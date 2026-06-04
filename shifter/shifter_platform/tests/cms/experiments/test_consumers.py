@@ -85,6 +85,13 @@ class TestConsumerAuthentication:
             assert connected is False
             assert code == 4004
 
+    # The owner-accept path reaches AsyncWebsocketConsumer.accept(), which in
+    # parallel CI scheduling can trigger a lazy DB connection check even
+    # though every ORM call this test exercises is patched. Mark the test
+    # `django_db` so pytest-django leaves the connection unblocked; the
+    # patched `_get_experiment` / `_get_runs` still keep the test from
+    # actually touching application tables.
+    @pytest.mark.django_db
     async def test_accepts_owner(self):
         user = _make_staff_user(pk=1)
         mock_experiment = MagicMock()
