@@ -58,7 +58,7 @@ jobs:
       fast_gcp_deploy: ${{ steps.env.outputs.fast_gcp_deploy }}
       skip_tests: ${{ steps.skip.outputs.skip_tests }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0  # Need full history to access PR head commit
 
@@ -103,6 +103,7 @@ jobs:
               # is verified, but it shouldn't trigger any deploy — the
               # `mcp` filter is the existing "Quality-only" route.
               - 'scripts/check_tf_iam_ec2_scope/**'
+              - 'scripts/check_tf_iam_elb_scope/**'
               - 'scripts/check_tf_sg_cidrs/**'
               - 'scripts/check_tf_kms_secrets_grant/**'
               # Guardrail / ADR-registry surfaces. A change to any of
@@ -256,6 +257,38 @@ jobs:
     uses: ./.github/workflows/_quality.yml
     with:
       skip_tests: ${{ needs.changes.outputs.skip_tests == 'true' }}
+    secrets:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+  # PR Gate — a single always-present aggregate check for branch
+  # protection. `dev` protection requires this one context instead of the
+  # individual Quality / * checks: those are only created when the
+  # `quality` job runs (it is conditional on quality-relevant paths), so
+  # requiring them directly leaves branch protection waiting forever on
+  # PRs that touch none of those paths. Scoped to pull_request events, so
+  # it never runs on aws-dev / gcp-dev / main pushes.
+  pr-gate:
+    name: PR Gate
+    needs: [changes, quality]
+    if: ${{ always() && github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Assert required PR jobs passed
+        run: |
+          changes_result='${{ needs.changes.result }}'
+          quality_result='${{ needs.quality.result }}'
+          echo "changes=$changes_result quality=$quality_result"
+          if [ "$changes_result" != "success" ]; then
+            echo "::error::Detect Changes did not succeed (result=$changes_result)"
+            exit 1
+          fi
+          # `quality` is legitimately skipped when no quality-relevant
+          # paths changed; only a real failure or cancellation blocks.
+          if [ "$quality_result" != "success" ] && [ "$quality_result" != "skipped" ]; then
+            echo "::error::Quality did not pass (result=$quality_result)"
+            exit 1
+          fi
+          echo "PR gate passed"
 
   gcp-dev:
     name: GCP Dev

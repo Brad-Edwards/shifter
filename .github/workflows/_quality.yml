@@ -8,6 +8,10 @@ on:
         required: false
         type: boolean
         default: false
+    secrets:
+      SONAR_TOKEN:
+        description: 'SonarCloud analysis token (sonarcloud job)'
+        required: true
 
 jobs:
   # ===========================================================================
@@ -20,7 +24,7 @@ jobs:
     name: Architecture (adr conformance)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       # The self-hosted runner ships with Python 3.9, but `adr_guard.py`
       # imports the stdlib `tomllib` module added in 3.11. `uv` brings its
@@ -28,7 +32,7 @@ jobs:
       # this workflow uses, so it's the portable fix: no OS-package upgrade
       # on the runner VMs, no dependency on `actions/setup-python`'s
       # version manifest (which doesn't cover the runner distro).
-      - uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a # v4
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
 
       - name: Install Helm for ADR guard chart rendering (hermetic, version-pinned, checksum-verified)
         env:
@@ -62,7 +66,7 @@ jobs:
     name: Lint (GitHub Actions)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: devops-actions/actionlint@467e2ce19b2310e93c9ffa0b50fe31f86b5a7f23 # v0.1.10
 
   terraform-lint:
@@ -71,7 +75,7 @@ jobs:
     name: Lint (terraform)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Setup TFLint
         uses: terraform-linters/setup-tflint@6e87008f9dd1fe3e34e66aca6c97b4a69f72a7f4 # v4
@@ -100,6 +104,16 @@ jobs:
             platform/terraform/modules/portal/ec2/main.tf \
             platform/terraform/modules/guacamole/iam.tf
 
+      # Issue #46: ELBv2 (Gateway Load Balancer) IAM scoping on the
+      # engine provisioner ECS task role. Mirrors check-tf-iam-ec2-scope:
+      # rejects Resource=* and wildcard ELBv2 actions on the GWLB
+      # mutation statements and requires the Shifter ownership tag
+      # conditions. Pre-commit also enforces it locally.
+      - name: Run check-tf-iam-elb-scope
+        run: |
+          python3 scripts/check_tf_iam_elb_scope/check_tf_iam_elb_scope.py \
+            platform/terraform/modules/engine-provisioner/iam.tf
+
       # Pin the behavior of the check_tf_* IAM/security checkers
       # themselves. The live-file invocations above only exercise the
       # happy-path shape; the test suites cover wildcards, list
@@ -113,8 +127,29 @@ jobs:
       - name: Run check_tf_* checker tests
         run: |
           python3 -m unittest scripts.check_tf_iam_ec2_scope.test_check_tf_iam_ec2_scope
+          python3 -m unittest scripts.check_tf_iam_elb_scope.test_check_tf_iam_elb_scope
           python3 -m unittest scripts.check_tf_sg_cidrs.test_check_tf_sg_cidrs
           python3 -m unittest scripts.check_tf_kms_secrets_grant.test_check_tf_kms_secrets_grant
+
+  # Pin the behavior of the Polaris CTFd workshop sync helpers. Issue #702
+  # shipped 38/39 challenges unsubmittable because flag-row reconciliation
+  # sat behind a category allowlist; these tests exercise the flag/hint
+  # reconciliation, manifest validation, and post-sync verification with a
+  # fake CTFd client. The scripts import siblings by bare name, so the test
+  # runs from the package directory (its name contains a hyphen, so the
+  # `unittest scripts.<pkg>` form the check_tf_* tests use is unavailable).
+  # Pure stdlib — no dependency install needed.
+  ctfd-workshop-tests:
+    permissions:
+      contents: read
+    name: Test (ctfd-workshop)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Run Polaris CTFd sync tests
+        working-directory: scripts/ctfd-workshop
+        run: python3 -m unittest test_sync_polaris_ctfd
 
   shifter-platform-lint:
     permissions:
@@ -122,10 +157,10 @@ jobs:
     name: Lint (shifter_platform)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Setup uv
-        uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a # v4
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
 
       - name: Install dependencies
         working-directory: shifter/shifter_platform
@@ -143,7 +178,7 @@ jobs:
     name: Lint JavaScript/CSS (shifter_platform)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -170,10 +205,10 @@ jobs:
     name: Lint (provisioner)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Setup uv
-        uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a # v4
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
 
       - name: Lint Python
         working-directory: shifter/engine/provisioner
@@ -188,10 +223,10 @@ jobs:
     name: Lint (packer)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Setup uv
-        uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a # v4
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
 
       - name: Lint Python
         working-directory: shifter/packer
@@ -206,10 +241,10 @@ jobs:
     name: Lint (bootstrap)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Setup uv
-        uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a # v4
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
 
       - name: Lint Python
         working-directory: scripts/bootstrap
@@ -224,10 +259,10 @@ jobs:
     name: Lint (gcp scripts)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Setup uv
-        uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a # v4
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
 
       - name: Lint Python
         working-directory: scripts/gcp
@@ -242,10 +277,10 @@ jobs:
     name: Lint (check_layer_imports)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Setup uv
-        uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a # v4
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
 
       - name: Lint Python
         working-directory: scripts/check_layer_imports
@@ -260,10 +295,10 @@ jobs:
     name: Lint (check_rds_pending_modifications)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Setup uv
-        uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a # v4
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
 
       - name: Lint Python
         working-directory: scripts/check_rds_pending_modifications
@@ -278,10 +313,10 @@ jobs:
     name: Lint (installation)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Setup uv
-        uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a # v4
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
 
       - name: Lint Python
         working-directory: shifter/installation
@@ -296,7 +331,7 @@ jobs:
     name: Lint (k8s manifests)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install kustomize (hermetic, version-pinned, checksum-verified)
         env:
@@ -347,7 +382,7 @@ jobs:
     name: Lint (k8s schemas)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install kustomize (hermetic, version-pinned, checksum-verified)
         env:
@@ -399,10 +434,10 @@ jobs:
     runs-on: ubuntu-latest
     continue-on-error: true  # Non-blocking - quality signal only
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Setup uv
-        uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a # v4
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
 
       - name: Install dependencies
         working-directory: shifter/shifter_platform
@@ -422,10 +457,10 @@ jobs:
     runs-on: ubuntu-latest
     continue-on-error: true  # Non-blocking - quality signal only
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Setup uv
-        uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a # v4
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
 
       - name: Install dependencies
         working-directory: shifter/engine/provisioner
@@ -447,10 +482,10 @@ jobs:
     name: Architecture (layer imports)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Setup uv
-        uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a # v4
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
 
       - name: Install dependencies
         working-directory: scripts/check_layer_imports
@@ -466,10 +501,10 @@ jobs:
     name: Architecture (import linter)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Setup uv
-        uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a # v4
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
 
       - name: Install dependencies
         working-directory: shifter/shifter_platform
@@ -499,10 +534,10 @@ jobs:
     name: SAST (shifter_platform)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Setup uv
-        uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a # v4
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
 
       - name: Run Bandit
         run: |
@@ -515,10 +550,10 @@ jobs:
     name: SAST (provisioner)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Setup uv
-        uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a # v4
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
 
       - name: Run Bandit
         # B404: subprocess import, B603: subprocess call, B607: partial path
@@ -533,10 +568,10 @@ jobs:
     name: SAST (packer)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Setup uv
-        uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a # v4
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
 
       - name: Run Bandit
         run: |
@@ -549,10 +584,10 @@ jobs:
     name: SAST (bootstrap)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Setup uv
-        uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a # v4
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
 
       - name: Run Bandit
         run: |
@@ -565,10 +600,10 @@ jobs:
     name: SAST (gcp scripts)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Setup uv
-        uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a # v4
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
 
       - name: Run Bandit
         run: |
@@ -581,10 +616,10 @@ jobs:
     name: SAST (check_layer_imports)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Setup uv
-        uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a # v4
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
 
       - name: Run Bandit
         working-directory: scripts/check_layer_imports
@@ -598,10 +633,10 @@ jobs:
     name: SAST (installation)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Setup uv
-        uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a # v4
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
 
       - name: Run Bandit
         run: |
@@ -634,10 +669,10 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Setup uv
-        uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a # v4
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
 
       - name: Install dependencies
         working-directory: shifter/shifter_platform
@@ -656,7 +691,15 @@ jobs:
           DB_PASSWORD: test
         run: |
           uv run python manage.py collectstatic --noinput
-          uv run pytest tests/ --ignore=tests/documentation --cov=config --cov=mission_control --cov=documentation --cov=cms --cov=shared --cov=ctf --cov=engine --cov=risk_register --cov-report=term-missing --cov-report=xml:coverage.xml
+          uv run pytest tests/ --ignore=tests/documentation --cov=. --cov-report=term-missing --cov-report=xml:coverage.xml
+
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-shifter-platform
+          path: shifter/shifter_platform/coverage.xml
+          if-no-files-found: error
+          retention-days: 1
 
   shifter-engine-tests:
     permissions:
@@ -666,10 +709,10 @@ jobs:
     needs: [provisioner-lint, provisioner-sast]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Setup uv
-        uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a # v4
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
 
       - name: Install dependencies
         working-directory: shifter/engine/provisioner
@@ -679,7 +722,15 @@ jobs:
         working-directory: shifter/engine/provisioner
         env:
           TESTING: "1"
-        run: uv run pytest tests/
+        run: uv run --with pytest-cov pytest tests/ --cov=. --cov-report=xml:coverage.xml
+
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-provisioner
+          path: shifter/engine/provisioner/coverage.xml
+          if-no-files-found: error
+          retention-days: 1
 
   packer-tests:
     permissions:
@@ -689,10 +740,10 @@ jobs:
     needs: [packer-lint]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Setup uv
-        uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a # v4
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
 
       - name: Install dependencies
         working-directory: shifter/packer
@@ -700,7 +751,15 @@ jobs:
 
       - name: Run tests
         working-directory: shifter/packer
-        run: uv run pytest tests/
+        run: uv run --with pytest-cov pytest tests/ --cov=. --cov-report=xml:coverage.xml
+
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-packer
+          path: shifter/packer/coverage.xml
+          if-no-files-found: error
+          retention-days: 1
 
   bootstrap-tests:
     permissions:
@@ -710,10 +769,10 @@ jobs:
     needs: [bootstrap-lint]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Setup uv
-        uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a # v4
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
 
       - name: Install dependencies
         working-directory: scripts/bootstrap
@@ -721,7 +780,15 @@ jobs:
 
       - name: Run tests
         working-directory: scripts/bootstrap
-        run: uv run pytest tests/
+        run: uv run --with pytest-cov pytest tests/ --cov=. --cov-report=xml:coverage.xml
+
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-bootstrap
+          path: scripts/bootstrap/coverage.xml
+          if-no-files-found: error
+          retention-days: 1
 
   gcp-scripts-tests:
     permissions:
@@ -731,10 +798,10 @@ jobs:
     needs: [gcp-scripts-lint]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Setup uv
-        uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a # v4
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
 
       - name: Install dependencies
         working-directory: scripts/gcp
@@ -752,10 +819,10 @@ jobs:
     needs: [check-layer-imports-lint]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Setup uv
-        uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a # v4
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
 
       - name: Install dependencies
         working-directory: scripts/check_layer_imports
@@ -763,7 +830,15 @@ jobs:
 
       - name: Run tests
         working-directory: scripts/check_layer_imports
-        run: uv run pytest tests/
+        run: uv run --with pytest-cov pytest tests/ --cov=. --cov-report=xml:coverage.xml
+
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-check-layer-imports
+          path: scripts/check_layer_imports/coverage.xml
+          if-no-files-found: error
+          retention-days: 1
 
   check-rds-pending-modifications-tests:
     permissions:
@@ -773,10 +848,10 @@ jobs:
     needs: [check-rds-pending-modifications-lint]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Setup uv
-        uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a # v4
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
 
       - name: Install dependencies
         working-directory: scripts/check_rds_pending_modifications
@@ -794,10 +869,10 @@ jobs:
     needs: [installation-lint]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Setup uv
-        uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a # v4
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
 
       - name: Install dependencies
         working-directory: shifter/installation
@@ -805,7 +880,15 @@ jobs:
 
       - name: Run tests
         working-directory: shifter/installation
-        run: uv run pytest tests/
+        run: uv run --with pytest-cov pytest tests/ --cov=. --cov-report=xml:coverage.xml
+
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-installation
+          path: shifter/installation/coverage.xml
+          if-no-files-found: error
+          retention-days: 1
 
   adr-guard-tests:
     permissions:
@@ -815,12 +898,12 @@ jobs:
     needs: [adr-conformance]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       # Same rationale as adr-conformance: `adr_guard` imports `tomllib`
       # (stdlib 3.11+); the self-hosted runner ships 3.9. Use `uv` to
       # source Python so the workflow doesn't depend on a system upgrade.
-      - uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a # v4
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
 
       - name: Run tests
         run: |
@@ -839,7 +922,7 @@ jobs:
     needs: [shifter-platform-lint-js]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -854,7 +937,15 @@ jobs:
 
       - name: Run JavaScript tests
         working-directory: shifter/shifter_platform
-        run: npm test
+        run: npm run test:coverage
+
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-shifter-platform-js
+          path: shifter/shifter_platform/coverage/lcov.info
+          if-no-files-found: error
+          retention-days: 1
 
   mcp-lint:
     # Lint always runs, even when [skip tests] is set on the workflow
@@ -870,7 +961,7 @@ jobs:
       matrix:
         package: [ngfw, ops, shared]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -899,7 +990,7 @@ jobs:
       matrix:
         package: [ngfw, ops]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -926,7 +1017,7 @@ jobs:
     name: Security (IaC)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Cache Checkov
         uses: actions/cache@v4
@@ -937,23 +1028,30 @@ jobs:
             ${{ runner.os }}-checkov-
 
       - name: Checkov IaC Security
+        # Blocking gate per ADR-004-R11. Skip-check entries live in
+        # platform/terraform/.checkov.yaml so this job and the local
+        # pre-commit hook consume the same policy boundary. Accepted-risk
+        # waivers are documented in docs/adr/exceptions.yaml with owner,
+        # reason, expires_on, and affected paths.
         uses: bridgecrewio/checkov-action@02a4c5d6a02367e5ea493c34c26b094302fd3f61 # v12
         with:
           directory: platform/terraform/
-          framework: terraform
+          config_file: platform/terraform/.checkov.yaml
           download_external_modules: true
-          quiet: true
-          compact: true
-          soft_fail: true
+          soft_fail: false
 
   security-k8s:
     permissions:
       contents: read
     name: Security (k8s)
     runs-on: ubuntu-latest
-    continue-on-error: true  # Soft-fail until manifest remediation complete
+    # K8s Checkov is intentionally a separate policy surface from Terraform
+    # Checkov (per ADR-004-R11). It stays soft-fail / continue-on-error
+    # while manifest remediation proceeds under a separate issue;
+    # Terraform soft-fail is NOT permitted to inherit from this.
+    continue-on-error: true
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Cache Checkov
         uses: actions/cache@v4
@@ -978,7 +1076,7 @@ jobs:
     name: Security (gitleaks)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -1022,10 +1120,10 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Setup uv
-        uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a # v4
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
 
       - name: Install dependencies
         working-directory: shifter/shifter_platform
@@ -1043,3 +1141,91 @@ jobs:
           DB_USER: test
           DB_PASSWORD: test
         run: uv run python manage.py check_model_fks
+
+  # ===========================================================================
+  # Static analysis — SonarCloud
+  # ===========================================================================
+
+  sonarcloud:
+    permissions:
+      contents: read
+    name: SonarCloud
+    # Runs after the test jobs so their coverage reports can feed the scan.
+    # success() keeps the implicit needs-passed guard that a custom if:
+    # would otherwise drop; skipped when tests are skipped.
+    if: ${{ success() && !inputs.skip_tests }}
+    needs:
+      - shifter-platform-tests
+      - shifter-platform-js-tests
+      - shifter-engine-tests
+      - packer-tests
+      - bootstrap-tests
+      - check-layer-imports-tests
+      - installation-tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history so SonarCloud attributes new code accurately for
+          # pull-request (new-code) quality-gate analysis.
+          fetch-depth: 0
+
+      # Coverage reports are produced by the test jobs and passed as
+      # artifacts; restore each at the repo-relative path that
+      # sonar-project.properties references.
+      - name: Download shifter_platform coverage
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage-shifter-platform
+          path: shifter/shifter_platform
+      - name: Download shifter_platform JS coverage
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage-shifter-platform-js
+          path: shifter/shifter_platform/coverage
+      - name: Download provisioner coverage
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage-provisioner
+          path: shifter/engine/provisioner
+      - name: Download packer coverage
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage-packer
+          path: shifter/packer
+      - name: Download bootstrap coverage
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage-bootstrap
+          path: scripts/bootstrap
+      - name: Download check_layer_imports coverage
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage-check-layer-imports
+          path: scripts/check_layer_imports
+      - name: Download installation coverage
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage-installation
+          path: shifter/installation
+
+      - name: Setup Java for SonarScanner
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: SonarQube Cloud scan
+        uses: SonarSource/sonarqube-scan-action@v6
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          # Project key, org, sources, exclusions, and coverage report
+          # paths come from the repo-root sonar-project.properties. On
+          # pull requests, wait for the SonarCloud quality gate so a
+          # failing new-code gate fails this job (and, via the Quality
+          # caller, the PR Gate check). Branch runs (push to dev) upload
+          # analysis without blocking on pre-existing debt.
+          args: >-
+            -Dsonar.scanner.skipJreProvisioning=true
+            ${{ github.event_name == 'pull_request' && '-Dsonar.qualitygate.wait=true' || '' }}
