@@ -27,6 +27,7 @@ from ctf.models import (
     CTFParticipant,
     CTFTopic,
 )
+from shared.log_sanitize import safe_log_value
 
 if TYPE_CHECKING:
     pass
@@ -469,7 +470,7 @@ def add_flag(
         validator_config=validator_config,
     )
 
-    logger.info("Added flag %s to challenge %s", flag_obj.id, challenge_id)
+    logger.info("Added flag %s to challenge %s", safe_log_value(flag_obj.id), safe_log_value(challenge_id))
     return flag_obj
 
 
@@ -502,7 +503,7 @@ def remove_flag(flag_id: UUID, *, actor_id: int) -> None:
         )
 
     flag_obj.delete(soft=True)
-    logger.info("Removed flag %s", flag_id)
+    logger.info("Removed flag %s", safe_log_value(flag_id))
 
 
 def _compute_legacy_flag_hash(data: dict[str, Any], flags_list: list | None) -> None:
@@ -587,7 +588,7 @@ def create_challenge(event_id: UUID, challenge_data: dict[str, Any], *, actor_id
         CTFStateError: If event is not modifiable.
         CTFValidationError: If challenge data is invalid.
     """
-    logger.info("Creating challenge for event %s", event_id)
+    logger.info("Creating challenge for event %s", safe_log_value(event_id))
 
     # Get and validate event
     try:
@@ -640,9 +641,9 @@ def create_challenge(event_id: UUID, challenge_data: dict[str, Any], *, actor_id
 
         logger.info(
             "Created challenge %s for event %s: %s",
-            challenge.id,
-            event_id,
-            challenge.name,
+            safe_log_value(challenge.id),
+            safe_log_value(event_id),
+            safe_log_value(challenge.name),
         )
 
     _sync_release_task(challenge)
@@ -712,7 +713,7 @@ def update_challenge(challenge_id: UUID, challenge_data: dict[str, Any], *, acto
         CTFPermissionError: If actor does not own the event.
         CTFStateError: If challenge's event is not modifiable.
     """
-    logger.info("Updating challenge %s", challenge_id)
+    logger.info("Updating challenge %s", safe_log_value(challenge_id))
 
     try:
         challenge = CTFChallenge.objects.select_related("event").get(pk=challenge_id)
@@ -745,7 +746,7 @@ def update_challenge(challenge_id: UUID, challenge_data: dict[str, Any], *, acto
             setattr(challenge, key, value)
         challenge.save()
         _apply_optional_challenge_associations(challenge, flags_list, tag_names, topic_names, actor_id)
-        logger.info("Updated challenge %s", challenge_id)
+        logger.info("Updated challenge %s", safe_log_value(challenge_id))
 
     _sync_release_task(challenge)
 
@@ -841,7 +842,7 @@ def delete_challenge(challenge_id: UUID, *, actor_id: int) -> None:
         CTFPermissionError: If actor does not own the event.
         CTFStateError: If challenge's event is not modifiable.
     """
-    logger.info("Deleting challenge %s", challenge_id)
+    logger.info("Deleting challenge %s", safe_log_value(challenge_id))
 
     try:
         challenge = CTFChallenge.objects.select_related("event").get(pk=challenge_id)
@@ -866,7 +867,7 @@ def delete_challenge(challenge_id: UUID, *, actor_id: int) -> None:
         # Soft-delete prerequisite links where this challenge is required
         CTFChallengePrerequisite.objects.filter(required_challenge=challenge).update(deleted_at=timezone.now())
         challenge.delete(soft=True)
-    logger.info("Deleted challenge %s", challenge_id)
+    logger.info("Deleted challenge %s", safe_log_value(challenge_id))
 
 
 def get_challenge(challenge_id: UUID) -> CTFChallenge:
@@ -1242,8 +1243,8 @@ def add_prerequisite(
 
     logger.info(
         "Added prerequisite: %s requires %s",
-        challenge_id,
-        required_challenge_id,
+        safe_log_value(challenge_id),
+        safe_log_value(required_challenge_id),
     )
     return prereq
 
@@ -1312,7 +1313,7 @@ def remove_prerequisite(prerequisite_id: UUID, *, actor_id: int) -> None:
         )
 
     prereq.delete(soft=True)
-    logger.info("Removed prerequisite %s", prerequisite_id)
+    logger.info("Removed prerequisite %s", safe_log_value(prerequisite_id))
 
 
 def get_prerequisites(challenge_id: UUID) -> QuerySet[CTFChallengePrerequisite]:

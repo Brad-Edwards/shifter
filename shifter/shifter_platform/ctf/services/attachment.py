@@ -31,6 +31,7 @@ from ctf.s3 import (
     generate_download_url,
     upload_challenge_file,
 )
+from shared.log_sanitize import safe_log_value
 
 if TYPE_CHECKING:
     pass
@@ -68,10 +69,10 @@ def _run_text_stream_validation(
         # rejection path above.
         logger.warning(
             "add_challenge_file: streaming text inspection rejected challenge=%s ext=%s actor=%s reason=%s",
-            challenge_id,
-            ext,
+            safe_log_value(challenge_id),
+            safe_log_value(ext),
             actor_id,
-            exc,
+            safe_log_value(exc),
         )
         raise CTFValidationError(
             f"File content inspection failed: {exc}",
@@ -163,10 +164,10 @@ def add_challenge_file(
     except CTFInspectionError as exc:
         logger.warning(
             "add_challenge_file: header inspection failed challenge=%s ext=%s actor=%s reason=%s",
-            challenge_id,
-            ext,
+            safe_log_value(challenge_id),
+            safe_log_value(ext),
             actor_id,
-            exc,
+            safe_log_value(exc),
         )
         raise CTFValidationError(
             f"File content inspection failed: {exc}",
@@ -216,7 +217,7 @@ def add_challenge_file(
         order=next_order,
     )
 
-    logger.info("Added file %s to challenge %s", challenge_file.id, challenge_id)
+    logger.info("Added file %s to challenge %s", challenge_file.id, safe_log_value(challenge_id))
     return challenge_file
 
 
@@ -256,10 +257,12 @@ def remove_challenge_file(file_id: UUID, *, actor_id: int) -> None:
     try:
         delete_challenge_file(challenge_file.s3_key)
     except CTFFileError:
-        logger.warning("Failed to delete S3 object %s, proceeding with soft delete", challenge_file.s3_key)
+        logger.warning(
+            "Failed to delete S3 object %s, proceeding with soft delete", safe_log_value(challenge_file.s3_key)
+        )
 
     challenge_file.delete(soft=True)
-    logger.info("Removed file %s", file_id)
+    logger.info("Removed file %s", safe_log_value(file_id))
 
 
 def get_challenge_files(challenge_id: UUID) -> QuerySet[CTFChallengeFile]:

@@ -12,7 +12,7 @@ from uuid import UUID
 from ctf.enums import NotificationStatus, NotificationType, ScheduledTaskType
 from ctf.exceptions import CTFNotFoundError
 from ctf.models import CTFEvent, CTFNotification, CTFParticipant
-from shared.log_sanitize import safe_log
+from shared.log_sanitize import safe_log_value
 
 if TYPE_CHECKING:
     from datetime import datetime
@@ -34,7 +34,7 @@ def send_invitations(event_id: UUID) -> dict[str, Any]:
     Raises:
         CTFNotFoundError: If event doesn't exist.
     """
-    logger.info("Sending invitations for event %s", event_id)
+    logger.info("Sending invitations for event %s", safe_log_value(event_id))
 
     try:
         event = CTFEvent.objects.get(pk=event_id)
@@ -77,7 +77,7 @@ def send_invitations(event_id: UUID) -> dict[str, Any]:
             else:
                 failed += 1
         except Exception:
-            logger.exception("Failed to send invitation to %s", safe_log(participant.email))
+            logger.exception("Failed to send invitation to %s", safe_log_value(participant.email))
             failed += 1
 
     # Create notification record
@@ -162,7 +162,7 @@ def send_credentials(event_id: UUID) -> dict[str, Any]:
             else:
                 failed += 1
         except Exception:
-            logger.exception("Failed to send credentials to %s", safe_log(participant.email))
+            logger.exception("Failed to send credentials to %s", safe_log_value(participant.email))
             failed += 1
 
     if sent > 0:
@@ -259,7 +259,7 @@ def send_reminder(event_id: UUID, hours_before: int = 24) -> dict[str, Any]:
             else:
                 failed += 1
         except Exception:
-            logger.exception("Failed to send reminder to %s", safe_log(participant.email))
+            logger.exception("Failed to send reminder to %s", safe_log_value(participant.email))
             failed += 1
 
     if sent > 0:
@@ -303,7 +303,7 @@ def send_announcement(
     Raises:
         CTFNotFoundError: If event doesn't exist.
     """
-    logger.info("Sending announcement for event %s: %s", event_id, subject)
+    logger.info("Sending announcement for event %s: %s", safe_log_value(event_id), safe_log_value(subject))
 
     try:
         event = CTFEvent.objects.get(pk=event_id)
@@ -347,7 +347,7 @@ def send_announcement(
             if success:
                 sent += 1
         except Exception:
-            logger.exception("Failed to send announcement to %s", safe_log(participant.email))
+            logger.exception("Failed to send announcement to %s", safe_log_value(participant.email))
 
     from django.utils import timezone
 
@@ -413,17 +413,17 @@ def notify_organizer_provision_failure(
     if not failures:
         return
 
-    logger.info("Notifying organizer of %d provisioning failures for event %s", len(failures), event_id)
+    logger.info("Notifying organizer of %d provisioning failures for event %s", len(failures), safe_log_value(event_id))
 
     try:
         event = CTFEvent.objects.get(pk=event_id)
     except CTFEvent.DoesNotExist:
-        logger.error("Cannot notify: event %s not found", event_id)
+        logger.error("Cannot notify: event %s not found", safe_log_value(event_id))
         return
 
     organizer = event.created_by
     if not organizer or not organizer.email:
-        logger.warning("Cannot notify: event %s has no organizer email", event_id)
+        logger.warning("Cannot notify: event %s has no organizer email", safe_log_value(event_id))
         return
 
     html_content, text_content, custom_subject = _render_email(

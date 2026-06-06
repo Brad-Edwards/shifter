@@ -13,6 +13,7 @@ from django.core.exceptions import ValidationError
 from django.db.models import QuerySet
 
 from ctf.models import CTFBracket, CTFParticipant
+from shared.log_sanitize import safe_log_value
 
 logger = logging.getLogger(__name__)
 
@@ -87,7 +88,7 @@ def delete_bracket(bracket_id: UUID) -> None:
     # Unassign participants from this bracket
     CTFParticipant.objects.filter(bracket=bracket).update(bracket=None)
     bracket.delete()
-    logger.info("Deleted bracket %s", bracket_id)
+    logger.info("Deleted bracket %s", safe_log_value(bracket_id))
 
 
 def list_brackets(event_id: UUID) -> QuerySet[CTFBracket]:
@@ -142,7 +143,7 @@ def assign_participant_bracket(participant_id: UUID, bracket_id: UUID) -> CTFPar
 
     participant.bracket = bracket
     participant.save(update_fields=["bracket", "updated_at"])
-    logger.info("Assigned participant %s to bracket '%s'", participant_id, bracket.name)
+    logger.info("Assigned participant %s to bracket '%s'", safe_log_value(participant_id), safe_log_value(bracket.name))
     return participant
 
 
@@ -161,5 +162,5 @@ def remove_participant_bracket(participant_id: UUID) -> CTFParticipant:
     participant = CTFParticipant.objects.get(pk=participant_id)
     participant.bracket = None
     participant.save(update_fields=["bracket", "updated_at"])
-    logger.info("Removed bracket assignment for participant %s", participant_id)
+    logger.info("Removed bracket assignment for participant %s", safe_log_value(participant_id))
     return participant

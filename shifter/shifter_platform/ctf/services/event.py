@@ -15,6 +15,7 @@ from django.db.models import QuerySet
 from ctf.enums import VALID_TRANSITIONS, EventStatus, validate_transition
 from ctf.exceptions import CTFNotFoundError, CTFStateError, CTFValidationError
 from ctf.models import CTFEvent
+from shared.log_sanitize import safe_log_value
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import User
@@ -113,7 +114,7 @@ def update_event(event_id: UUID, event_data: dict[str, Any]) -> CTFEvent:
         CTFStateError: If event is not modifiable.
         CTFValidationError: If event data is invalid.
     """
-    logger.info("Updating CTF event %s", event_id)
+    logger.info("Updating CTF event %s", safe_log_value(event_id))
 
     try:
         event = CTFEvent.objects.get(pk=event_id)
@@ -172,7 +173,7 @@ def delete_event(event_id: UUID) -> None:
     Raises:
         CTFNotFoundError: If event doesn't exist.
     """
-    logger.info("Deleting CTF event %s", event_id)
+    logger.info("Deleting CTF event %s", safe_log_value(event_id))
 
     try:
         event = CTFEvent.objects.get(pk=event_id)
@@ -189,7 +190,7 @@ def delete_event(event_id: UUID) -> None:
         # Soft delete
         event.delete(soft=True)
 
-        logger.info("Deleted CTF event %s", event_id)
+        logger.info("Deleted CTF event %s", safe_log_value(event_id))
 
 
 def force_delete_event(
@@ -279,9 +280,9 @@ def force_delete_event(
 
     logger.warning(
         "FORCE DELETE: Event %s (%s) permanently deleted by %s (pk=%s). Ranges destroyed: %d, ranges failed: %d.",
-        event_id,
-        event_name,
-        actor.email,
+        safe_log_value(event_id),
+        safe_log_value(event_name),
+        safe_log_value(actor.email),
         actor.pk,
         ranges_destroyed,
         ranges_failed,

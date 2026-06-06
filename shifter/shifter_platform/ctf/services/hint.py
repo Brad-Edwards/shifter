@@ -14,6 +14,7 @@ from django.db.models import QuerySet, Sum
 
 from ctf.exceptions import CTFNotFoundError, CTFStateError, CTFValidationError
 from ctf.models import CTFChallenge, CTFHint, CTFHintUsage, CTFParticipant
+from shared.log_sanitize import safe_log_value
 
 logger = logging.getLogger(__name__)
 
@@ -66,7 +67,9 @@ def add_hint(challenge_id: UUID, hint_data: dict[str, Any], *, actor_id: int) ->
         order=order,
     )
 
-    logger.info("Added hint %s (order=%d) to challenge %s", hint.id, order, challenge_id)
+    logger.info(
+        "Added hint %s (order=%s) to challenge %s", hint.id, safe_log_value(order), safe_log_value(challenge_id)
+    )
     return hint
 
 
@@ -144,7 +147,7 @@ def remove_hint(hint_id: UUID, *, actor_id: int) -> None:
         )
 
     hint.delete(soft=True)
-    logger.info("Removed hint %s", hint_id)
+    logger.info("Removed hint %s", safe_log_value(hint_id))
 
 
 def get_hints(challenge_id: UUID) -> QuerySet[CTFHint]:
@@ -287,9 +290,9 @@ def use_hint(
 
     logger.info(
         "Hint unlocked: participant=%s, hint=%s, challenge=%s, penalty=%d%%",
-        participant_id,
-        hint_id,
-        hint.challenge_id,
+        safe_log_value(participant_id),
+        safe_log_value(hint_id),
+        safe_log_value(hint.challenge_id),
         hint.penalty,
     )
 

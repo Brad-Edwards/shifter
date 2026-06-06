@@ -26,6 +26,8 @@ from django.utils import timezone
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
 from ctf.bridges import get_user_role
+from shared.errors import classify_user_message
+from shared.log_sanitize import safe_log_value
 
 if TYPE_CHECKING:
     from django.http import HttpRequest
@@ -269,12 +271,14 @@ def _resolve_hint_to_unlock(request: HttpRequest, participant, challenge_id):
     try:
         body = _parse_body_object(request, allow_empty=True)
     except _BodyParseError as e:
-        return JsonResponse({"error": str(e)}, status=400)
+        logger.exception("Failed to parse request body")
+        return JsonResponse({"error": classify_user_message(e)}, status=400)
     if "hint_id" in body:
         try:
             return _parse_body_uuid(body.get("hint_id"), "hint_id")
         except _BodyUUIDError as e:
-            return JsonResponse({"error": str(e)}, status=400)
+            logger.exception("Failed to parse hint_id from request body")
+            return JsonResponse({"error": classify_user_message(e)}, status=400)
     # Default path: pick the first hint not yet unlocked.
     unlocked_ids = {h.id for h in get_unlocked_hints(participant.id, challenge_id)}
     next_hint = next((h for h in get_hints(challenge_id) if h.id not in unlocked_ids), None)
@@ -1624,9 +1628,9 @@ def admin_participant_import(request: HttpRequest, event_id: UUID) -> HttpRespon
                 imported_count = len(participants)
                 logger.info(
                     "User %s imported %d participants to event %s",
-                    request.user.email,
+                    safe_log_value(request.user.email),
                     imported_count,
-                    event_id,
+                    safe_log_value(event_id),
                 )
                 messages.success(request, f"Successfully imported {imported_count} participants.")
                 return redirect("ctf:admin_participant_list", event_id=event_id)
@@ -1736,9 +1740,9 @@ def admin_participant_add(request: HttpRequest, event_id: UUID) -> HttpResponse:
                 )
                 logger.info(
                     "User %s added participant %s to event %s",
-                    request.user.email,
-                    participant.email,
-                    event_id,
+                    safe_log_value(request.user.email),
+                    safe_log_value(participant.email),
+                    safe_log_value(event_id),
                 )
                 messages.success(request, f"Participant {participant.name} added successfully.")
                 return redirect("ctf:admin_participant_list", event_id=event_id)
@@ -2013,7 +2017,8 @@ def api_assign_bracket(request: HttpRequest, participant_id: UUID) -> JsonRespon
     try:
         body = _parse_body_object(request)
     except _BodyParseError as e:
-        return JsonResponse({"error": str(e)}, status=400)
+        logger.exception("Failed to parse request body")
+        return JsonResponse({"error": classify_user_message(e)}, status=400)
 
     bracket_id = body.get("bracket_id")
 
@@ -2329,7 +2334,8 @@ def api_event_list(request: HttpRequest) -> JsonResponse:
     try:
         body = _parse_body_object(request)
     except _BodyParseError as e:
-        return JsonResponse({"error": str(e)}, status=400)
+        logger.exception("Failed to parse request body")
+        return JsonResponse({"error": classify_user_message(e)}, status=400)
 
     # Parse datetime strings to datetime objects for the service layer
     from django.utils.dateparse import parse_datetime
@@ -2351,7 +2357,8 @@ def api_event_list(request: HttpRequest) -> JsonResponse:
             status=201,
         )
     except CTFValidationError as e:
-        return JsonResponse({"error": str(e)}, status=400)
+        logger.exception("Failed to create event")
+        return JsonResponse({"error": classify_user_message(e)}, status=400)
     except ValidationError as e:
         # Django model validation (from full_clean in save)
         return JsonResponse({"error": "; ".join(e.messages)}, status=400)
@@ -2429,7 +2436,8 @@ def api_event_detail(request: HttpRequest, event_id: UUID) -> JsonResponse:
     try:
         body = _parse_body_object(request)
     except _BodyParseError as e:
-        return JsonResponse({"error": str(e)}, status=400)
+        logger.exception("Failed to parse request body")
+        return JsonResponse({"error": classify_user_message(e)}, status=400)
     _coerce_event_datetime_fields(body)
     try:
         updated = update_event(event_id, body)
@@ -2441,7 +2449,8 @@ def api_event_detail(request: HttpRequest, event_id: UUID) -> JsonResponse:
             }
         )
     except (CTFValidationError, CTFStateError) as e:
-        return JsonResponse({"error": str(e)}, status=400)
+        logger.exception("Failed to update event")
+        return JsonResponse({"error": classify_user_message(e)}, status=400)
     except ValidationError as e:
         return JsonResponse({"error": "; ".join(e.messages)}, status=400)
 
@@ -2472,7 +2481,8 @@ def api_force_delete_event(request: HttpRequest, event_id: UUID) -> JsonResponse
     try:
         body = _parse_body_object(request)
     except _BodyParseError as e:
-        return JsonResponse({"error": str(e)}, status=400)
+        logger.exception("Failed to parse request body")
+        return JsonResponse({"error": classify_user_message(e)}, status=400)
 
     confirmation_name = body.get("confirmation_name")
     if not confirmation_name:
@@ -2481,7 +2491,8 @@ def api_force_delete_event(request: HttpRequest, event_id: UUID) -> JsonResponse
     try:
         result = force_delete_event(event_id, request.user, confirmation_name)
     except CTFValidationError as e:
-        return JsonResponse({"error": str(e)}, status=400)
+        logger.exception("Failed to force-delete event")
+        return JsonResponse({"error": classify_user_message(e)}, status=400)
 
     return JsonResponse(result)
 
@@ -2532,7 +2543,8 @@ def api_challenge_list(request: HttpRequest, event_id: UUID) -> JsonResponse:
     try:
         body = _parse_body_object(request)
     except _BodyParseError as e:
-        return JsonResponse({"error": str(e)}, status=400)
+        logger.exception("Failed to parse request body")
+        return JsonResponse({"error": classify_user_message(e)}, status=400)
 
     try:
         challenge = create_challenge(event_id, body, actor_id=user.pk)
@@ -2548,9 +2560,11 @@ def api_challenge_list(request: HttpRequest, event_id: UUID) -> JsonResponse:
     except CTFPermissionError:
         return JsonResponse({"error": "Forbidden"}, status=403)
     except CTFNotFoundError as e:
-        return JsonResponse({"error": str(e)}, status=404)
+        logger.exception("Failed to create challenge")
+        return JsonResponse({"error": classify_user_message(e)}, status=404)
     except (CTFValidationError, CTFStateError) as e:
-        return JsonResponse({"error": str(e)}, status=400)
+        logger.exception("Failed to create challenge")
+        return JsonResponse({"error": classify_user_message(e)}, status=400)
 
 
 @login_required
@@ -2605,13 +2619,15 @@ def api_challenge_detail(request: HttpRequest, challenge_id: UUID) -> JsonRespon
         except CTFPermissionError:
             return JsonResponse({"error": "Forbidden"}, status=403)
         except (CTFNotFoundError, CTFStateError) as e:
-            return JsonResponse({"error": str(e)}, status=400)
+            logger.exception("Failed to delete challenge")
+            return JsonResponse({"error": classify_user_message(e)}, status=400)
 
     # PUT
     try:
         body = _parse_body_object(request)
     except _BodyParseError as e:
-        return JsonResponse({"error": str(e)}, status=400)
+        logger.exception("Failed to parse request body")
+        return JsonResponse({"error": classify_user_message(e)}, status=400)
 
     try:
         updated = update_challenge(challenge_id, body, actor_id=user.pk)
@@ -2626,7 +2642,8 @@ def api_challenge_detail(request: HttpRequest, challenge_id: UUID) -> JsonRespon
     except CTFPermissionError:
         return JsonResponse({"error": "Forbidden"}, status=403)
     except (CTFNotFoundError, CTFValidationError, CTFStateError) as e:
-        return JsonResponse({"error": str(e)}, status=400)
+        logger.exception("Failed to update challenge")
+        return JsonResponse({"error": classify_user_message(e)}, status=400)
 
 
 @login_required
@@ -2656,7 +2673,8 @@ def api_submit_flag(request: HttpRequest, challenge_id: UUID) -> JsonResponse:
         body = _parse_body_object(request)
         flag = _get_body_str(body, "flag").strip()
     except _BodyParseError as e:
-        return JsonResponse({"error": str(e)}, status=400)
+        logger.exception("Failed to parse request body")
+        return JsonResponse({"error": classify_user_message(e)}, status=400)
 
     if not flag:
         return JsonResponse({"error": "Flag is required"}, status=400)
@@ -2679,16 +2697,20 @@ def api_submit_flag(request: HttpRequest, challenge_id: UUID) -> JsonResponse:
             }
         )
     except CTFNotFoundError as e:
-        return JsonResponse({"error": str(e)}, status=404)
+        logger.exception("Failed to submit flag")
+        return JsonResponse({"error": classify_user_message(e)}, status=404)
     except CTFValidationError as e:
-        return JsonResponse({"error": str(e)}, status=400)
+        logger.exception("Failed to submit flag")
+        return JsonResponse({"error": classify_user_message(e)}, status=400)
     except CTFRateLimitError as e:
-        response = JsonResponse({"error": str(e), "details": e.details}, status=429)
+        logger.exception("Failed to submit flag")
+        response = JsonResponse({"error": classify_user_message(e), "details": e.details}, status=429)
         if e.details.get("retry_after_seconds"):
             response["Retry-After"] = str(e.details["retry_after_seconds"])
         return response
     except CTFStateError as e:
-        return JsonResponse({"error": str(e)}, status=400)
+        logger.exception("Failed to submit flag")
+        return JsonResponse({"error": classify_user_message(e)}, status=400)
 
 
 @login_required
@@ -2729,9 +2751,11 @@ def api_use_hint(request: HttpRequest, challenge_id: UUID) -> JsonResponse:
         result = use_hint(participant.id, hint_uuid_or_response, expected_challenge_id=challenge_id)
         return JsonResponse(result)
     except CTFNotFoundError as e:
-        return JsonResponse({"error": str(e)}, status=404)
+        logger.exception("Failed to use hint")
+        return JsonResponse({"error": classify_user_message(e)}, status=404)
     except (CTFValidationError, CTFStateError) as e:
-        return JsonResponse({"error": str(e)}, status=400)
+        logger.exception("Failed to use hint")
+        return JsonResponse({"error": classify_user_message(e)}, status=400)
 
 
 @login_required
@@ -2759,7 +2783,8 @@ def api_rate_challenge(request: HttpRequest, challenge_id: UUID) -> JsonResponse
     try:
         body = _parse_body_object(request)
     except _BodyParseError as e:
-        return JsonResponse({"error": str(e)}, status=400)
+        logger.exception("Failed to parse request body")
+        return JsonResponse({"error": classify_user_message(e)}, status=400)
 
     value = body.get("value")
     if not isinstance(value, int):
@@ -2769,9 +2794,11 @@ def api_rate_challenge(request: HttpRequest, challenge_id: UUID) -> JsonResponse
         rating = rate_challenge(participant.id, challenge_id, value)
         return JsonResponse({"value": rating.value, "challenge_id": str(challenge_id)})
     except CTFNotFoundError as e:
-        return JsonResponse({"error": str(e)}, status=404)
+        logger.exception("Failed to rate challenge")
+        return JsonResponse({"error": classify_user_message(e)}, status=404)
     except CTFValidationError as e:
-        return JsonResponse({"error": str(e)}, status=400)
+        logger.exception("Failed to rate challenge")
+        return JsonResponse({"error": classify_user_message(e)}, status=400)
 
 
 @login_required
@@ -2849,7 +2876,8 @@ def api_participant_list(request: HttpRequest, event_id: UUID) -> JsonResponse:
         try:
             body = _parse_body_object(request)
         except _BodyParseError as e:
-            return JsonResponse({"error": str(e)}, status=400)
+            logger.exception("Failed to parse request body")
+            return JsonResponse({"error": classify_user_message(e)}, status=400)
 
         name = body.get("name")
         email = body.get("email")
@@ -2870,7 +2898,8 @@ def api_participant_list(request: HttpRequest, event_id: UUID) -> JsonResponse:
                 status=201,
             )
         except CTFValidationError as e:
-            return JsonResponse({"error": str(e)}, status=400)
+            logger.exception("Failed to invite participant")
+            return JsonResponse({"error": classify_user_message(e)}, status=400)
 
     return JsonResponse({"error": "Method not allowed"}, status=405)
 
@@ -2902,7 +2931,8 @@ def api_participant_import(request: HttpRequest, event_id: UUID) -> JsonResponse
     try:
         body = _parse_body_object(request)
     except _BodyParseError as e:
-        return JsonResponse({"error": str(e)}, status=400)
+        logger.exception("Failed to parse request body")
+        return JsonResponse({"error": classify_user_message(e)}, status=400)
 
     participants_data = body.get("participants", [])
     if not isinstance(participants_data, list):
@@ -2929,7 +2959,8 @@ def api_participant_import(request: HttpRequest, event_id: UUID) -> JsonResponse
                 }
             )
         except CTFValidationError as e:
-            errors.append({"index": idx, "email": email, "error": str(e)})
+            logger.exception("Failed to import participant at index %d", idx)
+            errors.append({"index": idx, "email": email, "error": classify_user_message(e)})
 
     return JsonResponse(
         {
@@ -3034,7 +3065,8 @@ def api_participant_resend_invite(request: HttpRequest, participant_id: UUID) ->
             }
         )
     except CTFStateError as e:
-        return JsonResponse({"error": str(e)}, status=400)
+        logger.exception("Failed to resend invite")
+        return JsonResponse({"error": classify_user_message(e)}, status=400)
 
 
 @login_required
@@ -3235,7 +3267,8 @@ def api_notification_list(request: HttpRequest, event_id: UUID) -> JsonResponse:
         try:
             data = _parse_body_object(request)
         except _BodyParseError as e:
-            return JsonResponse({"error": str(e)}, status=400)
+            logger.exception("Failed to parse request body")
+            return JsonResponse({"error": classify_user_message(e)}, status=400)
 
         from ctf.services import notification
 
@@ -3243,7 +3276,8 @@ def api_notification_list(request: HttpRequest, event_id: UUID) -> JsonResponse:
             subject = _get_body_str(data, "subject").strip()
             body = _get_body_str(data, "body").strip()
         except _BodyParseError as e:
-            return JsonResponse({"error": str(e)}, status=400)
+            logger.exception("Failed to parse notification fields from request body")
+            return JsonResponse({"error": classify_user_message(e)}, status=400)
 
         if not subject or not body:
             return JsonResponse({"error": "Subject and body are required"}, status=400)
@@ -3377,7 +3411,9 @@ def _validate_template_bodies(html_body: str, text_body: str) -> JsonResponse | 
         try:
             Template(source)
         except TemplateSyntaxError as exc:
-            return JsonResponse({"error": f"Invalid template syntax in {label}: {exc}"}, status=400)
+            logger.exception("Invalid template syntax in %s", label)
+            message = classify_user_message(exc, default=f"Invalid template syntax in {label}")
+            return JsonResponse({"error": message}, status=400)
     return None
 
 
@@ -3422,7 +3458,8 @@ def api_event_email_template(request: HttpRequest, event_id: UUID, notification_
         text_body = _get_body_str(body, "text_body").strip()
         subject = _get_body_str(body, "subject").strip()
     except _BodyParseError as e:
-        return JsonResponse({"error": str(e)}, status=400)
+        logger.exception("Failed to parse email template fields from request body")
+        return JsonResponse({"error": classify_user_message(e)}, status=400)
 
     syntax_error = _validate_template_bodies(html_body, text_body)
     if syntax_error is not None:
@@ -3547,7 +3584,8 @@ def _participant_range_action(request: HttpRequest, participant_id: UUID, action
         result = action_fn(participant_id)
         return JsonResponse(result)
     except (CTFNotFoundError, CTFRangeError) as e:
-        return JsonResponse({"error": str(e)}, status=400)
+        logger.exception("Participant range action failed")
+        return JsonResponse({"error": classify_user_message(e)}, status=400)
 
 
 @login_required
@@ -3653,7 +3691,8 @@ def api_add_flag(request: HttpRequest, challenge_id: UUID) -> JsonResponse:
         body = _parse_body_object(request)
         flag_value = _get_body_str(body, "flag").strip()
     except _BodyParseError as e:
-        return JsonResponse({"error": str(e)}, status=400)
+        logger.exception("Failed to parse flag fields from request body")
+        return JsonResponse({"error": classify_user_message(e)}, status=400)
 
     flag_type = body.get("flag_type", "static")
 
@@ -3683,11 +3722,14 @@ def api_add_flag(request: HttpRequest, challenge_id: UUID) -> JsonResponse:
     except CTFPermissionError:
         return JsonResponse({"error": "Forbidden"}, status=403)
     except CTFNotFoundError as e:
-        return JsonResponse({"error": str(e)}, status=404)
+        logger.exception("Failed to add flag")
+        return JsonResponse({"error": classify_user_message(e)}, status=404)
     except CTFStateError as e:
-        return JsonResponse({"error": str(e)}, status=400)
+        logger.exception("Failed to add flag")
+        return JsonResponse({"error": classify_user_message(e)}, status=400)
     except CTFValidationError as e:
-        return JsonResponse({"error": str(e)}, status=400)
+        logger.exception("Failed to add flag")
+        return JsonResponse({"error": classify_user_message(e)}, status=400)
 
 
 @login_required
@@ -3719,9 +3761,11 @@ def api_remove_flag(request: HttpRequest, flag_id: UUID) -> JsonResponse:
     except CTFPermissionError:
         return JsonResponse({"error": "Forbidden"}, status=403)
     except CTFNotFoundError as e:
-        return JsonResponse({"error": str(e)}, status=404)
+        logger.exception("Failed to remove flag")
+        return JsonResponse({"error": classify_user_message(e)}, status=404)
     except CTFStateError as e:
-        return JsonResponse({"error": str(e)}, status=400)
+        logger.exception("Failed to remove flag")
+        return JsonResponse({"error": classify_user_message(e)}, status=400)
 
 
 # -----------------------------------------------------------------------------
@@ -3769,7 +3813,8 @@ def api_challenge_hints(request: HttpRequest, challenge_id: UUID) -> JsonRespons
     try:
         body = _parse_body_object(request)
     except _BodyParseError as e:
-        return JsonResponse({"error": str(e)}, status=400)
+        logger.exception("Failed to parse request body")
+        return JsonResponse({"error": classify_user_message(e)}, status=400)
 
     try:
         hint = add_hint(challenge_id, body, actor_id=user.pk)
@@ -3780,7 +3825,8 @@ def api_challenge_hints(request: HttpRequest, challenge_id: UUID) -> JsonRespons
     except CTFPermissionError:
         return JsonResponse({"error": "Forbidden"}, status=403)
     except (CTFNotFoundError, CTFStateError, CTFValidationError) as e:
-        return JsonResponse({"error": str(e)}, status=400)
+        logger.exception("Failed to add hint")
+        return JsonResponse({"error": classify_user_message(e)}, status=400)
 
 
 @login_required
@@ -3797,9 +3843,11 @@ def api_hint_delete(request: HttpRequest, hint_id: UUID) -> JsonResponse:
     except CTFPermissionError:
         return JsonResponse({"error": "Forbidden"}, status=403)
     except CTFNotFoundError as e:
-        return JsonResponse({"error": str(e)}, status=404)
+        logger.exception("Failed to delete hint")
+        return JsonResponse({"error": classify_user_message(e)}, status=404)
     except CTFStateError as e:
-        return JsonResponse({"error": str(e)}, status=400)
+        logger.exception("Failed to delete hint")
+        return JsonResponse({"error": classify_user_message(e)}, status=400)
 
 
 # -----------------------------------------------------------------------------
@@ -3883,11 +3931,14 @@ def api_challenge_files(request: HttpRequest, challenge_id: UUID) -> JsonRespons
     except CTFPermissionError:
         return JsonResponse({"error": "Forbidden"}, status=403)
     except CTFNotFoundError as e:
-        return JsonResponse({"error": str(e)}, status=404)
+        logger.exception("Failed to add challenge file")
+        return JsonResponse({"error": classify_user_message(e)}, status=404)
     except CTFStateError as e:
-        return JsonResponse({"error": str(e)}, status=400)
+        logger.exception("Failed to add challenge file")
+        return JsonResponse({"error": classify_user_message(e)}, status=400)
     except CTFValidationError as e:
-        return JsonResponse({"error": str(e)}, status=400)
+        logger.exception("Failed to add challenge file")
+        return JsonResponse({"error": classify_user_message(e)}, status=400)
 
 
 @login_required
@@ -3919,9 +3970,11 @@ def api_challenge_file_delete(request: HttpRequest, file_id: UUID) -> JsonRespon
     except CTFPermissionError:
         return JsonResponse({"error": "Forbidden"}, status=403)
     except CTFNotFoundError as e:
-        return JsonResponse({"error": str(e)}, status=404)
+        logger.exception("Failed to delete challenge file")
+        return JsonResponse({"error": classify_user_message(e)}, status=404)
     except CTFStateError as e:
-        return JsonResponse({"error": str(e)}, status=400)
+        logger.exception("Failed to delete challenge file")
+        return JsonResponse({"error": classify_user_message(e)}, status=400)
 
 
 @login_required
@@ -3977,7 +4030,8 @@ def api_file_download(request: HttpRequest, file_id: UUID) -> HttpResponse:
     try:
         url, _filename = get_download_url(file_id)
     except CTFNotFoundError as e:
-        return JsonResponse({"error": str(e)}, status=404)
+        logger.exception("Failed to get download URL")
+        return JsonResponse({"error": classify_user_message(e)}, status=404)
 
     # Return the presigned URL for client-side navigation instead of a
     # server-side redirect.  This avoids open-redirect risk (S5146) since the
@@ -4027,7 +4081,11 @@ def admin_challenge_file_upload(request: HttpRequest, challenge_id: UUID) -> Htt
     except CTFPermissionError:
         return HttpResponse("Forbidden", status=403)
     except (CTFNotFoundError, CTFStateError, CTFValidationError) as e:
-        logger.warning("File upload failed for challenge %s: %s", challenge_id, e)
+        logger.warning(
+            "File upload failed for challenge %s: %s",
+            safe_log_value(challenge_id),
+            safe_log_value(e),
+        )
 
     return redirect("ctf:admin_challenge_detail", challenge_id=challenge_id)
 
@@ -4080,12 +4138,14 @@ def api_challenge_prerequisites(request: HttpRequest, challenge_id: UUID) -> Jso
     try:
         body = _parse_body_object(request)
     except _BodyParseError as e:
-        return JsonResponse({"error": str(e)}, status=400)
+        logger.exception("Failed to parse request body")
+        return JsonResponse({"error": classify_user_message(e)}, status=400)
 
     try:
         required_uuid = _parse_body_uuid(body.get("required_challenge_id"), "required_challenge_id")
     except _BodyUUIDError as e:
-        return JsonResponse({"error": str(e)}, status=400)
+        logger.exception("Failed to parse required_challenge_id from request body")
+        return JsonResponse({"error": classify_user_message(e)}, status=400)
 
     try:
         prereq = add_prerequisite(challenge_id, required_uuid, actor_id=user.pk)
@@ -4100,11 +4160,14 @@ def api_challenge_prerequisites(request: HttpRequest, challenge_id: UUID) -> Jso
     except CTFPermissionError:
         return JsonResponse({"error": "Forbidden"}, status=403)
     except CTFNotFoundError as e:
-        return JsonResponse({"error": str(e)}, status=404)
+        logger.exception("Failed to add prerequisite")
+        return JsonResponse({"error": classify_user_message(e)}, status=404)
     except CTFStateError as e:
-        return JsonResponse({"error": str(e)}, status=400)
+        logger.exception("Failed to add prerequisite")
+        return JsonResponse({"error": classify_user_message(e)}, status=400)
     except CTFValidationError as e:
-        return JsonResponse({"error": str(e)}, status=400)
+        logger.exception("Failed to add prerequisite")
+        return JsonResponse({"error": classify_user_message(e)}, status=400)
 
 
 @login_required
@@ -4136,6 +4199,8 @@ def api_prerequisite_delete(request: HttpRequest, prerequisite_id: UUID) -> Json
     except CTFPermissionError:
         return JsonResponse({"error": "Forbidden"}, status=403)
     except CTFNotFoundError as e:
-        return JsonResponse({"error": str(e)}, status=404)
+        logger.exception("Failed to remove prerequisite")
+        return JsonResponse({"error": classify_user_message(e)}, status=404)
     except CTFStateError as e:
-        return JsonResponse({"error": str(e)}, status=400)
+        logger.exception("Failed to remove prerequisite")
+        return JsonResponse({"error": classify_user_message(e)}, status=400)
