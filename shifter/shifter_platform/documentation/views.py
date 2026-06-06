@@ -168,8 +168,12 @@ def _render_markdown(file_path: Path) -> str:
     Raises Http404 if file doesn't exist.
     HTML output is sanitized with bleach to prevent XSS.
     """
+    # Defence in depth: confirm the file stays within DOCS_ROOT before reading,
+    # so this helper cannot be coerced into reading outside the docs tree
+    # regardless of how the caller built ``file_path``.
+    safe_path = _resolve_within_docs(file_path)
     try:
-        content = file_path.read_text(encoding="utf-8")
+        content = safe_path.read_text(encoding="utf-8")
     except FileNotFoundError as err:
         raise Http404("Document not found") from err
 
@@ -211,6 +215,23 @@ def _sanitize_path(path: str) -> str:
     return clean_path
 
 
+def _resolve_within_docs(candidate: Path) -> Path:
+    """Resolve ``candidate`` and confirm it stays within ``DOCS_ROOT``.
+
+    The string-level checks in :func:`_sanitize_path` are advisory only;
+    this is the authoritative containment guard. We resolve both the docs
+    root and the candidate to absolute, symlink-free paths and verify the
+    candidate is inside the root before any filesystem access. Anything that
+    escapes the docs tree (via ``..``, an absolute path, or a symlink) raises
+    Http404 instead of touching the path.
+    """
+    docs_root = DOCS_ROOT.resolve()
+    resolved = (DOCS_ROOT / candidate).resolve()
+    if not resolved.is_relative_to(docs_root):
+        raise Http404("Document not found")
+    return resolved
+
+
 @login_required
 @require_GET
 def doc_index(request: HttpRequest) -> HttpResponse:
@@ -240,13 +261,15 @@ def doc_page(request: HttpRequest, path: str) -> HttpResponse:
     # Sanitize path to prevent directory traversal
     clean_path = _sanitize_path(path)
 
-    # Try to find the markdown file
+    # Try to find the markdown file. Each candidate is resolved and confirmed
+    # to stay within DOCS_ROOT *before* any filesystem access, so a crafted
+    # ``path`` cannot read outside the docs tree.
     # First try exact path + .md
-    file_path = DOCS_ROOT / f"{clean_path}.md"
+    file_path = _resolve_within_docs(Path(f"{clean_path}.md"))
 
     # If not found, try path/index.md (for folder landing pages)
     if not file_path.exists():
-        file_path = DOCS_ROOT / clean_path / "index.md"
+        file_path = _resolve_within_docs(Path(clean_path) / "index.md")
 
     if not file_path.exists():
         raise Http404("Document not found")

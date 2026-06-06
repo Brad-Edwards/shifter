@@ -14,6 +14,7 @@ from shared.cloud import PROVISIONER_CONTAINER_NAME
 from shared.cloud.exceptions import CloudTaskError
 from shared.cloud.gcp.base import build_job_generate_name, parse_job_task_id
 from shared.cloud.sensitive_env import split_env
+from shared.log_sanitize import safe_log_value
 
 __all__ = ("PROVISIONER_CONTAINER_NAME", "GCPTaskRunner")
 
@@ -474,10 +475,14 @@ class GCPTaskRunner:
         try:
             core_api.delete_namespaced_secret(name=secret_name, namespace=namespace)
         except Exception:
+            # ``secret_name`` is the Kubernetes Secret *resource name* (a
+            # non-sensitive object identifier, never the payload). Route it
+            # through ``safe_log_value`` so CodeQL's clear-text-logging
+            # dataflow is broken and only the safe identifier is emitted.
             logger.warning(
-                "run_task: failed to clean up orphan secret=%s namespace=%s",
-                secret_name,
-                namespace,
+                "run_task: failed to clean up orphan secret_resource=%s namespace=%s",
+                safe_log_value(secret_name),
+                safe_log_value(namespace),
                 exc_info=True,
             )
 
@@ -547,12 +552,16 @@ class GCPTaskRunner:
         run. Each delete is best-effort: we log and continue so the
         caller's exception (raised after we return) carries the
         original cause."""
+        # ``secret_name`` is the Kubernetes Secret *resource name* (a
+        # non-sensitive object identifier, never the payload). Route it
+        # through ``safe_log_value`` so CodeQL's clear-text-logging dataflow
+        # is broken and only the safe identifier is emitted.
         logger.warning(
-            "run_task: unwinding run for job=%s secret=%s namespace=%s reason=%s",
-            job_name,
-            secret_name,
-            namespace,
-            detail,
+            "run_task: unwinding run for job=%s secret_resource=%s namespace=%s reason=%s",
+            safe_log_value(job_name),
+            safe_log_value(secret_name),
+            safe_log_value(namespace),
+            safe_log_value(detail),
         )
         try:
             batch_api.delete_namespaced_job(name=job_name, namespace=namespace)
@@ -566,10 +575,14 @@ class GCPTaskRunner:
         try:
             core_api.delete_namespaced_secret(name=secret_name, namespace=namespace)
         except Exception:
+            # ``secret_name`` is the Kubernetes Secret *resource name* (a
+            # non-sensitive object identifier, never the payload). Route it
+            # through ``safe_log_value`` so CodeQL's clear-text-logging
+            # dataflow is broken and only the safe identifier is emitted.
             logger.warning(
-                "run_task: failed to delete Secret during unwind secret=%s namespace=%s",
-                secret_name,
-                namespace,
+                "run_task: failed to delete Secret during unwind secret_resource=%s namespace=%s",
+                safe_log_value(secret_name),
+                safe_log_value(namespace),
                 exc_info=True,
             )
 

@@ -14,6 +14,7 @@ from django.views.decorators.http import require_http_methods, require_POST
 
 from config import identity_platform as identity_platform_auth
 from shared.auth import is_ctf_organizer, is_ctf_participant
+from shared.errors import classify_user_message
 
 logger = logging.getLogger(__name__)
 
@@ -96,8 +97,9 @@ def identity_platform_session(request):
     try:
         user = identity_platform_auth.login_with_identity_token(request, id_token)
     except identity_platform_auth.IdentityPlatformAuthError as exc:
+        logger.warning("Identity Platform login failed: code=%s", exc.code, exc_info=True)
         return JsonResponse(
-            {"error": exc.code, "message": str(exc)},
+            {"error": exc.code, "message": classify_user_message(exc, default="Authentication failed")},
             status=403,
         )
 
