@@ -185,6 +185,17 @@ def _sample_guest_access_defaults() -> list[str]:
     return []
 
 
+# AWS account IDs are 12-digit numbers; redact them (including the account-id
+# field of any ARN) before a command string is echoed to stdout/logs so the
+# account is never disclosed in clear text.
+_AWS_ACCOUNT_ID_RE = re.compile(r"(?<!\d)\d{12}(?!\d)")
+
+
+def _redact_cmd_for_log(cmd_str: str) -> str:
+    """Mask AWS account IDs in a command string destined for the log/stdout."""
+    return _AWS_ACCOUNT_ID_RE.sub("<redacted-account-id>", cmd_str)
+
+
 def run_cmd(
     cmd: list[str],
     dry_run: bool = False,
@@ -198,11 +209,12 @@ def run_cmd(
         cmd = cmd[:1] + ["--profile", profile] + cmd[1:]
 
     cmd_str = " ".join(cmd)
+    log_cmd_str = _redact_cmd_for_log(cmd_str)
     if dry_run:
-        print(f"{Colors.BLUE}[DRY-RUN] Would run: {cmd_str}{Colors.END}")
+        print(f"{Colors.BLUE}[DRY-RUN] Would run: {log_cmd_str}{Colors.END}")
         return None
 
-    info(f"Running: {cmd_str}")
+    info(f"Running: {log_cmd_str}")
     try:
         if capture:
             result = subprocess.run(cmd, check=check, capture_output=True, text=True)  # nosec B603 B607
@@ -3298,7 +3310,7 @@ def bootstrap_account(config: BootstrapConfig, profile: str, dry_run: bool = Fal
     # Get account ID
     if not dry_run:
         account_id = get_aws_account_id(profile)
-        info(f"AWS Account ID: {account_id}")
+        info("AWS Account ID resolved (redacted from logs)")
     else:
         account_id = "123456789012"
         info("[DRY-RUN] Would get AWS account ID")
@@ -3468,7 +3480,7 @@ use_lockfile = true
                 error("Failed to get role ARN from Terraform output")
                 sys.exit(1)
             role_arn = result.stdout.strip()
-            success(f"Production IAM role created: {role_arn}")
+            success("Production IAM role created (ARN redacted from logs)")
         else:
             role_arn = f"arn:aws:iam::{account_id}:role/{config.role_name}"
 
@@ -3536,7 +3548,8 @@ def walkthrough_github_secrets(bootstrap_result: dict, dry_run: bool = False) ->
 
     subheader("GitHub Secret to Add")
     print(f"  {Colors.BOLD}Name:{Colors.END}  {secret_name}")
-    print(f"  {Colors.BOLD}Value:{Colors.END} {role_arn}")
+    print(f"  {Colors.BOLD}Value:{Colors.END} <redacted - retrieve at paste time>")
+    print(f"  {Colors.DIM}Retrieve the full ARN with: terraform output -raw github_actions_role_arn{Colors.END}")
 
     if not dry_run:
         # Check if gh CLI is available
@@ -3584,7 +3597,7 @@ def walkthrough_github_secrets(bootstrap_result: dict, dry_run: bool = False) ->
         print(f"  1. Go to: https://github.com/{github_org}/{github_repo}/settings/secrets/actions")
         print("  2. Click 'New repository secret'")
         print(f"  3. Name: {secret_name}")
-        print(f"  4. Value: {role_arn}")
+        print("  4. Value: <redacted - run 'terraform output -raw github_actions_role_arn' to copy the full ARN>")
         print("  5. Click 'Add secret'")
         wait_for_user("Add the GitHub secret, then press Enter to continue.")
         success("GitHub secret configured")

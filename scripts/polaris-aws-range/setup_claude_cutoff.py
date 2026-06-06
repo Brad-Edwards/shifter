@@ -276,9 +276,10 @@ def main() -> int:
     print(f"     aws --region {REGION} lambda invoke --function-name {LAMBDA_NAME} /tmp/out.json")
     print(f"     cat /tmp/out.json")
     print(f"  2. When happy, flip DRY_RUN=0 and enable the schedule:")
+    print("     (set CTFD_TOKEN_SECRET_ID to the secret named at the top of this script)")
     print(f"     aws --region {REGION} lambda update-function-configuration --function-name {LAMBDA_NAME} "
           f"--environment 'Variables={{CTFD_URL=https://polaris.keplerops.com,"
-          f"CTFD_TOKEN_SECRET_ID={SECRET_NAME},DRY_RUN=0,KEEP_CLAUDE=}}'")
+          f"CTFD_TOKEN_SECRET_ID=<redacted>,DRY_RUN=0,KEEP_CLAUDE=}}'")
     print(f"     aws --region {REGION} scheduler update-schedule --name {SCHEDULE_NAME} ... --state ENABLED ...")
     return 0
 
