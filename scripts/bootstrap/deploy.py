@@ -2709,7 +2709,11 @@ def stage_gcp_control_plane_values(
         bootstrap_operator_email=bootstrap_operator_email,
     )
     values_path = staging_root / "shifter.values.generated.json"
+    # This staging file carries Guacamole DB + JSON-auth secrets in clear text
+    # for Helm to consume. Restrict it to owner-only on disk (defense in depth);
+    # it is transient and removed with the staging dir after the deploy.
     values_path.write_text(json.dumps(values, indent=2, sort_keys=True))
+    values_path.chmod(0o600)
     return values_path
 
 
