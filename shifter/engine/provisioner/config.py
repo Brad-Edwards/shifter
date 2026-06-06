@@ -779,8 +779,8 @@ def get_range_from_db(range_id: int) -> dict[str, Any]:
         logger.debug(
             "Loaded range %d: ngfw_enabled=%s, ngfw_attachment=%s",
             range_id,
-            result["ngfw_enabled"],
-            "present" if result["ngfw_attachment"] else "none",
+            bool(ngfw_enabled),
+            "present" if ngfw_attachment else "none",
         )
 
         return result

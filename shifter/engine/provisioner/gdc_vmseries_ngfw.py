@@ -180,7 +180,7 @@ def _delete_ssh_secret(secret_ref: str) -> None:
     client = secretmanager.SecretManagerServiceClient()
     try:
         client.delete_secret(request={"name": secret_ref})
-        logger.info("Deleted GDC VM-Series SSH secret %s", secret_ref)
+        logger.info("Deleted GDC VM-Series SSH secret ref_fp=%s", safe_log_fingerprint(secret_ref))
     except google_exceptions.NotFound:
         return
 
