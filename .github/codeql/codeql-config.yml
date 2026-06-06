@@ -1,0 +1,15 @@
+name: "Shifter CodeQL config"
+
+# paths-ignore mirrors the security-relevant exclusions already documented in
+# sonar-project.properties. These paths are not production attack surface and
+# must not gate the pipeline:
+#   - scenario-dev/**: intentionally-vulnerable CTF target content (the whole
+#     point of the scenarios is to be exploitable inside an isolated range).
+#   - tests / test fixtures: contain mock credentials and deliberately-malformed
+#     inputs to exercise handlers; not shipped or reachable in production.
+paths-ignore:
+  - 'scenario-dev/**'
+  - '**/tests/**'
+  - '**/test_*.py'
+  - '**/*.test.js'
+  - '**/conftest.py'
