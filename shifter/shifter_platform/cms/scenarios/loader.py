@@ -12,11 +12,27 @@ from pathlib import Path
 import yaml
 
 from cms.scenarios.schema import ScenarioTemplate
+from shared.log_sanitize import safe_log_value
 
 logger = logging.getLogger(__name__)
 
 # Directory containing scenario YAML templates
 TEMPLATES_DIR = Path(__file__).parent / "templates"
+
+
+def _resolve_template_path(scenario_id: str) -> Path:
+    """Resolve the YAML template path for ``scenario_id`` within TEMPLATES_DIR.
+
+    ``scenario_id`` is user-controlled, so the resolved path is confirmed to
+    stay inside :data:`TEMPLATES_DIR`. Path-traversal attempts (``..``,
+    absolute paths, embedded separators) resolve outside the base dir and are
+    rejected with a ``ValueError`` matching the not-found contract.
+    """
+    base = TEMPLATES_DIR.resolve()
+    candidate = (base / f"{scenario_id}.yaml").resolve()
+    if not candidate.is_relative_to(base):
+        raise ValueError(f"Scenario '{scenario_id}' not found")
+    return candidate
 
 
 @lru_cache(maxsize=32)
@@ -32,18 +48,18 @@ def load_scenario(scenario_id: str) -> ScenarioTemplate:
     Raises:
         ValueError: If scenario not found or template is invalid
     """
-    logger.debug("load_scenario: scenario_id=%s", scenario_id)
+    logger.debug("load_scenario: scenario_id=%s", safe_log_value(scenario_id))
 
-    template_path = TEMPLATES_DIR / f"{scenario_id}.yaml"
+    template_path = _resolve_template_path(scenario_id)
 
     if not template_path.exists():
-        logger.warning("load_scenario: not found scenario_id=%s", scenario_id)
+        logger.warning("load_scenario: not found scenario_id=%s", safe_log_value(scenario_id))
         raise ValueError(f"Scenario '{scenario_id}' not found")
 
     with open(template_path) as f:
         data = yaml.safe_load(f)
 
-    logger.debug("load_scenario: loaded scenario_id=%s", scenario_id)
+    logger.debug("load_scenario: loaded scenario_id=%s", safe_log_value(scenario_id))
     return ScenarioTemplate(**data)
 
 

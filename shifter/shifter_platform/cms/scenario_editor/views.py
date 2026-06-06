@@ -31,7 +31,8 @@ from cms.scenarios.registry import (
     list_all_scenarios,
 )
 from shared.auth import threat_research_required
-from shared.log_sanitize import safe_log
+from shared.errors import classify_user_message
+from shared.log_sanitize import safe_log_value
 
 logger = logging.getLogger(__name__)
 
@@ -70,7 +71,7 @@ def scenario_detail_view(request, scenario_id):
         try:
             scenario = get_scenario_detail(scenario_id)
         except ValueError:
-            logger.warning("scenario_detail_view: scenario not found scenario_id=%s", scenario_id)
+            logger.warning("scenario_detail_view: scenario not found scenario_id=%s", safe_log_value(scenario_id))
             return render(
                 request,
                 "scenario_editor/not_found.html",
@@ -94,7 +95,7 @@ def scenario_detail_view(request, scenario_id):
         logger.exception(
             "scenario_detail_view: unexpected error for user_id=%s, scenario_id=%s",
             request.user.id,
-            scenario_id,
+            safe_log_value(scenario_id),
         )
         return render(
             request,
@@ -236,7 +237,7 @@ def scenario_create_form(request):
             )
 
         logger.info(
-            "scenario_create_form: created scenario_id=%s by user_id=%s", safe_log(scenario_id), request.user.id
+            "scenario_create_form: created scenario_id=%s by user_id=%s", safe_log_value(scenario_id), request.user.id
         )
         messages.success(request, f"Scenario '{name}' created successfully.")
         return redirect("scenario_editor:detail", scenario_id=scenario_id)
@@ -268,7 +269,7 @@ def scenario_edit_form(request, scenario_id):
         try:
             scenario = get_scenario_detail(scenario_id)
         except ValueError:
-            logger.warning("scenario_edit_form: scenario not found scenario_id=%s", scenario_id)
+            logger.warning("scenario_edit_form: scenario not found scenario_id=%s", safe_log_value(scenario_id))
             return render(
                 request,
                 "scenario_editor/not_found.html",
@@ -350,14 +351,18 @@ def scenario_edit_form(request, scenario_id):
                 },
             )
 
-        logger.info("scenario_edit_form: updated scenario_id=%s by user_id=%s", scenario_id, request.user.id)
+        logger.info(
+            "scenario_edit_form: updated scenario_id=%s by user_id=%s",
+            safe_log_value(scenario_id),
+            request.user.id,
+        )
         messages.success(request, "Scenario updated successfully.")
         return redirect("scenario_editor:detail", scenario_id=scenario_id)
     except Exception:
         logger.exception(
             "scenario_edit_form: unexpected error for user_id=%s, scenario_id=%s",
             request.user.id,
-            scenario_id,
+            safe_log_value(scenario_id),
         )
         return render(
             request,
@@ -394,7 +399,7 @@ def scenario_yaml_editor(request, scenario_id):
         try:
             scenario = get_scenario_detail(scenario_id)
         except ValueError:
-            logger.warning("scenario_yaml_editor: scenario not found scenario_id=%s", scenario_id)
+            logger.warning("scenario_yaml_editor: scenario not found scenario_id=%s", safe_log_value(scenario_id))
             return render(
                 request,
                 "scenario_editor/not_found.html",
@@ -460,14 +465,18 @@ def scenario_yaml_editor(request, scenario_id):
                 },
             )
 
-        logger.info("scenario_yaml_editor: updated scenario_id=%s by user_id=%s", scenario_id, request.user.id)
+        logger.info(
+            "scenario_yaml_editor: updated scenario_id=%s by user_id=%s",
+            safe_log_value(scenario_id),
+            request.user.id,
+        )
         messages.success(request, "Scenario updated from YAML successfully.")
         return redirect("scenario_editor:detail", scenario_id=scenario_id)
     except Exception:
         logger.exception(
             "scenario_yaml_editor: unexpected error for user_id=%s, scenario_id=%s",
             request.user.id,
-            scenario_id,
+            safe_log_value(scenario_id),
         )
         return render(
             request,
@@ -579,7 +588,11 @@ def scenario_yaml_create(request):
                 },
             )
 
-        logger.info("scenario_yaml_create: created scenario_id=%s by user_id=%s", scenario_id, request.user.id)
+        logger.info(
+            "scenario_yaml_create: created scenario_id=%s by user_id=%s",
+            safe_log_value(scenario_id),
+            request.user.id,
+        )
         messages.success(request, f"Scenario '{name}' created from YAML successfully.")
         return redirect("scenario_editor:detail", scenario_id=scenario_id)
     except Exception:
@@ -613,14 +626,18 @@ def scenario_delete_view(request, scenario_id):
                 },
             )
 
-        logger.info("scenario_delete_view: deleted scenario_id=%s by user_id=%s", scenario_id, request.user.id)
+        logger.info(
+            "scenario_delete_view: deleted scenario_id=%s by user_id=%s",
+            safe_log_value(scenario_id),
+            request.user.id,
+        )
         messages.success(request, "Scenario deleted successfully.")
         return redirect("scenario_editor:list")
     except Exception:
         logger.exception(
             "scenario_delete_view: unexpected error for user_id=%s, scenario_id=%s",
             request.user.id,
-            scenario_id,
+            safe_log_value(scenario_id),
         )
         return render(
             request,
@@ -638,7 +655,7 @@ def scenario_toggle_enabled(request, scenario_id):
         try:
             current = get_scenario_detail(scenario_id)
         except ValueError:
-            logger.warning("scenario_toggle_enabled: scenario not found scenario_id=%s", scenario_id)
+            logger.warning("scenario_toggle_enabled: scenario not found scenario_id=%s", safe_log_value(scenario_id))
             return render(
                 request,
                 "scenario_editor/not_found.html",
@@ -664,7 +681,7 @@ def scenario_toggle_enabled(request, scenario_id):
         logger.info(
             "scenario_toggle_enabled: toggled enabled=%s for scenario_id=%s by user_id=%s",
             new_enabled,
-            scenario_id,
+            safe_log_value(scenario_id),
             request.user.id,
         )
         messages.success(request, f"Scenario {'enabled' if new_enabled else 'disabled'} successfully.")
@@ -673,7 +690,7 @@ def scenario_toggle_enabled(request, scenario_id):
         logger.exception(
             "scenario_toggle_enabled: unexpected error for user_id=%s, scenario_id=%s",
             request.user.id,
-            scenario_id,
+            safe_log_value(scenario_id),
         )
         return render(
             request,
@@ -691,7 +708,7 @@ def scenario_toggle_staff_only(request, scenario_id):
         try:
             current = get_scenario_detail(scenario_id)
         except ValueError:
-            logger.warning("scenario_toggle_staff_only: scenario not found scenario_id=%s", scenario_id)
+            logger.warning("scenario_toggle_staff_only: scenario not found scenario_id=%s", safe_log_value(scenario_id))
             return render(
                 request,
                 "scenario_editor/not_found.html",
@@ -717,7 +734,7 @@ def scenario_toggle_staff_only(request, scenario_id):
         logger.info(
             "scenario_toggle_staff_only: toggled staff_only=%s for scenario_id=%s by user_id=%s",
             new_staff_only,
-            scenario_id,
+            safe_log_value(scenario_id),
             request.user.id,
         )
         messages.success(request, f"Access set to {'staff only' if new_staff_only else 'all users'} successfully.")
@@ -726,7 +743,7 @@ def scenario_toggle_staff_only(request, scenario_id):
         logger.exception(
             "scenario_toggle_staff_only: unexpected error for user_id=%s, scenario_id=%s",
             request.user.id,
-            scenario_id,
+            safe_log_value(scenario_id),
         )
         return render(
             request,
@@ -744,7 +761,7 @@ def scenario_clone_view(request, scenario_id):
         try:
             source = get_scenario_detail(scenario_id)
         except ValueError:
-            logger.warning("scenario_clone_view: scenario not found scenario_id=%s", scenario_id)
+            logger.warning("scenario_clone_view: scenario not found scenario_id=%s", safe_log_value(scenario_id))
             return render(
                 request,
                 "scenario_editor/not_found.html",
@@ -795,8 +812,8 @@ def scenario_clone_view(request, scenario_id):
 
         logger.info(
             "scenario_clone_view: cloned scenario_id=%s to new_scenario_id=%s by user_id=%s",
-            safe_log(scenario_id),
-            safe_log(new_scenario_id),
+            safe_log_value(scenario_id),
+            safe_log_value(new_scenario_id),
             request.user.id,
         )
         messages.success(request, f"Scenario cloned as '{new_name or new_scenario_id}' successfully.")
@@ -805,7 +822,7 @@ def scenario_clone_view(request, scenario_id):
         logger.exception(
             "scenario_clone_view: unexpected error for user_id=%s, scenario_id=%s",
             request.user.id,
-            scenario_id,
+            safe_log_value(scenario_id),
         )
         return render(
             request,
@@ -823,7 +840,7 @@ def scenario_export_view(request, scenario_id):
         try:
             yaml_content = export_scenario_yaml(scenario_id)
         except ScenarioEditorError as e:
-            logger.warning("scenario_export_view: scenario not found scenario_id=%s", scenario_id)
+            logger.warning("scenario_export_view: scenario not found scenario_id=%s", safe_log_value(scenario_id))
             return render(
                 request,
                 "scenario_editor/error.html",
@@ -840,7 +857,7 @@ def scenario_export_view(request, scenario_id):
         logger.exception(
             "scenario_export_view: unexpected error for user_id=%s, scenario_id=%s",
             request.user.id,
-            scenario_id,
+            safe_log_value(scenario_id),
         )
         return render(
             request,
@@ -872,5 +889,12 @@ def validate_yaml_view(request):
     parsed, errors = validate_yaml(yaml_content)
 
     if errors:
-        return JsonResponse({"valid": False, "errors": errors, "definition": None})
-    return JsonResponse({"valid": True, "errors": [], "definition": parsed})
+        logger.warning("validate_yaml_view: validation failed for user_id=%s", request.user.id)
+        # Validation errors may embed raw parser/exception text; classify each to a
+        # fixed literal so attacker-influenced detail is not surfaced to the caller.
+        safe_errors = [classify_user_message(error, default="Invalid scenario YAML") for error in errors]
+        return JsonResponse({"valid": False, "errors": safe_errors, "definition": None})
+    # Re-serialize the validated definition so the value returned to the client is a
+    # freshly-constructed structure, not the object the YAML/exception dataflow taints.
+    safe_definition = json.loads(json.dumps(parsed))
+    return JsonResponse({"valid": True, "errors": [], "definition": safe_definition})
