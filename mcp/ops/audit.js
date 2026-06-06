@@ -10,12 +10,11 @@
 // the original tool response is preserved.
 
 import {
-  chmodSync,
   closeSync,
-  existsSync,
+  fchmodSync,
+  fstatSync,
   mkdirSync,
   openSync,
-  statSync,
   writeSync,
 } from "node:fs";
 import { homedir } from "node:os";
@@ -178,23 +177,26 @@ export function appendAuditRecord(policy, record) {
     mkdirSync(dirname(path), { recursive: true, mode: AUDIT_DIR_MODE });
     // openSync(..., 'a', 0o600) creates the file owner-only when it
     // doesn't already exist, but ignores the mode for an existing
-    // file. If a previous process created the file with a looser
-    // mode, tighten it here so the contents become owner-only on
-    // first append from this version. statSync isolates the legacy-
-    // perms branch so the chmod call only runs when needed.
-    if (existsSync(path)) {
+    // file. Open first, then inspect and tighten via the file
+    // descriptor (fstatSync/fchmodSync) rather than re-resolving the
+    // path: a path-based existsSync/statSync/chmodSync sequence is a
+    // check-then-use race (the path could be swapped between calls),
+    // whereas fd-based ops act on the already-open inode atomically.
+    const fd = openSync(path, "a", AUDIT_FILE_MODE);
+    try {
+      // If a previous process created the file with a looser mode,
+      // tighten it so the contents become owner-only on first append
+      // from this version. fstatSync isolates the legacy-perms branch
+      // so the fchmod call only runs when needed.
       try {
-        const mode = statSync(path).mode & 0o777;
+        const mode = fstatSync(fd).mode & 0o777;
         if (mode !== AUDIT_FILE_MODE) {
-          chmodSync(path, AUDIT_FILE_MODE);
+          fchmodSync(fd, AUDIT_FILE_MODE);
         }
       } catch {
         // Permission tightening is best-effort; fall through to the
-        // open + write below, which will surface real failures.
+        // write below, which will surface real failures.
       }
-    }
-    const fd = openSync(path, "a", AUDIT_FILE_MODE);
-    try {
       writeSync(fd, JSON.stringify(emit) + "\n");
     } finally {
       closeSync(fd);

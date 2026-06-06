@@ -64,6 +64,22 @@
         banner.className = "banner";
     }
 
+    function safeRedirectPath(rawUrl, fallback) {
+        // Resolve a redirect target to a same-origin path, rejecting
+        // anything that could smuggle a dangerous scheme (javascript:,
+        // data:, vbscript:) into window.location.assign. Cross-origin or
+        // unparseable targets fall back to the trusted default URL.
+        try {
+            const resolved = new URL(String(rawUrl ?? ""), window.location.origin);
+            if (resolved.origin !== window.location.origin) {
+                return fallback;
+            }
+            return resolved.pathname + resolved.search + resolved.hash;
+        } catch {
+            return fallback;
+        }
+    }
+
     function csrfToken() {
         return document.cookie
             .split(";")
@@ -106,7 +122,7 @@
             }
             throw new Error(body.message || "Authentication failed.");
         }
-        window.location.assign(body.redirect_url || config.dashboardUrl);
+        window.location.assign(safeRedirectPath(body.redirect_url || config.dashboardUrl, "/"));
     }
 
     async function sendVerification(user) {
@@ -273,7 +289,7 @@
                 },
             },
             tosUrl: config.loginUrl,
-            privacyPolicyUrl: () => window.location.assign(config.loginUrl),
+            privacyPolicyUrl: () => window.location.assign(safeRedirectPath(config.loginUrl, "/")),
         });
     }
 

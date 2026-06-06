@@ -4,6 +4,17 @@
  * Handles the multi-step wizard for NGFW provisioning.
  * Manages form state, validation, API calls, and status polling.
  */
+
+/**
+ * Strip CR/LF (and other control chars) from a value before it is
+ * written to the console so an attacker-controlled WebSocket payload
+ * cannot forge or split log lines (log injection).
+ */
+function stripLogNewlines(value) {
+    const text = typeof value === 'string' ? value : JSON.stringify(value);
+    return String(text).replace(/[\r\n\u2028\u2029]/g, ' ');
+}
+
 class NGFWWizardManager {
     constructor(options) {
         this.csrfToken = options.csrfToken;
@@ -307,7 +318,7 @@ class NGFWWizardManager {
         this.ws.onmessage = (event) => {
             try {
                 const data = JSON.parse(event.data);
-                console.log('NGFW status update:', data);
+                console.log('NGFW status update:', stripLogNewlines(data));
 
                 if (data.status === 'ready') {
                     this.showSuccess();
