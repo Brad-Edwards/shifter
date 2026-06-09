@@ -5,6 +5,7 @@ AWS services (ECS, Secrets Manager) are mocked as they require infrastructure.
 """
 
 import uuid
+from unittest.mock import patch
 
 import pytest
 from django.contrib.auth import get_user_model
@@ -89,6 +90,7 @@ def range_ready(db, user, request_obj):
                 "os_type": "kali",
                 "private_ip": "10.1.1.10",
                 "ssh_key_secret_arn": ("arn:aws:secretsmanager:us-east-2:123:secret:key"),
+                "rdp_password_secret_arn": ("arn:aws:secretsmanager:us-east-2:123:secret:kali-rdp"),
             },
             {
                 "uuid": "victim-uuid-456",
@@ -96,6 +98,7 @@ def range_ready(db, user, request_obj):
                 "os_type": "windows",
                 "private_ip": "10.1.1.20",
                 "ssh_key_secret_arn": ("arn:aws:secretsmanager:us-east-2:123:secret:key2"),
+                "rdp_password_secret_arn": ("arn:aws:secretsmanager:us-east-2:123:secret:win-rdp"),
             },
         ],
     )
@@ -483,26 +486,33 @@ class TestGetRdpConnectionInfoIntegration:
 
     def test_returns_connection_info_for_windows_instance(self, range_ready):
         """get_rdp_connection_info returns correct info for Windows."""
-        result = get_rdp_connection_info(
-            user=range_ready.user,
-            instance_uuid="victim-uuid-456",
-        )
+        with (
+            patch("engine.secrets.get_rdp_password", return_value="WinRdp123!"),
+            patch("engine.secrets.get_ssh_key", return_value="fake-ssh-key"),
+        ):
+            result = get_rdp_connection_info(
+                user=range_ready.user,
+                instance_uuid="victim-uuid-456",
+            )
 
         assert result["private_ip"] == "10.1.1.20"
         assert result["os_type"] == "windows"
         assert result["rdp_username"] == "Administrator"
+        assert result["rdp_password"] == "WinRdp123!"
         assert "connection_name" in result
 
     def test_returns_connection_info_for_kali_instance(self, range_ready):
         """get_rdp_connection_info returns correct info for Kali."""
-        result = get_rdp_connection_info(
-            user=range_ready.user,
-            instance_uuid="attacker-uuid-123",
-        )
+        with patch("engine.secrets.get_rdp_password", return_value="KaliRdp123!"):
+            result = get_rdp_connection_info(
+                user=range_ready.user,
+                instance_uuid="attacker-uuid-123",
+            )
 
         assert result["private_ip"] == "10.1.1.10"
         assert result["os_type"] == "kali"
         assert result["rdp_username"] == "kali"
+        assert result["rdp_password"] == "KaliRdp123!"
 
     def test_raises_for_nonexistent_instance(self, range_ready):
         """get_rdp_connection_info raises for unknown instance UUID."""
@@ -542,15 +552,17 @@ class TestGetRdpConnectionInfoIntegration:
                     "role": "victim",
                     "os_type": "ubuntu",
                     "private_ip": "10.1.1.30",
+                    "rdp_password_secret_arn": "arn:aws:secretsmanager:us-east-2:123:secret:ubuntu-rdp",
                 },
             ],
         )
 
-        result = get_rdp_connection_info(user=user, instance_uuid="ubuntu-uuid")
+        with patch("engine.secrets.get_rdp_password", return_value="UbuntuRdp123!"):
+            result = get_rdp_connection_info(user=user, instance_uuid="ubuntu-uuid")
 
         assert result["os_type"] == "ubuntu"
         assert result["rdp_username"] == "ubuntu"
-        assert result["rdp_password"] == "ubuntu"
+        assert result["rdp_password"] == "UbuntuRdp123!"
         assert result["private_ip"] == "10.1.1.30"
 
     def test_raises_for_none_user(self, range_ready):

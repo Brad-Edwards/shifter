@@ -1,5 +1,6 @@
 """Tests for Guacamole SSH functions in mission_control/guacamole.py."""
 
+import urllib.error
 from unittest.mock import patch
 
 import pytest
@@ -13,6 +14,54 @@ def fake_private_key():
     header = "-----BEGIN " + "RSA PRIVATE " + "KEY-----"
     footer = "-----END " + "RSA PRIVATE " + "KEY-----"
     return f"{header}\n{'x' * 64}\n{footer}"
+
+
+class _TokenResponse:
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+    def read(self):
+        return b'{"authToken":"token123"}'
+
+
+class TestGuacamoleAuthToken:
+    """Tests for Guacamole token exchange guardrails."""
+
+    def test_accepts_256_bit_json_auth_secret(self):
+        from mission_control.guacamole import sign_and_encrypt_payload
+
+        result = sign_and_encrypt_payload({"username": "test@example.com"}, "00" * 32)
+
+        assert isinstance(result, str)
+        assert result
+
+    def test_retries_transient_http_error_then_returns_token(self, settings):
+        from mission_control.guacamole import get_guacamole_auth_token
+
+        transient = urllib.error.HTTPError(
+            "https://guac.example.com/api/tokens",
+            502,
+            "Bad Gateway",
+            {},
+            None,
+        )
+        with (
+            patch("mission_control.guacamole.urllib.request.urlopen", side_effect=[transient, _TokenResponse()]),
+            patch("mission_control.guacamole.time.sleep") as mock_sleep,
+        ):
+            result = get_guacamole_auth_token("https://guac.example.com", "encrypted", attempts=2, base_delay_ms=1)
+
+        assert result == "token123"
+        mock_sleep.assert_called_once_with(0.001)
+
+    def test_rejects_non_http_api_url(self):
+        from mission_control.guacamole import get_guacamole_auth_token
+
+        with pytest.raises(ValueError, match="non-http"):
+            get_guacamole_auth_token("file:///tmp/guacamole", "encrypted")
 
 
 class TestCreateSSHConnectionParams:

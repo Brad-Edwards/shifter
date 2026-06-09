@@ -22,6 +22,7 @@ class TestGetRdpConnectionInfo:
                     "vm_name": "range-42-win-target",
                     "ip": "10.200.0.110",
                     "ssh_secret_ref": "projects/test/secrets/vmrt-ssh-key",
+                    "rdp_password_secret_ref": "projects/test/secrets/win-rdp",
                 }
             },
         }
@@ -31,15 +32,17 @@ class TestGetRdpConnectionInfo:
         with (
             patch.object(Range, "get_active_for_user", return_value=mock_range),
             patch("engine.secrets.get_ssh_key", return_value="fake-ssh-key-for-testing"),
+            patch("engine.secrets.get_rdp_password", return_value="WinRdp123!"),
         ):
             result = get_rdp_connection_info(mock_user, "gdc-win-uuid-123")
 
         assert result["host"] == "10.200.0.110"
         assert result["private_ip"] == "10.200.0.110"
         assert result["connection_name"] == "range-42-win-target"
+        assert result["rdp_password"] == "WinRdp123!"
         assert result["ssh_key"] == "fake-ssh-key-for-testing"
 
-    def test_gcp_linux_rdp_uses_runtime_password_env(self):
+    def test_gcp_linux_rdp_uses_per_instance_password_secret(self):
         from engine.models import Range
         from engine.services import get_rdp_connection_info
 
@@ -50,13 +53,14 @@ class TestGetRdpConnectionInfo:
             "os_type": "ubuntu",
             "cloud_provider": "gcp",
             "private_ip": "10.200.0.120",
+            "rdp_password_secret_ref": "projects/test/secrets/ubuntu-rdp",
         }
         mock_range = Mock(spec=Range, id=42, user=mock_user, status=Range.Status.READY)
         mock_range.get_instance_by_uuid = Mock(return_value=instance_data)
 
         with (
             patch.object(Range, "get_active_for_user", return_value=mock_range),
-            patch.dict(os.environ, {"GDC_UBUNTU_PASSWORD": "LabUbuntu123!"}, clear=False),
+            patch("engine.secrets.get_rdp_password", return_value="LabUbuntu123!"),
         ):
             result = get_rdp_connection_info(mock_user, "gdc-ubuntu-uuid-123")
 
@@ -86,7 +90,7 @@ class TestGetRdpConnectionInfo:
         with (
             patch.object(Range, "get_active_for_user", return_value=mock_range),
             patch("engine.secrets.get_ssh_key", return_value="fake-ssh-key-for-testing"),
-            patch.dict(os.environ, {"DC_DOMAIN_PASSWORD": "DomainPass123!"}, clear=False),
+            patch.dict(os.environ, {"CLOUD_PROVIDER": "gcp", "DC_DOMAIN_PASSWORD": "DomainPass123!"}, clear=False),
         ):
             result = get_rdp_connection_info(mock_user, "gdc-dc-uuid-123")
 
