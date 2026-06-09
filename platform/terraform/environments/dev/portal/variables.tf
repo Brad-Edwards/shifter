@@ -97,6 +97,11 @@ variable "db_skip_final_snapshot" {
   type        = bool
 }
 
+variable "db_apply_immediately" {
+  description = "Apply portal RDS modifications during the deploy instead of queueing them for the maintenance window."
+  type        = bool
+}
+
 # ------------------------------------------------------------------------------
 # EC2
 # ------------------------------------------------------------------------------
@@ -195,7 +200,7 @@ variable "ctfd_ssh_allowed_cidrs" {
 # ------------------------------------------------------------------------------
 
 variable "domain_name" {
-  description = "Domain name for ACM certificate (e.g., shifter.keplerops.com)"
+  description = "Domain name for ACM certificate (e.g., shifter.example.com)"
   type        = string
 }
 
@@ -260,6 +265,19 @@ variable "enable_autoscaling" {
   type        = bool
 }
 
+variable "enable_redis" {
+  description = <<-EOT
+    Wire Redis as the Django Channels backend for the portal runtime
+    (ADR-018, #849). Environment-owned and INDEPENDENT of enable_autoscaling:
+    a single-instance dev portal may use Redis, and an environment may disable
+    Redis to save cost without changing ASG posture. When true, the Redis
+    endpoint is published to SSM and the container runs with
+    CHANNEL_LAYER_BACKEND=redis (fail-closed if the endpoint is missing); when
+    false, the portal runs CHANNEL_LAYER_BACKEND=in_memory.
+  EOT
+  type        = bool
+}
+
 variable "asg_min_size" {
   description = "Minimum number of instances in the ASG"
   type        = number
@@ -273,6 +291,21 @@ variable "asg_max_size" {
 variable "asg_desired_capacity" {
   description = "Desired number of instances in the ASG"
   type        = number
+}
+
+variable "asg_warm_pool_min_size" {
+  description = "Minimum number of pre-initialized portal instances to keep in the ASG warm pool. Set 0 to disable."
+  type        = number
+}
+
+variable "asg_warm_pool_state" {
+  description = "Warm pool instance state. Valid values are Stopped, Running, or Hibernated."
+  type        = string
+
+  validation {
+    condition     = contains(["Stopped", "Running", "Hibernated"], var.asg_warm_pool_state)
+    error_message = "asg_warm_pool_state must be one of: Stopped, Running, Hibernated."
+  }
 }
 
 variable "scale_up_threshold" {
@@ -348,6 +381,20 @@ variable "enable_waf_logging" {
 }
 
 # ------------------------------------------------------------------------------
+# Portal east-west inspection (#122)
+# ------------------------------------------------------------------------------
+
+variable "enable_portal_inspection" {
+  description = "Insert an AWS Network Firewall east-west inspection boundary between the portal public (ALB) tier and the private services tier. Requires enable_log_aggregation = true."
+  type        = bool
+}
+
+variable "firewall_log_retention_days" {
+  description = "CloudWatch retention in days for portal Network Firewall FLOW / ALERT logs."
+  type        = number
+}
+
+# ------------------------------------------------------------------------------
 # Engine Provisioner
 # ------------------------------------------------------------------------------
 
@@ -363,12 +410,12 @@ variable "dc_domain_name" {
   default     = "internal.shifter"
 }
 
-variable "dc_domain_password" {
-  description = "Domain admin password for prebaked DC"
-  type        = string
-  sensitive   = true
-  default     = ""
-}
+# The DC Administrator password is intentionally not a Terraform variable.
+# It lives in aws_secretsmanager_secret.dc_domain_password (created by
+# the engine-provisioner module) with the value managed out-of-band, and
+# is plumbed to the engine task via ECS `secrets = [...]` and to the
+# portal Django container via the portal/ssm + ec2 modules and
+# entrypoint.sh.
 
 # ------------------------------------------------------------------------------
 # Guacamole
@@ -454,6 +501,11 @@ variable "guacamole_db_skip_final_snapshot" {
   type        = bool
 }
 
+variable "guacamole_db_apply_immediately" {
+  description = "Apply Guacamole RDS modifications during the deploy instead of queueing them for the maintenance window."
+  type        = bool
+}
+
 variable "guacamole_enable_autoscaling" {
   description = "Enable autoscaling for Guacamole ECS services"
   type        = bool
@@ -467,6 +519,30 @@ variable "guacamole_autoscaling_min_capacity" {
 variable "guacamole_autoscaling_max_capacity" {
   description = "Maximum capacity for Guacamole autoscaling"
   type        = number
+}
+
+variable "guacd_autoscaling_min_capacity" {
+  description = "Minimum guacd capacity for autoscaling. Defaults to guacamole_autoscaling_min_capacity."
+  type        = number
+  default     = null
+}
+
+variable "guacd_autoscaling_max_capacity" {
+  description = "Maximum guacd capacity for autoscaling. Defaults to guacamole_autoscaling_max_capacity."
+  type        = number
+  default     = null
+}
+
+variable "guacamole_client_autoscaling_min_capacity" {
+  description = "Minimum guacamole-client capacity for autoscaling. Defaults to guacamole_autoscaling_min_capacity."
+  type        = number
+  default     = null
+}
+
+variable "guacamole_client_autoscaling_max_capacity" {
+  description = "Maximum guacamole-client capacity for autoscaling. Defaults to guacamole_autoscaling_max_capacity."
+  type        = number
+  default     = null
 }
 
 variable "guacamole_autoscaling_cpu_target" {
@@ -556,11 +632,11 @@ variable "email_backend" {
 variable "ctf_from_email" {
   description = "From address for CTF emails"
   type        = string
-  default     = "ctf@keplerops.com"
+  default     = "ctf@example.com"
 }
 
 variable "ses_domain" {
-  description = "Domain for SES email sending (e.g., keplerops.com)"
+  description = "Domain for SES email sending (e.g., example.com)"
   type        = string
 }
 

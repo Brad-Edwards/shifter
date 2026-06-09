@@ -21,7 +21,8 @@ provider "aws" {
 }
 
 locals {
-  name_prefix = "${var.environment}-portal"
+  name_prefix                 = "${var.environment}-portal"
+  alb_access_logs_bucket_name = "${local.name_prefix}-alb-logs-${var.environment}-${data.aws_caller_identity.current.account_id}"
   # Add padding to field_encryption_key (b64_url doesn't include padding, but Fernet requires it)
   field_encryption_key_padded = "${random_id.field_encryption_key.b64_url}="
 }
@@ -33,7 +34,7 @@ locals {
 data "terraform_remote_state" "foundation" {
   backend = "s3"
   config = {
-    bucket = "shifter-dev-infra-2ff5b419-fe3a-4146-9838-74ff24869fb0"
+    bucket = "shifter-dev-infra-1697b88e-01b3-424f-be63-8ab29df0ce39"
     key    = "shifter/dev/terraform.tfstate"
     region = "us-east-2"
   }
@@ -46,7 +47,7 @@ data "terraform_remote_state" "foundation" {
 data "terraform_remote_state" "range" {
   backend = "s3"
   config = {
-    bucket = "shifter-dev-infra-2ff5b419-fe3a-4146-9838-74ff24869fb0"
+    bucket = "shifter-dev-infra-1697b88e-01b3-424f-be63-8ab29df0ce39"
     key    = "dev/range/terraform.tfstate"
     region = "us-east-2"
   }
@@ -72,6 +73,150 @@ data "aws_ssm_parameter" "dc_ami" {
   name = "/shifter/ami/dc"
 }
 
+data "aws_caller_identity" "current" {}
+
+# ------------------------------------------------------------------------------
+# KMS CMKs — Secrets Manager and Portal S3 bucket
+# ------------------------------------------------------------------------------
+# Closes Checkov CKV_AWS_149 (Secrets Manager CMK) and CKV_AWS_145 (S3 SSE-KMS)
+# for #213 / #218. The `kms:ViaService` + `kms:CallerAccount` condition is the
+# AWS-recommended pattern for service-scoped CMKs: anyone in this account who
+# already holds `secretsmanager:GetSecretValue` (or `s3:GetObject`) on the
+# specific resource can transparently decrypt through the service; principals
+# from other accounts cannot. Annual key rotation is enabled automatically
+# (`enable_key_rotation = true`).
+#
+# These keys are intentionally separate from `engine-state` (Pulumi state) and
+# from each other, so a future revoke/rotate of one boundary does not collapse
+# the others. See docs/architecture/secrets-manager-cmk-preflight.md and
+# docs/architecture/s3-bucket-hardening-preflight.md.
+
+resource "aws_kms_key" "secrets_manager" {
+  description             = "CMK for portal Secrets Manager secrets (CKV_AWS_149) — see #213"
+  enable_key_rotation     = true
+  deletion_window_in_days = 30
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid       = "EnableRootAccountAdmin"
+        Effect    = "Allow"
+        Principal = { AWS = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root" }
+        Action    = "kms:*"
+        Resource  = "*"
+      },
+      {
+        # Account-scoped use via Secrets Manager only, AND bound by encryption
+        # context to portal-owned secret ARNs (`shifter-<env>-*` for platform
+        # secrets and `shifter/<env>/*` for engine-provisioner runtime secrets).
+        # Secrets Manager always passes `SecretARN` as encryption context, so
+        # `kms:EncryptionContext:SecretARN` constrains use of this key to the
+        # specific secret namespace this CMK is intended to protect — a
+        # principal with `kms:Decrypt` could not use this key to decrypt some
+        # other Secrets Manager secret in the account.
+        Sid       = "AllowPortalSecretsManagerCallers"
+        Effect    = "Allow"
+        Principal = { AWS = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root" }
+        Action = [
+          "kms:Decrypt",
+          "kms:DescribeKey",
+          "kms:Encrypt",
+          "kms:GenerateDataKey*",
+          "kms:ReEncrypt*",
+          "kms:CreateGrant",
+        ]
+        Resource = "*"
+        Condition = {
+          StringEquals = {
+            "kms:CallerAccount" = data.aws_caller_identity.current.account_id
+            "kms:ViaService"    = "secretsmanager.${var.aws_region}.amazonaws.com"
+          }
+          "ForAnyValue:StringLike" = {
+            "kms:EncryptionContext:SecretARN" = [
+              "arn:aws:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:shifter-${var.environment}-*",
+              "arn:aws:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:shifter/${var.environment}/*",
+            ]
+          }
+        }
+      },
+    ]
+  })
+
+  tags = merge(var.tags, {
+    Name = "${local.name_prefix}-secrets-manager"
+  })
+}
+
+resource "aws_kms_alias" "secrets_manager" {
+  name          = "alias/shifter-${var.environment}-secrets-manager"
+  target_key_id = aws_kms_key.secrets_manager.key_id
+}
+
+resource "aws_kms_key" "portal_s3" {
+  description             = "CMK for the portal user-uploads S3 bucket (CKV_AWS_145) — see #218"
+  enable_key_rotation     = true
+  deletion_window_in_days = 30
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid       = "EnableRootAccountAdmin"
+        Effect    = "Allow"
+        Principal = { AWS = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root" }
+        Action    = "kms:*"
+        Resource  = "*"
+      },
+      {
+        # Account-scoped use via S3 only, AND bound by encryption context to
+        # objects under the portal user-uploads bucket. S3 always passes
+        # `aws:s3:arn = arn:aws:s3:::<bucket>/<key>` as encryption context for
+        # SSE-KMS, so this condition constrains use of this key to objects in
+        # the configured bucket — a principal with `kms:Decrypt` could not use
+        # this key to decrypt some other S3 object in the account.
+        Sid       = "AllowPortalUserUploadsBucket"
+        Effect    = "Allow"
+        Principal = { AWS = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root" }
+        Action = [
+          "kms:Decrypt",
+          "kms:DescribeKey",
+          "kms:Encrypt",
+          "kms:GenerateDataKey*",
+          "kms:ReEncrypt*",
+        ]
+        Resource = "*"
+        Condition = {
+          StringEquals = {
+            "kms:CallerAccount" = data.aws_caller_identity.current.account_id
+            "kms:ViaService"    = "s3.${var.aws_region}.amazonaws.com"
+          }
+          "ForAnyValue:StringLike" = {
+            # With S3 Bucket Keys enabled (set in `modules/portal/s3`), S3
+            # passes the BUCKET ARN as KMS encryption context for the per-bucket
+            # data key. For object-level operations without Bucket Keys S3
+            # passes the OBJECT ARN. Allow both patterns so the policy doesn't
+            # deny the first SSE-KMS operation.
+            "kms:EncryptionContext:aws:s3:arn" = [
+              "arn:aws:s3:::${var.user_storage_bucket}",
+              "arn:aws:s3:::${var.user_storage_bucket}/*",
+            ]
+          }
+        }
+      },
+    ]
+  })
+
+  tags = merge(var.tags, {
+    Name = "${local.name_prefix}-s3"
+  })
+}
+
+resource "aws_kms_alias" "portal_s3" {
+  name          = "alias/shifter-${var.environment}-portal-s3"
+  target_key_id = aws_kms_key.portal_s3.key_id
+}
+
 # ------------------------------------------------------------------------------
 # VPC
 # ------------------------------------------------------------------------------
@@ -88,6 +233,11 @@ module "vpc" {
   # Phase 5: VPC Flow Logs
   enable_flow_logs   = var.enable_vpc_flow_logs
   log_retention_days = var.log_retention_days
+
+  # Portal east-west inspection (#122)
+  enable_portal_inspection    = var.enable_portal_inspection
+  enable_log_aggregation      = var.enable_log_aggregation
+  firewall_log_retention_days = var.firewall_log_retention_days
 }
 
 # ------------------------------------------------------------------------------
@@ -97,10 +247,11 @@ module "vpc" {
 module "rds" {
   source = "../../../modules/portal/rds"
 
-  name_prefix         = local.name_prefix
-  vpc_id              = module.vpc.vpc_id
-  subnet_ids          = module.vpc.private_subnet_ids
-  allowed_cidr_blocks = [module.vpc.vpc_cidr]
+  name_prefix                = local.name_prefix
+  secrets_kms_key_arn        = aws_kms_key.secrets_manager.arn
+  vpc_id                     = module.vpc.vpc_id
+  subnet_ids                 = module.vpc.private_subnet_ids
+  allowed_security_group_ids = [module.ec2.security_group_id]
 
   db_name               = var.db_name
   db_username           = var.db_username
@@ -112,6 +263,7 @@ module "rds" {
   backup_retention_days = var.db_backup_retention_days
   deletion_protection   = var.db_deletion_protection
   skip_final_snapshot   = var.db_skip_final_snapshot
+  apply_immediately     = var.db_apply_immediately
 
   # Phase 5: RDS Log Exports
   enable_log_exports = var.enable_rds_log_exports
@@ -127,17 +279,19 @@ module "rds" {
 module "alb" {
   source = "../../../modules/portal/alb"
 
-  name_prefix       = local.name_prefix
-  vpc_id            = module.vpc.vpc_id
-  public_subnet_ids = module.vpc.public_subnet_ids
-  domain_name       = var.domain_name
-  app_port          = var.app_port
-  health_check_path = var.health_check_path
-  enable_stickiness = var.enable_autoscaling
+  name_prefix                = local.name_prefix
+  vpc_id                     = module.vpc.vpc_id
+  public_subnet_ids          = module.vpc.public_subnet_ids
+  domain_name                = var.domain_name
+  app_port                   = var.app_port
+  health_check_path          = var.health_check_path
+  enable_stickiness          = var.enable_autoscaling
+  enable_deletion_protection = false # dev: allow intentional teardown; matches db_deletion_protection=false convention
 
   # Phase 5: ALB Access Logs and WAF Logging
   enable_access_logs      = var.enable_alb_access_logs
-  logs_bucket_name        = var.enable_alb_access_logs ? module.log_aggregation.logs_bucket_name : ""
+  logs_bucket_name        = var.enable_alb_access_logs ? local.alb_access_logs_bucket_name : ""
+  logs_bucket_policy_id   = var.enable_alb_access_logs ? module.log_aggregation.alb_logs_bucket_policy_id : ""
   enable_waf_logging      = var.enable_waf_logging
   waf_log_destination_arn = var.enable_waf_logging ? module.log_aggregation.waf_firehose_arn : ""
 
@@ -151,13 +305,13 @@ module "alb" {
 module "redis" {
   source = "../../../modules/portal/redis"
 
-  name_prefix         = local.name_prefix
-  vpc_id              = module.vpc.vpc_id
-  subnet_ids          = module.vpc.private_subnet_ids
-  allowed_cidr_blocks = [module.vpc.vpc_cidr]
-  node_type           = var.redis_node_type
-  engine_version      = var.redis_engine_version
-  enable_replication  = var.redis_enable_replication
+  name_prefix                = local.name_prefix
+  vpc_id                     = module.vpc.vpc_id
+  subnet_ids                 = module.vpc.private_subnet_ids
+  allowed_security_group_ids = [module.ec2.security_group_id]
+  node_type                  = var.redis_node_type
+  engine_version             = var.redis_engine_version
+  enable_replication         = var.redis_enable_replication
 
   # CloudWatch Alarms
   enable_alarms = var.alarm_email != ""
@@ -177,6 +331,7 @@ module "cognito" {
   environment           = var.environment
   aws_region            = var.aws_region
   log_retention_days    = var.log_retention_days
+  secrets_kms_key_arn   = aws_kms_key.secrets_manager.arn
   cognito_domain_prefix = var.cognito_domain_prefix
   callback_urls         = ["https://${var.domain_name}/oidc/callback/"]
   logout_urls           = ["https://${var.domain_name}/"]
@@ -252,12 +407,13 @@ module "ssm" {
   ecr_repository_name = split("/", data.terraform_remote_state.foundation.outputs.portal_ecr_url)[1]
 
   # Secrets Manager ARNs
-  db_secret_arn          = module.rds.db_credentials_secret_arn
-  app_secret_arn         = aws_secretsmanager_secret.app.arn
-  cognito_secret_arn     = module.cognito.cognito_secret_arn
-  guacamole_secret_arn   = module.guacamole.json_auth_secret_arn
-  guacamole_base_url     = "https://${var.domain_name}/guacamole"
-  guacamole_api_base_url = module.guacamole.guacamole_client_internal_url
+  db_secret_arn                 = module.rds.db_credentials_secret_arn
+  app_secret_arn                = aws_secretsmanager_secret.app.arn
+  cognito_secret_arn            = module.cognito.cognito_secret_arn
+  guacamole_secret_arn          = module.guacamole.json_auth_secret_arn
+  guacamole_base_url            = "https://${var.domain_name}/guacamole"
+  guacamole_api_base_url        = module.guacamole.guacamole_client_internal_url
+  dc_domain_password_secret_arn = module.engine_provisioner.dc_domain_password_secret_arn
 
   # Application configuration
   domain_name       = var.domain_name
@@ -274,8 +430,9 @@ module "ssm" {
   sqs_cms_url    = module.messaging.sqs_queue_urls["cms"]
   sqs_engine_url = module.messaging.sqs_queue_urls["engine"]
   sqs_mc_url     = module.messaging.sqs_queue_urls["mc"]
-  redis_endpoint = var.enable_autoscaling ? module.redis.redis_endpoint : ""
-  enable_redis   = var.enable_autoscaling
+  # Redis wiring is environment-owned and decoupled from autoscaling (ADR-018, #849).
+  redis_endpoint = var.enable_redis ? module.redis.redis_endpoint : ""
+  enable_redis   = var.enable_redis
 
   # Database endpoint (direct RDS connection - hostname only, not endpoint with port)
   db_host_override        = module.rds.db_instance_address
@@ -310,10 +467,12 @@ module "ec2" {
     aws_secretsmanager_secret.app.arn,
     module.cognito.cognito_secret_arn,
     module.guacamole.json_auth_secret_arn,
+    module.engine_provisioner.dc_domain_password_secret_arn,
   ]
-  s3_bucket_arn    = module.s3.bucket_arn
-  app_port         = var.app_port
-  root_volume_size = var.ec2_root_volume_size
+  secrets_manager_kms_key_arn = aws_kms_key.secrets_manager.arn
+  s3_bucket_arn               = module.s3.bucket_arn
+  app_port                    = var.app_port
+  root_volume_size            = var.ec2_root_volume_size
 
   # ECS permissions for engine provisioner
   ecs_cluster_arn            = module.engine_provisioner.ecs_cluster_arn
@@ -322,20 +481,23 @@ module "ec2" {
   ecs_execution_role_arn     = module.engine_provisioner.ecs_execution_role_arn
 
   # Autoscaling configuration
-  enable_autoscaling   = var.enable_autoscaling
-  subnet_ids           = module.vpc.private_subnet_ids
-  target_group_arn     = module.alb.target_group_arn
-  asg_min_size         = var.asg_min_size
-  asg_max_size         = var.asg_max_size
-  asg_desired_capacity = var.asg_desired_capacity
-  redis_endpoint       = var.enable_autoscaling ? module.redis.redis_endpoint : ""
-  scale_up_threshold   = var.scale_up_threshold
-  scale_down_threshold = var.scale_down_threshold
-  log_retention_days   = var.log_retention_days
+  enable_autoscaling     = var.enable_autoscaling
+  subnet_ids             = module.vpc.private_subnet_ids
+  target_group_arn       = module.alb.target_group_arn
+  asg_min_size           = var.asg_min_size
+  asg_max_size           = var.asg_max_size
+  asg_desired_capacity   = var.asg_desired_capacity
+  asg_warm_pool_min_size = var.asg_warm_pool_min_size
+  asg_warm_pool_state    = var.asg_warm_pool_state
+  redis_endpoint         = var.enable_redis ? module.redis.redis_endpoint : ""
+  scale_up_threshold     = var.scale_up_threshold
+  scale_down_threshold   = var.scale_down_threshold
+  log_retention_days     = var.log_retention_days
 
   # Messaging (SQS queues for message consumers)
-  sqs_queue_arns = values(module.messaging.sqs_queue_arns)
-  sqs_queue_urls = module.messaging.sqs_queue_urls
+  sqs_queue_arns  = values(module.messaging.sqs_queue_arns)
+  sqs_queue_urls  = module.messaging.sqs_queue_urls
+  sqs_kms_key_arn = module.messaging.kms_key_arn
 
   # Parameter Store prefix for user_data bootstrap
   ssm_parameter_store_prefix = module.ssm.parameter_store_prefix
@@ -345,6 +507,11 @@ module "ec2" {
   enable_ses              = true
 
   tags = var.tags
+
+  # First boot installs Docker and configures ECR/SSM-backed deployment. Make
+  # the portal AWS service endpoints part of the VPC dependency boundary so a
+  # fresh account does not race private AWS API reachability.
+  depends_on = [module.vpc]
 }
 
 # ------------------------------------------------------------------------------
@@ -400,7 +567,30 @@ module "s3" {
 
   bucket_name          = var.user_storage_bucket
   cors_allowed_origins = ["https://${var.domain_name}"]
+  kms_key_arn          = aws_kms_key.portal_s3.arn
   tags                 = var.tags
+}
+
+resource "aws_iam_role_policy" "range_instance_portal_s3_kms_read" {
+  name = "portal-s3-kms-read"
+  role = replace(data.terraform_remote_state.range.outputs.range_instance_role_arn, "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/", "")
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = "kms:Decrypt"
+        Resource = aws_kms_key.portal_s3.arn
+        Condition = {
+          StringEquals = {
+            "kms:CallerAccount" = data.aws_caller_identity.current.account_id
+            "kms:ViaService"    = "s3.${var.aws_region}.amazonaws.com"
+          }
+        }
+      }
+    ]
+  })
 }
 
 # ------------------------------------------------------------------------------
@@ -417,11 +607,11 @@ resource "random_id" "field_encryption_key" {
   byte_length = 32
 }
 
-# checkov:skip=CKV_AWS_149:Deferred for MVP. AWS-managed keys sufficient for low-usage internal MVP. See #213
 resource "aws_secretsmanager_secret" "app" {
   name                    = "shifter-${local.name_prefix}-app"
   description             = "Django application secrets"
   recovery_window_in_days = 0 # NOSONAR - dev environment: immediate deletion avoids naming conflicts on recreate
+  kms_key_id              = aws_kms_key.secrets_manager.arn
 
   tags = merge(var.tags, {
     Name = "shifter-${local.name_prefix}-app"
@@ -451,9 +641,11 @@ resource "aws_vpc_peering_connection" "portal_to_range" {
   })
 }
 
-# Route from Portal private subnets to Range VPC via peering
+# Route from Portal private subnets to Range VPC via peering (per-AZ).
 resource "aws_route" "portal_to_range" {
-  route_table_id            = module.vpc.private_route_table_id
+  count = length(module.vpc.private_route_table_ids)
+
+  route_table_id            = module.vpc.private_route_table_ids[count.index]
   destination_cidr_block    = data.terraform_remote_state.range.outputs.vpc_cidr
   vpc_peering_connection_id = aws_vpc_peering_connection.portal_to_range.id
 }
@@ -477,10 +669,11 @@ resource "aws_route" "range_to_portal" {
 module "engine_provisioner" {
   source = "../../../modules/engine-provisioner"
 
-  name_prefix        = local.name_prefix
-  environment        = var.environment
-  tags               = var.tags
-  log_retention_days = var.log_retention_days
+  name_prefix                 = local.name_prefix
+  environment                 = var.environment
+  tags                        = var.tags
+  log_retention_days          = var.log_retention_days
+  secrets_manager_kms_key_arn = aws_kms_key.secrets_manager.arn
 
   # ECR
   ecr_repository_url  = data.terraform_remote_state.foundation.outputs.engine_provisioner_ecr_url
@@ -522,9 +715,10 @@ module "engine_provisioner" {
   windows_ami_id = data.aws_ssm_parameter.windows_ami.value
   dc_ami_id      = data.aws_ssm_parameter.dc_ami.value
 
-  # Prebaked DC configuration
-  dc_domain_name     = var.dc_domain_name
-  dc_domain_password = var.dc_domain_password
+  # Prebaked DC configuration. dc_domain_password is sourced from
+  # aws_secretsmanager_secret.dc_domain_password inside the
+  # engine-provisioner module; no plaintext input from this stack.
+  dc_domain_name = var.dc_domain_name
 
   # Instance types
   kali_instance_type   = var.kali_instance_type
@@ -552,7 +746,10 @@ module "engine_provisioner" {
   ngfw_instance_role_arn      = data.terraform_remote_state.range.outputs.ngfw_instance_role_arn != null ? data.terraform_remote_state.range.outputs.ngfw_instance_role_arn : ""
 
   # Messaging (SNS topic for range event publishing)
-  sns_topic_arn = module.messaging.sns_topic_arn
+  sns_topic_arn   = module.messaging.sns_topic_arn
+  sns_kms_key_arn = module.messaging.kms_key_arn
+
+  depends_on = [module.vpc]
 }
 
 moved {
@@ -567,9 +764,10 @@ moved {
 module "guacamole" {
   source = "../../../modules/guacamole"
 
-  name_prefix = local.name_prefix
-  environment = var.environment
-  tags        = var.tags
+  name_prefix         = local.name_prefix
+  environment         = var.environment
+  tags                = var.tags
+  secrets_kms_key_arn = aws_kms_key.secrets_manager.arn
 
   # Networking (Portal VPC)
   vpc_id                   = module.vpc.vpc_id
@@ -610,12 +808,17 @@ module "guacamole" {
   db_backup_retention_days = var.guacamole_db_backup_retention_days
   db_deletion_protection   = var.guacamole_db_deletion_protection
   db_skip_final_snapshot   = var.guacamole_db_skip_final_snapshot
+  db_apply_immediately     = var.guacamole_db_apply_immediately
 
   # Autoscaling
-  enable_autoscaling       = var.guacamole_enable_autoscaling
-  autoscaling_min_capacity = var.guacamole_autoscaling_min_capacity
-  autoscaling_max_capacity = var.guacamole_autoscaling_max_capacity
-  autoscaling_cpu_target   = var.guacamole_autoscaling_cpu_target
+  enable_autoscaling                        = var.guacamole_enable_autoscaling
+  autoscaling_min_capacity                  = var.guacamole_autoscaling_min_capacity
+  autoscaling_max_capacity                  = var.guacamole_autoscaling_max_capacity
+  guacd_autoscaling_min_capacity            = var.guacd_autoscaling_min_capacity
+  guacd_autoscaling_max_capacity            = var.guacd_autoscaling_max_capacity
+  guacamole_client_autoscaling_min_capacity = var.guacamole_client_autoscaling_min_capacity
+  guacamole_client_autoscaling_max_capacity = var.guacamole_client_autoscaling_max_capacity
+  autoscaling_cpu_target                    = var.guacamole_autoscaling_cpu_target
 
   # Secrets
   secrets_recovery_window_days = var.guacamole_secrets_recovery_window_days
@@ -626,6 +829,32 @@ module "guacamole" {
   cognito_domain       = module.cognito.cognito_domain
   aws_region           = var.aws_region
   domain_name          = var.domain_name
+
+  depends_on = [module.vpc]
+}
+
+# ALB health checks and user traffic are routed through the portal inspection
+# boundary before they reach private targets. Source security group references
+# do not survive that middlebox path reliably, so keep those existing SG rules
+# and add CIDR-scoped ingress from only the ALB public subnet CIDRs.
+resource "aws_security_group_rule" "portal_app_from_alb_subnets" {
+  type              = "ingress"
+  from_port         = var.app_port
+  to_port           = var.app_port
+  protocol          = "tcp"
+  cidr_blocks       = module.vpc.public_subnet_cidrs
+  security_group_id = module.ec2.security_group_id
+  description       = "HTTP from ALB public subnets through inspection"
+}
+
+resource "aws_security_group_rule" "guacamole_client_from_alb_subnets" {
+  type              = "ingress"
+  from_port         = 8080
+  to_port           = 8080
+  protocol          = "tcp"
+  cidr_blocks       = module.vpc.public_subnet_cidrs
+  security_group_id = module.guacamole.guacamole_client_security_group_id
+  description       = "HTTP from ALB public subnets through inspection"
 }
 
 # ------------------------------------------------------------------------------
@@ -667,6 +896,8 @@ module "log_aggregation" {
     module.engine_provisioner.log_group_names,
     # Guacamole logs
     module.guacamole.log_group_names,
+    # Portal east-west inspection (#122)
+    var.enable_portal_inspection ? [module.vpc.firewall_log_group_name] : [],
   ) : []
 
   tags = var.tags
@@ -682,6 +913,7 @@ resource "aws_cloudwatch_log_group" "bedrock" {
 
   name              = "/aws/bedrock/${local.name_prefix}-invocations"
   retention_in_days = var.log_retention_days
+  kms_key_id        = aws_kms_key.cloudwatch_logs.arn
 
   tags = merge(var.tags, {
     Name = "${local.name_prefix}-bedrock-invocations"

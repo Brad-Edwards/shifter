@@ -56,7 +56,12 @@ locals {
 # Guacd Task Definition
 # ------------------------------------------------------------------------------
 
+# Guacd needs to write to /var/run/ (UNIX socket) and /tmp/ at runtime. Making
+# the root filesystem read-only requires mounting these as tmpfs volumes; that
+# is a follow-up hardening pass tracked under ADR-004-R11 exception
+# ckv-aws-336-guacd-fs.
 resource "aws_ecs_task_definition" "guacd" {
+  # checkov:skip=CKV_AWS_336:Guacd needs writable /var/run + /tmp; tmpfs mount follow-up.
   family                   = "${var.name_prefix}-guacd"
   requires_compatibilities = ["FARGATE"]
   network_mode             = "awsvpc"
@@ -248,8 +253,8 @@ resource "aws_ecs_service" "guacamole_client" {
 resource "aws_appautoscaling_target" "guacd" {
   count = var.enable_autoscaling ? 1 : 0
 
-  max_capacity       = var.autoscaling_max_capacity
-  min_capacity       = var.autoscaling_min_capacity
+  max_capacity       = coalesce(var.guacd_autoscaling_max_capacity, var.autoscaling_max_capacity)
+  min_capacity       = coalesce(var.guacd_autoscaling_min_capacity, var.autoscaling_min_capacity)
   resource_id        = "service/${aws_ecs_cluster.guacamole.name}/${aws_ecs_service.guacd.name}"
   scalable_dimension = "ecs:service:DesiredCount"
   service_namespace  = "ecs"
@@ -281,8 +286,8 @@ resource "aws_appautoscaling_policy" "guacd_cpu" {
 resource "aws_appautoscaling_target" "guacamole_client" {
   count = var.enable_autoscaling ? 1 : 0
 
-  max_capacity       = var.autoscaling_max_capacity
-  min_capacity       = var.autoscaling_min_capacity
+  max_capacity       = coalesce(var.guacamole_client_autoscaling_max_capacity, var.autoscaling_max_capacity)
+  min_capacity       = coalesce(var.guacamole_client_autoscaling_min_capacity, var.autoscaling_min_capacity)
   resource_id        = "service/${aws_ecs_cluster.guacamole.name}/${aws_ecs_service.guacamole_client.name}"
   scalable_dimension = "ecs:service:DesiredCount"
   service_namespace  = "ecs"

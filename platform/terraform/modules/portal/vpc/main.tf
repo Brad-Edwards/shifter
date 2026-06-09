@@ -24,7 +24,6 @@ locals {
 # VPC
 # ------------------------------------------------------------------------------
 
-# checkov:skip=CKV2_AWS_12:Default SG restriction deferred - see #221
 resource "aws_vpc" "this" {
   cidr_block           = var.vpc_cidr
   enable_dns_hostnames = true
@@ -32,6 +31,23 @@ resource "aws_vpc" "this" {
 
   tags = merge(local.common_tags, {
     Name = "${var.name_prefix}-vpc"
+  })
+}
+
+# ------------------------------------------------------------------------------
+# Default Security Group — deny all
+# ------------------------------------------------------------------------------
+# Adopts the AWS-created default security group and removes the permissive
+# default rules (open intra-SG ingress, open egress). All real traffic flows
+# through named security groups defined in this module and its consumers; the
+# default SG must never be attached to any workload. Satisfies Checkov
+# CKV2_AWS_12.
+
+resource "aws_default_security_group" "this" {
+  vpc_id = aws_vpc.this.id
+
+  tags = merge(local.common_tags, {
+    Name = "${var.name_prefix}-default-sg-deny-all"
   })
 }
 
@@ -66,15 +82,19 @@ resource "aws_subnet" "public" {
 }
 
 resource "aws_route_table" "public" {
+  count = var.az_count
+
   vpc_id = aws_vpc.this.id
 
   tags = merge(local.common_tags, {
-    Name = "${var.name_prefix}-public-rt"
+    Name = "${var.name_prefix}-public-rt-${local.azs[count.index]}"
   })
 }
 
 resource "aws_route" "public_internet" {
-  route_table_id         = aws_route_table.public.id
+  count = var.az_count
+
+  route_table_id         = aws_route_table.public[count.index].id
   destination_cidr_block = "0.0.0.0/0"
   gateway_id             = aws_internet_gateway.this.id
 }
@@ -83,7 +103,7 @@ resource "aws_route_table_association" "public" {
   count = var.az_count
 
   subnet_id      = aws_subnet.public[count.index].id
-  route_table_id = aws_route_table.public.id
+  route_table_id = aws_route_table.public[count.index].id
 }
 
 # ------------------------------------------------------------------------------
@@ -133,17 +153,27 @@ resource "aws_subnet" "private" {
 }
 
 resource "aws_route_table" "private" {
+  count = var.az_count
+
   vpc_id = aws_vpc.this.id
 
   tags = merge(local.common_tags, {
-    Name = "${var.name_prefix}-private-rt"
+    Name = "${var.name_prefix}-private-rt-${local.azs[count.index]}"
   })
 }
 
 resource "aws_route" "private_nat" {
-  count = var.enable_nat_gateway ? 1 : 0
+  # When portal inspection is enabled, each private route table's default
+  # route is owned by inspection.tf (private 0/0 -> same-AZ firewall
+  # endpoint -> NAT) so private egress traverses the same firewall
+  # endpoint as the NAT return path. Keeping a direct private->NAT
+  # default here would make the inspection path asymmetric: NAT return
+  # packets would enter the firewall via the public route table while
+  # the initiating leg bypassed it, breaking stateful inspection for
+  # unrelated private egress flows.
+  count = var.enable_nat_gateway && !var.enable_portal_inspection ? var.az_count : 0
 
-  route_table_id         = aws_route_table.private.id
+  route_table_id         = aws_route_table.private[count.index].id
   destination_cidr_block = "0.0.0.0/0"
   nat_gateway_id         = aws_nat_gateway.this[0].id
 }
@@ -152,7 +182,7 @@ resource "aws_route_table_association" "private" {
   count = var.az_count
 
   subnet_id      = aws_subnet.private[count.index].id
-  route_table_id = aws_route_table.private.id
+  route_table_id = aws_route_table.private[count.index].id
 }
 
 # ------------------------------------------------------------------------------
@@ -164,6 +194,7 @@ resource "aws_cloudwatch_log_group" "flow_logs" {
 
   name              = "/vpc/${var.name_prefix}-flow-logs"
   retention_in_days = var.log_retention_days
+  kms_key_id        = aws_kms_key.cloudwatch_logs.arn
 
   tags = merge(local.common_tags, {
     Name = "${var.name_prefix}-flow-logs"

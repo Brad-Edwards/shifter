@@ -14,7 +14,7 @@ variable "public_subnet_ids" {
 }
 
 variable "domain_name" {
-  description = "Domain name for ACM certificate (e.g., shifter.keplerops.com)"
+  description = "Domain name for ACM certificate (e.g., shifter.example.com)"
   type        = string
 }
 
@@ -44,6 +44,12 @@ variable "enable_waf" {
   default     = true
 }
 
+variable "enable_deletion_protection" {
+  description = "Enable ALB deletion protection (CKV_AWS_150). Mirrors the `db_deletion_protection` convention: secure default is `true` in prod; dev environments that need intentional teardown set this to `false` and re-apply before destroying."
+  type        = bool
+  default     = true
+}
+
 # ------------------------------------------------------------------------------
 # Access Logs
 # ------------------------------------------------------------------------------
@@ -55,6 +61,12 @@ variable "enable_access_logs" {
 
 variable "logs_bucket_name" {
   description = "S3 bucket name for ALB access logs (required when enable_access_logs is true)"
+  type        = string
+  default     = ""
+}
+
+variable "logs_bucket_policy_id" {
+  description = "Optional readiness handle for the S3 bucket policy that permits ALB access-log delivery"
   type        = string
   default     = ""
 }

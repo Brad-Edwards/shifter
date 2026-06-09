@@ -29,14 +29,24 @@ output "availability_zones" {
   value       = module.vpc.availability_zones
 }
 
-output "private_route_table_id" {
-  description = "ID of the private route table (for NAT gateway access)"
-  value       = module.vpc.private_route_table_id
+output "private_route_table_ids" {
+  description = "IDs of the per-AZ private route tables, ordered by availability_zones."
+  value       = module.vpc.private_route_table_ids
 }
 
 # ------------------------------------------------------------------------------
 # RDS
 # ------------------------------------------------------------------------------
+
+output "db_instance_id" {
+  description = "DBInstanceIdentifier of the portal RDS instance (consumed by the post-apply pending-modifications check)"
+  value       = module.rds.db_instance_id
+}
+
+output "guacamole_db_instance_id" {
+  description = "DBInstanceIdentifier of the Guacamole RDS instance (consumed by the post-apply pending-modifications check)"
+  value       = module.guacamole.db_instance_id
+}
 
 output "db_instance_endpoint" {
   description = "Endpoint of the RDS instance"

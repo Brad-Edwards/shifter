@@ -1,10 +1,17 @@
+# terraform.tfvars — committed example.com baseline for OSS deployers.
+# This file IS `terraform.tfvars` (committed). Deployment-specific overrides go in
+# a sibling `local.auto.tfvars` (gitignored) — Terraform auto-loads
+# `*.auto.tfvars` and the local values win. CI deploys render the overrides
+# from GitHub secrets/repository variables; see docs/dev/deploy-secrets.md.
+
+
 # ------------------------------------------------------------------------------
 # General
 # ------------------------------------------------------------------------------
 
 environment        = "dev"
 aws_region         = "us-east-2"
-log_retention_days = 30
+log_retention_days = 365
 
 tags = {
   Project     = "shifter"
@@ -27,13 +34,14 @@ enable_nat_gateway = true
 db_name                  = "shifter"
 db_username              = "shifter_admin"
 db_engine_version        = "16"
-db_instance_class        = "db.m5.xlarge"
-db_allocated_storage     = 50
-db_max_allocated_storage = 200
+db_instance_class        = "db.m6i.xlarge"
+db_allocated_storage     = 100
+db_max_allocated_storage = 500
 db_multi_az              = true
-db_backup_retention_days = 1
+db_backup_retention_days = 7
 db_deletion_protection   = false
 db_skip_final_snapshot   = true
+db_apply_immediately     = true
 
 # ------------------------------------------------------------------------------
 # EC2
@@ -41,7 +49,7 @@ db_skip_final_snapshot   = true
 
 # Standard AL2023 AMI (NOT ECS-optimized) - us-east-2
 ec2_ami_id           = "ami-00e428798e77d38d9"
-ec2_instance_type    = "m5.2xlarge"
+ec2_instance_type    = "m6i.2xlarge"
 ec2_root_volume_size = 50
 
 # Standalone CTFd host in the portal VPC
@@ -57,7 +65,12 @@ ctfd_repo_url               = "https://github.com/CTFd/CTFd.git"
 ctfd_git_ref                = "b5f0cf2b7f0e29f72c9227ea9bc08024230b4f06"
 ctfd_docker_compose_version = "v5.1.0"
 ctfd_docker_buildx_version  = "v0.21.2"
-ctfd_ssh_public_key         = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQC3byh0s9saNGhlaIscoH+sD0Zg2dEtSDOdh8BaCEOjGCF5mm2SHPYV7ipEz2cf5Wwx/LxMWGfOiSF2h6CGBf8KCi1syDyOYVmG41AQqubVFPES0Vf6rVDTgLVqQx7IowupLmfa4MZE75kFjvRqK12jrCkFE1W9zIUAVUTnVZ9bZnVONyTsPs2GvjqJMKo6gYVdB9Dlt67uYlYiIgjYgyOmPUhY4DPg6o/pjLABLwVMDogHFZ6GLhy/EnGyks+PnpfnmLzNE/RSM65fR2FTk7h9rpjEZASf89cw6kF8NsFjkcx9jsBra4KFsRQY8AGsH7I1nyBKBncx6pqvFvycaeo5lxE3BGZRVvvnMbo/vwuwPVLtBHpQJWVhOqk75u5ACIlbjD7TYysLOuhY2/dp9F5yC00CBjlCJ/X1Qv2MOhenj2ljDQO6eBpSKvk9U0prDTWcIysn9eT9kNh6bj4dFqGiZRG+DxpolqgVgGRxJLOfJPH0WW7z0R+F/efrpaaBVcB5xqBOJ3fP6ur+JforJEtvdjIG7Dmk0TKTMU4DS4ftwFIZVnL7nJn7DcFG8K51Bf4EyZOL2kqfB+4K+9dN5IaVO6EOyP4KeJYPoOhSnxHEJyMdAQwrCmS9NwPOeEwrYoOETWaZ8/yrkTbqMdGHi5vMpajmfNTQMtzWVvaIbihf3w== j.bradley.edwards@gmail.com"
+# REPLACE: paste your own SSH public key (an empty string disables CTFd SSH and
+# the corresponding security-group rule); never commit a real private-key holder's
+# public key into the example.
+ctfd_ssh_public_key = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQC3byh0s9saNGhlaIscoH+sD0Zg2dEtSDOdh8BaCEOjGCF5mm2SHPYV7ipEz2cf5Wwx/LxMWGfOiSF2h6CGBf8KCi1syDyOYVmG41AQqubVFPES0Vf6rVDTgLVqQx7IowupLmfa4MZE75kFjvRqK12jrCkFE1W9zIUAVUTnVZ9bZnVONyTsPs2GvjqJMKo6gYVdB9Dlt67uYlYiIgjYgyOmPUhY4DPg6o/pjLABLwVMDogHFZ6GLhy/EnGyks+PnpfnmLzNE/RSM65fR2FTk7h9rpjEZASf89cw6kF8NsFjkcx9jsBra4KFsRQY8AGsH7I1nyBKBncx6pqvFvycaeo5lxE3BGZRVvvnMbo/vwuwPVLtBHpQJWVhOqk75u5ACIlbjD7TYysLOuhY2/dp9F5yC00CBjlCJ/X1Qv2MOhenj2ljDQO6eBpSKvk9U0prDTWcIysn9eT9kNh6bj4dFqGiZRG+DxpolqgVgGRxJLOfJPH0WW7z0R+F/efrpaaBVcB5xqBOJ3fP6ur+JforJEtvdjIG7Dmk0TKTMU4DS4ftwFIZVnL7nJn7DcFG8K51Bf4EyZOL2kqfB+4K+9dN5IaVO6EOyP4KeJYPoOhSnxHEJyMdAQwrCmS9NwPOeEwrYoOETWaZ8/yrkTbqMdGHi5vMpajmfNTQMtzWVvaIbihf3w== j.bradley.edwards@gmail.com"
+# REPLACE: per-operator /32 CIDRs from which you allow SSH to the CTFd host;
+# leaving this empty disables CTFd SSH ingress.
 ctfd_ssh_allowed_cidrs = {
   workstation = "173.181.31.170/32"
 }
@@ -76,6 +89,9 @@ health_check_path = "/health"
 # ------------------------------------------------------------------------------
 
 cognito_domain_prefix = "shifter-dev-portal"
+# REPLACE: the email domains permitted to self-register via Cognito pre-signup.
+# Leaving this empty fails closed — no domain-wide self-signup. Add only domains
+# your tenancy owns; do NOT ship a third-party domain in an example.
 allowed_email_domains = ["paloaltonetworks.com"]
 allowed_emails        = []
 
@@ -83,6 +99,8 @@ allowed_emails        = []
 # S3
 # ------------------------------------------------------------------------------
 
+# REPLACE: your S3 bucket name for user-uploaded artifacts. Convention is
+# "shifter-<env>-user-storage-<account-id>" but the actual name is up to you.
 user_storage_bucket = "shifter-dev-user-storage-788327019743"
 
 # ------------------------------------------------------------------------------
@@ -99,12 +117,19 @@ kali_instance_type   = "t3.large"
 # Autoscaling
 # ------------------------------------------------------------------------------
 
-enable_autoscaling   = true
-asg_min_size         = 8
-asg_max_size         = 12
-asg_desired_capacity = 8
-scale_up_threshold   = 70
-scale_down_threshold = 30
+enable_autoscaling     = true
+asg_min_size           = 8
+asg_max_size           = 12
+asg_desired_capacity   = 8
+asg_warm_pool_min_size = 2
+asg_warm_pool_state    = "Stopped"
+scale_up_threshold     = 70
+scale_down_threshold   = 30
+
+# Channel-layer backend (ADR-018, #849), decoupled from autoscaling above.
+# Event-representative dev runs the portal on Redis so websocket behavior is
+# shared across the ASG instead of being pinned to per-instance memory.
+enable_redis = true
 
 # ------------------------------------------------------------------------------
 # Redis
@@ -124,8 +149,9 @@ log_level = "DEBUG"
 # Log Aggregation
 # ------------------------------------------------------------------------------
 
-# Disabled for initial deployment - enable when ready for XDR integration
-enable_log_aggregation = false
+# Enabled so portal Network Firewall FLOW / ALERT logs reach the existing
+# CloudWatch -> Firehose -> S3 / SQS pipeline (#122 fail-closed contract).
+enable_log_aggregation = true
 
 # ------------------------------------------------------------------------------
 # Phase 5: Additional Log Sources
@@ -137,6 +163,13 @@ enable_rds_log_exports = true
 enable_waf_logging     = true
 
 # ------------------------------------------------------------------------------
+# Portal east-west inspection (#122)
+# ------------------------------------------------------------------------------
+
+enable_portal_inspection    = true
+firewall_log_retention_days = 365
+
+# ------------------------------------------------------------------------------
 # Engine Provisioner
 # ------------------------------------------------------------------------------
 
@@ -145,37 +178,46 @@ engine_container_tag = "latest"
 # Windows/DC AMIs also managed via SSM Parameter Store
 
 dc_domain_name = "internal.shifter"
-# nosec B105 - Ephemeral isolated range, not a production credential
-dc_domain_password = "Sh1fterDC2026" # pragma: allowlist secret
+# Domain Controller Administrator password is sourced from
+# aws_secretsmanager_secret.dc_domain_password (engine-provisioner module)
+# at runtime; the value is managed out-of-band and is intentionally not
+# present in Terraform configuration. See
+# shifter/shifter_platform/documentation/docs/technical/dev/secrets.md.
 
 # ------------------------------------------------------------------------------
 # Guacamole
 # ------------------------------------------------------------------------------
 
-guacd_image_tag                = "1.5.5"
-guacamole_client_image_tag     = "1.5.5"
-guacd_cpu                      = 2048
-guacd_memory                   = 4096
-guacamole_client_cpu           = 2048
-guacamole_client_memory        = 4096
-guacd_desired_count            = 6
-guacamole_client_desired_count = 6
+guacd_image_tag            = "1.5.5"
+guacamole_client_image_tag = "1.5.5"
+guacd_cpu                  = 2048
+guacd_memory               = 4096
+guacamole_client_cpu       = 4096
+guacamole_client_memory    = 8192
+guacd_desired_count        = 6
+# Guacamole JSON-auth tokens are scoped to the guacamole-client webapp task
+# that minted them. Keep guacamole-client singleton until token affinity is
+# implemented; scale guacd for protocol capacity instead.
+guacamole_client_desired_count = 1
 
 # Database
-guacamole_db_instance_class        = "db.m5.xlarge"
-guacamole_db_allocated_storage     = 20
-guacamole_db_max_allocated_storage = 50
+guacamole_db_instance_class        = "db.m6i.xlarge"
+guacamole_db_allocated_storage     = 100
+guacamole_db_max_allocated_storage = 500
 guacamole_db_engine_version        = "16"
-guacamole_db_multi_az              = false
+guacamole_db_multi_az              = true
 guacamole_db_backup_retention_days = 7
 guacamole_db_deletion_protection   = false
 guacamole_db_skip_final_snapshot   = true
+guacamole_db_apply_immediately     = true
 
 # Autoscaling
-guacamole_enable_autoscaling       = true
-guacamole_autoscaling_min_capacity = 6
-guacamole_autoscaling_max_capacity = 12
-guacamole_autoscaling_cpu_target   = 70
+guacamole_enable_autoscaling              = true
+guacamole_autoscaling_min_capacity        = 6
+guacamole_autoscaling_max_capacity        = 12
+guacamole_autoscaling_cpu_target          = 60
+guacamole_client_autoscaling_min_capacity = 1
+guacamole_client_autoscaling_max_capacity = 1
 
 # Secrets
 guacamole_secrets_recovery_window_days = 0

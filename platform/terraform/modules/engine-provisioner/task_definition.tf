@@ -15,9 +15,19 @@ resource "aws_ecs_task_definition" "engine_provisioner" {
     name      = "pulumi-provisioner"
     image     = "${var.ecr_repository_url}:${var.container_image_tag}"
     essential = true
+    # Keep the ECS task non-root. AWS Fargate task volumes are mounted
+    # root-owned and do not expose a Kubernetes-style fsGroup / uid option,
+    # so readonlyRootFilesystem + non-root + mounted /tmp/workspace paths
+    # leaves Python with no usable temp directory. The image still keeps
+    # application code root-owned and unwritable to UID 1000; writable
+    # paths are limited to /tmp, HOME tool caches, and
+    # TERRAFORM_WORKSPACE_DIR inside the task's ephemeral writable layer.
+    readonlyRootFilesystem = false
+    user                   = "1000:1000"
 
     environment = [
       { name = "ENVIRONMENT", value = var.environment },
+      { name = "SECRETS_KMS_KEY_ARN", value = var.secrets_manager_kms_key_arn },
       { name = "AWS_REGION", value = local.region },
       { name = "DB_HOST", value = var.db_host },
       { name = "DB_PORT", value = tostring(var.db_port) },
@@ -34,7 +44,6 @@ resource "aws_ecs_task_definition" "engine_provisioner" {
       { name = "WINDOWS_AMI_ID", value = var.windows_ami_id },
       { name = "DC_AMI_ID", value = var.dc_ami_id },
       { name = "DC_DOMAIN_NAME", value = var.dc_domain_name },
-      { name = "DC_DOMAIN_PASSWORD", value = var.dc_domain_password },
       { name = "AGENT_S3_BUCKET", value = var.agent_s3_bucket },
       { name = "S3_ENDPOINT_ID", value = var.s3_endpoint_id },
       { name = "FIREWALL_ENDPOINT_ID", value = var.firewall_endpoint_id },
@@ -55,6 +64,13 @@ resource "aws_ecs_task_definition" "engine_provisioner" {
       { name = "NGFW_INSTANCE_PROFILE_NAME", value = var.ngfw_instance_profile_name },
       # Messaging (SNS for range events)
       { name = "SNS_RANGE_EVENTS_ARN", value = var.sns_topic_arn },
+    ]
+
+    secrets = [
+      {
+        name      = "DC_DOMAIN_PASSWORD"
+        valueFrom = aws_secretsmanager_secret.dc_domain_password.arn
+      }
     ]
 
     logConfiguration = {

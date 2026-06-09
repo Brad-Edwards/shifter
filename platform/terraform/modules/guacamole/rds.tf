@@ -29,11 +29,11 @@ resource "random_password" "db_password" {
   override_special = "!#$%&*()-_=+[]{}<>:?"
 }
 
-# checkov:skip=CKV_AWS_149:AWS-managed keys sufficient for internal platform
 resource "aws_secretsmanager_secret" "db_credentials" {
   name                    = "shifter-${var.name_prefix}-guacamole-db"
   description             = "Guacamole PostgreSQL database credentials"
   recovery_window_in_days = var.secrets_recovery_window_days
+  kms_key_id              = var.secrets_kms_key_arn
 
   tags = merge(local.common_tags, {
     Name = "shifter-${var.name_prefix}-guacamole-db"
@@ -66,11 +66,11 @@ resource "random_id" "json_auth_secret" {
   byte_length = 16 # 16 bytes = 128 bits = 32 hex characters
 }
 
-# checkov:skip=CKV_AWS_149:AWS-managed keys sufficient for internal platform
 resource "aws_secretsmanager_secret" "json_auth" {
   name                    = "shifter-${var.name_prefix}-guacamole-json-auth"
   description             = "Guacamole JSON auth 128-bit secret key for Portal RDP integration"
   recovery_window_in_days = var.secrets_recovery_window_days
+  kms_key_id              = var.secrets_kms_key_arn
 
   tags = merge(local.common_tags, {
     Name = "shifter-${var.name_prefix}-guacamole-json-auth"
@@ -86,25 +86,23 @@ resource "aws_secretsmanager_secret_version" "json_auth" {
 # RDS PostgreSQL Instance
 # ------------------------------------------------------------------------------
 
-# checkov:skip=CKV_AWS_354:Performance insights enabled
-# checkov:skip=CKV_AWS_353:Performance insights enabled
-# checkov:skip=CKV_AWS_157:IAM auth not needed - Guacamole uses password auth
-# checkov:skip=CKV_AWS_118:Enhanced monitoring deferred
-# checkov:skip=CKV_AWS_293:CA certificate deferred
 resource "aws_db_instance" "guacamole" {
+  # checkov:skip=CKV_AWS_157:Guacamole uses password auth — IAM DB auth would require rewriting the Guacamole JDBC connector. See ADR-004-R11 exception.
+  # checkov:skip=CKV_AWS_293:Deletion protection controlled by var.db_deletion_protection (dev false / prod true).
   identifier = "${var.name_prefix}-guacamole-db"
 
   # Engine
   engine               = "postgres"
   engine_version       = var.db_engine_version
   instance_class       = var.db_instance_class
-  parameter_group_name = "default.postgres${split(".", var.db_engine_version)[0]}"
+  parameter_group_name = aws_db_parameter_group.guacamole.name
 
   # Storage
   allocated_storage     = var.db_allocated_storage
   max_allocated_storage = var.db_max_allocated_storage
   storage_type          = "gp3"
   storage_encrypted     = true
+  kms_key_id            = aws_kms_key.rds.arn
 
   # Database
   db_name  = "guacamole"
@@ -126,13 +124,22 @@ resource "aws_db_instance" "guacamole" {
   deletion_protection        = var.db_deletion_protection
   skip_final_snapshot        = var.db_skip_final_snapshot
   final_snapshot_identifier  = var.db_skip_final_snapshot ? null : "${var.name_prefix}-guacamole-db-final"
+  copy_tags_to_snapshot      = true
 
-  # Performance Insights (free tier for 7 days retention)
+  # Enhanced monitoring (CKV_AWS_118) and Performance Insights with CMK
+  # (CKV_AWS_354).
+  monitoring_interval                   = 60
+  monitoring_role_arn                   = aws_iam_role.rds_enhanced_monitoring.arn
   performance_insights_enabled          = true
   performance_insights_retention_period = 7
+  performance_insights_kms_key_id       = aws_kms_key.rds.arn
 
   # CloudWatch Log Exports
   enabled_cloudwatch_logs_exports = ["postgresql", "upgrade"]
+
+  # Whether class/storage/parameter changes apply during the deploy or wait
+  # for the maintenance window. Set true in dev, false in prod.
+  apply_immediately = var.db_apply_immediately
 
   tags = merge(local.common_tags, {
     Name = "${var.name_prefix}-guacamole-db"
@@ -151,6 +158,7 @@ resource "aws_db_instance" "guacamole" {
 resource "aws_cloudwatch_log_group" "rds_postgresql" {
   name              = "/aws/rds/instance/${var.name_prefix}-guacamole-db/postgresql"
   retention_in_days = var.log_retention_days
+  kms_key_id        = aws_kms_key.cloudwatch_logs.arn
 
   tags = merge(local.common_tags, {
     Name = "${var.name_prefix}-guacamole-rds-postgresql-logs"
@@ -160,6 +168,7 @@ resource "aws_cloudwatch_log_group" "rds_postgresql" {
 resource "aws_cloudwatch_log_group" "rds_upgrade" {
   name              = "/aws/rds/instance/${var.name_prefix}-guacamole-db/upgrade"
   retention_in_days = var.log_retention_days
+  kms_key_id        = aws_kms_key.cloudwatch_logs.arn
 
   tags = merge(local.common_tags, {
     Name = "${var.name_prefix}-guacamole-rds-upgrade-logs"

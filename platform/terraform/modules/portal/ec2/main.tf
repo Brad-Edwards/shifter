@@ -23,6 +23,7 @@ locals {
 resource "aws_cloudwatch_log_group" "portal" {
   name              = local.log_group_name
   retention_in_days = var.log_retention_days
+  kms_key_id        = aws_kms_key.cloudwatch_logs.arn
 
   tags = merge(local.common_tags, {
     Name = "${var.name_prefix}-portal-logs"
@@ -94,6 +95,38 @@ resource "aws_iam_role_policy" "secrets_read" {
         Resource = var.secret_arns
       }
     ]
+  })
+}
+
+# Allow the portal EC2 role to decrypt secrets encrypted with the portal
+# Secrets Manager CMK. The portal container reads values via boto3 from inside
+# the container, but the underlying Secrets Manager → KMS Decrypt call runs as
+# this EC2 instance role and needs kms:Decrypt on the CMK. Without it,
+# `entrypoint.sh::fetch_runtime_secret` fails the GetSecretValue call with
+# `AccessDeniedException: Access to KMS is not allowed`, and the existing
+# bug-fix to entrypoint.sh aborts container start (better than silently
+# exporting an empty env var). Scoped to the concrete CMK ARN and pinned to
+# Secrets Manager via kms:ViaService. See issue #52.
+resource "aws_iam_role_policy" "kms_secrets_decrypt" {
+  name = "kms-secrets-decrypt"
+  role = aws_iam_role.this.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Sid    = "SecretsManagerKMSAccess"
+      Effect = "Allow"
+      Action = [
+        "kms:Decrypt",
+        "kms:DescribeKey"
+      ]
+      Resource = var.secrets_manager_kms_key_arn
+      Condition = {
+        StringEquals = {
+          "kms:ViaService" = "secretsmanager.${var.aws_region}.amazonaws.com"
+        }
+      }
+    }]
   })
 }
 
@@ -267,6 +300,31 @@ resource "aws_iam_role_policy" "sqs_publish" {
           "sqs:SendMessage"
         ]
         Resource = var.sqs_queue_arns
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy" "sqs_kms" {
+  name = "sqs-kms-access"
+  role = aws_iam_role.this.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "kms:Decrypt",
+          "kms:GenerateDataKey"
+        ]
+        Resource = var.sqs_kms_key_arn
+        Condition = {
+          StringEquals = {
+            "kms:CallerAccount" = data.aws_caller_identity.current.account_id
+            "kms:ViaService"    = "sqs.${var.aws_region}.amazonaws.com"
+          }
+        }
       }
     ]
   })
@@ -497,6 +555,19 @@ resource "aws_autoscaling_group" "this" {
     }
   }
 
+  dynamic "warm_pool" {
+    for_each = var.asg_warm_pool_min_size > 0 ? [1] : []
+
+    content {
+      min_size   = var.asg_warm_pool_min_size
+      pool_state = var.asg_warm_pool_state
+
+      instance_reuse_policy {
+        reuse_on_scale_in = true
+      }
+    }
+  }
+
   dynamic "tag" {
     for_each = merge(local.common_tags, {
       Name = "${var.name_prefix}-ec2"
@@ -596,7 +667,7 @@ resource "aws_instance" "this" {
   monitoring             = true
   ebs_optimized          = true
 
-  user_data = base64encode(templatefile("${path.module}/user_data.sh", {
+  user_data_base64 = base64encode(templatefile("${path.module}/user_data.sh", {
     aws_region                 = var.aws_region
     ecr_repository_url         = var.ecr_repository_url
     log_group_name             = local.log_group_name

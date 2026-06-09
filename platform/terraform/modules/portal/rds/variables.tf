@@ -16,8 +16,15 @@ variable "subnet_ids" {
 }
 
 variable "allowed_cidr_blocks" {
-  description = "CIDR blocks allowed to access the database"
+  description = "CIDR blocks allowed to access the database. Prefer allowed_security_group_ids; CIDRs are kept for callers that genuinely cannot pass an SG."
   type        = list(string)
+  default     = []
+}
+
+variable "allowed_security_group_ids" {
+  description = "Security group IDs allowed to access the database. Preferred over allowed_cidr_blocks for microsegmentation. At least one of allowed_cidr_blocks or allowed_security_group_ids must be non-empty (enforced by a precondition on the RDS instance)."
+  type        = list(string)
+  default     = []
 }
 
 variable "db_name" {
@@ -75,10 +82,20 @@ variable "tags" {
   type        = map(string)
 }
 
+variable "secrets_kms_key_arn" {
+  description = "ARN of the KMS CMK used to encrypt Secrets Manager secrets owned by this module (CKV_AWS_149). Required input — no default."
+  type        = string
+}
+
 variable "prevent_destroy" {
   description = "Prevent accidental destruction of RDS instance (use in prod)"
   type        = bool
   default     = false
+}
+
+variable "apply_immediately" {
+  description = "Apply RDS modifications during the deploy instead of queueing them for the maintenance window. Required input — environments must choose explicitly."
+  type        = bool
 }
 
 # ------------------------------------------------------------------------------

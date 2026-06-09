@@ -36,13 +36,27 @@ resource "aws_security_group" "this" {
 }
 
 resource "aws_security_group_rule" "ingress_postgres" {
+  count = length(var.allowed_cidr_blocks) > 0 ? 1 : 0
+
   type              = "ingress"
   from_port         = 5432
   to_port           = 5432
   protocol          = "tcp"
   cidr_blocks       = var.allowed_cidr_blocks
   security_group_id = aws_security_group.this.id
-  description       = "PostgreSQL access"
+  description       = "PostgreSQL access (CIDR-based)"
+}
+
+resource "aws_security_group_rule" "ingress_postgres_sg" {
+  count = length(var.allowed_security_group_ids)
+
+  type                     = "ingress"
+  from_port                = 5432
+  to_port                  = 5432
+  protocol                 = "tcp"
+  source_security_group_id = var.allowed_security_group_ids[count.index]
+  security_group_id        = aws_security_group.this.id
+  description              = "PostgreSQL access (SG-based)"
 }
 
 resource "aws_security_group_rule" "egress_all" {
@@ -65,11 +79,11 @@ resource "random_password" "db_password" {
   override_special = "!#$%&*()-_=+[]{}<>:?"
 }
 
-# checkov:skip=CKV_AWS_149:Deferred for MVP. AWS-managed keys sufficient for low-usage internal MVP. See #213
 resource "aws_secretsmanager_secret" "db_credentials" {
   name                    = "shifter-${var.name_prefix}-db-credentials"
   description             = "RDS PostgreSQL credentials"
   recovery_window_in_days = 0 # Immediate deletion, avoids naming conflicts on recreate
+  kms_key_id              = var.secrets_kms_key_arn
 
   tags = merge(var.tags, {
     Name   = "shifter-${var.name_prefix}-db-credentials"
@@ -93,25 +107,23 @@ resource "aws_secretsmanager_secret_version" "db_credentials" {
 # RDS PostgreSQL Instance
 # ------------------------------------------------------------------------------
 
-# checkov:skip=CKV_AWS_354:Performance insights enabled (line 133)
-# checkov:skip=CKV_AWS_353:Performance insights enabled (line 133)
-# checkov:skip=CKV_AWS_157:IAM auth enabled (line 137)
-# checkov:skip=CKV_AWS_118:Enhanced monitoring deferred - see #215
-# checkov:skip=CKV_AWS_293:CA certificate deferred - see #216
 resource "aws_db_instance" "this" {
+  # checkov:skip=CKV_AWS_157:Multi-AZ controlled by var.multi_az; environments choose
+  # checkov:skip=CKV_AWS_293:Deletion protection controlled by var.deletion_protection (dev false / prod true)
   identifier = "${var.name_prefix}-db"
 
   # Engine
   engine               = "postgres"
   engine_version       = var.engine_version
   instance_class       = var.instance_class
-  parameter_group_name = "default.postgres${split(".", var.engine_version)[0]}"
+  parameter_group_name = aws_db_parameter_group.this.name
 
   # Storage
   allocated_storage     = var.allocated_storage
   max_allocated_storage = var.max_allocated_storage
   storage_type          = "gp3"
   storage_encrypted     = true
+  kms_key_id            = aws_kms_key.rds.arn
 
   # Database
   db_name  = var.db_name
@@ -133,16 +145,33 @@ resource "aws_db_instance" "this" {
   deletion_protection        = var.deletion_protection
   skip_final_snapshot        = var.skip_final_snapshot
   final_snapshot_identifier  = var.skip_final_snapshot ? null : "${var.name_prefix}-db-final"
+  copy_tags_to_snapshot      = true
 
-  # Performance Insights (free tier for 7 days retention)
+  # Enhanced monitoring (CKV_AWS_118) and Performance Insights with CMK
+  # (CKV_AWS_354). 60-second OS metrics is the lowest non-zero interval that
+  # doesn't materially affect cost on `db.t*g.*` / `db.m6*` classes.
+  monitoring_interval                   = 60
+  monitoring_role_arn                   = aws_iam_role.enhanced_monitoring.arn
   performance_insights_enabled          = true
   performance_insights_retention_period = 7
+  performance_insights_kms_key_id       = aws_kms_key.rds.arn
 
   # IAM Database Authentication (for Lambda provisioner)
   iam_database_authentication_enabled = true
 
   # CloudWatch Log Exports
   enabled_cloudwatch_logs_exports = var.enable_log_exports ? ["postgresql", "upgrade"] : []
+
+  # Whether class/storage/parameter changes apply during the deploy or wait
+  # for the maintenance window. Set true in dev, false in prod.
+  apply_immediately = var.apply_immediately
+
+  lifecycle {
+    precondition {
+      condition     = length(var.allowed_security_group_ids) > 0 || length(var.allowed_cidr_blocks) > 0
+      error_message = "portal/rds: at least one of allowed_security_group_ids or allowed_cidr_blocks must be non-empty so the RDS security group has an ingress source."
+    }
+  }
 
   tags = merge(var.tags, {
     Name   = "${var.name_prefix}-db"
@@ -165,6 +194,7 @@ resource "aws_cloudwatch_log_group" "rds_postgresql" {
 
   name              = "/aws/rds/instance/${var.name_prefix}-db/postgresql"
   retention_in_days = var.log_retention_days
+  kms_key_id        = aws_kms_key.cloudwatch_logs.arn
 
   tags = merge(var.tags, {
     Name   = "${var.name_prefix}-rds-postgresql-logs"
@@ -177,6 +207,7 @@ resource "aws_cloudwatch_log_group" "rds_upgrade" {
 
   name              = "/aws/rds/instance/${var.name_prefix}-db/upgrade"
   retention_in_days = var.log_retention_days
+  kms_key_id        = aws_kms_key.cloudwatch_logs.arn
 
   tags = merge(var.tags, {
     Name   = "${var.name_prefix}-rds-upgrade-logs"
