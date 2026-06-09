@@ -90,6 +90,7 @@ jobs:
               - 'platform/terraform/modules/portal/**'
               - 'platform/terraform/modules/guacamole/**'
               - 'platform/terraform/environments/*/portal/**'
+              - 'scripts/check_rds_pending_modifications/**'
               - '.github/workflows/_shifter-platform.yml'
             shifter_app:
               - 'shifter/**'
