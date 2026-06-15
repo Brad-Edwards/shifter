@@ -84,3 +84,8 @@ ResultActive=yes
 EOF
 
 echo "=== Desktop setup complete ==="
+
+# Packer has observed an intermittent 123 from the shell wrapper after this
+# script completes successfully. Preserve strict-mode failure behavior above,
+# but return success once all intended desktop configuration has run.
+exit 0
