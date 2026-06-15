@@ -13,11 +13,12 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-_ENV_KEY_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)=")
+_ENV_KEY_RE = re.compile(r"^([A-Za-z_]\w*)=", re.ASCII)
 
 GCP_STATIC_RUNTIME_ENV_PATH = Path("platform/k8s/gcp/overlays/gcp-dev/platform-runtime.env")
 GCP_GENERATED_RUNTIME_ENV_PATH = Path("platform/k8s/gcp/overlays/gcp-dev/platform-runtime.generated.env")
 GCP_SECRET_RUNTIME_ENV_PATH = Path("platform/k8s/gcp/overlays/gcp-dev/platform-runtime-secrets.env")
+GCP_BACKEND_OWNER = "gcp backend"
 
 GCP_GENERATED_RUNTIME_ENV_KEYS: frozenset[str] = frozenset(
     {
@@ -125,19 +126,19 @@ RUNTIME_SURFACES: tuple[RuntimeSurface, ...] = (
     ),
     RuntimeSurface(
         path=str(GCP_STATIC_RUNTIME_ENV_PATH),
-        owner="gcp backend",
+        owner=GCP_BACKEND_OWNER,
         authority="checked-in static GCP runtime env",
         notes="Non-secret env keys that are stable for the gcp-dev overlay.",
     ),
     RuntimeSurface(
         path=str(GCP_GENERATED_RUNTIME_ENV_PATH),
-        owner="gcp backend",
+        owner=GCP_BACKEND_OWNER,
         authority="comment-only generated GCP runtime env stub",
         notes="Tracked stub stays assignment-free; required keys are rendered from Terraform outputs at deploy time.",
     ),
     RuntimeSurface(
         path=str(GCP_SECRET_RUNTIME_ENV_PATH),
-        owner="gcp backend",
+        owner=GCP_BACKEND_OWNER,
         authority="synthetic secret env placeholder",
         notes="Must not contain real assignments in source control.",
     ),
@@ -157,6 +158,8 @@ RUNTIME_SURFACES: tuple[RuntimeSurface, ...] = (
 
 
 def _repo_path(repo_root: Path, relative_path: Path) -> Path:
+    """Resolve a repo-relative runtime inventory path."""
+
     return repo_root / relative_path
 
 
@@ -175,6 +178,8 @@ def env_keys_from_file(path: Path) -> tuple[str, ...]:
 
 
 def _duplicate_key_issues(path: Path, keys: tuple[str, ...]) -> list[RuntimeInventoryIssue]:
+    """Return sanitized issues for duplicate env assignment keys."""
+
     seen: set[str] = set()
     duplicates: set[str] = set()
     for key in keys:
@@ -192,10 +197,14 @@ def _duplicate_key_issues(path: Path, keys: tuple[str, ...]) -> list[RuntimeInve
 
 
 def _missing_file_issue(path: Path) -> RuntimeInventoryIssue:
+    """Return a sanitized issue for a missing runtime inventory file."""
+
     return RuntimeInventoryIssue(str(path), "required runtime inventory file is missing")
 
 
 def _generated_stub_assignment_issues(path: Path, keys: tuple[str, ...]) -> list[RuntimeInventoryIssue]:
+    """Return issues when the checked-in generated runtime stub has assignments."""
+
     if not keys:
         return []
     return [
@@ -214,6 +223,8 @@ def _set_delta_issues(
     required: frozenset[str],
     allowed_extra: frozenset[str] = frozenset(),
 ) -> list[RuntimeInventoryIssue]:
+    """Return sanitized issues for missing and unregistered env keys."""
+
     issues: list[RuntimeInventoryIssue] = []
     missing = sorted(required - actual)
     extra = sorted(actual - required - allowed_extra)

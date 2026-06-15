@@ -82,6 +82,8 @@ def _cmd_validate(path_str: str) -> int:
 
 
 def _cmd_runtime_inventory(repo_root_str: str, *, check: bool) -> int:
+    """List or validate checked-in runtime configuration surfaces."""
+
     repo_root = Path(repo_root_str)
     if check:
         issues = validate_runtime_inventory(repo_root)
@@ -100,17 +102,21 @@ def _cmd_runtime_inventory(repo_root_str: str, *, check: bool) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Run the shifter-config command-line interface."""
+
     parser = _build_parser()
     args = parser.parse_args(argv)
     if args.command is None:
         parser.print_help(sys.stderr)
         return 2
     if args.command == "validate":
-        return _cmd_validate(args.path)
-    if args.command == "runtime-inventory":
-        return _cmd_runtime_inventory(args.repo_root, check=args.check)
-    parser.print_help(sys.stderr)  # pragma: no cover - argparse rejects unknown subcommands first
-    return 2
+        exit_code = _cmd_validate(args.path)
+    elif args.command == "runtime-inventory":
+        exit_code = _cmd_runtime_inventory(args.repo_root, check=args.check)
+    else:
+        parser.print_help(sys.stderr)  # pragma: no cover - argparse rejects unknown subcommands first
+        exit_code = 2
+    return exit_code
 
 
 if __name__ == "__main__":  # pragma: no cover - exercised via ``python -m installation``
