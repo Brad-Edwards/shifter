@@ -151,16 +151,14 @@ def get_ssh_connection_info(user: User, instance_uuid: str) -> dict[str, Any]:
 
     logger.debug("connect_terminal: user_id=%s instance_uuid=%s", user.id, safe_log_value(instance_uuid))
 
-    range_obj = Range.objects.filter(
-        provisioned_instances__contains=[{"uuid": instance_uuid}],
-        user=user,
-    ).first()
-
+    # Resolve the user's active range the same way get_rdp_connection_info does.
+    # A user has at most one active range, so the instance must live in it; this
+    # avoids the provider-specific ``provisioned_instances__contains`` JSON lookup
+    # (unsupported on SQLite and non-portable across backends).
+    range_obj = Range.get_active_for_user(user)
     if not range_obj:
-        logger.error(
-            "Range not found for instance: user_id=%s instance_uuid=%s", user.id, safe_log_value(instance_uuid)
-        )
-        raise ValueError(f"No range found containing instance {instance_uuid}")
+        logger.error("No active range for user: user_id=%s instance_uuid=%s", user.id, safe_log_value(instance_uuid))
+        raise ValueError("No active range found")
 
     if range_obj.status != Range.Status.READY:
         logger.error("Range not ready: range_id=%s status=%s", range_obj.id, range_obj.status)

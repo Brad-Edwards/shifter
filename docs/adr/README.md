@@ -199,11 +199,13 @@ entries. Completed so far:
   with the SSH key/RDP secret fetched over the `boto3` Secrets Manager boundary,
   the NGFW teardown/lifecycle dispatched over the real `engine.ecs` boto3 path,
   and the SSH transport mocked at the third-party `asyncssh` library boundary.
-  `test_get_ssh_connection_info` and `test_connect_terminal` remain baselined:
-  the underlying service resolves the range via a `provisioned_instances__contains`
-  JSON lookup, which the SQLite test backend cannot execute
-  (`NotSupportedError`), so a real-DB rewrite is blocked until the test DB is
-  Postgres or the lookup is made relational.
+  `test_get_ssh_connection_info` and `test_connect_terminal` are also driven
+  against a real active `Range`: the underlying service previously resolved the
+  range with a `provisioned_instances__contains` JSON lookup that the SQLite test
+  backend cannot execute (`NotSupportedError`); it now resolves the user's active
+  range via `Range.get_active_for_user` (consistent with
+  `get_rdp_connection_info`), removing the non-portable query. With these, the
+  engine group carries no remaining ADR-019 baseline entries.
 
 Decomposition-owned suites are out of scope here and land with their own
 issues: provisioner (#946), `ctf/**` and `cms/experiments/test_orchestrator*`
