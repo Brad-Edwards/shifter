@@ -107,6 +107,29 @@ class TestSecurity:
         with pytest.raises(Http404):
             doc_page(request, path="this-does-not-exist")
 
+    def test_resolve_within_docs_rejects_symlink_escape(self, tmp_path):
+        """The resolve-and-contain barrier rejects a symlink that escapes the root.
+
+        The string sanitiser sees a clean relative name with no '..', so this
+        barrier (CodeQL py/path-injection) is what stops the escape:
+        Path.resolve() follows the symlink out of the docs root and the
+        containment check fails. Exercises the helper directly (no patching of
+        module topology).
+        """
+        from documentation.views import _resolve_within_docs
+
+        docs_root = tmp_path / "docs"
+        docs_root.mkdir()
+        inside = docs_root / "real.md"
+        inside.write_text("ok", encoding="utf-8")
+        secret = tmp_path / "secret.md"
+        secret.write_text("TOP SECRET", encoding="utf-8")
+        (docs_root / "leak.md").symlink_to(secret)
+
+        # A genuine in-root file resolves; the escaping symlink is rejected.
+        assert _resolve_within_docs(docs_root / "real.md", docs_root) == inside.resolve()
+        assert _resolve_within_docs(docs_root / "leak.md", docs_root) is None
+
 
 # =============================================================================
 # Basic Functionality

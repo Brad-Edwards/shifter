@@ -289,6 +289,22 @@ describe('NGFWWizardManager', () => {
 
             console.error = originalError;
         });
+
+        test('WebSocket onmessage sanitizes CR/LF in the logged status', () => {
+            wizard.ngfwId = 42;
+            wizard.connectWebSocket();
+
+            const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+            // A status carrying CR/LF must not reach the log verbatim.
+            mockWebSocket.onmessage({ data: JSON.stringify({ status: 'pending\r\nforged-log-entry' }) });
+
+            const statusLog = logSpy.mock.calls.find((args) => args[0] === 'NGFW status update:');
+            expect(statusLog).toBeDefined();
+            expect(statusLog[1]).not.toMatch(/[\r\n]/);
+            expect(statusLog[1]).toContain('forged-log-entry');
+
+            logSpy.mockRestore();
+        });
     });
 
     describe('showSuccess', () => {

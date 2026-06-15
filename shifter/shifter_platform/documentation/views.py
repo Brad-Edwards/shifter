@@ -211,6 +211,25 @@ def _sanitize_path(path: str) -> str:
     return clean_path
 
 
+def _resolve_within_docs(candidate: Path, docs_root: Path = DOCS_ROOT) -> Path | None:
+    """Resolve ``candidate`` and return it only if it stays inside ``docs_root``.
+
+    ``Path.resolve()`` collapses ``..`` segments and follows symlinks, so a
+    path that escapes the documentation root (through traversal that survived
+    the string sanitiser, or through a symlink planted under the docs tree) is
+    rejected by the containment check. This resolve-and-contain barrier is what
+    CodeQL's ``py/path-injection`` requires before the file is read;
+    ``_sanitize_path`` is kept as defence in depth. ``docs_root`` defaults to
+    the module ``DOCS_ROOT`` and is injectable so the barrier can be unit-tested
+    directly. Returns the resolved path, or ``None`` when it escapes the root.
+    """
+    root = docs_root.resolve()
+    resolved = candidate.resolve()
+    if resolved.is_relative_to(root):
+        return resolved
+    return None
+
+
 @login_required
 @require_GET
 def doc_index(request: HttpRequest) -> HttpResponse:
@@ -240,15 +259,14 @@ def doc_page(request: HttpRequest, path: str) -> HttpResponse:
     # Sanitize path to prevent directory traversal
     clean_path = _sanitize_path(path)
 
-    # Try to find the markdown file
-    # First try exact path + .md
-    file_path = DOCS_ROOT / f"{clean_path}.md"
-
-    # If not found, try path/index.md (for folder landing pages)
-    if not file_path.exists():
-        file_path = DOCS_ROOT / clean_path / "index.md"
-
-    if not file_path.exists():
+    # Resolve the requested file and confirm it stays within DOCS_ROOT before
+    # any filesystem access (CodeQL py/path-injection): resolve-and-contain is
+    # the barrier, _sanitize_path above is defence in depth. Try exact path +
+    # .md first, then path/index.md (folder landing pages).
+    file_path = _resolve_within_docs(DOCS_ROOT / f"{clean_path}.md")
+    if file_path is None or not file_path.exists():
+        file_path = _resolve_within_docs(DOCS_ROOT / clean_path / "index.md")
+    if file_path is None or not file_path.exists():
         raise Http404("Document not found")
 
     content = _render_markdown(file_path)

@@ -162,3 +162,21 @@ class TestThreatResearchRequiredDecorator:
         resp = self.view(request)
         assert resp.status_code == 200
         assert resp.content == b"ok"
+
+    def test_unauthorized_log_escapes_crlf_in_path(self, caplog):
+        """A user-controlled request.path with CR/LF is escaped in the denial
+        log so it cannot forge log entries (CodeQL py/log-injection)."""
+        import logging
+
+        user = _make_user(is_staff=False)
+        request = self._make_request(user=user)
+        request.path = "/threat/\r\nINJECTED forged-entry"
+        with caplog.at_level(logging.WARNING):
+            self.view(request)
+
+        denials = [r for r in caplog.records if "denied access" in r.getMessage()]
+        assert denials, "expected a denial warning log record"
+        msg = denials[0].getMessage()
+        assert "\r" not in msg and "\n" not in msg  # raw control chars removed
+        assert "\\r\\n" in msg  # escaped form present
+        assert "INJECTED" in msg  # value preserved, only escaped
