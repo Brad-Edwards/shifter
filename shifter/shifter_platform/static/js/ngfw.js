@@ -307,7 +307,13 @@ class NGFWWizardManager {
         this.ws.onmessage = (event) => {
             try {
                 const data = JSON.parse(event.data);
-                console.log('NGFW status update:', data);
+                // Log the status only when it is a known, safe literal; any
+                // other value (including an attacker-influenced one carrying
+                // CR/LF) logs as 'unknown' so it cannot forge log entries
+                // (CodeQL js/log-injection).
+                const KNOWN_STATUSES = ['ready', 'failed', 'pending', 'provisioning', 'stopped'];
+                const safeStatus = KNOWN_STATUSES.includes(data.status) ? data.status : 'unknown';
+                console.log('NGFW status update:', safeStatus);
 
                 if (data.status === 'ready') {
                     this.showSuccess();
