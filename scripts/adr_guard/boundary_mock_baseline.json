@@ -2726,26 +2726,6 @@
       "target": "documentation.views.render"
     },
     {
-      "count": 22,
-      "path": "shifter/shifter_platform/tests/engine/services/test_connect_terminal.py",
-      "target": "engine.models.Range.objects.filter"
-    },
-    {
-      "count": 15,
-      "path": "shifter/shifter_platform/tests/engine/services/test_connect_terminal.py",
-      "target": "engine.secrets.get_ssh_key"
-    },
-    {
-      "count": 3,
-      "path": "shifter/shifter_platform/tests/engine/services/test_get_ssh_connection_info.py",
-      "target": "engine.models.Range.objects.filter"
-    },
-    {
-      "count": 2,
-      "path": "shifter/shifter_platform/tests/engine/services/test_get_ssh_connection_info.py",
-      "target": "engine.secrets.get_ssh_key"
-    },
-    {
       "count": 3,
       "path": "shifter/shifter_platform/tests/integration/engine/test_range_lifecycle.py",
       "target": "engine.services.get_rdp_password"
