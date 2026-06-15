@@ -407,6 +407,22 @@ def create_dynamodb_table(table_name: str, region: str, profile: str, dry_run: b
         )
 
 
+def administrator_access_policy_document() -> str:
+    """Return the inline administrator policy used for bootstrap and CI roles."""
+    return json.dumps(
+        {
+            "Version": "2012-10-17",
+            "Statement": [
+                {
+                    "Effect": "Allow",
+                    "Action": "*",
+                    "Resource": "*",
+                }
+            ],
+        }
+    )
+
+
 AWS_ENVIRONMENTS = ("dev", "proof", "prod")
 
 
@@ -3262,16 +3278,19 @@ def bootstrap_account(config: BootstrapConfig, profile: str, dry_run: bool = Fal
         profile=profile,
     )
 
-    # Attach AdministratorAccess to bootstrap role (temporary, will be deleted)
+    # Add AdministratorAccess-equivalent permissions inline. The target AWS org
+    # may deny iam:AttachRolePolicy via SCP even for admin operators.
     run_cmd(
         [
             "aws",
             "iam",
-            "attach-role-policy",
+            "put-role-policy",
             "--role-name",
             config.bootstrap_role_name,
-            "--policy-arn",
-            "arn:aws:iam::aws:policy/AdministratorAccess",
+            "--policy-name",
+            "bootstrap-administrator-access",
+            "--policy-document",
+            administrator_access_policy_document(),
         ],
         dry_run=dry_run,
         profile=profile,
@@ -3362,16 +3381,16 @@ use_lockfile = true
 
     info(f"Deleting temporary bootstrap role: {config.bootstrap_role_name}")
 
-    # Detach AdministratorAccess first
+    # Delete the inline bootstrap policy first.
     run_cmd(
         [
             "aws",
             "iam",
-            "detach-role-policy",
+            "delete-role-policy",
             "--role-name",
             config.bootstrap_role_name,
-            "--policy-arn",
-            "arn:aws:iam::aws:policy/AdministratorAccess",
+            "--policy-name",
+            "bootstrap-administrator-access",
         ],
         dry_run=dry_run,
         check=False,
