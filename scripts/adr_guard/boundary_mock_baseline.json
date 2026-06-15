@@ -2906,26 +2906,6 @@
       "target": "engine.ssh.asyncssh.import_private_key"
     },
     {
-      "count": 10,
-      "path": "shifter/shifter_platform/tests/engine/test_handlers.py",
-      "target": "engine.handlers.Range.objects.get"
-    },
-    {
-      "count": 6,
-      "path": "shifter/shifter_platform/tests/engine/test_handlers.py",
-      "target": "engine.handlers.audit_log_system_event"
-    },
-    {
-      "count": 3,
-      "path": "shifter/shifter_platform/tests/engine/test_handlers.py",
-      "target": "engine.handlers.process_ngfw_event"
-    },
-    {
-      "count": 3,
-      "path": "shifter/shifter_platform/tests/engine/test_handlers.py",
-      "target": "engine.handlers.process_range_event"
-    },
-    {
       "count": 3,
       "path": "shifter/shifter_platform/tests/integration/engine/test_range_lifecycle.py",
       "target": "engine.services.get_rdp_password"

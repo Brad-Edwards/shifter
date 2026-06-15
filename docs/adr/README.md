@@ -182,7 +182,10 @@ entries. Completed so far:
   no-op for create/destroy; pause/resume require a successful dispatch, so they
   configure ECS via `override_settings` and mock the AWS task runner at the
   `boto3` boundary. Range-query suites (`test_get_range_status`,
-  `test_get_instance_ips_by_uuid`) read real rows' `provisioned_instances`.
+  `test_get_instance_ips_by_uuid`) read real rows' `provisioned_instances`. The
+  SNS event handler suite (`engine/test_handlers`) drives the handlers against
+  real `Range` rows and asserts the persisted status/timestamp updates + audit
+  row.
 
 Decomposition-owned suites are out of scope here and land with their own
 issues: provisioner (#946), `ctf/**` and `cms/experiments/test_orchestrator*`
