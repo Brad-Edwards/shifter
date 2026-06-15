@@ -132,8 +132,8 @@ RUNTIME_SURFACES: tuple[RuntimeSurface, ...] = (
     RuntimeSurface(
         path=str(GCP_GENERATED_RUNTIME_ENV_PATH),
         owner="gcp backend",
-        authority="generated GCP runtime env placeholder",
-        notes="Required non-secret and secret-reference keys rendered from Terraform outputs at deploy time.",
+        authority="comment-only generated GCP runtime env stub",
+        notes="Tracked stub stays assignment-free; required keys are rendered from Terraform outputs at deploy time.",
     ),
     RuntimeSurface(
         path=str(GCP_SECRET_RUNTIME_ENV_PATH),
@@ -195,6 +195,18 @@ def _missing_file_issue(path: Path) -> RuntimeInventoryIssue:
     return RuntimeInventoryIssue(str(path), "required runtime inventory file is missing")
 
 
+def _generated_stub_assignment_issues(path: Path, keys: tuple[str, ...]) -> list[RuntimeInventoryIssue]:
+    if not keys:
+        return []
+    return [
+        RuntimeInventoryIssue(
+            str(path),
+            "checked-in generated runtime stub must be comment-only; assignments found for env keys: "
+            + ", ".join(sorted(set(keys))),
+        )
+    ]
+
+
 def _set_delta_issues(
     *,
     path: Path,
@@ -235,14 +247,7 @@ def validate_runtime_inventory(repo_root: str | Path) -> list[RuntimeInventoryIs
     issues.extend(_duplicate_key_issues(static_path, static_keys))
     issues.extend(_duplicate_key_issues(secret_path, secret_keys))
 
-    issues.extend(
-        _set_delta_issues(
-            path=generated_path,
-            actual=set(generated_keys),
-            required=GCP_GENERATED_RUNTIME_ENV_KEYS,
-            allowed_extra=GCP_OPTIONAL_GENERATED_RUNTIME_ENV_KEYS,
-        )
-    )
+    issues.extend(_generated_stub_assignment_issues(generated_path, generated_keys))
     issues.extend(
         _set_delta_issues(
             path=secret_path,
@@ -251,12 +256,12 @@ def validate_runtime_inventory(repo_root: str | Path) -> list[RuntimeInventoryIs
         )
     )
 
-    overlap = sorted(set(generated_keys) & set(static_keys))
+    overlap = sorted(GCP_GENERATED_RUNTIME_ENV_KEYS & set(static_keys))
     if overlap:
         issues.append(
             RuntimeInventoryIssue(
                 str(GCP_GENERATED_RUNTIME_ENV_PATH),
-                f"duplicates keys from {GCP_STATIC_RUNTIME_ENV_PATH}: " + ", ".join(overlap),
+                f"renderer-owned env keys duplicate keys from {GCP_STATIC_RUNTIME_ENV_PATH}: " + ", ".join(overlap),
             )
         )
     return issues

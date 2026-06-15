@@ -83,8 +83,8 @@ Validation rejects:
 - malformed secret names or references
 - missing required backend secrets
 - secret names not used by the selected backend
-- generated runtime env placeholders that omit required keys
-- duplicate keys between static and generated runtime env files
+- checked-in generated runtime env stubs with assignments
+- duplicate keys between static runtime env files and renderer-owned keys
 - unregistered checked-in runtime secret env assignments
 
 Validation errors are path-based and do not echo rejected input values.

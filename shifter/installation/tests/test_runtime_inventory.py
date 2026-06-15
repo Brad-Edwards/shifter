@@ -5,7 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 
 from installation.runtime_inventory import (
-    GCP_GENERATED_RUNTIME_ENV_KEYS,
     RUNTIME_SURFACES,
     RuntimeInventoryIssue,
     env_keys_from_file,
@@ -41,7 +40,7 @@ def test_env_keys_from_file_returns_names_without_values(tmp_path):
     assert env_keys_from_file(env_file) == ("FOO", "BAR")
 
 
-def test_runtime_inventory_detects_missing_generated_keys(tmp_path):
+def test_runtime_inventory_rejects_checked_in_generated_assignments(tmp_path):
     generated = tmp_path / "platform/k8s/gcp/overlays/gcp-dev/platform-runtime.generated.env"
     static = tmp_path / "platform/k8s/gcp/overlays/gcp-dev/platform-runtime.env"
     secret = tmp_path / "platform/k8s/gcp/overlays/gcp-dev/platform-runtime-secrets.env"
@@ -54,20 +53,17 @@ def test_runtime_inventory_detects_missing_generated_keys(tmp_path):
 
     assert issues
     rendered = "\n".join(issue.render() for issue in issues)
-    assert "missing env keys" in rendered
-    assert "APP_SECRET_ID" in rendered
+    assert "comment-only" in rendered
+    assert "STORAGE_BUCKET_NAME" in rendered
     assert "placeholder" not in rendered
 
 
-def test_runtime_inventory_detects_static_generated_overlap(tmp_path):
+def test_runtime_inventory_detects_static_renderer_overlap(tmp_path):
     generated = tmp_path / "platform/k8s/gcp/overlays/gcp-dev/platform-runtime.generated.env"
     static = tmp_path / "platform/k8s/gcp/overlays/gcp-dev/platform-runtime.env"
     secret = tmp_path / "platform/k8s/gcp/overlays/gcp-dev/platform-runtime-secrets.env"
     generated.parent.mkdir(parents=True)
-    generated.write_text(
-        "".join(f"{key}=placeholder\n" for key in sorted(GCP_GENERATED_RUNTIME_ENV_KEYS)),
-        encoding="utf-8",
-    )
+    generated.write_text("", encoding="utf-8")
     static.write_text("STORAGE_BUCKET_NAME=also-static\n", encoding="utf-8")
     secret.write_text("", encoding="utf-8")
 
@@ -76,7 +72,8 @@ def test_runtime_inventory_detects_static_generated_overlap(tmp_path):
     assert (
         RuntimeInventoryIssue(
             "platform/k8s/gcp/overlays/gcp-dev/platform-runtime.generated.env",
-            "duplicates keys from platform/k8s/gcp/overlays/gcp-dev/platform-runtime.env: STORAGE_BUCKET_NAME",
+            "renderer-owned env keys duplicate keys from "
+            "platform/k8s/gcp/overlays/gcp-dev/platform-runtime.env: STORAGE_BUCKET_NAME",
         )
         in issues
     )

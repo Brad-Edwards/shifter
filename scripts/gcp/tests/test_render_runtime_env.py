@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
+PINNED_IMAGE_TAG = "abc1234"
 
 
 def _load_module_from_path(module_path: Path, module_name: str):
@@ -108,7 +109,7 @@ def test_render_env_emits_production_security_profile():
     """The GCP runtime is always production-secure and addressed via https://<hostname>."""
     module = _load_module("render_runtime_env.py", "render_runtime_env")
 
-    rendered = module.render_env(_outputs())
+    rendered = module.render_env(_outputs(), image_tag=PINNED_IMAGE_TAG)
 
     # Production runtime security profile — unconditional.
     assert "DJANGO_DEBUG=false\n" in rendered
@@ -135,16 +136,25 @@ def test_render_env_emits_production_security_profile():
     assert "GDC_STATIC_IP_RESERVATION_COUNT=4\n" in rendered
     assert "RANGE_VPC_ID=projects/shifter-gcp-dev/global/networks/shifter-gcp-dev-range\n" in rendered
     assert "RANGE_VPC_CIDR=10.50.0.0/16\n" in rendered
+    assert (
+        "ENGINE_TASK_IMAGE=us-central1-docker.pkg.dev/"
+        "shifter-gcp-dev/shifter-gcp-dev-pulumi-provisioner/pulumi-provisioner:abc1234\n"
+    ) in rendered
 
 
 def test_render_env_keys_match_runtime_inventory(monkeypatch):
     module = _load_module("render_runtime_env.py", "render_runtime_env")
 
-    assert _rendered_keys(module.render_env(_outputs())) == set(GCP_GENERATED_RUNTIME_ENV_KEYS)
+    assert _rendered_keys(module.render_env(_outputs(), image_tag=PINNED_IMAGE_TAG)) == set(
+        GCP_GENERATED_RUNTIME_ENV_KEYS
+    )
 
     monkeypatch.setenv("PLATFORM_BOOTSTRAP_STAFF_EMAILS", "admin@example.com")
     monkeypatch.setenv("PLATFORM_BOOTSTRAP_SUPERUSER_EMAILS", "admin@example.com")
-    rendered = module.render_env(_outputs(identity_allowed_emails=["alice@example.com", "bob@example.com"]))
+    rendered = module.render_env(
+        _outputs(identity_allowed_emails=["alice@example.com", "bob@example.com"]),
+        image_tag=PINNED_IMAGE_TAG,
+    )
 
     assert _rendered_keys(rendered) == set(GCP_GENERATED_RUNTIME_ENV_KEYS | GCP_OPTIONAL_GENERATED_RUNTIME_ENV_KEYS)
 
@@ -163,14 +173,22 @@ def test_render_env_fails_closed_on_insecure_inputs(missing_kwargs, expected_sub
     module = _load_module("render_runtime_env.py", "render_runtime_env")
 
     with pytest.raises(ValueError, match=expected_substring):
-        module.render_env(_outputs(**missing_kwargs))
+        module.render_env(_outputs(**missing_kwargs), image_tag=PINNED_IMAGE_TAG)
+
+
+@pytest.mark.parametrize("image_tag", ["", "  ", "latest"])
+def test_render_env_rejects_missing_or_moving_image_tags(image_tag):
+    module = _load_module("render_runtime_env.py", "render_runtime_env")
+
+    with pytest.raises(ValueError, match="image_tag"):
+        module.render_env(_outputs(), image_tag=image_tag)
 
 
 def test_render_env_renders_identity_allow_list_from_terraform_outputs():
     """IDENTITY_ALLOWED_EMAIL_DOMAIN / IDENTITY_ALLOWED_EMAILS come from Terraform outputs, not literals/env."""
     module = _load_module("render_runtime_env.py", "render_runtime_env")
 
-    default_rendered = module.render_env(_outputs())
+    default_rendered = module.render_env(_outputs(), image_tag=PINNED_IMAGE_TAG)
     assert "IDENTITY_ALLOWED_EMAIL_DOMAIN=paloaltonetworks.com\n" in default_rendered
     assert "IDENTITY_ALLOWED_EMAILS=" not in default_rendered  # empty list -> no key
 
@@ -178,7 +196,8 @@ def test_render_env_renders_identity_allow_list_from_terraform_outputs():
         _outputs(
             identity_allowed_email_domain="contractors.example.com",
             identity_allowed_emails=["alice@partner.test", "bob@partner.test"],
-        )
+        ),
+        image_tag=PINNED_IMAGE_TAG,
     )
     assert "IDENTITY_ALLOWED_EMAIL_DOMAIN=contractors.example.com\n" in custom_rendered
     assert "IDENTITY_ALLOWED_EMAILS=alice@partner.test,bob@partner.test\n" in custom_rendered
@@ -192,7 +211,7 @@ def test_render_env_emits_redis_tls_and_secret_id_for_authenticated_cache():
     """
     module = _load_module("render_runtime_env.py", "render_runtime_env")
 
-    rendered = module.render_env(_outputs())
+    rendered = module.render_env(_outputs(), image_tag=PINNED_IMAGE_TAG)
 
     assert "REDIS_HOST=10.0.0.20\n" in rendered
     assert "REDIS_PORT=6379\n" in rendered
@@ -206,7 +225,7 @@ def test_render_env_never_emits_redis_password_or_url():
     Manager + entrypoint hydration only (ADR-008-R6, #963)."""
     module = _load_module("render_runtime_env.py", "render_runtime_env")
 
-    rendered = module.render_env(_outputs())
+    rendered = module.render_env(_outputs(), image_tag=PINNED_IMAGE_TAG)
 
     # Negative assertions — exact key names the entrypoint exports and any
     # plausible URL/password keys the renderer could leak.
@@ -237,7 +256,7 @@ def test_render_env_fails_closed_when_cache_payload_lacks_tls_flag():
     outputs["control_plane_cache"] = {"value": {"host": "10.0.0.20", "port": 6379}}
 
     with pytest.raises(ValueError, match="tls_enabled"):
-        module.render_env(outputs)
+        module.render_env(outputs, image_tag=PINNED_IMAGE_TAG)
 
 
 def test_render_env_fails_closed_when_redis_secret_id_missing():
@@ -256,7 +275,7 @@ def test_render_env_fails_closed_when_redis_secret_id_missing():
     }
 
     with pytest.raises(ValueError, match='runtime_secret_ids\\["redis"\\]'):
-        module.render_env(outputs)
+        module.render_env(outputs, image_tag=PINNED_IMAGE_TAG)
 
 
 def test_render_env_preserves_bootstrap_admin_lists_from_environment(monkeypatch):
@@ -264,7 +283,7 @@ def test_render_env_preserves_bootstrap_admin_lists_from_environment(monkeypatch
     monkeypatch.setenv("PLATFORM_BOOTSTRAP_STAFF_EMAILS", "admin@example.com")
     monkeypatch.setenv("PLATFORM_BOOTSTRAP_SUPERUSER_EMAILS", "admin@example.com")
 
-    rendered = module.render_env(_outputs())
+    rendered = module.render_env(_outputs(), image_tag=PINNED_IMAGE_TAG)
 
     assert "PLATFORM_BOOTSTRAP_STAFF_EMAILS=admin@example.com\n" in rendered
     assert "PLATFORM_BOOTSTRAP_SUPERUSER_EMAILS=admin@example.com\n" in rendered

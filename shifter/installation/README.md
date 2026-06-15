@@ -86,10 +86,11 @@ uv run --project shifter/installation shifter-config runtime-inventory --check
 ```
 
 The runtime-inventory check compares file paths and env-key names only. It
-does not print values. Today it guards the GCP static/generated runtime env
-contract and records the boundary between the public `shifter.yaml` installation
-config, the checked-in `.shifter.yaml` MCP ops policy, and gitignored local
-`.env` files.
+does not print values. Today it guards the GCP static runtime env, keeps the
+tracked generated runtime stub assignment-free, records the generated renderer
+key contract, and documents the boundary between the public `shifter.yaml`
+installation config, the checked-in `.shifter.yaml` MCP ops policy, and
+gitignored local `.env` files.
 
 ## Backend Bundle Contract
 
