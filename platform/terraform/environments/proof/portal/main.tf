@@ -34,7 +34,7 @@ locals {
 data "terraform_remote_state" "foundation" {
   backend = "s3"
   config = {
-    bucket = "REPLACE_AT_BOOTSTRAP"
+    bucket = "shifter-proof-infra-5d9224e1-ca92-4c9e-bd09-34015bcfc1e9"
     key    = "shifter/proof/terraform.tfstate"
     region = "us-east-2"
   }
@@ -47,7 +47,7 @@ data "terraform_remote_state" "foundation" {
 data "terraform_remote_state" "range" {
   backend = "s3"
   config = {
-    bucket = "REPLACE_AT_BOOTSTRAP"
+    bucket = "shifter-proof-infra-5d9224e1-ca92-4c9e-bd09-34015bcfc1e9"
     key    = "proof/range/terraform.tfstate"
     region = "us-east-2"
   }

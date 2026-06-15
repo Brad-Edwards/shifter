@@ -1,4 +1,4 @@
-bucket       = "REPLACE_AT_BOOTSTRAP"
+bucket       = "shifter-proof-infra-5d9224e1-ca92-4c9e-bd09-34015bcfc1e9"
 key          = "proof/portal/terraform.tfstate"
 region       = "us-east-2"
 encrypt      = true
