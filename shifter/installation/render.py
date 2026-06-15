@@ -68,11 +68,13 @@ def _policy_from_config(config: RootConfig) -> RangeEgressPolicy:
 
 
 def _render_aws(policy: RangeEgressPolicy) -> str:
+    """Render the AWS bridge tfvars (``victim_allowed_cidrs``) for ``policy``."""
     # AWS exposes only the CIDR allowlist; mode is encoded by presence/absence of CIDRs.
     return _hcl_string_list("victim_allowed_cidrs", policy.allowed_cidrs)
 
 
 def _render_gcp(policy: RangeEgressPolicy) -> str:
+    """Render the GCP bridge tfvars (``range_egress_mode`` + ``range_egress_allowed_cidrs``)."""
     mode = f'range_egress_mode = "{policy.mode.value}"\n'
     cidrs = _hcl_string_list("range_egress_allowed_cidrs", policy.allowed_cidrs)
     return mode + cidrs

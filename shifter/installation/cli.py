@@ -92,16 +92,8 @@ def _cmd_validate(path_str: str) -> int:
     return 0
 
 
-def _cmd_render(path_str: str, output: str | None) -> int:
-    config_path = Path(path_str)
-    try:
-        config = load_root_config(config_path)
-    except InstallationConfigError as exc:
-        print(f"{config_path}: invalid", file=sys.stderr)
-        for issue in exc.issues:
-            print(f"  - {issue.render()}", file=sys.stderr)
-        return 1
-    rendered = render_tfvars(config)
+def _emit_rendered(rendered: str, output: str | None, backend: str) -> int:
+    """Write rendered tfvars to ``output`` (or stdout when None); return the exit code."""
     if output is None:
         sys.stdout.write(rendered)
         return 0
@@ -112,21 +104,32 @@ def _cmd_render(path_str: str, output: str | None) -> int:
         detail = getattr(exc, "strerror", None) or str(exc)
         print(f"{output_path}: could not write rendered tfvars: {detail}", file=sys.stderr)
         return 1
-    print(f"{output_path}: wrote range egress bridge tfvars ({config.backend}).", file=sys.stderr)
+    print(f"{output_path}: wrote range egress bridge tfvars ({backend}).", file=sys.stderr)
     return 0
+
+
+def _cmd_render(path_str: str, output: str | None) -> int:
+    """Render the range egress bridge tfvars for the config at ``path_str``."""
+    config_path = Path(path_str)
+    try:
+        config = load_root_config(config_path)
+    except InstallationConfigError as exc:
+        print(f"{config_path}: invalid", file=sys.stderr)
+        for issue in exc.issues:
+            print(f"  - {issue.render()}", file=sys.stderr)
+        return 1
+    return _emit_rendered(render_tfvars(config), output, config.backend)
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
-    if args.command is None:
-        parser.print_help(sys.stderr)
-        return 2
     if args.command == "validate":
         return _cmd_validate(args.path)
     if args.command == "render":
         return _cmd_render(args.path, args.output)
-    parser.print_help(sys.stderr)  # pragma: no cover - argparse rejects unknown subcommands first
+    # No subcommand given (argparse rejects unknown subcommands before this point).
+    parser.print_help(sys.stderr)
     return 2
 
 
