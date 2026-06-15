@@ -10,6 +10,12 @@ ADR-017 records the platform-level rules this implementation is bound by.
 PLAT-220's refinements (PLAT-221 scenario overrides, PLAT-222 composable sets +
 admin UI, PLAT-223 RBAC) are intentionally out of scope here.
 
+Issue #958 closed the renderer gap: `shifter-config render` now generates the
+provider Terraform bridge tfvars directly from `shifter.yaml`, so the operator
+no longer transcribes the allowlist into a second file (see [Operator
+workflow](#operator-workflow) below). The renderer preflight is
+[range-egress-allowlist-render-preflight-958.md](range-egress-allowlist-render-preflight-958.md).
+
 ## Public surface
 
 ```yaml
@@ -35,9 +41,9 @@ Omitting the `range_egress` block is equivalent to `mode: status-quo`.
 `allowed_cidrs`:
 
 - Each entry must be a syntactically valid CIDR with an explicit prefix length.
-- `0.0.0.0/0` and `::/0` are rejected — allow-all is a separate mode (not
+- `0.0.0.0/0` and `::/0` are rejected; allow-all is a separate mode (not
   defined; out of scope for PLAT-220).
-- Host bits set are rejected — write the network address.
+- Host bits set are rejected; write the network address.
 - Duplicate entries after canonicalisation are rejected.
 - IPv4 and IPv6 are both accepted.
 - The list must be non-empty when `mode` is `allowlist`; the list must be empty
@@ -59,9 +65,11 @@ allowlist is **not** committed to the repo:
 | `shifter/installation/examples/{aws,gcp}.yaml`                                                  | committed; empty `status-quo` baseline |
 | `platform/terraform/environments/{dev,prod}/range/terraform.tfvars`                             | committed; `victim_allowed_cidrs = []` baseline |
 | `platform/terraform/environments/{dev,prod}/range/local.auto.tfvars.example`                    | committed; documented shape only |
-| `platform/terraform/environments/{dev,prod}/range/local.auto.tfvars`                            | gitignored; operator writes per deployment |
+| `platform/terraform/environments/{dev,prod}/range/local.auto.tfvars`                            | gitignored; operator's other per-deployment overrides (not the egress allowlist) |
+| `platform/terraform/environments/{dev,prod}/range/victim_allowed_cidrs.auto.tfvars`             | gitignored; `shifter-config render` output (AWS egress bridge) |
 | `platform/terraform/gcp/environments/gcp-dev/terraform.tfvars`                                  | committed; `range_egress_mode = "status-quo"`, empty allowlist |
-| `platform/terraform/gcp/environments/gcp-dev/local.auto.tfvars`                                 | gitignored; operator writes per deployment |
+| `platform/terraform/gcp/environments/gcp-dev/local.auto.tfvars`                                 | gitignored; operator's other per-deployment overrides (not the egress allowlist) |
+| `platform/terraform/gcp/environments/gcp-dev/range_egress.auto.tfvars`                          | gitignored; `shifter-config render` output (GCP egress bridge) |
 
 Two `.gitignore` rules prevent the prior committed forms from being
 re-introduced:
@@ -87,7 +95,7 @@ AWS Network Firewall rule groups. The relevant Terraform variable is
   default-deny `drop ip $HOME_NET any -> $EXTERNAL_NET any`.
 
 When `victim_allowed_cidrs` is empty, the existing NGFW-bypass / DNS / NTP
-allow lanes still apply and unmatched egress is dropped — this is the
+allow lanes still apply and unmatched egress is dropped; this is the
 documented `status-quo` behavior. `enable_network_firewall = false` short-
 circuits enforcement; the documented platform contract says this is the
 operator's explicit opt-out from PLAT-220 on AWS.
@@ -121,7 +129,7 @@ program against is the same `settings.range_egress` block.
 ## Out of scope
 
 - Domain-based egress allowlists (`victim_allowed_domains`,
-  `kali_allowed_domains` on the AWS module) — domains and CIDRs are
+  `kali_allowed_domains` on the AWS module); domains and CIDRs are
   separate concepts; the AWS module already exposes
   `victim_allowed_domains` independently and GCP has no native domain-based
   egress filter at the VPC firewall layer. A future requirement can
@@ -130,11 +138,12 @@ program against is the same `settings.range_egress` block.
   admin UI (PLAT-222), and RBAC for allowlist management (PLAT-223). Those
   refinements extend the `settings.range_egress` surface; the platform-level
   default established here remains the fallback.
-- A `shifter.yaml` → `local.auto.tfvars` renderer (i.e. having `shifter-config`
-  or `scripts/bootstrap/deploy.py` write the operator's allowlist directly
-  into the gitignored override). PLAT-220 establishes the shape and the
-  enforcement; the renderer is plumbing that fits naturally into the
-  backend settings_model migrations (#1116, #1117).
+- A `shifter.yaml` -> provider Terraform bridge renderer was out of scope for
+  the original #775 / PLAT-220 implementation; #958 delivered it as
+  `shifter-config render`, preserving the public policy and backend bridge
+  semantics documented here. Wiring the renderer into the CI deploy workflows
+  (so plan/apply regenerate the bridge tfvars instead of consuming a separately
+  maintained deployment secret) remains follow-up scope.
 - An explicit `allow-all` mode. The platform contract rejects `0.0.0.0/0`
   to keep operators from encoding allow-all as a sentinel CIDR. A future
   requirement can introduce a real allow-all mode with a documented
@@ -143,19 +152,33 @@ program against is the same `settings.range_egress` block.
 ## Operator workflow
 
 1. Author your `shifter.yaml` with `settings.range_egress.{mode,allowed_cidrs}`.
-2. For each Terraform environment you deploy:
-   - **AWS dev / prod range**: copy
-     `platform/terraform/environments/<env>/range/local.auto.tfvars.example`
-     to `local.auto.tfvars` (same directory) and set `victim_allowed_cidrs`
-     to the same list as `shifter.yaml.settings.range_egress.allowed_cidrs`.
-   - **GCP gcp-dev**: append to (or create) `local.auto.tfvars` next to
-     `terraform.tfvars` with `range_egress_mode = "<mode>"` and
-     `range_egress_allowed_cidrs = [<list>]`.
-3. Run `terraform apply` from each env directory.
+2. Render the provider Terraform bridge values from that single source with
+   `shifter-config render`. The renderer reads the `backend` from `shifter.yaml`
+   and emits the matching bridge variables (AWS `victim_allowed_cidrs`; GCP
+   `range_egress_mode` + `range_egress_allowed_cidrs`), so you never transcribe
+   the CIDRs a second time:
+   - **AWS dev / prod range**:
 
-`local.auto.tfvars` is gitignored; never commit one. A future renderer can
-generate these files directly from `shifter.yaml` so the operator only writes
-the list once.
+     ```bash
+     uv run --project shifter/installation shifter-config render shifter.yaml \
+       --output platform/terraform/environments/<env>/range/victim_allowed_cidrs.auto.tfvars
+     ```
+
+   - **GCP gcp-dev**:
+
+     ```bash
+     uv run --project shifter/installation shifter-config render shifter.yaml \
+       --output platform/terraform/gcp/environments/gcp-dev/range_egress.auto.tfvars
+     ```
+
+   Re-run it whenever the allowlist changes.
+3. Run `terraform apply` from each env directory. Terraform auto-loads the
+   rendered `*.auto.tfvars` alongside the committed `terraform.tfvars`.
+
+The rendered `*.auto.tfvars` is gitignored and generated; never hand-edit or
+commit it, and re-render rather than editing in place. It is a dedicated file
+separate from any `local.auto.tfvars` that carries unrelated deployment
+overrides, so re-rendering the allowlist never clobbers those.
 
 ## Migration from the prior committed allowlist
 
@@ -167,11 +190,13 @@ deployment, the operator must:
 
 1. Recover the prior list from the deleted file (Git history, prior checkout,
    or the PANW Cortex documentation). The values were public IP CIDRs, not
-   secrets — Git history is fine.
-2. Write the list into a new `local.auto.tfvars` next to each affected
-   `terraform.tfvars` (`environments/dev/range/`, `environments/prod/range/`),
-   using the `local.auto.tfvars.example` file in the same directory as the
-   shape reference.
+   secrets, so Git history is fine.
+2. Put the recovered list into `shifter.yaml` under
+   `settings.range_egress.allowed_cidrs` (with `mode: allowlist`), then run
+   `shifter-config render` for each affected environment to generate its
+   `victim_allowed_cidrs.auto.tfvars` (see [Operator workflow](#operator-workflow)).
+   Do **not** write the recovered list into `local.auto.tfvars` by hand: that
+   re-creates the second drift-prone source this change removes.
 3. Run `terraform plan` and confirm there is **no diff** in the
    `aws_networkfirewall_rule_group.victim_ips[*]` resources. Going from N
    chunks to fewer chunks (or zero) requires the policy update + rule-group
@@ -179,5 +204,6 @@ deployment, the operator must:
    `platform/terraform/modules/range/vpc/firewall.tf` describes the manual
    recovery path if Terraform shows the reduction.
 
-For a fresh deployment, no migration is needed — the committed baseline is
-empty and the operator's first apply sets the allowlist.
+For a fresh deployment, no migration is needed; the committed baseline is
+empty. The operator authors `shifter.yaml`, runs `shifter-config render`, and
+the first apply sets the allowlist from the rendered tfvars.
