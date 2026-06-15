@@ -160,17 +160,44 @@ session. Three sources:
     --aws-rds <portal-db> --aws-redis <portal-redis>
   ```
 
+  For #853, the AWS adapter records RDS `DatabaseConnections` average and peak
+  values, plus a lower-bound connection churn proxy derived from
+  sample-to-sample active-connection deltas. CloudWatch does not expose exact
+  opens/closes per second; short-lived open/close cycles between samples remain
+  invisible, so the report labels the value as a proxy.
+
 A GCP / Prometheus / OpenShift adapter is the next implementation of the same
 `MetricsAdapter` protocol.
+
+## Database connection churn (#853)
+
+The report includes a `Database connection posture (#853)` section. It keeps
+the current deployed Django posture visible (`CONN_MAX_AGE=0`) and compares it
+with same-window RDS metrics and client tail latency. The recommendation is
+evidence-based: keep the current posture when connection churn is not moving
+with RDS CPU or portal p95/p99 latency; treat DB connection lifecycle as a
+candidate contributor only when churn, RDS pressure, and user-visible latency
+move together during stepped-concurrency runs.
+
+Do not use the harness output alone to turn on persistent connections. First
+check the capacity math for the target runtime:
+
+```text
+portal replicas * worker/process count * Django connection contexts
+```
+
+That total must fit under the database max-connection budget with failover and
+background-worker headroom.
 
 ## Output
 
 The envelope report covers the preflight Evidence Bar: target environment and
 run parameters, deployment shape, per-route request/error counts and p50/p95/p99
 latency, websocket open/drop/close-code counts and reconnects, same-window
-provider metrics (or named gaps), first-mover attribution, and a
-supported-concurrency conclusion with limiting factor and a #910 sizing
-implication. Unknown fields render as `unknown` rather than a guess.
+provider metrics (or named gaps), DB connection posture, first-mover
+attribution, and a supported-concurrency conclusion with limiting factor and a
+#910 sizing implication. Unknown fields render as `unknown` rather than a
+guess.
 
 The conclusion is a heuristic first pass from a single run. Bounding the true
 ceiling and margin needs a stepped-concurrency sweep; re-run at increasing
