@@ -4,7 +4,7 @@ name: Deploy
 on:
   pull_request:
   push:
-    branches: [main, dev, aws-dev, gcp-dev]
+    branches: [main, dev, aws-dev, aws-proof, gcp-dev]
   workflow_dispatch:
     inputs:
       gcp_require_active_certificate:
@@ -154,6 +154,9 @@ jobs:
           if [ "${{ github.event_name }}" == "pull_request" ]; then
             if [ "${{ github.base_ref }}" == "aws-dev" ]; then
               RUN_AWS="true"
+            elif [ "${{ github.base_ref }}" == "aws-proof" ]; then
+              AWS_ENV="proof"
+              RUN_AWS="true"
             elif [ "${{ github.base_ref }}" == "gcp-dev" ]; then
               RUN_GCP="true"
             fi
@@ -167,6 +170,11 @@ jobs:
                 APPLY_AWS="true"
                 ;;
               aws-dev)
+                RUN_AWS="true"
+                APPLY_AWS="true"
+                ;;
+              aws-proof)
+                AWS_ENV="proof"
                 RUN_AWS="true"
                 APPLY_AWS="true"
                 ;;
@@ -184,6 +192,11 @@ jobs:
             BRANCH="${GITHUB_REF#refs/heads/}"
             case "$BRANCH" in
               aws-dev)
+                RUN_AWS="true"
+                APPLY_AWS="true"
+                ;;
+              aws-proof)
+                AWS_ENV="proof"
                 RUN_AWS="true"
                 APPLY_AWS="true"
                 ;;
@@ -358,6 +371,7 @@ jobs:
     secrets:
       AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
       AWS_ROLE_ARN_DEV: ${{ secrets.AWS_ROLE_ARN_DEV }}
+      AWS_ROLE_ARN_PROOF: ${{ secrets.AWS_ROLE_ARN_PROOF }}
 
   range:
     name: Range
@@ -382,6 +396,7 @@ jobs:
     secrets:
       AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
       AWS_ROLE_ARN_DEV: ${{ secrets.AWS_ROLE_ARN_DEV }}
+      AWS_ROLE_ARN_PROOF: ${{ secrets.AWS_ROLE_ARN_PROOF }}
 
   shifter-engine:
     name: Shifter Engine
@@ -405,6 +420,7 @@ jobs:
     secrets:
       AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
       AWS_ROLE_ARN_DEV: ${{ secrets.AWS_ROLE_ARN_DEV }}
+      AWS_ROLE_ARN_PROOF: ${{ secrets.AWS_ROLE_ARN_PROOF }}
 
   shifter_platform:
     name: Shifter Platform
@@ -432,7 +448,9 @@ jobs:
     secrets:
       AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
       AWS_ROLE_ARN_DEV: ${{ secrets.AWS_ROLE_ARN_DEV }}
+      AWS_ROLE_ARN_PROOF: ${{ secrets.AWS_ROLE_ARN_PROOF }}
       PLATFORM_BOOTSTRAP_STAFF_EMAILS: ${{ secrets.PLATFORM_BOOTSTRAP_STAFF_EMAILS }}
       PLATFORM_BOOTSTRAP_SUPERUSER_EMAILS: ${{ secrets.PLATFORM_BOOTSTRAP_SUPERUSER_EMAILS }}
       TF_VARS_DEV_PORTAL: ${{ secrets.TF_VARS_DEV_PORTAL }}
       TF_VARS_PROD_PORTAL: ${{ secrets.TF_VARS_PROD_PORTAL }}
+      TF_VARS_PROOF_PORTAL: ${{ secrets.TF_VARS_PROOF_PORTAL }}

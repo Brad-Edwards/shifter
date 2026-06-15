@@ -752,6 +752,11 @@ class TestBootstrapConfig:
         config = deploy.BootstrapConfig(env="dev")
         assert config.bucket_prefix == "shifter-dev-infra"
 
+    def test_bucket_prefix_for_proof_env(self):
+        """Config generates correct bucket prefix for proof."""
+        config = deploy.BootstrapConfig(env="proof")
+        assert config.bucket_prefix == "shifter-proof-infra"
+
     def test_table_prefix_for_prod_env(self):
         """Config generates correct DynamoDB table prefix for prod."""
         config = deploy.BootstrapConfig(env="prod")
@@ -761,6 +766,11 @@ class TestBootstrapConfig:
         """Config generates correct DynamoDB table prefix for dev."""
         config = deploy.BootstrapConfig(env="dev")
         assert config.table_prefix == "shifter-dev-terraform"
+
+    def test_table_prefix_for_proof_env(self):
+        """Config generates correct DynamoDB table prefix for proof."""
+        config = deploy.BootstrapConfig(env="proof")
+        assert config.table_prefix == "shifter-proof-terraform"
 
     def test_role_name_includes_env(self):
         """Config generates IAM role name with environment."""
@@ -776,6 +786,15 @@ class TestBootstrapConfig:
         """Config generates GitHub secret name for dev."""
         config = deploy.BootstrapConfig(env="dev")
         assert config.secret_name == "AWS_ROLE_ARN_DEV"
+
+    def test_secret_name_for_proof_env(self):
+        """Config generates GitHub secret name for proof."""
+        config = deploy.BootstrapConfig(env="proof")
+        assert config.secret_name == "AWS_ROLE_ARN_PROOF"
+
+    def test_aws_environment_choices_include_proof(self):
+        """AWS bootstrap commands accept proof as a first-class environment."""
+        assert deploy.AWS_ENVIRONMENTS == ("dev", "proof", "prod")
 
     # ---------------------------------------------------------------------
     # Input validation

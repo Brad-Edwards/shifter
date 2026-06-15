@@ -44,9 +44,37 @@ When automated options are available, you'll see:
 
 ## Commands
 
+## Fresh Proof Account Order
+
+Proof is a separate AWS tenant copied from the current `aws-dev` infrastructure
+shape. Treat it as its own environment: do not run proof bootstrap with
+`--env dev`, because that would rewrite dev backend files and the
+`AWS_ROLE_ARN_DEV` secret.
+
+1. Run `bootstrap --env proof --profile proof` to create the proof state
+   bucket, GitHub OIDC provider, and deploy role. Let it update
+   `AWS_ROLE_ARN_PROOF` and the proof `.s3.tfbackend` files.
+2. If proof needs its own self-hosted runner pool, update
+   `platform/terraform/global/github-runner/proof.tfvars`, apply the runner
+   root with `proof.s3.tfbackend`, and register the runners. Existing
+   self-hosted runners can also deploy proof by assuming `AWS_ROLE_ARN_PROOF`.
+3. Seed or build the `/shifter/ami/{kali,ubuntu,windows,dc}` SSM parameters in
+   the proof account. The Packer workflow accepts `environment=proof`; the Kali
+   build still requires the target account to accept the free AWS Marketplace
+   terms for product code `7lgvy7mt78lgoi4lant0znp5h`.
+4. Configure `TF_VARS_PROOF_PORTAL` in GitHub Actions with the proof portal
+   `local.auto.tfvars` payload.
+5. For the first proof deploy, run the `Deploy` workflow manually on
+   `aws-proof`. Manual dispatch forces the AWS chain (Core -> Range -> Engine
+   -> Platform). After the first full run succeeds, normal filtered
+   `aws-proof` pushes are appropriate.
+6. During the first platform apply, publish the ACM and SES validation records,
+   then publish runtime DNS records for `proof.shifter.keplerops.com`,
+   `chat.proof.shifter.keplerops.com`, and `proof-polaris.keplerops.com`.
+
 ### Bootstrap Only
 ```bash
-./scripts/bootstrap/deploy.py bootstrap --env prod --profile <your-prod-profile>
+./scripts/bootstrap/deploy.py bootstrap --env proof --profile proof
 ```
 
 ### Terraform Only (after bootstrap)
@@ -78,7 +106,7 @@ repo-specific fixes from the live spike:
 
 ## Options
 
-- `--env` (required): `dev` or `prod`
+- `--env` (required): `dev`, `proof`, or `prod`
 - `--profile` (required): AWS CLI profile name
 - `--dry-run` (optional): Show what would happen without making changes
 - `--project-id` (GDC only): GCP project ID, defaults to `PANW_GCP_DEV` or repo-root `.env`
