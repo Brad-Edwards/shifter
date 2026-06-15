@@ -2726,16 +2726,6 @@
       "target": "documentation.views.render"
     },
     {
-      "count": 18,
-      "path": "shifter/shifter_platform/tests/engine/services/test_connect_ngfw_terminal.py",
-      "target": "engine.models.Instance.objects.select_related"
-    },
-    {
-      "count": 6,
-      "path": "shifter/shifter_platform/tests/engine/services/test_connect_ngfw_terminal.py",
-      "target": "engine.secrets.get_ssh_key"
-    },
-    {
       "count": 22,
       "path": "shifter/shifter_platform/tests/engine/services/test_connect_terminal.py",
       "target": "engine.models.Range.objects.filter"
@@ -2746,41 +2736,6 @@
       "target": "engine.secrets.get_ssh_key"
     },
     {
-      "count": 4,
-      "path": "shifter/shifter_platform/tests/engine/services/test_destroy_ngfw.py",
-      "target": "engine.ecs.start_ngfw_teardown"
-    },
-    {
-      "count": 7,
-      "path": "shifter/shifter_platform/tests/engine/services/test_destroy_ngfw.py",
-      "target": "engine.models.Instance.objects.filter"
-    },
-    {
-      "count": 6,
-      "path": "shifter/shifter_platform/tests/engine/services/test_destroy_ngfw.py",
-      "target": "engine.models.Range.objects.filter"
-    },
-    {
-      "count": 8,
-      "path": "shifter/shifter_platform/tests/engine/services/test_destroy_ngfw.py",
-      "target": "engine.models.Request.objects.get"
-    },
-    {
-      "count": 8,
-      "path": "shifter/shifter_platform/tests/engine/services/test_get_rdp_connection_info.py",
-      "target": "engine.models.Range.get_active_for_user"
-    },
-    {
-      "count": 2,
-      "path": "shifter/shifter_platform/tests/engine/services/test_get_rdp_connection_info.py",
-      "target": "engine.secrets.get_ssh_key"
-    },
-    {
-      "count": 3,
-      "path": "shifter/shifter_platform/tests/engine/services/test_get_rdp_connection_info.py",
-      "target": "engine.services.get_rdp_password"
-    },
-    {
       "count": 3,
       "path": "shifter/shifter_platform/tests/engine/services/test_get_ssh_connection_info.py",
       "target": "engine.models.Range.objects.filter"
@@ -2789,46 +2744,6 @@
       "count": 2,
       "path": "shifter/shifter_platform/tests/engine/services/test_get_ssh_connection_info.py",
       "target": "engine.secrets.get_ssh_key"
-    },
-    {
-      "count": 7,
-      "path": "shifter/shifter_platform/tests/engine/services/test_ngfw_lifecycle.py",
-      "target": "engine.ecs.start_ngfw_operation"
-    },
-    {
-      "count": 9,
-      "path": "shifter/shifter_platform/tests/engine/services/test_ngfw_lifecycle.py",
-      "target": "engine.models.Instance.objects.filter"
-    },
-    {
-      "count": 11,
-      "path": "shifter/shifter_platform/tests/engine/services/test_ngfw_lifecycle.py",
-      "target": "engine.models.Request.objects.get"
-    },
-    {
-      "count": 2,
-      "path": "shifter/shifter_platform/tests/engine/services/test_secrets.py",
-      "target": "engine.secrets.get_secrets_store"
-    },
-    {
-      "count": 1,
-      "path": "shifter/shifter_platform/tests/engine/ssh/test_ssh_connection.py",
-      "target": "engine.ssh.asyncio.wait_for"
-    },
-    {
-      "count": 6,
-      "path": "shifter/shifter_platform/tests/engine/ssh/test_ssh_connection.py",
-      "target": "engine.ssh.asyncssh"
-    },
-    {
-      "count": 1,
-      "path": "shifter/shifter_platform/tests/engine/ssh/test_ssh_connection.py",
-      "target": "engine.ssh.asyncssh.connect"
-    },
-    {
-      "count": 1,
-      "path": "shifter/shifter_platform/tests/engine/ssh/test_ssh_connection.py",
-      "target": "engine.ssh.asyncssh.import_private_key"
     },
     {
       "count": 3,

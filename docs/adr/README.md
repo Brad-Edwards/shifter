@@ -192,7 +192,18 @@ entries. Completed so far:
   config); the local-provisioner routing is driven over the real
   `subprocess.Popen` boundary, and the GCP path drives the real config/env
   units (`_get_engine_task_config`, `_get_gcp_provisioner_env_overrides`) rather
-  than mocking the runner factory.
+  than mocking the runner factory. The SSH/secrets/NGFW service suites
+  (`engine/services/test_secrets`, `test_get_rdp_connection_info`,
+  `test_connect_ngfw_terminal`, `test_destroy_ngfw`, `test_ngfw_lifecycle`, and
+  `engine/ssh/test_ssh_connection`) drive real `Request`/`Instance`/`Range` rows
+  with the SSH key/RDP secret fetched over the `boto3` Secrets Manager boundary,
+  the NGFW teardown/lifecycle dispatched over the real `engine.ecs` boto3 path,
+  and the SSH transport mocked at the third-party `asyncssh` library boundary.
+  `test_get_ssh_connection_info` and `test_connect_terminal` remain baselined:
+  the underlying service resolves the range via a `provisioned_instances__contains`
+  JSON lookup, which the SQLite test backend cannot execute
+  (`NotSupportedError`), so a real-DB rewrite is blocked until the test DB is
+  Postgres or the lookup is made relational.
 
 Decomposition-owned suites are out of scope here and land with their own
 issues: provisioner (#946), `ctf/**` and `cms/experiments/test_orchestrator*`
