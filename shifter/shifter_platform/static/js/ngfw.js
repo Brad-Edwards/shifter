@@ -307,10 +307,12 @@ class NGFWWizardManager {
         this.ws.onmessage = (event) => {
             try {
                 const data = JSON.parse(event.data);
-                // Log only the sanitized status field; the raw WebSocket payload
-                // must not be logged verbatim (CodeQL js/log-injection: an
-                // attacker-influenced value could forge log entries via CR/LF).
-                const safeStatus = String(data.status).replace(/[\r\n\t]/g, ' ');
+                // Log the status only when it is a known, safe literal; any
+                // other value (including an attacker-influenced one carrying
+                // CR/LF) logs as 'unknown' so it cannot forge log entries
+                // (CodeQL js/log-injection).
+                const KNOWN_STATUSES = ['ready', 'failed', 'pending', 'provisioning', 'stopped'];
+                const safeStatus = KNOWN_STATUSES.includes(data.status) ? data.status : 'unknown';
                 console.log('NGFW status update:', safeStatus);
 
                 if (data.status === 'ready') {

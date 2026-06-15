@@ -212,22 +212,25 @@ def _sanitize_path(path: str) -> str:
 
 
 def _resolve_within_docs(candidate: Path, docs_root: Path = DOCS_ROOT) -> Path | None:
-    """Resolve ``candidate`` and return it only if it stays inside ``docs_root``.
+    """Return ``candidate`` only if it stays inside ``docs_root``, else ``None``.
 
-    ``Path.resolve()`` collapses ``..`` segments and follows symlinks, so a
-    path that escapes the documentation root (through traversal that survived
-    the string sanitiser, or through a symlink planted under the docs tree) is
-    rejected by the containment check. This resolve-and-contain barrier is what
-    CodeQL's ``py/path-injection`` requires before the file is read;
-    ``_sanitize_path`` is kept as defence in depth. ``docs_root`` defaults to
+    Containment is first checked lexically with ``os.path.normpath`` plus a
+    prefix check — this is the barrier CodeQL's ``py/path-injection`` requires,
+    and it rejects ``..`` traversal before any filesystem access. The path is
+    then resolved and re-checked against the resolved root as defence in depth,
+    so a symlink planted under the docs tree cannot redirect the read outside
+    it. ``_sanitize_path`` upstream is a further layer. ``docs_root`` defaults to
     the module ``DOCS_ROOT`` and is injectable so the barrier can be unit-tested
-    directly. Returns the resolved path, or ``None`` when it escapes the root.
+    directly.
     """
-    root = docs_root.resolve()
-    resolved = candidate.resolve()
-    if resolved.is_relative_to(root):
-        return resolved
-    return None
+    base = os.path.normpath(str(docs_root))
+    target = os.path.normpath(str(candidate))
+    if target != base and not target.startswith(base + os.sep):
+        return None
+    resolved = Path(target).resolve()
+    if not resolved.is_relative_to(Path(base).resolve()):
+        return None
+    return resolved
 
 
 @login_required
