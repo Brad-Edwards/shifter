@@ -719,7 +719,7 @@
     "title": "Range network egress is a platform-level policy, applied uniformly on AWS and GCP",
     "status": "accepted",
     "scope": "repository",
-    "decision": "Range egress is configured once at the platform level (`settings.range_egress` in shifter.yaml) and applied uniformly across supported cloud backends. The configuration shape is provider-neutral (`mode` + `allowed_cidrs`), validated by shifter/installation/range_egress.py, and bridged into AWS Network Firewall rule groups (platform/terraform/modules/range/vpc/firewall.tf) and GCP VPC firewall egress rules (platform/terraform/gcp/modules/platform-core/main.tf). The default mode (`status-quo`) preserves each backend's existing posture so the policy is opt-in. CIDRs are operator configuration, not secrets, but the per-deployment allowlist values live in gitignored `local.auto.tfvars` overrides — the committed Terraform baseline carries an empty allowlist so the repo is OSS-publishable without exposing any operator's allowlist (PLAT-220, #775).",
+    "decision": "Range egress is configured once at the platform level (`settings.range_egress` in shifter.yaml) and applied uniformly across supported cloud backends. The configuration shape is provider-neutral (`mode` + `allowed_cidrs`), validated by shifter/installation/range_egress.py, and bridged into AWS Network Firewall rule groups (platform/terraform/modules/range/vpc/firewall.tf) and GCP VPC firewall egress rules (platform/terraform/gcp/modules/platform-core/main.tf). The default mode (`status-quo`) preserves each backend's existing posture so the policy is opt-in. CIDRs are operator configuration, not secrets, and per-deployment values must not be committed; follow-up #958 closes the remaining drift by requiring provider-specific Terraform bridge inputs to be rendered from the validated root policy instead of hand-maintained as a second allowlist copy.",
     "rules": [
       {
         "id": "ADR-017-R1",
@@ -728,12 +728,17 @@
       },
       {
         "id": "ADR-017-R2",
-        "description": "Per-deployment range egress allowlist values must not be committed to the repository. Operators write the values into a gitignored `local.auto.tfvars` (or any `*.auto.tfvars.local`) alongside the env's `terraform.tfvars`; the committed Terraform baseline ships an empty allowlist. `.gitignore` blocks the prior committed forms (`victim_allowed_cidrs*.auto.tfvars`, `range_egress*.auto.tfvars`) from being re-introduced.",
+        "description": "Per-deployment range egress allowlist values must not be committed to the repository. Provider bridge values live only in gitignored deployment override files such as `local.auto.tfvars` (or any `*.auto.tfvars.local`) alongside the env's `terraform.tfvars`; the committed Terraform baseline ships an empty allowlist. `.gitignore` blocks the prior committed forms (`victim_allowed_cidrs*.auto.tfvars`, `range_egress*.auto.tfvars`) from being re-introduced.",
         "checks": ["no-plaintext-secrets-in-tfvars"]
       },
       {
         "id": "ADR-017-R3",
         "description": "Default behavior when `settings.range_egress` is omitted (or `mode: status-quo`) is documented per backend: AWS retains the existing Network Firewall posture (enabled by default, deny-all with documented allow lanes); GCP retains its existing Cloud NAT egress (no enforcement). `mode: deny-all` and `mode: allowlist` apply the documented platform contract uniformly on both clouds (deny-all base on the range VPC; HTTPS allow on TCP 443 to the operator-declared CIDRs).",
+        "checks": []
+      },
+      {
+        "id": "ADR-017-R4",
+        "description": "Deploy-time or local renderer paths for range egress must consume the normalized `settings.range_egress` policy from `shifter/installation/range_egress.py` / `load_root_config` and render provider-specific Terraform bridge variables from that policy. Operators must not maintain a separate CIDR allowlist copy in both root config and tfvars; provider variables remain internal and Terraform validation remains a direct-use backstop.",
         "checks": []
       }
     ],
@@ -757,6 +762,7 @@
       "platform/terraform/gcp/environments/gcp-dev/main.tf",
       "platform/terraform/gcp/environments/gcp-dev/terraform.tfvars",
       "docs/architecture/range-egress-ip-allowlist.md",
+      "docs/architecture/range-egress-allowlist-render-preflight-958.md",
       "docs/dev/deploy-secrets.md",
       ".gitignore"
     ]
