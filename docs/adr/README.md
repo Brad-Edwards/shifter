@@ -181,7 +181,18 @@ entries. Completed so far:
   `test_resume_range`), driven against real `Range`/`Request` rows. ECS is a
   no-op for create/destroy; pause/resume require a successful dispatch, so they
   configure ECS via `override_settings` and mock the AWS task runner at the
-  `boto3` boundary.
+  `boto3` boundary. Range-query suites (`test_get_range_status`,
+  `test_get_instance_ips_by_uuid`) read real rows' `provisioned_instances`. The
+  SNS event handler suite (`engine/test_handlers`) drives the handlers against
+  real `Range` rows and asserts the persisted status/timestamp updates + audit
+  row. The ECS task-dispatch suites (`engine/ecs/**`) drive the real
+  `shared.cloud` task runner with AWS configured via settings and the ECS client
+  mocked only at the `boto3` boundary, asserting the dispatch contract reaching
+  `boto3` (cluster / task definition / container / command line / network
+  config); the local-provisioner routing is driven over the real
+  `subprocess.Popen` boundary, and the GCP path drives the real config/env
+  units (`_get_engine_task_config`, `_get_gcp_provisioner_env_overrides`) rather
+  than mocking the runner factory.
 
 Decomposition-owned suites are out of scope here and land with their own
 issues: provisioner (#946), `ctf/**` and `cms/experiments/test_orchestrator*`

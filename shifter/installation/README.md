@@ -103,6 +103,21 @@ config is invalid. See
 [`docs/architecture/range-egress-ip-allowlist.md`](../../docs/architecture/range-egress-ip-allowlist.md)
 for the full operator workflow.
 
+## Runtime Inventory
+
+Check the checked-in runtime-env inventory from the repository root:
+
+```bash
+uv run --project shifter/installation shifter-config runtime-inventory --check
+```
+
+The runtime-inventory check compares file paths and env-key names only. It
+does not print values. Today it guards the GCP static runtime env, keeps the
+tracked generated runtime stub assignment-free, records the generated renderer
+key contract, and documents the boundary between the public `shifter.yaml`
+installation config, the checked-in `.shifter.yaml` MCP ops policy, and
+gitignored local `.env` files.
+
 ## Backend Bundle Contract
 
 `contract.py` defines the machine-readable backend bundle contract.
@@ -134,7 +149,8 @@ internal whitespace.
 | `loader.py` | YAML loading, duplicate-key checks, root validation, and backend validation dispatch. |
 | `contract.py` | Backend bundle contract types and invariants. |
 | `registry.py` | Supported backend bundle registry. |
-| `cli.py` | `shifter-config validate` and `shifter-config render`. |
+| `runtime_inventory.py` | Runtime config surface inventory and env-key drift checker. |
+| `cli.py` | `shifter-config validate`, `render`, and `runtime-inventory`. |
 | `render.py` | Render `settings.range_egress` into provider Terraform bridge tfvars. |
 | `errors.py` | Sanitized validation issue model. |
 | `examples/` | Valid AWS and GCP example configs. |
