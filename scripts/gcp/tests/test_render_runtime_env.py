@@ -3,20 +3,38 @@
 from __future__ import annotations
 
 import importlib.util
+import sys
 from pathlib import Path
 
 import pytest
 
+REPO_ROOT = Path(__file__).resolve().parents[3]
 PINNED_IMAGE_TAG = "abc1234"
 
 
-def _load_module(module_filename: str, module_name: str):
-    module_path = Path(__file__).resolve().parents[1] / module_filename
+def _load_module_from_path(module_path: Path, module_name: str):
     spec = importlib.util.spec_from_file_location(module_name, module_path)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
     spec.loader.exec_module(module)
     return module
+
+
+def _load_module(module_filename: str, module_name: str):
+    return _load_module_from_path(Path(__file__).resolve().parents[1] / module_filename, module_name)
+
+
+runtime_inventory = _load_module_from_path(
+    REPO_ROOT / "shifter/installation/runtime_inventory.py",
+    "installation_runtime_inventory_for_gcp_tests",
+)
+GCP_GENERATED_RUNTIME_ENV_KEYS = runtime_inventory.GCP_GENERATED_RUNTIME_ENV_KEYS
+GCP_OPTIONAL_GENERATED_RUNTIME_ENV_KEYS = runtime_inventory.GCP_OPTIONAL_GENERATED_RUNTIME_ENV_KEYS
+
+
+def _rendered_keys(rendered: str) -> set[str]:
+    return {line.split("=", 1)[0] for line in rendered.splitlines() if line and not line.startswith("#")}
 
 
 def _outputs(
@@ -122,6 +140,23 @@ def test_render_env_emits_production_security_profile():
         "ENGINE_TASK_IMAGE=us-central1-docker.pkg.dev/"
         "shifter-gcp-dev/shifter-gcp-dev-pulumi-provisioner/pulumi-provisioner:abc1234\n"
     ) in rendered
+
+
+def test_render_env_keys_match_runtime_inventory(monkeypatch):
+    module = _load_module("render_runtime_env.py", "render_runtime_env")
+
+    assert _rendered_keys(module.render_env(_outputs(), image_tag=PINNED_IMAGE_TAG)) == set(
+        GCP_GENERATED_RUNTIME_ENV_KEYS
+    )
+
+    monkeypatch.setenv("PLATFORM_BOOTSTRAP_STAFF_EMAILS", "admin@example.com")
+    monkeypatch.setenv("PLATFORM_BOOTSTRAP_SUPERUSER_EMAILS", "admin@example.com")
+    rendered = module.render_env(
+        _outputs(identity_allowed_emails=["alice@example.com", "bob@example.com"]),
+        image_tag=PINNED_IMAGE_TAG,
+    )
+
+    assert _rendered_keys(rendered) == set(GCP_GENERATED_RUNTIME_ENV_KEYS | GCP_OPTIONAL_GENERATED_RUNTIME_ENV_KEYS)
 
 
 @pytest.mark.parametrize(
