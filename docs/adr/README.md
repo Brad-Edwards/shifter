@@ -207,6 +207,16 @@ entries. Completed so far:
   `get_rdp_connection_info`), removing the non-portable query. With these, the
   engine group carries no remaining ADR-019 baseline entries.
 
+- `cms` (core): range-service suites (`test_services_range`,
+  `test_services_range_destroy_cancel`, `test_services_range_pause_resume`,
+  `test_services_range_lifecycle`). These drive the real CMS services through the
+  full hydrate -> engine -> persist stack against a real DB: a custom DB
+  `Scenario` hydrates a windows-agent range, engine ECS is unconfigured so
+  create/destroy/cancel are no-ops, and pause/resume configure ECS with the AWS
+  task runner mocked at the `boto3` boundary. Assertions are on persisted cms
+  `RangeInstance` / engine `Range` state, `AuditLog` rows, and the returned
+  `RangeContext`.
+
 Decomposition-owned suites are out of scope here and land with their own
 issues: provisioner (#946), `ctf/**` and `cms/experiments/test_orchestrator*`
 (#885, #886, #889-#891), and `cms/scenario_editor/**` (#887, #888).
