@@ -13,6 +13,7 @@ from django.http import HttpRequest, HttpResponse
 from django.shortcuts import redirect
 
 from shared.constants import USER_CANNOT_BE_NONE, USER_MUST_BE_SAVED
+from shared.log_sanitize import safe_log_value
 
 logger = logging.getLogger(__name__)
 
@@ -121,7 +122,7 @@ def threat_research_required(view_func: Callable[..., HttpResponse]) -> Callable
         logger.warning(
             "threat_research_required: user %s denied access to %s",
             request.user.pk,
-            request.path,
+            safe_log_value(request.path),
         )
         messages.error(request, "You do not have permission to access this page.")
         return redirect("mission_control:dashboard")

@@ -16,7 +16,7 @@ from django.urls import reverse
 
 from management.services import get_user_profile
 from shared.auth import CTF_ORGANIZER_GROUP, CTF_PARTICIPANT_GROUP
-from shared.log_sanitize import safe_log
+from shared.log_sanitize import safe_log_value
 
 logger = logging.getLogger(__name__)
 
@@ -123,7 +123,7 @@ def dev_login(request):
         if profile.user_type != user_type:
             profile.user_type = user_type
             profile.save(update_fields=["user_type"])
-        logger.info("Dev login: set user_type=%s for %s", safe_log(user_type), safe_log(email))
+        logger.info("Dev login: set user_type=%s for %s", safe_log_value(user_type), safe_log_value(email))
 
         # Redirect to appropriate dashboard
         redirect_url = reverse(USER_TYPE_REDIRECTS.get(user_type, "mission_control:dashboard"))

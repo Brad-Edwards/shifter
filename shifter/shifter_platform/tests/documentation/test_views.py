@@ -107,6 +107,28 @@ class TestSecurity:
         with pytest.raises(Http404):
             doc_page(request, path="this-does-not-exist")
 
+    def test_doc_file_map_keys_slugs_to_trusted_files(self, tmp_path):
+        """The doc map keys slugs to real files from a trusted walk; excluded and
+        hidden entries are skipped and an index.md is reachable by its folder
+        slug. A request path is only ever a key, so no user value reaches a
+        filesystem path (CodeQL py/path-injection). Exercises the helper
+        directly (no patching of module topology).
+        """
+        from documentation.views import _doc_file_map
+
+        (tmp_path / "guide.md").write_text("g", encoding="utf-8")
+        (tmp_path / "sub").mkdir()
+        (tmp_path / "sub" / "index.md").write_text("i", encoding="utf-8")
+        (tmp_path / "_deprecated").mkdir()
+        (tmp_path / "_deprecated" / "old.md").write_text("o", encoding="utf-8")
+
+        mapping = _doc_file_map(tmp_path)
+
+        assert mapping["guide"] == tmp_path / "guide.md"
+        assert mapping["sub/index"] == tmp_path / "sub" / "index.md"
+        assert mapping["sub"] == tmp_path / "sub" / "index.md"  # folder landing page
+        assert "_deprecated/old" not in mapping  # excluded folder skipped
+
 
 # =============================================================================
 # Basic Functionality
