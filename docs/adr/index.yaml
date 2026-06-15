@@ -825,5 +825,70 @@
       "docs/adr/README.md",
       "shifter/shifter_platform/documentation/docs/technical/dev/adr-enforcement.md"
     ]
+  },
+  {
+    "id": "ADR-020",
+    "title": "Range internet isolation is enforced by routing and Network Firewall default-deny, not security-group egress",
+    "status": "accepted",
+    "scope": "repository",
+    "decision": "All concurrent per-user ranges share one stable range VPC, each range in its own ephemeral subnet. Range network isolation splits responsibility across two layers by design: per-subnet security groups (`aws_security_group.subnet` in shifter/engine/provisioner/terraform/modules/range/main.tf) own local L4 reachability and gate only ingress (the subnet's own CIDR, `connected_to` peers, and portal SSH/RDP), while the route table plus AWS Network Firewall own internet egress containment. The security groups intentionally allow all egress (`0.0.0.0/0`, protocol -1) because security groups cannot express the domain/SNI allowlists, direct-IP-SNI rejection, and all-protocol default-deny the range needs; encoding a partial egress allowlist there would be redundant with and weaker than the firewall. The all-egress security group is acceptable only because every range route table sends `0.0.0.0/0` to the firewall endpoint (`aws_route.private_to_firewall` in platform/terraform/modules/range/vpc/firewall.tf; runtime `aws_route.firewall`) and the firewall STRICT_ORDER policy drops all unmatched egress at priority 100 (`drop_all`), with narrow allow lanes for victim IPs/domains, DNS to 8.8.8.8, and NTP. Blast radius: a compromised range host cannot reach another range (target security-group ingress denies it) and cannot reach the internet except through the firewall's allowlisted lanes. Cross-range and participant internet isolation therefore relies on the Network Firewall default-deny, not on security groups (review finding NET-7). The rationale and live model are recorded in docs/architecture/range-isolation-model.md; the configurable egress allowlist layered on this base is ADR-017.",
+    "rules": [
+      {
+        "id": "ADR-020-R1",
+        "description": "Per-range security groups gate ingress only (own subnet CIDR, `connected_to` peers, and portal SSH/RDP) and intentionally allow all egress. Security groups must not be documented or relied upon as the control for range internet-egress isolation.",
+        "checks": []
+      },
+      {
+        "id": "ADR-020-R2",
+        "description": "Range internet-egress isolation is owned by the route table (user-subnet `0.0.0.0/0` to the firewall endpoint) plus the AWS Network Firewall STRICT_ORDER default-deny (`drop_all`, priority 100). The all-egress security groups are acceptable only while that route-table-to-firewall path and default-deny remain intact; weakening either is a security-posture change requiring a matching ADR update.",
+        "checks": []
+      },
+      {
+        "id": "ADR-020-R3",
+        "description": "`enable_network_firewall = false` routes user subnets straight to NAT (`aws_route.private_to_nat`) and removes the default-deny, leaving the all-egress security groups unrestricted; it is an explicit dev-only opt-out. Making the firewall optional in any production profile requires its own ADR and guardrail.",
+        "checks": []
+      }
+    ],
+    "exceptions": [],
+    "enforcement": ["agent-policy"],
+    "evidence": [
+      "shifter/engine/provisioner/terraform/modules/range/main.tf",
+      "platform/terraform/modules/range/vpc/main.tf",
+      "platform/terraform/modules/range/vpc/firewall.tf",
+      "platform/terraform/modules/range/vpc/nat.tf",
+      "docs/architecture/range-isolation-model.md",
+      "docs/architecture/range-egress-ip-allowlist.md"
+    ]
+  },
+  {
+    "id": "ADR-021",
+    "title": "Range placement is single-AZ; multi-AZ is deferred",
+    "status": "accepted",
+    "scope": "repository",
+    "decision": "The stable range VPC and every concurrent range placed in it are pinned to a single availability zone, the first AZ the account exposes (`local.primary_az = data.aws_availability_zones.available.names[0]` in platform/terraform/modules/range/vpc/nat.tf). The NAT, firewall, persistent-NGFW, and SSM-endpoint subnets are placed in that AZ; the AZ is published as the module `availability_zone` output, bound into the provisioner as `RANGE_AVAILABILITY_ZONE` (platform/terraform/modules/engine-provisioner/task_definition.tf, shifter/engine/provisioner/config.py), and applied to runtime range subnets and instances (shifter/engine/provisioner/terraform/modules/range/main.tf). `ec2:RunInstances` is IAM-constrained to that AZ (platform/terraform/modules/engine-provisioner/iam.tf). This is a deliberate cost-and-simplicity decision for ephemeral ranges: one NAT Gateway and one firewall endpoint serve all ranges, inter-AZ data-transfer charges are avoided, and routing/endpoint placement stays single-target. It accepts a concentrated failure domain (a single-AZ impairment takes out all concurrent ranges) and a capacity ceiling bounded by one AZ. Explicit decision: multi-AZ range placement is not warranted now (review finding NET-8); it is revisited if ranges gain non-reprovisionable durable state, an availability SLO is placed on individual active ranges, or one AZ's capacity becomes the binding constraint. The rationale, trade-offs, and future placement seam are recorded in docs/architecture/range-single-az-placement.md.",
+    "rules": [
+      {
+        "id": "ADR-021-R1",
+        "description": "The range VPC and all concurrent ranges are placed in a single availability zone, selected once as the account's first AZ and propagated through the `availability_zone` output, `RANGE_AVAILABILITY_ZONE`, and the `ec2:AvailabilityZone` IAM condition. This is the accepted posture for ephemeral ranges and trades availability and per-AZ capacity for cost and simplicity.",
+        "checks": []
+      },
+      {
+        "id": "ADR-021-R2",
+        "description": "Multi-AZ range placement is deferred. If later warranted it must be introduced as an explicit placement contract -- an environment-owned ordered zone list, a per-range placement selector feeding both stable and runtime modules, and a deterministic per-AZ egress target (firewall endpoint per AZ) so the ADR-020 default-deny holds in every AZ -- not as an ad-hoc `multi_az` boolean or a stray `data.aws_availability_zones` lookup in the runtime module.",
+        "checks": []
+      }
+    ],
+    "exceptions": [],
+    "enforcement": ["agent-policy"],
+    "evidence": [
+      "platform/terraform/modules/range/vpc/nat.tf",
+      "platform/terraform/modules/range/vpc/outputs.tf",
+      "platform/terraform/modules/engine-provisioner/task_definition.tf",
+      "platform/terraform/modules/engine-provisioner/iam.tf",
+      "shifter/engine/provisioner/config.py",
+      "shifter/engine/provisioner/terraform_vars.py",
+      "shifter/engine/provisioner/terraform/modules/range/main.tf",
+      "docs/architecture/range-single-az-placement.md"
+    ]
   }
 ]
