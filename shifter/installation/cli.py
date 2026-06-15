@@ -1,13 +1,13 @@
-"""``shifter-config`` — inspect and validate the root Shifter installation config.
+"""``shifter-config`` — inspect and validate Shifter installation config.
 
-Today it exposes one subcommand, ``validate``, which checks the *shape* of
-``shifter.yaml`` — the backend selector, deployment identity, secret references, and
-that backend-specific ``settings`` is a mapping — so CI, deploy scripts, and operators
-catch a malformed root config before Terraform, Helm, Django, workers, or deployment
-scripts run. The *contents* of ``settings`` (and which settings a backend requires) are
-validated by the selected backend bundle's contract (#1113); the backend-aware
-setup/doctor UX is #1115. This command deliberately stays small: parse a path, read a
-file, print sanitized results.
+``validate`` checks the shape of ``shifter.yaml`` — the backend selector, deployment
+identity, secret references, and backend-specific ``settings`` mapping — so CI, deploy
+scripts, and operators catch malformed root config before Terraform, Helm, Django,
+workers, or deployment scripts run. ``runtime-inventory`` checks the checked-in runtime
+env surfaces by file path and env-key name only. The *contents* of ``settings`` (and
+which settings a backend requires) are validated by the selected backend bundle's
+contract (#1113); the backend-aware setup/doctor UX is #1115. This command deliberately
+stays small: parse paths, read files, print sanitized results.
 """
 
 from __future__ import annotations
@@ -18,6 +18,7 @@ from pathlib import Path
 
 from .errors import InstallationConfigError
 from .loader import load_root_config
+from .runtime_inventory import RUNTIME_SURFACES, validate_runtime_inventory
 
 DEFAULT_CONFIG_FILENAME = "shifter.yaml"
 
@@ -43,6 +44,24 @@ def _build_parser() -> argparse.ArgumentParser:
         default=DEFAULT_CONFIG_FILENAME,
         help=f"Path to the config file (default: ./{DEFAULT_CONFIG_FILENAME}).",
     )
+    inventory = subcommands.add_parser(
+        "runtime-inventory",
+        help="List or check the repo runtime configuration inventory.",
+        description=(
+            "List or check runtime configuration surfaces by file path and key name only. "
+            "The checker never prints env values."
+        ),
+    )
+    inventory.add_argument(
+        "--repo-root",
+        default=".",
+        help="Repository root to check (default: current directory).",
+    )
+    inventory.add_argument(
+        "--check",
+        action="store_true",
+        help="Validate tracked runtime env files against the inventory.",
+    )
     return parser
 
 
@@ -62,6 +81,24 @@ def _cmd_validate(path_str: str) -> int:
     return 0
 
 
+def _cmd_runtime_inventory(repo_root_str: str, *, check: bool) -> int:
+    repo_root = Path(repo_root_str)
+    if check:
+        issues = validate_runtime_inventory(repo_root)
+        if issues:
+            print(f"{repo_root}: runtime inventory invalid", file=sys.stderr)
+            for issue in issues:
+                print(f"  - {issue.render()}", file=sys.stderr)
+            return 1
+        print(f"{repo_root}: OK — runtime inventory is current")
+        return 0
+
+    print("Runtime configuration surfaces:")
+    for surface in RUNTIME_SURFACES:
+        print(f"- {surface.path}: {surface.authority} ({surface.owner})")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
@@ -70,6 +107,8 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     if args.command == "validate":
         return _cmd_validate(args.path)
+    if args.command == "runtime-inventory":
+        return _cmd_runtime_inventory(args.repo_root, check=args.check)
     parser.print_help(sys.stderr)  # pragma: no cover - argparse rejects unknown subcommands first
     return 2
 
