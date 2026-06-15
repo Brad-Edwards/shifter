@@ -7,25 +7,6 @@
     }
 
     const config = JSON.parse(configScript.textContent);
-
-    // Only ever navigate to a same-origin path. Parsing through URL and
-    // returning pathname+search+hash strips any scheme, so a "javascript:" or
-    // cross-origin value can never reach location.assign (CodeQL
-    // js/xss-through-dom).
-    function safeSameOriginUrl(candidate, fallback = "/") {
-        for (const value of [candidate, fallback]) {
-            try {
-                const url = new URL(value, window.location.origin);
-                if (url.origin === window.location.origin) {
-                    return url.pathname + url.search + url.hash;
-                }
-            } catch {
-                // not parseable / not same-origin; try the next candidate
-            }
-        }
-        return "/";
-    }
-
     const existingApp = firebase.apps.find((app) => app.name === "[DEFAULT]");
     const app =
         existingApp ||
@@ -125,7 +106,7 @@
             }
             throw new Error(body.message || "Authentication failed.");
         }
-        window.location.assign(safeSameOriginUrl(body.redirect_url, config.dashboardUrl));
+        window.location.assign(body.redirect_url || config.dashboardUrl);
     }
 
     async function sendVerification(user) {
@@ -292,7 +273,7 @@
                 },
             },
             tosUrl: config.loginUrl,
-            privacyPolicyUrl: () => window.location.assign(safeSameOriginUrl(config.loginUrl)),
+            privacyPolicyUrl: () => window.location.assign(config.loginUrl),
         });
     }
 
