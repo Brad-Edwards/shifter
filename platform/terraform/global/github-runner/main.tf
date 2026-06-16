@@ -108,10 +108,60 @@ resource "aws_iam_instance_profile" "runner" {
   role = aws_iam_role.runner.name
 }
 
-# SSM for remote access (alternative to SSH)
-resource "aws_iam_role_policy_attachment" "ssm" {
-  role       = aws_iam_role.runner.name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+# SSM for remote access (alternative to SSH). Keep this inline because the
+# proof account denies iam:AttachRolePolicy through an org SCP.
+resource "aws_iam_role_policy" "ssm" {
+  name = "ssm-managed-instance-core"
+  role = aws_iam_role.runner.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "ssm:DescribeAssociation",
+          "ssm:GetDeployablePatchSnapshotForInstance",
+          "ssm:GetDocument",
+          "ssm:DescribeDocument",
+          "ssm:GetManifest",
+          "ssm:GetParameter",
+          "ssm:GetParameters",
+          "ssm:ListAssociations",
+          "ssm:ListInstanceAssociations",
+          "ssm:PutInventory",
+          "ssm:PutComplianceItems",
+          "ssm:PutConfigurePackageResult",
+          "ssm:UpdateAssociationStatus",
+          "ssm:UpdateInstanceAssociationStatus",
+          "ssm:UpdateInstanceInformation",
+        ]
+        Resource = "*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "ssmmessages:CreateControlChannel",
+          "ssmmessages:CreateDataChannel",
+          "ssmmessages:OpenControlChannel",
+          "ssmmessages:OpenDataChannel",
+        ]
+        Resource = "*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "ec2messages:AcknowledgeMessage",
+          "ec2messages:DeleteMessage",
+          "ec2messages:FailMessage",
+          "ec2messages:GetEndpoint",
+          "ec2messages:GetMessages",
+          "ec2messages:SendReply",
+        ]
+        Resource = "*"
+      },
+    ]
+  })
 }
 
 # ECR access for Docker builds
@@ -156,7 +206,7 @@ resource "aws_instance" "runner" {
     volume_type = "gp3"
   }
 
-  user_data = base64encode(<<-EOF
+  user_data = <<-EOF
     #!/bin/bash
     set -ex
 
@@ -187,7 +237,6 @@ resource "aws_instance" "runner" {
 
     echo "Runner downloaded. Register with ./config.sh (see README)."
   EOF
-  )
 
   tags = {
     Name = "shifter-github-runner-${count.index + 1}"
