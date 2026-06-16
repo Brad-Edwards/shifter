@@ -4,11 +4,14 @@
 set -euo pipefail
 
 export DEBIAN_FRONTEND=noninteractive
+export NEEDRESTART_MODE=a
 
 echo "=== Installing XFCE desktop and xrdp for RDP access ==="
-# Install lightweight XFCE desktop (ubuntu-desktop is too heavy)
+# Install lightweight XFCE desktop (ubuntu-desktop is too heavy). Avoid
+# xfce4-goodies here; it pulls optional printer/scanner/plugin packages that
+# are not needed for Guacamole RDP access and have caused flaky apt failures.
 # dbus-x11 is required for xrdp session communication
-apt-get install -y xfce4 xfce4-goodies xrdp xorgxrdp dbus-x11
+apt-get install -y xfce4 xrdp xorgxrdp dbus-x11
 
 # Enable xrdp service
 systemctl enable xrdp
@@ -84,8 +87,3 @@ ResultActive=yes
 EOF
 
 echo "=== Desktop setup complete ==="
-
-# Packer has observed an intermittent 123 from the shell wrapper after this
-# script completes successfully. Preserve strict-mode failure behavior above,
-# but return success once all intended desktop configuration has run.
-exit 0
