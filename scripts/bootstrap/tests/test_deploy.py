@@ -1021,6 +1021,9 @@ enable_managed_tls = true
 gke_master_authorized_cidrs = ["198.51.100.10/32"]
 """
         )
+        # The control-plane apply renders the range egress bridge from the root
+        # config (#1015); a deployment shifter.yaml must be resolvable.
+        (mock_repo_root / "shifter.yaml").write_text("version: 1\nbackend: gcp\n")
 
         terraform_output = json.dumps(_sample_gcp_control_plane_outputs(config.project_id))
 
@@ -1031,7 +1034,7 @@ gke_master_authorized_cidrs = ["198.51.100.10/32"]
             patch("deploy.run_gcp_terraform_init_with_retry") as mock_init,
             patch("deploy.wait_for_gcp_terraform_bootstrap_access") as mock_wait,
             patch("deploy.run_gcp_terraform_apply_with_retry") as mock_apply,
-            patch("deploy.run_cmd"),
+            patch("deploy.run_cmd") as mock_run_cmd,
             patch("os.chdir"),
             patch(
                 "subprocess.run",
@@ -1040,6 +1043,10 @@ gke_master_authorized_cidrs = ["198.51.100.10/32"]
         ):
             outputs = deploy.apply_gcp_control_plane_terraform(config)
 
+        # The apply flow renders the range egress bridge tfvars from shifter.yaml (#1015).
+        assert any("shifter-config" in (call.args[0] if call.args else []) for call in mock_run_cmd.call_args_list), (
+            "apply must render the range egress allowlist via shifter-config"
+        )
         mock_init.assert_called_once_with(config, config.terraform_state_bucket_name, Path("bootstrap.json"))
         mock_wait.assert_called_once_with(config, Path("bootstrap.json"))
         assert mock_init.call_args.args[1] == "prod-rwctxzl6shxk-terraform-state"
@@ -1069,6 +1076,86 @@ gke_master_authorized_cidrs = ["198.51.100.10/32"]
         ]
         assert ["terraform", "apply", "-auto-approve", f"-var=project_id={config.project_id}"] == expected_apply
         assert outputs["gke_cluster_name"]["value"] == "shifter-gcp-dev-platform"
+
+
+class TestRenderRangeEgressTfvars:
+    """render_range_egress_tfvars shells out to `shifter-config render` at the process boundary (#1015)."""
+
+    def test_invokes_shifter_config_render_with_paths(self, tmp_path):
+        """The render argv passes the config and output paths to the installation CLI."""
+        repo_root = tmp_path / "repo"
+        (repo_root / "shifter" / "installation").mkdir(parents=True)
+        config_path = tmp_path / "shifter.yaml"
+        config_path.write_text("version: 1\nbackend: gcp\n")
+        output_path = tmp_path / "range_egress.auto.tfvars"
+
+        with patch("subprocess.run", return_value=subprocess.CompletedProcess(["uv"], 0)) as mock_run:
+            deploy.render_range_egress_tfvars(repo_root, config_path, output_path)
+
+        mock_run.assert_called_once()
+        argv = mock_run.call_args.args[0]
+        assert argv[:6] == [
+            "uv",
+            "run",
+            "--project",
+            str(repo_root / "shifter" / "installation"),
+            "shifter-config",
+            "render",
+        ]
+        assert argv[6] == str(config_path)
+        assert argv[-2:] == ["--output", str(output_path)]
+
+    def test_dry_run_does_not_execute(self, tmp_path, capsys):
+        """Dry-run prints the render command without touching the process boundary."""
+        with patch("subprocess.run") as mock_run:
+            deploy.render_range_egress_tfvars(
+                tmp_path / "repo", tmp_path / "shifter.yaml", tmp_path / "out.tfvars", dry_run=True
+            )
+
+        mock_run.assert_not_called()
+        assert "shifter-config" in capsys.readouterr().out
+
+
+class TestResolveShifterConfigPath:
+    """resolve_shifter_config_path is single-source; a missing root config fails the deploy loud (#1015)."""
+
+    def test_prefers_explicit_path(self, tmp_path, monkeypatch):
+        """An explicit --shifter-config path wins over the SHIFTER_CONFIG env and the repo-root default."""
+        monkeypatch.setenv("SHIFTER_CONFIG", str(tmp_path / "env-not-used.yaml"))
+        explicit = tmp_path / "explicit.yaml"
+        explicit.write_text("version: 1\nbackend: gcp\n")
+        (tmp_path / "shifter.yaml").write_text("version: 1\nbackend: gcp\n")
+        config = deploy.GDCBootstrapConfig(project_id="p", shifter_config_path=str(explicit))
+
+        assert deploy.resolve_shifter_config_path(config, tmp_path) == explicit
+
+    def test_falls_back_to_env(self, tmp_path, monkeypatch):
+        """With no explicit path, SHIFTER_CONFIG is used before the repo-root default."""
+        env_cfg = tmp_path / "env.yaml"
+        env_cfg.write_text("version: 1\nbackend: gcp\n")
+        monkeypatch.setenv("SHIFTER_CONFIG", str(env_cfg))
+        config = deploy.GDCBootstrapConfig(project_id="p")
+
+        assert deploy.resolve_shifter_config_path(config, tmp_path) == env_cfg
+
+    def test_falls_back_to_repo_root(self, tmp_path, monkeypatch):
+        """With no explicit path and no env, the repo-root shifter.yaml is the default."""
+        monkeypatch.delenv("SHIFTER_CONFIG", raising=False)
+        repo_cfg = tmp_path / "shifter.yaml"
+        repo_cfg.write_text("version: 1\nbackend: gcp\n")
+        config = deploy.GDCBootstrapConfig(project_id="p")
+
+        assert deploy.resolve_shifter_config_path(config, tmp_path) == repo_cfg
+
+    def test_missing_config_fails_loud(self, tmp_path, monkeypatch, capsys):
+        """No resolvable root config is a hard SystemExit, never a silent status-quo."""
+        monkeypatch.delenv("SHIFTER_CONFIG", raising=False)
+        config = deploy.GDCBootstrapConfig(project_id="p")
+
+        with pytest.raises(SystemExit):
+            deploy.resolve_shifter_config_path(config, tmp_path)
+
+        assert "shifter.yaml" in capsys.readouterr().out
 
 
 class TestGcpControlPlaneSecurityInputs:
@@ -3120,10 +3207,9 @@ class TestBootstrapAccount:
         ):
             deploy.bootstrap_account(bootstrap_config, "my-profile", dry_run=True)
 
-            # run_cmd should be called with dry_run=True
-            for call_args in mock_run.call_args_list:
-                if "dry_run" in call_args[1]:
-                    assert call_args[1]["dry_run"] is True
+            # In dry-run, every AWS/IAM command is routed through run_cmd(dry_run=True),
+            # which short-circuits before subprocess.run, so nothing reaches the boundary.
+            mock_run.assert_not_called()
 
     # ---------------------------------------------------------------------
     # Error handling
@@ -3394,7 +3480,9 @@ class TestWalkthroughGithubSecrets:
 
         with patch("shutil.which", return_value="/usr/bin/gh"):
             deploy.walkthrough_github_secrets(bootstrap_result, dry_run=True)
-            # In dry-run, no gh secret set should be called
+            # In dry-run, no `gh` command (availability probe or `gh secret set`)
+            # reaches the process boundary.
+            mock_subprocess.assert_not_called()
 
 
 # =============================================================================
@@ -3699,8 +3787,9 @@ class TestTerraformDeploy:
         ):
             deploy.terraform_deploy("dev", "my-profile", dry_run=True)
 
-            # In dry-run, subprocess calls should not happen (or be minimal)
-            # The test just verifies it completes without error
+            # In dry-run, terraform init/plan are routed through run_cmd(dry_run=True)
+            # and apply is skipped, so no terraform command reaches the boundary.
+            mock_subprocess.assert_not_called()
 
     # ---------------------------------------------------------------------
     # Component ordering
@@ -3819,10 +3908,9 @@ class TestWalkthroughCognitoUser:
         with patch("deploy.run_cmd") as mock_run:
             deploy.walkthrough_cognito_user(outputs, "dev", "my-profile", dry_run=True)
 
-            # run_cmd should be called with dry_run=True
-            for call_args in mock_run.call_args_list:
-                if "dry_run" in call_args[1]:
-                    assert call_args[1]["dry_run"] is True
+            # In dry-run, the Cognito admin-create-user call is gated behind
+            # `if not dry_run`, so run_cmd is never invoked at all.
+            mock_run.assert_not_called()
 
 
 # =============================================================================

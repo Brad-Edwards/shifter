@@ -16,6 +16,15 @@ no longer transcribes the allowlist into a second file (see [Operator
 workflow](#operator-workflow) below). The renderer preflight is
 [range-egress-allowlist-render-preflight-958.md](range-egress-allowlist-render-preflight-958.md).
 
+Issue #1015 wired that renderer into the deploy paths: the AWS (`_range.yml`)
+and GCP (`_gcp-dev.yml`) deploy workflows and `scripts/bootstrap/deploy.py`'s
+GCP control-plane apply now run `shifter-config render` against the deployment's
+`shifter.yaml` at plan/apply time, so the egress allowlist is single-source
+end-to-end and is no longer carried as an independently maintained copy in a
+deploy secret (see [CI and scripted deploys](#ci-and-scripted-deploys) below).
+The CI-render preflight is
+[range-egress-ci-render-preflight-1015.md](range-egress-ci-render-preflight-1015.md).
+
 ## Public surface
 
 ```yaml
@@ -141,9 +150,9 @@ program against is the same `settings.range_egress` block.
 - A `shifter.yaml` -> provider Terraform bridge renderer was out of scope for
   the original #775 / PLAT-220 implementation; #958 delivered it as
   `shifter-config render`, preserving the public policy and backend bridge
-  semantics documented here. Wiring the renderer into the CI deploy workflows
-  (so plan/apply regenerate the bridge tfvars instead of consuming a separately
-  maintained deployment secret) remains follow-up scope.
+  semantics documented here, and #1015 wired it into the deploy paths (see [CI
+  and scripted deploys](#ci-and-scripted-deploys)). Both are now delivered, not
+  follow-up scope.
 - An explicit `allow-all` mode. The platform contract rejects `0.0.0.0/0`
   to keep operators from encoding allow-all as a sentinel CIDR. A future
   requirement can introduce a real allow-all mode with a documented
@@ -179,6 +188,29 @@ The rendered `*.auto.tfvars` is gitignored and generated; never hand-edit or
 commit it, and re-render rather than editing in place. It is a dedicated file
 separate from any `local.auto.tfvars` that carries unrelated deployment
 overrides, so re-rendering the allowlist never clobbers those.
+
+## CI and scripted deploys
+
+The CI and scripted deploy paths run the same `shifter-config render` so they
+never consume a second copy of the allowlist (#1015). The deployment's
+`shifter.yaml` reaches them as a GitHub Actions secret (or a resolved path for
+the local scripted bootstrap); each path writes it to an ephemeral file and
+renders the backend bridge tfvars before Terraform consumes the variables. A
+missing config fails the deploy loud; it never silently falls back to
+`status-quo`.
+
+| Deploy path | Config source | Renders |
+| ----------- | ------------- | ------- |
+| `.github/workflows/_range.yml` (AWS `dev`/`prod`, plan + apply) | `SHIFTER_CONFIG_DEV_RANGE` / `SHIFTER_CONFIG_PROD_RANGE` secret (strict `inputs.is_dev` selection) | `victim_allowed_cidrs.auto.tfvars` in the env's range dir |
+| `.github/workflows/_gcp-dev.yml` (GCP deploy) | `SHIFTER_CONFIG_GCP_DEV` secret | `range_egress.auto.tfvars` in the gcp-dev env dir |
+| `scripts/bootstrap/deploy.py gdc-bootstrap` (GCP control-plane apply) | `--shifter-config` → `$SHIFTER_CONFIG` → repo-root `shifter.yaml` | `range_egress.auto.tfvars` in the gcp-dev env dir |
+
+The config secret carries `shifter.yaml`, which holds secret *references* rather
+than secret values; the deploy steps still treat it as sensitive (written by
+shell redirection, never echoed, passed in argv, or uploaded as an artifact).
+See [docs/dev/deploy-secrets.md](../dev/deploy-secrets.md) for the secret names
+and the non-egress range overrides that stay in `TF_VARS_*_RANGE` /
+`local.auto.tfvars`.
 
 ## Migration from the prior committed allowlist
 
