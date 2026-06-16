@@ -256,13 +256,15 @@ jobs:
   quality:
     name: Quality
     needs: changes
-    # Run Quality on PRs and direct pushes to `dev` only.
+    # Run Quality on PRs, direct pushes to `dev`, and manual deploys except
+    # the proof tenant standup path.
     # Pushes to deployment branches (aws-dev, gcp-dev) only happen via merge
     # from `dev` (per repo rule: deploy branches must never be ahead of dev),
     # so the same SHA already passed Quality on its dev push and re-running
     # here is pure duplicate work. Deploy jobs already tolerate skipped
     # Quality via `(needs.quality.result == 'success' || ... == 'skipped')`.
     if: |
+      !(github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/aws-proof') &&
       (github.event_name == 'pull_request' ||
        github.event_name == 'workflow_dispatch' ||
        github.ref == 'refs/heads/dev') &&
