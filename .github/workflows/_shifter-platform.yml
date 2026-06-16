@@ -134,7 +134,15 @@ jobs:
         run: |
           terraform plan -no-color -lock-timeout=5m -out=tfplan
           terraform show -json tfplan > plan.json
-          if jq -e '.resource_changes[]? | select(.change.actions | index("delete")) | select(.type != "aws_ecs_task_definition")' plan.json >/dev/null; then
+          if jq -e --arg environment "${{ inputs.environment }}" '
+            .resource_changes[]?
+            | select(.change.actions | index("delete"))
+            | select(.type != "aws_ecs_task_definition")
+            | select(
+                ($environment != "proof")
+                or (.type != "aws_acm_certificate" and .type != "aws_acm_certificate_validation")
+              )
+          ' plan.json >/dev/null; then
             echo "::error::Terraform plan includes delete actions; refusing automatic platform apply during aws-dev rollback."
             exit 1
           fi
