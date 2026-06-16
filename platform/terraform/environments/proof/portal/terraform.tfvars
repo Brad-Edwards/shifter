@@ -80,7 +80,7 @@ ctfd_ssh_allowed_cidrs = {
 # ------------------------------------------------------------------------------
 
 # TODO: Update with your proof domain
-domain_name       = "proof.shifter.keplerops.com"
+domain_name       = "shifter.keplerops.com"
 app_port          = 8000
 health_check_path = "/health"
 
