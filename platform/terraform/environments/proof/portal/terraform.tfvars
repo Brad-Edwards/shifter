@@ -117,10 +117,12 @@ kali_instance_type   = "t3.large"
 # Autoscaling
 # ------------------------------------------------------------------------------
 
-enable_autoscaling     = true
-asg_min_size           = 6
-asg_max_size           = 12
-asg_desired_capacity   = 6
+enable_autoscaling = true
+# Proof's standard EC2 quota is lower than aws-dev. Keep enough headroom for
+# rolling ASG refreshes while CTFd and proof runners are online.
+asg_min_size           = 4
+asg_max_size           = 6
+asg_desired_capacity   = 4
 asg_warm_pool_min_size = 0
 asg_warm_pool_state    = "Stopped"
 scale_up_threshold     = 70
