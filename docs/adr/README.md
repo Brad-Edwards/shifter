@@ -239,7 +239,21 @@ entries. Completed so far:
   -> tag -> `create_agent` stack and asserts the persisted `AgentConfig`/`AuditLog`,
   the magic-byte-mismatch delete-and-abort, and that rejection logs do not leak
   header bytes; S3 (presign / head / range-GET header read / tag / delete) is
-  mocked only at the `boto3` boundary.
+  mocked only at the `boto3` boundary. The `cms.services` suites
+  (`test_services`, `test_services_storage`, `test_services_agents`,
+  `test_services_scenarios`, `test_services_ngfws`) drive the agent / storage /
+  range-projection / scenario / NGFW service entrypoints against real rows: the
+  range-projection IP overlay reads a real engine `Range`'s
+  `provisioned_instances` through `engine.services.get_instance_ips_by_uuid`;
+  the scenario services drive the real registry (built-in templates + DB customs);
+  the NGFW services drive real `Credential` / `Request` / `Instance` / `App` rows
+  and the seeded `panw-ngfw` catalog + `deployment_profile` / `scm` credential
+  types, with `create_ngfw` running the full resolve -> provision -> hydrate ->
+  dispatch stack (engine NGFW provisioning is a no-op under unconfigured ECS) and
+  the engine-error path driven by a real engine NGFW instance with an attached
+  range. Impossible-state defensive tests (the ORM returning `None` / a
+  wrong-typed object / a list of dicts) and generic unexpected-exception re-raise
+  tests are dropped per the boundary-mock-policy intent (ADR-019).
 
 Decomposition-owned suites are out of scope here and land with their own
 issues: provisioner (#946), `ctf/**` and `cms/experiments/test_orchestrator*`
