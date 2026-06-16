@@ -2,7 +2,7 @@
 # This file IS `terraform.tfvars` (committed). Deployment-specific overrides go in
 # a sibling `local.auto.tfvars` (gitignored) — Terraform auto-loads
 # `*.auto.tfvars` and the local values win. CI deploys render the overrides
-# from GitHub secrets/repository variables; see docs/dev/deploy-secrets.md.
+# from GitHub secrets/repository variables.
 
 
 # ------------------------------------------------------------------------------
@@ -49,7 +49,7 @@ db_apply_immediately     = true
 
 # Standard AL2023 AMI (NOT ECS-optimized) - us-east-2
 ec2_ami_id           = "ami-00e428798e77d38d9"
-ec2_instance_type    = "m6i.2xlarge"
+ec2_instance_type    = "t3.xlarge"
 ec2_root_volume_size = 50
 
 # Standalone CTFd host in the portal VPC
@@ -117,12 +117,10 @@ kali_instance_type   = "t3.large"
 # Autoscaling
 # ------------------------------------------------------------------------------
 
-enable_autoscaling = true
-# Proof's standard EC2 quota is lower than aws-dev. Keep enough headroom for
-# rolling ASG refreshes while CTFd and proof runners are online.
-asg_min_size           = 4
-asg_max_size           = 6
-asg_desired_capacity   = 4
+enable_autoscaling     = false
+asg_min_size           = 1
+asg_max_size           = 1
+asg_desired_capacity   = 1
 asg_warm_pool_min_size = 0
 asg_warm_pool_state    = "Stopped"
 scale_up_threshold     = 70
