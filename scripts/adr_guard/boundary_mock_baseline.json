@@ -1501,46 +1501,6 @@
       "target": "cms.models.CredentialType.objects.create"
     },
     {
-      "count": 3,
-      "path": "shifter/shifter_platform/tests/cms/test_handlers.py",
-      "target": "cms.experiments.handlers.process_event"
-    },
-    {
-      "count": 3,
-      "path": "shifter/shifter_platform/tests/cms/test_handlers.py",
-      "target": "cms.handlers.process_ngfw_event"
-    },
-    {
-      "count": 3,
-      "path": "shifter/shifter_platform/tests/cms/test_handlers.py",
-      "target": "cms.handlers.process_range_event"
-    },
-    {
-      "count": 12,
-      "path": "shifter/shifter_platform/tests/cms/test_handlers.py",
-      "target": "cms.handlers.range_events.RangeInstance"
-    },
-    {
-      "count": 9,
-      "path": "shifter/shifter_platform/tests/cms/test_handlers.py",
-      "target": "cms.handlers.range_events.notify_ctf_range_status"
-    },
-    {
-      "count": 3,
-      "path": "shifter/shifter_platform/tests/cms/test_handlers.py",
-      "target": "cms.handlers.range_events.notify_experiment_on_range_ready"
-    },
-    {
-      "count": 14,
-      "path": "shifter/shifter_platform/tests/cms/test_handlers_ngfw.py",
-      "target": "cms.handlers.ngfw_events.App.objects.get"
-    },
-    {
-      "count": 14,
-      "path": "shifter/shifter_platform/tests/cms/test_handlers_ngfw.py",
-      "target": "cms.handlers.ngfw_events.Instance.objects.get"
-    },
-    {
       "count": 4,
       "path": "shifter/shifter_platform/tests/cms/test_models.py",
       "target": "cms.models.Credential.objects.create"

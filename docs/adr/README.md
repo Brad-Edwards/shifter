@@ -215,7 +215,14 @@ entries. Completed so far:
   create/destroy/cancel are no-ops, and pause/resume configure ECS with the AWS
   task runner mocked at the `boto3` boundary. Assertions are on persisted cms
   `RangeInstance` / engine `Range` state, `AuditLog` rows, and the returned
-  `RangeContext`.
+  `RangeContext`. The event-handler suites (`test_handlers`, `test_handlers_ngfw`)
+  drive `process_event` / `process_range_event` / `process_ngfw_event` against
+  real `RangeInstance`/`Request`/`Instance`/`App` rows and assert the persisted
+  status (and `App.data.serial_number`) updates; the range handler's CTF bridge
+  is verified by connecting a real receiver to the `range_status_changed` signal,
+  and dispatcher routing is verified through each sub-handler's real effect
+  (experiment routing via the experiments handler's own validation log, which
+  required adding `cms.experiments` to the `enable_log_propagation` fixture).
 
 Decomposition-owned suites are out of scope here and land with their own
 issues: provisioner (#946), `ctf/**` and `cms/experiments/test_orchestrator*`
