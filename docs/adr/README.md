@@ -223,6 +223,23 @@ entries. Completed so far:
   and dispatcher routing is verified through each sub-handler's real effect
   (experiment routing via the experiments handler's own validation log, which
   required adding `cms.experiments` to the `enable_log_propagation` fixture).
+  The asset-service and S3-helper suites (`test_assets`, `assets/test_s3`) drive
+  the real `cms.assets.services` (create/delete/storage) against real
+  `AgentConfig`/`OperatingSystem`/`AuditLog` rows and the real `cms.assets.s3`
+  helper through the `shared.cloud` AWS adapter, mocked only at the `boto3` S3
+  client boundary (with `AWS_S3_BUCKET_NAME` set so the real not-configured guard
+  is not tripped); the delete fail-fast path is driven with a `boto3` `ClientError`
+  and asserts no soft-delete occurs. The presigned-upload lifecycle suites
+  (`test_services_upload`, `test_services_upload_cancel`,
+  `test_services_upload_complete`) drive `initiate_upload` / `cancel_upload` /
+  `complete_upload` against a real user, real quota/extension validation, and a
+  real signed upload token (round-tripped through `generate_upload_token` /
+  `verify_upload_token` rather than patched): `initiate_upload` asserts the issued
+  token's verified payload; `complete_upload` runs the full verify -> header-inspect
+  -> tag -> `create_agent` stack and asserts the persisted `AgentConfig`/`AuditLog`,
+  the magic-byte-mismatch delete-and-abort, and that rejection logs do not leak
+  header bytes; S3 (presign / head / range-GET header read / tag / delete) is
+  mocked only at the `boto3` boundary.
 
 Decomposition-owned suites are out of scope here and land with their own
 issues: provisioner (#946), `ctf/**` and `cms/experiments/test_orchestrator*`
