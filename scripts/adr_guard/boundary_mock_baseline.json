@@ -1641,66 +1641,6 @@
       "target": "cms.assets.services.get_storage_used"
     },
     {
-      "count": 7,
-      "path": "shifter/shifter_platform/tests/cms/test_services_upload.py",
-      "target": "cms.assets.s3.generate_presigned_upload_url"
-    },
-    {
-      "count": 14,
-      "path": "shifter/shifter_platform/tests/cms/test_services_upload.py",
-      "target": "cms.assets.services.get_storage_used"
-    },
-    {
-      "count": 9,
-      "path": "shifter/shifter_platform/tests/cms/test_services_upload.py",
-      "target": "cms.assets.upload_token.generate_upload_token"
-    },
-    {
-      "count": 11,
-      "path": "shifter/shifter_platform/tests/cms/test_services_upload.py",
-      "target": "cms.assets.validation.validate_file_extension"
-    },
-    {
-      "count": 5,
-      "path": "shifter/shifter_platform/tests/cms/test_services_upload_cancel.py",
-      "target": "cms.assets.s3.delete_agent"
-    },
-    {
-      "count": 6,
-      "path": "shifter/shifter_platform/tests/cms/test_services_upload_cancel.py",
-      "target": "cms.assets.upload_token.verify_upload_token"
-    },
-    {
-      "count": 2,
-      "path": "shifter/shifter_platform/tests/cms/test_services_upload_complete.py",
-      "target": "cms.assets.s3.delete_agent"
-    },
-    {
-      "count": 9,
-      "path": "shifter/shifter_platform/tests/cms/test_services_upload_complete.py",
-      "target": "cms.assets.s3.read_agent_header"
-    },
-    {
-      "count": 9,
-      "path": "shifter/shifter_platform/tests/cms/test_services_upload_complete.py",
-      "target": "cms.assets.s3.tag_s3_object"
-    },
-    {
-      "count": 11,
-      "path": "shifter/shifter_platform/tests/cms/test_services_upload_complete.py",
-      "target": "cms.assets.s3.verify_s3_object_exists"
-    },
-    {
-      "count": 9,
-      "path": "shifter/shifter_platform/tests/cms/test_services_upload_complete.py",
-      "target": "cms.assets.services.create_agent"
-    },
-    {
-      "count": 13,
-      "path": "shifter/shifter_platform/tests/cms/test_services_upload_complete.py",
-      "target": "cms.assets.upload_token.verify_upload_token"
-    },
-    {
       "count": 2,
       "path": "shifter/shifter_platform/tests/config/test_logout.py",
       "target": "config.views.logout"
