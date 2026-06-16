@@ -253,7 +253,19 @@ entries. Completed so far:
   the engine-error path driven by a real engine NGFW instance with an attached
   range. Impossible-state defensive tests (the ORM returning `None` / a
   wrong-typed object / a list of dicts) and generic unexpected-exception re-raise
-  tests are dropped per the boundary-mock-policy intent (ADR-019).
+  tests are dropped per the boundary-mock-policy intent (ADR-019). The model and
+  scenario-hydrator suites (`test_models`, `test_credentials`,
+  `test_models_agent_config`, `test_models_asset`, `test_models_operating_system`,
+  `test_models_range_instance`, `test_models_subnet`, `test_scenario_hydrator`)
+  drive real rows for the ORM-dependent cases — Credential/CredentialType
+  create/uniqueness/cascade/PROTECT, `active_for_user` soft-delete filtering,
+  `RangeInstance` create/query/`select_related`, `OperatingSystem.get_for_extension`,
+  and the `Subnet` terminal soft-delete invariant — keeping the field-inspection
+  and in-memory property tests as-is. `test_scenario_hydrator` drives the real
+  `hydrate_scenario` against real DB `Scenario` rows (loaded through the real
+  registry) and real `AgentConfig` rows, exercising `from_agent` OS resolution and
+  agent embedding. With these the `cms` core area carries no remaining ADR-019
+  baseline entries.
 
 Decomposition-owned suites are out of scope here and land with their own
 issues: provisioner (#946), `ctf/**` and `cms/experiments/test_orchestrator*`
