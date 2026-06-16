@@ -192,7 +192,30 @@ entries. Completed so far:
   config); the local-provisioner routing is driven over the real
   `subprocess.Popen` boundary, and the GCP path drives the real config/env
   units (`_get_engine_task_config`, `_get_gcp_provisioner_env_overrides`) rather
-  than mocking the runner factory.
+  than mocking the runner factory. The SSH/secrets/NGFW service suites
+  (`engine/services/test_secrets`, `test_get_rdp_connection_info`,
+  `test_connect_ngfw_terminal`, `test_destroy_ngfw`, `test_ngfw_lifecycle`, and
+  `engine/ssh/test_ssh_connection`) drive real `Request`/`Instance`/`Range` rows
+  with the SSH key/RDP secret fetched over the `boto3` Secrets Manager boundary,
+  the NGFW teardown/lifecycle dispatched over the real `engine.ecs` boto3 path,
+  and the SSH transport mocked at the third-party `asyncssh` library boundary.
+  `test_get_ssh_connection_info` and `test_connect_terminal` are also driven
+  against a real active `Range`: the underlying service previously resolved the
+  range with a `provisioned_instances__contains` JSON lookup that the SQLite test
+  backend cannot execute (`NotSupportedError`); it now resolves the user's active
+  range via `Range.get_active_for_user` (consistent with
+  `get_rdp_connection_info`), removing the non-portable query. With these, the
+  engine group carries no remaining ADR-019 baseline entries.
+
+- `cms` (core): range-service suites (`test_services_range`,
+  `test_services_range_destroy_cancel`, `test_services_range_pause_resume`,
+  `test_services_range_lifecycle`). These drive the real CMS services through the
+  full hydrate -> engine -> persist stack against a real DB: a custom DB
+  `Scenario` hydrates a windows-agent range, engine ECS is unconfigured so
+  create/destroy/cancel are no-ops, and pause/resume configure ECS with the AWS
+  task runner mocked at the `boto3` boundary. Assertions are on persisted cms
+  `RangeInstance` / engine `Range` state, `AuditLog` rows, and the returned
+  `RangeContext`.
 
 Decomposition-owned suites are out of scope here and land with their own
 issues: provisioner (#946), `ctf/**` and `cms/experiments/test_orchestrator*`
