@@ -1051,11 +1051,6 @@
       "target": "terraform_base.run_terraform"
     },
     {
-      "count": 1,
-      "path": "shifter/shifter_platform/tests/cms/assets/test_s3.py",
-      "target": "cms.assets.s3.get_object_storage"
-    },
-    {
       "count": 4,
       "path": "shifter/shifter_platform/tests/cms/experiments/test_consumers.py",
       "target": "cms.experiments.consumers.ExperimentStatusConsumer._get_experiment"
@@ -1469,26 +1464,6 @@
       "count": 6,
       "path": "shifter/shifter_platform/tests/cms/experiments/test_views.py",
       "target": "cms.scenarios.registry.load_scenario_template"
-    },
-    {
-      "count": 11,
-      "path": "shifter/shifter_platform/tests/cms/test_assets.py",
-      "target": "cms.assets.services.AgentConfig"
-    },
-    {
-      "count": 6,
-      "path": "shifter/shifter_platform/tests/cms/test_assets.py",
-      "target": "cms.assets.services.OperatingSystem"
-    },
-    {
-      "count": 10,
-      "path": "shifter/shifter_platform/tests/cms/test_assets.py",
-      "target": "cms.assets.services.audit_log"
-    },
-    {
-      "count": 7,
-      "path": "shifter/shifter_platform/tests/cms/test_assets.py",
-      "target": "cms.assets.services.s3_delete"
     },
     {
       "count": 3,

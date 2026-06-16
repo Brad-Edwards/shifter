@@ -223,6 +223,13 @@ entries. Completed so far:
   and dispatcher routing is verified through each sub-handler's real effect
   (experiment routing via the experiments handler's own validation log, which
   required adding `cms.experiments` to the `enable_log_propagation` fixture).
+  The asset-service and S3-helper suites (`test_assets`, `assets/test_s3`) drive
+  the real `cms.assets.services` (create/delete/storage) against real
+  `AgentConfig`/`OperatingSystem`/`AuditLog` rows and the real `cms.assets.s3`
+  helper through the `shared.cloud` AWS adapter, mocked only at the `boto3` S3
+  client boundary (with `AWS_S3_BUCKET_NAME` set so the real not-configured guard
+  is not tripped); the delete fail-fast path is driven with a `boto3` `ClientError`
+  and asserts no soft-delete occurs.
 
 Decomposition-owned suites are out of scope here and land with their own
 issues: provisioner (#946), `ctf/**` and `cms/experiments/test_orchestrator*`
