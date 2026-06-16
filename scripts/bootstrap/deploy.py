@@ -496,6 +496,9 @@ class GDCBootstrapConfig:
     boot_disk_type: str = "pd-ssd"
     service_account_name: str = "baremetal-gcr"
     google_account_email: str | None = None
+    # Root installation config (shifter.yaml) that feeds the range egress render
+    # (#1015). None falls back to SHIFTER_CONFIG / repo-root shifter.yaml.
+    shifter_config_path: str | None = None
 
     @property
     def resolved_network_name(self) -> str:
@@ -2650,6 +2653,58 @@ def gcp_terraform_bootstrap_credentials(config: GDCBootstrapConfig):
             )
 
 
+# Generated GCP range egress bridge tfvars (range_egress_mode +
+# range_egress_allowed_cidrs). Rendered from shifter.yaml; gitignored.
+RANGE_EGRESS_BRIDGE_FILENAME = "range_egress.auto.tfvars"
+
+
+def resolve_shifter_config_path(config: GDCBootstrapConfig, repo_root: Path) -> Path:
+    """Resolve the root installation config (shifter.yaml) that feeds the range egress render.
+
+    Precedence: explicit ``--shifter-config`` (``config.shifter_config_path``), the
+    ``SHIFTER_CONFIG`` environment variable, then the repo-root ``shifter.yaml``.
+
+    A missing root config is a hard deploy failure: the deployed range firewall must be
+    rendered from the single authoritative source, never silently defaulted to
+    ``status-quo`` (the drift #1015 closes). Fails loud naming only the resolved path and
+    the docs reference, never the config contents.
+    """
+    candidate = config.shifter_config_path or os.environ.get("SHIFTER_CONFIG")
+    config_path = Path(candidate) if candidate else (repo_root / "shifter.yaml")
+    if not config_path.exists():
+        error(
+            "Range egress render requires a root installation config (shifter.yaml). "
+            f"Looked for: {config_path}. Provide --shifter-config or set SHIFTER_CONFIG. "
+            "See docs/dev/deploy-secrets.md."
+        )
+        sys.exit(1)
+    return config_path
+
+
+def render_range_egress_tfvars(repo_root: Path, config_path: Path, output_path: Path, dry_run: bool = False) -> None:
+    """Render the range egress bridge tfvars from ``config_path`` via ``shifter-config render``.
+
+    Reuses the installation package's CLI (loader + RangeEgressPolicy + renderer) so the
+    deployed firewall is generated from ``settings.range_egress`` rather than transcribed
+    (ADR-017-R4). The config path and output path are passed as argv; the config contents
+    are never read, echoed, or logged here.
+    """
+    run_cmd(
+        [
+            "uv",
+            "run",
+            "--project",
+            str(repo_root / "shifter" / "installation"),
+            "shifter-config",
+            "render",
+            str(config_path),
+            "--output",
+            str(output_path),
+        ],
+        dry_run=dry_run,
+    )
+
+
 def apply_gcp_control_plane_terraform(
     config: GDCBootstrapConfig, dry_run: bool = False
 ) -> dict[str, dict[str, object]]:
@@ -2664,6 +2719,11 @@ def apply_gcp_control_plane_terraform(
     except ValueError as exc:
         error(str(exc))
         sys.exit(1)
+
+    # Range egress single-source preflight (#1015): resolve and validate the root
+    # config before any Terraform/state side effects so a missing config fails the
+    # deploy up front instead of applying a stale/status-quo allowlist.
+    shifter_config_path = resolve_shifter_config_path(config, repo_root)
 
     tf_state_bucket = config.terraform_state_bucket_name
     if not gcloud_resource_exists(
@@ -2689,6 +2749,10 @@ def apply_gcp_control_plane_terraform(
         ["gcloud", "storage", "buckets", "update", f"gs://{tf_state_bucket}", "--versioning"],
         dry_run=dry_run,
     )
+
+    # Render the range egress bridge tfvars from shifter.yaml before Terraform consumes
+    # the variables, so the deployed firewall matches settings.range_egress (#1015).
+    render_range_egress_tfvars(repo_root, shifter_config_path, tf_dir / RANGE_EGRESS_BRIDGE_FILENAME, dry_run=dry_run)
 
     original_dir = os.getcwd()
     os.chdir(tf_dir)
@@ -4411,6 +4475,14 @@ Examples:
     gdc_parser.add_argument("--region", default="us-central1", help="Cluster region")
     gdc_parser.add_argument("--zone", default="us-central1-a", help="Compute Engine zone")
     gdc_parser.add_argument("--google-account-email", help="Optional Google identity to grant cluster-admin")
+    gdc_parser.add_argument(
+        "--shifter-config",
+        help=(
+            "Path to the deployment's shifter.yaml; its settings.range_egress is rendered into "
+            "range_egress.auto.tfvars before the control-plane apply (#1015). Defaults to "
+            "$SHIFTER_CONFIG or ./shifter.yaml; a missing config fails the deploy."
+        ),
+    )
     gdc_parser.add_argument("--dry-run", action="store_true", help="Show what would be done")
 
     args = parser.parse_args()
@@ -4443,6 +4515,7 @@ Examples:
                 region=args.region,
                 zone=args.zone,
                 google_account_email=args.google_account_email,
+                shifter_config_path=args.shifter_config,
             ),
             dry_run=args.dry_run,
         )
