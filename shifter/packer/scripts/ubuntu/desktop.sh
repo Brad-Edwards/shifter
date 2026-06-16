@@ -87,3 +87,9 @@ ResultActive=yes
 EOF
 
 echo "=== Desktop setup complete ==="
+
+# On Ubuntu 22.04, desktop package hooks have intermittently left the Packer
+# shell wrapper reporting 123 after the script's intended work completed. Keep
+# strict-mode failure behavior for every command above, then return success once
+# the desktop configuration has reached this marker.
+exit 0
