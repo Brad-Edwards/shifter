@@ -86,6 +86,7 @@ ResultInactive=no
 ResultActive=yes
 EOF
 
+touch /var/tmp/shifter-desktop-ready
 echo "=== Desktop setup complete ==="
 
 # On Ubuntu 22.04, desktop package hooks have intermittently left the Packer
