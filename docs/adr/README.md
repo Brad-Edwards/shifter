@@ -279,8 +279,16 @@ entries. Completed so far:
   (`notify_experiment_on_range_ready` / `process_range_event`) against real
   linked `RangeInstance`/`Request`/`ExperimentRun` rows with the SQS publish at
   the `boto3` boundary (a `boto3` `ClientError` drives the run-marked-FAILED path).
-  The `cms/experiments/test_orchestrator*` suites stay out of scope (decomposition,
-  below).
+  The experiment-service suites (`test_services`, `test_services_lifecycle`) drive
+  `create_experiment` / `start_experiment` / `cancel_experiment` / `list_scripts` /
+  `delete_script` / `get`/`list_experiments` / `get_scenario_instances` against
+  real `Experiment`/`ExperimentRun`/`ScriptAsset`/`AuditLog` rows, real
+  users/groups for the `shared.auth.can_edit_cms_authoring` policy (active staff
+  or `Threat Research` member), and the real scenario registry (the built-in
+  `basic` template, instances `Attacker`+`Workstation`); `start_experiment`'s
+  `experiment.start` publish runs through the real SQS publisher at the `boto3`
+  boundary. The `cms/experiments/test_orchestrator*` suites stay out of scope
+  (decomposition, below).
 
 Decomposition-owned suites are out of scope here and land with their own
 issues: provisioner (#946), `ctf/**` and `cms/experiments/test_orchestrator*`
