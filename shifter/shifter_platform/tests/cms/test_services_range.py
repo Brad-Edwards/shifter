@@ -181,3 +181,58 @@ class TestCreateRangeReturn:
         assert "victim" in roles
         for instance in ctx.instances:
             assert instance.uuid is not None
+
+
+class TestHasReadyActiveRange:
+    """The cheap sidebar indicator used by the `nav` context tier (#898).
+
+    It must mirror ``get_active_range``'s ``has_active_range`` semantics
+    (latest non-DESTROYING range is READY) without building the full payload.
+    """
+
+    def test_false_when_user_has_no_range(self, user):
+        assert services.has_ready_active_range(user) is False
+
+    def test_true_when_latest_range_is_ready(self, user):
+        _range_instance(user, range_id=1, status="ready")
+        assert services.has_ready_active_range(user) is True
+
+    def test_false_when_latest_range_not_ready(self, user):
+        _range_instance(user, range_id=1, status="provisioning")
+        assert services.has_ready_active_range(user) is False
+
+    def test_excludes_destroying_range(self, user):
+        _range_instance(user, range_id=1, status="destroying")
+        assert services.has_ready_active_range(user) is False
+
+    def test_uses_most_recent_range(self, user):
+        # Older ready range, newer provisioning range -> mirrors get_active_range's
+        # "most recently created" selection, so the indicator is False.
+        _range_instance(user, range_id=1, status="ready")
+        _range_instance(user, range_id=2, status="provisioning")
+        assert services.has_ready_active_range(user) is False
+
+    def test_excludes_other_users_range(self, user, django_user_model):
+        other = django_user_model.objects.create_user(username="hr-other@e.com", email="hr-other@e.com")
+        _range_instance(other, range_id=1, status="ready")
+        assert services.has_ready_active_range(user) is False
+
+    def test_requires_user_argument(self):
+        with pytest.raises(TypeError):
+            services.has_ready_active_range()
+
+    @pytest.mark.parametrize("invalid_user", INVALID_USERS)
+    def test_raises_on_invalid_user(self, invalid_user):
+        with pytest.raises((TypeError, ValueError, AttributeError)):
+            services.has_ready_active_range(invalid_user)
+
+    def test_is_cheaper_than_full_projection(self, user):
+        """The indicator issues a single lightweight query and never resolves
+        runtime IPs, FK joins, or instance contexts the way get_active_range does."""
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        _range_instance(user, range_id=1, status="ready")
+        with CaptureQueriesContext(connection) as ctx:
+            services.has_ready_active_range(user)
+        assert len(ctx.captured_queries) == 1

@@ -42,7 +42,7 @@ def _make_staff_user():
     user.is_staff = True
     user.pk = 1
     user.id = 1
-    user.groups.filter.return_value.exists.return_value = False
+    user.groups.values_list.return_value = []
     return user
 
 
@@ -54,7 +54,7 @@ def _make_regular_user():
     user.is_staff = False
     user.pk = 2
     user.id = 2
-    user.groups.filter.return_value.exists.return_value = False
+    user.groups.values_list.return_value = []
     return user
 
 
@@ -67,18 +67,9 @@ def _make_threat_research_user():
     user.pk = 3
     user.id = 3
 
-    # The decorator calls user.groups.filter(name=THREAT_RESEARCH_GROUP).exists()
-    # We need filter to return a queryset whose .exists() returns True
-    # only when called with name=THREAT_RESEARCH_GROUP.
-    def _groups_filter(**kwargs):
-        qs = MagicMock()
-        if kwargs.get("name") == THREAT_RESEARCH_GROUP:
-            qs.exists.return_value = True
-        else:
-            qs.exists.return_value = False
-        return qs
-
-    user.groups.filter = _groups_filter
+    # can_edit_cms_authoring resolves membership via shared.auth.get_user_group_names,
+    # which reads user.groups.values_list("name", flat=True).
+    user.groups.values_list.return_value = [THREAT_RESEARCH_GROUP]
     return user
 
 

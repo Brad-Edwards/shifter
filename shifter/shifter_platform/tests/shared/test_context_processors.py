@@ -17,10 +17,9 @@ def _make_user(is_staff=False, is_active=True, groups=None):
     user.is_authenticated = True
     user.is_anonymous = False
     user.pk = 1
-    if groups:
-        user.groups.filter.return_value.exists.return_value = True
-    else:
-        user.groups.filter.return_value.exists.return_value = False
+    # Group predicates resolve membership via shared.auth.get_user_group_names,
+    # which reads values_list("name", flat=True) once per request.
+    user.groups.values_list.return_value = list(groups or [])
     return user
 
 
