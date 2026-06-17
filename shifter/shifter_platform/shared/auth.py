@@ -6,6 +6,7 @@ import contextlib
 import functools
 import logging
 from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 from django.conf import settings
 from django.contrib import messages
@@ -15,6 +16,9 @@ from django.shortcuts import redirect
 
 from shared.constants import USER_CANNOT_BE_NONE, USER_MUST_BE_SAVED
 from shared.log_sanitize import safe_log_value
+
+if TYPE_CHECKING:
+    from django.contrib.auth.models import User
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +32,7 @@ CTF_PARTICIPANT_GROUP = "CTF Participant"
 _GROUP_NAMES_CACHE_ATTR = "_shifter_request_group_names"
 
 
-def get_user_group_names(user) -> frozenset[str]:
+def get_user_group_names(user: User) -> frozenset[str]:
     """Return the user's group names, memoized on the user instance.
 
     The portal context processors evaluate group membership up to five times per
