@@ -1061,16 +1061,6 @@
       "target": "cms.experiments.consumers.ExperimentStatusConsumer._get_runs"
     },
     {
-      "count": 6,
-      "path": "shifter/shifter_platform/tests/cms/experiments/test_events.py",
-      "target": "cms.experiments.events.get_queue_publisher"
-    },
-    {
-      "count": 8,
-      "path": "shifter/shifter_platform/tests/cms/experiments/test_events.py",
-      "target": "cms.experiments.events.settings"
-    },
-    {
       "count": 2,
       "path": "shifter/shifter_platform/tests/cms/experiments/test_handlers.py",
       "target": "channels.layers.get_channel_layer"
@@ -1181,31 +1171,6 @@
       "target": "cms.experiments.services.start_experiment"
     },
     {
-      "count": 3,
-      "path": "shifter/shifter_platform/tests/cms/experiments/test_models.py",
-      "target": "cms.experiments.models.Experiment.save"
-    },
-    {
-      "count": 2,
-      "path": "shifter/shifter_platform/tests/cms/experiments/test_models.py",
-      "target": "cms.experiments.models.ExperimentRun.save"
-    },
-    {
-      "count": 1,
-      "path": "shifter/shifter_platform/tests/cms/experiments/test_models.py",
-      "target": "cms.experiments.models.ScriptAsset.objects.filter"
-    },
-    {
-      "count": 1,
-      "path": "shifter/shifter_platform/tests/cms/experiments/test_notifications.py",
-      "target": "cms.experiments.notifications.Experiment.objects.filter"
-    },
-    {
-      "count": 1,
-      "path": "shifter/shifter_platform/tests/cms/experiments/test_notifications.py",
-      "target": "cms.experiments.notifications.publish_notification"
-    },
-    {
       "count": 16,
       "path": "shifter/shifter_platform/tests/cms/experiments/test_orchestrator.py",
       "target": "cms.experiments.orchestrator.Experiment"
@@ -1259,31 +1224,6 @@
       "count": 11,
       "path": "shifter/shifter_platform/tests/cms/experiments/test_orchestrator_dispatch.py",
       "target": "cms.experiments.orchestrator.start_experiment_task"
-    },
-    {
-      "count": 4,
-      "path": "shifter/shifter_platform/tests/cms/experiments/test_range_bridge.py",
-      "target": "cms.handlers.experiment_bridge.publish_range_provisioned_for_experiment"
-    },
-    {
-      "count": 2,
-      "path": "shifter/shifter_platform/tests/cms/experiments/test_range_bridge.py",
-      "target": "cms.handlers.range_events.RangeInstance"
-    },
-    {
-      "count": 2,
-      "path": "shifter/shifter_platform/tests/cms/experiments/test_range_bridge.py",
-      "target": "cms.handlers.range_events.notify_ctf_range_status"
-    },
-    {
-      "count": 2,
-      "path": "shifter/shifter_platform/tests/cms/experiments/test_range_bridge.py",
-      "target": "cms.handlers.range_events.notify_experiment_on_range_ready"
-    },
-    {
-      "count": 5,
-      "path": "shifter/shifter_platform/tests/cms/experiments/test_s3_tokens.py",
-      "target": "cms.experiments.s3.settings"
     },
     {
       "count": 10,
