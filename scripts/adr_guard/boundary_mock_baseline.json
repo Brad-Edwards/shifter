@@ -1051,86 +1051,6 @@
       "target": "terraform_base.run_terraform"
     },
     {
-      "count": 4,
-      "path": "shifter/shifter_platform/tests/cms/experiments/test_consumers.py",
-      "target": "cms.experiments.consumers.ExperimentStatusConsumer._get_experiment"
-    },
-    {
-      "count": 3,
-      "path": "shifter/shifter_platform/tests/cms/experiments/test_consumers.py",
-      "target": "cms.experiments.consumers.ExperimentStatusConsumer._get_runs"
-    },
-    {
-      "count": 2,
-      "path": "shifter/shifter_platform/tests/cms/experiments/test_handlers.py",
-      "target": "channels.layers.get_channel_layer"
-    },
-    {
-      "count": 1,
-      "path": "shifter/shifter_platform/tests/cms/experiments/test_handlers.py",
-      "target": "cms.experiments.handlers.Experiment"
-    },
-    {
-      "count": 1,
-      "path": "shifter/shifter_platform/tests/cms/experiments/test_handlers.py",
-      "target": "cms.experiments.handlers.Experiment.objects.get"
-    },
-    {
-      "count": 1,
-      "path": "shifter/shifter_platform/tests/cms/experiments/test_handlers.py",
-      "target": "cms.experiments.handlers.Experiment.objects.only"
-    },
-    {
-      "count": 12,
-      "path": "shifter/shifter_platform/tests/cms/experiments/test_handlers.py",
-      "target": "cms.experiments.handlers.ExperimentOrchestrator"
-    },
-    {
-      "count": 1,
-      "path": "shifter/shifter_platform/tests/cms/experiments/test_handlers.py",
-      "target": "cms.experiments.handlers.ExperimentRun"
-    },
-    {
-      "count": 1,
-      "path": "shifter/shifter_platform/tests/cms/experiments/test_handlers.py",
-      "target": "cms.experiments.handlers.ExperimentRun.objects.get"
-    },
-    {
-      "count": 3,
-      "path": "shifter/shifter_platform/tests/cms/experiments/test_handlers.py",
-      "target": "cms.experiments.handlers._broadcast_experiment_status"
-    },
-    {
-      "count": 3,
-      "path": "shifter/shifter_platform/tests/cms/experiments/test_handlers.py",
-      "target": "cms.experiments.handlers._broadcast_experiment_status_if_terminal"
-    },
-    {
-      "count": 1,
-      "path": "shifter/shifter_platform/tests/cms/experiments/test_handlers.py",
-      "target": "cms.experiments.handlers._broadcast_run_status"
-    },
-    {
-      "count": 6,
-      "path": "shifter/shifter_platform/tests/cms/experiments/test_handlers.py",
-      "target": "cms.experiments.handlers._broadcast_run_status_for"
-    },
-    {
-      "count": 2,
-      "path": "shifter/shifter_platform/tests/cms/experiments/test_handlers.py",
-      "target": "cms.experiments.handlers._experiment_recipient_id"
-    },
-    {
-      "count": 1,
-      "path": "shifter/shifter_platform/tests/cms/experiments/test_handlers.py",
-      "target": "cms.experiments.handlers._publish_experiment_status_notification"
-    },
-    {
-      "count": 1,
-      "path": "shifter/shifter_platform/tests/cms/experiments/test_handlers.py",
-      "target": "cms.experiments.handlers._publish_run_status_notification"
-    },
-    {
       "count": 2,
       "path": "shifter/shifter_platform/tests/cms/experiments/test_integration.py",
       "target": "cms.experiments.orchestrator.Experiment"
@@ -2394,6 +2314,41 @@
       "count": 3,
       "path": "shifter/shifter_platform/tests/views/test_launch_range_scenarios.py",
       "target": "mission_control.views.logger"
+    },
+    {
+      "count": 2,
+      "path": "shifter/shifter_platform/tests/cms/experiments/test_handlers.py",
+      "target": "channels.layers.get_channel_layer"
+    },
+    {
+      "count": 1,
+      "path": "shifter/shifter_platform/tests/cms/experiments/test_handlers.py",
+      "target": "cms.experiments.handlers.Experiment"
+    },
+    {
+      "count": 12,
+      "path": "shifter/shifter_platform/tests/cms/experiments/test_handlers.py",
+      "target": "cms.experiments.handlers.ExperimentOrchestrator"
+    },
+    {
+      "count": 1,
+      "path": "shifter/shifter_platform/tests/cms/experiments/test_handlers.py",
+      "target": "cms.experiments.handlers.ExperimentRun"
+    },
+    {
+      "count": 2,
+      "path": "shifter/shifter_platform/tests/cms/experiments/test_handlers.py",
+      "target": "cms.experiments.handlers._broadcast_experiment_status"
+    },
+    {
+      "count": 3,
+      "path": "shifter/shifter_platform/tests/cms/experiments/test_handlers.py",
+      "target": "cms.experiments.handlers._broadcast_experiment_status_if_terminal"
+    },
+    {
+      "count": 6,
+      "path": "shifter/shifter_platform/tests/cms/experiments/test_handlers.py",
+      "target": "cms.experiments.handlers._broadcast_run_status_for"
     }
   ],
   "version": 1

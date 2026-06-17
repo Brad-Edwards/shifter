@@ -2,6 +2,7 @@
 
 import json
 from unittest.mock import MagicMock, patch
+from uuid import uuid4
 
 import pytest
 
@@ -102,83 +103,95 @@ class TestProcessEvent:
         mock_orch_cls.assert_not_called()
 
 
+@pytest.mark.django_db
 class TestNotifications:
-    @patch("cms.experiments.handlers.Experiment.objects.only")
-    def test_experiment_recipient_missing_experiment_returns_none(self, mock_only):
-        from cms.experiments.handlers import _experiment_recipient_id
+    """Notification + broadcast helpers, driven against real rows.
+
+    These persist a ``WebSocketNotification`` for the experiment owner (the
+    channel-layer fan-out is best-effort and falls back to persistence). Only the
+    channel-layer transport is mocked at the ``channels`` boundary to drive the
+    fallback path.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _registered(self):
+        from cms.experiments.notifications import register_experiment_notifications
+        from shared.notifications import clear_notification_registry
+
+        clear_notification_registry()
+        register_experiment_notifications()
+
+    def _owner_and_experiment(self):
+        from django.contrib.auth import get_user_model
+
         from cms.experiments.models import Experiment
 
-        mock_only.return_value.get.side_effect = Experiment.DoesNotExist
+        suffix = uuid4().hex[:8]
+        user = get_user_model().objects.create_user(username=f"h-{suffix}@e.com", email=f"h-{suffix}@e.com")
+        experiment = Experiment.objects.create(user=user, name="Handler Exp", scenario_id="basic")
+        return user, experiment
 
-        assert _experiment_recipient_id(999) is None
+    def test_experiment_recipient_returns_owner(self):
+        from cms.experiments.handlers import _experiment_recipient_id
 
-    @patch("cms.experiments.handlers._experiment_recipient_id", return_value=None)
-    def test_run_status_notification_skips_missing_recipient(self, mock_recipient):
+        user, experiment = self._owner_and_experiment()
+        assert _experiment_recipient_id(experiment.pk) == user.id
+
+    def test_experiment_recipient_missing_experiment_returns_none(self):
+        from cms.experiments.handlers import _experiment_recipient_id
+
+        assert _experiment_recipient_id(999999) is None
+
+    def test_run_status_notification_skips_missing_recipient(self):
         from cms.experiments.handlers import _publish_run_status_notification
+        from shared.models import WebSocketNotification
 
         _publish_run_status_notification(
-            experiment_id=999,
-            run_id=5,
-            run_number=1,
-            status=RunStatus.FAILED.value,
-            error_message="missing owner",
+            experiment_id=999999, run_id=5, run_number=1, status=RunStatus.FAILED.value, error_message="no owner"
         )
+        assert not WebSocketNotification.objects.exists()
 
-        mock_recipient.assert_called_once_with(999)
-
-    @patch("cms.experiments.handlers._experiment_recipient_id", return_value=None)
-    def test_experiment_status_notification_skips_missing_recipient(self, mock_recipient):
+    def test_experiment_status_notification_skips_missing_recipient(self):
         from cms.experiments.handlers import _publish_experiment_status_notification
+        from shared.models import WebSocketNotification
 
-        _publish_experiment_status_notification(999, "failed")
+        _publish_experiment_status_notification(999999, "failed")
+        assert not WebSocketNotification.objects.exists()
 
-        mock_recipient.assert_called_once_with(999)
-
-    def test_broadcast_run_status_queues_notification_when_channel_layer_fails(self):
+    def test_broadcast_run_status_persists_notification_when_channel_layer_fails(self):
         from cms.experiments.handlers import _broadcast_run_status
+        from shared.models import WebSocketNotification
 
-        with (
-            patch("channels.layers.get_channel_layer", side_effect=RuntimeError("unavailable")),
-            patch("cms.experiments.handlers._publish_run_status_notification") as mock_publish,
-        ):
-            _broadcast_run_status(10, 5, 1, RunStatus.FAILED.value, "SSM timeout")
+        user, experiment = self._owner_and_experiment()
+        with patch("channels.layers.get_channel_layer", side_effect=RuntimeError("unavailable")):
+            _broadcast_run_status(experiment.pk, 5, 1, RunStatus.FAILED.value, "SSM timeout")
 
-        mock_publish.assert_called_once_with(10, 5, 1, RunStatus.FAILED.value, "SSM timeout")
+        assert WebSocketNotification.objects.filter(recipient_id=user.id).exists()
 
-    def test_broadcast_experiment_status_queues_notification_when_channel_layer_fails(self):
+    def test_broadcast_experiment_status_persists_notification_when_channel_layer_fails(self):
         from cms.experiments.handlers import _broadcast_experiment_status
+        from shared.models import WebSocketNotification
 
-        with (
-            patch("channels.layers.get_channel_layer", side_effect=RuntimeError("unavailable")),
-            patch("cms.experiments.handlers._publish_experiment_status_notification") as mock_publish,
-        ):
-            _broadcast_experiment_status(10, "failed")
+        user, experiment = self._owner_and_experiment()
+        with patch("channels.layers.get_channel_layer", side_effect=RuntimeError("unavailable")):
+            _broadcast_experiment_status(experiment.pk, "failed")
 
-        mock_publish.assert_called_once_with(10, "failed")
+        assert WebSocketNotification.objects.filter(recipient_id=user.id).exists()
 
-    def test_broadcast_run_status_for_missing_run_returns(self):
+    def test_broadcast_run_status_for_missing_run_is_noop(self):
         from cms.experiments.handlers import _broadcast_run_status_for
-        from cms.experiments.models import ExperimentRun
+        from shared.models import WebSocketNotification
 
-        with (
-            patch("cms.experiments.handlers.ExperimentRun.objects.get", side_effect=ExperimentRun.DoesNotExist),
-            patch("cms.experiments.handlers._broadcast_run_status") as mock_broadcast,
-        ):
-            _broadcast_run_status_for(10, 999)
+        _, experiment = self._owner_and_experiment()
+        _broadcast_run_status_for(experiment.pk, 999999)  # no such run
+        assert not WebSocketNotification.objects.exists()
 
-        mock_broadcast.assert_not_called()
-
-    def test_broadcast_experiment_status_if_terminal_missing_experiment_returns(self):
+    def test_broadcast_experiment_status_if_terminal_missing_experiment_is_noop(self):
         from cms.experiments.handlers import _broadcast_experiment_status_if_terminal
-        from cms.experiments.models import Experiment
+        from shared.models import WebSocketNotification
 
-        with (
-            patch("cms.experiments.handlers.Experiment.objects.get", side_effect=Experiment.DoesNotExist),
-            patch("cms.experiments.handlers._broadcast_experiment_status") as mock_broadcast,
-        ):
-            _broadcast_experiment_status_if_terminal(999)
-
-        mock_broadcast.assert_not_called()
+        _broadcast_experiment_status_if_terminal(999999)
+        assert not WebSocketNotification.objects.exists()
 
 
 class TestEventHandlers:
