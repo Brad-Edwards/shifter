@@ -288,7 +288,18 @@ entries. Completed so far:
   `basic` template, instances `Attacker`+`Workstation`); `start_experiment`'s
   `experiment.start` publish runs through the real SQS publisher at the `boto3`
   boundary. The `cms/experiments/test_orchestrator*` suites stay out of scope
-  (decomposition, below).
+  (decomposition, below). The WebSocket consumer suite (`test_consumers`) drives
+  the real `ExperimentStatusConsumer` through the Channels `WebsocketCommunicator`
+  against real `Experiment`/`ExperimentRun` rows and real users (auth/ownership
+  rejection, hydrate-on-connect); the broadcast-handler tests assert the formatted
+  event on the consumer's `send` transport. The experiment SQS-handler suite
+  (`test_handlers`) is **partially** rewritten: its notification + channel-layer
+  broadcast helpers are driven against real rows (asserting the persisted
+  `WebSocketNotification` fallback, with the channel layer failed at the `channels`
+  boundary), while the event-dispatch tests that assert routing into the
+  decomposition-owned `ExperimentOrchestrator` (#885/#886/#889-891) keep their
+  orchestrator mock and remain in a (reduced) baseline — driving the real
+  orchestrator is that decomposition's surface, not #957's.
 
 Decomposition-owned suites are out of scope here and land with their own
 issues: provisioner (#946), `ctf/**` and `cms/experiments/test_orchestrator*`
