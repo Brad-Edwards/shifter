@@ -267,6 +267,21 @@ entries. Completed so far:
   agent embedding. With these the `cms` core area carries no remaining ADR-019
   baseline entries.
 
+- `cms/experiments` (non-orchestrator): the foundational data/event suites
+  (`test_models`, `test_events`, `test_notifications`, `test_s3_tokens`,
+  `test_range_bridge`) drive real `Experiment`/`ExperimentRun`/`ScriptAsset` rows
+  for model save/transition/`active_for_user`; the upload-token HMAC round-trip
+  against the real `SECRET_KEY` (only `SCRIPT_UPLOAD_URL_EXPIRES` tuned via the
+  `settings` fixture); event publishing through the real `shared.cloud` SQS
+  publisher mocked at the `boto3` boundary; notification authorization against a
+  real owned `Experiment` and notification publishing asserted on the persisted
+  `WebSocketNotification` row; and the range->experiment bridge end-to-end
+  (`notify_experiment_on_range_ready` / `process_range_event`) against real
+  linked `RangeInstance`/`Request`/`ExperimentRun` rows with the SQS publish at
+  the `boto3` boundary (a `boto3` `ClientError` drives the run-marked-FAILED path).
+  The `cms/experiments/test_orchestrator*` suites stay out of scope (decomposition,
+  below).
+
 Decomposition-owned suites are out of scope here and land with their own
 issues: provisioner (#946), `ctf/**` and `cms/experiments/test_orchestrator*`
 (#885, #886, #889-#891), and `cms/scenario_editor/**` (#887, #888).
