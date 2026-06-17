@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import functools
 import logging
 from collections.abc import Callable
@@ -21,19 +22,48 @@ THREAT_RESEARCH_GROUP = "Threat Research"
 CTF_ORGANIZER_GROUP = "CTF Organizer"
 CTF_PARTICIPANT_GROUP = "CTF Participant"
 
+# Attribute used to memoize a user's group names for the duration of a single
+# request. Django builds a fresh ``request.user`` per request, so caching here
+# is strictly request-scoped — see ``get_user_group_names``.
+_GROUP_NAMES_CACHE_ATTR = "_shifter_request_group_names"
+
+
+def get_user_group_names(user) -> frozenset[str]:
+    """Return the user's group names, memoized on the user instance.
+
+    The portal context processors evaluate group membership up to five times per
+    authenticated HTML render (``is_ctf_participant_only`` twice,
+    ``can_edit_cms_authoring`` once, and the two ``get_user_role`` checks).
+    Each of those previously issued its own ``auth_user_groups`` query. Caching
+    the resolved group-name set on the per-request user instance collapses them
+    to a single query without a stale cross-request cache (#898).
+
+    The ``isinstance`` guard keeps the memoization correct for test doubles and
+    Django ``SimpleLazyObject`` proxies: a non-frozenset cached value (e.g. a
+    ``MagicMock`` auto-attribute) is treated as "not cached" and recomputed.
+    """
+    cached = getattr(user, _GROUP_NAMES_CACHE_ATTR, None)
+    if isinstance(cached, frozenset):
+        return cached
+    names = frozenset(user.groups.values_list("name", flat=True))
+    # Some user-like objects reject attribute writes; recompute next time if so.
+    with contextlib.suppress(AttributeError, TypeError):
+        setattr(user, _GROUP_NAMES_CACHE_ATTR, names)
+    return names
+
 
 def is_ctf_organizer(user) -> bool:
     """Return True if the user is in the CTF Organizer group."""
     if not user.is_active:
         return False
-    return user.groups.filter(name=CTF_ORGANIZER_GROUP).exists()
+    return CTF_ORGANIZER_GROUP in get_user_group_names(user)
 
 
 def is_ctf_participant(user) -> bool:
     """Return True if the user is in the CTF Participant group."""
     if not user.is_active:
         return False
-    return user.groups.filter(name=CTF_PARTICIPANT_GROUP).exists()
+    return CTF_PARTICIPANT_GROUP in get_user_group_names(user)
 
 
 def is_ctf_participant_only(user) -> bool:
@@ -51,7 +81,7 @@ def is_ctf_participant_only(user) -> bool:
         return False
     if user.is_staff or user.is_superuser:
         return False
-    user_groups = set(user.groups.values_list("name", flat=True))
+    user_groups = get_user_group_names(user)
     has_ctf_role = bool(user_groups & {CTF_PARTICIPANT_GROUP, CTF_ORGANIZER_GROUP})
     if not has_ctf_role:
         return False
@@ -71,7 +101,7 @@ def can_edit_cms_authoring(user) -> bool:
         return False
     if user.is_staff:
         return True
-    return user.groups.filter(name=THREAT_RESEARCH_GROUP).exists()
+    return THREAT_RESEARCH_GROUP in get_user_group_names(user)
 
 
 def validate_cms_authoring_user(user, func_name: str) -> None:

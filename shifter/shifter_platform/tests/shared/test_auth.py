@@ -17,17 +17,20 @@ from shared.constants import USER_CANNOT_BE_NONE, USER_MUST_BE_SAVED
 
 
 def _make_user(is_staff=False, is_active=True, groups=None):
-    """Create a mock user with the given properties."""
+    """Create a mock user with the given properties.
+
+    The group predicates now resolve membership through
+    ``shared.auth.get_user_group_names``, which reads
+    ``user.groups.values_list("name", flat=True)`` once per request, so the mock
+    exposes the group-name list rather than ``filter(...).exists()``.
+    """
     user = MagicMock()
     user.is_staff = is_staff
     user.is_active = is_active
     user.is_authenticated = True
     user.is_anonymous = False
     user.pk = 1
-    if groups:
-        user.groups.filter.return_value.exists.return_value = True
-    else:
-        user.groups.filter.return_value.exists.return_value = False
+    user.groups.values_list.return_value = list(groups or [])
     return user
 
 
@@ -180,3 +183,73 @@ class TestThreatResearchRequiredDecorator:
         assert "\r" not in msg and "\n" not in msg  # raw control chars removed
         assert "\\r\\n" in msg  # escaped form present
         assert "INJECTED" in msg  # value preserved, only escaped
+
+
+@pytest.mark.django_db
+class TestGetUserGroupNames:
+    """Request-scoped group-name memoization that collapses the portal context
+    processors' repeated ``user.groups`` lookups to one query per render (#898).
+    """
+
+    def _user_with_groups(self, *names):
+        from django.contrib.auth import get_user_model
+        from django.contrib.auth.models import Group
+
+        user = get_user_model().objects.create_user(username="ggn@example.com", email="ggn@example.com")
+        for name in names:
+            group, _ = Group.objects.get_or_create(name=name)
+            user.groups.add(group)
+        return user
+
+    def test_returns_group_names_as_frozenset(self):
+        from shared.auth import CTF_PARTICIPANT_GROUP, get_user_group_names
+
+        user = self._user_with_groups(CTF_PARTICIPANT_GROUP, THREAT_RESEARCH_GROUP)
+        names = get_user_group_names(user)
+
+        assert isinstance(names, frozenset)
+        assert names == frozenset({CTF_PARTICIPANT_GROUP, THREAT_RESEARCH_GROUP})
+
+    def test_empty_when_user_has_no_groups(self):
+        from shared.auth import get_user_group_names
+
+        user = self._user_with_groups()
+        assert get_user_group_names(user) == frozenset()
+
+    def test_memoizes_on_user_instance(self):
+        """Repeated calls on the same user instance issue exactly one DB query."""
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        from shared.auth import CTF_PARTICIPANT_GROUP, get_user_group_names
+
+        user = self._user_with_groups(CTF_PARTICIPANT_GROUP)
+        with CaptureQueriesContext(connection) as ctx:
+            get_user_group_names(user)
+            get_user_group_names(user)
+            get_user_group_names(user)
+
+        assert len(ctx.captured_queries) == 1
+
+    def test_predicates_share_one_query_per_user(self):
+        """The four shared.auth group predicates resolve from a single cached
+        lookup when called against the same request-scoped user instance."""
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        from shared.auth import (
+            CTF_PARTICIPANT_GROUP,
+            can_edit_cms_authoring,
+            is_ctf_organizer,
+            is_ctf_participant,
+            is_ctf_participant_only,
+        )
+
+        user = self._user_with_groups(CTF_PARTICIPANT_GROUP)
+        with CaptureQueriesContext(connection) as ctx:
+            is_ctf_organizer(user)
+            is_ctf_participant(user)
+            is_ctf_participant_only(user)
+            can_edit_cms_authoring(user)
+
+        assert len(ctx.captured_queries) == 1

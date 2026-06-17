@@ -32,10 +32,17 @@ User = get_user_model()
 
 # Exact per-page query budgets. Bump deliberately (with justification) when a
 # real change adds queries; an accidental regression must fail here first.
-DASHBOARD_NO_RANGE_BUDGET = 7
-DASHBOARD_ACTIVE_RANGE_BUDGET = 11
-TERMINAL_BUDGET = 7
-CTF_PARTICIPANT_DASHBOARD_BUDGET = 21
+#
+# Tightened by #898: request-scoped group caching collapses the five per-render
+# auth_user_groups lookups to one, select_related("agent", "request") removes the
+# get_active_range FK N+1, and the full active-range payload is now built only on
+# the terminal render — so non-terminal pages pay a single cheap has_active_range
+# query instead of the runtime-IP / scenario / instance-context projection.
+DASHBOARD_NO_RANGE_BUDGET = 4
+DASHBOARD_ACTIVE_RANGE_BUDGET = 4
+TERMINAL_BUDGET = 4
+TERMINAL_ACTIVE_RANGE_BUDGET = 6
+CTF_PARTICIPANT_DASHBOARD_BUDGET = 16
 
 
 @pytest.fixture
@@ -141,6 +148,17 @@ class TestPageRenderQueryBudgets:
 
         assert response.status_code == 200
         assert queries == TERMINAL_BUDGET
+
+    def test_terminal_active_range_budget(self, user, client_for, active_range):
+        """The terminal render is the one page that still builds the full
+        active-range payload (#898 terminal_full tier); this pins its budget so
+        the FK/runtime-IP/scenario work cannot silently regress or migrate to
+        non-terminal pages."""
+        client = client_for(user)
+        response, queries = _render_query_count(client, "/mission-control/terminal/")
+
+        assert response.status_code == 200
+        assert queries == TERMINAL_ACTIVE_RANGE_BUDGET
 
     def test_ctf_participant_dashboard_budget(self, user, client_for, ctf_participant):
         client = client_for(user)

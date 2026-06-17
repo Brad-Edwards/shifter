@@ -29,10 +29,11 @@ class UserRole:
 def get_user_role(user: User) -> UserRole:
     """Get CTF role info for a user via Django Groups."""
     from management.services import get_user_profile
-    from shared.auth import CTF_ORGANIZER_GROUP, CTF_PARTICIPANT_GROUP
+    from shared.auth import CTF_ORGANIZER_GROUP, CTF_PARTICIPANT_GROUP, get_user_group_names
 
-    is_organizer = user.groups.filter(name=CTF_ORGANIZER_GROUP).exists()
-    is_participant = user.groups.filter(name=CTF_PARTICIPANT_GROUP).exists()
+    group_names = get_user_group_names(user)
+    is_organizer = CTF_ORGANIZER_GROUP in group_names
+    is_participant = CTF_PARTICIPANT_GROUP in group_names
 
     active_event = None
     if is_participant:

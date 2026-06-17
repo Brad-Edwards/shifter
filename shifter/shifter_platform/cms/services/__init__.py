@@ -82,6 +82,7 @@ from ._range_queries import (
     get_active_range,
     get_range,
     get_range_by_request_id,
+    has_ready_active_range,
     list_ranges,
 )
 from ._range_resume import resume_range, resume_range_by_request_id
@@ -145,6 +146,7 @@ __all__ = (
     "get_range_target_instances",
     "get_scenario",
     "get_storage_used",
+    "has_ready_active_range",
     "initiate_script_upload",
     "initiate_upload",
     "list_agents",
