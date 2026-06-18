@@ -1146,46 +1146,6 @@
       "target": "cms.experiments.orchestrator.start_experiment_task"
     },
     {
-      "count": 10,
-      "path": "shifter/shifter_platform/tests/cms/experiments/test_script_inspection.py",
-      "target": "cms.experiments.services.ScriptAsset"
-    },
-    {
-      "count": 1,
-      "path": "shifter/shifter_platform/tests/cms/experiments/test_script_inspection.py",
-      "target": "cms.experiments.services._check_result_type"
-    },
-    {
-      "count": 10,
-      "path": "shifter/shifter_platform/tests/cms/experiments/test_script_inspection.py",
-      "target": "cms.experiments.services.audit_log"
-    },
-    {
-      "count": 10,
-      "path": "shifter/shifter_platform/tests/cms/experiments/test_script_inspection.py",
-      "target": "cms.experiments.services.delete_s3_object"
-    },
-    {
-      "count": 10,
-      "path": "shifter/shifter_platform/tests/cms/experiments/test_script_inspection.py",
-      "target": "cms.experiments.services.read_script_header"
-    },
-    {
-      "count": 1,
-      "path": "shifter/shifter_platform/tests/cms/experiments/test_script_inspection.py",
-      "target": "cms.experiments.services.transaction"
-    },
-    {
-      "count": 10,
-      "path": "shifter/shifter_platform/tests/cms/experiments/test_script_inspection.py",
-      "target": "cms.experiments.services.verify_s3_object"
-    },
-    {
-      "count": 10,
-      "path": "shifter/shifter_platform/tests/cms/experiments/test_script_inspection.py",
-      "target": "cms.experiments.services.verify_upload_token"
-    },
-    {
       "count": 2,
       "path": "shifter/shifter_platform/tests/cms/experiments/test_view_flows.py",
       "target": "cms.experiments.views._validate_experiment_create_input"

@@ -299,7 +299,14 @@ entries. Completed so far:
   boundary), while the event-dispatch tests that assert routing into the
   decomposition-owned `ExperimentOrchestrator` (#885/#886/#889-891) keep their
   orchestrator mock and remain in a (reduced) baseline — driving the real
-  orchestrator is that decomposition's surface, not #957's.
+  orchestrator is that decomposition's surface, not #957's. The script-upload
+  inspection suite (`test_script_inspection`) drives the real
+  `complete_script_upload` with a real signed upload token and S3 exercised
+  through the real `cms.experiments.s3` helpers + `shared.cloud` AWS adapter,
+  mocked at the `boto3` boundary: it asserts the persisted `ScriptAsset`/`AuditLog`
+  on accept and the delete-and-reject behavior on binary / non-UTF-8 / oversize /
+  size-mismatch headers (incl. the full-body Range read and no-delete-on-transport-
+  failure), with rejection logs asserted not to leak header bytes or the token.
 
 Decomposition-owned suites are out of scope here and land with their own
 issues: provisioner (#946), `ctf/**` and `cms/experiments/test_orchestrator*`
