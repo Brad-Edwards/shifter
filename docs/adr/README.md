@@ -352,6 +352,25 @@ entries. Completed so far:
   fault. With these, the `shared` and `risk_register` areas carry no remaining
   ADR-019 baseline entries.
 
+- `mission_control` Guacamole connection-URL endpoints
+  (`test_guacamole_ssh`, `test_api_instance_ssh_url`, `test_api_ngfw_ssh_url`,
+  `test_views_guacamole`): drive the real views → real `engine.services`
+  (`get_ssh_connection_info` / `connect_ngfw_terminal` /
+  `get_rdp_connection_info`, against real READY `Range` rows and real NGFW
+  `Instance` / `Request` rows) → real `mission_control.guacamole` URL builders
+  (real AES/HMAC sign-and-encrypt). Only the cloud/network boundaries are
+  mocked: the boto3 Secrets Manager client that yields the SSH/RDP secret and
+  the urllib Guacamole `/api/tokens` POST. Assertions read the returned URL and
+  the decrypted payload that was actually POSTed, instead of patching
+  `engine.services.*` / `mission_control.guacamole.*` / the bootstrap enqueue.
+  Generic fault-injection tests are replaced with real-boundary equivalents
+  (a Secrets Manager `ClientError` drives the 500 path; an invalid signing
+  secret drives the URL-build failure; a real exhausted bootstrap-worker
+  semaphore drives the 503); the unreachable range-SSH `PermissionError`
+  defensive branch is dropped. Shared cloud/Guacamole boundary helpers live in
+  `tests/mission_control/conftest.py`. The NGFW management-page views
+  (`test_ngfw_detail`, `test_views_ngfw`) land separately.
+
 Decomposition-owned suites are out of scope here and land with their own
 issues: provisioner (#946), `ctf/**` and `cms/experiments/test_orchestrator*`
 (#885, #886, #889-#891), and `cms/scenario_editor/**` (#887, #888).
