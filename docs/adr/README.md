@@ -307,6 +307,17 @@ entries. Completed so far:
   on accept and the delete-and-reject behavior on binary / non-UTF-8 / oversize /
   size-mismatch headers (incl. the full-body Range read and no-delete-on-transport-
   failure), with rejection logs asserted not to leak header bytes or the token.
+  The view + integration suites (`test_views`, `test_view_flows`, `test_integration`)
+  drive the real experiment/script/download views through the Django test client
+  against real users/groups (the staff / Threat-Research access policy), real
+  rows, the real services, and the real templates; the script-upload and
+  artifact-download flows presign / inspect via the real `cms.experiments.s3`
+  helpers mocked only at the `boto3` boundary, and `test_integration` runs the real
+  create -> start -> cancel + script-assignment service flows end-to-end (the old
+  suite asserted on MagicMocks that never invoked real code). With these the
+  `cms/experiments` non-orchestrator area carries no remaining ADR-019 baseline
+  entries; only the decomposition-owned `test_orchestrator*` and the
+  orchestrator-dispatch tests retained in `test_handlers` remain (above).
 
 Decomposition-owned suites are out of scope here and land with their own
 issues: provisioner (#946), `ctf/**` and `cms/experiments/test_orchestrator*`
