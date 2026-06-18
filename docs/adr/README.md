@@ -332,6 +332,26 @@ entries. Completed so far:
   `compute_stats`. `management` was added to the `enable_log_propagation` fixture
   so its service logs are observable by `caplog`.
 
+- `shared` + `risk_register`: the cloud-storage adapter suites
+  (`shared/cloud/test_aws_storage`, `test_gcp_storage`) drive the real
+  `AWSObjectStorage` / `GCPObjectStorage` (including their real `_get_client`
+  region/endpoint/client resolution) and mock only the SDK boundary —
+  `boto3.client` and `google.cloud.storage.Client` respectively — rather than
+  patching the first-party `_get_client`. `shared/test_email` drives the real
+  `send_email` through the real thread pool and asserts the locmem outbox
+  instead of patching `shared.email.send_email`. `shared/test_notifications`
+  drives the real in-process `InMemoryChannelLayer` (a real channel is
+  subscribed to the user/topic group and the dispatched event is received off
+  the layer) instead of patching `get_channel_layer` / `async_to_sync`; the
+  `IntegrityError` race-fallback test is dropped because the unique constraint
+  exactly matches the `get_or_create` lookup, so the fallback is reachable only
+  via a genuine multi-connection race or by mocking the first-party manager.
+  `risk_register/test_audit_services` drives the real audit functions against
+  real `AuditLog` rows (asserting the persisted row) instead of patching
+  `AuditLog.log`, with the swallow path exercised via a real non-JSON payload
+  fault. With these, the `shared` and `risk_register` areas carry no remaining
+  ADR-019 baseline entries.
+
 Decomposition-owned suites are out of scope here and land with their own
 issues: provisioner (#946), `ctf/**` and `cms/experiments/test_orchestrator*`
 (#885, #886, #889-#891), and `cms/scenario_editor/**` (#887, #888).

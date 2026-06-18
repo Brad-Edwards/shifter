@@ -2046,11 +2046,6 @@
       "target": "mission_control.views.render"
     },
     {
-      "count": 8,
-      "path": "shifter/shifter_platform/tests/risk_register/test_audit_services.py",
-      "target": "risk_register.services.AuditLog.log"
-    },
-    {
       "count": 1,
       "path": "shifter/shifter_platform/tests/scenario_editor/test_view_error_flows.py",
       "target": "cms.scenario_editor.services.clone_scenario"
@@ -2069,41 +2064,6 @@
       "count": 5,
       "path": "shifter/shifter_platform/tests/scenario_editor/test_view_error_flows.py",
       "target": "cms.scenario_editor.services.validate_yaml"
-    },
-    {
-      "count": 4,
-      "path": "shifter/shifter_platform/tests/shared/cloud/test_aws_storage.py",
-      "target": "storage._get_client"
-    },
-    {
-      "count": 3,
-      "path": "shifter/shifter_platform/tests/shared/cloud/test_gcp_storage.py",
-      "target": "storage._get_client"
-    },
-    {
-      "count": 1,
-      "path": "shifter/shifter_platform/tests/shared/test_email.py",
-      "target": "shared.email.send_email"
-    },
-    {
-      "count": 1,
-      "path": "shifter/shifter_platform/tests/shared/test_notifications.py",
-      "target": "shared.notifications.WebSocketNotification.objects.get"
-    },
-    {
-      "count": 1,
-      "path": "shifter/shifter_platform/tests/shared/test_notifications.py",
-      "target": "shared.notifications.WebSocketNotification.objects.get_or_create"
-    },
-    {
-      "count": 1,
-      "path": "shifter/shifter_platform/tests/shared/test_notifications.py",
-      "target": "shared.notifications.async_to_sync"
-    },
-    {
-      "count": 5,
-      "path": "shifter/shifter_platform/tests/shared/test_notifications.py",
-      "target": "shared.notifications.get_channel_layer"
     },
     {
       "count": 11,
