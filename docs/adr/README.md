@@ -319,6 +319,19 @@ entries. Completed so far:
   entries; only the decomposition-owned `test_orchestrator*` and the
   orchestrator-dispatch tests retained in `test_handlers` remain (above).
 
+- `management`: the service suite (`test_services`) drives `log_activity` /
+  `get_user_profile` / `mark_user_deleted` / `create_user_profile` /
+  `save_user_profile` / `update_cognito_sub` against real `UserProfile` /
+  `ActivityLog` / `AuditLog` rows (accounting for the `post_save` signal that
+  auto-provisions a profile), with the real duplicate-profile `IntegrityError`
+  exercised directly and generic fault-injection tests dropped; `test_apps`
+  verifies the profile signal wiring through its real effect (creating/saving a
+  user provisions a profile) rather than asserting `post_save.connect` shapes;
+  and `test_check_model_fks` drives the real management command against the real
+  (clean) model graph and exercises the violation-count path via the real
+  `compute_stats`. `management` was added to the `enable_log_propagation` fixture
+  so its service logs are observable by `caplog`.
+
 Decomposition-owned suites are out of scope here and land with their own
 issues: provisioner (#946), `ctf/**` and `cms/experiments/test_orchestrator*`
 (#885, #886, #889-#891), and `cms/scenario_editor/**` (#887, #888).
