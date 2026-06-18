@@ -1861,51 +1861,6 @@
       "target": "engine.services.get_rdp_password"
     },
     {
-      "count": 6,
-      "path": "shifter/shifter_platform/tests/management/test_apps.py",
-      "target": "management.apps.post_save"
-    },
-    {
-      "count": 1,
-      "path": "shifter/shifter_platform/tests/management/test_apps.py",
-      "target": "management.apps.settings"
-    },
-    {
-      "count": 9,
-      "path": "shifter/shifter_platform/tests/management/test_check_model_fks.py",
-      "target": "management.management.commands.check_model_fks.Command.analyze_fks"
-    },
-    {
-      "count": 1,
-      "path": "shifter/shifter_platform/tests/management/test_check_model_fks.py",
-      "target": "management.management.commands.check_model_fks.Command.compute_stats"
-    },
-    {
-      "count": 9,
-      "path": "shifter/shifter_platform/tests/management/test_services.py",
-      "target": "management.models.ActivityLog.log"
-    },
-    {
-      "count": 3,
-      "path": "shifter/shifter_platform/tests/management/test_services.py",
-      "target": "management.models.UserProfile.objects.create"
-    },
-    {
-      "count": 10,
-      "path": "shifter/shifter_platform/tests/management/test_services.py",
-      "target": "management.models.UserProfile.objects.get_or_create"
-    },
-    {
-      "count": 7,
-      "path": "shifter/shifter_platform/tests/management/test_services.py",
-      "target": "management.services.audit_log"
-    },
-    {
-      "count": 20,
-      "path": "shifter/shifter_platform/tests/management/test_services.py",
-      "target": "management.services.get_user_profile"
-    },
-    {
       "count": 2,
       "path": "shifter/shifter_platform/tests/mission_control/consumers/test_range_status_consumer.py",
       "target": "cms.services.get_range_by_request_id"
