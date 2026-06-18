@@ -1051,46 +1051,6 @@
       "target": "terraform_base.run_terraform"
     },
     {
-      "count": 2,
-      "path": "shifter/shifter_platform/tests/cms/experiments/test_integration.py",
-      "target": "cms.experiments.orchestrator.Experiment"
-    },
-    {
-      "count": 2,
-      "path": "shifter/shifter_platform/tests/cms/experiments/test_integration.py",
-      "target": "cms.experiments.orchestrator.ExperimentRun"
-    },
-    {
-      "count": 2,
-      "path": "shifter/shifter_platform/tests/cms/experiments/test_integration.py",
-      "target": "cms.experiments.orchestrator.engine_create_range"
-    },
-    {
-      "count": 1,
-      "path": "shifter/shifter_platform/tests/cms/experiments/test_integration.py",
-      "target": "cms.experiments.services.cancel_experiment"
-    },
-    {
-      "count": 5,
-      "path": "shifter/shifter_platform/tests/cms/experiments/test_integration.py",
-      "target": "cms.experiments.services.create_experiment"
-    },
-    {
-      "count": 1,
-      "path": "shifter/shifter_platform/tests/cms/experiments/test_integration.py",
-      "target": "cms.experiments.services.delete_script"
-    },
-    {
-      "count": 1,
-      "path": "shifter/shifter_platform/tests/cms/experiments/test_integration.py",
-      "target": "cms.experiments.services.initiate_script_upload"
-    },
-    {
-      "count": 3,
-      "path": "shifter/shifter_platform/tests/cms/experiments/test_integration.py",
-      "target": "cms.experiments.services.start_experiment"
-    },
-    {
       "count": 16,
       "path": "shifter/shifter_platform/tests/cms/experiments/test_orchestrator.py",
       "target": "cms.experiments.orchestrator.Experiment"
@@ -1144,71 +1104,6 @@
       "count": 11,
       "path": "shifter/shifter_platform/tests/cms/experiments/test_orchestrator_dispatch.py",
       "target": "cms.experiments.orchestrator.start_experiment_task"
-    },
-    {
-      "count": 2,
-      "path": "shifter/shifter_platform/tests/cms/experiments/test_view_flows.py",
-      "target": "cms.experiments.views._validate_experiment_create_input"
-    },
-    {
-      "count": 1,
-      "path": "shifter/shifter_platform/tests/cms/experiments/test_view_flows.py",
-      "target": "cms.scenarios.registry.list_all_scenarios"
-    },
-    {
-      "count": 1,
-      "path": "shifter/shifter_platform/tests/cms/experiments/test_view_flows.py",
-      "target": "cms.scenarios.registry.load_scenario_template"
-    },
-    {
-      "count": 8,
-      "path": "shifter/shifter_platform/tests/cms/experiments/test_views.py",
-      "target": "cms.experiments.views.render"
-    },
-    {
-      "count": 1,
-      "path": "shifter/shifter_platform/tests/cms/experiments/test_views.py",
-      "target": "cms.experiments.views.services.cancel_experiment"
-    },
-    {
-      "count": 3,
-      "path": "shifter/shifter_platform/tests/cms/experiments/test_views.py",
-      "target": "cms.experiments.views.services.create_experiment"
-    },
-    {
-      "count": 3,
-      "path": "shifter/shifter_platform/tests/cms/experiments/test_views.py",
-      "target": "cms.experiments.views.services.get_experiment"
-    },
-    {
-      "count": 2,
-      "path": "shifter/shifter_platform/tests/cms/experiments/test_views.py",
-      "target": "cms.experiments.views.services.get_scenario_instances"
-    },
-    {
-      "count": 4,
-      "path": "shifter/shifter_platform/tests/cms/experiments/test_views.py",
-      "target": "cms.experiments.views.services.list_experiments"
-    },
-    {
-      "count": 2,
-      "path": "shifter/shifter_platform/tests/cms/experiments/test_views.py",
-      "target": "cms.experiments.views.services.list_scripts"
-    },
-    {
-      "count": 1,
-      "path": "shifter/shifter_platform/tests/cms/experiments/test_views.py",
-      "target": "cms.experiments.views.services.start_experiment"
-    },
-    {
-      "count": 1,
-      "path": "shifter/shifter_platform/tests/cms/experiments/test_views.py",
-      "target": "cms.scenarios.registry.list_all_scenarios"
-    },
-    {
-      "count": 6,
-      "path": "shifter/shifter_platform/tests/cms/experiments/test_views.py",
-      "target": "cms.scenarios.registry.load_scenario_template"
     },
     {
       "count": 2,
