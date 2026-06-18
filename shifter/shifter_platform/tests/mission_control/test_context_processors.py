@@ -1,8 +1,10 @@
 """Tests for mission_control context processors."""
 
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
+import pytest
 from django.db import DatabaseError
 
 from shared.enums import ResourceStatus
@@ -42,6 +44,7 @@ class TestActiveRangeContextLookup(_TestActiveRangeContextProcessorHelpers):
         mock_request = MagicMock()
         mock_request.user.is_authenticated = True
         mock_request.user.id = 42
+        mock_request.resolver_match.view_name = "mission_control:terminal"
 
         mock_range_context = RangeContext(
             request_id=uuid4(),
@@ -71,6 +74,7 @@ class TestActiveRangeContextLookup(_TestActiveRangeContextProcessorHelpers):
         mock_request = MagicMock()
         mock_request.user.is_authenticated = True
         mock_request.user.id = 42
+        mock_request.resolver_match.view_name = "mission_control:terminal"
 
         mock_range_context = RangeContext(
             request_id=uuid4(),
@@ -99,6 +103,7 @@ class TestActiveRangeContextLookup(_TestActiveRangeContextProcessorHelpers):
         mock_request = MagicMock()
         mock_request.user.is_authenticated = True
         mock_request.user.id = 42
+        mock_request.resolver_match.view_name = "mission_control:terminal"
 
         with patch(
             "mission_control.context_processors.get_active_range",
@@ -144,6 +149,7 @@ class TestActiveRangeContextErrors(_TestActiveRangeContextProcessorHelpers):
         mock_request = MagicMock()
         mock_request.user.is_authenticated = True
         mock_request.user.id = 42
+        mock_request.resolver_match.view_name = "mission_control:terminal"
 
         with patch(
             "mission_control.context_processors.get_active_range",
@@ -161,6 +167,7 @@ class TestActiveRangeContextErrors(_TestActiveRangeContextProcessorHelpers):
         mock_request = MagicMock()
         mock_request.user.is_authenticated = True
         mock_request.user.id = 42
+        mock_request.resolver_match.view_name = "mission_control:terminal"
 
         with patch(
             "mission_control.context_processors.get_active_range",
@@ -178,6 +185,7 @@ class TestActiveRangeContextErrors(_TestActiveRangeContextProcessorHelpers):
         mock_request = MagicMock()
         mock_request.user.is_authenticated = True
         mock_request.user.id = 42
+        mock_request.resolver_match.view_name = "mission_control:terminal"
 
         # Return a dict instead of RangeContext
         with patch(
@@ -196,6 +204,7 @@ class TestActiveRangeContextErrors(_TestActiveRangeContextProcessorHelpers):
         mock_request = MagicMock()
         mock_request.user.is_authenticated = True
         mock_request.user.id = 42
+        mock_request.resolver_match.view_name = "mission_control:terminal"
 
         with (
             patch("mission_control.context_processors.logger") as mock_logger,
@@ -204,8 +213,11 @@ class TestActiveRangeContextErrors(_TestActiveRangeContextProcessorHelpers):
                 return_value="not a RangeContext",
             ),
         ):
-            active_range(mock_request)
+            result = active_range(mock_request)
 
+        # Invalid type degrades to the safe empty context, not just a log line.
+        assert result["has_active_range"] is False
+        assert result["active_range"] is None
         mock_logger.error.assert_called_once()
         call_args = mock_logger.error.call_args[0]
         assert "invalid type" in call_args[0]
@@ -223,6 +235,7 @@ class TestActiveRangeContextLogging(_TestActiveRangeContextProcessorHelpers):
         mock_request = MagicMock()
         mock_request.user.is_authenticated = True
         mock_request.user.id = 42
+        mock_request.resolver_match.view_name = "mission_control:terminal"
 
         mock_range_context = RangeContext(
             request_id=uuid4(),
@@ -241,8 +254,11 @@ class TestActiveRangeContextLogging(_TestActiveRangeContextProcessorHelpers):
                 return_value=mock_range_context,
             ),
         ):
-            active_range(mock_request)
+            result = active_range(mock_request)
 
+        # The terminal payload is built from the found range, not just logged.
+        assert result["has_active_range"] is True
+        assert result["active_range"] is mock_range_context
         # Verify logger.info was called with expected arguments
         mock_logger.info.assert_called_once()
         call_args = mock_logger.info.call_args[0]
@@ -256,6 +272,7 @@ class TestActiveRangeContextLogging(_TestActiveRangeContextProcessorHelpers):
         mock_request = MagicMock()
         mock_request.user.is_authenticated = True
         mock_request.user.id = 42
+        mock_request.resolver_match.view_name = "mission_control:terminal"
 
         with (
             patch("mission_control.context_processors.logger") as mock_logger,
@@ -264,8 +281,11 @@ class TestActiveRangeContextLogging(_TestActiveRangeContextProcessorHelpers):
                 return_value=None,
             ),
         ):
-            active_range(mock_request)
+            result = active_range(mock_request)
 
+        # No range -> empty context surfaced to the template, plus the log line.
+        assert result["has_active_range"] is False
+        assert result["active_range"] is None
         mock_logger.info.assert_called_once()
         call_args = mock_logger.info.call_args[0]
         assert "no active range" in call_args[0]
@@ -278,6 +298,7 @@ class TestActiveRangeContextLogging(_TestActiveRangeContextProcessorHelpers):
         mock_request = MagicMock()
         mock_request.user.is_authenticated = True
         mock_request.user.id = 42
+        mock_request.resolver_match.view_name = "mission_control:terminal"
 
         with (
             patch("mission_control.context_processors.logger") as mock_logger,
@@ -286,8 +307,11 @@ class TestActiveRangeContextLogging(_TestActiveRangeContextProcessorHelpers):
                 side_effect=DatabaseError("DB connection failed"),
             ),
         ):
-            active_range(mock_request)
+            result = active_range(mock_request)
 
+        # A service error fails soft to the empty context, and is logged.
+        assert result["has_active_range"] is False
+        assert result["active_range"] is None
         mock_logger.exception.assert_called_once()
         call_args = mock_logger.exception.call_args[0]
         assert "Error" in call_args[0]
@@ -301,6 +325,7 @@ class TestActiveRangeContextLogging(_TestActiveRangeContextProcessorHelpers):
         mock_request = MagicMock()
         mock_request.user.is_authenticated = True
         mock_request.user.id = 42
+        mock_request.resolver_match.view_name = "mission_control:terminal"
 
         # Create RangeContext with READY status
         mock_range_context = RangeContext(
@@ -332,6 +357,7 @@ class TestActiveRangeContextLogging(_TestActiveRangeContextProcessorHelpers):
         mock_request = MagicMock()
         mock_request.user.is_authenticated = True
         mock_request.user.id = 42
+        mock_request.resolver_match.view_name = "mission_control:terminal"
 
         for status in [ResourceStatus.DESTROYED, ResourceStatus.FAILED]:
             mock_range_context = RangeContext(
@@ -365,6 +391,7 @@ class TestActiveRangeContextInstanceFiltering(_TestActiveRangeContextProcessorHe
         mock_request = MagicMock()
         mock_request.user.is_authenticated = True
         mock_request.user.id = 42
+        mock_request.resolver_match.view_name = "mission_control:terminal"
 
         range_ctx = self._make_range_with_instances(["kali", "ubuntu", "windows", "panos"])
 
@@ -385,6 +412,7 @@ class TestActiveRangeContextInstanceFiltering(_TestActiveRangeContextProcessorHe
         mock_request = MagicMock()
         mock_request.user.is_authenticated = True
         mock_request.user.id = 42
+        mock_request.resolver_match.view_name = "mission_control:terminal"
 
         range_ctx = self._make_range_with_instances(["kali", "ubuntu", "windows", "panos"])
 
@@ -404,6 +432,7 @@ class TestActiveRangeContextInstanceFiltering(_TestActiveRangeContextProcessorHe
         mock_request = MagicMock()
         mock_request.user.is_authenticated = True
         mock_request.user.id = 42
+        mock_request.resolver_match.view_name = "mission_control:terminal"
 
         range_ctx = self._make_range_with_instances(["ubuntu", "windows"])
 
@@ -423,6 +452,7 @@ class TestActiveRangeContextInstanceFiltering(_TestActiveRangeContextProcessorHe
         mock_request = MagicMock()
         mock_request.user.is_authenticated = True
         mock_request.user.id = 42
+        mock_request.resolver_match.view_name = "mission_control:terminal"
 
         range_ctx = self._make_range_with_instances(["kali", "kali", "windows"])
 
@@ -461,6 +491,7 @@ class TestTerminalInstancesPayload:
         request = MagicMock()
         request.user.is_authenticated = True
         request.user.id = 42
+        request.resolver_match.view_name = "mission_control:terminal"
 
         range_ctx = self._range_with(
             [
@@ -511,6 +542,7 @@ class TestTerminalInstancesPayload:
         request = MagicMock()
         request.user.is_authenticated = True
         request.user.id = 42
+        request.resolver_match.view_name = "mission_control:terminal"
 
         range_ctx = self._range_with(
             [
@@ -533,8 +565,100 @@ class TestTerminalInstancesPayload:
         request = MagicMock()
         request.user.is_authenticated = True
         request.user.id = 42
+        request.resolver_match.view_name = "mission_control:terminal"
 
         with patch("mission_control.context_processors.get_active_range", return_value=None):
             result = active_range(request)
 
         assert result["terminal_instances"] == []
+
+
+@pytest.mark.django_db
+class TestActiveRangeContextTier:
+    """Page-scoped context depth (#898): the full active-range payload is built
+    only for the terminal render; every other authenticated page gets the cheap
+    ``has_active_range`` indicator without FK joins, runtime IPs, or terminal JSON.
+
+    Asserted through the processor's observable context output against real range
+    rows — the per-tier query-cost reduction is pinned separately by the rendered
+    page-render budgets and ``TestHasReadyActiveRange`` — so no internal service
+    call is patched (ADR-019-R1 boundary-mock policy).
+    """
+
+    @pytest.fixture
+    def user(self, db):
+        from django.contrib.auth import get_user_model
+
+        return get_user_model().objects.create_user(username="tier@example.com", email="tier@example.com")
+
+    def _seed_ready_range(self, user):
+        from cms.models import RangeInstance
+        from cms.models import Request as CMSRequest
+        from shared.enums import RequestType
+
+        request = CMSRequest.objects.create(request_id=uuid4(), request_type=RequestType.RANGE.value, user=user)
+        RangeInstance.objects.create(request=request, scenario_id="test_scenario", user_id=user.id, status="ready")
+
+    def _request(self, user, view_name):
+        from django.test import RequestFactory
+
+        request = RequestFactory().get("/")
+        request.user = user
+        request.resolver_match = SimpleNamespace(view_name=view_name) if view_name else None
+        return request
+
+    def test_non_terminal_page_indicates_range_without_full_payload(self, user):
+        from mission_control.context_processors import active_range
+
+        self._seed_ready_range(user)
+        result = active_range(self._request(user, "mission_control:dashboard"))
+
+        # Indicator true, but the terminal-only payload is NOT built even though a
+        # ready range exists — proof the nav tier skipped get_active_range.
+        assert result["has_active_range"] is True
+        assert result["active_range"] is None
+        assert result["connection_urls"] == []
+        assert result["scenario_name"] is None
+        assert result["terminal_instances"] == []
+
+    def test_non_terminal_page_false_when_no_range(self, user):
+        from mission_control.context_processors import active_range
+
+        result = active_range(self._request(user, "mission_control:dashboard"))
+
+        assert result["has_active_range"] is False
+        assert result["active_range"] is None
+
+    def test_missing_resolver_match_uses_nav_tier(self, user):
+        """A render with no resolved view (e.g. error pages) defaults to nav tier."""
+        from mission_control.context_processors import active_range
+
+        self._seed_ready_range(user)
+        result = active_range(self._request(user, None))
+
+        assert result["has_active_range"] is True
+        assert result["active_range"] is None
+
+    def test_nav_tier_fails_soft_on_service_error(self):
+        """An unsaved user makes the CMS indicator raise; the nav tier must swallow
+        it into the safe empty context rather than 500 the page."""
+        from django.contrib.auth import get_user_model
+
+        from mission_control.context_processors import active_range
+
+        unsaved = get_user_model()(username="unsaved@example.com")  # id is None -> ValueError in service
+        result = active_range(self._request(unsaved, "mission_control:dashboard"))
+
+        assert result["has_active_range"] is False
+        assert result["active_range"] is None
+
+    def test_terminal_page_builds_full_payload(self, user):
+        from mission_control.context_processors import active_range
+        from shared.schemas import RangeContext
+
+        self._seed_ready_range(user)
+        result = active_range(self._request(user, "mission_control:terminal"))
+
+        # The terminal tier builds the real RangeContext projection.
+        assert isinstance(result["active_range"], RangeContext)
+        assert result["has_active_range"] is True
