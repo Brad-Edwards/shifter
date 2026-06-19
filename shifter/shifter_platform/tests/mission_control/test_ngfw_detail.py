@@ -1,20 +1,15 @@
 """Behavior tests for the ngfw_detail view in mission_control/views.
 
 Drives the real view → real ``cms.services.get_ngfw`` (against a real CMS NGFW
-``App``) → real ``engine.services.get_ranges_for_ngfw`` → the real
-``ngfw/detail.html`` template, instead of patching ``cms_get_ngfw`` /
-``get_ranges_for_ngfw`` / ``render``. Assertions read the rendered response.
-
-Note (flagged separately): ``ngfw_detail`` resolves linked ranges by passing
-``int(ngfw.instance_id)`` — the CMS Instance UUID coerced to its 128-bit int —
-to ``get_ranges_for_ngfw``, which filters ``engine.Range.ngfw_instance_id`` (a
-64-bit int FK to the *engine* Instance). Those id spaces never coincide, so the
-linked-ranges table is always empty in practice; that is a product bug, not a
-property to assert here. These tests therefore pin the view's render/redirect
-contract, not a populated linked-ranges table.
+``App``) → real ``engine.services.get_ranges_for_ngfw`` (against real engine
+NGFW ``Instance`` + linked ``Range`` rows, correlated by the shared
+``request_id``) → the real ``ngfw/detail.html`` template, instead of patching
+``cms_get_ngfw`` / ``get_ranges_for_ngfw`` / ``render``. Assertions read the
+rendered response.
 """
 
 import time
+from uuid import uuid4
 
 import pytest
 from django.contrib.auth import get_user_model
@@ -49,36 +44,56 @@ def client_for(db):
     return _make
 
 
+def _engine_ngfw_with_range(user, request_id, *, range_status="ready"):
+    """Create the engine side of an NGFW (Request + role=ngfw Instance) keyed by
+    the shared ``request_id``, plus a Range attached to it.
+
+    Returns the created Range.
+    """
+    from engine.models import Instance, Range, Request
+    from shared.enums import RequestType
+
+    engine_request = Request.objects.create(request_id=request_id, request_type=RequestType.NGFW.value, user=user)
+    ngfw_instance = Instance.objects.create(request=engine_request, role=Instance.Role.NGFW)
+    return Range.objects.create(user=user, status=range_status, ngfw_instance=ngfw_instance)
+
+
 class TestNGFWDetailView:
-    @pytest.mark.xfail(
-        strict=True,
-        reason=(
-            "PRODUCT BUG: ngfw_detail passes int(cms NGFWAppContext.instance_id) — the CMS "
-            "Instance UUID coerced to a 128-bit int — to get_ranges_for_ngfw, which filters "
-            "engine.Range.ngfw_instance_id (a 64-bit int FK to the *engine* NGFW Instance). The "
-            "id spaces never coincide, so the detail page raises OverflowError (HTTP 500) on "
-            "SQLite and silently shows no linked ranges on Postgres. Drop this xfail once the "
-            "cms<->engine NGFW-instance linkage is fixed."
-        ),
-    )
-    def test_renders_detail_for_owned_ngfw(self, user, client_for, cms_ngfw_app):
+    def test_renders_linked_ranges_when_present(self, user, client_for, cms_ngfw_app):
         app = cms_ngfw_app(user, name="DevNGFW")
-        client = Client(raise_request_exception=False)
-        client.force_login(user)
-        session = client.session
-        session["oidc_id_token_expiration"] = time.time() + 3600
-        session.save()
+        # Engine NGFW Instance + attached range, correlated by the shared request_id.
+        rng = _engine_ngfw_with_range(user, app.instance.request.request_id)
 
-        response = client.get(reverse("mission_control:ngfw_detail", kwargs={"app_id": str(app.id)}))
+        response = client_for(user).get(reverse("mission_control:ngfw_detail", kwargs={"app_id": str(app.id)}))
 
-        # Correct behavior once the linkage bug is fixed: the page renders with
-        # the NGFW name (and an empty linked-ranges section for a fresh NGFW).
         assert response.status_code == 200
-        assert "DevNGFW" in response.content.decode()
+        body = response.content.decode()
+        assert "DevNGFW" in body
+        assert "No ranges are currently using this NGFW" not in body
+        assert str(rng.pk) in body
+
+    def test_renders_empty_state_when_no_linked_ranges(self, user, client_for, cms_ngfw_app):
+        app = cms_ngfw_app(user, name="LonelyNGFW")
+
+        response = client_for(user).get(reverse("mission_control:ngfw_detail", kwargs={"app_id": str(app.id)}))
+
+        assert response.status_code == 200
+        body = response.content.decode()
+        assert "LonelyNGFW" in body
+        assert "No ranges are currently using this NGFW" in body
+
+    def test_excludes_ranges_attached_to_other_ngfws(self, user, client_for, cms_ngfw_app):
+        """A range attached to a different NGFW's instance is not shown."""
+        app = cms_ngfw_app(user, name="MineNGFW")
+        # A range attached to an unrelated engine NGFW (different request_id).
+        _engine_ngfw_with_range(user, uuid4())
+
+        response = client_for(user).get(reverse("mission_control:ngfw_detail", kwargs={"app_id": str(app.id)}))
+
+        assert response.status_code == 200
+        assert "No ranges are currently using this NGFW" in response.content.decode()
 
     def test_redirects_to_list_when_ngfw_missing(self, user, client_for):
-        from uuid import uuid4
-
         response = client_for(user).get(reverse("mission_control:ngfw_detail", kwargs={"app_id": str(uuid4())}))
 
         assert response.status_code == 302

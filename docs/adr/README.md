@@ -378,14 +378,18 @@ entries. Completed so far:
   rows → the real templates and JSON, instead of patching the cms service
   functions and `render`. Engine NGFW provisioning is a no-op (ECS unconfigured),
   so no cloud mock is needed. NGFW App/credential factories live in
-  `tests/mission_control/conftest.py`. The successful `ngfw_detail` render is a
-  strict `xfail`: driving the real view surfaced a pre-existing product bug the
-  old mocked-`render` test hid — `ngfw_detail` passes `int(cms NGFWAppContext
+  `tests/mission_control/conftest.py`. Driving the real `ngfw_detail` render
+  surfaced (and this PR fixes) a pre-existing product bug the old
+  mocked-`render` test hid: `ngfw_detail` passed `int(cms NGFWAppContext
   .instance_id)` (a CMS Instance UUID coerced to a 128-bit int) to
-  `get_ranges_for_ngfw`, which filters the engine `Range.ngfw_instance_id`
-  (64-bit int FK to the engine NGFW Instance), so the detail page 500s on SQLite
-  / shows no linked ranges on Postgres. The xfail documents the correct behavior
-  and flips to a hard failure once the cms↔engine linkage is fixed.
+  `get_ranges_for_ngfw`, which filters the engine `Range.ngfw_instance` (a
+  64-bit int FK to the engine NGFW Instance) — different id spaces, so the
+  detail page 500'd on SQLite / showed no linked ranges on Postgres. The view
+  now correlates via the shared provisioning `request_id` (exposed on
+  `NGFWAppContext`), and `get_ranges_for_ngfw` resolves the engine NGFW Instance
+  from that request_id and returns the `LinkedRangeContext` projection the
+  template already expects. `test_ngfw_detail` asserts the real linked-ranges
+  render end to end.
 
 Decomposition-owned suites are out of scope here and land with their own
 issues: provisioner (#946), `ctf/**` and `cms/experiments/test_orchestrator*`
