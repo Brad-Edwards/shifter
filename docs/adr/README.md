@@ -368,8 +368,24 @@ entries. Completed so far:
   secret drives the URL-build failure; a real exhausted bootstrap-worker
   semaphore drives the 503); the unreachable range-SSH `PermissionError`
   defensive branch is dropped. Shared cloud/Guacamole boundary helpers live in
-  `tests/mission_control/conftest.py`. The NGFW management-page views
-  (`test_ngfw_detail`, `test_views_ngfw`) land separately.
+  `tests/mission_control/conftest.py`.
+
+- `mission_control` NGFW management pages (`test_views_ngfw`,
+  `test_ngfw_detail`): drive the real list/wizard/deprovision/detail HTML views
+  and the create/list/destroy JSON APIs → real `cms.services` NGFW entrypoints
+  (`list_ngfws` / `get_ngfw` / `create_ngfw` / `destroy_ngfw` /
+  `list_credentials`) against real `App` / `Instance` / `Request` / `Credential`
+  rows → the real templates and JSON, instead of patching the cms service
+  functions and `render`. Engine NGFW provisioning is a no-op (ECS unconfigured),
+  so no cloud mock is needed. NGFW App/credential factories live in
+  `tests/mission_control/conftest.py`. The successful `ngfw_detail` render is a
+  strict `xfail`: driving the real view surfaced a pre-existing product bug the
+  old mocked-`render` test hid — `ngfw_detail` passes `int(cms NGFWAppContext
+  .instance_id)` (a CMS Instance UUID coerced to a 128-bit int) to
+  `get_ranges_for_ngfw`, which filters the engine `Range.ngfw_instance_id`
+  (64-bit int FK to the engine NGFW Instance), so the detail page 500s on SQLite
+  / shows no linked ranges on Postgres. The xfail documents the correct behavior
+  and flips to a hard failure once the cms↔engine linkage is fixed.
 
 Decomposition-owned suites are out of scope here and land with their own
 issues: provisioner (#946), `ctf/**` and `cms/experiments/test_orchestrator*`

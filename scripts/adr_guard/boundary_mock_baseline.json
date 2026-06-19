@@ -1911,21 +1911,6 @@
       "target": "config.health_checks.get_channel_layer"
     },
     {
-      "count": 3,
-      "path": "shifter/shifter_platform/tests/mission_control/test_ngfw_detail.py",
-      "target": "engine.services.get_ranges_for_ngfw"
-    },
-    {
-      "count": 3,
-      "path": "shifter/shifter_platform/tests/mission_control/test_ngfw_detail.py",
-      "target": "mission_control.views.cms_get_ngfw"
-    },
-    {
-      "count": 3,
-      "path": "shifter/shifter_platform/tests/mission_control/test_ngfw_detail.py",
-      "target": "mission_control.views.render"
-    },
-    {
       "count": 1,
       "path": "shifter/shifter_platform/tests/mission_control/test_oidc.py",
       "target": "config.oidc.OIDCAuthenticationBackend.create_user"
@@ -1949,36 +1934,6 @@
       "count": 7,
       "path": "shifter/shifter_platform/tests/mission_control/test_oidc.py",
       "target": "config.oidc.update_cognito_sub"
-    },
-    {
-      "count": 3,
-      "path": "shifter/shifter_platform/tests/mission_control/test_views_ngfw.py",
-      "target": "mission_control.views._ngfw.cms_create_ngfw"
-    },
-    {
-      "count": 4,
-      "path": "shifter/shifter_platform/tests/mission_control/test_views_ngfw.py",
-      "target": "mission_control.views._ngfw.cms_destroy_ngfw"
-    },
-    {
-      "count": 1,
-      "path": "shifter/shifter_platform/tests/mission_control/test_views_ngfw.py",
-      "target": "mission_control.views._ngfw.cms_list_credentials"
-    },
-    {
-      "count": 2,
-      "path": "shifter/shifter_platform/tests/mission_control/test_views_ngfw.py",
-      "target": "mission_control.views._ngfw.cms_list_ngfws"
-    },
-    {
-      "count": 3,
-      "path": "shifter/shifter_platform/tests/mission_control/test_views_ngfw.py",
-      "target": "mission_control.views.cms_get_ngfw"
-    },
-    {
-      "count": 3,
-      "path": "shifter/shifter_platform/tests/mission_control/test_views_ngfw.py",
-      "target": "mission_control.views.render"
     },
     {
       "count": 1,

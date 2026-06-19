@@ -237,6 +237,102 @@ def range_rdp_instance(db):
     return _make
 
 
+def _ensure_ngfw_catalog():
+    """Ensure the ``panw-ngfw`` InstanceType/AppType catalog rows exist.
+
+    They are migration-seeded, but a ``TransactionTestCase`` elsewhere can flush
+    them from a worker DB under xdist, so create defensively.
+    """
+    from cms.models import AppType, InstanceType
+
+    InstanceType.objects.get_or_create(
+        slug="panw-ngfw",
+        defaults={"name": "PAN-OS NGFW", "spec_class": "shared.schemas.range.InstanceSpec"},
+    )
+    AppType.objects.get_or_create(
+        slug="panw-ngfw",
+        defaults={"name": "PANW NGFW", "spec_class": "shared.schemas.app.NGFWAppSpec"},
+    )
+
+
+@pytest.fixture
+def cms_ngfw_app(db):
+    """Factory: a real CMS NGFW ``App`` (Request + Instance + App, panw-ngfw types).
+
+    This is what ``cms.services.get_ngfw`` / ``list_ngfws`` resolve and project
+    into the ``NGFWAppContext`` the MC NGFW pages render. Returns the ``App``.
+    """
+
+    def _make(user, *, name="DevNGFW", status=None, serial="X-1"):
+        from uuid import uuid4
+
+        from cms.models import App, AppType, Instance, InstanceType, Request
+        from shared.enums import RequestType, ResourceStatus
+
+        _ensure_ngfw_catalog()
+        resolved_status = status or ResourceStatus.READY.value
+        request = Request.objects.create(request_id=uuid4(), request_type=RequestType.NGFW.value, user=user)
+        instance = Instance.objects.create(
+            request=request,
+            name=name,
+            instance_type=InstanceType.objects.get(slug="panw-ngfw"),
+            status=resolved_status,
+        )
+        return App.objects.create(
+            name=name,
+            app_type=AppType.objects.get(slug="panw-ngfw"),
+            instance=instance,
+            status=resolved_status,
+            data={"serial_number": serial},
+        )
+
+    return _make
+
+
+@pytest.fixture
+def ngfw_catalog(db):
+    """Ensure the panw-ngfw catalog exists (for the real create_ngfw path)."""
+    _ensure_ngfw_catalog()
+
+
+@pytest.fixture
+def ngfw_credentials(db):
+    """Factory: real deployment_profile + scm ``Credential`` rows for ``user``.
+
+    Returns ``(deployment_profile, scm_credential)`` so create_ngfw can resolve
+    them by id.
+    """
+
+    def _make(user):
+        from cms.models import Credential, CredentialType
+
+        dp_ct, _ = CredentialType.objects.get_or_create(
+            slug="deployment_profile",
+            defaults={"name": "deployment_profile", "spec_class": "shared.schemas.DeploymentProfileSpec"},
+        )
+        scm_ct, _ = CredentialType.objects.get_or_create(
+            slug="scm", defaults={"name": "scm", "spec_class": "shared.schemas.SCMCredentialSpec"}
+        )
+        deployment_profile = Credential.objects.create(
+            user=user, credential_type=dp_ct, name="dp-cred", data={"name": "dp", "authcode": "AUTH-XYZ"}
+        )
+        scm_credential = Credential.objects.create(
+            user=user,
+            credential_type=scm_ct,
+            name="scm-cred",
+            data={
+                "name": "scm",
+                "scm_pin_id": "PIN1",
+                "scm_pin_value": "VAL1",
+                "scm_folder_name": "folder",
+                "sls_region": "us",
+            },
+        )
+        return deployment_profile, scm_credential
+
+    return _make
+
+
 @pytest.fixture
 def make_ngfw(db):
     """Factory: a real NGFW ``Instance`` (READY, AWS mgmt state) owned by ``user``.
