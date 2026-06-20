@@ -164,7 +164,7 @@
   {
     "rule_id": "ADR-004-R11",
     "owner": "@Brad-Edwards",
-    "reason": "ElastiCache encryption deferrals on portal Redis. Replication group (prod / active channel-layer path): #938 enabled in-transit encryption (CKV_AWS_30) and AUTH (CKV_AWS_31); at-rest encryption (CKV_AWS_29) and the KMS CMK (CKV_AWS_191) remain deferred as a distinct control tracked under #295. Single-node path (dev-only / private-subnet, unused — dev sets enable_redis=false): retains plaintext, so CKV_AWS_30 (in transit) and CKV_AWS_31 (at rest) stay skipped with a documented threat-model acceptance block on the resource (#938). Carry the inline skips on the resources themselves.",
+    "reason": "ElastiCache encryption deferrals on portal Redis. Replication group (prod / active channel-layer path): #938 enabled in-transit encryption (CKV_AWS_30) and AUTH (CKV_AWS_31); at-rest encryption (CKV_AWS_29) and the KMS CMK (CKV_AWS_191) remain deferred as a distinct control tracked under #1059. Single-node path (dev-only / private-subnet, unused — dev sets enable_redis=false): retains plaintext, so CKV_AWS_30 (in transit) and CKV_AWS_31 (at rest) stay skipped with a documented threat-model acceptance block on the resource (#938). Carry the inline skips on the resources themselves.",
     "expires_on": "2026-11-26",
     "paths": [
       "platform/terraform/modules/portal/redis/main.tf"

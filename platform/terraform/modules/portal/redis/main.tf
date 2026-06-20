@@ -83,8 +83,8 @@ resource "aws_security_group_rule" "egress_all" {
 # @Brad-Edwards. Review trigger: if a deployed environment ever sets
 # enable_replication = false with enable_redis = true, switch this path to the
 # hardened replication group instead of accepting plaintext.
-# checkov:skip=CKV_AWS_31:Single-node Redis at-rest encryption deferred - dev-only/private-subnet acceptance (#938); principled deferral via ADR-004-R11 exception (#295).
-# checkov:skip=CKV_AWS_30:Single-node Redis in-transit encryption deferred - dev-only/private-subnet acceptance (#938); principled deferral via ADR-004-R11 exception (#295).
+# checkov:skip=CKV_AWS_31:Single-node Redis at-rest encryption deferred - dev-only/private-subnet acceptance (#938); principled deferral via ADR-004-R11 exception (#938).
+# checkov:skip=CKV_AWS_30:Single-node Redis in-transit encryption deferred - dev-only/private-subnet acceptance (#938); principled deferral via ADR-004-R11 exception (#938).
 resource "aws_elasticache_cluster" "single_node" {
   count = var.enable_replication ? 0 : 1
 
@@ -174,8 +174,8 @@ resource "aws_secretsmanager_secret_version" "redis_auth" {
 # ------------------------------------------------------------------------------
 
 resource "aws_elasticache_replication_group" "ha" {
-  # checkov:skip=CKV_AWS_29:Redis at-rest encryption remains deferred (distinct from #938 AUTH+transit scope); principled deferral via ADR-004-R11 exception (#295).
-  # checkov:skip=CKV_AWS_191:KMS CMK on ElastiCache requires at-rest encryption (kept deferred with CKV_AWS_29); principled deferral via ADR-004-R11 exception (#295).
+  # checkov:skip=CKV_AWS_29:Redis at-rest encryption remains deferred (distinct from #938 AUTH+transit scope); principled deferral via ADR-004-R11 exception (#1059).
+  # checkov:skip=CKV_AWS_191:KMS CMK on ElastiCache requires at-rest encryption (kept deferred with CKV_AWS_29); principled deferral via ADR-004-R11 exception (#1059).
   count = var.enable_replication ? 1 : 0
 
   replication_group_id = "${var.name_prefix}-redis"
