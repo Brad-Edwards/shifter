@@ -36,7 +36,7 @@ def _app_to_ngfw_context(app: App) -> NGFWAppContext:
     AWS infrastructure details are owned by Engine, not exposed here.
 
     Args:
-        app: App model with instance relationship loaded.
+        app: App model with ``instance`` and ``instance.request`` loaded.
     """
     from shared.schemas.app import NGFWAppContext
 
@@ -44,6 +44,7 @@ def _app_to_ngfw_context(app: App) -> NGFWAppContext:
     return NGFWAppContext(
         app_id=app.id,
         instance_id=app.instance.id,
+        request_id=app.instance.request.request_id,
         name=app.name,
         status=app.status,
         created_at=app.created_at,
@@ -165,7 +166,7 @@ def list_ngfws(user: User) -> list[NGFWAppContext]:
             instance__request__user=user,
             app_type__slug="panw-ngfw",
         )
-        .select_related("instance")
+        .select_related("instance", "instance__request")
         .order_by("-created_at")
     )
 

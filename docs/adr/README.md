@@ -352,6 +352,45 @@ entries. Completed so far:
   fault. With these, the `shared` and `risk_register` areas carry no remaining
   ADR-019 baseline entries.
 
+- `mission_control` Guacamole connection-URL endpoints
+  (`test_guacamole_ssh`, `test_api_instance_ssh_url`, `test_api_ngfw_ssh_url`,
+  `test_views_guacamole`): drive the real views → real `engine.services`
+  (`get_ssh_connection_info` / `connect_ngfw_terminal` /
+  `get_rdp_connection_info`, against real READY `Range` rows and real NGFW
+  `Instance` / `Request` rows) → real `mission_control.guacamole` URL builders
+  (real AES/HMAC sign-and-encrypt). Only the cloud/network boundaries are
+  mocked: the boto3 Secrets Manager client that yields the SSH/RDP secret and
+  the urllib Guacamole `/api/tokens` POST. Assertions read the returned URL and
+  the decrypted payload that was actually POSTed, instead of patching
+  `engine.services.*` / `mission_control.guacamole.*` / the bootstrap enqueue.
+  Generic fault-injection tests are replaced with real-boundary equivalents
+  (a Secrets Manager `ClientError` drives the 500 path; an invalid signing
+  secret drives the URL-build failure; a real exhausted bootstrap-worker
+  semaphore drives the 503); the unreachable range-SSH `PermissionError`
+  defensive branch is dropped. Shared cloud/Guacamole boundary helpers live in
+  `tests/mission_control/conftest.py`.
+
+- `mission_control` NGFW management pages (`test_views_ngfw`,
+  `test_ngfw_detail`): drive the real list/wizard/deprovision/detail HTML views
+  and the create/list/destroy JSON APIs → real `cms.services` NGFW entrypoints
+  (`list_ngfws` / `get_ngfw` / `create_ngfw` / `destroy_ngfw` /
+  `list_credentials`) against real `App` / `Instance` / `Request` / `Credential`
+  rows → the real templates and JSON, instead of patching the cms service
+  functions and `render`. Engine NGFW provisioning is a no-op (ECS unconfigured),
+  so no cloud mock is needed. NGFW App/credential factories live in
+  `tests/mission_control/conftest.py`. Driving the real `ngfw_detail` render
+  surfaced (and this PR fixes) a pre-existing product bug the old
+  mocked-`render` test hid: `ngfw_detail` passed `int(cms NGFWAppContext
+  .instance_id)` (a CMS Instance UUID coerced to a 128-bit int) to
+  `get_ranges_for_ngfw`, which filters the engine `Range.ngfw_instance` (a
+  64-bit int FK to the engine NGFW Instance) — different id spaces, so the
+  detail page 500'd on SQLite / showed no linked ranges on Postgres. The view
+  now correlates via the shared provisioning `request_id` (exposed on
+  `NGFWAppContext`), and `get_ranges_for_ngfw` resolves the engine NGFW Instance
+  from that request_id and returns the `LinkedRangeContext` projection the
+  template already expects. `test_ngfw_detail` asserts the real linked-ranges
+  render end to end.
+
 Decomposition-owned suites are out of scope here and land with their own
 issues: provisioner (#946), `ctf/**` and `cms/experiments/test_orchestrator*`
 (#885, #886, #889-#891), and `cms/scenario_editor/**` (#887, #888).

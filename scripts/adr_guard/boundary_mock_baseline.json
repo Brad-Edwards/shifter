@@ -1881,26 +1881,6 @@
       "target": "mission_control.consumers.audit_session_event"
     },
     {
-      "count": 5,
-      "path": "shifter/shifter_platform/tests/mission_control/test_api_instance_ssh_url.py",
-      "target": "engine.services.get_ssh_connection_info"
-    },
-    {
-      "count": 3,
-      "path": "shifter/shifter_platform/tests/mission_control/test_api_instance_ssh_url.py",
-      "target": "mission_control.guacamole.create_guacamole_ssh_url"
-    },
-    {
-      "count": 11,
-      "path": "shifter/shifter_platform/tests/mission_control/test_api_ngfw_ssh_url.py",
-      "target": "engine.services.connect_ngfw_terminal"
-    },
-    {
-      "count": 5,
-      "path": "shifter/shifter_platform/tests/mission_control/test_api_ngfw_ssh_url.py",
-      "target": "mission_control.guacamole.create_guacamole_ssh_url"
-    },
-    {
       "count": 20,
       "path": "shifter/shifter_platform/tests/mission_control/test_context_processors.py",
       "target": "mission_control.context_processors.get_active_range"
@@ -1916,21 +1896,6 @@
       "target": "mission_control.context_processors.logger"
     },
     {
-      "count": 7,
-      "path": "shifter/shifter_platform/tests/mission_control/test_guacamole_ssh.py",
-      "target": "mission_control.guacamole.create_guacamole_auth_payload"
-    },
-    {
-      "count": 7,
-      "path": "shifter/shifter_platform/tests/mission_control/test_guacamole_ssh.py",
-      "target": "mission_control.guacamole.get_guacamole_auth_token"
-    },
-    {
-      "count": 7,
-      "path": "shifter/shifter_platform/tests/mission_control/test_guacamole_ssh.py",
-      "target": "mission_control.guacamole.sign_and_encrypt_payload"
-    },
-    {
       "count": 1,
       "path": "shifter/shifter_platform/tests/mission_control/test_health.py",
       "target": "config.health_checks.ChannelLayerRedisHealthCheck._probe"
@@ -1944,21 +1909,6 @@
       "count": 1,
       "path": "shifter/shifter_platform/tests/mission_control/test_health.py",
       "target": "config.health_checks.get_channel_layer"
-    },
-    {
-      "count": 3,
-      "path": "shifter/shifter_platform/tests/mission_control/test_ngfw_detail.py",
-      "target": "engine.services.get_ranges_for_ngfw"
-    },
-    {
-      "count": 3,
-      "path": "shifter/shifter_platform/tests/mission_control/test_ngfw_detail.py",
-      "target": "mission_control.views.cms_get_ngfw"
-    },
-    {
-      "count": 3,
-      "path": "shifter/shifter_platform/tests/mission_control/test_ngfw_detail.py",
-      "target": "mission_control.views.render"
     },
     {
       "count": 1,
@@ -1984,66 +1934,6 @@
       "count": 7,
       "path": "shifter/shifter_platform/tests/mission_control/test_oidc.py",
       "target": "config.oidc.update_cognito_sub"
-    },
-    {
-      "count": 2,
-      "path": "shifter/shifter_platform/tests/mission_control/test_views_guacamole.py",
-      "target": "engine.services.connect_ngfw_terminal"
-    },
-    {
-      "count": 4,
-      "path": "shifter/shifter_platform/tests/mission_control/test_views_guacamole.py",
-      "target": "engine.services.get_rdp_connection_info"
-    },
-    {
-      "count": 7,
-      "path": "shifter/shifter_platform/tests/mission_control/test_views_guacamole.py",
-      "target": "engine.services.get_ssh_connection_info"
-    },
-    {
-      "count": 2,
-      "path": "shifter/shifter_platform/tests/mission_control/test_views_guacamole.py",
-      "target": "mission_control.guacamole.create_guacamole_rdp_url"
-    },
-    {
-      "count": 3,
-      "path": "shifter/shifter_platform/tests/mission_control/test_views_guacamole.py",
-      "target": "mission_control.guacamole.create_guacamole_ssh_url"
-    },
-    {
-      "count": 1,
-      "path": "shifter/shifter_platform/tests/mission_control/test_views_guacamole.py",
-      "target": "mission_control.views._guacamole_bootstrap.enqueue_guacamole_bootstrap"
-    },
-    {
-      "count": 3,
-      "path": "shifter/shifter_platform/tests/mission_control/test_views_ngfw.py",
-      "target": "mission_control.views._ngfw.cms_create_ngfw"
-    },
-    {
-      "count": 4,
-      "path": "shifter/shifter_platform/tests/mission_control/test_views_ngfw.py",
-      "target": "mission_control.views._ngfw.cms_destroy_ngfw"
-    },
-    {
-      "count": 1,
-      "path": "shifter/shifter_platform/tests/mission_control/test_views_ngfw.py",
-      "target": "mission_control.views._ngfw.cms_list_credentials"
-    },
-    {
-      "count": 2,
-      "path": "shifter/shifter_platform/tests/mission_control/test_views_ngfw.py",
-      "target": "mission_control.views._ngfw.cms_list_ngfws"
-    },
-    {
-      "count": 3,
-      "path": "shifter/shifter_platform/tests/mission_control/test_views_ngfw.py",
-      "target": "mission_control.views.cms_get_ngfw"
-    },
-    {
-      "count": 3,
-      "path": "shifter/shifter_platform/tests/mission_control/test_views_ngfw.py",
-      "target": "mission_control.views.render"
     },
     {
       "count": 1,

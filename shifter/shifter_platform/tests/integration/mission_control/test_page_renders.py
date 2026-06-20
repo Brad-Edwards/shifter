@@ -118,7 +118,21 @@ def ctf_participant(db, user):
 
 
 def _render_query_count(client: Client, url: str):
-    """Return (response, query_count) for a GET, capturing only the render."""
+    """Return (response, steady-state query_count) for a GET.
+
+    A warm-up request is issued first and discarded, so the measured count is
+    the steady-state per-render query cost — which is what these budgets are
+    meant to pin. Several per-process lazy caches (permission/content-type
+    prefetch, the auth-backend setup) issue a one-time query on first access in
+    a fresh process. Under pytest-xdist the budget module may share a worker
+    with a sibling test module that leaves such a cache cold; without the
+    warm-up that one-time query lands on whichever render is measured first and
+    intermittently inflates every exact-count budget on the worker (all five
+    fail together). Warming first makes the measurement independent of worker
+    scheduling while still catching any real per-render regression, which is
+    paid by both the warm-up and the measured render.
+    """
+    client.get(url)  # warm per-process lazy caches; intentionally not measured
     with CaptureQueriesContext(connection) as ctx:
         response = client.get(url)
     return response, len(ctx.captured_queries)
