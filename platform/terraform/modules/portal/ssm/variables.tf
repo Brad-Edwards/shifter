@@ -206,3 +206,83 @@ variable "asg_name" {
   type        = string
   default     = ""
 }
+
+# ------------------------------------------------------------------------------
+# Portal Runtime Capacity Tunables (#930)
+# ------------------------------------------------------------------------------
+# Non-secret integer knobs published to Parameter Store so the portal worker
+# count and terminal-websocket caps/timeouts can be retuned without an image
+# rebuild (update the parameter, then converge/restart the container).
+#
+# The terminal caps are process-local (one TerminalSessionRegistry per Gunicorn
+# worker), so the real per-instance ceiling is:
+#   per-instance cap = portal_web_workers * terminal_max_sessions
+# Keep deployed values positive: a <= 0 terminal cap disables that limit in the
+# app, which is a deliberate break-glass, not a steady-state posture, so the
+# validations below reject it.
+
+variable "portal_web_workers" {
+  description = "Gunicorn/Uvicorn worker processes per portal instance (PORTAL_WEB_WORKERS). Size to the instance vCPU budget."
+  type        = number
+  default     = 4
+
+  validation {
+    condition     = var.portal_web_workers >= 1 && floor(var.portal_web_workers) == var.portal_web_workers
+    error_message = "portal_web_workers must be a positive integer."
+  }
+}
+
+variable "terminal_max_sessions" {
+  description = "Active terminal SSH sessions per worker process (TERMINAL_MAX_SESSIONS). Per-instance cap = portal_web_workers * this."
+  type        = number
+  default     = 200
+
+  validation {
+    condition     = var.terminal_max_sessions >= 1 && floor(var.terminal_max_sessions) == var.terminal_max_sessions
+    error_message = "terminal_max_sessions must be a positive integer (a <= 0 disable is a deliberate break-glass, not a deployed value)."
+  }
+}
+
+variable "terminal_max_sessions_per_user" {
+  description = "Active terminal SSH sessions per user, per worker process (TERMINAL_MAX_SESSIONS_PER_USER)."
+  type        = number
+  default     = 10
+
+  validation {
+    condition     = var.terminal_max_sessions_per_user >= 1 && floor(var.terminal_max_sessions_per_user) == var.terminal_max_sessions_per_user
+    error_message = "terminal_max_sessions_per_user must be a positive integer."
+  }
+}
+
+variable "terminal_idle_timeout_seconds" {
+  description = "Close an idle terminal session after this many seconds (TERMINAL_IDLE_TIMEOUT_SECONDS)."
+  type        = number
+  default     = 1800
+
+  validation {
+    condition     = var.terminal_idle_timeout_seconds >= 1 && floor(var.terminal_idle_timeout_seconds) == var.terminal_idle_timeout_seconds
+    error_message = "terminal_idle_timeout_seconds must be a positive integer."
+  }
+}
+
+variable "terminal_max_session_seconds" {
+  description = "Hard ceiling on a single terminal session's lifetime in seconds (TERMINAL_MAX_SESSION_SECONDS)."
+  type        = number
+  default     = 28800
+
+  validation {
+    condition     = var.terminal_max_session_seconds >= 1 && floor(var.terminal_max_session_seconds) == var.terminal_max_session_seconds
+    error_message = "terminal_max_session_seconds must be a positive integer."
+  }
+}
+
+variable "terminal_read_poll_seconds" {
+  description = "How often an idle terminal read loop wakes to enforce timeouts (TERMINAL_READ_POLL_SECONDS). Does not bound output latency."
+  type        = number
+  default     = 30
+
+  validation {
+    condition     = var.terminal_read_poll_seconds >= 1 && floor(var.terminal_read_poll_seconds) == var.terminal_read_poll_seconds
+    error_message = "terminal_read_poll_seconds must be a positive integer."
+  }
+}

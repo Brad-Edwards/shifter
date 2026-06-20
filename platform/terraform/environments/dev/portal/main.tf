@@ -453,6 +453,16 @@ module "ssm" {
   # Email configuration
   email_backend  = var.email_backend
   ctf_from_email = var.ctf_from_email
+
+  # Portal runtime capacity tunables (#930). Worker count is sized to the
+  # instance vCPU budget; terminal caps are process-local, so the per-instance
+  # ceiling is portal_web_workers * terminal_max_sessions.
+  portal_web_workers             = var.portal_web_workers
+  terminal_max_sessions          = var.terminal_max_sessions
+  terminal_max_sessions_per_user = var.terminal_max_sessions_per_user
+  terminal_idle_timeout_seconds  = var.terminal_idle_timeout_seconds
+  terminal_max_session_seconds   = var.terminal_max_session_seconds
+  terminal_read_poll_seconds     = var.terminal_read_poll_seconds
 }
 
 # ------------------------------------------------------------------------------

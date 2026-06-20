@@ -180,6 +180,17 @@ Guacamole targets. The targets therefore allow ingress both from the ALB
 security group and from the portal public subnet CIDRs; the CIDR rule is still
 VPC-local and is required for the routed middlebox path.
 
+`enable_portal_inspection` defaults to `false` in the committed
+`platform/terraform/environments/<env>/portal/terraform.tfvars` (#932). A deploy
+that wants inspection sets `enable_portal_inspection = true` in its
+`TF_VARS_<ENV>_PORTAL` secret payload (rendered as `local.auto.tfvars`, which
+overrides the committed baseline). Enabling it removes the direct private → NAT
+default route, so the portal apply job runs
+`scripts/assert_portal_inspection/assert_portal_inspection.py` after
+`terraform apply`: it fails the deploy if the live route tables do not point at
+healthy per-AZ Network Firewall endpoints, instead of silently blackholing
+egress. The assertion is a no-op when inspection is off.
+
 ## AWS range (`dev` / `prod`)
 
 Consumed by `.github/workflows/_range.yml`. The committed

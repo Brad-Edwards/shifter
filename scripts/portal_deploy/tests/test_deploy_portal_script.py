@@ -27,6 +27,10 @@ class DeployPortalScriptTests(unittest.TestCase):
         *,
         invalid_bootstrap_emails: bool = False,
         missing_optional_params: bool = False,
+        invalid_terminal_param: bool = False,
+        invalid_terminal_cap: bool = False,
+        zero_workers: bool = False,
+        zero_terminal_cap: bool = False,
     ) -> dict[str, str]:
         bin_dir = root / "bin"
         bin_dir.mkdir()
@@ -152,6 +156,56 @@ class DeployPortalScriptTests(unittest.TestCase):
                     printf 'admin@example.test\\n'
                   fi
                   ;;
+                */portal-web-workers)
+                  if [[ "${MISSING_OPTIONAL_PARAMS:-}" == "1" ]]; then
+                    printf '\\n'
+                  elif [[ "${INVALID_TERMINAL_PARAM:-}" == "1" ]]; then
+                    printf '2 -e INJECTED=evil\\n'
+                  elif [[ "${ZERO_WORKERS:-}" == "1" ]]; then
+                    printf '0\\n'
+                  else
+                    printf '2\\n'
+                  fi
+                  ;;
+                */terminal-max-sessions-per-user)
+                  if [[ "${MISSING_OPTIONAL_PARAMS:-}" == "1" ]]; then
+                    printf '\\n'
+                  else
+                    printf '10\\n'
+                  fi
+                  ;;
+                */terminal-max-sessions)
+                  if [[ "${MISSING_OPTIONAL_PARAMS:-}" == "1" ]]; then
+                    printf '\\n'
+                  elif [[ "${INVALID_TERMINAL_CAP:-}" == "1" ]]; then
+                    printf '200 -e INJECTED=evil\\n'
+                  elif [[ "${ZERO_TERMINAL_CAP:-}" == "1" ]]; then
+                    printf '0\\n'
+                  else
+                    printf '200\\n'
+                  fi
+                  ;;
+                */terminal-idle-timeout-seconds)
+                  if [[ "${MISSING_OPTIONAL_PARAMS:-}" == "1" ]]; then
+                    printf '\\n'
+                  else
+                    printf '1800\\n'
+                  fi
+                  ;;
+                */terminal-max-session-seconds)
+                  if [[ "${MISSING_OPTIONAL_PARAMS:-}" == "1" ]]; then
+                    printf '\\n'
+                  else
+                    printf '28800\\n'
+                  fi
+                  ;;
+                */terminal-read-poll-seconds)
+                  if [[ "${MISSING_OPTIONAL_PARAMS:-}" == "1" ]]; then
+                    printf '\\n'
+                  else
+                    printf '30\\n'
+                  fi
+                  ;;
                 *) printf '\\n' ;;
               esac
               exit 0
@@ -199,6 +253,14 @@ class DeployPortalScriptTests(unittest.TestCase):
             env["INVALID_BOOTSTRAP_EMAILS"] = "1"
         if missing_optional_params:
             env["MISSING_OPTIONAL_PARAMS"] = "1"
+        if invalid_terminal_param:
+            env["INVALID_TERMINAL_PARAM"] = "1"
+        if invalid_terminal_cap:
+            env["INVALID_TERMINAL_CAP"] = "1"
+        if zero_workers:
+            env["ZERO_WORKERS"] = "1"
+        if zero_terminal_cap:
+            env["ZERO_TERMINAL_CAP"] = "1"
         return env
 
     def _script_args(
@@ -398,8 +460,115 @@ class DeployPortalScriptTests(unittest.TestCase):
                 "CTF_FROM_EMAIL",
                 "PLATFORM_BOOTSTRAP_STAFF_EMAILS",
                 "PLATFORM_BOOTSTRAP_SUPERUSER_EMAILS",
+                "PORTAL_WEB_WORKERS",
+                "TERMINAL_MAX_SESSIONS",
+                "TERMINAL_MAX_SESSIONS_PER_USER",
+                "TERMINAL_IDLE_TIMEOUT_SECONDS",
+                "TERMINAL_MAX_SESSION_SECONDS",
+                "TERMINAL_READ_POLL_SECONDS",
             ):
                 self.assertNotIn(f"{name}=", log)
+
+    def test_terminal_capacity_params_emitted_as_docker_env(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            env = self._install_stubs(root)
+
+            result = subprocess.run(
+                self._script_args(root),
+                check=False,
+                capture_output=True,
+                text=True,
+                env=env,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            log = (root / "calls.log").read_text(encoding="utf-8")
+            for pair in (
+                "PORTAL_WEB_WORKERS=2",
+                "TERMINAL_MAX_SESSIONS=200",
+                "TERMINAL_MAX_SESSIONS_PER_USER=10",
+                "TERMINAL_IDLE_TIMEOUT_SECONDS=1800",
+                "TERMINAL_MAX_SESSION_SECONDS=28800",
+                "TERMINAL_READ_POLL_SECONDS=30",
+            ):
+                self.assertIn(pair, log)
+
+    def test_non_numeric_terminal_capacity_param_rejected_before_docker(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            env = self._install_stubs(root, invalid_terminal_param=True)
+
+            result = subprocess.run(
+                self._script_args(root),
+                check=False,
+                capture_output=True,
+                text=True,
+                env=env,
+            )
+
+            self.assertEqual(result.returncode, 1)
+            self.assertIn("Invalid PORTAL_WEB_WORKERS", result.stderr)
+            log_path = root / "calls.log"
+            log = log_path.read_text(encoding="utf-8") if log_path.exists() else ""
+            self.assertNotIn("docker run", log)
+            self.assertNotIn("INJECTED=evil", log)
+
+    def test_non_numeric_terminal_cap_rejected_before_docker(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            env = self._install_stubs(root, invalid_terminal_cap=True)
+
+            result = subprocess.run(
+                self._script_args(root),
+                check=False,
+                capture_output=True,
+                text=True,
+                env=env,
+            )
+
+            self.assertEqual(result.returncode, 1)
+            self.assertIn("Invalid TERMINAL_MAX_SESSIONS", result.stderr)
+            log_path = root / "calls.log"
+            log = log_path.read_text(encoding="utf-8") if log_path.exists() else ""
+            self.assertNotIn("docker run", log)
+            self.assertNotIn("INJECTED=evil", log)
+
+    def test_zero_portal_web_workers_rejected_before_docker(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            env = self._install_stubs(root, zero_workers=True)
+
+            result = subprocess.run(
+                self._script_args(root),
+                check=False,
+                capture_output=True,
+                text=True,
+                env=env,
+            )
+
+            self.assertEqual(result.returncode, 1)
+            self.assertIn("Invalid PORTAL_WEB_WORKERS", result.stderr)
+            log_path = root / "calls.log"
+            log = log_path.read_text(encoding="utf-8") if log_path.exists() else ""
+            self.assertNotIn("docker run", log)
+
+    def test_zero_terminal_cap_passes_through_as_disable(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            env = self._install_stubs(root, zero_terminal_cap=True)
+
+            result = subprocess.run(
+                self._script_args(root),
+                check=False,
+                capture_output=True,
+                text=True,
+                env=env,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            log = (root / "calls.log").read_text(encoding="utf-8")
+            self.assertIn("TERMINAL_MAX_SESSIONS=0", log)
 
     def test_non_dev_allowed_hosts_excludes_localhost_aliases(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

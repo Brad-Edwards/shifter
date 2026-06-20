@@ -146,8 +146,13 @@ variable "guacd_desired_count" {
 }
 
 variable "guacamole_client_desired_count" {
-  description = "Desired number of guacamole-client tasks"
+  description = "Desired number of guacamole-client tasks. Must be 1: the client tier mints and serves auth tokens from task-local process memory, so N>1 breaks first-click RDP (#928). The module hard-pins the service to one task; this input is validated to 1 so a generated/deployed value cannot silently request more."
   type        = number
+
+  validation {
+    condition     = var.guacamole_client_desired_count == 1
+    error_message = "guacamole_client_desired_count must be 1: the guacamole-client tier is single-task by design (token/task affinity, #928). Scale guacd for capacity instead."
+  }
 }
 
 # ------------------------------------------------------------------------------
@@ -214,17 +219,17 @@ variable "db_apply_immediately" {
 # ------------------------------------------------------------------------------
 
 variable "enable_autoscaling" {
-  description = "Enable auto scaling for ECS services"
+  description = "Enable auto scaling for the guacd ECS service (the per-connection capacity tier). The guacamole-client tier is intentionally single-task and is never autoscaled (#928)."
   type        = bool
 }
 
 variable "autoscaling_min_capacity" {
-  description = "Minimum number of tasks for auto scaling"
+  description = "Minimum number of guacd tasks for auto scaling"
   type        = number
 }
 
 variable "autoscaling_max_capacity" {
-  description = "Maximum number of tasks for auto scaling"
+  description = "Maximum number of guacd tasks for auto scaling"
   type        = number
 }
 
