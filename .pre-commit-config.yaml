@@ -187,6 +187,17 @@ repos:
         language: system
         files: ^(scripts/polaris-aws-range/|shifter/engine/provisioner/terraform/modules/range/).*\.tf$
 
+      # Portal target-service (Django:8000 / Guacamole client:8080) SG ingress
+      # must source only from a security-group reference or the ALB-only
+      # alb_ingress_subnet_cidrs output, never the whole public tier where CTFd
+      # lives. Guards the #911 NET-2 / #933 segmentation fix. See
+      # scripts/check_portal_target_sg_sources/test_check_portal_target_sg_sources.py.
+      - id: check-portal-target-sg-sources
+        name: Portal target-service SG ingress source scoping (#933)
+        entry: python3 scripts/check_portal_target_sg_sources/check_portal_target_sg_sources.py
+        language: system
+        files: ^platform/terraform/environments/(dev|prod)/portal/main\.tf$
+
       - id: check-tf-iam-ec2-scope
         name: AWS EC2 lifecycle IAM scoping (engine provisioner)
         entry: python3 scripts/check_tf_iam_ec2_scope/check_tf_iam_ec2_scope.py
@@ -268,10 +279,11 @@ repos:
           python3 -m unittest scripts.check_tf_iam_elb_scope.test_check_tf_iam_elb_scope &&
           python3 -m unittest scripts.check_tf_sg_cidrs.test_check_tf_sg_cidrs &&
           python3 -m unittest scripts.check_tf_kms_secrets_grant.test_check_tf_kms_secrets_grant &&
-          python3 -m unittest scripts.check_tf_rds_security.test_check_tf_rds_security
+          python3 -m unittest scripts.check_tf_rds_security.test_check_tf_rds_security &&
+          python3 -m unittest scripts.check_portal_target_sg_sources.test_check_portal_target_sg_sources
           '
         language: system
-        files: ^scripts/check_tf_(iam_ec2_scope|iam_elb_scope|sg_cidrs|kms_secrets_grant|rds_security)/
+        files: ^scripts/(check_tf_(iam_ec2_scope|iam_elb_scope|sg_cidrs|kms_secrets_grant|rds_security)|check_portal_target_sg_sources)/
         pass_filenames: false
 
   # Kubernetes schema validation

@@ -125,14 +125,19 @@ class TestApiNGFWSSHURL:
         assert response.status_code == 302
 
     def test_returns_400_for_non_owner(self, rf, user, other_user, guac_secret, make_ngfw):
+        # Ownership resolution moved into the bootstrap worker (#929), so the
+        # permission failure surfaces as a polled FAILED bootstrap, not a
+        # synchronous 400.
         ngfw = make_ngfw(user, owner=other_user)
         app_id = str(ngfw.uuid)
         request = _post_request(rf, user, app_id)
 
         response = api_ngfw_ssh_url(request, app_id)
 
-        assert response.status_code == 400
-        assert "permission" in _json(response)["error"].lower()
+        assert response.status_code == 202
+        status = _status_response(rf, user, _json(response)["request_id"])
+        assert status.status_code == 400
+        assert "permission" in _json(status)["error"].lower()
 
     # ---- validation -------------------------------------------------------
 
@@ -144,8 +149,10 @@ class TestApiNGFWSSHURL:
 
         response = api_ngfw_ssh_url(request, app_id)
 
-        assert response.status_code == 400
-        assert "not found" in _json(response)["error"].lower()
+        assert response.status_code == 202
+        status = _status_response(rf, user, _json(response)["request_id"])
+        assert status.status_code == 400
+        assert "not found" in _json(status)["error"].lower()
 
     def test_returns_400_when_ngfw_not_accessible(self, rf, user, guac_secret, make_ngfw):
         from shared.enums import ResourceStatus
@@ -156,8 +163,10 @@ class TestApiNGFWSSHURL:
 
         response = api_ngfw_ssh_url(request, app_id)
 
-        assert response.status_code == 400
-        assert "error" in _json(response)
+        assert response.status_code == 202
+        status = _status_response(rf, user, _json(response)["request_id"])
+        assert status.status_code == 400
+        assert "error" in _json(status)
 
     def test_requires_post_method(self, rf, user, guac_secret):
         request = rf.get("/mc/ngfw/some-uuid/ssh-url/")
@@ -184,8 +193,12 @@ class TestApiNGFWSSHURL:
         with secrets_boundary(client=failing):
             response = api_ngfw_ssh_url(request, app_id)
 
-        assert response.status_code == 500
-        assert _json(response)["error"] == "Internal server error"
+        # The Secrets Manager fetch now runs in the bootstrap worker (#929), so
+        # the failure surfaces via the polled status, not the initial response.
+        assert response.status_code == 202
+        status = _status_response(rf, user, _json(response)["request_id"])
+        assert status.status_code == 500
+        assert _json(status)["error"] == "Internal server error"
 
     def test_returns_500_when_signing_secret_is_invalid(self, rf, user, settings, make_ngfw, secrets_boundary):
         # A non-AES-length secret makes the real sign_and_encrypt step raise.
