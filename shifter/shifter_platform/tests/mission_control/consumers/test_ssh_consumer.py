@@ -111,6 +111,68 @@ class TestSSHConsumerConnectRealRange:
         consumer.close.assert_awaited_once_with(code=WebSocketCloseCode.SSH_CONNECTION_FAILED)
 
     @pytest.mark.asyncio
+    async def test_connect_runs_on_dedicated_terminal_executor(self, consumer, seeded_ssh_range):
+        """Terminal connect work runs on the terminal-connect pool, not the
+        shared sync lane — the isolation that keeps a connect storm from
+        blocking page renders (#929, WS-3).
+
+        Observed at the boto3 Secrets Manager boundary: the SSH-key fetch that
+        ``connect_terminal`` performs records the worker thread it ran on.
+        """
+        import threading
+
+        user, instance = seeded_ssh_range
+        captured: dict[str, str] = {}
+
+        def record_thread(**_kwargs):
+            captured["thread"] = threading.current_thread().name
+            return {"SecretString": "TEST-SSH-PRIVATE-KEY-MATERIAL"}
+
+        client = MagicMock()
+        client.get_secret_value.side_effect = record_thread
+
+        fake_conn = AsyncMock()
+        consumer.scope = _scope(user, instance["uuid"])
+        with (
+            patch("boto3.client", return_value=client),
+            patch("asyncssh.import_private_key", return_value=MagicMock()),
+            patch("asyncssh.connect", new=AsyncMock(return_value=fake_conn)),
+            patch("asyncio.create_task", return_value=MagicMock()),
+        ):
+            await consumer.connect()
+
+        assert captured["thread"].startswith("terminal-connect")
+
+    @pytest.mark.asyncio
+    async def test_rejects_when_terminal_executor_saturated(self, consumer, seeded_ssh_range):
+        """A saturated terminal executor fails the connect fast with the
+        retryable SERVICE_UNAVAILABLE close, instead of queuing unbounded work
+        (#929). The session slot taken before the connect is released so the
+        rejection self-heals.
+
+        Drives the real bounded admission gate: every slot is drained so the
+        consumer's genuine ``run_terminal_sync`` call is rejected — no internal
+        patching, only observed close behavior.
+        """
+        from mission_control import terminal_executor
+
+        user, instance = seeded_ssh_range
+        consumer.scope = _scope(user, instance["uuid"])
+
+        admission = terminal_executor._get_admission()
+        drained = 0
+        while admission.acquire(blocking=False):
+            drained += 1
+        try:
+            await consumer.connect()
+        finally:
+            for _ in range(drained):
+                admission.release()
+
+        consumer.close.assert_awaited_once_with(code=WebSocketCloseCode.SERVICE_UNAVAILABLE)
+        assert consumer._session_acquired is False
+
+    @pytest.mark.asyncio
     async def test_accepts_on_successful_connect(self, consumer, seeded_ssh_range, secrets_boundary):
         """Successful connection accepts the WebSocket and starts the read task."""
         user, instance = seeded_ssh_range
@@ -160,12 +222,22 @@ class TestSSHConsumerDisconnect:
 
     @pytest.mark.asyncio
     async def test_handles_disconnect_without_connect(self, consumer):
-        """Disconnect handles case where connect never completed."""
+        """Disconnect with no SSH/session is a clean no-op.
+
+        When connect never completed there is no SSH connection to tear down and
+        no acquired session slot to release, so disconnect must complete without
+        raising and without inventing teardown work.
+        """
         consumer.ssh_conn = None
         consumer._read_task = None
+        consumer._session_acquired = False
+        consumer._user_id = None
 
         await consumer.disconnect(close_code=1000)
-        # Should not raise
+
+        # No SSH teardown attempted, and the session slot stays released.
+        assert consumer.ssh_conn is None
+        assert consumer._session_acquired is False
 
 
 class TestSSHConsumerReceive:
@@ -204,11 +276,17 @@ class TestSSHConsumerReceive:
 
     @pytest.mark.asyncio
     async def test_ignores_when_no_ssh_connection(self, consumer):
-        """Messages before SSH connection is established are ignored."""
+        """Input before the SSH connection exists is dropped, not buffered.
+
+        With no ``ssh_conn`` there is nothing to forward to, so receive must
+        complete without raising and without emitting anything back to the
+        WebSocket.
+        """
         consumer.ssh_conn = None
 
         await consumer.receive(text_data=json.dumps({"type": "input", "data": "test"}))
-        # Should not raise
+
+        consumer.send.assert_not_awaited()
 
 
 class TestSSHConsumerReadOutput:
