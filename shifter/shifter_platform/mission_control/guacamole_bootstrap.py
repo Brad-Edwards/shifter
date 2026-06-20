@@ -232,18 +232,15 @@ def consume_ready_url(*, request_id: UUID, user_id: int) -> str | None:
     delivered — clearing any token still parked on an expired success.
     """
     with transaction.atomic():
-        try:
-            row = GuacamoleBootstrapRequest.objects.select_for_update().get(pk=request_id, user_id=user_id)
-        except GuacamoleBootstrapRequest.DoesNotExist:
+        row = GuacamoleBootstrapRequest.objects.select_for_update().filter(pk=request_id, user_id=user_id).first()
+        if row is None or row.status != GuacamoleBootstrapRequest.Status.SUCCEEDED:
             return None
-        if row.status != GuacamoleBootstrapRequest.Status.SUCCEEDED:
-            return None
-        if row.is_expired:
+        if row.is_expired or row.delivered_at is not None or not row.result_url:
+            # Not deliverable: clear any token still parked on an expired success
+            # before refusing, so it does not sit at rest until pruning.
             if row.result_url:
                 row.result_url = ""
                 row.save(update_fields=("result_url", "updated_at"))
-            return None
-        if row.delivered_at is not None or not row.result_url:
             return None
         url = row.result_url
         row.result_url = ""

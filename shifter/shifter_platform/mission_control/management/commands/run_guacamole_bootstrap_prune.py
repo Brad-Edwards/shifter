@@ -26,6 +26,7 @@ import tempfile
 import time
 from argparse import ArgumentParser
 from pathlib import Path
+from types import FrameType
 from typing import Any
 
 from django.conf import settings
@@ -109,7 +110,7 @@ class Command(BaseCommand):
             logger.info("Pruned %d expired Guacamole bootstrap row(s)", total)
         return total
 
-    def _signal_handler(self, signum: int, frame: Any) -> None:
+    def _signal_handler(self, signum: int, frame: FrameType | None) -> None:
         sig_name = signal.Signals(signum).name
         logger.info("Guacamole bootstrap prune received %s, shutting down", sig_name)
         self.shutdown = True
