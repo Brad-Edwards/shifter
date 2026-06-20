@@ -260,3 +260,66 @@ resource "aws_ssm_parameter" "ctfd_platform_url" {
 
   tags = local.common_tags
 }
+
+# ------------------------------------------------------------------------------
+# Parameter Store - Portal Runtime Capacity Tunables (#930)
+# ------------------------------------------------------------------------------
+# Non-secret integers read by both container hydration paths (user_data.sh on
+# first boot, scripts/portal-deploy/deploy_portal.sh on SSM redeploy) and mapped
+# 1:1 onto the matching Docker env var. Updating a value retunes the running
+# fleet on the next converge/restart, with no image rebuild. Caps are
+# process-local: per-instance cap = portal_web_workers * terminal_max_sessions.
+
+resource "aws_ssm_parameter" "portal_web_workers" {
+  name        = "${local.ps_prefix}/portal-web-workers"
+  description = "Gunicorn/Uvicorn worker processes per portal instance (PORTAL_WEB_WORKERS), sized to instance vCPUs"
+  type        = "String"
+  value       = tostring(var.portal_web_workers)
+
+  tags = local.common_tags
+}
+
+resource "aws_ssm_parameter" "terminal_max_sessions" {
+  name        = "${local.ps_prefix}/terminal-max-sessions"
+  description = "Terminal SSH sessions per worker process (TERMINAL_MAX_SESSIONS); per-instance cap = workers * this"
+  type        = "String"
+  value       = tostring(var.terminal_max_sessions)
+
+  tags = local.common_tags
+}
+
+resource "aws_ssm_parameter" "terminal_max_sessions_per_user" {
+  name        = "${local.ps_prefix}/terminal-max-sessions-per-user"
+  description = "Terminal SSH sessions per user, per worker process (TERMINAL_MAX_SESSIONS_PER_USER)"
+  type        = "String"
+  value       = tostring(var.terminal_max_sessions_per_user)
+
+  tags = local.common_tags
+}
+
+resource "aws_ssm_parameter" "terminal_idle_timeout_seconds" {
+  name        = "${local.ps_prefix}/terminal-idle-timeout-seconds"
+  description = "Idle terminal session timeout in seconds (TERMINAL_IDLE_TIMEOUT_SECONDS)"
+  type        = "String"
+  value       = tostring(var.terminal_idle_timeout_seconds)
+
+  tags = local.common_tags
+}
+
+resource "aws_ssm_parameter" "terminal_max_session_seconds" {
+  name        = "${local.ps_prefix}/terminal-max-session-seconds"
+  description = "Hard ceiling on a terminal session lifetime in seconds (TERMINAL_MAX_SESSION_SECONDS)"
+  type        = "String"
+  value       = tostring(var.terminal_max_session_seconds)
+
+  tags = local.common_tags
+}
+
+resource "aws_ssm_parameter" "terminal_read_poll_seconds" {
+  name        = "${local.ps_prefix}/terminal-read-poll-seconds"
+  description = "Idle terminal read-loop poll interval in seconds (TERMINAL_READ_POLL_SECONDS); does not bound output latency"
+  type        = "String"
+  value       = tostring(var.terminal_read_poll_seconds)
+
+  tags = local.common_tags
+}

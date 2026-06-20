@@ -198,15 +198,22 @@ WEBSOCKET_NOTIFICATION_RETENTION_DAYS = _env_int("WEBSOCKET_NOTIFICATION_RETENTI
 # read task. During a live event a burst of sessions (or a reconnect storm) can
 # saturate the event loop and exhaust file descriptors, making the whole portal
 # look unreliable. These bounds cap concurrency and reclaim idle/abandoned
-# sessions. They are env-tunable so limits can be adjusted during an event
-# without a redeploy; the caps are per ASGI process, which matches how the
-# portal is deployed. A value <= 0 disables that individual limit.
+# sessions. A value <= 0 disables that individual limit.
+#
+# The caps are PER WORKER PROCESS. The production portal runs Gunicorn with
+# PORTAL_WEB_WORKERS Uvicorn workers (entrypoint.sh, #174), and the
+# TerminalSessionRegistry is process-local (one registry per worker), so the
+# real per-instance ceiling is PORTAL_WEB_WORKERS * TERMINAL_MAX_SESSIONS and the
+# per-user worst case is PORTAL_WEB_WORKERS * TERMINAL_MAX_SESSIONS_PER_USER.
+# These knobs and PORTAL_WEB_WORKERS are wired through SSM/tfvars (#930), so an
+# operator can retune them on a running instance without an image rebuild
+# (update the parameter, then converge/restart the container).
 #
 # TERMINAL_READ_POLL_SECONDS is how often an idle session's read loop wakes to
 # enforce the timeouts; it does NOT add latency to terminal output (output is
 # delivered as soon as it arrives). The previous hard-coded 0.1s poll woke every
 # idle terminal ~10x/second; a multi-second interval cuts idle CPU by orders of
-# magnitude. See docs/architecture/terminal-websocket-capacity-preflight-847.md.
+# magnitude. See docs/architecture/terminal-websocket-capacity-847.md.
 TERMINAL_MAX_SESSIONS = _env_int("TERMINAL_MAX_SESSIONS", 200)
 TERMINAL_MAX_SESSIONS_PER_USER = _env_int("TERMINAL_MAX_SESSIONS_PER_USER", 10)
 TERMINAL_IDLE_TIMEOUT_SECONDS = _env_int("TERMINAL_IDLE_TIMEOUT_SECONDS", 1800)

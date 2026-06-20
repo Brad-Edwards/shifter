@@ -52,6 +52,17 @@ ec2_ami_id           = "ami-00e428798e77d38d9"
 ec2_instance_type    = "t3.xlarge"
 ec2_root_volume_size = 50
 
+# Portal runtime capacity tunables (#930). t3.xlarge has 4 vCPUs, so the
+# Gunicorn/Uvicorn pool is 4 workers. Terminal caps are process-local;
+# per-instance terminal ceiling = portal_web_workers * terminal_max_sessions =
+# 4 * 200 = 800 sessions.
+portal_web_workers             = 4
+terminal_max_sessions          = 200
+terminal_max_sessions_per_user = 10
+terminal_idle_timeout_seconds  = 1800
+terminal_max_session_seconds   = 28800
+terminal_read_poll_seconds     = 30
+
 # ------------------------------------------------------------------------------
 # ALB
 # ------------------------------------------------------------------------------

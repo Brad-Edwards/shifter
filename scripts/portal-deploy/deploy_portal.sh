@@ -150,6 +150,34 @@ validate_bootstrap_email_list() {
   fi
 }
 
+# Portal runtime capacity knobs (#930) are non-secret integers fed from SSM into
+# the container env. They are interpolated into `docker run` argv, so a
+# non-integer value is rejected before any container call to keep the argv
+# injection-safe. Empty is always allowed (the parameter is unset and the image
+# default applies).
+#
+# validate_uint accepts 0 because the app treats a <= 0 TERMINAL_* cap as
+# "disabled" (a deliberate break-glass; tfvars validation keeps deployed values
+# positive). validate_positive_int additionally rejects 0, for knobs like the
+# worker count where 0 is never valid.
+validate_uint() {
+  local name="$1"
+  local value="$2"
+  if [[ -n "$value" && ! "$value" =~ ^[0-9]+$ ]]; then
+    echo "Invalid ${name}: expected a non-negative integer" >&2
+    exit 1
+  fi
+}
+
+validate_positive_int() {
+  local name="$1"
+  local value="$2"
+  if [[ -n "$value" && ! "$value" =~ ^[1-9][0-9]*$ ]]; then
+    echo "Invalid ${name}: expected a positive integer" >&2
+    exit 1
+  fi
+}
+
 image_ref() {
   local registry="$1"
   local repository="$2"
@@ -272,6 +300,12 @@ main() {
   local platform_bootstrap_staff_emails
   local platform_bootstrap_superuser_emails
   local image_digest
+  local portal_web_workers
+  local terminal_max_sessions
+  local terminal_max_sessions_per_user
+  local terminal_idle_timeout_seconds
+  local terminal_max_session_seconds
+  local terminal_read_poll_seconds
 
   image_digest=$(get_optional_param "$PS_PREFIX/image-digest")
   image_tag=$(get_param "$PS_PREFIX/image-tag")
@@ -301,6 +335,23 @@ main() {
   platform_bootstrap_superuser_emails=$(get_optional_param "$PS_PREFIX/platform-bootstrap-superuser-emails")
   validate_bootstrap_email_list "PLATFORM_BOOTSTRAP_STAFF_EMAILS" "$platform_bootstrap_staff_emails"
   validate_bootstrap_email_list "PLATFORM_BOOTSTRAP_SUPERUSER_EMAILS" "$platform_bootstrap_superuser_emails"
+
+  # Portal runtime capacity tunables (#930). Each is process-local: the
+  # per-instance ceiling is PORTAL_WEB_WORKERS * TERMINAL_MAX_SESSIONS. Read the
+  # same parameter names user_data.sh reads, validate as integers before they
+  # reach docker argv, and only emit when set (image default applies otherwise).
+  portal_web_workers=$(get_optional_param "$PS_PREFIX/portal-web-workers")
+  terminal_max_sessions=$(get_optional_param "$PS_PREFIX/terminal-max-sessions")
+  terminal_max_sessions_per_user=$(get_optional_param "$PS_PREFIX/terminal-max-sessions-per-user")
+  terminal_idle_timeout_seconds=$(get_optional_param "$PS_PREFIX/terminal-idle-timeout-seconds")
+  terminal_max_session_seconds=$(get_optional_param "$PS_PREFIX/terminal-max-session-seconds")
+  terminal_read_poll_seconds=$(get_optional_param "$PS_PREFIX/terminal-read-poll-seconds")
+  validate_positive_int "PORTAL_WEB_WORKERS" "$portal_web_workers"
+  validate_uint "TERMINAL_MAX_SESSIONS" "$terminal_max_sessions"
+  validate_uint "TERMINAL_MAX_SESSIONS_PER_USER" "$terminal_max_sessions_per_user"
+  validate_uint "TERMINAL_IDLE_TIMEOUT_SECONDS" "$terminal_idle_timeout_seconds"
+  validate_uint "TERMINAL_MAX_SESSION_SECONDS" "$terminal_max_session_seconds"
+  validate_uint "TERMINAL_READ_POLL_SECONDS" "$terminal_read_poll_seconds"
 
   local image
   image=$(image_ref "$ecr_registry" "$ecr_repository" "$image_digest" "$image_tag")
@@ -337,6 +388,12 @@ main() {
   append_env_if_set CTF_FROM_EMAIL "$ctf_from_email"
   append_env_if_set PLATFORM_BOOTSTRAP_STAFF_EMAILS "$platform_bootstrap_staff_emails"
   append_env_if_set PLATFORM_BOOTSTRAP_SUPERUSER_EMAILS "$platform_bootstrap_superuser_emails"
+  append_env_if_set PORTAL_WEB_WORKERS "$portal_web_workers"
+  append_env_if_set TERMINAL_MAX_SESSIONS "$terminal_max_sessions"
+  append_env_if_set TERMINAL_MAX_SESSIONS_PER_USER "$terminal_max_sessions_per_user"
+  append_env_if_set TERMINAL_IDLE_TIMEOUT_SECONDS "$terminal_idle_timeout_seconds"
+  append_env_if_set TERMINAL_MAX_SESSION_SECONDS "$terminal_max_session_seconds"
+  append_env_if_set TERMINAL_READ_POLL_SECONDS "$terminal_read_poll_seconds"
 
   run_migrations "$image" "${DOCKER_ENV[@]}"
   if [[ "$MIGRATE_ONLY" == "true" ]]; then
