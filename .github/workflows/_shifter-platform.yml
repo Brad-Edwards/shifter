@@ -364,6 +364,19 @@ jobs:
             echo "No Service Discovery deletion in saved plan"
           fi
       - run: terraform apply -lock-timeout=5m tfplan
+      - name: Assert portal inspection route/endpoint wiring
+        # When portal east-west inspection is enabled, the direct private->NAT
+        # default route is removed, so a stale / wrong-AZ / unhealthy firewall
+        # endpoint silently blackholes egress while `terraform apply` still
+        # succeeds. This post-apply check proves the live route tables point at
+        # the healthy per-AZ Network Firewall endpoints from
+        # firewall_status.sync_states and fails the deploy otherwise. It is a
+        # no-op when inspection is disabled, so it runs for every environment.
+        # See scripts/assert_portal_inspection/assert_portal_inspection.py.
+        working-directory: platform/terraform/environments/${{ inputs.environment }}/portal
+        run: |
+          python3 "${GITHUB_WORKSPACE}/scripts/assert_portal_inspection/assert_portal_inspection.py" \
+            --tf-outputs-from .
       - name: Verify RDS pending modifications applied (dev only)
         # Dev opts into apply_immediately=true so any post-apply
         # PendingModifiedValues means the deploy is incomplete. Prod

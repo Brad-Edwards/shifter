@@ -150,7 +150,13 @@ enable_waf_logging     = true
 # Portal east-west inspection (#122)
 # ------------------------------------------------------------------------------
 
-enable_portal_inspection    = true
+# Default-off baseline (#932). Enabling inspection removes the direct
+# private->NAT default route, so a misconfigured firewall endpoint blackholes
+# egress. A deploy opts in via the TF_VARS_*_PORTAL secret (local.auto.tfvars);
+# the post-apply assertion (scripts/assert_portal_inspection) then fails the
+# deploy if the route/endpoint wiring is unhealthy instead of shipping a
+# blackhole.
+enable_portal_inspection    = false
 firewall_log_retention_days = 365
 
 # prod: secure default; flip false + apply before any intentional destroy
@@ -175,14 +181,17 @@ dc_domain_name = "internal.shifter"
 # Guacamole
 # ------------------------------------------------------------------------------
 
-guacd_image_tag                = "1.5.5"
-guacamole_client_image_tag     = "1.5.5"
-guacd_cpu                      = 512
-guacd_memory                   = 1024
-guacamole_client_cpu           = 512
-guacamole_client_memory        = 1024
-guacd_desired_count            = 2
-guacamole_client_desired_count = 2
+guacd_image_tag            = "1.5.5"
+guacamole_client_image_tag = "1.5.5"
+guacd_cpu                  = 512
+guacd_memory               = 1024
+guacamole_client_cpu       = 512
+guacamole_client_memory    = 1024
+guacd_desired_count        = 2
+# Single guacamole-client task: tokens are minted and served from task-local
+# process memory, so N>1 client tasks break first-click RDP (#928). Scale guacd
+# for capacity, not the client.
+guacamole_client_desired_count = 1
 
 # Database (production settings)
 guacamole_db_instance_class        = "db.t3.small"
