@@ -114,10 +114,13 @@ class TestNotifications:
     """
 
     @pytest.fixture(autouse=True)
-    def _registered(self):
+    def _registered(self, settings):
         from cms.experiments.notifications import register_experiment_notifications
         from shared.notifications import clear_notification_registry
 
+        # The shared notification subsystem is disabled by default (#941); these
+        # helper tests assert on the persisted/fanned-out path, so enable it.
+        settings.WEBSOCKET_NOTIFICATIONS_ENABLED = True
         clear_notification_registry()
         register_experiment_notifications()
 

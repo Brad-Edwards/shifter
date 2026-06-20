@@ -186,6 +186,14 @@ REDIS_HOST = os.environ.get("REDIS_HOST", "")
 REDIS_PORT = int(os.environ.get("REDIS_PORT", "6379"))
 CHANNEL_LAYERS = _build_channel_layers(os.environ)
 
+# Shared WebSocket notification subsystem enablement (issue #941). The shared
+# persisted notification path (``/ws/notifications/``) has no front-end consumer,
+# so it is disabled by default: when off, publishing creates no per-recipient rows
+# and performs no channel-layer fan-out, and the shared socket is parked. Set to
+# "true" only once a real browser consumer, bounded fan-out, and scheduled pruning
+# exist. Non-secret boolean; absent env means disabled.
+WEBSOCKET_NOTIFICATIONS_ENABLED = _env_bool("WEBSOCKET_NOTIFICATIONS_ENABLED", False)
+
 # Shared WebSocket notification replay bounds (issue #679).
 WEBSOCKET_NOTIFICATION_MAX_REPLAY = _env_int("WEBSOCKET_NOTIFICATION_MAX_REPLAY", 100)
 WEBSOCKET_NOTIFICATION_RETENTION_DAYS = _env_int("WEBSOCKET_NOTIFICATION_RETENTION_DAYS", 7)
