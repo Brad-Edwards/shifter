@@ -195,10 +195,7 @@ cms_range_instance = RangeInstance.objects.create(
     status="ready",
     range_spec=range_spec,
 )
-print(
-    f"cms.RangeInstance: id={cms_range_instance.id} "
-    f"range_id={cms_range_instance.range_id}"
-)
+print(f"cms.RangeInstance: id={cms_range_instance.id}")
 
 print("\nSUMMARY")
 print(f"  User: {user.email} (id={user.id})")
@@ -206,5 +203,8 @@ print(f"  Engine Range id: {range_obj.id}")
 print(f"  CMS RangeInstance id: {cms_range_instance.id}")
 print(f"  Attacker instance uuid: {attacker_uuid}")
 print(f"  Kali private IP: {KALI_PRIVATE_IP}")
-print(f"  SSH key secret ARN: {KALI_SSH_KEY_SECRET_ARN}")
+# Don't log the secret ARN in clear text (it references a Secrets Manager
+# secret); confirm it was supplied without echoing the value (CodeQL
+# py/clear-text-logging-sensitive-data).
+print("  SSH key secret ARN: <provided via POLARIS_KALI_SSH_KEY_SECRET_ARN>")
 print(json.dumps({"attacker_uuid": attacker_uuid, "range_id": range_obj.id}))
