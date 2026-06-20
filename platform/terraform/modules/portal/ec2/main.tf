@@ -207,6 +207,34 @@ resource "aws_iam_role_policy" "cloudwatch_metrics" {
   })
 }
 
+# Portal web capacity metrics (#940). The portal app process publishes
+# request/terminal saturation gauges to the Shifter/PortalCapacity namespace.
+# This is a SEPARATE least-privilege statement, constrained by its own
+# cloudwatch:namespace condition, rather than widening the worker-health policy
+# above — keeping web-capacity emission and worker-container liveness on distinct
+# grants. cloudwatch:PutMetricData has no resource-level scoping, so the
+# namespace condition is the boundary.
+resource "aws_iam_role_policy" "cloudwatch_metrics_portal_capacity" {
+  name = "cloudwatch-metrics-portal-capacity"
+  role = aws_iam_role.this.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["cloudwatch:PutMetricData"]
+        Resource = "*"
+        Condition = {
+          StringEquals = {
+            "cloudwatch:namespace" = "Shifter/PortalCapacity"
+          }
+        }
+      }
+    ]
+  })
+}
+
 # IAM policy for reading range SSH keys from Secrets Manager
 # SSH keys are stored at: shifter/{env}/range/{range_id}/*-ssh-key
 # Required for Terminal UI feature to connect to Kali/Victim instances
@@ -650,69 +678,25 @@ resource "aws_autoscaling_group" "this" {
 # ------------------------------------------------------------------------------
 # Auto Scaling Policies
 # ------------------------------------------------------------------------------
+# Portal autoscaling is driven by request-path saturation, not average EC2 CPU
+# (#940). The primary scale-out/scale-in policies are ALB target-tracking
+# (ALBRequestCountPerTarget + TargetResponseTime) in autoscaling_alb.tf; the
+# simple policy below is an *additive* app-saturation scale-out, triggered by
+# the Shifter/PortalCapacity WorkerBusyRatio alarm in observability.tf. There is
+# deliberately NO CPU-low / simple scale-IN policy: leaving CPU-low as a scale-in
+# path alongside target tracking lets a latency-saturated-but-low-CPU fleet scale
+# in (the documented #851 / #940 failure mode), so target tracking owns the
+# saturation-aware, drain-respecting scale-in. Average EC2 CPU remains only as a
+# guardrail *notification* alarm (observability.tf), not a scaling action.
 
 resource "aws_autoscaling_policy" "scale_up" {
   count = var.enable_autoscaling ? 1 : 0
 
-  name                   = "${var.name_prefix}-scale-up"
+  name                   = "${var.name_prefix}-app-saturation-scale-out"
   scaling_adjustment     = 1
   adjustment_type        = "ChangeInCapacity"
-  cooldown               = 300
+  cooldown               = var.scale_out_cooldown_seconds
   autoscaling_group_name = aws_autoscaling_group.this[0].name
-}
-
-resource "aws_autoscaling_policy" "scale_down" {
-  count = var.enable_autoscaling ? 1 : 0
-
-  name                   = "${var.name_prefix}-scale-down"
-  scaling_adjustment     = -1
-  adjustment_type        = "ChangeInCapacity"
-  cooldown               = 300
-  autoscaling_group_name = aws_autoscaling_group.this[0].name
-}
-
-resource "aws_cloudwatch_metric_alarm" "cpu_high" {
-  count = var.enable_autoscaling ? 1 : 0
-
-  alarm_name          = "${var.name_prefix}-cpu-high"
-  comparison_operator = "GreaterThanThreshold"
-  evaluation_periods  = 2
-  metric_name         = "CPUUtilization"
-  namespace           = "AWS/EC2"
-  period              = 120
-  statistic           = "Average"
-  threshold           = var.scale_up_threshold
-  alarm_description   = "Scale up when CPU > ${var.scale_up_threshold}%"
-
-  dimensions = {
-    AutoScalingGroupName = aws_autoscaling_group.this[0].name
-  }
-
-  alarm_actions = [aws_autoscaling_policy.scale_up[0].arn]
-
-  tags = local.common_tags
-}
-
-resource "aws_cloudwatch_metric_alarm" "cpu_low" {
-  count = var.enable_autoscaling ? 1 : 0
-
-  alarm_name          = "${var.name_prefix}-cpu-low"
-  comparison_operator = "LessThanThreshold"
-  evaluation_periods  = 2
-  metric_name         = "CPUUtilization"
-  namespace           = "AWS/EC2"
-  period              = 120
-  statistic           = "Average"
-  threshold           = var.scale_down_threshold
-  alarm_description   = "Scale down when CPU < ${var.scale_down_threshold}%"
-
-  dimensions = {
-    AutoScalingGroupName = aws_autoscaling_group.this[0].name
-  }
-
-  alarm_actions = [aws_autoscaling_policy.scale_down[0].arn]
-
-  tags = local.common_tags
 }
 
 # ------------------------------------------------------------------------------

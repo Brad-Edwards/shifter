@@ -134,6 +134,7 @@ MIDDLEWARE = [
     "config.middleware.HealthCheckMiddleware",
     # Request ID for audit logging correlation
     "config.middleware.RequestIDMiddleware",
+    "config.middleware.RequestInFlightMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
@@ -240,6 +241,8 @@ TERMINAL_CONNECT_EXECUTOR_WORKERS = _env_int("TERMINAL_CONNECT_EXECUTOR_WORKERS"
 # TerminalExecutorSaturated and the connect is closed with SERVICE_UNAVAILABLE
 # (4503, retryable) instead of being queued without limit (#929).
 TERMINAL_CONNECT_EXECUTOR_QUEUE_SLACK = _env_int("TERMINAL_CONNECT_EXECUTOR_QUEUE_SLACK", 16)
+
+from config._capacity_settings import *  # noqa: E402  # NOSONAR
 
 # Database
 # Use SQLite for local dev/tests, PostgreSQL for deployed environments

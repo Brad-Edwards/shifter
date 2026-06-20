@@ -228,13 +228,52 @@ variable "asg_desired_capacity" {
 }
 
 variable "scale_up_threshold" {
-  description = "CPU percentage threshold to trigger scale up"
+  description = "Average EC2 CPU percentage that fires the guardrail notification alarm (#940: CPU is a notification, not a scaling action)."
   type        = number
 }
 
-variable "scale_down_threshold" {
-  description = "CPU percentage threshold to trigger scale down"
+# Portal app-saturation autoscaling + observability (#940). Scale-out tracks ALB
+# request-path saturation instead of average EC2 CPU.
+variable "scale_target_requests_per_target" {
+  description = "ALBRequestCountPerTarget target-tracking value: requests per target per minute held steady (primary scale-out signal)."
   type        = number
+  default     = 1000
+}
+
+variable "scale_target_response_time_seconds" {
+  description = "ALB TargetResponseTime (Average, seconds) target-tracking value: the latency/queueing target held steady."
+  type        = number
+  default     = 0.5
+}
+
+variable "worker_busy_ratio_scale_out_threshold" {
+  description = "Hottest-worker WorkerBusyRatio above which the additive app-saturation scale-out fires."
+  type        = number
+  default     = 0.8
+}
+
+variable "target_response_time_alarm_threshold_seconds" {
+  description = "ALB p95 TargetResponseTime (seconds) above which the latency observability alarm notifies."
+  type        = number
+  default     = 1.0
+}
+
+variable "enable_portal_capacity_alarms" {
+  description = "Create the portal capacity CloudWatch alarms and dashboard."
+  type        = bool
+  default     = true
+}
+
+variable "portal_capacity_metrics_enabled" {
+  description = "Enable the per-worker Shifter/PortalCapacity metrics emitter (PORTAL_CAPACITY_METRICS_ENABLED)."
+  type        = bool
+  default     = false
+}
+
+variable "portal_worker_soft_concurrency" {
+  description = "Busy-ratio denominator: soft concurrent in-flight HTTP request target per portal web worker (PORTAL_WORKER_SOFT_CONCURRENCY)."
+  type        = number
+  default     = 6
 }
 
 # ------------------------------------------------------------------------------
