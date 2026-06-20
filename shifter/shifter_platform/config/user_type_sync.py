@@ -23,7 +23,7 @@ from django.db import transaction
 
 from management.services import get_user_profile, set_active_ctf_event
 from risk_register.models import AuditLog
-from risk_register.services import audit_role_sync, get_client_ip, get_request_id
+from risk_register.services import RequestAudit, StateChange, audit_role_sync, get_client_ip, get_request_id
 from shared.auth import CTF_ORGANIZER_GROUP, CTF_PARTICIPANT_GROUP
 
 if TYPE_CHECKING:
@@ -49,17 +49,18 @@ _ALL_CTF_GROUPS = (CTF_ORGANIZER_GROUP, CTF_PARTICIPANT_GROUP)
 
 
 def _ctf_group_names(user: User) -> set[str]:
+    """Return the user's current CTF-scoped group names."""
     return set(user.groups.filter(name__in=_ALL_CTF_GROUPS).values_list("name", flat=True))
 
 
-def _request_context(request: HttpRequest | None) -> tuple[str | None, str, str]:
-    """Return ``(source_ip, user_agent, request_id)`` for the audit row."""
+def _request_context(request: HttpRequest | None) -> RequestAudit:
+    """Return the request-derived audit context for the role-sync row."""
     if request is None:
-        return None, "", ""
-    return (
-        get_client_ip(request),
-        request.META.get("HTTP_USER_AGENT", "")[:500],
-        get_request_id(request),
+        return RequestAudit()
+    return RequestAudit(
+        source_ip=get_client_ip(request),
+        user_agent=request.META.get("HTTP_USER_AGENT", "")[:500],
+        request_id=get_request_id(request),
     )
 
 
@@ -132,7 +133,7 @@ def sync_user_type(
     new_groups = set() if target_group is None else old_groups | {target_group}
 
     if new_groups != old_groups or old_user_type != claimed_user_type:
-        source_ip, user_agent, request_id = _request_context(request)
+        request_audit = _request_context(request)
         with transaction.atomic():
             to_remove = old_groups - new_groups
             if to_remove:
@@ -149,12 +150,12 @@ def sync_user_type(
                 user_id=user.id,
                 actor_type=actor_type,
                 actor_id=user.id,
-                previous_state={"user_type": old_user_type, "groups": sorted(old_groups)},
-                new_state={"user_type": claimed_user_type, "groups": sorted(new_groups)},
+                change=StateChange(
+                    previous={"user_type": old_user_type, "groups": sorted(old_groups)},
+                    new={"user_type": claimed_user_type, "groups": sorted(new_groups)},
+                ),
                 source=source,
-                source_ip=source_ip,
-                user_agent=user_agent,
-                request_id=request_id,
+                request=request_audit,
             )
 
     _sync_active_ctf_event(user, claimed_user_type, ctf_event_id)

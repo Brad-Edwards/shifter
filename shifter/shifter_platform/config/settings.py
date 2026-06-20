@@ -476,14 +476,11 @@ REST_FRAMEWORK = {
 # ------------------------------------------------------------------------------
 
 ENVIRONMENT = os.environ.get("ENVIRONMENT", "production")
-# Dev-auth secondary admission is bound to the direct peer (REMOTE_ADDR): the
-# loopback range is always admitted and these CIDRs opt in extra admin networks.
-# The spoofable Host header is never a dev-auth primitive (SEC-3, issue #937).
+# Dev-auth admission is bound to the direct peer (REMOTE_ADDR): loopback is always
+# admitted and these CIDRs opt in extra admin networks; Host is never trusted (SEC-3, #937).
 DEV_LOGIN_ALLOWED_CIDRS = _env_list("DEV_LOGIN_ALLOWED_CIDRS")
-
-# Number of trusted reverse-proxy hops that append to X-Forwarded-For. Shifter
-# runs behind a single ALB that appends the real client IP as the rightmost
-# value, so the audit source-IP resolver trusts that hop (issue #937 SEC-4).
+# Trusted reverse-proxy hops appending to X-Forwarded-For (single ALB -> 1); the audit
+# source-IP resolver trusts that rightmost hop (issue #937 SEC-4).
 AUDIT_TRUSTED_PROXY_HOPS = _env_int("AUDIT_TRUSTED_PROXY_HOPS", 1)
 
 # ------------------------------------------------------------------------------

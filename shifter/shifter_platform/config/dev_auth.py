@@ -9,7 +9,7 @@ import logging
 
 from django.conf import settings
 from django.contrib.auth import get_user_model, login
-from django.http import HttpResponseForbidden, HttpResponseRedirect
+from django.http import HttpRequest, HttpResponseForbidden, HttpResponseRedirect
 from django.shortcuts import render
 from django.urls import reverse
 
@@ -44,7 +44,30 @@ def _is_dev_environment():
     return settings.DEBUG or getattr(settings, "ENVIRONMENT", "production") == "development"
 
 
-def _request_peer_allowed(request) -> bool:
+_IpAddress = ipaddress.IPv4Address | ipaddress.IPv6Address
+
+
+def _parse_peer_ip(remote_addr: str) -> _IpAddress | None:
+    """Parse ``REMOTE_ADDR`` into an IP address, or None when absent/malformed."""
+    remote_addr = remote_addr.strip()
+    if not remote_addr:
+        return None
+    try:
+        return ipaddress.ip_address(remote_addr)
+    except ValueError:
+        return None
+
+
+def _ip_in_cidr(client_ip: _IpAddress, cidr: str) -> bool:
+    """Return True if ``client_ip`` falls in ``cidr``; skip malformed CIDRs."""
+    try:
+        return client_ip in ipaddress.ip_network(cidr, strict=False)
+    except ValueError:
+        logger.warning("Ignoring invalid DEV_LOGIN_ALLOWED_CIDRS entry: %s", cidr)
+        return False
+
+
+def _request_peer_allowed(request: HttpRequest) -> bool:
     """Allow dev auth only from a trusted direct peer address.
 
     Admission is bound to the actual socket peer (``REMOTE_ADDR``) — never the
@@ -53,25 +76,12 @@ def _request_peer_allowed(request) -> bool:
     tunnels (which present as loopback) keep working; additional admin networks
     opt in through ``DEV_LOGIN_ALLOWED_CIDRS``.
     """
-    remote_addr = request.META.get("REMOTE_ADDR", "").strip()
-    if not remote_addr:
+    client_ip = _parse_peer_ip(request.META.get("REMOTE_ADDR", ""))
+    if client_ip is None:
         return False
-
-    try:
-        client_ip = ipaddress.ip_address(remote_addr)
-    except ValueError:
-        return False
-
     if client_ip.is_loopback:
         return True
-
-    for cidr in getattr(settings, "DEV_LOGIN_ALLOWED_CIDRS", []):
-        try:
-            if client_ip in ipaddress.ip_network(cidr, strict=False):
-                return True
-        except ValueError:
-            logger.warning("Ignoring invalid DEV_LOGIN_ALLOWED_CIDRS entry: %s", cidr)
-    return False
+    return any(_ip_in_cidr(client_ip, cidr) for cidr in getattr(settings, "DEV_LOGIN_ALLOWED_CIDRS", []))
 
 
 def dev_login(request):

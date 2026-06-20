@@ -53,6 +53,15 @@ class StateChange:
 
 
 @dataclass(frozen=True)
+class RequestAudit:
+    """Request-derived audit context (source IP, user agent, request id)."""
+
+    source_ip: str | None = None
+    user_agent: str = ""
+    request_id: str = ""
+
+
+@dataclass(frozen=True)
 class AuthPrincipal:
     """Identity of the principal in an authentication audit event."""
 
@@ -158,42 +167,36 @@ def audit_role_sync(
     user_id: int,
     actor_type: str,
     actor_id: int | None,
-    previous_state: dict[str, Any],
-    new_state: dict[str, Any],
+    change: StateChange,
     source: str,
-    source_ip: str | None = None,
-    user_agent: str = "",
-    request_id: str = "",
-) -> AuditLog:
+    request: RequestAudit | None = None,
+) -> AuditLog | None:
     """Record a ``user_type`` / CTF-group-membership change (fail-closed).
 
     The safety control for the self-mutable ``custom:user_type`` attribute is a
     durable, reviewable audit trail (issue #937 SEC-5), so this writer is
-    strict: a persistence failure raises rather than returning None. Callers run
-    it inside a transaction so a failed audit rolls back the role mutation it
-    describes. ``previous_state`` / ``new_state`` carry the old and new
-    ``user_type`` plus the old and new CTF group names — never tokens, cookies,
-    or raw provider payloads.
+    strict: a persistence failure raises rather than returning None, so callers
+    running it inside a transaction roll back the role mutation it describes.
+    ``change`` carries the old and new ``user_type`` plus the old and new CTF
+    group names — never tokens, cookies, or raw provider payloads.
     """
-    entry = audit_log(
+    request = request or RequestAudit()
+    return audit_log(
         AuditEvent(
             entity_type=AuditLog.EntityType.USER,
             entity_id=user_id,
             action=AuditLog.Action.ROLE_SYNC,
             actor_type=actor_type,
             actor_id=actor_id,
-            previous_state=previous_state,
-            new_state=new_state,
+            previous_state=change.previous,
+            new_state=change.new,
             context=f"user_type sync via {source}",
-            source_ip=source_ip,
-            user_agent=user_agent,
-            request_id=request_id,
+            source_ip=request.source_ip,
+            user_agent=request.user_agent,
+            request_id=request.request_id,
         ),
         strict=True,
     )
-    if entry is None:  # pragma: no cover - strict=True raises instead of returning None
-        raise RuntimeError("audit_role_sync: strict audit_log returned None")
-    return entry
 
 
 def _valid_ip(value: str | None) -> str | None:

@@ -21,7 +21,9 @@ from risk_register.models import AuditLog
 from risk_register.services import (
     AuditEvent,
     AuthPrincipal,
+    RequestAudit,
     SessionInfo,
+    StateChange,
     audit_auth_event,
     audit_log,
     audit_log_from_request,
@@ -177,10 +179,12 @@ class TestAuditRoleSync:
             user_id=7,
             actor_type=AuditLog.ActorType.USER,
             actor_id=7,
-            previous_state={"user_type": "standard", "groups": []},
-            new_state={"user_type": "ctf_participant", "groups": ["CTF Participant"]},
+            change=StateChange(
+                previous={"user_type": "standard", "groups": []},
+                new={"user_type": "ctf_participant", "groups": ["CTF Participant"]},
+            ),
             source="oidc",
-            source_ip="9.9.9.9",
+            request=RequestAudit(source_ip="9.9.9.9"),
         )
         stored = AuditLog.objects.get(pk=entry.pk)
         assert stored.action == AuditLog.Action.ROLE_SYNC
@@ -198,8 +202,7 @@ class TestAuditRoleSync:
                 user_id=1,
                 actor_type=AuditLog.ActorType.USER,
                 actor_id=1,
-                previous_state={"user_type": "standard"},
-                new_state={"groups": {1, 2, 3}},
+                change=StateChange(previous={"user_type": "standard"}, new={"groups": {1, 2, 3}}),
                 source="oidc",
             )
 
