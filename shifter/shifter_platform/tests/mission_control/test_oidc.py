@@ -6,7 +6,8 @@ import pytest
 from django.contrib.auth import get_user_model
 from django.test import override_settings
 
-from config.oidc import ShifterOIDCBackend, generate_username, provider_logout_url
+from config.oidc import ShifterOIDCBackend, provider_logout_url
+from config.username import generate_username
 from management.services import get_user_profile
 from risk_register.models import AuditLog
 
