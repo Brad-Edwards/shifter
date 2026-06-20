@@ -286,3 +286,24 @@ variable "terminal_read_poll_seconds" {
     error_message = "terminal_read_poll_seconds must be a positive integer."
   }
 }
+
+# ------------------------------------------------------------------------------
+# Portal web capacity metrics (#940)
+# ------------------------------------------------------------------------------
+
+variable "portal_capacity_metrics_enabled" {
+  description = "Enable the per-worker Shifter/PortalCapacity metrics emitter (PORTAL_CAPACITY_METRICS_ENABLED). Enable in ASG-mode environments where the capacity alarms/dashboard exist."
+  type        = bool
+  default     = false
+}
+
+variable "portal_worker_soft_concurrency" {
+  description = "Busy-ratio denominator: the soft concurrent in-flight HTTP request target per portal web worker (PORTAL_WORKER_SOFT_CONCURRENCY)."
+  type        = number
+  default     = 6
+
+  validation {
+    condition     = var.portal_worker_soft_concurrency >= 1 && floor(var.portal_worker_soft_concurrency) == var.portal_worker_soft_concurrency
+    error_message = "portal_worker_soft_concurrency must be a positive integer."
+  }
+}

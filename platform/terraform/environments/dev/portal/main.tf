@@ -463,6 +463,11 @@ module "ssm" {
   terminal_idle_timeout_seconds  = var.terminal_idle_timeout_seconds
   terminal_max_session_seconds   = var.terminal_max_session_seconds
   terminal_read_poll_seconds     = var.terminal_read_poll_seconds
+
+  # Portal web capacity metrics (#940). Enable flag and busy-ratio denominator
+  # are env-owned and hydrated by both first-boot user_data and SSM redeploy.
+  portal_capacity_metrics_enabled = var.portal_capacity_metrics_enabled
+  portal_worker_soft_concurrency  = var.portal_worker_soft_concurrency
 }
 
 # ------------------------------------------------------------------------------
@@ -503,14 +508,26 @@ module "ec2" {
   ecs_execution_role_arn     = module.engine_provisioner.ecs_execution_role_arn
 
   # Autoscaling configuration
-  enable_autoscaling     = var.enable_autoscaling
-  subnet_ids             = module.vpc.private_subnet_ids
-  target_group_arn       = module.alb.target_group_arn
-  asg_min_size           = var.asg_min_size
-  asg_max_size           = var.asg_max_size
-  asg_desired_capacity   = var.asg_desired_capacity
-  asg_warm_pool_min_size = var.asg_warm_pool_min_size
-  asg_warm_pool_state    = var.asg_warm_pool_state
+  enable_autoscaling      = var.enable_autoscaling
+  subnet_ids              = module.vpc.private_subnet_ids
+  target_group_arn        = module.alb.target_group_arn
+  alb_arn_suffix          = module.alb.alb_arn_suffix
+  target_group_arn_suffix = module.alb.target_group_arn_suffix
+  asg_min_size            = var.asg_min_size
+  asg_max_size            = var.asg_max_size
+  asg_desired_capacity    = var.asg_desired_capacity
+  asg_warm_pool_min_size  = var.asg_warm_pool_min_size
+  asg_warm_pool_state     = var.asg_warm_pool_state
+
+  # App-saturation autoscaling + observability (#940). Scale-out tracks ALB
+  # request-path saturation, not average EC2 CPU; alarms/dashboard notify the
+  # shared alerts topic.
+  scale_target_requests_per_target             = var.scale_target_requests_per_target
+  scale_target_response_time_seconds           = var.scale_target_response_time_seconds
+  worker_busy_ratio_scale_out_threshold        = var.worker_busy_ratio_scale_out_threshold
+  target_response_time_alarm_threshold_seconds = var.target_response_time_alarm_threshold_seconds
+  enable_portal_capacity_alarms                = var.enable_portal_capacity_alarms
+  portal_capacity_alarm_actions                = var.alarm_email != "" ? [aws_sns_topic.alerts.arn] : []
 
   # Connection-lifecycle drain (#931): bounded termination drain + graceful
   # container stop, sized below the ALB idle timeout / target drain.
@@ -518,10 +535,9 @@ module "ec2" {
   docker_stop_timeout                     = var.docker_stop_timeout
   instance_refresh_min_healthy_percentage = var.instance_refresh_min_healthy_percentage
 
-  redis_endpoint       = var.enable_redis ? module.redis.redis_endpoint : ""
-  scale_up_threshold   = var.scale_up_threshold
-  scale_down_threshold = var.scale_down_threshold
-  log_retention_days   = var.log_retention_days
+  redis_endpoint     = var.enable_redis ? module.redis.redis_endpoint : ""
+  scale_up_threshold = var.scale_up_threshold
+  log_retention_days = var.log_retention_days
 
   # Messaging (SQS queues for message consumers)
   sqs_queue_arns  = values(module.messaging.sqs_queue_arns)
@@ -555,7 +571,9 @@ module "ctfd" {
   aws_region  = var.aws_region
   name_prefix = local.name_prefix
   vpc_id      = module.vpc.vpc_id
-  subnet_id   = module.vpc.public_subnet_ids[0]
+  # Public-workload tier, kept out of the ALB ingress CIDR so CTFd cannot
+  # reach Django:8000 / Guacamole:8080 directly (#911 NET-2 / #933).
+  subnet_id = module.vpc.public_workload_subnet_ids[0]
 
   ami_id                 = var.ctfd_ami_id
   instance_type          = var.ctfd_instance_type
@@ -863,18 +881,23 @@ module "guacamole" {
   depends_on = [module.vpc]
 }
 
-# ALB health checks and user traffic are routed through the portal inspection
-# boundary before they reach private targets. Source security group references
-# do not survive that middlebox path reliably, so keep those existing SG rules
-# and add CIDR-scoped ingress from only the ALB public subnet CIDRs.
+# When portal inspection is enabled, ALB health checks and user traffic reach
+# the private targets through the Network Firewall endpoint. AWS documents that
+# security-group references do not allow traffic across a routed middlebox (the
+# flow is split source->middlebox and middlebox->destination), so the inspected
+# ALB->target path needs a CIDR rule in addition to the module SG-to-SG rules.
+# That CIDR is scoped to the ALB ingress tier ONLY (`alb_ingress_subnet_cidrs`),
+# never the whole public tier: CTFd lives in the separate public-workload tier,
+# so it cannot reach Django:8000 / Guacamole:8080 directly (#911 NET-2 / #933).
+# See https://aws.amazon.com/blogs/networking-and-content-delivery/deployment-models-for-aws-network-firewall-with-vpc-routing-enhancements/
 resource "aws_security_group_rule" "portal_app_from_alb_subnets" {
   type              = "ingress"
   from_port         = var.app_port
   to_port           = var.app_port
   protocol          = "tcp"
-  cidr_blocks       = module.vpc.public_subnet_cidrs
+  cidr_blocks       = module.vpc.alb_ingress_subnet_cidrs
   security_group_id = module.ec2.security_group_id
-  description       = "HTTP from ALB public subnets through inspection"
+  description       = "HTTP from ALB ingress subnets through inspection"
 }
 
 resource "aws_security_group_rule" "guacamole_client_from_alb_subnets" {
@@ -882,9 +905,9 @@ resource "aws_security_group_rule" "guacamole_client_from_alb_subnets" {
   from_port         = 8080
   to_port           = 8080
   protocol          = "tcp"
-  cidr_blocks       = module.vpc.public_subnet_cidrs
+  cidr_blocks       = module.vpc.alb_ingress_subnet_cidrs
   security_group_id = module.guacamole.guacamole_client_security_group_id
-  description       = "HTTP from ALB public subnets through inspection"
+  description       = "HTTP from ALB ingress subnets through inspection"
 }
 
 # ------------------------------------------------------------------------------

@@ -132,6 +132,17 @@ jobs:
             platform/terraform/modules/portal/rds/main.tf \
             platform/terraform/modules/guacamole/rds.tf
 
+      # #911 NET-2 / #933: the portal target-service SGs (Django:8000,
+      # Guacamole client:8080) must source ingress only from a security-group
+      # reference or the ALB-only alb_ingress_subnet_cidrs output, never the
+      # whole public tier (where CTFd lives). Guards the env-root SG rules so a
+      # future edit cannot re-widen the source back to public_subnet_cidrs.
+      - name: Run check-portal-target-sg-sources
+        run: |
+          python3 scripts/check_portal_target_sg_sources/check_portal_target_sg_sources.py \
+            platform/terraform/environments/dev/portal/main.tf \
+            platform/terraform/environments/prod/portal/main.tf
+
       # Pin the behavior of the check_tf_* IAM/security checkers
       # themselves. The live-file invocations above only exercise the
       # happy-path shape; the test suites cover wildcards, list
@@ -149,6 +160,7 @@ jobs:
           python3 -m unittest scripts.check_tf_sg_cidrs.test_check_tf_sg_cidrs
           python3 -m unittest scripts.check_tf_kms_secrets_grant.test_check_tf_kms_secrets_grant
           python3 -m unittest scripts.check_tf_rds_security.test_check_tf_rds_security
+          python3 -m unittest scripts.check_portal_target_sg_sources.test_check_portal_target_sg_sources
 
   # Pin the behavior of the Polaris CTFd workshop sync helpers. Issue #702
   # shipped 38/39 challenges unsubmittable because flag-row reconciliation

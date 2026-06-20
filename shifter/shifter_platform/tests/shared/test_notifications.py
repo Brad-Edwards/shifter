@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import timedelta
 from io import StringIO
 from unittest.mock import MagicMock
@@ -32,6 +33,12 @@ def clear_notification_registry():
 def user(db):
     """Create a test user."""
     return get_user_model().objects.create_user(username="owner@example.com", email="owner@example.com")
+
+
+@pytest.fixture
+def enabled_notifications(settings):
+    """Enable the shared notification subsystem (off by default since #941)."""
+    settings.WEBSOCKET_NOTIFICATIONS_ENABLED = True
 
 
 def _register_experiment_type() -> None:
@@ -113,7 +120,7 @@ def test_authorize_subscription_handles_invalid_and_failing_authorizers(caplog) 
     assert "notification authorizer failed" in caplog.text
 
 
-def test_publish_notification_validates_registration_and_event_id(user) -> None:
+def test_publish_notification_validates_registration_and_event_id(user, enabled_notifications) -> None:
     """Publish rejects unknown contracts and accepts string event ids."""
     from shared.notifications import publish_notification
 
@@ -149,7 +156,7 @@ def test_publish_notification_validates_registration_and_event_id(user) -> None:
 
 
 @pytest.mark.django_db
-def test_publish_notification_generates_event_id_when_not_supplied(user):
+def test_publish_notification_generates_event_id_when_not_supplied(user, enabled_notifications):
     """Publish generates an idempotency key when the source event has no id."""
     from shared.notifications import publish_notification
 
@@ -166,7 +173,7 @@ def test_publish_notification_generates_event_id_when_not_supplied(user):
 
 
 @pytest.mark.django_db
-def test_publish_notification_persists_and_fans_out(user):
+def test_publish_notification_persists_and_fans_out(user, enabled_notifications):
     """Publishing stores a per-recipient row and sends to the user/topic group.
 
     Uses the real (in-process ``InMemoryChannelLayer``) channels backend rather
@@ -207,7 +214,7 @@ def test_publish_notification_persists_and_fans_out(user):
 
 
 @pytest.mark.django_db
-def test_publish_notification_is_idempotent_per_recipient_topic_type_and_event(user):
+def test_publish_notification_is_idempotent_per_recipient_topic_type_and_event(user, enabled_notifications):
     """Duplicate source events do not enqueue duplicate missed notifications."""
     from shared.notifications import publish_notification
 
@@ -232,6 +239,43 @@ def test_publish_notification_is_idempotent_per_recipient_topic_type_and_event(u
     assert first[0].id == second[0].id
     assert WebSocketNotification.objects.count() == 1
     assert str(WebSocketNotification.objects.get()) == f"experiment.run_status:experiment:100:{user.id}"
+
+
+@pytest.mark.django_db
+def test_publish_notification_disabled_creates_no_rows_and_no_fanout(user, settings):
+    """When the subsystem is disabled (default since #941), publishing is a full no-op.
+
+    Disabled mode must stop cost before persistence and fan-out: no
+    ``WebSocketNotification`` rows are written and a real channel subscribed to
+    the destination group receives nothing.
+    """
+    from shared.notifications import publish_notification
+
+    settings.WEBSOCKET_NOTIFICATIONS_ENABLED = False
+    _register_experiment_type()
+
+    # Subscribe a real channel to the destination group so any fan-out would be observable.
+    channel_layer = get_channel_layer()
+    channel_name = async_to_sync(channel_layer.new_channel)()
+    group_name = notification_user_topic_group(user.id, "experiment:100")
+    async_to_sync(channel_layer.group_add)(group_name, channel_name)
+
+    result = publish_notification(
+        "experiment.run_status",
+        topic="experiment:100",
+        payload={"run_id": 7, "status": "running"},
+        recipient_ids=[user.id, user.id],
+        event_id="12345678-1234-5678-1234-567812345678",
+    )
+
+    assert result == []
+    assert WebSocketNotification.objects.count() == 0
+
+    async def _assert_no_message_delivered() -> None:
+        with pytest.raises(asyncio.TimeoutError):
+            await asyncio.wait_for(channel_layer.receive(channel_name), timeout=0.2)
+
+    async_to_sync(_assert_no_message_delivered)()
 
 
 # The ``_get_or_create_notification`` IntegrityError race fallback is omitted: the
