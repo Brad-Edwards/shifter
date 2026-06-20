@@ -129,13 +129,16 @@ class TestApiInstanceSSHURL:
 
     def test_returns_400_when_instance_not_in_range(self, rf, user, guac_configured, range_ssh_instance):
         # A READY range exists, but the requested instance uuid is not in it.
+        # Resolution moved into the worker (#929) -> polled FAILED bootstrap (400).
         range_ssh_instance(user, uuid="a-different-instance-uuid")
         request = _post_request(rf, user)
 
         response = guacamole_ssh_url(request)
 
-        assert response.status_code == 400
-        assert "not found" in _json(response)["error"].lower()
+        assert response.status_code == 202
+        status = _status_response(rf, user, _json(response)["request_id"])
+        assert status.status_code == 400
+        assert "not found" in _json(status)["error"].lower()
 
     def test_returns_503_when_guacamole_not_configured(self, rf, user, settings, range_ssh_instance, secrets_boundary):
         settings.GUACAMOLE_JSON_AUTH_SECRET = ""
