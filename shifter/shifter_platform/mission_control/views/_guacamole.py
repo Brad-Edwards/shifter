@@ -35,7 +35,6 @@ from ._guacamole_builders import (
     _resolve_range_ssh,
     _resolve_rdp_conn,
     _response_error_message,
-    _sftp_root_for_os,  # noqa: F401  (re-exported for tests / backwards-compat)
     _ViewError,
 )
 
