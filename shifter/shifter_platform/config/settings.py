@@ -188,6 +188,14 @@ REDIS_HOST = os.environ.get("REDIS_HOST", "")
 REDIS_PORT = int(os.environ.get("REDIS_PORT", "6379"))
 CHANNEL_LAYERS = _build_channel_layers(os.environ)
 
+# Shared WebSocket notification subsystem enablement (issue #941). The shared
+# persisted notification path (``/ws/notifications/``) has no front-end consumer,
+# so it is disabled by default: when off, publishing creates no per-recipient rows
+# and performs no channel-layer fan-out, and the shared socket is parked. Set to
+# "true" only once a real browser consumer, bounded fan-out, and scheduled pruning
+# exist. Non-secret boolean; absent env means disabled.
+WEBSOCKET_NOTIFICATIONS_ENABLED = _env_bool("WEBSOCKET_NOTIFICATIONS_ENABLED", False)
+
 # Shared WebSocket notification replay bounds (issue #679).
 WEBSOCKET_NOTIFICATION_MAX_REPLAY = _env_int("WEBSOCKET_NOTIFICATION_MAX_REPLAY", 100)
 WEBSOCKET_NOTIFICATION_RETENTION_DAYS = _env_int("WEBSOCKET_NOTIFICATION_RETENTION_DAYS", 7)
@@ -221,6 +229,19 @@ TERMINAL_MAX_SESSIONS_PER_USER = _env_int("TERMINAL_MAX_SESSIONS_PER_USER", 10)
 TERMINAL_IDLE_TIMEOUT_SECONDS = _env_int("TERMINAL_IDLE_TIMEOUT_SECONDS", 1800)
 TERMINAL_MAX_SESSION_SECONDS = _env_int("TERMINAL_MAX_SESSION_SECONDS", 28800)
 TERMINAL_READ_POLL_SECONDS = _env_int("TERMINAL_READ_POLL_SECONDS", 30)
+# Bounded executor that runs blocking terminal-connect work (SSH connect, audit
+# writes, ownership lookups) off the default thread-sensitive sync_to_async lane
+# that serves HTTP page renders, so a terminal connect storm cannot head-of-line
+# block page renders on the same ASGI worker (#929). Per-process, like the caps
+# above.
+TERMINAL_CONNECT_EXECUTOR_WORKERS = _env_int("TERMINAL_CONNECT_EXECUTOR_WORKERS", 8)
+# Bounded admission gate on top of the terminal executor. ThreadPoolExecutor
+# caps concurrent workers but has an unbounded submission queue, so a connect
+# storm could still pile arbitrary blocking work in-process. Admission capacity
+# is workers + this slack; once it is exhausted run_terminal_sync rejects with
+# TerminalExecutorSaturated and the connect is closed with SERVICE_UNAVAILABLE
+# (4503, retryable) instead of being queued without limit (#929).
+TERMINAL_CONNECT_EXECUTOR_QUEUE_SLACK = _env_int("TERMINAL_CONNECT_EXECUTOR_QUEUE_SLACK", 16)
 
 # Portal web capacity metrics (Shifter/PortalCapacity, #940). When enabled, each
 # Uvicorn worker runs a daemon thread that publishes its in-flight HTTP request
@@ -425,6 +446,26 @@ GUACAMOLE_API_BASE_URL = os.environ.get("GUACAMOLE_API_BASE_URL", "") or GUACAMO
 GUACAMOLE_BOOTSTRAP_WORKERS = int(os.environ.get("GUACAMOLE_BOOTSTRAP_WORKERS", "4"))
 GUACAMOLE_BOOTSTRAP_TTL_SECONDS = int(os.environ.get("GUACAMOLE_BOOTSTRAP_TTL_SECONDS", "300"))
 GUACAMOLE_BOOTSTRAP_INLINE = _env_bool("GUACAMOLE_BOOTSTRAP_INLINE", False)
+
+# Bounded botocore connect/read timeouts for the AWS Secrets Manager client used
+# on/near the portal request path. A stalled Secrets Manager must fail fast
+# instead of hanging an ASGI worker on botocore's long defaults (#929).
+# AWS_SECRETS_MAX_ATTEMPTS is the total attempt count (first try + retries).
+AWS_SECRETS_CONNECT_TIMEOUT_SECONDS = _env_int("AWS_SECRETS_CONNECT_TIMEOUT_SECONDS", 2)
+AWS_SECRETS_READ_TIMEOUT_SECONDS = _env_int("AWS_SECRETS_READ_TIMEOUT_SECONDS", 5)
+AWS_SECRETS_MAX_ATTEMPTS = _env_int("AWS_SECRETS_MAX_ATTEMPTS", 2)
+# GCP counterpart: bounded per-request deadline for Secret Manager reads so a
+# stalled backend fails fast instead of hanging the calling thread (#929).
+GCP_SECRETS_REQUEST_TIMEOUT_SECONDS = _env_int("GCP_SECRETS_REQUEST_TIMEOUT_SECONDS", 5)
+
+# Bounded, in-process, provider-neutral cache of resolved secret VALUES, keyed by
+# secret reference (never by value), so a per-range connect storm collapses to one
+# Secrets Manager fetch per reference for the TTL window (#929). TTL bounds
+# staleness so credential rotation under the same reference converges and a
+# destroyed range's entries simply expire; no durable storage. TTL <= 0 disables
+# the cache. Values are never logged.
+SECRET_CACHE_TTL_SECONDS = _env_int("SECRET_CACHE_TTL_SECONDS", 300)
+SECRET_CACHE_MAX_ENTRIES = _env_int("SECRET_CACHE_MAX_ENTRIES", 256)
 # First-click readiness retry for the /api/tokens exchange (issue #395).
 # Bounded exponential backoff inside mission_control.guacamole guards against the
 # token-readiness race that surfaces as a redirect to the Guacamole login page on

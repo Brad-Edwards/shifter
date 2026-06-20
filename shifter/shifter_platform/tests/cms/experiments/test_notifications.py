@@ -103,12 +103,13 @@ def test_notification_payload_projectors_return_browser_safe_fields() -> None:
 
 
 @pytest.mark.django_db
-def test_publish_experiment_run_status_notification_persists_safe_payload() -> None:
+def test_publish_experiment_run_status_notification_persists_safe_payload(settings) -> None:
     """Publishing persists a browser-safe WebSocketNotification for the recipient/topic."""
     from django.contrib.auth import get_user_model
 
     from shared.models import WebSocketNotification
 
+    settings.WEBSOCKET_NOTIFICATIONS_ENABLED = True
     register_experiment_notifications()
     recipient = get_user_model().objects.create_user(username="notif-rcpt@e.com", email="notif-rcpt@e.com")
     publish_experiment_run_status_notification(
