@@ -159,6 +159,11 @@
         "id": "ADR-004-R12",
         "description": "First-party AWS RDS DB instances under `platform/terraform/modules/portal/rds/main.tf` and `platform/terraform/modules/guacamole/rds.tf` MUST keep `iam_database_authentication_enabled = true` and MUST explicitly set `ca_cert_identifier` to a non-empty expression. Checkov covers IAM authentication through CKV_AWS_161, but CKV_AWS_211 currently passes when the CA attribute is absent; the repo-native `scripts/check_tf_rds_security/check_tf_rds_security.py` checker closes that gap. The checker is wired as the `check-tf-rds-security` pre-commit hook and a CI step in `.github/workflows/_quality.yml`, and its unittest suite is included in the `check_tf_*` checker tests.",
         "checks": []
+      },
+      {
+        "id": "ADR-004-R13",
+        "description": "Portal target-service security groups MUST NOT admit ingress from the whole public subnet tier. Every `aws_security_group_rule` ingress in `platform/terraform/environments/{dev,prod}/portal/main.tf` whose `security_group_id` is the Django EC2 SG (`module.ec2.security_group_id`) or the Guacamole client SG (`module.guacamole.guacamole_client_security_group_id`) MUST source either from a security-group reference (`source_security_group_id`, the preferred posture on the inspection-off path) or from the ALB-only `module.vpc.alb_ingress_subnet_cidrs` output. `module.vpc.public_subnet_cidrs`, `module.vpc.public_workload_subnet_cidrs`, or any other CIDR source is rejected because those tiers contain or may contain workloads other than the ALB (the standalone CTFd instance lives in the public-workload tier). AWS Network Firewall breaks SG referencing across the routed inspection middlebox, so the inspected ALB->target path legitimately needs a CIDR rule; scoping it to the ALB-only tier keeps CTFd fenced off Django:8000 / Guacamole:8080 while preserving the inspection path. Backstops the #911 NET-2 / #933 segmentation regression where the CIDR rule was scoped to `public_subnet_cidrs` and gave CTFd direct L4 reach past the ALB/WAF/`/admin` deny. The checker is `scripts/check_portal_target_sg_sources/check_portal_target_sg_sources.py`, wired as the `check-portal-target-sg-sources` pre-commit hook and a CI step in `.github/workflows/_quality.yml`, with its unittest suite included in the `check_tf_*` checker tests.",
+        "checks": []
       }
     ],
     "exceptions": [],
@@ -173,6 +178,7 @@
       "scripts/adr_guard/adr_guard.py",
       "scripts/check_tf_kms_secrets_grant/check_tf_kms_secrets_grant.py",
       "scripts/check_tf_rds_security/check_tf_rds_security.py",
+      "scripts/check_portal_target_sg_sources/check_portal_target_sg_sources.py",
       "platform/terraform/.checkov.yaml",
       "docs/adr/exceptions.yaml",
       "docs/architecture/checkov-soft-fail-preflight-757.md",

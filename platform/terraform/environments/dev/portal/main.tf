@@ -555,7 +555,9 @@ module "ctfd" {
   aws_region  = var.aws_region
   name_prefix = local.name_prefix
   vpc_id      = module.vpc.vpc_id
-  subnet_id   = module.vpc.public_subnet_ids[0]
+  # Public-workload tier, kept out of the ALB ingress CIDR so CTFd cannot
+  # reach Django:8000 / Guacamole:8080 directly (#911 NET-2 / #933).
+  subnet_id = module.vpc.public_workload_subnet_ids[0]
 
   ami_id                 = var.ctfd_ami_id
   instance_type          = var.ctfd_instance_type
@@ -863,18 +865,23 @@ module "guacamole" {
   depends_on = [module.vpc]
 }
 
-# ALB health checks and user traffic are routed through the portal inspection
-# boundary before they reach private targets. Source security group references
-# do not survive that middlebox path reliably, so keep those existing SG rules
-# and add CIDR-scoped ingress from only the ALB public subnet CIDRs.
+# When portal inspection is enabled, ALB health checks and user traffic reach
+# the private targets through the Network Firewall endpoint. AWS documents that
+# security-group references do not allow traffic across a routed middlebox (the
+# flow is split source->middlebox and middlebox->destination), so the inspected
+# ALB->target path needs a CIDR rule in addition to the module SG-to-SG rules.
+# That CIDR is scoped to the ALB ingress tier ONLY (`alb_ingress_subnet_cidrs`),
+# never the whole public tier: CTFd lives in the separate public-workload tier,
+# so it cannot reach Django:8000 / Guacamole:8080 directly (#911 NET-2 / #933).
+# See https://aws.amazon.com/blogs/networking-and-content-delivery/deployment-models-for-aws-network-firewall-with-vpc-routing-enhancements/
 resource "aws_security_group_rule" "portal_app_from_alb_subnets" {
   type              = "ingress"
   from_port         = var.app_port
   to_port           = var.app_port
   protocol          = "tcp"
-  cidr_blocks       = module.vpc.public_subnet_cidrs
+  cidr_blocks       = module.vpc.alb_ingress_subnet_cidrs
   security_group_id = module.ec2.security_group_id
-  description       = "HTTP from ALB public subnets through inspection"
+  description       = "HTTP from ALB ingress subnets through inspection"
 }
 
 resource "aws_security_group_rule" "guacamole_client_from_alb_subnets" {
@@ -882,9 +889,9 @@ resource "aws_security_group_rule" "guacamole_client_from_alb_subnets" {
   from_port         = 8080
   to_port           = 8080
   protocol          = "tcp"
-  cidr_blocks       = module.vpc.public_subnet_cidrs
+  cidr_blocks       = module.vpc.alb_ingress_subnet_cidrs
   security_group_id = module.guacamole.guacamole_client_security_group_id
-  description       = "HTTP from ALB public subnets through inspection"
+  description       = "HTTP from ALB ingress subnets through inspection"
 }
 
 # ------------------------------------------------------------------------------
