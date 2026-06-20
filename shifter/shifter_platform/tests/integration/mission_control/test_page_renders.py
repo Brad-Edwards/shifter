@@ -118,24 +118,44 @@ def ctf_participant(db, user):
 
 
 def _render_query_count(client: Client, url: str):
-    """Return (response, steady-state query_count) for a GET.
-
-    A warm-up request is issued first and discarded, so the measured count is
-    the steady-state per-render query cost — which is what these budgets are
-    meant to pin. Several per-process lazy caches (permission/content-type
-    prefetch, the auth-backend setup) issue a one-time query on first access in
-    a fresh process. Under pytest-xdist the budget module may share a worker
-    with a sibling test module that leaves such a cache cold; without the
-    warm-up that one-time query lands on whichever render is measured first and
-    intermittently inflates every exact-count budget on the worker (all five
-    fail together). Warming first makes the measurement independent of worker
-    scheduling while still catching any real per-render regression, which is
-    paid by both the warm-up and the measured render.
-    """
-    client.get(url)  # warm per-process lazy caches; intentionally not measured
+    """Return (response, query_count) for a GET, capturing only the render."""
     with CaptureQueriesContext(connection) as ctx:
         response = client.get(url)
     return response, len(ctx.captured_queries)
+
+
+@pytest.fixture(autouse=True)
+def _real_context_processors():
+    """Pin the real context processors for these exact-count budgets.
+
+    Django caches the resolved context-processor callables on each template
+    ``Engine`` (a ``cached_property``). Several ctf view suites patch the
+    context processors by module path (``mission_control.context_processors
+    .active_range``, ``shared.context_processors.user_permissions``,
+    ``ctf.context_processors.ctf_navigation``) to isolate their view tests; if
+    one of those patched renders is the first to warm a cold ``Engine`` on a
+    pytest-xdist worker, the *mocked* processors get cached process-wide and
+    survive the ``with patch`` block — so later renders silently skip those
+    processors' queries and every exact-count budget on the worker fails (the
+    measured count drops, e.g. 4 -> 2). Dropping the cached resolution before
+    and after each budget test forces re-resolution against the live (real,
+    unpatched) module attributes, so the budgets are deterministic regardless of
+    worker scheduling; clearing on teardown also leaves the next test a cold
+    cache so a ctf suite that follows can still apply its own patch. The
+    underlying ctf-suite fragility (relying on a cold Engine cache) is tracked
+    for the ctf decomposition.
+    """
+    from django.template import engines
+
+    def _reset() -> None:
+        for backend in engines.all():
+            engine = getattr(backend, "engine", None)
+            if engine is not None:
+                engine.__dict__.pop("template_context_processors", None)
+
+    _reset()
+    yield
+    _reset()
 
 
 @pytest.mark.django_db

@@ -1106,11 +1106,6 @@
       "target": "cms.experiments.orchestrator.start_experiment_task"
     },
     {
-      "count": 2,
-      "path": "shifter/shifter_platform/tests/config/test_logout.py",
-      "target": "config.views.logout"
-    },
-    {
       "count": 1,
       "path": "shifter/shifter_platform/tests/ctf/conftest.py",
       "target": "cms.services.create_range"
@@ -1851,16 +1846,6 @@
       "target": "ctf.services.submission.verify_flag"
     },
     {
-      "count": 4,
-      "path": "shifter/shifter_platform/tests/documentation/test_views.py",
-      "target": "documentation.views.render"
-    },
-    {
-      "count": 3,
-      "path": "shifter/shifter_platform/tests/integration/engine/test_range_lifecycle.py",
-      "target": "engine.services.get_rdp_password"
-    },
-    {
       "count": 1,
       "path": "shifter/shifter_platform/tests/scenario_editor/test_view_error_flows.py",
       "target": "cms.scenario_editor.services.clone_scenario"
@@ -1879,26 +1864,6 @@
       "count": 5,
       "path": "shifter/shifter_platform/tests/scenario_editor/test_view_error_flows.py",
       "target": "cms.scenario_editor.services.validate_yaml"
-    },
-    {
-      "count": 11,
-      "path": "shifter/shifter_platform/tests/views/test_launch_range_scenarios.py",
-      "target": "mission_control.views.cms_create_range"
-    },
-    {
-      "count": 1,
-      "path": "shifter/shifter_platform/tests/views/test_launch_range_scenarios.py",
-      "target": "mission_control.views.cms_get_agent"
-    },
-    {
-      "count": 4,
-      "path": "shifter/shifter_platform/tests/views/test_launch_range_scenarios.py",
-      "target": "mission_control.views.cms_list_scenarios"
-    },
-    {
-      "count": 3,
-      "path": "shifter/shifter_platform/tests/views/test_launch_range_scenarios.py",
-      "target": "mission_control.views.logger"
     },
     {
       "count": 2,
