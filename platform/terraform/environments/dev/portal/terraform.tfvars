@@ -164,7 +164,13 @@ enable_waf_logging     = true
 # Portal east-west inspection (#122)
 # ------------------------------------------------------------------------------
 
-enable_portal_inspection    = true
+# Default-off baseline (#932). Enabling inspection removes the direct
+# private->NAT default route, so a misconfigured firewall endpoint blackholes
+# egress. A deploy opts in via the TF_VARS_*_PORTAL secret (local.auto.tfvars);
+# the post-apply assertion (scripts/assert_portal_inspection) then fails the
+# deploy if the route/endpoint wiring is unhealthy instead of shipping a
+# blackhole.
+enable_portal_inspection    = false
 firewall_log_retention_days = 365
 
 # dev: allow intentional teardown; apply once with this false before destroying
