@@ -16,7 +16,9 @@ from event_load_harness.metrics.base import MetricsResult
 _MISSING_PROVIDER_SIGNALS = [
     "ALB/ingress p95/p99 latency and 5xx counts (no provider adapter)",
     "ALB active/rejected connection counts (no provider adapter)",
+    "ALB RequestCountPerTarget scale-out signal (no provider adapter)",
     "Portal EC2/pod CPU and memory (no provider adapter)",
+    "Portal worker busy ratio and terminal-session utilization (Shifter/PortalCapacity; no provider adapter)",
     "RDS connections, connection churn proxy, and CPU (no provider adapter)",
     "Redis CPU/memory/connections (no provider adapter)",
     "Guacamole ECS/pod CPU and task/replica health (no provider adapter)",

@@ -134,6 +134,8 @@ MIDDLEWARE = [
     "config.middleware.HealthCheckMiddleware",
     # Request ID for audit logging correlation
     "config.middleware.RequestIDMiddleware",
+    # Per-worker in-flight HTTP concurrency gauge for portal capacity metrics (#940)
+    "config.middleware.RequestInFlightMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
@@ -219,6 +221,28 @@ TERMINAL_MAX_SESSIONS_PER_USER = _env_int("TERMINAL_MAX_SESSIONS_PER_USER", 10)
 TERMINAL_IDLE_TIMEOUT_SECONDS = _env_int("TERMINAL_IDLE_TIMEOUT_SECONDS", 1800)
 TERMINAL_MAX_SESSION_SECONDS = _env_int("TERMINAL_MAX_SESSION_SECONDS", 28800)
 TERMINAL_READ_POLL_SECONDS = _env_int("TERMINAL_READ_POLL_SECONDS", 30)
+
+# Portal web capacity metrics (Shifter/PortalCapacity, #940). When enabled, each
+# Uvicorn worker runs a daemon thread that publishes its in-flight HTTP request
+# concurrency, worker busy ratio, and terminal-session utilization to CloudWatch
+# so portal autoscaling and operators can see request-path saturation that
+# average EC2 CPU misses. Disabled by default; turned on per environment.
+#
+# PORTAL_WORKER_SOFT_CONCURRENCY is the busy-ratio denominator: the soft
+# concurrent-request target per worker above which the worker is queueing
+# request-path work (the portal serves ~4 serialized sync requests per worker,
+# so the default sits a little above that baseline). PORTAL_CAPACITY_NAME_PREFIX
+# is the low-cardinality metric dimension and MUST match the Terraform
+# name_prefix so the CloudWatch alarms/dashboard match the series; it is supplied
+# by user_data.sh / deploy_portal.sh from the environment name_prefix.
+# PORTAL_CAPACITY_METRICS_ENABLED and PORTAL_WORKER_SOFT_CONCURRENCY are wired
+# through SSM/tfvars like the #930 terminal knobs; the publish interval is a
+# stable operational default (env-overridable) and is not SSM-provisioned.
+# See docs/architecture/portal-app-saturation-autoscaling-preflight-940.md.
+PORTAL_CAPACITY_METRICS_ENABLED = _env_bool("PORTAL_CAPACITY_METRICS_ENABLED", False)
+PORTAL_CAPACITY_METRICS_INTERVAL_SECONDS = _env_int("PORTAL_CAPACITY_METRICS_INTERVAL_SECONDS", 60)
+PORTAL_WORKER_SOFT_CONCURRENCY = _env_int("PORTAL_WORKER_SOFT_CONCURRENCY", 6)
+PORTAL_CAPACITY_NAME_PREFIX = os.environ.get("PORTAL_CAPACITY_NAME_PREFIX", "").strip()
 
 # Database
 # Use SQLite for local dev/tests, PostgreSQL for deployed environments

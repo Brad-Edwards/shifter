@@ -178,6 +178,15 @@ validate_positive_int() {
   fi
 }
 
+validate_bool() {
+  local name="$1"
+  local value="$2"
+  if [[ -n "$value" && "$value" != "true" && "$value" != "false" ]]; then
+    echo "Invalid ${name}: expected 'true' or 'false'" >&2
+    exit 1
+  fi
+}
+
 image_ref() {
   local registry="$1"
   local repository="$2"
@@ -312,6 +321,8 @@ main() {
   local terminal_idle_timeout_seconds
   local terminal_max_session_seconds
   local terminal_read_poll_seconds
+  local portal_capacity_metrics_enabled
+  local portal_worker_soft_concurrency
 
   image_digest=$(get_optional_param "$PS_PREFIX/image-digest")
   image_tag=$(get_param "$PS_PREFIX/image-tag")
@@ -359,6 +370,15 @@ main() {
   validate_uint "TERMINAL_MAX_SESSION_SECONDS" "$terminal_max_session_seconds"
   validate_uint "TERMINAL_READ_POLL_SECONDS" "$terminal_read_poll_seconds"
 
+  # Portal web capacity metrics (#940). Same parameter names user_data.sh reads;
+  # validated before docker argv. The NamePrefix dimension reuses the portal name
+  # prefix this script already receives (--worker-health-name-prefix) so an
+  # enabled emitter is always labelled and matches the CloudWatch alarms.
+  portal_capacity_metrics_enabled=$(get_optional_param "$PS_PREFIX/portal-capacity-metrics-enabled")
+  portal_worker_soft_concurrency=$(get_optional_param "$PS_PREFIX/portal-worker-soft-concurrency")
+  validate_bool "PORTAL_CAPACITY_METRICS_ENABLED" "$portal_capacity_metrics_enabled"
+  validate_positive_int "PORTAL_WORKER_SOFT_CONCURRENCY" "$portal_worker_soft_concurrency"
+
   local image
   image=$(image_ref "$ecr_registry" "$ecr_repository" "$image_digest" "$image_tag")
   echo "Deploying image: $image"
@@ -400,6 +420,9 @@ main() {
   append_env_if_set TERMINAL_IDLE_TIMEOUT_SECONDS "$terminal_idle_timeout_seconds"
   append_env_if_set TERMINAL_MAX_SESSION_SECONDS "$terminal_max_session_seconds"
   append_env_if_set TERMINAL_READ_POLL_SECONDS "$terminal_read_poll_seconds"
+  append_env PORTAL_CAPACITY_NAME_PREFIX "$WORKER_HEALTH_NAME_PREFIX"
+  append_env_if_set PORTAL_CAPACITY_METRICS_ENABLED "$portal_capacity_metrics_enabled"
+  append_env_if_set PORTAL_WORKER_SOFT_CONCURRENCY "$portal_worker_soft_concurrency"
 
   run_migrations "$image" "${DOCKER_ENV[@]}"
   if [[ "$MIGRATE_ONLY" == "true" ]]; then
