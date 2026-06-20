@@ -36,6 +36,24 @@ from config._channels import log_channel_layer_posture  # noqa: E402
 
 log_channel_layer_posture(os.environ)
 
+# Start the per-worker portal capacity metrics emitter (#940). This module is
+# imported once per Uvicorn worker process, so each worker gets exactly one
+# daemon emitter. The factory is fully fail-soft: when metrics are disabled, the
+# NamePrefix is missing, or the CloudWatch client cannot be built it returns None
+# and worker boot continues. Kept module-global so the worker holds a reference
+# for the process lifetime (the thread is a daemon and needs no explicit join).
+from django.conf import settings  # noqa: E402
+
+from config.capacity_metrics import build_emitter_from_config  # noqa: E402
+
+portal_capacity_emitter = build_emitter_from_config(
+    enabled=settings.PORTAL_CAPACITY_METRICS_ENABLED,
+    name_prefix=settings.PORTAL_CAPACITY_NAME_PREFIX,
+    interval_seconds=settings.PORTAL_CAPACITY_METRICS_INTERVAL_SECONDS,
+    soft_concurrency=settings.PORTAL_WORKER_SOFT_CONCURRENCY,
+    terminal_max_sessions=settings.TERMINAL_MAX_SESSIONS,
+)
+
 # Import routing after Django setup
 from cms.experiments.routing import websocket_urlpatterns as experiment_ws_urlpatterns  # noqa: E402
 from mission_control.routing import websocket_urlpatterns  # noqa: E402

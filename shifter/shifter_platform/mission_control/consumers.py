@@ -23,7 +23,7 @@ from mission_control.terminal_executor import (
     run_terminal_sync,
 )
 from mission_control.terminal_sessions import session_registry as _session_registry
-from risk_register.services import SessionInfo, audit_session_event
+from risk_register.services import SessionInfo, audit_session_event, select_trusted_client_ip
 from shared.enums import WebSocketCloseCode
 
 if TYPE_CHECKING:
@@ -63,10 +63,22 @@ class SSHConsumer(AsyncWebsocketConsumer):
             await self.close(code=WebSocketCloseCode.SERVER_ERROR)
 
     def _client_ip(self) -> str | None:
-        """Best-effort client IP from the X-Forwarded-For header, for audit."""
+        """Best-effort client IP for audit, using the shared trusted-hop policy.
+
+        Mirrors :func:`risk_register.services.get_client_ip` on the ASGI scope so
+        terminal-session audit rows do not drift from HTTP audit rows: the
+        rightmost (proxy-appended) X-Forwarded-For hop is trusted, with the
+        direct peer from ``scope["client"]`` as the fallback (SEC-4, issue #937).
+        """
         headers = dict(self.scope.get("headers", []))
         xff = headers.get(b"x-forwarded-for", b"").decode()
-        return xff.split(",")[0].strip() if xff else None
+        client = self.scope.get("client")
+        remote_addr = client[0] if client else None
+        return select_trusted_client_ip(
+            xff,
+            remote_addr,
+            trusted_hops=getattr(settings, "AUDIT_TRUSTED_PROXY_HOPS", 1),
+        )
 
     async def _resolve_request(self) -> tuple[Any, str] | None:
         """Validate auth and the instance UUID.

@@ -4711,5 +4711,192 @@ class DeployVerificationFailLoudTests(unittest.TestCase):
         self.assertIn("deploy-verification-fail-loud", ADR_GUARD.CHECK_LEVELS["fast"])
 
 
+class NoLiveCloudIdentifiersTests(unittest.TestCase):
+    """Tests for ADR-004-R14: forbid live AWS infrastructure identifiers
+    (account IDs, VPC/subnet IDs, account-suffixed and UUID-suffixed infra
+    buckets) in tracked files.
+
+    Real-looking values are built programmatically so the literal pattern
+    never appears in this tracked test source - the repo-wide check scans
+    its own test file, and a hardcoded real-looking value here would either
+    self-flag or weaken the test. Synthetic allowlist values are written
+    literally because the check is required to pass them.
+    """
+
+    REAL_ACCOUNT = "9" * 12  # twelve nines - not in the synthetic allowlist
+    REAL_VPC = "vpc-" + "a" * 17
+    REAL_SUBNET = "subnet-" + "b" * 17
+    ACCT_BUCKET = "shifter-polaris-bake-dev-" + "9" * 12
+    UUID_BUCKET = "shifter-dev-infra-" + "-".join(
+        ["a" * 8, "b" * 4, "c" * 4, "d" * 4, "e" * 12]
+    )
+
+    def _write(self, repo_root: Path, rel: str, body: str) -> Path:
+        path = repo_root / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(body, encoding="utf-8")
+        return path
+
+    def test_flags_account_id_and_vpc_in_tfvars(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            self._write(
+                repo_root,
+                "platform/terraform/global/x/dev.tfvars",
+                f'vpc_id = "{self.REAL_VPC}" # aws-dev account {self.REAL_ACCOUNT}\n',
+            )
+            violations = ADR_GUARD.check_no_live_cloud_identifiers(repo_root, None)
+            self.assertIn(
+                "platform/terraform/global/x/dev.tfvars",
+                {v.path for v in violations},
+            )
+            self.assertTrue(violations)
+            for v in violations:
+                self.assertEqual(v.rule_id, "ADR-004-R14")
+                self.assertEqual(v.check, "no-live-cloud-identifiers")
+                # Messages must never echo the live value (preflight rule).
+                self.assertNotIn(self.REAL_ACCOUNT, v.message)
+                self.assertNotIn(self.REAL_VPC, v.message)
+
+    def test_flags_subnet_id(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            self._write(repo_root, "scripts/x/register.py", f'SUBNET = "{self.REAL_SUBNET}"\n')
+            violations = ADR_GUARD.check_no_live_cloud_identifiers(repo_root, None)
+            self.assertEqual({v.path for v in violations}, {"scripts/x/register.py"})
+            for v in violations:
+                self.assertEqual(v.rule_id, "ADR-004-R14")
+                self.assertNotIn(self.REAL_SUBNET, v.message)
+
+    def test_flags_account_suffixed_bucket(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            self._write(repo_root, "scripts/x/reset.sh", f'BUCKET="{self.ACCT_BUCKET}"\n')
+            violations = ADR_GUARD.check_no_live_cloud_identifiers(repo_root, None)
+            self.assertIn("scripts/x/reset.sh", {v.path for v in violations})
+            for v in violations:
+                self.assertEqual(v.rule_id, "ADR-004-R14")
+                self.assertNotIn(self.ACCT_BUCKET, v.message)
+                self.assertNotIn(self.REAL_ACCOUNT, v.message)
+
+    def test_flags_uuid_suffixed_infra_bucket(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            self._write(repo_root, "platform/terraform/x/dev.s3.tfbackend", f'bucket = "{self.UUID_BUCKET}"\n')
+            violations = ADR_GUARD.check_no_live_cloud_identifiers(repo_root, None)
+            self.assertEqual({v.path for v in violations}, {"platform/terraform/x/dev.s3.tfbackend"})
+            for v in violations:
+                self.assertEqual(v.rule_id, "ADR-004-R14")
+                self.assertNotIn(self.UUID_BUCKET, v.message)
+
+    def test_flags_hyphen_prefixed_account_id(self) -> None:
+        # The UUID-tail suppression must NOT make `-` a universal account-ID
+        # boundary: `account-<id>` / `bucket-<id>` reintroduction shapes are
+        # still live account IDs (codex review #936 finding 2).
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            self._write(
+                repo_root,
+                "scripts/x/policy.json",
+                f'{{"role": "aws-dev-{self.REAL_ACCOUNT}", "b": "mybucket-{self.REAL_ACCOUNT}"}}\n',
+            )
+            violations = ADR_GUARD.check_no_live_cloud_identifiers(repo_root, None)
+            self.assertTrue(violations)
+            for v in violations:
+                self.assertEqual(v.rule_id, "ADR-004-R14")
+                self.assertNotIn(self.REAL_ACCOUNT, v.message)
+
+    def test_suppresses_uuid_tail_not_an_account_id(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            uuid = "550e8400-e29b-41d4-a716-" + "4" * 12
+            self._write(repo_root, "scripts/x/test_ids.py", f'request_id = "{uuid}"\n')
+            violations = ADR_GUARD.check_no_live_cloud_identifiers(repo_root, None)
+            self.assertEqual(violations, [])
+
+    def test_allows_synthetic_account_ids(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            self._write(
+                repo_root,
+                "scripts/x/test_thing.py",
+                'a = "123456789012"\nb = "111122223333"\nc = "000000000000"\n',
+            )
+            violations = ADR_GUARD.check_no_live_cloud_identifiers(repo_root, None)
+            self.assertEqual(violations, [])
+
+    def test_allows_placeholder_and_example_forms(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            self._write(
+                repo_root,
+                "platform/terraform/x/local.auto.tfvars.example",
+                'vpc_id = "vpc-xxxxxxxx"\n'
+                'subnet_id = "subnet-xxxxxxxx"\n'
+                'agent_s3_bucket = "shifter-dev-user-storage-<your-account-id>"\n'
+                'account = "<your-account-id>"\n',
+            )
+            violations = ADR_GUARD.check_no_live_cloud_identifiers(repo_root, None)
+            self.assertEqual(violations, [])
+
+    def test_does_not_flag_dynamic_arn_interpolation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            self._write(
+                repo_root,
+                "platform/terraform/x/main.tf",
+                'resource = "arn:aws:secretsmanager:${var.region}:'
+                '${data.aws_caller_identity.current.account_id}:secret:shifter/*"\n',
+            )
+            violations = ADR_GUARD.check_no_live_cloud_identifiers(repo_root, None)
+            self.assertEqual(violations, [])
+
+    def test_respects_files_param(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            self._write(repo_root, "a/flagged.tfvars", f'account = "{self.REAL_ACCOUNT}"\n')
+            self._write(repo_root, "b/other.tfvars", f'account = "{self.REAL_ACCOUNT}"\n')
+            violations = ADR_GUARD.check_no_live_cloud_identifiers(repo_root, ["a/flagged.tfvars"])
+            self.assertEqual({v.path for v in violations}, {"a/flagged.tfvars"})
+
+    def test_skips_binary_and_lock_files(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            self._write(repo_root, "x/.terraform.lock.hcl", f'h1 = "{self.REAL_ACCOUNT}"\n')
+            (repo_root / "x" / "img.png").write_bytes(b"\x89PNG\x00" + self.REAL_ACCOUNT.encode())
+            violations = ADR_GUARD.check_no_live_cloud_identifiers(repo_root, None)
+            self.assertEqual(violations, [])
+
+    def test_path_exception_clears_violation(self) -> None:
+        # Backend infra buckets / vendor templates are retained via scoped
+        # exceptions.yaml entries, applied by the central filter.
+        v = ADR_GUARD.Violation(
+            check="no-live-cloud-identifiers",
+            rule_id="ADR-004-R14",
+            path="platform/terraform/environments/dev/range/dev.s3.tfbackend",
+            message="line 1: live infra/state S3 bucket name (value redacted)",
+        )
+        exception = {
+            "rule_id": "ADR-004-R14",
+            "owner": "@Brad-Edwards",
+            "reason": "backend bucket needed for terraform init",
+            "expires_on": "2027-01-01",
+            "paths": ["*.s3.tfbackend"],
+        }
+        self.assertEqual(ADR_GUARD.filter_excepted_violations([v], [exception]), [])
+
+    def test_clean_real_repo_passes(self) -> None:
+        violations = ADR_GUARD.check_no_live_cloud_identifiers(ADR_GUARD.REPO_ROOT, None)
+        # Apply the repo's real exceptions, exactly as main() does.
+        exceptions = ADR_GUARD.load_adr_exceptions(ADR_GUARD.REPO_ROOT)
+        violations = ADR_GUARD.filter_excepted_violations(violations, exceptions)
+        self.assertEqual(violations, [], msg=f"Unexpected violations: {violations}")
+
+    def test_check_registered_at_ci_and_fast_levels(self) -> None:
+        self.assertIn("no-live-cloud-identifiers", ADR_GUARD.CHECKS)
+        self.assertIn("no-live-cloud-identifiers", ADR_GUARD.CHECK_LEVELS["ci"])
+        self.assertIn("no-live-cloud-identifiers", ADR_GUARD.CHECK_LEVELS["fast"])
+
+
 if __name__ == "__main__":
     unittest.main()

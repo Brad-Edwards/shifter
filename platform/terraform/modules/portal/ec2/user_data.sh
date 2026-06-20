@@ -170,6 +170,15 @@ validate_positive_int() {
   fi
 }
 
+validate_bool() {
+  local name="$1"
+  local value="$2"
+  if [[ -n "$value" && "$value" != "true" && "$value" != "false" ]]; then
+    echo "Invalid $name: expected 'true' or 'false'"
+    exit 1
+  fi
+}
+
 image_ref() {
   local registry="$1"
   local repository="$2"
@@ -240,6 +249,14 @@ validate_uint "TERMINAL_MAX_SESSIONS_PER_USER" "$TERMINAL_MAX_SESSIONS_PER_USER"
 validate_uint "TERMINAL_IDLE_TIMEOUT_SECONDS" "$TERMINAL_IDLE_TIMEOUT_SECONDS"
 validate_uint "TERMINAL_MAX_SESSION_SECONDS" "$TERMINAL_MAX_SESSION_SECONDS"
 validate_uint "TERMINAL_READ_POLL_SECONDS" "$TERMINAL_READ_POLL_SECONDS"
+
+# Portal web capacity metrics (#940). Enable flag + busy-ratio denominator come
+# from SSM (same params the SSM redeploy path reads); the NamePrefix dimension
+# comes from the Terraform name_prefix so it matches the CloudWatch alarms.
+PORTAL_CAPACITY_METRICS_ENABLED=$(get_param "$PS_PREFIX/portal-capacity-metrics-enabled" 2>/dev/null || echo "")
+PORTAL_WORKER_SOFT_CONCURRENCY=$(get_param "$PS_PREFIX/portal-worker-soft-concurrency" 2>/dev/null || echo "")
+validate_bool "PORTAL_CAPACITY_METRICS_ENABLED" "$PORTAL_CAPACITY_METRICS_ENABLED"
+validate_positive_int "PORTAL_WORKER_SOFT_CONCURRENCY" "$PORTAL_WORKER_SOFT_CONCURRENCY"
 
 IMAGE=$(image_ref "$ECR_REGISTRY" "$ECR_REPOSITORY" "$IMAGE_DIGEST" "$IMAGE_TAG")
 echo "Deploying image: $IMAGE"
@@ -343,6 +360,17 @@ if [[ -n "$TERMINAL_MAX_SESSION_SECONDS" ]]; then
 fi
 if [[ -n "$TERMINAL_READ_POLL_SECONDS" ]]; then
   COMMON_ENV="$COMMON_ENV -e TERMINAL_READ_POLL_SECONDS=$TERMINAL_READ_POLL_SECONDS"
+fi
+
+# Portal web capacity metrics (#940), validated above. The NamePrefix dimension
+# is the Terraform name_prefix so the emitted series matches the CloudWatch
+# alarms/dashboard; it is always set so an enabled emitter is never unlabelled.
+COMMON_ENV="$COMMON_ENV -e PORTAL_CAPACITY_NAME_PREFIX=${name_prefix}"
+if [[ -n "$PORTAL_CAPACITY_METRICS_ENABLED" ]]; then
+  COMMON_ENV="$COMMON_ENV -e PORTAL_CAPACITY_METRICS_ENABLED=$PORTAL_CAPACITY_METRICS_ENABLED"
+fi
+if [[ -n "$PORTAL_WORKER_SOFT_CONCURRENCY" ]]; then
+  COMMON_ENV="$COMMON_ENV -e PORTAL_WORKER_SOFT_CONCURRENCY=$PORTAL_WORKER_SOFT_CONCURRENCY"
 fi
 
 if [[ -n "$CTFD_PLATFORM_URL" ]]; then

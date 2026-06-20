@@ -107,8 +107,20 @@ enable_autoscaling   = true
 asg_min_size         = 2
 asg_max_size         = 5
 asg_desired_capacity = 2
-scale_up_threshold   = 70
-scale_down_threshold = 30
+scale_up_threshold   = 70 # CPU guardrail notification only (#940)
+
+# Portal app-saturation autoscaling + observability (#940). prod runs the ASG,
+# so scale-out tracks ALB request-path saturation (RequestCountPerTarget +
+# TargetResponseTime) and the additive worker-busy-ratio scale-out; the app
+# emitter is enabled so the PortalCapacity alarms/dashboard have a live series.
+# portal_web_workers = 4 here, so soft concurrency 8 ~ 2x the ~4-request baseline.
+enable_portal_capacity_alarms                = true
+portal_capacity_metrics_enabled              = true
+portal_worker_soft_concurrency               = 8
+scale_target_requests_per_target             = 1000
+scale_target_response_time_seconds           = 0.5
+worker_busy_ratio_scale_out_threshold        = 0.8
+target_response_time_alarm_threshold_seconds = 1.0
 
 # Channel-layer backend (ADR-018, #849), decoupled from autoscaling above.
 # Prod runs the portal on Redis (CHANNEL_LAYER_BACKEND=redis), as before.

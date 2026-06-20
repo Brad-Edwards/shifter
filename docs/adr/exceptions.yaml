@@ -217,5 +217,43 @@
     "paths": [
       "platform/terraform/modules/guacamole/ecs.tf"
     ]
+  },
+  {
+    "rule_id": "ADR-004-R14",
+    "owner": "@Brad-Edwards",
+    "reason": "Vendor (Prisma Cloud) AWS connector CloudFormation templates. The 12-digit account IDs in these downloaded templates are Palo Alto Networks' own published service account IDs (gcp_saas_role, dspm_scanner, etc.) and MUST stay exact for the cross-account connector roles to function. They are not Shifter infrastructure and carry no reconnaissance value about this deployment.",
+    "expires_on": "2027-06-20",
+    "paths": [
+      "platform/cloudformation/*"
+    ]
+  },
+  {
+    "rule_id": "ADR-004-R14",
+    "owner": "@Brad-Edwards",
+    "reason": "Terraform S3 backend/state bucket names read directly by `terraform init -backend-config=<env>.s3.tfbackend` and by remote-state data sources. CI inits the backend from the committed file (there is no secret-based bucket injection), so the active dev deploy needs the real bucket committed. These are UUID-suffixed (`shifter-[dev-]infra-<uuid>`) and do NOT embed the AWS account ID, so reconnaissance value is low. prod backends already use the REPLACE_AT_BOOTSTRAP placeholder rewritten by scripts/bootstrap/deploy.py.",
+    "expires_on": "2027-06-20",
+    "paths": [
+      "*.s3.tfbackend",
+      "platform/terraform/global/tssummit-ranges/*",
+      "platform/terraform/environments/*/portal/main.tf"
+    ]
+  },
+  {
+    "rule_id": "ADR-004-R14",
+    "owner": "@Brad-Edwards",
+    "reason": "Operational state-bucket map in the mcp/ops server, which reads live Terraform state from these UUID-suffixed infra/state buckets at runtime. The bucket names do not embed the AWS account ID. Moving them to runtime config is a separate change to the agent's working-day surface and out of scope for the identifier-strip; retained explicitly here.",
+    "expires_on": "2027-06-20",
+    "paths": [
+      "mcp/ops/index.js"
+    ]
+  },
+  {
+    "rule_id": "ADR-004-R14",
+    "owner": "@Brad-Edwards",
+    "reason": "Synthetic PAN-OS firewall serial-number fixtures in unit tests. PAN firewall serials are 12 digits, structurally identical to AWS account IDs, so the pattern check cannot distinguish them. These are fabricated test serial values, not live AWS accounts or infrastructure.",
+    "expires_on": "2027-06-20",
+    "paths": [
+      "shifter/engine/provisioner/tests/test_main.py"
+    ]
   }
 ]

@@ -474,6 +474,11 @@ module "ssm" {
   terminal_idle_timeout_seconds  = var.terminal_idle_timeout_seconds
   terminal_max_session_seconds   = var.terminal_max_session_seconds
   terminal_read_poll_seconds     = var.terminal_read_poll_seconds
+
+  # Portal web capacity metrics (#940). Enable flag and busy-ratio denominator
+  # are env-owned and hydrated by both first-boot user_data and SSM redeploy.
+  portal_capacity_metrics_enabled = var.portal_capacity_metrics_enabled
+  portal_worker_soft_concurrency  = var.portal_worker_soft_concurrency
 }
 
 # ------------------------------------------------------------------------------
@@ -520,14 +525,26 @@ module "ec2" {
   ecs_execution_role_arn     = module.engine_provisioner.ecs_execution_role_arn
 
   # Autoscaling configuration
-  enable_autoscaling     = var.enable_autoscaling
-  subnet_ids             = module.vpc.private_subnet_ids
-  target_group_arn       = module.alb.target_group_arn
-  asg_min_size           = var.asg_min_size
-  asg_max_size           = var.asg_max_size
-  asg_desired_capacity   = var.asg_desired_capacity
-  asg_warm_pool_min_size = var.asg_warm_pool_min_size
-  asg_warm_pool_state    = var.asg_warm_pool_state
+  enable_autoscaling      = var.enable_autoscaling
+  subnet_ids              = module.vpc.private_subnet_ids
+  target_group_arn        = module.alb.target_group_arn
+  alb_arn_suffix          = module.alb.alb_arn_suffix
+  target_group_arn_suffix = module.alb.target_group_arn_suffix
+  asg_min_size            = var.asg_min_size
+  asg_max_size            = var.asg_max_size
+  asg_desired_capacity    = var.asg_desired_capacity
+  asg_warm_pool_min_size  = var.asg_warm_pool_min_size
+  asg_warm_pool_state     = var.asg_warm_pool_state
+
+  # App-saturation autoscaling + observability (#940). Scale-out tracks ALB
+  # request-path saturation, not average EC2 CPU; alarms/dashboard notify the
+  # shared alerts topic.
+  scale_target_requests_per_target             = var.scale_target_requests_per_target
+  scale_target_response_time_seconds           = var.scale_target_response_time_seconds
+  worker_busy_ratio_scale_out_threshold        = var.worker_busy_ratio_scale_out_threshold
+  target_response_time_alarm_threshold_seconds = var.target_response_time_alarm_threshold_seconds
+  enable_portal_capacity_alarms                = var.enable_portal_capacity_alarms
+  portal_capacity_alarm_actions                = var.alarm_email != "" ? [aws_sns_topic.alerts.arn] : []
 
   # Connection-lifecycle drain (#931): bounded termination drain + graceful
   # container stop, sized below the ALB idle timeout / target drain.
@@ -535,10 +552,9 @@ module "ec2" {
   docker_stop_timeout                     = var.docker_stop_timeout
   instance_refresh_min_healthy_percentage = var.instance_refresh_min_healthy_percentage
 
-  redis_endpoint       = var.enable_redis ? module.redis.redis_endpoint : ""
-  scale_up_threshold   = var.scale_up_threshold
-  scale_down_threshold = var.scale_down_threshold
-  log_retention_days   = var.log_retention_days
+  redis_endpoint     = var.enable_redis ? module.redis.redis_endpoint : ""
+  scale_up_threshold = var.scale_up_threshold
+  log_retention_days = var.log_retention_days
 
   # Messaging (SQS queues for message consumers)
   sqs_queue_arns  = values(module.messaging.sqs_queue_arns)
