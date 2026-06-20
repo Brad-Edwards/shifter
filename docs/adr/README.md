@@ -433,6 +433,21 @@ entries. Completed so far:
   success/failure log assertions, instead of patching `cms_create_range` /
   `cms_list_scenarios` / `cms_get_agent` / `logger`.
 
+### Refactor-survival demonstration (#957)
+
+The point of the boundary-mock policy is that behavior tests survive refactors
+that mock-coupled tests would not. To demonstrate this concretely, the
+`generate_username` Django-username validator was moved out of the OIDC backend
+module (`config/oidc.py`) into its own `config/username.py`, and the single
+topology reference (`OIDC_USERNAME_ALGO = "config.username.generate_username"`)
+was updated. The `tests/mission_control/test_oidc.py` `ShifterOIDCBackend`
+behavior tests — which exercise `generate_username` only through the real OIDC
+`create_user` / `update_user` login flow (via `OIDC_USERNAME_ALGO`), never naming
+the function's location — pass **unchanged** across the move. Only the function's
+own direct unit tests (`TestGenerateUsername`) updated their import to follow it.
+A mock-coupled test that had patched `config.oidc.generate_username` would have
+broken on the move; the behavior tests did not.
+
 Decomposition-owned suites are out of scope here and land with their own
 issues: provisioner (#946), `ctf/**` and `cms/experiments/test_orchestrator*`
 (#885, #886, #889-#891), and `cms/scenario_editor/**` (#887, #888).
