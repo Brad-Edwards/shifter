@@ -345,8 +345,8 @@ echo "Stopping existing containers..."
 # Docker stop timeout exceeds the Gunicorn graceful-timeout (30s) so long-lived
 # terminal/WebSocket connections drain before SIGKILL (issue #931). Sized below
 # the ASG termination drain window.
-docker stop --time ${docker_stop_timeout} portal worker-cms worker-engine worker-mc ctf-scheduler 2>/dev/null || true
-docker rm portal worker-cms worker-engine worker-mc ctf-scheduler 2>/dev/null || true
+docker stop --time ${docker_stop_timeout} portal worker-cms worker-engine worker-mc ctf-scheduler guacamole-bootstrap-prune 2>/dev/null || true
+docker rm portal worker-cms worker-engine worker-mc ctf-scheduler guacamole-bootstrap-prune 2>/dev/null || true
 
 echo "Starting portal..."
 eval docker run -d --name portal --restart unless-stopped -p 8000:8000 $COMMON_ENV "$IMAGE"
@@ -357,10 +357,12 @@ WORKER_CMS_HEALTH="--health-cmd='find /tmp/worker-cms-heartbeat -mmin -2 | grep 
 WORKER_ENGINE_HEALTH="--health-cmd='find /tmp/worker-engine-heartbeat -mmin -2 | grep -q .'"
 WORKER_MC_HEALTH="--health-cmd='find /tmp/worker-mc-heartbeat -mmin -2 | grep -q .'"
 CTF_SCHEDULER_HEALTH="--health-cmd='find /tmp/ctf-scheduler-heartbeat -mmin -2 | grep -q .'"
+GUAC_PRUNE_HEALTH="--health-cmd='find /tmp/guacamole-bootstrap-prune-heartbeat -mmin -2 | grep -q .'"
 eval docker run -d --name worker-cms --restart unless-stopped $WORKER_HEALTH_BASE "$WORKER_CMS_HEALTH" $COMMON_ENV "$IMAGE" python manage.py run_worker --queue cms
 eval docker run -d --name worker-engine --restart unless-stopped $WORKER_HEALTH_BASE "$WORKER_ENGINE_HEALTH" $COMMON_ENV "$IMAGE" python manage.py run_worker --queue engine
 eval docker run -d --name worker-mc --restart unless-stopped $WORKER_HEALTH_BASE "$WORKER_MC_HEALTH" $COMMON_ENV "$IMAGE" python manage.py run_worker --queue mc
 eval docker run -d --name ctf-scheduler --restart unless-stopped $WORKER_HEALTH_BASE "$CTF_SCHEDULER_HEALTH" $COMMON_ENV "$IMAGE" python manage.py run_ctf_scheduler
+eval docker run -d --name guacamole-bootstrap-prune --restart unless-stopped $WORKER_HEALTH_BASE "$GUAC_PRUNE_HEALTH" $COMMON_ENV "$IMAGE" python manage.py run_guacamole_bootstrap_prune
 
 echo "All containers started:"
 docker ps

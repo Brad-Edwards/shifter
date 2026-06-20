@@ -422,6 +422,11 @@ GUACAMOLE_API_BASE_URL = os.environ.get("GUACAMOLE_API_BASE_URL", "") or GUACAMO
 GUACAMOLE_BOOTSTRAP_WORKERS = int(os.environ.get("GUACAMOLE_BOOTSTRAP_WORKERS", "4"))
 GUACAMOLE_BOOTSTRAP_TTL_SECONDS = int(os.environ.get("GUACAMOLE_BOOTSTRAP_TTL_SECONDS", "300"))
 GUACAMOLE_BOOTSTRAP_INLINE = _env_bool("GUACAMOLE_BOOTSTRAP_INLINE", False)
+# Cadence and bounded batch size for the dedicated bootstrap pruning service
+# (run_guacamole_bootstrap_prune). Non-secret integers; the prune deletes
+# expired bootstrap rows so abandoned token URLs do not persist at rest.
+GUACAMOLE_BOOTSTRAP_PRUNE_INTERVAL_SECONDS = _env_int("GUACAMOLE_BOOTSTRAP_PRUNE_INTERVAL_SECONDS", 60)
+GUACAMOLE_BOOTSTRAP_PRUNE_BATCH_SIZE = _env_int("GUACAMOLE_BOOTSTRAP_PRUNE_BATCH_SIZE", 500)
 
 # Bounded botocore connect/read timeouts for the AWS Secrets Manager client used
 # on/near the portal request path. A stalled Secrets Manager must fail fast
