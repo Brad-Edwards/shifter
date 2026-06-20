@@ -164,14 +164,17 @@ dc_domain_name = "internal.shifter"
 # Guacamole
 # ------------------------------------------------------------------------------
 
-guacd_image_tag                = "1.5.5"
-guacamole_client_image_tag     = "1.5.5"
-guacd_cpu                      = 512
-guacd_memory                   = 1024
-guacamole_client_cpu           = 512
-guacamole_client_memory        = 1024
-guacd_desired_count            = 2
-guacamole_client_desired_count = 2
+guacd_image_tag            = "1.5.5"
+guacamole_client_image_tag = "1.5.5"
+guacd_cpu                  = 512
+guacd_memory               = 1024
+guacamole_client_cpu       = 512
+guacamole_client_memory    = 1024
+guacd_desired_count        = 2
+# Single guacamole-client task: tokens are minted and served from task-local
+# process memory, so N>1 client tasks break first-click RDP (#928). Scale guacd
+# for capacity, not the client.
+guacamole_client_desired_count = 1
 
 # Database (production settings)
 guacamole_db_instance_class        = "db.t3.small"
