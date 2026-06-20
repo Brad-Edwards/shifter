@@ -231,10 +231,13 @@ class TestGuacamoleRDPURL:
     def test_returns_400_when_no_active_range(self, rf, user, guac_configured):
         from mission_control.views import guacamole_rdp_url
 
-        # No range exists, so the real engine service raises ValueError -> 400.
+        # Resolution moved into the worker (#929): no range -> the engine service
+        # raises ValueError -> polled FAILED bootstrap with status 400.
         request = _post(rf, "/mc/guac/rdp/", {"instance_uuid": str(uuid4())}, user)
         response = guacamole_rdp_url(request)
-        assert response.status_code == 400
+        assert response.status_code == 202
+        status = _get_status(rf, user, _json(response)["request_id"])
+        assert status.status_code == 400
 
     def test_returns_bootstrap_status_url_on_success(
         self, rf, user, guac_configured, range_rdp_instance, secrets_boundary, guac_exchange
@@ -313,10 +316,13 @@ class TestGuacamoleSSHURL:
     def test_returns_400_when_no_active_range(self, rf, user, guac_configured):
         from mission_control.views import guacamole_ssh_url
 
-        # No range -> real get_ssh_connection_info raises ValueError -> 400.
+        # Resolution moved into the worker (#929): no range -> ValueError ->
+        # polled FAILED bootstrap with status 400.
         request = _post(rf, "/mc/guac/ssh/", {"instance_uuid": str(uuid4())}, user)
         response = guacamole_ssh_url(request)
-        assert response.status_code == 400
+        assert response.status_code == 202
+        status = _get_status(rf, user, _json(response)["request_id"])
+        assert status.status_code == 400
 
     def test_returns_500_when_secrets_manager_fails(
         self, rf, user, guac_configured, range_ssh_instance, secrets_boundary, secrets_client_factory
@@ -332,7 +338,10 @@ class TestGuacamoleSSHURL:
         )
         with secrets_boundary(client=failing):
             response = guacamole_ssh_url(request)
-        assert response.status_code == 500
+        # Secrets Manager fetch runs in the worker now (#929) -> polled 500.
+        assert response.status_code == 202
+        status = _get_status(rf, user, _json(response)["request_id"])
+        assert status.status_code == 500
 
     def test_returns_bootstrap_status_url_on_success(
         self, rf, user, guac_configured, range_ssh_instance, secrets_boundary, guac_exchange
@@ -349,6 +358,48 @@ class TestGuacamoleSSHURL:
         status = _get_status(rf, user, data["request_id"])
         assert status.status_code == 200
         assert _json(status)["url"].startswith("https://guac.example.com/#/client/")
+
+    @pytest.mark.django_db(transaction=True)
+    def test_request_returns_while_secrets_manager_is_stalled(
+        self, rf, user, guac_configured, range_ssh_instance, guac_exchange, settings
+    ):
+        """WS-2 acceptance: a stalled Secrets Manager does not block the request.
+
+        With the bootstrap running asynchronously, the view returns 202 while the
+        worker is still blocked inside the Secrets Manager fetch — proving the
+        credential resolution is off the request thread (so page renders /
+        ``/health`` on the same worker are unaffected).
+        """
+        import threading
+
+        from mission_control.views import guacamole_ssh_url
+
+        settings.GUACAMOLE_BOOTSTRAP_INLINE = False
+        _rng, instance = range_ssh_instance(user)
+        request = _post(rf, "/mc/guac/ssh/", {"instance_uuid": instance["uuid"]}, user)
+
+        reached_secrets = threading.Event()
+        release = threading.Event()
+
+        def stalled_fetch(**_kwargs):
+            reached_secrets.set()
+            release.wait(timeout=5)
+            return {"SecretString": "TEST-SSH-PRIVATE-KEY-MATERIAL"}
+
+        client = MagicMock()
+        client.get_secret_value.side_effect = stalled_fetch
+
+        try:
+            with patch("boto3.client", return_value=client), guac_exchange():
+                response = guacamole_ssh_url(request)
+
+                # Request returned promptly without waiting on the stalled fetch.
+                assert response.status_code == 202
+                # The worker independently reached the Secrets Manager boundary
+                # and is blocked there — i.e. the fetch is off the request path.
+                assert reached_secrets.wait(timeout=5)
+        finally:
+            release.set()
 
     def test_returns_503_when_bootstrap_workers_are_full(
         self, rf, user, guac_configured, range_ssh_instance, secrets_boundary, settings

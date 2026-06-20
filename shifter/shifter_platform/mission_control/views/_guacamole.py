@@ -178,6 +178,44 @@ def _generate_rdp_url(
         raise _ViewError(JsonResponse({"error": "Failed to generate RDP URL"}, status=500)) from e
 
 
+def _resolve_and_build_rdp_url(
+    *,
+    user: User,
+    instance_uuid: str,
+    guac_settings: tuple[str, str, str | None],
+) -> str:
+    """Resolve RDP credentials and build the signed URL — runs in the worker.
+
+    Credential resolution (the Secrets Manager fetch) happens here, inside the
+    bootstrap worker, not on the request thread (#929). ``_ViewError`` raised by
+    resolution is converted to a polled ``BootstrapFailure`` by the caller's
+    ``_wrap_bootstrap_error``.
+    """
+    conn_info = _resolve_rdp_conn(user, instance_uuid)
+    guacamole_signing_secret, guacamole_base_url, guacamole_api_url = guac_settings
+    # ``conn_info`` carries RDP credentials, so only non-secret metadata is
+    # logged. ``os_type`` is read from the credential-bearing dict, so CodeQL
+    # taints it regardless of naming; it goes through ``safe_log_fingerprint``
+    # (a true ``py/clear-text-logging-sensitive-data`` taint-break). The
+    # user/instance correlation IDs go through ``safe_log_value``.
+    rdp_os = str(conn_info.get("os_type") or "unknown")
+    file_transfer_available = "yes" if conn_info.get("ssh_key") else "no"
+    logger.info(
+        "Guac RDP request: user=%s instance_uuid=%s os=%s file_transfer_available=%s",
+        safe_log_value(user.email),
+        safe_log_value(instance_uuid),
+        safe_log_fingerprint(rdp_os),
+        file_transfer_available,
+    )
+    return _generate_rdp_url(
+        user_email=user.email,
+        conn_info=conn_info,
+        guacamole_signing_secret=guacamole_signing_secret,
+        guacamole_base_url=guacamole_base_url,
+        guacamole_api_url=guacamole_api_url,
+    )
+
+
 @login_required
 @require_POST
 def guacamole_rdp_url(request: HttpRequest) -> JsonResponse:
@@ -191,6 +229,12 @@ def guacamole_rdp_url(request: HttpRequest) -> JsonResponse:
         - request_id: bootstrap request UUID
         - status_url: URL to poll for the signed Guacamole URL
 
+    The request thread only parses, authenticates, and enqueues; credential
+    resolution and URL generation run in the bootstrap worker so a stalled
+    Secrets Manager cannot block this request thread (#929). A target that fails
+    resolution (no active range, bad instance, secrets error) surfaces as a
+    polled FAILED bootstrap rather than a synchronous error.
+
     Security:
         - User must have an active range in READY status
         - URL is signed with HMAC-SHA256 and expires in 5 minutes
@@ -200,22 +244,7 @@ def guacamole_rdp_url(request: HttpRequest) -> JsonResponse:
     try:
         data = _parse_json_body(request)
         instance_uuid = _require_instance_uuid(data)
-        conn_info = _resolve_rdp_conn(user, instance_uuid)
-        guacamole_signing_secret, guacamole_base_url, guacamole_api_url = _get_guac_settings("RDP")
-        # ``conn_info`` carries RDP credentials, so only non-secret metadata is
-        # logged. ``os_type`` is read from the credential-bearing dict, so CodeQL
-        # taints it regardless of naming; it goes through ``safe_log_fingerprint``
-        # (a true ``py/clear-text-logging-sensitive-data`` taint-break). The
-        # user/instance correlation IDs go through ``safe_log_value``.
-        rdp_os = str(conn_info.get("os_type") or "unknown")
-        file_transfer_available = "yes" if conn_info.get("ssh_key") else "no"
-        logger.info(
-            "Guac RDP request: user=%s instance_uuid=%s os=%s file_transfer_available=%s",
-            safe_log_value(user.email),
-            safe_log_value(instance_uuid),
-            safe_log_fingerprint(rdp_os),
-            file_transfer_available,
-        )
+        guac_settings = _get_guac_settings("RDP")
     except _ViewError as err:
         return err.response
 
@@ -225,12 +254,10 @@ def guacamole_rdp_url(request: HttpRequest) -> JsonResponse:
         target_id=instance_uuid,
         build_url=lambda: _wrap_bootstrap_error(
             "RDP",
-            lambda: _generate_rdp_url(
-                user_email=user.email,
-                conn_info=conn_info,
-                guacamole_signing_secret=guacamole_signing_secret,
-                guacamole_base_url=guacamole_base_url,
-                guacamole_api_url=guacamole_api_url,
+            lambda: _resolve_and_build_rdp_url(
+                user=user,
+                instance_uuid=instance_uuid,
+                guac_settings=guac_settings,
             ),
         ),
     )
@@ -315,12 +342,41 @@ def _generate_ngfw_ssh_url(
         raise _ViewError(JsonResponse({"error": INTERNAL_SERVER_ERROR}, status=500)) from e
 
 
+def _resolve_and_build_ngfw_ssh_url(
+    *,
+    user: User,
+    app_id: str,
+    guac_settings: tuple[str, str, str | None],
+) -> str:
+    """Resolve NGFW SSH credentials and build the signed URL — runs in the worker.
+
+    The ownership check and Secrets Manager fetch happen here, off the request
+    thread (#929); ``_ViewError`` becomes a polled ``BootstrapFailure``.
+    """
+    ssh_conn = _resolve_ngfw_ssh(user, app_id)
+    guacamole_signing_secret, guacamole_base_url, guacamole_api_url = guac_settings
+    return _generate_ngfw_ssh_url(
+        user_email=user.email,
+        app_id=app_id,
+        ssh_conn=ssh_conn,
+        guacamole_signing_secret=guacamole_signing_secret,
+        guacamole_base_url=guacamole_base_url,
+        guacamole_api_url=guacamole_api_url,
+    )
+
+
 @login_required
 @require_POST
 def api_ngfw_ssh_url(request: HttpRequest, app_id: str) -> JsonResponse:
     """Queue Guacamole SSH URL bootstrap for NGFW CLI access.
 
     POST /mc/ngfw/<app_id>/ssh-url/
+
+    The request thread only authenticates and enqueues; ownership resolution and
+    the Secrets Manager fetch run in the bootstrap worker (#929). NGFW
+    not-found / not-accessible / permission-denied surface as a polled FAILED
+    bootstrap (HTTP error via the status endpoint) rather than a synchronous
+    error.
 
     Args:
         request: HTTP request
@@ -329,10 +385,6 @@ def api_ngfw_ssh_url(request: HttpRequest, app_id: str) -> JsonResponse:
     Returns:
         JsonResponse with {"request_id": "...", "status_url": "..."}
 
-    Error Responses:
-        400: NGFW not found, not accessible, or permission denied
-        500: Internal error
-
     Security:
         - User must own the NGFW (validated via Request chain)
         - NGFW must be in ready status
@@ -340,8 +392,7 @@ def api_ngfw_ssh_url(request: HttpRequest, app_id: str) -> JsonResponse:
     """
     user = _get_user(request)
     try:
-        ssh_conn = _resolve_ngfw_ssh(user, app_id)
-        guacamole_signing_secret, guacamole_base_url, guacamole_api_url = _get_guac_settings("SSH")
+        guac_settings = _get_guac_settings("SSH")
     except _ViewError as err:
         return err.response
 
@@ -356,13 +407,10 @@ def api_ngfw_ssh_url(request: HttpRequest, app_id: str) -> JsonResponse:
         target_id=str(app_id),
         build_url=lambda: _wrap_bootstrap_error(
             "SSH",
-            lambda: _generate_ngfw_ssh_url(
-                user_email=user.email,
+            lambda: _resolve_and_build_ngfw_ssh_url(
+                user=user,
                 app_id=app_id,
-                ssh_conn=ssh_conn,
-                guacamole_signing_secret=guacamole_signing_secret,
-                guacamole_base_url=guacamole_base_url,
-                guacamole_api_url=guacamole_api_url,
+                guac_settings=guac_settings,
             ),
         ),
     )
@@ -447,19 +495,19 @@ def _generate_range_ssh_url(
         raise _ViewError(JsonResponse({"error": INTERNAL_SERVER_ERROR}, status=500)) from e
 
 
-@login_required
-@require_POST
-def guacamole_ssh_url(request: HttpRequest) -> JsonResponse:
-    """Queue signed Guacamole URL bootstrap for SSH access to a range instance."""
-    user = _get_user(request)
-    try:
-        data = _parse_json_body(request)
-        instance_uuid = _require_instance_uuid(data)
-        ssh_info = _resolve_range_ssh(user, instance_uuid)
-        guacamole_signing_secret, guacamole_base_url, guacamole_api_url = _get_guac_settings("SSH")
-    except _ViewError as err:
-        return err.response
+def _resolve_and_build_range_ssh_url(
+    *,
+    user: User,
+    instance_uuid: str,
+    guac_settings: tuple[str, str, str | None],
+) -> str:
+    """Resolve range SSH credentials and build the signed URL — runs in the worker.
 
+    Credential resolution (the Secrets Manager fetch) happens here, off the
+    request thread (#929); ``_ViewError`` becomes a polled ``BootstrapFailure``.
+    """
+    ssh_info = _resolve_range_ssh(user, instance_uuid)
+    guacamole_signing_secret, guacamole_base_url, guacamole_api_url = guac_settings
     # ``ssh_info`` carries the SSH private key. Only non-secret metadata is
     # logged: the host IP and cloud provider name. Both are read from the
     # credential-bearing dict, so CodeQL taints them regardless of naming; they
@@ -473,19 +521,44 @@ def guacamole_ssh_url(request: HttpRequest) -> JsonResponse:
         safe_log_fingerprint(ssh_info["host"]),
         safe_log_fingerprint(ssh_info.get("cloud_provider") or "unknown"),
     )
+    return _generate_range_ssh_url(
+        user_email=user.email,
+        instance_uuid=instance_uuid,
+        ssh_info=ssh_info,
+        guacamole_signing_secret=guacamole_signing_secret,
+        guacamole_base_url=guacamole_base_url,
+        guacamole_api_url=guacamole_api_url,
+    )
+
+
+@login_required
+@require_POST
+def guacamole_ssh_url(request: HttpRequest) -> JsonResponse:
+    """Queue signed Guacamole URL bootstrap for SSH access to a range instance.
+
+    The request thread only parses, authenticates, and enqueues; credential
+    resolution and URL generation run in the bootstrap worker so a stalled
+    Secrets Manager cannot block this request thread (#929). A target that fails
+    resolution surfaces as a polled FAILED bootstrap.
+    """
+    user = _get_user(request)
+    try:
+        data = _parse_json_body(request)
+        instance_uuid = _require_instance_uuid(data)
+        guac_settings = _get_guac_settings("SSH")
+    except _ViewError as err:
+        return err.response
+
     return guacamole_bootstrap_response(
         user=user,
         protocol=GuacamoleBootstrapRequest.Protocol.RANGE_SSH,
         target_id=instance_uuid,
         build_url=lambda: _wrap_bootstrap_error(
             "SSH",
-            lambda: _generate_range_ssh_url(
-                user_email=user.email,
+            lambda: _resolve_and_build_range_ssh_url(
+                user=user,
                 instance_uuid=instance_uuid,
-                ssh_info=ssh_info,
-                guacamole_signing_secret=guacamole_signing_secret,
-                guacamole_base_url=guacamole_base_url,
-                guacamole_api_url=guacamole_api_url,
+                guac_settings=guac_settings,
             ),
         ),
     )

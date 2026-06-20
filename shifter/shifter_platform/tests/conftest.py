@@ -67,6 +67,22 @@ def mock_queryset():
 
 
 @pytest.fixture(autouse=True)
+def _reset_secret_cache():
+    """Reset the in-process credential cache around every test.
+
+    ``engine.secrets`` keeps a module-global TTL cache of resolved secret values
+    (#929). Clearing it before and after each test keeps the global state from
+    leaking across tests, so suites that assert on Secrets Manager call counts
+    start from a cold cache.
+    """
+    from engine.secrets import clear_secret_cache
+
+    clear_secret_cache()
+    yield
+    clear_secret_cache()
+
+
+@pytest.fixture(autouse=True)
 def enable_log_propagation():
     """Enable log propagation for caplog to work with our configured loggers.
 

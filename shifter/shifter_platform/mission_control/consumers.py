@@ -14,6 +14,10 @@ from channels.generic.websocket import AsyncWebsocketConsumer
 from django.conf import settings
 from django.contrib.auth.models import AnonymousUser
 
+from mission_control.terminal_executor import (
+    TerminalExecutorSaturated,
+    run_terminal_sync,
+)
 from mission_control.terminal_sessions import session_registry as _session_registry
 from risk_register.services import SessionInfo, audit_session_event
 from shared.enums import WebSocketCloseCode
@@ -81,6 +85,25 @@ class SSHConsumer(AsyncWebsocketConsumer):
         self.instance_uuid = instance_uuid
         return user, instance_uuid
 
+    async def _audit_best_effort(self, **kwargs: Any) -> None:
+        """Write a session-audit event, tolerating terminal-executor saturation.
+
+        Audit writes are best-effort telemetry, not part of the connection
+        contract. Under a connect storm the bounded terminal executor may reject
+        admission (``TerminalExecutorSaturated``); dropping the audit line is
+        preferable to crashing the consumer, so saturation is logged and
+        swallowed here while the real connect path surfaces it as a retryable
+        close.
+        """
+        try:
+            await run_terminal_sync(audit_session_event, **kwargs)
+        except TerminalExecutorSaturated:
+            logger.warning(
+                "Skipped terminal audit (executor saturated): action=%s uuid=%s",
+                kwargs.get("action"),
+                self.instance_uuid,
+            )
+
     async def _open_ssh(self, user: Any, instance_uuid: str, client_ip: str | None) -> bool:
         """Open the SSH connection; return True on success.
 
@@ -91,13 +114,22 @@ class SSHConsumer(AsyncWebsocketConsumer):
         from engine.services import connect_terminal
 
         try:
-            self.ssh_conn = await sync_to_async(connect_terminal)(user, instance_uuid)
+            # Run blocking connect (DB + Secrets Manager) on the dedicated
+            # terminal executor so it cannot block page renders (#929).
+            self.ssh_conn = await run_terminal_sync(connect_terminal, user, instance_uuid)
             await self.ssh_conn.connect()
             return True
+        except TerminalExecutorSaturated:
+            await self._release_session_slot()
+            logger.warning(
+                "Terminal connect rejected - executor saturated: uuid=%s",
+                instance_uuid,
+            )
+            await self.close(code=WebSocketCloseCode.SERVICE_UNAVAILABLE)
         except PermissionError:
             await self._release_session_slot()
             logger.warning("Terminal connection denied - permission error: uuid=%s", instance_uuid)
-            await sync_to_async(audit_session_event)(
+            await self._audit_best_effort(
                 action="access_denied",
                 user_id=user.id,
                 session=SessionInfo(
@@ -161,7 +193,7 @@ class SSHConsumer(AsyncWebsocketConsumer):
         self._session_start = loop.time()
         self._last_activity = self._session_start
 
-        await sync_to_async(audit_session_event)(
+        await self._audit_best_effort(
             action="connect",
             user_id=user.id,
             session=SessionInfo(
@@ -274,7 +306,7 @@ class SSHConsumer(AsyncWebsocketConsumer):
 
         # Audit log disconnection if we had a valid session
         if self._user_id:
-            await sync_to_async(audit_session_event)(
+            await self._audit_best_effort(
                 action="disconnect",
                 user_id=self._user_id,
                 session=SessionInfo(
