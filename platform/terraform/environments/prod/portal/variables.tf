@@ -578,3 +578,46 @@ variable "django_secret_key_ci" {
   type        = string
   default     = ""
 }
+
+# ------------------------------------------------------------------------------
+# Long-lived connection lifecycle (#931)
+# ------------------------------------------------------------------------------
+# Explicit, ordered timing for the portal's long-lived WebSocket / RDP / SSH
+# workload. Prod uses full drain windows. Ordering: ws_ping(20s) < idle_timeout,
+# and graceful(30s) < docker_stop < dereg <= termination_drain.
+
+variable "alb_idle_timeout_seconds" {
+  description = "ALB idle timeout (s) for long-lived WebSocket connections (#931)."
+  type        = number
+  default     = 300
+}
+
+variable "portal_deregistration_delay_seconds" {
+  description = "Portal target-group deregistration delay (s) for connection drain (#931)."
+  type        = number
+  default     = 120
+}
+
+variable "guacamole_deregistration_delay_seconds" {
+  description = "Guacamole target-group deregistration delay (s) for RDP/SSH drain (#931)."
+  type        = number
+  default     = 120
+}
+
+variable "termination_drain_timeout" {
+  description = "ASG termination-drain hold (s) for in-flight session drain on refresh/scale-in (#931)."
+  type        = number
+  default     = 180
+}
+
+variable "docker_stop_timeout" {
+  description = "Docker stop grace (s) on redeploy; must exceed the 30s Gunicorn graceful timeout (#931)."
+  type        = number
+  default     = 35
+}
+
+variable "instance_refresh_min_healthy_percentage" {
+  description = "Minimum healthy percentage kept in service during an ASG instance refresh (#931)."
+  type        = number
+  default     = 50
+}

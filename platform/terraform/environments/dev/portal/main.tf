@@ -292,6 +292,11 @@ module "alb" {
   enable_stickiness          = var.enable_autoscaling
   enable_deletion_protection = false # dev: allow intentional teardown; matches db_deletion_protection=false convention
 
+  # Long-lived connection lifecycle (#931): explicit idle timeout + portal
+  # target drain.
+  idle_timeout_seconds         = var.alb_idle_timeout_seconds
+  deregistration_delay_seconds = var.portal_deregistration_delay_seconds
+
   # Phase 5: ALB Access Logs and WAF Logging
   enable_access_logs      = var.enable_alb_access_logs
   logs_bucket_name        = var.enable_alb_access_logs ? local.alb_access_logs_bucket_name : ""
@@ -496,10 +501,17 @@ module "ec2" {
   asg_desired_capacity   = var.asg_desired_capacity
   asg_warm_pool_min_size = var.asg_warm_pool_min_size
   asg_warm_pool_state    = var.asg_warm_pool_state
-  redis_endpoint         = var.enable_redis ? module.redis.redis_endpoint : ""
-  scale_up_threshold     = var.scale_up_threshold
-  scale_down_threshold   = var.scale_down_threshold
-  log_retention_days     = var.log_retention_days
+
+  # Connection-lifecycle drain (#931): bounded termination drain + graceful
+  # container stop, sized below the ALB idle timeout / target drain.
+  termination_drain_timeout               = var.termination_drain_timeout
+  docker_stop_timeout                     = var.docker_stop_timeout
+  instance_refresh_min_healthy_percentage = var.instance_refresh_min_healthy_percentage
+
+  redis_endpoint       = var.enable_redis ? module.redis.redis_endpoint : ""
+  scale_up_threshold   = var.scale_up_threshold
+  scale_down_threshold = var.scale_down_threshold
+  log_retention_days   = var.log_retention_days
 
   # Messaging (SQS queues for message consumers)
   sqs_queue_arns  = values(module.messaging.sqs_queue_arns)
@@ -787,6 +799,9 @@ module "guacamole" {
   # Shared ALB (from Portal ALB module)
   alb_listener_arn      = module.alb.https_listener_arn
   alb_security_group_id = module.alb.security_group_id
+
+  # Drain in-flight RDP/SSH browser sessions on target removal (#931).
+  target_deregistration_delay_seconds = var.guacamole_deregistration_delay_seconds
 
   # ECR (from foundation remote state)
   guacd_ecr_repository_url            = data.terraform_remote_state.foundation.outputs.guacd_ecr_url

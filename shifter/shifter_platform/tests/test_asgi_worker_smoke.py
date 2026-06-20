@@ -32,15 +32,41 @@ def test_uvicorn_has_a_websocket_backend() -> None:
 
 
 def test_uvicorn_worker_class_importable() -> None:
-    """``-k uvicorn_worker.UvicornWorker`` must resolve at import time.
+    """The standalone ``uvicorn_worker.UvicornWorker`` base must resolve at import time.
 
-    ``entrypoint.sh`` passes ``-k uvicorn_worker.UvicornWorker`` to
-    Gunicorn. If the symbol cannot be imported, the master exits
-    before serving any HTTP or websocket traffic. The current Uvicorn
-    docs mark the legacy ``uvicorn.workers`` submodule deprecated and
-    direct users to the standalone ``uvicorn-worker`` distribution;
-    this test pins that contract.
+    ``entrypoint.sh`` serves the portal with
+    ``config.asgi_worker.ShifterUvicornWorker``, which subclasses
+    ``uvicorn_worker.UvicornWorker``; if the base symbol cannot be imported the
+    Gunicorn master exits before serving any HTTP or websocket traffic. The
+    current Uvicorn docs mark the legacy ``uvicorn.workers`` submodule
+    deprecated and direct users to the standalone ``uvicorn-worker``
+    distribution; this test pins that contract.
     """
     from uvicorn_worker import UvicornWorker
 
     assert UvicornWorker.__module__.startswith("uvicorn_worker")
+
+
+def test_shifter_worker_pins_websocket_keepalive() -> None:
+    """The deployed worker class must pin an explicit WebSocket keepalive (#931).
+
+    ``entrypoint.sh`` serves the portal with ``config.asgi_worker.ShifterUvicornWorker``
+    rather than the bare ``uvicorn_worker.UvicornWorker`` so the ALB never silently
+    reaps an otherwise-idle terminal/notification/RDP WebSocket: Uvicorn sends
+    protocol PING frames at ``ws_ping_interval`` < the ALB ``idle_timeout``. The
+    preflight (docs/architecture/aws-long-lived-connection-drain-preflight-931.md)
+    forbids assuming Uvicorn's default ping is active in the built Gunicorn worker
+    path, so the interval/timeout are pinned in ``CONFIG_KWARGS`` and this test
+    fails closed if they ever drop out.
+    """
+    from uvicorn_worker import UvicornWorker
+
+    from config.asgi_worker import ShifterUvicornWorker
+
+    assert issubclass(ShifterUvicornWorker, UvicornWorker)
+
+    kwargs = ShifterUvicornWorker.CONFIG_KWARGS
+    assert isinstance(kwargs.get("ws_ping_interval"), (int, float))
+    assert kwargs["ws_ping_interval"] > 0
+    assert isinstance(kwargs.get("ws_ping_timeout"), (int, float))
+    assert kwargs["ws_ping_timeout"] > 0

@@ -7,6 +7,21 @@ variable "name_prefix" {
   type        = string
 }
 
+variable "target_deregistration_delay_seconds" {
+  description = <<-EOT
+    Guacamole target-group deregistration delay in seconds, allowing in-flight
+    RDP/SSH browser sessions to drain when a target is removed (issue #931).
+    AWS allows 0-3600.
+  EOT
+  type        = number
+  default     = 120
+
+  validation {
+    condition     = var.target_deregistration_delay_seconds >= 0 && var.target_deregistration_delay_seconds <= 3600
+    error_message = "target_deregistration_delay_seconds must be between 0 and 3600."
+  }
+}
+
 variable "environment" {
   description = "Environment name (dev, prod)"
   type        = string

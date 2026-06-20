@@ -278,7 +278,10 @@ echo "Pulling image..."
 docker pull "$IMAGE"
 
 echo "Stopping existing containers..."
-docker stop portal worker-cms worker-engine worker-mc ctf-scheduler 2>/dev/null || true
+# Docker stop timeout exceeds the Gunicorn graceful-timeout (30s) so long-lived
+# terminal/WebSocket connections drain before SIGKILL (issue #931). Sized below
+# the ASG termination drain window.
+docker stop --time ${docker_stop_timeout} portal worker-cms worker-engine worker-mc ctf-scheduler 2>/dev/null || true
 docker rm portal worker-cms worker-engine worker-mc ctf-scheduler 2>/dev/null || true
 
 echo "Starting portal..."

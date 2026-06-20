@@ -400,13 +400,21 @@ class TerminalManager extends TerminalLayoutBase {
     }
 
     /**
-     * Calculate retry delay with exponential backoff
+     * Calculate retry delay with exponential backoff and equal jitter.
+     *
+     * The cap is the deterministic exponential backoff (base * 2^n, clamped to
+     * maxDelayMs). The returned delay is half that cap plus a uniform random
+     * share of the other half ("equal jitter"). The floor keeps reconnects from
+     * hammering the server immediately, while the random spread prevents every
+     * terminal dropped by an ASG instance refresh from reconnecting in lockstep
+     * and stampeding the remaining instances (issue #931).
      */
     _getRetryDelay(retryCount) {
-        return Math.min(
+        const cap = Math.min(
             this.retryConfig.baseDelayMs * Math.pow(2, retryCount),
             this.retryConfig.maxDelayMs
         );
+        return Math.round(cap / 2 + Math.random() * (cap / 2));
     }
 
     /**
