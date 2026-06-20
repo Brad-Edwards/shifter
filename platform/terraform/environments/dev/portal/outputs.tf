@@ -35,6 +35,31 @@ output "private_route_table_ids" {
 }
 
 # ------------------------------------------------------------------------------
+# Portal east-west inspection assertion contract (#932)
+# ------------------------------------------------------------------------------
+# Typed, non-secret topology consumed by the post-apply assertion
+# (scripts/assert_portal_inspection). All per-AZ lists are ordered by
+# availability_zones. A future staging environment or enforcement-mode change
+# reuses the same assertion entrypoint with different topology data.
+
+output "portal_inspection_assertion" {
+  description = "Typed contract consumed by scripts/assert_portal_inspection to prove NFW route/endpoint wiring post-apply (#932)."
+  value = {
+    inspection_enabled       = module.vpc.inspection_enabled
+    firewall_arn             = module.vpc.firewall_arn
+    availability_zones       = module.vpc.availability_zones
+    endpoint_ids_by_az       = module.vpc.firewall_endpoint_ids_by_az
+    public_route_table_ids   = module.vpc.public_route_table_ids
+    private_route_table_ids  = module.vpc.private_route_table_ids
+    firewall_route_table_ids = module.vpc.firewall_route_table_ids
+    public_subnet_cidrs      = module.vpc.public_subnet_cidrs
+    private_subnet_cidrs     = module.vpc.private_subnet_cidrs
+    firewall_subnet_cidrs    = module.vpc.firewall_subnet_cidrs
+    nat_gateway_id           = module.vpc.nat_gateway_id
+  }
+}
+
+# ------------------------------------------------------------------------------
 # RDS
 # ------------------------------------------------------------------------------
 

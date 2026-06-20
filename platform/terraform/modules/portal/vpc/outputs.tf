@@ -78,3 +78,28 @@ output "firewall_log_group_name" {
   description = "Name of the CloudWatch log group receiving Network Firewall FLOW / ALERT logs. Empty string when inspection is disabled."
   value       = var.enable_portal_inspection ? aws_cloudwatch_log_group.firewall[0].name : ""
 }
+
+output "firewall_arn" {
+  description = "ARN of the portal Network Firewall. Empty string when inspection is disabled."
+  value       = var.enable_portal_inspection ? aws_networkfirewall_firewall.portal[0].arn : ""
+}
+
+output "public_route_table_ids" {
+  description = "IDs of the per-AZ public route tables, ordered by availability_zones."
+  value       = aws_route_table.public[*].id
+}
+
+output "firewall_route_table_ids" {
+  description = "IDs of the per-AZ firewall route tables, ordered by availability_zones. Empty list when inspection is disabled."
+  value       = aws_route_table.firewall[*].id
+}
+
+output "private_subnet_cidrs" {
+  description = "CIDR blocks of the per-AZ private subnets, ordered by availability_zones."
+  value       = aws_subnet.private[*].cidr_block
+}
+
+output "firewall_subnet_cidrs" {
+  description = "CIDR blocks of the per-AZ firewall subnets, ordered by availability_zones. Empty list when inspection is disabled."
+  value       = aws_subnet.firewall[*].cidr_block
+}

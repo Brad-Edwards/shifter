@@ -3856,6 +3856,7 @@ PYTHON_COMPLEXITY_GATE_PYPROJECTS = (
     "scripts/gcp",
     "scripts/check_layer_imports",
     "scripts/check_rds_pending_modifications",
+    "scripts/assert_portal_inspection",
     "uat/event-load-harness",
 )
 
