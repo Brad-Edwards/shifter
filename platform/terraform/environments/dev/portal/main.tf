@@ -322,6 +322,12 @@ module "redis" {
   engine_version             = var.redis_engine_version
   enable_replication         = var.redis_enable_replication
 
+  # AUTH + in-transit encryption (#938): the AUTH token secret is encrypted by
+  # the portal CMK. is_active_channel_backend rejects a live channel layer on
+  # the plaintext single-node path.
+  secrets_kms_key_arn       = aws_kms_key.secrets_manager.arn
+  is_active_channel_backend = var.enable_redis
+
   # CloudWatch Alarms
   enable_alarms = var.alarm_email != ""
   alarm_actions = var.alarm_email != "" ? [aws_sns_topic.alerts.arn] : []
@@ -442,6 +448,11 @@ module "ssm" {
   # Redis wiring is environment-owned and decoupled from autoscaling (ADR-018, #849).
   redis_endpoint = var.enable_redis ? module.redis.redis_endpoint : ""
   enable_redis   = var.enable_redis
+  # AUTH + in-transit encryption references (#938). Non-secret: the token stays
+  # in Secrets Manager and is hydrated into REDIS_PASSWORD by entrypoint.sh.
+  redis_secret_arn = module.redis.redis_secret_arn
+  redis_tls        = module.redis.redis_tls_enabled
+  redis_ca_mode    = "system"
 
   # Database endpoint (direct RDS connection - hostname only, not endpoint with port)
   db_host_override        = module.rds.db_instance_address
@@ -484,13 +495,19 @@ module "ec2" {
   instance_type         = var.ec2_instance_type
   ecr_repository_arn    = data.terraform_remote_state.foundation.outputs.portal_ecr_arn
   ecr_repository_url    = data.terraform_remote_state.foundation.outputs.portal_ecr_url
-  secret_arns = [
-    module.rds.db_credentials_secret_arn,
-    aws_secretsmanager_secret.app.arn,
-    module.cognito.cognito_secret_arn,
-    module.guacamole.json_auth_secret_arn,
-    module.engine_provisioner.dc_domain_password_secret_arn,
-  ]
+  # The Redis AUTH token secret (#938) is included only on the in-transit-
+  # encryption path; the single-node path returns "" and must not reach the IAM
+  # Resource list (an empty ARN is invalid).
+  secret_arns = concat(
+    [
+      module.rds.db_credentials_secret_arn,
+      aws_secretsmanager_secret.app.arn,
+      module.cognito.cognito_secret_arn,
+      module.guacamole.json_auth_secret_arn,
+      module.engine_provisioner.dc_domain_password_secret_arn,
+    ],
+    module.redis.redis_secret_arn != "" ? [module.redis.redis_secret_arn] : [],
+  )
   secrets_manager_kms_key_arn = aws_kms_key.secrets_manager.arn
   s3_bucket_arn               = module.s3.bucket_arn
   app_port                    = var.app_port

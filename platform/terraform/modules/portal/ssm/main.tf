@@ -221,6 +221,43 @@ resource "aws_ssm_parameter" "channel_layer_backend" {
   tags = local.common_tags
 }
 
+# Redis AUTH + in-transit encryption wiring (#938). Written only when Redis is
+# the active backend AND the secure path is enabled. These carry non-secret
+# references and flags only: the AUTH token stays in Secrets Manager and is
+# hydrated into REDIS_PASSWORD by entrypoint.sh, never via Parameter Store.
+resource "aws_ssm_parameter" "redis_secret_arn" {
+  count = var.enable_redis && var.redis_tls ? 1 : 0
+
+  name        = "${local.ps_prefix}/redis-secret-arn"
+  description = "ARN of the Secrets Manager secret holding the Redis AUTH token (resolved to REDIS_PASSWORD at portal startup)"
+  type        = "String"
+  value       = var.redis_secret_arn
+
+  tags = local.common_tags
+}
+
+resource "aws_ssm_parameter" "redis_tls" {
+  count = var.enable_redis && var.redis_tls ? 1 : 0
+
+  name        = "${local.ps_prefix}/redis-tls"
+  description = "Whether the Redis channel-layer connection uses in-transit encryption + AUTH (REDIS_TLS)"
+  type        = "String"
+  value       = "true"
+
+  tags = local.common_tags
+}
+
+resource "aws_ssm_parameter" "redis_ca_mode" {
+  count = var.enable_redis && var.redis_tls ? 1 : 0
+
+  name        = "${local.ps_prefix}/redis-ca-mode"
+  description = "TLS trust mode for the Redis server certificate (REDIS_CA_MODE): system | pem"
+  type        = "String"
+  value       = var.redis_ca_mode
+
+  tags = local.common_tags
+}
+
 resource "aws_ssm_parameter" "db_host_override" {
   count = var.enable_db_host_override ? 1 : 0
 
