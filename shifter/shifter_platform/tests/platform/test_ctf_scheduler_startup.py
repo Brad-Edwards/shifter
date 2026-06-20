@@ -75,7 +75,11 @@ def test_local_compose_starts_ctf_scheduler_service() -> None:
 def test_aws_deploy_paths_start_ctf_scheduler_container(path: Path) -> None:
     deployment_text = path.read_text(encoding="utf-8")
 
-    assert f"docker stop portal worker-cms worker-engine worker-mc {SCHEDULER_NAME}" in deployment_text
+    # Containers are stopped gracefully with an explicit timeout (#931) so
+    # long-lived connections drain before SIGKILL; the timeout token differs
+    # between the templated user-data and the redeploy script.
+    assert "docker stop --time " in deployment_text
+    assert f"portal worker-cms worker-engine worker-mc {SCHEDULER_NAME}" in deployment_text
     assert f"docker rm portal worker-cms worker-engine worker-mc {SCHEDULER_NAME}" in deployment_text
     assert "health-interval 30s" in deployment_text
     assert "health-timeout 5s" in deployment_text

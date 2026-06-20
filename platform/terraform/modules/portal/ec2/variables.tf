@@ -228,6 +228,50 @@ variable "lifecycle_hook_heartbeat_timeout" {
   default     = 600
 }
 
+variable "termination_drain_timeout" {
+  description = <<-EOT
+    Bounded drain window, in seconds, that a terminating instance is held in
+    Terminating:Wait by the EC2_INSTANCE_TERMINATING lifecycle hook so the ALB
+    can deregister the target and long-lived terminal/RDP/SSH WebSocket sessions
+    can drain before SIGKILL (issue #931). Should be >= the target-group
+    deregistration_delay and > the Docker stop timeout. AWS max is 7200.
+  EOT
+  type        = number
+  default     = 180
+
+  validation {
+    condition     = var.termination_drain_timeout >= 30 && var.termination_drain_timeout <= 7200
+    error_message = "termination_drain_timeout must be between 30 and 7200 seconds."
+  }
+}
+
+variable "docker_stop_timeout" {
+  description = <<-EOT
+    Seconds Docker waits for a container to stop gracefully (SIGTERM) before
+    SIGKILL during an in-place redeploy. Must exceed the Gunicorn graceful
+    timeout (30s) so long-lived connections drain, and stay below
+    termination_drain_timeout (issue #931).
+  EOT
+  type        = number
+  default     = 35
+
+  validation {
+    condition     = var.docker_stop_timeout > 30 && var.docker_stop_timeout <= 600
+    error_message = "docker_stop_timeout must be greater than 30 (the Gunicorn graceful timeout) and at most 600 seconds."
+  }
+}
+
+variable "instance_refresh_min_healthy_percentage" {
+  description = "Minimum percentage of healthy instances kept in service during an ASG instance refresh."
+  type        = number
+  default     = 50
+
+  validation {
+    condition     = var.instance_refresh_min_healthy_percentage >= 0 && var.instance_refresh_min_healthy_percentage <= 100
+    error_message = "instance_refresh_min_healthy_percentage must be between 0 and 100."
+  }
+}
+
 variable "worker_health_alarm_actions" {
   description = "SNS topic ARNs notified when the UnhealthyWorkers alarm (#953) fires; empty disables alarm notifications"
   type        = list(string)

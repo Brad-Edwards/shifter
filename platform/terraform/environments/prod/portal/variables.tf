@@ -546,6 +546,46 @@ variable "ctf_from_email" {
   default     = "ctf@example.com"
 }
 
+# Portal runtime capacity tunables (#930). Forwarded to the portal/ssm module,
+# which validates them; per-instance terminal cap = portal_web_workers *
+# terminal_max_sessions. Set explicitly in terraform.tfvars so event capacity
+# policy is visible in one place rather than hidden in the image defaults.
+variable "portal_web_workers" {
+  description = "Gunicorn/Uvicorn worker processes per portal instance (PORTAL_WEB_WORKERS), sized to instance vCPUs."
+  type        = number
+  default     = 4
+}
+
+variable "terminal_max_sessions" {
+  description = "Active terminal SSH sessions per worker process (TERMINAL_MAX_SESSIONS)."
+  type        = number
+  default     = 200
+}
+
+variable "terminal_max_sessions_per_user" {
+  description = "Active terminal SSH sessions per user, per worker process (TERMINAL_MAX_SESSIONS_PER_USER)."
+  type        = number
+  default     = 10
+}
+
+variable "terminal_idle_timeout_seconds" {
+  description = "Idle terminal session timeout in seconds (TERMINAL_IDLE_TIMEOUT_SECONDS)."
+  type        = number
+  default     = 1800
+}
+
+variable "terminal_max_session_seconds" {
+  description = "Hard ceiling on a terminal session lifetime in seconds (TERMINAL_MAX_SESSION_SECONDS)."
+  type        = number
+  default     = 28800
+}
+
+variable "terminal_read_poll_seconds" {
+  description = "Idle terminal read-loop poll interval in seconds (TERMINAL_READ_POLL_SECONDS)."
+  type        = number
+  default     = 30
+}
+
 variable "ses_domain" {
   description = "Domain for SES email sending (e.g., example.com)"
   type        = string
@@ -577,4 +617,47 @@ variable "django_secret_key_ci" {
   description = "Django secret key for CI testing (extracted by quality.yml workflow, not used by Terraform)"
   type        = string
   default     = ""
+}
+
+# ------------------------------------------------------------------------------
+# Long-lived connection lifecycle (#931)
+# ------------------------------------------------------------------------------
+# Explicit, ordered timing for the portal's long-lived WebSocket / RDP / SSH
+# workload. Prod uses full drain windows. Ordering: ws_ping(20s) < idle_timeout,
+# and graceful(30s) < docker_stop < dereg <= termination_drain.
+
+variable "alb_idle_timeout_seconds" {
+  description = "ALB idle timeout (s) for long-lived WebSocket connections (#931)."
+  type        = number
+  default     = 300
+}
+
+variable "portal_deregistration_delay_seconds" {
+  description = "Portal target-group deregistration delay (s) for connection drain (#931)."
+  type        = number
+  default     = 120
+}
+
+variable "guacamole_deregistration_delay_seconds" {
+  description = "Guacamole target-group deregistration delay (s) for RDP/SSH drain (#931)."
+  type        = number
+  default     = 120
+}
+
+variable "termination_drain_timeout" {
+  description = "ASG termination-drain hold (s) for in-flight session drain on refresh/scale-in (#931)."
+  type        = number
+  default     = 180
+}
+
+variable "docker_stop_timeout" {
+  description = "Docker stop grace (s) on redeploy; must exceed the 30s Gunicorn graceful timeout (#931)."
+  type        = number
+  default     = 35
+}
+
+variable "instance_refresh_min_healthy_percentage" {
+  description = "Minimum healthy percentage kept in service during an ASG instance refresh (#931)."
+  type        = number
+  default     = 50
 }
