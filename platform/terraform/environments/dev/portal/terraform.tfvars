@@ -132,8 +132,20 @@ asg_max_size           = 2
 asg_desired_capacity   = 1
 asg_warm_pool_min_size = 0
 asg_warm_pool_state    = "Stopped"
-scale_up_threshold     = 70
-scale_down_threshold   = 30
+scale_up_threshold     = 70 # CPU guardrail notification only (#940)
+
+# Portal app-saturation autoscaling + observability (#940). dev runs a single
+# instance (enable_autoscaling = false), so the ASG-scoped scaling policies and
+# the PortalCapacity/CPU alarms + dashboard are not created; the ALB latency/5xx/
+# rejected/unhealthy observability alarms still are. The app emitter is enabled
+# in ASG-mode environments where the capacity alarms exist, so it stays off here.
+enable_portal_capacity_alarms                = true
+portal_capacity_metrics_enabled              = false
+portal_worker_soft_concurrency               = 6
+scale_target_requests_per_target             = 1000
+scale_target_response_time_seconds           = 0.5
+worker_busy_ratio_scale_out_threshold        = 0.8
+target_response_time_alarm_threshold_seconds = 1.0
 
 # Channel-layer backend (ADR-018, #849), decoupled from autoscaling above.
 # The committed OSS baseline is single-instance and uses the in-memory channel

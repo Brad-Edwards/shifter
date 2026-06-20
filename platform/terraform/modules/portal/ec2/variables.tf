@@ -172,13 +172,70 @@ variable "redis_endpoint" {
 }
 
 variable "scale_up_threshold" {
-  description = "CPU percentage threshold to trigger scale up"
+  description = "Average EC2 CPU percentage that fires the guardrail notification alarm (#940: CPU is no longer a scaling action, only a notification)."
   type        = number
 }
 
-variable "scale_down_threshold" {
-  description = "CPU percentage threshold to trigger scale down"
+# ------------------------------------------------------------------------------
+# App-saturation autoscaling + observability (#940)
+# ------------------------------------------------------------------------------
+
+variable "alb_arn_suffix" {
+  description = "ALB ARN suffix (app/<name>/<id>) for ALB CloudWatch dimensions and the ALBRequestCountPerTarget resource label."
+  type        = string
+}
+
+variable "target_group_arn_suffix" {
+  description = "Target group ARN suffix (targetgroup/<name>/<id>) for ALB CloudWatch dimensions and the ALBRequestCountPerTarget resource label."
+  type        = string
+}
+
+variable "scale_target_requests_per_target" {
+  description = "Target-tracking target value for ALBRequestCountPerTarget: requests per target per minute the ASG holds steady (primary request-path scale-out signal)."
   type        = number
+  default     = 1000
+}
+
+variable "scale_target_response_time_seconds" {
+  description = "Target-tracking target value for ALB TargetResponseTime (Average, seconds): the latency/queueing target the ASG holds steady."
+  type        = number
+  default     = 0.5
+}
+
+variable "scale_out_cooldown_seconds" {
+  description = "Cooldown for the additive app-saturation simple scale-out policy."
+  type        = number
+  default     = 60
+}
+
+variable "worker_busy_ratio_scale_out_threshold" {
+  description = "Hottest-worker WorkerBusyRatio (in-flight HTTP requests / soft concurrency) above which the additive app-saturation scale-out fires."
+  type        = number
+  default     = 0.8
+}
+
+variable "enable_portal_capacity_alarms" {
+  description = "Create the portal capacity CloudWatch alarms and dashboard. PortalCapacity-namespace alarms also require the app emitter (PORTAL_CAPACITY_METRICS_ENABLED=true)."
+  type        = bool
+  default     = true
+}
+
+variable "portal_capacity_alarm_actions" {
+  description = "SNS topic ARNs notified by the portal capacity / ALB observability alarms (typically the environment alerts topic)."
+  type        = list(string)
+  default     = []
+}
+
+variable "target_response_time_alarm_threshold_seconds" {
+  description = "ALB p95 TargetResponseTime (seconds) above which the latency observability alarm notifies."
+  type        = number
+  default     = 1.0
+}
+
+variable "alb_target_5xx_alarm_threshold" {
+  description = "ALB target 5xx count per period above which the 5xx observability alarm notifies."
+  type        = number
+  default     = 0
 }
 
 # ------------------------------------------------------------------------------

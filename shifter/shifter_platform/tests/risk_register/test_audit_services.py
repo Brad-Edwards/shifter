@@ -21,15 +21,19 @@ from risk_register.models import AuditLog
 from risk_register.services import (
     AuditEvent,
     AuthPrincipal,
+    RequestAudit,
     SessionInfo,
+    StateChange,
     audit_auth_event,
     audit_log,
     audit_log_from_request,
     audit_log_system_event,
+    audit_role_sync,
     audit_session_event,
     get_actor_from_request,
     get_client_ip,
     get_request_id,
+    select_trusted_client_ip,
 )
 
 # ---- Fixtures ----
@@ -127,6 +131,23 @@ class TestAuditLog:
         assert stored.user_agent == "TestAgent"
         assert stored.request_id == "req-123"
 
+    def test_strict_reraises_on_persistence_failure(self):
+        """With ``strict=True`` a persistence fault propagates instead of None.
+
+        The role-sync audit path needs fail-closed behavior so a failed audit
+        rolls back the role mutation it describes (issue #937 SEC-5).
+        """
+        with pytest.raises(TypeError):
+            audit_log(
+                AuditEvent(
+                    entity_type=AuditLog.EntityType.USER,
+                    entity_id=1,
+                    action=AuditLog.Action.ROLE_SYNC,
+                    new_state={"bad": {1, 2, 3}},
+                ),
+                strict=True,
+            )
+
     def test_returns_none_when_row_cannot_be_persisted(self):
         """A real serialization failure is swallowed; the caller gets None.
 
@@ -148,6 +169,44 @@ class TestAuditLog:
         assert result is None
 
 
+# ---- audit_role_sync() ----
+
+
+@pytest.mark.django_db
+class TestAuditRoleSync:
+    def test_records_role_change_row(self):
+        entry = audit_role_sync(
+            user_id=7,
+            actor_type=AuditLog.ActorType.USER,
+            actor_id=7,
+            change=StateChange(
+                previous={"user_type": "standard", "groups": []},
+                new={"user_type": "ctf_participant", "groups": ["CTF Participant"]},
+            ),
+            source="oidc",
+            request=RequestAudit(source_ip="9.9.9.9"),
+        )
+        stored = AuditLog.objects.get(pk=entry.pk)
+        assert stored.action == AuditLog.Action.ROLE_SYNC
+        assert stored.entity_type == AuditLog.EntityType.USER
+        assert stored.entity_id == 7
+        assert stored.actor_type == AuditLog.ActorType.USER
+        assert stored.previous_state == {"user_type": "standard", "groups": []}
+        assert stored.new_state == {"user_type": "ctf_participant", "groups": ["CTF Participant"]}
+        assert stored.source_ip == "9.9.9.9"
+
+    def test_raises_when_row_cannot_be_persisted(self):
+        """Fail-closed: a persistence fault propagates so callers can roll back."""
+        with pytest.raises(TypeError):
+            audit_role_sync(
+                user_id=1,
+                actor_type=AuditLog.ActorType.USER,
+                actor_id=1,
+                change=StateChange(previous={"user_type": "standard"}, new={"groups": {1, 2, 3}}),
+                source="oidc",
+            )
+
+
 # ---- audit_log_from_request() ----
 
 
@@ -165,7 +224,8 @@ class TestAuditLogFromRequest:
         stored = AuditLog.objects.get(pk=entry.pk)
         assert stored.actor_type == AuditLog.ActorType.USER
         assert stored.actor_id == staff_user.id
-        assert stored.source_ip == "10.0.0.1"
+        # Rightmost (ALB-appended) hop, not the spoofable leftmost value.
+        assert stored.source_ip == "10.0.0.2"
         assert stored.user_agent == "TestBrowser/1.0"
         assert stored.request_id == "req-abc-123"
 
@@ -267,13 +327,52 @@ class TestAuditSessionEvent:
 
 
 class TestGetClientIp:
-    def test_xff_first_ip(self, mock_request):
+    def test_xff_rightmost_trusted_hop(self, mock_request):
+        """Behind one trusted proxy, the rightmost (appended) hop is the client.
+
+        The leftmost value ``10.0.0.1`` is attacker-controlled and must be
+        ignored in favour of the proxy-appended ``10.0.0.2`` (SEC-4).
+        """
         ip = get_client_ip(mock_request)
-        assert ip == "10.0.0.1"
+        assert ip == "10.0.0.2"
 
     def test_remote_addr_fallback(self, mock_request_simple):
         ip = get_client_ip(mock_request_simple)
         assert ip == "192.168.1.1"
+
+
+# ---- select_trusted_client_ip() ----
+
+
+class TestSelectTrustedClientIp:
+    def test_returns_rightmost_hop_with_default_single_proxy(self):
+        ip = select_trusted_client_ip("1.2.3.4, 9.9.9.9", "10.0.0.1", trusted_hops=1)
+        assert ip == "9.9.9.9"
+
+    def test_forged_leftmost_value_is_ignored(self):
+        ip = select_trusted_client_ip("127.0.0.1, 9.9.9.9", "10.0.0.1", trusted_hops=1)
+        assert ip == "9.9.9.9"
+
+    def test_falls_back_to_remote_addr_without_xff(self):
+        ip = select_trusted_client_ip("", "192.168.1.1", trusted_hops=1)
+        assert ip == "192.168.1.1"
+
+    def test_falls_back_when_chain_shorter_than_trusted_hops(self):
+        # Only one hop present but two proxies are trusted -> cannot trust it.
+        ip = select_trusted_client_ip("9.9.9.9", "192.168.1.1", trusted_hops=2)
+        assert ip == "192.168.1.1"
+
+    def test_honours_multiple_trusted_hops(self):
+        ip = select_trusted_client_ip("1.1.1.1, 2.2.2.2, 3.3.3.3", "10.0.0.1", trusted_hops=2)
+        assert ip == "2.2.2.2"
+
+    def test_malformed_selected_value_falls_back_to_remote_addr(self):
+        ip = select_trusted_client_ip("9.9.9.9, not-an-ip", "192.168.1.1", trusted_hops=1)
+        assert ip == "192.168.1.1"
+
+    def test_returns_none_when_nothing_trustworthy(self):
+        ip = select_trusted_client_ip("not-an-ip", None, trusted_hops=1)
+        assert ip is None
 
 
 # ---- get_request_id() ----
