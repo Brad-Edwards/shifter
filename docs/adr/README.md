@@ -391,6 +391,29 @@ entries. Completed so far:
   template already expects. `test_ngfw_detail` asserts the real linked-ranges
   render end to end.
 
+- `mission_control` consumers + misc (`test_context_processors`, `test_oidc`,
+  `test_health`, `consumers/test_range_status_consumer`,
+  `consumers/test_ssh_consumer`, `consumers/test_ssh_consumer_capacity`): the
+  `active_range` context processor is driven against real `RangeInstance` rows
+  (the stored `range_spec` controls the projected instances, real group
+  membership decides `is_ctf_participant_only`, and runtime private IPs come
+  from a real linked engine `Range`) instead of patching `get_active_range` /
+  `is_ctf_participant_only` / `logger`. `test_oidc` drives the real
+  `ShifterOIDCBackend.create_user` / `update_user` / `_update_cognito_sub`
+  (real mozilla base + real `update_cognito_sub` / `audit_auth_event`),
+  asserting persisted flags / `UserProfile` / `AuditLog`. `test_health` drives
+  the real channel-layer probe over the in-process `InMemoryChannelLayer` and
+  the real missing-default-layer path (third-party `health_check` backends are
+  still patched for the DB/cache failure cases — those are real boundaries).
+  The WebSocket consumers drive the real `connect_terminal` /
+  `get_range_by_request_id` / `audit_session_event` against real READY `Range`
+  rows (`@pytest.mark.django_db(transaction=True)` so `sync_to_async` sees the
+  committed rows), mocking only the boto3 Secrets Manager and the asyncssh
+  transport boundary; the range-lookup connect paths are additionally covered
+  real by `tests/integration/engine/test_consumers_integration.py` and
+  `tests/integration/asgi/test_terminal_ws.py`. Generic/impossible-state and
+  incidental-logging tests are dropped per the policy intent.
+
 Decomposition-owned suites are out of scope here and land with their own
 issues: provisioner (#946), `ctf/**` and `cms/experiments/test_orchestrator*`
 (#885, #886, #889-#891), and `cms/scenario_editor/**` (#887, #888).

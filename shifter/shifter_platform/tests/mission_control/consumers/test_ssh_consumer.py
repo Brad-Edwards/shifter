@@ -9,9 +9,12 @@ import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from django.contrib.auth import get_user_model
 from django.contrib.auth.models import AnonymousUser
 
 from shared.enums import WebSocketCloseCode
+
+User = get_user_model()
 
 
 @pytest.fixture
@@ -27,31 +30,34 @@ def consumer():
     return c
 
 
-@pytest.fixture
-def authenticated_scope():
-    """WebSocket scope with authenticated user."""
-    user = MagicMock()
-    user.id = 1
-    user.is_authenticated = True
+def _scope(user, instance_uuid="test-uuid-1234"):
     return {
         "type": "websocket",
         "user": user,
-        "url_route": {"kwargs": {"instance_uuid": "test-uuid-1234"}},
+        "url_route": {"kwargs": {"instance_uuid": instance_uuid}},
     }
 
 
 @pytest.fixture
 def unauthenticated_scope():
     """WebSocket scope with anonymous user."""
-    return {
-        "type": "websocket",
-        "user": AnonymousUser(),
-        "url_route": {"kwargs": {"instance_uuid": "test-uuid-1234"}},
-    }
+    return _scope(AnonymousUser())
 
 
-class TestSSHConsumerConnect:
-    """Tests for connect() and _do_connect() behavior."""
+@pytest.fixture
+def real_user(db):
+    return User.objects.create_user(username="ssh-consumer@example.com", email="ssh-consumer@example.com")
+
+
+@pytest.fixture
+def seeded_ssh_range(range_ssh_instance, real_user):
+    """A real READY engine Range owned by ``real_user`` with one SSH instance."""
+    _rng, instance = range_ssh_instance(real_user)
+    return real_user, instance
+
+
+class TestSSHConsumerConnectGuards:
+    """Connect guards that reject before any range/SSH work (no DB)."""
 
     @pytest.mark.asyncio
     async def test_rejects_unauthenticated_user(self, consumer, unauthenticated_scope):
@@ -66,67 +72,61 @@ class TestSSHConsumerConnect:
     async def test_rejects_missing_instance_uuid(self, consumer):
         """Missing instance_uuid returns INVALID_REQUEST."""
         user = MagicMock(is_authenticated=True)
-        consumer.scope = {
-            "type": "websocket",
-            "user": user,
-            "url_route": {"kwargs": {}},
-        }
+        consumer.scope = {"type": "websocket", "user": user, "url_route": {"kwargs": {}}}
 
         await consumer.connect()
 
         consumer.close.assert_awaited_once_with(code=WebSocketCloseCode.INVALID_REQUEST)
 
+
+@pytest.mark.django_db(transaction=True)
+class TestSSHConsumerConnectRealRange:
+    """Connect driven through the real engine.services.connect_terminal.
+
+    Uses a real user + real READY Range; the SSH key is fetched over the boto3
+    Secrets Manager boundary, and the asyncssh transport is the only thing
+    mocked (and only for the success case — the failure case naturally fails on
+    the opaque test key). The full ASGI-stack path is additionally covered by
+    tests/integration/asgi/test_terminal_ws.py.
+    """
+
     @pytest.mark.asyncio
-    async def test_rejects_on_value_error(self, consumer, authenticated_scope):
-        """ValueError from connect_terminal returns NOT_FOUND.
+    async def test_rejects_when_no_active_range(self, consumer, real_user):
+        """No active range -> connect_terminal raises ValueError -> NOT_FOUND."""
+        consumer.scope = _scope(real_user, "no-such-instance")
 
-        Engine raises ValueError for: no active range, range not ready,
-        instance not in range, etc.
-        """
-        consumer.scope = authenticated_scope
-
-        with patch("engine.services.connect_terminal", side_effect=ValueError("Instance not found")):
-            await consumer.connect()
+        await consumer.connect()
 
         consumer.close.assert_awaited_once_with(code=WebSocketCloseCode.NOT_FOUND)
 
     @pytest.mark.asyncio
-    async def test_rejects_on_permission_error(self, consumer, authenticated_scope):
-        """PermissionError from connect_terminal returns PERMISSION_DENIED."""
-        consumer.scope = authenticated_scope
+    async def test_rejects_on_ssh_connection_failure(self, consumer, seeded_ssh_range, secrets_boundary):
+        """A real SSH connect failure (opaque test key) returns SSH_CONNECTION_FAILED."""
+        user, instance = seeded_ssh_range
+        consumer.scope = _scope(user, instance["uuid"])
 
-        with patch("engine.services.connect_terminal", side_effect=PermissionError("Not authorized")):
-            await consumer.connect()
-
-        consumer.close.assert_awaited_once_with(code=WebSocketCloseCode.PERMISSION_DENIED)
-
-    @pytest.mark.asyncio
-    async def test_rejects_on_ssh_connection_failure(self, consumer, authenticated_scope):
-        """SSH connection failure returns SSH_CONNECTION_FAILED."""
-        consumer.scope = authenticated_scope
-        mock_ssh = AsyncMock()
-        mock_ssh.connect.side_effect = ConnectionError("SSH failed")
-
-        with patch("engine.services.connect_terminal", return_value=mock_ssh):
+        with secrets_boundary():
             await consumer.connect()
 
         consumer.close.assert_awaited_once_with(code=WebSocketCloseCode.SSH_CONNECTION_FAILED)
 
     @pytest.mark.asyncio
-    async def test_accepts_on_successful_connect(self, consumer, authenticated_scope):
-        """Successful connection accepts WebSocket and starts read task."""
-        consumer.scope = authenticated_scope
-        mock_ssh = AsyncMock()
+    async def test_accepts_on_successful_connect(self, consumer, seeded_ssh_range, secrets_boundary):
+        """Successful connection accepts the WebSocket and starts the read task."""
+        user, instance = seeded_ssh_range
+        consumer.scope = _scope(user, instance["uuid"])
 
+        fake_conn = AsyncMock()  # asyncssh connection (boundary)
         with (
-            patch("engine.services.connect_terminal", return_value=mock_ssh),
+            secrets_boundary(),
+            patch("asyncssh.import_private_key", return_value=MagicMock()),
+            patch("asyncssh.connect", new=AsyncMock(return_value=fake_conn)),
             patch("asyncio.create_task") as mock_create_task,
         ):
             mock_create_task.return_value = MagicMock()
             await consumer.connect()
 
         consumer.accept.assert_awaited_once()
-        mock_ssh.connect.assert_awaited_once()
         mock_create_task.assert_called_once()
 
 
