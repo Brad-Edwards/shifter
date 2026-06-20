@@ -154,3 +154,74 @@ class TestPruneCommand:
 
         assert deleted == 2
         assert GuacamoleBootstrapRequest.objects.filter(pk=active.id).exists()
+
+    def test_prune_cycle_drains_in_batches(self):
+        from mission_control.management.commands.run_guacamole_bootstrap_prune import Command
+
+        for _ in range(3):
+            _make(ttl_seconds=-10)
+
+        # batch_size below the backlog forces multiple batches within one cycle.
+        deleted = Command()._prune_cycle(batch_size=2)
+
+        assert deleted == 3
+        assert GuacamoleBootstrapRequest.objects.count() == 0
+
+    def test_signal_handler_sets_shutdown(self):
+        import signal
+
+        from mission_control.management.commands.run_guacamole_bootstrap_prune import Command
+
+        cmd = Command()
+        assert cmd.shutdown is False
+        cmd._signal_handler(signal.SIGTERM, None)
+        assert cmd.shutdown is True
+
+    def test_add_arguments_exposes_settings_driven_defaults(self):
+        from argparse import ArgumentParser
+
+        from mission_control.management.commands.run_guacamole_bootstrap_prune import Command
+
+        parser = ArgumentParser()
+        Command().add_arguments(parser)
+        namespace = parser.parse_args([])
+
+        assert namespace.poll_interval >= 1
+        assert namespace.batch_size >= 1
+
+    def test_handle_runs_one_cycle_then_shuts_down(self, monkeypatch):
+        from mission_control.management.commands import run_guacamole_bootstrap_prune as mod
+
+        monkeypatch.setattr(mod.signal, "signal", lambda *args, **kwargs: None)
+        _make(ttl_seconds=-10)
+        cmd = mod.Command()
+        results = []
+        original_cycle = cmd._prune_cycle
+
+        def one_then_stop(batch_size):
+            deleted = original_cycle(batch_size)
+            results.append(deleted)
+            cmd.shutdown = True
+            return deleted
+
+        monkeypatch.setattr(cmd, "_prune_cycle", one_then_stop)
+        cmd.handle(poll_interval=1, batch_size=10)
+
+        assert results == [1]
+        assert not mod.HEARTBEAT_FILE.exists()
+
+    def test_handle_survives_a_cycle_error(self, monkeypatch):
+        from mission_control.management.commands import run_guacamole_bootstrap_prune as mod
+
+        monkeypatch.setattr(mod.signal, "signal", lambda *args, **kwargs: None)
+        cmd = mod.Command()
+
+        def boom(batch_size):
+            cmd.shutdown = True
+            raise RuntimeError("transient db blip")
+
+        monkeypatch.setattr(cmd, "_prune_cycle", boom)
+        # The loop must log and exit cleanly on shutdown, never propagate.
+        cmd.handle(poll_interval=1, batch_size=10)
+
+        assert not mod.HEARTBEAT_FILE.exists()
