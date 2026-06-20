@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import importlib.util
 
+import pytest
+
 
 def test_uvicorn_has_a_websocket_backend() -> None:
     """A uvicorn-compatible WebSocket backend must be installed.
@@ -70,3 +72,44 @@ def test_shifter_worker_pins_websocket_keepalive() -> None:
     assert kwargs["ws_ping_interval"] > 0
     assert isinstance(kwargs.get("ws_ping_timeout"), (int, float))
     assert kwargs["ws_ping_timeout"] > 0
+
+
+_PING_ENV = "PORTAL_WEB_WS_PING_INTERVAL"
+
+
+def test_keepalive_env_falls_back_to_default_when_unset(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An unset (or blank) keepalive variable yields the supplied default."""
+    from config.asgi_worker import _positive_float_env
+
+    monkeypatch.delenv(_PING_ENV, raising=False)
+    assert _positive_float_env(_PING_ENV, 20.0) == 20.0
+
+    monkeypatch.setenv(_PING_ENV, "   ")
+    assert _positive_float_env(_PING_ENV, 20.0) == 20.0
+
+
+def test_keepalive_env_parses_a_valid_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A positive numeric override is parsed and returned as a float."""
+    from config.asgi_worker import _positive_float_env
+
+    monkeypatch.setenv(_PING_ENV, "12.5")
+    assert _positive_float_env(_PING_ENV, 20.0) == 12.5
+
+
+def test_keepalive_env_rejects_non_numeric(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A non-numeric value fails loud so the Gunicorn master aborts at boot."""
+    from config.asgi_worker import _positive_float_env
+
+    monkeypatch.setenv(_PING_ENV, "soon")
+    with pytest.raises(ValueError, match="must be a number"):
+        _positive_float_env(_PING_ENV, 20.0)
+
+
+@pytest.mark.parametrize("bad_value", ["0", "-5"])
+def test_keepalive_env_rejects_non_positive(monkeypatch: pytest.MonkeyPatch, bad_value: str) -> None:
+    """A zero or negative interval would disable the keepalive; reject it."""
+    from config.asgi_worker import _positive_float_env
+
+    monkeypatch.setenv(_PING_ENV, bad_value)
+    with pytest.raises(ValueError, match="positive number"):
+        _positive_float_env(_PING_ENV, 20.0)
