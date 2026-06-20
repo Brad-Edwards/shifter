@@ -139,7 +139,7 @@ def collect_snapshot(soft_concurrency: int, terminal_max_sessions: int) -> Capac
     )
 
 
-def build_metric_data(snapshot: CapacitySnapshot, name_prefix: str) -> list[dict]:
+def build_metric_data(snapshot: CapacitySnapshot, name_prefix: str) -> list[dict[str, object]]:
     """Translate a snapshot into CloudWatch ``MetricData`` entries.
 
     Every entry carries exactly one dimension (``NamePrefix``) so the series
@@ -176,6 +176,8 @@ def build_metric_data(snapshot: CapacitySnapshot, name_prefix: str) -> list[dict
 
 
 class _CloudWatchClient(Protocol):
+    """Minimal CloudWatch client surface used by the emitter (boto3-compatible)."""
+
     def put_metric_data(self, **kwargs: object) -> object: ...
 
 
@@ -218,7 +220,8 @@ class PortalCapacityEmitter:
                 MetricData=build_metric_data(snapshot, self._name_prefix),
             )
             return True
-        except Exception as exc:  # fail-soft: a metric blip must not break request serving
+        except Exception as exc:
+            # Fail-soft: a metric blip must not break request serving.
             _logger.warning("portal-capacity metric emit failed: %s", safe_log_value(str(exc)))
             return False
 
@@ -266,15 +269,23 @@ def build_emitter_from_config(
     cannot be constructed — worker boot must never fail because of an optional
     observability signal.
     """
-    if not enabled:
-        return None
-    if not name_prefix:
-        _logger.error("portal-capacity metrics enabled but PORTAL_CAPACITY_NAME_PREFIX is empty; emitter not started")
+    # Refuse to start (logging a bounded reason) rather than raise: an optional
+    # observability signal must never fail worker boot. Disabled is silent; an
+    # enabled-but-unlabelled emitter is an error because its series could not
+    # match the CloudWatch alarms/dashboard.
+    if not enabled or not name_prefix:
+        if enabled:
+            _logger.error(
+                "portal-capacity metrics enabled but PORTAL_CAPACITY_NAME_PREFIX is empty; emitter not started"
+            )
         return None
     try:
         client = client_factory()
-    except Exception as exc:  # fail-soft: never break worker boot on a client-init error
-        _logger.error("portal-capacity metrics: CloudWatch client init failed: %s", safe_log_value(str(exc)))
+    except Exception as exc:
+        # Fail-soft: never break worker boot on a client-init error. Log a bounded,
+        # sanitized message, not the traceback (raw exception text is forbidden by
+        # the #940 preflight anti-patterns).
+        _logger.warning("portal-capacity metrics: CloudWatch client init failed: %s", safe_log_value(str(exc)))
         return None
     emitter = PortalCapacityEmitter(
         client=client,

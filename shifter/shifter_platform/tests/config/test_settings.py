@@ -46,6 +46,9 @@ def test_portal_capacity_metrics_defaults_are_off(monkeypatch) -> None:
     ):
         monkeypatch.delenv(var, raising=False)
 
+    # The capacity settings live in a re-exported sub-module; evict it so the
+    # fresh settings load re-reads the (cleared) environment instead of the cache.
+    sys.modules.pop("config._capacity_settings", None)
     settings_module = _load_settings_module("config._settings_capacity_default_test")
 
     assert settings_module.PORTAL_CAPACITY_METRICS_ENABLED is False
@@ -64,6 +67,8 @@ def test_portal_capacity_metrics_read_from_env(monkeypatch) -> None:
     monkeypatch.setenv("PORTAL_WORKER_SOFT_CONCURRENCY", "12")
     monkeypatch.setenv("PORTAL_CAPACITY_NAME_PREFIX", "prod-portal")
 
+    # Re-read env in the extracted capacity-settings sub-module (avoid the cache).
+    sys.modules.pop("config._capacity_settings", None)
     settings_module = _load_settings_module("config._settings_capacity_env_test")
 
     assert settings_module.PORTAL_CAPACITY_METRICS_ENABLED is True

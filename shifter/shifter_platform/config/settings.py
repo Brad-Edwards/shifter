@@ -134,7 +134,6 @@ MIDDLEWARE = [
     "config.middleware.HealthCheckMiddleware",
     # Request ID for audit logging correlation
     "config.middleware.RequestIDMiddleware",
-    # Per-worker in-flight HTTP concurrency gauge for portal capacity metrics (#940)
     "config.middleware.RequestInFlightMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
@@ -243,27 +242,7 @@ TERMINAL_CONNECT_EXECUTOR_WORKERS = _env_int("TERMINAL_CONNECT_EXECUTOR_WORKERS"
 # (4503, retryable) instead of being queued without limit (#929).
 TERMINAL_CONNECT_EXECUTOR_QUEUE_SLACK = _env_int("TERMINAL_CONNECT_EXECUTOR_QUEUE_SLACK", 16)
 
-# Portal web capacity metrics (Shifter/PortalCapacity, #940). When enabled, each
-# Uvicorn worker runs a daemon thread that publishes its in-flight HTTP request
-# concurrency, worker busy ratio, and terminal-session utilization to CloudWatch
-# so portal autoscaling and operators can see request-path saturation that
-# average EC2 CPU misses. Disabled by default; turned on per environment.
-#
-# PORTAL_WORKER_SOFT_CONCURRENCY is the busy-ratio denominator: the soft
-# concurrent-request target per worker above which the worker is queueing
-# request-path work (the portal serves ~4 serialized sync requests per worker,
-# so the default sits a little above that baseline). PORTAL_CAPACITY_NAME_PREFIX
-# is the low-cardinality metric dimension and MUST match the Terraform
-# name_prefix so the CloudWatch alarms/dashboard match the series; it is supplied
-# by user_data.sh / deploy_portal.sh from the environment name_prefix.
-# PORTAL_CAPACITY_METRICS_ENABLED and PORTAL_WORKER_SOFT_CONCURRENCY are wired
-# through SSM/tfvars like the #930 terminal knobs; the publish interval is a
-# stable operational default (env-overridable) and is not SSM-provisioned.
-# See docs/architecture/portal-app-saturation-autoscaling-preflight-940.md.
-PORTAL_CAPACITY_METRICS_ENABLED = _env_bool("PORTAL_CAPACITY_METRICS_ENABLED", False)
-PORTAL_CAPACITY_METRICS_INTERVAL_SECONDS = _env_int("PORTAL_CAPACITY_METRICS_INTERVAL_SECONDS", 60)
-PORTAL_WORKER_SOFT_CONCURRENCY = _env_int("PORTAL_WORKER_SOFT_CONCURRENCY", 6)
-PORTAL_CAPACITY_NAME_PREFIX = os.environ.get("PORTAL_CAPACITY_NAME_PREFIX", "").strip()
+from config._capacity_settings import *  # noqa: E402  # NOSONAR
 
 # Database
 # Use SQLite for local dev/tests, PostgreSQL for deployed environments
