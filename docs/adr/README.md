@@ -414,6 +414,40 @@ entries. Completed so far:
   `tests/integration/asgi/test_terminal_ws.py`. Generic/impossible-state and
   incidental-logging tests are dropped per the policy intent.
 
+- config / documentation / integration / views misc (`config/test_logout`,
+  `documentation/test_views`, `integration/engine/test_range_lifecycle`,
+  `views/test_launch_range_scenarios`): `test_logout` drives the real
+  `logout_view` through the test Client with a real session (the real Django
+  `logout` flushes it) instead of patching `config.views.logout`.
+  `documentation/test_views` drives the real `doc_index` render and asserts the
+  captured `response.context` (nav_tree / active_nav) instead of patching
+  `documentation.views.render`. `test_range_lifecycle` drives the real
+  `get_rdp_connection_info` → `get_rdp_password` over the boto3 Secrets Manager
+  boundary instead of patching `engine.services.get_rdp_password`.
+  `test_launch_range_scenarios` drives the real `mission_control:launch_range`
+  endpoint → real `cms_list_scenarios` / `cms_get_agent` / `cms_create_range`
+  against a real custom hydratable `Scenario` + a real Windows `AgentConfig`
+  (engine provisioning is a no-op, so the range stays `provisioning`), with the
+  real-boundary CMSError paths (a second launch hits "already have an active
+  range"; an unknown agent classifies to a safe message) and `caplog` for the
+  success/failure log assertions, instead of patching `cms_create_range` /
+  `cms_list_scenarios` / `cms_get_agent` / `logger`.
+
+### Refactor-survival demonstration (#957)
+
+The point of the boundary-mock policy is that behavior tests survive refactors
+that mock-coupled tests would not. To demonstrate this concretely, the
+`generate_username` Django-username validator was moved out of the OIDC backend
+module (`config/oidc.py`) into its own `config/username.py`, and the single
+topology reference (`OIDC_USERNAME_ALGO = "config.username.generate_username"`)
+was updated. The `tests/mission_control/test_oidc.py` `ShifterOIDCBackend`
+behavior tests — which exercise `generate_username` only through the real OIDC
+`create_user` / `update_user` login flow (via `OIDC_USERNAME_ALGO`), never naming
+the function's location — pass **unchanged** across the move. Only the function's
+own direct unit tests (`TestGenerateUsername`) updated their import to follow it.
+A mock-coupled test that had patched `config.oidc.generate_username` would have
+broken on the move; the behavior tests did not.
+
 Decomposition-owned suites are out of scope here and land with their own
 issues: provisioner (#946), `ctf/**` and `cms/experiments/test_orchestrator*`
 (#885, #886, #889-#891), and `cms/scenario_editor/**` (#887, #888).

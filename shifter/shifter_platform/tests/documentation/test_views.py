@@ -4,13 +4,15 @@ Tests the view logic, not specific documentation content.
 Content-specific tests are brittle and break when docs are reorganized.
 """
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
-from django.http import Http404, HttpResponse
+from django.http import Http404
 from django.test import RequestFactory
 
 from documentation.views import doc_index, doc_page
+
+DOCS_INDEX_URL = "/docs/"
 
 
 @pytest.fixture
@@ -62,12 +64,10 @@ class TestAccessControl:
         assert response.status_code == 302
         assert "login" in response.url.lower() or "oidc" in response.url.lower()
 
-    @patch("documentation.views.render")
-    def test_authenticated_user_can_access(self, mock_render, rf, mock_user):
-        """Authenticated users get 200 OK."""
-        mock_render.return_value = HttpResponse(status=200)
-        request = _make_request(rf, mock_user)
-        response = doc_index(request)
+    def test_authenticated_user_can_access(self, authenticated_client):
+        """Authenticated users get 200 OK from the real rendered docs index."""
+        client, _user = authenticated_client()
+        response = client.get(DOCS_INDEX_URL)
 
         assert response.status_code == 200
 
@@ -138,39 +138,26 @@ class TestSecurity:
 class TestBasicFunctionality:
     """Tests for core view behavior."""
 
-    @patch("documentation.views.render")
-    def test_index_returns_nav_tree(self, mock_render, rf, mock_user):
-        """Index page includes nav_tree in context."""
-        mock_render.return_value = HttpResponse(status=200)
-        request = _make_request(rf, mock_user)
-        doc_index(request)
+    def test_index_returns_nav_tree(self, authenticated_client):
+        """Index page includes nav_tree in the real render context."""
+        client, _user = authenticated_client()
+        response = client.get(DOCS_INDEX_URL)
 
-        mock_render.assert_called_once()
-        context = mock_render.call_args[0][2]
-        assert "nav_tree" in context
-        assert isinstance(context["nav_tree"], list)
+        assert response.status_code == 200
+        assert isinstance(response.context["nav_tree"], list)
 
-    @patch("documentation.views.render")
-    def test_index_sets_active_nav(self, mock_render, rf, mock_user):
+    def test_index_sets_active_nav(self, authenticated_client):
         """Docs pages set active_nav to 'docs'."""
-        mock_render.return_value = HttpResponse(status=200)
-        request = _make_request(rf, mock_user)
-        doc_index(request)
+        client, _user = authenticated_client()
+        response = client.get(DOCS_INDEX_URL)
 
-        mock_render.assert_called_once()
-        context = mock_render.call_args[0][2]
-        assert context["active_nav"] == "docs"
+        assert response.context["active_nav"] == "docs"
 
-    @patch("documentation.views.render")
-    def test_nav_tree_excludes_deprecated(self, mock_render, rf, mock_user):
-        """Nav tree does not include _deprecated folder."""
-        mock_render.return_value = HttpResponse(status=200)
-        request = _make_request(rf, mock_user)
-        doc_index(request)
-
-        mock_render.assert_called_once()
-        context = mock_render.call_args[0][2]
-        nav_tree = context["nav_tree"]
+    def test_nav_tree_excludes_deprecated(self, authenticated_client):
+        """Nav tree does not include the _deprecated folder."""
+        client, _user = authenticated_client()
+        response = client.get(DOCS_INDEX_URL)
+        nav_tree = response.context["nav_tree"]
 
         def find_deprecated(items):
             for item in items:
