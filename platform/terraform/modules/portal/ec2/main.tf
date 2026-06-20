@@ -538,6 +538,7 @@ resource "aws_launch_template" "this" {
     ssm_parameter_store_prefix = var.ssm_parameter_store_prefix
     lifecycle_hook_name        = "${var.name_prefix}-launch-hook"
     name_prefix                = var.name_prefix
+    docker_stop_timeout        = var.docker_stop_timeout
     worker_health_monitor_b64  = base64encode(file("${path.module}/worker-health/shifter-worker-health.sh"))
     worker_health_service_b64  = base64encode(file("${path.module}/worker-health/shifter-worker-health.service"))
     worker_health_timer_b64    = base64encode(file("${path.module}/worker-health/shifter-worker-health.timer"))
@@ -613,7 +614,7 @@ resource "aws_autoscaling_group" "this" {
   instance_refresh {
     strategy = "Rolling"
     preferences {
-      min_healthy_percentage = 50
+      min_healthy_percentage = var.instance_refresh_min_healthy_percentage
     }
   }
 
@@ -736,6 +737,7 @@ resource "aws_instance" "this" {
     ssm_parameter_store_prefix = var.ssm_parameter_store_prefix
     lifecycle_hook_name        = ""
     name_prefix                = var.name_prefix
+    docker_stop_timeout        = var.docker_stop_timeout
     worker_health_monitor_b64  = base64encode(file("${path.module}/worker-health/shifter-worker-health.sh"))
     worker_health_service_b64  = base64encode(file("${path.module}/worker-health/shifter-worker-health.service"))
     worker_health_timer_b64    = base64encode(file("${path.module}/worker-health/shifter-worker-health.timer"))
@@ -777,4 +779,28 @@ resource "aws_autoscaling_lifecycle_hook" "launch" {
   lifecycle_transition   = "autoscaling:EC2_INSTANCE_LAUNCHING"
   heartbeat_timeout      = var.lifecycle_hook_heartbeat_timeout
   default_result         = "ABANDON"
+}
+
+# ------------------------------------------------------------------------------
+# ASG Termination Drain Hook (bounded drain for long-lived connections)
+# ------------------------------------------------------------------------------
+# Holds a terminating instance in Terminating:Wait for a bounded window so that,
+# during an instance refresh or scale-in, the ALB has time to deregister the
+# target (target-group deregistration_delay) and existing terminal / RDP / SSH
+# WebSocket sessions can drain before the container is SIGKILLed (issue #931,
+# DP-21). This is a passive timeout-only drain: no instance-side
+# CompleteLifecycleAction is required, and default_result = "CONTINUE" lets the
+# termination proceed automatically once heartbeat_timeout elapses, so no
+# instance ever gets stuck. Kept separate from the launch hook above so launch
+# bootstrap success never depends on termination-drain logic. The instance IAM
+# role already scopes autoscaling:CompleteLifecycleAction to this ASG, so an
+# early-completion path can be added later without an IAM change.
+resource "aws_autoscaling_lifecycle_hook" "terminate" {
+  count = var.enable_autoscaling ? 1 : 0
+
+  name                   = "${var.name_prefix}-terminate-hook"
+  autoscaling_group_name = aws_autoscaling_group.this[0].name
+  lifecycle_transition   = "autoscaling:EC2_INSTANCE_TERMINATING"
+  heartbeat_timeout      = var.termination_drain_timeout
+  default_result         = "CONTINUE"
 }

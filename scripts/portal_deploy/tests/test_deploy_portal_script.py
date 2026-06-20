@@ -377,7 +377,7 @@ class DeployPortalScriptTests(unittest.TestCase):
             self.assertLess(
                 log.index("docker run --rm"),
                 log.index(
-                    "docker stop portal worker-cms worker-engine worker-mc ctf-scheduler"
+                    "docker stop --time 35 portal worker-cms worker-engine worker-mc ctf-scheduler"
                 ),
             )
             self.assertIn("python manage.py migrate --noinput", log)
@@ -389,7 +389,7 @@ class DeployPortalScriptTests(unittest.TestCase):
             self.assertIn("run_worker --queue mc", log)
             self.assertIn("python manage.py run_ctf_scheduler", log)
             self.assertIn(
-                "docker stop portal worker-cms worker-engine worker-mc ctf-scheduler",
+                "docker stop --time 35 portal worker-cms worker-engine worker-mc ctf-scheduler",
                 log,
             )
             self.assertIn(
