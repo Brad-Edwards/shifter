@@ -26,6 +26,7 @@ from django.utils import timezone
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
 from ctf.bridges import get_user_role
+from risk_register.services import get_client_ip
 from shared.log_sanitize import safe_log_value
 
 if TYPE_CHECKING:
@@ -159,14 +160,6 @@ def ctf_role_required(view_func: Callable[..., HttpResponse]) -> Callable[..., H
 # -----------------------------------------------------------------------------
 # Helpers
 # -----------------------------------------------------------------------------
-
-
-def _get_client_ip(request: HttpRequest) -> str | None:
-    """Extract client IP from request headers."""
-    forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR")
-    if forwarded_for:
-        return forwarded_for.split(",")[0].strip()
-    return request.META.get("REMOTE_ADDR")
 
 
 _FORBIDDEN_CHALLENGE_ACCESS_MSG = "Forbidden: You do not have access to this challenge"
@@ -2928,7 +2921,7 @@ def api_submit_flag(request: HttpRequest, challenge_id: UUID) -> JsonResponse:
     except _BodyParseError as e:
         return JsonResponse({"error": str(e)}, status=400)
 
-    return _submit_flag_response(participant, challenge_id, flag, _get_client_ip(request))
+    return _submit_flag_response(participant, challenge_id, flag, get_client_ip(request))
 
 
 def _unlock_hint_response(participant: CTFParticipant, challenge_id: UUID, hint_uuid: UUID) -> JsonResponse:

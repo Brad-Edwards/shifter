@@ -312,6 +312,8 @@ class AuditLog(models.Model):
         LOGOUT = "logout", "Logout"
         LOGIN_FAILED = "login_failed", "Login Failed"
         ACCESS_DENIED = "access_denied", "Access Denied"
+        # Authorization
+        ROLE_SYNC = "role_sync", "Role Sync"
         # Sessions
         CONNECT = "connect", "Connect"
         DISCONNECT = "disconnect", "Disconnect"

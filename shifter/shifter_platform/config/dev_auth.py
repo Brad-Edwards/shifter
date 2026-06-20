@@ -9,13 +9,11 @@ import logging
 
 from django.conf import settings
 from django.contrib.auth import get_user_model, login
-from django.contrib.auth.models import Group
 from django.http import HttpResponseForbidden, HttpResponseRedirect
 from django.shortcuts import render
 from django.urls import reverse
 
-from management.services import get_user_profile
-from shared.auth import CTF_ORGANIZER_GROUP, CTF_PARTICIPANT_GROUP
+from config.user_type_sync import sync_user_type
 from shared.log_sanitize import safe_log_value
 
 logger = logging.getLogger(__name__)
@@ -46,15 +44,16 @@ def _is_dev_environment():
     return settings.DEBUG or getattr(settings, "ENVIRONMENT", "production") == "development"
 
 
-def _request_host_or_ip_allowed(request) -> bool:
-    """Allow dev auth only over explicitly local/admin access paths."""
-    host = request.get_host().split(":", 1)[0].strip().lower()
-    if host in {item.lower() for item in getattr(settings, "DEV_LOGIN_ALLOWED_HOSTS", [])}:
-        return True
+def _request_peer_allowed(request) -> bool:
+    """Allow dev auth only from a trusted direct peer address.
 
-    remote_addr = request.META.get("HTTP_X_FORWARDED_FOR", "").split(",")[0].strip() or request.META.get(
-        "REMOTE_ADDR", ""
-    )
+    Admission is bound to the actual socket peer (``REMOTE_ADDR``) — never the
+    spoofable ``Host`` header or ``X-Forwarded-For`` (SEC-3, issue #937). The
+    loopback range is always admitted so local development and SSM/admin
+    tunnels (which present as loopback) keep working; additional admin networks
+    opt in through ``DEV_LOGIN_ALLOWED_CIDRS``.
+    """
+    remote_addr = request.META.get("REMOTE_ADDR", "").strip()
     if not remote_addr:
         return False
 
@@ -62,6 +61,9 @@ def _request_host_or_ip_allowed(request) -> bool:
         client_ip = ipaddress.ip_address(remote_addr)
     except ValueError:
         return False
+
+    if client_ip.is_loopback:
+        return True
 
     for cidr in getattr(settings, "DEV_LOGIN_ALLOWED_CIDRS", []):
         try:
@@ -90,7 +92,7 @@ def dev_login(request):
     """
     if not _is_dev_environment():
         return HttpResponseForbidden("Development auth disabled in production")
-    if not settings.DEBUG and not _request_host_or_ip_allowed(request):
+    if not settings.DEBUG and not _request_peer_allowed(request):
         return HttpResponseForbidden("Development auth is only available through local or admin access paths")
 
     if request.method == "POST":
@@ -103,26 +105,10 @@ def dev_login(request):
         user, _created = User.objects.get_or_create(username=email, defaults={"email": email, "is_active": True})
         login(request, user, backend="django.contrib.auth.backends.ModelBackend")
 
-        # Set group membership based on user_type
-        ctf_groups = {CTF_ORGANIZER_GROUP, CTF_PARTICIPANT_GROUP}
-        type_to_group = {
-            "ctf_organizer": CTF_ORGANIZER_GROUP,
-            "ctf_participant": CTF_PARTICIPANT_GROUP,
-        }
-
-        group_name = type_to_group.get(user_type)
-        if group_name:
-            group, _ = Group.objects.get_or_create(name=group_name)
-            user.groups.add(group)
-        else:
-            # "standard" — remove CTF groups
-            user.groups.remove(*Group.objects.filter(name__in=ctf_groups))
-
-        # Keep user_type field in sync for backwards compat
-        profile = get_user_profile(user)
-        if profile.user_type != user_type:
-            profile.user_type = user_type
-            profile.save(update_fields=["user_type"])
+        # Sync CTF group membership + profile via the shared, audited helper so
+        # dev-login produces the same fail-closed ROLE_SYNC audit trail as the
+        # real identity providers (issue #937 SEC-5).
+        sync_user_type(user, user_type, source="dev_login", request=request)
         logger.info("Dev login: set user_type=%s for %s", safe_log_value(user_type), safe_log_value(email))
 
         # Redirect to appropriate dashboard
@@ -139,7 +125,7 @@ def dev_logout(request):
     """
     if not _is_dev_environment():
         return HttpResponseForbidden("Development auth disabled in production")
-    if not settings.DEBUG and not _request_host_or_ip_allowed(request):
+    if not settings.DEBUG and not _request_peer_allowed(request):
         return HttpResponseForbidden("Development auth is only available through local or admin access paths")
 
     from django.contrib.auth import logout

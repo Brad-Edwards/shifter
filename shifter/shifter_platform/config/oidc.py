@@ -6,25 +6,20 @@ import logging
 import os
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlencode
-from uuid import UUID
 
-from django.contrib.auth.models import Group
 from mozilla_django_oidc.auth import OIDCAuthenticationBackend
 
 from config.bootstrap_admin import apply_bootstrap_admin_flags
-from management.services import get_user_profile, update_cognito_sub
+from config.user_type_sync import sync_user_type
+from management.services import update_cognito_sub
 from risk_register.models import AuditLog
-from risk_register.services import AuthPrincipal, audit_auth_event
-from shared.auth import CTF_ORGANIZER_GROUP, CTF_PARTICIPANT_GROUP
+from risk_register.services import AuthPrincipal, audit_auth_event, get_client_ip
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import User
     from django.http import HttpRequest
 
 logger = logging.getLogger(__name__)
-
-# Valid CTF user types that can be set from Cognito claims
-VALID_CTF_USER_TYPES = {"standard", "ctf_organizer", "ctf_participant"}
 
 
 def provider_logout_url(request: HttpRequest) -> str:
@@ -99,14 +94,17 @@ class ShifterOIDCBackend(OIDCAuthenticationBackend):
 
     def authenticate(self, request: HttpRequest | None, **kwargs: Any) -> User | None:
         """Authenticate and log the event."""
+        # Stash the request so create_user / update_user (whose signatures are
+        # fixed by mozilla-django-oidc and omit the request) can attribute the
+        # user-type sync audit row to the request context (issue #937 SEC-5).
+        self._request = request
         user = super().authenticate(request, **kwargs)
 
         # Get request context for audit logging
         source_ip = None
         user_agent = ""
         if request:
-            xff = request.META.get("HTTP_X_FORWARDED_FOR")
-            source_ip = xff.split(",")[0].strip() if xff else request.META.get("REMOTE_ADDR")
+            source_ip = get_client_ip(request)
             user_agent = request.META.get("HTTP_USER_AGENT", "")[:500]
 
         if user:
@@ -144,76 +142,16 @@ class ShifterOIDCBackend(OIDCAuthenticationBackend):
         update_cognito_sub(user, cognito_sub)
 
     def _update_user_type(self, user: User, claims: dict[str, Any]) -> None:
-        """Update CTF groups and active CTF event from Cognito custom claims.
+        """Sync CTF groups, profile user_type, and active CTF event from claims.
 
-        Reads custom:user_type and custom:ctf_event_id from OIDC claims
-        and adds/removes the user from the appropriate Django Groups.
+        Delegates to the shared, audited :func:`config.user_type_sync.sync_user_type`
+        so OIDC, Identity Platform, and dev-login share one mapping and one
+        fail-closed audit trail (issue #937 SEC-5).
         """
-        user_type = claims.get("custom:user_type")
-
-        CLAIM_TO_GROUP = {
-            "ctf_organizer": CTF_ORGANIZER_GROUP,
-            "ctf_participant": CTF_PARTICIPANT_GROUP,
-        }
-
-        if user_type and user_type in VALID_CTF_USER_TYPES:
-            group_name = CLAIM_TO_GROUP.get(user_type)
-            if group_name:
-                group, _ = Group.objects.get_or_create(name=group_name)
-                user.groups.add(group)
-                logger.info(
-                    "Added user %s to group '%s' from OIDC claim",
-                    user.email,
-                    group_name,
-                )
-            elif user_type == "standard":
-                # Remove CTF groups for standard users
-                ctf_groups = Group.objects.filter(name__in=[CTF_ORGANIZER_GROUP, CTF_PARTICIPANT_GROUP])
-                user.groups.remove(*ctf_groups)
-                logger.info(
-                    "Removed CTF groups for standard user %s from OIDC claim",
-                    user.email,
-                )
-
-            # Keep user_type field in sync for backwards compat
-            profile = get_user_profile(user)
-            if profile.user_type != user_type:
-                profile.user_type = user_type
-                profile.save(update_fields=["user_type"])
-        elif user_type:
-            logger.warning(
-                "Invalid user_type claim '%s' for user %s, ignoring",
-                user_type,
-                user.email,
-            )
-
-        # Set active CTF event for participant users
-        ctf_event_id = claims.get("custom:ctf_event_id")
-        is_participant = user.groups.filter(name=CTF_PARTICIPANT_GROUP).exists()
-        if ctf_event_id and is_participant:
-            try:
-                event_uuid = UUID(ctf_event_id)
-                from ctf.models import CTFEvent
-
-                event = CTFEvent.objects.filter(pk=event_uuid).first()
-                if event:
-                    from management.services import set_active_ctf_event
-
-                    set_active_ctf_event(user, event.pk)
-                    logger.info(
-                        "Set active CTF event %s for user %s",
-                        ctf_event_id,
-                        user.email,
-                    )
-                else:
-                    logger.warning(
-                        "CTF event %s not found for user %s",
-                        ctf_event_id,
-                        user.email,
-                    )
-            except (ValueError, TypeError):
-                logger.warning(
-                    "Invalid ctf_event_id claim '%s' for user %s, ignoring",
-                    ctf_event_id,
-                    user.email,
-                )
+        sync_user_type(
+            user,
+            claims.get("custom:user_type"),
+            source="oidc",
+            request=getattr(self, "_request", None),
+            ctf_event_id=claims.get("custom:ctf_event_id"),
+        )
