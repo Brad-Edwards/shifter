@@ -48,13 +48,11 @@ class _SecretCache:
         now = self._clock()
         with self._lock:
             entry = self._store.get(ref)
-            if entry is None:
-                return None
-            expires_at, value = entry
-            if expires_at <= now:
+            if entry is not None and entry[0] <= now:
+                # Past expiry: drop it and treat as a miss.
                 del self._store[ref]
-                return None
-            return value
+                entry = None
+            return entry[1] if entry is not None else None
 
     def set(self, ref: str, value: str, ttl: int, max_entries: int) -> None:
         if ttl <= 0:
@@ -82,10 +80,12 @@ def clear_secret_cache() -> None:
 
 
 def _cache_ttl_seconds() -> int:
+    """Return the configured credential-cache TTL in seconds (<= 0 disables it)."""
     return int(getattr(settings, "SECRET_CACHE_TTL_SECONDS", 300))
 
 
 def _cache_max_entries() -> int:
+    """Return the configured maximum number of cached credential entries."""
     return max(1, int(getattr(settings, "SECRET_CACHE_MAX_ENTRIES", 256)))
 
 
