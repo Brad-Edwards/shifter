@@ -13,10 +13,13 @@ from check_layer_imports import (
     IMPORT_PATTERN,
     analyze_cyberscript_imports,
     analyze_imports,
+    analyze_private_facade_imports,
     compute_cyberscript_violations,
+    compute_private_facade_violations,
     compute_stats,
     get_cyberscript_imports,
     get_imports,
+    get_private_facade_imports,
     is_import_allowed,
     load_allowed_imports,
     print_summary,
@@ -110,6 +113,23 @@ class TestIsImportAllowed:
         assert is_import_allowed("cms", "management.services.foo", allowed) is True
         assert is_import_allowed("cms", "management.models", allowed) is False
         assert is_import_allowed("cms", "management", allowed) is False
+
+    def test_private_submodule_rejected(self):
+        """A private split-package submodule is not a public facade member."""
+        allowed = {"cms": ["engine.services"], "mission_control": ["cms.services"]}
+        # Direct dotted private submodule import (e.g. import engine.services._lifecycle).
+        assert is_import_allowed("cms", "engine.services._lifecycle", allowed) is False
+        assert is_import_allowed("mission_control", "cms.services._range_pause", allowed) is False
+        # A private component anywhere in the remainder is rejected.
+        assert is_import_allowed("mission_control", "cms.services.sub._private", allowed) is False
+        # The public facade and public submodules stay allowed.
+        assert is_import_allowed("mission_control", "cms.services", allowed) is True
+        assert is_import_allowed("mission_control", "cms.services.public", allowed) is True
+
+    def test_private_shared_submodule_allowed(self):
+        """shared is the contracts layer and remains freely importable."""
+        allowed = {"cms": ["shared"]}
+        assert is_import_allowed("cms", "shared.enums._internal", allowed) is True
 
 
 class TestLoadAllowedImports:
@@ -276,6 +296,70 @@ class TestCyberscriptViolations:
         assert "cyberscript.script_context" in imports
         violations = compute_cyberscript_violations("shared", imports)
         assert violations == []
+
+
+class TestPrivateFacadeImports:
+    """Tests for ``from layer.services import _private`` detection (AST-based).
+
+    The regex import scan only sees the module path, so ``from cms.services
+    import _range_pause`` looks like an allowed ``cms.services`` facade import.
+    This AST pass recovers the imported private name so the gate can reject it.
+    """
+
+    def test_detects_from_facade_import_of_private_name(self, tmp_path):
+        layer_path = tmp_path / "mission_control"
+        layer_path.mkdir()
+        (layer_path / "views.py").write_text("from cms.services import _range_pause\n")
+        found = get_private_facade_imports(layer_path)
+        assert found == {"cms.services._range_pause"}
+
+    def test_detects_aliased_private_name(self, tmp_path):
+        layer_path = tmp_path / "mission_control"
+        layer_path.mkdir()
+        (layer_path / "views.py").write_text("from cms.services import _range_pause as rp\n")
+        assert get_private_facade_imports(layer_path) == {"cms.services._range_pause"}
+
+    def test_ignores_public_names_and_relative_imports(self, tmp_path):
+        layer_path = tmp_path / "mission_control"
+        layer_path.mkdir()
+        (layer_path / "views.py").write_text(
+            "from cms.services import audit_log\nfrom ._helpers import _thing\nimport os\n"
+        )
+        assert get_private_facade_imports(layer_path) == set()
+
+    def test_violation_is_cross_layer_and_disallowed(self):
+        allowed = {"mission_control": ["cms.services"]}
+        modules = {"cms.services._range_pause"}
+        assert compute_private_facade_violations("mission_control", modules, allowed) == ["cms.services._range_pause"]
+
+    def test_same_layer_private_import_is_not_a_violation(self):
+        allowed = {"cms": ["shared"]}
+        modules = {"cms.services._range_pause"}
+        assert compute_private_facade_violations("cms", modules, allowed) == []
+
+    def test_analyze_rolls_up_violations_per_layer(self, tmp_path):
+        mc_path = tmp_path / "mission_control"
+        mc_path.mkdir()
+        (mc_path / "views.py").write_text("from cms.services import _range_pause\n")
+        allowed = {"mission_control": ["cms.services"]}
+        result = analyze_private_facade_imports(tmp_path, allowed)
+        assert result == {"mission_control": ["cms.services._range_pause"]}
+
+    def test_private_facade_violations_counted_in_stats(self):
+        stats = compute_stats(
+            {},
+            {"mission_control": ["cms.services"]},
+            private_facade={"mission_control": ["cms.services._range_pause"]},
+        )
+        assert stats["violations"] == 1
+        assert "mission_control" in stats["layers_with_violations"]
+        assert stats["violation_details"] == [
+            {
+                "from": "mission_control",
+                "to": "cms",
+                "modules": ["cms.services._range_pause"],
+            }
+        ]
 
 
 class TestAnalyzeImports:

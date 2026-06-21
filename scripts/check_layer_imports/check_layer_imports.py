@@ -17,6 +17,7 @@ Usage:
 """
 
 import argparse
+import ast
 import json
 import re
 import sys
@@ -82,10 +83,18 @@ def is_import_allowed(from_layer: str, module_path: str, allowed: dict[str, list
             if module_path == "shared" or module_path.startswith("shared."):
                 return True
         elif "." in entry:
-            # Dotted path (e.g. "cms.services") — allows exact match
-            # and anything under it
-            if module_path == entry or module_path.startswith(entry + "."):
+            # Dotted path (e.g. "cms.services") — the public facade. Allow the
+            # exact facade and its PUBLIC submodules, but reject any path whose
+            # remainder names a private split-package module (a component that
+            # starts with "_", e.g. "cms.services._range_pause"). The facade is
+            # the cross-layer seam; private submodules are not (ADR-001-R1).
+            if module_path == entry:
                 return True
+            if module_path.startswith(entry + "."):
+                remainder = module_path[len(entry) + 1 :]
+                if not any(part.startswith("_") for part in remainder.split(".")):
+                    return True
+                # private submodule — not a facade member; keep checking entries
         else:
             # Bare layer name — exact match only
             if module_path == entry:
@@ -158,6 +167,59 @@ def analyze_cyberscript_imports(base_path: Path) -> dict[str, list[str]]:
     return result
 
 
+def get_private_facade_imports(layer_path: Path) -> set[str]:
+    """Return ``layer.path._private`` targets imported via ``from ... import``.
+
+    The regex import scan only captures the module path, so
+    ``from cms.services import _range_pause`` is indistinguishable from a
+    legitimate ``cms.services`` facade import. This AST pass recovers the
+    imported name and, when it is private (starts with ``_``) and the module
+    belongs to one of our layers, reconstructs the effective dotted target
+    (``cms.services._range_pause``). Relative imports (``from ._x import y``)
+    and public names are ignored.
+    """
+    imports: set[str] = set()
+
+    if not layer_path.exists():
+        return imports
+
+    for py_file in layer_path.rglob("*.py"):
+        try:
+            tree = ast.parse(py_file.read_text())
+        except (OSError, SyntaxError):
+            # nosec B112 - skip unreadable / unparseable files
+            continue
+
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.ImportFrom) or node.level != 0 or not node.module:
+                continue
+            if node.module.split(".")[0] not in ALL_LAYERS:
+                continue
+            for alias in node.names:
+                if alias.name.startswith("_"):
+                    imports.add(f"{node.module}.{alias.name}")
+
+    return imports
+
+
+def compute_private_facade_violations(from_layer: str, modules: set[str], allowed: dict[str, list[str]]) -> list[str]:
+    """Return private-name facade imports that violate the public-facade rule."""
+    return sorted(m for m in modules if m.split(".")[0] != from_layer and not is_import_allowed(from_layer, m, allowed))
+
+
+def analyze_private_facade_imports(base_path: Path, allowed: dict[str, list[str]]) -> dict[str, list[str]]:
+    """Analyze cross-layer private-name facade imports per layer."""
+    result: dict[str, list[str]] = {}
+
+    for from_layer in ALL_LAYERS:
+        modules = get_private_facade_imports(base_path / from_layer)
+        violations = compute_private_facade_violations(from_layer, modules, allowed)
+        if violations:
+            result[from_layer] = violations
+
+    return result
+
+
 def analyze_imports(base_path: Path) -> dict:
     """Analyze all cross-layer imports and return structured result."""
     result = {}
@@ -197,10 +259,28 @@ def _apply_cyberscript_violations(stats: dict[str, object], cyberscript: dict[st
         )
 
 
+def _apply_private_facade_violations(stats: dict[str, object], private_facade: dict[str, list[str]]) -> None:
+    """Roll private-name facade-import violations into summary stats."""
+    for from_layer, modules in private_facade.items():
+        stats["violations"] = int(stats["violations"]) + len(modules)
+        layers_with_violations = stats["layers_with_violations"]
+        if from_layer not in layers_with_violations:
+            layers_with_violations.append(from_layer)
+        violation_details = stats["violation_details"]
+        violation_details.append(
+            {
+                "from": from_layer,
+                "to": modules[0].split(".")[0] if modules else "",
+                "modules": modules,
+            }
+        )
+
+
 def compute_stats(
     imports: dict[str, dict[str, list[str]]],
     allowed: dict[str, list[str]],
     cyberscript: dict[str, list[str]] | None = None,
+    private_facade: dict[str, list[str]] | None = None,
 ) -> dict[str, object]:
     """Compute summary statistics from import analysis."""
     stats = {
@@ -235,6 +315,9 @@ def compute_stats(
 
     if cyberscript:
         _apply_cyberscript_violations(stats, cyberscript)
+
+    if private_facade:
+        _apply_private_facade_violations(stats, private_facade)
 
     # Determine clean layers (no violations)
     for layer in ALL_LAYERS:
@@ -293,12 +376,14 @@ def main():
     # Analyze imports
     imports = analyze_imports(base_path)
     cyberscript = analyze_cyberscript_imports(base_path)
-    stats = compute_stats(imports, allowed, cyberscript)
+    private_facade = analyze_private_facade_imports(base_path, allowed)
+    stats = compute_stats(imports, allowed, cyberscript, private_facade)
 
     # Build output
     output = {
         "imports": imports,
         "cyberscript_imports": cyberscript,
+        "private_facade_imports": private_facade,
         "stats": stats,
     }
 
