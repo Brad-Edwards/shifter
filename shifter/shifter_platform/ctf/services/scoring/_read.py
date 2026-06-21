@@ -55,12 +55,12 @@ logger = logging.getLogger(__name__)
 _RANK_NULL_LAST = datetime(9999, 12, 31, tzinfo=UTC)
 
 
-def _nulls_last(expr: Any) -> Coalesce:
+def _nulls_last(expr: str | F) -> Coalesce:
     """Coalesce a possibly-null last-solve expression to the far-future sentinel.
 
     Used as a secondary ORDER BY key so the materialized board, the recompute
     board, and the rank COUNT all place no-solve rows last identically across
-    database backends. ``expr`` may be a field-name string or an expression.
+    database backends. ``expr`` is a field-name string or an ``F`` expression.
     """
     return Coalesce(expr, Value(_RANK_NULL_LAST, output_field=DateTimeField()))
 
