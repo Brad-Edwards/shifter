@@ -193,6 +193,7 @@ wait_for 60 "redis" docker exec "$REDIS" redis-cli ping
 # Common runtime env: enough to satisfy production settings import and the real
 # entrypoint without any cloud access. Mirrors deploy_portal.sh env names.
 declare -a common_env=(
+  -e ENVIRONMENT=production
   -e "DB_HOST=${PG}" -e DB_PORT=5432 -e "DB_NAME=${DB_NAME}" -e "DB_USER=${DB_USER}" -e "DB_PASSWORD=${DB_PASSWORD}"
   -e "DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY}"
   -e "FIELD_ENCRYPTION_KEY=${FIELD_ENCRYPTION_KEY}"
