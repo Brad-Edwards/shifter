@@ -1658,38 +1658,47 @@ jobs:
 
       # Coverage reports are produced by the test jobs and passed as
       # artifacts; restore each at the repo-relative path that
-      # sonar-project.properties references.
+      # sonar-project.properties references. Only download reports for
+      # categories that actually ran — skipped path-filter jobs do not
+      # upload artifacts.
       - name: Download shifter_platform coverage
+        if: ${{ needs.paths.outputs.run_all == 'true' || needs.paths.outputs.shifter_platform == 'true' }}
         uses: actions/download-artifact@v8
         with:
           name: coverage-shifter-platform
           path: shifter/shifter_platform
       - name: Download shifter_platform JS coverage
+        if: ${{ needs.paths.outputs.run_all == 'true' || needs.paths.outputs.shifter_platform == 'true' }}
         uses: actions/download-artifact@v8
         with:
           name: coverage-shifter-platform-js
           path: shifter/shifter_platform/coverage
       - name: Download provisioner coverage
+        if: ${{ needs.paths.outputs.run_all == 'true' || needs.paths.outputs.provisioner == 'true' }}
         uses: actions/download-artifact@v8
         with:
           name: coverage-provisioner
           path: shifter/engine/provisioner
       - name: Download packer coverage
+        if: ${{ needs.paths.outputs.run_all == 'true' || needs.paths.outputs.packer == 'true' }}
         uses: actions/download-artifact@v8
         with:
           name: coverage-packer
           path: shifter/packer
       - name: Download bootstrap coverage
+        if: ${{ needs.paths.outputs.run_all == 'true' || needs.paths.outputs.bootstrap == 'true' }}
         uses: actions/download-artifact@v8
         with:
           name: coverage-bootstrap
           path: scripts/bootstrap
       - name: Download check_layer_imports coverage
+        if: ${{ needs.paths.outputs.run_all == 'true' || needs.paths.outputs.check_layer_imports == 'true' }}
         uses: actions/download-artifact@v8
         with:
           name: coverage-check-layer-imports
           path: scripts/check_layer_imports
       - name: Download installation coverage
+        if: ${{ needs.paths.outputs.run_all == 'true' || needs.paths.outputs.installation == 'true' }}
         uses: actions/download-artifact@v8
         with:
           name: coverage-installation
