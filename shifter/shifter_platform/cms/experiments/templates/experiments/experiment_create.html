@@ -353,6 +353,7 @@
     addScriptBtn.addEventListener('click', function() {
         const row = document.createElement('div');
         row.className = 'script-row';
+        const rowId = `script-row-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 
         let instanceOpts = '<option value="">-- Instance --</option>';
         instances.forEach(i => {
@@ -361,19 +362,19 @@
 
         row.innerHTML = `
             <div>
-                <label class="text-small text-muted">Instance</label>
-                <select class="script-instance">${instanceOpts}</select>
+                <label class="text-small text-muted" for="${rowId}-instance">Instance</label>
+                <select id="${rowId}-instance" class="script-instance">${instanceOpts}</select>
             </div>
             <div>
-                <label class="text-small text-muted">Type</label>
-                <select class="script-type-select">
+                <label class="text-small text-muted" for="${rowId}-type">Type</label>
+                <select id="${rowId}-type" class="script-type-select">
                     <option value="python">Python</option>
                     <option value="claude_code">Claude Code</option>
                 </select>
             </div>
             <div class="script-config">
-                <label class="text-small text-muted">Script / Prompt</label>
-                <select class="script-id-select">
+                <label class="text-small text-muted" for="${rowId}-script">Script / Prompt</label>
+                <select id="${rowId}-script" class="script-id-select">
                     <option value="">-- Select script --</option>
                 </select>
             </div>
@@ -396,8 +397,9 @@
             const configDiv = row.querySelector('.script-config');
             if (this.value === 'claude_code') {
                 configDiv.innerHTML = `
-                    <label class="text-small text-muted">Prompt</label>
+                    <label class="text-small text-muted" for="${rowId}-prompt">Prompt</label>
                     <input type="text"
+                           id="${rowId}-prompt"
                            class="claude-prompt"
                            placeholder="Attack {{Workstation.ip}}">
                 `;
@@ -406,8 +408,8 @@
                 });
             } else {
                 configDiv.innerHTML = `
-                    <label class="text-small text-muted">Script</label>
-                    <select class="script-id-select">
+                    <label class="text-small text-muted" for="${rowId}-script-select">Script</label>
+                    <select id="${rowId}-script-select" class="script-id-select">
                         <option value="">-- Select script --</option>
                     </select>
                 `;

@@ -224,8 +224,9 @@ function renderInstances() {
             </div>
             <div class="inline-fields">
                 <div class="form-group" style="margin-bottom: 8px;">
-                    <label>Name</label>
+                    <label for="instance-name-${idx}">Name</label>
                     <input type="text"
+                           id="instance-name-${idx}"
                            class="form-input"
                            value="${escapeHtml(inst.name || '')}"
                            onchange="instances[${idx}].name = this.value"
@@ -233,8 +234,8 @@ function renderInstances() {
                            required>
                 </div>
                 <div class="form-group" style="margin-bottom: 8px;">
-                    <label>Role</label>
-                    <select class="form-select" onchange="instances[${idx}].role = this.value">
+                    <label for="instance-role-${idx}">Role</label>
+                    <select id="instance-role-${idx}" class="form-select" onchange="instances[${idx}].role = this.value">
                         ${ROLES.map(function(r) {
                             return '<option value="' + escapeHtml(r) + '" '
                                 + (inst.role === r ? 'selected' : '') + '>'
@@ -243,8 +244,8 @@ function renderInstances() {
                     </select>
                 </div>
                 <div class="form-group" style="margin-bottom: 8px;">
-                    <label>OS Type</label>
-                    <select class="form-select" onchange="instances[${idx}].os_type = this.value">
+                    <label for="instance-os-${idx}">OS Type</label>
+                    <select id="instance-os-${idx}" class="form-select" onchange="instances[${idx}].os_type = this.value">
                         ${OS_TYPES.map(function(o) {
                             return '<option value="' + escapeHtml(o) + '" '
                                 + (inst.os_type === o ? 'selected' : '') + '>'
@@ -256,37 +257,42 @@ function renderInstances() {
             <div class="inline-fields" style="margin-top: 4px;">
                 <div class="form-checkbox">
                     <input type="checkbox"
+                           id="instance-xdr-${idx}"
                            ${inst.xdr_agent ? 'checked' : ''}
                            onchange="instances[${idx}].xdr_agent = this.checked">
-                    <label style="margin-bottom: 0; font-size: 13px;">XDR Agent</label>
+                    <label for="instance-xdr-${idx}" style="margin-bottom: 0; font-size: 13px;">XDR Agent</label>
                 </div>
                 <div class="form-checkbox">
                     <input type="checkbox"
+                           id="instance-dc-${idx}"
                            ${inst.domain_controller ? 'checked' : ''}
                            onchange="handleDCChange(${idx}, this.checked)">
-                    <label style="margin-bottom: 0; font-size: 13px;">Domain Controller</label>
+                    <label for="instance-dc-${idx}" style="margin-bottom: 0; font-size: 13px;">Domain Controller</label>
                 </div>
                 <div class="form-checkbox">
                     <input type="checkbox"
+                           id="instance-join-domain-${idx}"
                            ${inst.join_domain ? 'checked' : ''}
                            onchange="instances[${idx}].join_domain = this.checked">
-                    <label style="margin-bottom: 0; font-size: 13px;">Join Domain</label>
+                    <label for="instance-join-domain-${idx}" style="margin-bottom: 0; font-size: 13px;">Join Domain</label>
                 </div>
             </div>
             ${inst.domain_controller ? `
             <div style="margin-top: 8px; padding: 8px; background: rgba(100,100,255,0.05); border-radius: 4px;">
                 <div class="inline-fields">
                     <div class="form-group" style="margin-bottom: 4px;">
-                        <label>Domain Name</label>
+                        <label for="instance-domain-name-${idx}">Domain Name</label>
                         <input type="text"
+                               id="instance-domain-name-${idx}"
                                class="form-input"
                                value="${escapeHtml(inst.dc_config?.domain_name || 'internal.shifter')}"
                                onchange="updateDCConfig(${idx}, 'domain_name', this.value)"
                                placeholder="internal.shifter">
                     </div>
                     <div class="form-group" style="margin-bottom: 4px;">
-                        <label>NetBIOS Name</label>
+                        <label for="instance-netbios-${idx}">NetBIOS Name</label>
                         <input type="text"
+                               id="instance-netbios-${idx}"
                                class="form-input"
                                value="${escapeHtml(inst.dc_config?.netbios_name || 'INTSHIFTER')}"
                                onchange="updateDCConfig(${idx}, 'netbios_name', this.value)"
@@ -322,8 +328,9 @@ function renderSubnets() {
                 </button>
             </div>
             <div class="form-group" style="margin-bottom: 8px;">
-                <label>Subnet Name</label>
+                <label for="subnet-name-${idx}">Subnet Name</label>
                 <input type="text"
+                       id="subnet-name-${idx}"
                        class="form-input"
                        value="${escapeHtml(subnet.name || '')}"
                        onchange="subnets[${idx}].name = this.value"
@@ -331,8 +338,9 @@ function renderSubnets() {
                        required>
             </div>
             <div class="form-group" style="margin-bottom: 8px;">
-                <label>Instances (comma-separated names)</label>
+                <label for="subnet-instances-${idx}">Instances (comma-separated names)</label>
                 <input type="text"
+                       id="subnet-instances-${idx}"
                        class="form-input"
                        value="${escapeHtml((subnet.instances || []).join(', '))}"
                        onchange="subnets[${idx}].instances = parseNameList(this.value)"
@@ -341,8 +349,9 @@ function renderSubnets() {
                 </div>
             </div>
             <div class="form-group" style="margin-bottom: 4px;">
-                <label>Connected To (comma-separated subnet names)</label>
+                <label for="subnet-connected-${idx}">Connected To (comma-separated subnet names)</label>
                 <input type="text"
+                       id="subnet-connected-${idx}"
                        class="form-input"
                        value="${escapeHtml((subnet.connected_to || []).join(', '))}"
                        onchange="subnets[${idx}].connected_to = parseNameList(this.value)"

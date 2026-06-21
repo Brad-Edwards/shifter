@@ -155,11 +155,11 @@
                                     <div class="flex-row gap-sm">
                                         <a href="{% url 'ctf:admin_challenge_detail' challenge_id=challenge.pk %}"
                                            class="btn btn-secondary"
-                                           title='{% trans "View" %}'>{% trans "View" %}</a>
+                                           aria-label='{% blocktrans with name=challenge.name %}View {{ name }}{% endblocktrans %}'>{% trans "View" %}</a>
                                         {% if event.is_modifiable %}
                                             <a href="{% url 'ctf:admin_challenge_edit' challenge_id=challenge.pk %}"
                                                class="btn btn-secondary"
-                                               title='{% trans "Edit" %}'>{% trans "Edit" %}</a>
+                                               aria-label='{% blocktrans with name=challenge.name %}Edit {{ name }}{% endblocktrans %}'>{% trans "Edit" %}</a>
                                         {% endif %}
                                     </div>
                                 </td>

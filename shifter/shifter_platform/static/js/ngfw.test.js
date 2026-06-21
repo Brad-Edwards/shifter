@@ -49,7 +49,7 @@ describe('NGFWWizardManager', () => {
         <div id="summary-folder-row"></div>
         <div id="provisioning-progress"></div>
         <div id="success-state" style="display: none;"></div>
-        <a id="view-ngfw-btn" href="#"></a>
+        <button type="button" id="view-ngfw-btn"></button>
         <button id="step1-next"></button>
         <button id="step2-back"></button>
         <button id="step2-next"></button>
@@ -266,15 +266,6 @@ describe('NGFWWizardManager', () => {
             expect(mockWebSocket.close).toHaveBeenCalled();
         });
 
-        test('WebSocket onmessage shows success on ready status', () => {
-            wizard.ngfwId = 42;
-            wizard.connectWebSocket();
-
-            mockWebSocket.onmessage({ data: JSON.stringify({ status: 'ready' }) });
-
-            expect(document.getElementById('success-state').style.display).toBe('block');
-        });
-
         test('WebSocket onmessage alerts on failed status', () => {
             wizard.ngfwId = 42;
             wizard.connectWebSocket();
@@ -327,6 +318,16 @@ describe('NGFWWizardManager', () => {
 
             expect(document.getElementById('provisioning-progress').style.display).toBe('none');
             expect(document.getElementById('success-state').style.display).toBe('block');
+        });
+    });
+
+    describe('viewNgfwBtn', () => {
+        test('stores detail URL on the button after provisioning', () => {
+            const viewBtn = document.getElementById('view-ngfw-btn');
+            wizard.ngfwId = 99;
+            wizard._setViewNgfwDetailUrl();
+
+            expect(viewBtn.dataset.detailUrl).toBe('/ngfw/99/');
         });
     });
 });

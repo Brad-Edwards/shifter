@@ -25,7 +25,43 @@ class ShifterDropdown {
         this.isOpen = false;
 
         this.element._shifterDropdown = this;
+        this._wireAccessibility();
         this.init();
+    }
+
+    _wireAccessibility() {
+        if (!this.trigger) {
+            return;
+        }
+
+        const formGroup = this.element.closest('.form-group');
+        let label = null;
+
+        if (this.hiddenInput?.id) {
+            label = formGroup?.querySelector(`label[for="${this.hiddenInput.id}"]`) || null;
+        }
+
+        if (!label && formGroup) {
+            label = formGroup.querySelector('label.form-label, label');
+        }
+
+        if (!this.trigger.id) {
+            const baseId = this.element.id || `shifter-dropdown-${Math.random().toString(36).slice(2, 9)}`;
+            this.trigger.id = `${baseId}-trigger`;
+        }
+
+        if (label) {
+            if (!label.id) {
+                label.id = `${this.trigger.id}-label`;
+            }
+            if (!label.getAttribute('for')) {
+                label.setAttribute('for', this.trigger.id);
+            }
+            this.trigger.setAttribute('aria-labelledby', label.id);
+        }
+
+        this.trigger.setAttribute('aria-haspopup', 'listbox');
+        this.trigger.setAttribute('aria-expanded', 'false');
     }
 
     init() {
@@ -78,6 +114,7 @@ class ShifterDropdown {
     open() {
         this.isOpen = true;
         this.element.classList.add('open');
+        this.trigger.setAttribute('aria-expanded', 'true');
         this.highlightedIndex = -1;
 
         if (this.filterInput) {
@@ -97,6 +134,7 @@ class ShifterDropdown {
     close() {
         this.isOpen = false;
         this.element.classList.remove('open');
+        this.trigger.setAttribute('aria-expanded', 'false');
         this.highlightedIndex = -1;
         this.items.forEach(item => item.classList.remove('highlighted'));
     }

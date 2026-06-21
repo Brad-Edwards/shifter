@@ -112,12 +112,9 @@
                 <tbody>
                     {% for exp in experiments %}
                         {% url 'experiments:experiment_detail' exp.pk as detail_url %}
-                        <tr tabindex="0"
-                            role="button"
-                            onclick="window.location='{{ detail_url }}'"
-                            onkeydown="handleExperimentRowKeydown(event, '{{ detail_url }}')">
+                        <tr>
                             <td>
-                                {{ exp.name }}
+                                <a href="{{ detail_url }}">{{ exp.name }}</a>
                             </td>
                             <td>
                                 {{ exp.scenario_id }}
@@ -169,14 +166,4 @@
             </div>
         </div>
     {% endif %}
-{% endblock %}
-{% block extra_js %}
-    <script>
-    function handleExperimentRowKeydown(event, detailUrl) {
-        if (event.key === 'Enter' || event.key === ' ') {
-            event.preventDefault();
-            window.location = detailUrl;
-        }
-    }
-    </script>
 {% endblock %}

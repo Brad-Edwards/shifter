@@ -239,11 +239,11 @@
                                 <div class="flex-row gap-sm">
                                     <a href="{% url 'ctf:admin_participant_detail' participant_id=participant.pk %}"
                                        class="btn btn-secondary"
-                                       title='{% trans "View" %}'>{% trans "View" %}</a>
+                                       aria-label='{% blocktrans with name=participant.name %}View {{ name }}{% endblocktrans %}'>{% trans "View" %}</a>
                                     <button type="button"
-                                            class="btn btn-secondary"
-                                            title='{% trans "Send Link" %}'
-                                            onclick="resendInvite('{{ participant.pk }}')">
+                                            class="btn btn-secondary js-resend-invite"
+                                            data-participant-id="{{ participant.pk }}"
+                                            aria-label='{% blocktrans with name=participant.name %}Send link to {{ name }}{% endblocktrans %}'>
                                         {% trans "Send Link" %}
                                     </button>
                                 </div>
@@ -324,5 +324,11 @@ function resendInvite(participantId) {
         alert('Error resending invite: ' + err.message);
     });
 }
+
+document.querySelectorAll('.js-resend-invite').forEach(function(button) {
+    button.addEventListener('click', function() {
+        resendInvite(button.dataset.participantId);
+    });
+});
     </script>
 {% endblock %}
