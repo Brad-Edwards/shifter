@@ -8,7 +8,10 @@ from django.core.exceptions import PermissionDenied
 from django.test import RequestFactory
 
 from shared.auth import (
+    CTF_ORGANIZER_GROUP,
+    CTF_PARTICIPANT_GROUP,
     THREAT_RESEARCH_GROUP,
+    block_ctf_participant_only,
     can_edit_cms_authoring,
     threat_research_required,
     validate_cms_authoring_user,
@@ -132,10 +135,17 @@ class TestThreatResearchRequiredDecorator:
         return request
 
     def test_unauthenticated_redirects_to_login(self):
+        from django.conf import settings
+        from django.shortcuts import resolve_url
+
         request = self._make_request()
         resp = self.view(request)
         assert resp.status_code == 302
-        assert "admin" not in resp.url
+        # Positively assert the destination is the configured login URL — not
+        # merely "not admin" — so a refactor that redirected the unauthenticated
+        # branch anywhere else fails here. resolve_url mirrors what redirect()
+        # does to LOGIN_URL (a path when DEBUG, a URL name otherwise).
+        assert resp.url == resolve_url(settings.LOGIN_URL)
 
     def test_unauthorized_redirects_to_dashboard(self):
         user = _make_user(is_staff=False)
@@ -183,6 +193,88 @@ class TestThreatResearchRequiredDecorator:
         assert "\r" not in msg and "\n" not in msg  # raw control chars removed
         assert "\\r\\n" in msg  # escaped form present
         assert "INJECTED" in msg  # value preserved, only escaped
+
+
+class TestBlockCtfParticipantOnlyDecorator:
+    """Unit tests for the block_ctf_participant_only lifecycle guard (#944).
+
+    The guard rejects CTF participant-only accounts from a range lifecycle verb
+    they are not explicitly allowed to invoke, server-side at the HTTP boundary.
+    """
+
+    def setup_method(self):
+        self.factory = RequestFactory()
+
+        from django.http import JsonResponse
+
+        @block_ctf_participant_only("destroy")
+        def dummy_view(request):
+            return JsonResponse({"success": True})
+
+        self.view = dummy_view
+
+    def _make_post(self, user):
+        request = self.factory.post("/api/range/destroy/")
+        request.user = user
+        return request
+
+    @staticmethod
+    def _user(*, is_staff=False, is_superuser=False, is_active=True, groups=None):
+        user = MagicMock()
+        user.is_staff = is_staff
+        user.is_superuser = is_superuser
+        user.is_active = is_active
+        user.is_authenticated = True
+        user.pk = 42
+        user.groups.values_list.return_value = list(groups or [])
+        return user
+
+    def test_participant_only_user_is_forbidden(self):
+        user = self._user(groups=[CTF_PARTICIPANT_GROUP])
+        resp = self.view(self._make_post(user))
+        assert resp.status_code == 403
+        import json
+
+        assert json.loads(resp.content) == {"error": "Forbidden"}
+
+    def test_organizer_only_user_is_forbidden(self):
+        # Organizers are also "participant-only" per is_ctf_participant_only:
+        # they hold a CTF role but are not staff/superuser/Threat Research, so a
+        # direct lifecycle call from an organizer account is blocked too. The
+        # organizer's on-behalf-of provisioning runs through ctf.services -> CMS,
+        # not these MC views, so it is unaffected.
+        user = self._user(groups=[CTF_ORGANIZER_GROUP])
+        resp = self.view(self._make_post(user))
+        assert resp.status_code == 403
+
+    def test_staff_user_passes_through(self):
+        user = self._user(is_staff=True, groups=[CTF_PARTICIPANT_GROUP])
+        resp = self.view(self._make_post(user))
+        assert resp.status_code == 200
+
+    def test_threat_research_member_passes_through(self):
+        user = self._user(groups=[CTF_PARTICIPANT_GROUP, THREAT_RESEARCH_GROUP])
+        resp = self.view(self._make_post(user))
+        assert resp.status_code == 200
+
+    def test_plain_non_ctf_user_passes_through(self):
+        user = self._user(groups=[])
+        resp = self.view(self._make_post(user))
+        assert resp.status_code == 200
+
+    def test_allowlisted_verb_permits_participant(self, monkeypatch):
+        # Seam coverage: when a verb is added to the allowlist, a participant-only
+        # account is permitted that verb even though the shipped allowlist is empty.
+        monkeypatch.setattr("shared.auth.PARTICIPANT_ALLOWED_LIFECYCLE_VERBS", frozenset({"destroy"}))
+        user = self._user(groups=[CTF_PARTICIPANT_GROUP])
+        resp = self.view(self._make_post(user))
+        assert resp.status_code == 200
+
+    def test_shipped_allowlist_is_empty(self):
+        from shared.auth import PARTICIPANT_ALLOWED_LIFECYCLE_VERBS
+
+        assert not PARTICIPANT_ALLOWED_LIFECYCLE_VERBS
+        assert isinstance(PARTICIPANT_ALLOWED_LIFECYCLE_VERBS, frozenset)
 
 
 @pytest.mark.django_db
