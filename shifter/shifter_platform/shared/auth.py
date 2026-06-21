@@ -168,8 +168,11 @@ def block_ctf_participant_only(verb: str) -> Callable[[Callable[..., HttpRespons
     """
 
     def _decorator(view_func: Callable[..., HttpResponse]) -> Callable[..., HttpResponse]:
+        """Wrap ``view_func`` with the participant-only lifecycle guard for ``verb``."""
+
         @functools.wraps(view_func)
         def _wrapped(request: HttpRequest, *args, **kwargs) -> HttpResponse:
+            """Deny participant-only accounts the disallowed verb, else delegate."""
             user = request.user
             if is_ctf_participant_only(user) and verb not in PARTICIPANT_ALLOWED_LIFECYCLE_VERBS:
                 logger.warning(
