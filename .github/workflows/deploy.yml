@@ -136,6 +136,7 @@ jobs:
             # trigger Terraform plans, image builds, or environment deploys.
             quality_only:
               - '.github/workflows/_quality.yml'
+              - '.github/quality-path-filters.yaml'
               - 'scripts/polaris-aws-range/**'
               - 'scenario-dev/polaris/tests/**'
               # Guardrail scripts that the Quality workflow invokes
@@ -338,6 +339,7 @@ jobs:
     uses: ./.github/workflows/_quality.yml
     with:
       skip_tests: false
+      run_full_matrix: ${{ github.event_name == 'workflow_dispatch' }}
       # Build + boot the production portal image when the image's own inputs
       # change (portal_image), the portal platform Terraform changes
       # (shifter_platform), or the smoke's own implementation changes
