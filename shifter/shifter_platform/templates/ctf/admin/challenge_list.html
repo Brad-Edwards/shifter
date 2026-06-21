@@ -154,12 +154,14 @@
                                 <td>
                                     <div class="flex-row gap-sm">
                                         <a href="{% url 'ctf:admin_challenge_detail' challenge_id=challenge.pk %}"
-                                           class="btn btn-secondary"
-                                           aria-label='{% blocktrans with name=challenge.name %}View {{ name }}{% endblocktrans %}'>{% trans "View" %}</a>
+                                           class="btn btn-secondary">
+                                            {% trans "View" %}<span class="visually-hidden"> {{ challenge.name }}</span>
+                                        </a>
                                         {% if event.is_modifiable %}
                                             <a href="{% url 'ctf:admin_challenge_edit' challenge_id=challenge.pk %}"
-                                               class="btn btn-secondary"
-                                               aria-label='{% blocktrans with name=challenge.name %}Edit {{ name }}{% endblocktrans %}'>{% trans "Edit" %}</a>
+                                               class="btn btn-secondary">
+                                                {% trans "Edit" %}<span class="visually-hidden"> {{ challenge.name }}</span>
+                                            </a>
                                         {% endif %}
                                     </div>
                                 </td>

@@ -122,12 +122,14 @@
                             <td>
                                 <div class="flex-row gap-sm">
                                     <a href="{% url 'ctf:admin_event_detail' event_id=event.pk %}"
-                                       class="btn btn-secondary"
-                                       aria-label='{% blocktrans with name=event.name %}View {{ name }}{% endblocktrans %}'>{% trans "View" %}</a>
+                                       class="btn btn-secondary">
+                                        {% trans "View" %}<span class="visually-hidden"> {{ event.name }}</span>
+                                    </a>
                                     {% if event.is_modifiable %}
                                         <a href="{% url 'ctf:admin_event_edit' event_id=event.pk %}"
-                                           class="btn btn-secondary"
-                                           aria-label='{% blocktrans with name=event.name %}Edit {{ name }}{% endblocktrans %}'>{% trans "Edit" %}</a>
+                                           class="btn btn-secondary">
+                                            {% trans "Edit" %}<span class="visually-hidden"> {{ event.name }}</span>
+                                        </a>
                                     {% endif %}
                                 </div>
                             </td>

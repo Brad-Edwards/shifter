@@ -471,9 +471,8 @@
                                 <tr>
                                     <td>
                                         <button type="button"
-                                                data-download-url="{% url 'ctf:api_file_download' file_id=file.pk %}"
-                                                aria-label='{% blocktrans with filename=file.display %}Download {{ filename }}{% endblocktrans %}'>
-                                           {{ file.display }}
+                                                data-download-url="{% url 'ctf:api_file_download' file_id=file.pk %}">
+                                            {{ file.display }}
                                         </button>
                                     </td>
                                     <td>

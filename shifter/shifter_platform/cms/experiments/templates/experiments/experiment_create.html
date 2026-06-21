@@ -258,6 +258,7 @@
 
     let instances = [];
     let cachedScripts = null;
+    let scriptRowCounter = 0;
     const allowedProperties = ['ip', 'name', 'instance_id'];
 
     // Load agents on page load
@@ -353,7 +354,7 @@
     addScriptBtn.addEventListener('click', function() {
         const row = document.createElement('div');
         row.className = 'script-row';
-        const rowId = `script-row-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+        const rowId = `script-row-${++scriptRowCounter}`;
 
         let instanceOpts = '<option value="">-- Instance --</option>';
         instances.forEach(i => {

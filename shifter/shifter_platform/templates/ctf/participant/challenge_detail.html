@@ -116,8 +116,7 @@
                                         <li class="mb-1">
                                             <button type="button"
                                                     class="btn btn-sm btn-outline-primary"
-                                                    data-download-url="{% url 'ctf:api_file_download' file_id=file.pk %}"
-                                                    aria-label='{% blocktrans with filename=file.display %}Download {{ filename }}{% endblocktrans %}'>
+                                                    data-download-url="{% url 'ctf:api_file_download' file_id=file.pk %}">
                                                 {% blocktrans with v1=file.display %}
                                                     &#128196; {{ v1 }}
                                                 {% endblocktrans %}

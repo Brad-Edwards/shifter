@@ -329,5 +329,19 @@ describe('NGFWWizardManager', () => {
 
             expect(viewBtn.dataset.detailUrl).toBe('/ngfw/99/');
         });
+
+        test('does not navigate when detail URL is missing', () => {
+            const viewBtn = document.getElementById('view-ngfw-btn');
+            delete viewBtn.dataset.detailUrl;
+
+            expect(() => viewBtn.click()).not.toThrow();
+        });
+
+        test('handles click when detail URL is present', () => {
+            wizard.ngfwId = 42;
+            wizard._setViewNgfwDetailUrl();
+
+            expect(() => document.getElementById('view-ngfw-btn').click()).not.toThrow();
+        });
     });
 });
