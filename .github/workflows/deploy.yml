@@ -204,6 +204,8 @@ jobs:
             guardrail_docs:
               - '.github/pull_request_template.md'
               - '.github/copilot-instructions.md'
+              - '.gc/plan-rules.md'
+              - 'changelog.d/README.md'
               - 'docs/adr/**'
               - 'shifter/shifter_platform/documentation/docs/technical/dev/adr-enforcement.md'
 
