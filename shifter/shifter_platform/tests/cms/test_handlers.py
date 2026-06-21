@@ -298,12 +298,12 @@ def _make_instance_and_app(user, *, status=ResourceStatus.PROVISIONING.value):
     instance_type = InstanceType.objects.create(
         name="Handler Test Instance Type",
         slug=f"handler-it-{uuid4().hex[:8]}",
-        spec_class="shared.schemas.SCMCredentialSpec",
+        spec_slug="credential.scm",
     )
     app_type = AppType.objects.create(
         name="Handler Test App Type",
         slug=f"handler-at-{uuid4().hex[:8]}",
-        spec_class="shared.schemas.SCMCredentialSpec",
+        spec_slug="credential.scm",
     )
     instance = Instance.objects.create(request=req, name="ngfw-instance", instance_type=instance_type, status=status)
     app = App.objects.create(name="ngfw-app", app_type=app_type, instance=instance, status=status)

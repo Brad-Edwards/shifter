@@ -9,6 +9,7 @@ from uuid import UUID
 
 from shared.enums import CANCELLABLE_STATUSES, ResourceStatus
 from shared.schemas import RangeContext, RangeSpec, RequestSpec
+from shared.schemas.persistence import wrap_persisted_spec
 
 from ._common import EngineError, _resolve_instance_host
 
@@ -100,7 +101,7 @@ def _persist_range_atomically(
                 cms_user_id=range_spec.user_id,
                 status=range_model.Status.PROVISIONING,
                 subnet_index=subnet_index,
-                range_config=range_spec.model_dump(),
+                range_config=wrap_persisted_spec("range_spec", range_spec),
             )
         else:
             range_obj = range_model.objects.create(
@@ -109,7 +110,7 @@ def _persist_range_atomically(
                 cms_user_id=range_spec.user_id,
                 status=range_model.Status.PROVISIONING,
                 subnet_index=subnet_index,
-                range_config=range_spec.model_dump(),
+                range_config=wrap_persisted_spec("range_spec", range_spec),
             )
 
         logger.info(
