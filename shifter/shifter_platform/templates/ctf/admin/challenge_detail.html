@@ -470,7 +470,7 @@
                             {% for file in challenge_files %}
                                 <tr>
                                     <td>
-                                        <a href="#"
+                                        <a href="{% url 'ctf:api_file_download' file_id=file.pk %}"
                                            data-download-url="{% url 'ctf:api_file_download' file_id=file.pk %}">
                                            {{ file.display }}
                                            </a>

@@ -382,6 +382,46 @@ def _is_flag_modifiable(event: CTFEvent) -> bool:
     return event.is_content_modifiable or event.is_live_flag_repairable
 
 
+def _flag_hash_for_payload(
+    flag_type: str,
+    flag_data: dict[str, Any],
+    *,
+    case_sensitive: bool,
+    validator_config: dict[str, Any] | None,
+) -> str:
+    """Validate flag payload fields and return the value to store in flag_hash."""
+    if flag_type not in VALID_FLAG_TYPES:
+        raise CTFValidationError(
+            f"Invalid flag_type: {flag_type}",
+            details={"flag_type": flag_type},
+        )
+
+    if flag_type in ("static", "regex"):
+        plaintext_flag = flag_data.get("flag", "").strip()
+        if not plaintext_flag:
+            raise CTFValidationError(
+                "Flag value is required",
+                details={"missing_fields": ["flag"]},
+            )
+        if flag_type == "regex":
+            try:
+                re.compile(plaintext_flag)
+            except re.error as e:
+                raise CTFValidationError(
+                    f"Invalid regex pattern: {e}",
+                    details={"pattern": plaintext_flag},
+                ) from None
+            return plaintext_flag
+        return hash_flag(plaintext_flag, case_sensitive=case_sensitive)
+
+    if flag_type == "programmable":
+        _validate_programmable_config(validator_config)
+        return "programmable"
+
+    _validate_http_config(validator_config)
+    return "http"
+
+
 def _reject_non_flag_live_edits(challenge: CTFChallenge, challenge_data: dict[str, Any]) -> None:
     """Refuse broad challenge edits during ACTIVE/PAUSED live events."""
     if challenge.event.is_content_modifiable:
@@ -462,41 +502,12 @@ def add_flag(
     case_sensitive = flag_data.get("case_sensitive", True)
     order = flag_data.get("order", 0)
     validator_config = flag_data.get("validator_config")
-
-    if flag_type not in VALID_FLAG_TYPES:
-        raise CTFValidationError(
-            f"Invalid flag_type: {flag_type}",
-            details={"flag_type": flag_type},
-        )
-
-    if flag_type in ("static", "regex"):
-        plaintext_flag = flag_data.get("flag", "").strip()
-        if not plaintext_flag:
-            raise CTFValidationError(
-                "Flag value is required",
-                details={"missing_fields": ["flag"]},
-            )
-
-        if flag_type == "regex":
-            # Validate regex pattern
-            try:
-                re.compile(plaintext_flag)
-            except re.error as e:
-                raise CTFValidationError(
-                    f"Invalid regex pattern: {e}",
-                    details={"pattern": plaintext_flag},
-                ) from None
-            # Regex patterns stored as plaintext (can't hash a regex)
-            stored_value = plaintext_flag
-        else:
-            # Static flags: hash for secure storage
-            stored_value = hash_flag(plaintext_flag, case_sensitive=case_sensitive)
-    elif flag_type == "programmable":
-        _validate_programmable_config(validator_config)
-        stored_value = "programmable"
-    else:  # http
-        _validate_http_config(validator_config)
-        stored_value = "http"
+    stored_value = _flag_hash_for_payload(
+        flag_type,
+        flag_data,
+        case_sensitive=case_sensitive,
+        validator_config=validator_config,
+    )
 
     flag_obj = CTFFlag.objects.create(
         challenge=challenge,
@@ -559,37 +570,12 @@ def update_flag(
     case_sensitive = flag_data.get("case_sensitive", flag_obj.case_sensitive)
     order = flag_data.get("order", flag_obj.order)
     validator_config = flag_data.get("validator_config", flag_obj.validator_config)
-
-    if flag_type not in VALID_FLAG_TYPES:
-        raise CTFValidationError(
-            f"Invalid flag_type: {flag_type}",
-            details={"flag_type": flag_type},
-        )
-
-    if flag_type in ("static", "regex"):
-        plaintext_flag = flag_data.get("flag", "").strip()
-        if not plaintext_flag:
-            raise CTFValidationError(
-                "Flag value is required",
-                details={"missing_fields": ["flag"]},
-            )
-        if flag_type == "regex":
-            try:
-                re.compile(plaintext_flag)
-            except re.error as e:
-                raise CTFValidationError(
-                    f"Invalid regex pattern: {e}",
-                    details={"pattern": plaintext_flag},
-                ) from None
-            stored_value = plaintext_flag
-        else:
-            stored_value = hash_flag(plaintext_flag, case_sensitive=case_sensitive)
-    elif flag_type == "programmable":
-        _validate_programmable_config(validator_config)
-        stored_value = "programmable"
-    else:
-        _validate_http_config(validator_config)
-        stored_value = "http"
+    stored_value = _flag_hash_for_payload(
+        flag_type,
+        flag_data,
+        case_sensitive=case_sensitive,
+        validator_config=validator_config,
+    )
 
     flag_obj.flag_hash = stored_value
     flag_obj.flag_type = flag_type
