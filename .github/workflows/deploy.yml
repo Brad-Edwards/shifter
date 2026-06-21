@@ -89,6 +89,7 @@ jobs:
               - '.github/workflows/_range.yml'
             shifter_engine:
               - 'shifter/engine/provisioner/**'
+              - 'shifter/cyberscript/**'
               # NB: module is `engine-provisioner`, not the historical
               # `pulumi-provisioner` name; the latter was a stale typo
               # the path filter inherited from before the rename.
