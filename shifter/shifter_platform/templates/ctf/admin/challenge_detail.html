@@ -836,7 +836,7 @@ document.querySelectorAll('[data-download-url]').forEach(function(link) {
     });
 });
     </script>
-    {% if event.is_content_modifiable %}
+    {% if event.is_content_modifiable or event.is_live_flag_repairable %}
         <script>
 function addFlag() {
     const flagValue = document.getElementById('new-flag-value').value.trim();

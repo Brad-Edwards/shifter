@@ -98,6 +98,35 @@ def create_event(user: User, event_data: dict[str, Any]) -> CTFEvent:
     return event
 
 
+def _validate_event_time_range(event_start: Any, event_end: Any) -> None:
+    """Raise when event_end is not strictly after event_start."""
+    if event_end <= event_start:
+        raise CTFValidationError(
+            "Event end must be after event start",
+            code="CTF_INVALID_DATES",
+        )
+
+
+def _reschedule_event_if_schedule_changed(
+    event: CTFEvent,
+    safe_data: dict[str, Any],
+    *,
+    old_event_end: Any,
+) -> None:
+    """Reschedule pending tasks when event times change."""
+    schedule_changed = ("event_start" in safe_data and safe_data["event_start"] != event.event_start) or (
+        "event_end" in safe_data and safe_data["event_end"] != event.event_end
+    )
+    event_end_changed = "event_end" in safe_data and safe_data["event_end"] != old_event_end
+    if schedule_changed and event.status == EventStatus.REGISTRATION.value:
+        _reschedule_event_tasks(event)
+    elif event_end_changed and event.status in (
+        EventStatus.ACTIVE.value,
+        EventStatus.PAUSED.value,
+    ):
+        _reschedule_live_event_schedule(event)
+
+
 def update_event(event_id: UUID, event_data: dict[str, Any]) -> CTFEvent:
     """Update an existing CTF event.
 
@@ -130,43 +159,20 @@ def update_event(event_id: UUID, event_data: dict[str, Any]) -> CTFEvent:
             details={"event_id": str(event_id), "status": event.status},
         )
 
-    # Validate time changes
     new_start = event_data.get("event_start", event.event_start)
     new_end = event_data.get("event_end", event.event_end)
-    if new_end <= new_start:
-        raise CTFValidationError(
-            "Event end must be after event start",
-            code="CTF_INVALID_DATES",
-        )
+    _validate_event_time_range(new_start, new_end)
 
-    # Filter to allowed fields only — prevent mass assignment of status,
-    # created_by, id, timestamps, etc.
     safe_data = {k: v for k, v in event_data.items() if k in _EVENT_MUTABLE_FIELDS}
-
     old_event_end = event.event_end
 
     with transaction.atomic():
-        # Track if we need to reschedule tasks
-        schedule_changed = ("event_start" in safe_data and safe_data["event_start"] != event.event_start) or (
-            "event_end" in safe_data and safe_data["event_end"] != event.event_end
-        )
-        event_end_changed = "event_end" in safe_data and safe_data["event_end"] != old_event_end
-
-        # Update only allowed fields
         for key, value in safe_data.items():
             setattr(event, key, value)
         event.save()
 
         logger.info("Updated CTF event %s", event.id)
-
-        # Reschedule tasks if schedule changed
-        if schedule_changed and event.status == EventStatus.REGISTRATION.value:
-            _reschedule_event_tasks(event)
-        elif event_end_changed and event.status in (
-            EventStatus.ACTIVE.value,
-            EventStatus.PAUSED.value,
-        ):
-            _reschedule_live_event_schedule(event)
+        _reschedule_event_if_schedule_changed(event, safe_data, old_event_end=old_event_end)
 
     return event
 
