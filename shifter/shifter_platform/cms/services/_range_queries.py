@@ -225,6 +225,7 @@ def get_active_range(user: User) -> RangeContext | None:
         instance = (
             RangeInstance.objects.filter(user_id=user.id)
             .exclude(status=ResourceStatus.DESTROYING.value)
+            .select_related("agent", "request")
             .order_by("-created_at")
             .first()
         )
@@ -269,6 +270,40 @@ def get_active_range(user: User) -> RangeContext | None:
             user.id,
         )
         return None
+
+
+def has_ready_active_range(user: User) -> bool:
+    """Return whether the user's latest active range is READY, cheaply.
+
+    Mirrors :func:`get_active_range`'s ownership filter and ``has_active_range``
+    semantics (the most recently created non-DESTROYING range is READY) but reads
+    only the ``status`` column — no FK joins, runtime-IP overlay, scenario lookup,
+    or instance-context projection. Used by the ``nav`` context tier so the shared
+    sidebar's ``has_active_range`` indicator does not pay terminal-page cost on
+    every authenticated render (#898).
+
+    Args:
+        user: User whose active-range readiness to check.
+
+    Returns:
+        True if the user's most recent non-DESTROYING range is READY.
+
+    Raises:
+        TypeError: If user is None or an invalid type.
+        ValueError: If user is unsaved (id is None).
+    """
+    from shared.enums import ResourceStatus
+
+    _validate_caller_user(user, "has_ready_active_range")
+
+    status = (
+        RangeInstance.objects.filter(user_id=user.id)
+        .exclude(status=ResourceStatus.DESTROYING.value)
+        .order_by("-created_at")
+        .values_list("status", flat=True)
+        .first()
+    )
+    return status == ResourceStatus.READY.value
 
 
 def get_range_by_request_id(user: User, request_id: str) -> RangeContext:

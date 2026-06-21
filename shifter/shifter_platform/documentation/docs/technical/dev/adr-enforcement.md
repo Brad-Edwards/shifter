@@ -74,6 +74,12 @@ The first slice intentionally stays small:
   cross-verifies that `PYTHON_COMPLEXITY_GATE_PYPROJECTS` matches the
   `id: ruff` hook working directories in `.pre-commit-config.yaml`, so
   a new lint surface cannot be added in one place without the other.
+  Standalone verifier scripts under `scripts/` that ship their own
+  `pyproject.toml` (for example the post-apply deploy checks such as
+  `scripts/assert_portal_inspection`, added for issue #932) are gated
+  surfaces too: registering one means adding its directory to both
+  `.pre-commit-config.yaml` and `PYTHON_COMPLEXITY_GATE_PYPROJECTS` in
+  the same change.
   The complexity computation itself is Ruff's job; this check is the
   config-shape backstop against silent gate removal. Existing
   high-complexity functions carry per-function `# noqa: C901`

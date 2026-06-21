@@ -39,7 +39,10 @@ architectural defaults, and Kubernetes-specific validators previously in
   `CHANGELOG.md` directly; `CHANGELOG.md` is collated from fragments at
   release time by `uvx towncrier build`. Fragments cannot conflict between
   PRs, eliminating the rebase / re-run-CI churn that hand-edits caused. See
-  `changelog.d/README.md`. Pure refactors / CI-only / docs-only changes may
+  `changelog.d/README.md`. Changes to CI/CD and deploy pipelines
+  (`.github/workflows/**`, `.github/actions/**`, and other build/deploy/test
+  automation) MUST add a `changed` or `fixed` fragment so pipeline behaviour
+  changes leave a release-note trail. Pure refactors and docs-only changes may
   legitimately ship without a fragment.
 - Changes to guardrail files (`.github/workflows/**`, `.github/CODEOWNERS`,
   `.github/pull_request_template.md`, `.github/copilot-instructions.md`,

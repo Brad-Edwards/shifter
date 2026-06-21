@@ -292,6 +292,11 @@ module "alb" {
   enable_stickiness          = var.enable_autoscaling
   enable_deletion_protection = false # dev: allow intentional teardown; matches db_deletion_protection=false convention
 
+  # Long-lived connection lifecycle (#931): explicit idle timeout + portal
+  # target drain.
+  idle_timeout_seconds         = var.alb_idle_timeout_seconds
+  deregistration_delay_seconds = var.portal_deregistration_delay_seconds
+
   # Phase 5: ALB Access Logs and WAF Logging
   enable_access_logs      = var.enable_alb_access_logs
   logs_bucket_name        = var.enable_alb_access_logs ? local.alb_access_logs_bucket_name : ""
@@ -316,6 +321,12 @@ module "redis" {
   node_type                  = var.redis_node_type
   engine_version             = var.redis_engine_version
   enable_replication         = var.redis_enable_replication
+
+  # AUTH + in-transit encryption (#938): the AUTH token secret is encrypted by
+  # the portal CMK. is_active_channel_backend rejects a live channel layer on
+  # the plaintext single-node path.
+  secrets_kms_key_arn       = aws_kms_key.secrets_manager.arn
+  is_active_channel_backend = var.enable_redis
 
   # CloudWatch Alarms
   enable_alarms = var.alarm_email != ""
@@ -437,6 +448,11 @@ module "ssm" {
   # Redis wiring is environment-owned and decoupled from autoscaling (ADR-018, #849).
   redis_endpoint = var.enable_redis ? module.redis.redis_endpoint : ""
   enable_redis   = var.enable_redis
+  # AUTH + in-transit encryption references (#938). Non-secret: the token stays
+  # in Secrets Manager and is hydrated into REDIS_PASSWORD by entrypoint.sh.
+  redis_secret_arn = module.redis.redis_secret_arn
+  redis_tls        = module.redis.redis_tls_enabled
+  redis_ca_mode    = "system"
 
   # Database endpoint (direct RDS connection - hostname only, not endpoint with port)
   db_host_override        = module.rds.db_instance_address
@@ -448,6 +464,21 @@ module "ssm" {
   # Email configuration
   email_backend  = var.email_backend
   ctf_from_email = var.ctf_from_email
+
+  # Portal runtime capacity tunables (#930). Worker count is sized to the
+  # instance vCPU budget; terminal caps are process-local, so the per-instance
+  # ceiling is portal_web_workers * terminal_max_sessions.
+  portal_web_workers             = var.portal_web_workers
+  terminal_max_sessions          = var.terminal_max_sessions
+  terminal_max_sessions_per_user = var.terminal_max_sessions_per_user
+  terminal_idle_timeout_seconds  = var.terminal_idle_timeout_seconds
+  terminal_max_session_seconds   = var.terminal_max_session_seconds
+  terminal_read_poll_seconds     = var.terminal_read_poll_seconds
+
+  # Portal web capacity metrics (#940). Enable flag and busy-ratio denominator
+  # are env-owned and hydrated by both first-boot user_data and SSM redeploy.
+  portal_capacity_metrics_enabled = var.portal_capacity_metrics_enabled
+  portal_worker_soft_concurrency  = var.portal_worker_soft_concurrency
 }
 
 # ------------------------------------------------------------------------------
@@ -469,13 +500,19 @@ module "ec2" {
   instance_type         = var.ec2_instance_type
   ecr_repository_arn    = data.terraform_remote_state.foundation.outputs.portal_ecr_arn
   ecr_repository_url    = data.terraform_remote_state.foundation.outputs.portal_ecr_url
-  secret_arns = [
-    module.rds.db_credentials_secret_arn,
-    aws_secretsmanager_secret.app.arn,
-    module.cognito.cognito_secret_arn,
-    module.guacamole.json_auth_secret_arn,
-    module.engine_provisioner.dc_domain_password_secret_arn,
-  ]
+  # The Redis AUTH token secret (#938) is included only on the in-transit-
+  # encryption path; the single-node path returns "" and must not reach the IAM
+  # Resource list (an empty ARN is invalid).
+  secret_arns = concat(
+    [
+      module.rds.db_credentials_secret_arn,
+      aws_secretsmanager_secret.app.arn,
+      module.cognito.cognito_secret_arn,
+      module.guacamole.json_auth_secret_arn,
+      module.engine_provisioner.dc_domain_password_secret_arn,
+    ],
+    module.redis.redis_secret_arn != "" ? [module.redis.redis_secret_arn] : [],
+  )
   secrets_manager_kms_key_arn = aws_kms_key.secrets_manager.arn
   s3_bucket_arn               = module.s3.bucket_arn
   app_port                    = var.app_port
@@ -488,18 +525,36 @@ module "ec2" {
   ecs_execution_role_arn     = module.engine_provisioner.ecs_execution_role_arn
 
   # Autoscaling configuration
-  enable_autoscaling     = var.enable_autoscaling
-  subnet_ids             = module.vpc.private_subnet_ids
-  target_group_arn       = module.alb.target_group_arn
-  asg_min_size           = var.asg_min_size
-  asg_max_size           = var.asg_max_size
-  asg_desired_capacity   = var.asg_desired_capacity
-  asg_warm_pool_min_size = var.asg_warm_pool_min_size
-  asg_warm_pool_state    = var.asg_warm_pool_state
-  redis_endpoint         = var.enable_redis ? module.redis.redis_endpoint : ""
-  scale_up_threshold     = var.scale_up_threshold
-  scale_down_threshold   = var.scale_down_threshold
-  log_retention_days     = var.log_retention_days
+  enable_autoscaling      = var.enable_autoscaling
+  subnet_ids              = module.vpc.private_subnet_ids
+  target_group_arn        = module.alb.target_group_arn
+  alb_arn_suffix          = module.alb.alb_arn_suffix
+  target_group_arn_suffix = module.alb.target_group_arn_suffix
+  asg_min_size            = var.asg_min_size
+  asg_max_size            = var.asg_max_size
+  asg_desired_capacity    = var.asg_desired_capacity
+  asg_warm_pool_min_size  = var.asg_warm_pool_min_size
+  asg_warm_pool_state     = var.asg_warm_pool_state
+
+  # App-saturation autoscaling + observability (#940). Scale-out tracks ALB
+  # request-path saturation, not average EC2 CPU; alarms/dashboard notify the
+  # shared alerts topic.
+  scale_target_requests_per_target             = var.scale_target_requests_per_target
+  scale_target_response_time_seconds           = var.scale_target_response_time_seconds
+  worker_busy_ratio_scale_out_threshold        = var.worker_busy_ratio_scale_out_threshold
+  target_response_time_alarm_threshold_seconds = var.target_response_time_alarm_threshold_seconds
+  enable_portal_capacity_alarms                = var.enable_portal_capacity_alarms
+  portal_capacity_alarm_actions                = var.alarm_email != "" ? [aws_sns_topic.alerts.arn] : []
+
+  # Connection-lifecycle drain (#931): bounded termination drain + graceful
+  # container stop, sized below the ALB idle timeout / target drain.
+  termination_drain_timeout               = var.termination_drain_timeout
+  docker_stop_timeout                     = var.docker_stop_timeout
+  instance_refresh_min_healthy_percentage = var.instance_refresh_min_healthy_percentage
+
+  redis_endpoint     = var.enable_redis ? module.redis.redis_endpoint : ""
+  scale_up_threshold = var.scale_up_threshold
+  log_retention_days = var.log_retention_days
 
   # Messaging (SQS queues for message consumers)
   sqs_queue_arns  = values(module.messaging.sqs_queue_arns)
@@ -533,7 +588,9 @@ module "ctfd" {
   aws_region  = var.aws_region
   name_prefix = local.name_prefix
   vpc_id      = module.vpc.vpc_id
-  subnet_id   = module.vpc.public_subnet_ids[0]
+  # Public-workload tier, kept out of the ALB ingress CIDR so CTFd cannot
+  # reach Django:8000 / Guacamole:8080 directly (#911 NET-2 / #933).
+  subnet_id = module.vpc.public_workload_subnet_ids[0]
 
   ami_id                 = var.ctfd_ami_id
   instance_type          = var.ctfd_instance_type
@@ -788,6 +845,9 @@ module "guacamole" {
   alb_listener_arn      = module.alb.https_listener_arn
   alb_security_group_id = module.alb.security_group_id
 
+  # Drain in-flight RDP/SSH browser sessions on target removal (#931).
+  target_deregistration_delay_seconds = var.guacamole_deregistration_delay_seconds
+
   # ECR (from foundation remote state)
   guacd_ecr_repository_url            = data.terraform_remote_state.foundation.outputs.guacd_ecr_url
   guacd_ecr_repository_arn            = data.terraform_remote_state.foundation.outputs.guacd_ecr_arn
@@ -838,18 +898,23 @@ module "guacamole" {
   depends_on = [module.vpc]
 }
 
-# ALB health checks and user traffic are routed through the portal inspection
-# boundary before they reach private targets. Source security group references
-# do not survive that middlebox path reliably, so keep those existing SG rules
-# and add CIDR-scoped ingress from only the ALB public subnet CIDRs.
+# When portal inspection is enabled, ALB health checks and user traffic reach
+# the private targets through the Network Firewall endpoint. AWS documents that
+# security-group references do not allow traffic across a routed middlebox (the
+# flow is split source->middlebox and middlebox->destination), so the inspected
+# ALB->target path needs a CIDR rule in addition to the module SG-to-SG rules.
+# That CIDR is scoped to the ALB ingress tier ONLY (`alb_ingress_subnet_cidrs`),
+# never the whole public tier: CTFd lives in the separate public-workload tier,
+# so it cannot reach Django:8000 / Guacamole:8080 directly (#911 NET-2 / #933).
+# See https://aws.amazon.com/blogs/networking-and-content-delivery/deployment-models-for-aws-network-firewall-with-vpc-routing-enhancements/
 resource "aws_security_group_rule" "portal_app_from_alb_subnets" {
   type              = "ingress"
   from_port         = var.app_port
   to_port           = var.app_port
   protocol          = "tcp"
-  cidr_blocks       = module.vpc.public_subnet_cidrs
+  cidr_blocks       = module.vpc.alb_ingress_subnet_cidrs
   security_group_id = module.ec2.security_group_id
-  description       = "HTTP from ALB public subnets through inspection"
+  description       = "HTTP from ALB ingress subnets through inspection"
 }
 
 resource "aws_security_group_rule" "guacamole_client_from_alb_subnets" {
@@ -857,9 +922,9 @@ resource "aws_security_group_rule" "guacamole_client_from_alb_subnets" {
   from_port         = 8080
   to_port           = 8080
   protocol          = "tcp"
-  cidr_blocks       = module.vpc.public_subnet_cidrs
+  cidr_blocks       = module.vpc.alb_ingress_subnet_cidrs
   security_group_id = module.guacamole.guacamole_client_security_group_id
-  description       = "HTTP from ALB public subnets through inspection"
+  description       = "HTTP from ALB ingress subnets through inspection"
 }
 
 # ------------------------------------------------------------------------------

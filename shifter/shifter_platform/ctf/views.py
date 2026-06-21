@@ -26,6 +26,7 @@ from django.utils import timezone
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
 from ctf.bridges import get_user_role
+from risk_register.services import get_client_ip
 from shared.log_sanitize import safe_log_value
 
 if TYPE_CHECKING:
@@ -43,6 +44,7 @@ if TYPE_CHECKING:
         CTFNotification,
         CTFParticipant,
         CTFSubmission,
+        CTFTeam,
     )
 
 logger = logging.getLogger(__name__)
@@ -159,14 +161,6 @@ def ctf_role_required(view_func: Callable[..., HttpResponse]) -> Callable[..., H
 # -----------------------------------------------------------------------------
 # Helpers
 # -----------------------------------------------------------------------------
-
-
-def _get_client_ip(request: HttpRequest) -> str | None:
-    """Extract client IP from request headers."""
-    forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR")
-    if forwarded_for:
-        return forwarded_for.split(",")[0].strip()
-    return request.META.get("REMOTE_ADDR")
 
 
 _FORBIDDEN_CHALLENGE_ACCESS_MSG = "Forbidden: You do not have access to this challenge"
@@ -904,6 +898,23 @@ def participant_team(request: HttpRequest) -> HttpResponse:
     return render(request, "ctf/participant/team.html", context)
 
 
+def _join_team_and_recompute(participant: CTFParticipant, team: CTFTeam) -> None:
+    """Move a participant onto a team and refresh both teams' materialized scores.
+
+    Issue #850: membership changed, so the joined team and the team the
+    participant left (if any) both need their materialized leaderboard columns
+    recomputed.
+    """
+    from ctf.services.scoring import recompute_team_score
+
+    old_team_id = participant.team_id
+    participant.team = team
+    participant.save(update_fields=["team", "updated_at"])
+    recompute_team_score(team.id)
+    if old_team_id is not None and old_team_id != team.id:
+        recompute_team_score(old_team_id)
+
+
 @login_required
 @ctf_participant_required
 @require_http_methods(["GET", "POST"])
@@ -937,8 +948,7 @@ def team_join(request: HttpRequest) -> HttpResponse:
             elif participant.team_id == team.id:
                 error = "You are already on this team."
             else:
-                participant.team = team
-                participant.save(update_fields=["team", "updated_at"])
+                _join_team_and_recompute(participant, team)
                 logger.info(
                     "Participant %s joined team %s in event %s",
                     participant.id,
@@ -2184,10 +2194,19 @@ def admin_range_list(request: HttpRequest, event_id: UUID) -> HttpResponse:
 
     participants = CTFParticipant.objects.filter(event=event).order_by("name")
 
+    from ctf.services import range as range_service
+
+    progress = range_service.get_provision_progress(event_id)
+    active_provisioning = bool(progress["task"]) or progress["counts"]["provisioning"] > 0
+
     return render(
         request,
         "ctf/admin/range_list.html",
-        {"event": event, "participants": participants},
+        {
+            "event": event,
+            "participants": participants,
+            "active_provisioning": active_provisioning,
+        },
     )
 
 
@@ -2928,7 +2947,7 @@ def api_submit_flag(request: HttpRequest, challenge_id: UUID) -> JsonResponse:
     except _BodyParseError as e:
         return JsonResponse({"error": str(e)}, status=400)
 
-    return _submit_flag_response(participant, challenge_id, flag, _get_client_ip(request))
+    return _submit_flag_response(participant, challenge_id, flag, get_client_ip(request))
 
 
 def _unlock_hint_response(participant: CTFParticipant, challenge_id: UUID, hint_uuid: UUID) -> JsonResponse:
@@ -3748,14 +3767,28 @@ def api_range_list(request: HttpRequest, event_id: UUID) -> JsonResponse:
         for p in participants
     ]
 
-    return JsonResponse({"event_id": str(event_id), "ranges": data})
+    from ctf.services import range as range_service
+
+    progress = range_service.get_provision_progress(event_id)
+
+    return JsonResponse(
+        {
+            "event_id": str(event_id),
+            "ranges": data,
+            "progress": progress,
+        }
+    )
 
 
 @login_required
 @ctf_organizer_required
 @require_POST
 def api_provision_ranges(request: HttpRequest, event_id: UUID) -> JsonResponse:
-    """API: Trigger bulk range provisioning for an event.
+    """API: Queue bulk range provisioning for an event.
+
+    Enqueues (or coalesces onto) a background spin-up task and returns
+    immediately so the request thread is never blocked by the throttled
+    provisioning loop. Progress is polled via ``api_range_list``.
 
     Args:
         event_id: UUID of the event.
@@ -3773,8 +3806,16 @@ def api_provision_ranges(request: HttpRequest, event_id: UUID) -> JsonResponse:
 
     from ctf.services import range as range_service
 
-    result = range_service.provision_event_ranges(event_id)
-    return JsonResponse(result)
+    task = range_service.request_event_provisioning(event_id, source="manual")
+    return JsonResponse(
+        {
+            "event_id": str(event_id),
+            "status": "queued",
+            "task_id": str(task.pk),
+            "task_status": task.status,
+        },
+        status=202,
+    )
 
 
 @login_required

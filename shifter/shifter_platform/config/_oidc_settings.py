@@ -141,7 +141,7 @@ OIDC_OP_LOGOUT_URL_METHOD = "config.oidc.provider_logout_url" if AUTH_PROVIDER =
 OIDC_CREATE_USER = True
 
 # Use email as username (default is sha1 hash of email)
-OIDC_USERNAME_ALGO = "config.oidc.generate_username"
+OIDC_USERNAME_ALGO = "config.username.generate_username"
 
 # URLs exempt from OIDC authentication (public pages)
 # Must be URL paths starting with "/" or view names (not regex patterns)

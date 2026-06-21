@@ -34,7 +34,7 @@ must live in the account default VPC, not the Shifter range VPC or portal VPC.
 3. Create or reuse a private S3 bucket in aws-dev and upload the tarball:
 
    ```bash
-   bucket=shifter-polaris-bake-dev-741140496509
+   bucket=shifter-polaris-bake-dev-<your-account-id>
    AWS_PROFILE=aws-dev AWS_REGION=us-east-2 aws s3api create-bucket \
      --bucket "$bucket" \
      --create-bucket-configuration LocationConstraint=us-east-2
@@ -56,7 +56,7 @@ must live in the account default VPC, not the Shifter range VPC or portal VPC.
    name_prefix        = "polaris-dev-default"
    deployment_purpose = "default-vpc-standalone"
 
-   range_vpc_id           = "vpc-02c81b9b197f058b1"
+   range_vpc_id           = "vpc-xxxxxxxxxxxxxxxxx"
    polaris_cidr_block     = "172.31.240.0/24"
    availability_zone      = "us-east-2a"
    egress_route_target    = "igw"
@@ -66,8 +66,8 @@ must live in the account default VPC, not the Shifter range VPC or portal VPC.
    management_ingress_cidrs = []
    publish_kali_host_ports  = false
 
-   build_tarball_bucket = "shifter-polaris-bake-dev-741140496509"
-   build_tarball_s3_uri = "s3://shifter-polaris-bake-dev-741140496509/polaris/build-aws-dev-default-vpc.tar.gz"
+   build_tarball_bucket = "shifter-polaris-bake-dev-<your-account-id>"
+   build_tarball_s3_uri = "s3://shifter-polaris-bake-dev-<your-account-id>/polaris/build-aws-dev-default-vpc.tar.gz"
    ```
 
    Keep the values in `local.auto.tfvars` or another ignored tfvars file, then:

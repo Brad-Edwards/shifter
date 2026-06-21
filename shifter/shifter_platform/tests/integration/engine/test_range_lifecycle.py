@@ -5,7 +5,8 @@ AWS services (ECS, Secrets Manager) are mocked as they require infrastructure.
 """
 
 import uuid
-from unittest.mock import patch
+from contextlib import contextmanager
+from unittest.mock import MagicMock, patch
 
 import pytest
 from django.contrib.auth import get_user_model
@@ -485,13 +486,24 @@ class TestGetActiveForUserIntegration:
 # =============================================================================
 
 
+@contextmanager
+def _boto3_rdp_secret(value):
+    """Bind the boto3 Secrets Manager client so the real get_rdp_password (and
+    the sftp ssh-key fetch) resolve ``value`` over the cloud boundary instead of
+    patching the first-party ``engine.services.get_rdp_password``."""
+    client = MagicMock()
+    client.get_secret_value.return_value = {"SecretString": value}
+    with patch("boto3.client", return_value=client):
+        yield
+
+
 @pytest.mark.django_db
 class TestGetRdpConnectionInfoIntegration:
     """Integration tests for get_rdp_connection_info with real DB."""
 
     def test_returns_connection_info_for_windows_instance(self, range_ready):
         """get_rdp_connection_info returns correct info for Windows."""
-        with patch("engine.services.get_rdp_password", return_value="PerInstanceWinPw!"):
+        with _boto3_rdp_secret("PerInstanceWinPw!"):
             result = get_rdp_connection_info(
                 user=range_ready.user,
                 instance_uuid="victim-uuid-456",
@@ -505,7 +517,7 @@ class TestGetRdpConnectionInfoIntegration:
 
     def test_returns_connection_info_for_kali_instance(self, range_ready):
         """get_rdp_connection_info returns correct info for Kali."""
-        with patch("engine.services.get_rdp_password", return_value="PerInstanceKaliPw!"):
+        with _boto3_rdp_secret("PerInstanceKaliPw!"):
             result = get_rdp_connection_info(
                 user=range_ready.user,
                 instance_uuid="attacker-uuid-123",
@@ -561,7 +573,7 @@ class TestGetRdpConnectionInfoIntegration:
             ],
         )
 
-        with patch("engine.services.get_rdp_password", return_value="PerInstanceUbuntuPw!"):
+        with _boto3_rdp_secret("PerInstanceUbuntuPw!"):
             result = get_rdp_connection_info(user=user, instance_uuid="ubuntu-uuid")
 
         assert result["os_type"] == "ubuntu"

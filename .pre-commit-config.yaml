@@ -27,13 +27,13 @@ repos:
         exclude: ^(shifter/engine/provisioner/tests/|shifter/shifter_platform/tests/engine/ssh/|scripts/bootstrap/tests/|shifter/engine/provisioner/utils/crypto\.py|scenario-dev/polaris/build/_shared/)
 
   - repo: https://github.com/rhysd/actionlint
-    rev: v1.7.11
+    rev: v1.7.12
     hooks:
       - id: actionlint
         files: ^\.github/workflows/.*\.yml$
 
   - repo: https://github.com/gitleaks/gitleaks
-    rev: v8.24.2
+    rev: v8.30.1
     hooks:
       - id: gitleaks
         args: [--config, .gitleaks.toml]
@@ -41,7 +41,7 @@ repos:
   # Python - Ruff (linting + formatting)
   # Note: Ruff handles import sorting via "I" rules - no separate isort needed
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.15.13
+    rev: v0.15.18
     hooks:
       - id: ruff
         name: ruff (shifter_platform)
@@ -92,6 +92,13 @@ repos:
       - id: ruff-format
         name: ruff-format (check_rds_pending_modifications)
         files: ^scripts/check_rds_pending_modifications/
+      - id: ruff
+        name: ruff (assert_portal_inspection)
+        args: [--fix]
+        files: ^scripts/assert_portal_inspection/
+      - id: ruff-format
+        name: ruff-format (assert_portal_inspection)
+        files: ^scripts/assert_portal_inspection/
       - id: ruff
         name: ruff (installation)
         args: [--fix]
@@ -147,14 +154,14 @@ repos:
 
   # Shell scripts
   - repo: https://github.com/shellcheck-py/shellcheck-py
-    rev: v0.10.0.1
+    rev: v0.11.0.1
     hooks:
       - id: shellcheck
         files: ^scripts/
 
   # Terraform formatting and validation
   - repo: https://github.com/antonbabenko/pre-commit-terraform
-    rev: v1.96.3
+    rev: v1.105.0
     hooks:
       - id: terraform_fmt
         files: ^platform/terraform/
@@ -179,6 +186,17 @@ repos:
         entry: python3 scripts/check_tf_sg_cidrs/check_tf_sg_cidrs.py
         language: system
         files: ^(scripts/polaris-aws-range/|shifter/engine/provisioner/terraform/modules/range/).*\.tf$
+
+      # Portal target-service (Django:8000 / Guacamole client:8080) SG ingress
+      # must source only from a security-group reference or the ALB-only
+      # alb_ingress_subnet_cidrs output, never the whole public tier where CTFd
+      # lives. Guards the #911 NET-2 / #933 segmentation fix. See
+      # scripts/check_portal_target_sg_sources/test_check_portal_target_sg_sources.py.
+      - id: check-portal-target-sg-sources
+        name: Portal target-service SG ingress source scoping (#933)
+        entry: python3 scripts/check_portal_target_sg_sources/check_portal_target_sg_sources.py
+        language: system
+        files: ^platform/terraform/environments/(dev|prod)/portal/main\.tf$
 
       - id: check-tf-iam-ec2-scope
         name: AWS EC2 lifecycle IAM scoping (engine provisioner)
@@ -261,10 +279,11 @@ repos:
           python3 -m unittest scripts.check_tf_iam_elb_scope.test_check_tf_iam_elb_scope &&
           python3 -m unittest scripts.check_tf_sg_cidrs.test_check_tf_sg_cidrs &&
           python3 -m unittest scripts.check_tf_kms_secrets_grant.test_check_tf_kms_secrets_grant &&
-          python3 -m unittest scripts.check_tf_rds_security.test_check_tf_rds_security
+          python3 -m unittest scripts.check_tf_rds_security.test_check_tf_rds_security &&
+          python3 -m unittest scripts.check_portal_target_sg_sources.test_check_portal_target_sg_sources
           '
         language: system
-        files: ^scripts/check_tf_(iam_ec2_scope|iam_elb_scope|sg_cidrs|kms_secrets_grant|rds_security)/
+        files: ^scripts/(check_tf_(iam_ec2_scope|iam_elb_scope|sg_cidrs|kms_secrets_grant|rds_security)|check_portal_target_sg_sources)/
         pass_filenames: false
 
   # Kubernetes schema validation
@@ -355,7 +374,7 @@ repos:
   # Checkov scans the repo root in addition to platform/terraform/ and
   # follows module sources into shifter/engine/provisioner/terraform/.
   - repo: https://github.com/bridgecrewio/checkov
-    rev: 3.2.529
+    rev: 3.2.534
     hooks:
       - id: checkov
         name: checkov (terraform)
@@ -428,6 +447,17 @@ repos:
         entry: python3 scripts/adr_guard/adr_guard.py --changed --level fast
         language: system
         files: ^(docs/adr/|scripts/adr_guard/|\.github/workflows/|\.github/(CODEOWNERS|pull_request_template\.md|copilot-instructions\.md)$|\.claude/|shifter/shifter_platform/.*\.py$|shifter/engine/provisioner/cloud/.*\.py$|platform/terraform/environments/.*\.tfvars$|\.pre-commit-config\.yaml$|AGENTS\.md$|\.importlinter$|\.tflint\.hcl$|\.gitleaks\.toml$|\.kube-linter\.yaml$|\.shifter\.yaml$|mcp/.*\.(js|mjs|cjs)$)
+        pass_filenames: false
+        verbose: true
+
+      # ADR-004-R13 identifier hygiene runs on every commit against the
+      # changed set: live cloud identifiers can be reintroduced in ANY tracked
+      # file, so this hook deliberately has no narrowing `files:` filter. The
+      # check itself skips binary / lock files, so the scan stays cheap.
+      - id: adr-guard-identifiers
+        name: architecture (adr guard live cloud identifiers)
+        entry: python3 scripts/adr_guard/adr_guard.py --checks no-live-cloud-identifiers --changed
+        language: system
         pass_filenames: false
         verbose: true
 
@@ -553,6 +583,14 @@ repos:
           bash -c 'cd scripts/check_rds_pending_modifications && uv run pytest tests/ -q'
         language: system
         files: ^scripts/check_rds_pending_modifications/
+        pass_filenames: false
+
+      - id: pytest-assert-portal-inspection
+        name: pytest (assert_portal_inspection)
+        entry: >-
+          bash -c 'cd scripts/assert_portal_inspection && uv run pytest tests/ -q'
+        language: system
+        files: ^scripts/assert_portal_inspection/
         pass_filenames: false
 
       - id: pytest-event-load-harness

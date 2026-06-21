@@ -170,147 +170,79 @@ def mock_profile():
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.django_db
 class TestOIDCBackendCTFUserType:
-    """Test that the OIDC backend handles CTF user type claims."""
+    """OIDC backend turns custom:user_type claims into CTF group membership.
+
+    Behavior tests against real users, groups, and profiles through the
+    backend's ``_update_user_type`` entry point. The sync mechanics (audit
+    rows, add-only CTF membership, the CTF-only invariant) are unit-tested in
+    ``tests/config/test_user_type_sync.py``; these tests cover the OIDC
+    integration path and the ``custom:ctf_event_id`` plumbing.
+    """
 
     def _make_backend(self):
         from config.oidc import ShifterOIDCBackend
 
         return ShifterOIDCBackend()
 
-    @patch("config.oidc.Group.objects.get_or_create")
-    @patch("config.oidc.get_user_profile")
-    def test_create_user_sets_group_from_claims(self, mock_get_profile, mock_group_goc):
-        """OIDC create_user should add user to CTF Organizer group from claim."""
-        backend = self._make_backend()
-        user = _make_mock_user(email="newctf@test.com")
+    @pytest.fixture
+    def real_user(self, db):
+        from django.contrib.auth import get_user_model
 
-        mock_group = _MockGroup(CTF_ORGANIZER_GROUP)
-        mock_group_goc.return_value = (mock_group, True)
+        return get_user_model().objects.create_user(username="newctf@test.com", email="newctf@test.com")
 
-        profile = MagicMock(user_type="standard")
-        mock_get_profile.return_value = profile
+    def test_organizer_claim_adds_organizer_group(self, real_user):
+        self._make_backend()._update_user_type(real_user, {"custom:user_type": "ctf_organizer"})
+        assert real_user.groups.filter(name=CTF_ORGANIZER_GROUP).exists()
 
-        claims = {
-            "sub": "cognito-sub-123",
-            "email": "newctf@test.com",
-            "custom:user_type": "ctf_organizer",
-        }
+    def test_participant_claim_adds_participant_group(self, real_user):
+        self._make_backend()._update_user_type(real_user, {"custom:user_type": "ctf_participant"})
+        assert real_user.groups.filter(name=CTF_PARTICIPANT_GROUP).exists()
 
-        backend._update_user_type(user, claims)
+    def test_missing_claim_leaves_groups_unchanged(self, real_user):
+        self._make_backend()._update_user_type(real_user, {"sub": "some-sub"})
+        assert not real_user.groups.filter(name__in=[CTF_ORGANIZER_GROUP, CTF_PARTICIPANT_GROUP]).exists()
 
-        assert user.groups.filter(name=CTF_ORGANIZER_GROUP).exists()
+    def test_invalid_claim_value_ignored(self, real_user):
+        self._make_backend()._update_user_type(real_user, {"custom:user_type": "invalid_type"})
+        assert not real_user.groups.filter(name__in=[CTF_ORGANIZER_GROUP, CTF_PARTICIPANT_GROUP]).exists()
 
-    @patch("config.oidc.Group.objects.get_or_create")
-    @patch("config.oidc.get_user_profile")
-    def test_update_user_type_organizer(self, mock_get_profile, mock_group_goc, mock_organizer_user):
-        """_update_user_type should add user to CTF Organizer group."""
-        backend = self._make_backend()
+    def test_ctf_event_set_for_participant_from_claim(self, real_user):
+        from datetime import timedelta
 
-        mock_group = _MockGroup(CTF_ORGANIZER_GROUP)
-        mock_group_goc.return_value = (mock_group, False)
+        from django.utils import timezone
 
-        profile = MagicMock(user_type="ctf_organizer")
-        mock_get_profile.return_value = profile
+        from ctf.enums import EventStatus
+        from ctf.models import CTFEvent
 
-        claims = {"custom:user_type": "ctf_organizer"}
-        backend._update_user_type(mock_organizer_user, claims)
+        event = CTFEvent.objects.create(
+            name="OIDC Event",
+            description="event",
+            created_by=real_user,
+            status=EventStatus.ACTIVE.value,
+            event_start=timezone.now() - timedelta(hours=1),
+            event_end=timezone.now() + timedelta(hours=7),
+            scenario_id="basic",
+        )
 
-        assert mock_organizer_user.groups.filter(name=CTF_ORGANIZER_GROUP).exists()
+        self._make_backend()._update_user_type(
+            real_user,
+            {"custom:user_type": "ctf_participant", "custom:ctf_event_id": str(event.pk)},
+        )
 
-    @patch("config.oidc.Group.objects.get_or_create")
-    @patch("config.oidc.get_user_profile")
-    def test_update_user_type_participant(self, mock_get_profile, mock_group_goc, mock_participant_user):
-        """_update_user_type should add user to CTF Participant group."""
-        backend = self._make_backend()
+        real_user.refresh_from_db()
+        assert real_user.groups.filter(name=CTF_PARTICIPANT_GROUP).exists()
+        assert real_user.profile.active_ctf_event_id == event.pk
 
-        mock_group = _MockGroup(CTF_PARTICIPANT_GROUP)
-        mock_group_goc.return_value = (mock_group, False)
-
-        profile = MagicMock(user_type="ctf_participant")
-        mock_get_profile.return_value = profile
-
-        claims = {"custom:user_type": "ctf_participant"}
-        backend._update_user_type(mock_participant_user, claims)
-
-        assert mock_participant_user.groups.filter(name=CTF_PARTICIPANT_GROUP).exists()
-
-    def test_update_user_type_missing_claim_no_group_change(self, mock_organizer_user):
-        """Missing custom:user_type claim should not change groups."""
-        backend = self._make_backend()
-        claims = {"sub": "some-sub"}
-
-        mock_organizer_user.groups.clear()
-
-        backend._update_user_type(mock_organizer_user, claims)
-
-        assert not mock_organizer_user.groups.filter(name=CTF_ORGANIZER_GROUP).exists()
-        assert not mock_organizer_user.groups.filter(name=CTF_PARTICIPANT_GROUP).exists()
-
-    def test_update_user_type_invalid_type_ignored(self, mock_organizer_user):
-        """Invalid user_type claim value should be ignored."""
-        backend = self._make_backend()
-        claims = {"custom:user_type": "invalid_type"}
-
-        mock_organizer_user.groups.clear()
-
-        backend._update_user_type(mock_organizer_user, claims)
-
-        assert not mock_organizer_user.groups.filter(name=CTF_ORGANIZER_GROUP).exists()
-        assert not mock_organizer_user.groups.filter(name=CTF_PARTICIPANT_GROUP).exists()
-
-    @patch("management.services.set_active_ctf_event")
-    @patch("ctf.models.CTFEvent.objects")
-    @patch("config.oidc.Group.objects.get_or_create")
-    @patch("config.oidc.get_user_profile")
-    def test_update_ctf_event_from_claims(
-        self, mock_get_profile, mock_group_goc, mock_event_objects, mock_set_event, mock_participant_user
-    ):
-        """_update_user_type should set active_ctf_event from custom:ctf_event_id."""
-        backend = self._make_backend()
-
-        mock_group = _MockGroup(CTF_PARTICIPANT_GROUP)
-        mock_group_goc.return_value = (mock_group, False)
-
-        mock_event = MagicMock()
-        mock_event.pk = "11111111-1111-1111-1111-111111111111"
-        mock_event_objects.filter.return_value.first.return_value = mock_event
-
-        profile = MagicMock(user_type="ctf_participant", active_ctf_event_id=None)
-        mock_get_profile.return_value = profile
-
-        claims = {
-            "custom:user_type": "ctf_participant",
-            "custom:ctf_event_id": "11111111-1111-1111-1111-111111111111",
-        }
-
-        backend._update_user_type(mock_participant_user, claims)
-
-        assert mock_participant_user.groups.filter(name=CTF_PARTICIPANT_GROUP).exists()
-        mock_set_event.assert_called_once_with(mock_participant_user, mock_event.pk)
-
-    @patch("config.oidc.Group.objects.get_or_create")
-    @patch("config.oidc.get_user_profile")
-    def test_update_ctf_event_invalid_uuid_ignored(self, mock_get_profile, mock_group_goc, mock_participant_user):
-        """Invalid ctf_event_id should be ignored gracefully."""
-        backend = self._make_backend()
-
-        mock_group = _MockGroup(CTF_PARTICIPANT_GROUP)
-        mock_group_goc.return_value = (mock_group, False)
-
-        profile = MagicMock(user_type="ctf_participant", active_ctf_event_id=None)
-        mock_get_profile.return_value = profile
-
-        claims = {
-            "custom:user_type": "ctf_participant",
-            "custom:ctf_event_id": "not-a-uuid",
-        }
-
-        backend._update_user_type(mock_participant_user, claims)
-
-        assert mock_participant_user.groups.filter(name=CTF_PARTICIPANT_GROUP).exists()
-        # Invalid UUID should not trigger set_active_ctf_event
-        assert profile.active_ctf_event_id is None
+    def test_invalid_ctf_event_id_ignored(self, real_user):
+        self._make_backend()._update_user_type(
+            real_user,
+            {"custom:user_type": "ctf_participant", "custom:ctf_event_id": "not-a-uuid"},
+        )
+        real_user.refresh_from_db()
+        assert real_user.groups.filter(name=CTF_PARTICIPANT_GROUP).exists()
+        assert real_user.profile.active_ctf_event_id is None
 
 
 class TestDashboardRouting:
@@ -467,96 +399,50 @@ class TestAccessControlDecorators:
         assert response.status_code == 302
 
 
+@pytest.mark.django_db
 class TestDevLogin:
-    """Test dev login CTF user type support."""
+    """Dev login CTF user type support (behavior tests, real DB).
+
+    Drives the dev-login view through the test client and asserts the real
+    group membership and redirect. The shared sync mechanics and audit trail
+    are unit-tested in ``tests/config/test_user_type_sync.py``.
+    """
 
     @override_settings(DEBUG=True)
-    @patch("config.dev_auth.get_user_profile")
-    @patch("config.dev_auth.Group.objects.get_or_create")
-    @patch("config.dev_auth.User.objects.get_or_create")
-    @patch("config.dev_auth.login")
-    def test_dev_login_ctf_organizer(
-        self, mock_login, mock_user_goc, mock_group_goc, mock_get_profile, request_factory
-    ):
+    def test_dev_login_ctf_organizer(self, client):
         """Dev login should add user to CTF Organizer group."""
-        from config.dev_auth import dev_login
+        from django.contrib.auth import get_user_model
 
-        user = _make_mock_user(email="ctforg@test.com")
-        mock_user_goc.return_value = (user, True)
-
-        mock_group = _MockGroup(CTF_ORGANIZER_GROUP)
-        mock_group_goc.return_value = (mock_group, True)
-
-        mock_get_profile.return_value = MagicMock(user_type="standard")
-
-        request = request_factory.post(
-            "/dev-login/",
-            {"email": "ctforg@test.com", "user_type": "ctf_organizer"},
-        )
-        request.session = {}
-        response = dev_login(request)
+        response = client.post("/dev-login/", {"email": "ctforg@test.com", "user_type": "ctf_organizer"})
 
         assert response.status_code == 302
         assert "/ctf/admin/" in response.url
+        user = get_user_model().objects.get(username="ctforg@test.com")
         assert user.groups.filter(name=CTF_ORGANIZER_GROUP).exists()
 
     @override_settings(DEBUG=True)
-    @patch("config.dev_auth.get_user_profile")
-    @patch("config.dev_auth.Group.objects.get_or_create")
-    @patch("config.dev_auth.User.objects.get_or_create")
-    @patch("config.dev_auth.login")
-    def test_dev_login_ctf_participant(
-        self, mock_login, mock_user_goc, mock_group_goc, mock_get_profile, request_factory
-    ):
+    def test_dev_login_ctf_participant(self, client):
         """Dev login should add user to CTF Participant group."""
-        from config.dev_auth import dev_login
+        from django.contrib.auth import get_user_model
 
-        user = _make_mock_user(email="ctfpart@test.com")
-        mock_user_goc.return_value = (user, True)
-
-        mock_group = _MockGroup(CTF_PARTICIPANT_GROUP)
-        mock_group_goc.return_value = (mock_group, True)
-
-        mock_get_profile.return_value = MagicMock(user_type="standard")
-
-        request = request_factory.post(
-            "/dev-login/",
-            {"email": "ctfpart@test.com", "user_type": "ctf_participant"},
-        )
-        request.session = {}
-        response = dev_login(request)
+        response = client.post("/dev-login/", {"email": "ctfpart@test.com", "user_type": "ctf_participant"})
 
         assert response.status_code == 302
         assert "/mission-control/" in response.url
+        user = get_user_model().objects.get(username="ctfpart@test.com")
         assert user.groups.filter(name=CTF_PARTICIPANT_GROUP).exists()
 
     @override_settings(DEBUG=True)
-    @patch("config.dev_auth.get_user_profile")
-    @patch("config.dev_auth.Group.objects.filter")
-    @patch("config.dev_auth.User.objects.get_or_create")
-    @patch("config.dev_auth.login")
-    def test_dev_login_standard_user_default(
-        self, mock_login, mock_user_goc, mock_group_filter, mock_get_profile, request_factory
-    ):
-        """Dev login without user_type should default to standard."""
-        from config.dev_auth import dev_login
+    def test_dev_login_standard_user_default(self, client):
+        """Dev login without user_type should default to standard (no CTF groups)."""
+        from django.contrib.auth import get_user_model
 
-        user = _make_mock_user(email="dev@example.com")
-        mock_user_goc.return_value = (user, True)
-
-        mock_group_filter.return_value = []
-
-        mock_get_profile.return_value = MagicMock(user_type="standard")
-
-        request = request_factory.post(
-            "/dev-login/",
-            {"email": "dev@example.com"},
-        )
-        request.session = {}
-        response = dev_login(request)
+        response = client.post("/dev-login/", {"email": "dev@example.com"})
 
         assert response.status_code == 302
         assert "/mission-control/" in response.url
+        user = get_user_model().objects.get(username="dev@example.com")
+        assert not user.groups.filter(name__in=[CTF_ORGANIZER_GROUP, CTF_PARTICIPANT_GROUP]).exists()
 
 
 class TestCTFContextProcessor:

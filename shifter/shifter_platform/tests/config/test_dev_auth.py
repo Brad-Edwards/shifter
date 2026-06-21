@@ -41,8 +41,16 @@ def user(db):
     return User.objects.create_user(username="test@example.com", email="test@example.com")
 
 
+PUBLIC_PEER = "203.0.113.10"  # TEST-NET-3, never loopback/admin
+
+
 class TestDevLoginSecurity:
-    """Test security checks for dev_login endpoint."""
+    """Test security checks for dev_login endpoint.
+
+    Secondary admission (when DEBUG is False) is bound to the direct peer
+    address (REMOTE_ADDR) and loopback/admin CIDRs only. The spoofable Host
+    header and X-Forwarded-For are never trusted for this decision (SEC-3).
+    """
 
     @override_settings(DEBUG=True, ENVIRONMENT="production")
     def test_allows_access_when_debug_true(self, client):
@@ -56,11 +64,39 @@ class TestDevLoginSecurity:
         ENVIRONMENT="development",
         ALLOWED_HOSTS=["testserver", "shifter.example.com", "localhost"],
     )
-    def test_blocks_public_access_even_in_development(self, client):
-        """Deployed dev auth must not be reachable from the public ingress host."""
-        response = client.get("/dev-login/", HTTP_HOST="shifter.example.com")
+    def test_blocks_public_peer_even_in_development(self, client):
+        """Deployed dev auth must not be reachable from a non-local peer."""
+        response = client.get("/dev-login/", REMOTE_ADDR=PUBLIC_PEER)
         assert response.status_code == 403
         assert b"local or admin access paths" in response.content
+
+    @override_settings(
+        DEBUG=False,
+        ENVIRONMENT="development",
+        ALLOWED_HOSTS=["testserver", "shifter.example.com", "localhost"],
+    )
+    def test_forged_host_header_does_not_grant_access(self, client):
+        """A forged Host header must not admit a non-local peer (SEC-3)."""
+        response = client.get(
+            "/dev-login/",
+            REMOTE_ADDR=PUBLIC_PEER,
+            HTTP_HOST="localhost",
+        )
+        assert response.status_code == 403
+
+    @override_settings(
+        DEBUG=False,
+        ENVIRONMENT="development",
+        ALLOWED_HOSTS=["testserver", "shifter.example.com", "localhost"],
+    )
+    def test_forged_xff_does_not_grant_access(self, client):
+        """A forged X-Forwarded-For must not admit a non-local peer (SEC-3)."""
+        response = client.get(
+            "/dev-login/",
+            REMOTE_ADDR=PUBLIC_PEER,
+            HTTP_X_FORWARDED_FOR="127.0.0.1",
+        )
+        assert response.status_code == 403
 
     @override_settings(DEBUG=True, ENVIRONMENT="development")
     def test_allows_access_when_both_true(self, client):
@@ -72,23 +108,16 @@ class TestDevLoginSecurity:
     @override_settings(DEBUG=False, ENVIRONMENT="production")
     def test_blocks_access_in_production(self, client):
         """dev_login MUST block access in production (DEBUG=False, ENVIRONMENT='production')."""
-        response = client.get("/dev-login/")
-        # CRITICAL: Must return 403 in production
+        response = client.get("/dev-login/", REMOTE_ADDR="127.0.0.1")
+        # CRITICAL: Must return 403 in production even from loopback
         assert response.status_code == 403
         assert b"Development auth disabled in production" in response.content
 
     @override_settings(DEBUG=False, ENVIRONMENT="staging")
     def test_blocks_access_in_non_development_environments(self, client):
         """dev_login should block access in non-development environments (e.g., staging)."""
-        response = client.get("/dev-login/")
+        response = client.get("/dev-login/", REMOTE_ADDR="127.0.0.1")
         # Should return 403 for any ENVIRONMENT other than 'development'
-        assert response.status_code == 403
-
-    @override_settings(DEBUG=False, ENVIRONMENT="production")
-    def test_blocks_access_when_environment_explicitly_production(self, client):
-        """dev_login should block access when ENVIRONMENT is explicitly 'production'."""
-        response = client.get("/dev-login/")
-        # Should return 403 when ENVIRONMENT is production
         assert response.status_code == 403
 
     @override_settings(
@@ -96,9 +125,20 @@ class TestDevLoginSecurity:
         ENVIRONMENT="development",
         ALLOWED_HOSTS=["testserver", "shifter.example.com", "localhost"],
     )
-    def test_allows_access_over_localhost_in_development(self, client):
+    def test_allows_loopback_peer_in_development(self, client):
         """Deployed dev auth stays available through loopback/admin tunnels."""
-        response = client.get("/dev-login/", HTTP_HOST="localhost:8000")
+        response = client.get("/dev-login/", REMOTE_ADDR="127.0.0.1")
+        assert response.status_code == 200
+
+    @override_settings(
+        DEBUG=False,
+        ENVIRONMENT="development",
+        DEV_LOGIN_ALLOWED_CIDRS=["10.0.0.0/8"],
+        ALLOWED_HOSTS=["testserver", "shifter.example.com", "localhost"],
+    )
+    def test_allows_configured_cidr_peer_in_development(self, client):
+        """An explicitly configured admin CIDR is admitted by REMOTE_ADDR."""
+        response = client.get("/dev-login/", REMOTE_ADDR="10.1.2.3")
         assert response.status_code == 200
 
 
@@ -118,10 +158,10 @@ class TestDevLogoutSecurity:
         ENVIRONMENT="development",
         ALLOWED_HOSTS=["testserver", "shifter.example.com", "localhost"],
     )
-    def test_allows_access_when_environment_development(self, client, user):
+    def test_allows_access_from_loopback_peer(self, client, user):
         """dev_logout stays available through localhost/admin paths only."""
         client.force_login(user)
-        response = client.get("/dev-logout/", HTTP_HOST="localhost:8000")
+        response = client.get("/dev-logout/", REMOTE_ADDR="127.0.0.1")
         assert response.status_code == 302
 
     @override_settings(
@@ -129,9 +169,9 @@ class TestDevLogoutSecurity:
         ENVIRONMENT="development",
         ALLOWED_HOSTS=["testserver", "shifter.example.com", "localhost"],
     )
-    def test_blocks_public_access_in_development(self, client, user):
+    def test_blocks_public_peer_in_development(self, client, user):
         client.force_login(user)
-        response = client.get("/dev-logout/", HTTP_HOST="shifter.example.com")
+        response = client.get("/dev-logout/", REMOTE_ADDR=PUBLIC_PEER)
         assert response.status_code == 403
         assert b"local or admin access paths" in response.content
 
@@ -139,7 +179,7 @@ class TestDevLogoutSecurity:
     def test_blocks_access_in_production(self, client, user):
         """dev_logout MUST block access in production."""
         client.force_login(user)
-        response = client.get("/dev-logout/")
+        response = client.get("/dev-logout/", REMOTE_ADDR="127.0.0.1")
         # CRITICAL: Must return 403 in production
         assert response.status_code == 403
         assert b"Development auth disabled in production" in response.content

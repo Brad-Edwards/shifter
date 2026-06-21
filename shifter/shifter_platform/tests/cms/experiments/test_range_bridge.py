@@ -1,183 +1,142 @@
-"""Tests for the range-to-experiment event bridge.
+"""Behavior tests for the range-to-experiment event bridge.
 
-When a range's status transitions to READY and that range is linked to
-an experiment run, the CMS handler should publish an experiment event
-to trigger the next phase (script execution).
-
-Logic under test:
-- Detects when a provisioned range is linked to an experiment run
-- Publishes experiment.run.range_provisioned event with correct context
-- Does nothing when range is not linked to an experiment
-- Does nothing for non-READY status transitions
-- Handles missing experiment run gracefully
+When a range becomes READY and is linked to an experiment run, the CMS handler
+publishes an ``experiment.run.range_provisioned`` event to continue execution.
+These tests drive the real ``notify_experiment_on_range_ready`` /
+``process_range_event`` against real ``RangeInstance``/``Request``/``Experiment``/
+``ExperimentRun`` rows, with the SQS publish exercised through the real
+``shared.cloud`` queue publisher mocked only at the ``boto3`` boundary — instead
+of patching ``ExperimentRun`` / ``publish_range_provisioned_for_experiment`` /
+``RangeInstance`` / the bridge functions.
 """
 
+import json
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
+import pytest
+from botocore.exceptions import ClientError
+from django.contrib.auth import get_user_model
+
+from cms.experiments.models import Experiment, ExperimentRun
 from cms.experiments.schemas import RunStatus
-from shared.enums import ResourceStatus
+from cms.handlers import notify_experiment_on_range_ready, process_range_event
+from cms.models import RangeInstance, Request
+from shared.enums import RequestType, ResourceStatus
 
-# experiment_bridge imports ExperimentRun at its module top, so patches must
-# target the bridge module's binding (where the name is looked up at call time)
-# rather than the source module.
-PATCH_EXP_RUN = "cms.handlers.experiment_bridge.ExperimentRun"
+pytestmark = pytest.mark.django_db
+
+User = get_user_model()
+
+CMS_URL = "https://sqs.us-east-2.amazonaws.com/123/cms-tasks"
 
 
-class TestRangeToExperimentBridge:
-    """Tests for notify_experiment_on_range_ready bridge function."""
+@pytest.fixture
+def sqs_client(settings):
+    """Configure the CMS SQS queue and patch boto3 with a mock SQS client."""
+    settings.CLOUD_PROVIDER = "aws"
+    settings.SQS_QUEUE_CONFIG = {"cms": {"url": CMS_URL}}
+    client = MagicMock()
+    with patch("boto3.client", return_value=client):
+        yield client
 
-    @patch("cms.handlers.experiment_bridge.publish_range_provisioned_for_experiment")
-    @patch(PATCH_EXP_RUN)
-    def test_publishes_event_when_range_ready_for_experiment(self, mock_run_model, mock_publish):
-        """When range status becomes READY and linked to experiment, publishes event."""
-        mock_publish.return_value = True
-        request_id = uuid4()
 
-        # Mock the range instance
-        ri = MagicMock()
-        ri.request.request_id = request_id
+@pytest.fixture
+def user(db):
+    return User.objects.create_user(username="bridge@example.com", email="bridge@example.com")
 
-        # Mock ExperimentRun.objects.select_related().get() to return a matching run
-        mock_run = MagicMock()
-        mock_run.experiment_id = 10
-        mock_run.pk = 5
-        mock_run_model.objects.select_related.return_value.get.return_value = mock_run
-        mock_run_model.DoesNotExist = Exception
 
-        from cms.handlers import notify_experiment_on_range_ready
+def _request(user):
+    return Request.objects.create(request_id=uuid4(), request_type=RequestType.RANGE.value, user=user)
 
-        provisioned_instances = {"Workstation": {"instance_id": "i-abc123"}}
-        notify_experiment_on_range_ready(ri, provisioned_instances)
 
-        mock_publish.assert_called_once_with(
-            experiment_id=10,
-            run_id=5,
-            provisioned_instances=provisioned_instances,
+def _range_instance(user, *, request=None, range_id=None, status=ResourceStatus.PROVISIONING.value):
+    return RangeInstance.objects.create(
+        user_id=user.id, request=request, range_id=range_id, status=status, scenario_id="basic"
+    )
+
+
+def _experiment_run(user, request, *, status=RunStatus.PENDING.value):
+    experiment = Experiment.objects.create(user=user, name="Exp", scenario_id="basic")
+    return ExperimentRun.objects.create(
+        experiment=experiment, run_number=1, request_id=request.request_id, status=status
+    )
+
+
+def _sent_body(sqs_client):
+    sqs_client.send_message.assert_called_once()
+    return json.loads(sqs_client.send_message.call_args.kwargs["MessageBody"])
+
+
+class TestNotifyExperimentOnRangeReady:
+    def test_publishes_event_when_linked_to_experiment(self, user, sqs_client):
+        req = _request(user)
+        run = _experiment_run(user, req)
+        ri = _range_instance(user, request=req)
+
+        provisioned = {"Workstation": {"instance_id": "i-abc123"}}
+        notify_experiment_on_range_ready(ri, provisioned)
+
+        body = _sent_body(sqs_client)
+        assert body["event_type"] == "experiment.run.range_provisioned"
+        assert body["experiment_id"] == run.experiment_id
+        assert body["run_id"] == run.pk
+        assert body["provisioned_instances"] == provisioned
+
+    def test_does_nothing_for_range_without_experiment(self, user, sqs_client):
+        req = _request(user)  # no ExperimentRun links to this request
+        ri = _range_instance(user, request=req)
+        notify_experiment_on_range_ready(ri, {})
+        sqs_client.send_message.assert_not_called()
+
+    def test_handles_missing_request_gracefully(self, user, sqs_client):
+        ri = _range_instance(user, request=None)
+        notify_experiment_on_range_ready(ri, {})  # must not raise
+        sqs_client.send_message.assert_not_called()
+
+    def test_marks_run_failed_on_sqs_error(self, user, sqs_client):
+        req = _request(user)
+        run = _experiment_run(user, req)
+        ri = _range_instance(user, request=req)
+        sqs_client.send_message.side_effect = ClientError(
+            {"Error": {"Code": "500", "Message": "SQS unavailable"}}, "SendMessage"
         )
 
-    @patch("cms.handlers.experiment_bridge.publish_range_provisioned_for_experiment")
-    @patch(PATCH_EXP_RUN)
-    def test_does_nothing_for_range_without_experiment(self, mock_run_model, mock_publish):
-        """Range not linked to any experiment run -> no event published."""
-        request_id = uuid4()
+        notify_experiment_on_range_ready(ri, {"Workstation": {"instance_id": "i-abc123"}})
 
-        ri = MagicMock()
-        ri.request.request_id = request_id
-
-        # ExperimentRun not found
-        mock_run_model.DoesNotExist = Exception
-        mock_run_model.objects.select_related.return_value.get.side_effect = mock_run_model.DoesNotExist
-
-        from cms.handlers import notify_experiment_on_range_ready
-
-        notify_experiment_on_range_ready(ri, {})
-
-        mock_publish.assert_not_called()
-
-    @patch("cms.handlers.experiment_bridge.publish_range_provisioned_for_experiment")
-    @patch(PATCH_EXP_RUN)
-    def test_handles_deleted_request_gracefully(self, mock_run_model, mock_publish):
-        """If range_instance has no request, no crash."""
-        ri = MagicMock()
-        ri.request = None
-
-        from cms.handlers import notify_experiment_on_range_ready
-
-        # Should not raise
-        notify_experiment_on_range_ready(ri, {})
-        mock_publish.assert_not_called()
+        run.refresh_from_db()
+        assert run.status == RunStatus.FAILED.value
+        assert run.error_message == "Failed to publish range provisioning notification"
 
 
-class TestCmsHandlerBridgeIntegration:
-    """Tests for process_range_event calling the bridge on READY status."""
-
-    @patch("cms.handlers.range_events.notify_experiment_on_range_ready")
-    @patch("cms.handlers.range_events.notify_ctf_range_status")
-    @patch("cms.handlers.range_events.RangeInstance")
-    def test_process_range_event_calls_bridge_on_ready(self, mock_ri_model, mock_ctf, mock_bridge):
-        """process_range_event calls bridge with the resolved instance + provisioned_instances on READY."""
-        request_id = str(uuid4())
-
-        mock_instance = MagicMock()
-        mock_instance.user_id = 1
-        mock_instance.status = "provisioning"
-        mock_instance.range_id = None
-        mock_instance.pk = 99
-        mock_ri_model.objects.get.return_value = mock_instance
-        mock_ri_model.DoesNotExist = Exception
-
-        provisioned_instances = {"Workstation": {"instance_id": "i-abc123"}}
-        event = {
+class TestProcessRangeEventBridgeIntegration:
+    def _event(self, req, user, *, new_status, **extra):
+        return {
             "event_type": "range.status.updated",
-            "request_id": request_id,
+            "request_id": str(req.request_id),
             "range_id": 1,
-            "user_id": 1,
-            "new_status": ResourceStatus.READY.value,
-            "instances": provisioned_instances,
+            "user_id": user.id,
+            "new_status": new_status,
+            **extra,
         }
 
-        from cms.handlers import process_range_event
+    def test_calls_bridge_on_ready(self, user, sqs_client):
+        req = _request(user)
+        run = _experiment_run(user, req)
+        _range_instance(user, request=req, range_id=None)
 
-        process_range_event(event)
+        provisioned = {"Workstation": {"instance_id": "i-abc123"}}
+        process_range_event(self._event(req, user, new_status=ResourceStatus.READY.value, instances=provisioned))
 
-        # Pin both args so a regression that swapped arguments or dropped the
-        # instances payload is caught.
-        mock_bridge.assert_called_once_with(mock_instance, provisioned_instances)
+        body = _sent_body(sqs_client)
+        assert body["experiment_id"] == run.experiment_id
+        assert body["run_id"] == run.pk
+        assert body["provisioned_instances"] == provisioned
 
-    @patch("cms.handlers.range_events.notify_experiment_on_range_ready")
-    @patch("cms.handlers.range_events.notify_ctf_range_status")
-    @patch("cms.handlers.range_events.RangeInstance")
-    def test_process_range_event_no_bridge_on_non_ready(self, mock_ri_model, mock_ctf, mock_bridge):
-        """Bridge is NOT called for non-READY status transitions."""
-        request_id = str(uuid4())
+    def test_no_bridge_on_non_ready(self, user, sqs_client):
+        req = _request(user)
+        _experiment_run(user, req)
+        _range_instance(user, request=req)
 
-        mock_instance = MagicMock()
-        mock_instance.user_id = 1
-        mock_instance.status = "provisioning"
-        mock_instance.range_id = None
-        mock_instance.pk = 99
-        mock_ri_model.objects.get.return_value = mock_instance
-        mock_ri_model.DoesNotExist = Exception
-
-        event = {
-            "event_type": "range.status.updated",
-            "request_id": request_id,
-            "range_id": 1,
-            "user_id": 1,
-            "new_status": ResourceStatus.PROVISIONING.value,
-        }
-
-        from cms.handlers import process_range_event
-
-        process_range_event(event)
-
-        mock_bridge.assert_not_called()
-
-    @patch("cms.handlers.experiment_bridge.publish_range_provisioned_for_experiment")
-    @patch(PATCH_EXP_RUN)
-    def test_bridge_marks_run_failed_on_sqs_error(self, mock_run_model, mock_publish):
-        """When SQS publish fails, the experiment run is marked FAILED."""
-        from cms.experiments.events import ExperimentEventError
-
-        request_id = uuid4()
-        ri = MagicMock()
-        ri.request.request_id = request_id
-
-        mock_run = MagicMock()
-        mock_run.experiment_id = 10
-        mock_run.pk = 5
-        mock_run_model.objects.select_related.return_value.get.return_value = mock_run
-        mock_run_model.DoesNotExist = Exception
-
-        mock_publish.side_effect = ExperimentEventError("SQS unavailable")
-
-        from cms.handlers import notify_experiment_on_range_ready
-
-        provisioned_instances = {"Workstation": {"instance_id": "i-abc123"}}
-        notify_experiment_on_range_ready(ri, provisioned_instances)
-
-        # Run should be marked FAILED with error message
-        assert mock_run.error_message == "Failed to publish range provisioning notification"
-        mock_run.save.assert_called_once()
-        mock_run.transition_to.assert_called_once_with(RunStatus.FAILED)
+        process_range_event(self._event(req, user, new_status=ResourceStatus.PROVISIONING.value))
+        sqs_client.send_message.assert_not_called()

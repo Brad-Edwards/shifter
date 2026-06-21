@@ -171,16 +171,21 @@ fi
 # pool without rebuilding the image. Defaults are conservative: 4 workers and
 # a 90s timeout (Gunicorn's 30s default would kill long-lived WebSocket and
 # SSH terminal connections that are the portal's main workload). The worker
-# class string is `uvicorn_worker.UvicornWorker` (the supported standalone
-# `uvicorn-worker` package) — `uvicorn.workers.UvicornWorker` is deprecated
-# upstream. `tests/test_asgi_worker_smoke.py` pins the import contract in CI.
+# class is `config.asgi_worker.ShifterUvicornWorker`, a subclass of the
+# supported standalone `uvicorn-worker` package's `UvicornWorker`
+# (`uvicorn.workers.UvicornWorker` is deprecated upstream). The subclass pins
+# an explicit WebSocket keepalive (`ws_ping_interval`/`ws_ping_timeout`) sized
+# below the ALB idle_timeout so long-lived terminal/notification/RDP sockets
+# are not silently reaped (issue #931); the bare worker would leave the ping
+# settings to Uvicorn's defaults. `tests/test_asgi_worker_smoke.py` pins both
+# the import contract and the keepalive in CI.
 if [[ $# -gt 0 ]]; then
     echo "Running: $@"
     exec "$@"
 else
     echo "Starting gunicorn (uvicorn workers)..."
     exec gunicorn config.asgi:application \
-        --worker-class uvicorn_worker.UvicornWorker \
+        --worker-class config.asgi_worker.ShifterUvicornWorker \
         --bind "${PORTAL_WEB_BIND:-0.0.0.0:8000}" \
         --workers "${PORTAL_WEB_WORKERS:-4}" \
         --timeout "${PORTAL_WEB_TIMEOUT:-90}" \

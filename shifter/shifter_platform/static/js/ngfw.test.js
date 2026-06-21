@@ -289,6 +289,36 @@ describe('NGFWWizardManager', () => {
 
             console.error = originalError;
         });
+
+        test('WebSocket onmessage logs an unknown status as "unknown" (no raw payload)', () => {
+            wizard.ngfwId = 42;
+            wizard.connectWebSocket();
+
+            const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+            // A status outside the known set (here carrying CR/LF) must not reach
+            // the log verbatim; it is collapsed to the safe 'unknown' literal.
+            mockWebSocket.onmessage({ data: JSON.stringify({ status: 'pending\r\nforged-log-entry' }) });
+
+            const statusLog = logSpy.mock.calls.find((args) => args[0] === 'NGFW status update:');
+            expect(statusLog).toBeDefined();
+            expect(statusLog[1]).toBe('unknown');
+
+            logSpy.mockRestore();
+        });
+
+        test('WebSocket onmessage logs a known status verbatim', () => {
+            wizard.ngfwId = 42;
+            wizard.connectWebSocket();
+
+            const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+            mockWebSocket.onmessage({ data: JSON.stringify({ status: 'pending' }) });
+
+            const statusLog = logSpy.mock.calls.find((args) => args[0] === 'NGFW status update:');
+            expect(statusLog).toBeDefined();
+            expect(statusLog[1]).toBe('pending');
+
+            logSpy.mockRestore();
+        });
     });
 
     describe('showSuccess', () => {

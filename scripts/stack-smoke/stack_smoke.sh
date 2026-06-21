@@ -72,6 +72,7 @@ MIGRATE=shifter-smoke-migrate
 read -r -d '' SMOKE_WORKER_SPECS_DEFAULT <<'SPECS' || true
 worker-cms|/tmp/worker-cms-heartbeat|python manage.py run_worker --queue cms --wait-time 1
 ctf-scheduler|/tmp/ctf-scheduler-heartbeat|python manage.py run_ctf_scheduler --poll-interval 1
+guacamole-bootstrap-prune|/tmp/guacamole-bootstrap-prune-heartbeat|python manage.py run_guacamole_bootstrap_prune --poll-interval 1
 SPECS
 SMOKE_WORKER_SPECS="${SMOKE_WORKER_SPECS:-$SMOKE_WORKER_SPECS_DEFAULT}"
 
@@ -201,6 +202,11 @@ declare -a common_env=(
   -e OIDC_AUTH_DOMAIN=https://auth.example.test
   -e "REDIS_HOST=${REDIS}" -e REDIS_PORT=6379
   -e CHANNEL_LAYER_BACKEND=redis
+  # The shared notification websocket (SMOKE_WS_PATH) is parked by default
+  # (#941); enable it here so the ws_handshake probe has a routed consumer to
+  # accept through the real ASGI stack. This exercises the enabled path in the
+  # built image, not the production default.
+  -e WEBSOCKET_NOTIFICATIONS_ENABLED=true
   -e "AWS_ENDPOINT_URL=http://${ELASTICMQ}:9324"
   -e AWS_ACCESS_KEY_ID=stack-smoke -e AWS_SECRET_ACCESS_KEY=stack-smoke -e AWS_DEFAULT_REGION=us-east-2
   -e "SQS_CMS_URL=http://${ELASTICMQ}:9324/000000000000/cms"

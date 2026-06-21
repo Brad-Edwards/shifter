@@ -2,6 +2,9 @@
   "name": "shifter-platform",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=20.19.0"
+  },
   "scripts": {
     "test": "jest",
     "test:coverage": "jest --coverage"
@@ -22,13 +25,13 @@
     ]
   },
   "devDependencies": {
-    "@eslint/js": "^9.39.2",
-    "eslint": "^9.39.2",
-    "eslint-plugin-security": "^3.0.1",
-    "globals": "^16.5.0",
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.3.0",
+    "eslint-plugin-security": "^4.0.0",
+    "globals": "^17.6.0",
     "jest": "^30.4.2",
     "jest-environment-jsdom": "^30.4.1",
-    "stylelint": "^16.26.1",
-    "stylelint-config-standard": "^39.0.1"
+    "stylelint": "^17.11.1",
+    "stylelint-config-standard": "^40.0.0"
   }
 }

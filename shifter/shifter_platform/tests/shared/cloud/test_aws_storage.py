@@ -1,4 +1,10 @@
-"""Tests for AWSObjectStorage.read_object_header."""
+"""Behavior tests for AWSObjectStorage.read_object_header.
+
+Drives the real ``AWSObjectStorage`` (including its real ``_get_client`` region/
+endpoint/Config resolution) and mocks only the boto3 boundary: ``boto3.client``
+is patched to return a fake S3 client, instead of patching the first-party
+``_get_client`` method directly.
+"""
 
 from io import BytesIO
 from unittest.mock import MagicMock, patch
@@ -24,7 +30,7 @@ class TestReadObjectHeader:
         fake_client = MagicMock()
         fake_client.get_object.return_value = _make_get_object_response(b"\x50\x4b\x03\x04rest")
 
-        with patch.object(storage, "_get_client", return_value=fake_client):
+        with patch("boto3.client", return_value=fake_client):
             result = storage.read_object_header("my-bucket", "my-key", max_bytes=512)
 
         assert result == b"\x50\x4b\x03\x04rest"
@@ -41,7 +47,7 @@ class TestReadObjectHeader:
         # adapter must still tolerate a longer body and cap it.
         fake_client.get_object.return_value = _make_get_object_response(b"x" * 2048)
 
-        with patch.object(storage, "_get_client", return_value=fake_client):
+        with patch("boto3.client", return_value=fake_client):
             result = storage.read_object_header("b", "k", max_bytes=128)
 
         assert len(result) <= 128
@@ -58,7 +64,7 @@ class TestReadObjectHeader:
         fake_client = MagicMock()
         fake_client.get_object.side_effect = _make_client_error("NoSuchKey")
 
-        with patch.object(storage, "_get_client", return_value=fake_client), pytest.raises(CloudStorageError):
+        with patch("boto3.client", return_value=fake_client), pytest.raises(CloudStorageError):
             storage.read_object_header("b", "k", max_bytes=512)
 
     def test_other_client_error_maps_to_cloud_storage_error(self):
@@ -66,5 +72,5 @@ class TestReadObjectHeader:
         fake_client = MagicMock()
         fake_client.get_object.side_effect = _make_client_error("AccessDenied")
 
-        with patch.object(storage, "_get_client", return_value=fake_client), pytest.raises(CloudStorageError):
+        with patch("boto3.client", return_value=fake_client), pytest.raises(CloudStorageError):
             storage.read_object_header("b", "k", max_bytes=512)
