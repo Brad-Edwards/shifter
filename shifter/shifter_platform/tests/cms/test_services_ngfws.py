@@ -39,8 +39,8 @@ pytestmark = pytest.mark.django_db
 User = get_user_model()
 
 _CRED_SPEC = {
-    "deployment_profile": "shared.schemas.DeploymentProfileSpec",
-    "scm": "shared.schemas.SCMCredentialSpec",
+    "deployment_profile": "credential.deployment_profile",
+    "scm": "credential.scm",
 }
 _SCM_DATA = {
     "name": "scm",
@@ -63,11 +63,9 @@ def _ngfw_catalog(db):
     from cms.models import AppType, InstanceType
 
     InstanceType.objects.get_or_create(
-        slug="panw-ngfw", defaults={"name": "PAN-OS NGFW", "spec_class": "shared.schemas.range.InstanceSpec"}
+        slug="panw-ngfw", defaults={"name": "PAN-OS NGFW", "spec_slug": "instance.panw-ngfw"}
     )
-    AppType.objects.get_or_create(
-        slug="panw-ngfw", defaults={"name": "PANW NGFW", "spec_class": "shared.schemas.app.NGFWAppSpec"}
-    )
+    AppType.objects.get_or_create(slug="panw-ngfw", defaults={"name": "PANW NGFW", "spec_slug": "app.panw-ngfw"})
 
 
 @pytest.fixture
@@ -78,7 +76,7 @@ def user(db):
 def _credential(user, slug, data):
     from cms.models import Credential, CredentialType
 
-    ct, _ = CredentialType.objects.get_or_create(slug=slug, defaults={"name": slug, "spec_class": _CRED_SPEC[slug]})
+    ct, _ = CredentialType.objects.get_or_create(slug=slug, defaults={"name": slug, "spec_slug": _CRED_SPEC[slug]})
     return Credential.objects.create(user=user, credential_type=ct, name=f"{slug}-cred", data=data)
 
 

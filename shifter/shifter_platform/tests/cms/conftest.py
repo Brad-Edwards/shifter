@@ -131,7 +131,7 @@ def credential_type_obj():
     ct = CredentialType(
         name="Deployment Profile",
         slug="deployment_profile",
-        spec_class="shared.schemas.DeploymentProfileSpec",
+        spec_slug="credential.deployment_profile",
     )
     ct.pk = 1
     ct.id = 1
@@ -144,7 +144,7 @@ def scm_credential_type_obj():
     ct = CredentialType(
         name="SCM Credential",
         slug="scm",
-        spec_class="shared.schemas.SCMCredentialSpec",
+        spec_slug="credential.scm",
     )
     ct.pk = 2
     ct.id = 2
