@@ -86,7 +86,8 @@
                                       class="d-inline">
                                     {% csrf_token %}
                                     <button type="submit"
-                                            class="btn btn-sm toggle-btn {% if scenario.enabled %}toggle-btn-on{% else %}toggle-btn-off{% endif %}"
+                                            class="btn btn-sm toggle-btn
+                                                   {% if scenario.enabled %}toggle-btn-on{% else %}toggle-btn-off{% endif %}"
                                             onclick="return confirm('Toggle this setting?')">
                                         {% if scenario.enabled %}
                                             {% trans "Enabled" %}
@@ -102,7 +103,8 @@
                                       class="d-inline">
                                     {% csrf_token %}
                                     <button type="submit"
-                                            class="btn btn-sm toggle-btn {% if scenario.staff_only %}toggle-btn-staff{% else %}toggle-btn-public{% endif %}"
+                                            class="btn btn-sm toggle-btn
+                                                   {% if scenario.staff_only %}toggle-btn-staff{% else %}toggle-btn-public{% endif %}"
                                             onclick="return confirm('Toggle this setting?')">
                                         {% if scenario.staff_only %}
                                             {% trans "Staff Only" %}
