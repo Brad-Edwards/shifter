@@ -17,6 +17,7 @@ import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
+from uuid import UUID
 
 from cms.exceptions import CMSError
 from cms.models import RangeInstance
@@ -55,14 +56,18 @@ def _audit_log_call(**kwargs: Any) -> None:  # NOSONAR
 
 @dataclass(frozen=True)
 class _LifecycleOp:
-    """Operation-specific facts that distinguish pause from resume."""
+    """Operation-specific facts that distinguish pause from resume.
 
-    name: str  # log-message prefix, e.g. "pause_range"
-    verb: str  # short verb for the "cannot <verb>" log, e.g. "pause"
-    engine_call: Callable[[Any], Any]
+    ``name`` is the log-message prefix (e.g. ``"pause_range"``); ``verb`` is the
+    short verb used in the "cannot <verb>" log (e.g. ``"pause"``).
+    """
+
+    name: str
+    verb: str
+    engine_call: Callable[[UUID], bool]
     target_status: str
     revert_status: str
-    audit_action: Any
+    audit_action: AuditLog.Action
     failure_message: str
 
 
@@ -91,7 +96,7 @@ def _attempt_transition(
     instance: RangeInstance,
     op: _LifecycleOp,
     *,
-    request_id: Any,
+    request_id: UUID,
     audit_entity_id: int,
     user: User,
     label: str,

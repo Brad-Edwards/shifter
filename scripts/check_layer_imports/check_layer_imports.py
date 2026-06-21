@@ -167,6 +167,18 @@ def analyze_cyberscript_imports(base_path: Path) -> dict[str, list[str]]:
     return result
 
 
+def _private_facade_imports_in_tree(tree: ast.AST) -> set[str]:
+    """Return ``layer.path._private`` targets from one parsed module AST."""
+    targets: set[str] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ImportFrom) or node.level != 0 or not node.module:
+            continue
+        if node.module.split(".")[0] not in ALL_LAYERS:
+            continue
+        targets.update(f"{node.module}.{alias.name}" for alias in node.names if alias.name.startswith("_"))
+    return targets
+
+
 def get_private_facade_imports(layer_path: Path) -> set[str]:
     """Return ``layer.path._private`` targets imported via ``from ... import``.
 
@@ -190,14 +202,7 @@ def get_private_facade_imports(layer_path: Path) -> set[str]:
             # nosec B112 - skip unreadable / unparseable files
             continue
 
-        for node in ast.walk(tree):
-            if not isinstance(node, ast.ImportFrom) or node.level != 0 or not node.module:
-                continue
-            if node.module.split(".")[0] not in ALL_LAYERS:
-                continue
-            for alias in node.names:
-                if alias.name.startswith("_"):
-                    imports.add(f"{node.module}.{alias.name}")
+        imports.update(_private_facade_imports_in_tree(tree))
 
     return imports
 

@@ -401,9 +401,7 @@ def iter_private_facade_imports(text: str) -> set[str]:
             continue
         if node.module.split(".")[0] not in LAYERS:
             continue
-        for alias in node.names:
-            if alias.name.startswith("_"):
-                targets.add(f"{node.module}.{alias.name}")
+        targets.update(f"{node.module}.{alias.name}" for alias in node.names if alias.name.startswith("_"))
     return targets
 
 
