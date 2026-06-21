@@ -268,8 +268,8 @@ run_containers() {
   # (issue #931). DOCKER_STOP_TIMEOUT must stay below the ASG termination drain.
   local stop_timeout="${DOCKER_STOP_TIMEOUT:-35}"
   docker pull "$image"
-  docker stop --time "$stop_timeout" portal worker-cms worker-engine worker-mc ctf-scheduler 2>/dev/null || true
-  docker rm portal worker-cms worker-engine worker-mc ctf-scheduler 2>/dev/null || true
+  docker stop --time "$stop_timeout" portal worker-cms worker-engine worker-mc ctf-scheduler guacamole-bootstrap-prune 2>/dev/null || true
+  docker rm portal worker-cms worker-engine worker-mc ctf-scheduler guacamole-bootstrap-prune 2>/dev/null || true
   docker run -d --name portal --restart unless-stopped -p 8000:8000 "${common_env[@]}" "$image"
   docker run -d --name worker-cms --restart unless-stopped "${worker_health_base[@]}" \
     "--health-cmd=find /tmp/worker-cms-heartbeat -mmin -2 | grep -q ." \
@@ -283,6 +283,9 @@ run_containers() {
   docker run -d --name ctf-scheduler --restart unless-stopped "${worker_health_base[@]}" \
     "--health-cmd=find /tmp/ctf-scheduler-heartbeat -mmin -2 | grep -q ." \
     "${common_env[@]}" "$image" python manage.py run_ctf_scheduler
+  docker run -d --name guacamole-bootstrap-prune --restart unless-stopped "${worker_health_base[@]}" \
+    "--health-cmd=find /tmp/guacamole-bootstrap-prune-heartbeat -mmin -2 | grep -q ." \
+    "${common_env[@]}" "$image" python manage.py run_guacamole_bootstrap_prune
   docker ps
 }
 
@@ -310,6 +313,9 @@ main() {
   local sqs_mc_url
   local redis_endpoint
   local channel_layer_backend
+  local redis_secret_arn
+  local redis_tls
+  local redis_ca_mode
   local email_backend
   local ctf_from_email
   local platform_bootstrap_staff_emails
@@ -346,6 +352,11 @@ main() {
   sqs_mc_url=$(get_param "$PS_PREFIX/sqs-mc-url")
   redis_endpoint=$(get_optional_param "$PS_PREFIX/redis-endpoint")
   channel_layer_backend=$(get_optional_param "$PS_PREFIX/channel-layer-backend")
+  # Redis AUTH + in-transit encryption (#938). Mirrors user_data.sh: emit the
+  # secret reference + non-secret flags; entrypoint.sh hydrates the token.
+  redis_secret_arn=$(get_optional_param "$PS_PREFIX/redis-secret-arn")
+  redis_tls=$(get_optional_param "$PS_PREFIX/redis-tls")
+  redis_ca_mode=$(get_optional_param "$PS_PREFIX/redis-ca-mode")
   email_backend=$(get_optional_param "$PS_PREFIX/email-backend")
   ctf_from_email=$(get_optional_param "$PS_PREFIX/ctf-from-email")
   platform_bootstrap_staff_emails=$(get_optional_param "$PS_PREFIX/platform-bootstrap-staff-emails")
@@ -410,6 +421,9 @@ main() {
   append_env SQS_MC_URL "$sqs_mc_url"
   append_env_if_set REDIS_HOST "$redis_endpoint"
   append_env_if_set CHANNEL_LAYER_BACKEND "$channel_layer_backend"
+  append_env_if_set REDIS_SECRET_ID "$redis_secret_arn"
+  append_env_if_set REDIS_TLS "$redis_tls"
+  append_env_if_set REDIS_CA_MODE "$redis_ca_mode"
   append_env_if_set EMAIL_BACKEND "$email_backend"
   append_env_if_set CTF_FROM_EMAIL "$ctf_from_email"
   append_env_if_set PLATFORM_BOOTSTRAP_STAFF_EMAILS "$platform_bootstrap_staff_emails"

@@ -161,6 +161,24 @@ variable "enable_redis" {
   default     = false
 }
 
+variable "redis_secret_arn" {
+  description = "ARN of the Secrets Manager secret holding the Redis AUTH token (#938). Non-secret reference only; the token itself never enters Parameter Store. Empty on the plaintext single-node path."
+  type        = string
+  default     = ""
+}
+
+variable "redis_tls" {
+  description = "Whether the Redis channel-layer connection uses in-transit encryption + AUTH (#938). Drives the REDIS_TLS env var consumed by config/_channels.py."
+  type        = bool
+  default     = false
+}
+
+variable "redis_ca_mode" {
+  description = "TLS trust mode for the Redis server certificate (#938): 'system' (AWS ElastiCache public Amazon CA via the OS trust store) or 'pem' (bundled CA in REDIS_CA_PEM). Consumed by config/_channels.py as REDIS_CA_MODE."
+  type        = string
+  default     = "system"
+}
+
 variable "db_host_override" {
   description = "Override database host. If empty, uses RDS host from secret."
   type        = string

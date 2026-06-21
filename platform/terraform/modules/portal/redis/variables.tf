@@ -47,6 +47,18 @@ variable "enable_replication" {
   type        = bool
 }
 
+variable "secrets_kms_key_arn" {
+  description = "ARN of the portal Secrets Manager CMK used to encrypt the Redis AUTH token secret. Required when enable_replication is true (the AUTH/in-transit path stores the token in Secrets Manager); ignored on the single-node path. Default empty so non-replication callers need not pass it."
+  type        = string
+  default     = ""
+}
+
+variable "is_active_channel_backend" {
+  description = "True when this Redis is the active Django Channels backend for the environment (the env-root enable_redis posture). When true, the module requires the AUTH + in-transit encryption path (enable_replication = true); the single-node path is dev-only plaintext and must not back a live channel layer."
+  type        = bool
+  default     = false
+}
+
 # ------------------------------------------------------------------------------
 # Alarm Configuration
 # ------------------------------------------------------------------------------
