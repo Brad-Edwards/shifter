@@ -58,6 +58,13 @@ class TestCreateRangePersistence:
         assert range_obj.user == user
         assert range_obj.cms_user_id == user.id
 
+    def test_persists_range_config_with_schema_discriminator(self, user):
+        create_range(make_request_spec(user_id=user.id))
+        range_obj = Range.objects.get()
+        assert range_obj.range_config["spec_schema"] == "range_spec"
+        assert range_obj.range_config["spec_version"] == "1"
+        assert range_obj.range_config["payload"]["scenario_id"] == "basic-attack"
+
     def test_allocates_a_subnet_index(self, user):
         create_range(make_request_spec(user_id=user.id))
         assert Range.objects.get().subnet_index is not None

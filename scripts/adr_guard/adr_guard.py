@@ -223,14 +223,25 @@ def load_allowed_imports(config_path: Path) -> dict[str, list[str]]:
 
 
 def is_import_allowed(from_layer: str, module_path: str, allowed: dict[str, list[str]]) -> bool:
-    """Check whether an import is allowed by the layer policy."""
+    """Check whether an import is allowed by the layer policy.
+
+    A dotted entry (e.g. ``cms.services``) is the public facade: the exact
+    facade and its public submodules are allowed, but a private split-package
+    submodule — any path component after the facade that starts with ``_``
+    (``cms.services._range_pause``) — is not a cross-layer seam (ADR-001-R1).
+    ``shared`` is the contracts layer and stays freely importable.
+    """
     for entry in allowed.get(from_layer, []):
         if entry == "shared":
             if module_path == "shared" or module_path.startswith("shared."):
                 return True
         elif "." in entry:
-            if module_path == entry or module_path.startswith(entry + "."):
+            if module_path == entry:
                 return True
+            if module_path.startswith(entry + "."):
+                remainder = module_path[len(entry) + 1 :]
+                if not any(part.startswith("_") for part in remainder.split(".")):
+                    return True
         elif module_path == entry:
             return True
     return False
@@ -369,6 +380,31 @@ def check_adr_registry(repo_root: Path, files: list[str] | None) -> list[Violati
     return violations
 
 
+def iter_private_facade_imports(text: str) -> set[str]:
+    """Return ``layer.path._private`` targets imported via ``from ... import``.
+
+    The ``IMPORT_PATTERN`` regex only captures the module path, so
+    ``from cms.services import _range_pause`` looks like an allowed
+    ``cms.services`` facade import. This AST pass recovers the imported name and,
+    when it is private (starts with ``_``) and the module belongs to one of our
+    layers, reconstructs the effective dotted target (``cms.services._range_pause``).
+    Relative imports (``from ._x import y``) and public names are ignored.
+    """
+    targets: set[str] = set()
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return targets
+
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ImportFrom) or node.level != 0 or not node.module:
+            continue
+        if node.module.split(".")[0] not in LAYERS:
+            continue
+        targets.update(f"{node.module}.{alias.name}" for alias in node.names if alias.name.startswith("_"))
+    return targets
+
+
 def check_layer_imports(repo_root: Path, files: list[str] | None) -> list[Violation]:
     """Check the layer import policy against selected files."""
     violations: list[Violation] = []
@@ -377,7 +413,11 @@ def check_layer_imports(repo_root: Path, files: list[str] | None) -> list[Violat
 
     for rel, from_layer in iter_layer_files(repo_root, files):
         text = (repo_root / rel).read_text(encoding="utf-8")
-        for module in sorted(set(IMPORT_PATTERN.findall(text))):
+        regex_modules = set(IMPORT_PATTERN.findall(text))
+        # AST recovers `from facade import _private`, which the regex sees only
+        # as the allowed facade module path.
+        private_modules = iter_private_facade_imports(text)
+        for module in sorted(regex_modules | private_modules):
             to_layer = module.split(".", 1)[0]
             if to_layer == from_layer:
                 continue

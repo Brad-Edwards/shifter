@@ -381,7 +381,11 @@ def test_provisioner_db_status_helpers_use_owning_module_connection(monkeypatch:
     _update_range_config(42, {"subnets": [{"name": "attack", "cidr": "10.1.2.0/28"}]})
 
     saved_spec, saved_range_id = config_cursor.execute_calls[0][1]
-    assert json.loads(saved_spec) == {"subnets": [{"name": "attack", "cidr": "10.1.2.0/28"}]}
+    assert json.loads(saved_spec) == {
+        "spec_schema": "range_spec",
+        "spec_version": "1",
+        "payload": {"subnets": [{"name": "attack", "cidr": "10.1.2.0/28"}]},
+    }
     assert saved_range_id == 42
     config_conn.commit.assert_called_once_with()
 

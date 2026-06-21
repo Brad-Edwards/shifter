@@ -21,7 +21,7 @@ def scm_credential_type():
             "id": 1,
             "name": "SCM Registration",
             "slug": "scm",
-            "spec_class": "shared.schemas.SCMCredentialSpec",
+            "spec_slug": "credential.scm",
         }
     )
     return ct
@@ -38,7 +38,7 @@ def deployment_profile_type():
             "id": 2,
             "name": "NGFW Deployment Profile",
             "slug": "deployment_profile",
-            "spec_class": "shared.schemas.DeploymentProfileSpec",
+            "spec_slug": "credential.deployment_profile",
         }
     )
     return ct
@@ -99,7 +99,7 @@ def _real_user(suffix):
 def _real_ct(slug, spec):
     from cms.models import CredentialType
 
-    return CredentialType.objects.get_or_create(slug=slug, defaults={"name": slug, "spec_class": spec})[0]
+    return CredentialType.objects.get_or_create(slug=slug, defaults={"name": slug, "spec_slug": spec})[0]
 
 
 # ---------------------------------------------------------------------------
@@ -115,14 +115,12 @@ class TestCredentialType:
         """CredentialType can be created with required fields."""
         from cms.models import CredentialType
 
-        cred_type = CredentialType.objects.create(
-            name="Test Type", slug="test-cred-type", spec_class="shared.schemas.SCMCredentialSpec"
-        )
+        cred_type = CredentialType.objects.create(name="Test Type", slug="test-cred-type", spec_slug="credential.scm")
 
         persisted = CredentialType.objects.get(pk=cred_type.pk)
         assert persisted.name == "Test Type"
         assert persisted.slug == "test-cred-type"
-        assert persisted.spec_class == "shared.schemas.SCMCredentialSpec"
+        assert persisted.spec_slug == "credential.scm"
 
     def test_get_spec_class_loads_scm_spec(self, scm_credential_type):
         """get_spec_class() should load SCMCredentialSpec."""
