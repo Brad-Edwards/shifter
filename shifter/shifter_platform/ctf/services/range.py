@@ -202,7 +202,9 @@ def _safe_heartbeat(heartbeat: Callable[[], None] | None, event_id: UUID) -> Non
     try:
         heartbeat()
     except Exception:
-        logger.warning("Spin-up heartbeat failed for event %s", event_id, exc_info=True)
+        # A persistently failing heartbeat is what re-opens the stale-sweep bug
+        # this guards against, so surface it (with traceback) rather than hide it.
+        logger.exception("Spin-up heartbeat failed for event %s", event_id)
 
 
 def _record_provision_attempt(
