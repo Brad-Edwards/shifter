@@ -175,6 +175,62 @@ class TestGuacamoleBootstrapStatus:
         bootstrap.refresh_from_db()
         assert bootstrap.status == GuacamoleBootstrapRequest.Status.FAILED
 
+    def test_first_poll_delivers_url_then_clears_token(self, rf, mock_user):
+        from mission_control.models import GuacamoleBootstrapRequest
+
+        bootstrap = self._bootstrap(
+            mock_user,
+            status=GuacamoleBootstrapRequest.Status.SUCCEEDED,
+            result_url="https://guac/secret-token",
+        )
+
+        response = _get_status(rf, mock_user, bootstrap.id)
+
+        assert response.status_code == 200
+        assert _json(response)["url"] == "https://guac/secret-token"
+        bootstrap.refresh_from_db()
+        assert bootstrap.result_url == ""
+        assert bootstrap.delivered_at is not None
+
+    def test_repeat_poll_does_not_replay_url(self, rf, mock_user):
+        from mission_control.models import GuacamoleBootstrapRequest
+
+        bootstrap = self._bootstrap(
+            mock_user,
+            status=GuacamoleBootstrapRequest.Status.SUCCEEDED,
+            result_url="https://guac/secret-token",
+        )
+
+        first = _get_status(rf, mock_user, bootstrap.id)
+        second = _get_status(rf, mock_user, bootstrap.id)
+
+        assert first.status_code == 200
+        assert second.status_code == 410
+        assert "url" not in _json(second)
+
+    def test_expired_succeeded_poll_clears_parked_url(self, rf, mock_user):
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        from mission_control.models import GuacamoleBootstrapRequest
+
+        bootstrap = GuacamoleBootstrapRequest.objects.create(
+            user_id=mock_user.id,
+            protocol=GuacamoleBootstrapRequest.Protocol.RDP,
+            target_id="vm-1",
+            status=GuacamoleBootstrapRequest.Status.SUCCEEDED,
+            result_url="https://guac/secret-token",
+            expires_at=timezone.now() - timedelta(seconds=1),
+        )
+
+        response = _get_status(rf, mock_user, bootstrap.id)
+
+        assert response.status_code == 410
+        assert "url" not in _json(response)
+        bootstrap.refresh_from_db()
+        assert bootstrap.result_url == ""
+
     def test_open_page_contains_status_url_for_owner(self, rf, mock_user):
         from mission_control.models import GuacamoleBootstrapRequest
 

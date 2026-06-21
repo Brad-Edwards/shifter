@@ -268,8 +268,8 @@ run_containers() {
   # (issue #931). DOCKER_STOP_TIMEOUT must stay below the ASG termination drain.
   local stop_timeout="${DOCKER_STOP_TIMEOUT:-35}"
   docker pull "$image"
-  docker stop --time "$stop_timeout" portal worker-cms worker-engine worker-mc ctf-scheduler 2>/dev/null || true
-  docker rm portal worker-cms worker-engine worker-mc ctf-scheduler 2>/dev/null || true
+  docker stop --time "$stop_timeout" portal worker-cms worker-engine worker-mc ctf-scheduler guacamole-bootstrap-prune 2>/dev/null || true
+  docker rm portal worker-cms worker-engine worker-mc ctf-scheduler guacamole-bootstrap-prune 2>/dev/null || true
   docker run -d --name portal --restart unless-stopped -p 8000:8000 "${common_env[@]}" "$image"
   docker run -d --name worker-cms --restart unless-stopped "${worker_health_base[@]}" \
     "--health-cmd=find /tmp/worker-cms-heartbeat -mmin -2 | grep -q ." \
@@ -283,6 +283,9 @@ run_containers() {
   docker run -d --name ctf-scheduler --restart unless-stopped "${worker_health_base[@]}" \
     "--health-cmd=find /tmp/ctf-scheduler-heartbeat -mmin -2 | grep -q ." \
     "${common_env[@]}" "$image" python manage.py run_ctf_scheduler
+  docker run -d --name guacamole-bootstrap-prune --restart unless-stopped "${worker_health_base[@]}" \
+    "--health-cmd=find /tmp/guacamole-bootstrap-prune-heartbeat -mmin -2 | grep -q ." \
+    "${common_env[@]}" "$image" python manage.py run_guacamole_bootstrap_prune
   docker ps
 }
 
