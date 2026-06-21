@@ -24,6 +24,11 @@ IMPORT_PATTERN = re.compile(
     r"^\s*(?:from|import)\s+((?:shared|engine|cms|management|mission_control|ctf)(?:\.\w+)*)",
     re.MULTILINE,
 )
+CYBERSCRIPT_IMPORT_PATTERN = re.compile(
+    r"^\s*(?:from|import)\s+(cyberscript(?:\.\w+)*)",
+    re.MULTILINE,
+)
+CYBERSCRIPT_ALLOWED_LAYER = "shared"
 REQUIRED_ADR_KEYS = {
     "id",
     "title",
@@ -383,6 +388,16 @@ def check_layer_imports(repo_root: Path, files: list[str] | None) -> list[Violat
                         "ADR-001-R1",
                         rel,
                         f"{from_layer} may not import {module}",
+                    )
+                )
+        if from_layer != CYBERSCRIPT_ALLOWED_LAYER:
+            for module in sorted(set(CYBERSCRIPT_IMPORT_PATTERN.findall(text))):
+                violations.append(
+                    Violation(
+                        "layer-imports",
+                        "ADR-001-R1",
+                        rel,
+                        f"{from_layer} may not import {module}; use shared shims",
                     )
                 )
 

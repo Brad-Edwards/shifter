@@ -189,7 +189,7 @@ class TestSensitiveKeysContract:
                 )
 
     def test_listed_secrets_actually_exist_on_instance_specs(self):
-        from cyberscript.schemas.app import NGFWAppSpec
+        from shared.schemas.app import NGFWAppSpec
 
         spec_classes = {"NGFWAppSpec": NGFWAppSpec}
         for spec_name, keys in _INSTANCE_SPEC_SECRET_KEYS.items():

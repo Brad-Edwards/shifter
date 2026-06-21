@@ -7,8 +7,9 @@ from __future__ import annotations
 
 from enum import StrEnum
 
-from cyberscript.template_vars import TemplateString
 from pydantic import BaseModel, Field, field_validator, model_validator
+
+from shared.template_vars import TemplateString
 
 # ---------------------------------------------------------------------------
 # Enums

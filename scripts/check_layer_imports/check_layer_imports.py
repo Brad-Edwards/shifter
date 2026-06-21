@@ -34,6 +34,14 @@ IMPORT_PATTERN = re.compile(
     re.MULTILINE,
 )
 
+# Direct cyberscript imports — only the shared layer may import cyberscript.
+CYBERSCRIPT_IMPORT_PATTERN = re.compile(
+    r"^\s*(?:from|import)\s+(cyberscript(?:\.\w+)*)",
+    re.MULTILINE,
+)
+
+CYBERSCRIPT_ALLOWED_LAYER = "shared"
+
 
 def load_allowed_imports(config_path: Path) -> dict[str, list[str]]:
     """Load allowed imports from YAML config file.
@@ -99,7 +107,8 @@ def get_imports(layer_path: Path) -> dict[str, set[str]]:
     for py_file in layer_path.rglob("*.py"):
         try:
             content = py_file.read_text()
-        except Exception:  # nosec B112 - skip unreadable files
+        except Exception:
+            # nosec B112 - skip unreadable files
             continue
 
         for match in set(IMPORT_PATTERN.findall(content)):
@@ -108,6 +117,45 @@ def get_imports(layer_path: Path) -> dict[str, set[str]]:
             imports[base_layer].add(match)
 
     return imports
+
+
+def get_cyberscript_imports(layer_path: Path) -> set[str]:
+    """Return cyberscript module paths imported under a layer directory."""
+    imports: set[str] = set()
+
+    if not layer_path.exists():
+        return imports
+
+    for py_file in layer_path.rglob("*.py"):
+        try:
+            content = py_file.read_text()
+        except Exception:
+            # nosec B112 - skip unreadable files
+            continue
+
+        imports.update(CYBERSCRIPT_IMPORT_PATTERN.findall(content))
+
+    return imports
+
+
+def compute_cyberscript_violations(from_layer: str, modules: set[str]) -> list[str]:
+    """Return cyberscript imports that violate the shared-only rule."""
+    if from_layer == CYBERSCRIPT_ALLOWED_LAYER or not modules:
+        return []
+    return sorted(modules)
+
+
+def analyze_cyberscript_imports(base_path: Path) -> dict[str, list[str]]:
+    """Analyze direct cyberscript imports per layer."""
+    result: dict[str, list[str]] = {}
+
+    for from_layer in ALL_LAYERS:
+        modules = get_cyberscript_imports(base_path / from_layer)
+        violations = compute_cyberscript_violations(from_layer, modules)
+        if violations:
+            result[from_layer] = violations
+
+    return result
 
 
 def analyze_imports(base_path: Path) -> dict:
@@ -132,7 +180,28 @@ def analyze_imports(base_path: Path) -> dict:
     return result
 
 
-def compute_stats(imports: dict, allowed: dict[str, list[str]]) -> dict:
+def _apply_cyberscript_violations(stats: dict[str, object], cyberscript: dict[str, list[str]]) -> None:
+    """Roll cyberscript boundary violations into summary stats."""
+    for from_layer, modules in cyberscript.items():
+        stats["violations"] = int(stats["violations"]) + len(modules)
+        layers_with_violations = stats["layers_with_violations"]
+        if from_layer not in layers_with_violations:
+            layers_with_violations.append(from_layer)
+        violation_details = stats["violation_details"]
+        violation_details.append(
+            {
+                "from": from_layer,
+                "to": "cyberscript",
+                "modules": modules,
+            }
+        )
+
+
+def compute_stats(
+    imports: dict[str, dict[str, list[str]]],
+    allowed: dict[str, list[str]],
+    cyberscript: dict[str, list[str]] | None = None,
+) -> dict[str, object]:
     """Compute summary statistics from import analysis."""
     stats = {
         "total_cross_layer_imports": 0,
@@ -163,6 +232,9 @@ def compute_stats(imports: dict, allowed: dict[str, list[str]]) -> dict:
 
         if layer_has_violation:
             stats["layers_with_violations"].append(from_layer)
+
+    if cyberscript:
+        _apply_cyberscript_violations(stats, cyberscript)
 
     # Determine clean layers (no violations)
     for layer in ALL_LAYERS:
@@ -220,11 +292,13 @@ def main():
 
     # Analyze imports
     imports = analyze_imports(base_path)
-    stats = compute_stats(imports, allowed)
+    cyberscript = analyze_cyberscript_imports(base_path)
+    stats = compute_stats(imports, allowed, cyberscript)
 
     # Build output
     output = {
         "imports": imports,
+        "cyberscript_imports": cyberscript,
         "stats": stats,
     }
 
