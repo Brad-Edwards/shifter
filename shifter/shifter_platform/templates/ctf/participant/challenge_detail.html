@@ -114,13 +114,14 @@
                                 <ul class="list-unstyled mt-1">
                                     {% for file in challenge_files %}
                                         <li class="mb-1">
-                                            <a href="#"
-                                               class="btn btn-sm btn-outline-primary"
-                                               data-download-url="{% url 'ctf:api_file_download' file_id=file.pk %}">
+                                            <button type="button"
+                                                    class="btn btn-sm btn-outline-primary"
+                                                    data-download-url="
+                                                        {% url 'ctf:api_file_download' file_id=file.pk %}">
                                                 {% blocktrans with v1=file.display %}
                                                     &#128196; {{ v1 }}
                                                 {% endblocktrans %}
-                                            </a>
+                                            </button>
                                             <small class="text-muted ms-1">{{ file.file_size_display }}</small>
                                         </li>
                                     {% endfor %}

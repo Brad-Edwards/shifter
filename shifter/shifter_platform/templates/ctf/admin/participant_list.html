@@ -238,13 +238,14 @@
                             <td>
                                 <div class="flex-row gap-sm">
                                     <a href="{% url 'ctf:admin_participant_detail' participant_id=participant.pk %}"
-                                       class="btn btn-secondary"
-                                       title='{% trans "View" %}'>{% trans "View" %}</a>
+                                       class="btn btn-secondary">
+                                        {% trans "View" %}<span class="visually-hidden"> {{ participant.name }}</span>
+                                    </a>
                                     <button type="button"
-                                            class="btn btn-secondary"
-                                            title='{% trans "Send Link" %}'
-                                            onclick="resendInvite('{{ participant.pk }}')">
+                                            class="btn btn-secondary js-resend-invite"
+                                            data-participant-id="{{ participant.pk }}">
                                         {% trans "Send Link" %}
+                                        <span class="visually-hidden"> {{ participant.name }}</span>
                                     </button>
                                 </div>
                             </td>
@@ -324,5 +325,11 @@ function resendInvite(participantId) {
         alert('Error resending invite: ' + err.message);
     });
 }
+
+document.querySelectorAll('.js-resend-invite').forEach(function(button) {
+    button.addEventListener('click', function() {
+        resendInvite(button.dataset.participantId);
+    });
+});
     </script>
 {% endblock %}

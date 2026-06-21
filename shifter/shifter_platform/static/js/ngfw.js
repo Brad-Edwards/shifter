@@ -161,6 +161,21 @@ class NGFWWizardManager {
         this.elements.otpFolderInput?.addEventListener('input', (e) => {
             this.formData.otp_folder = e.target.value.trim();
         });
+
+        this.elements.viewNgfwBtn?.addEventListener('click', () => {
+            const detailUrl = this.elements.viewNgfwBtn.dataset.detailUrl;
+            if (detailUrl) {
+                globalThis.location.href = detailUrl;
+            }
+        });
+    }
+
+    _setViewNgfwDetailUrl() {
+        if (!this.elements.viewNgfwBtn || !this.ngfwId) {
+            return;
+        }
+        this.elements.viewNgfwBtn.dataset.detailUrl =
+            this.detailUrlTemplate.replace('{id}', this.ngfwId);
     }
 
     setInitialState() {
@@ -281,9 +296,7 @@ class NGFWWizardManager {
 
             // Connect WebSocket for status updates
             this.ngfwId = data.id;
-            if (this.elements.viewNgfwBtn) {
-                this.elements.viewNgfwBtn.href = this.detailUrlTemplate.replace('{id}', this.ngfwId);
-            }
+            this._setViewNgfwDetailUrl();
             this.connectWebSocket();
 
         } catch (err) {
