@@ -372,6 +372,15 @@ def disqualify_participant(participant_id: UUID, reason: str | None = None) -> C
     participant.status = ParticipantStatus.DISQUALIFIED.value
     participant.save(update_fields=["status", "updated_at"])
 
+    # Maintain the materialized leaderboard (issue #850): a disqualified
+    # participant drops off the individual board via the eligibility filter at
+    # read time, but their team's materialized score must shed their
+    # contribution now.
+    if participant.team_id is not None:
+        from ctf.services.scoring import recompute_team_score
+
+        recompute_team_score(participant.team_id)
+
     # Clear CTF participant profile if user was linked
     if participant.user is not None:
         _clear_ctf_participant_profile(participant.user, participant.event)

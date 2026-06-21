@@ -255,6 +255,16 @@ def submit_flag(
         # Update participant last active
         participant.update_last_active()
 
+        # Maintain the materialized leaderboard (issue #850) in the same
+        # transaction as the authoritative write. Only a correct submission
+        # changes score/solve-count/last-solve, so incorrect attempts stay
+        # cheap (no recompute) — important under wrong-answer load.
+        if is_correct:
+            from ctf.services.scoring import recompute_participant_score, recompute_team_score
+
+            recompute_participant_score(participant.id)
+            recompute_team_score(participant.team_id)
+
     return submission
 
 

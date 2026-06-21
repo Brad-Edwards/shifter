@@ -121,3 +121,96 @@ class TestHandleSendReminder:
         _handle_send_reminder(scheduled_task)
 
         mock_send.assert_called_once_with(scheduled_task.event_id, hours_before=24)
+
+
+@pytest.mark.django_db
+class TestHandleSpinUpRanges:
+    """_handle_spin_up_ranges converts the spin-up window, forwards the
+    heartbeat to the throttled service, and returns its result so the
+    dispatcher can detect interruption. With no unassigned participants the
+    throttled loop is a no-op, which keeps this test free of CMS-boundary
+    mocking."""
+
+    def test_returns_throttled_result(self, ctf_event):
+        from django.utils import timezone
+
+        from ctf.enums import ScheduledTaskType
+        from ctf.management.commands.run_ctf_scheduler import _handle_spin_up_ranges
+        from ctf.models import CTFScheduledTask
+
+        task = CTFScheduledTask.objects.create(
+            event=ctf_event,
+            task_type=ScheduledTaskType.SPIN_UP_RANGES.value,
+            scheduled_for=timezone.now(),
+        )
+
+        result = _handle_spin_up_ranges(task, shutdown_check=lambda: False, heartbeat=MagicMock())
+
+        assert result["interrupted"] is False
+        assert result["total"] == 0
+
+
+class TestExecuteTaskInterruption:
+    """_execute_task records interruption as recoverable, not completed."""
+
+    def _make_task(self):
+        task = MagicMock()
+        task.task_type = "spin_up_ranges"
+        return task
+
+    def test_requeues_on_interrupted_result(self, monkeypatch):
+        from ctf.management.commands import run_ctf_scheduler as cmd
+
+        task = self._make_task()
+
+        def handler(_task, shutdown_check=None, heartbeat=None):
+            return {"interrupted": True}
+
+        monkeypatch.setitem(cmd.TASK_HANDLERS, "spin_up_ranges", handler)
+        cmd.Command()._execute_task(task)
+
+        task.requeue_for_resume.assert_called_once()
+        task.mark_completed.assert_not_called()
+
+    def test_completes_on_normal_result(self, monkeypatch):
+        from ctf.management.commands import run_ctf_scheduler as cmd
+
+        task = self._make_task()
+
+        def handler(_task, shutdown_check=None, heartbeat=None):
+            return {"interrupted": False}
+
+        monkeypatch.setitem(cmd.TASK_HANDLERS, "spin_up_ranges", handler)
+        cmd.Command()._execute_task(task)
+
+        task.mark_completed.assert_called_once()
+        task.requeue_for_resume.assert_not_called()
+
+    def test_completes_on_none_result(self, monkeypatch):
+        from ctf.management.commands import run_ctf_scheduler as cmd
+
+        task = self._make_task()
+        task.task_type = "event_start"
+
+        def handler(_task, shutdown_check=None, heartbeat=None):
+            return None
+
+        monkeypatch.setitem(cmd.TASK_HANDLERS, "event_start", handler)
+        cmd.Command()._execute_task(task)
+
+        task.mark_completed.assert_called_once()
+
+    def test_marks_failed_on_exception(self, monkeypatch):
+        from ctf.management.commands import run_ctf_scheduler as cmd
+
+        task = self._make_task()
+
+        def handler(_task, shutdown_check=None, heartbeat=None):
+            raise RuntimeError("boom")
+
+        monkeypatch.setitem(cmd.TASK_HANDLERS, "spin_up_ranges", handler)
+        cmd.Command()._execute_task(task)
+
+        task.mark_failed.assert_called_once()
+        task.mark_completed.assert_not_called()
+        task.requeue_for_resume.assert_not_called()
