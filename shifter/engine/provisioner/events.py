@@ -48,31 +48,30 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
+from cyberscript.enums import ResourceStatus
+from cyberscript.wire_constants import (
+    EVENT_TYPE_CANCELLED,
+    EVENT_TYPE_DESTROYED,
+    EVENT_TYPE_NGFW,
+    EVENT_TYPE_PROVISIONED,
+    EVENT_TYPE_STATUS_UPDATED,
+)
+
 from cloud import get_event_bus
 from log_redact import safe_log_fingerprint, safe_log_value
 
 logger = logging.getLogger(__name__)
 
-# Resource event type constants (mirroring shared.messages.events); consolidating
-# these into the shared package is tracked in #641.
-EVENT_TYPE_STATUS_UPDATED = "range.status.updated"
-EVENT_TYPE_PROVISIONED = "range.provisioned"
-EVENT_TYPE_DESTROYED = "range.destroyed"
-EVENT_TYPE_CANCELLED = "range.cancelled"
-
-# NGFW event type constant (matching shared.messages.events)
-EVENT_TYPE_NGFW = "ngfw.event"
-
-# Resource status constants (matching shared.enums.ResourceStatus)
-STATUS_PENDING = "pending"
-STATUS_PROVISIONING = "provisioning"
-STATUS_READY = "ready"
-STATUS_PAUSING = "pausing"
-STATUS_PAUSED = "paused"
-STATUS_RESUMING = "resuming"
-STATUS_FAILED = "failed"
-STATUS_DESTROYING = "destroying"
-STATUS_DESTROYED = "destroyed"
+# Status string aliases for provisioner call sites (sourced from cyberscript.enums).
+STATUS_PENDING = ResourceStatus.PENDING.value
+STATUS_PROVISIONING = ResourceStatus.PROVISIONING.value
+STATUS_READY = ResourceStatus.READY.value
+STATUS_PAUSING = ResourceStatus.PAUSING.value
+STATUS_PAUSED = ResourceStatus.PAUSED.value
+STATUS_RESUMING = ResourceStatus.RESUMING.value
+STATUS_FAILED = ResourceStatus.FAILED.value
+STATUS_DESTROYING = ResourceStatus.DESTROYING.value
+STATUS_DESTROYED = ResourceStatus.DESTROYED.value
 
 
 def _get_sns_topic_arn() -> str:

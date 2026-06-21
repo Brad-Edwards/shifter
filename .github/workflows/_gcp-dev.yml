@@ -357,7 +357,8 @@ jobs:
       - name: Build and push provisioner image
         uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25
         with:
-          context: ./shifter/engine/provisioner
+          context: ./shifter
+          file: ./shifter/engine/provisioner/Dockerfile
           push: true
           tags: |
             ${{ env.PROVISIONER_IMAGE_ROOT }}:${{ env.SHORT_SHA }}
