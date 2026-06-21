@@ -40,7 +40,7 @@
     <form method="post" id="scenarioForm">
         {% csrf_token %}
         <!-- Basic Information -->
-        <div class="card" style="margin-bottom: 16px;">
+        <div class="card mb-lg">
             <div class="card-title">
                 {% trans "Basic Information" %}
             </div>
@@ -96,26 +96,21 @@
                            {% if scenario.ngfw %}
                                checked
                            {% endif %}>
-                    <label for="ngfw" style="margin-bottom: 0;">
+                    <label for="ngfw" class="form-label-inline">
                         {% trans "Requires NGFW (Next-Gen Firewall)" %}
                     </label>
                 </div>
             </div>
         </div>
         <!-- Instances -->
-        <div class="card" style="margin-bottom: 16px;">
-            <div style="display: flex;
-                        justify-content: space-between;
-                        align-items: center;
-                        margin-bottom: 12px">
-                <div class="card-title" style="margin-bottom: 0;">
+        <div class="card mb-lg">
+            <div class="card-section-header">
+                <div class="card-title mb-0">
                     {% trans "Instances" %}
                 </div>
                 <button type="button"
-                        class="btn btn-add"
-                        onclick="addInstance()"
-                        style="font-size: 12px;
-                               height: 28px">
+                        class="btn btn-add btn-add-sm"
+                        onclick="addInstance()">
                     {% trans "+ Add Instance" %}
                 </button>
             </div>
@@ -124,23 +119,18 @@
             </div>
         </div>
         <!-- Subnets -->
-        <div class="card" style="margin-bottom: 16px;">
-            <div style="display: flex;
-                        justify-content: space-between;
-                        align-items: center;
-                        margin-bottom: 12px">
-                <div class="card-title" style="margin-bottom: 0;">
+        <div class="card mb-lg">
+            <div class="card-section-header">
+                <div class="card-title mb-0">
                     {% trans "Subnets" %}
                 </div>
                 <button type="button"
-                        class="btn btn-add"
-                        onclick="addSubnet()"
-                        style="font-size: 12px;
-                               height: 28px">
+                        class="btn btn-add btn-add-sm"
+                        onclick="addSubnet()">
                     {% trans "+ Add Subnet" %}
                 </button>
             </div>
-            <div class="help-text" style="margin-bottom: 12px;">
+            <div class="help-text mb-md">
                 {% blocktrans trimmed %}
                     Define network segments. If no subnets are defined, all instances are placed in a single
                     default subnet.
@@ -208,9 +198,9 @@ function renderInstanceDCFields(inst, idx) {
         return '';
     }
     return `
-            <div style="margin-top: 8px; padding: 8px; background: rgba(100,100,255,0.05); border-radius: 4px;">
+            <div class="dc-config-panel">
                 <div class="inline-fields">
-                    <div class="form-group" style="margin-bottom: 4px;">
+                    <div class="form-group form-group-compact">
                         <label for="instance-domain-name-${idx}">Domain Name</label>
                         <input type="text"
                                id="instance-domain-name-${idx}"
@@ -219,7 +209,7 @@ function renderInstanceDCFields(inst, idx) {
                                onchange="updateDCConfig(${idx}, 'domain_name', this.value)"
                                placeholder="internal.shifter">
                     </div>
-                    <div class="form-group" style="margin-bottom: 4px;">
+                    <div class="form-group form-group-compact">
                         <label for="instance-netbios-${idx}">NetBIOS Name</label>
                         <input type="text"
                                id="instance-netbios-${idx}"
@@ -241,19 +231,16 @@ function renderInstances() {
         var card = document.createElement('div');
         card.className = 'instance-card';
         card.innerHTML = `
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom:
-                8px;">
-                <strong style="font-size: 14px;">Instance ${idx + 1}</strong>
+            <div class="instance-card-header">
+                <strong class="instance-card-title">Instance ${idx + 1}</strong>
                 <button type="button"
-                        class="btn btn-danger"
-                        onclick="removeInstance(${idx})"
-                        style="font-size: 11px; height: 22px; padding: 0 8px;
-                               border-radius: 11px; min-width: auto;">
+                        class="btn btn-danger btn-remove-sm"
+                        onclick="removeInstance(${idx})">
                     Remove
                 </button>
             </div>
             <div class="inline-fields">
-                <div class="form-group" style="margin-bottom: 8px;">
+                <div class="form-group form-group-compact">
                     <label for="instance-name-${idx}">Name</label>
                     <input type="text"
                            id="instance-name-${idx}"
@@ -263,7 +250,7 @@ function renderInstances() {
                            placeholder="Instance name"
                            required>
                 </div>
-                <div class="form-group" style="margin-bottom: 8px;">
+                <div class="form-group form-group-compact">
                     <label for="instance-role-${idx}">Role</label>
                     <select id="instance-role-${idx}"
                             class="form-select"
@@ -275,7 +262,7 @@ function renderInstances() {
                         }).join('')}
                     </select>
                 </div>
-                <div class="form-group" style="margin-bottom: 8px;">
+                <div class="form-group form-group-compact">
                     <label for="instance-os-${idx}">OS Type</label>
                     <select id="instance-os-${idx}"
                             class="form-select"
@@ -288,28 +275,27 @@ function renderInstances() {
                     </select>
                 </div>
             </div>
-            <div class="inline-fields" style="margin-top: 4px;">
+            <div class="inline-fields inline-fields-mt">
                 <div class="form-checkbox">
                     <input type="checkbox"
                            id="instance-xdr-${idx}"
                            ${inst.xdr_agent ? 'checked' : ''}
                            onchange="instances[${idx}].xdr_agent = this.checked">
-                    <label for="instance-xdr-${idx}" style="margin-bottom: 0; font-size: 13px;">XDR Agent</label>
+                    <label for="instance-xdr-${idx}" class="form-label-sm">XDR Agent</label>
                 </div>
                 <div class="form-checkbox">
                     <input type="checkbox"
                            id="instance-dc-${idx}"
                            ${inst.domain_controller ? 'checked' : ''}
                            onchange="handleDCChange(${idx}, this.checked)">
-                    <label for="instance-dc-${idx}" style="margin-bottom: 0; font-size: 13px;">Domain Controller</label>
+                    <label for="instance-dc-${idx}" class="form-label-sm">Domain Controller</label>
                 </div>
                 <div class="form-checkbox">
                     <input type="checkbox"
                            id="instance-join-domain-${idx}"
                            ${inst.join_domain ? 'checked' : ''}
                            onchange="instances[${idx}].join_domain = this.checked">
-                    <label for="instance-join-domain-${idx}"
-                           style="margin-bottom: 0; font-size: 13px;">Join Domain</label>
+                    <label for="instance-join-domain-${idx}" class="form-label-sm">Join Domain</label>
                 </div>
             </div>
             ${renderInstanceDCFields(inst, idx)}
@@ -328,18 +314,15 @@ function renderSubnets() {
         var card = document.createElement('div');
         card.className = 'subnet-card';
         card.innerHTML = `
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom:
-                8px;">
-                <strong style="font-size: 14px;">Subnet ${idx + 1}</strong>
+            <div class="instance-card-header">
+                <strong class="instance-card-title">Subnet ${idx + 1}</strong>
                 <button type="button"
-                        class="btn btn-danger"
-                        onclick="removeSubnet(${idx})"
-                        style="font-size: 11px; height: 22px; padding: 0 8px;
-                               border-radius: 11px; min-width: auto;">
+                        class="btn btn-danger btn-remove-sm"
+                        onclick="removeSubnet(${idx})">
                     Remove
                 </button>
             </div>
-            <div class="form-group" style="margin-bottom: 8px;">
+            <div class="form-group form-group-compact">
                 <label for="subnet-name-${idx}">Subnet Name</label>
                 <input type="text"
                        id="subnet-name-${idx}"
@@ -349,7 +332,7 @@ function renderSubnets() {
                        placeholder="core"
                        required>
             </div>
-            <div class="form-group" style="margin-bottom: 8px;">
+            <div class="form-group form-group-compact">
                 <label for="subnet-instances-${idx}">Instances (comma-separated names)</label>
                 <input type="text"
                        id="subnet-instances-${idx}"
@@ -360,7 +343,7 @@ function renderSubnets() {
                 <div class="help-text">Available: ${escapeHtml(instanceNames.join(', ') || '(define instances first)')}
                 </div>
             </div>
-            <div class="form-group" style="margin-bottom: 4px;">
+            <div class="form-group form-group-compact">
                 <label for="subnet-connected-${idx}">Connected To (comma-separated subnet names)</label>
                 <input type="text"
                        id="subnet-connected-${idx}"
