@@ -9,6 +9,7 @@ rendered response.
 """
 
 import time
+from pathlib import Path
 from uuid import uuid4
 
 import pytest
@@ -106,3 +107,11 @@ class TestNGFWDetailView:
 
         assert response.status_code == 302
         assert reverse("mission_control:ngfw_list") in response.url
+
+
+NGFW_DETAIL_TEMPLATE = Path(__file__).resolve().parents[2] / "templates" / "mission_control" / "ngfw" / "detail.html"
+
+
+def test_ngfw_detail_template_has_no_inline_style_attributes():
+    content = NGFW_DETAIL_TEMPLATE.read_text(encoding="utf-8")
+    assert 'style="' not in content, "ngfw/detail.html still contains inline style= attributes"

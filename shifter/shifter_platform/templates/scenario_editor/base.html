@@ -66,17 +66,15 @@
         <div class="layout">
             <main class="main">
                 {% if messages %}
-                    <div style="padding: 0 24px;">
+                    <div class="messages-container">
                         {% for message in messages %}
-                            <div class="{% if message.tags == 'success' %}
-                                            validation-valid
-                                        {% elif message.tags == 'error' %}
-                                            validation-invalid
-                                        {% else %}
-                                            validation-result
-                                        {% endif %}"
-                                 style="display: block;
-                                        margin-bottom: 8px">
+                            <div class="message-banner {% if message.tags == 'success' %}
+                                                            validation-valid
+                                                        {% elif message.tags == 'error' %}
+                                                            validation-invalid
+                                                        {% else %}
+                                                            validation-result
+                                                        {% endif %}">
                                 {{ message }}
                             </div>
                         {% endfor %}
