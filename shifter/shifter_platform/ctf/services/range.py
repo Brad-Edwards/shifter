@@ -227,7 +227,7 @@ def _record_provision_attempt(
         else:
             tallies["failed"] += 1
             errors.append({"participant_id": str(participant.pk), "error": str(e)})
-            logger.error("Failed to provision range for participant %s: %s", participant.pk, e)
+            logger.exception("Failed to provision range for participant %s", participant.pk)
 
 
 def provision_event_ranges_throttled(
