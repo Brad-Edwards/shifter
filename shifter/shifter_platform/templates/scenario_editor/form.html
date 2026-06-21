@@ -203,6 +203,36 @@ function parseNameList(value) {
     }).filter(Boolean);
 }
 
+function renderInstanceDCFields(inst, idx) {
+    if (!inst.domain_controller) {
+        return '';
+    }
+    return `
+            <div style="margin-top: 8px; padding: 8px; background: rgba(100,100,255,0.05); border-radius: 4px;">
+                <div class="inline-fields">
+                    <div class="form-group" style="margin-bottom: 4px;">
+                        <label for="instance-domain-name-${idx}">Domain Name</label>
+                        <input type="text"
+                               id="instance-domain-name-${idx}"
+                               class="form-input"
+                               value="${escapeHtml(inst.dc_config?.domain_name || 'internal.shifter')}"
+                               onchange="updateDCConfig(${idx}, 'domain_name', this.value)"
+                               placeholder="internal.shifter">
+                    </div>
+                    <div class="form-group" style="margin-bottom: 4px;">
+                        <label for="instance-netbios-${idx}">NetBIOS Name</label>
+                        <input type="text"
+                               id="instance-netbios-${idx}"
+                               class="form-input"
+                               value="${escapeHtml(inst.dc_config?.netbios_name || 'INTSHIFTER')}"
+                               onchange="updateDCConfig(${idx}, 'netbios_name', this.value)"
+                               placeholder="INTSHIFTER">
+                    </div>
+                </div>
+            </div>
+            `;
+}
+
 function renderInstances() {
     var container = document.getElementById('instances-container');
     container.innerHTML = '';
@@ -235,7 +265,9 @@ function renderInstances() {
                 </div>
                 <div class="form-group" style="margin-bottom: 8px;">
                     <label for="instance-role-${idx}">Role</label>
-                    <select id="instance-role-${idx}" class="form-select" onchange="instances[${idx}].role = this.value">
+                    <select id="instance-role-${idx}"
+                            class="form-select"
+                            onchange="instances[${idx}].role = this.value">
                         ${ROLES.map(function(r) {
                             return '<option value="' + escapeHtml(r) + '" '
                                 + (inst.role === r ? 'selected' : '') + '>'
@@ -245,7 +277,9 @@ function renderInstances() {
                 </div>
                 <div class="form-group" style="margin-bottom: 8px;">
                     <label for="instance-os-${idx}">OS Type</label>
-                    <select id="instance-os-${idx}" class="form-select" onchange="instances[${idx}].os_type = this.value">
+                    <select id="instance-os-${idx}"
+                            class="form-select"
+                            onchange="instances[${idx}].os_type = this.value">
                         ${OS_TYPES.map(function(o) {
                             return '<option value="' + escapeHtml(o) + '" '
                                 + (inst.os_type === o ? 'selected' : '') + '>'
@@ -274,33 +308,11 @@ function renderInstances() {
                            id="instance-join-domain-${idx}"
                            ${inst.join_domain ? 'checked' : ''}
                            onchange="instances[${idx}].join_domain = this.checked">
-                    <label for="instance-join-domain-${idx}" style="margin-bottom: 0; font-size: 13px;">Join Domain</label>
+                    <label for="instance-join-domain-${idx}"
+                           style="margin-bottom: 0; font-size: 13px;">Join Domain</label>
                 </div>
             </div>
-            ${inst.domain_controller ? `
-            <div style="margin-top: 8px; padding: 8px; background: rgba(100,100,255,0.05); border-radius: 4px;">
-                <div class="inline-fields">
-                    <div class="form-group" style="margin-bottom: 4px;">
-                        <label for="instance-domain-name-${idx}">Domain Name</label>
-                        <input type="text"
-                               id="instance-domain-name-${idx}"
-                               class="form-input"
-                               value="${escapeHtml(inst.dc_config?.domain_name || 'internal.shifter')}"
-                               onchange="updateDCConfig(${idx}, 'domain_name', this.value)"
-                               placeholder="internal.shifter">
-                    </div>
-                    <div class="form-group" style="margin-bottom: 4px;">
-                        <label for="instance-netbios-${idx}">NetBIOS Name</label>
-                        <input type="text"
-                               id="instance-netbios-${idx}"
-                               class="form-input"
-                               value="${escapeHtml(inst.dc_config?.netbios_name || 'INTSHIFTER')}"
-                               onchange="updateDCConfig(${idx}, 'netbios_name', this.value)"
-                               placeholder="INTSHIFTER">
-                    </div>
-                </div>
-            </div>
-            ` : ''}
+            ${renderInstanceDCFields(inst, idx)}
         `;
         container.appendChild(card);
     });

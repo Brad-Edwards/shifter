@@ -160,7 +160,8 @@
                                         {% if event.is_modifiable %}
                                             <a href="{% url 'ctf:admin_challenge_edit' challenge_id=challenge.pk %}"
                                                class="btn btn-secondary">
-                                                {% trans "Edit" %}<span class="visually-hidden"> {{ challenge.name }}</span>
+                                                {% trans "Edit" %}
+                                                <span class="visually-hidden"> {{ challenge.name }}</span>
                                             </a>
                                         {% endif %}
                                     </div>

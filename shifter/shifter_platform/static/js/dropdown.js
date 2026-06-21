@@ -4,6 +4,7 @@
  */
 
 const ARIA_HASPOPUP_LISTBOX = 'listbox';
+const ARIA_ATTR_EXPANDED = 'aria-expanded';
 const ARIA_EXPANDED_FALSE = 'false';
 const ARIA_EXPANDED_TRUE = 'true';
 let dropdownInstanceCounter = 0;
@@ -66,7 +67,7 @@ class ShifterDropdown {
         }
 
         this.trigger.setAttribute('aria-haspopup', ARIA_HASPOPUP_LISTBOX);
-        this.trigger.setAttribute('aria-expanded', ARIA_EXPANDED_FALSE);
+        this.trigger.setAttribute(ARIA_ATTR_EXPANDED, ARIA_EXPANDED_FALSE);
     }
 
     init() {
@@ -119,7 +120,7 @@ class ShifterDropdown {
     open() {
         this.isOpen = true;
         this.element.classList.add('open');
-        this.trigger.setAttribute('aria-expanded', ARIA_EXPANDED_TRUE);
+        this.trigger.setAttribute(ARIA_ATTR_EXPANDED, ARIA_EXPANDED_TRUE);
         this.highlightedIndex = -1;
 
         if (this.filterInput) {
@@ -139,7 +140,7 @@ class ShifterDropdown {
     close() {
         this.isOpen = false;
         this.element.classList.remove('open');
-        this.trigger.setAttribute('aria-expanded', ARIA_EXPANDED_FALSE);
+        this.trigger.setAttribute(ARIA_ATTR_EXPANDED, ARIA_EXPANDED_FALSE);
         this.highlightedIndex = -1;
         this.items.forEach(item => item.classList.remove('highlighted'));
     }
