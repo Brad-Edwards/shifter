@@ -383,7 +383,7 @@
             {% if not is_ctf_participant_only %}
                 {# Settings #}
                 <div>
-                    <a href="#" class="nav-menu-item nav-menu-item-level-0">
+                    <a href="{% url 'mission_control:settings' %}" class="nav-menu-item nav-menu-item-level-0">
                         <span class="nav-icon">
                             <svg width="24"
                                  height="24"
@@ -428,7 +428,7 @@
                 </div>
                 {# Help #}
                 <div>
-                    <a href="#" class="nav-menu-item nav-menu-item-level-0">
+                    <a href="{% url 'documentation:index' %}" class="nav-menu-item nav-menu-item-level-0">
                         <span class="nav-icon">
                             <svg width="24"
                                  height="24"

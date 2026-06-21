@@ -1,7 +1,8 @@
 """Tests for template variable parsing, validation, and resolution."""
 
 import pytest
-from cyberscript.template_vars import (
+
+from shared.template_vars import (
     build_instance_data,
     extract_variables,
     resolve_template,
