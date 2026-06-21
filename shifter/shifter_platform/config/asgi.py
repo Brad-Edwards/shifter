@@ -26,15 +26,15 @@ os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings")
 # Initialize Django ASGI application early to ensure AppRegistry is populated
 django_asgi_app = get_asgi_application()
 
-# Log the active channel-layer backend once per portal process (#849). The
+# Log resolved settings posture once per portal process (#849, #948). The
 # production portal runs Gunicorn with PORTAL_WEB_WORKERS Uvicorn workers
 # (entrypoint.sh, #174), so this module is imported once per worker process and
 # each worker serves both HTTP and WebSocket and consumes CHANNEL_LAYERS;
 # logging is configured by get_asgi_application() above. An invalid/
 # redis-without-host posture already fails closed at settings import.
-from config._channels import log_channel_layer_posture  # noqa: E402
+from config._posture import log_settings_posture  # noqa: E402
 
-log_channel_layer_posture(os.environ)
+log_settings_posture(os.environ)
 
 # Start the per-worker portal capacity metrics emitter (#940). This module is
 # imported once per Uvicorn worker process, so each worker gets exactly one

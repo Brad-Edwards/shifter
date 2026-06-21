@@ -14,6 +14,11 @@ locals {
     Module = "ec2"
   })
   log_group_name = "/portal/${var.name_prefix}"
+  django_environment = (
+    var.environment == "dev" ? "development" :
+    var.environment == "prod" ? "production" :
+    var.environment
+  )
 }
 
 # ------------------------------------------------------------------------------
@@ -561,6 +566,7 @@ resource "aws_launch_template" "this" {
 
   user_data = base64encode(templatefile("${path.module}/user_data.sh", {
     aws_region                 = var.aws_region
+    django_environment         = local.django_environment
     ecr_repository_url         = var.ecr_repository_url
     log_group_name             = local.log_group_name
     ssm_parameter_store_prefix = var.ssm_parameter_store_prefix
@@ -716,6 +722,7 @@ resource "aws_instance" "this" {
 
   user_data_base64 = base64encode(templatefile("${path.module}/user_data.sh", {
     aws_region                 = var.aws_region
+    django_environment         = local.django_environment
     ecr_repository_url         = var.ecr_repository_url
     log_group_name             = local.log_group_name
     ssm_parameter_store_prefix = var.ssm_parameter_store_prefix
