@@ -27,13 +27,13 @@ repos:
         exclude: ^(shifter/engine/provisioner/tests/|shifter/shifter_platform/tests/engine/ssh/|scripts/bootstrap/tests/|shifter/engine/provisioner/utils/crypto\.py|scenario-dev/polaris/build/_shared/)
 
   - repo: https://github.com/rhysd/actionlint
-    rev: v1.7.11
+    rev: v1.7.12
     hooks:
       - id: actionlint
         files: ^\.github/workflows/.*\.yml$
 
   - repo: https://github.com/gitleaks/gitleaks
-    rev: v8.24.2
+    rev: v8.30.1
     hooks:
       - id: gitleaks
         args: [--config, .gitleaks.toml]
@@ -41,7 +41,7 @@ repos:
   # Python - Ruff (linting + formatting)
   # Note: Ruff handles import sorting via "I" rules - no separate isort needed
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.15.13
+    rev: v0.15.18
     hooks:
       - id: ruff
         name: ruff (shifter_platform)
@@ -161,7 +161,7 @@ repos:
 
   # Terraform formatting and validation
   - repo: https://github.com/antonbabenko/pre-commit-terraform
-    rev: v1.96.3
+    rev: v1.105.0
     hooks:
       - id: terraform_fmt
         files: ^platform/terraform/
@@ -374,7 +374,7 @@ repos:
   # Checkov scans the repo root in addition to platform/terraform/ and
   # follows module sources into shifter/engine/provisioner/terraform/.
   - repo: https://github.com/bridgecrewio/checkov
-    rev: 3.2.529
+    rev: 3.2.534
     hooks:
       - id: checkov
         name: checkov (terraform)
