@@ -1,6 +1,7 @@
 /**
  * Custom Dropdown Component
  * Lightweight accessible dropdown used across the platform.
+ * Sonar: aria attribute names are centralized as module constants.
  */
 
 const ARIA_HASPOPUP_LISTBOX = 'listbox';
