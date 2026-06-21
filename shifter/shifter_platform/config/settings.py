@@ -26,6 +26,7 @@ from dotenv import load_dotenv
 from config._channels import *  # NOSONAR
 from config._channels import _build_channel_layers
 from config._cloud import *  # NOSONAR
+from config._guacamole_settings import *  # NOSONAR
 from config._logging_config import *  # NOSONAR
 from config._terminal_assets import *  # NOSONAR
 
@@ -242,6 +243,14 @@ TERMINAL_CONNECT_EXECUTOR_WORKERS = _env_int("TERMINAL_CONNECT_EXECUTOR_WORKERS"
 # (4503, retryable) instead of being queued without limit (#929).
 TERMINAL_CONNECT_EXECUTOR_QUEUE_SLACK = _env_int("TERMINAL_CONNECT_EXECUTOR_QUEUE_SLACK", 16)
 
+# CTF scheduler (run_ctf_scheduler) stale-task recovery window. A long
+# SPIN_UP_RANGES run heartbeats its task's updated_at, so this only needs to
+# exceed the maximum gap between heartbeats; the default is set well above the
+# legitimate spin-up window (default range_spinup_minutes=30) plus retry/poll
+# jitter so a genuinely in-flight spin-up is never marked FAILED on the
+# multi-node portal. See docs/architecture/ctf-scheduler-concurrency-preflight-942.md.
+CTF_SCHEDULER_STALE_TASK_MINUTES = _env_int("CTF_SCHEDULER_STALE_TASK_MINUTES", 120)
+
 from config._capacity_settings import *  # noqa: E402  # NOSONAR
 
 # Database
@@ -410,21 +419,8 @@ EXPERIMENT_MAX_TOTAL_RUNS = 10
 EXPERIMENT_MAX_PARALLEL_RUNS = 5
 
 # Guacamole RDP Integration
-# ------------------------------------------------------------------------------
-# JSON auth secret key for signing RDP session URLs
-# Must match the JSON_SECRET_KEY configured in Guacamole's ECS task definition
-# This is a hex string key (64-character/256-bit preferred) stored in Secrets Manager
-GUACAMOLE_JSON_AUTH_SECRET = os.environ.get("GUACAMOLE_JSON_AUTH_SECRET", "")
-# Public URL for browser (returned to client)
-GUACAMOLE_BASE_URL = os.environ.get("GUACAMOLE_BASE_URL", "/guacamole")
-# Internal URL for server-to-server API calls (defaults to base URL if not set)
-GUACAMOLE_API_BASE_URL = os.environ.get("GUACAMOLE_API_BASE_URL", "") or GUACAMOLE_BASE_URL
-# Bounded async bootstrap workers for Guacamole token creation. Each worker may
-# hold a blocking Guacamole /api/tokens request, so keep this intentionally low
-# and scale with portal instance count.
-GUACAMOLE_BOOTSTRAP_WORKERS = int(os.environ.get("GUACAMOLE_BOOTSTRAP_WORKERS", "4"))
-GUACAMOLE_BOOTSTRAP_TTL_SECONDS = int(os.environ.get("GUACAMOLE_BOOTSTRAP_TTL_SECONDS", "300"))
-GUACAMOLE_BOOTSTRAP_INLINE = _env_bool("GUACAMOLE_BOOTSTRAP_INLINE", False)
+# Guacamole connection + bootstrap settings live in ``config/_guacamole_settings``
+# (re-exported above) to keep this module under the 500-line cap (Sonar S104).
 
 # Bounded botocore connect/read timeouts for the AWS Secrets Manager client used
 # on/near the portal request path. A stalled Secrets Manager must fail fast

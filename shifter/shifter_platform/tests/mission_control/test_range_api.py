@@ -204,6 +204,81 @@ class TestCancelRange:
         assert AuditLog.objects.filter(action=AuditLog.Action.CANCEL).exists()
 
 
+class TestParticipantOnlyLifecycleGuard:
+    """A CTF participant-only account is rejected server-side on every range
+    lifecycle verb (#944), even though the UI hides those verbs. Read endpoints
+    and non-participant users are unaffected.
+    """
+
+    LIFECYCLE_VIEWS = [
+        "mission_control:launch_range",
+        "mission_control:cancel_range",
+        "mission_control:destroy_range",
+        "mission_control:pause_range",
+        "mission_control:resume_range",
+    ]
+
+    def _participant_only(self, authenticated_client, email):
+        from django.contrib.auth.models import Group
+
+        client, user = authenticated_client(email=email)
+        group, _ = Group.objects.get_or_create(name="CTF Participant")
+        user.groups.add(group)
+        return client, user
+
+    @pytest.mark.parametrize("view_name", LIFECYCLE_VIEWS)
+    def test_participant_only_account_is_forbidden(self, authenticated_client, view_name):
+        client, _ = self._participant_only(authenticated_client, email=f"p-{view_name.split(':')[1]}@example.com")
+        response = client.post(
+            reverse(view_name),
+            data=json.dumps({"request_id": "00000000-0000-0000-0000-000000000000"}),
+            content_type="application/json",
+        )
+        assert response.status_code == 403
+        assert _json(response) == {"error": "Forbidden"}
+
+    def test_participant_only_launch_creates_no_range(
+        self, authenticated_client, windows_os, make_agent, hydratable_scenario
+    ):
+        client, user = self._participant_only(authenticated_client, email="p-launch-state@example.com")
+        agent = make_agent(user)
+        response = client.post(
+            reverse("mission_control:launch_range"),
+            data=json.dumps({"agent_id": agent.id, "scenario": hydratable_scenario.scenario_id}),
+            content_type="application/json",
+        )
+        assert response.status_code == 403
+        # The guard runs before any CMS call, so nothing is provisioned.
+        assert not Range.objects.filter(user_id=user.id).exists()
+
+    def test_participant_only_destroy_writes_no_audit(self, authenticated_client):
+        client, _ = self._participant_only(authenticated_client, email="p-destroy-audit@example.com")
+        response = client.post(
+            reverse("mission_control:destroy_range"),
+            data=json.dumps({"request_id": "00000000-0000-0000-0000-000000000000"}),
+            content_type="application/json",
+        )
+        assert response.status_code == 403
+        assert not AuditLog.objects.filter(action=AuditLog.Action.DEPROVISION).exists()
+
+    def test_participant_only_may_still_read_range(self, authenticated_client):
+        client, _ = self._participant_only(authenticated_client, email="p-read@example.com")
+        response = client.get(reverse("mission_control:get_range"))
+        assert response.status_code == 200
+        assert _json(response)["has_range"] is False
+
+    def test_non_participant_destroy_is_not_forbidden(self, authenticated_client):
+        # Regression: a plain (non-CTF) user is not blocked by the guard. The
+        # nonexistent range yields a 400 from the CMS layer, never a 403.
+        client, _ = authenticated_client(email="plain-destroy@example.com")
+        response = client.post(
+            reverse("mission_control:destroy_range"),
+            data=json.dumps({"request_id": "00000000-0000-0000-0000-000000000000"}),
+            content_type="application/json",
+        )
+        assert response.status_code == 400
+
+
 class TestDestroyRange:
     def test_requires_login(self):
         response = Client().post(

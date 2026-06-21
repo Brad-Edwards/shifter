@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 from django.conf import settings
 from django.contrib import messages
 from django.core.exceptions import PermissionDenied
-from django.http import HttpRequest, HttpResponse
+from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import redirect
 
 from shared.constants import USER_CANNOT_BE_NONE, USER_MUST_BE_SAVED
@@ -134,6 +134,58 @@ def validate_cms_authoring_user(user, func_name: str) -> None:
     if not can_edit_cms_authoring(user):
         logger.warning("%s denied: user_id=%s not staff or Threat Research", func_name, user.id)
         raise PermissionDenied("Active staff or Threat Research group membership is required")
+
+
+# Range lifecycle verbs a CTF participant-only account MAY invoke directly on
+# its own event range. Empty by design (#944): organizers provision and tear
+# down participant ranges through ctf.services -> CMS, so a participant-only
+# account gets no direct lifecycle verb. This is the single policy point that
+# block_ctf_participant_only consults; widening the set is a one-line change
+# plus tests, not edits scattered across every Mission Control endpoint.
+PARTICIPANT_ALLOWED_LIFECYCLE_VERBS: frozenset[str] = frozenset()
+
+
+def block_ctf_participant_only(verb: str) -> Callable[[Callable[..., HttpResponse]], Callable[..., HttpResponse]]:
+    """Decorator factory: reject CTF participant-only accounts from a range
+    lifecycle ``verb`` they are not explicitly allowed to invoke.
+
+    Mission Control templates hide these verbs from participant-only accounts,
+    but template hiding is not an authorization control (ADR-013). The MC
+    lifecycle endpoints are ``@login_required`` only, so a participant-only
+    account can POST them directly against its own organizer-provisioned range.
+    This guard enforces the policy server-side at the HTTP boundary, before any
+    CMS/engine state change, returning an authored JSON ``403`` when the verb is
+    not in ``PARTICIPANT_ALLOWED_LIFECYCLE_VERBS``.
+
+    Apply it after ``@login_required`` so the caller is already authenticated.
+    Reuses the canonical ``is_ctf_participant_only`` predicate, so it is scoped
+    exactly to accounts holding a CTF role with no Launch-Range-granting role
+    (staff, superuser, Threat Research). Plain non-CTF users are unaffected.
+
+    Organizer-driven provisioning/cleanup calls CMS with the participant's user
+    via ``ctf.services`` and does not pass through these MC views, so it is not
+    blocked by this guard.
+    """
+
+    def _decorator(view_func: Callable[..., HttpResponse]) -> Callable[..., HttpResponse]:
+        """Wrap ``view_func`` with the participant-only lifecycle guard for ``verb``."""
+
+        @functools.wraps(view_func)
+        def _wrapped(request: HttpRequest, *args, **kwargs) -> HttpResponse:
+            """Deny participant-only accounts the disallowed verb, else delegate."""
+            user = request.user
+            if is_ctf_participant_only(user) and verb not in PARTICIPANT_ALLOWED_LIFECYCLE_VERBS:
+                logger.warning(
+                    "Range lifecycle verb %s denied for CTF participant-only user %s",
+                    verb,
+                    getattr(user, "pk", None),
+                )
+                return JsonResponse({"error": "Forbidden"}, status=403)
+            return view_func(request, *args, **kwargs)
+
+        return _wrapped
+
+    return _decorator
 
 
 def threat_research_required(view_func: Callable[..., HttpResponse]) -> Callable[..., HttpResponse]:
