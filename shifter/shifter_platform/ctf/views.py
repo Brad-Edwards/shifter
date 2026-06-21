@@ -930,8 +930,17 @@ def team_join(request: HttpRequest) -> HttpResponse:
             elif participant.team_id == team.id:
                 error = "You are already on this team."
             else:
+                from ctf.services.scoring import recompute_team_score
+
+                old_team_id = participant.team_id
                 participant.team = team
                 participant.save(update_fields=["team", "updated_at"])
+                # Maintain the materialized team leaderboard (issue #850):
+                # membership moved, so recompute both the joined team and the
+                # team the participant left (if any).
+                recompute_team_score(team.id)
+                if old_team_id is not None and old_team_id != team.id:
+                    recompute_team_score(old_team_id)
                 logger.info(
                     "Participant %s joined team %s in event %s",
                     participant.id,
