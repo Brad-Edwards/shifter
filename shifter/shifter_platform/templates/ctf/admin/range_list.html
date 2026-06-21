@@ -20,6 +20,10 @@
     padding: 4px 10px;
     font-size: 13px;
 }
+.provision-progress {
+    margin-bottom: 12px;
+    display: none;
+}
     </style>
 {% endblock %}
 {% block content %}
@@ -31,6 +35,7 @@
             {% trans "Provision All Ranges" %}
         </button>
     </div>
+    <div id="provision-progress" class="text-muted provision-progress"></div>
     <div class="card" style="padding: 0;">
         <table class="table">
             <thead>
@@ -159,6 +164,9 @@ document.addEventListener('DOMContentLoaded', function() {
         rangeListUrl: '{% url "ctf:api_range_list" event_id=event.pk %}',
     });
     manager.init();
+    {% if active_provisioning %}
+    manager.startProgressPolling();
+    {% endif %}
 });
     </script>
 {% endblock %}

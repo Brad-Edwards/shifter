@@ -14,9 +14,9 @@ import pytest
 from django.utils import timezone
 
 from ctf.bridges import RangeProvisionResult
-from ctf.enums import ParticipantStatus
+from ctf.enums import ParticipantStatus, ScheduledTaskStatus, ScheduledTaskType
 from ctf.exceptions import CTFNotFoundError, CTFRangeError
-from ctf.models import CTFEvent, CTFParticipant
+from ctf.models import CTFEvent, CTFParticipant, CTFScheduledTask
 from ctf.services import range as range_service
 
 
@@ -168,88 +168,6 @@ class TestProvisionParticipantRange:
             pytest.raises(CTFRangeError, match="Range provisioning failed"),
         ):
             range_service.provision_participant_range(ctf_participant.pk)
-
-
-class TestProvisionEventRanges:
-    """Tests for provision_event_ranges."""
-
-    def test_not_found(self):
-        """Raises CTFNotFoundError for nonexistent event."""
-        from ctf.models import CTFEvent
-
-        with patch.object(CTFEvent, "objects") as mock_objects:
-            mock_objects.get.side_effect = CTFEvent.DoesNotExist
-            mock_objects.DoesNotExist = CTFEvent.DoesNotExist
-            with pytest.raises(CTFNotFoundError):
-                range_service.provision_event_ranges(uuid4())
-
-    def test_bulk_provision(self):
-        """Bulk provisioning iterates participants without ranges."""
-        from ctf.models import CTFEvent
-
-        event_id = uuid4()
-        participant_pk = uuid4()
-        mock_participant = Mock(pk=participant_pk)
-
-        with (
-            patch.object(CTFEvent, "objects") as mock_event_objects,
-            patch.object(CTFParticipant, "objects") as mock_part_objects,
-            patch.object(
-                range_service,
-                "provision_participant_range_with_retry",
-                return_value={"status": "provisioning", "retries": 0},
-            ) as mock_provision,
-        ):
-            mock_event_objects.get.return_value = Mock()
-            mock_part_objects.filter.return_value = [mock_participant]
-
-            result = range_service.provision_event_ranges(event_id)
-
-        assert result["successful"] == 1
-        assert result["failed"] == 0
-        mock_provision.assert_called_once_with(participant_pk)
-
-    def test_bulk_provision_skips_assigned(self):
-        """Participants with existing ranges are skipped (filter handles it)."""
-        from ctf.models import CTFEvent
-
-        event_id = uuid4()
-
-        with (
-            patch.object(CTFEvent, "objects") as mock_event_objects,
-            patch.object(CTFParticipant, "objects") as mock_part_objects,
-        ):
-            mock_event_objects.get.return_value = Mock()
-            mock_part_objects.filter.return_value = []  # No unassigned participants
-
-            result = range_service.provision_event_ranges(event_id)
-
-        assert result["total"] == 0
-
-    def test_bulk_provision_partial_failure(self):
-        """Failures in individual provisions are tracked."""
-        from ctf.models import CTFEvent
-
-        event_id = uuid4()
-        mock_participant = Mock(pk=uuid4())
-
-        with (
-            patch.object(CTFEvent, "objects") as mock_event_objects,
-            patch.object(CTFParticipant, "objects") as mock_part_objects,
-            patch.object(
-                range_service,
-                "provision_participant_range_with_retry",
-                side_effect=RuntimeError("fail"),
-            ),
-            patch("ctf.services.notification.notify_organizer_provision_failure"),
-        ):
-            mock_event_objects.get.return_value = Mock()
-            mock_part_objects.filter.return_value = [mock_participant]
-
-            result = range_service.provision_event_ranges(event_id)
-
-        assert result["failed"] == 1
-        assert result["successful"] == 0
 
 
 class TestGetRangeStatus:
@@ -432,8 +350,10 @@ class TestProvisionEventRangesThrottled:
         assert result["total"] == 3
         assert result["interrupted"] is False
         assert mock_provision.call_count == 3
-        # Sleep called between provisions (not after the last one)
-        assert _patch_sleep.call_count == 2
+        # Two inter-provision gaps (not after the last one). Each gap is slept
+        # in <=15s heartbeat chunks, so total slept == 2 * clamped delay.
+        # window=300 / 3 participants = 100s raw -> 100s clamped.
+        assert sum(c.args[0] for c in _patch_sleep.call_args_list) == 200.0
 
         # Verify progress logging (3 progress calls among the info calls)
         progress_calls = [c for c in mock_logger.info.call_args_list if "progress" in str(c.args[0])]
@@ -449,7 +369,7 @@ class TestProvisionEventRangesThrottled:
         event_id = uuid4()
         call_count = 0
 
-        def provision_side_effect(pk):
+        def provision_side_effect(pk, **kwargs):
             nonlocal call_count
             call_count += 1
             if call_count == 2:
@@ -500,46 +420,49 @@ class TestProvisionEventRangesThrottled:
 
                 range_service.provision_event_ranges_throttled(uuid4(), window)
 
-            mock_sleep.assert_called_with(expected_delay)
+            # Two participants -> one inter-provision gap, slept in <=15s
+            # heartbeat chunks whose total equals the clamped delay.
+            assert sum(c.args[0] for c in mock_sleep.call_args_list) == expected_delay
 
     @pytest.mark.usefixtures("_patch_event_exists")
     def test_shutdown_interruption(self, _patch_sleep):
         """shutdown_check stops the loop and sets interrupted=True."""
         participants = [Mock(pk=uuid4()) for _ in range(5)]
-        check_calls = 0
+        provisioned: list = []
+        stop = {"flag": False}
 
-        def shutdown_after_two():
-            nonlocal check_calls
-            check_calls += 1
-            # shutdown_check is called at the top of each iteration AND
-            # before each sleep. After 2 complete iterations that's 4 calls
-            # (top + sleep for each). The 5th call (top of i=2) triggers.
-            return check_calls >= 5
+        def provision_side_effect(pk, **kwargs):
+            provisioned.append(pk)
+            stop["flag"] = True  # request shutdown after the first provision
+            return {"status": "provisioning", "retries": 0}
+
+        def shutdown_check():
+            return stop["flag"]
 
         with (
             patch.object(CTFParticipant, "objects") as mock_part,
             patch.object(
                 range_service,
                 "provision_participant_range_with_retry",
-                return_value={"status": "provisioning", "retries": 0},
-            ) as mock_provision,
+                side_effect=provision_side_effect,
+            ),
         ):
             mock_part.filter.return_value = participants
 
-            result = range_service.provision_event_ranges_throttled(uuid4(), 600, shutdown_check=shutdown_after_two)
+            result = range_service.provision_event_ranges_throttled(uuid4(), 600, shutdown_check=shutdown_check)
 
         assert result["interrupted"] is True
-        # Should have provisioned only 2 before shutdown triggered
-        assert mock_provision.call_count == 2
-        assert result["successful"] == 2
+        # Loop breaks at the top of the second iteration, so only one provision ran.
+        assert len(provisioned) == 1
 
     @pytest.mark.django_db
     @pytest.mark.usefixtures("_patch_sleep")
     def test_heartbeat_called_each_iteration(self, ctf_event):
-        """The heartbeat fires once per participant so the task stays live (CTF-3).
+        """The heartbeat fires at least once per participant so the task stays live.
 
         DB-backed with unregistered participants: provisioning fails fast before
-        any CMS/network call, which is enough to observe per-iteration heartbeats.
+        any CMS/network call. The heartbeat also fires during the chunked
+        inter-provision waits (#943), so the count is >= the participant count.
         """
         for i in range(3):
             _make_unregistered_participant(ctf_event, i)
@@ -547,7 +470,7 @@ class TestProvisionEventRangesThrottled:
 
         result = range_service.provision_event_ranges_throttled(ctf_event.pk, 300, heartbeat=heartbeat)
 
-        assert heartbeat.call_count == 3
+        assert heartbeat.call_count >= 3
         assert result["total"] == 3
 
     @pytest.mark.django_db
@@ -560,7 +483,7 @@ class TestProvisionEventRangesThrottled:
 
         result = range_service.provision_event_ranges_throttled(ctf_event.pk, 300, heartbeat=heartbeat)
 
-        assert heartbeat.call_count == 3
+        assert heartbeat.call_count >= 3
         assert result["total"] == 3
 
 
@@ -575,3 +498,122 @@ class TestIsAlreadyAssignedError:
 
     def test_non_range_error_is_not_benign(self):
         assert not range_service._is_already_assigned_error(RuntimeError("boom"))
+
+
+class TestInterruptibleSleep:
+    """_interruptible_sleep is the keep-alive primitive used by the throttled
+    loop and the retry backoff: it sleeps the full duration in chunks while
+    touching the heartbeat and honoring shutdown."""
+
+    def test_chunks_sum_to_duration_and_touch_heartbeat(self, _patch_sleep):
+        heartbeat = Mock()
+
+        range_service._interruptible_sleep(40, heartbeat=heartbeat)
+
+        # Slept the whole 40s in <=15s chunks (15 + 15 + 10).
+        assert sum(c.args[0] for c in _patch_sleep.call_args_list) == 40
+        assert heartbeat.call_count >= 3
+
+    def test_aborts_early_on_shutdown(self, _patch_sleep):
+        range_service._interruptible_sleep(120, shutdown_check=lambda: True)
+
+        # Shutdown is checked before the first chunk, so nothing is slept.
+        assert _patch_sleep.call_count == 0
+
+
+@pytest.mark.django_db
+class TestRequestEventProvisioning:
+    """request_event_provisioning enqueues/coalesces a SPIN_UP_RANGES task."""
+
+    def _spin_up_count(self, event):
+        return CTFScheduledTask.objects.filter(
+            event=event,
+            task_type=ScheduledTaskType.SPIN_UP_RANGES.value,
+        ).count()
+
+    def test_creates_due_now_task_when_none_exists(self, ctf_event):
+        before = timezone.now()
+
+        task = range_service.request_event_provisioning(ctf_event.id, source="manual")
+
+        assert task.task_type == ScheduledTaskType.SPIN_UP_RANGES.value
+        assert task.status == ScheduledTaskStatus.PENDING.value
+        assert before - timedelta(seconds=2) <= task.scheduled_for <= timezone.now()
+        assert task.metadata.get("source") == "manual"
+        assert self._spin_up_count(ctf_event) == 1
+
+    def test_coalesces_future_pending_pulled_to_now(self, ctf_event):
+        existing = CTFScheduledTask.objects.create(
+            event=ctf_event,
+            task_type=ScheduledTaskType.SPIN_UP_RANGES.value,
+            scheduled_for=timezone.now() + timedelta(hours=6),
+        )
+
+        task = range_service.request_event_provisioning(ctf_event.id, source="manual")
+
+        assert task.pk == existing.pk
+        task.refresh_from_db()
+        assert task.scheduled_for <= timezone.now()
+        assert task.metadata.get("source") == "manual"
+        # No duplicate runnable task was created.
+        assert self._spin_up_count(ctf_event) == 1
+
+    def test_reuses_running_task(self, ctf_event):
+        existing = CTFScheduledTask.objects.create(
+            event=ctf_event,
+            task_type=ScheduledTaskType.SPIN_UP_RANGES.value,
+            scheduled_for=timezone.now() - timedelta(minutes=1),
+            status=ScheduledTaskStatus.RUNNING.value,
+        )
+
+        task = range_service.request_event_provisioning(ctf_event.id)
+
+        assert task.pk == existing.pk
+        assert task.status == ScheduledTaskStatus.RUNNING.value
+        assert self._spin_up_count(ctf_event) == 1
+
+    def test_event_not_found_raises(self):
+        with pytest.raises(CTFNotFoundError):
+            range_service.request_event_provisioning(uuid4())
+
+
+@pytest.mark.django_db
+class TestGetProvisionProgress:
+    """get_provision_progress projects participant counts plus the active task."""
+
+    def _participant(self, event, name, range_status, range_instance_id=None):
+        return CTFParticipant.objects.create(
+            event=event,
+            email=f"{name}@test.com",
+            name=name,
+            range_status=range_status,
+            range_instance_id=range_instance_id,
+        )
+
+    def test_counts_and_active_task(self, ctf_event):
+        self._participant(ctf_event, "a", "ready", 1)
+        self._participant(ctf_event, "b", "provisioning", 2)
+        self._participant(ctf_event, "c", "error")
+        self._participant(ctf_event, "d", "")  # not assigned
+        task = CTFScheduledTask.objects.create(
+            event=ctf_event,
+            task_type=ScheduledTaskType.SPIN_UP_RANGES.value,
+            scheduled_for=timezone.now(),
+        )
+
+        progress = range_service.get_provision_progress(ctf_event.id)
+
+        counts = progress["counts"]
+        assert counts["total"] == 4
+        assert counts["ready"] == 1
+        assert counts["provisioning"] == 1
+        assert counts["error"] == 1
+        assert counts["not_assigned"] == 1
+        assert progress["task"]["id"] == str(task.pk)
+        assert progress["task"]["status"] == ScheduledTaskStatus.PENDING.value
+
+    def test_no_active_task(self, ctf_event):
+        progress = range_service.get_provision_progress(ctf_event.id)
+
+        assert progress["task"] is None
+        assert progress["counts"]["total"] == 0

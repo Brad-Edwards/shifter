@@ -5,6 +5,7 @@ Provides integration with Shifter's range infrastructure for CTF events.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import time
 from collections.abc import Callable
@@ -12,15 +13,50 @@ from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 from django.db import transaction
+from django.utils import timezone
 
+from ctf.enums import ScheduledTaskStatus, ScheduledTaskType
 from ctf.exceptions import CTFNotFoundError, CTFRangeError
-from ctf.models import CTFEvent, CTFParticipant
+from ctf.models import CTFEvent, CTFParticipant, CTFScheduledTask
 from shared.log_sanitize import safe_log_value
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import User
 
 logger = logging.getLogger(__name__)
+
+# Throttled provisioning can sleep for up to 120s between participants and the
+# retry backoff can wait even longer. The scheduler's liveness heartbeat file
+# is checked at a 1-2 minute staleness threshold, so long waits are broken into
+# small chunks that touch the heartbeat between them (and stay responsive to
+# shutdown) rather than blocking in a single ``time.sleep`` call.
+_HEARTBEAT_CHUNK_SECONDS = 15.0
+
+
+def _interruptible_sleep(
+    seconds: float,
+    *,
+    heartbeat: Callable[[], None] | None = None,
+    shutdown_check: Callable[[], bool] | None = None,
+) -> None:
+    """Sleep ``seconds`` in <=``_HEARTBEAT_CHUNK_SECONDS`` increments.
+
+    Touches ``heartbeat`` before each increment so a long wait does not let the
+    scheduler liveness file go stale, and aborts early when ``shutdown_check``
+    returns True so the caller stays responsive to SIGTERM.
+    """
+    remaining = float(seconds)
+    while remaining > 0:
+        if shutdown_check is not None and shutdown_check():
+            return
+        if heartbeat is not None:
+            # A heartbeat failure during a wait must never abort provisioning;
+            # the per-participant call site logs persistent failures (#942).
+            with contextlib.suppress(Exception):
+                heartbeat()
+        chunk = min(_HEARTBEAT_CHUNK_SECONDS, remaining)
+        time.sleep(chunk)
+        remaining -= chunk
 
 
 def _is_already_assigned_error(exc: Exception) -> bool:
@@ -125,69 +161,134 @@ def provision_participant_range(participant_id: UUID) -> dict[str, Any]:
     }
 
 
-def provision_event_ranges(event_id: UUID) -> dict[str, Any]:
-    """Provision ranges for all participants in an event.
+def request_event_provisioning(event_id: UUID, *, source: str = "manual") -> CTFScheduledTask:
+    """Enqueue (or coalesce onto) a due-now SPIN_UP_RANGES task for an event.
+
+    The organizer "provision all" action runs the throttled provisioning loop
+    on the CTF scheduler instead of the request thread. Repeated clicks and a
+    pre-existing scheduled spin-up coalesce onto a single runnable task:
+
+    - a RUNNING spin-up task is reused as-is (work is already in flight);
+    - a PENDING spin-up task is reused; if it is scheduled in the future it is
+      pulled forward to now so the manual action takes effect immediately and
+      the original task cannot fire again later;
+    - otherwise a new PENDING task due now is created.
+
+    The work itself only provisions participants without a range, so resuming or
+    re-running is idempotent.
+
+    Args:
+        event_id: UUID of the event.
+        source: Audit hint recorded in task metadata (e.g. "manual").
+
+    Returns:
+        The active CTFScheduledTask (created or coalesced).
+
+    Raises:
+        CTFNotFoundError: If event doesn't exist.
+    """
+    spin_up = ScheduledTaskType.SPIN_UP_RANGES.value
+    with transaction.atomic():
+        # Serialize concurrent enqueues for the same event so duplicate clicks
+        # cannot each create a runnable task.
+        try:
+            CTFEvent.objects.select_for_update().get(pk=event_id)
+        except CTFEvent.DoesNotExist:
+            raise CTFNotFoundError(
+                f"Event {event_id} not found",
+                details={"event_id": str(event_id)},
+            ) from None
+
+        now = timezone.now()
+
+        running = CTFScheduledTask.objects.filter(
+            event_id=event_id,
+            task_type=spin_up,
+            status=ScheduledTaskStatus.RUNNING.value,
+        ).first()
+        if running is not None:
+            logger.info("Coalescing provision request onto running task %s", running.pk)
+            return running
+
+        pending = (
+            CTFScheduledTask.objects.filter(
+                event_id=event_id,
+                task_type=spin_up,
+                status=ScheduledTaskStatus.PENDING.value,
+            )
+            .order_by("scheduled_for")
+            .first()
+        )
+        if pending is not None:
+            if pending.scheduled_for > now:
+                pending.scheduled_for = now
+                pending.metadata = {**(pending.metadata or {}), "source": source}
+                pending.save(update_fields=["scheduled_for", "metadata", "updated_at"])
+                logger.info(
+                    "Pulled scheduled spin-up task %s forward for event %s", pending.pk, safe_log_value(event_id)
+                )
+            else:
+                logger.info("Coalescing provision request onto pending task %s", pending.pk)
+            return pending
+
+        task = CTFScheduledTask.objects.create(
+            event_id=event_id,
+            task_type=spin_up,
+            scheduled_for=now,
+            metadata={"source": source},
+        )
+    logger.info("Enqueued provision task %s for event %s", task.pk, safe_log_value(event_id))
+    return task
+
+
+def get_provision_progress(event_id: UUID) -> dict[str, Any]:
+    """Project provisioning progress for an event.
+
+    Returns bounded aggregate participant counts (computed from the cached
+    ``range_status``) plus the active spin-up task's status, suitable for
+    polling from the organizer UI. Carries no raw error text.
 
     Args:
         event_id: UUID of the event.
 
     Returns:
-        Dict with counts of successful, failed, and pending provisions.
-
-    Raises:
-        CTFNotFoundError: If event doesn't exist.
+        ``{"counts": {...}, "task": {...} | None}``.
     """
-    logger.info("Bulk provisioning ranges for event %s", safe_log_value(event_id))
-
-    try:
-        CTFEvent.objects.get(pk=event_id)
-    except CTFEvent.DoesNotExist:
-        raise CTFNotFoundError(
-            f"Event {event_id} not found",
-            details={"event_id": str(event_id)},
-        ) from None
-
-    participants = CTFParticipant.objects.filter(
-        event_id=event_id,
-        range_instance_id__isnull=True,
-    )
-
-    successful = 0
-    failed = 0
-    skipped = 0
-    errors = []
-
-    for participant in participants:
-        try:
-            provision_participant_range_with_retry(participant.pk)
-            successful += 1
-        except Exception as e:
-            if _is_already_assigned_error(e):
-                skipped += 1
-                logger.info("Participant %s already has a range; skipping", participant.pk)
-                continue
-            failed += 1
-            errors.append({"participant_id": str(participant.pk), "error": str(e)})
-            logger.error(
-                "Failed to provision range for participant %s: %s",
-                participant.pk,
-                e,
-            )
-
-    # Notify organizer of failures
-    if errors:
-        from ctf.services.notification import notify_organizer_provision_failure
-
-        notify_organizer_provision_failure(event_id, errors)
-
-    return {
-        "event_id": str(event_id),
-        "total": successful + failed + skipped,
-        "successful": successful,
-        "failed": failed,
-        "skipped": skipped,
-        "errors": errors,
+    counts = {
+        "total": 0,
+        "ready": 0,
+        "provisioning": 0,
+        "error": 0,
+        "not_assigned": 0,
+        "other": 0,
     }
+    statuses = CTFParticipant.objects.filter(event_id=event_id).values_list("range_status", flat=True)
+    for status in statuses:
+        counts["total"] += 1
+        key = status or "not_assigned"
+        if key in counts and key != "total":
+            counts[key] += 1
+        else:
+            counts["other"] += 1
+
+    active = (
+        CTFScheduledTask.objects.filter(
+            event_id=event_id,
+            task_type=ScheduledTaskType.SPIN_UP_RANGES.value,
+            status__in=[ScheduledTaskStatus.PENDING.value, ScheduledTaskStatus.RUNNING.value],
+        )
+        .order_by("-scheduled_for")
+        .first()
+    )
+    task_block = None
+    if active is not None:
+        task_block = {
+            "id": str(active.pk),
+            "status": active.status,
+            "scheduled_for": active.scheduled_for.isoformat(),
+        }
+
+    return {"counts": counts, "task": task_block}
 
 
 def _safe_heartbeat(heartbeat: Callable[[], None] | None, event_id: UUID) -> None:
@@ -211,14 +312,17 @@ def _record_provision_attempt(
     participant: CTFParticipant,
     tallies: dict[str, int],
     errors: list[dict[str, str]],
+    heartbeat: Callable[[], None] | None = None,
 ) -> None:
     """Provision one participant and fold the outcome into the running tallies.
 
     A benign 'already has a range' race loser is counted as ``skipped`` rather
-    than ``failed`` so it does not poison the event spin-up (#942).
+    than ``failed`` so it does not poison the event spin-up (#942). The
+    ``heartbeat`` is forwarded so the per-participant retry backoff also keeps
+    the scheduled task and liveness file fresh (#943).
     """
     try:
-        provision_participant_range_with_retry(participant.pk)
+        provision_participant_range_with_retry(participant.pk, heartbeat=heartbeat)
         tallies["successful"] += 1
     except Exception as e:
         if _is_already_assigned_error(e):
@@ -246,10 +350,12 @@ def provision_event_ranges_throttled(
         spinup_window_seconds: Total window (seconds) over which to spread requests.
         shutdown_check: Optional callable returning True when the caller
             wants to abort (e.g. SIGTERM received by management command).
-        heartbeat: Optional callable invoked once per participant so a
-            long-running spin-up keeps its scheduled task fresh and is not swept
-            as stale on the multi-node portal (#942). Failures are swallowed so a
-            heartbeat error never aborts provisioning.
+        heartbeat: Optional callable invoked between provisions and during the
+            inter-provision waits so a long run keeps both its scheduled task
+            fresh (so the stale-recovery sweep does not mark it FAILED on the
+            multi-node portal, #942) and the scheduler liveness file fresh (so
+            the container healthcheck does not restart it, #943). Failures are
+            swallowed so a heartbeat error never aborts provisioning.
 
     Returns:
         Dict with counts of successful, failed, skipped, and whether interrupted.
@@ -310,7 +416,7 @@ def provision_event_ranges_throttled(
             break
 
         _safe_heartbeat(heartbeat, event_id)
-        _record_provision_attempt(participant, tallies, errors)
+        _record_provision_attempt(participant, tallies, errors, heartbeat=heartbeat)
 
         logger.info(
             "Throttled provisioning progress for event %s: %d/%d (%d ready, %d failed, %d skipped)",
@@ -322,9 +428,10 @@ def provision_event_ranges_throttled(
             tallies["skipped"],
         )
 
-        # Sleep between provisions (skip after the last one)
+        # Sleep between provisions (skip after the last one). The wait is
+        # chunked so the heartbeat stays fresh and shutdown stays responsive.
         if i < count - 1 and not (shutdown_check and shutdown_check()):
-            time.sleep(delay)
+            _interruptible_sleep(delay, heartbeat=heartbeat, shutdown_check=shutdown_check)
 
     # Notify organizer of failures
     if errors:
@@ -453,6 +560,7 @@ def provision_participant_range_with_retry(
     participant_id: UUID,
     max_retries: int = 3,
     base_delay: int = 30,
+    heartbeat: Callable[[], None] | None = None,
 ) -> dict[str, Any]:
     """Provision a range with exponential backoff retry.
 
@@ -460,6 +568,8 @@ def provision_participant_range_with_retry(
         participant_id: UUID of the participant.
         max_retries: Maximum retry attempts after initial failure.
         base_delay: Base delay in seconds between retries (doubled each attempt).
+        heartbeat: Optional callable invoked during backoff waits so the
+            scheduler liveness file stays fresh through long retries.
 
     Returns:
         Dict with range instance ID, status, and retry count.
@@ -491,7 +601,7 @@ def provision_participant_range_with_retry(
                     delay,
                     e,
                 )
-                time.sleep(delay)
+                _interruptible_sleep(delay, heartbeat=heartbeat)
 
     # All retries exhausted — mark as error
     try:
