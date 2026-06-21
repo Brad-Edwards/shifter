@@ -4,7 +4,6 @@ Tests the HMAC token logic -- no real S3 calls needed.
 """
 
 import pytest
-from cyberscript.script_context import ScriptExecutionContext
 
 from cms.experiments.s3 import (
     _normalize_script_filename_segment,
@@ -12,6 +11,7 @@ from cms.experiments.s3 import (
     normalize_legacy_script_s3_key,
     verify_upload_token,
 )
+from shared.script_context import ScriptExecutionContext
 
 
 class TestUploadToken:

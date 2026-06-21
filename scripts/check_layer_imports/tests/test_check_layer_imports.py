@@ -8,9 +8,12 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from check_layer_imports import (
     ALL_LAYERS,
+    CYBERSCRIPT_IMPORT_PATTERN,
     IMPORT_PATTERN,
     analyze_imports,
+    compute_cyberscript_violations,
     compute_stats,
+    get_cyberscript_imports,
     get_imports,
     is_import_allowed,
     load_allowed_imports,
@@ -217,6 +220,57 @@ class TestComputeStats:
         assert stats["violation_details"][0]["from"] == "engine"
         assert stats["violation_details"][0]["to"] == "cms"
         assert "cms.models" in stats["violation_details"][0]["modules"]
+
+    def test_cyberscript_violations_counted(self):
+        """Cyberscript boundary violations roll up into exit-code-driving stats."""
+        stats = compute_stats({}, {}, cyberscript={"cms": ["cyberscript.script_context"]})
+        assert stats["violations"] == 1
+        assert "cms" in stats["layers_with_violations"]
+        assert stats["violation_details"] == [
+            {
+                "from": "cms",
+                "to": "cyberscript",
+                "modules": ["cyberscript.script_context"],
+            }
+        ]
+
+
+class TestCyberscriptImportPattern:
+    """Tests for direct cyberscript import detection."""
+
+    def test_matches_from_import(self):
+        code = "from cyberscript.script_context import ScriptExecutionContext"
+        matches = CYBERSCRIPT_IMPORT_PATTERN.findall(code)
+        assert matches == ["cyberscript.script_context"]
+
+    def test_matches_simple_import(self):
+        code = "import cyberscript.template_vars"
+        matches = CYBERSCRIPT_IMPORT_PATTERN.findall(code)
+        assert matches == ["cyberscript.template_vars"]
+
+
+class TestCyberscriptViolations:
+    """Tests for the cyberscript-only-via-shared rule."""
+
+    def test_cms_direct_cyberscript_import_is_violation(self, tmp_path):
+        cms_path = tmp_path / "cms" / "experiments"
+        cms_path.mkdir(parents=True)
+        (cms_path / "orchestrator.py").write_text("from cyberscript.script_context import ScriptExecutionContext\n")
+        imports = get_cyberscript_imports(cms_path.parent)
+        assert imports == {"cyberscript.script_context"}
+        violations = compute_cyberscript_violations("cms", imports)
+        assert violations == ["cyberscript.script_context"]
+
+    def test_shared_may_import_cyberscript(self, tmp_path):
+        shared_path = tmp_path / "shared"
+        shared_path.mkdir()
+        (shared_path / "script_context.py").write_text(
+            "from cyberscript.script_context import ScriptExecutionContext\n"
+        )
+        imports = get_cyberscript_imports(shared_path)
+        assert "cyberscript.script_context" in imports
+        violations = compute_cyberscript_violations("shared", imports)
+        assert violations == []
 
 
 class TestAnalyzeImports:
