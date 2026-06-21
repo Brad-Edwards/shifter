@@ -48,6 +48,7 @@ from ctf.services.challenge import (
     remove_flag,
     remove_prerequisite,
     update_challenge,
+    update_flag,
     verify_flag,
     verify_single_flag,
 )
@@ -193,6 +194,7 @@ __all__ = [
     "update_bracket",
     "update_challenge",
     "update_event",
+    "update_flag",
     "update_hint",
     "update_participant_range_status",
     "use_hint",

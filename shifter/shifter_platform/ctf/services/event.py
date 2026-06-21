@@ -143,11 +143,14 @@ def update_event(event_id: UUID, event_data: dict[str, Any]) -> CTFEvent:
     # created_by, id, timestamps, etc.
     safe_data = {k: v for k, v in event_data.items() if k in _EVENT_MUTABLE_FIELDS}
 
+    old_event_end = event.event_end
+
     with transaction.atomic():
         # Track if we need to reschedule tasks
         schedule_changed = ("event_start" in safe_data and safe_data["event_start"] != event.event_start) or (
             "event_end" in safe_data and safe_data["event_end"] != event.event_end
         )
+        event_end_changed = "event_end" in safe_data and safe_data["event_end"] != old_event_end
 
         # Update only allowed fields
         for key, value in safe_data.items():
@@ -159,6 +162,11 @@ def update_event(event_id: UUID, event_data: dict[str, Any]) -> CTFEvent:
         # Reschedule tasks if schedule changed
         if schedule_changed and event.status == EventStatus.REGISTRATION.value:
             _reschedule_event_tasks(event)
+        elif event_end_changed and event.status in (
+            EventStatus.ACTIVE.value,
+            EventStatus.PAUSED.value,
+        ):
+            _reschedule_live_event_schedule(event)
 
     return event
 
@@ -760,6 +768,41 @@ def _schedule_event_tasks(event: CTFEvent) -> None:
             )
 
     logger.info("Scheduled tasks for event %s", event.id)
+
+
+def _reschedule_live_event_schedule(event: CTFEvent) -> None:
+    """Reschedule pending end-of-life tasks after event_end moves during a live event."""
+    from ctf.enums import ScheduledTaskStatus, ScheduledTaskType
+    from ctf.models import CTFScheduledTask
+
+    for task in CTFScheduledTask.objects.filter(
+        event=event,
+        task_type=ScheduledTaskType.EVENT_END.value,
+        status=ScheduledTaskStatus.PENDING.value,
+    ):
+        task.mark_cancelled()
+
+    CTFScheduledTask.objects.create(
+        event=event,
+        task_type=ScheduledTaskType.EVENT_END.value,
+        scheduled_for=event.event_end,
+    )
+
+    for task in CTFScheduledTask.objects.filter(
+        event=event,
+        task_type=ScheduledTaskType.CLEANUP_RANGES.value,
+        status=ScheduledTaskStatus.PENDING.value,
+    ):
+        task.mark_cancelled()
+
+    if event.auto_cleanup:
+        CTFScheduledTask.objects.create(
+            event=event,
+            task_type=ScheduledTaskType.CLEANUP_RANGES.value,
+            scheduled_for=event.get_cleanup_time(),
+        )
+
+    logger.info("Rescheduled live end tasks for event %s", event.id)
 
 
 def _reschedule_event_tasks(event: CTFEvent) -> None:

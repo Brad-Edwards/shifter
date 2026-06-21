@@ -264,6 +264,14 @@ class CTFEvent(CTFBaseModel):
             return False
 
     @property
+    def is_live_flag_repairable(self) -> bool:
+        """Return True when organizers may perform narrow live flag repairs."""
+        try:
+            return EventStatus(self.status) in {EventStatus.ACTIVE, EventStatus.PAUSED}
+        except ValueError:
+            return False
+
+    @property
     def duration_hours(self) -> float:
         """Return event duration in hours."""
         delta = self.event_end - self.event_start
