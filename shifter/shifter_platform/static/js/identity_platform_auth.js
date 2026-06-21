@@ -34,7 +34,7 @@
 
     function setVisibleSection(key) {
         Object.values(sections).forEach((section) => section.classList.remove("visible"));
-        let targetSection = null;
+        let targetSection;
         switch (key) {
             case "auth":
                 targetSection = sections.auth;
