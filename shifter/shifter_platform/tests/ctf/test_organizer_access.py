@@ -332,11 +332,15 @@ class TestAPIOwnershipChecks:
 class TestOwnerCanAccess:
     """Verify the owning organizer CAN access these views (not just that others can't)."""
 
+    @pytest.mark.django_db
     def test_range_list_allows_owner(self, rf, mock_owner_user):
+        # django_db: the progress projection reads the (empty) scheduled-task
+        # table directly; participants stay mocked.
         from ctf.views import admin_range_list
 
         with patch("ctf.models.CTFParticipant.objects") as mock_objects:
             mock_objects.filter.return_value.order_by.return_value = []
+            mock_objects.filter.return_value.values_list.return_value = []
             request = _get_request(rf, mock_owner_user)
             response = admin_range_list(request, event_id=EVENT_ID)
 
@@ -359,11 +363,15 @@ class TestOwnerCanAccess:
         response = admin_notification_create(request, event_id=EVENT_ID)
         assert response.status_code == 200
 
+    @pytest.mark.django_db
     def test_api_range_list_allows_owner(self, rf, mock_owner_user):
+        # django_db: the progress projection reads the (empty) scheduled-task
+        # table directly; participants stay mocked.
         from ctf.views import api_range_list
 
         with patch("ctf.models.CTFParticipant.objects") as mock_objects:
             mock_objects.filter.return_value.order_by.return_value = []
+            mock_objects.filter.return_value.values_list.return_value = []
             request = _get_request(rf, mock_owner_user)
             response = api_range_list(request, event_id=EVENT_ID)
 
