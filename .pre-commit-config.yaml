@@ -450,6 +450,17 @@ repos:
         pass_filenames: false
         verbose: true
 
+      # ADR-004-R13 identifier hygiene runs on every commit against the
+      # changed set: live cloud identifiers can be reintroduced in ANY tracked
+      # file, so this hook deliberately has no narrowing `files:` filter. The
+      # check itself skips binary / lock files, so the scan stays cheap.
+      - id: adr-guard-identifiers
+        name: architecture (adr guard live cloud identifiers)
+        entry: python3 scripts/adr_guard/adr_guard.py --checks no-live-cloud-identifiers --changed
+        language: system
+        pass_filenames: false
+        verbose: true
+
       - id: adr-guard-k8s
         name: architecture (adr guard k8s deployments)
         entry: python3 scripts/adr_guard/adr_guard.py --checks k8s-deployment-security-context --files

@@ -170,6 +170,15 @@ validate_positive_int() {
   fi
 }
 
+validate_bool() {
+  local name="$1"
+  local value="$2"
+  if [[ -n "$value" && "$value" != "true" && "$value" != "false" ]]; then
+    echo "Invalid $name: expected 'true' or 'false'"
+    exit 1
+  fi
+}
+
 image_ref() {
   local registry="$1"
   local repository="$2"
@@ -206,6 +215,11 @@ SQS_ENGINE_URL=$(get_param "$PS_PREFIX/sqs-engine-url")
 SQS_MC_URL=$(get_param "$PS_PREFIX/sqs-mc-url")
 REDIS_ENDPOINT=$(get_param "$PS_PREFIX/redis-endpoint" || echo "")
 CHANNEL_LAYER_BACKEND=$(get_param "$PS_PREFIX/channel-layer-backend" 2>/dev/null || echo "")
+# Redis AUTH + in-transit encryption (#938). Present only on the secure path;
+# entrypoint.sh hydrates REDIS_SECRET_ID into REDIS_PASSWORD/REDIS_CA_PEM.
+REDIS_SECRET_ARN=$(get_param "$PS_PREFIX/redis-secret-arn" 2>/dev/null || echo "")
+REDIS_TLS=$(get_param "$PS_PREFIX/redis-tls" 2>/dev/null || echo "")
+REDIS_CA_MODE=$(get_param "$PS_PREFIX/redis-ca-mode" 2>/dev/null || echo "")
 GUACAMOLE_SECRET_ARN=$(get_param "$PS_PREFIX/guacamole-secret-arn" 2>/dev/null || echo "")
 DC_DOMAIN_PASSWORD_SECRET_ARN=$(get_param "$PS_PREFIX/dc-domain-password-secret-arn" 2>/dev/null || echo "")
 GUACAMOLE_BASE_URL=$(get_param "$PS_PREFIX/guacamole-base-url" 2>/dev/null || echo "")
@@ -236,6 +250,14 @@ validate_uint "TERMINAL_IDLE_TIMEOUT_SECONDS" "$TERMINAL_IDLE_TIMEOUT_SECONDS"
 validate_uint "TERMINAL_MAX_SESSION_SECONDS" "$TERMINAL_MAX_SESSION_SECONDS"
 validate_uint "TERMINAL_READ_POLL_SECONDS" "$TERMINAL_READ_POLL_SECONDS"
 
+# Portal web capacity metrics (#940). Enable flag + busy-ratio denominator come
+# from SSM (same params the SSM redeploy path reads); the NamePrefix dimension
+# comes from the Terraform name_prefix so it matches the CloudWatch alarms.
+PORTAL_CAPACITY_METRICS_ENABLED=$(get_param "$PS_PREFIX/portal-capacity-metrics-enabled" 2>/dev/null || echo "")
+PORTAL_WORKER_SOFT_CONCURRENCY=$(get_param "$PS_PREFIX/portal-worker-soft-concurrency" 2>/dev/null || echo "")
+validate_bool "PORTAL_CAPACITY_METRICS_ENABLED" "$PORTAL_CAPACITY_METRICS_ENABLED"
+validate_positive_int "PORTAL_WORKER_SOFT_CONCURRENCY" "$PORTAL_WORKER_SOFT_CONCURRENCY"
+
 IMAGE=$(image_ref "$ECR_REGISTRY" "$ECR_REPOSITORY" "$IMAGE_DIGEST" "$IMAGE_TAG")
 echo "Deploying image: $IMAGE"
 
@@ -261,6 +283,19 @@ COMMON_ENV="$COMMON_ENV -e SQS_MC_URL=$SQS_MC_URL"
 # Add Redis if configured
 if [[ -n "$REDIS_ENDPOINT" ]]; then
   COMMON_ENV="$COMMON_ENV -e REDIS_HOST=$REDIS_ENDPOINT"
+fi
+
+# Redis AUTH + in-transit encryption (#938). Only the secret reference and
+# non-secret flags travel here; the AUTH token is hydrated from Secrets Manager
+# by entrypoint.sh, never passed via docker argv.
+if [[ -n "$REDIS_SECRET_ARN" ]]; then
+  COMMON_ENV="$COMMON_ENV -e REDIS_SECRET_ID=$REDIS_SECRET_ARN"
+fi
+if [[ -n "$REDIS_TLS" ]]; then
+  COMMON_ENV="$COMMON_ENV -e REDIS_TLS=$REDIS_TLS"
+fi
+if [[ -n "$REDIS_CA_MODE" ]]; then
+  COMMON_ENV="$COMMON_ENV -e REDIS_CA_MODE=$REDIS_CA_MODE"
 fi
 
 # Channel-layer backend posture (ADR-018, #849), decoupled from autoscaling.
@@ -325,6 +360,17 @@ if [[ -n "$TERMINAL_MAX_SESSION_SECONDS" ]]; then
 fi
 if [[ -n "$TERMINAL_READ_POLL_SECONDS" ]]; then
   COMMON_ENV="$COMMON_ENV -e TERMINAL_READ_POLL_SECONDS=$TERMINAL_READ_POLL_SECONDS"
+fi
+
+# Portal web capacity metrics (#940), validated above. The NamePrefix dimension
+# is the Terraform name_prefix so the emitted series matches the CloudWatch
+# alarms/dashboard; it is always set so an enabled emitter is never unlabelled.
+COMMON_ENV="$COMMON_ENV -e PORTAL_CAPACITY_NAME_PREFIX=${name_prefix}"
+if [[ -n "$PORTAL_CAPACITY_METRICS_ENABLED" ]]; then
+  COMMON_ENV="$COMMON_ENV -e PORTAL_CAPACITY_METRICS_ENABLED=$PORTAL_CAPACITY_METRICS_ENABLED"
+fi
+if [[ -n "$PORTAL_WORKER_SOFT_CONCURRENCY" ]]; then
+  COMMON_ENV="$COMMON_ENV -e PORTAL_WORKER_SOFT_CONCURRENCY=$PORTAL_WORKER_SOFT_CONCURRENCY"
 fi
 
 if [[ -n "$CTFD_PLATFORM_URL" ]]; then

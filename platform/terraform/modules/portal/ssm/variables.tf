@@ -161,6 +161,24 @@ variable "enable_redis" {
   default     = false
 }
 
+variable "redis_secret_arn" {
+  description = "ARN of the Secrets Manager secret holding the Redis AUTH token (#938). Non-secret reference only; the token itself never enters Parameter Store. Empty on the plaintext single-node path."
+  type        = string
+  default     = ""
+}
+
+variable "redis_tls" {
+  description = "Whether the Redis channel-layer connection uses in-transit encryption + AUTH (#938). Drives the REDIS_TLS env var consumed by config/_channels.py."
+  type        = bool
+  default     = false
+}
+
+variable "redis_ca_mode" {
+  description = "TLS trust mode for the Redis server certificate (#938): 'system' (AWS ElastiCache public Amazon CA via the OS trust store) or 'pem' (bundled CA in REDIS_CA_PEM). Consumed by config/_channels.py as REDIS_CA_MODE."
+  type        = string
+  default     = "system"
+}
+
 variable "db_host_override" {
   description = "Override database host. If empty, uses RDS host from secret."
   type        = string
@@ -284,5 +302,26 @@ variable "terminal_read_poll_seconds" {
   validation {
     condition     = var.terminal_read_poll_seconds >= 1 && floor(var.terminal_read_poll_seconds) == var.terminal_read_poll_seconds
     error_message = "terminal_read_poll_seconds must be a positive integer."
+  }
+}
+
+# ------------------------------------------------------------------------------
+# Portal web capacity metrics (#940)
+# ------------------------------------------------------------------------------
+
+variable "portal_capacity_metrics_enabled" {
+  description = "Enable the per-worker Shifter/PortalCapacity metrics emitter (PORTAL_CAPACITY_METRICS_ENABLED). Enable in ASG-mode environments where the capacity alarms/dashboard exist."
+  type        = bool
+  default     = false
+}
+
+variable "portal_worker_soft_concurrency" {
+  description = "Busy-ratio denominator: the soft concurrent in-flight HTTP request target per portal web worker (PORTAL_WORKER_SOFT_CONCURRENCY)."
+  type        = number
+  default     = 6
+
+  validation {
+    condition     = var.portal_worker_soft_concurrency >= 1 && floor(var.portal_worker_soft_concurrency) == var.portal_worker_soft_concurrency
+    error_message = "portal_worker_soft_concurrency must be a positive integer."
   }
 }

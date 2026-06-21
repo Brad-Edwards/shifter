@@ -117,6 +117,67 @@ _SPECS = [
         "rejectedconnectioncount",
     ),
     (
+        "AWS/ApplicationELB",
+        "ActiveConnectionCount",
+        "Maximum",
+        "count",
+        "LoadBalancer",
+        "alb",
+        False,
+        "ALB active connections",
+        "activeconnectioncount",
+    ),
+    (
+        # App-side portal capacity gauges (#940), Shifter/PortalCapacity namespace,
+        # dimensioned only by the environment NamePrefix. Busy ratio is reported as
+        # the fleet mean (Average) and the hottest worker (Maximum); they answer
+        # different questions during a saturation run.
+        "Shifter/PortalCapacity",
+        "WorkerBusyRatio",
+        "Average",
+        "ratio",
+        "NamePrefix",
+        "name_prefix",
+        False,
+        "Portal worker busy ratio (fleet mean)",
+        "workerbusyratio",
+    ),
+    (
+        "Shifter/PortalCapacity",
+        "WorkerBusyRatio",
+        "Maximum",
+        "ratio",
+        "NamePrefix",
+        "name_prefix",
+        False,
+        "Portal worker busy ratio (hottest worker)",
+        "workerbusyratio_peak",
+    ),
+    (
+        # Count gauge: with the emitter publish interval aligned to the metric
+        # period, Sum across the same-dimension samples approximates the fleet total.
+        "Shifter/PortalCapacity",
+        "WorkerInFlightRequests",
+        "Sum",
+        "count",
+        "NamePrefix",
+        "name_prefix",
+        False,
+        "Portal in-flight HTTP requests (fleet)",
+        "workerinflightrequests",
+    ),
+    (
+        "Shifter/PortalCapacity",
+        "TerminalActiveSessions",
+        "Sum",
+        "count",
+        "NamePrefix",
+        "name_prefix",
+        False,
+        "Portal terminal active sessions (fleet)",
+        "terminalactivesessions",
+    ),
+    (
         "AWS/EC2",
         "CPUUtilization",
         "Average",
@@ -226,8 +287,43 @@ class AwsMetricsAdapter:
                 provenance=f"{namespace} {metric_name} ({stat})" + (" [proxy]" if is_proxy else ""),
                 is_proxy=is_proxy,
             )
+        self._collect_request_count_per_target(window_start, window_end, metrics, gaps)
         self._collect_rds_connection_churn(window_start, window_end, metrics, gaps)
         return MetricsResult(self.provider, window_start, window_end, metrics=metrics, gaps=gaps)
+
+    def _collect_request_count_per_target(self, window_start, window_end, metrics, gaps) -> None:
+        """Portal scale-out signal (#940): requests-per-target.
+
+        AWS publishes ``RequestCountPerTarget`` under "Per AppELB, per TG" — the
+        ``LoadBalancer`` + ``TargetGroup`` dimension PAIR — not ``TargetGroup``
+        alone, so it needs both the ``alb`` (LoadBalancer suffix) and
+        ``target_group`` targets; querying ``TargetGroup`` alone returns no
+        datapoints. ``Sum`` is the only meaningful statistic for this metric.
+        """
+        alb = self.targets.get("alb")
+        target_group = self.targets.get("target_group")
+        if not alb or not target_group:
+            gaps.append("ALB RequestCountPerTarget (needs both alb and target_group configured)")
+            return
+        value = self._query_dimensions(
+            "AWS/ApplicationELB",
+            "RequestCountPerTarget",
+            "Sum",
+            [{"Name": "LoadBalancer", "Value": alb}, {"Name": "TargetGroup", "Value": target_group}],
+            window_start,
+            window_end,
+        )
+        if value is None:
+            gaps.append("ALB RequestCountPerTarget (no datapoints in window)")
+            return
+        key = "target_group.requestcountpertarget"
+        metrics[key] = MetricValue(
+            name=key,
+            value=value,
+            unit="count",
+            provenance="AWS/ApplicationELB RequestCountPerTarget (Sum, LoadBalancer+TargetGroup)",
+            is_proxy=False,
+        )
 
     def _collect_rds_connection_churn(self, window_start, window_end, metrics, gaps) -> None:
         dim_value = self.targets.get("rds_instance")
@@ -237,8 +333,7 @@ class AwsMetricsAdapter:
             "AWS/RDS",
             "DatabaseConnections",
             "Average",
-            "DBInstanceIdentifier",
-            dim_value,
+            [{"Name": "DBInstanceIdentifier", "Value": dim_value}],
             window_start,
             window_end,
         )
@@ -259,7 +354,7 @@ class AwsMetricsAdapter:
         )
 
     def _query(self, namespace, metric_name, stat, dim_key, dim_value, start, end):
-        """Aggregate one signal across the full run window, or None on any gap/failure.
+        """Aggregate one single-dimension signal across the full run window.
 
         Percentile stats (p95/p99) must be requested via ``ExtendedStatistics``
         alone; sending both ``Statistics`` and ``ExtendedStatistics`` for a
@@ -267,20 +362,24 @@ class AwsMetricsAdapter:
         returns multiple datapoints, so every datapoint is aggregated (sum / mean /
         max) rather than collapsing the window to its latest point.
         """
+        return self._query_dimensions(namespace, metric_name, stat, [{"Name": dim_key, "Value": dim_value}], start, end)
+
+    def _query_dimensions(self, namespace, metric_name, stat, dimensions, start, end):
+        """Aggregate a signal identified by a full dimension set (one or more dims)."""
         is_pct = stat in ("p95", "p99")
-        points = self._query_datapoints(namespace, metric_name, stat, dim_key, dim_value, start, end)
+        points = self._query_datapoints(namespace, metric_name, stat, dimensions, start, end)
         if points is None:
             return None
         values = _datapoint_values(points, stat, is_pct)
         return _aggregate(stat, values)
 
-    def _query_datapoints(self, namespace, metric_name, stat, dim_key, dim_value, start, end):
+    def _query_datapoints(self, namespace, metric_name, stat, dimensions, start, end):
         client = self._get_client()
         is_pct = stat in ("p95", "p99")
         kwargs = {
             "Namespace": namespace,
             "MetricName": metric_name,
-            "Dimensions": [{"Name": dim_key, "Value": dim_value}],
+            "Dimensions": dimensions,
             "StartTime": start,
             "EndTime": end,
             "Period": 300,

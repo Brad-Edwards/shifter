@@ -221,6 +221,43 @@ resource "aws_ssm_parameter" "channel_layer_backend" {
   tags = local.common_tags
 }
 
+# Redis AUTH + in-transit encryption wiring (#938). Written only when Redis is
+# the active backend AND the secure path is enabled. These carry non-secret
+# references and flags only: the AUTH token stays in Secrets Manager and is
+# hydrated into REDIS_PASSWORD by entrypoint.sh, never via Parameter Store.
+resource "aws_ssm_parameter" "redis_secret_arn" {
+  count = var.enable_redis && var.redis_tls ? 1 : 0
+
+  name        = "${local.ps_prefix}/redis-secret-arn"
+  description = "ARN of the Secrets Manager secret holding the Redis AUTH token (resolved to REDIS_PASSWORD at portal startup)"
+  type        = "String"
+  value       = var.redis_secret_arn
+
+  tags = local.common_tags
+}
+
+resource "aws_ssm_parameter" "redis_tls" {
+  count = var.enable_redis && var.redis_tls ? 1 : 0
+
+  name        = "${local.ps_prefix}/redis-tls"
+  description = "Whether the Redis channel-layer connection uses in-transit encryption + AUTH (REDIS_TLS)"
+  type        = "String"
+  value       = "true"
+
+  tags = local.common_tags
+}
+
+resource "aws_ssm_parameter" "redis_ca_mode" {
+  count = var.enable_redis && var.redis_tls ? 1 : 0
+
+  name        = "${local.ps_prefix}/redis-ca-mode"
+  description = "TLS trust mode for the Redis server certificate (REDIS_CA_MODE): system | pem"
+  type        = "String"
+  value       = var.redis_ca_mode
+
+  tags = local.common_tags
+}
+
 resource "aws_ssm_parameter" "db_host_override" {
   count = var.enable_db_host_override ? 1 : 0
 
@@ -320,6 +357,28 @@ resource "aws_ssm_parameter" "terminal_read_poll_seconds" {
   description = "Idle terminal read-loop poll interval in seconds (TERMINAL_READ_POLL_SECONDS); does not bound output latency"
   type        = "String"
   value       = tostring(var.terminal_read_poll_seconds)
+
+  tags = local.common_tags
+}
+
+# Portal web capacity metrics (#940). Read by both the first-boot user_data and
+# the SSM-redeploy deploy_portal.sh hydration paths, like the #930 terminal
+# tunables, so an operator can toggle the emitter or retune the busy-ratio
+# denominator on a running fleet without an image rebuild.
+resource "aws_ssm_parameter" "portal_capacity_metrics_enabled" {
+  name        = "${local.ps_prefix}/portal-capacity-metrics-enabled"
+  description = "Enable the per-worker Shifter/PortalCapacity metrics emitter (PORTAL_CAPACITY_METRICS_ENABLED): true|false"
+  type        = "String"
+  value       = tostring(var.portal_capacity_metrics_enabled)
+
+  tags = local.common_tags
+}
+
+resource "aws_ssm_parameter" "portal_worker_soft_concurrency" {
+  name        = "${local.ps_prefix}/portal-worker-soft-concurrency"
+  description = "Busy-ratio denominator: soft concurrent-request target per portal web worker (PORTAL_WORKER_SOFT_CONCURRENCY)"
+  type        = "String"
+  value       = tostring(var.portal_worker_soft_concurrency)
 
   tags = local.common_tags
 }

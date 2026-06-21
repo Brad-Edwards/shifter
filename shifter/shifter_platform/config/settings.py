@@ -135,6 +135,7 @@ MIDDLEWARE = [
     "config.middleware.HealthCheckMiddleware",
     # Request ID for audit logging correlation
     "config.middleware.RequestIDMiddleware",
+    "config.middleware.RequestInFlightMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
@@ -241,6 +242,8 @@ TERMINAL_CONNECT_EXECUTOR_WORKERS = _env_int("TERMINAL_CONNECT_EXECUTOR_WORKERS"
 # TerminalExecutorSaturated and the connect is closed with SERVICE_UNAVAILABLE
 # (4503, retryable) instead of being queued without limit (#929).
 TERMINAL_CONNECT_EXECUTOR_QUEUE_SLACK = _env_int("TERMINAL_CONNECT_EXECUTOR_QUEUE_SLACK", 16)
+
+from config._capacity_settings import *  # noqa: E402  # NOSONAR
 
 # Database
 # Use SQLite for local dev/tests, PostgreSQL for deployed environments
@@ -472,8 +475,10 @@ REST_FRAMEWORK = {
 # ------------------------------------------------------------------------------
 
 ENVIRONMENT = os.environ.get("ENVIRONMENT", "production")
-DEV_LOGIN_ALLOWED_HOSTS = _env_list("DEV_LOGIN_ALLOWED_HOSTS") or ["localhost", "127.0.0.1", "[::1]"]
+# Dev-auth admits the direct peer REMOTE_ADDR only (loopback + these CIDRs); Host is never trusted (SEC-3 #937).
 DEV_LOGIN_ALLOWED_CIDRS = _env_list("DEV_LOGIN_ALLOWED_CIDRS")
+# Trusted XFF proxy hops (single ALB -> 1); the audit source-IP resolver trusts that rightmost hop (SEC-4 #937).
+AUDIT_TRUSTED_PROXY_HOPS = _env_int("AUDIT_TRUSTED_PROXY_HOPS", 1)
 
 # ------------------------------------------------------------------------------
 # Logging Configuration

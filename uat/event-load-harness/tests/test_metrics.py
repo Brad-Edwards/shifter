@@ -130,6 +130,62 @@ def test_connection_churn_proxy_needs_at_least_two_samples():
     assert _connection_churn_proxy([{"Timestamp": START, "Average": 2.0}]) is None
 
 
+def test_aws_adapter_collects_request_count_per_target():
+    # The portal scale-out signal: requests-per-target. AWS publishes it under the
+    # LoadBalancer + TargetGroup dimension PAIR (Per AppELB, per TG), not TargetGroup
+    # alone, so the query must carry both dimensions or it silently returns nothing.
+    fake = _FakeCloudWatch()
+    adapter = AwsMetricsAdapter(
+        region="us-east-2",
+        targets={"alb": "app/dev-portal/lb1", "target_group": "targetgroup/dev-portal/abc"},
+        client=fake,
+    )
+    result = adapter.collect(*WINDOW)
+    calls = [c for c in fake.calls if c["MetricName"] == "RequestCountPerTarget"]
+    assert calls
+    assert calls[0]["Dimensions"] == [
+        {"Name": "LoadBalancer", "Value": "app/dev-portal/lb1"},
+        {"Name": "TargetGroup", "Value": "targetgroup/dev-portal/abc"},
+    ]
+    assert calls[0]["Namespace"] == "AWS/ApplicationELB"
+    # Summed across the window (3 + 4).
+    assert result.metrics["target_group.requestcountpertarget"].value == 7.0
+
+
+def test_request_count_per_target_needs_both_alb_and_target_group():
+    # Only target_group configured (no LoadBalancer): named gap, no fabricated value.
+    fake = _FakeCloudWatch()
+    adapter = AwsMetricsAdapter(region="us-east-2", targets={"target_group": "targetgroup/dev-portal/abc"}, client=fake)
+    result = adapter.collect(*WINDOW)
+    assert "target_group.requestcountpertarget" not in result.metrics
+    assert any("RequestCountPerTarget" in gap for gap in result.gaps)
+
+
+def test_aws_adapter_collects_active_connection_count():
+    fake = _FakeCloudWatch()
+    adapter = AwsMetricsAdapter(region="us-east-2", targets={"alb": "app/portal/abc"}, client=fake)
+    result = adapter.collect(*WINDOW)
+    # Maximum across the window picks the busiest period (max(15, 25)).
+    assert result.metrics["alb.activeconnectioncount"].value == 25.0
+
+
+def test_aws_adapter_collects_portal_capacity_signals():
+    # Custom Shifter/PortalCapacity gauges, dimensioned only by the low-cardinality
+    # NamePrefix. Busy ratio reports both fleet mean (Average) and hottest worker
+    # (Maximum); terminal sessions report the fleet total (Sum).
+    fake = _FakeCloudWatch()
+    adapter = AwsMetricsAdapter(region="us-east-2", targets={"name_prefix": "dev-portal"}, client=fake)
+    result = adapter.collect(*WINDOW)
+    cap_calls = [c for c in fake.calls if c["Namespace"] == "Shifter/PortalCapacity"]
+    assert cap_calls
+    assert all(c["Dimensions"] == [{"Name": "NamePrefix", "Value": "dev-portal"}] for c in cap_calls)
+    assert result.metrics["name_prefix.workerbusyratio"].value == 15.0  # mean of per-period averages
+    assert result.metrics["name_prefix.workerbusyratio_peak"].value == 25.0  # hottest worker
+    # Count gauges sum across the window (3 + 4) so a fleet-total regression is caught.
+    assert result.metrics["name_prefix.terminalactivesessions"].value == 7.0
+    assert result.metrics["name_prefix.workerinflightrequests"].value == 7.0
+
+
 def test_metric_value_can_be_flagged_as_proxy():
     mv = MetricValue(
         name="rds.connection_rate_proxy",

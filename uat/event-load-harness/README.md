@@ -156,9 +156,16 @@ session. Three sources:
   ```sh
   uv run event-load-harness ... \
     --metric-source aws --region us-east-2 \
-    --aws-alb app/<portal-alb>/<id> --aws-asg <portal-asg> \
+    --aws-alb app/<portal-alb>/<id> --aws-target-group targetgroup/<portal-tg>/<id> \
+    --aws-asg <portal-asg> --aws-name-prefix <env>-portal \
     --aws-rds <portal-db> --aws-redis <portal-redis>
   ```
+
+  `--aws-target-group` (with `--aws-alb`) collects ALB `RequestCountPerTarget`
+  (the portal scale-out signal), which AWS publishes under the LoadBalancer +
+  TargetGroup dimension pair, and `--aws-name-prefix` collects the app-emitted
+  `Shifter/PortalCapacity` worker busy ratio and terminal-session gauges (#940).
+  All ARN suffixes are exposed as Terraform outputs of the portal `alb` module.
 
   For #853, the AWS adapter records RDS `DatabaseConnections` average and peak
   values, plus a lower-bound connection churn proxy derived from
@@ -188,6 +195,36 @@ portal replicas * worker/process count * Django connection contexts
 
 That total must fit under the database max-connection budget with failover and
 background-worker headroom.
+
+## Portal autoscaling scale-out verification (#940)
+
+This is the documented acceptance run for #940: prove portal scale-out reacts to
+request-path saturation *before* average EC2 CPU pins. It needs an ASG-enabled
+environment (`enable_autoscaling = true` and `portal_capacity_metrics_enabled =
+true`, for example prod); the committed dev tfvars run a single instance and
+cannot scale out.
+
+1. Resolve the targets from the portal Terraform outputs: the `alb` module's
+   `alb_arn_suffix` / `target_group_arn_suffix`, the portal ASG name, and the
+   environment `name_prefix` (for example `prod-portal`).
+2. Run a stepped-concurrency profile that drives request-path saturation against
+   the deployed target, collecting AWS metrics for the run window:
+
+   ```sh
+   uv run event-load-harness --target-url https://<portal-host> \
+     --confirm-host <portal-host> --profile portal-core \
+     --concurrency <stepped> --ramp-seconds <r> --duration-seconds <d> \
+     --metric-source aws --region us-east-2 \
+     --aws-alb <alb_arn_suffix> --aws-target-group <target_group_arn_suffix> \
+     --aws-asg <portal-asg> --aws-name-prefix <env>-portal
+   ```
+
+3. Confirm in the report and the `<env>-portal-portal-capacity` CloudWatch
+   dashboard that `RequestCountPerTarget` / `TargetResponseTime` (and the
+   `WorkerBusyRatio` gauge) rise and the ASG adds capacity *before* `AWS/EC2`
+   `CPUUtilization` reaches the guardrail threshold. The target-tracking policies
+   own scale-out and scale-in; the worker-busy-ratio alarm adds an app-saturation
+   scale-out. Any unconfigured target is reported as a named gap, never a guess.
 
 ## Output
 

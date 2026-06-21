@@ -322,6 +322,12 @@ module "redis" {
   engine_version             = var.redis_engine_version
   enable_replication         = var.redis_enable_replication
 
+  # AUTH + in-transit encryption (#938): the AUTH token secret is encrypted by
+  # the portal CMK. is_active_channel_backend rejects a live channel layer on
+  # the plaintext single-node path.
+  secrets_kms_key_arn       = aws_kms_key.secrets_manager.arn
+  is_active_channel_backend = var.enable_redis
+
   # CloudWatch Alarms
   enable_alarms = var.alarm_email != ""
   alarm_actions = var.alarm_email != "" ? [aws_sns_topic.alerts.arn] : []
@@ -442,6 +448,11 @@ module "ssm" {
   # Redis wiring is environment-owned and decoupled from autoscaling (ADR-018, #849).
   redis_endpoint = var.enable_redis ? module.redis.redis_endpoint : ""
   enable_redis   = var.enable_redis
+  # AUTH + in-transit encryption references (#938). Non-secret: the token stays
+  # in Secrets Manager and is hydrated into REDIS_PASSWORD by entrypoint.sh.
+  redis_secret_arn = module.redis.redis_secret_arn
+  redis_tls        = module.redis.redis_tls_enabled
+  redis_ca_mode    = "system"
 
   # Database endpoint (direct RDS connection - hostname only, not endpoint with port)
   db_host_override        = module.rds.db_instance_address
@@ -463,6 +474,11 @@ module "ssm" {
   terminal_idle_timeout_seconds  = var.terminal_idle_timeout_seconds
   terminal_max_session_seconds   = var.terminal_max_session_seconds
   terminal_read_poll_seconds     = var.terminal_read_poll_seconds
+
+  # Portal web capacity metrics (#940). Enable flag and busy-ratio denominator
+  # are env-owned and hydrated by both first-boot user_data and SSM redeploy.
+  portal_capacity_metrics_enabled = var.portal_capacity_metrics_enabled
+  portal_worker_soft_concurrency  = var.portal_worker_soft_concurrency
 }
 
 # ------------------------------------------------------------------------------
@@ -484,13 +500,19 @@ module "ec2" {
   instance_type         = var.ec2_instance_type
   ecr_repository_arn    = data.terraform_remote_state.foundation.outputs.portal_ecr_arn
   ecr_repository_url    = data.terraform_remote_state.foundation.outputs.portal_ecr_url
-  secret_arns = [
-    module.rds.db_credentials_secret_arn,
-    aws_secretsmanager_secret.app.arn,
-    module.cognito.cognito_secret_arn,
-    module.guacamole.json_auth_secret_arn,
-    module.engine_provisioner.dc_domain_password_secret_arn,
-  ]
+  # The Redis AUTH token secret (#938) is included only on the in-transit-
+  # encryption path; the single-node path returns "" and must not reach the IAM
+  # Resource list (an empty ARN is invalid).
+  secret_arns = concat(
+    [
+      module.rds.db_credentials_secret_arn,
+      aws_secretsmanager_secret.app.arn,
+      module.cognito.cognito_secret_arn,
+      module.guacamole.json_auth_secret_arn,
+      module.engine_provisioner.dc_domain_password_secret_arn,
+    ],
+    module.redis.redis_secret_arn != "" ? [module.redis.redis_secret_arn] : [],
+  )
   secrets_manager_kms_key_arn = aws_kms_key.secrets_manager.arn
   s3_bucket_arn               = module.s3.bucket_arn
   app_port                    = var.app_port
@@ -503,14 +525,26 @@ module "ec2" {
   ecs_execution_role_arn     = module.engine_provisioner.ecs_execution_role_arn
 
   # Autoscaling configuration
-  enable_autoscaling     = var.enable_autoscaling
-  subnet_ids             = module.vpc.private_subnet_ids
-  target_group_arn       = module.alb.target_group_arn
-  asg_min_size           = var.asg_min_size
-  asg_max_size           = var.asg_max_size
-  asg_desired_capacity   = var.asg_desired_capacity
-  asg_warm_pool_min_size = var.asg_warm_pool_min_size
-  asg_warm_pool_state    = var.asg_warm_pool_state
+  enable_autoscaling      = var.enable_autoscaling
+  subnet_ids              = module.vpc.private_subnet_ids
+  target_group_arn        = module.alb.target_group_arn
+  alb_arn_suffix          = module.alb.alb_arn_suffix
+  target_group_arn_suffix = module.alb.target_group_arn_suffix
+  asg_min_size            = var.asg_min_size
+  asg_max_size            = var.asg_max_size
+  asg_desired_capacity    = var.asg_desired_capacity
+  asg_warm_pool_min_size  = var.asg_warm_pool_min_size
+  asg_warm_pool_state     = var.asg_warm_pool_state
+
+  # App-saturation autoscaling + observability (#940). Scale-out tracks ALB
+  # request-path saturation, not average EC2 CPU; alarms/dashboard notify the
+  # shared alerts topic.
+  scale_target_requests_per_target             = var.scale_target_requests_per_target
+  scale_target_response_time_seconds           = var.scale_target_response_time_seconds
+  worker_busy_ratio_scale_out_threshold        = var.worker_busy_ratio_scale_out_threshold
+  target_response_time_alarm_threshold_seconds = var.target_response_time_alarm_threshold_seconds
+  enable_portal_capacity_alarms                = var.enable_portal_capacity_alarms
+  portal_capacity_alarm_actions                = var.alarm_email != "" ? [aws_sns_topic.alerts.arn] : []
 
   # Connection-lifecycle drain (#931): bounded termination drain + graceful
   # container stop, sized below the ALB idle timeout / target drain.
@@ -518,10 +552,9 @@ module "ec2" {
   docker_stop_timeout                     = var.docker_stop_timeout
   instance_refresh_min_healthy_percentage = var.instance_refresh_min_healthy_percentage
 
-  redis_endpoint       = var.enable_redis ? module.redis.redis_endpoint : ""
-  scale_up_threshold   = var.scale_up_threshold
-  scale_down_threshold = var.scale_down_threshold
-  log_retention_days   = var.log_retention_days
+  redis_endpoint     = var.enable_redis ? module.redis.redis_endpoint : ""
+  scale_up_threshold = var.scale_up_threshold
+  log_retention_days = var.log_retention_days
 
   # Messaging (SQS queues for message consumers)
   sqs_queue_arns  = values(module.messaging.sqs_queue_arns)

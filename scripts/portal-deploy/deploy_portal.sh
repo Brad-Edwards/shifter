@@ -178,6 +178,15 @@ validate_positive_int() {
   fi
 }
 
+validate_bool() {
+  local name="$1"
+  local value="$2"
+  if [[ -n "$value" && "$value" != "true" && "$value" != "false" ]]; then
+    echo "Invalid ${name}: expected 'true' or 'false'" >&2
+    exit 1
+  fi
+}
+
 image_ref() {
   local registry="$1"
   local repository="$2"
@@ -304,6 +313,9 @@ main() {
   local sqs_mc_url
   local redis_endpoint
   local channel_layer_backend
+  local redis_secret_arn
+  local redis_tls
+  local redis_ca_mode
   local email_backend
   local ctf_from_email
   local platform_bootstrap_staff_emails
@@ -315,6 +327,8 @@ main() {
   local terminal_idle_timeout_seconds
   local terminal_max_session_seconds
   local terminal_read_poll_seconds
+  local portal_capacity_metrics_enabled
+  local portal_worker_soft_concurrency
 
   image_digest=$(get_optional_param "$PS_PREFIX/image-digest")
   image_tag=$(get_param "$PS_PREFIX/image-tag")
@@ -338,6 +352,11 @@ main() {
   sqs_mc_url=$(get_param "$PS_PREFIX/sqs-mc-url")
   redis_endpoint=$(get_optional_param "$PS_PREFIX/redis-endpoint")
   channel_layer_backend=$(get_optional_param "$PS_PREFIX/channel-layer-backend")
+  # Redis AUTH + in-transit encryption (#938). Mirrors user_data.sh: emit the
+  # secret reference + non-secret flags; entrypoint.sh hydrates the token.
+  redis_secret_arn=$(get_optional_param "$PS_PREFIX/redis-secret-arn")
+  redis_tls=$(get_optional_param "$PS_PREFIX/redis-tls")
+  redis_ca_mode=$(get_optional_param "$PS_PREFIX/redis-ca-mode")
   email_backend=$(get_optional_param "$PS_PREFIX/email-backend")
   ctf_from_email=$(get_optional_param "$PS_PREFIX/ctf-from-email")
   platform_bootstrap_staff_emails=$(get_optional_param "$PS_PREFIX/platform-bootstrap-staff-emails")
@@ -361,6 +380,15 @@ main() {
   validate_uint "TERMINAL_IDLE_TIMEOUT_SECONDS" "$terminal_idle_timeout_seconds"
   validate_uint "TERMINAL_MAX_SESSION_SECONDS" "$terminal_max_session_seconds"
   validate_uint "TERMINAL_READ_POLL_SECONDS" "$terminal_read_poll_seconds"
+
+  # Portal web capacity metrics (#940). Same parameter names user_data.sh reads;
+  # validated before docker argv. The NamePrefix dimension reuses the portal name
+  # prefix this script already receives (--worker-health-name-prefix) so an
+  # enabled emitter is always labelled and matches the CloudWatch alarms.
+  portal_capacity_metrics_enabled=$(get_optional_param "$PS_PREFIX/portal-capacity-metrics-enabled")
+  portal_worker_soft_concurrency=$(get_optional_param "$PS_PREFIX/portal-worker-soft-concurrency")
+  validate_bool "PORTAL_CAPACITY_METRICS_ENABLED" "$portal_capacity_metrics_enabled"
+  validate_positive_int "PORTAL_WORKER_SOFT_CONCURRENCY" "$portal_worker_soft_concurrency"
 
   local image
   image=$(image_ref "$ecr_registry" "$ecr_repository" "$image_digest" "$image_tag")
@@ -393,6 +421,9 @@ main() {
   append_env SQS_MC_URL "$sqs_mc_url"
   append_env_if_set REDIS_HOST "$redis_endpoint"
   append_env_if_set CHANNEL_LAYER_BACKEND "$channel_layer_backend"
+  append_env_if_set REDIS_SECRET_ID "$redis_secret_arn"
+  append_env_if_set REDIS_TLS "$redis_tls"
+  append_env_if_set REDIS_CA_MODE "$redis_ca_mode"
   append_env_if_set EMAIL_BACKEND "$email_backend"
   append_env_if_set CTF_FROM_EMAIL "$ctf_from_email"
   append_env_if_set PLATFORM_BOOTSTRAP_STAFF_EMAILS "$platform_bootstrap_staff_emails"
@@ -403,6 +434,9 @@ main() {
   append_env_if_set TERMINAL_IDLE_TIMEOUT_SECONDS "$terminal_idle_timeout_seconds"
   append_env_if_set TERMINAL_MAX_SESSION_SECONDS "$terminal_max_session_seconds"
   append_env_if_set TERMINAL_READ_POLL_SECONDS "$terminal_read_poll_seconds"
+  append_env PORTAL_CAPACITY_NAME_PREFIX "$WORKER_HEALTH_NAME_PREFIX"
+  append_env_if_set PORTAL_CAPACITY_METRICS_ENABLED "$portal_capacity_metrics_enabled"
+  append_env_if_set PORTAL_WORKER_SOFT_CONCURRENCY "$portal_worker_soft_concurrency"
 
   run_migrations "$image" "${DOCKER_ENV[@]}"
   if [[ "$MIGRATE_ONLY" == "true" ]]; then
