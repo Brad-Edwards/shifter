@@ -19,6 +19,8 @@ MANIFEST_PATH = CONFIG_DIR / "env-manifest.json"
 
 @dataclass(frozen=True, slots=True)
 class EnvBinding:
+    """One settings env var, its default expression, and the module that reads it."""
+
     name: str
     default: str | None
     source_file: str
@@ -28,49 +30,74 @@ _EXPLICIT_BINDINGS = (EnvBinding(name="ENVIRONMENT", default=None, source_file="
 
 
 def _default_repr(node: ast.expr | None) -> str | None:
-    if node is None:
+    """Render an AST default expression as a stable manifest string."""
+    result: str | None
+    match node:
+        case None:
+            result = None
+        case ast.Constant(value=None):
+            result = None
+        case ast.Constant(value=value):
+            result = repr(value)
+        case ast.Name(id=name):
+            result = name
+        case ast.IfExp(body=body, orelse=orelse):
+            result = f"{_default_repr(body)} if ... else {_default_repr(orelse)}"
+        case _:
+            try:
+                result = ast.unparse(node)
+            except Exception:
+                result = "<dynamic>"
+    return result
+
+
+def _is_os_environ_get(node: ast.Call) -> bool:
+    """Return True when ``node`` is an ``os.environ.get(...)`` call."""
+    func = node.func
+    return (
+        isinstance(func, ast.Attribute)
+        and func.attr == "get"
+        and isinstance(func.value, ast.Attribute)
+        and func.value.attr == "environ"
+        and isinstance(func.value.value, ast.Name)
+        and func.value.value.id == "os"
+    )
+
+
+def _env_name_from_get(node: ast.Call) -> str | None:
+    """Extract the env var name from an ``os.environ.get`` call, or None."""
+    if not node.args or not isinstance(node.args[0], ast.Constant):
         return None
-    if isinstance(node, ast.Constant):
-        if node.value is None:
-            return None
-        return repr(node.value)
-    if isinstance(node, ast.Name):
-        return node.id
-    if isinstance(node, ast.IfExp):
-        return f"{_default_repr(node.body)} if ... else {_default_repr(node.orelse)}"
-    try:
-        return ast.unparse(node)
-    except Exception:
-        return "<dynamic>"
+    if not isinstance(node.args[0].value, str):
+        return None
+    return node.args[0].value
+
+
+def _binding_from_get_call(node: ast.Call, rel: str) -> EnvBinding | None:
+    """Build an ``EnvBinding`` from a validated ``os.environ.get`` call."""
+    name = _env_name_from_get(node)
+    if name is None:
+        return None
+    default = _default_repr(node.args[1]) if len(node.args) > 1 else None
+    return EnvBinding(name=name, default=default, source_file=rel)
 
 
 def _extract_from_file(path: Path) -> list[EnvBinding]:
+    """Collect ``os.environ.get`` bindings from one config module."""
     tree = ast.parse(path.read_text(), filename=str(path))
-    bindings: list[EnvBinding] = []
     rel = path.relative_to(CONFIG_DIR.parent).as_posix()
-
+    bindings: list[EnvBinding] = []
     for node in ast.walk(tree):
-        if not isinstance(node, ast.Call):
+        if not isinstance(node, ast.Call) or not _is_os_environ_get(node):
             continue
-        func = node.func
-        if not (
-            isinstance(func, ast.Attribute)
-            and func.attr == "get"
-            and isinstance(func.value, ast.Attribute)
-            and func.value.attr == "environ"
-            and isinstance(func.value.value, ast.Name)
-            and func.value.value.id == "os"
-        ):
-            continue
-        if not node.args or not isinstance(node.args[0], ast.Constant) or not isinstance(node.args[0].value, str):
-            continue
-        name = node.args[0].value
-        default = _default_repr(node.args[1]) if len(node.args) > 1 else None
-        bindings.append(EnvBinding(name=name, default=default, source_file=rel))
+        binding = _binding_from_get_call(node, rel)
+        if binding is not None:
+            bindings.append(binding)
     return bindings
 
 
 def collect_env_bindings(config_dir: Path | None = None) -> list[EnvBinding]:
+    """Merge explicit and extracted env bindings from all config modules."""
     root = config_dir or CONFIG_DIR
     files = sorted(root.glob("settings.py")) + sorted(root.glob("_*.py"))
     merged: dict[str, EnvBinding] = {binding.name: binding for binding in _EXPLICIT_BINDINGS}
@@ -83,6 +110,7 @@ def collect_env_bindings(config_dir: Path | None = None) -> list[EnvBinding]:
 
 
 def render_manifest_json(bindings: list[EnvBinding]) -> str:
+    """Serialize bindings to the committed manifest JSON shape."""
     payload = {
         "schema_version": 1,
         "generated_from": "config/_env_manifest.py",
@@ -92,6 +120,7 @@ def render_manifest_json(bindings: list[EnvBinding]) -> str:
 
 
 def write_manifest(path: Path | None = None) -> Path:
+    """Regenerate and write ``env-manifest.json``; return the target path."""
     target = path or MANIFEST_PATH
     bindings = collect_env_bindings()
     target.write_text(render_manifest_json(bindings))
@@ -99,6 +128,7 @@ def write_manifest(path: Path | None = None) -> Path:
 
 
 def manifest_is_current(path: Path | None = None) -> bool:
+    """Return True when the committed manifest matches the current extractor output."""
     target = path or MANIFEST_PATH
     if not target.exists():
         return False

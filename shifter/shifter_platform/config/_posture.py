@@ -23,6 +23,7 @@ _logger = logging.getLogger(__name__)
 
 
 def describe_environment_posture(env: Mapping[str, str]) -> dict[str, object]:
+    """Summarize resolved environment/debug/testing flags (non-secret)."""
     return {
         "environment": env.get("ENVIRONMENT", "").strip() or None,
         "debug": env.get("DJANGO_DEBUG", "").strip().lower() == "true",
@@ -31,12 +32,14 @@ def describe_environment_posture(env: Mapping[str, str]) -> dict[str, object]:
 
 
 def describe_auth_posture(env: Mapping[str, str]) -> dict[str, object]:
+    """Summarize the resolved auth provider selection."""
     return {
         "auth_provider": env.get("AUTH_PROVIDER", "oidc").strip().lower() or "oidc",
     }
 
 
 def describe_database_posture(env: Mapping[str, str]) -> dict[str, object]:
+    """Summarize database engine/host posture without credentials."""
     if env.get("TESTING") == "1":
         return {"engine": "sqlite", "host": None, "port": None, "name": None}
     host = env.get("DB_HOST", "localhost").strip() or "localhost"
@@ -49,6 +52,7 @@ def describe_database_posture(env: Mapping[str, str]) -> dict[str, object]:
 
 
 def describe_deploy_posture(env: Mapping[str, str]) -> dict[str, object]:
+    """Summarize cloud provider and local/remote deploy mode."""
     local = env.get("LOCAL_PROVISIONER", "").strip()
     return {
         "cloud_provider": env.get("CLOUD_PROVIDER", "aws").strip().lower() or "aws",
