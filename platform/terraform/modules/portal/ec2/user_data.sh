@@ -215,6 +215,11 @@ SQS_ENGINE_URL=$(get_param "$PS_PREFIX/sqs-engine-url")
 SQS_MC_URL=$(get_param "$PS_PREFIX/sqs-mc-url")
 REDIS_ENDPOINT=$(get_param "$PS_PREFIX/redis-endpoint" || echo "")
 CHANNEL_LAYER_BACKEND=$(get_param "$PS_PREFIX/channel-layer-backend" 2>/dev/null || echo "")
+# Redis AUTH + in-transit encryption (#938). Present only on the secure path;
+# entrypoint.sh hydrates REDIS_SECRET_ID into REDIS_PASSWORD/REDIS_CA_PEM.
+REDIS_SECRET_ARN=$(get_param "$PS_PREFIX/redis-secret-arn" 2>/dev/null || echo "")
+REDIS_TLS=$(get_param "$PS_PREFIX/redis-tls" 2>/dev/null || echo "")
+REDIS_CA_MODE=$(get_param "$PS_PREFIX/redis-ca-mode" 2>/dev/null || echo "")
 GUACAMOLE_SECRET_ARN=$(get_param "$PS_PREFIX/guacamole-secret-arn" 2>/dev/null || echo "")
 DC_DOMAIN_PASSWORD_SECRET_ARN=$(get_param "$PS_PREFIX/dc-domain-password-secret-arn" 2>/dev/null || echo "")
 GUACAMOLE_BASE_URL=$(get_param "$PS_PREFIX/guacamole-base-url" 2>/dev/null || echo "")
@@ -278,6 +283,19 @@ COMMON_ENV="$COMMON_ENV -e SQS_MC_URL=$SQS_MC_URL"
 # Add Redis if configured
 if [[ -n "$REDIS_ENDPOINT" ]]; then
   COMMON_ENV="$COMMON_ENV -e REDIS_HOST=$REDIS_ENDPOINT"
+fi
+
+# Redis AUTH + in-transit encryption (#938). Only the secret reference and
+# non-secret flags travel here; the AUTH token is hydrated from Secrets Manager
+# by entrypoint.sh, never passed via docker argv.
+if [[ -n "$REDIS_SECRET_ARN" ]]; then
+  COMMON_ENV="$COMMON_ENV -e REDIS_SECRET_ID=$REDIS_SECRET_ARN"
+fi
+if [[ -n "$REDIS_TLS" ]]; then
+  COMMON_ENV="$COMMON_ENV -e REDIS_TLS=$REDIS_TLS"
+fi
+if [[ -n "$REDIS_CA_MODE" ]]; then
+  COMMON_ENV="$COMMON_ENV -e REDIS_CA_MODE=$REDIS_CA_MODE"
 fi
 
 # Channel-layer backend posture (ADR-018, #849), decoupled from autoscaling.
