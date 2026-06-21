@@ -243,6 +243,14 @@ TERMINAL_CONNECT_EXECUTOR_WORKERS = _env_int("TERMINAL_CONNECT_EXECUTOR_WORKERS"
 # (4503, retryable) instead of being queued without limit (#929).
 TERMINAL_CONNECT_EXECUTOR_QUEUE_SLACK = _env_int("TERMINAL_CONNECT_EXECUTOR_QUEUE_SLACK", 16)
 
+# CTF scheduler (run_ctf_scheduler) stale-task recovery window. A long
+# SPIN_UP_RANGES run heartbeats its task's updated_at, so this only needs to
+# exceed the maximum gap between heartbeats; the default is set well above the
+# legitimate spin-up window (default range_spinup_minutes=30) plus retry/poll
+# jitter so a genuinely in-flight spin-up is never marked FAILED on the
+# multi-node portal. See docs/architecture/ctf-scheduler-concurrency-preflight-942.md.
+CTF_SCHEDULER_STALE_TASK_MINUTES = _env_int("CTF_SCHEDULER_STALE_TASK_MINUTES", 120)
+
 from config._capacity_settings import *  # noqa: E402  # NOSONAR
 
 # Database

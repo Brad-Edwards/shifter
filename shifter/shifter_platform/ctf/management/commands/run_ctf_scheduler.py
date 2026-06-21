@@ -24,6 +24,7 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
+from django.conf import settings
 from django.core.management.base import BaseCommand
 from django.db import transaction
 from django.utils import timezone
@@ -34,9 +35,6 @@ from ctf.models import CTFScheduledTask
 logger = logging.getLogger(__name__)
 
 HEARTBEAT_FILE = Path(tempfile.gettempdir()) / "ctf-scheduler-heartbeat"
-
-# Tasks running longer than this are considered stale and marked FAILED.
-STALE_TASK_MINUTES = 30
 
 
 class Command(BaseCommand):
@@ -118,15 +116,36 @@ class Command(BaseCommand):
         return tasks
 
     def _recover_stale_tasks(self) -> None:
-        """Mark RUNNING tasks older than STALE_TASK_MINUTES as FAILED."""
-        cutoff = timezone.now() - timedelta(minutes=STALE_TASK_MINUTES)
-        stale = CTFScheduledTask.objects.filter(
-            status=ScheduledTaskStatus.RUNNING.value,
-            updated_at__lt=cutoff,
+        """Mark genuinely stale RUNNING tasks FAILED, heartbeat-aware and node-safe.
+
+        The stale window is settings-driven (``CTF_SCHEDULER_STALE_TASK_MINUTES``)
+        and set above the legitimate spin-up duration; long-running handlers
+        heartbeat ``updated_at`` so an in-flight task is not swept. The transition
+        is a conditional compare-and-swap ``UPDATE`` filtered on the still-stale
+        condition, so on the multi-node portal two schedulers cannot both recover
+        the same row and a task that heartbeats between the read and the write is
+        left alone (#942).
+        """
+        stale_minutes = settings.CTF_SCHEDULER_STALE_TASK_MINUTES
+        cutoff = timezone.now() - timedelta(minutes=stale_minutes)
+        stale_pks = list(
+            CTFScheduledTask.objects.filter(
+                status=ScheduledTaskStatus.RUNNING.value,
+                updated_at__lt=cutoff,
+            ).values_list("pk", flat=True)
         )
-        for task in stale:
-            task.mark_failed(f"Stale: running for over {STALE_TASK_MINUTES} minutes")
-            logger.warning("Recovered stale task %s (%s)", task.pk, task.task_type)
+        for pk in stale_pks:
+            recovered = CTFScheduledTask.objects.filter(
+                pk=pk,
+                status=ScheduledTaskStatus.RUNNING.value,
+                updated_at__lt=cutoff,
+            ).update(
+                status=ScheduledTaskStatus.FAILED.value,
+                executed_at=timezone.now(),
+                error_message=f"Stale: running for over {stale_minutes} minutes",
+            )
+            if recovered:
+                logger.warning("Recovered stale task %s", pk)
 
     def _execute_task(self, task: CTFScheduledTask) -> None:
         """Dispatch a task to its handler and record the outcome."""
@@ -168,10 +187,20 @@ def _handle_spin_up_ranges(task: CTFScheduledTask, shutdown_check=None) -> None:
 
     event = task.event
     spinup_window = event.range_spinup_minutes * 60  # convert to seconds
+
+    def heartbeat() -> None:
+        """Bump only this claimed task's updated_at so it is not swept as stale.
+
+        A targeted UPDATE avoids ``CTFBaseModel.save()``/``full_clean()`` and the
+        cost of validating the whole event graph on every tick (#942).
+        """
+        CTFScheduledTask.objects.filter(pk=task.pk).update(updated_at=timezone.now())
+
     result = provision_event_ranges_throttled(
         event_id=event.pk,
         spinup_window_seconds=spinup_window,
         shutdown_check=shutdown_check,
+        heartbeat=heartbeat,
     )
     logger.info(
         "SPIN_UP_RANGES result for event %s: %s",

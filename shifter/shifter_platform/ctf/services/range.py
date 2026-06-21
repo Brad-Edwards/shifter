@@ -11,6 +11,8 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
+from django.db import transaction
+
 from ctf.exceptions import CTFNotFoundError, CTFRangeError
 from ctf.models import CTFEvent, CTFParticipant
 from shared.log_sanitize import safe_log_value
@@ -19,6 +21,15 @@ if TYPE_CHECKING:
     from django.contrib.auth.models import User
 
 logger = logging.getLogger(__name__)
+
+
+def _is_already_assigned_error(exc: Exception) -> bool:
+    """Return True for the benign 'already has a range' race-loser error (#942).
+
+    A second (manual or scheduled) caller that finds a participant already
+    assigned should be skipped, not counted as a provisioning failure.
+    """
+    return isinstance(exc, CTFRangeError) and "already has a range" in str(exc)
 
 
 def provision_participant_range(participant_id: UUID) -> dict[str, Any]:
@@ -38,56 +49,74 @@ def provision_participant_range(participant_id: UUID) -> dict[str, Any]:
     """
     logger.info("Provisioning range for participant %s", safe_log_value(participant_id))
 
-    try:
-        participant = CTFParticipant.objects.select_related("event", "user").get(pk=participant_id)
-    except CTFParticipant.DoesNotExist:
-        raise CTFNotFoundError(
-            f"Participant {participant_id} not found",
-            details={"participant_id": str(participant_id)},
-        ) from None
+    # Lock the participant row for the whole assignment (#942 CTF-7): the
+    # already-assigned check, CMS create call, instance-id lookup, and write must
+    # be atomic so concurrent manual + scheduled provisioning cannot double-assign
+    # a range. No select_related: `user` is nullable (FOR UPDATE rejects the
+    # nullable side of an outer join on PostgreSQL) and joining `event` would
+    # widen the lock to an event-wide row lock; both load lazily under the lock.
+    with transaction.atomic():
+        try:
+            participant = CTFParticipant.objects.select_for_update().get(pk=participant_id)
+        except CTFParticipant.DoesNotExist:
+            raise CTFNotFoundError(
+                f"Participant {participant_id} not found",
+                details={"participant_id": str(participant_id)},
+            ) from None
 
-    if participant.user is None:
-        raise CTFRangeError(
-            "Participant must be registered before provisioning a range",
-            details={"participant_id": str(participant_id)},
-        )
+        if participant.user is None:
+            raise CTFRangeError(
+                "Participant must be registered before provisioning a range",
+                details={"participant_id": str(participant_id)},
+            )
 
-    if participant.range_instance_id:
-        raise CTFRangeError(
-            "Participant already has a range assigned",
-            details={
-                "participant_id": str(participant_id),
-                "range_instance_id": participant.range_instance_id,
-            },
-        )
+        # An assignment is "claimed" the moment provisioning starts, not only
+        # once a range_instance_id resolves (#942). cms_create_range can succeed
+        # while cms_find_range_instance_id still returns None (the RangeInstance
+        # row is not yet resolvable from the request id), in which case this
+        # function persists range_status="provisioning" with a null
+        # range_instance_id. Keying the guard solely on range_instance_id would
+        # let the next caller re-provision that participant once the lock
+        # releases, creating a second CMS range. Treat an in-progress
+        # provisioning state as already-claimed so the benign race-loser path
+        # skips it instead.
+        if participant.range_instance_id or participant.range_status == "provisioning":
+            raise CTFRangeError(
+                "Participant already has a range assigned",
+                details={
+                    "participant_id": str(participant_id),
+                    "range_instance_id": participant.range_instance_id,
+                    "range_status": participant.range_status,
+                },
+            )
 
-    event = participant.event
-    agents_by_os = event.range_config.get("agents_by_os", {}) if event.range_config else {}
-    ngfw_enabled = event.range_config.get("ngfw_enabled", False) if event.range_config else False
+        event = participant.event
+        agents_by_os = event.range_config.get("agents_by_os", {}) if event.range_config else {}
+        ngfw_enabled = event.range_config.get("ngfw_enabled", False) if event.range_config else False
 
-    try:
-        from ctf.bridges import cms_create_range, cms_find_range_instance_id
+        try:
+            from ctf.bridges import cms_create_range, cms_find_range_instance_id
 
-        result = cms_create_range(
-            user=participant.user,
-            scenario=event.scenario_id,
-            agents_by_os=agents_by_os,
-            ngfw_enabled=ngfw_enabled,
-        )
-    except Exception as e:
-        logger.exception("Range provisioning failed for participant %s", safe_log_value(participant_id))
-        raise CTFRangeError(
-            f"Range provisioning failed: {e}",
-            details={"participant_id": str(participant_id)},
-        ) from e
+            result = cms_create_range(
+                user=participant.user,
+                scenario=event.scenario_id,
+                agents_by_os=agents_by_os,
+                ngfw_enabled=ngfw_enabled,
+            )
+        except Exception as e:
+            logger.exception("Range provisioning failed for participant %s", safe_log_value(participant_id))
+            raise CTFRangeError(
+                f"Range provisioning failed: {e}",
+                details={"participant_id": str(participant_id)},
+            ) from e
 
-    # Store the RangeInstance reference
-    range_instance_id = cms_find_range_instance_id(result.request_id)
+        # Store the RangeInstance reference
+        range_instance_id = cms_find_range_instance_id(result.request_id)
 
-    if range_instance_id:
-        participant.range_instance_id = range_instance_id
-    participant.range_status = "provisioning"
-    participant.save(update_fields=["range_instance_id", "range_status", "updated_at"])
+        if range_instance_id:
+            participant.range_instance_id = range_instance_id
+        participant.range_status = "provisioning"
+        participant.save(update_fields=["range_instance_id", "range_status", "updated_at"])
 
     return {
         "participant_id": str(participant_id),
@@ -125,6 +154,7 @@ def provision_event_ranges(event_id: UUID) -> dict[str, Any]:
 
     successful = 0
     failed = 0
+    skipped = 0
     errors = []
 
     for participant in participants:
@@ -132,6 +162,10 @@ def provision_event_ranges(event_id: UUID) -> dict[str, Any]:
             provision_participant_range_with_retry(participant.pk)
             successful += 1
         except Exception as e:
+            if _is_already_assigned_error(e):
+                skipped += 1
+                logger.info("Participant %s already has a range; skipping", participant.pk)
+                continue
             failed += 1
             errors.append({"participant_id": str(participant.pk), "error": str(e)})
             logger.error(
@@ -148,17 +182,59 @@ def provision_event_ranges(event_id: UUID) -> dict[str, Any]:
 
     return {
         "event_id": str(event_id),
-        "total": successful + failed,
+        "total": successful + failed + skipped,
         "successful": successful,
         "failed": failed,
+        "skipped": skipped,
         "errors": errors,
     }
+
+
+def _safe_heartbeat(heartbeat: Callable[[], None] | None, event_id: UUID) -> None:
+    """Invoke the spin-up heartbeat, swallowing failures (#942).
+
+    Keeps the claimed scheduled task fresh so the stale-recovery sweep does not
+    mark this in-flight spin-up FAILED. A heartbeat error must never abort the
+    spin-up.
+    """
+    if heartbeat is None:
+        return
+    try:
+        heartbeat()
+    except Exception:
+        # A persistently failing heartbeat is what re-opens the stale-sweep bug
+        # this guards against, so surface it (with traceback) rather than hide it.
+        logger.exception("Spin-up heartbeat failed for event %s", event_id)
+
+
+def _record_provision_attempt(
+    participant: CTFParticipant,
+    tallies: dict[str, int],
+    errors: list[dict[str, str]],
+) -> None:
+    """Provision one participant and fold the outcome into the running tallies.
+
+    A benign 'already has a range' race loser is counted as ``skipped`` rather
+    than ``failed`` so it does not poison the event spin-up (#942).
+    """
+    try:
+        provision_participant_range_with_retry(participant.pk)
+        tallies["successful"] += 1
+    except Exception as e:
+        if _is_already_assigned_error(e):
+            tallies["skipped"] += 1
+            logger.info("Participant %s already has a range; skipping", participant.pk)
+        else:
+            tallies["failed"] += 1
+            errors.append({"participant_id": str(participant.pk), "error": str(e)})
+            logger.exception("Failed to provision range for participant %s", participant.pk)
 
 
 def provision_event_ranges_throttled(
     event_id: UUID,
     spinup_window_seconds: int,
     shutdown_check: Callable[[], bool] | None = None,
+    heartbeat: Callable[[], None] | None = None,
 ) -> dict[str, Any]:
     """Provision ranges for all participants with throttled pacing.
 
@@ -170,9 +246,13 @@ def provision_event_ranges_throttled(
         spinup_window_seconds: Total window (seconds) over which to spread requests.
         shutdown_check: Optional callable returning True when the caller
             wants to abort (e.g. SIGTERM received by management command).
+        heartbeat: Optional callable invoked once per participant so a
+            long-running spin-up keeps its scheduled task fresh and is not swept
+            as stale on the multi-node portal (#942). Failures are swallowed so a
+            heartbeat error never aborts provisioning.
 
     Returns:
-        Dict with counts of successful, failed, and whether interrupted.
+        Dict with counts of successful, failed, skipped, and whether interrupted.
 
     Raises:
         CTFNotFoundError: If event doesn't exist.
@@ -205,6 +285,7 @@ def provision_event_ranges_throttled(
             "total": 0,
             "successful": 0,
             "failed": 0,
+            "skipped": 0,
             "errors": [],
             "interrupted": False,
         }
@@ -213,8 +294,7 @@ def provision_event_ranges_throttled(
     raw_delay = spinup_window_seconds / max(count, 1)
     delay = max(5.0, min(120.0, raw_delay))
 
-    successful = 0
-    failed = 0
+    tallies = {"successful": 0, "failed": 0, "skipped": 0}
     errors: list[dict[str, str]] = []
     interrupted = False
 
@@ -229,25 +309,17 @@ def provision_event_ranges_throttled(
             interrupted = True
             break
 
-        try:
-            provision_participant_range_with_retry(participant.pk)
-            successful += 1
-        except Exception as e:
-            failed += 1
-            errors.append({"participant_id": str(participant.pk), "error": str(e)})
-            logger.error(
-                "Failed to provision range for participant %s: %s",
-                participant.pk,
-                e,
-            )
+        _safe_heartbeat(heartbeat, event_id)
+        _record_provision_attempt(participant, tallies, errors)
 
         logger.info(
-            "Throttled provisioning progress for event %s: %d/%d (%d ready, %d failed)",
+            "Throttled provisioning progress for event %s: %d/%d (%d ready, %d failed, %d skipped)",
             event_id,
             i + 1,
             count,
-            successful,
-            failed,
+            tallies["successful"],
+            tallies["failed"],
+            tallies["skipped"],
         )
 
         # Sleep between provisions (skip after the last one)
@@ -262,9 +334,10 @@ def provision_event_ranges_throttled(
 
     return {
         "event_id": str(event_id),
-        "total": successful + failed,
-        "successful": successful,
-        "failed": failed,
+        "total": tallies["successful"] + tallies["failed"] + tallies["skipped"],
+        "successful": tallies["successful"],
+        "failed": tallies["failed"],
+        "skipped": tallies["skipped"],
         "errors": errors,
         "interrupted": interrupted,
     }

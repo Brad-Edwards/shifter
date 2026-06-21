@@ -6,15 +6,36 @@ Unit tests — mock all ORM access. We test our service logic
 
 from __future__ import annotations
 
+from datetime import timedelta
 from unittest.mock import Mock, patch
 from uuid import uuid4
 
 import pytest
+from django.utils import timezone
 
 from ctf.bridges import RangeProvisionResult
+from ctf.enums import ParticipantStatus
 from ctf.exceptions import CTFNotFoundError, CTFRangeError
 from ctf.models import CTFEvent, CTFParticipant
 from ctf.services import range as range_service
+
+
+def _make_unregistered_participant(event, idx):
+    """Create an unassigned, unregistered participant on ``event``.
+
+    With no linked user, provisioning fails fast ("must be registered") before
+    any CMS/network call, so the throttled loop runs without external boundaries.
+    """
+    return CTFParticipant.objects.create(
+        event=event,
+        user=None,
+        email=f"throttle-{idx}@test.com",
+        name=f"Throttle Participant {idx}",
+        status=ParticipantStatus.INVITED.value,
+        invite_token=f"throttle-{event.pk}-{idx}",
+        invite_token_expires=timezone.now() + timedelta(days=7),
+    )
+
 
 # ---------------------------------------------------------------------------
 # Shared fixtures
@@ -62,55 +83,91 @@ def _patch_participant_not_found():
 
 
 class TestProvisionParticipantRange:
-    """Tests for provision_participant_range."""
+    """Tests for provision_participant_range.
 
-    def test_not_found(self, _patch_participant_not_found):
+    DB-backed (#942): assignment now runs under ``transaction.atomic()`` +
+    ``select_for_update()`` to close the manual/scheduled double-assign race,
+    so these exercise real rows rather than a mocked ``objects`` manager.
+    """
+
+    @pytest.mark.django_db
+    def test_not_found(self):
         """Raises CTFNotFoundError for nonexistent participant."""
         with pytest.raises(CTFNotFoundError):
             range_service.provision_participant_range(uuid4())
 
-    @pytest.mark.usefixtures("_patch_participant_get")
-    def test_already_assigned(self, mock_participant):
-        """Raises CTFRangeError if participant already has a range."""
-        mock_participant.range_instance_id = 42
+    @pytest.mark.django_db
+    def test_already_assigned_raises_and_keeps_assignment(self, ctf_participant):
+        """An already-assigned participant raises without re-provisioning (CTF-7).
+
+        No CMS mock: if the guard regressed and the code reached provisioning,
+        the real bridge would raise "Range provisioning failed" and the
+        already-has-a-range match would not be met. The original assignment must
+        survive unchanged.
+        """
+        ctf_participant.range_instance_id = 42
+        ctf_participant.save(update_fields=["range_instance_id", "updated_at"])
 
         with pytest.raises(CTFRangeError, match="already has a range"):
-            range_service.provision_participant_range(mock_participant.pk)
+            range_service.provision_participant_range(ctf_participant.pk)
 
-    @pytest.mark.usefixtures("_patch_participant_get")
-    def test_provision_success(self, mock_participant):
-        """Successful provisioning sets range_instance_id and status."""
-        request_id = uuid4()
-        mock_result = RangeProvisionResult(request_id=request_id)
+        ctf_participant.refresh_from_db()
+        assert ctf_participant.range_instance_id == 42
+
+    @pytest.mark.django_db
+    def test_provision_success_persists_assignment(self, ctf_participant):
+        """Successful provisioning persists range_instance_id and status under the lock."""
+        mock_result = RangeProvisionResult(request_id=uuid4())
 
         with (
             patch("ctf.bridges.cms_create_range", return_value=mock_result) as mock_create,
             patch("ctf.bridges.cms_find_range_instance_id", return_value=99),
         ):
-            result = range_service.provision_participant_range(mock_participant.pk)
+            result = range_service.provision_participant_range(ctf_participant.pk)
 
         assert result["status"] == "provisioning"
-        mock_participant.save.assert_called_once()
-        assert mock_participant.range_status == "provisioning"
         mock_create.assert_called_once()
-        assert mock_create.call_args.kwargs["user"] == mock_participant.user
+        assert mock_create.call_args.kwargs["user"] == ctf_participant.user
 
-    @pytest.mark.usefixtures("_patch_participant_get")
-    def test_provision_requires_registered_user(self, mock_participant):
+        ctf_participant.refresh_from_db()
+        assert ctf_participant.range_instance_id == 99
+        assert ctf_participant.range_status == "provisioning"
+
+    @pytest.mark.django_db
+    def test_in_flight_provisioning_blocks_reprovision(self, ctf_participant):
+        """A participant mid-provision (status set, no instance id) is treated as claimed (#942).
+
+        cms_create_range can succeed while cms_find_range_instance_id returns
+        None, leaving range_status="provisioning" with a null range_instance_id.
+        Keying the guard only on range_instance_id would let the next caller
+        create a second CMS range. No CMS mock here: if the guard regressed the
+        real bridge would raise "Range provisioning failed", not the benign
+        "already has a range".
+        """
+        ctf_participant.range_status = "provisioning"
+        ctf_participant.save(update_fields=["range_status", "updated_at"])
+
+        with pytest.raises(CTFRangeError, match="already has a range"):
+            range_service.provision_participant_range(ctf_participant.pk)
+
+        ctf_participant.refresh_from_db()
+        assert ctf_participant.range_instance_id is None
+        assert ctf_participant.range_status == "provisioning"
+
+    @pytest.mark.django_db
+    def test_provision_requires_registered_user(self, ctf_participant_invited):
         """Raises CTFRangeError if participant has no linked user."""
-        mock_participant.user = None
-
         with pytest.raises(CTFRangeError, match="must be registered"):
-            range_service.provision_participant_range(mock_participant.pk)
+            range_service.provision_participant_range(ctf_participant_invited.pk)
 
-    @pytest.mark.usefixtures("_patch_participant_get")
-    def test_provision_cms_failure(self, mock_participant):
+    @pytest.mark.django_db
+    def test_provision_cms_failure(self, ctf_participant):
         """CMS errors are wrapped in CTFRangeError."""
         with (
             patch("ctf.bridges.cms_create_range", side_effect=RuntimeError("CMS down")),
             pytest.raises(CTFRangeError, match="Range provisioning failed"),
         ):
-            range_service.provision_participant_range(mock_participant.pk)
+            range_service.provision_participant_range(ctf_participant.pk)
 
 
 class TestProvisionEventRanges:
@@ -475,3 +532,46 @@ class TestProvisionEventRangesThrottled:
         # Should have provisioned only 2 before shutdown triggered
         assert mock_provision.call_count == 2
         assert result["successful"] == 2
+
+    @pytest.mark.django_db
+    @pytest.mark.usefixtures("_patch_sleep")
+    def test_heartbeat_called_each_iteration(self, ctf_event):
+        """The heartbeat fires once per participant so the task stays live (CTF-3).
+
+        DB-backed with unregistered participants: provisioning fails fast before
+        any CMS/network call, which is enough to observe per-iteration heartbeats.
+        """
+        for i in range(3):
+            _make_unregistered_participant(ctf_event, i)
+        heartbeat = Mock()
+
+        result = range_service.provision_event_ranges_throttled(ctf_event.pk, 300, heartbeat=heartbeat)
+
+        assert heartbeat.call_count == 3
+        assert result["total"] == 3
+
+    @pytest.mark.django_db
+    @pytest.mark.usefixtures("_patch_sleep")
+    def test_heartbeat_failure_does_not_abort_spin_up(self, ctf_event):
+        """A failing heartbeat is swallowed; the spin-up loop still runs to completion."""
+        for i in range(3):
+            _make_unregistered_participant(ctf_event, i)
+        heartbeat = Mock(side_effect=RuntimeError("db hiccup"))
+
+        result = range_service.provision_event_ranges_throttled(ctf_event.pk, 300, heartbeat=heartbeat)
+
+        assert heartbeat.call_count == 3
+        assert result["total"] == 3
+
+
+class TestIsAlreadyAssignedError:
+    """The benign race-loser discriminator that keeps the skip path off the failure path (CTF-7)."""
+
+    def test_already_assigned_message_is_benign(self):
+        assert range_service._is_already_assigned_error(CTFRangeError("Participant already has a range assigned"))
+
+    def test_other_range_error_is_not_benign(self):
+        assert not range_service._is_already_assigned_error(CTFRangeError("Range provisioning failed: boom"))
+
+    def test_non_range_error_is_not_benign(self):
+        assert not range_service._is_already_assigned_error(RuntimeError("boom"))
