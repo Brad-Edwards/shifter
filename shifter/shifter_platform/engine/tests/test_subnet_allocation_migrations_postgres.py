@@ -77,6 +77,7 @@ def _run_manage_py(database_name: str, port: str, *args: str) -> subprocess.Comp
     env = os.environ.copy()
     env.update(
         {
+            "ENVIRONMENT": "test",
             "DJANGO_SECRET_KEY": DJANGO_TEST_SECRET_KEY,
             "DJANGO_DEBUG": "true",
             "SITE_URL": "http://localhost",
