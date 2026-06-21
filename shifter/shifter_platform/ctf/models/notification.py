@@ -297,3 +297,15 @@ class CTFScheduledTask(CTFBaseModel):
         self.status = ScheduledTaskStatus.CANCELLED.value
         self.save(update_fields=["status", "updated_at"])
         logger.info("Task %s cancelled: %s", self.task_type, self.pk)
+
+    def requeue_for_resume(self) -> None:
+        """Return an interrupted task to PENDING so the scheduler resumes it.
+
+        Used when a long-running handler is cut short by shutdown: the work is
+        recoverable (idempotent on the remaining items), so the task is made due
+        again rather than recorded as completed.
+        """
+        self.status = ScheduledTaskStatus.PENDING.value
+        self.scheduled_for = timezone.now()
+        self.save(update_fields=["status", "scheduled_for", "updated_at"])
+        logger.info("Task %s requeued for resume: %s", self.task_type, self.pk)

@@ -2194,10 +2194,19 @@ def admin_range_list(request: HttpRequest, event_id: UUID) -> HttpResponse:
 
     participants = CTFParticipant.objects.filter(event=event).order_by("name")
 
+    from ctf.services import range as range_service
+
+    progress = range_service.get_provision_progress(event_id)
+    active_provisioning = bool(progress["task"]) or progress["counts"]["provisioning"] > 0
+
     return render(
         request,
         "ctf/admin/range_list.html",
-        {"event": event, "participants": participants},
+        {
+            "event": event,
+            "participants": participants,
+            "active_provisioning": active_provisioning,
+        },
     )
 
 
@@ -3758,14 +3767,28 @@ def api_range_list(request: HttpRequest, event_id: UUID) -> JsonResponse:
         for p in participants
     ]
 
-    return JsonResponse({"event_id": str(event_id), "ranges": data})
+    from ctf.services import range as range_service
+
+    progress = range_service.get_provision_progress(event_id)
+
+    return JsonResponse(
+        {
+            "event_id": str(event_id),
+            "ranges": data,
+            "progress": progress,
+        }
+    )
 
 
 @login_required
 @ctf_organizer_required
 @require_POST
 def api_provision_ranges(request: HttpRequest, event_id: UUID) -> JsonResponse:
-    """API: Trigger bulk range provisioning for an event.
+    """API: Queue bulk range provisioning for an event.
+
+    Enqueues (or coalesces onto) a background spin-up task and returns
+    immediately so the request thread is never blocked by the throttled
+    provisioning loop. Progress is polled via ``api_range_list``.
 
     Args:
         event_id: UUID of the event.
@@ -3783,8 +3806,16 @@ def api_provision_ranges(request: HttpRequest, event_id: UUID) -> JsonResponse:
 
     from ctf.services import range as range_service
 
-    result = range_service.provision_event_ranges(event_id)
-    return JsonResponse(result)
+    task = range_service.request_event_provisioning(event_id, source="manual")
+    return JsonResponse(
+        {
+            "event_id": str(event_id),
+            "status": "queued",
+            "task_id": str(task.pk),
+            "task_status": task.status,
+        },
+        status=202,
+    )
 
 
 @login_required

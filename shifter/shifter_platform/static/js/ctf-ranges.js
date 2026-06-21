@@ -72,7 +72,7 @@ class CTFRangeManager {
         if (!confirm('Provision ranges for all unassigned participants?')) return;
 
         let btn = document.getElementById('btn-provision-all');
-        this._setButtonLoading(btn, 'Provisioning...');
+        this._setButtonLoading(btn, 'Queuing...');
 
         try {
             let response = await fetch(this.provisionAllUrl, {
@@ -90,20 +90,74 @@ class CTFRangeManager {
                 return;
             }
 
-            let msg = 'Provisioned: ' + data.successful + ', Failed: ' + data.failed;
-            if (data.errors && data.errors.length > 0) {
-                msg += '\n\nErrors:\n';
-                data.errors.forEach(function(e) {
-                    msg += '- ' + e.error + '\n';
-                });
-            }
-            alert(msg);
-            this._reload();
+            // Provisioning now runs in the background; show live progress
+            // instead of blocking on a synchronous result.
+            this._showProgress('Provisioning queued. Tracking progress...');
+            this.startProgressPolling();
         } catch (err) {
             alert('Error provisioning ranges: ' + err.message);
         } finally {
             this._clearButtonLoading(btn, 'Provision All Ranges');
         }
+    }
+
+    startProgressPolling() {
+        if (this.statusPollInterval) return;
+        this.statusPollInterval = setInterval(() => this._pollProgress(), this.statusPollDelay);
+        this._pollProgress();
+    }
+
+    _stopProgressPolling() {
+        if (this.statusPollInterval) {
+            clearInterval(this.statusPollInterval);
+            this.statusPollInterval = null;
+        }
+    }
+
+    async _pollProgress() {
+        let response;
+        try {
+            response = await fetch(this.rangeListUrl, {
+                method: 'GET',
+                headers: { 'X-CSRFToken': this.csrfToken },
+            });
+        } catch {
+            return; // transient; keep polling
+        }
+        if (!response.ok) return;
+
+        let data = await response.json();
+        let progress = data.progress || {};
+        let counts = progress.counts || {};
+        let task = progress.task || null;
+
+        this._renderProgress(counts, task);
+
+        // Done once no spin-up task is queued/running and nothing is mid-provision.
+        let provisioning = counts.provisioning || 0;
+        if (!task && provisioning <= 0) {
+            this._stopProgressPolling();
+            this._reload();
+        }
+    }
+
+    _showProgress(message) {
+        let el = document.getElementById('provision-progress');
+        if (!el) return;
+        el.textContent = message;
+        el.style.display = '';
+    }
+
+    _renderProgress(counts, task) {
+        let status = task ? task.status : 'idle';
+        this._showProgress(
+            'Status: ' + status +
+            ' — ready ' + (counts.ready || 0) +
+            ', provisioning ' + (counts.provisioning || 0) +
+            ', error ' + (counts.error || 0) +
+            ', not assigned ' + (counts.not_assigned || 0) +
+            ' / ' + (counts.total || 0)
+        );
     }
 
     async provisionOne(participantId, btn) {
