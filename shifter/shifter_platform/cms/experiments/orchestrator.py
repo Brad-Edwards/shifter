@@ -17,11 +17,6 @@ from dataclasses import dataclass, field
 from typing import Any
 from uuid import uuid4
 
-from cyberscript.script_context import (
-    ScriptExecutionContext,
-    build_ai_execution_policy_payload,
-)
-from cyberscript.template_vars import build_instance_data
 from pydantic import ValidationError
 
 from cms.experiments.ecs import start_experiment_task
@@ -39,6 +34,11 @@ from cms.experiments.schemas import (
 from engine.services import create_range as engine_create_range
 from risk_register.models import AuditLog
 from risk_register.services import StateChange, audit_log_system_event
+from shared.script_context import (
+    ScriptExecutionContext,
+    build_ai_execution_policy_payload,
+)
+from shared.template_vars import build_instance_data
 
 logger = logging.getLogger(__name__)
 

@@ -8,7 +8,7 @@
     "rules": [
       {
         "id": "ADR-001-R1",
-        "description": "Cross-layer imports must conform to scripts/check_layer_imports/layer_imports.yaml.",
+        "description": "Cross-layer imports must conform to scripts/check_layer_imports/layer_imports.yaml; only shared may import cyberscript directly.",
         "checks": ["layer-imports"]
       },
       {
