@@ -1656,49 +1656,62 @@ jobs:
           # pull-request (new-code) quality-gate analysis.
           fetch-depth: 0
 
-      # Coverage reports are produced by the test jobs and passed as
-      # artifacts; restore each at the repo-relative path that
-      # sonar-project.properties references. Only download reports for
-      # categories that actually ran — skipped path-filter jobs do not
-      # upload artifacts.
+      # Coverage reports are produced only by test jobs that ran for the
+      # changed paths. Each download mirrors that job's path filter and
+      # success result so a portal-only PR does not fail Sonar waiting for
+      # skipped-job artifacts (issue #786).
       - name: Download shifter_platform coverage
-        if: ${{ needs.paths.outputs.run_all == 'true' || needs.paths.outputs.shifter_platform == 'true' }}
+        if: >-
+          ${{ (needs.paths.outputs.run_all == 'true' || needs.paths.outputs.shifter_platform == 'true')
+          && needs.shifter-platform-tests.result == 'success' }}
         uses: actions/download-artifact@v8
         with:
           name: coverage-shifter-platform
           path: shifter/shifter_platform
       - name: Download shifter_platform JS coverage
-        if: ${{ needs.paths.outputs.run_all == 'true' || needs.paths.outputs.shifter_platform == 'true' }}
+        if: >-
+          ${{ (needs.paths.outputs.run_all == 'true' || needs.paths.outputs.shifter_platform == 'true')
+          && needs.shifter-platform-js-tests.result == 'success' }}
         uses: actions/download-artifact@v8
         with:
           name: coverage-shifter-platform-js
           path: shifter/shifter_platform/coverage
       - name: Download provisioner coverage
-        if: ${{ needs.paths.outputs.run_all == 'true' || needs.paths.outputs.provisioner == 'true' }}
+        if: >-
+          ${{ (needs.paths.outputs.run_all == 'true' || needs.paths.outputs.provisioner == 'true')
+          && needs.shifter-engine-tests.result == 'success' }}
         uses: actions/download-artifact@v8
         with:
           name: coverage-provisioner
           path: shifter/engine/provisioner
       - name: Download packer coverage
-        if: ${{ needs.paths.outputs.run_all == 'true' || needs.paths.outputs.packer == 'true' }}
+        if: >-
+          ${{ (needs.paths.outputs.run_all == 'true' || needs.paths.outputs.packer == 'true')
+          && needs.packer-tests.result == 'success' }}
         uses: actions/download-artifact@v8
         with:
           name: coverage-packer
           path: shifter/packer
       - name: Download bootstrap coverage
-        if: ${{ needs.paths.outputs.run_all == 'true' || needs.paths.outputs.bootstrap == 'true' }}
+        if: >-
+          ${{ (needs.paths.outputs.run_all == 'true' || needs.paths.outputs.bootstrap == 'true')
+          && needs.bootstrap-tests.result == 'success' }}
         uses: actions/download-artifact@v8
         with:
           name: coverage-bootstrap
           path: scripts/bootstrap
       - name: Download check_layer_imports coverage
-        if: ${{ needs.paths.outputs.run_all == 'true' || needs.paths.outputs.check_layer_imports == 'true' }}
+        if: >-
+          ${{ (needs.paths.outputs.run_all == 'true' || needs.paths.outputs.check_layer_imports == 'true')
+          && needs.check-layer-imports-tests.result == 'success' }}
         uses: actions/download-artifact@v8
         with:
           name: coverage-check-layer-imports
           path: scripts/check_layer_imports
       - name: Download installation coverage
-        if: ${{ needs.paths.outputs.run_all == 'true' || needs.paths.outputs.installation == 'true' }}
+        if: >-
+          ${{ (needs.paths.outputs.run_all == 'true' || needs.paths.outputs.installation == 'true')
+          && needs.installation-tests.result == 'success' }}
         uses: actions/download-artifact@v8
         with:
           name: coverage-installation
