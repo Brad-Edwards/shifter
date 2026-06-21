@@ -135,16 +135,19 @@
                               action="{% url 'scenario_editor:toggle_enabled' scenario_id=scenario.id %}"
                               class="d-inline">
                             {% csrf_token %}
-                            <button type="submit"
-                                    class="btn btn-sm toggle-btn
-                                           {% if scenario.enabled %}toggle-btn-on{% else %}toggle-btn-off{% endif %}"
-                                    onclick="return confirm('Toggle this setting?')">
-                                {% if scenario.enabled %}
+                            {% if scenario.enabled %}
+                                <button type="submit"
+                                        class="btn btn-sm toggle-btn toggle-btn-on"
+                                        onclick="return confirm('Toggle this setting?')">
                                     {% trans "Enabled" %}
-                                {% else %}
+                                </button>
+                            {% else %}
+                                <button type="submit"
+                                        class="btn btn-sm toggle-btn toggle-btn-off"
+                                        onclick="return confirm('Toggle this setting?')">
                                     {% trans "Disabled" %}
-                                {% endif %}
-                            </button>
+                                </button>
+                            {% endif %}
                         </form>
                     </td>
                 </tr>
@@ -157,16 +160,19 @@
                               action="{% url 'scenario_editor:toggle_staff_only' scenario_id=scenario.id %}"
                               class="d-inline">
                             {% csrf_token %}
-                            <button type="submit"
-                                    class="btn btn-sm toggle-btn
-                                           {% if scenario.staff_only %}toggle-btn-staff{% else %}toggle-btn-public{% endif %}"
-                                    onclick="return confirm('Toggle this setting?')">
-                                {% if scenario.staff_only %}
+                            {% if scenario.staff_only %}
+                                <button type="submit"
+                                        class="btn btn-sm toggle-btn toggle-btn-staff"
+                                        onclick="return confirm('Toggle this setting?')">
                                     {% trans "Staff Only" %}
-                                {% else %}
+                                </button>
+                            {% else %}
+                                <button type="submit"
+                                        class="btn btn-sm toggle-btn toggle-btn-public"
+                                        onclick="return confirm('Toggle this setting?')">
                                     {% trans "All Users" %}
-                                {% endif %}
-                            </button>
+                                </button>
+                            {% endif %}
                         </form>
                     </td>
                 </tr>
