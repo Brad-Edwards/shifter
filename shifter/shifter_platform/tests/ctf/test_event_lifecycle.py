@@ -237,15 +237,31 @@ class TestEventStatusTransitions:
         assert mock_event.status == EventStatus.ACTIVE.value
         mock_event.save.assert_called_once()
 
-    def test_complete_active_event(self, mock_event_active):
-        """Should be able to complete an active event."""
+    @pytest.mark.django_db
+    def test_complete_active_event(self, organizer_user):
+        """Should be able to complete an active event.
+
+        Real-DB (not mocked): completing an event finalizes the materialized
+        leaderboard from the database (issue #850), so this asserts the
+        observable status transition rather than mocking that first-party call.
+        """
+        from ctf.models import CTFEvent
         from ctf.services import complete_event
 
-        with patch("ctf.services.range.cleanup_event_ranges"):
-            result = complete_event(mock_event_active)
+        event = CTFEvent.objects.create(
+            name="Active CTF Event",
+            description="An active event",
+            created_by=organizer_user,
+            status=EventStatus.ACTIVE.value,
+            event_start=timezone.now() - timedelta(hours=1),
+            event_end=timezone.now() + timedelta(hours=7),
+            scenario_id="basic",
+            auto_cleanup=False,
+        )
+        result = complete_event(event)
         assert result is True
-        assert mock_event_active.status == EventStatus.ENDED.value
-        mock_event_active.save.assert_called_once()
+        event.refresh_from_db()
+        assert event.status == EventStatus.ENDED.value
 
     def test_cancel_draft_event(self, mock_event_draft):
         """Should be able to cancel a draft event."""
@@ -289,14 +305,29 @@ class TestEventStatusTransitions:
         result = schedule_event(mock_event_active)
         assert result is False
 
-    def test_cannot_modify_ended_event(self):
-        """Ended events should not be modifiable."""
-        ended_event = _make_mock_event(
+    @pytest.mark.django_db
+    def test_cannot_modify_ended_event(self, organizer_user):
+        """Real `CTFEvent.is_modifiable`: terminal (ended) events are not modifiable."""
+        from ctf.models import CTFEvent
+
+        ended_event = CTFEvent.objects.create(
             name="Ended",
+            created_by=organizer_user,
             status=EventStatus.ENDED.value,
-            is_modifiable=False,
+            event_start=timezone.now() - timedelta(hours=2),
+            event_end=timezone.now() - timedelta(hours=1),
+            scenario_id="basic",
+        )
+        draft_event = CTFEvent.objects.create(
+            name="Draft",
+            created_by=organizer_user,
+            status=EventStatus.DRAFT.value,
+            event_start=timezone.now() + timedelta(days=1),
+            event_end=timezone.now() + timedelta(days=1, hours=8),
+            scenario_id="basic",
         )
         assert ended_event.is_modifiable is False
+        assert draft_event.is_modifiable is True
 
     def test_pause_active_event(self, mock_event_active):
         """Should be able to pause an active event."""
@@ -404,67 +435,100 @@ class TestEventStatusTransitions:
 
 
 class TestEventServices:
-    """Test event service functions with mocked ORM."""
+    """Test event service functions.
 
-    def test_create_event_service(self, mock_user):
-        """create_event service should create event and return it."""
-        created_event = _make_mock_event(
-            name="Service Created Event",
-            status=EventStatus.DRAFT.value,
-        )
+    Service behavior (filter predicates, forced-DRAFT invariant, mass-assignment
+    guard, cross-organizer isolation) is exercised against real DB rows; pure
+    transition guards that need no DB stay mocked above.
+    """
 
-        with (
-            patch("ctf.services.event.CTFEvent.objects") as mock_objects,
-            patch("ctf.services.event.transaction.atomic", side_effect=_noop_atomic),
-        ):
-            mock_objects.create.return_value = created_event
-            from ctf.services import create_event
+    @pytest.mark.django_db
+    def test_create_event_service(self, organizer_user):
+        """create_event persists the event, forces DRAFT, and blocks mass assignment."""
+        from ctf.models import CTFEvent
+        from ctf.services import create_event
 
-            event_data = {
+        event = create_event(
+            organizer_user,
+            {
                 "name": "Service Created Event",
                 "description": "Created via service",
                 "event_start": timezone.now() + timedelta(days=1),
                 "event_end": timezone.now() + timedelta(days=1, hours=8),
                 "scenario_id": "basic",
-            }
-            event = create_event(mock_user, event_data)
+                # Mass-assignment attempts that the service must ignore.
+                "status": EventStatus.ACTIVE.value,
+                "created_by_id": 999999,
+            },
+        )
 
         assert event.pk is not None
         assert event.name == "Service Created Event"
+        # Status is forced to DRAFT regardless of the supplied value, and
+        # created_by is the caller, not the injected id.
         assert event.status == EventStatus.DRAFT.value
+        assert event.created_by_id == organizer_user.pk
+        # Same invariants hold for the persisted row.
+        persisted = CTFEvent.objects.get(pk=event.pk)
+        assert persisted.status == EventStatus.DRAFT.value
+        assert persisted.created_by_id == organizer_user.pk
 
-    def test_get_organizer_events(self, mock_user, mock_event, mock_event_draft):
-        """get_organizer_events should return only organizer's events."""
-        qs = MagicMock()
-        qs.order_by.return_value = [mock_event, mock_event_draft]
+    @pytest.mark.django_db
+    def test_get_organizer_events(self, organizer_user):
+        """get_organizer_events returns the organizer's own events."""
+        from ctf.models import CTFEvent
+        from ctf.services import get_organizer_events
 
-        with patch("ctf.services.event.CTFEvent.objects") as mock_objects:
-            mock_objects.filter.return_value = qs
-            from ctf.services import get_organizer_events
-
-            events = get_organizer_events(mock_user)
-
-        assert mock_event in events
-        assert mock_event_draft in events
-
-    def test_get_organizer_events_excludes_others(self, mock_user, mock_event):
-        """get_organizer_events should exclude other organizers' events."""
-        other_event = _make_mock_event(
-            name="Other Event",
-            created_by_id=3,
+        e1 = CTFEvent.objects.create(
+            name="E1",
+            created_by=organizer_user,
+            status=EventStatus.DRAFT.value,
+            event_start=timezone.now() + timedelta(days=1),
+            event_end=timezone.now() + timedelta(days=1, hours=8),
+            scenario_id="basic",
+        )
+        e2 = CTFEvent.objects.create(
+            name="E2",
+            created_by=organizer_user,
+            status=EventStatus.REGISTRATION.value,
+            event_start=timezone.now() + timedelta(days=2),
+            event_end=timezone.now() + timedelta(days=2, hours=8),
+            scenario_id="basic",
         )
 
-        qs = MagicMock()
-        qs.order_by.return_value = [mock_event]
+        events = list(get_organizer_events(organizer_user))
+        assert {e.pk for e in events} == {e1.pk, e2.pk}
 
-        with patch("ctf.services.event.CTFEvent.objects") as mock_objects:
-            mock_objects.filter.return_value = qs
-            from ctf.services import get_organizer_events
+    @pytest.mark.django_db
+    def test_get_organizer_events_excludes_others(self, organizer_user, standard_user):
+        """get_organizer_events filters by created_by — no cross-organizer leakage.
 
-            events = get_organizer_events(mock_user)
+        Regression guard: dropping `filter(created_by=user)` would leak another
+        user's events here, where the mocked version could not catch it.
+        """
+        from ctf.models import CTFEvent
+        from ctf.services import get_organizer_events
 
-        assert mock_event in events
-        assert other_event not in events
+        mine = CTFEvent.objects.create(
+            name="Mine",
+            created_by=organizer_user,
+            status=EventStatus.DRAFT.value,
+            event_start=timezone.now() + timedelta(days=1),
+            event_end=timezone.now() + timedelta(days=1, hours=8),
+            scenario_id="basic",
+        )
+        theirs = CTFEvent.objects.create(
+            name="Theirs",
+            created_by=standard_user,
+            status=EventStatus.DRAFT.value,
+            event_start=timezone.now() + timedelta(days=1),
+            event_end=timezone.now() + timedelta(days=1, hours=8),
+            scenario_id="basic",
+        )
+
+        pks = {e.pk for e in get_organizer_events(organizer_user)}
+        assert mine.pk in pks
+        assert theirs.pk not in pks
 
     def test_get_event_returns_event(self, mock_event):
         """get_event should return event by ID."""

@@ -495,6 +495,13 @@ def complete_event(event: CTFEvent) -> bool:
         )
         return False
 
+    # Finalize the materialized leaderboard (issue #850) from authoritative
+    # rows when the event ends, so the stored per-event scores are exact and
+    # self-heal any incremental-maintenance drift before the board goes static.
+    from ctf.services.scoring import recompute_event_leaderboard
+
+    recompute_event_leaderboard(event.pk)
+
     if event.auto_cleanup:
         from ctf.services.range import cleanup_event_ranges
 

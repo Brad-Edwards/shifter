@@ -118,6 +118,28 @@ class CTFTeam(CTFBaseModel):
         related_name="captained_teams",
         help_text="Team captain",
     )
+    # Materialized leaderboard state (issue #850). Derived from authoritative
+    # CTFSubmission/CTFAward rows of eligible members; maintained by the
+    # ctf.services.scoring recompute helpers and rebuildable via the
+    # ctf_recompute_leaderboard command. Read by the live (unfrozen, no-bracket)
+    # team scoreboard; frozen or bracket-filtered views recompute from source.
+    cached_score = models.IntegerField(
+        default=0,
+        help_text="Materialized team score (eligible members' submissions + awards); see issue #850",
+    )
+    cached_solve_count = models.PositiveIntegerField(
+        default=0,
+        help_text="Materialized count of distinct challenges solved by eligible members",
+    )
+    cached_member_count = models.PositiveIntegerField(
+        default=0,
+        help_text="Materialized count of eligible team members",
+    )
+    last_solve_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Materialized timestamp of the team's most recent correct solve (tie-breaker)",
+    )
 
     class Meta:
         """Django model metadata."""
@@ -132,6 +154,9 @@ class CTFTeam(CTFBaseModel):
                 condition=Q(deleted_at__isnull=True),
                 name="unique_active_team_name_per_event",
             ),
+        ]
+        indexes = [
+            models.Index(fields=["event", "-cached_score", "last_solve_at"], name="ctf_team_event_score_idx"),
         ]
 
     def __str__(self) -> str:
@@ -305,6 +330,24 @@ class CTFParticipant(CTFBaseModel):
         blank=True,
         help_text="Last activity timestamp",
     )
+    # Materialized leaderboard state (issue #850). Derived from authoritative
+    # CTFSubmission/CTFAward rows; maintained by the ctf.services.scoring
+    # recompute helpers and rebuildable via the ctf_recompute_leaderboard
+    # command. Read by the live (unfrozen) scoreboard and the participant-rank
+    # path; frozen views recompute from source.
+    cached_score = models.IntegerField(
+        default=0,
+        help_text="Materialized total score (submissions + awards); see issue #850",
+    )
+    cached_solve_count = models.PositiveIntegerField(
+        default=0,
+        help_text="Materialized count of correctly solved challenges",
+    )
+    last_solve_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Materialized timestamp of the most recent correct solve (tie-breaker)",
+    )
 
     class Meta:
         """Django model metadata."""
@@ -323,6 +366,7 @@ class CTFParticipant(CTFBaseModel):
         indexes = [
             models.Index(fields=["event", "status"]),
             models.Index(fields=["event", "team"]),
+            models.Index(fields=["event", "-cached_score", "last_solve_at"], name="ctf_part_event_score_idx"),
         ]
 
     def __str__(self) -> str:
