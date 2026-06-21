@@ -190,6 +190,44 @@ def provision_event_ranges(event_id: UUID) -> dict[str, Any]:
     }
 
 
+def _safe_heartbeat(heartbeat: Callable[[], None] | None, event_id: UUID) -> None:
+    """Invoke the spin-up heartbeat, swallowing failures (#942).
+
+    Keeps the claimed scheduled task fresh so the stale-recovery sweep does not
+    mark this in-flight spin-up FAILED. A heartbeat error must never abort the
+    spin-up.
+    """
+    if heartbeat is None:
+        return
+    try:
+        heartbeat()
+    except Exception:
+        logger.warning("Spin-up heartbeat failed for event %s", event_id, exc_info=True)
+
+
+def _record_provision_attempt(
+    participant: CTFParticipant,
+    tallies: dict[str, int],
+    errors: list[dict[str, str]],
+) -> None:
+    """Provision one participant and fold the outcome into the running tallies.
+
+    A benign 'already has a range' race loser is counted as ``skipped`` rather
+    than ``failed`` so it does not poison the event spin-up (#942).
+    """
+    try:
+        provision_participant_range_with_retry(participant.pk)
+        tallies["successful"] += 1
+    except Exception as e:
+        if _is_already_assigned_error(e):
+            tallies["skipped"] += 1
+            logger.info("Participant %s already has a range; skipping", participant.pk)
+        else:
+            tallies["failed"] += 1
+            errors.append({"participant_id": str(participant.pk), "error": str(e)})
+            logger.error("Failed to provision range for participant %s: %s", participant.pk, e)
+
+
 def provision_event_ranges_throttled(
     event_id: UUID,
     spinup_window_seconds: int,
@@ -254,9 +292,7 @@ def provision_event_ranges_throttled(
     raw_delay = spinup_window_seconds / max(count, 1)
     delay = max(5.0, min(120.0, raw_delay))
 
-    successful = 0
-    failed = 0
-    skipped = 0
+    tallies = {"successful": 0, "failed": 0, "skipped": 0}
     errors: list[dict[str, str]] = []
     interrupted = False
 
@@ -271,39 +307,17 @@ def provision_event_ranges_throttled(
             interrupted = True
             break
 
-        # Keep the claimed scheduled task fresh so the stale-recovery sweep does
-        # not mark this in-flight spin-up FAILED (#942). Never let a heartbeat
-        # failure abort provisioning.
-        if heartbeat is not None:
-            try:
-                heartbeat()
-            except Exception:
-                logger.warning("Spin-up heartbeat failed for event %s", event_id, exc_info=True)
-
-        try:
-            provision_participant_range_with_retry(participant.pk)
-            successful += 1
-        except Exception as e:
-            if _is_already_assigned_error(e):
-                skipped += 1
-                logger.info("Participant %s already has a range; skipping", participant.pk)
-            else:
-                failed += 1
-                errors.append({"participant_id": str(participant.pk), "error": str(e)})
-                logger.error(
-                    "Failed to provision range for participant %s: %s",
-                    participant.pk,
-                    e,
-                )
+        _safe_heartbeat(heartbeat, event_id)
+        _record_provision_attempt(participant, tallies, errors)
 
         logger.info(
             "Throttled provisioning progress for event %s: %d/%d (%d ready, %d failed, %d skipped)",
             event_id,
             i + 1,
             count,
-            successful,
-            failed,
-            skipped,
+            tallies["successful"],
+            tallies["failed"],
+            tallies["skipped"],
         )
 
         # Sleep between provisions (skip after the last one)
@@ -318,10 +332,10 @@ def provision_event_ranges_throttled(
 
     return {
         "event_id": str(event_id),
-        "total": successful + failed + skipped,
-        "successful": successful,
-        "failed": failed,
-        "skipped": skipped,
+        "total": tallies["successful"] + tallies["failed"] + tallies["skipped"],
+        "successful": tallies["successful"],
+        "failed": tallies["failed"],
+        "skipped": tallies["skipped"],
         "errors": errors,
         "interrupted": interrupted,
     }
