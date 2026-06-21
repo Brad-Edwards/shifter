@@ -268,10 +268,13 @@ def mark_range_instances_destroyed(range_id: int) -> tuple[int, int]:
 
 def _update_range_config(range_id: int, range_spec: dict[str, Any]) -> None:
     """Write updated range_config back to mission_control_range."""
+    from cyberscript.persisted_envelope import ensure_wrapped_persisted_spec
+
+    wrapped = ensure_wrapped_persisted_spec("range_spec", range_spec)
     with get_db_connection() as conn, conn.cursor() as cur:
         cur.execute(
             "UPDATE mission_control_range SET range_config = %s WHERE id = %s",
-            (json.dumps(range_spec), range_id),
+            (json.dumps(wrapped), range_id),
         )
         conn.commit()
     logger.info("Persisted updated range_config for range %d", range_id)
@@ -299,7 +302,10 @@ def get_range_data_by_request_id(request_id: str) -> dict[str, Any]:
         if not row:
             raise ValueError(f"Range request not found: {request_id}")
 
-        range_config = row[3] if row[3] else {}
+        range_config_raw = row[3] if row[3] else {}
+        from cyberscript.persisted_envelope import unwrap_persisted_spec
+
+        range_config = unwrap_persisted_spec(range_config_raw)
         user_id = row[2]
         ngfw_instance_id = None
 

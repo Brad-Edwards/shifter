@@ -224,7 +224,7 @@ class TestCredentialDataORMRoundTrip:
             slug="deployment_profile",
             defaults={
                 "name": "NGFW Deployment Profile",
-                "spec_class": "shared.schemas.DeploymentProfileSpec",
+                "spec_slug": "credential.deployment_profile",
             },
         )
         return ct
@@ -295,7 +295,7 @@ class TestInstanceDataORMRoundTrip:
             slug="panw-ngfw",
             defaults={
                 "name": "PANW NGFW",
-                "spec_class": "shared.schemas.range.InstanceSpec",
+                "spec_slug": "instance.panw-ngfw",
             },
         )
         return it
