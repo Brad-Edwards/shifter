@@ -38,6 +38,8 @@ on:
         required: true
       AWS_ROLE_ARN_DEV:
         required: true
+      AWS_ROLE_ARN_PROOF:
+        required: false
       PLATFORM_BOOTSTRAP_STAFF_EMAILS:
         required: false
       PLATFORM_BOOTSTRAP_SUPERUSER_EMAILS:
@@ -53,6 +55,8 @@ on:
         required: false
       TF_INFRA_STATE_BUCKET:
         required: true
+      TF_VARS_PROOF_PORTAL:
+        required: false
 
 jobs:
   plan:
@@ -74,9 +78,40 @@ jobs:
         working-directory: platform/terraform/environments/${{ inputs.environment }}/portal
     steps:
       - uses: actions/checkout@v6
+      - name: Resolve AWS deploy role
+        id: aws-role
+        env:
+          ENVIRONMENT: ${{ inputs.environment }}
+          AWS_ROLE_ARN_DEV: ${{ secrets.AWS_ROLE_ARN_DEV }}
+          AWS_ROLE_ARN_PROOF: ${{ secrets.AWS_ROLE_ARN_PROOF }}
+          AWS_ROLE_ARN_PROD: ${{ secrets.AWS_ROLE_ARN }}
+        run: |
+          case "$ENVIRONMENT" in
+            dev)
+              ROLE_SECRET_NAME="AWS_ROLE_ARN_DEV"
+              ROLE_ARN="$AWS_ROLE_ARN_DEV"
+              ;;
+            proof)
+              ROLE_SECRET_NAME="AWS_ROLE_ARN_PROOF"
+              ROLE_ARN="$AWS_ROLE_ARN_PROOF"
+              ;;
+            prod)
+              ROLE_SECRET_NAME="AWS_ROLE_ARN"
+              ROLE_ARN="$AWS_ROLE_ARN_PROD"
+              ;;
+            *)
+              echo "::error::Unsupported AWS environment: $ENVIRONMENT"
+              exit 1
+              ;;
+          esac
+          if [ -z "$ROLE_ARN" ]; then
+            echo "::error::Required secret ${ROLE_SECRET_NAME} is not set"
+            exit 1
+          fi
+          echo "role_arn=$ROLE_ARN" >> "$GITHUB_OUTPUT"
       - uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ inputs.is_dev && secrets.AWS_ROLE_ARN_DEV || secrets.AWS_ROLE_ARN }}
+          role-to-assume: ${{ steps.aws-role.outputs.role_arn }}
           aws-region: us-east-2
       - uses: hashicorp/setup-terraform@v3
         with:
@@ -90,24 +125,36 @@ jobs:
         # into a gitignored local.auto.tfvars that Terraform auto-loads over
         # the baseline before plan and apply. See docs/dev/deploy-secrets.md.
         env:
-          IS_DEV: ${{ inputs.is_dev }}
+          ENVIRONMENT: ${{ inputs.environment }}
           ENGINE_IMAGE_DIGEST: ${{ inputs.engine_image_digest }}
-          ENGINE_TASK_FAMILY: ${{ inputs.is_dev && 'dev-portal-pulumi-provisioner' || 'prod-portal-pulumi-provisioner' }}
+          ENGINE_TASK_FAMILY: ${{ inputs.environment }}-portal-pulumi-provisioner
           TF_VARS_DEV_PORTAL: ${{ secrets.TF_VARS_DEV_PORTAL }}
+          TF_VARS_PROOF_PORTAL: ${{ secrets.TF_VARS_PROOF_PORTAL }}
           TF_VARS_PROD_PORTAL: ${{ secrets.TF_VARS_PROD_PORTAL }}
         run: |
-          # Select strictly on inputs.is_dev. A GitHub Actions
+          # Select strictly on inputs.environment in shell. A GitHub Actions
           # `is_dev && DEV_SECRET || PROD_SECRET` expression is unsafe: an
           # empty active-environment secret is falsy and falls through to
           # the other environment's secret. Selecting in shell keeps an
           # empty active secret empty so the check below trips fail-loud.
-          if [ "${IS_DEV}" = "true" ]; then
-            PORTAL_SECRET_NAME="TF_VARS_DEV_PORTAL"
-            TF_VARS_PORTAL="${TF_VARS_DEV_PORTAL}"
-          else
-            PORTAL_SECRET_NAME="TF_VARS_PROD_PORTAL"
-            TF_VARS_PORTAL="${TF_VARS_PROD_PORTAL}"
-          fi
+          case "$ENVIRONMENT" in
+            dev)
+              PORTAL_SECRET_NAME="TF_VARS_DEV_PORTAL"
+              TF_VARS_PORTAL="${TF_VARS_DEV_PORTAL}"
+              ;;
+            proof)
+              PORTAL_SECRET_NAME="TF_VARS_PROOF_PORTAL"
+              TF_VARS_PORTAL="${TF_VARS_PROOF_PORTAL}"
+              ;;
+            prod)
+              PORTAL_SECRET_NAME="TF_VARS_PROD_PORTAL"
+              TF_VARS_PORTAL="${TF_VARS_PROD_PORTAL}"
+              ;;
+            *)
+              echo "::error::Unsupported AWS environment: $ENVIRONMENT"
+              exit 1
+              ;;
+          esac
           if [ -z "${TF_VARS_PORTAL}" ]; then
             echo "::error::Required secret ${PORTAL_SECRET_NAME} is not set. See docs/dev/deploy-secrets.md."
             exit 1
@@ -182,14 +229,45 @@ jobs:
       inputs.platform_changes &&
       github.event_name != 'pull_request'
     env:
-      GUACD_REPO: ${{ inputs.is_dev && 'shifter-dev-guacd' || 'shifter-guacd' }}
-      GUACAMOLE_CLIENT_REPO: ${{ inputs.is_dev && 'shifter-dev-guacamole-client' || 'shifter-guacamole-client' }}
+      GUACD_REPO: ${{ inputs.environment == 'prod' && 'shifter-guacd' || format('shifter-{0}-guacd', inputs.environment) }}
+      GUACAMOLE_CLIENT_REPO: ${{ inputs.environment == 'prod' && 'shifter-guacamole-client' || format('shifter-{0}-guacamole-client', inputs.environment) }}
       GUACAMOLE_VERSION: "1.5.5"
     steps:
       - uses: actions/checkout@v6
+      - name: Resolve AWS deploy role
+        id: aws-role
+        env:
+          ENVIRONMENT: ${{ inputs.environment }}
+          AWS_ROLE_ARN_DEV: ${{ secrets.AWS_ROLE_ARN_DEV }}
+          AWS_ROLE_ARN_PROOF: ${{ secrets.AWS_ROLE_ARN_PROOF }}
+          AWS_ROLE_ARN_PROD: ${{ secrets.AWS_ROLE_ARN }}
+        run: |
+          case "$ENVIRONMENT" in
+            dev)
+              ROLE_SECRET_NAME="AWS_ROLE_ARN_DEV"
+              ROLE_ARN="$AWS_ROLE_ARN_DEV"
+              ;;
+            proof)
+              ROLE_SECRET_NAME="AWS_ROLE_ARN_PROOF"
+              ROLE_ARN="$AWS_ROLE_ARN_PROOF"
+              ;;
+            prod)
+              ROLE_SECRET_NAME="AWS_ROLE_ARN"
+              ROLE_ARN="$AWS_ROLE_ARN_PROD"
+              ;;
+            *)
+              echo "::error::Unsupported AWS environment: $ENVIRONMENT"
+              exit 1
+              ;;
+          esac
+          if [ -z "$ROLE_ARN" ]; then
+            echo "::error::Required secret ${ROLE_SECRET_NAME} is not set"
+            exit 1
+          fi
+          echo "role_arn=$ROLE_ARN" >> "$GITHUB_OUTPUT"
       - uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ inputs.is_dev && secrets.AWS_ROLE_ARN_DEV || secrets.AWS_ROLE_ARN }}
+          role-to-assume: ${{ steps.aws-role.outputs.role_arn }}
           aws-region: us-east-2
       - name: Login to Amazon ECR
         id: login-ecr
@@ -256,9 +334,40 @@ jobs:
         working-directory: platform/terraform/environments/${{ inputs.environment }}/portal
     steps:
       - uses: actions/checkout@v6
+      - name: Resolve AWS deploy role
+        id: aws-role
+        env:
+          ENVIRONMENT: ${{ inputs.environment }}
+          AWS_ROLE_ARN_DEV: ${{ secrets.AWS_ROLE_ARN_DEV }}
+          AWS_ROLE_ARN_PROOF: ${{ secrets.AWS_ROLE_ARN_PROOF }}
+          AWS_ROLE_ARN_PROD: ${{ secrets.AWS_ROLE_ARN }}
+        run: |
+          case "$ENVIRONMENT" in
+            dev)
+              ROLE_SECRET_NAME="AWS_ROLE_ARN_DEV"
+              ROLE_ARN="$AWS_ROLE_ARN_DEV"
+              ;;
+            proof)
+              ROLE_SECRET_NAME="AWS_ROLE_ARN_PROOF"
+              ROLE_ARN="$AWS_ROLE_ARN_PROOF"
+              ;;
+            prod)
+              ROLE_SECRET_NAME="AWS_ROLE_ARN"
+              ROLE_ARN="$AWS_ROLE_ARN_PROD"
+              ;;
+            *)
+              echo "::error::Unsupported AWS environment: $ENVIRONMENT"
+              exit 1
+              ;;
+          esac
+          if [ -z "$ROLE_ARN" ]; then
+            echo "::error::Required secret ${ROLE_SECRET_NAME} is not set"
+            exit 1
+          fi
+          echo "role_arn=$ROLE_ARN" >> "$GITHUB_OUTPUT"
       - uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ inputs.is_dev && secrets.AWS_ROLE_ARN_DEV || secrets.AWS_ROLE_ARN }}
+          role-to-assume: ${{ steps.aws-role.outputs.role_arn }}
           aws-region: us-east-2
       - uses: hashicorp/setup-terraform@v3
         with:
@@ -270,24 +379,36 @@ jobs:
         # into a gitignored local.auto.tfvars that Terraform auto-loads over
         # the baseline before plan and apply. See docs/dev/deploy-secrets.md.
         env:
-          IS_DEV: ${{ inputs.is_dev }}
+          ENVIRONMENT: ${{ inputs.environment }}
           ENGINE_IMAGE_DIGEST: ${{ inputs.engine_image_digest }}
-          ENGINE_TASK_FAMILY: ${{ inputs.is_dev && 'dev-portal-pulumi-provisioner' || 'prod-portal-pulumi-provisioner' }}
+          ENGINE_TASK_FAMILY: ${{ inputs.environment }}-portal-pulumi-provisioner
           TF_VARS_DEV_PORTAL: ${{ secrets.TF_VARS_DEV_PORTAL }}
+          TF_VARS_PROOF_PORTAL: ${{ secrets.TF_VARS_PROOF_PORTAL }}
           TF_VARS_PROD_PORTAL: ${{ secrets.TF_VARS_PROD_PORTAL }}
         run: |
-          # Select strictly on inputs.is_dev. A GitHub Actions
+          # Select strictly on inputs.environment in shell. A GitHub Actions
           # `is_dev && DEV_SECRET || PROD_SECRET` expression is unsafe: an
           # empty active-environment secret is falsy and falls through to
           # the other environment's secret. Selecting in shell keeps an
           # empty active secret empty so the check below trips fail-loud.
-          if [ "${IS_DEV}" = "true" ]; then
-            PORTAL_SECRET_NAME="TF_VARS_DEV_PORTAL"
-            TF_VARS_PORTAL="${TF_VARS_DEV_PORTAL}"
-          else
-            PORTAL_SECRET_NAME="TF_VARS_PROD_PORTAL"
-            TF_VARS_PORTAL="${TF_VARS_PROD_PORTAL}"
-          fi
+          case "$ENVIRONMENT" in
+            dev)
+              PORTAL_SECRET_NAME="TF_VARS_DEV_PORTAL"
+              TF_VARS_PORTAL="${TF_VARS_DEV_PORTAL}"
+              ;;
+            proof)
+              PORTAL_SECRET_NAME="TF_VARS_PROOF_PORTAL"
+              TF_VARS_PORTAL="${TF_VARS_PROOF_PORTAL}"
+              ;;
+            prod)
+              PORTAL_SECRET_NAME="TF_VARS_PROD_PORTAL"
+              TF_VARS_PORTAL="${TF_VARS_PROD_PORTAL}"
+              ;;
+            *)
+              echo "::error::Unsupported AWS environment: $ENVIRONMENT"
+              exit 1
+              ;;
+          esac
           if [ -z "${TF_VARS_PORTAL}" ]; then
             echo "::error::Required secret ${PORTAL_SECRET_NAME} is not set. See docs/dev/deploy-secrets.md."
             exit 1
@@ -517,12 +638,43 @@ jobs:
       image_tag: ${{ steps.image.outputs.tag }}
       image_digest: ${{ steps.build.outputs.digest }}
     env:
-      ECR_REPOSITORY: ${{ inputs.is_dev && 'shifter-dev-portal' || 'shifter-portal' }}
+      ECR_REPOSITORY: ${{ inputs.environment == 'prod' && 'shifter-portal' || format('shifter-{0}-portal', inputs.environment) }}
     steps:
       - uses: actions/checkout@v6
+      - name: Resolve AWS deploy role
+        id: aws-role
+        env:
+          ENVIRONMENT: ${{ inputs.environment }}
+          AWS_ROLE_ARN_DEV: ${{ secrets.AWS_ROLE_ARN_DEV }}
+          AWS_ROLE_ARN_PROOF: ${{ secrets.AWS_ROLE_ARN_PROOF }}
+          AWS_ROLE_ARN_PROD: ${{ secrets.AWS_ROLE_ARN }}
+        run: |
+          case "$ENVIRONMENT" in
+            dev)
+              ROLE_SECRET_NAME="AWS_ROLE_ARN_DEV"
+              ROLE_ARN="$AWS_ROLE_ARN_DEV"
+              ;;
+            proof)
+              ROLE_SECRET_NAME="AWS_ROLE_ARN_PROOF"
+              ROLE_ARN="$AWS_ROLE_ARN_PROOF"
+              ;;
+            prod)
+              ROLE_SECRET_NAME="AWS_ROLE_ARN"
+              ROLE_ARN="$AWS_ROLE_ARN_PROD"
+              ;;
+            *)
+              echo "::error::Unsupported AWS environment: $ENVIRONMENT"
+              exit 1
+              ;;
+          esac
+          if [ -z "$ROLE_ARN" ]; then
+            echo "::error::Required secret ${ROLE_SECRET_NAME} is not set"
+            exit 1
+          fi
+          echo "role_arn=$ROLE_ARN" >> "$GITHUB_OUTPUT"
       - uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ inputs.is_dev && secrets.AWS_ROLE_ARN_DEV || secrets.AWS_ROLE_ARN }}
+          role-to-assume: ${{ steps.aws-role.outputs.role_arn }}
           aws-region: us-east-2
       - name: Login to Amazon ECR
         id: login-ecr
@@ -559,7 +711,7 @@ jobs:
       AWS_REGION: us-east-2
       ENV: ${{ inputs.environment }}
       PS_PREFIX: /shifter/${{ inputs.environment }}/portal
-      INSTANCE_TAG: ${{ inputs.is_dev && 'dev-portal-ec2' || 'prod-portal-ec2' }}
+      INSTANCE_TAG: ${{ inputs.environment }}-portal-ec2
       PLATFORM_BOOTSTRAP_STAFF_EMAILS: ${{ secrets.PLATFORM_BOOTSTRAP_STAFF_EMAILS }}
       PLATFORM_BOOTSTRAP_SUPERUSER_EMAILS: ${{ secrets.PLATFORM_BOOTSTRAP_SUPERUSER_EMAILS }}
     steps:
@@ -570,9 +722,40 @@ jobs:
           terraform_version: "1.13.3"
           terraform_wrapper: false
 
+      - name: Resolve AWS deploy role
+        id: aws-role
+        env:
+          ENVIRONMENT: ${{ inputs.environment }}
+          AWS_ROLE_ARN_DEV: ${{ secrets.AWS_ROLE_ARN_DEV }}
+          AWS_ROLE_ARN_PROOF: ${{ secrets.AWS_ROLE_ARN_PROOF }}
+          AWS_ROLE_ARN_PROD: ${{ secrets.AWS_ROLE_ARN }}
+        run: |
+          case "$ENVIRONMENT" in
+            dev)
+              ROLE_SECRET_NAME="AWS_ROLE_ARN_DEV"
+              ROLE_ARN="$AWS_ROLE_ARN_DEV"
+              ;;
+            proof)
+              ROLE_SECRET_NAME="AWS_ROLE_ARN_PROOF"
+              ROLE_ARN="$AWS_ROLE_ARN_PROOF"
+              ;;
+            prod)
+              ROLE_SECRET_NAME="AWS_ROLE_ARN"
+              ROLE_ARN="$AWS_ROLE_ARN_PROD"
+              ;;
+            *)
+              echo "::error::Unsupported AWS environment: $ENVIRONMENT"
+              exit 1
+              ;;
+          esac
+          if [ -z "$ROLE_ARN" ]; then
+            echo "::error::Required secret ${ROLE_SECRET_NAME} is not set"
+            exit 1
+          fi
+          echo "role_arn=$ROLE_ARN" >> "$GITHUB_OUTPUT"
       - uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ inputs.is_dev && secrets.AWS_ROLE_ARN_DEV || secrets.AWS_ROLE_ARN }}
+          role-to-assume: ${{ steps.aws-role.outputs.role_arn }}
           aws-region: us-east-2
 
       - name: Render Terraform backend configs

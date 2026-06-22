@@ -4,7 +4,7 @@ name: Deploy
 on:
   pull_request:
   push:
-    branches: [main, dev, aws-dev, gcp-dev]
+    branches: [main, dev, aws-dev, aws-proof, gcp-dev]
   workflow_dispatch:
     inputs:
       gcp_require_active_certificate:
@@ -241,6 +241,13 @@ jobs:
                 RUN_AWS="true"
                 APPLY_AWS="true"
                 ;;
+              aws-proof)
+                AWS_ENV="proof"
+                AWS_IS_DEV="false"
+                AWS_GITHUB_ENV="aws-proof"
+                RUN_AWS="true"
+                APPLY_AWS="true"
+                ;;
               gcp-dev)
                 RUN_GCP="true"
                 DEPLOY_GCP="true"
@@ -255,6 +262,13 @@ jobs:
             BRANCH="${GITHUB_REF#refs/heads/}"
             case "$BRANCH" in
               aws-dev)
+                RUN_AWS="true"
+                APPLY_AWS="true"
+                ;;
+              aws-proof)
+                AWS_ENV="proof"
+                AWS_IS_DEV="false"
+                AWS_GITHUB_ENV="aws-proof"
                 RUN_AWS="true"
                 APPLY_AWS="true"
                 ;;
@@ -331,7 +345,10 @@ jobs:
     # so the same SHA already passed Quality on its dev push and re-running
     # here is pure duplicate work. Deploy jobs already tolerate skipped
     # Quality via `(needs.quality.result == 'success' || ... == 'skipped')`.
+    # The proof tenant standup path (manual dispatch on aws-proof) also skips
+    # Quality: it redeploys a SHA already validated on dev.
     if: |
+      !(github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/aws-proof') &&
       (github.event_name == 'pull_request' ||
        github.event_name == 'workflow_dispatch' ||
        github.ref == 'refs/heads/dev') &&
@@ -458,6 +475,7 @@ jobs:
       AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
       AWS_ROLE_ARN_DEV: ${{ secrets.AWS_ROLE_ARN_DEV }}
       TF_INFRA_STATE_BUCKET: ${{ secrets.TF_INFRA_STATE_BUCKET }}
+      AWS_ROLE_ARN_PROOF: ${{ secrets.AWS_ROLE_ARN_PROOF }}
 
   range:
     name: Range
@@ -484,6 +502,7 @@ jobs:
     secrets:
       AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
       AWS_ROLE_ARN_DEV: ${{ secrets.AWS_ROLE_ARN_DEV }}
+      AWS_ROLE_ARN_PROOF: ${{ secrets.AWS_ROLE_ARN_PROOF }}
       TF_VARS_DEV_RANGE: ${{ secrets.TF_VARS_DEV_RANGE }}
       TF_VARS_PROD_RANGE: ${{ secrets.TF_VARS_PROD_RANGE }}
       TF_INFRA_STATE_BUCKET: ${{ secrets.TF_INFRA_STATE_BUCKET }}
@@ -515,6 +534,7 @@ jobs:
     secrets:
       AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
       AWS_ROLE_ARN_DEV: ${{ secrets.AWS_ROLE_ARN_DEV }}
+      AWS_ROLE_ARN_PROOF: ${{ secrets.AWS_ROLE_ARN_PROOF }}
 
   shifter_platform:
     name: Shifter Platform
@@ -553,8 +573,10 @@ jobs:
     secrets:
       AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
       AWS_ROLE_ARN_DEV: ${{ secrets.AWS_ROLE_ARN_DEV }}
+      AWS_ROLE_ARN_PROOF: ${{ secrets.AWS_ROLE_ARN_PROOF }}
       PLATFORM_BOOTSTRAP_STAFF_EMAILS: ${{ secrets.PLATFORM_BOOTSTRAP_STAFF_EMAILS }}
       PLATFORM_BOOTSTRAP_SUPERUSER_EMAILS: ${{ secrets.PLATFORM_BOOTSTRAP_SUPERUSER_EMAILS }}
       TF_VARS_DEV_PORTAL: ${{ secrets.TF_VARS_DEV_PORTAL }}
       TF_VARS_PROD_PORTAL: ${{ secrets.TF_VARS_PROD_PORTAL }}
       TF_INFRA_STATE_BUCKET: ${{ secrets.TF_INFRA_STATE_BUCKET }}
+      TF_VARS_PROOF_PORTAL: ${{ secrets.TF_VARS_PROOF_PORTAL }}

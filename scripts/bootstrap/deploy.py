@@ -435,6 +435,9 @@ def administrator_access_policy_document() -> str:
     )
 
 
+AWS_ENVIRONMENTS = ("dev", "proof", "prod")
+
+
 @dataclass
 class BootstrapConfig:
     env: str
@@ -462,7 +465,9 @@ class BootstrapConfig:
 
     @property
     def secret_name(self) -> str:
-        return "AWS_ROLE_ARN" if self.env == "prod" else "AWS_ROLE_ARN_DEV"
+        if self.env == "prod":
+            return "AWS_ROLE_ARN"
+        return f"AWS_ROLE_ARN_{self.env.upper().replace('-', '_')}"
 
 
 @dataclass(frozen=True)
@@ -4335,19 +4340,19 @@ Examples:
 
     # Bootstrap command
     bootstrap_parser = subparsers.add_parser("bootstrap", help="Bootstrap AWS account (S3, DynamoDB, IAM)")
-    bootstrap_parser.add_argument("--env", required=True, choices=["dev", "prod"], help="Environment")
+    bootstrap_parser.add_argument("--env", required=True, choices=AWS_ENVIRONMENTS, help="Environment")
     bootstrap_parser.add_argument("--profile", required=True, help="AWS CLI profile name")
     bootstrap_parser.add_argument("--dry-run", action="store_true", help="Show what would be done")
 
     # Terraform command
     tf_parser = subparsers.add_parser("terraform", help="Deploy Terraform infrastructure")
-    tf_parser.add_argument("--env", required=True, choices=["dev", "prod"], help="Environment")
+    tf_parser.add_argument("--env", required=True, choices=AWS_ENVIRONMENTS, help="Environment")
     tf_parser.add_argument("--profile", required=True, help="AWS CLI profile name")
     tf_parser.add_argument("--dry-run", action="store_true", help="Show what would be done")
 
     # Full command
     full_parser = subparsers.add_parser("full", help="Full interactive deployment (bootstrap + config + terraform)")
-    full_parser.add_argument("--env", required=True, choices=["dev", "prod"], help="Environment")
+    full_parser.add_argument("--env", required=True, choices=AWS_ENVIRONMENTS, help="Environment")
     full_parser.add_argument("--profile", required=True, help="AWS CLI profile name")
     full_parser.add_argument("--dry-run", action="store_true", help="Show what would be done")
 
