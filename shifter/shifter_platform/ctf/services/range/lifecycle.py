@@ -130,12 +130,11 @@ def cleanup_event_ranges(event_id: UUID) -> dict[str, Any]:
         try:
             _destroy_single_range(participant, participant.user)
             destroyed += 1
-        except Exception as e:
+        except Exception:
             failed += 1
-            logger.error(
-                "Failed to destroy range for participant %s: %s",
+            logger.exception(
+                "Failed to destroy range for participant %s",
                 participant.pk,
-                e,
             )
 
     return {
