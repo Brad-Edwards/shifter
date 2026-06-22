@@ -2390,6 +2390,29 @@ _QUALITY_GUARDRAIL_DOCS_REQUIRED_GLOBS = (
 _PR_GATE_SKIPPED_QUALITY_GUARD = (
     '[ "$quality_result" = "skipped" ] && [ "$quality_relevant" != "false" ]'
 )
+_QUALITY_WORKFLOW_PATH = ".github/workflows/_quality.yml"
+_SKIP_TESTS_LITERAL = "skip_tests: false"
+_SKIP_TESTS_FORBIDDEN_MARKERS = (
+    "[skip tests]",
+    "[skip quality]",
+    "Check for skip flags",
+)
+# Lint / architecture / security jobs in _quality.yml that must never be gated
+# on inputs.skip_tests (ADR-003-R2 / issue #760).
+_QUALITY_SKIP_TESTS_IMMUNE_JOB_SUFFIXES = ("-lint", "-lint-js", "-sast", "-arch")
+_QUALITY_SKIP_TESTS_IMMUNE_JOB_NAMES = frozenset(
+    {
+        "adr-conformance",
+        "workflow-lint",
+        "terraform-lint",
+        "security-iac",
+        "security-k8s",
+        "secrets-gitleaks",
+        "k8s-lint",
+        "k8s-schema",
+        "mcp-lint",
+    }
+)
 _QUALITY_ONLY_OUTPUT = "quality_only: ${{ steps.filter.outputs.quality_only }}"
 _QUALITY_ONLY_REQUIRED_GLOBS = (
     "scripts/polaris-aws-range/**",
@@ -2414,6 +2437,7 @@ def _deploy_plan_scope_relevant(files: list[str] | None) -> bool:
         _CORE_WORKFLOW_PATH,
         _RANGE_WORKFLOW_PATH,
         _PLATFORM_WORKFLOW_PATH,
+        _QUALITY_WORKFLOW_PATH,
         _ADR_GUARD_SCRIPT_PATH,
     }
     return any(path in relevant for path in files)
@@ -2477,6 +2501,114 @@ def _filter_globs(block: list[str]) -> list[str]:
 
 def _active_line_contains(block: list[str], needle: str) -> bool:
     return any(needle in line for line in block if not line.lstrip().startswith("#"))
+
+
+def _extract_job_if(block: list[str]) -> str:
+    """Return the ``if:`` expression for a stripped workflow job block."""
+    active = [line for line in block if not line.lstrip().startswith("#")]
+    for idx, line in enumerate(active):
+        if not line.startswith("if:"):
+            continue
+        rest = line[3:].strip()
+        if rest == "|":
+            body: list[str] = []
+            for follow in active[idx + 1 :]:
+                if re.match(r"^[A-Za-z0-9_-]+:", follow):
+                    break
+                body.append(follow)
+            return " ".join(body)
+        return rest
+    return ""
+
+
+def _quality_job_is_skip_tests_immune(job_name: str) -> bool:
+    if job_name in _QUALITY_SKIP_TESTS_IMMUNE_JOB_NAMES:
+        return True
+    return any(job_name.endswith(suffix) for suffix in _QUALITY_SKIP_TESTS_IMMUNE_JOB_SUFFIXES)
+
+
+def _quality_workflow_job_names(quality_text: str) -> list[str]:
+    names: list[str] = []
+    in_jobs = False
+    for raw_line in quality_text.splitlines():
+        if raw_line.strip() == "jobs:":
+            in_jobs = True
+            continue
+        if not in_jobs:
+            continue
+        if raw_line and not raw_line.startswith(" "):
+            break
+        match = re.match(r"^  ([a-z0-9_-]+):\s*$", raw_line)
+        if match:
+            names.append(match.group(1))
+    return names
+
+
+def _check_deploy_workflow_skip_tests_policy(deploy_text: str) -> list[Violation]:
+    """ADR-003-R2: commit-message / dynamic test skips are not accepted."""
+    violations: list[Violation] = []
+    lowered = deploy_text.lower()
+    for marker in _SKIP_TESTS_FORBIDDEN_MARKERS:
+        if marker.lower() in lowered:
+            violations.append(
+                _plan_scope_violation(
+                    _DEPLOY_WORKFLOW_PATH,
+                    f"Commit-message or label-based test skips are not accepted; "
+                    f"remove `{marker}` handling from the deploy workflow",
+                )
+            )
+            break
+
+    quality_block = _workflow_job_block(deploy_text, "quality")
+    if not quality_block:
+        return violations
+    if not (
+        _active_line_contains(quality_block, "_quality.yml")
+        or _active_line_contains(quality_block, "./.github/workflows/_quality.yml")
+    ):
+        return violations
+    if not _active_line_contains(quality_block, _SKIP_TESTS_LITERAL):
+        violations.append(
+            _plan_scope_violation(
+                _DEPLOY_WORKFLOW_PATH,
+                "The Quality reusable-workflow call must pass "
+                f"`{_SKIP_TESTS_LITERAL}` literally so protected-branch CI "
+                "cannot bypass unit tests through commit-message flags",
+            )
+        )
+    if _active_line_contains(quality_block, "skip_tests: ${{") or _active_line_contains(
+        quality_block, "skip_tests:${{"
+    ):
+        violations.append(
+            _plan_scope_violation(
+                _DEPLOY_WORKFLOW_PATH,
+                "The Quality reusable-workflow call must not derive "
+                "`skip_tests` from step outputs or commit-message parsing",
+            )
+        )
+    return violations
+
+
+def _check_quality_workflow_skip_tests_contract(quality_text: str) -> list[Violation]:
+    """Architecture, lint, and security jobs must not honor ``inputs.skip_tests``."""
+    violations: list[Violation] = []
+    for job_name in _quality_workflow_job_names(quality_text):
+        if not _quality_job_is_skip_tests_immune(job_name):
+            continue
+        block = _workflow_job_block(quality_text, job_name)
+        if not block:
+            continue
+        if_expr = _extract_job_if(block)
+        if "skip_tests" in if_expr:
+            violations.append(
+                _plan_scope_violation(
+                    _QUALITY_WORKFLOW_PATH,
+                    f"Job `{job_name}` must not be gated on `inputs.skip_tests`; "
+                    "lint, architecture, and security checks run even when unit "
+                    "tests are skipped",
+                )
+            )
+    return violations
 
 
 def _terraform_plan_has_lock_timeout(stripped_line: str) -> bool:
@@ -2951,6 +3083,24 @@ def check_deploy_workflow_plan_scope(repo_root: Path, files: list[str] | None) -
         violations.extend(_check_deploy_workflow_plan_routing(deploy_text))
         violations.extend(_check_deploy_workflow_quality_only_routing(deploy_text))
         violations.extend(_check_deploy_workflow_portal_image_routing(deploy_text))
+        violations.extend(_check_deploy_workflow_skip_tests_policy(deploy_text))
+
+    quality_path = repo_root / _QUALITY_WORKFLOW_PATH
+    if files is None or _QUALITY_WORKFLOW_PATH in files or _ADR_GUARD_SCRIPT_PATH in files:
+        if not quality_path.exists():
+            violations.append(
+                _plan_scope_violation(
+                    _QUALITY_WORKFLOW_PATH,
+                    "Required workflow is missing; ADR-003-R2 cannot verify "
+                    "architecture/security independence from skip_tests",
+                )
+            )
+        else:
+            violations.extend(
+                _check_quality_workflow_skip_tests_contract(
+                    quality_path.read_text(encoding="utf-8")
+                )
+            )
 
     for path, workflow_path in (
         (_CORE_WORKFLOW_PATH, core_path),
