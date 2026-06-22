@@ -237,7 +237,9 @@ def resend_invite(participant_id: UUID) -> CTFParticipant:
         {
             "event": participant.event,
             "participant": participant,
-            "invite_token": participant.invite_token,
+            # Expose only the registration URL, not the raw token, so
+            # organizer-authored templates cannot reintroduce the token into a
+            # query string or other leak surface (#1088).
             "registration_url": registration_url,
         },
         event=participant.event,

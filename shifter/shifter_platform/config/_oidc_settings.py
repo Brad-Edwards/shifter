@@ -153,6 +153,8 @@ OIDC_EXEMPT_URLS = [
     "/dev-logout/",
     # CTF magic link registration (token is the auth)
     "/ctf/register/",
+    # CTF magic link token exchange (token is the auth; CSRF-protected POST)
+    "/ctf/register/exchange/",
     # CTF help page
     "/ctf/help/",
 ]
