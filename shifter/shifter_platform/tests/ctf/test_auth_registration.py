@@ -13,6 +13,7 @@ All tests run WITHOUT @pytest.mark.django_db by mocking the ORM.
 
 from __future__ import annotations
 
+import json
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -212,133 +213,201 @@ class TestIsCtfParticipantOnly:
 
 
 class TestCTFRegisterView:
-    """Test CTF magic link authentication via invite token."""
+    """The GET registration page hosts the fragment-token exchange.
+
+    The invite token is carried in the URL fragment (#token=...) which browsers
+    never send to the server, so this view reads no token, performs no login,
+    and only renders the exchange page (SonarCloud S8435).
+    """
+
+    def test_get_renders_exchange_page(self, request_factory):
+        """GET returns 200 and renders the exchange page without reading a token."""
+        from django.contrib.auth.models import AnonymousUser
+
+        from ctf.views import ctf_register
+
+        request = request_factory.get("/ctf/register/")
+        # AuthenticationMiddleware sets request.user in the real stack; this page
+        # is OIDC-exempt and reached while unauthenticated.
+        request.user = AnonymousUser()
+        response = ctf_register(request)
+
+        assert response.status_code == 200
+        assert response["Referrer-Policy"] == "no-referrer"
+
+    @patch("django.contrib.auth.login")
+    def test_get_never_logs_in(self, mock_login, request_factory):
+        """A token in the query string must be ignored: GET never authenticates."""
+        from django.contrib.auth.models import AnonymousUser
+
+        from ctf.views import ctf_register
+
+        # Even if a token leaks into the query string, the GET page must not act on it.
+        request = request_factory.get("/ctf/register/?token=should-be-ignored")
+        request.user = AnonymousUser()
+        response = ctf_register(request)
+
+        assert response.status_code == 200
+        mock_login.assert_not_called()
+
+
+class TestCTFRegisterExchange:
+    """The POST exchange consumes the invite token from the JSON body."""
+
+    @staticmethod
+    def _post(request_factory, token):
+        return request_factory.post(
+            "/ctf/register/exchange/",
+            data=json.dumps({"token": token}),
+            content_type="application/json",
+        )
 
     @patch("django.contrib.auth.login")
     @patch("ctf.models.CTFParticipant.objects")
-    def test_valid_token_logs_in_and_redirects(self, mock_objects, mock_login, request_factory):
-        """Valid token with linked user should log in and redirect to dashboard."""
-        from ctf.views import ctf_register
+    def test_valid_token_logs_in_and_returns_redirect(self, mock_objects, mock_login, request_factory):
+        """Valid token with linked user logs in and returns the dashboard redirect."""
+        from ctf.views import ctf_register_exchange
 
-        mock_user = _make_mock_user(email="part@test.com")
         mock_participant = MagicMock()
-        mock_participant.user = mock_user
+        mock_participant.user = _make_mock_user(email="part@test.com")
         mock_participant.is_invite_valid = True
         mock_objects.filter.return_value.select_related.return_value.first.return_value = mock_participant
 
-        request = request_factory.get("/ctf/register/?token=valid-token")
-        response = ctf_register(request)
+        response = ctf_register_exchange(self._post(request_factory, "valid-token"))
 
-        assert response.status_code == 302
-        assert "/mission-control/" in response.url
+        assert response.status_code == 200
+        assert "/mission-control/" in json.loads(response.content)["redirect"]
         mock_login.assert_called_once()
 
     @patch("django.contrib.auth.login")
     @patch("ctf.models.CTFParticipant.objects")
     def test_repeated_token_use_works(self, mock_objects, mock_login, request_factory):
-        """Using the same token again should log in the same user (multi-use default)."""
-        from ctf.views import ctf_register
+        """Same token exchanged twice logs in both times (multi-use default)."""
+        from ctf.views import ctf_register_exchange
 
-        mock_user = _make_mock_user(email="part@test.com")
         mock_participant = MagicMock()
-        mock_participant.user = mock_user
+        mock_participant.user = _make_mock_user(email="part@test.com")
         mock_participant.is_invite_valid = True
         mock_objects.filter.return_value.select_related.return_value.first.return_value = mock_participant
 
-        # First use
-        request = request_factory.get("/ctf/register/?token=valid-token")
-        response = ctf_register(request)
-        assert response.status_code == 302
-        assert "/mission-control/" in response.url
-
-        # Second use
-        request = request_factory.get("/ctf/register/?token=valid-token")
-        response = ctf_register(request)
-        assert response.status_code == 302
-        assert "/mission-control/" in response.url
+        for _ in range(2):
+            response = ctf_register_exchange(self._post(request_factory, "valid-token"))
+            assert response.status_code == 200
+            assert "/mission-control/" in json.loads(response.content)["redirect"]
 
     def test_missing_token_returns_400(self, request_factory):
-        """Missing token should return 400."""
-        from ctf.views import ctf_register
+        """Empty token returns a 400 JSON envelope."""
+        from ctf.views import ctf_register_exchange
 
-        request = request_factory.get("/ctf/register/")
-        response = ctf_register(request)
+        response = ctf_register_exchange(self._post(request_factory, ""))
         assert response.status_code == 400
+        assert "error" in json.loads(response.content)
+
+    def test_absent_token_field_returns_400(self, request_factory):
+        """A body without a token field returns a 400 JSON envelope."""
+        from ctf.views import ctf_register_exchange
+
+        request = request_factory.post(
+            "/ctf/register/exchange/",
+            data=json.dumps({}),
+            content_type="application/json",
+        )
+        response = ctf_register_exchange(request)
+        assert response.status_code == 400
+        assert "error" in json.loads(response.content)
+
+    def test_malformed_body_returns_400(self, request_factory):
+        """A non-object / non-JSON body returns a 400 JSON envelope, not a 500."""
+        from ctf.views import ctf_register_exchange
+
+        request = request_factory.post(
+            "/ctf/register/exchange/",
+            data="not-json",
+            content_type="application/json",
+        )
+        response = ctf_register_exchange(request)
+        assert response.status_code == 400
+        assert "error" in json.loads(response.content)
+
+    def test_oversize_token_returns_400(self, request_factory):
+        """A token far longer than any real invite token is rejected before any lookup."""
+        from ctf.views import ctf_register_exchange
+
+        response = ctf_register_exchange(self._post(request_factory, "x" * 4096))
+        assert response.status_code == 400
+        assert "error" in json.loads(response.content)
 
     @patch("ctf.models.CTFParticipant.objects")
     def test_invalid_token_returns_400(self, mock_objects, request_factory):
-        """Invalid token should return 400."""
-        from ctf.views import ctf_register
+        """Unknown token returns 400."""
+        from ctf.views import ctf_register_exchange
 
         mock_objects.filter.return_value.select_related.return_value.first.return_value = None
 
-        request = request_factory.get("/ctf/register/?token=bogus-token-value")
-        response = ctf_register(request)
+        response = ctf_register_exchange(self._post(request_factory, "bogus-token-value"))
         assert response.status_code == 400
 
     @patch("ctf.models.CTFParticipant.objects")
     def test_token_without_linked_user_returns_400(self, mock_objects, request_factory):
-        """Token for participant with no linked user should return 400."""
-        from ctf.views import ctf_register
+        """Token for a participant with no linked user returns 400."""
+        from ctf.views import ctf_register_exchange
 
         mock_participant = MagicMock()
         mock_participant.user = None
         mock_objects.filter.return_value.select_related.return_value.first.return_value = mock_participant
 
-        request = request_factory.get("/ctf/register/?token=invited-token")
-        response = ctf_register(request)
+        response = ctf_register_exchange(self._post(request_factory, "invited-token"))
         assert response.status_code == 400
 
     @patch("django.contrib.auth.login")
     @patch("ctf.models.CTFParticipant.objects")
     def test_expired_token_rejected(self, mock_objects, mock_login, request_factory):
-        """Expired invite token should return 400."""
-        from ctf.views import ctf_register
+        """Expired invite token returns 400 with an 'expired' message and no login."""
+        from ctf.views import ctf_register_exchange
 
         mock_participant = MagicMock()
         mock_participant.user = _make_mock_user(email="expired@test.com")
         mock_participant.is_invite_valid = False
         mock_objects.filter.return_value.select_related.return_value.first.return_value = mock_participant
 
-        request = request_factory.get("/ctf/register/?token=expired-token")
-        response = ctf_register(request)
+        response = ctf_register_exchange(self._post(request_factory, "expired-token"))
         assert response.status_code == 400
-        assert b"expired" in response.content.lower()
+        assert "expired" in json.loads(response.content)["error"].lower()
         mock_login.assert_not_called()
 
-    @patch("django.contrib.auth.login")
-    @patch("ctf.models.CTFParticipant.objects")
-    def test_valid_token_checks_expiration(self, mock_objects, mock_login, request_factory):
-        """Valid token should pass the is_invite_valid check and log in."""
-        from ctf.views import ctf_register
+    def test_token_never_echoed_in_error(self, request_factory):
+        """An error response must not echo the submitted token value."""
+        from ctf.views import ctf_register_exchange
 
-        mock_participant = MagicMock()
-        mock_participant.user = _make_mock_user(email="valid@test.com")
-        mock_participant.is_invite_valid = True
-        mock_objects.filter.return_value.select_related.return_value.first.return_value = mock_participant
+        with patch("ctf.models.CTFParticipant.objects") as mock_objects:
+            mock_objects.filter.return_value.select_related.return_value.first.return_value = None
+            response = ctf_register_exchange(self._post(request_factory, "super-secret-token"))
 
-        request = request_factory.get("/ctf/register/?token=valid-token")
-        response = ctf_register(request)
-        assert response.status_code == 302
-        mock_login.assert_called_once()
+        assert "super-secret-token" not in response.content.decode()
 
     @override_settings(MAGIC_LINK_SINGLE_USE=True)
     @patch("django.contrib.auth.login")
     @patch("ctf.models.CTFParticipant.objects")
     def test_single_use_clears_token(self, mock_objects, mock_login, request_factory):
-        """When MAGIC_LINK_SINGLE_USE is True, token is cleared after login."""
-        from ctf.views import ctf_register
+        """When MAGIC_LINK_SINGLE_USE is True, the token is cleared after login."""
+        from ctf.views import ctf_register_exchange
 
         mock_participant = MagicMock()
         mock_participant.user = _make_mock_user(email="single@test.com")
         mock_participant.is_invite_valid = True
         mock_objects.filter.return_value.select_related.return_value.first.return_value = mock_participant
 
-        request = request_factory.get("/ctf/register/?token=single-use-token")
-        response = ctf_register(request)
-        assert response.status_code == 302
+        response = ctf_register_exchange(self._post(request_factory, "single-use-token"))
+        assert response.status_code == 200
         mock_participant.save.assert_called_once()
         assert mock_participant.invite_token == ""
+
+    def test_get_method_not_allowed(self, request_factory):
+        """The exchange endpoint only accepts POST."""
+        from ctf.views import ctf_register_exchange
+
+        response = ctf_register_exchange(request_factory.get("/ctf/register/exchange/"))
+        assert response.status_code == 405
 
 
 class TestInviteRateLimit:
@@ -385,7 +454,7 @@ class TestCTFSidebar:
         ):
             response = participant_dashboard(request)
 
-        assert response.status_code != 403
+        assert response.status_code == 200
 
     @patch("management.services.get_user_profile")
     @patch("ctf.views.render")

@@ -23,6 +23,7 @@ from django.core.exceptions import ValidationError
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import redirect, render
 from django.utils import timezone
+from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
 from ctf.bridges import get_user_role
@@ -473,24 +474,60 @@ def _resolve_bracket_filter(
 # -----------------------------------------------------------------------------
 
 
+# Upper bound for an accepted invite token. Real tokens are
+# ``secrets.token_urlsafe(32)`` (~43 chars) stored in a 64-char column; anything
+# materially larger is rejected before any database lookup.
+_MAX_INVITE_TOKEN_LEN = 256
+
+
 @require_GET
+@ensure_csrf_cookie
 def ctf_register(request: HttpRequest) -> HttpResponse:
-    """Authenticate a participant via magic link token.
+    """Render the magic-link exchange page (no token read, no login).
 
-    No login required. The invite token IS the authentication.
-    Participants are auto-registered at add-time via _auto_register_participant(),
-    so every valid token maps to a participant with a linked Django user.
+    The invite token is carried in the URL *fragment* (``#token=...``), which
+    browsers never send to the server, so it stays out of the request target,
+    proxy/ALB access logs, the ECS request formatter, and the ``Referer`` header
+    (SonarCloud ``pythonenterprise:S8435``). This view only renders the exchange
+    page and sets the CSRF cookie; page JavaScript reads the fragment, scrubs it
+    from history, and POSTs the token to ``ctf_register_exchange`` for validation
+    and login. A ``Referrer-Policy: no-referrer`` header is set as defense in
+    depth so the address-bar fragment cannot leak via outbound navigations.
+    """
+    response = render(request, "ctf/participant/register.html", {})
+    response["Referrer-Policy"] = "no-referrer"
+    return response
 
-    Token expiration is enforced via is_invite_valid. When MAGIC_LINK_SINGLE_USE
-    is True, the token is cleared after the first successful login.
+
+@require_POST
+@ensure_csrf_cookie
+def ctf_register_exchange(request: HttpRequest) -> JsonResponse:
+    """Consume an invite token from the JSON body and create a session.
+
+    The invite token IS the authentication. Participants are auto-registered at
+    add-time via ``_auto_register_participant()``, so every valid token maps to a
+    participant with a linked Django user. Token expiration is enforced via
+    ``is_invite_valid``. When ``MAGIC_LINK_SINGLE_USE`` is True, the token is
+    cleared after the first successful login. CSRF-protected via the cookie set
+    on the GET page; the credential is never echoed back in any response.
     """
     from django.conf import settings
     from django.contrib.auth import login
+    from django.urls import reverse
 
     from ctf.models import CTFParticipant
 
-    token = request.GET.get("token")
-    participant = CTFParticipant.objects.filter(invite_token=token).select_related("user").first() if token else None
+    try:
+        body = _parse_body_object(request)
+        token = _get_body_str(body, "token", required=True).strip()
+    except _BodyParseError as e:
+        return JsonResponse({"error": str(e)}, status=400)
+
+    participant = (
+        CTFParticipant.objects.filter(invite_token=token).select_related("user").first()
+        if token and len(token) <= _MAX_INVITE_TOKEN_LEN
+        else None
+    )
 
     error_message = None
     if not token:
@@ -500,7 +537,7 @@ def ctf_register(request: HttpRequest) -> HttpResponse:
     elif not participant.is_invite_valid:
         error_message = "Invite token has expired."
     if error_message:
-        return HttpResponse(error_message, status=400)
+        return JsonResponse({"error": error_message}, status=400)
 
     # error_message is None implies a valid participant with a linked user.
     assert participant is not None and participant.user is not None
@@ -510,7 +547,7 @@ def ctf_register(request: HttpRequest) -> HttpResponse:
         participant.invite_token = ""  # nosec B105 — clearing token, not a password  # NOSONAR
         participant.save(update_fields=["invite_token", "updated_at"])
 
-    return redirect("mission_control:dashboard")
+    return JsonResponse({"redirect": reverse("mission_control:dashboard")})
 
 
 @login_required
