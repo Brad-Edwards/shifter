@@ -318,6 +318,9 @@ class DeployWorkflowPlanScopeTests(unittest.TestCase):
             f"{quality_non_docs_filter}"
             f"{guardrail_docs_filter}"
             "  quality:\n"
+            "    uses: ./.github/workflows/_quality.yml\n"
+            "    with:\n"
+            "      skip_tests: false\n"
             "    if: |\n"
             f"      {quality_condition}\n"
             "  pr-gate:\n"
@@ -873,6 +876,47 @@ class DeployWorkflowPlanScopeTests(unittest.TestCase):
 
             self.assertEqual(len(violations), 1)
             self.assertIn("-lock-timeout=5m", violations[0].message)
+
+    def test_flags_commit_message_skip_tests_bypass(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            deploy = self._deploy_text().replace(
+                "skip_tests: false",
+                "skip_tests: ${{ steps.skip.outputs.skip_tests == 'true' }}",
+            )
+            deploy += (
+                "\n# legacy bypass\n"
+                'if echo "$COMMIT_MSG" | grep -qi "\\[skip tests\\]"; then\n'
+            )
+            self._write_workflows(repo_root, deploy, self._platform_text())
+
+            violations = ADR_GUARD.check_deploy_workflow_plan_scope(repo_root, None)
+
+            self.assertGreaterEqual(len(violations), 1)
+            self.assertTrue(
+                any(
+                    "skip" in v.message.lower() and v.rule_id == "ADR-003-R2"
+                    for v in violations
+                )
+            )
+
+    def test_flags_architecture_job_gated_on_skip_tests(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            self._write_workflows(repo_root, self._deploy_text(), self._platform_text())
+            (repo_root / ".github" / "workflows" / "_quality.yml").write_text(
+                "jobs:\n"
+                "  adr-conformance:\n"
+                "    if: ${{ !inputs.skip_tests }}\n"
+                "    runs-on: ubuntu-latest\n",
+                encoding="utf-8",
+            )
+
+            violations = ADR_GUARD.check_deploy_workflow_plan_scope(repo_root, None)
+
+            self.assertEqual(len(violations), 1)
+            self.assertIn("adr-conformance", violations[0].message)
+            self.assertIn("skip_tests", violations[0].message)
 
     def test_clean_real_repo_passes(self) -> None:
         violations = ADR_GUARD.check_deploy_workflow_plan_scope(ADR_GUARD.REPO_ROOT, None)
