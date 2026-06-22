@@ -57,7 +57,9 @@ def send_invitations(event_id: UUID) -> dict[str, Any]:
                 {
                     "event": event,
                     "participant": participant,
-                    "invite_token": participant.invite_token,
+                    # Expose only the registration URL, not the raw token, so
+                    # organizer-authored templates cannot reintroduce the token
+                    # into a query string or other leak surface (#1088).
                     "registration_url": registration_url,
                 },
                 event=event,
@@ -556,13 +558,18 @@ def notify_organizer_event_end(event_id: UUID) -> None:
 def _build_registration_url(invite_token: str) -> str:
     """Build a full registration URL from an invite token.
 
-    Uses Django's reverse() to generate the path, then prepends the
-    configured site URL to produce an absolute link suitable for emails.
+    The token is placed in the URL *fragment* (``#token=...``), never the query
+    string. Browsers do not send the fragment to the server, so the credential
+    stays out of proxy/ALB access logs, the request formatter, and the
+    ``Referer`` header (SonarCloud ``pythonenterprise:S8435``). The registration
+    page's JavaScript reads the fragment and POSTs it to the token-exchange
+    endpoint. ``token_urlsafe`` output is already fragment-safe, so no
+    percent-encoding is required.
     """
     from django.conf import settings
     from django.urls import reverse
 
-    path = reverse("ctf:ctf_register") + f"?token={invite_token}"
+    path = reverse("ctf:ctf_register") + f"#token={invite_token}"
     base = (getattr(settings, "SITE_URL", "") or "").rstrip("/")
     return f"{base}{path}"
 

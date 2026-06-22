@@ -16,8 +16,8 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 import pytest
-from django.http import HttpResponse
 from django.test import RequestFactory, override_settings
+from django.urls import reverse
 
 from shared.auth import (
     CTF_ORGANIZER_GROUP,
@@ -301,36 +301,16 @@ class TestAccessControlDecorators:
         request.user = user
         return request
 
-    def _mock_admin_dashboard_internals(self):
-        """Return context managers for mocking admin_dashboard view internals."""
-        return (
-            patch("ctf.views.render", return_value=HttpResponse("ok", status=200)),
-            patch("ctf.services.get_organizer_events", return_value=self._mock_event_qs()),
-        )
+    @pytest.mark.django_db
+    def test_organizer_required_allows_organizer(self, client, organizer_user):
+        """ctf_organizer_required should allow organizer access.
 
-    @staticmethod
-    def _mock_event_qs():
-        qs = MagicMock()
-        qs.filter.return_value.count.return_value = 0
-        qs.count.return_value = 0
-        qs.__getitem__ = MagicMock(return_value=[])
-        return qs
-
-    @patch("management.services.get_user_profile")
-    def test_organizer_required_allows_organizer(self, mock_get_profile, request_factory, mock_organizer_user):
-        """ctf_organizer_required should allow organizer access."""
-        from ctf.views import admin_dashboard
-
-        mock_get_profile.return_value = MagicMock(active_ctf_event_id=None)
-
-        request = self._make_view_request(request_factory, mock_organizer_user)
-
-        with (
-            patch("ctf.views.render", return_value=HttpResponse("ok", status=200)),
-            patch("ctf.services.get_organizer_events", return_value=self._mock_event_qs()),
-        ):
-            response = admin_dashboard(request)
-
+        Integration assertion (ADR-019): drive the real view through the test
+        client with a real organizer user and real template render, rather than
+        patching first-party ``render``/``get_user_role`` topology.
+        """
+        client.force_login(organizer_user)
+        response = client.get(reverse("ctf:admin_dashboard"))
         assert response.status_code == 200
 
     @patch("management.services.get_user_profile")
@@ -355,26 +335,17 @@ class TestAccessControlDecorators:
         response = admin_dashboard(request)
         assert response.status_code == 403
 
-    def test_participant_required_allows_participant(self, request_factory, mock_participant_user):
-        """ctf_participant_required should allow participant with CTFParticipant record.
+    @pytest.mark.django_db
+    def test_participant_required_allows_participant(self, client, ctf_participant, participant_user):
+        """ctf_participant_required should allow a registered participant.
 
-        After the cycle-4 cleanup, the decorator delegates to
-        `ctf.services.participant.is_active_participant`; the view delegates
-        participant resolution to `_get_active_participant(request)` which
-        in turn reads the user's active CTF event via bridges. Patch at
-        these boundaries instead of the underlying ORM.
+        Integration assertion (ADR-019): a real active CTFParticipant row (the
+        ``ctf_participant`` fixture) makes ``is_active_participant`` true, so the
+        decorator admits the user and the view renders for real — no first-party
+        ``is_active_participant``/``_get_active_participant``/``render`` patches.
         """
-        from ctf.views import participant_dashboard
-
-        request = self._make_view_request(request_factory, mock_participant_user)
-
-        with (
-            patch("ctf.services.participant.is_active_participant", return_value=True),
-            patch("ctf.views._get_active_participant", return_value=None),
-            patch("ctf.views.render", return_value=HttpResponse("ok", status=200)),
-        ):
-            response = participant_dashboard(request)
-
+        client.force_login(participant_user)
+        response = client.get(reverse("ctf:participant_dashboard"))
         assert response.status_code != 403
 
     @patch("ctf.models.CTFParticipant.objects")

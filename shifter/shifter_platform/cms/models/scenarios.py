@@ -11,6 +11,7 @@ Has no internal CMS dependencies; only depends on ``settings.AUTH_USER_MODEL``.
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
 from uuid import uuid4
 
 from django.conf import settings
@@ -19,6 +20,9 @@ from django.db import models
 from shared.db import SoftDeleteManager, SoftDeleteMixin, SoftDeleteQuerySet
 
 logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    from cms.scenarios.schema import AnyScenarioTemplate
 
 
 class Scenario(SoftDeleteMixin, models.Model):
@@ -94,23 +98,26 @@ class Scenario(SoftDeleteMixin, models.Model):
             self.validate_definition()
         super().save(*args, **kwargs)
 
-    def to_template(self):
-        """Convert to a ScenarioTemplate for validation and hydration.
+    def to_template(self) -> AnyScenarioTemplate:
+        """Convert to a validated scenario template for hydration.
 
         Returns:
-            ScenarioTemplate instance built from model fields + definition.
+            ScenarioTemplate or CTFScenarioTemplate built from model fields + definition.
         """
-        from cms.scenarios.schema import ScenarioTemplate
+        from pydantic import TypeAdapter
 
-        return ScenarioTemplate(
-            id=self.scenario_id,
-            name=self.name,
-            description=self.description,
-            enabled=True,
-            ngfw=self.definition.get("ngfw", False),
-            instances=self.definition.get("instances", []),
-            subnets=self.definition.get("subnets", []),
-        )
+        from cms.scenarios.schema import AnyScenarioTemplate
+
+        payload = {
+            "id": self.scenario_id,
+            "name": self.name,
+            "description": self.description,
+            "enabled": True,
+            **self.definition,
+        }
+        if "scenario_type" not in payload:
+            payload["scenario_type"] = "demo"
+        return TypeAdapter(AnyScenarioTemplate).validate_python(payload)
 
     def validate_definition(self):
         """Validate definition against ScenarioTemplate schema.
