@@ -9,6 +9,7 @@ import logging
 import re
 from functools import lru_cache
 from pathlib import Path
+from typing import Any
 
 import yaml
 from pydantic import TypeAdapter
@@ -18,7 +19,7 @@ from cms.scenarios.schema import AnyScenarioTemplate, ScenarioTemplate
 logger = logging.getLogger(__name__)
 
 
-def _normalize_scenario_payload(data: dict) -> dict:
+def _normalize_scenario_payload(data: dict[str, Any]) -> dict[str, Any]:
     """Ensure legacy demo templates validate against the discriminated union."""
     if "scenario_type" not in data:
         return {**data, "scenario_type": "demo"}
