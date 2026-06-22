@@ -65,6 +65,13 @@ class TestFindTemplateViolations:
         assert allowed == frozenset()
         assert email_template.find_template_violations("Hi {{ event_name }}", allowed)
 
+    def test_adversarial_brace_input_is_linear(self):
+        # Regression for py/polynomial-redos: a long run of braces must not hang
+        # and must be flagged as invalid, not silently accepted.
+        allowed = email_template.allowed_placeholders(NotificationType.INVITE.value)
+        evil = "{{" * 20000 + "a"
+        assert email_template.find_template_violations(evil, allowed)
+
 
 class TestBuildSafeContext:
     """The rich render context is flattened to scalar strings only."""

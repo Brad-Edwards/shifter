@@ -30,8 +30,10 @@ _DATE_FORMAT = "F j, Y g:i A"
 
 # Flat placeholder grammar: ``{{ name }}`` where name is a simple identifier.
 _PLACEHOLDER_RE = re.compile(r"{{\s*([a-z][a-z0-9_]*)\s*}}")
-# Any ``{{ ... }}`` span, used to detect invalid inner content.
-_ANY_PLACEHOLDER_RE = re.compile(r"{{(.*?)}}", re.DOTALL)
+# Any ``{{ ... }}`` span, used to detect invalid inner content. The inner
+# class excludes braces (rather than a lazy ``.*?``) so the pattern is linear
+# on adversarial input like ``{{{{...`` (avoids py/polynomial-redos).
+_ANY_PLACEHOLDER_RE = re.compile(r"{{([^{}]*)}}")
 _VALID_NAME_RE = re.compile(r"[a-z][a-z0-9_]*")
 
 _COMMON = frozenset({"event_name", "event_description", "event_start", "event_end"})
