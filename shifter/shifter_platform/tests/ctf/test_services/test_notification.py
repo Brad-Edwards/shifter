@@ -613,16 +613,19 @@ class TestRenderEmailWithCustomTemplate:
         assert mock_render.call_count == 2
 
     def test_uses_custom_template_when_present(self):
-        """Renders from DB template instead of filesystem when custom exists."""
+        """Renders from DB template via safe placeholder substitution."""
 
         class _SimpleEvent:
             name = "My Custom Event"
+            description = ""
+            event_start = None
+            event_end = None
 
         event = _SimpleEvent()
 
         mock_template = MagicMock()
-        mock_template.html_body = "<html>Hello {{ event.name }}</html>"
-        mock_template.text_body = "Hello {{ event.name }}"
+        mock_template.html_body = "<html>Hello {{ event_name }}</html>"
+        mock_template.text_body = "Hello {{ event_name }}"
         mock_template.subject = "Custom Subject"
 
         with patch("ctf.models.CTFEmailTemplate.objects") as mock_qs:
