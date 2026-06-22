@@ -1523,6 +1523,112 @@ jobs:
           compact: true
           soft_fail: true
 
+  # Issue #708: advisory container/IaC and lockfile CVE signal. Exit code 0
+  # and artifact-only SARIF — findings do not block merge; gitleaks/bandit/
+  # checkov/Sonar remain the enforcement gates.
+  security-trivy-advisory:
+    permissions:
+      contents: read
+    name: Security (trivy advisory)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Trivy (hermetic, version-pinned, checksum-verified)
+        env:
+          TRIVY_VERSION: 0.71.2
+        run: |
+          set -euo pipefail
+          mkdir -p "${RUNNER_TEMP}/trivy-bin"
+          curl -fsSL -o "${RUNNER_TEMP}/trivy.tar.gz" \
+            "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
+          curl -fsSL -o "${RUNNER_TEMP}/trivy_checksums.txt" \
+            "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_checksums.txt"
+          expected=$(grep "trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz" "${RUNNER_TEMP}/trivy_checksums.txt" | awk '{print $1}')
+          echo "${expected}  ${RUNNER_TEMP}/trivy.tar.gz" | sha256sum -c -
+          tar -xzf "${RUNNER_TEMP}/trivy.tar.gz" -C "${RUNNER_TEMP}/trivy-bin" trivy
+          echo "${RUNNER_TEMP}/trivy-bin" >> "${GITHUB_PATH}"
+          trivy --version
+
+      - name: Scan first-party Dockerfiles and Terraform (advisory)
+        run: |
+          set -euo pipefail
+          mkdir -p "${RUNNER_TEMP}/trivy-results"
+          # Trivy config accepts one target root per invocation. Scan each
+          # first-party tree separately (skip temp/ via path exclusion).
+          for target in shifter/engine shifter/shifter_platform shifter/packer; do
+            slug=$(echo "$target" | tr '/' '-')
+            trivy config \
+              --exit-code 0 \
+              --format sarif \
+              --output "${RUNNER_TEMP}/trivy-results/${slug}.sarif" \
+              --skip-dirs '**/temp/**' \
+              "$target"
+          done
+          trivy config \
+            --exit-code 0 \
+            --format sarif \
+            --output "${RUNNER_TEMP}/trivy-results/terraform.sarif" \
+            platform/terraform/
+
+      - name: Upload Trivy SARIF artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-advisory-sarif
+          path: ${{ runner.temp }}/trivy-results/*.sarif
+          if-no-files-found: error
+          retention-days: 14
+
+  security-osv-advisory:
+    permissions:
+      contents: read
+    name: Security (osv-scanner advisory)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install OSV-Scanner (hermetic, version-pinned, checksum-verified)
+        env:
+          OSV_VERSION: v2.4.0
+        run: |
+          set -euo pipefail
+          mkdir -p "${RUNNER_TEMP}/osv-bin"
+          curl -fsSL -o "${RUNNER_TEMP}/osv-scanner" \
+            "https://github.com/google/osv-scanner/releases/download/${OSV_VERSION}/osv-scanner_linux_amd64"
+          curl -fsSL -o "${RUNNER_TEMP}/osv-scanner_SHA256SUMS" \
+            "https://github.com/google/osv-scanner/releases/download/${OSV_VERSION}/osv-scanner_SHA256SUMS"
+          expected=$(grep 'osv-scanner_linux_amd64$' "${RUNNER_TEMP}/osv-scanner_SHA256SUMS" | awk '{print $1}')
+          echo "${expected}  ${RUNNER_TEMP}/osv-scanner" | sha256sum -c -
+          chmod +x "${RUNNER_TEMP}/osv-scanner"
+          echo "${RUNNER_TEMP}" >> "${GITHUB_PATH}"
+          osv-scanner --version
+
+      - name: Scan repo-root lockfiles (advisory)
+        run: |
+          set -euo pipefail
+          mkdir -p "${RUNNER_TEMP}/osv-results"
+          sarif_out="${RUNNER_TEMP}/osv-results/package-lock.sarif"
+          empty_sarif='{"version":"2.1.0","$schema":"https://json.schemastore.org/sarif-2.1.0.json","runs":[]}'
+          # Issue #708 scope: repo-root lockfiles (package-lock.json today).
+          if [ -f package-lock.json ]; then
+            osv-scanner scan source \
+              --lockfile=package-lock.json \
+              --format sarif \
+              --output-file "${sarif_out}" \
+              ./ || true
+          fi
+          if [ ! -s "${sarif_out}" ]; then
+            printf '%s\n' "${empty_sarif}" > "${sarif_out}"
+          fi
+
+      - name: Upload OSV-Scanner SARIF artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: osv-scanner-advisory-sarif
+          path: ${{ runner.temp }}/osv-results/*.sarif
+          if-no-files-found: error
+          retention-days: 14
+
   secrets-gitleaks:
     permissions:
       contents: read
