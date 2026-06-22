@@ -7,12 +7,12 @@
 (function () {
     "use strict";
 
-    var statusEl = document.getElementById("ctf-register-status");
-    var exchangeUrl = statusEl.dataset.exchangeUrl;
+    const statusEl = document.getElementById("ctf-register-status");
+    const exchangeUrl = statusEl.dataset.exchangeUrl;
 
     function getCookie(name) {
-        var value = "; " + document.cookie;
-        var parts = value.split("; " + name + "=");
+        const value = "; " + document.cookie;
+        const parts = value.split("; " + name + "=");
         if (parts.length === 2) {
             return parts.pop().split(";").shift();
         }
@@ -23,8 +23,8 @@
         statusEl.textContent = message;
     }
 
-    var params = new URLSearchParams(globalThis.location.hash.replace(/^#/, ""));
-    var token = params.get("token");
+    const params = new URLSearchParams(globalThis.location.hash.replace(/^#/, ""));
+    const token = params.get("token");
     // Scrub the token from the address bar / history immediately so it cannot
     // be copied, leaked via Referer, or restored from the back button.
     globalThis.history.replaceState(null, "", globalThis.location.pathname);
