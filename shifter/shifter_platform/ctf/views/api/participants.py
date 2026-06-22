@@ -36,6 +36,8 @@ from ctf.views.api._common import (
 
 logger = logging.getLogger(__name__)
 
+_INVALID_PARTICIPANT_REQUEST = "Invalid participant request."
+
 
 def _participant_list_get(request: HttpRequest, event_id: UUID) -> JsonResponse:
     """Return the JSON participant list for an event, optionally filtered by status."""
@@ -73,12 +75,12 @@ def _handle_participant_invite_post(request: HttpRequest, event_id: UUID) -> Jso
         if not name or not email:
             raise _BodyParseError("name and email are required")
     except _BodyParseError as e:
-        return _json_error(e, "Invalid participant request.", 400)
+        return _json_error(e, _INVALID_PARTICIPANT_REQUEST, 400)
 
     try:
         participant = invite_participant(event_id, email, name)
     except CTFValidationError as e:
-        return _json_error(e, "Invalid participant request.", 400)
+        return _json_error(e, _INVALID_PARTICIPANT_REQUEST, 400)
 
     return JsonResponse(
         {
@@ -138,7 +140,7 @@ def api_participant_import(request: HttpRequest, event_id: UUID) -> JsonResponse
         if not isinstance(participants_data, list):
             raise _BodyParseError("participants must be an array")
     except _BodyParseError as e:
-        return _json_error(e, "Invalid participant request.", 400)
+        return _json_error(e, _INVALID_PARTICIPANT_REQUEST, 400)
 
     imported = []
     errors = []
@@ -237,7 +239,7 @@ def _resend_invite_response(participant_id: UUID) -> JsonResponse:
     try:
         updated = resend_invite(participant_id)
     except CTFStateError as e:
-        return _json_error(e, "Invalid participant request.", 400)
+        return _json_error(e, _INVALID_PARTICIPANT_REQUEST, 400)
     return JsonResponse(
         {
             "success": True,

@@ -35,6 +35,8 @@ from ctf.views.api._common import (
 
 logger = logging.getLogger(__name__)
 
+_INVALID_CHALLENGE_REQUEST = "Invalid challenge request."
+
 
 def _challenge_list_get(event_id: UUID, user: User) -> JsonResponse:
     """List challenges for an event as JSON, or 403 when the actor lacks access."""
@@ -69,7 +71,7 @@ def _handle_challenge_create_api_post(request: HttpRequest, event_id: UUID, user
     try:
         body = _parse_body_object(request)
     except _BodyParseError as e:
-        return _json_error(e, "Invalid challenge request.", 400)
+        return _json_error(e, _INVALID_CHALLENGE_REQUEST, 400)
 
     challenge = None
     error: tuple[str, int] | None = None
@@ -80,7 +82,7 @@ def _handle_challenge_create_api_post(request: HttpRequest, event_id: UUID, user
     except CTFNotFoundError as e:
         error = _error_tuple(e, "Challenge not found.", 404)
     except (CTFValidationError, CTFStateError) as e:
-        error = _error_tuple(e, "Invalid challenge request.", 400)
+        error = _error_tuple(e, _INVALID_CHALLENGE_REQUEST, 400)
     if error is not None:
         return JsonResponse({"error": error[0]}, status=error[1])
 
@@ -147,7 +149,7 @@ def _handle_challenge_delete(challenge_id: UUID, user: User) -> JsonResponse:
     except CTFPermissionError:
         return JsonResponse({"error": "Forbidden"}, status=403)
     except (CTFNotFoundError, CTFStateError) as e:
-        return _json_error(e, "Invalid challenge request.", 400)
+        return _json_error(e, _INVALID_CHALLENGE_REQUEST, 400)
     return JsonResponse({}, status=204)
 
 
@@ -159,7 +161,7 @@ def _handle_challenge_update_put(request: HttpRequest, challenge_id: UUID, user:
     try:
         body = _parse_body_object(request)
     except _BodyParseError as e:
-        return _json_error(e, "Invalid challenge request.", 400)
+        return _json_error(e, _INVALID_CHALLENGE_REQUEST, 400)
 
     updated = None
     error: tuple[str, int] | None = None
@@ -168,7 +170,7 @@ def _handle_challenge_update_put(request: HttpRequest, challenge_id: UUID, user:
     except CTFPermissionError:
         error = ("Forbidden", 403)
     except (CTFNotFoundError, CTFValidationError, CTFStateError) as e:
-        error = _error_tuple(e, "Invalid challenge request.", 400)
+        error = _error_tuple(e, _INVALID_CHALLENGE_REQUEST, 400)
     if error is not None:
         return JsonResponse({"error": error[0]}, status=error[1])
 

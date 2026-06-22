@@ -201,6 +201,22 @@ def _handle_delete_email_template(event: CTFEvent, notification_type: str) -> Js
     return JsonResponse({"status": "reverted_to_default"})
 
 
+def _email_body_error(label: str, source: str) -> str | None:
+    """Return a validation error message for one email-template body, or None.
+
+    Single exit point keeps `_validate_template_bodies` within the
+    returns-per-function limit (python:S1142).
+    """
+    error = None
+    if not source:
+        error = "html_body and text_body are required"
+    elif "{%" in source or "%}" in source:
+        error = f"Template tags are not allowed in {label}; use {{{{ variable }}}} placeholders only."
+    elif source.count("{{") != source.count("}}"):
+        error = f"Unbalanced placeholders in {label}."
+    return error
+
+
 def _validate_template_bodies(html_body: str, text_body: str) -> JsonResponse | None:
     """Validate the two organizer email-template bodies; return a 400 or None.
 
@@ -214,15 +230,9 @@ def _validate_template_bodies(html_body: str, text_body: str) -> JsonResponse | 
     traversal) is tracked in #1095.
     """
     for label, source in (("html_body", html_body), ("text_body", text_body)):
-        if not source:
-            return JsonResponse({"error": "html_body and text_body are required"}, status=400)
-        if "{%" in source or "%}" in source:
-            return JsonResponse(
-                {"error": f"Template tags are not allowed in {label}; use {{{{ variable }}}} placeholders only."},
-                status=400,
-            )
-        if source.count("{{") != source.count("}}"):
-            return JsonResponse({"error": f"Unbalanced placeholders in {label}."}, status=400)
+        error = _email_body_error(label, source)
+        if error:
+            return JsonResponse({"error": error}, status=400)
     return None
 
 

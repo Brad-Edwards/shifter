@@ -34,6 +34,9 @@ from ctf.views._parsing import (
 
 logger = logging.getLogger(__name__)
 
+_CHALLENGE_OR_PARTICIPANT_NOT_FOUND = "Challenge or participant not found."
+_CHALLENGE_ACTION_FAILED = "Could not process challenge action."
+
 
 def _resolve_challenge_participant(
     request: HttpRequest, challenge_id: UUID
@@ -66,9 +69,9 @@ def _submit_flag_response(
     try:
         submission = submit_flag(participant.id, challenge_id, flag, ip_address=ip_address)
     except CTFNotFoundError as e:
-        error_resp = _json_error(e, "Challenge or participant not found.", 404)
+        error_resp = _json_error(e, _CHALLENGE_OR_PARTICIPANT_NOT_FOUND, 404)
     except (CTFValidationError, CTFStateError) as e:
-        error_resp = _json_error(e, "Could not process challenge action.", 400)
+        error_resp = _json_error(e, _CHALLENGE_ACTION_FAILED, 400)
     except CTFRateLimitError as e:
         retry_after = e.details.get("retry_after_seconds")
         error_resp = _json_error(e, "Rate limit exceeded.", 429)
@@ -112,7 +115,7 @@ def api_submit_flag(request: HttpRequest, challenge_id: UUID) -> JsonResponse:
         if not flag:
             raise _BodyParseError("Flag is required")
     except _BodyParseError as e:
-        return _json_error(e, "Could not process challenge action.", 400)
+        return _json_error(e, _CHALLENGE_ACTION_FAILED, 400)
 
     return _submit_flag_response(participant, challenge_id, flag, get_client_ip(request))
 
@@ -125,9 +128,9 @@ def _unlock_hint_response(participant: CTFParticipant, challenge_id: UUID, hint_
     try:
         result = use_hint(participant.id, hint_uuid, expected_challenge_id=challenge_id)
     except CTFNotFoundError as e:
-        return _json_error(e, "Challenge or participant not found.", 404)
+        return _json_error(e, _CHALLENGE_OR_PARTICIPANT_NOT_FOUND, 404)
     except (CTFValidationError, CTFStateError) as e:
-        return _json_error(e, "Could not process challenge action.", 400)
+        return _json_error(e, _CHALLENGE_ACTION_FAILED, 400)
     return JsonResponse(result)
 
 
@@ -168,9 +171,9 @@ def _rate_challenge_response(participant: CTFParticipant, challenge_id: UUID, va
     try:
         rating = rate_challenge(participant.id, challenge_id, value)
     except CTFNotFoundError as e:
-        return _json_error(e, "Challenge or participant not found.", 404)
+        return _json_error(e, _CHALLENGE_OR_PARTICIPANT_NOT_FOUND, 404)
     except CTFValidationError as e:
-        return _json_error(e, "Could not process challenge action.", 400)
+        return _json_error(e, _CHALLENGE_ACTION_FAILED, 400)
     return JsonResponse({"value": rating.value, "challenge_id": str(challenge_id)})
 
 
@@ -194,7 +197,7 @@ def api_rate_challenge(request: HttpRequest, challenge_id: UUID) -> JsonResponse
         if not isinstance(value, int):
             raise _BodyParseError("value must be an integer (1-5)")
     except _BodyParseError as e:
-        return _json_error(e, "Could not process challenge action.", 400)
+        return _json_error(e, _CHALLENGE_ACTION_FAILED, 400)
 
     return _rate_challenge_response(participant, challenge_id, value)
 
@@ -231,7 +234,7 @@ def _parse_explicit_hint_id(body: dict[str, Any]) -> UUID | JsonResponse:
     try:
         return _parse_body_uuid(body.get("hint_id"), "hint_id")
     except _BodyUUIDError as e:
-        return _json_error(e, "Could not process challenge action.", 400)
+        return _json_error(e, _CHALLENGE_ACTION_FAILED, 400)
 
 
 def _resolve_next_unlockable_hint(participant: CTFParticipant, challenge_id: UUID) -> UUID | JsonResponse:
@@ -266,7 +269,7 @@ def _resolve_hint_to_unlock(
     try:
         body = _parse_body_object(request, allow_empty=True)
     except _BodyParseError as e:
-        return _json_error(e, "Could not process challenge action.", 400)
+        return _json_error(e, _CHALLENGE_ACTION_FAILED, 400)
     if "hint_id" in body:
         return _parse_explicit_hint_id(body)
     return _resolve_next_unlockable_hint(participant, challenge_id)

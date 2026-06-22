@@ -34,6 +34,8 @@ from ctf.views.api._common import (
 
 logger = logging.getLogger(__name__)
 
+_INVALID_EVENT_REQUEST = "Invalid event request."
+
 
 def _handle_event_create_post(request: HttpRequest, user: User) -> JsonResponse:
     """Create an event from the POST body, returning a 201 payload or a 400 error."""
@@ -43,7 +45,7 @@ def _handle_event_create_post(request: HttpRequest, user: User) -> JsonResponse:
     try:
         body = _parse_body_object(request)
     except _BodyParseError as e:
-        return _json_error(e, "Invalid event request.", 400)
+        return _json_error(e, _INVALID_EVENT_REQUEST, 400)
 
     # Parse datetime strings to datetime objects for the service layer
     from django.utils.dateparse import parse_datetime
@@ -59,7 +61,7 @@ def _handle_event_create_post(request: HttpRequest, user: User) -> JsonResponse:
     except (CTFValidationError, ValidationError) as e:
         # Django model validation (ValidationError) and domain validation both
         # map to a controlled 400; the exception detail is logged, not returned.
-        return _json_error(e, "Invalid event request.", 400)
+        return _json_error(e, _INVALID_EVENT_REQUEST, 400)
 
     return JsonResponse(
         {
@@ -148,13 +150,13 @@ def _handle_event_update_put(request: HttpRequest, event_id: UUID) -> JsonRespon
     try:
         body = _parse_body_object(request)
     except _BodyParseError as e:
-        return _json_error(e, "Invalid event request.", 400)
+        return _json_error(e, _INVALID_EVENT_REQUEST, 400)
     _coerce_event_datetime_fields(body)
 
     try:
         updated = update_event(event_id, body)
     except (CTFValidationError, CTFStateError, ValidationError) as e:
-        return _json_error(e, "Invalid event request.", 400)
+        return _json_error(e, _INVALID_EVENT_REQUEST, 400)
 
     return JsonResponse(
         {
@@ -212,7 +214,7 @@ def _force_delete_event_response(request: HttpRequest, event_id: UUID) -> JsonRe
     try:
         result = force_delete_event(event_id, user, confirmation_name)
     except CTFValidationError as e:
-        return _json_error(e, "Invalid event request.", 400)
+        return _json_error(e, _INVALID_EVENT_REQUEST, 400)
 
     return JsonResponse(result)
 
