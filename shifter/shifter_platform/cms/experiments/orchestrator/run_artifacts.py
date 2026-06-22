@@ -17,6 +17,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("cms.experiments.orchestrator")
 
+_RUN_LOG_FMT = "collect_artifacts: %s (run=%d)"
+
 
 def collect_artifacts(experiment_id: int, run: ExperimentRun) -> None:
     """Trigger artifact collection from range instances via ECS task.
@@ -54,7 +56,7 @@ def collect_artifacts(experiment_id: int, run: ExperimentRun) -> None:
 
     if run.request_id is None:
         msg = "ExperimentRun has no request_id — cannot collect artifacts"
-        logger.error("collect_artifacts: %s (run=%d)", msg, run.pk)
+        logger.error(_RUN_LOG_FMT, msg, run.pk)
         run.error_message = msg
         run.save(update_fields=["error_message"])
         run.transition_to(RunStatus.FAILED)
@@ -70,7 +72,7 @@ def collect_artifacts(experiment_id: int, run: ExperimentRun) -> None:
         )
     except Exception as exc:
         collect_error = f"Failed to start collection ECS task: {exc}"
-        logger.exception("collect_artifacts: %s (run=%d)", collect_error, run.pk)
+        logger.exception(_RUN_LOG_FMT, collect_error, run.pk)
         task_arn = None
 
     # Single failure exit covers both the exception and the not-configured
@@ -78,7 +80,7 @@ def collect_artifacts(experiment_id: int, run: ExperimentRun) -> None:
     if task_arn is None:
         msg = collect_error or "ECS not configured — cannot collect experiment artifacts"
         if collect_error is None:
-            logger.error("collect_artifacts: %s (run=%d)", msg, run.pk)
+            logger.error(_RUN_LOG_FMT, msg, run.pk)
         run.error_message = msg
         run.save(update_fields=["error_message"])
         run.transition_to(RunStatus.FAILED)

@@ -176,6 +176,7 @@ def _build_python_script_command(
     instance_id: str,
     private_ip: str | None,
 ) -> ScriptCommand:
+    """Render a Python-script command via a validated ``ScriptExecutionContext``."""
     s3_key = script_assignment.script.s3_key if script_assignment.script else ""
     ctx = ScriptExecutionContext.for_python(
         instance_name=instance_name,
@@ -201,6 +202,7 @@ def _build_claude_script_command(
     private_ip: str | None,
     instance_data: dict[str, dict[str, Any]],
 ) -> ScriptCommand:
+    """Render a Claude-prompt command via a validated ``ScriptExecutionContext``."""
     ctx = ScriptExecutionContext.for_claude(
         instance_name=instance_name,
         instance_id=instance_id,
