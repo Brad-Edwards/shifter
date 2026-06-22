@@ -37,7 +37,7 @@ def get_scenario_instances(scenario_id: str, user: User | None = None) -> list[d
         try:
             if user is not None:
                 _pkg.check_scenario_access(scenario_id, user)
-            scenario = _pkg.load_scenario_template(scenario_id)
+            scenario = _pkg.load_demo_scenario_template(scenario_id)
         except ValueError as e:
             raise ExperimentValidationError(f"Invalid scenario: {e}") from e
 

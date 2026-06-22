@@ -103,7 +103,7 @@ def validate_scenario_requirements(scenario_id: str, agent: AgentConfig | None) 
     Raises:
         CMSError: If validation fails (agent missing, wrong OS, etc.)
     """
-    from cms.scenarios.registry import load_scenario_template
+    from cms.scenarios.registry import load_demo_scenario_template
 
     logger.debug(
         "validate_scenario_requirements called for scenario_id=%s",
@@ -111,7 +111,7 @@ def validate_scenario_requirements(scenario_id: str, agent: AgentConfig | None) 
     )
 
     try:
-        scenario = load_scenario_template(scenario_id)
+        scenario = load_demo_scenario_template(scenario_id)
     except ValueError as e:
         logger.error(
             "validate_scenario_requirements: scenario '%s' not found",

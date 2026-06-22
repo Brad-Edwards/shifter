@@ -22,6 +22,7 @@ class UnknownSpecSlugError(LookupError):
 def _build_registry() -> dict[str, type[BaseModel]]:
     from .app import NGFWAppSpec
     from .credentials import DeploymentProfileSpec, SCMCredentialSpec
+    from .ctf import CTFRangeSpec
     from .range import InstanceSpec, RangeSpec
     from .subnet import SubnetSpec
 
@@ -31,6 +32,7 @@ def _build_registry() -> dict[str, type[BaseModel]]:
         "instance.panw-ngfw": InstanceSpec,
         "app.panw-ngfw": NGFWAppSpec,
         "range_spec": RangeSpec,
+        "ctf_range_spec": CTFRangeSpec,
         "instance_spec": InstanceSpec,
         "subnet_spec": SubnetSpec,
         "ngfw_app_spec": NGFWAppSpec,
