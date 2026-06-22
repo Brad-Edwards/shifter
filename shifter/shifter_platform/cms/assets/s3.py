@@ -25,6 +25,9 @@ from shared.s3 import (  # noqa: F401  # NOSONAR — re-exports, rationale above
     sanitize_s3_filename,
 )
 
+# SonarCloud S1192: extracted duplicated string literals.
+BUCKET_NOT_CONFIGURED_MSG = "AWS_S3_BUCKET_NAME is not configured"
+
 logger = logging.getLogger(__name__)
 
 
@@ -53,7 +56,7 @@ def upload_agent(file_obj: BinaryIO, user_id: int, filename: str) -> tuple[str, 
 
     if not settings.AWS_S3_BUCKET_NAME:
         logger.error("upload_agent: AWS_S3_BUCKET_NAME is not configured")
-        raise S3Error("AWS_S3_BUCKET_NAME is not configured")
+        raise S3Error(BUCKET_NOT_CONFIGURED_MSG)
 
     # Generate unique key
     unique_id = uuid.uuid4().hex[:12]
@@ -107,7 +110,7 @@ def delete_agent(s3_key: str) -> None:
 
     if not settings.AWS_S3_BUCKET_NAME:
         logger.error("delete_agent: AWS_S3_BUCKET_NAME is not configured")
-        raise S3Error("AWS_S3_BUCKET_NAME is not configured")
+        raise S3Error(BUCKET_NOT_CONFIGURED_MSG)
 
     try:
         storage = get_object_storage()
@@ -142,7 +145,7 @@ def generate_presigned_upload_url(
 
     if not settings.AWS_S3_BUCKET_NAME:
         logger.error("generate_presigned_upload_url: AWS_S3_BUCKET_NAME is not configured")
-        raise S3Error("AWS_S3_BUCKET_NAME is not configured")
+        raise S3Error(BUCKET_NOT_CONFIGURED_MSG)
 
     # Sanitize filename and generate unique key
     safe_filename = sanitize_s3_filename(filename)
@@ -182,7 +185,7 @@ def verify_s3_object_exists(s3_key: str) -> tuple[int, str]:
 
     if not settings.AWS_S3_BUCKET_NAME:
         logger.error("verify_s3_object_exists: AWS_S3_BUCKET_NAME is not configured")
-        raise S3Error("AWS_S3_BUCKET_NAME is not configured")
+        raise S3Error(BUCKET_NOT_CONFIGURED_MSG)
 
     try:
         storage = get_object_storage()
@@ -212,7 +215,7 @@ def read_agent_header(s3_key: str, max_bytes: int) -> bytes:
 
     if not settings.AWS_S3_BUCKET_NAME:
         logger.error("read_agent_header: AWS_S3_BUCKET_NAME is not configured")
-        raise S3Error("AWS_S3_BUCKET_NAME is not configured")
+        raise S3Error(BUCKET_NOT_CONFIGURED_MSG)
 
     try:
         storage = get_object_storage()
@@ -241,7 +244,7 @@ def tag_s3_object(s3_key: str, tags: dict[str, str]) -> None:
 
     if not settings.AWS_S3_BUCKET_NAME:
         logger.error("tag_s3_object: AWS_S3_BUCKET_NAME is not configured")
-        raise S3Error("AWS_S3_BUCKET_NAME is not configured")
+        raise S3Error(BUCKET_NOT_CONFIGURED_MSG)
 
     try:
         storage = get_object_storage()

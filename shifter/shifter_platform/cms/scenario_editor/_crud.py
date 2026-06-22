@@ -67,7 +67,7 @@ def create_scenario(
         try:
             validate_scenario_id(scenario_id)
         except ScenarioEditorError:
-            logger.error(
+            logger.exception(
                 "create_scenario: invalid scenario_id format: %s, user_id=%s",
                 safe_log_value(scenario_id),
                 user.id,

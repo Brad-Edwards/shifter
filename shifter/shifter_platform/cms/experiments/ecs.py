@@ -45,15 +45,22 @@ def _get_task_config() -> tuple[str, str, dict | None] | None:
     )
 
     if provider == "gcp":
-        if not all([cluster, task_definition]):
-            logger.warning(
-                "GCP task configuration incomplete for experiment tasks. "
-                "Required: ENGINE_TASK_NAMESPACE/ENGINE_TASK_CLUSTER and "
-                "EXPERIMENT_TASK_DEFINITION or ENGINE_TASK_IMAGE/ENGINE_TASK_DEFINITION."
-            )
-            return None
-        return cluster, task_definition, None
+        return _gcp_experiment_task_config(cluster, task_definition)
+    return _aws_experiment_task_config(cluster, task_definition)
 
+
+def _gcp_experiment_task_config(cluster: str, task_definition: str) -> tuple[str, str, dict | None] | None:
+    if not all([cluster, task_definition]):
+        logger.warning(
+            "GCP task configuration incomplete for experiment tasks. "
+            "Required: ENGINE_TASK_NAMESPACE/ENGINE_TASK_CLUSTER and "
+            "EXPERIMENT_TASK_DEFINITION or ENGINE_TASK_IMAGE/ENGINE_TASK_DEFINITION."
+        )
+        return None
+    return cluster, task_definition, None
+
+
+def _aws_experiment_task_config(cluster: str, task_definition: str) -> tuple[str, str, dict | None] | None:
     security_group_id: str = getattr(settings, "ENGINE_TASK_NETWORK_SECURITY_GROUP_ID", "") or getattr(
         settings, "ENGINE_ECS_SECURITY_GROUP_ID", ""
     )

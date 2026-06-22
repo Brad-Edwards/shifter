@@ -83,6 +83,25 @@ def _is_provisioner_task(container_name: str) -> bool:
     return container_name == PROVISIONER_CONTAINER_NAME
 
 
+def _job_condition_reason(status: Any) -> str | None:
+    """Return the message/reason of the first Failed/Complete Job condition, if any."""
+    for condition in getattr(status, "conditions", None) or []:
+        if getattr(condition, "type", "") in {"Failed", "Complete"}:
+            return getattr(condition, "message", None) or getattr(condition, "reason", None)
+    return None
+
+
+def _derive_job_state(*, active: int, failed: int, succeeded: int) -> str:
+    """Map active/failed/succeeded Job counts to a coarse ECS-style task state."""
+    if succeeded > 0:
+        return "SUCCEEDED"
+    if failed > 0:
+        return "FAILED"
+    if active > 0:
+        return "RUNNING"
+    return "SUBMITTED"
+
+
 class GCPTaskRunner:
     """Kubernetes Job implementation of TaskRunner protocol.
 
@@ -341,21 +360,9 @@ class GCPTaskRunner:
         succeeded = int(getattr(status, "succeeded", 0) or 0)
         started_at = getattr(status, "start_time", None)
         stopped_at = getattr(status, "completion_time", None)
-        stopped_reason = None
 
-        for condition in getattr(status, "conditions", None) or []:
-            if getattr(condition, "type", "") in {"Failed", "Complete"}:
-                stopped_reason = getattr(condition, "message", None) or getattr(condition, "reason", None)
-                break
-
-        if succeeded > 0:
-            state = "SUCCEEDED"
-        elif failed > 0:
-            state = "FAILED"
-        elif active > 0:
-            state = "RUNNING"
-        else:
-            state = "SUBMITTED"
+        stopped_reason = _job_condition_reason(status)
+        state = _derive_job_state(active=active, failed=failed, succeeded=succeeded)
 
         if state in {"SUCCEEDED", "FAILED"} and not stopped_reason:
             stopped_reason = self._extract_stopped_reason(core_api, namespace, job_name)
@@ -448,7 +455,7 @@ class GCPTaskRunner:
         except CloudTaskError:
             raise
         except Exception as e:
-            logger.error("run_task: failed task_definition=%s error=%s", task_definition, e)
+            logger.exception("run_task: failed task_definition=%s error=%s", task_definition, e)
             raise CloudTaskError(f"Failed to create Kubernetes Job: {e}") from e
 
     @staticmethod
@@ -591,5 +598,5 @@ class GCPTaskRunner:
         except CloudTaskError:
             raise
         except Exception as e:
-            logger.error("get_task_status: failed task_id=%s error=%s", task_id, e)
+            logger.exception("get_task_status: failed task_id=%s error=%s", task_id, e)
             raise CloudTaskError(f"Failed to get Kubernetes Job status: {e}") from e

@@ -29,6 +29,11 @@ from shared.errors import classify_user_message
 from shared.exceptions import CMSError
 from shared.log_sanitize import safe_log_value
 
+# SonarCloud S1192: extracted duplicated string literals.
+UNEXPECTED_ERROR_MSG = "An unexpected error occurred. Please try again."
+EXPERIMENT_LIST_URL = "experiments:experiment_list"
+EXPERIMENT_DETAIL_URL = "experiments:experiment_detail"
+
 if TYPE_CHECKING:
     from django.contrib.auth.models import User
     from django.http import HttpRequest
@@ -60,8 +65,8 @@ def script_list(request: HttpRequest) -> HttpResponse:
             "script_list: unexpected error for user_id=%s",
             request.user.id,
         )
-        messages.error(request, "An unexpected error occurred. Please try again.")
-        return redirect("experiments:experiment_list")
+        messages.error(request, UNEXPECTED_ERROR_MSG)
+        return redirect(EXPERIMENT_LIST_URL)
 
 
 def _complete_script_upload_post(request: HttpRequest, upload_token: str) -> HttpResponse:
@@ -102,8 +107,8 @@ def _handle_script_upload_post(request: HttpRequest) -> HttpResponse:
         return _initiate_script_upload_post(request)
     except Exception:
         logger.exception("script_upload: unexpected error for user_id=%s", request.user.id)
-        messages.error(request, "An unexpected error occurred. Please try again.")
-        return redirect("experiments:experiment_list")
+        messages.error(request, UNEXPECTED_ERROR_MSG)
+        return redirect(EXPERIMENT_LIST_URL)
 
 
 @threat_research_required
@@ -136,7 +141,7 @@ def script_delete(request: HttpRequest, script_id: int) -> HttpResponse:
             "script_delete: unexpected error for user_id=%s",
             request.user.id,
         )
-        messages.error(request, "An unexpected error occurred. Please try again.")
+        messages.error(request, UNEXPECTED_ERROR_MSG)
     return redirect("experiments:script_list")
 
 
@@ -166,8 +171,8 @@ def experiment_list(request: HttpRequest) -> HttpResponse:
             "experiment_list: unexpected error for user_id=%s",
             request.user.id,
         )
-        messages.error(request, "An unexpected error occurred. Please try again.")
-        return redirect("experiments:experiment_list")
+        messages.error(request, UNEXPECTED_ERROR_MSG)
+        return redirect(EXPERIMENT_LIST_URL)
 
 
 def _validate_experiment_create_input(request: HttpRequest) -> ExperimentCreateInput:
@@ -224,10 +229,10 @@ def _handle_experiment_create_post(request: HttpRequest) -> HttpResponse:
         return redirect("experiments:experiment_create")
     except Exception:
         logger.exception("experiment_create: unexpected error for user_id=%s", request.user.id)
-        messages.error(request, "An unexpected error occurred. Please try again.")
-        return redirect("experiments:experiment_list")
+        messages.error(request, UNEXPECTED_ERROR_MSG)
+        return redirect(EXPERIMENT_LIST_URL)
     messages.success(request, f"Experiment '{experiment.name}' created.")
-    return redirect("experiments:experiment_detail", experiment_id=experiment.pk)
+    return redirect(EXPERIMENT_DETAIL_URL, experiment_id=experiment.pk)
 
 
 @threat_research_required
@@ -265,14 +270,14 @@ def experiment_detail(request: HttpRequest, experiment_id: int) -> HttpResponse:
         experiment = services.get_experiment(cast("User", request.user), experiment_id)
     except ExperimentError:
         messages.error(request, "Experiment not found.")
-        return redirect("experiments:experiment_list")
+        return redirect(EXPERIMENT_LIST_URL)
     except Exception:
         logger.exception(
             "experiment_detail: unexpected error for user_id=%s",
             request.user.id,
         )
-        messages.error(request, "An unexpected error occurred. Please try again.")
-        return redirect("experiments:experiment_list")
+        messages.error(request, UNEXPECTED_ERROR_MSG)
+        return redirect(EXPERIMENT_LIST_URL)
 
     return render(
         request,
@@ -302,8 +307,8 @@ def experiment_start(request: HttpRequest, experiment_id: int) -> HttpResponse:
             "experiment_start: unexpected error for user_id=%s",
             request.user.id,
         )
-        messages.error(request, "An unexpected error occurred. Please try again.")
-    return redirect("experiments:experiment_detail", experiment_id=experiment_id)
+        messages.error(request, UNEXPECTED_ERROR_MSG)
+    return redirect(EXPERIMENT_DETAIL_URL, experiment_id=experiment_id)
 
 
 @threat_research_required
@@ -323,8 +328,8 @@ def experiment_cancel(request: HttpRequest, experiment_id: int) -> HttpResponse:
             "experiment_cancel: unexpected error for user_id=%s",
             request.user.id,
         )
-        messages.error(request, "An unexpected error occurred. Please try again.")
-    return redirect("experiments:experiment_detail", experiment_id=experiment_id)
+        messages.error(request, UNEXPECTED_ERROR_MSG)
+    return redirect(EXPERIMENT_DETAIL_URL, experiment_id=experiment_id)
 
 
 # =============================================================================
@@ -341,14 +346,14 @@ def experiment_download(request: HttpRequest, experiment_id: int) -> HttpRespons
         return redirect(url)
     except ArtifactError as e:
         messages.error(request, str(e))
-        return redirect("experiments:experiment_detail", experiment_id=experiment_id)
+        return redirect(EXPERIMENT_DETAIL_URL, experiment_id=experiment_id)
     except Exception:
         logger.exception(
             "experiment_download: unexpected error for user_id=%s",
             request.user.id,
         )
-        messages.error(request, "An unexpected error occurred. Please try again.")
-        return redirect("experiments:experiment_list")
+        messages.error(request, UNEXPECTED_ERROR_MSG)
+        return redirect(EXPERIMENT_LIST_URL)
 
 
 @threat_research_required
@@ -370,14 +375,14 @@ def artifact_download(
         return redirect(url)
     except ArtifactError as e:
         messages.error(request, str(e))
-        return redirect("experiments:experiment_detail", experiment_id=experiment_id)
+        return redirect(EXPERIMENT_DETAIL_URL, experiment_id=experiment_id)
     except Exception:
         logger.exception(
             "artifact_download: unexpected error for user_id=%s",
             request.user.id,
         )
-        messages.error(request, "An unexpected error occurred. Please try again.")
-        return redirect("experiments:experiment_list")
+        messages.error(request, UNEXPECTED_ERROR_MSG)
+        return redirect(EXPERIMENT_LIST_URL)
 
 
 # =============================================================================

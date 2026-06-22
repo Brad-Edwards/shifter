@@ -207,7 +207,7 @@ def _verify_hash(submitted_flag: str, stored_hash: str, context_id: UUID) -> boo
                 stored_hash.encode("utf-8"),
             )
         except Exception as e:
-            logger.error("Flag verification error for %s: %s", context_id, e)
+            logger.exception("Flag verification error for %s: %s", context_id, e)
             return False
     elif stored_hash.startswith("pbkdf2:"):
         parts = stored_hash.split(":", 2)
@@ -237,6 +237,47 @@ def _verify_hash(submitted_flag: str, stored_hash: str, context_id: UUID) -> boo
         return False
 
 
+def _verify_regex_flag(flag_obj: CTFFlag, submitted_flag: str) -> bool:
+    # Regex flags: pattern stored as plaintext in flag_hash
+    regex_flags = 0 if flag_obj.case_sensitive else re.IGNORECASE
+    try:
+        return bool(re.fullmatch(flag_obj.flag_hash, submitted_flag, flags=regex_flags))
+    except re.error as e:
+        logger.exception("Invalid regex pattern for flag %s: %s", flag_obj.id, e)
+        return False
+
+
+def _verify_programmable_flag(flag_obj: CTFFlag, submitted_flag: str, config: dict) -> bool:
+    from ctf.validators import get_validator
+
+    validator_name = config.get("validator_name", "")
+    validator_func = get_validator(validator_name)
+    if validator_func is None:
+        logger.error("Unknown validator %r for flag %s", validator_name, flag_obj.id)
+        return False
+    try:
+        return validator_func(submitted_flag, config.get("params", {}))
+    except Exception as e:
+        logger.exception("Validator %r error for flag %s: %s", validator_name, flag_obj.id, e)
+        return False
+
+
+def _verify_http_flag(flag_obj: CTFFlag, submitted_flag: str, config: dict) -> bool:
+    from ctf.validators import validate_http
+
+    try:
+        return validate_http(submitted_flag, config, flag_obj.challenge_id)
+    except Exception as e:
+        logger.exception("HTTP validator error for flag %s: %s", flag_obj.id, e)
+        return False
+
+
+def _verify_static_flag(flag_obj: CTFFlag, submitted_flag: str) -> bool:
+    # Static flags: hashed comparison
+    value = submitted_flag if flag_obj.case_sensitive else submitted_flag.lower()
+    return _verify_hash(value, flag_obj.flag_hash, flag_obj.id)
+
+
 def verify_single_flag(flag_obj: CTFFlag, submitted_flag: str) -> bool:
     """Verify a submitted flag against a single CTFFlag record.
 
@@ -248,38 +289,13 @@ def verify_single_flag(flag_obj: CTFFlag, submitted_flag: str) -> bool:
         True if the flag matches.
     """
     if flag_obj.flag_type == "regex":
-        # Regex flags: pattern stored as plaintext in flag_hash
-        regex_flags = 0 if flag_obj.case_sensitive else re.IGNORECASE
-        try:
-            return bool(re.fullmatch(flag_obj.flag_hash, submitted_flag, flags=regex_flags))
-        except re.error as e:
-            logger.error("Invalid regex pattern for flag %s: %s", flag_obj.id, e)
-            return False
-    elif flag_obj.flag_type in ("programmable", "http"):
-        from ctf.validators import get_validator, validate_http
-
+        return _verify_regex_flag(flag_obj, submitted_flag)
+    if flag_obj.flag_type in ("programmable", "http"):
         config = flag_obj.validator_config or {}
         if flag_obj.flag_type == "programmable":
-            validator_name = config.get("validator_name", "")
-            validator_func = get_validator(validator_name)
-            if validator_func is None:
-                logger.error("Unknown validator %r for flag %s", validator_name, flag_obj.id)
-                return False
-            try:
-                return validator_func(submitted_flag, config.get("params", {}))
-            except Exception as e:
-                logger.error("Validator %r error for flag %s: %s", validator_name, flag_obj.id, e)
-                return False
-        else:  # http
-            try:
-                return validate_http(submitted_flag, config, flag_obj.challenge_id)
-            except Exception as e:
-                logger.error("HTTP validator error for flag %s: %s", flag_obj.id, e)
-                return False
-    else:
-        # Static flags: hashed comparison
-        value = submitted_flag if flag_obj.case_sensitive else submitted_flag.lower()
-        return _verify_hash(value, flag_obj.flag_hash, flag_obj.id)
+            return _verify_programmable_flag(flag_obj, submitted_flag, config)
+        return _verify_http_flag(flag_obj, submitted_flag, config)
+    return _verify_static_flag(flag_obj, submitted_flag)
 
 
 def verify_flag(challenge: CTFChallenge, submitted_flag: str) -> bool:
@@ -1130,6 +1146,67 @@ from ctf.services.authorization import assert_actor_owns_event as _assert_actor_
 # -----------------------------------------------------------------------------
 
 
+def _assert_participant_eligible(participant: CTFParticipant) -> None:
+    """Raise CTFStateError unless the participant is registered and non-disqualified."""
+    from ctf.services.participant.queries import _PLAYING_PARTICIPANT_STATUSES
+
+    # Participant eligibility: aligned with `eligible_participant_q`.
+    if participant.registered_at is None or participant.status not in _PLAYING_PARTICIPANT_STATUSES:
+        raise CTFStateError(
+            "Participant is not eligible",
+            details={
+                "participant_id": str(participant.id),
+                "status": participant.status,
+            },
+        )
+
+
+def _assert_event_active_and_in_window(event: CTFEvent) -> None:
+    """Raise CTFStateError unless the event is ACTIVE and within its competition window."""
+    from ctf.enums import EventStatus
+
+    if event.status != EventStatus.ACTIVE.value:
+        raise CTFStateError(
+            f"Event is not active (status: {event.status})",
+            details={"event_id": str(event.id), "status": event.status},
+        )
+
+    now = timezone.now()
+    if now < event.event_start or now > event.event_end:
+        raise CTFStateError(
+            "Event is not within its competition window",
+            details={
+                "event_id": str(event.id),
+                "event_start": event.event_start.isoformat(),
+                "event_end": event.event_end.isoformat(),
+                "server_time": now.isoformat(),
+            },
+        )
+
+
+def _assert_challenge_visible_and_released(challenge: CTFChallenge) -> None:
+    """Raise CTFStateError unless the challenge is visible (not hidden/locked) and released."""
+    if challenge.visibility == "hidden":
+        raise CTFStateError(
+            "Challenge is not available",
+            details={"challenge_id": str(challenge.id)},
+        )
+    if challenge.visibility == "locked":
+        raise CTFStateError(
+            "Challenge is locked",
+            details={"challenge_id": str(challenge.id)},
+        )
+
+    if not challenge.is_released:
+        raise CTFStateError(
+            "Challenge has not been released yet",
+            details={
+                "challenge_id": str(challenge.id),
+                "release_time": challenge.release_time.isoformat() if challenge.release_time else None,
+            },
+        )
+
+
 def assert_challenge_available_for_participant(
     participant: CTFParticipant,
     challenge: CTFChallenge,
@@ -1155,18 +1232,7 @@ def assert_challenge_available_for_participant(
         CTFStateError: any availability gate fails (including ineligible
             participant).
     """
-    from ctf.enums import EventStatus
-    from ctf.services.participant.queries import _PLAYING_PARTICIPANT_STATUSES
-
-    # Participant eligibility: aligned with `eligible_participant_q`.
-    if participant.registered_at is None or participant.status not in _PLAYING_PARTICIPANT_STATUSES:
-        raise CTFStateError(
-            "Participant is not eligible",
-            details={
-                "participant_id": str(participant.id),
-                "status": participant.status,
-            },
-        )
+    _assert_participant_eligible(participant)
 
     if challenge.event_id != participant.event_id:
         raise CTFValidationError(
@@ -1177,45 +1243,8 @@ def assert_challenge_available_for_participant(
             },
         )
 
-    event = challenge.event
-    if event.status != EventStatus.ACTIVE.value:
-        raise CTFStateError(
-            f"Event is not active (status: {event.status})",
-            details={"event_id": str(event.id), "status": event.status},
-        )
-
-    now = timezone.now()
-    if now < event.event_start or now > event.event_end:
-        raise CTFStateError(
-            "Event is not within its competition window",
-            details={
-                "event_id": str(event.id),
-                "event_start": event.event_start.isoformat(),
-                "event_end": event.event_end.isoformat(),
-                "server_time": now.isoformat(),
-            },
-        )
-
-    if challenge.visibility == "hidden":
-        raise CTFStateError(
-            "Challenge is not available",
-            details={"challenge_id": str(challenge.id)},
-        )
-    if challenge.visibility == "locked":
-        raise CTFStateError(
-            "Challenge is locked",
-            details={"challenge_id": str(challenge.id)},
-        )
-
-    if not challenge.is_released:
-        raise CTFStateError(
-            "Challenge has not been released yet",
-            details={
-                "challenge_id": str(challenge.id),
-                "release_time": challenge.release_time.isoformat() if challenge.release_time else None,
-            },
-        )
-
+    _assert_event_active_and_in_window(challenge.event)
+    _assert_challenge_visible_and_released(challenge)
     _assert_prerequisites_met(challenge, participant)
 
 

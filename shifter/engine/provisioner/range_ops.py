@@ -29,6 +29,29 @@ _GCP_RANGE_LIFECYCLE_NOT_IMPLEMENTED = (
 )
 
 
+# (cloud_provider, asset_type) -> operation_mode for non-AWS lifecycle targets.
+_GCP_OPERATION_MODES = {
+    ("gcp", "vm_runtime_vm"): "gdc_vm_runtime",
+    ("gcp", "scenario_pod"): "gdc_scenario_pod",
+}
+
+
+def _build_aws_lifecycle_entry(
+    entry: dict[str, object], state_dict: dict, uuid: object, role: str
+) -> dict[str, object] | None:
+    aws_instance_id = state_dict.get("aws_instance_id")
+    if not aws_instance_id:
+        logger.warning(
+            "Instance %s (role=%s) missing aws_instance_id in state, skipping",
+            uuid,
+            role,
+        )
+        return None
+    entry["operation_mode"] = "aws"
+    entry["aws_instance_id"] = aws_instance_id
+    return entry
+
+
 def _build_range_lifecycle_entry(
     request_id: str,
     uuid: object,
@@ -49,30 +72,16 @@ def _build_range_lifecycle_entry(
     }
 
     if cloud_provider == "aws":
-        aws_instance_id = state_dict.get("aws_instance_id")
-        if not aws_instance_id:
-            logger.warning(
-                "Instance %s (role=%s) missing aws_instance_id in state, skipping",
-                uuid,
-                role,
-            )
-            return None
-        entry["operation_mode"] = "aws"
-        entry["aws_instance_id"] = aws_instance_id
-        return entry
+        return _build_aws_lifecycle_entry(entry, state_dict, uuid, role)
 
-    if cloud_provider == "gcp" and asset_type == "vm_runtime_vm":
-        entry["operation_mode"] = "gdc_vm_runtime"
-        return entry
-
-    if cloud_provider == "gcp" and asset_type == "scenario_pod":
-        entry["operation_mode"] = "gdc_scenario_pod"
-        return entry
-
-    raise ValueError(
-        "Unsupported range lifecycle target "
-        f"for request {request_id}: cloud_provider={cloud_provider!r} asset_type={asset_type!r}"
-    )
+    operation_mode = _GCP_OPERATION_MODES.get((cloud_provider, asset_type))
+    if operation_mode is None:
+        raise ValueError(
+            "Unsupported range lifecycle target "
+            f"for request {request_id}: cloud_provider={cloud_provider!r} asset_type={asset_type!r}"
+        )
+    entry["operation_mode"] = operation_mode
+    return entry
 
 
 def get_range_instance_ids(request_id: str) -> list[dict]:
@@ -684,7 +693,7 @@ def run_range_resume(request_id: str) -> None:
     except Exception as e:
         # Fatal: range cannot resume without NGFW
         error_msg = f"Failed to start NGFW: {e}"
-        logger.error("run_range_resume: %s request_id=%s", error_msg, request_id)
+        logger.exception("run_range_resume: %s request_id=%s", error_msg, request_id)
         update_range_status(range_id, "failed", error_message=error_msg)
         publish_status_update(
             request_id=request_id,

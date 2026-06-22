@@ -49,6 +49,10 @@ except ImportError:
 
 import terraform_backend as tb
 
+# SonarCloud S1192: extracted duplicated string literals.
+HELP_AWS_PROFILE = "AWS CLI profile name"
+HELP_DRY_RUN = "Show what would be done"
+
 
 # Colors for terminal output
 class Colors:
@@ -188,6 +192,21 @@ def _sample_guest_access_defaults() -> list[str]:
     return []
 
 
+def _validate_argv(cmd: list[str]) -> None:
+    """Validate an argv list before handing it to subprocess.
+
+    Commands here are always argv lists (never shell strings), so shell-metacharacter
+    injection is not possible. This guards the remaining risk from external/CLI-derived
+    tokens: every element must be a string, and no element may contain a NUL byte
+    (which `execve` rejects and which can truncate arguments in some C wrappers).
+    """
+    for index, arg in enumerate(cmd):
+        if not isinstance(arg, str):
+            raise ValueError(f"argv[{index}] must be a string, got {type(arg).__name__}")
+        if "\x00" in arg:
+            raise ValueError(f"argv[{index}] contains a NUL byte")
+
+
 def run_cmd(
     cmd: list[str],
     dry_run: bool = False,
@@ -200,6 +219,7 @@ def run_cmd(
     if profile and cmd[0] == "aws":
         cmd = cmd[:1] + ["--profile", profile] + cmd[1:]
 
+    _validate_argv(cmd)
     cmd_str = " ".join(cmd)
     if dry_run:
         print(f"{Colors.BLUE}[DRY-RUN] Would run: {cmd_str}{Colors.END}")
@@ -226,6 +246,7 @@ def get_aws_account_id(profile: str = None) -> str:
     cmd = ["aws", "sts", "get-caller-identity", "--query", "Account", "--output", "text"]
     if profile:
         cmd = ["aws", "--profile", profile, "sts", "get-caller-identity", "--query", "Account", "--output", "text"]
+    _validate_argv(cmd)
     result = subprocess.run(cmd, capture_output=True, text=True, check=True)  # nosec B603 B607
     return result.stdout.strip()
 
@@ -282,8 +303,10 @@ GCP_IAP_TCP_SOURCE_RANGE = "35.235.240.0/20"
 
 def s3_bucket_exists(bucket_name: str, profile: str) -> bool:
     """Check if an S3 bucket exists."""
+    cmd = ["aws", "--profile", profile, "s3api", "head-bucket", "--bucket", bucket_name]
+    _validate_argv(cmd)
     result = subprocess.run(  # nosec B603 B607
-        ["aws", "--profile", profile, "s3api", "head-bucket", "--bucket", bucket_name],
+        cmd,
         capture_output=True,
         text=True,
     )
@@ -1284,27 +1307,31 @@ def ensure_gdc_vm_image_secret(config: GDCBootstrapConfig, dry_run: bool = False
         )
 
 
+def _ensure_gcloud_resource(describe_args: list[str], create_args: list[str], *, dry_run: bool) -> None:
+    """Run `create_args` unless the resource described by `describe_args` already exists."""
+    if dry_run or not gcloud_resource_exists(describe_args):
+        run_cmd(create_args, dry_run=dry_run)
+
+
 def ensure_gdc_network(config: GDCBootstrapConfig, dry_run: bool = False) -> None:
     """Create the custom VPC, subnet, and firewall rules used by the cluster."""
-    if dry_run or not gcloud_resource_exists(
-        ["gcloud", "compute", "networks", "describe", config.resolved_network_name, "--project", config.project_id]
-    ):
-        run_cmd(
-            [
-                "gcloud",
-                "compute",
-                "networks",
-                "create",
-                config.resolved_network_name,
-                "--project",
-                config.project_id,
-                "--subnet-mode",
-                "custom",
-            ],
-            dry_run=dry_run,
-        )
+    _ensure_gcloud_resource(
+        ["gcloud", "compute", "networks", "describe", config.resolved_network_name, "--project", config.project_id],
+        [
+            "gcloud",
+            "compute",
+            "networks",
+            "create",
+            config.resolved_network_name,
+            "--project",
+            config.project_id,
+            "--subnet-mode",
+            "custom",
+        ],
+        dry_run=dry_run,
+    )
 
-    if dry_run or not gcloud_resource_exists(
+    _ensure_gcloud_resource(
         [
             "gcloud",
             "compute",
@@ -1316,30 +1343,28 @@ def ensure_gdc_network(config: GDCBootstrapConfig, dry_run: bool = False) -> Non
             config.project_id,
             "--region",
             config.region,
-        ]
-    ):
-        run_cmd(
-            [
-                "gcloud",
-                "compute",
-                "networks",
-                "subnets",
-                "create",
-                config.resolved_subnetwork_name,
-                "--project",
-                config.project_id,
-                "--network",
-                config.resolved_network_name,
-                "--region",
-                config.region,
-                "--range",
-                config.subnet_cidr,
-                "--enable-private-ip-google-access",
-            ],
-            dry_run=dry_run,
-        )
+        ],
+        [
+            "gcloud",
+            "compute",
+            "networks",
+            "subnets",
+            "create",
+            config.resolved_subnetwork_name,
+            "--project",
+            config.project_id,
+            "--network",
+            config.resolved_network_name,
+            "--region",
+            config.region,
+            "--range",
+            config.subnet_cidr,
+            "--enable-private-ip-google-access",
+        ],
+        dry_run=dry_run,
+    )
 
-    if dry_run or not gcloud_resource_exists(
+    _ensure_gcloud_resource(
         [
             "gcloud",
             "compute",
@@ -1350,26 +1375,24 @@ def ensure_gdc_network(config: GDCBootstrapConfig, dry_run: bool = False) -> Non
             config.project_id,
             "--region",
             config.region,
-        ]
-    ):
-        run_cmd(
-            [
-                "gcloud",
-                "compute",
-                "routers",
-                "create",
-                config.cloud_router_name,
-                "--project",
-                config.project_id,
-                "--region",
-                config.region,
-                "--network",
-                config.resolved_network_name,
-            ],
-            dry_run=dry_run,
-        )
+        ],
+        [
+            "gcloud",
+            "compute",
+            "routers",
+            "create",
+            config.cloud_router_name,
+            "--project",
+            config.project_id,
+            "--region",
+            config.region,
+            "--network",
+            config.resolved_network_name,
+        ],
+        dry_run=dry_run,
+    )
 
-    if dry_run or not gcloud_resource_exists(
+    _ensure_gcloud_resource(
         [
             "gcloud",
             "compute",
@@ -1383,29 +1406,27 @@ def ensure_gdc_network(config: GDCBootstrapConfig, dry_run: bool = False) -> Non
             config.cloud_router_name,
             "--region",
             config.region,
-        ]
-    ):
-        run_cmd(
-            [
-                "gcloud",
-                "compute",
-                "routers",
-                "nats",
-                "create",
-                config.cloud_nat_name,
-                "--project",
-                config.project_id,
-                "--router",
-                config.cloud_router_name,
-                "--region",
-                config.region,
-                "--auto-allocate-nat-external-ips",
-                "--nat-custom-subnet-ip-ranges",
-                config.resolved_subnetwork_name,
-                "--enable-logging",
-            ],
-            dry_run=dry_run,
-        )
+        ],
+        [
+            "gcloud",
+            "compute",
+            "routers",
+            "nats",
+            "create",
+            config.cloud_nat_name,
+            "--project",
+            config.project_id,
+            "--router",
+            config.cloud_router_name,
+            "--region",
+            config.region,
+            "--auto-allocate-nat-external-ips",
+            "--nat-custom-subnet-ip-ranges",
+            config.resolved_subnetwork_name,
+            "--enable-logging",
+        ],
+        dry_run=dry_run,
+    )
 
     firewall_rules = [
         (
@@ -1426,31 +1447,29 @@ def ensure_gdc_network(config: GDCBootstrapConfig, dry_run: bool = False) -> Non
     ]
 
     for name, rules, source_ranges in firewall_rules:
-        if dry_run or not gcloud_resource_exists(
-            ["gcloud", "compute", "firewall-rules", "describe", name, "--project", config.project_id]
-        ):
-            run_cmd(
-                [
-                    "gcloud",
-                    "compute",
-                    "firewall-rules",
-                    "create",
-                    name,
-                    "--project",
-                    config.project_id,
-                    "--network",
-                    config.resolved_network_name,
-                    "--direction",
-                    "INGRESS",
-                    "--allow",
-                    rules,
-                    "--source-ranges",
-                    source_ranges,
-                    "--target-tags",
-                    config.instance_tag,
-                ],
-                dry_run=dry_run,
-            )
+        _ensure_gcloud_resource(
+            ["gcloud", "compute", "firewall-rules", "describe", name, "--project", config.project_id],
+            [
+                "gcloud",
+                "compute",
+                "firewall-rules",
+                "create",
+                name,
+                "--project",
+                config.project_id,
+                "--network",
+                config.resolved_network_name,
+                "--direction",
+                "INGRESS",
+                "--allow",
+                rules,
+                "--source-ranges",
+                source_ranges,
+                "--target-tags",
+                config.instance_tag,
+            ],
+            dry_run=dry_run,
+        )
 
 
 def gdc_instance_create_command(
@@ -2001,6 +2020,18 @@ def prompt_for_gcp_bootstrap_operator_credentials() -> tuple[str, str]:
     return email, password
 
 
+def _resolve_operator_email_domain(outputs: dict[str, dict[str, object]] | None) -> tuple[str, str]:
+    """Resolve the required operator email domain and its source (Terraform output, else env)."""
+    if outputs is not None:
+        tf_value = outputs.get("identity_allowed_email_domain", {}).get("value")
+        if isinstance(tf_value, str) and tf_value.strip():
+            return tf_value.strip().lower(), "Terraform output identity_allowed_email_domain"
+    env_value = os.environ.get("SHIFTER_GCP_OPERATOR_EMAIL_DOMAIN", "").strip().lower()
+    if env_value:
+        return env_value, "SHIFTER_GCP_OPERATOR_EMAIL_DOMAIN"
+    return "", ""
+
+
 def _validate_gcp_bootstrap_operator_email(
     email: str,
     outputs: dict[str, dict[str, object]] | None = None,
@@ -2026,18 +2057,7 @@ def _validate_gcp_bootstrap_operator_email(
     if not local or not domain:
         raise ValueError("GCP operator email must have a non-empty local part and domain")
 
-    required_domain = ""
-    source = ""
-    if outputs is not None:
-        tf_value = outputs.get("identity_allowed_email_domain", {}).get("value")
-        if isinstance(tf_value, str) and tf_value.strip():
-            required_domain = tf_value.strip().lower()
-            source = "Terraform output identity_allowed_email_domain"
-    if not required_domain:
-        env_value = os.environ.get("SHIFTER_GCP_OPERATOR_EMAIL_DOMAIN", "").strip().lower()
-        if env_value:
-            required_domain = env_value
-            source = "SHIFTER_GCP_OPERATOR_EMAIL_DOMAIN"
+    required_domain, source = _resolve_operator_email_domain(outputs)
 
     if required_domain and not email.lower().endswith(f"@{required_domain}"):
         raise ValueError(
@@ -2519,9 +2539,7 @@ def prune_stale_gcp_terraform_bootstrap_keys(config: GDCBootstrapConfig) -> None
         )
 
 
-@contextmanager
-def gcp_terraform_bootstrap_credentials(config: GDCBootstrapConfig):
-    """Provision temporary ADC-compatible credentials for Terraform bootstrap."""
+def _ensure_terraform_bootstrap_service_account(config: GDCBootstrapConfig) -> None:
     if not gcloud_resource_exists(
         [
             "gcloud",
@@ -2546,8 +2564,8 @@ def gcp_terraform_bootstrap_credentials(config: GDCBootstrapConfig):
             check=False,
         )
 
-    member = f"serviceAccount:{config.terraform_bootstrap_service_account_email}"
-    bucket_url = f"gs://{config.terraform_state_bucket_name}"
+
+def _grant_terraform_bootstrap_iam(config: GDCBootstrapConfig, member: str, bucket_url: str) -> None:
     for role in GCP_TERRAFORM_BOOTSTRAP_ROLES:
         run_cmd(
             [
@@ -2575,6 +2593,78 @@ def gcp_terraform_bootstrap_credentials(config: GDCBootstrapConfig):
             GCP_TERRAFORM_BOOTSTRAP_BUCKET_ROLE,
         ]
     )
+
+
+def _revoke_terraform_bootstrap_iam(
+    config: GDCBootstrapConfig,
+    member: str,
+    bucket_url: str,
+    key_id: str,
+    previous_env: dict[str, str | None],
+) -> None:
+    for key, value in previous_env.items():
+        if value is None:
+            os.environ.pop(key, None)
+        else:
+            os.environ[key] = value
+
+    if key_id:
+        run_cmd(
+            [
+                "gcloud",
+                "iam",
+                "service-accounts",
+                "keys",
+                "delete",
+                key_id,
+                "--iam-account",
+                config.terraform_bootstrap_service_account_email,
+                "--project",
+                config.project_id,
+                "--quiet",
+            ],
+            check=False,
+        )
+
+    for role in GCP_TERRAFORM_BOOTSTRAP_ROLES:
+        run_cmd(
+            [
+                "gcloud",
+                "projects",
+                "remove-iam-policy-binding",
+                config.project_id,
+                "--member",
+                member,
+                "--role",
+                role,
+                "--no-user-output-enabled",
+            ],
+            check=False,
+        )
+    run_cmd(
+        [
+            "gcloud",
+            "storage",
+            "buckets",
+            "remove-iam-policy-binding",
+            bucket_url,
+            "--member",
+            member,
+            "--role",
+            GCP_TERRAFORM_BOOTSTRAP_BUCKET_ROLE,
+        ],
+        check=False,
+    )
+
+
+@contextmanager
+def gcp_terraform_bootstrap_credentials(config: GDCBootstrapConfig):
+    """Provision temporary ADC-compatible credentials for Terraform bootstrap."""
+    _ensure_terraform_bootstrap_service_account(config)
+
+    member = f"serviceAccount:{config.terraform_bootstrap_service_account_email}"
+    bucket_url = f"gs://{config.terraform_state_bucket_name}"
+    _grant_terraform_bootstrap_iam(config, member, bucket_url)
 
     env_keys = ("GOOGLE_APPLICATION_CREDENTIALS", "GOOGLE_BACKEND_CREDENTIALS", "GOOGLE_CREDENTIALS")
     previous_env = {key: os.environ.get(key) for key in env_keys}
@@ -2606,59 +2696,7 @@ def gcp_terraform_bootstrap_credentials(config: GDCBootstrapConfig):
         try:
             yield credentials_path
         finally:
-            for key, value in previous_env.items():
-                if value is None:
-                    os.environ.pop(key, None)
-                else:
-                    os.environ[key] = value
-
-            if key_id:
-                run_cmd(
-                    [
-                        "gcloud",
-                        "iam",
-                        "service-accounts",
-                        "keys",
-                        "delete",
-                        key_id,
-                        "--iam-account",
-                        config.terraform_bootstrap_service_account_email,
-                        "--project",
-                        config.project_id,
-                        "--quiet",
-                    ],
-                    check=False,
-                )
-
-            for role in GCP_TERRAFORM_BOOTSTRAP_ROLES:
-                run_cmd(
-                    [
-                        "gcloud",
-                        "projects",
-                        "remove-iam-policy-binding",
-                        config.project_id,
-                        "--member",
-                        member,
-                        "--role",
-                        role,
-                        "--no-user-output-enabled",
-                    ],
-                    check=False,
-                )
-            run_cmd(
-                [
-                    "gcloud",
-                    "storage",
-                    "buckets",
-                    "remove-iam-policy-binding",
-                    bucket_url,
-                    "--member",
-                    member,
-                    "--role",
-                    GCP_TERRAFORM_BOOTSTRAP_BUCKET_ROLE,
-                ],
-                check=False,
-            )
+            _revoke_terraform_bootstrap_iam(config, member, bucket_url, key_id, previous_env)
 
 
 # Generated GCP range egress bridge tfvars (range_egress_mode +
@@ -2976,67 +3014,49 @@ def helm_release_exists(release_name: str, namespace: str) -> bool:
     return result.returncode == 0
 
 
-def list_gcp_helm_cutover_resources(namespace: str) -> list[str]:
-    """List legacy Shifter resources in a namespace that must be purged before Helm takes ownership."""
-    labeled_result = subprocess.run(  # nosec B603 B607
-        [
-            "kubectl",
-            "-n",
-            namespace,
-            "get",
-            "deploy,svc,sa,cm,secret,ingress,rs,pod,job,cronjob,sts,ds",
-            "-l",
-            "app.kubernetes.io/part-of=shifter",
-            "-o",
-            "name",
-            "--ignore-not-found",
-        ],
+def _kubectl_get_resource_names(get_args: list[str], namespace: str, description: str) -> list[str] | None:
+    """Run `kubectl get` and return resource names, or None if the namespace does not exist."""
+    result = subprocess.run(  # nosec B603 B607
+        ["kubectl", "-n", namespace, "get", *get_args, "-o", "name", "--ignore-not-found"],
         capture_output=True,
         text=True,
         check=False,
     )
-    if labeled_result.returncode != 0:
-        stderr = labeled_result.stderr.strip().lower() if labeled_result.stderr else ""
+    if result.returncode != 0:
+        stderr = result.stderr.strip().lower() if result.stderr else ""
         if f'namespaces "{namespace}" not found' in stderr:
-            return []
-        raise RuntimeError(
-            f"Failed to inspect legacy Helm-cutover resources in namespace {namespace}: {labeled_result.stderr}"
-        )
+            return None
+        raise RuntimeError(f"Failed to inspect {description} resources in namespace {namespace}: {result.stderr}")
+    return [line.strip() for line in result.stdout.splitlines() if line.strip()]
+
+
+def list_gcp_helm_cutover_resources(namespace: str) -> list[str]:
+    """List legacy Shifter resources in a namespace that must be purged before Helm takes ownership."""
+    labeled = _kubectl_get_resource_names(
+        [
+            "deploy,svc,sa,cm,secret,ingress,rs,pod,job,cronjob,sts,ds",
+            "-l",
+            "app.kubernetes.io/part-of=shifter",
+        ],
+        namespace,
+        "legacy Helm-cutover",
+    )
+    if labeled is None:
+        return []
 
     explicit_resource_names = {
         "shifter-platform": ["configmap/platform-runtime", "secret/guacamole-runtime"],
         "shifter-jobs": ["serviceaccount/provisioner"],
     }
     explicit_resources = explicit_resource_names.get(namespace, [])
-    named_result = None
+    named: list[str] = []
     if explicit_resources:
-        named_result = subprocess.run(  # nosec B603 B607
-            [
-                "kubectl",
-                "-n",
-                namespace,
-                "get",
-                *explicit_resources,
-                "-o",
-                "name",
-                "--ignore-not-found",
-            ],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        if named_result.returncode != 0:
-            stderr = named_result.stderr.strip().lower() if named_result.stderr else ""
-            if f'namespaces "{namespace}" not found' in stderr:
-                return []
-            raise RuntimeError(
-                f"Failed to inspect explicit Helm-cutover resources in namespace {namespace}: {named_result.stderr}"
-            )
+        named_result = _kubectl_get_resource_names(explicit_resources, namespace, "explicit Helm-cutover")
+        if named_result is None:
+            return []
+        named = named_result
 
-    resources = [line.strip() for line in labeled_result.stdout.splitlines() if line.strip()]
-    if named_result is not None:
-        resources.extend(line.strip() for line in named_result.stdout.splitlines() if line.strip())
-    return sorted(set(resources))
+    return sorted(set(labeled + named))
 
 
 def prepare_gcp_helm_cutover(dry_run: bool = False) -> None:
@@ -3430,6 +3450,105 @@ shifter-gdc-kubeconfig"""
     }
 
 
+def _ensure_state_bucket(bucket_name: str, config: BootstrapConfig, profile: str, dry_run: bool) -> None:
+    """Create the Terraform-state S3 bucket, or confirm reuse if it already exists."""
+    if not dry_run and s3_bucket_exists(bucket_name, profile):
+        warn(f"S3 bucket '{bucket_name}' already exists")
+        if not confirm("Continue using existing bucket?"):
+            error("Cannot continue without S3 bucket for Terraform state")
+            sys.exit(1)
+        info("Using existing bucket")
+    else:
+        create_s3_bucket(bucket_name, config.region, profile, dry_run)
+
+
+def _run_iam_terraform(config: BootstrapConfig, bucket_name: str, account_id: str, profile: str, dry_run: bool) -> str:
+    """Run the global/iam Terraform stack and return the production GitHub Actions role ARN."""
+    repo_root = get_repo_root()
+    iam_tf_dir = repo_root / "platform" / "terraform" / "global" / "iam"
+
+    if not iam_tf_dir.exists():
+        error(f"IAM Terraform directory not found: {iam_tf_dir}")
+        sys.exit(1)
+
+    # Write per-instance backend config outside the product repo.
+    instance_dir = tb.instance_dir_from_env() or Path.home() / ".shifter" / f"{config.env}-{bucket_name}"
+    backend_dir = tb.resolve_instance_backend_dir(
+        env=config.env,
+        bucket=bucket_name,
+        instance_dir=instance_dir,
+    )
+    backend_config_file = tb.backend_config_for_stack(backend_dir, "global/iam", config.env)
+    if not dry_run:
+        tb.write_instance_backend_configs(
+            backend_dir=backend_dir,
+            env=config.env,
+            bucket=bucket_name,
+            region=config.region,
+        )
+        info("Using rendered instance backend config for global/iam")
+        success(f"Backend config ready for {config.env}")
+    else:
+        info("[DRY-RUN] Would write instance backend config outside the product repo")
+
+    original_dir = os.getcwd()
+    os.chdir(iam_tf_dir)
+
+    # Set AWS_PROFILE for Terraform (only affects this process and its children)
+    os.environ["AWS_PROFILE"] = profile
+
+    try:
+        info("Running terraform init with instance backend config")
+        run_cmd(
+            ["terraform", "init", "-reconfigure", f"-backend-config={backend_config_file}"],
+            dry_run=dry_run,
+        )
+        _terraform_apply_iam(config, dry_run)
+        role_arn = _terraform_iam_role_arn(config, account_id, dry_run)
+    finally:
+        os.chdir(original_dir)
+
+    return role_arn
+
+
+def _terraform_apply_iam(config: BootstrapConfig, dry_run: bool) -> None:
+    """Run terraform apply (or plan in dry-run) for the IAM stack; exit on apply failure."""
+    info(f"Running terraform apply for {config.env}...")
+    tfvars_file = f"{config.env}.tfvars"
+
+    if dry_run:
+        run_cmd(["terraform", "plan", f"-var-file={tfvars_file}"], dry_run=dry_run)
+        return
+
+    apply_result = run_cmd(
+        ["terraform", "apply", "-auto-approve", f"-var-file={tfvars_file}"],
+        dry_run=dry_run,
+        check=False,
+    )
+    if apply_result and apply_result.returncode != 0:
+        error("Terraform apply failed for IAM module")
+        error("The bootstrap role is still active - you can retry manually")
+        sys.exit(1)
+
+
+def _terraform_iam_role_arn(config: BootstrapConfig, account_id: str, dry_run: bool) -> str:
+    """Return the production GitHub Actions role ARN from terraform output (synthetic in dry-run)."""
+    if dry_run:
+        return f"arn:aws:iam::{account_id}:role/{config.role_name}"
+
+    result = subprocess.run(  # nosec B603 B607
+        ["terraform", "output", "-raw", "github_actions_role_arn"],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        error("Failed to get role ARN from Terraform output")
+        sys.exit(1)
+    role_arn = result.stdout.strip()
+    success(f"Production IAM role created: {role_arn}")
+    return role_arn
+
+
 def bootstrap_account(config: BootstrapConfig, profile: str, dry_run: bool = False) -> dict:
     """Bootstrap AWS account with state backend and IAM role."""
     header(f"Bootstrapping {config.env.upper()} AWS Account")
@@ -3458,16 +3577,7 @@ def bootstrap_account(config: BootstrapConfig, profile: str, dry_run: bool = Fal
 
     # Step 1: S3 Bucket
     header("Step 1/3: Creating S3 Bucket")
-
-    if not dry_run and s3_bucket_exists(bucket_name, profile):
-        warn(f"S3 bucket '{bucket_name}' already exists")
-        if not confirm("Continue using existing bucket?"):
-            error("Cannot continue without S3 bucket for Terraform state")
-            sys.exit(1)
-        info("Using existing bucket")
-    else:
-        create_s3_bucket(bucket_name, config.region, profile, dry_run)
-
+    _ensure_state_bucket(bucket_name, config, profile, dry_run)
     success("S3 bucket ready")
 
     # Step 2: Bootstrap IAM Role (temporary - will be replaced by Terraform)
@@ -3546,81 +3656,7 @@ def bootstrap_account(config: BootstrapConfig, profile: str, dry_run: bool = Fal
 
     info("Running Terraform to create properly scoped IAM policies...")
     info("The production role will be: " + config.role_name)
-
-    repo_root = get_repo_root()
-    iam_tf_dir = repo_root / "platform" / "terraform" / "global" / "iam"
-
-    if not iam_tf_dir.exists():
-        error(f"IAM Terraform directory not found: {iam_tf_dir}")
-        sys.exit(1)
-
-    # Write per-instance backend config outside the product repo.
-    instance_dir = tb.instance_dir_from_env() or Path.home() / ".shifter" / f"{config.env}-{bucket_name}"
-    backend_dir = tb.resolve_instance_backend_dir(
-        env=config.env,
-        bucket=bucket_name,
-        instance_dir=instance_dir,
-    )
-    backend_config_file = tb.backend_config_for_stack(backend_dir, "global/iam", config.env)
-    if not dry_run:
-        tb.write_instance_backend_configs(
-            backend_dir=backend_dir,
-            env=config.env,
-            bucket=bucket_name,
-            region=config.region,
-        )
-        info("Using rendered instance backend config for global/iam")
-        success(f"Backend config ready for {config.env}")
-    else:
-        info("[DRY-RUN] Would write instance backend config outside the product repo")
-
-    original_dir = os.getcwd()
-    os.chdir(iam_tf_dir)
-
-    # Set AWS_PROFILE for Terraform (only affects this process and its children)
-    os.environ["AWS_PROFILE"] = profile
-
-    try:
-        info("Running terraform init with instance backend config")
-        run_cmd(
-            ["terraform", "init", "-reconfigure", f"-backend-config={backend_config_file}"],
-            dry_run=dry_run,
-        )
-
-        # Terraform apply with auto-approve (we already confirmed at start)
-        info(f"Running terraform apply for {config.env}...")
-        tfvars_file = f"{config.env}.tfvars"
-
-        if not dry_run:
-            apply_result = run_cmd(
-                ["terraform", "apply", "-auto-approve", f"-var-file={tfvars_file}"],
-                dry_run=dry_run,
-                check=False,
-            )
-            if apply_result and apply_result.returncode != 0:
-                error("Terraform apply failed for IAM module")
-                error("The bootstrap role is still active - you can retry manually")
-                sys.exit(1)
-        else:
-            run_cmd(["terraform", "plan", f"-var-file={tfvars_file}"], dry_run=dry_run)
-
-        # Get role ARN from terraform output
-        if not dry_run:
-            result = subprocess.run(  # nosec B603 B607
-                ["terraform", "output", "-raw", "github_actions_role_arn"],
-                capture_output=True,
-                text=True,
-            )
-            if result.returncode != 0:
-                error("Failed to get role ARN from Terraform output")
-                sys.exit(1)
-            role_arn = result.stdout.strip()
-            success(f"Production IAM role created: {role_arn}")
-        else:
-            role_arn = f"arn:aws:iam::{account_id}:role/{config.role_name}"
-
-    finally:
-        os.chdir(original_dir)
+    role_arn = _run_iam_terraform(config, bucket_name, account_id, profile, dry_run)
 
     # Cleanup: Delete the bootstrap role
     header("Cleanup: Removing Bootstrap Role")
@@ -3797,6 +3833,41 @@ def _ensure_tf_infra_state_bucket_secret(bucket_name: str, github_org: str, gith
     success("TF_INFRA_STATE_BUCKET configured")
 
 
+def _configure_github_secrets_via_gh(
+    secret_name: str, role_arn: str, bucket_name: str, github_org: str, github_repo: str
+) -> bool:
+    """Try to set the GitHub secrets via the gh CLI.
+
+    Returns True if the secrets were fully handled (caller should return); False if
+    the user chose the manual path and the caller should print the manual steps.
+    """
+    print(f"\n{Colors.GREEN}✓ GitHub CLI detected{Colors.END}")
+
+    secret_exists = github_secret_exists(secret_name, github_org, github_repo)
+
+    if secret_exists:
+        warn(f"Secret '{secret_name}' already exists in {github_org}/{github_repo}")
+        choice = confirm_or_manual("Overwrite existing secret?")
+    else:
+        choice = confirm_or_manual("Automatically set these secrets using gh CLI?")
+
+    if choice == "yes":
+        info(f"Running: gh secret set {secret_name} --repo {github_org}/{github_repo}")
+        _gh_secret_set_or_exit(secret_name, role_arn, github_org, github_repo)
+        _gh_secret_set_or_exit("TF_INFRA_STATE_BUCKET", bucket_name, github_org, github_repo)
+        success("GitHub secrets configured via gh CLI")
+        return True
+    if choice == "no":
+        if secret_exists:
+            info("Keeping existing secret value")
+            _ensure_tf_infra_state_bucket_secret(bucket_name, github_org, github_repo)
+            return True
+        error("GitHub secret is required for CI/CD to authenticate with AWS")
+        error("Without this, GitHub Actions cannot deploy infrastructure")
+        sys.exit(1)
+    return False
+
+
 def walkthrough_github_secrets(bootstrap_result: dict, dry_run: bool = False) -> None:
     """Walk user through setting GitHub secrets."""
     header("Configure GitHub Secrets")
@@ -3815,46 +3886,26 @@ def walkthrough_github_secrets(bootstrap_result: dict, dry_run: bool = False) ->
     print(f"\n  {Colors.BOLD}Name:{Colors.END}  TF_INFRA_STATE_BUCKET")
     print(f"  {Colors.BOLD}Value:{Colors.END} (same S3 state bucket shown above)")
 
-    if not dry_run:
-        gh_available = subprocess.run(["which", "gh"], capture_output=True).returncode == 0  # nosec B603 B607
+    if dry_run:
+        return
 
-        if gh_available:
-            print(f"\n{Colors.GREEN}✓ GitHub CLI detected{Colors.END}")
+    gh_available = subprocess.run(["which", "gh"], capture_output=True).returncode == 0  # nosec B603 B607
 
-            secret_exists = github_secret_exists(secret_name, github_org, github_repo)
+    if gh_available:
+        if _configure_github_secrets_via_gh(secret_name, role_arn, bucket_name, github_org, github_repo):
+            return
+    else:
+        warn("GitHub CLI (gh) not found - using manual method")
 
-            if secret_exists:
-                warn(f"Secret '{secret_name}' already exists in {github_org}/{github_repo}")
-                choice = confirm_or_manual("Overwrite existing secret?")
-            else:
-                choice = confirm_or_manual("Automatically set these secrets using gh CLI?")
-
-            if choice == "yes":
-                info(f"Running: gh secret set {secret_name} --repo {github_org}/{github_repo}")
-                _gh_secret_set_or_exit(secret_name, role_arn, github_org, github_repo)
-                _gh_secret_set_or_exit("TF_INFRA_STATE_BUCKET", bucket_name, github_org, github_repo)
-                success("GitHub secrets configured via gh CLI")
-                return
-            elif choice == "no":
-                if secret_exists:
-                    info("Keeping existing secret value")
-                    _ensure_tf_infra_state_bucket_secret(bucket_name, github_org, github_repo)
-                    return
-                error("GitHub secret is required for CI/CD to authenticate with AWS")
-                error("Without this, GitHub Actions cannot deploy infrastructure")
-                sys.exit(1)
-        else:
-            warn("GitHub CLI (gh) not found - using manual method")
-
-        print(f"\n{Colors.BOLD}Manual Steps:{Colors.END}")
-        print(f"  1. Go to: https://github.com/{github_org}/{github_repo}/settings/secrets/actions")
-        print("  2. Click 'New repository secret'")
-        print(f"  3. Name: {secret_name}")
-        print(f"  4. Value: {role_arn}")
-        print("  5. Click 'Add secret'")
-        print("  6. Add another secret named TF_INFRA_STATE_BUCKET with the state bucket value above")
-        wait_for_user("Add the GitHub secrets, then press Enter to continue.")
-        success("GitHub secrets configured")
+    print(f"\n{Colors.BOLD}Manual Steps:{Colors.END}")
+    print(f"  1. Go to: https://github.com/{github_org}/{github_repo}/settings/secrets/actions")
+    print("  2. Click 'New repository secret'")
+    print(f"  3. Name: {secret_name}")
+    print(f"  4. Value: {role_arn}")
+    print("  5. Click 'Add secret'")
+    print("  6. Add another secret named TF_INFRA_STATE_BUCKET with the state bucket value above")
+    wait_for_user("Add the GitHub secrets, then press Enter to continue.")
+    success("GitHub secrets configured")
 
 
 _COMPONENT_REQUIREMENT_REASON = {
@@ -4263,6 +4314,11 @@ Estimated time: 30-45 minutes (mostly waiting for RDS and ACM)
     walkthrough_final_steps(env)
 
 
+def _missing_dependency_lines(commands: dict[str, str]) -> list[str]:
+    """Return formatted '  - cmd: desc' lines for each command not found on PATH."""
+    return [f"  - {cmd}: {desc}" for cmd, desc in commands.items() if not shutil.which(cmd)]
+
+
 def check_dependencies(command: str | None = None):
     """Check command-specific dependencies before starting."""
     required = {"git": "Git - https://git-scm.com/downloads"}
@@ -4289,16 +4345,8 @@ def check_dependencies(command: str | None = None):
 
     optional = {"gh": "GitHub CLI - https://cli.github.com/ (recommended for automating GitHub secrets)"}
 
-    missing_required = []
-    missing_optional = []
-
-    for cmd, desc in required.items():
-        if not shutil.which(cmd):
-            missing_required.append(f"  - {cmd}: {desc}")
-
-    for cmd, desc in optional.items():
-        if not shutil.which(cmd):
-            missing_optional.append(f"  - {cmd}: {desc}")
+    missing_required = _missing_dependency_lines(required)
+    missing_optional = _missing_dependency_lines(optional)
 
     if missing_required:
         error("Missing required dependencies:")
@@ -4341,20 +4389,20 @@ Examples:
     # Bootstrap command
     bootstrap_parser = subparsers.add_parser("bootstrap", help="Bootstrap AWS account (S3, DynamoDB, IAM)")
     bootstrap_parser.add_argument("--env", required=True, choices=AWS_ENVIRONMENTS, help="Environment")
-    bootstrap_parser.add_argument("--profile", required=True, help="AWS CLI profile name")
-    bootstrap_parser.add_argument("--dry-run", action="store_true", help="Show what would be done")
+    bootstrap_parser.add_argument("--profile", required=True, help=HELP_AWS_PROFILE)
+    bootstrap_parser.add_argument("--dry-run", action="store_true", help=HELP_DRY_RUN)
 
     # Terraform command
     tf_parser = subparsers.add_parser("terraform", help="Deploy Terraform infrastructure")
     tf_parser.add_argument("--env", required=True, choices=AWS_ENVIRONMENTS, help="Environment")
-    tf_parser.add_argument("--profile", required=True, help="AWS CLI profile name")
-    tf_parser.add_argument("--dry-run", action="store_true", help="Show what would be done")
+    tf_parser.add_argument("--profile", required=True, help=HELP_AWS_PROFILE)
+    tf_parser.add_argument("--dry-run", action="store_true", help=HELP_DRY_RUN)
 
     # Full command
     full_parser = subparsers.add_parser("full", help="Full interactive deployment (bootstrap + config + terraform)")
     full_parser.add_argument("--env", required=True, choices=AWS_ENVIRONMENTS, help="Environment")
-    full_parser.add_argument("--profile", required=True, help="AWS CLI profile name")
-    full_parser.add_argument("--dry-run", action="store_true", help="Show what would be done")
+    full_parser.add_argument("--profile", required=True, help=HELP_AWS_PROFILE)
+    full_parser.add_argument("--dry-run", action="store_true", help=HELP_DRY_RUN)
 
     gdc_parser = subparsers.add_parser(
         "gdc-bootstrap",
@@ -4377,7 +4425,7 @@ Examples:
             "$SHIFTER_CONFIG or ./shifter.yaml; a missing config fails the deploy."
         ),
     )
-    gdc_parser.add_argument("--dry-run", action="store_true", help="Show what would be done")
+    gdc_parser.add_argument("--dry-run", action="store_true", help=HELP_DRY_RUN)
 
     args = parser.parse_args()
     check_dependencies(args.command)

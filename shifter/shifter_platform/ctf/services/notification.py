@@ -14,6 +14,10 @@ from ctf.exceptions import CTFNotFoundError
 from ctf.models import CTFEvent, CTFNotification, CTFParticipant
 from shared.log_sanitize import safe_log
 
+# SonarCloud S1192: extracted duplicated string literals.
+NO_ORGANIZER_EMAIL_LOG = "Cannot notify: event %s has no organizer email"
+EVENT_NOT_FOUND_LOG = "Cannot notify: event %s not found"
+
 if TYPE_CHECKING:
     from datetime import datetime
 
@@ -422,12 +426,12 @@ def notify_organizer_provision_failure(
     try:
         event = CTFEvent.objects.get(pk=event_id)
     except CTFEvent.DoesNotExist:
-        logger.error("Cannot notify: event %s not found", event_id)
+        logger.error(EVENT_NOT_FOUND_LOG, event_id)
         return
 
     organizer = event.created_by
     if not organizer or not organizer.email:
-        logger.warning("Cannot notify: event %s has no organizer email", event_id)
+        logger.warning(NO_ORGANIZER_EMAIL_LOG, event_id)
         return
 
     html_content, text_content, custom_subject = _render_email(
@@ -471,12 +475,12 @@ def notify_organizer_event_start(event_id: UUID) -> None:
     try:
         event = CTFEvent.objects.get(pk=event_id)
     except CTFEvent.DoesNotExist:
-        logger.error("Cannot notify: event %s not found", event_id)
+        logger.error(EVENT_NOT_FOUND_LOG, event_id)
         return
 
     organizer = event.created_by
     if not organizer or not organizer.email:
-        logger.warning("Cannot notify: event %s has no organizer email", event_id)
+        logger.warning(NO_ORGANIZER_EMAIL_LOG, event_id)
         return
 
     html_content, text_content, custom_subject = _render_email(
@@ -516,12 +520,12 @@ def notify_organizer_event_end(event_id: UUID) -> None:
     try:
         event = CTFEvent.objects.get(pk=event_id)
     except CTFEvent.DoesNotExist:
-        logger.error("Cannot notify: event %s not found", event_id)
+        logger.error(EVENT_NOT_FOUND_LOG, event_id)
         return
 
     organizer = event.created_by
     if not organizer or not organizer.email:
-        logger.warning("Cannot notify: event %s has no organizer email", event_id)
+        logger.warning(NO_ORGANIZER_EMAIL_LOG, event_id)
         return
 
     html_content, text_content, custom_subject = _render_email(

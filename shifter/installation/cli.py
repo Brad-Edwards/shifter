@@ -116,7 +116,11 @@ def _emit_rendered(rendered: str, output: str | None, backend: str) -> int:
     if output is None:
         sys.stdout.write(rendered)
         return 0
-    output_path = Path(output)
+    if "\x00" in output:
+        print(f"{output!r}: output path contains a NUL byte", file=sys.stderr)
+        return 1
+    # Normalize the operator-supplied output path (collapsing any `..`) before writing.
+    output_path = Path(output).resolve()
     try:
         output_path.write_text(rendered, encoding="utf-8")
     except OSError as exc:

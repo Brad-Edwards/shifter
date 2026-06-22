@@ -23,6 +23,9 @@ from shared.cloud import PROVISIONER_CONTAINER_NAME, get_task_runner
 from shared.cloud.exceptions import CloudTaskError
 from shared.enums import ResourceType
 
+# SonarCloud S1192: extracted duplicated string literals.
+REQUEST_ID_NONE_MSG = "request_id cannot be None"
+
 if TYPE_CHECKING:
     from uuid import UUID
 
@@ -180,7 +183,7 @@ def _run_local_provisioner(command: list[str]) -> str | None:
         return f"local-{process.pid}"
 
     except Exception as e:
-        logger.error("Failed to start local provisioner: %s", e)
+        logger.exception("Failed to start local provisioner: %s", e)
         raise RuntimeError(f"Local provisioner failed: {e}") from e
 
 
@@ -234,15 +237,22 @@ def _get_engine_task_config() -> tuple[str, str, dict[str, Any] | None] | None:
     )
 
     if provider == "gcp":
-        if not all([cluster, task_definition]):
-            logger.warning(
-                "GCP task configuration incomplete, skipping task run. "
-                "Set ENGINE_TASK_NAMESPACE/ENGINE_TASK_CLUSTER and "
-                "ENGINE_TASK_IMAGE/ENGINE_TASK_DEFINITION in settings."
-            )
-            return None
-        return cluster, task_definition, None
+        return _gcp_engine_task_config(cluster, task_definition)
+    return _aws_engine_task_config(cluster, task_definition)
 
+
+def _gcp_engine_task_config(cluster: str, task_definition: str) -> tuple[str, str, dict[str, Any] | None] | None:
+    if not all([cluster, task_definition]):
+        logger.warning(
+            "GCP task configuration incomplete, skipping task run. "
+            "Set ENGINE_TASK_NAMESPACE/ENGINE_TASK_CLUSTER and "
+            "ENGINE_TASK_IMAGE/ENGINE_TASK_DEFINITION in settings."
+        )
+        return None
+    return cluster, task_definition, None
+
+
+def _aws_engine_task_config(cluster: str, task_definition: str) -> tuple[str, str, dict[str, Any] | None] | None:
     security_group_id: str = (
         getattr(settings, "ENGINE_TASK_NETWORK_SECURITY_GROUP_ID", None)
         or getattr(settings, "ENGINE_ECS_SECURITY_GROUP_ID", None)
@@ -277,6 +287,22 @@ def _get_engine_task_config() -> tuple[str, str, dict[str, Any] | None] | None:
     return cluster, task_definition, network_config
 
 
+def _validate_start_ecs_task_args(range_id: int, user_id: int, command: str) -> None:
+    """Validate _start_ecs_task inputs, raising TypeError/ValueError on bad input."""
+    if range_id is None or not isinstance(range_id, int):
+        raise TypeError("range_id must be an integer")
+    if user_id is None or not isinstance(user_id, int):
+        raise TypeError("user_id must be an integer")
+    if range_id < 0:
+        raise ValueError("range_id must be non-negative")
+    if user_id < 0:
+        raise ValueError("user_id must be non-negative")
+    if command is None or not isinstance(command, str):
+        raise TypeError("command must be a string")
+    if not command.strip():
+        raise ValueError("command must be a non-empty string")
+
+
 def _start_ecs_task(range_id: int, user_id: int, command: str) -> str | None:
     """Start an ECS Fargate task for provisioning operations.
 
@@ -293,18 +319,7 @@ def _start_ecs_task(range_id: int, user_id: int, command: str) -> str | None:
         ValueError: If range_id is negative or user_id is negative or command is empty
         CloudTaskError: If ECS task fails to start
     """
-    if range_id is None or not isinstance(range_id, int):
-        raise TypeError("range_id must be an integer")
-    if user_id is None or not isinstance(user_id, int):
-        raise TypeError("user_id must be an integer")
-    if range_id < 0:
-        raise ValueError("range_id must be non-negative")
-    if user_id < 0:
-        raise ValueError("user_id must be non-negative")
-    if command is None or not isinstance(command, str):
-        raise TypeError("command must be a string")
-    if not command.strip():
-        raise ValueError("command must be a non-empty string")
+    _validate_start_ecs_task_args(range_id, user_id, command)
 
     task_config = _get_engine_task_config()
     if task_config is None:
@@ -341,7 +356,7 @@ def _start_ecs_task(range_id: int, user_id: int, command: str) -> str | None:
         )
         return task_arn
     except CloudTaskError as e:
-        logger.error("Failed to start ECS task for range_id=%s: %s", range_id, e)
+        logger.exception("Failed to start ECS task for range_id=%s: %s", range_id, e)
         raise
 
 
@@ -406,7 +421,7 @@ def _start_range_ecs_task(request_id: UUID, command: str) -> str | None:
     from uuid import UUID as UUIDType
 
     if request_id is None:
-        raise TypeError("request_id cannot be None")
+        raise TypeError(REQUEST_ID_NONE_MSG)
     if not isinstance(request_id, UUIDType):
         raise TypeError(f"request_id must be a UUID, got {type(request_id).__name__}")
     valid_commands = ("provision", "destroy", "pause", "resume")
@@ -445,7 +460,7 @@ def _start_range_ecs_task(request_id: UUID, command: str) -> str | None:
         logger.info("Started Range ECS task: request_id=%s task_arn=%s", request_id, task_arn)
         return task_arn
     except CloudTaskError as e:
-        logger.error("Failed to start Range ECS task for request_id=%s: %s", request_id, e)
+        logger.exception("Failed to start Range ECS task for request_id=%s: %s", request_id, e)
         raise
 
 
@@ -499,7 +514,7 @@ def start_range_operation(request_id: UUID, operation: str) -> str | None:
     from uuid import UUID as UUIDType
 
     if request_id is None:
-        raise TypeError("request_id cannot be None")
+        raise TypeError(REQUEST_ID_NONE_MSG)
     if not isinstance(request_id, UUIDType):
         raise TypeError(f"request_id must be a UUID, got {type(request_id).__name__}")
     if operation not in ("pause", "resume"):
@@ -526,7 +541,7 @@ def _start_ngfw_ecs_task(request_id: UUID, command: list[str]) -> str | None:
     from uuid import UUID
 
     if request_id is None:
-        raise TypeError("request_id cannot be None")
+        raise TypeError(REQUEST_ID_NONE_MSG)
     if not isinstance(request_id, UUID):
         raise TypeError(f"request_id must be a UUID, got {type(request_id).__name__}")
     if command is None or not isinstance(command, list):
@@ -564,7 +579,7 @@ def _start_ngfw_ecs_task(request_id: UUID, command: list[str]) -> str | None:
         logger.info("Started NGFW ECS task: request_id=%s task_arn=%s", request_id, task_arn)
         return task_arn
     except CloudTaskError as e:
-        logger.error("Failed to start NGFW ECS task for request_id=%s: %s", request_id, e)
+        logger.exception("Failed to start NGFW ECS task for request_id=%s: %s", request_id, e)
         raise
 
 
@@ -622,7 +637,7 @@ def start_ngfw_operation(request_id: UUID, operation: str) -> str | None:
     from uuid import UUID
 
     if request_id is None:
-        raise TypeError("request_id cannot be None")
+        raise TypeError(REQUEST_ID_NONE_MSG)
     if not isinstance(request_id, UUID):
         raise TypeError(f"request_id must be a UUID, got {type(request_id).__name__}")
     if operation not in ("start", "stop"):
@@ -663,5 +678,5 @@ def get_task_status(task_arn: str) -> dict | None:
             "stopped_reason": result.get("stopped_reason"),
         }
     except CloudTaskError as e:
-        logger.error("Failed to get task status: %s", e)
+        logger.exception("Failed to get task status: %s", e)
         return None

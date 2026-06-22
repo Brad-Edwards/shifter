@@ -4,6 +4,10 @@ from rest_framework import serializers
 
 from risk_register.models import APIKey, AuditLog, Comment, Risk, StrideCategory
 
+# SonarCloud S1192: extracted duplicated string literals.
+LIKELIHOOD_RANGE_MSG = "Likelihood score must be between 1 and 5"
+IMPACT_RANGE_MSG = "Impact score must be between 1 and 5"
+
 
 class RiskSerializer(serializers.ModelSerializer):
     """Serializer for Risk model."""
@@ -38,13 +42,13 @@ class RiskSerializer(serializers.ModelSerializer):
     def validate_likelihood_score(self, value):
         """Validate likelihood score is between 1 and 5."""
         if value is not None and (value < 1 or value > 5):
-            raise serializers.ValidationError("Likelihood score must be between 1 and 5")
+            raise serializers.ValidationError(LIKELIHOOD_RANGE_MSG)
         return value
 
     def validate_impact_score(self, value):
         """Validate impact score is between 1 and 5."""
         if value is not None and (value < 1 or value > 5):
-            raise serializers.ValidationError("Impact score must be between 1 and 5")
+            raise serializers.ValidationError(IMPACT_RANGE_MSG)
         return value
 
     def validate_stride_categories(self, value):
@@ -76,12 +80,12 @@ class RiskCreateSerializer(serializers.ModelSerializer):
 
     def validate_likelihood_score(self, value):
         if value is not None and (value < 1 or value > 5):
-            raise serializers.ValidationError("Likelihood score must be between 1 and 5")
+            raise serializers.ValidationError(LIKELIHOOD_RANGE_MSG)
         return value
 
     def validate_impact_score(self, value):
         if value is not None and (value < 1 or value > 5):
-            raise serializers.ValidationError("Impact score must be between 1 and 5")
+            raise serializers.ValidationError(IMPACT_RANGE_MSG)
         return value
 
 
@@ -106,12 +110,12 @@ class RiskUpdateSerializer(serializers.ModelSerializer):
 
     def validate_likelihood_score(self, value):
         if value is not None and (value < 1 or value > 5):
-            raise serializers.ValidationError("Likelihood score must be between 1 and 5")
+            raise serializers.ValidationError(LIKELIHOOD_RANGE_MSG)
         return value
 
     def validate_impact_score(self, value):
         if value is not None and (value < 1 or value > 5):
-            raise serializers.ValidationError("Impact score must be between 1 and 5")
+            raise serializers.ValidationError(IMPACT_RANGE_MSG)
         return value
 
 

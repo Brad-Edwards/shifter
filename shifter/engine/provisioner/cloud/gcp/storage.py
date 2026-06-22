@@ -37,7 +37,7 @@ class GCPObjectStorage:
                 method="GET",
             )
         except Exception as e:
-            logger.error("generate_presigned_download_url: failed bucket=%s key=%s error=%s", bucket, key, e)
+            logger.exception("generate_presigned_download_url: failed bucket=%s key=%s error=%s", bucket, key, e)
             raise CloudStorageError(f"Failed to generate GCS download URL: {e}") from e
 
     def object_exists(self, bucket: str, key: str) -> bool:
@@ -46,7 +46,7 @@ class GCPObjectStorage:
             client = self._get_client()
             return client.bucket(bucket).blob(key).exists(client)
         except Exception as e:
-            logger.error("object_exists: failed bucket=%s key=%s error=%s", bucket, key, e)
+            logger.exception("object_exists: failed bucket=%s key=%s error=%s", bucket, key, e)
             raise CloudStorageError(f"Failed to check GCS object existence: {e}") from e
 
     def delete_object(self, bucket: str, key: str) -> None:
@@ -55,5 +55,5 @@ class GCPObjectStorage:
             client = self._get_client()
             client.bucket(bucket).blob(key).delete()
         except Exception as e:
-            logger.error("delete_object: failed bucket=%s key=%s error=%s", bucket, key, e)
+            logger.exception("delete_object: failed bucket=%s key=%s error=%s", bucket, key, e)
             raise CloudStorageError(f"Failed to delete GCS object: {e}") from e

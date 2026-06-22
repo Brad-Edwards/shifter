@@ -95,21 +95,29 @@ class IsOwnerOrAdmin(AuditedPermissionMixin, permissions.BasePermission):
     For API keys, allow access to objects they created.
     """
 
+    @staticmethod
+    def _is_admin(request) -> bool:
+        return bool(
+            request.user and request.user.is_authenticated and (request.user.is_staff or request.user.is_superuser)
+        )
+
+    @staticmethod
+    def _owns_via_apikey(request, obj) -> bool:
+        return bool(
+            isinstance(request.auth, APIKey) and hasattr(obj, "author_apikey") and obj.author_apikey == request.auth
+        )
+
+    @staticmethod
+    def _owns_via_user(request, obj) -> bool:
+        if not (request.user and request.user.is_authenticated):
+            return False
+        if hasattr(obj, "author_user") and obj.author_user == request.user:
+            return True
+        return bool(hasattr(obj, "created_by") and obj.created_by == request.user)
+
     def has_object_permission(self, request, view, obj):
-        # Admins can access anything
-        if request.user and request.user.is_authenticated and (request.user.is_staff or request.user.is_superuser):
+        if self._is_admin(request) or self._owns_via_apikey(request, obj) or self._owns_via_user(request, obj):
             return True
-
-        # Check ownership for API keys
-        if isinstance(request.auth, APIKey) and hasattr(obj, "author_apikey") and obj.author_apikey == request.auth:
-            return True
-
-        # Check ownership for users
-        if request.user and request.user.is_authenticated:
-            if hasattr(obj, "author_user") and obj.author_user == request.user:
-                return True
-            if hasattr(obj, "created_by") and obj.created_by == request.user:
-                return True
 
         # Log access denied
         obj_name = type(obj).__name__
