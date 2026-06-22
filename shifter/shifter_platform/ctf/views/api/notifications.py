@@ -201,36 +201,37 @@ def _handle_delete_email_template(event: CTFEvent, notification_type: str) -> Js
     return JsonResponse({"status": "reverted_to_default"})
 
 
-def _email_body_error(label: str, source: str) -> str | None:
+def _email_body_error(label: str, source: str, allowed: frozenset[str]) -> str | None:
     """Return a validation error message for one email-template body, or None.
 
     Single exit point keeps `_validate_template_bodies` within the
     returns-per-function limit (python:S1142).
     """
-    error = None
+    from ctf.services.email_template import find_template_violations
+
     if not source:
-        error = "html_body and text_body are required"
-    elif "{%" in source or "%}" in source:
-        error = f"Template tags are not allowed in {label}; use {{{{ variable }}}} placeholders only."
-    elif source.count("{{") != source.count("}}"):
-        error = f"Unbalanced placeholders in {label}."
-    return error
+        return "html_body and text_body are required"
+    violations = find_template_violations(source, allowed)
+    if violations:
+        return f"Invalid template syntax in {label}: {violations[0]}"
+    return None
 
 
-def _validate_template_bodies(html_body: str, text_body: str) -> JsonResponse | None:
+def _validate_template_bodies(html_body: str, text_body: str, notification_type: str) -> JsonResponse | None:
     """Validate the two organizer email-template bodies; return a 400 or None.
 
-    Organizer templates are restricted to plain text with ``{{ variable }}``
-    placeholders; Django template tags / blocks (``{% ... %}``) are rejected so
-    untrusted template *logic* can never be stored and later rendered
-    (CWE-1336 / py:template-injection). The request body is NOT compiled into a
-    Django ``Template`` here; the stored bodies are substituted by the existing
-    template engine at send time (ctf/services/notification.py). Full
-    render-side hardening (placeholder-only substitution, no attribute
-    traversal) is tracked in #1095.
+    Organizer templates are restricted to the flat ``{{ name }}`` placeholder
+    grammar over the per-notification-type scalar allowlist enforced at render
+    time (``ctf.services.email_template``). Request input is never compiled into
+    a Django ``Template``; attribute traversal, filters, tags, comments, and
+    unknown placeholders are rejected so untrusted template *logic* can never be
+    stored and later rendered (CWE-1336, issue #1095).
     """
+    from ctf.services.email_template import allowed_placeholders
+
+    allowed = allowed_placeholders(notification_type)
     for label, source in (("html_body", html_body), ("text_body", text_body)):
-        error = _email_body_error(label, source)
+        error = _email_body_error(label, source, allowed)
         if error:
             return JsonResponse({"error": error}, status=400)
     return None
@@ -248,7 +249,7 @@ def _handle_put_email_template(request: HttpRequest, event: CTFEvent, notificati
     except _BodyParseError as e:
         return _json_error(e, "Invalid notification request.", 400)
 
-    syntax_error = _validate_template_bodies(html_body, text_body)
+    syntax_error = _validate_template_bodies(html_body, text_body, notification_type)
     if syntax_error is not None:
         return syntax_error
 
