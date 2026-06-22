@@ -12,7 +12,10 @@ import pytest
 
 from cyberscript.channels import groups
 from cyberscript.enums import ResourceStatus
+from cyberscript.schemas.range import AgentDetails, InstanceSpec, RangeSpec
+from cyberscript.schemas.subnet import SubnetSpec
 from cyberscript import wire_constants as event_types
+from cyberscript import wire_spec_keys as spec_keys
 
 
 class TestResourceStatusCanary:
@@ -67,3 +70,23 @@ class TestChannelGroupCanary:
         assert name == expected
         assert len(name) <= 100
         assert ":" not in name
+
+
+class TestWireSpecKeysAlignWithSchemas:
+    def test_range_spec_schema_keys_are_model_fields(self) -> None:
+        assert spec_keys.RANGE_SPEC_TOP_LEVEL_SCHEMA_KEYS <= set(RangeSpec.model_fields)
+
+    def test_subnet_schema_keys_are_model_fields(self) -> None:
+        assert spec_keys.SUBNET_SCHEMA_KEYS <= set(SubnetSpec.model_fields)
+
+    def test_instance_schema_keys_are_model_fields(self) -> None:
+        assert spec_keys.INSTANCE_SCHEMA_KEYS <= set(InstanceSpec.model_fields)
+
+    def test_agent_schema_keys_are_model_fields(self) -> None:
+        assert spec_keys.AGENT_SCHEMA_KEYS <= set(AgentDetails.model_fields)
+
+    def test_runtime_keys_are_not_dsl_kernel_fields(self) -> None:
+        subnet_fields = set(SubnetSpec.model_fields)
+        instance_fields = set(InstanceSpec.model_fields)
+        assert not spec_keys.SUBNET_RUNTIME_KEYS & subnet_fields
+        assert not spec_keys.INSTANCE_RUNTIME_KEYS & instance_fields

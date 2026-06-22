@@ -270,19 +270,33 @@ def _handle_event_end(
     heartbeat: Heartbeat | None = None,
 ) -> None:
     """Complete the event, notify the organizer, and auto-clean ranges if enabled."""
+    from ctf.models import CTFEvent
     from ctf.services.event import complete_event
 
-    if complete_event(task.event):
+    event = CTFEvent.objects.get(pk=task.event_id)
+    now = timezone.now()
+    if now < event.event_end:
+        logger.info(
+            "Skipping stale EVENT_END task %s for event %s: event_end=%s now=%s",
+            task.pk,
+            event.pk,
+            event.event_end,
+            now,
+        )
+        task.mark_cancelled()
+        return
+
+    if complete_event(event):
         from ctf.services.notification import notify_organizer_event_end
 
-        notify_organizer_event_end(task.event_id)
+        notify_organizer_event_end(event.pk)
 
     # Also trigger cleanup if auto_cleanup is enabled
-    if task.event.auto_cleanup:
+    if event.auto_cleanup:
         from ctf.services.range import cleanup_event_ranges
 
-        result = cleanup_event_ranges(task.event_id)
-        logger.info("EVENT_END cleanup for event %s: %s", task.event_id, result)
+        result = cleanup_event_ranges(event.pk)
+        logger.info("EVENT_END cleanup for event %s: %s", event.pk, result)
 
 
 def _handle_send_reminder(

@@ -3296,21 +3296,12 @@ def api_participant_resend_invite(request: HttpRequest, participant_id: UUID) ->
 def api_range_status(request: HttpRequest) -> JsonResponse:
     """API: Get range status for current participant."""
     from ctf.exceptions import CTFNotFoundError
-    from ctf.models import CTFParticipant
+    from ctf.services import range as range_service
 
-    # Find participant for current user's active event
-    participant = (
-        CTFParticipant.objects.filter(
-            user=_get_user(request),
-        )
-        .order_by("-event__event_start")
-        .first()
-    )
+    participant = _get_active_participant(request)
 
     if not participant:
         return JsonResponse({"status": "not_assigned", "range_instance_id": None})
-
-    from ctf.services import range as range_service
 
     try:
         status = range_service.get_range_status(participant.pk)
