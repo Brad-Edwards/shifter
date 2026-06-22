@@ -1,6 +1,6 @@
 {# SPDX-FileCopyrightText: 2026 Palo Alto Networks, Inc. #}
 {# SPDX-License-Identifier: MIT #}
-{% load i18n %}
+{% load static i18n %}
 <!DOCTYPE html>
 <html lang="en">
     <head>
@@ -8,16 +8,14 @@
         <meta name="viewport" content="width=device-width, initial-scale=1">
         {# Defense in depth: never leak the address-bar fragment via outbound navigations. #}
         <meta name="referrer" content="no-referrer">
+        <link rel="icon" type="image/svg+xml" href="{% static 'images/favicon.svg' %}">
         <title>{% trans "Signing you in" %}</title>
     </head>
-    <body style="font-family: Arial, sans-serif;
-                 max-width: 600px;
-                 margin: 48px auto;
-                 text-align: center">
+    <body>
         <h2>
             {% trans "Signing you in…" %}
         </h2>
-        <p id="status">
+        <p id="ctf-register-status" data-exchange-url="{% url 'ctf:ctf_register_exchange' %}">
             {% trans "Validating your invitation…" %}
         </p>
         <noscript>
@@ -25,61 +23,6 @@
                 {% trans "JavaScript is required to complete sign-in. Please enable JavaScript and reload this page." %}
             </p>
         </noscript>
-        <script>
-            (function () {
-                "use strict";
-
-                function getCookie(name) {
-                    const value = "; " + document.cookie;
-                    const parts = value.split("; " + name + "=");
-                    if (parts.length === 2) {
-                        return parts.pop().split(";").shift();
-                    }
-                    return "";
-                }
-
-                function setStatus(message) {
-                    document.getElementById("status").textContent = message;
-                }
-
-                // The invite token rides in the URL fragment, which the browser
-                // never sends to the server. Read it, then immediately scrub it
-                // from the address bar / history so it cannot be copied, leaked
-                // via Referer, or restored from the back button.
-                const params = new URLSearchParams(window.location.hash.replace(/^#/, ""));
-                const token = params.get("token");
-                history.replaceState(null, "", window.location.pathname);
-
-                if (!token) {
-                    setStatus("Missing invite token.");
-                    return;
-                }
-
-                fetch("{% url 'ctf:ctf_register_exchange' %}", {
-                    method: "POST",
-                    credentials: "same-origin",
-                    headers: {
-                        "Content-Type": "application/json",
-                        "X-CSRFToken": getCookie("csrftoken")
-                    },
-                    body: JSON.stringify({ token: token })
-                })
-                    .then(function (response) {
-                        return response.json().then(function (data) {
-                            return { ok: response.ok, data: data };
-                        });
-                    })
-                    .then(function (result) {
-                        if (result.ok && result.data.redirect) {
-                            window.location.replace(result.data.redirect);
-                        } else {
-                            setStatus(result.data.error || "Unable to complete sign-in.");
-                        }
-                    })
-                    .catch(function () {
-                        setStatus("Unable to complete sign-in. Please try again.");
-                    });
-            })();
-        </script>
+        <script src="{% static 'js/ctf-register.js' %}" defer></script>
     </body>
 </html>
