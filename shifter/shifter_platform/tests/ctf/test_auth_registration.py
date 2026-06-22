@@ -16,8 +16,8 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 import pytest
-from django.http import HttpResponse
 from django.test import RequestFactory, override_settings
+from django.urls import reverse
 
 from shared.auth import (
     CTF_ORGANIZER_GROUP,
@@ -346,7 +346,7 @@ class TestInviteRateLimit:
 
     def test_rate_limit_allows_within_limit(self):
         """Requests within limit should succeed."""
-        from ctf.views import _check_invite_rate_limit
+        from ctf.views._access import _check_invite_rate_limit
 
         with patch("django.core.cache.cache") as mock_cache:
             mock_cache.incr.return_value = 1
@@ -354,7 +354,7 @@ class TestInviteRateLimit:
 
     def test_rate_limit_blocks_over_limit(self):
         """Requests over limit should be blocked."""
-        from ctf.views import _check_invite_rate_limit
+        from ctf.views._access import _check_invite_rate_limit
 
         with patch("django.core.cache.cache") as mock_cache:
             mock_cache.incr.return_value = 51
@@ -364,51 +364,23 @@ class TestInviteRateLimit:
 class TestCTFSidebar:
     """Test that CTF users get CTF-specific sidebar."""
 
-    @patch("ctf.views.render")
-    def test_participant_sees_ctf_sidebar(self, mock_render, request_factory, mock_participant_user):
-        """CTF participants should see CTF sidebar items.
+    @pytest.mark.django_db
+    def test_participant_sees_ctf_sidebar(self, client, ctf_participant, participant_user):
+        """A registered CTF participant can reach the participant dashboard.
 
-        Patches the participant-membership predicate (`is_active_participant`)
-        and the active-event participant resolver (`_get_active_participant`)
-        directly, since the cycle-4 cleanup centralised both.
+        Integration assertion (ADR-019): a real active CTFParticipant row makes
+        the real ``is_active_participant`` gate admit the user, and the view
+        renders for real — no first-party render/topology patches.
         """
-        from ctf.views import participant_dashboard
-
-        mock_render.return_value = HttpResponse("ok", status=200)
-
-        request = request_factory.get("/ctf/participant/dashboard/")
-        request.user = mock_participant_user
-
-        with (
-            patch("ctf.services.participant.is_active_participant", return_value=True),
-            patch("ctf.views._get_active_participant", return_value=None),
-        ):
-            response = participant_dashboard(request)
-
+        client.force_login(participant_user)
+        response = client.get(reverse("ctf:participant_dashboard"))
         assert response.status_code != 403
 
-    @patch("management.services.get_user_profile")
-    @patch("ctf.views.render")
-    def test_organizer_sees_ctf_admin_sidebar(
-        self, mock_render, mock_get_profile, request_factory, mock_organizer_user
-    ):
-        """CTF organizers should see CTF admin sidebar items."""
-        from ctf.views import admin_dashboard
-
-        mock_get_profile.return_value = MagicMock(active_ctf_event_id=None)
-        mock_render.return_value = HttpResponse("ok", status=200)
-
-        request = request_factory.get("/ctf/admin/")
-        request.user = mock_organizer_user
-
-        with patch("ctf.services.get_organizer_events") as mock_events:
-            mock_qs = MagicMock()
-            mock_qs.filter.return_value.count.return_value = 0
-            mock_qs.count.return_value = 0
-            mock_qs.__getitem__ = MagicMock(return_value=[])
-            mock_events.return_value = mock_qs
-            response = admin_dashboard(request)
-
+    @pytest.mark.django_db
+    def test_organizer_sees_ctf_admin_sidebar(self, client, organizer_user):
+        """A CTF organizer can reach the admin dashboard (real render)."""
+        client.force_login(organizer_user)
+        response = client.get(reverse("ctf:admin_dashboard"))
         assert response.status_code == 200
 
 
@@ -437,31 +409,23 @@ class TestDualRoles:
         assert role.is_ctf_organizer is True
         assert role.is_ctf_participant is True
 
-    @patch("management.services.get_user_profile")
-    @patch("ctf.views.render")
-    def test_dual_role_can_access_admin_views(self, mock_render, mock_get_profile, request_factory):
-        """User with both roles can access organizer views."""
-        from ctf.views import admin_dashboard
+    @pytest.mark.django_db
+    def test_dual_role_can_access_admin_views(self, client, django_user_model):
+        """A user holding both roles can access organizer views.
 
-        user = _make_mock_user(
-            email="dual@test.com",
-            groups={CTF_ORGANIZER_GROUP, CTF_PARTICIPANT_GROUP},
-        )
+        Integration assertion (ADR-019): a real user in both CTF groups reaches
+        the real admin dashboard through the client, instead of patching
+        first-party render/role topology.
+        """
+        from django.contrib.auth.models import Group
 
-        mock_get_profile.return_value = MagicMock(active_ctf_event_id=None)
-        mock_render.return_value = HttpResponse("ok", status=200)
+        user = django_user_model.objects.create_user(username="dual@test.com", email="dual@test.com")
+        for group_name in (CTF_ORGANIZER_GROUP, CTF_PARTICIPANT_GROUP):
+            group, _ = Group.objects.get_or_create(name=group_name)
+            user.groups.add(group)
 
-        request = request_factory.get("/ctf/admin/")
-        request.user = user
-
-        with patch("ctf.services.get_organizer_events") as mock_events:
-            mock_qs = MagicMock()
-            mock_qs.filter.return_value.count.return_value = 0
-            mock_qs.count.return_value = 0
-            mock_qs.__getitem__ = MagicMock(return_value=[])
-            mock_events.return_value = mock_qs
-            response = admin_dashboard(request)
-
+        client.force_login(user)
+        response = client.get(reverse("ctf:admin_dashboard"))
         assert response.status_code == 200
 
     @patch("management.services.set_active_ctf_event")
