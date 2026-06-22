@@ -487,6 +487,7 @@ module "ec2" {
   worker_health_alarm_actions = var.alarm_email != "" ? [aws_sns_topic.alerts.arn] : []
 
   aws_region            = var.aws_region
+  environment           = var.environment
   ec2_ami_id            = var.ec2_ami_id
   name_prefix           = local.name_prefix
   vpc_id                = module.vpc.vpc_id

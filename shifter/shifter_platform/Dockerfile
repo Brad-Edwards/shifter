@@ -106,12 +106,14 @@ RUN BUILD_DJANGO_SECRET_KEY="$(python -c 'import secrets; print(secrets.token_ur
     )" && \
     DJANGO_SECRET_KEY="$BUILD_DJANGO_SECRET_KEY" \
     FIELD_ENCRYPTION_KEY="$BUILD_FIELD_ENCRYPTION_KEY" \
+    ENVIRONMENT=build \
     OIDC_RP_CLIENT_ID=build-time-client \
     OIDC_AUTH_DOMAIN=https://auth.example.test \
     OIDC_ISSUER_URL=https://issuer.example.test \
     python manage.py compilemessages && \
     DJANGO_SECRET_KEY="$BUILD_DJANGO_SECRET_KEY" \
     FIELD_ENCRYPTION_KEY="$BUILD_FIELD_ENCRYPTION_KEY" \
+    ENVIRONMENT=build \
     OIDC_RP_CLIENT_ID=build-time-client \
     OIDC_AUTH_DOMAIN=https://auth.example.test \
     OIDC_ISSUER_URL=https://issuer.example.test \

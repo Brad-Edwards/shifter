@@ -12,10 +12,11 @@ name it always has.
 from __future__ import annotations
 
 import os
-import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
+
+load_dotenv()
 
 # Sub-module re-exports. Each sub-module declares ``__all__`` so the
 # wildcard surfaces only the names that are part of the public Django
@@ -23,18 +24,15 @@ from dotenv import load_dotenv
 # silence Sonar's S2208 (no-wildcard) guidance — for a settings module
 # the wildcard *is* the contract (Django's official split-settings
 # pattern uses ``from .base import *``).
-from config._channels import *  # NOSONAR
-from config._channels import _build_channel_layers
-from config._cloud import *  # NOSONAR
-from config._guacamole_settings import *  # NOSONAR
-from config._logging_config import *  # NOSONAR
-from config._terminal_assets import *  # NOSONAR
-
-load_dotenv()
+from config._channels import *  # NOSONAR  # noqa: E402
+from config._channels import _build_channel_layers  # noqa: E402
+from config._cloud import *  # NOSONAR  # noqa: E402
+from config._guacamole_settings import *  # NOSONAR  # noqa: E402
+from config._logging_config import *  # NOSONAR  # noqa: E402
+from config._runtime_env import AUTH_PROVIDER, IS_TEST_RUN, require_environment  # noqa: E402
+from config._terminal_assets import *  # NOSONAR  # noqa: E402
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-AUTH_PROVIDER = os.environ.get("AUTH_PROVIDER", "oidc").strip().lower()
-IS_TEST_RUN = os.environ.get("TESTING") == "1" or Path(sys.argv[0]).name == "pytest"
 
 
 def _env_bool(name: str, default: bool = False) -> bool:
@@ -482,7 +480,7 @@ REST_FRAMEWORK = {
 # Environment
 # ------------------------------------------------------------------------------
 
-ENVIRONMENT = os.environ.get("ENVIRONMENT", "production")
+ENVIRONMENT = require_environment()
 # Dev-auth admits the direct peer REMOTE_ADDR only (loopback + these CIDRs); Host is never trusted (SEC-3 #937).
 DEV_LOGIN_ALLOWED_CIDRS = _env_list("DEV_LOGIN_ALLOWED_CIDRS")
 # Trusted XFF proxy hops (single ALB -> 1); the audit source-IP resolver trusts that rightmost hop (SEC-4 #937).
