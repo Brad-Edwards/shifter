@@ -51,6 +51,8 @@ on:
         required: false
       TF_VARS_PROD_PORTAL:
         required: false
+      TF_INFRA_STATE_BUCKET:
+        required: true
 
 jobs:
   plan:
@@ -135,9 +137,24 @@ jobs:
             exit 1
           }
           printf 'engine_container_image_digest = "%s"\n' "$(resolve_engine_image_digest)" > zz-engine-image.auto.tfvars
-      - run: terraform init -backend-config=${{ inputs.environment }}.s3.tfbackend
+      - name: Render Terraform backend configs
+        working-directory: ${{ github.workspace }}
+        env:
+          TF_INFRA_STATE_BUCKET: ${{ secrets.TF_INFRA_STATE_BUCKET }}
+          AWS_REGION: us-east-2
+        run: |
+          set -euo pipefail
+          if [ -z "${TF_INFRA_STATE_BUCKET}" ]; then
+            echo "::error::TF_INFRA_STATE_BUCKET secret is required for AWS Terraform deploys"
+            exit 1
+          fi
+          python3 scripts/terraform/render_aws_backend_configs.py \
+            --env "${{ inputs.environment }}" \
+            --stack portal \
+            --github-env
+      - run: terraform init -backend-config="${SHIFTER_BACKEND_CONFIG_PATH}"
       - run: terraform validate
-      - run: terraform plan -no-color -lock-timeout=5m -out=tfplan && terraform show -no-color tfplan > plan.txt
+      - run: terraform plan -no-color -lock-timeout=5m -var-file="${SHIFTER_PORTAL_REMOTE_STATE_TFVARS}" -out=tfplan && terraform show -no-color tfplan > plan.txt
       - name: Comment PR
         if: github.event_name == 'pull_request'
         uses: actions/github-script@v7
@@ -300,13 +317,28 @@ jobs:
             exit 1
           }
           printf 'engine_container_image_digest = "%s"\n' "$(resolve_engine_image_digest)" > zz-engine-image.auto.tfvars
-      - run: terraform init -backend-config=${{ inputs.environment }}.s3.tfbackend
+      - name: Render Terraform backend configs
+        working-directory: ${{ github.workspace }}
+        env:
+          TF_INFRA_STATE_BUCKET: ${{ secrets.TF_INFRA_STATE_BUCKET }}
+          AWS_REGION: us-east-2
+        run: |
+          set -euo pipefail
+          if [ -z "${TF_INFRA_STATE_BUCKET}" ]; then
+            echo "::error::TF_INFRA_STATE_BUCKET secret is required for AWS Terraform deploys"
+            exit 1
+          fi
+          python3 scripts/terraform/render_aws_backend_configs.py \
+            --env "${{ inputs.environment }}" \
+            --stack portal \
+            --github-env
+      - run: terraform init -backend-config="${SHIFTER_BACKEND_CONFIG_PATH}"
       - name: Handle Service Discovery replacement
         env:
           ENV: ${{ inputs.environment }}
         run: |
           echo "Creating saved Terraform plan for Service Discovery check and apply..."
-          terraform plan -detailed-exitcode -lock-timeout=5m -out=tfplan 2>&1 || PLAN_EXIT=$?
+          terraform plan -detailed-exitcode -lock-timeout=5m -var-file="${SHIFTER_PORTAL_REMOTE_STATE_TFVARS}" -out=tfplan 2>&1 || PLAN_EXIT=$?
           if [ "${PLAN_EXIT:-0}" != "0" ] && [ "${PLAN_EXIT:-0}" != "2" ]; then
             echo "::error::Terraform plan failed with exit code ${PLAN_EXIT}"
             exit "${PLAN_EXIT}"
@@ -543,12 +575,28 @@ jobs:
           role-to-assume: ${{ inputs.is_dev && secrets.AWS_ROLE_ARN_DEV || secrets.AWS_ROLE_ARN }}
           aws-region: us-east-2
 
+      - name: Render Terraform backend configs
+        working-directory: ${{ github.workspace }}
+        env:
+          TF_INFRA_STATE_BUCKET: ${{ secrets.TF_INFRA_STATE_BUCKET }}
+          AWS_REGION: us-east-2
+        run: |
+          set -euo pipefail
+          if [ -z "${TF_INFRA_STATE_BUCKET}" ]; then
+            echo "::error::TF_INFRA_STATE_BUCKET secret is required for AWS Terraform deploys"
+            exit 1
+          fi
+          python3 scripts/terraform/render_aws_backend_configs.py \
+            --env "${ENV}" \
+            --stack portal \
+            --github-env
+
       - name: Get deployment config
         id: config
         run: |
           python3 "${GITHUB_WORKSPACE}/scripts/portal_deploy/portal_deploy.py" resolve-topology \
             --terraform-dir "${GITHUB_WORKSPACE}/platform/terraform/environments/${ENV}/portal" \
-            --backend-config "${ENV}.s3.tfbackend" \
+            --backend-config "${SHIFTER_BACKEND_CONFIG_PATH}" \
             --instance-tag "$INSTANCE_TAG" \
             --github-output "$GITHUB_OUTPUT"
 
