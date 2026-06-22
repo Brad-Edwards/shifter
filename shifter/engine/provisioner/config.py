@@ -719,7 +719,9 @@ def get_range_from_db(range_id: int) -> dict[str, Any]:
             raise ValueError(f"Range {range_id} not found")
 
         user_id = row[1]
-        range_config = row[3] or {}
+        from cyberscript.persisted_envelope import unwrap_persisted_spec
+
+        range_config = unwrap_persisted_spec(row[3] or {})
 
         # Check if scenario requires NGFW (ngfw: true in range_config)
         ngfw_enabled = range_config.get("ngfw", False)

@@ -518,10 +518,8 @@ class TestFlagServiceFunctions:
                 actor_id=challenge.event.created_by_id,
             )
 
-    def test_add_flag_rejects_active_event(self, ctf_event_active):
-        """add_flag rejects adding to non-modifiable event."""
-        from ctf.exceptions import CTFStateError
-
+    def test_add_flag_allows_active_event(self, ctf_event_active):
+        """add_flag allows live flag repair on active events."""
         challenge = CTFChallenge.objects.create(
             event=ctf_event_active,
             name="Active Flag Test",
@@ -531,8 +529,12 @@ class TestFlagServiceFunctions:
             difficulty=ChallengeDifficulty.EASY.value,
             flag_hash="placeholder",
         )
-        with pytest.raises(CTFStateError):
-            add_flag(challenge.pk, {"flag": "FLAG{test}"}, actor_id=challenge.event.created_by_id)
+        flag_obj = add_flag(
+            challenge.pk,
+            {"flag": "FLAG{test}"},
+            actor_id=challenge.event.created_by_id,
+        )
+        assert flag_obj.pk is not None
 
     def test_add_flag_requires_flag_value(self, ctf_event_draft):
         """add_flag requires non-empty flag value."""
@@ -570,10 +572,8 @@ class TestFlagServiceFunctions:
         assert not CTFFlag.objects.filter(pk=flag_id).exists()
         assert CTFFlag.all_objects.filter(pk=flag_id).exists()
 
-    def test_remove_flag_rejects_active_event(self, ctf_event_draft):
-        """remove_flag rejects removing from non-modifiable event."""
-        from ctf.exceptions import CTFStateError
-
+    def test_remove_flag_allows_active_event(self, ctf_event_draft):
+        """remove_flag allows live flag repair after event goes active."""
         challenge = CTFChallenge.objects.create(
             event=ctf_event_draft,
             name="Remove Active Flag Test",
@@ -585,12 +585,11 @@ class TestFlagServiceFunctions:
         )
         flag_obj = add_flag(challenge.pk, {"flag": "FLAG{test}"}, actor_id=challenge.event.created_by_id)
 
-        # Change event to active
         ctf_event_draft.status = EventStatus.ACTIVE.value
         ctf_event_draft.save()
 
-        with pytest.raises(CTFStateError):
-            remove_flag(flag_obj.pk, actor_id=flag_obj.challenge.event.created_by_id)
+        remove_flag(flag_obj.pk, actor_id=flag_obj.challenge.event.created_by_id)
+        assert not CTFFlag.objects.filter(pk=flag_obj.pk).exists()
 
     def test_remove_flag_not_found(self, db):
         """remove_flag raises CTFNotFoundError for missing flag."""

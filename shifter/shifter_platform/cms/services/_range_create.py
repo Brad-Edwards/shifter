@@ -11,6 +11,7 @@ from cms.models import AgentConfig, RangeInstance
 from risk_register.models import AuditLog
 from shared.constants import USER_CANNOT_BE_NONE, USER_MUST_BE_SAVED
 from shared.enums import ResourceStatus
+from shared.schemas.persistence import wrap_persisted_spec
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import User
@@ -185,7 +186,7 @@ def _persist_range_instance_record(
         scenario_id=scenario,
         user_id=user.id,
         agent=first_agent,
-        range_spec=range_spec.model_dump(mode="json"),
+        range_spec=wrap_persisted_spec("range_spec", range_spec),
     )
 
 
