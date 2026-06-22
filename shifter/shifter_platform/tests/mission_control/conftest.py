@@ -247,11 +247,11 @@ def _ensure_ngfw_catalog():
 
     InstanceType.objects.get_or_create(
         slug="panw-ngfw",
-        defaults={"name": "PAN-OS NGFW", "spec_class": "shared.schemas.range.InstanceSpec"},
+        defaults={"name": "PAN-OS NGFW", "spec_slug": "instance.panw-ngfw"},
     )
     AppType.objects.get_or_create(
         slug="panw-ngfw",
-        defaults={"name": "PANW NGFW", "spec_class": "shared.schemas.app.NGFWAppSpec"},
+        defaults={"name": "PANW NGFW", "spec_slug": "app.panw-ngfw"},
     )
 
 
@@ -308,10 +308,10 @@ def ngfw_credentials(db):
 
         dp_ct, _ = CredentialType.objects.get_or_create(
             slug="deployment_profile",
-            defaults={"name": "deployment_profile", "spec_class": "shared.schemas.DeploymentProfileSpec"},
+            defaults={"name": "deployment_profile", "spec_slug": "credential.deployment_profile"},
         )
         scm_ct, _ = CredentialType.objects.get_or_create(
-            slug="scm", defaults={"name": "scm", "spec_class": "shared.schemas.SCMCredentialSpec"}
+            slug="scm", defaults={"name": "scm", "spec_slug": "credential.scm"}
         )
         deployment_profile = Credential.objects.create(
             user=user, credential_type=dp_ct, name="dp-cred", data={"name": "dp", "authcode": "AUTH-XYZ"}

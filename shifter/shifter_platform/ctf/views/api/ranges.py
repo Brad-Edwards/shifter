@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from django.http import HttpRequest
 
 
+from ctf.views import _access
 from ctf.views._access import (
     _check_invite_rate_limit,
     _get_user,
@@ -35,21 +36,12 @@ logger = logging.getLogger(__name__)
 def api_range_status(request: HttpRequest) -> JsonResponse:
     """API: Get range status for current participant."""
     from ctf.exceptions import CTFNotFoundError
-    from ctf.models import CTFParticipant
+    from ctf.services import range as range_service
 
-    # Find participant for current user's active event
-    participant = (
-        CTFParticipant.objects.filter(
-            user=_get_user(request),
-        )
-        .order_by("-event__event_start")
-        .first()
-    )
+    participant = _access._get_active_participant(request)
 
     if not participant:
         return JsonResponse({"status": "not_assigned", "range_instance_id": None})
-
-    from ctf.services import range as range_service
 
     try:
         status = range_service.get_range_status(participant.pk)

@@ -13,20 +13,21 @@ from django.urls import reverse
 User = get_user_model()
 
 
-def test_environment_setting_default_is_fail_closed():
-    """settings.ENVIRONMENT must not default to 'development' (issue #761).
+def test_environment_setting_requires_explicit_value():
+    """settings.ENVIRONMENT must fail loud when unset (#948).
 
-    A 'development' default means any deployment that omits the ENVIRONMENT
-    env var silently activates /dev-login/. The safe default is fail-closed
-    ('production'), forcing dev environments to opt in explicitly.
+    Issue #761 blocked a silent ``development`` default; #948 blocks the
+    silent ``production`` default too.
     """
     settings_path = Path(__file__).resolve().parents[2] / "config" / "settings.py"
     source = settings_path.read_text()
-    forbidden = 'os.environ.get("ENVIRONMENT", "development")'
-    assert forbidden not in source, (
-        f"settings.ENVIRONMENT must not default to 'development' (regression of #761). "
-        f"Found {forbidden!r} in {settings_path}"
-    )
+    forbidden = [
+        'os.environ.get("ENVIRONMENT", "development")',
+        'os.environ.get("ENVIRONMENT", "production")',
+    ]
+    for pattern in forbidden:
+        assert pattern not in source, f"settings.ENVIRONMENT must not use silent default {pattern!r} in {settings_path}"
+    assert "require_environment()" in source
 
 
 @pytest.fixture

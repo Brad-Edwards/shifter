@@ -120,6 +120,84 @@ class AdrGuardTests(unittest.TestCase):
         self.assertEqual(filtered[0].rule_id, "ADR-002-R1")
 
 
+class LayerImportTighteningTests(unittest.TestCase):
+    """ADR-001-R1: private split-package submodules are not cross-layer seams."""
+
+    def _write_layer_repo(self, repo_root: Path, rel: str, body: str) -> None:
+        path = repo_root / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(body, encoding="utf-8")
+        cfg = repo_root / "scripts" / "check_layer_imports" / "layer_imports.yaml"
+        cfg.parent.mkdir(parents=True, exist_ok=True)
+        cfg.write_text(
+            "allowed:\n  mission_control:\n    - shared\n    - cms.services\n",
+            encoding="utf-8",
+        )
+
+    def test_is_import_allowed_rejects_private_submodule(self) -> None:
+        allowed = {"mission_control": ["cms.services"], "cms": ["engine.services"]}
+        self.assertFalse(ADR_GUARD.is_import_allowed("mission_control", "cms.services._range_pause", allowed))
+        self.assertFalse(ADR_GUARD.is_import_allowed("cms", "engine.services._lifecycle", allowed))
+        self.assertTrue(ADR_GUARD.is_import_allowed("mission_control", "cms.services", allowed))
+        self.assertTrue(ADR_GUARD.is_import_allowed("mission_control", "cms.services.public", allowed))
+
+    def test_is_import_allowed_shared_remains_open(self) -> None:
+        allowed = {"cms": ["shared"]}
+        self.assertTrue(ADR_GUARD.is_import_allowed("cms", "shared.enums._internal", allowed))
+
+    def test_check_layer_imports_flags_private_name_from_facade(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            rel = "shifter/shifter_platform/mission_control/views.py"
+            self._write_layer_repo(repo_root, rel, "from cms.services import _range_pause\n")
+
+            violations = ADR_GUARD.check_layer_imports(repo_root, [rel])
+
+            self.assertEqual(len(violations), 1)
+            self.assertEqual(violations[0].rule_id, "ADR-001-R1")
+            self.assertIn("cms.services._range_pause", violations[0].message)
+
+    def test_check_layer_imports_flags_aliased_private_name(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            rel = "shifter/shifter_platform/mission_control/views.py"
+            self._write_layer_repo(repo_root, rel, "from cms.services import _range_pause as rp\n")
+
+            violations = ADR_GUARD.check_layer_imports(repo_root, [rel])
+
+            self.assertTrue(any("cms.services._range_pause" in v.message for v in violations))
+
+    def test_check_layer_imports_flags_dotted_private_submodule(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            rel = "shifter/shifter_platform/mission_control/views.py"
+            self._write_layer_repo(repo_root, rel, "import cms.services._range_pause\n")
+
+            violations = ADR_GUARD.check_layer_imports(repo_root, [rel])
+
+            self.assertTrue(any("cms.services._range_pause" in v.message for v in violations))
+
+    def test_check_layer_imports_allows_public_facade_name(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            rel = "shifter/shifter_platform/mission_control/views.py"
+            self._write_layer_repo(repo_root, rel, "from cms.services import audit_log\n")
+
+            violations = ADR_GUARD.check_layer_imports(repo_root, [rel])
+
+            self.assertEqual(violations, [])
+
+    def test_check_layer_imports_ignores_same_layer_private_import(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            rel = "shifter/shifter_platform/cms/services/_range_pause.py"
+            self._write_layer_repo(repo_root, rel, "from cms.services import _range_lifecycle\n")
+
+            violations = ADR_GUARD.check_layer_imports(repo_root, [rel])
+
+            self.assertEqual(violations, [])
+
+
 class DeployWorkflowPlanScopeTests(unittest.TestCase):
     """Tests for the AWS platform plan trigger and lock-timeout guardrail."""
 

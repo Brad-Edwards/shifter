@@ -29,7 +29,7 @@ def _real_ct():
     """Get or create a real (saved) deployment-profile CredentialType."""
     ct, _ = CredentialType.objects.get_or_create(
         slug="deployment_profile",
-        defaults={"name": "Deployment Profile", "spec_class": "shared.schemas.DeploymentProfileSpec"},
+        defaults={"name": "Deployment Profile", "spec_slug": "credential.deployment_profile"},
     )
     return ct
 
@@ -187,7 +187,7 @@ class TestCredentialRelationships:
     def test_credential_protected_when_type_deleted(self):
         user = _user("protect")
         ct = CredentialType.objects.create(
-            name="Protected Type", slug="protected_test_type", spec_class="shared.schemas.DeploymentProfileSpec"
+            name="Protected Type", slug="protected_test_type", spec_slug="credential.deployment_profile"
         )
         _real_cred(user, "Using Type", ct=ct)
         with pytest.raises(ProtectedError), transaction.atomic():
@@ -198,9 +198,9 @@ class TestCredentialRelationships:
 class TestCredentialType:
     def test_slug_unique(self):
         CredentialType.objects.create(
-            name="Unique Test Type", slug="unique_test_slug_x", spec_class="shared.schemas.DeploymentProfileSpec"
+            name="Unique Test Type", slug="unique_test_slug_x", spec_slug="credential.deployment_profile"
         )
         with pytest.raises(IntegrityError), transaction.atomic():
             CredentialType.objects.create(
-                name="Another Test Type", slug="unique_test_slug_x", spec_class="shared.schemas.DeploymentProfileSpec"
+                name="Another Test Type", slug="unique_test_slug_x", spec_slug="credential.deployment_profile"
             )

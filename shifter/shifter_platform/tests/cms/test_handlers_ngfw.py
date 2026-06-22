@@ -37,7 +37,7 @@ def instance(request_obj):
     instance_type = InstanceType.objects.create(
         name="NGFW Test Instance Type",
         slug=f"ngfw-it-{uuid4().hex[:8]}",
-        spec_class="shared.schemas.SCMCredentialSpec",
+        spec_slug="credential.scm",
     )
     return Instance.objects.create(
         request=request_obj,
@@ -52,7 +52,7 @@ def app(instance):
     app_type = AppType.objects.create(
         name="NGFW Test App Type",
         slug=f"ngfw-at-{uuid4().hex[:8]}",
-        spec_class="shared.schemas.SCMCredentialSpec",
+        spec_slug="credential.scm",
     )
     return App.objects.create(
         name="ngfw-app",
