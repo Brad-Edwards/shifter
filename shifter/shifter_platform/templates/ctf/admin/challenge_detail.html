@@ -327,7 +327,7 @@
             <div class="card">
                 <div class="card-title flex-between-center">
                     {% trans "Flags" %}
-                    {% if event.is_content_modifiable %}
+                    {% if event.is_content_modifiable or event.is_live_flag_repairable %}
                         <button type="button"
                                 class="btn btn-sm btn-primary"
                                 onclick="document.getElementById('add-flag-form').classList.toggle('is-open')">
@@ -348,7 +348,7 @@
                                 <th>
                                     {% trans "Case Sensitive" %}
                                 </th>
-                                {% if event.is_content_modifiable %}
+                                {% if event.is_content_modifiable or event.is_live_flag_repairable %}
                                     <th>
                                         {% trans "Actions" %}
                                     </th>
@@ -371,7 +371,7 @@
                                             {% trans "No" %}
                                         {% endif %}
                                     </td>
-                                    {% if event.is_content_modifiable %}
+                                    {% if event.is_content_modifiable or event.is_live_flag_repairable %}
                                         <td>
                                             <button type="button"
                                                     class="btn btn-sm btn-danger"
@@ -389,7 +389,7 @@
                         {% trans "No flag records. Using legacy flag_hash field." %}
                     </div>
                 {% endif %}
-                {% if event.is_content_modifiable %}
+                {% if event.is_content_modifiable or event.is_live_flag_repairable %}
                     <div id="add-flag-form" class="collapse-panel">
                         <div class="mb-sm">
                             <label for="new-flag-value" class="field-label">
@@ -836,7 +836,7 @@ document.querySelectorAll('[data-download-url]').forEach(function(link) {
     });
 });
     </script>
-    {% if event.is_content_modifiable %}
+    {% if event.is_content_modifiable or event.is_live_flag_repairable %}
         <script>
 function addFlag() {
     const flagValue = document.getElementById('new-flag-value').value.trim();

@@ -11,6 +11,7 @@ set -euo pipefail
 
 # Configuration from Terraform template
 AWS_REGION="${aws_region}"
+DJANGO_ENVIRONMENT="${django_environment}"
 ECR_REPOSITORY_URL="${ecr_repository_url}"
 LOG_GROUP_NAME="${log_group_name}"
 PS_PREFIX="${ssm_parameter_store_prefix}"
@@ -265,6 +266,7 @@ echo "Deploying image: $IMAGE"
 # Build container environment variables
 # ------------------------------------------------------------------------------
 COMMON_ENV="-e AWS_REGION=$AWS_REGION"
+COMMON_ENV="$COMMON_ENV -e ENVIRONMENT=$DJANGO_ENVIRONMENT"
 COMMON_ENV="$COMMON_ENV -e AWS_S3_BUCKET_NAME=$S3_BUCKET"
 COMMON_ENV="$COMMON_ENV -e DB_SECRET_ARN=$DB_SECRET_ARN"
 COMMON_ENV="$COMMON_ENV -e APP_SECRET_ARN=$APP_SECRET_ARN"

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
@@ -14,6 +15,7 @@ def scheduled_task():
     task = MagicMock()
     task.event_id = uuid4()
     task.event = MagicMock()
+    task.event.pk = task.event_id
     task.event.auto_cleanup = False
     task.metadata = {}
     return task
@@ -48,42 +50,84 @@ class TestHandleEventStart:
 class TestHandleEventEnd:
     """Tests for _handle_event_end scheduler handler."""
 
+    @pytest.mark.django_db
     @patch("ctf.services.notification.notify_organizer_event_end")
     @patch("ctf.services.event.complete_event", return_value=True)
-    def test_calls_complete_and_notify(self, mock_complete, mock_notify, scheduled_task):
+    def test_calls_complete_and_notify(self, mock_complete, mock_notify, ctf_event_active):
         """Completes event and notifies organizer on success."""
+        from django.utils import timezone
+
+        from ctf.enums import ScheduledTaskStatus, ScheduledTaskType
         from ctf.management.commands.run_ctf_scheduler import _handle_event_end
+        from ctf.models import CTFScheduledTask
 
-        _handle_event_end(scheduled_task)
+        ctf_event_active.event_end = timezone.now() - timedelta(minutes=1)
+        ctf_event_active.save(update_fields=["event_end", "updated_at"])
+        task = CTFScheduledTask.objects.create(
+            event=ctf_event_active,
+            task_type=ScheduledTaskType.EVENT_END.value,
+            scheduled_for=ctf_event_active.event_end,
+            status=ScheduledTaskStatus.PENDING.value,
+        )
 
-        mock_complete.assert_called_once_with(scheduled_task.event)
-        mock_notify.assert_called_once_with(scheduled_task.event_id)
+        _handle_event_end(task)
 
+        mock_complete.assert_called_once()
+        assert mock_complete.call_args.args[0].pk == ctf_event_active.pk
+        mock_notify.assert_called_once_with(ctf_event_active.pk)
+
+    @pytest.mark.django_db
     @patch("ctf.services.notification.notify_organizer_event_end")
     @patch("ctf.services.event.complete_event", return_value=False)
-    def test_no_notify_on_failure(self, mock_complete, mock_notify, scheduled_task):
+    def test_no_notify_on_failure(self, mock_complete, mock_notify, ctf_event_active):
         """Does not notify organizer if completion fails."""
+        from django.utils import timezone
+
+        from ctf.enums import ScheduledTaskStatus, ScheduledTaskType
         from ctf.management.commands.run_ctf_scheduler import _handle_event_end
+        from ctf.models import CTFScheduledTask
 
-        _handle_event_end(scheduled_task)
+        ctf_event_active.event_end = timezone.now() - timedelta(minutes=1)
+        ctf_event_active.save(update_fields=["event_end", "updated_at"])
+        task = CTFScheduledTask.objects.create(
+            event=ctf_event_active,
+            task_type=ScheduledTaskType.EVENT_END.value,
+            scheduled_for=ctf_event_active.event_end,
+            status=ScheduledTaskStatus.PENDING.value,
+        )
 
-        mock_complete.assert_called_once_with(scheduled_task.event)
+        _handle_event_end(task)
+
+        mock_complete.assert_called_once()
         mock_notify.assert_not_called()
 
+    @pytest.mark.django_db
     @patch("ctf.services.range.cleanup_event_ranges", return_value={"ok": True})
     @patch("ctf.services.notification.notify_organizer_event_end")
     @patch("ctf.services.event.complete_event", return_value=True)
-    def test_triggers_cleanup_when_enabled(self, mock_complete, mock_notify, mock_cleanup, scheduled_task):
+    def test_triggers_cleanup_when_enabled(self, mock_complete, mock_notify, mock_cleanup, ctf_event_active):
         """Triggers range cleanup when auto_cleanup is enabled."""
-        scheduled_task.event.auto_cleanup = True
+        from django.utils import timezone
 
+        from ctf.enums import ScheduledTaskStatus, ScheduledTaskType
         from ctf.management.commands.run_ctf_scheduler import _handle_event_end
+        from ctf.models import CTFScheduledTask
 
-        _handle_event_end(scheduled_task)
+        ctf_event_active.auto_cleanup = True
+        ctf_event_active.event_end = timezone.now() - timedelta(minutes=1)
+        ctf_event_active.save(update_fields=["auto_cleanup", "event_end", "updated_at"])
+        task = CTFScheduledTask.objects.create(
+            event=ctf_event_active,
+            task_type=ScheduledTaskType.EVENT_END.value,
+            scheduled_for=ctf_event_active.event_end,
+            status=ScheduledTaskStatus.PENDING.value,
+        )
 
-        mock_complete.assert_called_once_with(scheduled_task.event)
-        mock_notify.assert_called_once_with(scheduled_task.event_id)
-        mock_cleanup.assert_called_once_with(scheduled_task.event_id)
+        _handle_event_end(task)
+
+        mock_complete.assert_called_once()
+        mock_notify.assert_called_once_with(ctf_event_active.pk)
+        mock_cleanup.assert_called_once_with(ctf_event_active.pk)
 
 
 class TestHandleSendReminder:

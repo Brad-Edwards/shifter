@@ -18,6 +18,11 @@ variable "name_prefix" {
   type        = string
 }
 
+variable "environment" {
+  description = "Terraform environment slug (dev, prod, etc.) used to derive Django ENVIRONMENT for portal containers"
+  type        = string
+}
+
 variable "vpc_id" {
   description = "VPC ID"
   type        = string

@@ -9,9 +9,9 @@ binding the module-level constants used in the re-export.
 from __future__ import annotations
 
 import os
-import sys
 import warnings
-from pathlib import Path
+
+from config._runtime_env import AUTH_PROVIDER, IS_TEST_RUN
 
 __all__ = [
     "AUTHENTICATION_BACKENDS",
@@ -44,11 +44,6 @@ __all__ = [
     "SESSION_COOKIE_AGE",
 ]
 
-# Re-derive the toggles the OIDC block needs. These are also defined in
-# ``config.settings`` but importing them from there would create a cycle
-# (settings.py imports this module).
-AUTH_PROVIDER = os.environ.get("AUTH_PROVIDER", "oidc").strip().lower()
-IS_TEST_RUN = os.environ.get("TESTING") == "1" or Path(sys.argv[0]).name == "pytest"
 DEBUG = os.environ.get("DJANGO_DEBUG", "False").lower() == "true"
 
 
