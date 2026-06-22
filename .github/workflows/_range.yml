@@ -39,6 +39,8 @@ on:
         required: false
       SHIFTER_CONFIG_PROD_RANGE:
         required: false
+      TF_INFRA_STATE_BUCKET:
+        required: true
 
 jobs:
   plan:
@@ -117,7 +119,22 @@ jobs:
           uv run --project "${GITHUB_WORKSPACE}/shifter/installation" \
             shifter-config render "${CONFIG_FILE}" \
             --output victim_allowed_cidrs.auto.tfvars
-      - run: terraform init -backend-config=${{ inputs.environment }}.s3.tfbackend
+      - name: Render Terraform backend configs
+        working-directory: ${{ github.workspace }}
+        env:
+          TF_INFRA_STATE_BUCKET: ${{ secrets.TF_INFRA_STATE_BUCKET }}
+          AWS_REGION: us-east-2
+        run: |
+          set -euo pipefail
+          if [ -z "${TF_INFRA_STATE_BUCKET}" ]; then
+            echo "::error::TF_INFRA_STATE_BUCKET secret is required for AWS Terraform deploys"
+            exit 1
+          fi
+          python3 scripts/terraform/render_aws_backend_configs.py \
+            --env "${{ inputs.environment }}" \
+            --stack range \
+            --github-env
+      - run: terraform init -backend-config="${SHIFTER_BACKEND_CONFIG_PATH}"
       - run: terraform validate
       - run: terraform plan -no-color -lock-timeout=5m -out=tfplan && terraform show -no-color tfplan > plan.txt
       - name: Comment PR
@@ -212,7 +229,22 @@ jobs:
           uv run --project "${GITHUB_WORKSPACE}/shifter/installation" \
             shifter-config render "${CONFIG_FILE}" \
             --output victim_allowed_cidrs.auto.tfvars
-      - run: terraform init -backend-config=${{ inputs.environment }}.s3.tfbackend
+      - name: Render Terraform backend configs
+        working-directory: ${{ github.workspace }}
+        env:
+          TF_INFRA_STATE_BUCKET: ${{ secrets.TF_INFRA_STATE_BUCKET }}
+          AWS_REGION: us-east-2
+        run: |
+          set -euo pipefail
+          if [ -z "${TF_INFRA_STATE_BUCKET}" ]; then
+            echo "::error::TF_INFRA_STATE_BUCKET secret is required for AWS Terraform deploys"
+            exit 1
+          fi
+          python3 scripts/terraform/render_aws_backend_configs.py \
+            --env "${{ inputs.environment }}" \
+            --stack range \
+            --github-env
+      - run: terraform init -backend-config="${SHIFTER_BACKEND_CONFIG_PATH}"
       - run: terraform plan -no-color -lock-timeout=5m -out=tfplan && terraform show -no-color tfplan
       - run: terraform apply -lock-timeout=5m tfplan
       - run: terraform output -json

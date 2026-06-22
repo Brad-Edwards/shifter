@@ -201,6 +201,17 @@ variable "ctfd_ssh_allowed_cidrs" {
 
 # ECR values come from terraform_remote_state.foundation
 
+variable "terraform_state_bucket" {
+  description = "S3 bucket hosting Terraform state for this deployment instance"
+  type        = string
+}
+
+variable "terraform_state_region" {
+  description = "AWS region for the Terraform state bucket"
+  type        = string
+  default     = "us-east-2"
+}
+
 # ------------------------------------------------------------------------------
 # ALB
 # ------------------------------------------------------------------------------
