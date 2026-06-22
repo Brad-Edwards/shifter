@@ -232,7 +232,7 @@ def force_delete_event(
     """
     from ctf.models import CTFChallengeFile, CTFParticipant
     from ctf.s3 import delete_challenge_file
-    from ctf.services.range import _destroy_single_range
+    from ctf.services.range.lifecycle import _destroy_single_range
 
     # Use all_objects so force delete works on soft-deleted events too
     try:

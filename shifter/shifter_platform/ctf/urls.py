@@ -21,6 +21,7 @@ participant_patterns = [
     # Dashboard
     path("", views.participant_dashboard, name="participant_dashboard"),
     path("register/", views.ctf_register, name="ctf_register"),
+    path("register/exchange/", views.ctf_register_exchange, name="ctf_register_exchange"),
     path("event/", views.participant_event, name="participant_event"),
     # Challenges
     path("challenges/", views.participant_challenges, name="challenges"),
