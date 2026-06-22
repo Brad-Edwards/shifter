@@ -30,7 +30,10 @@ Current mechanisms:
   first-party internal mock-patch counts for ADR-019. Counts may shrink
   as tests move to behavioral assertions, but new or increased internal
   patch counts, including baseline allowance increases against the branch
-  reference, fail the `boundary-mock-policy` check.
+  reference, fail the `boundary-mock-policy` check. For example, splitting
+  `cms/experiments/orchestrator.py` into a package (#886) moved its test
+  suites onto real-model / cloud-boundary assertions and dropped the
+  associated `cms.experiments.orchestrator.*` baseline allowances.
 - `.pre-commit-config.yaml`: local fast checks
   - The `Deploy` workflow's always-present `Pre-commit` job runs the
     file-hygiene and secret-scan subset (`trailing-whitespace`,
