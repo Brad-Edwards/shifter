@@ -109,6 +109,7 @@ from ctf.views.api.scoreboard import (
 from ctf.views.participant import (
     ctf_help,
     ctf_register,
+    ctf_register_exchange,
     participant_dashboard,
     participant_event,
     participant_range,
@@ -190,6 +191,7 @@ __all__ = [
     "challenge_detail",
     "ctf_help",
     "ctf_register",
+    "ctf_register_exchange",
     "participant_challenges",
     "participant_dashboard",
     "participant_event",

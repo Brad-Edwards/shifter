@@ -16,8 +16,9 @@ from django.utils import timezone
 from ctf.bridges import RangeProvisionResult
 from ctf.enums import ParticipantStatus, ScheduledTaskStatus, ScheduledTaskType
 from ctf.exceptions import CTFNotFoundError, CTFRangeError
-from ctf.models import CTFEvent, CTFParticipant, CTFScheduledTask
+from ctf.models import CTFParticipant, CTFScheduledTask
 from ctf.services import range as range_service
+from ctf.services.range import batch, provision
 
 
 def _make_unregistered_participant(event, idx):
@@ -185,17 +186,27 @@ class TestGetRangeStatus:
         assert result["status"] == "not_assigned"
 
     @pytest.mark.usefixtures("_patch_participant_get")
-    def test_polls_cms(self, mock_participant):
-        """Queries CMS for fresh status and updates cache."""
+    @pytest.mark.parametrize(
+        ("cached_status", "expect_save"),
+        [
+            ("provisioning", True),  # status changed -> cache refreshed (save)
+            ("ready", False),  # status unchanged -> no redundant DB write
+        ],
+    )
+    def test_polls_cms(self, mock_participant, cached_status, expect_save):
+        """Queries CMS for fresh status; saves only when the cached value changed."""
         mock_participant.range_instance_id = 42
-        mock_participant.range_status = "provisioning"
+        mock_participant.range_status = cached_status
 
         with patch("ctf.bridges.cms_get_range_status", return_value="ready"):
             result = range_service.get_range_status(mock_participant.pk)
 
         assert result["status"] == "ready"
         assert mock_participant.range_status == "ready"
-        mock_participant.save.assert_called_once()
+        if expect_save:
+            mock_participant.save.assert_called_once()
+        else:
+            mock_participant.save.assert_not_called()
 
 
 class TestCleanupEventRanges:
@@ -267,6 +278,9 @@ class TestDestroyParticipantRange:
         assert result["status"] == "destroyed"
         mock_destroy.assert_called_once_with(mock_participant.user, 42)
         mock_participant.save.assert_called_once()
+        # _destroy_single_range clears both fields; verify the status-clear too.
+        assert mock_participant.range_instance_id is None
+        assert mock_participant.range_status == ""
         assert mock_participant.range_instance_id is None
 
 
@@ -276,184 +290,103 @@ class TestDestroyParticipantRange:
 
 
 @pytest.fixture
-def _patch_event_exists():
-    """Patch CTFEvent.objects so .get() succeeds."""
-    with patch.object(CTFEvent, "objects") as mock_objects:
-        mock_objects.get.return_value = Mock()
-        mock_objects.DoesNotExist = CTFEvent.DoesNotExist
-        yield mock_objects
-
-
-@pytest.fixture
-def _patch_event_not_found():
-    """Patch CTFEvent.objects so .get() raises DoesNotExist."""
-    with patch.object(CTFEvent, "objects") as mock_objects:
-        mock_objects.get.side_effect = CTFEvent.DoesNotExist
-        mock_objects.DoesNotExist = CTFEvent.DoesNotExist
-        yield mock_objects
-
-
-@pytest.fixture
 def _patch_sleep():
-    """Patch time.sleep to avoid real delays."""
-    with patch("ctf.services.range.time.sleep") as mock_sleep:
+    """Patch time.sleep (the OS boundary) so throttled tests do not really wait."""
+    with patch("time.sleep") as mock_sleep:
         yield mock_sleep
 
 
-@pytest.fixture
-def throttle_participants():
-    """Create a list of mock participants for throttled provisioning tests."""
-    return [Mock(pk=uuid4()) for _ in range(3)]
+def _make_skip_participant(event, user, idx):
+    """Create a registered participant mid-provision (range_status='provisioning').
+
+    With a null ``range_instance_id`` it is still selected by the throttle query,
+    but the assignment guard rejects it as 'already has a range' before any CMS
+    call, so the loop counts it as a benign skip (#942) with no network I/O.
+    """
+    return CTFParticipant.objects.create(
+        event=event,
+        user=user,
+        email=f"skip-{idx}@test.com",
+        name=f"Skip Participant {idx}",
+        status=ParticipantStatus.ACTIVE.value,
+        registered_at=timezone.now(),
+        range_status="provisioning",
+    )
 
 
 class TestProvisionEventRangesThrottled:
-    """Tests for provision_event_ranges_throttled."""
+    """Tests for provision_event_ranges_throttled.
 
-    def test_not_found(self, _patch_event_not_found):
+    DB-backed: outcomes are driven by participant data rather than by mocking the
+    internal provision call. Unregistered participants fail fast ('must be
+    registered') before any CMS/network call; a mid-provision participant is a
+    benign skip. ``time.sleep`` is patched at the OS boundary so pacing is instant.
+    """
+
+    @pytest.mark.django_db
+    def test_not_found(self):
         """Raises CTFNotFoundError for nonexistent event."""
         with pytest.raises(CTFNotFoundError):
             range_service.provision_event_ranges_throttled(uuid4(), 300)
 
-    @pytest.mark.usefixtures("_patch_event_exists")
-    def test_empty_participants(self):
+    @pytest.mark.django_db
+    def test_empty_participants(self, ctf_event):
         """Returns zeros when no participants need provisioning."""
-        with patch.object(CTFParticipant, "objects") as mock_part:
-            mock_part.filter.return_value = []
-
-            result = range_service.provision_event_ranges_throttled(uuid4(), 300)
+        result = range_service.provision_event_ranges_throttled(ctf_event.pk, 300)
 
         assert result["total"] == 0
         assert result["successful"] == 0
         assert result["failed"] == 0
         assert result["interrupted"] is False
 
-    @pytest.mark.usefixtures("_patch_event_exists")
-    def test_all_succeed_with_progress(self, throttle_participants, _patch_sleep):
-        """Happy path: all provisions succeed, sleeps between them, logs progress."""
-        event_id = uuid4()
+    @pytest.mark.django_db
+    @pytest.mark.usefixtures("_patch_sleep")
+    def test_failures_and_skips_tallied_with_notification(self, ctf_event, participant_user):
+        """Failures and benign skips are tallied separately; failures notify the organizer."""
+        _make_unregistered_participant(ctf_event, 0)
+        _make_unregistered_participant(ctf_event, 1)
+        _make_skip_participant(ctf_event, participant_user, 0)
 
-        with (
-            patch.object(CTFParticipant, "objects") as mock_part,
-            patch.object(
-                range_service,
-                "provision_participant_range_with_retry",
-                return_value={"status": "provisioning", "retries": 0},
-            ) as mock_provision,
-            patch("ctf.services.range.logger") as mock_logger,
-        ):
-            mock_part.filter.return_value = throttle_participants
+        with patch("ctf.services.notification.notify_organizer_provision_failure") as mock_notify:
+            result = range_service.provision_event_ranges_throttled(ctf_event.pk, 300)
 
-            result = range_service.provision_event_ranges_throttled(event_id, 300)
-
-        assert result["successful"] == 3
-        assert result["failed"] == 0
         assert result["total"] == 3
-        assert result["interrupted"] is False
-        assert mock_provision.call_count == 3
-        # Two inter-provision gaps (not after the last one). Each gap is slept
-        # in <=15s heartbeat chunks, so total slept == 2 * clamped delay.
-        # window=300 / 3 participants = 100s raw -> 100s clamped.
-        assert sum(c.args[0] for c in _patch_sleep.call_args_list) == 200.0
-
-        # Verify progress logging (3 progress calls among the info calls)
-        progress_calls = [c for c in mock_logger.info.call_args_list if "progress" in str(c.args[0])]
-        assert len(progress_calls) == 3
-        # First progress: 1/3, last progress: 3/3
-        assert progress_calls[0].args[2] == 1  # i + 1
-        assert progress_calls[0].args[3] == 3  # count
-        assert progress_calls[2].args[2] == 3  # i + 1
-
-    @pytest.mark.usefixtures("_patch_event_exists")
-    def test_partial_failure_with_notification(self, throttle_participants, _patch_sleep):
-        """Mixed results: tracks errors and notifies organizer."""
-        event_id = uuid4()
-        call_count = 0
-
-        def provision_side_effect(pk, **kwargs):
-            nonlocal call_count
-            call_count += 1
-            if call_count == 2:
-                raise RuntimeError("CMS down")
-            return {"status": "provisioning", "retries": 0}
-
-        with (
-            patch.object(CTFParticipant, "objects") as mock_part,
-            patch.object(
-                range_service,
-                "provision_participant_range_with_retry",
-                side_effect=provision_side_effect,
-            ),
-            patch("ctf.services.notification.notify_organizer_provision_failure") as mock_notify,
-        ):
-            mock_part.filter.return_value = throttle_participants
-
-            result = range_service.provision_event_ranges_throttled(event_id, 300)
-
-        assert result["successful"] == 2
-        assert result["failed"] == 1
-        assert len(result["errors"]) == 1
-        assert "CMS down" in result["errors"][0]["error"]
+        assert result["successful"] == 0
+        assert result["failed"] == 2
+        assert result["skipped"] == 1
+        assert len(result["errors"]) == 2
         mock_notify.assert_called_once()
 
-    @pytest.mark.usefixtures("_patch_event_exists")
-    def test_delay_clamping(self):
-        """Delay is clamped to [5, 120] seconds."""
-        participants = [Mock(pk=uuid4()) for _ in range(2)]
+    @pytest.mark.django_db
+    def test_pacing_sleeps_between_provisions_only(self, ctf_event, _patch_sleep):
+        """Sleeps fill the inter-provision gaps (one fewer than participants), each summing to the clamped delay."""
+        for i in range(3):
+            _make_unregistered_participant(ctf_event, i)
 
-        # Test floor clamp: window=2s / 2 participants = 1s raw -> clamped to 5s
-        # Test ceiling clamp: window=500s / 2 participants = 250s raw -> clamped to 120s
-        # Test passthrough: window=100s / 2 participants = 50s raw -> 50s
-        for window, expected_delay in [(2, 5.0), (500, 120.0), (100, 50.0)]:
-            with (
-                patch.object(CTFEvent, "objects") as mock_event,
-                patch.object(CTFParticipant, "objects") as mock_part,
-                patch.object(
-                    range_service,
-                    "provision_participant_range_with_retry",
-                    return_value={"status": "provisioning", "retries": 0},
-                ),
-                patch("ctf.services.range.time.sleep") as mock_sleep,
-            ):
-                mock_event.get.return_value = Mock()
-                mock_event.DoesNotExist = CTFEvent.DoesNotExist
-                mock_part.filter.return_value = participants
+        range_service.provision_event_ranges_throttled(ctf_event.pk, 300)
 
-                range_service.provision_event_ranges_throttled(uuid4(), window)
+        # window=300 / 3 participants = 100s clamped; two gaps; chunked sleeps sum to 200s.
+        assert sum(c.args[0] for c in _patch_sleep.call_args_list) == 200.0
 
-            # Two participants -> one inter-provision gap, slept in <=15s
-            # heartbeat chunks whose total equals the clamped delay.
-            assert sum(c.args[0] for c in mock_sleep.call_args_list) == expected_delay
-
-    @pytest.mark.usefixtures("_patch_event_exists")
-    def test_shutdown_interruption(self, _patch_sleep):
+    @pytest.mark.django_db
+    @pytest.mark.usefixtures("_patch_sleep")
+    def test_shutdown_interruption(self, ctf_event):
         """shutdown_check stops the loop and sets interrupted=True."""
-        participants = [Mock(pk=uuid4()) for _ in range(5)]
-        provisioned: list = []
-        stop = {"flag": False}
+        for i in range(5):
+            _make_unregistered_participant(ctf_event, i)
 
-        def provision_side_effect(pk, **kwargs):
-            provisioned.append(pk)
-            stop["flag"] = True  # request shutdown after the first provision
-            return {"status": "provisioning", "retries": 0}
+        calls = {"n": 0}
 
         def shutdown_check():
-            return stop["flag"]
+            # False for the first iteration's top-of-loop check, True thereafter,
+            # so exactly one participant is processed before the loop breaks.
+            calls["n"] += 1
+            return calls["n"] > 1
 
-        with (
-            patch.object(CTFParticipant, "objects") as mock_part,
-            patch.object(
-                range_service,
-                "provision_participant_range_with_retry",
-                side_effect=provision_side_effect,
-            ),
-        ):
-            mock_part.filter.return_value = participants
-
-            result = range_service.provision_event_ranges_throttled(uuid4(), 600, shutdown_check=shutdown_check)
+        result = range_service.provision_event_ranges_throttled(ctf_event.pk, 600, shutdown_check=shutdown_check)
 
         assert result["interrupted"] is True
-        # Loop breaks at the top of the second iteration, so only one provision ran.
-        assert len(provisioned) == 1
+        assert result["total"] == 1
 
     @pytest.mark.django_db
     @pytest.mark.usefixtures("_patch_sleep")
@@ -487,17 +420,37 @@ class TestProvisionEventRangesThrottled:
         assert result["total"] == 3
 
 
+class TestComputeThrottleDelay:
+    """compute_throttle_delay is the pure pacing seam: window/count clamped to [5, 120]s."""
+
+    def test_passthrough_within_band(self):
+        # 100s window / 2 participants = 50s raw, inside the band.
+        assert batch.compute_throttle_delay(100, 2) == 50.0
+
+    def test_floor_clamp(self):
+        # 2s / 2 = 1s raw -> clamped up to the 5s floor.
+        assert batch.compute_throttle_delay(2, 2) == 5.0
+
+    def test_ceiling_clamp(self):
+        # 500s / 2 = 250s raw -> clamped down to the 120s ceiling.
+        assert batch.compute_throttle_delay(500, 2) == 120.0
+
+    def test_zero_participants_does_not_divide_by_zero(self):
+        # Guarded by max(count, 1); the window divides by 1 then clamps.
+        assert batch.compute_throttle_delay(60, 0) == 60.0
+
+
 class TestIsAlreadyAssignedError:
     """The benign race-loser discriminator that keeps the skip path off the failure path (CTF-7)."""
 
     def test_already_assigned_message_is_benign(self):
-        assert range_service._is_already_assigned_error(CTFRangeError("Participant already has a range assigned"))
+        assert provision._is_already_assigned_error(CTFRangeError("Participant already has a range assigned"))
 
     def test_other_range_error_is_not_benign(self):
-        assert not range_service._is_already_assigned_error(CTFRangeError("Range provisioning failed: boom"))
+        assert not provision._is_already_assigned_error(CTFRangeError("Range provisioning failed: boom"))
 
     def test_non_range_error_is_not_benign(self):
-        assert not range_service._is_already_assigned_error(RuntimeError("boom"))
+        assert not provision._is_already_assigned_error(RuntimeError("boom"))
 
 
 class TestInterruptibleSleep:
@@ -508,14 +461,14 @@ class TestInterruptibleSleep:
     def test_chunks_sum_to_duration_and_touch_heartbeat(self, _patch_sleep):
         heartbeat = Mock()
 
-        range_service._interruptible_sleep(40, heartbeat=heartbeat)
+        provision._interruptible_sleep(40, heartbeat=heartbeat)
 
         # Slept the whole 40s in <=15s chunks (15 + 15 + 10).
         assert sum(c.args[0] for c in _patch_sleep.call_args_list) == 40
         assert heartbeat.call_count >= 3
 
     def test_aborts_early_on_shutdown(self, _patch_sleep):
-        range_service._interruptible_sleep(120, shutdown_check=lambda: True)
+        provision._interruptible_sleep(120, shutdown_check=lambda: True)
 
         # Shutdown is checked before the first chunk, so nothing is slept.
         assert _patch_sleep.call_count == 0

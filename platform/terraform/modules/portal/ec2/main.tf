@@ -564,7 +564,7 @@ resource "aws_launch_template" "this" {
     security_groups             = [aws_security_group.this.id]
   }
 
-  user_data = base64encode(templatefile("${path.module}/user_data.sh", {
+  user_data = base64gzip(templatefile("${path.module}/user_data.sh", {
     aws_region                 = var.aws_region
     django_environment         = local.django_environment
     ecr_repository_url         = var.ecr_repository_url
@@ -720,7 +720,7 @@ resource "aws_instance" "this" {
   monitoring             = true
   ebs_optimized          = true
 
-  user_data_base64 = base64encode(templatefile("${path.module}/user_data.sh", {
+  user_data_base64 = base64gzip(templatefile("${path.module}/user_data.sh", {
     aws_region                 = var.aws_region
     django_environment         = local.django_environment
     ecr_repository_url         = var.ecr_repository_url
