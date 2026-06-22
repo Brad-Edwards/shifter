@@ -1,7 +1,7 @@
-"""Experiment manager views.
+"""Experiment lifecycle views (list, create, detail, start, cancel).
 
-All business logic is in experiments.services. Views handle HTTP only.
-Views require staff or Threat Research group membership.
+HTTP-only: parse the request, call ``cms.experiments.services``, render or
+redirect. All business logic lives in the service layer.
 """
 
 from __future__ import annotations
@@ -12,20 +12,14 @@ from typing import TYPE_CHECKING, cast
 
 from django.contrib import messages
 from django.core.paginator import Paginator
-from django.http import HttpResponse, JsonResponse
+from django.http import HttpResponse
 from django.shortcuts import redirect, render
 from django.views.decorators.http import require_POST
 
 from cms.experiments import services
-from cms.experiments.exceptions import (
-    ArtifactError,
-    ExperimentError,
-    ExperimentValidationError,
-    ScriptUploadError,
-)
+from cms.experiments.exceptions import ExperimentError, ExperimentValidationError
 from cms.experiments.schemas import ExperimentCreateInput
 from shared.auth import threat_research_required
-from shared.errors import classify_user_message
 from shared.exceptions import CMSError
 from shared.log_sanitize import safe_log_value
 
@@ -34,115 +28,6 @@ if TYPE_CHECKING:
     from django.http import HttpRequest
 
 logger = logging.getLogger(__name__)
-
-
-# =============================================================================
-# Script views
-# =============================================================================
-
-
-@threat_research_required
-def script_list(request: HttpRequest) -> HttpResponse:
-    """List user's script assets."""
-    logger.info("script_list: user_id=%s", request.user.id)
-    try:
-        scripts = services.list_scripts(cast("User", request.user))
-        return render(
-            request,
-            "experiments/script_list.html",
-            {
-                "active_nav": "experiments",
-                "scripts": scripts,
-            },
-        )
-    except Exception:
-        logger.exception(
-            "script_list: unexpected error for user_id=%s",
-            request.user.id,
-        )
-        messages.error(request, "An unexpected error occurred. Please try again.")
-        return redirect("experiments:experiment_list")
-
-
-def _complete_script_upload_post(request: HttpRequest, upload_token: str) -> HttpResponse:
-    """Finalize a presigned script upload the client has confirmed."""
-    try:
-        script = services.complete_script_upload(cast("User", request.user), upload_token)
-    except ScriptUploadError as e:
-        messages.error(request, str(e))
-        return redirect("experiments:script_upload")
-    messages.success(request, f"Script '{script.name}' uploaded successfully.")
-    return redirect("experiments:script_list")
-
-
-def _initiate_script_upload_post(request: HttpRequest) -> HttpResponse:
-    """Start a presigned script upload and return the presigned URL as JSON."""
-    name = request.POST.get("name", "").strip()
-    filename = request.POST.get("filename", "").strip()
-    try:
-        file_size_int = int(request.POST.get("file_size", "0"))
-    except (TypeError, ValueError):
-        return JsonResponse({"error": "Invalid file_size"}, status=400)
-    try:
-        result = services.initiate_script_upload(cast("User", request.user), name, filename, file_size_int)
-    except ScriptUploadError as e:
-        logger.exception("script_upload: initiation failed for user_id=%s", request.user.id)
-        return JsonResponse(
-            {"error": classify_user_message(str(e), default="Upload could not be initiated")}, status=400
-        )
-    return JsonResponse(result)
-
-
-def _handle_script_upload_post(request: HttpRequest) -> HttpResponse:
-    """Dispatch a script-upload POST to the completion or initiation path."""
-    try:
-        upload_token = request.POST.get("upload_token")
-        if upload_token:
-            return _complete_script_upload_post(request, upload_token)
-        return _initiate_script_upload_post(request)
-    except Exception:
-        logger.exception("script_upload: unexpected error for user_id=%s", request.user.id)
-        messages.error(request, "An unexpected error occurred. Please try again.")
-        return redirect("experiments:experiment_list")
-
-
-@threat_research_required
-def script_upload(request: HttpRequest) -> HttpResponse:
-    """Upload a script file — two-step presigned URL flow.
-
-    GET:  Show upload form.
-    POST: Initiate upload (returns presigned URL via JSON).
-    """
-    logger.info("script_upload: user_id=%s method=%s", request.user.id, safe_log_value(request.method))
-    if request.method == "GET":
-        return render(request, "experiments/script_upload.html", {"active_nav": "experiments"})
-    if request.method == "POST":
-        return _handle_script_upload_post(request)
-    return HttpResponse(status=405)
-
-
-@threat_research_required
-@require_POST
-def script_delete(request: HttpRequest, script_id: int) -> HttpResponse:
-    """Soft-delete a script."""
-    logger.info("script_delete: user_id=%s script_id=%s", request.user.id, safe_log_value(script_id))
-    try:
-        services.delete_script(cast("User", request.user), script_id)
-        messages.success(request, "Script deleted.")
-    except ScriptUploadError as e:
-        messages.error(request, str(e))
-    except Exception:
-        logger.exception(
-            "script_delete: unexpected error for user_id=%s",
-            request.user.id,
-        )
-        messages.error(request, "An unexpected error occurred. Please try again.")
-    return redirect("experiments:script_list")
-
-
-# =============================================================================
-# Experiment views
-# =============================================================================
 
 
 @threat_research_required
@@ -325,76 +210,3 @@ def experiment_cancel(request: HttpRequest, experiment_id: int) -> HttpResponse:
         )
         messages.error(request, "An unexpected error occurred. Please try again.")
     return redirect("experiments:experiment_detail", experiment_id=experiment_id)
-
-
-# =============================================================================
-# Download views
-# =============================================================================
-
-
-@threat_research_required
-def experiment_download(request: HttpRequest, experiment_id: int) -> HttpResponse:
-    """Redirect to presigned download URL for experiment bundle."""
-    logger.info("experiment_download: user_id=%s experiment_id=%s", request.user.id, safe_log_value(experiment_id))
-    try:
-        url = services.get_bundle_download_url(cast("User", request.user), experiment_id)
-        return redirect(url)
-    except ArtifactError as e:
-        messages.error(request, str(e))
-        return redirect("experiments:experiment_detail", experiment_id=experiment_id)
-    except Exception:
-        logger.exception(
-            "experiment_download: unexpected error for user_id=%s",
-            request.user.id,
-        )
-        messages.error(request, "An unexpected error occurred. Please try again.")
-        return redirect("experiments:experiment_list")
-
-
-@threat_research_required
-def artifact_download(
-    request: HttpRequest,
-    experiment_id: int,
-    run_number: int,
-    artifact_id: int,
-) -> HttpResponse:
-    """Redirect to presigned download URL for a single artifact."""
-    logger.info(
-        "artifact_download: user_id=%s experiment_id=%s artifact_id=%s",
-        request.user.id,
-        safe_log_value(experiment_id),
-        safe_log_value(artifact_id),
-    )
-    try:
-        url = services.get_artifact_download_url(cast("User", request.user), experiment_id, artifact_id)
-        return redirect(url)
-    except ArtifactError as e:
-        messages.error(request, str(e))
-        return redirect("experiments:experiment_detail", experiment_id=experiment_id)
-    except Exception:
-        logger.exception(
-            "artifact_download: unexpected error for user_id=%s",
-            request.user.id,
-        )
-        messages.error(request, "An unexpected error occurred. Please try again.")
-        return redirect("experiments:experiment_list")
-
-
-# =============================================================================
-# AJAX endpoints
-# =============================================================================
-
-
-@threat_research_required
-def scenario_instances(request: HttpRequest, scenario_id: str) -> JsonResponse:
-    """Return instance list for a scenario (AJAX)."""
-    logger.info("scenario_instances: user_id=%s scenario_id=%s", request.user.id, safe_log_value(scenario_id))
-    try:
-        instances = services.get_scenario_instances(scenario_id, user=cast("User", request.user))
-        return JsonResponse({"instances": instances})
-    except ExperimentValidationError as e:
-        logger.exception("scenario_instances: validation error for scenario_id=%s", safe_log_value(scenario_id))
-        return JsonResponse({"error": classify_user_message(str(e), default="Invalid scenario request")}, status=400)
-    except Exception:
-        logger.exception("scenario_instances: unexpected error")
-        return JsonResponse({"error": "An unexpected error occurred."}, status=500)
