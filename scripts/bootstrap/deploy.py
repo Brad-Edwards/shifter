@@ -3564,10 +3564,10 @@ def bootstrap_account(config: BootstrapConfig, profile: str, dry_run: bool = Fal
             bucket=bucket_name,
             region=config.region,
         )
-        info(f"Using instance backend config: {backend_config_file}")
+        info("Using rendered instance backend config for global/iam")
         success(f"Backend config ready for {config.env}")
     else:
-        info(f"[DRY-RUN] Would write instance backend config under {backend_dir}")
+        info("[DRY-RUN] Would write instance backend config outside the product repo")
 
     original_dir = os.getcwd()
     os.chdir(iam_tf_dir)
@@ -3576,7 +3576,7 @@ def bootstrap_account(config: BootstrapConfig, profile: str, dry_run: bool = Fal
     os.environ["AWS_PROFILE"] = profile
 
     try:
-        info(f"Running terraform init with backend config: {backend_config_file}")
+        info("Running terraform init with instance backend config")
         run_cmd(
             ["terraform", "init", "-reconfigure", f"-backend-config={backend_config_file}"],
             dry_run=dry_run,
@@ -3703,10 +3703,10 @@ def walkthrough_backend_config(bootstrap_result: dict, dry_run: bool = False) ->
 
     print("Backend configs are written outside the product repo so multiple instances")
     print("can share one checkout without committing state-bucket names.\n")
-    print(f"Instance directory: {instance_dir}\n")
+    print("Instance config is stored under your SHIFTER instance directory (~/.shifter/<env>-<bucket>/).\n")
 
     if dry_run:
-        info(f"[DRY-RUN] Would write backend configs under {backend_dir}")
+        info("[DRY-RUN] Would write backend configs outside the product repo")
         bootstrap_result["instance_dir"] = str(instance_dir)
         bootstrap_result["backend_config_dir"] = str(backend_dir)
         return
@@ -3725,8 +3725,8 @@ def walkthrough_backend_config(bootstrap_result: dict, dry_run: bool = False) ->
             bucket=bucket,
             region=region,
         )
-        success(f"Wrote {len(paths)} backend config file(s) under {backend_dir}")
-        success(f"Wrote portal remote-state vars: {portal_vars}")
+        success(f"Wrote {len(paths)} backend config file(s) to the instance directory")
+        success("Wrote portal remote-state tfvars for portal stack")
         bootstrap_result["portal_remote_state_tfvars"] = str(portal_vars)
     elif choice == "manual":
         wait_for_user(
@@ -3786,7 +3786,7 @@ def _ensure_tf_infra_state_bucket_secret(bucket_name: str, github_org: str, gith
     print(f"  1. Go to: https://github.com/{github_org}/{github_repo}/settings/secrets/actions")
     print("  2. Click 'New repository secret'")
     print("  3. Name: TF_INFRA_STATE_BUCKET")
-    print(f"  4. Value: {bucket_name}")
+    print("  4. Value: (same S3 state bucket created during bootstrap)")
     print("  5. Click 'Add secret'")
     wait_for_user("Add TF_INFRA_STATE_BUCKET, then press Enter to continue.")
     success("TF_INFRA_STATE_BUCKET configured")
@@ -3808,7 +3808,7 @@ def walkthrough_github_secrets(bootstrap_result: dict, dry_run: bool = False) ->
     print(f"  {Colors.BOLD}Name:{Colors.END}  {secret_name}")
     print(f"  {Colors.BOLD}Value:{Colors.END} {role_arn}")
     print(f"\n  {Colors.BOLD}Name:{Colors.END}  TF_INFRA_STATE_BUCKET")
-    print(f"  {Colors.BOLD}Value:{Colors.END} {bucket_name}")
+    print(f"  {Colors.BOLD}Value:{Colors.END} (same S3 state bucket shown above)")
 
     if not dry_run:
         gh_available = subprocess.run(["which", "gh"], capture_output=True).returncode == 0  # nosec B603 B607
@@ -3883,7 +3883,7 @@ def _terraform_init_or_exit(
     backend_config_path: Path,
 ) -> None:
     """Run `terraform init -reconfigure -backend-config=<path>`."""
-    info(f"Running terraform init -backend-config={backend_config_path}...")
+    info(f"Running terraform init for {component}...")
     init_result = run_cmd(
         ["terraform", "init", "-reconfigure", f"-backend-config={backend_config_path}"],
         dry_run=dry_run,
