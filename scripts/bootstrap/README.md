@@ -131,7 +131,7 @@ repo-specific fixes from the live spike:
 
 ## Options
 
-- `--env` (required): `dev` or `prod`
+- `--env` (required): `dev`, `proof`, or `prod`
 - `--profile` (required): AWS CLI profile name
 - `--dry-run` (optional): Show what would happen without making changes
 - `--project-id` (GDC only): GCP project ID, defaults to `PANW_GCP_DEV` or repo-root `.env`

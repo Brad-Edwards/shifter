@@ -233,6 +233,30 @@ variable "autoscaling_max_capacity" {
   type        = number
 }
 
+variable "guacd_autoscaling_min_capacity" {
+  description = "Minimum number of guacd tasks for auto scaling. Defaults to autoscaling_min_capacity."
+  type        = number
+  default     = null
+}
+
+variable "guacd_autoscaling_max_capacity" {
+  description = "Maximum number of guacd tasks for auto scaling. Defaults to autoscaling_max_capacity."
+  type        = number
+  default     = null
+}
+
+variable "guacamole_client_autoscaling_min_capacity" {
+  description = "Minimum number of guacamole-client tasks for auto scaling. Defaults to autoscaling_min_capacity."
+  type        = number
+  default     = null
+}
+
+variable "guacamole_client_autoscaling_max_capacity" {
+  description = "Maximum number of guacamole-client tasks for auto scaling. Defaults to autoscaling_max_capacity."
+  type        = number
+  default     = null
+}
+
 variable "autoscaling_cpu_target" {
   description = "Target CPU utilization percentage for auto scaling"
   type        = number
