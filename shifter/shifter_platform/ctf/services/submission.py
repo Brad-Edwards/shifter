@@ -361,7 +361,7 @@ def rate_challenge(
     # participant_id for an INVITED or DISQUALIFIED row would otherwise
     # bypass the access predicate the views apply via
     # `is_active_participant`. Mirror that here.
-    from ctf.services.participant import _PLAYING_PARTICIPANT_STATUSES
+    from ctf.services.participant.queries import _PLAYING_PARTICIPANT_STATUSES
 
     if participant.registered_at is None or participant.status not in _PLAYING_PARTICIPANT_STATUSES:
         from ctf.exceptions import CTFStateError as _CTFStateError
