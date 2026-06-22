@@ -69,6 +69,7 @@ class DeployPortalScriptTests(unittest.TestCase):
                     printf 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\\n'
                   fi
                   ;;
+                */environment) printf 'development\\n' ;;
                 */image-tag) printf 'abc123\\n' ;;
                 */ecr-registry) printf '123456789012.dkr.ecr.us-east-2.amazonaws.com\\n' ;;
                 */ecr-repository) printf 'shifter-dev-portal\\n' ;;
@@ -382,6 +383,9 @@ class DeployPortalScriptTests(unittest.TestCase):
             )
             self.assertIn("python manage.py migrate --noinput", log)
             self.assertIn("SKIP_MIGRATIONS=1", log)
+            # ENVIRONMENT must reach the container (config.settings
+            # require_environment() fails closed when it is blank, #948).
+            self.assertIn("-e ENVIRONMENT=development", log)
             for name in ("worker-cms", "worker-engine", "worker-mc", "ctf-scheduler"):
                 self.assertIn(f"docker run -d --name {name}", log)
             self.assertIn("run_worker --queue cms", log)
