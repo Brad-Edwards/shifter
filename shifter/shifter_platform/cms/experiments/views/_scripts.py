@@ -16,6 +16,12 @@ from django.views.decorators.http import require_POST
 
 from cms.experiments import services
 from cms.experiments.exceptions import ScriptUploadError
+from cms.experiments.views._constants import (
+    ROUTE_EXPERIMENT_LIST,
+    ROUTE_SCRIPT_LIST,
+    ROUTE_SCRIPT_UPLOAD,
+    UNEXPECTED_ERROR_MESSAGE,
+)
 from shared.auth import threat_research_required
 from shared.errors import classify_user_message
 from shared.log_sanitize import safe_log_value
@@ -46,8 +52,8 @@ def script_list(request: HttpRequest) -> HttpResponse:
             "script_list: unexpected error for user_id=%s",
             request.user.id,
         )
-        messages.error(request, "An unexpected error occurred. Please try again.")
-        return redirect("experiments:experiment_list")
+        messages.error(request, UNEXPECTED_ERROR_MESSAGE)
+        return redirect(ROUTE_EXPERIMENT_LIST)
 
 
 def _complete_script_upload_post(request: HttpRequest, upload_token: str) -> HttpResponse:
@@ -56,9 +62,9 @@ def _complete_script_upload_post(request: HttpRequest, upload_token: str) -> Htt
         script = services.complete_script_upload(cast("User", request.user), upload_token)
     except ScriptUploadError as e:
         messages.error(request, str(e))
-        return redirect("experiments:script_upload")
+        return redirect(ROUTE_SCRIPT_UPLOAD)
     messages.success(request, f"Script '{script.name}' uploaded successfully.")
-    return redirect("experiments:script_list")
+    return redirect(ROUTE_SCRIPT_LIST)
 
 
 def _initiate_script_upload_post(request: HttpRequest) -> HttpResponse:
@@ -88,8 +94,8 @@ def _handle_script_upload_post(request: HttpRequest) -> HttpResponse:
         return _initiate_script_upload_post(request)
     except Exception:
         logger.exception("script_upload: unexpected error for user_id=%s", request.user.id)
-        messages.error(request, "An unexpected error occurred. Please try again.")
-        return redirect("experiments:experiment_list")
+        messages.error(request, UNEXPECTED_ERROR_MESSAGE)
+        return redirect(ROUTE_EXPERIMENT_LIST)
 
 
 @threat_research_required
@@ -122,5 +128,5 @@ def script_delete(request: HttpRequest, script_id: int) -> HttpResponse:
             "script_delete: unexpected error for user_id=%s",
             request.user.id,
         )
-        messages.error(request, "An unexpected error occurred. Please try again.")
-    return redirect("experiments:script_list")
+        messages.error(request, UNEXPECTED_ERROR_MESSAGE)
+    return redirect(ROUTE_SCRIPT_LIST)

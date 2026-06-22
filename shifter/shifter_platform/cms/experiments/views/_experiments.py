@@ -19,6 +19,12 @@ from django.views.decorators.http import require_POST
 from cms.experiments import services
 from cms.experiments.exceptions import ExperimentError, ExperimentValidationError
 from cms.experiments.schemas import ExperimentCreateInput
+from cms.experiments.views._constants import (
+    ROUTE_EXPERIMENT_CREATE,
+    ROUTE_EXPERIMENT_DETAIL,
+    ROUTE_EXPERIMENT_LIST,
+    UNEXPECTED_ERROR_MESSAGE,
+)
 from shared.auth import threat_research_required
 from shared.exceptions import CMSError
 from shared.log_sanitize import safe_log_value
@@ -51,8 +57,8 @@ def experiment_list(request: HttpRequest) -> HttpResponse:
             "experiment_list: unexpected error for user_id=%s",
             request.user.id,
         )
-        messages.error(request, "An unexpected error occurred. Please try again.")
-        return redirect("experiments:experiment_list")
+        messages.error(request, UNEXPECTED_ERROR_MESSAGE)
+        return redirect(ROUTE_EXPERIMENT_LIST)
 
 
 def _validate_experiment_create_input(request: HttpRequest) -> ExperimentCreateInput:
@@ -106,13 +112,13 @@ def _handle_experiment_create_post(request: HttpRequest) -> HttpResponse:
         experiment = services.create_experiment(cast("User", request.user), data)
     except ExperimentValidationError as e:
         messages.error(request, str(e))
-        return redirect("experiments:experiment_create")
+        return redirect(ROUTE_EXPERIMENT_CREATE)
     except Exception:
         logger.exception("experiment_create: unexpected error for user_id=%s", request.user.id)
-        messages.error(request, "An unexpected error occurred. Please try again.")
-        return redirect("experiments:experiment_list")
+        messages.error(request, UNEXPECTED_ERROR_MESSAGE)
+        return redirect(ROUTE_EXPERIMENT_LIST)
     messages.success(request, f"Experiment '{experiment.name}' created.")
-    return redirect("experiments:experiment_detail", experiment_id=experiment.pk)
+    return redirect(ROUTE_EXPERIMENT_DETAIL, experiment_id=experiment.pk)
 
 
 @threat_research_required
@@ -150,14 +156,14 @@ def experiment_detail(request: HttpRequest, experiment_id: int) -> HttpResponse:
         experiment = services.get_experiment(cast("User", request.user), experiment_id)
     except ExperimentError:
         messages.error(request, "Experiment not found.")
-        return redirect("experiments:experiment_list")
+        return redirect(ROUTE_EXPERIMENT_LIST)
     except Exception:
         logger.exception(
             "experiment_detail: unexpected error for user_id=%s",
             request.user.id,
         )
-        messages.error(request, "An unexpected error occurred. Please try again.")
-        return redirect("experiments:experiment_list")
+        messages.error(request, UNEXPECTED_ERROR_MESSAGE)
+        return redirect(ROUTE_EXPERIMENT_LIST)
 
     return render(
         request,
@@ -187,8 +193,8 @@ def experiment_start(request: HttpRequest, experiment_id: int) -> HttpResponse:
             "experiment_start: unexpected error for user_id=%s",
             request.user.id,
         )
-        messages.error(request, "An unexpected error occurred. Please try again.")
-    return redirect("experiments:experiment_detail", experiment_id=experiment_id)
+        messages.error(request, UNEXPECTED_ERROR_MESSAGE)
+    return redirect(ROUTE_EXPERIMENT_DETAIL, experiment_id=experiment_id)
 
 
 @threat_research_required
@@ -208,5 +214,5 @@ def experiment_cancel(request: HttpRequest, experiment_id: int) -> HttpResponse:
             "experiment_cancel: unexpected error for user_id=%s",
             request.user.id,
         )
-        messages.error(request, "An unexpected error occurred. Please try again.")
-    return redirect("experiments:experiment_detail", experiment_id=experiment_id)
+        messages.error(request, UNEXPECTED_ERROR_MESSAGE)
+    return redirect(ROUTE_EXPERIMENT_DETAIL, experiment_id=experiment_id)

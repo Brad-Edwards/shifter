@@ -15,6 +15,11 @@ from django.shortcuts import redirect
 
 from cms.experiments import services
 from cms.experiments.exceptions import ArtifactError
+from cms.experiments.views._constants import (
+    ROUTE_EXPERIMENT_DETAIL,
+    ROUTE_EXPERIMENT_LIST,
+    UNEXPECTED_ERROR_MESSAGE,
+)
 from shared.auth import threat_research_required
 from shared.log_sanitize import safe_log_value
 
@@ -34,14 +39,14 @@ def experiment_download(request: HttpRequest, experiment_id: int) -> HttpRespons
         return redirect(url)
     except ArtifactError as e:
         messages.error(request, str(e))
-        return redirect("experiments:experiment_detail", experiment_id=experiment_id)
+        return redirect(ROUTE_EXPERIMENT_DETAIL, experiment_id=experiment_id)
     except Exception:
         logger.exception(
             "experiment_download: unexpected error for user_id=%s",
             request.user.id,
         )
-        messages.error(request, "An unexpected error occurred. Please try again.")
-        return redirect("experiments:experiment_list")
+        messages.error(request, UNEXPECTED_ERROR_MESSAGE)
+        return redirect(ROUTE_EXPERIMENT_LIST)
 
 
 @threat_research_required
@@ -63,11 +68,11 @@ def artifact_download(
         return redirect(url)
     except ArtifactError as e:
         messages.error(request, str(e))
-        return redirect("experiments:experiment_detail", experiment_id=experiment_id)
+        return redirect(ROUTE_EXPERIMENT_DETAIL, experiment_id=experiment_id)
     except Exception:
         logger.exception(
             "artifact_download: unexpected error for user_id=%s",
             request.user.id,
         )
-        messages.error(request, "An unexpected error occurred. Please try again.")
-        return redirect("experiments:experiment_list")
+        messages.error(request, UNEXPECTED_ERROR_MESSAGE)
+        return redirect(ROUTE_EXPERIMENT_LIST)
