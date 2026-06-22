@@ -78,7 +78,17 @@ def load_contract(tf_outputs: Mapping[str, Any]) -> dict:
 
 
 def _route_endpoint(route: Mapping[str, Any]) -> str | None:
-    return route.get("VpcEndpointId")
+    # A route targeting a Gateway Load Balancer VPC endpoint (the Network
+    # Firewall endpoint) is reported by EC2 DescribeRouteTables under
+    # GatewayId as "vpce-...", not VpcEndpointId. Accept either so the
+    # firewall-endpoint routes are recognized.
+    endpoint = route.get("VpcEndpointId")
+    if endpoint:
+        return endpoint
+    gateway = route.get("GatewayId")
+    if isinstance(gateway, str) and gateway.startswith("vpce-"):
+        return gateway
+    return None
 
 
 def _route_nat(route: Mapping[str, Any]) -> str | None:
