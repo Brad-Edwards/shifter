@@ -65,19 +65,9 @@ def allowed_placeholders(notification_type: str) -> frozenset[str]:
     return ALLOWED_PLACEHOLDERS_BY_TYPE.get(notification_type, frozenset())
 
 
-def find_template_violations(body: str, allowed: frozenset[str]) -> list[str]:
-    """Return policy violations for a custom body (empty list = valid).
-
-    Messages are fixed and body-safe: they never echo raw body content other
-    than placeholder names that already match the flat-identifier grammar.
-    """
+def _placeholder_violations(body: str, allowed: frozenset[str]) -> list[str]:
+    """Return violations for each ``{{ ... }}`` span found in *body*."""
     violations: list[str] = []
-
-    if "{%" in body or "%}" in body:
-        violations.append("Template tags ({% ... %}) are not allowed.")
-    if "{#" in body or "#}" in body:
-        violations.append("Template comments ({# ... #}) are not allowed.")
-
     for raw in _ANY_PLACEHOLDER_RE.findall(body):
         name = raw.strip()
         if not _VALID_NAME_RE.fullmatch(name):
@@ -86,20 +76,37 @@ def find_template_violations(body: str, allowed: frozenset[str]) -> list[str]:
             )
         elif name not in allowed:
             violations.append(f"Unknown placeholder {{{{ {name} }}}}.")
+    return violations
 
-    # Anything left after stripping valid spans means an unmatched delimiter.
-    residual = _ANY_PLACEHOLDER_RE.sub("", body)
-    if "{{" in residual or "}}" in residual:
-        violations.append("Unbalanced template delimiters ({{ or }}).")
 
-    # De-duplicate while preserving order.
+def _dedupe(messages: list[str]) -> list[str]:
+    """Return *messages* with duplicates removed, order preserved."""
     seen: set[str] = set()
     unique: list[str] = []
-    for message in violations:
+    for message in messages:
         if message not in seen:
             seen.add(message)
             unique.append(message)
     return unique
+
+
+def find_template_violations(body: str, allowed: frozenset[str]) -> list[str]:
+    """Return policy violations for a custom body (empty list = valid).
+
+    Messages are fixed and body-safe: they never echo raw body content other
+    than placeholder names that already match the flat-identifier grammar.
+    """
+    violations: list[str] = []
+    if "{%" in body or "%}" in body:
+        violations.append("Template tags ({% ... %}) are not allowed.")
+    if "{#" in body or "#}" in body:
+        violations.append("Template comments ({# ... #}) are not allowed.")
+    violations.extend(_placeholder_violations(body, allowed))
+    # Anything left after stripping valid spans means an unmatched delimiter.
+    residual = _ANY_PLACEHOLDER_RE.sub("", body)
+    if "{{" in residual or "}}" in residual:
+        violations.append("Unbalanced template delimiters ({{ or }}).")
+    return _dedupe(violations)
 
 
 def build_safe_context(context: Mapping[str, object]) -> dict[str, str]:
@@ -157,6 +164,7 @@ def render_safe_body(body: str, scalars: Mapping[str, str], *, escape: bool) -> 
     from django.utils.html import escape as html_escape
 
     def _replace(match: re.Match[str]) -> str:
+        """Substitute one matched placeholder with its allowlisted scalar."""
         value = scalars.get(match.group(1), "")
         return html_escape(value) if escape else value
 
@@ -164,6 +172,7 @@ def render_safe_body(body: str, scalars: Mapping[str, str], *, escape: bool) -> 
 
 
 def _as_text(value: object) -> str:
+    """Coerce a scalar value to a string (``None`` becomes ``""``)."""
     return "" if value is None else str(value)
 
 
