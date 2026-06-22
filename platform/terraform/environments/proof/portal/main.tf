@@ -217,6 +217,62 @@ resource "aws_kms_alias" "portal_s3" {
   target_key_id = aws_kms_key.portal_s3.key_id
 }
 
+resource "aws_kms_key" "redis_at_rest" {
+  description             = "CMK for portal Redis (ElastiCache) data-at-rest encryption (CKV_AWS_191) — see #1059"
+  enable_key_rotation     = true
+  deletion_window_in_days = 30
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid       = "EnableRootAccountAdmin"
+        Effect    = "Allow"
+        Principal = { AWS = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root" }
+        Action    = "kms:*"
+        Resource  = "*"
+      },
+      {
+        # Account-scoped use via ElastiCache only. ElastiCache uses this CMK on
+        # the account's behalf — creating grants for the replication group — to
+        # encrypt cache storage and the group's automated snapshots. kms:ViaService
+        # constrains every use/grant of this key to the ElastiCache service in
+        # this region, and kms:CallerAccount pins it to this account. No runtime
+        # EC2/ECS role needs a direct decrypt grant: at-rest encryption is
+        # provider-owned storage encryption, distinct from the Secrets Manager
+        # CMK that protects the Redis AUTH token.
+        Sid       = "AllowPortalElastiCacheUse"
+        Effect    = "Allow"
+        Principal = { AWS = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root" }
+        Action = [
+          "kms:Decrypt",
+          "kms:DescribeKey",
+          "kms:Encrypt",
+          "kms:GenerateDataKey*",
+          "kms:ReEncrypt*",
+          "kms:CreateGrant",
+        ]
+        Resource = "*"
+        Condition = {
+          StringEquals = {
+            "kms:CallerAccount" = data.aws_caller_identity.current.account_id
+            "kms:ViaService"    = "elasticache.${var.aws_region}.amazonaws.com"
+          }
+        }
+      },
+    ]
+  })
+
+  tags = merge(var.tags, {
+    Name = "${local.name_prefix}-redis-at-rest"
+  })
+}
+
+resource "aws_kms_alias" "redis_at_rest" {
+  name          = "alias/shifter-${var.environment}-redis-at-rest"
+  target_key_id = aws_kms_key.redis_at_rest.key_id
+}
+
 # ------------------------------------------------------------------------------
 # VPC
 # ------------------------------------------------------------------------------
@@ -324,8 +380,10 @@ module "redis" {
 
   # AUTH + in-transit encryption (#938): the AUTH token secret is encrypted by
   # the portal CMK. is_active_channel_backend rejects a live channel layer on
-  # the plaintext single-node path.
+  # the plaintext single-node path. redis_at_rest_kms_key_arn is the dedicated
+  # data-at-rest CMK for the replication group (#1059).
   secrets_kms_key_arn       = aws_kms_key.secrets_manager.arn
+  redis_at_rest_kms_key_arn = aws_kms_key.redis_at_rest.arn
   is_active_channel_backend = var.enable_redis
 
   # CloudWatch Alarms

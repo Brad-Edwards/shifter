@@ -174,8 +174,6 @@ resource "aws_secretsmanager_secret_version" "redis_auth" {
 # ------------------------------------------------------------------------------
 
 resource "aws_elasticache_replication_group" "ha" {
-  # checkov:skip=CKV_AWS_29:Redis at-rest encryption remains deferred (distinct from #938 AUTH+transit scope); principled deferral via ADR-004-R11 exception (#1059).
-  # checkov:skip=CKV_AWS_191:KMS CMK on ElastiCache requires at-rest encryption (kept deferred with CKV_AWS_29); principled deferral via ADR-004-R11 exception (#1059).
   count = var.enable_replication ? 1 : 0
 
   replication_group_id = "${var.name_prefix}-redis"
@@ -197,10 +195,13 @@ resource "aws_elasticache_replication_group" "ha" {
   snapshot_retention_limit = 1
   snapshot_window          = "01:00-02:00"
 
-  # AUTH + in-transit encryption (#938). at-rest encryption stays deferred (see
-  # the CKV_AWS_29 / CKV_AWS_191 skips above) and is tracked separately.
-  at_rest_encryption_enabled = false
+  # AUTH + in-transit encryption (#938) plus data-at-rest encryption under a
+  # dedicated customer-managed CMK (#1059). The at-rest key is distinct from the
+  # Secrets Manager CMK that protects the AUTH token secret; automated snapshots
+  # of this replication group inherit kms_key_id automatically.
+  at_rest_encryption_enabled = true
   transit_encryption_enabled = true
+  kms_key_id                 = var.redis_at_rest_kms_key_arn
   auth_token                 = random_password.redis_auth[0].result
 
   # Order the runtime contract: the AWSCURRENT secret version (the value the
@@ -224,6 +225,10 @@ resource "aws_elasticache_replication_group" "ha" {
     precondition {
       condition     = var.secrets_kms_key_arn != ""
       error_message = "portal/redis: enable_replication requires secrets_kms_key_arn so the Redis AUTH token secret is encrypted by the portal CMK."
+    }
+    precondition {
+      condition     = var.redis_at_rest_kms_key_arn != ""
+      error_message = "portal/redis: enable_replication requires redis_at_rest_kms_key_arn so the replication group's data at rest is encrypted by a dedicated customer-managed CMK (#1059)."
     }
   }
 }
