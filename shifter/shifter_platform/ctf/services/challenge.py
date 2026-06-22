@@ -27,6 +27,7 @@ from ctf.models import (
     CTFParticipant,
     CTFTopic,
 )
+from shared.log_sanitize import safe_log_value
 
 if TYPE_CHECKING:
     pass
@@ -529,7 +530,7 @@ def add_flag(
             action="add",
         )
 
-    logger.info("Added flag %s to challenge %s", flag_obj.id, challenge_id)
+    logger.info("Added flag %s to challenge %s", flag_obj.id, safe_log_value(challenge_id))
     return flag_obj
 
 
@@ -884,7 +885,7 @@ def update_challenge(challenge_id: UUID, challenge_data: dict[str, Any], *, acto
             setattr(challenge, key, value)
         challenge.save()
         _apply_optional_challenge_associations(challenge, flags_list, tag_names, topic_names, actor_id)
-        logger.info("Updated challenge %s", challenge_id)
+        logger.info("Updated challenge %s", safe_log_value(challenge_id))
 
         if challenge.event.is_live_flag_repairable and ("flag" in challenge_data or flags_list is not None):
             from ctf.services.audit import audit_live_flag_repair
