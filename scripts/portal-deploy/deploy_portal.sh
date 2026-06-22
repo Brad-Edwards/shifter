@@ -329,7 +329,9 @@ main() {
   local terminal_read_poll_seconds
   local portal_capacity_metrics_enabled
   local portal_worker_soft_concurrency
+  local environment
 
+  environment=$(get_param "$PS_PREFIX/environment")
   image_digest=$(get_optional_param "$PS_PREFIX/image-digest")
   image_tag=$(get_param "$PS_PREFIX/image-tag")
   ecr_registry=$(get_param "$PS_PREFIX/ecr-registry")
@@ -395,6 +397,7 @@ main() {
   echo "Deploying image: $image"
 
   DOCKER_ENV=()
+  append_env ENVIRONMENT "$environment"
   append_env AWS_REGION "$AWS_REGION"
   append_env AWS_S3_BUCKET_NAME "$s3_bucket"
   append_env DB_SECRET_ARN "$db_secret_arn"
