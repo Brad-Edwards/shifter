@@ -53,6 +53,12 @@ variable "secrets_kms_key_arn" {
   default     = ""
 }
 
+variable "redis_at_rest_kms_key_arn" {
+  description = "ARN of the dedicated Redis data-at-rest CMK used to encrypt the replication group's storage and its automated snapshots (#1059). Required when enable_replication is true (enforced by a precondition on the replication group); ignored on the single-node dev-only plaintext path. Kept distinct from secrets_kms_key_arn, which encrypts the AUTH token secret, not the cache storage. Default empty so non-replication callers need not pass it."
+  type        = string
+  default     = ""
+}
+
 variable "is_active_channel_backend" {
   description = "True when this Redis is the active Django Channels backend for the environment (the env-root enable_redis posture). When true, the module requires the AUTH + in-transit encryption path (enable_replication = true); the single-node path is dev-only plaintext and must not back a live channel layer."
   type        = bool
