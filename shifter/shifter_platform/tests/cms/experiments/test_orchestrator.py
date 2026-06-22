@@ -9,6 +9,8 @@ provisioning persists its records without touching any cloud boundary — no
 first-party seams are mocked.
 """
 
+from unittest.mock import MagicMock, patch
+
 import pytest
 from django.contrib.auth import get_user_model
 
@@ -16,6 +18,26 @@ from cms.experiments.exceptions import ExecutionPlanError
 from cms.experiments.models import Experiment, ExperimentRun, ExperimentScript, ScriptAsset
 from cms.experiments.orchestrator import ExperimentOrchestrator, execution_plan
 from cms.experiments.schemas import ExperimentStatus, RunStatus
+
+ARN = "arn:aws:ecs:us-east-2:123:task/abc"
+
+
+@pytest.fixture
+def ecs_configured(settings):
+    """Configure the experiment ECS task so start_experiment_task reaches boto3."""
+    settings.CLOUD_PROVIDER = "aws"
+    settings.ENGINE_TASK_CLUSTER = "test-cluster"
+    settings.EXPERIMENT_TASK_DEFINITION = "test-taskdef"
+    settings.ENGINE_TASK_NETWORK_SECURITY_GROUP_ID = "sg-123"
+    settings.ENGINE_TASK_NETWORK_SUBNET_IDS = "subnet-1,subnet-2"
+    return settings
+
+
+def _ecs_client():
+    client = MagicMock()
+    client.run_task.return_value = {"tasks": [{"taskArn": ARN}], "failures": []}
+    return client
+
 
 pytestmark = pytest.mark.django_db
 
@@ -245,3 +267,125 @@ class TestBuildExecutionPlan:
         assert plan.run_id == run.pk
         assert len(plan.victim_commands) == 1
         assert plan.victim_commands[0].instance_id == "i-0abcdef12"
+
+
+def _script(user, experiment, *, instance_name, execution_order):
+    asset = ScriptAsset.objects.create(
+        user=user, name="s", s3_key="scripts/x.py", original_filename="x.py", file_size_bytes=100
+    )
+    return ExperimentScript.objects.create(
+        experiment=experiment,
+        instance_name=instance_name,
+        script_type="python",
+        script=asset,
+        execution_order=execution_order,
+    )
+
+
+class TestHandlers:
+    """Event entrypoints drive run state transitions and the ECS dispatch boundary."""
+
+    def _run(self, experiment, *, status, metadata=None):
+        from uuid import uuid4
+
+        return ExperimentRun.objects.create(
+            experiment=experiment,
+            run_number=1,
+            status=status,
+            request_id=uuid4(),
+            metadata=metadata,
+        )
+
+    def test_range_provisioned_no_scripts_completes_run(self, make_experiment):
+        exp = make_experiment(status=ExperimentStatus.RUNNING.value)
+        run = self._run(exp, status=RunStatus.PROVISIONING.value)
+
+        ExperimentOrchestrator(exp.pk).handle_range_provisioned(run.pk, {})
+
+        run.refresh_from_db()
+        assert run.status == RunStatus.COMPLETED.value
+        exp.refresh_from_db()
+        assert exp.status == ExperimentStatus.COMPLETED.value
+
+    def test_range_provisioned_non_dict_payload_coerced(self, make_experiment):
+        exp = make_experiment(status=ExperimentStatus.RUNNING.value)
+        run = self._run(exp, status=RunStatus.PROVISIONING.value)
+
+        # A non-dict payload is coerced to {} rather than raising.
+        ExperimentOrchestrator(exp.pk).handle_range_provisioned(run.pk, ["not", "a", "dict"])
+
+        run.refresh_from_db()
+        assert run.status == RunStatus.COMPLETED.value
+
+    def test_range_provisioned_dispatches_victims(self, user, make_experiment, ecs_configured):
+        exp = make_experiment(status=ExperimentStatus.RUNNING.value)
+        _script(user, exp, instance_name="Workstation", execution_order=10)
+        run = self._run(exp, status=RunStatus.PROVISIONING.value)
+        client = _ecs_client()
+
+        with patch("boto3.client", return_value=client):
+            ExperimentOrchestrator(exp.pk).handle_range_provisioned(
+                run.pk, {"Workstation": {"instance_id": "i-0abcdef12"}}
+            )
+
+        run.refresh_from_db()
+        assert run.status == RunStatus.EXECUTING_VICTIMS.value
+        assert run.metadata["dispatch_task_arn"] == ARN
+        client.run_task.assert_called_once()
+
+    def test_range_provisioned_run_not_found(self, make_experiment):
+        exp = make_experiment(status=ExperimentStatus.RUNNING.value)
+        # Must not raise on an unknown run id.
+        ExperimentOrchestrator(exp.pk).handle_range_provisioned(999999, {})
+
+    def test_victim_completed_dispatches_attacker(self, user, make_experiment, ecs_configured):
+        exp = make_experiment(status=ExperimentStatus.RUNNING.value)
+        _script(user, exp, instance_name="Attacker", execution_order=100)
+        run = self._run(
+            exp,
+            status=RunStatus.EXECUTING_VICTIMS.value,
+            metadata={"provisioned_instances": {"Attacker": {"instance_id": "i-0abcdef12"}}},
+        )
+        client = _ecs_client()
+
+        with patch("boto3.client", return_value=client):
+            ExperimentOrchestrator(exp.pk).handle_victim_scripts_completed(run.pk)
+
+        run.refresh_from_db()
+        assert run.status == RunStatus.EXECUTING_ATTACKER.value
+        client.run_task.assert_called_once()
+
+    def test_victim_completed_no_attacker_completes_run(self, make_experiment):
+        exp = make_experiment(status=ExperimentStatus.RUNNING.value)
+        run = self._run(exp, status=RunStatus.EXECUTING_VICTIMS.value, metadata={"provisioned_instances": {}})
+
+        ExperimentOrchestrator(exp.pk).handle_victim_scripts_completed(run.pk)
+
+        run.refresh_from_db()
+        assert run.status == RunStatus.COMPLETED.value
+
+    def test_attacker_completed_collects_artifacts(self, make_experiment, ecs_configured):
+        exp = make_experiment(status=ExperimentStatus.RUNNING.value)
+        run = self._run(exp, status=RunStatus.EXECUTING_ATTACKER.value, metadata={})
+        client = _ecs_client()
+
+        with patch("boto3.client", return_value=client):
+            ExperimentOrchestrator(exp.pk).handle_attacker_scripts_completed(run.pk)
+
+        run.refresh_from_db()
+        assert run.status == RunStatus.COLLECTING.value
+        assert run.metadata["collect_task_arn"] == ARN
+        client.run_task.assert_called_once()
+
+    def test_artifacts_collected_completes_run(self, make_experiment):
+        exp = make_experiment(status=ExperimentStatus.RUNNING.value)
+        run = self._run(exp, status=RunStatus.COLLECTING.value)
+
+        ExperimentOrchestrator(exp.pk).handle_artifacts_collected(run.pk)
+
+        run.refresh_from_db()
+        assert run.status == RunStatus.COMPLETED.value
+
+    def test_artifacts_collected_run_not_found(self, make_experiment):
+        exp = make_experiment(status=ExperimentStatus.RUNNING.value)
+        ExperimentOrchestrator(exp.pk).handle_artifacts_collected(999999)

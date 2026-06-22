@@ -236,6 +236,15 @@ class TestCollectArtifacts:
         run.refresh_from_db()
         assert run.metadata["collect_task_arn"] == ARN
 
+    def test_missing_request_id_fails_run(self, user):
+        exp, run = _run(user, status=RunStatus.COLLECTING.value, request_id=None)
+
+        run_artifacts.collect_artifacts(exp.pk, run)
+
+        run.refresh_from_db()
+        assert run.status == RunStatus.FAILED.value
+        assert "request_id" in run.error_message
+
     def test_idempotent_when_already_collecting(self, user, ecs_configured):
         exp, run = _run(
             user,
