@@ -128,6 +128,27 @@ def test_healthy_topology_passes() -> None:
     assert failures == []
 
 
+def _route_tables_gateway_form() -> list[dict]:
+    """Mirror _route_tables() but report firewall-endpoint targets under
+    GatewayId, the way live EC2 DescribeRouteTables returns a Gateway Load
+    Balancer VPC endpoint (the Network Firewall endpoint) — "vpce-..." in
+    GatewayId, not VpcEndpointId."""
+    tables = _route_tables()
+    for table in tables:
+        for route in table["Routes"]:
+            endpoint = route.pop("VpcEndpointId", None)
+            if endpoint is not None:
+                route["GatewayId"] = endpoint
+    return tables
+
+
+def test_healthy_topology_passes_with_gateway_endpoint_form() -> None:
+    # Regression: firewall-endpoint routes surface under GatewayId in live
+    # EC2 output; the assertion must recognize them there too.
+    failures = evaluate_inspection(_contract(), _sync_states(), "IN_SYNC", _route_tables_gateway_form())
+    assert failures == []
+
+
 # --------------------------------------------------------------------------- #
 # evaluate_inspection — firewall health
 # --------------------------------------------------------------------------- #

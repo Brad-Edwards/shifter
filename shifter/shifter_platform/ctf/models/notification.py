@@ -184,6 +184,27 @@ class CTFEmailTemplate(CTFBaseModel):
             ),
         ]
 
+    def clean(self) -> None:
+        """Reject unsafe placeholder syntax in custom bodies (issue #1095).
+
+        Defense-in-depth alongside the API validator: enforces the flat
+        ``{{ name }}`` placeholder policy for admin and direct model saves
+        that call ``full_clean()``.
+        """
+        super().clean()
+        from django.core.exceptions import ValidationError
+
+        from ctf.services.email_template import allowed_placeholders, find_template_violations
+
+        allowed = allowed_placeholders(self.notification_type)
+        errors = {}
+        for field in ("html_body", "text_body"):
+            violations = find_template_violations(getattr(self, field) or "", allowed)
+            if violations:
+                errors[field] = violations[0]
+        if errors:
+            raise ValidationError(errors)
+
     def __str__(self) -> str:
         """Return template description."""
         return f"{self.event.name} - {self.notification_type}"
