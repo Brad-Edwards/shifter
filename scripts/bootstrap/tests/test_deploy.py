@@ -23,6 +23,7 @@ from unittest.mock import patch
 import pytest
 
 import deploy
+import terraform_backend as tb
 
 PINNED_IMAGE_TAG = "abc1234"
 
@@ -1051,30 +1052,8 @@ gke_master_authorized_cidrs = ["198.51.100.10/32"]
         mock_wait.assert_called_once_with(config, Path("bootstrap.json"))
         assert mock_init.call_args.args[1] == "prod-rwctxzl6shxk-terraform-state"
         assert mock_init.call_args.args[0] is config
-        expected_init = [
-            "terraform",
-            "init",
-            "-reconfigure",
-            "-backend-config=bucket=prod-rwctxzl6shxk-terraform-state",
-            "-backend-config=prefix=shifter/gcp-dev/platform-core",
-            "-backend-config=credentials=bootstrap.json",
-        ]
-        assert [
-            "terraform",
-            "init",
-            "-reconfigure",
-            f"-backend-config=bucket={config.terraform_state_bucket_name}",
-            f"-backend-config=prefix=shifter/{config.environment}/platform-core",
-            "-backend-config=credentials=bootstrap.json",
-        ] == expected_init
         mock_apply.assert_called_once_with(config)
-        expected_apply = [
-            "terraform",
-            "apply",
-            "-auto-approve",
-            "-var=project_id=prod-rwctxzl6shxk",
-        ]
-        assert ["terraform", "apply", "-auto-approve", f"-var=project_id={config.project_id}"] == expected_apply
+        assert mock_apply.call_args.args[0] is config
         assert outputs["gke_cluster_name"]["value"] == "shifter-gcp-dev-platform"
 
 
@@ -2832,9 +2811,10 @@ class TestGcpBootstrapIdentityPlatform:
             ),
             patch("deploy._gcp_identity_admin_request", side_effect=RuntimeError("EMAIL_EXISTS")) as mock_request,
         ):
-            deploy.ensure_gcp_identity_platform_operator(config, outputs)
+            result = deploy.ensure_gcp_identity_platform_operator(config, outputs)
 
         mock_request.assert_called_once()
+        assert result == "analyst@paloaltonetworks.com"
 
     def test_ensure_gcp_identity_platform_operator_prompts_when_env_missing(self):
         """Interactive bootstrap should prompt for the first operator when env values are absent."""
@@ -3294,18 +3274,25 @@ class TestBootstrapAccount:
 class TestWalkthroughGithubSecrets:
     """Tests for deploy.walkthrough_github_secrets."""
 
+    @staticmethod
+    def _bootstrap_result(**overrides):
+        base = {
+            "role_arn": "arn:aws:iam::123456789012:role/test-role",
+            "secret_name": "AWS_ROLE_ARN_DEV",
+            "github_org": "test-org",
+            "github_repo": "test-repo",
+            "bucket_name": "shifter-dev-infra-test-bucket",
+        }
+        base.update(overrides)
+        return base
+
     # ---------------------------------------------------------------------
     # Happy path - automated with gh CLI
     # ---------------------------------------------------------------------
 
     def test_sets_secret_via_gh_cli_when_user_confirms(self, bootstrap_config, mock_stdin_tty):
         """Function sets GitHub secret using gh CLI when automated."""
-        bootstrap_result = {
-            "role_arn": "arn:aws:iam::123456789012:role/test-role",
-            "secret_name": "AWS_ROLE_ARN_DEV",
-            "github_org": "test-org",
-            "github_repo": "test-repo",
-        }
+        bootstrap_result = self._bootstrap_result()
 
         with (
             patch("builtins.input", return_value="y"),
@@ -3329,16 +3316,11 @@ class TestWalkthroughGithubSecrets:
             assert len(gh_calls) > 0
             # Find the set call
             set_calls = [c for c in gh_calls if "set" in c[0][0]]
-            assert len(set_calls) > 0
+            assert len(set_calls) == 2
 
     def test_includes_role_arn_in_gh_secret_command(self, bootstrap_config, mock_stdin_tty):
         """Function passes correct role ARN to gh secret set."""
-        bootstrap_result = {
-            "role_arn": "arn:aws:iam::123456789012:role/test-role",
-            "secret_name": "AWS_ROLE_ARN_DEV",
-            "github_org": "test-org",
-            "github_repo": "test-repo",
-        }
+        bootstrap_result = self._bootstrap_result()
 
         with (
             patch("builtins.input", return_value="y"),
@@ -3371,12 +3353,7 @@ class TestWalkthroughGithubSecrets:
 
     def test_provides_manual_instructions_when_gh_not_available(self, capsys, mock_stdin_tty):
         """Function shows manual instructions when gh CLI not found."""
-        bootstrap_result = {
-            "role_arn": "arn:aws:iam::123456789012:role/test-role",
-            "secret_name": "AWS_ROLE_ARN_DEV",
-            "github_org": "test-org",
-            "github_repo": "test-repo",
-        }
+        bootstrap_result = self._bootstrap_result()
 
         with (
             patch("subprocess.run") as mock_run,
@@ -3394,12 +3371,7 @@ class TestWalkthroughGithubSecrets:
 
     def test_provides_manual_instructions_when_user_chooses_manual(self, capsys, mock_stdin_tty):
         """Function shows manual instructions when user selects manual."""
-        bootstrap_result = {
-            "role_arn": "arn:aws:iam::123456789012:role/test-role",
-            "secret_name": "AWS_ROLE_ARN_DEV",
-            "github_org": "test-org",
-            "github_repo": "test-repo",
-        }
+        bootstrap_result = self._bootstrap_result()
 
         with (
             patch("subprocess.run") as mock_run,
@@ -3420,32 +3392,66 @@ class TestWalkthroughGithubSecrets:
     # Error handling
     # ---------------------------------------------------------------------
 
-    def test_exits_when_user_refuses_github_secrets(self, mock_stdin_tty, mock_subprocess):
+    def test_exits_when_user_refuses_github_secrets(self, mock_stdin_tty):
         """Function exits when user enters 'no' for GitHub secrets."""
-        bootstrap_result = {
-            "role_arn": "arn:aws:iam::123456789012:role/test-role",
-            "secret_name": "AWS_ROLE_ARN_DEV",
-            "github_org": "test-org",
-            "github_repo": "test-repo",
-        }
+        bootstrap_result = self._bootstrap_result()
 
         with (
-            patch("shutil.which", return_value="/usr/bin/gh"),
-            patch("deploy.confirm_or_manual", return_value="no"),
+            patch("builtins.input", return_value="n"),
+            patch("subprocess.run") as mock_run,
         ):
+
+            def mock_subprocess_run(cmd, **kwargs):
+                cmd_str = " ".join(cmd) if isinstance(cmd, list) else str(cmd)
+                if "which" in cmd_str:
+                    return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="/usr/bin/gh\n", stderr="")
+                if "gh" in cmd_str and "list" in cmd_str:
+                    return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
+                return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
+
+            mock_run.side_effect = mock_subprocess_run
+
             with pytest.raises(SystemExit) as exc_info:
                 deploy.walkthrough_github_secrets(bootstrap_result)
 
             assert exc_info.value.code == 1
 
+    def test_ensures_state_bucket_when_role_secret_kept(self, mock_stdin_tty):
+        """Keeping an existing role secret still provisions TF_INFRA_STATE_BUCKET."""
+        bootstrap_result = self._bootstrap_result()
+
+        with (
+            patch("builtins.input", side_effect=["n", "y"]),
+            patch("subprocess.run") as mock_run,
+        ):
+
+            def mock_subprocess_run(cmd, **kwargs):
+                cmd_str = " ".join(cmd) if isinstance(cmd, list) else str(cmd)
+                if "which" in cmd_str:
+                    return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="/usr/bin/gh\n", stderr="")
+                if "gh" in cmd_str and "list" in cmd_str:
+                    return subprocess.CompletedProcess(
+                        args=cmd,
+                        returncode=0,
+                        stdout="AWS_ROLE_ARN_DEV\tupdated\n",
+                        stderr="",
+                    )
+                if "gh" in cmd_str and "secret" in cmd_str and "set" in cmd_str:
+                    return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
+                return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
+
+            mock_run.side_effect = mock_subprocess_run
+
+            deploy.walkthrough_github_secrets(bootstrap_result)
+
+            bucket_calls = [
+                c for c in mock_run.call_args_list if c[0][0][0] == "gh" and "TF_INFRA_STATE_BUCKET" in c[0][0]
+            ]
+            assert len(bucket_calls) == 1
+
     def test_exits_when_gh_command_fails(self, mock_stdin_tty):
         """Function exits when gh secret set fails."""
-        bootstrap_result = {
-            "role_arn": "arn:aws:iam::123456789012:role/test-role",
-            "secret_name": "AWS_ROLE_ARN_DEV",
-            "github_org": "test-org",
-            "github_repo": "test-repo",
-        }
+        bootstrap_result = self._bootstrap_result()
 
         with (
             patch("deploy.confirm_or_manual", return_value="yes"),
@@ -3471,12 +3477,7 @@ class TestWalkthroughGithubSecrets:
 
     def test_does_not_set_secret_in_dry_run_mode(self, mock_subprocess):
         """Function does not execute gh command in dry-run."""
-        bootstrap_result = {
-            "role_arn": "arn:aws:iam::123456789012:role/test-role",
-            "secret_name": "AWS_ROLE_ARN_DEV",
-            "github_org": "test-org",
-            "github_repo": "test-repo",
-        }
+        bootstrap_result = self._bootstrap_result()
 
         with patch("shutil.which", return_value="/usr/bin/gh"):
             deploy.walkthrough_github_secrets(bootstrap_result, dry_run=True)
@@ -3493,123 +3494,94 @@ class TestWalkthroughGithubSecrets:
 class TestWalkthroughBackendConfig:
     """Tests for deploy.walkthrough_backend_config."""
 
-    # ---------------------------------------------------------------------
-    # Happy path - automated file writes
-    # ---------------------------------------------------------------------
-
-    def test_writes_backend_tf_files_when_user_confirms(self, mock_repo_root, mock_stdin_tty, mock_subprocess):
-        """Function writes backend.tf files when user confirms."""
+    def test_writes_instance_backend_files_when_user_confirms(
+        self, tmp_path, mock_stdin_tty, mock_subprocess, monkeypatch
+    ):
+        instance_dir = tmp_path / "instance"
+        monkeypatch.setenv("SHIFTER_INSTANCE_DIR", str(instance_dir))
         bootstrap_result = {
             "bucket_name": "test-bucket",
-            "table_name": "test-table",
             "region": "us-east-2",
             "env": "dev",
         }
 
-        with (
-            patch("deploy.get_repo_root", return_value=mock_repo_root),
-            patch("deploy.confirm_or_manual", side_effect=["yes", "no"]),
-            patch("pathlib.Path.write_text") as mock_write,
-        ):
+        with patch("deploy.confirm_or_manual", return_value="yes"):
             deploy.walkthrough_backend_config(bootstrap_result)
 
-            # Should write 3 files
-            assert mock_write.call_count == 3  # core, portal, range
+        backend_dir = instance_dir / "terraform-backend"
+        assert (backend_dir / "environments/dev/dev.s3.tfbackend").exists()
+        assert (backend_dir / "environments/dev/portal/dev.s3.tfbackend").exists()
+        assert bootstrap_result["backend_config_dir"] == str(backend_dir)
 
-    def test_creates_correct_backend_config_content(self, mock_repo_root, mock_stdin_tty, mock_subprocess):
-        """Function generates correct Terraform backend configuration."""
+    def test_creates_correct_backend_config_content(self, tmp_path, mock_stdin_tty, mock_subprocess, monkeypatch):
+        instance_dir = tmp_path / "instance"
+        monkeypatch.setenv("SHIFTER_INSTANCE_DIR", str(instance_dir))
         bootstrap_result = {
             "bucket_name": "my-bucket",
-            "table_name": "my-table",
             "region": "us-west-2",
             "env": "prod",
         }
 
-        written_content = []
-
-        def capture_write(content):
-            written_content.append(content)
-
-        with (
-            patch("deploy.get_repo_root", return_value=mock_repo_root),
-            patch("deploy.confirm_or_manual", side_effect=["yes", "no"]),
-            patch("pathlib.Path.write_text", side_effect=capture_write),
-        ):
+        with patch("deploy.confirm_or_manual", return_value="yes"):
             deploy.walkthrough_backend_config(bootstrap_result)
 
-            # Bucket and region appear in the .tfbackend files. State locking
-            # is S3 native (use_lockfile = true), so no DynamoDB table name.
-            all_content = "".join(written_content)
-            assert "my-bucket" in all_content
-            assert "us-west-2" in all_content
-            assert "use_lockfile = true" in all_content
-            assert "dynamodb_table" not in all_content
+        core_backend = (instance_dir / "terraform-backend" / "environments/prod/prod.s3.tfbackend").read_text()
+        assert "my-bucket" in core_backend
+        assert "us-west-2" in core_backend
+        assert "use_lockfile = true" in core_backend
 
-    # ---------------------------------------------------------------------
-    # Error handling
-    # ---------------------------------------------------------------------
-
-    def test_exits_when_user_refuses_backend_config(self, mock_repo_root, mock_stdin_tty, mock_subprocess):
-        """Function exits when user enters 'no' for backend config."""
+    def test_exits_when_user_refuses_backend_config(self, tmp_path, mock_stdin_tty, mock_subprocess, monkeypatch):
+        monkeypatch.setenv("SHIFTER_INSTANCE_DIR", str(tmp_path / "instance"))
         bootstrap_result = {
             "bucket_name": "test-bucket",
-            "table_name": "test-table",
             "region": "us-east-2",
             "env": "dev",
         }
 
         with (
-            patch("deploy.get_repo_root", return_value=mock_repo_root),
             patch("deploy.confirm_or_manual", return_value="no"),
+            pytest.raises(SystemExit) as exc_info,
         ):
-            with pytest.raises(SystemExit) as exc_info:
-                deploy.walkthrough_backend_config(bootstrap_result)
+            deploy.walkthrough_backend_config(bootstrap_result)
 
-            assert exc_info.value.code == 1
+        assert exc_info.value.code == 1
 
-    def test_exits_when_file_write_fails(self, mock_repo_root, mock_stdin_tty, mock_subprocess):
-        """Function exits when backend.tf file write fails."""
+    def test_exits_when_file_write_fails(self, tmp_path, mock_stdin_tty, mock_subprocess, monkeypatch):
+        instance_dir = tmp_path / "instance"
+        instance_dir.mkdir()
+        instance_dir.chmod(0o500)
+        monkeypatch.setenv("SHIFTER_INSTANCE_DIR", str(instance_dir))
         bootstrap_result = {
             "bucket_name": "test-bucket",
-            "table_name": "test-table",
             "region": "us-east-2",
             "env": "dev",
         }
 
         with (
-            patch("deploy.get_repo_root", return_value=mock_repo_root),
             patch("deploy.confirm_or_manual", return_value="yes"),
-            patch("pathlib.Path.write_text", side_effect=OSError("Permission denied")),
-            pytest.raises(SystemExit),
+            pytest.raises(PermissionError),
         ):
             deploy.walkthrough_backend_config(bootstrap_result)
-
-    # ---------------------------------------------------------------------
-    # Manual fallback
-    # ---------------------------------------------------------------------
 
     def test_provides_manual_instructions_when_user_chooses_manual(
-        self, mock_repo_root, capsys, mock_stdin_tty, mock_subprocess
+        self, tmp_path, capsys, mock_stdin_tty, mock_subprocess, monkeypatch
     ):
-        """Function shows manual instructions when user selects manual."""
+        monkeypatch.setenv("SHIFTER_INSTANCE_DIR", str(tmp_path / "instance"))
         bootstrap_result = {
             "bucket_name": "test-bucket",
-            "table_name": "test-table",
             "region": "us-east-2",
             "env": "dev",
         }
 
         with (
-            patch("deploy.get_repo_root", return_value=mock_repo_root),
             patch("deploy.confirm_or_manual", return_value="manual"),
             patch("deploy.wait_for_user") as mock_wait,
         ):
             deploy.walkthrough_backend_config(bootstrap_result)
 
-            # Should call wait_for_user with instructions
-            assert mock_wait.called
-            call_arg = mock_wait.call_args[0][0]
-            assert ".s3.tfbackend" in call_arg.lower()
+        assert mock_wait.called
+        call_arg = mock_wait.call_args[0][0]
+        assert "instance directory" in call_arg.lower()
 
 
 # =============================================================================
@@ -3619,6 +3591,29 @@ class TestWalkthroughBackendConfig:
 
 class TestTerraformDeploy:
     """Tests for deploy.terraform_deploy."""
+
+    @pytest.fixture(autouse=True)
+    def _terraform_backend_setup(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("TF_INFRA_STATE_BUCKET", "test-bucket")
+        instance_dir = tmp_path / "instance"
+        monkeypatch.setenv("SHIFTER_INSTANCE_DIR", str(instance_dir))
+        tb.write_instance_backend_configs(
+            backend_dir=tb.resolve_instance_backend_dir(
+                env="dev",
+                bucket="test-bucket",
+                instance_dir=instance_dir,
+            ),
+            env="dev",
+            bucket="test-bucket",
+            region="us-east-2",
+        )
+        tb.write_portal_remote_state_tfvars(
+            instance_dir=instance_dir,
+            env="dev",
+            bucket="test-bucket",
+            region="us-east-2",
+        )
+        yield
 
     # ---------------------------------------------------------------------
     # Happy path - successful deployment
@@ -3637,10 +3632,7 @@ class TestTerraformDeploy:
             init_calls = [
                 c
                 for c in mock_subprocess.call_args_list
-                if len(c[0]) > 0
-                and len(c[0][0]) > 0
-                and "terraform" in " ".join(c[0][0])
-                and "init" in " ".join(c[0][0])
+                if c.args and len(c.args[0]) >= 2 and c.args[0][0:2] == ["terraform", "init"]
             ]
             assert len(init_calls) == 3
 
@@ -3680,10 +3672,7 @@ class TestTerraformDeploy:
             apply_calls = [
                 c
                 for c in mock_subprocess.call_args_list
-                if len(c[0]) > 0
-                and len(c[0][0]) > 0
-                and "terraform" in " ".join(c[0][0])
-                and "apply" in " ".join(c[0][0])
+                if c.args and len(c.args[0]) >= 2 and c.args[0][0:2] == ["terraform", "apply"]
             ]
             assert len(apply_calls) == 3
 
@@ -4005,7 +3994,6 @@ class TestMainCLI:
             patch("deploy.bootstrap_account") as mock_bootstrap,
             patch("deploy.walkthrough_github_secrets"),
             patch("deploy.walkthrough_backend_config"),
-            patch("deploy.walkthrough_git_commit"),
         ):
             mock_bootstrap.return_value = {"role_arn": "test"}
 

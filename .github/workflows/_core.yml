@@ -20,6 +20,10 @@ on:
         required: true
       AWS_ROLE_ARN_DEV:
         required: true
+      TF_INFRA_STATE_BUCKET:
+        required: true
+      AWS_ROLE_ARN_PROOF:
+        required: false
 
 jobs:
   plan:
@@ -35,16 +39,62 @@ jobs:
         working-directory: platform/terraform/environments/${{ inputs.environment }}
     steps:
       - uses: actions/checkout@v6
+      - name: Resolve AWS deploy role
+        id: aws-role
+        env:
+          ENVIRONMENT: ${{ inputs.environment }}
+          AWS_ROLE_ARN_DEV: ${{ secrets.AWS_ROLE_ARN_DEV }}
+          AWS_ROLE_ARN_PROOF: ${{ secrets.AWS_ROLE_ARN_PROOF }}
+          AWS_ROLE_ARN_PROD: ${{ secrets.AWS_ROLE_ARN }}
+        run: |
+          case "$ENVIRONMENT" in
+            dev)
+              ROLE_SECRET_NAME="AWS_ROLE_ARN_DEV"
+              ROLE_ARN="$AWS_ROLE_ARN_DEV"
+              ;;
+            proof)
+              ROLE_SECRET_NAME="AWS_ROLE_ARN_PROOF"
+              ROLE_ARN="$AWS_ROLE_ARN_PROOF"
+              ;;
+            prod)
+              ROLE_SECRET_NAME="AWS_ROLE_ARN"
+              ROLE_ARN="$AWS_ROLE_ARN_PROD"
+              ;;
+            *)
+              echo "::error::Unsupported AWS environment: $ENVIRONMENT"
+              exit 1
+              ;;
+          esac
+          if [ -z "$ROLE_ARN" ]; then
+            echo "::error::Required secret ${ROLE_SECRET_NAME} is not set"
+            exit 1
+          fi
+          echo "role_arn=$ROLE_ARN" >> "$GITHUB_OUTPUT"
       - uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ inputs.is_dev && secrets.AWS_ROLE_ARN_DEV || secrets.AWS_ROLE_ARN }}
+          role-to-assume: ${{ steps.aws-role.outputs.role_arn }}
           aws-region: us-east-2
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: "1.13.3"
       - run: terraform fmt -check -recursive
         working-directory: platform/terraform
-      - run: terraform init -backend-config=${{ inputs.environment }}.s3.tfbackend
+      - name: Render Terraform backend configs
+        working-directory: ${{ github.workspace }}
+        env:
+          TF_INFRA_STATE_BUCKET: ${{ secrets.TF_INFRA_STATE_BUCKET }}
+          AWS_REGION: us-east-2
+        run: |
+          set -euo pipefail
+          if [ -z "${TF_INFRA_STATE_BUCKET}" ]; then
+            echo "::error::TF_INFRA_STATE_BUCKET secret is required for AWS Terraform deploys"
+            exit 1
+          fi
+          python3 scripts/terraform/render_aws_backend_configs.py \
+            --env "${{ inputs.environment }}" \
+            --stack core \
+            --github-env
+      - run: terraform init -backend-config="${SHIFTER_BACKEND_CONFIG_PATH}"
       - run: terraform validate
       - run: terraform plan -no-color -lock-timeout=5m -out=tfplan && terraform show -no-color tfplan > plan.txt
       - name: Comment PR
@@ -80,14 +130,60 @@ jobs:
         working-directory: platform/terraform/environments/${{ inputs.environment }}
     steps:
       - uses: actions/checkout@v6
+      - name: Resolve AWS deploy role
+        id: aws-role
+        env:
+          ENVIRONMENT: ${{ inputs.environment }}
+          AWS_ROLE_ARN_DEV: ${{ secrets.AWS_ROLE_ARN_DEV }}
+          AWS_ROLE_ARN_PROOF: ${{ secrets.AWS_ROLE_ARN_PROOF }}
+          AWS_ROLE_ARN_PROD: ${{ secrets.AWS_ROLE_ARN }}
+        run: |
+          case "$ENVIRONMENT" in
+            dev)
+              ROLE_SECRET_NAME="AWS_ROLE_ARN_DEV"
+              ROLE_ARN="$AWS_ROLE_ARN_DEV"
+              ;;
+            proof)
+              ROLE_SECRET_NAME="AWS_ROLE_ARN_PROOF"
+              ROLE_ARN="$AWS_ROLE_ARN_PROOF"
+              ;;
+            prod)
+              ROLE_SECRET_NAME="AWS_ROLE_ARN"
+              ROLE_ARN="$AWS_ROLE_ARN_PROD"
+              ;;
+            *)
+              echo "::error::Unsupported AWS environment: $ENVIRONMENT"
+              exit 1
+              ;;
+          esac
+          if [ -z "$ROLE_ARN" ]; then
+            echo "::error::Required secret ${ROLE_SECRET_NAME} is not set"
+            exit 1
+          fi
+          echo "role_arn=$ROLE_ARN" >> "$GITHUB_OUTPUT"
       - uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ inputs.is_dev && secrets.AWS_ROLE_ARN_DEV || secrets.AWS_ROLE_ARN }}
+          role-to-assume: ${{ steps.aws-role.outputs.role_arn }}
           aws-region: us-east-2
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: "1.13.3"
-      - run: terraform init -backend-config=${{ inputs.environment }}.s3.tfbackend
+      - name: Render Terraform backend configs
+        working-directory: ${{ github.workspace }}
+        env:
+          TF_INFRA_STATE_BUCKET: ${{ secrets.TF_INFRA_STATE_BUCKET }}
+          AWS_REGION: us-east-2
+        run: |
+          set -euo pipefail
+          if [ -z "${TF_INFRA_STATE_BUCKET}" ]; then
+            echo "::error::TF_INFRA_STATE_BUCKET secret is required for AWS Terraform deploys"
+            exit 1
+          fi
+          python3 scripts/terraform/render_aws_backend_configs.py \
+            --env "${{ inputs.environment }}" \
+            --stack core \
+            --github-env
+      - run: terraform init -backend-config="${SHIFTER_BACKEND_CONFIG_PATH}"
       - run: terraform plan -no-color -lock-timeout=5m -out=tfplan && terraform show -no-color tfplan
       - run: terraform apply -lock-timeout=5m tfplan
       - run: terraform output -json

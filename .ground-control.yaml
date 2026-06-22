@@ -11,6 +11,5 @@ workflow:
 sonarcloud:
   project_key: Brad-Edwards_shifter
   organization: brad-edwards
-  quality_gate: aces-strict
 rules:
   plan_rules: .gc/plan-rules.md

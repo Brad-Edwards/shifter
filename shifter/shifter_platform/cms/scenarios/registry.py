@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Any
 from cms.scenarios.loader import get_all_scenarios as get_yaml_scenarios
 from cms.scenarios.loader import list_scenario_ids as list_yaml_ids
 from cms.scenarios.loader import load_scenario as load_yaml_scenario
-from cms.scenarios.schema import ScenarioTemplate
+from cms.scenarios.schema import AnyScenarioTemplate, CTFScenarioTemplate, ScenarioTemplate
 from shared.log_sanitize import safe_log_value
 
 if TYPE_CHECKING:
@@ -35,7 +35,7 @@ def _get_metadata_map() -> dict[str, dict[str, Any]]:
     return {m.scenario_id: {"enabled": m.enabled, "staff_only": m.staff_only} for m in ScenarioMetadata.objects.all()}
 
 
-def _get_db_scenarios() -> list[ScenarioTemplate]:
+def _get_db_scenarios() -> list[AnyScenarioTemplate]:
     """Load all active (non-deleted) custom scenarios from the database.
 
     Returns:
@@ -69,7 +69,7 @@ def is_default_scenario(scenario_id: str) -> bool:
 
 
 def _scenario_to_dict(
-    template: ScenarioTemplate,
+    template: AnyScenarioTemplate,
     *,
     is_default: bool,
     metadata: dict[str, Any] | None,
@@ -96,7 +96,14 @@ def _scenario_to_dict(
         data["staff_only"] = False
 
     data["is_default"] = is_default
-    data["agent_requirements"] = template.get_agent_requirements()
+    if isinstance(template, ScenarioTemplate):
+        data["agent_requirements"] = template.get_agent_requirements()
+    else:
+        data["agent_requirements"] = {
+            "requires_windows": False,
+            "requires_linux": False,
+            "has_from_agent": False,
+        }
     return data
 
 
@@ -181,6 +188,14 @@ def get_scenario_detail(scenario_id: str) -> dict[str, Any]:
         raise ValueError(f"Scenario '{scenario_id}' not found") from e
 
 
+def load_demo_scenario_template(scenario_id: str) -> ScenarioTemplate:
+    """Load a demo scenario template for hydration and agent-requirement checks."""
+    template = load_scenario_template(scenario_id)
+    if isinstance(template, CTFScenarioTemplate):
+        raise ValueError(f"Scenario '{scenario_id}' is a CTF scenario")
+    return template
+
+
 def check_scenario_access(scenario_id: str, user: User) -> dict[str, Any]:
     """Check if a user can access a scenario. Returns detail dict or raises ValueError.
 
@@ -203,7 +218,7 @@ def check_scenario_access(scenario_id: str, user: User) -> dict[str, Any]:
     return detail
 
 
-def load_scenario_template(scenario_id: str) -> ScenarioTemplate:
+def load_scenario_template(scenario_id: str) -> AnyScenarioTemplate:
     """Load a ScenarioTemplate from either source for hydration.
 
     This is the replacement for loader.load_scenario() that checks
@@ -213,7 +228,7 @@ def load_scenario_template(scenario_id: str) -> ScenarioTemplate:
         scenario_id: Unique scenario identifier.
 
     Returns:
-        Validated ScenarioTemplate.
+        Validated scenario template (demo or CTF).
 
     Raises:
         ValueError: If scenario not found in either source.

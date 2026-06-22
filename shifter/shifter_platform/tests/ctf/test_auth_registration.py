@@ -433,7 +433,7 @@ class TestDualRoles:
     @patch("django.contrib.auth.models.Group.objects")
     def test_adding_participant_does_not_remove_organizer(self, mock_group_objects, mock_get_profile, mock_set_event):
         """Registering as participant should not remove organizer group."""
-        from ctf.services.participant import _set_ctf_participant_profile
+        from ctf.services.participant.lifecycle import _set_ctf_participant_profile
 
         user = _make_mock_user(
             email="org@test.com",
@@ -461,7 +461,7 @@ class TestDualRoles:
     @patch("django.contrib.auth.models.Group.objects")
     def test_clearing_participant_does_not_remove_organizer(self, mock_group_objects, mock_get_profile, mock_set_event):
         """Clearing participant should not affect organizer group."""
-        from ctf.services.participant import (
+        from ctf.services.participant.lifecycle import (
             _clear_ctf_participant_profile,
             _set_ctf_participant_profile,
         )

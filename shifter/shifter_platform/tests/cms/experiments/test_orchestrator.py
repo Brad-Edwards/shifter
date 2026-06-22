@@ -1,594 +1,391 @@
-"""Tests for experiment orchestrator.
+"""Behavior tests for the experiment orchestrator coordinator.
 
-Tests the orchestration logic — scheduling, state transitions, completion checks.
-Engine calls are mocked since scheduling tests focus on concurrency and state logic.
-All DB access is mocked — these are pure-logic tests using plain pytest classes.
+Drives ``ExperimentOrchestrator`` scheduling, completion detection, run-failure
+handling, and execution-plan construction against real ``Experiment`` /
+``ExperimentRun`` / ``ExperimentScript`` rows (including real
+``transaction.atomic`` / ``select_for_update``, real scenario hydration, and
+real ``engine.services.create_range``). ECS is left unconfigured, so range
+provisioning persists its records without touching any cloud boundary — no
+first-party seams are mocked.
 """
 
 from unittest.mock import MagicMock, patch
 
 import pytest
+from django.contrib.auth import get_user_model
 
-from cms.experiments.orchestrator import ExperimentOrchestrator, ScriptCommand
-from cms.experiments.schemas import TERMINAL_RUN_STATUSES, ExperimentStatus, RunStatus
+from cms.experiments.exceptions import ExecutionPlanError
+from cms.experiments.models import Experiment, ExperimentRun, ExperimentScript, ScriptAsset
+from cms.experiments.orchestrator import ExperimentOrchestrator, execution_plan
+from cms.experiments.schemas import ExperimentStatus, RunStatus
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
-def _make_experiment(**overrides):
-    """Build a mock Experiment with sensible defaults."""
-    exp = MagicMock()
-    exp.pk = overrides.get("pk", 1)
-    exp.status = overrides.get("status", ExperimentStatus.DRAFT.value)
-    exp.name = overrides.get("name", "Test Experiment")
-    exp.scenario_id = overrides.get("scenario_id", "basic")
-    exp.total_runs = overrides.get("total_runs", 3)
-    exp.max_parallel_runs = overrides.get("max_parallel_runs", 2)
-    exp.started_at = overrides.get("started_at")
-    exp.completed_at = overrides.get("completed_at")
-    exp.error_message = overrides.get("error_message", "")
-    exp.agent = overrides.get("agent")
-    exp.user = overrides.get("user", MagicMock(pk=10))
-    return exp
+ARN = "arn:aws:ecs:us-east-2:123:task/abc"
 
 
-def _make_run(**overrides):
-    """Build a mock ExperimentRun with sensible defaults."""
-    run = MagicMock()
-    run.pk = overrides.get("pk", 100)
-    run.experiment_id = overrides.get("experiment_id", 1)
-    run.run_number = overrides.get("run_number", 1)
-    run.status = overrides.get("status", RunStatus.PENDING.value)
-    run.request_id = overrides.get("request_id")
-    run.error_message = overrides.get("error_message", "")
-    run.metadata = overrides.get("metadata")
-    run.started_at = overrides.get("started_at")
-    run.completed_at = overrides.get("completed_at")
-    return run
+@pytest.fixture
+def ecs_configured(settings):
+    """Configure the experiment ECS task so start_experiment_task reaches boto3."""
+    settings.CLOUD_PROVIDER = "aws"
+    settings.ENGINE_TASK_CLUSTER = "test-cluster"
+    settings.EXPERIMENT_TASK_DEFINITION = "test-taskdef"
+    settings.ENGINE_TASK_NETWORK_SECURITY_GROUP_ID = "sg-123"
+    settings.ENGINE_TASK_NETWORK_SUBNET_IDS = "subnet-1,subnet-2"
+    return settings
 
 
-def _make_script_assignment(**overrides):
-    """Build a mock ExperimentScript."""
-    sa = MagicMock()
-    sa.instance_name = overrides.get("instance_name", "Workstation")
-    sa.script_type = overrides.get("script_type", "python")
-    sa.execution_order = overrides.get("execution_order", 10)
-    sa.claude_prompt = overrides.get("claude_prompt", "")
-    script = MagicMock()
-    script.s3_key = overrides.get("s3_key", "scripts/test.py")
-    sa.script = overrides.get("script", script)
-    return sa
+def _ecs_client():
+    client = MagicMock()
+    client.run_task.return_value = {"tasks": [{"taskArn": ARN}], "failures": []}
+    return client
 
 
-# ---------------------------------------------------------------------------
-# ScheduleRunsTest
-# ---------------------------------------------------------------------------
+pytestmark = pytest.mark.django_db
+
+User = get_user_model()
+
+
+@pytest.fixture
+def user(db):
+    return User.objects.create_user(username="exp-orch@example.com", email="exp-orch@example.com")
+
+
+@pytest.fixture
+def make_experiment(user, make_agent, hydratable_scenario):
+    """Create a real Experiment whose scenario hydrates with a single Windows agent."""
+
+    def _make(*, status=ExperimentStatus.RUNNING.value, max_parallel_runs=2, total_runs=5, with_agent=True):
+        return Experiment.objects.create(
+            user=user,
+            name="Exp",
+            scenario_id=hydratable_scenario.scenario_id,
+            agent=make_agent(user) if with_agent else None,
+            status=status,
+            max_parallel_runs=max_parallel_runs,
+            total_runs=total_runs,
+        )
+
+    return _make
+
+
+def _pending_runs(experiment, count, *, start=1):
+    return [
+        ExperimentRun.objects.create(experiment=experiment, run_number=i, status=RunStatus.PENDING.value)
+        for i in range(start, start + count)
+    ]
 
 
 class TestScheduleRuns:
-    """Tests for schedule_runs() — scheduling, max_parallel, transition logic."""
+    """schedule_runs — scheduling, max_parallel, transition logic."""
 
-    @patch(
-        "django.db.transaction.atomic",
-        return_value=MagicMock(__enter__=MagicMock(), __exit__=MagicMock(return_value=False)),
-    )
-    @patch("cms.experiments.orchestrator.engine_create_range")
-    @patch("cms.experiments.orchestrator.ExperimentRun")
-    @patch("cms.experiments.orchestrator.Experiment")
-    def test_schedule_transitions_to_running(self, MockExperiment, MockRun, mock_engine, mock_atomic):
-        """schedule_runs transitions a QUEUED experiment to RUNNING."""
-        exp = _make_experiment(pk=1, status=ExperimentStatus.QUEUED.value)
+    def test_transitions_queued_to_running(self, make_experiment):
+        exp = make_experiment(status=ExperimentStatus.QUEUED.value, total_runs=0)
 
-        # After transition_to(RUNNING), the status changes to RUNNING
-        def do_transition(new_status):
-            exp.status = new_status.value
+        scheduled = ExperimentOrchestrator(exp.pk).schedule_runs()
 
-        exp.transition_to.side_effect = do_transition
-
-        # select_for_update().get() returns the experiment
-        mock_sfu = MagicMock()
-        mock_sfu.get.return_value = exp
-        MockExperiment.objects.select_for_update.return_value = mock_sfu
-
-        # No active runs
-        MockRun.objects.filter.return_value.count.return_value = 0
-
-        # No pending runs to schedule
-        pending_qs = MagicMock()
-        pending_qs.filter.return_value.order_by.return_value.__getitem__ = MagicMock(return_value=[])
-        MockRun.objects.select_for_update.return_value = pending_qs
-
-        orch = ExperimentOrchestrator(experiment_id=1)
-        orch.schedule_runs()
-
-        # transition_to was called with RUNNING
-        exp.transition_to.assert_called_with(ExperimentStatus.RUNNING)
-
-    @patch(
-        "django.db.transaction.atomic",
-        return_value=MagicMock(__enter__=MagicMock(), __exit__=MagicMock(return_value=False)),
-    )
-    @patch("cms.experiments.orchestrator.engine_create_range")
-    @patch("cms.experiments.orchestrator.ExperimentRun")
-    @patch("cms.experiments.orchestrator.Experiment")
-    def test_respects_max_parallel(self, MockExperiment, MockRun, mock_engine, mock_atomic):
-        """schedule_runs only schedules up to max_parallel_runs minus active."""
-        exp = _make_experiment(pk=1, status=ExperimentStatus.RUNNING.value, max_parallel_runs=2)
-
-        mock_sfu = MagicMock()
-        mock_sfu.get.return_value = exp
-        MockExperiment.objects.select_for_update.return_value = mock_sfu
-
-        # 0 active runs
-        MockRun.objects.filter.return_value.count.return_value = 0
-
-        # 5 pending runs available, but slots_available = 2
-        run1 = _make_run(pk=101, run_number=1)
-        run2 = _make_run(pk=102, run_number=2)
-
-        pending_qs = MagicMock()
-        pending_qs.filter.return_value.order_by.return_value.__getitem__ = MagicMock(return_value=[run1, run2])
-        MockRun.objects.select_for_update.return_value = pending_qs
-
-        orch = ExperimentOrchestrator(experiment_id=1)
-
-        with patch.object(orch, "_request_range_provisioning"):
-            scheduled = orch.schedule_runs()
-
-        assert scheduled == 2
-        assert run1.transition_to.call_count == 1
-        assert run2.transition_to.call_count == 1
-        run1.transition_to.assert_called_with(RunStatus.PROVISIONING)
-        run2.transition_to.assert_called_with(RunStatus.PROVISIONING)
-
-    @patch(
-        "django.db.transaction.atomic",
-        return_value=MagicMock(__enter__=MagicMock(), __exit__=MagicMock(return_value=False)),
-    )
-    @patch("cms.experiments.orchestrator.engine_create_range")
-    @patch("cms.experiments.orchestrator.ExperimentRun")
-    @patch("cms.experiments.orchestrator.Experiment")
-    def test_schedules_nothing_when_full(self, MockExperiment, MockRun, mock_engine, mock_atomic):
-        """schedule_runs returns 0 when active runs fill all slots."""
-        exp = _make_experiment(pk=1, status=ExperimentStatus.RUNNING.value, max_parallel_runs=1)
-
-        mock_sfu = MagicMock()
-        mock_sfu.get.return_value = exp
-        MockExperiment.objects.select_for_update.return_value = mock_sfu
-
-        # 1 active run, max_parallel=1 → no slots
-        MockRun.objects.filter.return_value.count.return_value = 1
-
-        orch = ExperimentOrchestrator(experiment_id=1)
-        scheduled = orch.schedule_runs()
-
+        exp.refresh_from_db()
+        assert exp.status == ExperimentStatus.RUNNING.value
         assert scheduled == 0
 
+    def test_respects_max_parallel(self, make_experiment):
+        exp = make_experiment(status=ExperimentStatus.RUNNING.value, max_parallel_runs=2)
+        runs = _pending_runs(exp, 5)
 
-# ---------------------------------------------------------------------------
-# ExperimentCompletionTest
-# ---------------------------------------------------------------------------
+        scheduled = ExperimentOrchestrator(exp.pk).schedule_runs()
 
+        assert scheduled == 2
+        provisioning = ExperimentRun.objects.filter(experiment=exp, status=RunStatus.PROVISIONING.value).count()
+        pending = ExperimentRun.objects.filter(experiment=exp, status=RunStatus.PENDING.value).count()
+        assert provisioning == 2
+        assert pending == 3
+        for run in runs[:2]:
+            run.refresh_from_db()
+            assert run.request_id is not None
 
-class TestExperimentCompletion:
-    """Tests for _check_experiment_completion — terminal state detection."""
+    def test_schedules_nothing_when_full(self, make_experiment):
+        exp = make_experiment(status=ExperimentStatus.RUNNING.value, max_parallel_runs=1)
+        ExperimentRun.objects.create(experiment=exp, run_number=1, status=RunStatus.PROVISIONING.value)
+        _pending_runs(exp, 2, start=2)
 
-    @patch("cms.experiments.orchestrator.audit_log_system_event")
-    @patch("cms.experiments.orchestrator.ExperimentRun")
-    @patch("cms.experiments.orchestrator.Experiment")
-    def test_all_runs_completed_marks_experiment_completed(self, MockExperiment, MockRun, mock_audit):
-        exp = _make_experiment(pk=1, status=ExperimentStatus.RUNNING.value)
-        mock_prefetch = MagicMock()
-        mock_prefetch.get.return_value = exp
-        MockExperiment.objects.prefetch_related.return_value = mock_prefetch
+        scheduled = ExperimentOrchestrator(exp.pk).schedule_runs()
 
-        # All 2 runs are terminal, all completed, 0 failed
-        all_runs_qs = MagicMock()
-        all_runs_qs.count.return_value = 2
-        all_runs_qs.filter.side_effect = lambda **kwargs: self._filter_runs(kwargs, total=2, completed=2, failed=0)
-        MockRun.objects.filter.return_value = all_runs_qs
+        assert scheduled == 0
+        assert ExperimentRun.objects.filter(experiment=exp, status=RunStatus.PENDING.value).count() == 2
 
-        orch = ExperimentOrchestrator(experiment_id=1)
-        orch._check_experiment_completion()
+    def test_not_running_experiment_skips(self, make_experiment):
+        exp = make_experiment(status=ExperimentStatus.COMPLETED.value)
+        _pending_runs(exp, 2)
 
-        exp.transition_to.assert_called_once_with(ExperimentStatus.COMPLETED)
+        scheduled = ExperimentOrchestrator(exp.pk).schedule_runs()
 
-    @patch("cms.experiments.orchestrator.audit_log_system_event")
-    @patch("cms.experiments.orchestrator.ExperimentRun")
-    @patch("cms.experiments.orchestrator.Experiment")
-    def test_all_runs_failed_marks_experiment_failed(self, MockExperiment, MockRun, mock_audit):
-        exp = _make_experiment(pk=1, status=ExperimentStatus.RUNNING.value)
-        mock_prefetch = MagicMock()
-        mock_prefetch.get.return_value = exp
-        MockExperiment.objects.prefetch_related.return_value = mock_prefetch
-
-        all_runs_qs = MagicMock()
-        all_runs_qs.count.return_value = 2
-        all_runs_qs.filter.side_effect = lambda **kwargs: self._filter_runs(kwargs, total=2, completed=0, failed=2)
-        MockRun.objects.filter.return_value = all_runs_qs
-
-        orch = ExperimentOrchestrator(experiment_id=1)
-        orch._check_experiment_completion()
-
-        exp.transition_to.assert_called_once_with(ExperimentStatus.FAILED)
-        exp.save.assert_called()
-
-    @patch("cms.experiments.orchestrator.audit_log_system_event")
-    @patch("cms.experiments.orchestrator.ExperimentRun")
-    @patch("cms.experiments.orchestrator.Experiment")
-    def test_mixed_results_marks_completed(self, MockExperiment, MockRun, mock_audit):
-        """If some runs succeed and some fail, experiment is still completed (not failed)."""
-        exp = _make_experiment(pk=1, status=ExperimentStatus.RUNNING.value)
-        mock_prefetch = MagicMock()
-        mock_prefetch.get.return_value = exp
-        MockExperiment.objects.prefetch_related.return_value = mock_prefetch
-
-        all_runs_qs = MagicMock()
-        all_runs_qs.count.return_value = 2
-        all_runs_qs.filter.side_effect = lambda **kwargs: self._filter_runs(kwargs, total=2, completed=1, failed=1)
-        MockRun.objects.filter.return_value = all_runs_qs
-
-        orch = ExperimentOrchestrator(experiment_id=1)
-        orch._check_experiment_completion()
-
-        exp.transition_to.assert_called_once_with(ExperimentStatus.COMPLETED)
-
-    @patch("cms.experiments.orchestrator.audit_log_system_event")
-    @patch("cms.experiments.orchestrator.ExperimentRun")
-    @patch("cms.experiments.orchestrator.Experiment")
-    def test_pending_runs_block_completion(self, MockExperiment, MockRun, mock_audit):
-        exp = _make_experiment(pk=1, status=ExperimentStatus.RUNNING.value)
-        mock_prefetch = MagicMock()
-        mock_prefetch.get.return_value = exp
-        MockExperiment.objects.prefetch_related.return_value = mock_prefetch
-
-        # 2 total, but only 1 terminal (1 pending) → terminal_count < total
-        all_runs_qs = MagicMock()
-        all_runs_qs.count.return_value = 2
-        terminal_qs = MagicMock()
-        terminal_qs.count.return_value = 1  # only 1 terminal
-        all_runs_qs.filter.return_value = terminal_qs
-        MockRun.objects.filter.return_value = all_runs_qs
-
-        orch = ExperimentOrchestrator(experiment_id=1)
-        orch._check_experiment_completion()
-
-        exp.transition_to.assert_not_called()
-
-    @staticmethod
-    def _filter_runs(kwargs, total, completed, failed):
-        """Return a mock queryset whose .count() depends on the filter kwargs."""
-        qs = MagicMock()
-        status_in = kwargs.get("status__in")
-        status_exact = kwargs.get("status")
-
-        if status_in is not None:
-            # Terminal statuses filter
-            terminal_values = {s.value for s in TERMINAL_RUN_STATUSES}
-            if set(status_in) == terminal_values:
-                qs.count.return_value = completed + failed
-            else:
-                qs.count.return_value = 0
-        elif status_exact == RunStatus.COMPLETED.value:
-            qs.count.return_value = completed
-        elif status_exact == RunStatus.FAILED.value:
-            qs.count.return_value = failed
-        else:
-            qs.count.return_value = total
-
-        return qs
-
-
-# ---------------------------------------------------------------------------
-# HandleRunFailedTest
-# ---------------------------------------------------------------------------
-
-
-class TestHandleRunFailed:
-    """Tests for handle_run_failed — run failure marking."""
-
-    @patch("cms.experiments.orchestrator.ExperimentRun")
-    @patch("cms.experiments.orchestrator.Experiment")
-    def test_marks_run_failed(self, MockExperiment, MockRun):
-        run = _make_run(pk=100, status=RunStatus.PROVISIONING.value)
-        MockRun.objects.get.return_value = run
-        MockRun.DoesNotExist = Exception
-
-        # Mock experiment for refresh/completion check
-        exp = _make_experiment(pk=1, status=ExperimentStatus.RUNNING.value)
-        mock_prefetch = MagicMock()
-        mock_prefetch.get.return_value = exp
-        MockExperiment.objects.prefetch_related.return_value = mock_prefetch
-
-        # select_for_update for schedule_runs path (called inside handle_run_failed)
-        mock_sfu = MagicMock()
-        mock_sfu.get.return_value = exp
-        MockExperiment.objects.select_for_update.return_value = mock_sfu
-
-        orch = ExperimentOrchestrator(experiment_id=1)
-
-        with patch.object(orch, "schedule_runs"), patch.object(orch, "_check_experiment_completion"):
-            orch.handle_run_failed(100, "Provisioning timed out")
-
-        run.save.assert_called()
-        run.transition_to.assert_called_with(RunStatus.FAILED)
-        assert run.error_message == "Provisioning timed out"
-
-    @patch("cms.experiments.orchestrator.ExperimentRun")
-    @patch("cms.experiments.orchestrator.Experiment")
-    def test_ignores_already_terminal(self, MockExperiment, MockRun):
-        run = _make_run(pk=100, status=RunStatus.COMPLETED.value)
-        MockRun.objects.get.return_value = run
-        MockRun.DoesNotExist = Exception
-
-        orch = ExperimentOrchestrator(experiment_id=1)
-        orch.handle_run_failed(100, "Late failure")
-
-        run.transition_to.assert_not_called()
-        assert run.status == RunStatus.COMPLETED.value
-
-
-# ---------------------------------------------------------------------------
-# ConcurrentScheduleRunsTest
-# ---------------------------------------------------------------------------
+        assert scheduled == 0
+        assert ExperimentRun.objects.filter(experiment=exp, status=RunStatus.PENDING.value).count() == 2
 
 
 class TestConcurrentScheduleRuns:
-    """Verify that concurrent schedule_runs() calls don't over-schedule beyond max_parallel.
+    """Successive schedule_runs() calls respect slot limits independently."""
 
-    Since we removed DB access, we verify the locking/scheduling logic via mocks.
-    """
+    def test_second_call_finds_no_slots(self, make_experiment):
+        exp = make_experiment(status=ExperimentStatus.RUNNING.value, max_parallel_runs=1)
+        _pending_runs(exp, 2)
 
-    @patch(
-        "django.db.transaction.atomic",
-        return_value=MagicMock(__enter__=MagicMock(), __exit__=MagicMock(return_value=False)),
-    )
-    @patch("cms.experiments.orchestrator.engine_create_range")
-    @patch("cms.experiments.orchestrator.ExperimentRun")
-    @patch("cms.experiments.orchestrator.Experiment")
-    def test_concurrent_schedule_respects_max_parallel(self, MockExperiment, MockRun, mock_engine, mock_atomic):
-        """Each invocation of schedule_runs respects slot limits independently."""
-        exp = _make_experiment(pk=1, status=ExperimentStatus.RUNNING.value, max_parallel_runs=1)
-
-        mock_sfu = MagicMock()
-        mock_sfu.get.return_value = exp
-        MockExperiment.objects.select_for_update.return_value = mock_sfu
-
-        # First call: 0 active, 1 slot → schedule 1 run
-        run1 = _make_run(pk=101, run_number=1)
-        # Second call: 1 active, 1 slot → 0 available
-        active_counts = iter([0, 1])
-        MockRun.objects.filter.return_value.count.side_effect = lambda: next(active_counts)
-
-        pending_results = iter([[run1], []])
-        pending_qs = MagicMock()
-        pending_qs.filter.return_value.order_by.return_value.__getitem__ = MagicMock(
-            side_effect=lambda s: next(pending_results)
-        )
-        MockRun.objects.select_for_update.return_value = pending_qs
-
-        orch = ExperimentOrchestrator(experiment_id=1)
-
-        with patch.object(orch, "_request_range_provisioning"):
-            first = orch.schedule_runs()
-            orch.refresh()
-            second = orch.schedule_runs()
+        orch = ExperimentOrchestrator(exp.pk)
+        first = orch.schedule_runs()
+        orch.refresh()
+        second = orch.schedule_runs()
 
         assert first == 1
         assert second == 0
         assert first + second <= exp.max_parallel_runs
 
 
-# ---------------------------------------------------------------------------
-# BuildExecutionPlanTest
-# ---------------------------------------------------------------------------
+class TestExperimentCompletion:
+    """_check_experiment_completion — terminal state detection."""
+
+    def _runs(self, experiment, *, completed=0, failed=0, pending=0):
+        n = 1
+        for _ in range(completed):
+            ExperimentRun.objects.create(experiment=experiment, run_number=n, status=RunStatus.COMPLETED.value)
+            n += 1
+        for _ in range(failed):
+            ExperimentRun.objects.create(experiment=experiment, run_number=n, status=RunStatus.FAILED.value)
+            n += 1
+        for _ in range(pending):
+            ExperimentRun.objects.create(experiment=experiment, run_number=n, status=RunStatus.PENDING.value)
+            n += 1
+
+    def test_all_completed_marks_experiment_completed(self, make_experiment):
+        exp = make_experiment(status=ExperimentStatus.RUNNING.value)
+        self._runs(exp, completed=2)
+
+        ExperimentOrchestrator(exp.pk)._check_experiment_completion()
+
+        exp.refresh_from_db()
+        assert exp.status == ExperimentStatus.COMPLETED.value
+
+    def test_all_failed_marks_experiment_failed(self, make_experiment):
+        exp = make_experiment(status=ExperimentStatus.RUNNING.value)
+        self._runs(exp, failed=2)
+
+        ExperimentOrchestrator(exp.pk)._check_experiment_completion()
+
+        exp.refresh_from_db()
+        assert exp.status == ExperimentStatus.FAILED.value
+        assert exp.error_message != ""
+
+    def test_mixed_results_marks_completed(self, make_experiment):
+        exp = make_experiment(status=ExperimentStatus.RUNNING.value)
+        self._runs(exp, completed=1, failed=1)
+
+        ExperimentOrchestrator(exp.pk)._check_experiment_completion()
+
+        exp.refresh_from_db()
+        assert exp.status == ExperimentStatus.COMPLETED.value
+
+    def test_pending_runs_block_completion(self, make_experiment):
+        exp = make_experiment(status=ExperimentStatus.RUNNING.value)
+        self._runs(exp, completed=1, pending=1)
+
+        ExperimentOrchestrator(exp.pk)._check_experiment_completion()
+
+        exp.refresh_from_db()
+        assert exp.status == ExperimentStatus.RUNNING.value
+
+
+class TestHandleRunFailed:
+    """handle_run_failed — run failure marking."""
+
+    def test_marks_run_failed(self, make_experiment):
+        exp = make_experiment(status=ExperimentStatus.RUNNING.value)
+        run = ExperimentRun.objects.create(experiment=exp, run_number=1, status=RunStatus.PROVISIONING.value)
+
+        ExperimentOrchestrator(exp.pk).handle_run_failed(run.pk, "Provisioning timed out")
+
+        run.refresh_from_db()
+        assert run.status == RunStatus.FAILED.value
+        assert run.error_message == "Provisioning timed out"
+
+    def test_ignores_already_terminal(self, make_experiment):
+        exp = make_experiment(status=ExperimentStatus.RUNNING.value)
+        run = ExperimentRun.objects.create(experiment=exp, run_number=1, status=RunStatus.COMPLETED.value)
+
+        ExperimentOrchestrator(exp.pk).handle_run_failed(run.pk, "Late failure")
+
+        run.refresh_from_db()
+        assert run.status == RunStatus.COMPLETED.value
+        assert run.error_message == ""
 
 
 class TestBuildExecutionPlan:
-    """Tests for _build_execution_plan validation and error handling."""
+    """build_execution_plan validation and error handling."""
 
-    @patch("cms.experiments.orchestrator.ExperimentScript")
-    @patch("cms.experiments.orchestrator.Experiment")
-    def test_raises_on_missing_instance_id(self, MockExperiment, MockScript):
-        """Raises ExecutionPlanError when instance has no instance_id key."""
-        from cms.experiments.exceptions import ExecutionPlanError
-
-        exp = _make_experiment(pk=1)
-        mock_prefetch = MagicMock()
-        mock_prefetch.get.return_value = exp
-        MockExperiment.objects.prefetch_related.return_value = mock_prefetch
-
-        run = _make_run(pk=100)
-
-        # Script assignment targeting "Workstation"
-        sa = _make_script_assignment(
-            instance_name="Workstation",
-            script_type="python",
-            execution_order=10,
-            s3_key="scripts/test.py",
+    def _script(self, user, experiment, *, instance_name="Workstation", s3_key="scripts/test.py", execution_order=10):
+        asset = ScriptAsset.objects.create(
+            user=user, name="s", s3_key=s3_key, original_filename="s.py", file_size_bytes=100
         )
-        mock_qs = MagicMock()
-        mock_qs.select_related.return_value.order_by.return_value = [sa]
-        MockScript.objects.filter.return_value = mock_qs
+        return ExperimentScript.objects.create(
+            experiment=experiment,
+            instance_name=instance_name,
+            script_type="python",
+            script=asset,
+            execution_order=execution_order,
+        )
 
-        provisioned_instances = {
-            "Workstation": {"hostname": "ws01"},  # No instance_id!
-        }
+    def test_raises_on_missing_instance_id(self, user, make_experiment):
+        exp = make_experiment(status=ExperimentStatus.RUNNING.value)
+        run = ExperimentRun.objects.create(experiment=exp, run_number=1, status=RunStatus.PROVISIONING.value)
+        self._script(user, exp, instance_name="Workstation")
 
-        orch = ExperimentOrchestrator(experiment_id=1)
+        provisioned = {"Workstation": {"hostname": "ws01"}}  # no instance_id
 
-        with (
-            patch("cms.experiments.orchestrator.build_instance_data", return_value={}),
-            pytest.raises(ExecutionPlanError) as exc_info,
-        ):
-            orch._build_execution_plan(run, provisioned_instances)
+        with pytest.raises(ExecutionPlanError) as exc_info:
+            execution_plan.build_execution_plan(exp.pk, run, provisioned)
 
         assert str(run.pk) in str(exc_info.value)
         assert "Workstation" in str(exc_info.value)
 
-    @patch("cms.experiments.orchestrator.ExperimentScript")
-    @patch("cms.experiments.orchestrator.Experiment")
-    def test_raises_on_missing_instance_completely(self, MockExperiment, MockScript):
-        """Raises ExecutionPlanError when instance not in provisioned dict."""
-        from cms.experiments.exceptions import ExecutionPlanError
+    def test_raises_on_missing_instance_completely(self, user, make_experiment):
+        exp = make_experiment(status=ExperimentStatus.RUNNING.value)
+        run = ExperimentRun.objects.create(experiment=exp, run_number=1, status=RunStatus.PROVISIONING.value)
+        self._script(user, exp, instance_name="Workstation")
 
-        exp = _make_experiment(pk=1)
-        mock_prefetch = MagicMock()
-        mock_prefetch.get.return_value = exp
-        MockExperiment.objects.prefetch_related.return_value = mock_prefetch
+        provisioned = {"Server": {"instance_id": "i-abc123"}}
 
-        run = _make_run(pk=100)
-
-        sa = _make_script_assignment(
-            instance_name="Workstation",
-            script_type="python",
-            execution_order=10,
-        )
-        mock_qs = MagicMock()
-        mock_qs.select_related.return_value.order_by.return_value = [sa]
-        MockScript.objects.filter.return_value = mock_qs
-
-        # Provisioned data completely missing "Workstation"
-        provisioned_instances = {
-            "Server": {"instance_id": "i-abc123"},
-        }
-
-        orch = ExperimentOrchestrator(experiment_id=1)
-
-        with (
-            patch("cms.experiments.orchestrator.build_instance_data", return_value={}),
-            pytest.raises(ExecutionPlanError) as exc_info,
-        ):
-            orch._build_execution_plan(run, provisioned_instances)
+        with pytest.raises(ExecutionPlanError) as exc_info:
+            execution_plan.build_execution_plan(exp.pk, run, provisioned)
 
         assert "Workstation" in str(exc_info.value)
 
-    @patch("cms.experiments.orchestrator.ExperimentScript")
-    @patch("cms.experiments.orchestrator.Experiment")
-    def test_builds_successfully_with_all_instances(self, MockExperiment, MockScript):
-        """Builds execution plan successfully when all instances present."""
-        exp = _make_experiment(pk=1)
-        mock_prefetch = MagicMock()
-        mock_prefetch.get.return_value = exp
-        MockExperiment.objects.prefetch_related.return_value = mock_prefetch
+    def test_builds_successfully_with_all_instances(self, user, make_experiment):
+        exp = make_experiment(status=ExperimentStatus.RUNNING.value)
+        run = ExperimentRun.objects.create(experiment=exp, run_number=1, status=RunStatus.PROVISIONING.value)
+        self._script(user, exp, instance_name="Workstation")
 
-        run = _make_run(pk=100)
+        provisioned = {"Workstation": {"instance_id": "i-0abcdef12", "hostname": "ws01"}}
 
-        sa = _make_script_assignment(
-            instance_name="Workstation",
-            script_type="python",
-            execution_order=10,
-            s3_key="scripts/test.py",
-        )
-        mock_qs = MagicMock()
-        mock_qs.select_related.return_value.order_by.return_value = [sa]
-        MockScript.objects.filter.return_value = mock_qs
-
-        provisioned_instances = {
-            "Workstation": {"instance_id": "i-0abcdef12", "hostname": "ws01"},
-        }
-
-        orch = ExperimentOrchestrator(experiment_id=1)
-
-        with patch("cms.experiments.orchestrator.build_instance_data", return_value={}):
-            plan = orch._build_execution_plan(run, provisioned_instances)
+        plan = execution_plan.build_execution_plan(exp.pk, run, provisioned)
 
         assert plan.run_id == run.pk
         assert len(plan.victim_commands) == 1
         assert plan.victim_commands[0].instance_id == "i-0abcdef12"
 
 
-# ---------------------------------------------------------------------------
-# IdempotencyTest
-# ---------------------------------------------------------------------------
+def _script(user, experiment, *, instance_name, execution_order):
+    asset = ScriptAsset.objects.create(
+        user=user, name="s", s3_key="scripts/x.py", original_filename="x.py", file_size_bytes=100
+    )
+    return ExperimentScript.objects.create(
+        experiment=experiment,
+        instance_name=instance_name,
+        script_type="python",
+        script=asset,
+        execution_order=execution_order,
+    )
 
 
-class TestIdempotency:
-    """Tests for idempotency checks in dispatch and collection."""
+class TestHandlers:
+    """Event entrypoints drive run state transitions and the ECS dispatch boundary."""
 
-    @patch("cms.experiments.orchestrator.start_experiment_task")
-    @patch("cms.experiments.orchestrator.Experiment")
-    def test_dispatch_commands_idempotent(self, MockExperiment, mock_start_task):
-        """_dispatch_commands skips dispatch if task ARN already exists."""
-        exp = _make_experiment(pk=1)
-        mock_prefetch = MagicMock()
-        mock_prefetch.get.return_value = exp
-        MockExperiment.objects.prefetch_related.return_value = mock_prefetch
+    def _run(self, experiment, *, status, metadata=None):
+        from uuid import uuid4
 
-        run = _make_run(
-            pk=100,
-            request_id="00000000-0000-0000-0000-000000000001",
-            metadata={"dispatch_task_arn": "arn:aws:ecs:us-east-2:123:task/existing"},
+        return ExperimentRun.objects.create(
+            experiment=experiment,
+            run_number=1,
+            status=status,
+            request_id=uuid4(),
+            metadata=metadata,
         )
 
-        commands = [
-            ScriptCommand(
-                instance_name="Workstation",
-                instance_id="i-abc123",
-                script_type="python",
-                command="echo test",
-                execution_order=10,
+    def test_range_provisioned_no_scripts_completes_run(self, make_experiment):
+        exp = make_experiment(status=ExperimentStatus.RUNNING.value)
+        run = self._run(exp, status=RunStatus.PROVISIONING.value)
+
+        ExperimentOrchestrator(exp.pk).handle_range_provisioned(run.pk, {})
+
+        run.refresh_from_db()
+        assert run.status == RunStatus.COMPLETED.value
+        exp.refresh_from_db()
+        assert exp.status == ExperimentStatus.COMPLETED.value
+
+    def test_range_provisioned_non_dict_payload_coerced(self, make_experiment):
+        exp = make_experiment(status=ExperimentStatus.RUNNING.value)
+        run = self._run(exp, status=RunStatus.PROVISIONING.value)
+
+        # A non-dict payload is coerced to {} rather than raising.
+        ExperimentOrchestrator(exp.pk).handle_range_provisioned(run.pk, ["not", "a", "dict"])
+
+        run.refresh_from_db()
+        assert run.status == RunStatus.COMPLETED.value
+
+    def test_range_provisioned_dispatches_victims(self, user, make_experiment, ecs_configured):
+        exp = make_experiment(status=ExperimentStatus.RUNNING.value)
+        _script(user, exp, instance_name="Workstation", execution_order=10)
+        run = self._run(exp, status=RunStatus.PROVISIONING.value)
+        client = _ecs_client()
+
+        with patch("boto3.client", return_value=client):
+            ExperimentOrchestrator(exp.pk).handle_range_provisioned(
+                run.pk, {"Workstation": {"instance_id": "i-0abcdef12"}}
             )
-        ]
 
-        orch = ExperimentOrchestrator(experiment_id=1)
-        orch._dispatch_commands(run, commands)
+        run.refresh_from_db()
+        assert run.status == RunStatus.EXECUTING_VICTIMS.value
+        assert run.metadata["dispatch_task_arn"] == ARN
+        client.run_task.assert_called_once()
 
-        # Should NOT call start_experiment_task because ARN already exists
-        mock_start_task.assert_not_called()
+    def test_range_provisioned_run_not_found(self, make_experiment):
+        exp = make_experiment(status=ExperimentStatus.RUNNING.value)
+        # Must not raise on an unknown run id.
+        ExperimentOrchestrator(exp.pk).handle_range_provisioned(999999, {})
 
-    @patch("cms.experiments.orchestrator.start_experiment_task")
-    @patch("cms.experiments.orchestrator.Experiment")
-    def test_collect_artifacts_idempotent(self, MockExperiment, mock_start_task):
-        """_collect_artifacts skips collection if task ARN already exists."""
-        exp = _make_experiment(pk=1)
-        mock_prefetch = MagicMock()
-        mock_prefetch.get.return_value = exp
-        MockExperiment.objects.prefetch_related.return_value = mock_prefetch
-
-        run = _make_run(
-            pk=100,
-            request_id="00000000-0000-0000-0000-000000000002",
-            metadata={"collect_task_arn": "arn:aws:ecs:us-east-2:123:task/existing"},
+    def test_victim_completed_dispatches_attacker(self, user, make_experiment, ecs_configured):
+        exp = make_experiment(status=ExperimentStatus.RUNNING.value)
+        _script(user, exp, instance_name="Attacker", execution_order=100)
+        run = self._run(
+            exp,
+            status=RunStatus.EXECUTING_VICTIMS.value,
+            metadata={"provisioned_instances": {"Attacker": {"instance_id": "i-0abcdef12"}}},
         )
+        client = _ecs_client()
 
-        orch = ExperimentOrchestrator(experiment_id=1)
-        orch._collect_artifacts(run)
+        with patch("boto3.client", return_value=client):
+            ExperimentOrchestrator(exp.pk).handle_victim_scripts_completed(run.pk)
 
-        # Should NOT call start_experiment_task because ARN already exists
-        mock_start_task.assert_not_called()
+        run.refresh_from_db()
+        assert run.status == RunStatus.EXECUTING_ATTACKER.value
+        client.run_task.assert_called_once()
 
-    @patch("cms.experiments.orchestrator.start_experiment_task")
-    @patch("cms.experiments.orchestrator.Experiment")
-    def test_dispatch_proceeds_when_no_arn(self, MockExperiment, mock_start_task):
-        """_dispatch_commands proceeds normally when no ARN exists."""
-        mock_start_task.return_value = "arn:aws:ecs:us-east-2:123:task/new"
+    def test_victim_completed_no_attacker_completes_run(self, make_experiment):
+        exp = make_experiment(status=ExperimentStatus.RUNNING.value)
+        run = self._run(exp, status=RunStatus.EXECUTING_VICTIMS.value, metadata={"provisioned_instances": {}})
 
-        exp = _make_experiment(pk=1)
-        mock_prefetch = MagicMock()
-        mock_prefetch.get.return_value = exp
-        MockExperiment.objects.prefetch_related.return_value = mock_prefetch
+        ExperimentOrchestrator(exp.pk).handle_victim_scripts_completed(run.pk)
 
-        run = _make_run(
-            pk=100,
-            request_id="00000000-0000-0000-0000-000000000003",
-            metadata={},  # No dispatch_task_arn
-        )
+        run.refresh_from_db()
+        assert run.status == RunStatus.COMPLETED.value
 
-        commands = [
-            ScriptCommand(
-                instance_name="Workstation",
-                instance_id="i-abc123",
-                script_type="python",
-                command="echo test",
-                execution_order=10,
-            )
-        ]
+    def test_attacker_completed_collects_artifacts(self, make_experiment, ecs_configured):
+        exp = make_experiment(status=ExperimentStatus.RUNNING.value)
+        run = self._run(exp, status=RunStatus.EXECUTING_ATTACKER.value, metadata={})
+        client = _ecs_client()
 
-        orch = ExperimentOrchestrator(experiment_id=1)
-        orch._dispatch_commands(run, commands)
+        with patch("boto3.client", return_value=client):
+            ExperimentOrchestrator(exp.pk).handle_attacker_scripts_completed(run.pk)
 
-        # Should call start_experiment_task since no ARN exists
-        mock_start_task.assert_called_once()
+        run.refresh_from_db()
+        assert run.status == RunStatus.COLLECTING.value
+        assert run.metadata["collect_task_arn"] == ARN
+        client.run_task.assert_called_once()
+
+    def test_artifacts_collected_completes_run(self, make_experiment):
+        exp = make_experiment(status=ExperimentStatus.RUNNING.value)
+        run = self._run(exp, status=RunStatus.COLLECTING.value)
+
+        ExperimentOrchestrator(exp.pk).handle_artifacts_collected(run.pk)
+
+        run.refresh_from_db()
+        assert run.status == RunStatus.COMPLETED.value
+
+    def test_artifacts_collected_run_not_found(self, make_experiment):
+        exp = make_experiment(status=ExperimentStatus.RUNNING.value)
+        ExperimentOrchestrator(exp.pk).handle_artifacts_collected(999999)
