@@ -219,6 +219,12 @@ class DeployWorkflowPlanScopeTests(unittest.TestCase):
         (workflow_dir / "_range.yml").write_text(
             range_workflow or self._terraform_workflow_text("range"), encoding="utf-8"
         )
+        (workflow_dir / "_quality.yml").write_text(
+            "jobs:\n"
+            "  adr-conformance:\n"
+            "    runs-on: ubuntu-latest\n",
+            encoding="utf-8",
+        )
 
     def _deploy_text(
         self,
