@@ -27,6 +27,10 @@ from ctf.views._parsing import (
 
 logger = logging.getLogger(__name__)
 
+_BRACKET_NOT_FOUND = "Bracket not found"
+_FORBIDDEN_EVENT_MSG = "Forbidden: You do not have access to this event"
+_ADMIN_BRACKET_LIST_URL = "ctf:admin_bracket_list"
+
 
 @login_required
 @ctf_organizer_required
@@ -48,7 +52,7 @@ def admin_bracket_list(request: HttpRequest, event_id: UUID) -> HttpResponse:
         raise Http404("Event not found") from None
 
     if event.created_by_id != request.user.pk:
-        return HttpResponse("Forbidden: You do not have access to this event", status=403)
+        return HttpResponse(_FORBIDDEN_EVENT_MSG, status=403)
 
     brackets = list_brackets(event.id)
 
@@ -81,14 +85,14 @@ def admin_bracket_create(request: HttpRequest, event_id: UUID) -> HttpResponse:
         raise Http404("Event not found") from None
 
     if event.created_by_id != request.user.pk:
-        return HttpResponse("Forbidden: You do not have access to this event", status=403)
+        return HttpResponse(_FORBIDDEN_EVENT_MSG, status=403)
 
     if request.method == "POST":
         form = CTFBracketForm(request.POST, event=event)
         if form.is_valid():
             form.save()
             messages.success(request, f"Bracket '{form.cleaned_data['name']}' created.")
-            return redirect("ctf:admin_bracket_list", event_id=event_id)
+            return redirect(_ADMIN_BRACKET_LIST_URL, event_id=event_id)
     else:
         form = CTFBracketForm(event=event)
 
@@ -117,18 +121,18 @@ def admin_bracket_edit(request: HttpRequest, bracket_id: UUID) -> HttpResponse:
     try:
         bracket = CTFBracket.objects.select_related("event").get(pk=bracket_id)
     except CTFBracket.DoesNotExist:
-        raise Http404("Bracket not found") from None
+        raise Http404(_BRACKET_NOT_FOUND) from None
 
     event = bracket.event
     if event.created_by_id != request.user.pk:
-        return HttpResponse("Forbidden: You do not have access to this event", status=403)
+        return HttpResponse(_FORBIDDEN_EVENT_MSG, status=403)
 
     if request.method == "POST":
         form = CTFBracketForm(request.POST, instance=bracket, event=event)
         if form.is_valid():
             form.save()
             messages.success(request, f"Bracket '{bracket.name}' updated.")
-            return redirect("ctf:admin_bracket_list", event_id=event.id)
+            return redirect(_ADMIN_BRACKET_LIST_URL, event_id=event.id)
     else:
         form = CTFBracketForm(instance=bracket, event=event)
 
@@ -157,16 +161,16 @@ def admin_bracket_delete(request: HttpRequest, bracket_id: UUID) -> HttpResponse
     try:
         bracket = get_bracket(bracket_id)
     except CTFBracket.DoesNotExist:
-        raise Http404("Bracket not found") from None
+        raise Http404(_BRACKET_NOT_FOUND) from None
 
     event = bracket.event
     if event.created_by_id != request.user.pk:
-        return HttpResponse("Forbidden: You do not have access to this event", status=403)
+        return HttpResponse(_FORBIDDEN_EVENT_MSG, status=403)
 
     name = bracket.name
     delete_bracket(bracket_id)
     messages.success(request, f"Bracket '{name}' deleted.")
-    return redirect("ctf:admin_bracket_list", event_id=event.id)
+    return redirect(_ADMIN_BRACKET_LIST_URL, event_id=event.id)
 
 
 def _set_participant_bracket(participant_id: UUID, bracket_id: object) -> JsonResponse:
@@ -192,7 +196,7 @@ def _set_participant_bracket(participant_id: UUID, bracket_id: object) -> JsonRe
     except ValidationError:
         error = ("Bracket and participant must belong to the same event", 400)
     except CTFBracket.DoesNotExist:
-        error = ("Bracket not found", 404)
+        error = (_BRACKET_NOT_FOUND, 404)
     if error is not None:
         return JsonResponse({"error": error[0]}, status=error[1])
 

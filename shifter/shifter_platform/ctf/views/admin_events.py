@@ -25,6 +25,9 @@ from ctf.views._access import (
 
 logger = logging.getLogger(__name__)
 
+_EVENT_NOT_FOUND_MSG = "Event not found"
+_FORBIDDEN_EVENT_MSG = "Forbidden: You do not have access to this event"
+
 
 @login_required
 @ctf_organizer_required
@@ -201,11 +204,11 @@ def admin_event_detail(request: HttpRequest, event_id: UUID) -> HttpResponse:
     try:
         event = get_event(event_id)
     except CTFNotFoundError:
-        raise Http404("Event not found") from None
+        raise Http404(_EVENT_NOT_FOUND_MSG) from None
 
     # Check permission - organizers can only access their own events
     if event.created_by_id != request.user.pk:
-        return HttpResponse("Forbidden: You do not have access to this event", status=403)
+        return HttpResponse(_FORBIDDEN_EVENT_MSG, status=403)
 
     if request.method == "POST":
         status_form = EventStatusForm(request.POST, event=event)
@@ -296,10 +299,10 @@ def admin_event_force_delete(request: HttpRequest, event_id: UUID) -> HttpRespon
     try:
         event = CTFEvent.all_objects.get(pk=event_id)
     except CTFEvent.DoesNotExist:
-        raise Http404("Event not found") from None
+        raise Http404(_EVENT_NOT_FOUND_MSG) from None
 
     if event.created_by_id != request.user.pk:
-        return HttpResponse("Forbidden: You do not have access to this event", status=403)
+        return HttpResponse(_FORBIDDEN_EVENT_MSG, status=403)
 
     if request.method == "GET":
         stats = get_event_stats(event)
@@ -333,11 +336,11 @@ def admin_event_edit(request: HttpRequest, event_id: UUID) -> HttpResponse:
     try:
         event = get_event(event_id)
     except CTFNotFoundError:
-        raise Http404("Event not found") from None
+        raise Http404(_EVENT_NOT_FOUND_MSG) from None
 
     # Check permission - organizers can only access their own events
     if event.created_by_id != request.user.pk:
-        return HttpResponse("Forbidden: You do not have access to this event", status=403)
+        return HttpResponse(_FORBIDDEN_EVENT_MSG, status=403)
 
     # Check if event is modifiable
     if not event.is_modifiable:
@@ -384,10 +387,10 @@ def admin_event_email_templates(request: HttpRequest, event_id: UUID) -> HttpRes
     try:
         event = get_event(event_id)
     except CTFNotFoundError:
-        raise Http404("Event not found") from None
+        raise Http404(_EVENT_NOT_FOUND_MSG) from None
 
     if event.created_by_id != request.user.pk:
-        return HttpResponse("Forbidden: You do not have access to this event", status=403)
+        return HttpResponse(_FORBIDDEN_EVENT_MSG, status=403)
 
     custom_templates = {t.notification_type: t for t in CTFEmailTemplate.objects.filter(event=event)}
 
@@ -424,10 +427,10 @@ def admin_analytics(request: HttpRequest, event_id: UUID) -> HttpResponse:
     try:
         event = get_event(event_id)
     except CTFNotFoundError:
-        raise Http404("Event not found") from None
+        raise Http404(_EVENT_NOT_FOUND_MSG) from None
 
     if event.created_by_id != request.user.pk:
-        return HttpResponse("Forbidden: You do not have access to this event", status=403)
+        return HttpResponse(_FORBIDDEN_EVENT_MSG, status=403)
 
     from ctf.models import CTFChallenge
     from ctf.services import get_challenge_statistics, get_event_statistics

@@ -25,6 +25,8 @@ from ctf.views._access import (
 
 logger = logging.getLogger(__name__)
 
+_SCOREBOARD_TEMPLATE = "ctf/participant/scoreboard.html"
+
 
 @require_GET
 def ctf_register(request: HttpRequest) -> HttpResponse:
@@ -42,7 +44,11 @@ def ctf_register(request: HttpRequest) -> HttpResponse:
 
     from ctf.models import CTFParticipant
 
-    token = request.GET.get("token")
+    # S8435 (sensitive data in URL): the invite token is a single-use magic-link
+    # credential delivered by email; URL delivery is the intended registration
+    # mechanism, preserved verbatim by the ctf/views split (#885). Reworking the
+    # flow off the query string is tracked in #1088.
+    token = request.GET.get("token")  # NOSONAR
     participant = CTFParticipant.objects.filter(invite_token=token).select_related("user").first() if token else None
 
     error_message = None
@@ -159,7 +165,7 @@ def scoreboard(request: HttpRequest) -> HttpResponse:
 
     participant = _access._get_active_participant(request)
     if not participant:
-        return render(request, "ctf/participant/scoreboard.html", {})
+        return render(request, _SCOREBOARD_TEMPLATE, {})
 
     event = participant.event
 
@@ -167,7 +173,7 @@ def scoreboard(request: HttpRequest) -> HttpResponse:
     if not event.scoreboard_visible:
         return render(
             request,
-            "ctf/participant/scoreboard.html",
+            _SCOREBOARD_TEMPLATE,
             {"participant": participant, "event": event, "scoreboard_hidden": True},
         )
 
@@ -198,7 +204,7 @@ def scoreboard(request: HttpRequest) -> HttpResponse:
         "team_mode": event.team_mode,
         "frozen": event.is_scoreboard_frozen,
     }
-    return render(request, "ctf/participant/scoreboard.html", context)
+    return render(request, _SCOREBOARD_TEMPLATE, context)
 
 
 @login_required

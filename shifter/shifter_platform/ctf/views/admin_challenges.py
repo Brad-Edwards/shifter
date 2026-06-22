@@ -28,6 +28,9 @@ from ctf.views._access import (
 
 logger = logging.getLogger(__name__)
 
+_ADMIN_CHALLENGE_DETAIL_URL = "ctf:admin_challenge_detail"
+_FORBIDDEN_EVENT_MSG = "Forbidden: You do not have access to this event"
+
 _FORBIDDEN_CHALLENGE_ACCESS_MSG = "Forbidden: You do not have access to this challenge"
 _CHALLENGE_FORM_TEMPLATE = "ctf/admin/challenge_form.html"
 
@@ -54,7 +57,7 @@ def admin_challenge_list(request: HttpRequest, event_id: UUID) -> HttpResponse:
 
     # Check permission
     if event.created_by_id != request.user.pk:
-        return HttpResponse("Forbidden: You do not have access to this event", status=403)
+        return HttpResponse(_FORBIDDEN_EVENT_MSG, status=403)
 
     challenges = list_challenges_for_event(event_id, actor_id=request.user.pk)
 
@@ -94,7 +97,7 @@ def _resolve_modifiable_event_for_challenge(
         raise Http404("Event not found") from None
 
     if event.created_by_id != request.user.pk:
-        return None, HttpResponse("Forbidden: You do not have access to this event", status=403)
+        return None, HttpResponse(_FORBIDDEN_EVENT_MSG, status=403)
 
     if not event.is_content_modifiable:
         logger.warning(
@@ -124,7 +127,7 @@ def _handle_challenge_create_post(request: HttpRequest, event: CTFEvent) -> Http
                 actor_id=user.pk,
             )
         except CTFPermissionError:
-            return HttpResponse("Forbidden: You do not have access to this event", status=403)
+            return HttpResponse(_FORBIDDEN_EVENT_MSG, status=403)
         except (CTFStateError, CTFValidationError) as e:
             form.add_error(None, str(e))
         else:
@@ -135,7 +138,7 @@ def _handle_challenge_create_post(request: HttpRequest, event: CTFEvent) -> Http
                 challenge.name,
                 event.pk,
             )
-            return redirect("ctf:admin_challenge_detail", challenge_id=challenge.pk)
+            return redirect(_ADMIN_CHALLENGE_DETAIL_URL, challenge_id=challenge.pk)
 
     context = {"form": form, "event": event, "is_edit": False}
     return render(request, _CHALLENGE_FORM_TEMPLATE, context)
@@ -274,7 +277,7 @@ def _resolve_editable_challenge(
             challenge.pk,
             event.pk,
         )
-        return None, redirect("ctf:admin_challenge_detail", challenge_id=challenge.pk)
+        return None, redirect(_ADMIN_CHALLENGE_DETAIL_URL, challenge_id=challenge.pk)
 
     return challenge, None
 
@@ -306,7 +309,7 @@ def _handle_challenge_edit_post(request: HttpRequest, challenge: CTFChallenge, e
                 challenge.pk,
                 challenge.name,
             )
-            return redirect("ctf:admin_challenge_detail", challenge_id=challenge.pk)
+            return redirect(_ADMIN_CHALLENGE_DETAIL_URL, challenge_id=challenge.pk)
 
     context = {"form": form, "event": event, "challenge": challenge, "is_edit": True}
     return render(request, _CHALLENGE_FORM_TEMPLATE, context)
@@ -344,7 +347,7 @@ def admin_challenge_edit(request: HttpRequest, challenge_id: UUID) -> HttpRespon
 def _admin_upload_challenge_file(request: HttpRequest, challenge_id: UUID) -> HttpResponse:
     """Add the uploaded file (if any) then redirect to the detail page; 403 on permission error."""
     if not request.FILES.get("file"):
-        return redirect("ctf:admin_challenge_detail", challenge_id=challenge_id)
+        return redirect(_ADMIN_CHALLENGE_DETAIL_URL, challenge_id=challenge_id)
 
     from django.core.files.uploadedfile import UploadedFile
 
@@ -368,7 +371,7 @@ def _admin_upload_challenge_file(request: HttpRequest, challenge_id: UUID) -> Ht
     except (CTFNotFoundError, CTFStateError, CTFValidationError) as e:
         logger.warning("File upload failed for challenge %s: %s", safe_log_value(challenge_id), e)
 
-    return redirect("ctf:admin_challenge_detail", challenge_id=challenge_id)
+    return redirect(_ADMIN_CHALLENGE_DETAIL_URL, challenge_id=challenge_id)
 
 
 @login_required
@@ -385,7 +388,7 @@ def admin_challenge_file_upload(request: HttpRequest, challenge_id: UUID) -> Htt
     try:
         challenge = get_challenge(challenge_id)
     except CTFNotFoundError:
-        return redirect("ctf:admin_challenge_detail", challenge_id=challenge_id)
+        return redirect(_ADMIN_CHALLENGE_DETAIL_URL, challenge_id=challenge_id)
 
     if challenge.event.created_by_id != request.user.pk:
         return HttpResponse("Forbidden", status=403)

@@ -25,6 +25,8 @@ from ctf.views._access import (
 
 logger = logging.getLogger(__name__)
 
+_NOTIFICATION_FORM_TEMPLATE = "ctf/admin/notification_form.html"
+
 
 @login_required
 @ctf_organizer_required
@@ -88,7 +90,7 @@ def _handle_notification_create_post(request: HttpRequest, event: CTFEvent) -> H
     if not subject or not body:
         return render(
             request,
-            "ctf/admin/notification_form.html",
+            _NOTIFICATION_FORM_TEMPLATE,
             {"event": event, "error": "Subject and body are required."},
         )
 
@@ -106,7 +108,7 @@ def _handle_notification_create_post(request: HttpRequest, event: CTFEvent) -> H
         if not scheduled_at:
             return render(
                 request,
-                "ctf/admin/notification_form.html",
+                _NOTIFICATION_FORM_TEMPLATE,
                 {"event": event, "error": "Valid schedule time is required."},
             )
         notif = CTFNotification.objects.create(
@@ -153,6 +155,6 @@ def admin_notification_create(request: HttpRequest, event_id: UUID) -> HttpRespo
 
     return render(
         request,
-        "ctf/admin/notification_form.html",
+        _NOTIFICATION_FORM_TEMPLATE,
         {"event": event},
     )

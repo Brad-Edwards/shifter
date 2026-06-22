@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 from django.contrib.auth.decorators import login_required
@@ -23,6 +23,9 @@ from ctf.views._access import (
 )
 
 logger = logging.getLogger(__name__)
+
+_EVENT_NOT_FOUND_MSG = "Event not found"
+_FORBIDDEN_EVENT_MSG = "Forbidden: You do not have access to this event"
 
 
 @login_required
@@ -44,11 +47,11 @@ def admin_participant_list(request: HttpRequest, event_id: UUID) -> HttpResponse
     try:
         event = get_event(event_id)
     except CTFNotFoundError:
-        raise Http404("Event not found") from None
+        raise Http404(_EVENT_NOT_FOUND_MSG) from None
 
     # Check permission - organizers can only access their own events
     if event.created_by_id != request.user.pk:
-        return HttpResponse("Forbidden: You do not have access to this event", status=403)
+        return HttpResponse(_FORBIDDEN_EVENT_MSG, status=403)
 
     # Get participants with optional status filter
     participants = list_participants_for_event(event_id)
@@ -85,6 +88,22 @@ def admin_participant_list(request: HttpRequest, event_id: UUID) -> HttpResponse
     return render(request, "ctf/admin/participant_list.html", context)
 
 
+def _participant_import_error_messages(exc: Any) -> list[str]:
+    """Map a CSV participant-import validation error to display messages.
+
+    Preserves the original precedence (existing > duplicates > generic), kept
+    out of ``admin_participant_import`` to hold its cognitive complexity below
+    the SonarCloud threshold (python:S3776).
+    """
+    details = exc.details
+    errors = details.get("errors") or details.get("existing") or [str(exc)]
+    if details.get("duplicates"):
+        errors = [f"Duplicate emails: {', '.join(details['duplicates'])}"]
+    if details.get("existing"):
+        errors = [f"Already exists: {', '.join(details['existing'])}"]
+    return errors
+
+
 @login_required
 @ctf_organizer_required
 @require_http_methods(["GET", "POST"])
@@ -107,11 +126,11 @@ def admin_participant_import(request: HttpRequest, event_id: UUID) -> HttpRespon
     try:
         event = get_event(event_id)
     except CTFNotFoundError:
-        raise Http404("Event not found") from None
+        raise Http404(_EVENT_NOT_FOUND_MSG) from None
 
     # Check permission
     if event.created_by_id != request.user.pk:
-        return HttpResponse("Forbidden: You do not have access to this event", status=403)
+        return HttpResponse(_FORBIDDEN_EVENT_MSG, status=403)
 
     errors = None
     imported_count = 0
@@ -133,11 +152,7 @@ def admin_participant_import(request: HttpRequest, event_id: UUID) -> HttpRespon
                 messages.success(request, f"Successfully imported {imported_count} participants.")
                 return redirect("ctf:admin_participant_list", event_id=event_id)
             except CTFValidationError as e:
-                errors = e.details.get("errors") or e.details.get("existing") or [str(e)]
-                if e.details.get("duplicates"):
-                    errors = [f"Duplicate emails: {', '.join(e.details['duplicates'])}"]
-                if e.details.get("existing"):
-                    errors = [f"Already exists: {', '.join(e.details['existing'])}"]
+                errors = _participant_import_error_messages(e)
     else:
         form = CTFParticipantImportForm()
 
@@ -220,11 +235,11 @@ def admin_participant_add(request: HttpRequest, event_id: UUID) -> HttpResponse:
     try:
         event = get_event(event_id)
     except CTFNotFoundError:
-        raise Http404("Event not found") from None
+        raise Http404(_EVENT_NOT_FOUND_MSG) from None
 
     # Check permission
     if event.created_by_id != request.user.pk:
-        return HttpResponse("Forbidden: You do not have access to this event", status=403)
+        return HttpResponse(_FORBIDDEN_EVENT_MSG, status=403)
 
     if request.method == "POST":
         form = CTFParticipantForm(request.POST, event=event)
@@ -273,10 +288,10 @@ def admin_team_list(request: HttpRequest, event_id: UUID) -> HttpResponse:
     try:
         event = get_event(event_id)
     except CTFNotFoundError:
-        raise Http404("Event not found") from None
+        raise Http404(_EVENT_NOT_FOUND_MSG) from None
 
     if event.created_by_id != request.user.pk:
-        return HttpResponse("Forbidden: You do not have access to this event", status=403)
+        return HttpResponse(_FORBIDDEN_EVENT_MSG, status=403)
 
     from ctf.models import CTFTeam
 
@@ -307,10 +322,10 @@ def admin_scoreboard(request: HttpRequest, event_id: UUID) -> HttpResponse:
     try:
         event = get_event(event_id)
     except CTFNotFoundError:
-        raise Http404("Event not found") from None
+        raise Http404(_EVENT_NOT_FOUND_MSG) from None
 
     if event.created_by_id != request.user.pk:
-        return HttpResponse("Forbidden: You do not have access to this event", status=403)
+        return HttpResponse(_FORBIDDEN_EVENT_MSG, status=403)
 
     from ctf.services import get_event_stats, get_scoreboard, get_team_scoreboard
 
@@ -360,10 +375,10 @@ def admin_range_list(request: HttpRequest, event_id: UUID) -> HttpResponse:
     try:
         event = get_event(event_id)
     except CTFNotFoundError:
-        raise Http404("Event not found") from None
+        raise Http404(_EVENT_NOT_FOUND_MSG) from None
 
     if event.created_by_id != request.user.pk:
-        return HttpResponse("Forbidden: You do not have access to this event", status=403)
+        return HttpResponse(_FORBIDDEN_EVENT_MSG, status=403)
 
     participants = CTFParticipant.objects.filter(event=event).order_by("name")
 
