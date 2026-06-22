@@ -3931,6 +3931,7 @@ def _terraform_apply_or_exit(component: str) -> dict[str, Any]:
 
 
 def _require_component_deploy(component: str, dry_run: bool) -> None:
+    """Confirm a Terraform component deploy or exit when the operator declines."""
     if dry_run or confirm(f"Deploy {component}?"):
         return
     error(f"{component.title()} deployment is required")
@@ -3941,10 +3942,12 @@ def _require_component_deploy(component: str, dry_run: bool) -> None:
 
 
 def _portal_remote_state_var_file(env: str, bucket: str) -> Path:
+    """Return the portal remote-state tfvars path for one instance."""
     return _instance_root(env=env, bucket=bucket) / "terraform-vars" / env / "portal" / "remote-state.auto.tfvars"
 
 
 def _ensure_portal_remote_state_var_file(env: str, bucket: str, portal_var_file: Path) -> None:
+    """Create portal remote-state tfvars when missing before portal init/plan."""
     if portal_var_file.exists():
         return
     tb.write_portal_remote_state_tfvars(
