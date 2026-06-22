@@ -116,11 +116,11 @@ def _assert_no_active_range(user: User) -> None:
 
 
 def _load_scenario_template_or_raise(scenario: str) -> ScenarioTemplate:
-    """Return the scenario template or raise CMSError if not found."""
-    from cms.scenarios.registry import load_scenario_template as load_scenario
+    """Return the demo scenario template or raise CMSError if not found."""
+    from cms.scenarios.registry import load_demo_scenario_template
 
     try:
-        return load_scenario(scenario)
+        return load_demo_scenario_template(scenario)
     except ValueError as e:
         logger.error("create_range: scenario '%s' not found", scenario)
         raise CMSError(str(e)) from e

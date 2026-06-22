@@ -177,6 +177,7 @@ def _validate_experiment_create_input(request: HttpRequest) -> ExperimentCreateI
     JSON, missing fields, or Pydantic validation failures.
     """
     from cms.scenarios.registry import load_scenario_template
+    from cms.scenarios.schema import ScenarioTemplate
 
     try:
         scripts_json = request.POST.get("scripts_json", "[]")
@@ -185,7 +186,10 @@ def _validate_experiment_create_input(request: HttpRequest) -> ExperimentCreateI
         scenario_id = request.POST.get("scenario_id", "")
         try:
             scenario = load_scenario_template(scenario_id)
-            instance_names = {inst.name for inst in scenario.instances}
+            if isinstance(scenario, ScenarioTemplate):
+                instance_names = {inst.name for inst in scenario.instances}
+            else:
+                instance_names = set()
         except (ValueError, CMSError):
             instance_names = set()
 
