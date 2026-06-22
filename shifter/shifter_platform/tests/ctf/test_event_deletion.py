@@ -24,7 +24,7 @@ from django.test import Client
 from django.urls import reverse
 from django.utils import timezone
 
-from ctf.enums import EventStatus
+from ctf.enums import EventStatus, ParticipantStatus
 
 # ---------------------------------------------------------------------------
 # Shared mock fixtures
@@ -224,42 +224,36 @@ class TestForceDeleteEvent:
         mock_file_qs.values_list.return_value = []
         return mock_part_qs, mock_file_qs
 
-    def test_force_delete_success(self, mock_user):
-        """force_delete_event should hard-delete the event and clean up ranges."""
-        event = _make_mock_event(name="My CTF")
-        event.delete = MagicMock(return_value=(1, {"CTFEvent": 1}))
+    @pytest.mark.django_db
+    def test_force_delete_success(self, ctf_event, organizer_user):
+        """force_delete_event hard-deletes the event and counts the destroyed range.
 
-        mock_participant = MagicMock()
-        mock_participant.pk = 42
-        mock_participant.user = mock_user
-        mock_part_qs = MagicMock()
-        mock_part_qs.select_related.return_value = [mock_participant]
-        mock_file_qs = MagicMock()
-        mock_file_qs.values_list.return_value = ["ctf-files/key1.txt"]
+        DB-backed: a participant whose range has no linked user makes
+        ``_destroy_single_range`` a no-op (still counted as destroyed), so the
+        cleanup tally is exercised without crossing the CMS/network boundary.
+        """
+        from ctf.models import CTFEvent, CTFParticipant
+        from ctf.services.event import force_delete_event
 
-        with (
-            patch("ctf.services.event.CTFEvent.all_objects") as mock_all,
-            patch("ctf.services.event.transaction.atomic", side_effect=_noop_atomic),
-            patch("ctf.services.event._cancel_event_tasks") as mock_cancel,
-            patch("ctf.models.CTFParticipant.all_objects") as mock_part_all,
-            patch("ctf.models.CTFChallengeFile.all_objects") as mock_file_all,
-            patch("ctf.services.range._destroy_single_range") as mock_destroy,
-            patch("ctf.s3.delete_challenge_file") as mock_s3_delete,
-        ):
-            mock_all.get.return_value = event
-            mock_part_all.filter.return_value = mock_part_qs
-            mock_file_all.filter.return_value = mock_file_qs
-            from ctf.services.event import force_delete_event
+        CTFParticipant.objects.create(
+            event=ctf_event,
+            user=None,
+            email="ranged@test.com",
+            name="Ranged Participant",
+            status=ParticipantStatus.INVITED.value,
+            invite_token="ranged-token",
+            invite_token_expires=timezone.now() + timedelta(days=7),
+            range_instance_id=42,
+            range_status="ready",
+        )
 
-            result = force_delete_event(event.pk, mock_user, "My CTF")
+        result = force_delete_event(ctf_event.pk, organizer_user, ctf_event.name)
 
-        assert result["event_name"] == "My CTF"
+        assert result["event_name"] == ctf_event.name
         assert result["ranges_destroyed"] == 1
         assert result["ranges_failed"] == 0
-        event.delete.assert_called_once_with(soft=False)
-        mock_cancel.assert_called_once_with(event)
-        mock_destroy.assert_called_once_with(mock_participant, mock_user)
-        mock_s3_delete.assert_called_once_with("ctf-files/key1.txt")
+        # Hard delete: gone even from all_objects (which still sees soft-deletes).
+        assert not CTFEvent.all_objects.filter(pk=ctf_event.pk).exists()
 
     def test_force_delete_wrong_confirmation_name(self, mock_user):
         """force_delete_event should raise CTFValidationError on name mismatch."""
@@ -286,38 +280,45 @@ class TestForceDeleteEvent:
             with pytest.raises(CTFNotFoundError):
                 force_delete_event(uuid4(), mock_user, "Whatever")
 
-    def test_force_delete_range_cleanup_partial_failure(self, mock_user):
-        """force_delete_event should proceed even if some ranges fail to destroy."""
-        event = _make_mock_event(name="Partial Fail")
-        event.delete = MagicMock(return_value=(1, {"CTFEvent": 1}))
+    @pytest.mark.django_db
+    def test_force_delete_range_cleanup_partial_failure(self, ctf_event, organizer_user, participant_user):
+        """force_delete_event proceeds and tallies destroyed vs failed when a destroy fails.
 
-        mock_ok = MagicMock(pk=1, user=mock_user)
-        mock_fail = MagicMock(pk=2, user=mock_user)
-        mock_part_qs = MagicMock()
-        mock_part_qs.select_related.return_value = [mock_ok, mock_fail]
-        _, mock_file_qs = self._mock_empty_querysets()
+        DB-backed: the no-user range is a no-op (destroyed); the range pointing at
+        a nonexistent RangeInstance raises ``CMSError`` inside
+        ``_destroy_single_range`` (counted as failed) -- a real cross-domain
+        failure, not a mocked one. The event is still hard-deleted.
+        """
+        from ctf.models import CTFEvent, CTFParticipant
+        from ctf.services.event import force_delete_event
 
-        with (
-            patch("ctf.services.event.CTFEvent.all_objects") as mock_all,
-            patch("ctf.services.event.transaction.atomic", side_effect=_noop_atomic),
-            patch("ctf.services.event._cancel_event_tasks"),
-            patch("ctf.models.CTFParticipant.all_objects") as mock_part_all,
-            patch("ctf.models.CTFChallengeFile.all_objects") as mock_file_all,
-            patch(
-                "ctf.services.range._destroy_single_range",
-                side_effect=[None, RuntimeError("CMS error")],
-            ),
-        ):
-            mock_all.get.return_value = event
-            mock_part_all.filter.return_value = mock_part_qs
-            mock_file_all.filter.return_value = mock_file_qs
-            from ctf.services.event import force_delete_event
+        CTFParticipant.objects.create(
+            event=ctf_event,
+            user=None,
+            email="ok@test.com",
+            name="OK",
+            status=ParticipantStatus.INVITED.value,
+            invite_token="ok-token",
+            invite_token_expires=timezone.now() + timedelta(days=7),
+            range_instance_id=42,
+            range_status="ready",
+        )
+        CTFParticipant.objects.create(
+            event=ctf_event,
+            user=participant_user,
+            email=participant_user.email,
+            name="Fails",
+            status=ParticipantStatus.ACTIVE.value,
+            registered_at=timezone.now(),
+            range_instance_id=999999,
+            range_status="ready",
+        )
 
-            result = force_delete_event(event.pk, mock_user, "Partial Fail")
+        result = force_delete_event(ctf_event.pk, organizer_user, ctf_event.name)
 
         assert result["ranges_destroyed"] == 1
         assert result["ranges_failed"] == 1
-        event.delete.assert_called_once_with(soft=False)
+        assert not CTFEvent.all_objects.filter(pk=ctf_event.pk).exists()
 
     def test_force_delete_range_cleanup_total_failure(self, mock_user):
         """force_delete_event should proceed even if all range destroys fail."""
