@@ -34,6 +34,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from textwrap import dedent
+from typing import Any
 from urllib import error as urllib_error
 from urllib import parse as urllib_parse
 from urllib import request as urllib_request
@@ -3664,17 +3665,19 @@ def bootstrap_account(config: BootstrapConfig, profile: str, dry_run: bool = Fal
     }
 
 
-def _infra_state_bucket(*, env: str, bucket_name: str | None = None) -> str:
+def _infra_state_bucket(*, bucket_name: str | None = None) -> str:
+    """Resolve the Terraform state bucket from args or TF_INFRA_STATE_BUCKET."""
     if bucket_name:
         return bucket_name
     from_env = os.environ.get("TF_INFRA_STATE_BUCKET", "").strip()
     if from_env:
         return from_env
     error("Set TF_INFRA_STATE_BUCKET or pass the bootstrap bucket name before running Terraform")
-    sys.exit(1)
+    raise SystemExit(1)
 
 
 def _instance_root(*, env: str, bucket: str) -> Path:
+    """Return the per-instance config root (explicit env dir or ~/.shifter/<env>-<bucket>)."""
     explicit = tb.instance_dir_from_env()
     if explicit is not None:
         return explicit
@@ -3682,6 +3685,7 @@ def _instance_root(*, env: str, bucket: str) -> Path:
 
 
 def _component_stack_dir(env: str, component: str) -> str:
+    """Map a deploy component name to its path under platform/terraform/environments/."""
     if component == "core":
         return f"environments/{env}"
     return f"environments/{env}/{component}"
@@ -3742,6 +3746,7 @@ def walkthrough_backend_config(bootstrap_result: dict, dry_run: bool = False) ->
 
 
 def _gh_secret_set_or_exit(secret_name: str, secret_value: str, github_org: str, github_repo: str) -> None:
+    """Set one GitHub Actions secret via gh CLI or exit on failure."""
     result = subprocess.run(  # nosec B603 B607
         [
             "gh",
@@ -3762,6 +3767,7 @@ def _gh_secret_set_or_exit(secret_name: str, secret_value: str, github_org: str,
 
 
 def _ensure_tf_infra_state_bucket_secret(bucket_name: str, github_org: str, github_repo: str) -> None:
+    """Ensure TF_INFRA_STATE_BUCKET exists when reusing an existing role secret."""
     if github_secret_exists("TF_INFRA_STATE_BUCKET", github_org, github_repo):
         info("TF_INFRA_STATE_BUCKET already configured")
         return
@@ -3871,9 +3877,7 @@ def _capture_terraform_outputs() -> dict:
 
 
 def _terraform_init_or_exit(
-    env: str,
     component: str,
-    tf_dir,
     dry_run: bool,
     *,
     backend_config_path: Path,
@@ -3887,7 +3891,7 @@ def _terraform_init_or_exit(
     if not dry_run and init_result and init_result.returncode != 0:
         error(f"Terraform init failed for {component}")
         error(f"Check that {backend_config_path} exists and has the real bucket name")
-        sys.exit(1)
+        raise SystemExit(1)
 
 
 def _terraform_plan_or_exit(component: str, dry_run: bool, *, var_files: list[Path] | None = None) -> None:
@@ -3903,7 +3907,7 @@ def _terraform_plan_or_exit(component: str, dry_run: bool, *, var_files: list[Pa
         sys.exit(1)
 
 
-def _terraform_apply_or_exit(component: str) -> dict:
+def _terraform_apply_or_exit(component: str) -> dict[str, Any]:
     """Show plan, confirm, apply, and capture outputs (for portal). Exits on failure."""
     print(f"\n{Colors.BOLD}Plan Summary:{Colors.END}")
     subprocess.run(["terraform", "show", "-no-color", "tfplan"], check=False)  # nosec B603 B607
@@ -3926,42 +3930,52 @@ def _terraform_apply_or_exit(component: str) -> dict:
     return {}
 
 
+def _require_component_deploy(component: str, dry_run: bool) -> None:
+    if dry_run or confirm(f"Deploy {component}?"):
+        return
+    error(f"{component.title()} deployment is required")
+    reason = _COMPONENT_REQUIREMENT_REASON.get(component)
+    if reason:
+        error(reason)
+    raise SystemExit(1)
+
+
+def _portal_remote_state_var_file(env: str, bucket: str) -> Path:
+    return _instance_root(env=env, bucket=bucket) / "terraform-vars" / env / "portal" / "remote-state.auto.tfvars"
+
+
+def _ensure_portal_remote_state_var_file(env: str, bucket: str, portal_var_file: Path) -> None:
+    if portal_var_file.exists():
+        return
+    tb.write_portal_remote_state_tfvars(
+        instance_dir=_instance_root(env=env, bucket=bucket),
+        env=env,
+        bucket=bucket,
+        region=os.environ.get("AWS_REGION", "us-east-2"),
+    )
+
+
 def _deploy_terraform_component(
     env: str,
     component: str,
     dry_run: bool,
     *,
     bucket_name: str | None = None,
-) -> dict:
+) -> dict[str, Any]:
     """Run init/plan/apply for one Terraform component; return any captured outputs."""
-    if not dry_run and not confirm(f"Deploy {component}?"):
-        error(f"{component.title()} deployment is required")
-        reason = _COMPONENT_REQUIREMENT_REASON.get(component)
-        if reason:
-            error(reason)
-        sys.exit(1)
+    _require_component_deploy(component, dry_run)
 
-    bucket = _infra_state_bucket(env=env, bucket_name=bucket_name)
-    backend_dir = tb.resolve_instance_backend_dir(
-        env=env,
-        bucket=bucket,
-        instance_dir=_instance_root(env=env, bucket=bucket),
-    )
+    bucket = _infra_state_bucket(bucket_name=bucket_name)
+    instance_dir = _instance_root(env=env, bucket=bucket)
+    backend_dir = tb.resolve_instance_backend_dir(env=env, bucket=bucket, instance_dir=instance_dir)
     backend_config_path = tb.backend_config_for_stack(
         backend_dir,
         _component_stack_dir(env, component),
         env,
     )
-    portal_var_file = (
-        _instance_root(env=env, bucket=bucket) / "terraform-vars" / env / "portal" / "remote-state.auto.tfvars"
-    )
-    if component == "portal" and not portal_var_file.exists():
-        tb.write_portal_remote_state_tfvars(
-            instance_dir=_instance_root(env=env, bucket=bucket),
-            env=env,
-            bucket=bucket,
-            region=os.environ.get("AWS_REGION", "us-east-2"),
-        )
+    portal_var_file = _portal_remote_state_var_file(env, bucket)
+    if component == "portal":
+        _ensure_portal_remote_state_var_file(env, bucket, portal_var_file)
 
     base_path = get_repo_root() / "platform" / "terraform" / "environments" / env
     tf_dir = base_path if component == "core" else base_path / component
@@ -3973,9 +3987,7 @@ def _deploy_terraform_component(
     os.chdir(tf_dir)
     try:
         _terraform_init_or_exit(
-            env,
             component,
-            tf_dir,
             dry_run,
             backend_config_path=backend_config_path,
         )
@@ -3988,7 +4000,13 @@ def _deploy_terraform_component(
         os.chdir(original_dir)
 
 
-def terraform_deploy(env: str, profile: str, dry_run: bool = False, *, bucket_name: str | None = None) -> dict:
+def terraform_deploy(
+    env: str,
+    profile: str,
+    dry_run: bool = False,
+    *,
+    bucket_name: str | None = None,
+) -> dict[str, Any]:
     """Deploy all Terraform components in order."""
     header(f"Deploying {env.upper()} Infrastructure")
 
@@ -4001,7 +4019,7 @@ def terraform_deploy(env: str, profile: str, dry_run: bool = False, *, bucket_na
         ("portal", "Portal infrastructure (VPC, RDS, EC2, ALB, Cognito)"),
     ]
 
-    outputs: dict = {}
+    outputs: dict[str, Any] = {}
     for i, (component, description) in enumerate(components, 1):
         header(f"Step {i}/{len(components)}: {description}")
         info(f"Component: {component}")

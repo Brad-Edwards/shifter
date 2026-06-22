@@ -23,6 +23,7 @@ _GLOBAL_STACKS: tuple[tuple[str, str], ...] = (
 
 
 def render_s3_tfbackend(*, bucket: str, key: str, region: str) -> str:
+    """Return a partial S3 backend config snippet for one Terraform stack."""
     if not bucket.strip():
         raise ValueError("bucket is required")
     if not key.strip():
@@ -44,11 +45,13 @@ def resolve_instance_backend_dir(
     bucket: str,
     instance_dir: Path | None = None,
 ) -> Path:
+    """Return the directory where per-stack `.s3.tfbackend` files are stored."""
     root = instance_dir if instance_dir is not None else Path.home() / ".shifter" / f"{env}-{bucket}"
     return root / "terraform-backend"
 
 
 def _stack_backend_path(backend_dir: Path, stack_relative_dir: str, env: str) -> Path:
+    """Map a stack path under `platform/terraform/` to its backend config file."""
     return backend_dir / stack_relative_dir / f"{env}.s3.tfbackend"
 
 
@@ -72,10 +75,12 @@ def write_instance_backend_configs(
 
 
 def backend_config_for_stack(backend_dir: Path, stack_relative_dir: str, env: str) -> Path:
+    """Return the backend config path for a single Terraform stack."""
     return _stack_backend_path(backend_dir, stack_relative_dir, env)
 
 
 def render_portal_remote_state_tfvars(*, bucket: str, region: str) -> str:
+    """Return tfvars content for portal `terraform_remote_state` lookups."""
     if not bucket.strip():
         raise ValueError("bucket is required")
     if not region.strip():
@@ -90,13 +95,15 @@ def write_portal_remote_state_tfvars(
     bucket: str,
     region: str,
 ) -> Path:
+    """Write portal remote-state tfvars under the instance directory."""
     target = instance_dir / "terraform-vars" / env / "portal" / "remote-state.auto.tfvars"
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(render_portal_remote_state_tfvars(bucket=bucket, region=region))
     return target
 
 
-def instance_dir_from_env(*, env: str | None = None) -> Path | None:
+def instance_dir_from_env() -> Path | None:
+    """Return SHIFTER_INSTANCE_DIR when set, otherwise None."""
     explicit = os.environ.get("SHIFTER_INSTANCE_DIR", "").strip()
     if explicit:
         return Path(explicit)
