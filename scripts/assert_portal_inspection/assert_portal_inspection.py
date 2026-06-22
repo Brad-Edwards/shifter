@@ -150,10 +150,15 @@ def _check_endpoint_routes(
     """Every endpoint-targeted route must hit `expected_endpoint`; `required_cidrs` must be present."""
     seen_cidrs: set[str] = set()
     for route in routes:
+        cidr = route.get("DestinationCidrBlock")
+        if not cidr:
+            # Gateway VPC endpoint routes for S3 / DynamoDB also target a
+            # "vpce-..." gateway, but via a managed prefix list rather than a
+            # CIDR destination. They are not firewall inspection routes — skip.
+            continue
         endpoint = _route_endpoint(route)
         if endpoint is None:
             continue
-        cidr = route.get("DestinationCidrBlock", "")
         seen_cidrs.add(cidr)
         if route.get("State") == "blackhole":
             failures.append(f"route table {rt_id}: route to {cidr} via {endpoint!r} is blackhole")

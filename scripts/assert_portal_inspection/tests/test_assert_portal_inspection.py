@@ -149,6 +149,25 @@ def test_healthy_topology_passes_with_gateway_endpoint_form() -> None:
     assert failures == []
 
 
+def test_prefix_list_gateway_endpoint_routes_are_ignored() -> None:
+    # Regression: S3 / DynamoDB gateway VPC endpoints add prefix-list routes
+    # (no CIDR destination) that also target a "vpce-..." gateway. They must
+    # not be mistaken for firewall inspection routes pointing at the wrong
+    # endpoint.
+    tables = _route_tables_gateway_form()
+    for table in tables:
+        if table["RouteTableId"] in PRIV_RT:
+            table["Routes"].append(
+                {
+                    "DestinationPrefixListId": "pl-s3example",
+                    "GatewayId": "vpce-0000000000s3ddb",
+                    "State": "active",
+                }
+            )
+    failures = evaluate_inspection(_contract(), _sync_states(), "IN_SYNC", tables)
+    assert failures == []
+
+
 # --------------------------------------------------------------------------- #
 # evaluate_inspection — firewall health
 # --------------------------------------------------------------------------- #
