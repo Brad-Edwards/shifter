@@ -357,6 +357,9 @@ jobs:
        github.event_name == 'workflow_dispatch')
     uses: ./.github/workflows/_quality.yml
     with:
+      # Commit-message / label-based test skips are not accepted on protected
+      # branches (ADR-003-R2, #760). Unit-test jobs honor skip_tests inside
+      # _quality.yml, but lint, architecture, and security jobs do not.
       skip_tests: false
       run_full_matrix: ${{ github.event_name == 'workflow_dispatch' }}
       # Build + boot the production portal image when the image's own inputs

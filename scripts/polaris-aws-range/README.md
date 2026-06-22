@@ -3,6 +3,22 @@
 This directory provisions a standalone Polaris/NORTHSTORM range: one Ubuntu
 Docker host plus one Windows Server 2022 A2 domain controller per range index.
 
+## Operator run artifacts
+
+The following files are **ephemeral operator outputs** from live event runs.
+They are gitignored and must not be committed:
+
+| File | Produced by |
+|---|---|
+| `provisioning_state.json` | `orchestrate_provisioning.py` — resumable machine-readable batch state |
+| `provisioning_status.md` | `orchestrate_provisioning.py` — human-readable batch log |
+| `health_report.md` | `check_range_health.py --output …` — per-range health sweep |
+| `postprovision_status.md` | post-provision supervisor scripts — splice/Bedrock follow-up status |
+
+Regenerate them by re-running the corresponding command during an operator
+session. `adr_guard`'s `no-tracked-generated-artifacts` check (ADR-004-R8)
+backstops these paths if they are force-added.
+
 ## aws-dev default VPC bring-up
 
 Use this path for the no-SSO `aws-dev` account in `us-east-2` when the range
