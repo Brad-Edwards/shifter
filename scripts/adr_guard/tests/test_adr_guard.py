@@ -4108,6 +4108,29 @@ class NoTrackedGeneratedArtifactsTests(unittest.TestCase):
             self.assertEqual({v.rule_id for v in violations}, {"ADR-004-R8"})
             self.assertNotIn("challenge-local-token", violations[0].message)
 
+    def test_flags_polaris_operator_run_outputs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            script_dir = repo_root / "scripts" / "polaris-aws-range"
+            script_dir.mkdir(parents=True)
+            (script_dir / "provisioning_state.json").write_text('{"outcomes": {}}', encoding="utf-8")
+            (script_dir / "provisioning_status.md").write_text("# status", encoding="utf-8")
+            (script_dir / "health_report.md").write_text("# health", encoding="utf-8")
+            (script_dir / "postprovision_status.md").write_text("# post", encoding="utf-8")
+            (script_dir / "README.md").write_text("# docs", encoding="utf-8")
+
+            violations = ADR_GUARD.check_no_tracked_generated_artifacts(repo_root, None)
+
+            flagged_paths = {v.path for v in violations}
+            self.assertIn("scripts/polaris-aws-range/provisioning_state.json", flagged_paths)
+            self.assertIn("scripts/polaris-aws-range/provisioning_status.md", flagged_paths)
+            self.assertIn("scripts/polaris-aws-range/health_report.md", flagged_paths)
+            self.assertIn("scripts/polaris-aws-range/postprovision_status.md", flagged_paths)
+            self.assertNotIn("scripts/polaris-aws-range/README.md", flagged_paths)
+            for v in violations:
+                self.assertEqual(v.rule_id, "ADR-004-R8")
+                self.assertNotIn("outcomes", v.message)
+
     def test_clean_tree_emits_no_violations(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo_root = Path(tmp)
@@ -4150,6 +4173,15 @@ class NoTrackedGeneratedArtifactsTests(unittest.TestCase):
         self.assertIn("no-tracked-generated-artifacts", ADR_GUARD.CHECKS)
         self.assertIn("no-tracked-generated-artifacts", ADR_GUARD.CHECK_LEVELS["ci"])
         self.assertIn("no-tracked-generated-artifacts", ADR_GUARD.CHECK_LEVELS["fast"])
+
+    def test_real_repo_passes(self) -> None:
+        """Exercise the production git ls-files discovery path against the real repo."""
+        violations = ADR_GUARD.check_no_tracked_generated_artifacts(ADR_GUARD.REPO_ROOT, None)
+        self.assertEqual(
+            violations,
+            [],
+            msg=f"Unexpected no-tracked-generated-artifacts violations: {violations}",
+        )
 
 
 class NoPopulatedSecretEnvFilesTests(unittest.TestCase):
