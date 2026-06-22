@@ -17,6 +17,7 @@ if TYPE_CHECKING:
 
 
 from ctf.views._access import (
+    _json_error,
     _resolve_owned_participant,
     ctf_organizer_required,
 )
@@ -228,6 +229,6 @@ def api_assign_bracket(request: HttpRequest, participant_id: UUID) -> JsonRespon
     try:
         body = _parse_body_object(request)
     except _BodyParseError as e:
-        return JsonResponse({"error": str(e)}, status=400)
+        return _json_error(e, "Invalid bracket request.", 400)
 
     return _set_participant_bracket(participant_id, body.get("bracket_id"))

@@ -20,6 +20,7 @@ from ctf.views import _access
 from ctf.views._access import (
     _check_invite_rate_limit,
     _get_user,
+    _json_error,
     ctf_organizer_required,
     ctf_participant_required,
 )
@@ -181,7 +182,7 @@ def _run_participant_range_action(participant_id: UUID, action_fn: Callable[[UUI
     try:
         result = action_fn(participant_id)
     except (CTFNotFoundError, CTFRangeError) as e:
-        return JsonResponse({"error": str(e)}, status=400)
+        return _json_error(e, "Could not process range request.", 400)
     return JsonResponse(result)
 
 

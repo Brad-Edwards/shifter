@@ -21,7 +21,9 @@ if TYPE_CHECKING:
 from ctf.views import _access
 from ctf.views._access import (
     _check_event_ownership,
+    _error_tuple,
     _get_user,
+    _json_error,
     ctf_organizer_required,
 )
 from ctf.views.api._common import (
@@ -59,9 +61,9 @@ def _handle_challenge_file_upload(request: HttpRequest, challenge_id: UUID, user
     except CTFPermissionError:
         error = ("Forbidden", 403)
     except CTFNotFoundError as e:
-        error = (str(e), 404)
+        error = _error_tuple(e, "File or challenge not found.", 404)
     except (CTFStateError, CTFValidationError) as e:
-        error = (str(e), 400)
+        error = _error_tuple(e, "Invalid file request.", 400)
     if error is not None:
         return JsonResponse({"error": error[0]}, status=error[1])
 
@@ -188,7 +190,7 @@ def _file_download_url_response(file_id: UUID) -> HttpResponse:
     try:
         url, filename = get_download_url(file_id)
     except CTFNotFoundError as e:
-        return JsonResponse({"error": str(e)}, status=404)
+        return _json_error(e, "File or challenge not found.", 404)
     return JsonResponse({"url": url, "filename": filename})
 
 

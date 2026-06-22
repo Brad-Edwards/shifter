@@ -10,6 +10,8 @@ from django.contrib.auth.decorators import login_required
 from django.http import JsonResponse
 from django.views.decorators.http import require_http_methods, require_POST
 
+from shared.log_sanitize import safe_log_value
+
 if TYPE_CHECKING:
     from django.http import HttpRequest
 
@@ -20,6 +22,7 @@ if TYPE_CHECKING:
 from ctf.views._access import (
     _check_invite_rate_limit,
     _get_user,
+    _json_error,
     _resolve_owned_participant,
     ctf_organizer_required,
 )
@@ -70,12 +73,12 @@ def _handle_participant_invite_post(request: HttpRequest, event_id: UUID) -> Jso
         if not name or not email:
             raise _BodyParseError("name and email are required")
     except _BodyParseError as e:
-        return JsonResponse({"error": str(e)}, status=400)
+        return _json_error(e, "Invalid participant request.", 400)
 
     try:
         participant = invite_participant(event_id, email, name)
     except CTFValidationError as e:
-        return JsonResponse({"error": str(e)}, status=400)
+        return _json_error(e, "Invalid participant request.", 400)
 
     return JsonResponse(
         {
@@ -135,7 +138,7 @@ def api_participant_import(request: HttpRequest, event_id: UUID) -> JsonResponse
         if not isinstance(participants_data, list):
             raise _BodyParseError("participants must be an array")
     except _BodyParseError as e:
-        return JsonResponse({"error": str(e)}, status=400)
+        return _json_error(e, "Invalid participant request.", 400)
 
     imported = []
     errors = []
@@ -158,7 +161,8 @@ def api_participant_import(request: HttpRequest, event_id: UUID) -> JsonResponse
                 }
             )
         except CTFValidationError as e:
-            errors.append({"index": idx, "email": email, "error": str(e)})
+            logger.warning("CTF participant import row %s failed: %s", idx, safe_log_value(str(e)))
+            errors.append({"index": idx, "email": email, "error": "Could not import participant."})
 
     return JsonResponse(
         {
@@ -233,7 +237,7 @@ def _resend_invite_response(participant_id: UUID) -> JsonResponse:
     try:
         updated = resend_invite(participant_id)
     except CTFStateError as e:
-        return JsonResponse({"error": str(e)}, status=400)
+        return _json_error(e, "Invalid participant request.", 400)
     return JsonResponse(
         {
             "success": True,

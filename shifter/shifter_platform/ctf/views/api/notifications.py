@@ -20,6 +20,7 @@ if TYPE_CHECKING:
 
 from ctf.views._access import (
     _get_user,
+    _json_error,
     ctf_organizer_required,
 )
 from ctf.views._parsing import (
@@ -45,7 +46,7 @@ def _handle_notification_announce_post(request: HttpRequest, event: CTFEvent) ->
         if not subject or not body:
             raise _BodyParseError("Subject and body are required")
     except _BodyParseError as e:
-        return JsonResponse({"error": str(e)}, status=400)
+        return _json_error(e, "Invalid notification request.", 400)
 
     notif = notification.send_announcement(
         event_id=event.id,
@@ -201,16 +202,27 @@ def _handle_delete_email_template(event: CTFEvent, notification_type: str) -> Js
 
 
 def _validate_template_bodies(html_body: str, text_body: str) -> JsonResponse | None:
-    """Validate the two template bodies; return a 400 JsonResponse or None on success."""
-    if not html_body or not text_body:
-        return JsonResponse({"error": "html_body and text_body are required"}, status=400)
-    from django.template import Template, TemplateSyntaxError
+    """Validate the two organizer email-template bodies; return a 400 or None.
 
+    Organizer templates are restricted to plain text with ``{{ variable }}``
+    placeholders; Django template tags / blocks (``{% ... %}``) are rejected so
+    untrusted template *logic* can never be stored and later rendered
+    (CWE-1336 / py:template-injection). The request body is NOT compiled into a
+    Django ``Template`` here; the stored bodies are substituted by the existing
+    template engine at send time (ctf/services/notification.py). Full
+    render-side hardening (placeholder-only substitution, no attribute
+    traversal) is tracked in #1095.
+    """
     for label, source in (("html_body", html_body), ("text_body", text_body)):
-        try:
-            Template(source)
-        except TemplateSyntaxError as exc:
-            return JsonResponse({"error": f"Invalid template syntax in {label}: {exc}"}, status=400)
+        if not source:
+            return JsonResponse({"error": "html_body and text_body are required"}, status=400)
+        if "{%" in source or "%}" in source:
+            return JsonResponse(
+                {"error": f"Template tags are not allowed in {label}; use {{{{ variable }}}} placeholders only."},
+                status=400,
+            )
+        if source.count("{{") != source.count("}}"):
+            return JsonResponse({"error": f"Unbalanced placeholders in {label}."}, status=400)
     return None
 
 
@@ -224,7 +236,7 @@ def _handle_put_email_template(request: HttpRequest, event: CTFEvent, notificati
         text_body = _get_body_str(body, "text_body").strip()
         subject = _get_body_str(body, "subject").strip()
     except _BodyParseError as e:
-        return JsonResponse({"error": str(e)}, status=400)
+        return _json_error(e, "Invalid notification request.", 400)
 
     syntax_error = _validate_template_bodies(html_body, text_body)
     if syntax_error is not None:

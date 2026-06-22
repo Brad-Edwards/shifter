@@ -17,7 +17,9 @@ if TYPE_CHECKING:
 
 from ctf.views._access import (
     _check_event_ownership,
+    _error_tuple,
     _get_user,
+    _json_error,
     ctf_organizer_required,
 )
 from ctf.views._parsing import (
@@ -43,7 +45,7 @@ def _handle_add_prerequisite(request: HttpRequest, challenge_id: UUID, user: Use
         body = _parse_body_object(request)
         required_uuid = _parse_body_uuid(body.get("required_challenge_id"), "required_challenge_id")
     except (_BodyParseError, _BodyUUIDError) as e:
-        return JsonResponse({"error": str(e)}, status=400)
+        return _json_error(e, "Invalid prerequisite request.", 400)
 
     prereq = None
     error: tuple[str, int] | None = None
@@ -52,9 +54,9 @@ def _handle_add_prerequisite(request: HttpRequest, challenge_id: UUID, user: Use
     except CTFPermissionError:
         error = ("Forbidden", 403)
     except CTFNotFoundError as e:
-        error = (str(e), 404)
+        error = _error_tuple(e, "Challenge not found.", 404)
     except (CTFStateError, CTFValidationError) as e:
-        error = (str(e), 400)
+        error = _error_tuple(e, "Invalid prerequisite request.", 400)
     if error is not None:
         return JsonResponse({"error": error[0]}, status=error[1])
 

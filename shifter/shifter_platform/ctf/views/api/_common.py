@@ -21,6 +21,7 @@ if TYPE_CHECKING:
 
 from ctf.views._access import (
     _check_event_ownership,
+    _error_tuple,
     _get_user,
 )
 
@@ -72,9 +73,9 @@ def _delete_via_service_response(action_fn: Callable[..., Any], target_id: UUID,
     except CTFPermissionError:
         error = ("Forbidden", 403)
     except CTFNotFoundError as e:
-        error = (str(e), 404)
+        error = _error_tuple(e, "Resource not found.", 404)
     except CTFStateError as e:
-        error = (str(e), 400)
+        error = _error_tuple(e, "Invalid request.", 400)
     if error is not None:
         return JsonResponse({"error": error[0]}, status=error[1])
     return JsonResponse({"success": True})

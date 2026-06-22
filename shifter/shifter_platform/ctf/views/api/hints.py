@@ -16,7 +16,9 @@ if TYPE_CHECKING:
 
 
 from ctf.views._access import (
+    _error_tuple,
     _get_user,
+    _json_error,
     ctf_organizer_required,
 )
 from ctf.views._parsing import (
@@ -38,7 +40,7 @@ def _handle_add_hint(request: HttpRequest, challenge_id: UUID, user: User) -> Js
     try:
         body = _parse_body_object(request)
     except _BodyParseError as e:
-        return JsonResponse({"error": str(e)}, status=400)
+        return _json_error(e, "Could not process hint request.", 400)
 
     hint = None
     error: tuple[str, int] | None = None
@@ -47,7 +49,7 @@ def _handle_add_hint(request: HttpRequest, challenge_id: UUID, user: User) -> Js
     except CTFPermissionError:
         error = ("Forbidden", 403)
     except (CTFNotFoundError, CTFStateError, CTFValidationError) as e:
-        error = (str(e), 400)
+        error = _error_tuple(e, "Could not process hint request.", 400)
     if error is not None:
         return JsonResponse({"error": error[0]}, status=error[1])
 
@@ -104,9 +106,9 @@ def api_hint_delete(request: HttpRequest, hint_id: UUID) -> JsonResponse:
     except CTFPermissionError:
         error = ("Forbidden", 403)
     except CTFNotFoundError as e:
-        error = (str(e), 404)
+        error = _error_tuple(e, "Hint or challenge not found.", 404)
     except CTFStateError as e:
-        error = (str(e), 400)
+        error = _error_tuple(e, "Could not process hint request.", 400)
     if error is not None:
         return JsonResponse({"error": error[0]}, status=error[1])
     return JsonResponse({}, status=204)

@@ -21,6 +21,7 @@ if TYPE_CHECKING:
 
 from ctf.views._access import (
     _get_user,
+    _json_error,
     ctf_organizer_required,
 )
 from ctf.views._parsing import (
@@ -42,7 +43,7 @@ def _handle_event_create_post(request: HttpRequest, user: User) -> JsonResponse:
     try:
         body = _parse_body_object(request)
     except _BodyParseError as e:
-        return JsonResponse({"error": str(e)}, status=400)
+        return _json_error(e, "Invalid event request.", 400)
 
     # Parse datetime strings to datetime objects for the service layer
     from django.utils.dateparse import parse_datetime
@@ -53,19 +54,13 @@ def _handle_event_create_post(request: HttpRequest, user: User) -> JsonResponse:
             if parsed:
                 body[field] = parsed
 
-    event = None
-    error_message = None
     try:
         event = create_event(user, body)
-    except CTFValidationError as e:
-        error_message = str(e)
-    except ValidationError as e:
-        # Django model validation (from full_clean in save)
-        error_message = "; ".join(e.messages)
-    if error_message is not None:
-        return JsonResponse({"error": error_message}, status=400)
+    except (CTFValidationError, ValidationError) as e:
+        # Django model validation (ValidationError) and domain validation both
+        # map to a controlled 400; the exception detail is logged, not returned.
+        return _json_error(e, "Invalid event request.", 400)
 
-    assert event is not None
     return JsonResponse(
         {
             "id": str(event.id),
@@ -153,21 +148,14 @@ def _handle_event_update_put(request: HttpRequest, event_id: UUID) -> JsonRespon
     try:
         body = _parse_body_object(request)
     except _BodyParseError as e:
-        return JsonResponse({"error": str(e)}, status=400)
+        return _json_error(e, "Invalid event request.", 400)
     _coerce_event_datetime_fields(body)
 
-    updated = None
-    error_message = None
     try:
         updated = update_event(event_id, body)
-    except (CTFValidationError, CTFStateError) as e:
-        error_message = str(e)
-    except ValidationError as e:
-        error_message = "; ".join(e.messages)
-    if error_message is not None:
-        return JsonResponse({"error": error_message}, status=400)
+    except (CTFValidationError, CTFStateError, ValidationError) as e:
+        return _json_error(e, "Invalid event request.", 400)
 
-    assert updated is not None
     return JsonResponse(
         {
             "id": str(updated.id),
@@ -218,13 +206,13 @@ def _force_delete_event_response(request: HttpRequest, event_id: UUID) -> JsonRe
         if not confirmation_name:
             raise _BodyParseError("confirmation_name is required")
     except _BodyParseError as e:
-        return JsonResponse({"error": str(e)}, status=400)
+        return _json_error(e, "confirmation_name is required.", 400)
 
     user = _get_user(request)
     try:
         result = force_delete_event(event_id, user, confirmation_name)
     except CTFValidationError as e:
-        return JsonResponse({"error": str(e)}, status=400)
+        return _json_error(e, "Invalid event request.", 400)
 
     return JsonResponse(result)
 

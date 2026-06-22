@@ -17,7 +17,9 @@ if TYPE_CHECKING:
 
 from ctf.views._access import (
     _check_event_ownership,
+    _error_tuple,
     _get_user,
+    _json_error,
     ctf_organizer_required,
 )
 from ctf.views._parsing import (
@@ -46,7 +48,7 @@ def _handle_add_flag(request: HttpRequest, challenge_id: UUID, user: User) -> Js
         if flag_type in ("static", "regex") and not flag_value:
             raise _BodyParseError("Flag value is required")
     except _BodyParseError as e:
-        return JsonResponse({"error": str(e)}, status=400)
+        return _json_error(e, "Invalid flag request.", 400)
 
     flag_data = {
         "flag": flag_value,
@@ -63,9 +65,9 @@ def _handle_add_flag(request: HttpRequest, challenge_id: UUID, user: User) -> Js
     except CTFPermissionError:
         error = ("Forbidden", 403)
     except CTFNotFoundError as e:
-        error = (str(e), 404)
+        error = _error_tuple(e, "Flag or challenge not found.", 404)
     except (CTFStateError, CTFValidationError) as e:
-        error = (str(e), 400)
+        error = _error_tuple(e, "Invalid flag request.", 400)
     if error is not None:
         return JsonResponse({"error": error[0]}, status=error[1])
 

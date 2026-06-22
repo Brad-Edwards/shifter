@@ -11,6 +11,7 @@ from django.contrib.auth.models import User
 from django.http import HttpResponse, JsonResponse
 
 from ctf.bridges import get_user_role
+from shared.log_sanitize import safe_log_value
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -188,3 +189,24 @@ def _resolve_owned_participant(
         return None, JsonResponse({"error": "Forbidden"}, status=403)
 
     return participant, None
+
+
+def _json_error(exc: Exception, message: str, status: int) -> JsonResponse:
+    """Return a JSON error envelope with a controlled, caller-supplied message.
+
+    The underlying exception is logged server-side (sanitised) rather than
+    serialised into the response, so internal details never reach the client
+    (CWE-209 / py:stack-trace-exposure). The CTF JSON API contract asserts on
+    status codes, not response text, so the controlled messages preserve it.
+    """
+    logger.warning("CTF API error (%s): %s | %s", status, message, safe_log_value(str(exc)))
+    return JsonResponse({"error": message}, status=status)
+
+
+def _error_tuple(exc: Exception, message: str, status: int) -> tuple[str, int]:
+    """(message, status) variant of `_json_error` for helpers that defer response
+    construction. Logs `exc` server-side and returns a controlled message so the
+    exception text never reaches the client (CWE-209 / py:stack-trace-exposure).
+    """
+    logger.warning("CTF API error (%s): %s | %s", status, message, safe_log_value(str(exc)))
+    return message, status
