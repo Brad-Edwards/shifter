@@ -198,6 +198,15 @@ describe('TerminalManager', () => {
 
             expect(manager.activeTerminalUuid).toBe('kali-uuid');
         });
+
+        test('registers custom key event handler for clipboard shortcuts', () => {
+            manager.init();
+
+            expect(mockTerminal.attachCustomKeyEventHandler).toHaveBeenCalledTimes(3);
+            expect(mockTerminal.attachCustomKeyEventHandler.mock.calls[0][0]).toEqual(
+                expect.any(Function)
+            );
+        });
     });
 
     describe('createTabs', () => {
