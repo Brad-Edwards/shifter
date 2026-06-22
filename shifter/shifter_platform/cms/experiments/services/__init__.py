@@ -46,7 +46,7 @@ from cms.experiments.s3 import (
     verify_s3_object,
     verify_upload_token,
 )
-from cms.scenarios.registry import check_scenario_access, load_scenario_template
+from cms.scenarios.registry import check_scenario_access, load_demo_scenario_template, load_scenario_template
 from risk_register.services import audit_log
 
 from ._artifacts import get_artifact_download_url, get_bundle_download_url
@@ -92,6 +92,7 @@ __all__ = [
     "initiate_script_upload",
     "list_experiments",
     "list_scripts",
+    "load_demo_scenario_template",
     "load_scenario_template",
     "publish_experiment_event",
     "read_script_header",
