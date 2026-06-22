@@ -157,6 +157,13 @@ The first slice intentionally stays small:
   condition, and consumed by the platform `build` job through the
   `portal_image_changes` input so an app-only push to an environment branch
   builds and converges the portal image without running Terraform. The check
+  also requires `.github/workflows/deploy.yml` to pass `skip_tests: false`
+  literally into `_quality.yml` (no commit-message parsing or dynamic outputs)
+  and requires lint, architecture, and security jobs in `_quality.yml` to stay
+  independent of `inputs.skip_tests` so the flag can only skip unit-test jobs
+  when a caller opts in; the deploy router never opts in (#760). Negative
+  fixtures in `scripts/adr_guard/tests/test_adr_guard.py` include a minimal
+  `_quality.yml` stub so plan-scope tests isolate one violation at a time. The check
   requires deploy concurrency to queue branch/manual runs rather than cancel
   in-flight applies; PR cancellation may remain enabled. It also requires every
   core, range, and platform `terraform plan` / saved-plan `terraform apply`
