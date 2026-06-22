@@ -84,7 +84,8 @@ to use the `aws-dev` deploy branch:
 
 1. Run `./scripts/bootstrap/deploy.py bootstrap --env dev --profile <profile>`.
    This creates the shared S3 state bucket, creates the GitHub OIDC role,
-   updates `AWS_ROLE_ARN_DEV`, and rewrites the dev `.s3.tfbackend` files.
+   sets `AWS_ROLE_ARN_DEV` and `TF_INFRA_STATE_BUCKET`, and writes
+   per-instance Terraform backend configs under `~/.shifter/<env>-<bucket>/`.
 2. Update `platform/terraform/global/github-runner/dev.tfvars` with the
    target account's VPC/subnet IDs, apply the runner root, and register each
    runner with GitHub. AWS deploy workflows use `runs-on: self-hosted`, and
