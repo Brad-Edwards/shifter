@@ -1301,16 +1301,6 @@
       "target": "ctf.services.participant.is_active_participant"
     },
     {
-      "count": 1,
-      "path": "shifter/shifter_platform/tests/ctf/test_auth.py",
-      "target": "ctf.views._get_active_participant"
-    },
-    {
-      "count": 3,
-      "path": "shifter/shifter_platform/tests/ctf/test_auth.py",
-      "target": "ctf.views.render"
-    },
-    {
       "count": 10,
       "path": "shifter/shifter_platform/tests/ctf/test_auth.py",
       "target": "management.services.get_user_profile"
@@ -1339,16 +1329,6 @@
       "count": 1,
       "path": "shifter/shifter_platform/tests/ctf/test_auth_registration.py",
       "target": "ctf.services.participant.is_active_participant"
-    },
-    {
-      "count": 1,
-      "path": "shifter/shifter_platform/tests/ctf/test_auth_registration.py",
-      "target": "ctf.views._get_active_participant"
-    },
-    {
-      "count": 3,
-      "path": "shifter/shifter_platform/tests/ctf/test_auth_registration.py",
-      "target": "ctf.views.render"
     },
     {
       "count": 5,
@@ -1426,11 +1406,6 @@
       "target": "ctf.services.range._destroy_single_range"
     },
     {
-      "count": 2,
-      "path": "shifter/shifter_platform/tests/ctf/test_event_deletion.py",
-      "target": "ctf.views.get_user_role"
-    },
-    {
       "count": 1,
       "path": "shifter/shifter_platform/tests/ctf/test_event_deletion.py",
       "target": "mission_control.context_processors.active_range"
@@ -1471,11 +1446,6 @@
       "target": "ctf.services.range.cleanup_event_ranges"
     },
     {
-      "count": 2,
-      "path": "shifter/shifter_platform/tests/ctf/test_event_lifecycle.py",
-      "target": "ctf.views.get_user_role"
-    },
-    {
       "count": 1,
       "path": "shifter/shifter_platform/tests/ctf/test_event_lifecycle.py",
       "target": "mission_control.context_processors.active_range"
@@ -1509,11 +1479,6 @@
       "count": 4,
       "path": "shifter/shifter_platform/tests/ctf/test_events.py",
       "target": "ctf.services.get_organizer_events"
-    },
-    {
-      "count": 2,
-      "path": "shifter/shifter_platform/tests/ctf/test_events.py",
-      "target": "ctf.views.get_user_role"
     },
     {
       "count": 1,
@@ -1594,26 +1559,6 @@
       "count": 1,
       "path": "shifter/shifter_platform/tests/ctf/test_organizer_access.py",
       "target": "ctf.services.scoring.get_team_scoreboard"
-    },
-    {
-      "count": 2,
-      "path": "shifter/shifter_platform/tests/ctf/test_organizer_access.py",
-      "target": "ctf.views._get_participant_for_challenge"
-    },
-    {
-      "count": 1,
-      "path": "shifter/shifter_platform/tests/ctf/test_organizer_access.py",
-      "target": "ctf.views._resolve_bracket_filter"
-    },
-    {
-      "count": 2,
-      "path": "shifter/shifter_platform/tests/ctf/test_organizer_access.py",
-      "target": "ctf.views.get_user_role"
-    },
-    {
-      "count": 1,
-      "path": "shifter/shifter_platform/tests/ctf/test_organizer_access.py",
-      "target": "ctf.views.render"
     },
     {
       "count": 3,

@@ -452,6 +452,20 @@ Decomposition-owned suites are out of scope here and land with their own
 issues: provisioner (#946), `ctf/**` and `cms/experiments/test_orchestrator*`
 (#885, #886, #889-#891), and `cms/scenario_editor/**` (#887, #888).
 
+### ADR-019 baseline reduction (#885)
+
+Splitting `ctf/views.py` into the `ctf/views/` package (#885, `python:S104`)
+removed every first-party `ctf.views.*` patch the CTF view tests carried. The
+view tests that drove role/render/participant resolution by patching
+`ctf.views.get_user_role`, `ctf.views.render`, `ctf.views._get_active_participant`,
+`ctf.views._get_participant_for_challenge`, and `ctf.views._resolve_bracket_filter`
+were rewritten to behavior tests: organizers are driven through real group
+membership (so the real `get_user_role` resolves), and the render / participant
+/ bracket paths run for real under `@pytest.mark.django_db` with the conftest
+user/event/participant fixtures (services mocked only at their already-tracked
+boundary). The corresponding 11 `ctf.views.*` entries were removed from
+`scripts/adr_guard/boundary_mock_baseline.json` (ratchet shrink).
+
 ## Adding A Rule
 
 1. Add or update the ADR in `index.yaml`.
