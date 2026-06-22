@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 from uuid import UUID
 
 from django.contrib.auth.decorators import login_required
@@ -15,6 +15,8 @@ from shared.log_sanitize import safe_log_value
 
 if TYPE_CHECKING:
     from django.http import HttpRequest
+
+    from ctf.exceptions import CTFValidationError
 
 
 from ctf.views import _parsing
@@ -88,7 +90,7 @@ def admin_participant_list(request: HttpRequest, event_id: UUID) -> HttpResponse
     return render(request, "ctf/admin/participant_list.html", context)
 
 
-def _participant_import_error_messages(exc: Any) -> list[str]:
+def _participant_import_error_messages(exc: CTFValidationError) -> list[str]:
     """Map a CSV participant-import validation error to display messages.
 
     Preserves the original precedence (existing > duplicates > generic), kept
