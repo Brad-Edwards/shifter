@@ -27,7 +27,7 @@ def wrap_persisted_spec(slug: str, model: BaseModel, *, mode: str = "json") -> d
     return {
         SPEC_SCHEMA_KEY: slug,
         SPEC_VERSION_KEY: SPEC_VERSION,
-        PAYLOAD_KEY: model.model_dump(mode=mode),  # type: ignore[arg-type]
+        PAYLOAD_KEY: model.model_dump(mode=mode),
     }
 
 

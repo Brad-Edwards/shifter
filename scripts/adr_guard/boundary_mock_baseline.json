@@ -1051,61 +1051,6 @@
       "target": "terraform_base.run_terraform"
     },
     {
-      "count": 16,
-      "path": "shifter/shifter_platform/tests/cms/experiments/test_orchestrator.py",
-      "target": "cms.experiments.orchestrator.Experiment"
-    },
-    {
-      "count": 10,
-      "path": "shifter/shifter_platform/tests/cms/experiments/test_orchestrator.py",
-      "target": "cms.experiments.orchestrator.ExperimentRun"
-    },
-    {
-      "count": 3,
-      "path": "shifter/shifter_platform/tests/cms/experiments/test_orchestrator.py",
-      "target": "cms.experiments.orchestrator.ExperimentScript"
-    },
-    {
-      "count": 4,
-      "path": "shifter/shifter_platform/tests/cms/experiments/test_orchestrator.py",
-      "target": "cms.experiments.orchestrator.audit_log_system_event"
-    },
-    {
-      "count": 3,
-      "path": "shifter/shifter_platform/tests/cms/experiments/test_orchestrator.py",
-      "target": "cms.experiments.orchestrator.build_instance_data"
-    },
-    {
-      "count": 4,
-      "path": "shifter/shifter_platform/tests/cms/experiments/test_orchestrator.py",
-      "target": "cms.experiments.orchestrator.engine_create_range"
-    },
-    {
-      "count": 3,
-      "path": "shifter/shifter_platform/tests/cms/experiments/test_orchestrator.py",
-      "target": "cms.experiments.orchestrator.start_experiment_task"
-    },
-    {
-      "count": 9,
-      "path": "shifter/shifter_platform/tests/cms/experiments/test_orchestrator_command_safety.py",
-      "target": "cms.experiments.orchestrator.Experiment"
-    },
-    {
-      "count": 9,
-      "path": "shifter/shifter_platform/tests/cms/experiments/test_orchestrator_command_safety.py",
-      "target": "cms.experiments.orchestrator.ExperimentScript"
-    },
-    {
-      "count": 11,
-      "path": "shifter/shifter_platform/tests/cms/experiments/test_orchestrator_dispatch.py",
-      "target": "cms.experiments.orchestrator.Experiment"
-    },
-    {
-      "count": 11,
-      "path": "shifter/shifter_platform/tests/cms/experiments/test_orchestrator_dispatch.py",
-      "target": "cms.experiments.orchestrator.start_experiment_task"
-    },
-    {
       "count": 1,
       "path": "shifter/shifter_platform/tests/ctf/conftest.py",
       "target": "cms.services.create_range"

@@ -1155,7 +1155,7 @@ def assert_challenge_available_for_participant(
             participant).
     """
     from ctf.enums import EventStatus
-    from ctf.services.participant import _PLAYING_PARTICIPANT_STATUSES
+    from ctf.services.participant.queries import _PLAYING_PARTICIPANT_STATUSES
 
     # Participant eligibility: aligned with `eligible_participant_q`.
     if participant.registered_at is None or participant.status not in _PLAYING_PARTICIPANT_STATUSES:
@@ -1242,7 +1242,7 @@ def assert_challenge_readable_for_participant(
     Submit/hint/file-download endpoints continue to use
     `assert_challenge_available_for_participant`.
     """
-    from ctf.services.participant import _PLAYING_PARTICIPANT_STATUSES
+    from ctf.services.participant.queries import _PLAYING_PARTICIPANT_STATUSES
 
     if participant.registered_at is None or participant.status not in _PLAYING_PARTICIPANT_STATUSES:
         raise CTFStateError(

@@ -11,7 +11,5 @@ workflow:
 sonarcloud:
   project_key: Brad-Edwards_shifter
   organization: brad-edwards
-  # Quality gate name (aces-strict) is configured on the SonarCloud project;
-  # gc_watch_sonar_analysis reads project_key + organization from this block.
 rules:
   plan_rules: .gc/plan-rules.md
