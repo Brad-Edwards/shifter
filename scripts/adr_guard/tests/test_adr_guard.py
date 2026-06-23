@@ -5057,6 +5057,34 @@ class NoLiveCloudIdentifiersTests(unittest.TestCase):
         self.assertIn("no-live-cloud-identifiers", ADR_GUARD.CHECK_LEVELS["ci"])
         self.assertIn("no-live-cloud-identifiers", ADR_GUARD.CHECK_LEVELS["fast"])
 
+    def test_portal_s3_cross_region_replication_exception_is_scoped(self) -> None:
+        """Portal user-uploads CRR waiver (#143) must not share log-archive paths."""
+        exceptions = ADR_GUARD.load_adr_exceptions(ADR_GUARD.REPO_ROOT)
+        portal_path = "platform/terraform/modules/portal/s3/"
+        portal_entries = [
+            entry
+            for entry in exceptions
+            if portal_path in (entry.get("paths") or [])
+        ]
+        self.assertEqual(len(portal_entries), 1, portal_entries)
+        self.assertEqual(portal_entries[0]["paths"], [portal_path])
+        reason = portal_entries[0]["reason"]
+        self.assertIn("CKV_AWS_144", reason)
+        self.assertIn("s3-bucket-hardening-preflight.md", reason)
+
+        log_entries = [
+            entry
+            for entry in exceptions
+            if any("log-aggregation" in path for path in (entry.get("paths") or []))
+        ]
+        self.assertTrue(log_entries, "expected a log-aggregation exception entry")
+        for entry in log_entries:
+            self.assertNotIn(
+                portal_path,
+                entry.get("paths") or [],
+                msg=f"log entry must not include portal path: {entry}",
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
