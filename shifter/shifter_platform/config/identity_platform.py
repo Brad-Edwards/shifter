@@ -15,6 +15,7 @@ from django.http import HttpRequest
 from firebase_admin import auth as firebase_auth
 
 from config.bootstrap_admin import apply_bootstrap_admin_flags
+from config.cognito_groups import sync_cognito_groups_from_claims
 from config.user_type_sync import sync_user_type
 from management.services import update_cognito_sub
 from risk_register.models import AuditLog
@@ -235,6 +236,7 @@ class IdentityPlatformBackend(BaseBackend):
         apply_bootstrap_admin_flags(user, claims.email)
         update_cognito_sub(user, claims.sub)
         _sync_user_type_from_claims(user, identity_claims, request)
+        sync_cognito_groups_from_claims(user, identity_claims, request)
 
         source_ip, user_agent = _request_audit_context(request)
         audit_auth_event(

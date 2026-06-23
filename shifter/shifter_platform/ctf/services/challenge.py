@@ -1409,33 +1409,42 @@ def add_prerequisite(
             details={"challenge_id": str(challenge_id)},
         )
 
-    # Check duplicate
-    if CTFChallengePrerequisite.objects.filter(
-        challenge=challenge,
-        required_challenge=required,
-    ).exists():
-        raise CTFValidationError(
-            "This prerequisite already exists",
-            details={
-                "challenge_id": str(challenge_id),
-                "required_challenge_id": str(required_challenge_id),
-            },
-        )
+    # Serialize prerequisite writes for this event so the duplicate and cycle
+    # checks and the insert cannot interleave with a concurrent edit (#1144).
+    # Without the lock, concurrent "A requires B" and "B requires A" each pass
+    # _would_create_cycle against the pre-write graph and together close an
+    # A<->B cycle (the unique constraint stops duplicate edges, not cycles),
+    # soft-bricking both challenges. The event row is the serialization point.
+    with transaction.atomic():
+        CTFEvent.objects.select_for_update().get(pk=challenge.event_id)
 
-    # Circular dependency check (BFS)
-    if _would_create_cycle(challenge_id, required_challenge_id):
-        raise CTFValidationError(
-            "Adding this prerequisite would create a circular dependency",
-            details={
-                "challenge_id": str(challenge_id),
-                "required_challenge_id": str(required_challenge_id),
-            },
-        )
+        # Check duplicate
+        if CTFChallengePrerequisite.objects.filter(
+            challenge=challenge,
+            required_challenge=required,
+        ).exists():
+            raise CTFValidationError(
+                "This prerequisite already exists",
+                details={
+                    "challenge_id": str(challenge_id),
+                    "required_challenge_id": str(required_challenge_id),
+                },
+            )
 
-    prereq = CTFChallengePrerequisite.objects.create(
-        challenge=challenge,
-        required_challenge=required,
-    )
+        # Circular dependency check (BFS)
+        if _would_create_cycle(challenge_id, required_challenge_id):
+            raise CTFValidationError(
+                "Adding this prerequisite would create a circular dependency",
+                details={
+                    "challenge_id": str(challenge_id),
+                    "required_challenge_id": str(required_challenge_id),
+                },
+            )
+
+        prereq = CTFChallengePrerequisite.objects.create(
+            challenge=challenge,
+            required_challenge=required,
+        )
 
     logger.info(
         "Added prerequisite: %s requires %s",

@@ -146,6 +146,13 @@ def api_participant_import(request: HttpRequest, event_id: UUID) -> JsonResponse
     errors = []
 
     for idx, p_data in enumerate(participants_data):
+        # Each element must be an object; a bare scalar (e.g. {"participants":
+        # ["x"]}) passed the list guard above but would raise AttributeError on
+        # .get() and surface as a 500 (#1149). Report it per-item instead.
+        if not isinstance(p_data, dict):
+            errors.append({"index": idx, "error": "each participant must be an object"})
+            continue
+
         name = p_data.get("name")
         email = p_data.get("email")
 
