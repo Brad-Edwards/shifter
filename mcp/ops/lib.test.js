@@ -29,6 +29,13 @@ import {
   buildSsmSendCommandArgs,
   buildRunManageArgs,
   buildPoolConfig,
+  DEFAULT_GITHUB_REPO,
+  BASE_AMI_TYPES,
+  PROMOTE_AMI_REF,
+  buildGhWorkflowRunArgs,
+  resolveGhToken,
+  ghExec,
+  resolveGitRef,
 } from "./lib.js";
 
 // ---------------------------------------------------------------------------
@@ -1048,5 +1055,130 @@ describe("buildPoolConfig", () => {
       () => buildPoolConfig({ ...validArgs(), port: "5444" }),
       /port must be a positive integer/,
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// GitHub workflow helpers (issue #411)
+// ---------------------------------------------------------------------------
+describe("buildGhWorkflowRunArgs", () => {
+  it("builds argv for gh workflow run with workflow inputs", () => {
+    assert.deepEqual(
+      buildGhWorkflowRunArgs({
+        workflow: "packer.yml",
+        repo: DEFAULT_GITHUB_REPO,
+        ref: "dev",
+        inputs: { ami_type: "kali" },
+      }),
+      [
+        "workflow",
+        "run",
+        "packer.yml",
+        "--repo",
+        DEFAULT_GITHUB_REPO,
+        "--ref",
+        "dev",
+        "-f",
+        "ami_type=kali",
+      ],
+    );
+  });
+
+  it("preserves metacharacters in input values as literal argv elements", () => {
+    const args = buildGhWorkflowRunArgs({
+      workflow: "packer.yml",
+      repo: DEFAULT_GITHUB_REPO,
+      ref: "feature/foo; rm -rf /",
+      inputs: { ami_type: "kali" },
+    });
+    assert.equal(args[args.indexOf("--ref") + 1], "feature/foo; rm -rf /");
+  });
+});
+
+describe("resolveGhToken", () => {
+  it("prefers GH_TOKEN over GITHUB_TOKEN", () => {
+    assert.equal(
+      resolveGhToken({ GH_TOKEN: "a", GITHUB_TOKEN: "b" }),
+      "a",
+    );
+  });
+
+  it("falls back to GITHUB_TOKEN", () => {
+    assert.equal(resolveGhToken({ GITHUB_TOKEN: "tok" }), "tok");
+  });
+
+  it("throws when no token is configured", () => {
+    assert.throws(() => resolveGhToken({}), /GitHub token not configured/);
+  });
+});
+
+describe("ghExec", () => {
+  it("invokes gh with token injected into the child env", () => {
+    const runner = makeRecordingRunner({ stdout: "ok\n" });
+    ghExec(["workflow", "run", "packer.yml"], {
+      runner,
+      token: "test-token",
+      env: { PATH: "/usr/bin" },
+    });
+    assert.equal(runner.calls.length, 1);
+    assert.deepEqual(runner.calls[0].argv, ["workflow", "run", "packer.yml"]);
+    assert.equal(runner.calls[0].options.env.GH_TOKEN, "test-token");
+    assert.equal(runner.calls[0].options.env.GITHUB_TOKEN, "test-token");
+  });
+
+  it("throws with stderr on non-zero exit", () => {
+    const runner = makeRecordingRunner({
+      status: 1,
+      stderr: "HTTP 403: forbidden",
+    });
+    assert.throws(
+      () =>
+        ghExec(["workflow", "run", "packer.yml"], {
+          runner,
+          token: "t",
+        }),
+      /HTTP 403: forbidden/,
+    );
+  });
+});
+
+describe("resolveGitRef", () => {
+  it("returns git branch when rev-parse succeeds", () => {
+    const calls = [];
+    const runner = (argv, options) => {
+      calls.push({ argv, options });
+      return {
+        status: 0,
+        stdout: "411-ops-mcp-ami\n",
+        stderr: "",
+        error: null,
+      };
+    };
+    assert.equal(resolveGitRef("/repo", { runner }), "411-ops-mcp-ami");
+    assert.deepEqual(calls[0].argv, ["rev-parse", "--abbrev-ref", "HEAD"]);
+    assert.equal(calls[0].options.cwd, "/repo");
+  });
+
+  it("falls back to dev when git fails", () => {
+    const runner = () => ({ status: 128, stdout: "", stderr: "fatal", error: null });
+    assert.equal(resolveGitRef("/repo", { runner, defaultRef: "dev" }), "dev");
+  });
+});
+
+describe("PROMOTE_AMI_REF", () => {
+  it("pins prod promotion to the protected integration branch", () => {
+    assert.equal(PROMOTE_AMI_REF, "dev");
+  });
+});
+
+describe("BASE_AMI_TYPES", () => {
+  it("matches packer-promote base AMI choices", () => {
+    assert.deepEqual([...BASE_AMI_TYPES], [
+      "kali",
+      "ubuntu",
+      "windows",
+      "dc",
+      "brokenbk",
+    ]);
   });
 });
