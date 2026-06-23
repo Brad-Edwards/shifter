@@ -3962,7 +3962,7 @@ def _capture_terraform_outputs() -> dict:
     the loop body stays at a reasonable nesting depth.
     """
     cmd = ["terraform", "output", "-json"]
-    result = subprocess.run(  # nosec B603 B607
+    result = subprocess.run(  # nosec B603 B607  # NOSONAR
         cmd,
         capture_output=True,
         text=True,

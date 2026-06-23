@@ -589,6 +589,22 @@ async function markOrphansDestroyedInDb(client, orphans) {
   }
 }
 
+function triggerAmiWorkflow({ workflow, ami_type, ref, actionsPath }) {
+  const branch = ref ?? resolveGitRef(_REPO_ROOT);
+  ghExec(
+    buildGhWorkflowRunArgs({
+      workflow,
+      repo: DEFAULT_GITHUB_REPO,
+      ref: branch,
+      inputs: { ami_type },
+    }),
+  );
+  return (
+    `Triggered ${workflow} for ${ami_type} on ref ${branch}. ` +
+    `View at: https://github.com/${DEFAULT_GITHUB_REPO}/actions/workflows/${actionsPath}`
+  );
+}
+
 export function registerAllOpsTools(ctx) {
   // `approve` is the operator-confirmation MCP tool. The agent reads
 // the token off the operator's terminal (which the server printed to
@@ -2470,22 +2486,6 @@ registerTool(ctx, {
 // ==========================================================================
 // GitHub Actions — AMI build / promote (issue #411)
 // ==========================================================================
-
-function triggerAmiWorkflow({ workflow, ami_type, ref, actionsPath }) {
-  const branch = ref ?? resolveGitRef(_REPO_ROOT);
-  ghExec(
-    buildGhWorkflowRunArgs({
-      workflow,
-      repo: DEFAULT_GITHUB_REPO,
-      ref: branch,
-      inputs: { ami_type },
-    }),
-  );
-  return (
-    `Triggered ${workflow} for ${ami_type} on ref ${branch}. ` +
-    `View at: https://github.com/${DEFAULT_GITHUB_REPO}/actions/workflows/${actionsPath}`
-  );
-}
 
 registerTool(ctx, {
   name: "build_ami",
