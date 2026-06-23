@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 from rest_framework import permissions
 from rest_framework.request import Request
 
+from risk_register.access import principal_has_risk_register_access
 from risk_register.models import APIKey, AuditLog
 from risk_register.services import audit_log_from_request
 from shared.api_tokens.models import ApiToken
@@ -74,6 +75,16 @@ class IsAuthenticatedOrAPIKey(AuditedPermissionMixin, permissions.BasePermission
 
         # Log access denied
         self._log_permission_denied(request, view, "No valid authentication")
+        return False
+
+
+class HasRiskRegisterCognitoGroup(AuditedPermissionMixin, permissions.BasePermission):
+    """Require membership in a configured Cognito group for risk register access."""
+
+    def has_permission(self, request: Request, view: APIView) -> bool:
+        if principal_has_risk_register_access(request):
+            return True
+        self._log_permission_denied(request, view, "Not in allowed Cognito group")
         return False
 
 

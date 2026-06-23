@@ -5,7 +5,7 @@ from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
-from risk_register.api.permissions import IsAdminUser, IsStaffSessionOrToken
+from risk_register.api.permissions import HasRiskRegisterCognitoGroup, IsAdminUser, IsStaffSessionOrToken
 from risk_register.api.serializers import (
     APIKeyCreatedSerializer,
     APIKeyCreateSerializer,
@@ -61,6 +61,7 @@ class RiskViewSet(viewsets.ModelViewSet):
     """
 
     permission_classes = [
+        HasRiskRegisterCognitoGroup,
         IsStaffSessionOrToken,
         require_scope(scopes.RISK_READ, scopes.RISK_WRITE),
     ]
@@ -225,6 +226,7 @@ class CommentViewSet(viewsets.ViewSet):
     """
 
     permission_classes = [
+        HasRiskRegisterCognitoGroup,
         IsStaffSessionOrToken,
         require_scope(scopes.RISK_READ, scopes.RISK_WRITE),
     ]
@@ -311,7 +313,7 @@ class CommentViewSet(viewsets.ViewSet):
 class APIKeyViewSet(viewsets.ViewSet):
     """ViewSet for API key management."""
 
-    permission_classes = [IsAdminUser]
+    permission_classes = [HasRiskRegisterCognitoGroup, IsAdminUser]
 
     def list(self, request):
         """List all API keys."""
@@ -394,7 +396,7 @@ class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
     """
 
     serializer_class = AuditLogSerializer
-    permission_classes = [IsAdminUser]
+    permission_classes = [HasRiskRegisterCognitoGroup, IsAdminUser]
 
     def get_queryset(self):
         """Return audit logs with optional filtering."""

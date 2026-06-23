@@ -3,7 +3,7 @@
 from unittest.mock import MagicMock
 
 from django.contrib.auth.models import AnonymousUser
-from django.test import RequestFactory
+from django.test import RequestFactory, override_settings
 
 from shared.auth import THREAT_RESEARCH_GROUP
 from shared.context_processors import user_permissions
@@ -36,16 +36,35 @@ class TestUserPermissionsContextProcessor:
 
     def test_unauthenticated_returns_false(self):
         result = user_permissions(self._make_request())
-        assert result == {"can_access_threat_research": False}
+        assert result == {
+            "can_access_threat_research": False,
+            "can_access_risk_register": False,
+        }
 
     def test_staff_returns_true(self):
         result = user_permissions(self._make_request(_make_user(is_staff=True)))
-        assert result == {"can_access_threat_research": True}
+        assert result["can_access_threat_research"] is True
+        assert result["can_access_risk_register"] is False
 
     def test_threat_research_member_returns_true(self):
         result = user_permissions(self._make_request(_make_user(is_staff=False, groups=[THREAT_RESEARCH_GROUP])))
-        assert result == {"can_access_threat_research": True}
+        assert result == {
+            "can_access_threat_research": True,
+            "can_access_risk_register": False,
+        }
 
     def test_regular_user_returns_false(self):
         result = user_permissions(self._make_request(_make_user(is_staff=False)))
-        assert result == {"can_access_threat_research": False}
+        assert result == {
+            "can_access_threat_research": False,
+            "can_access_risk_register": False,
+        }
+
+    @override_settings(RISK_REGISTER_ALLOWED_COGNITO_GROUPS=["security"])
+    def test_risk_register_flag_propagates_when_authorized(self, monkeypatch):
+        monkeypatch.setattr(
+            "shared.context_processors.principal_has_risk_register_access",
+            lambda request: True,
+        )
+        result = user_permissions(self._make_request(_make_user(is_staff=False)))
+        assert result["can_access_risk_register"] is True

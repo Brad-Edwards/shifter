@@ -10,6 +10,7 @@ from urllib.parse import urlencode
 from mozilla_django_oidc.auth import OIDCAuthenticationBackend
 
 from config.bootstrap_admin import apply_bootstrap_admin_flags
+from config.cognito_groups import sync_cognito_groups_from_claims
 from config.user_type_sync import sync_user_type
 from management.services import update_cognito_sub
 from risk_register.models import AuditLog
@@ -73,6 +74,7 @@ class ShifterOIDCBackend(OIDCAuthenticationBackend):
         apply_bootstrap_admin_flags(user, claims.get("email") or user.email)
         self._update_cognito_sub(user, claims)
         self._update_user_type(user, claims)
+        sync_cognito_groups_from_claims(user, claims, getattr(self, "_request", None))
 
         # Audit log: new user created via OIDC
         cognito_sub = claims.get("sub", "")
@@ -90,6 +92,7 @@ class ShifterOIDCBackend(OIDCAuthenticationBackend):
         apply_bootstrap_admin_flags(user, claims.get("email") or user.email)
         self._update_cognito_sub(user, claims)
         self._update_user_type(user, claims)
+        sync_cognito_groups_from_claims(user, claims, getattr(self, "_request", None))
         return user
 
     def authenticate(self, request: HttpRequest | None, **kwargs: Any) -> User | None:
