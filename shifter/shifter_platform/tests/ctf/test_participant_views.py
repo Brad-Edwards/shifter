@@ -11,11 +11,19 @@ from __future__ import annotations
 
 from datetime import timedelta
 
+from django.test import override_settings
 from django.urls import reverse
 from django.utils import timezone
 
 from ctf.enums import ParticipantStatus
 from ctf.models import CTFParticipant
+
+# The team_join error path renders a template that uses {% static %}; force the
+# non-manifest static storage so the render does not require a built manifest.
+_SIMPLE_STORAGES = {
+    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+    "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+}
 
 
 class TestAdminParticipantListView:
@@ -559,3 +567,57 @@ class TestAPIParticipantResendInvite:
         assert response.status_code == 200
         data = response.json()
         assert data["success"] is True
+
+
+class TestTeamJoinCapacityGuard:
+    """#1140: team_join enforces team_size_limit under a team row lock — a full
+    team is rejected and the joining participant is not added."""
+
+    def _active_joiner(self, user, event):
+        from management.services import set_active_ctf_event
+
+        joiner = CTFParticipant.objects.create(
+            event=event,
+            user=user,
+            email=user.email,
+            name="Joiner",
+            status=ParticipantStatus.ACTIVE.value,
+            registered_at=timezone.now(),
+        )
+        set_active_ctf_event(user, event.pk)
+        return joiner
+
+    @override_settings(STORAGES=_SIMPLE_STORAGES)
+    def test_rejects_join_when_team_full(self, authenticated_participant_client, participant_user, ctf_event_team):
+        from ctf.models import CTFTeam
+
+        team = CTFTeam.objects.create(event=ctf_event_team, name="Full Team", invite_code="FULL01")
+        for i in range(ctf_event_team.team_size_limit):
+            CTFParticipant.objects.create(
+                event=ctf_event_team,
+                email=f"member{i}@test.com",
+                name=f"Member {i}",
+                team=team,
+                status=ParticipantStatus.ACTIVE.value,
+                registered_at=timezone.now(),
+            )
+        joiner = self._active_joiner(participant_user, ctf_event_team)
+
+        response = authenticated_participant_client.post(reverse("ctf:team_join"), {"invite_code": "FULL01"})
+
+        assert response.status_code == 200
+        assert "This team is full" in response.content.decode()
+        joiner.refresh_from_db()
+        assert joiner.team_id is None
+
+    def test_allows_join_when_not_full(self, authenticated_participant_client, participant_user, ctf_event_team):
+        from ctf.models import CTFTeam
+
+        team = CTFTeam.objects.create(event=ctf_event_team, name="Open Team", invite_code="OPEN01")
+        joiner = self._active_joiner(participant_user, ctf_event_team)
+
+        response = authenticated_participant_client.post(reverse("ctf:team_join"), {"invite_code": "OPEN01"})
+
+        assert response.status_code == 302
+        joiner.refresh_from_db()
+        assert joiner.team_id == team.id
