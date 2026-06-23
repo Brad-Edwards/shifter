@@ -1,0 +1,1 @@
+AWS single-instance portal `user_data.sh` now force-removes containers (`docker rm -f`) before redeploy, matching `scripts/portal-deploy/deploy_portal.sh` (#1128). Previously the templated user-data path used a plain `docker rm`, so a redeploy could abort with "name already in use" when a container was still running; both AWS deploy paths are now consistently idempotent.

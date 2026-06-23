@@ -394,7 +394,12 @@ echo "Stopping existing containers..."
 # terminal/WebSocket connections drain before SIGKILL (issue #931). Sized below
 # the ASG termination drain window.
 docker stop --time ${docker_stop_timeout} portal worker-cms worker-engine worker-mc ctf-scheduler guacamole-bootstrap-prune 2>/dev/null || true
-docker rm portal worker-cms worker-engine worker-mc ctf-scheduler guacamole-bootstrap-prune 2>/dev/null || true
+# Force-remove so a redeploy is idempotent (matches scripts/portal-deploy/deploy_portal.sh,
+# #1128): `docker stop` above does the graceful drain (#931), but a plain `docker rm`
+# fails for any container still running, the failure is swallowed by `|| true`, and the
+# subsequent `docker run --name <x>` aborts with "name already in use". `-f` removes
+# regardless of state so the new containers always get their names.
+docker rm -f portal worker-cms worker-engine worker-mc ctf-scheduler guacamole-bootstrap-prune 2>/dev/null || true
 
 echo "Starting portal..."
 eval docker run -d --name portal --restart unless-stopped -p 8000:8000 $COMMON_ENV "$IMAGE"
