@@ -295,6 +295,12 @@ jobs:
             platform/terraform/modules/portal/rds/main.tf \
             platform/terraform/modules/guacamole/rds.tf
 
+      # ADR-004-R11 / issue #147: Checkov pre-commit hook args must match
+      # the security-iac job (config, directory, download_external_modules,
+      # soft_fail=false).
+      - name: Run check-checkov-invocation-parity
+        run: python3 scripts/check_checkov_invocation_parity/check_checkov_invocation_parity.py
+
       # #911 NET-2 / #933: the portal target-service SGs (Django:8000,
       # Guacamole client:8080) must source ingress only from a security-group
       # reference or the ALB-only alb_ingress_subnet_cidrs output, never the

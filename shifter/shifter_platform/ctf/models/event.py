@@ -238,10 +238,18 @@ class CTFEvent(CTFBaseModel):
 
     @property
     def is_scoreboard_frozen(self) -> bool:
-        """Return True if scoreboard is currently frozen for participants."""
+        """Return True if scoreboard is currently frozen for participants.
+
+        Pausing must not lift the freeze: a frozen board stays frozen while the
+        event is ACTIVE or PAUSED, so an organizer pausing during the freeze
+        window does not leak post-freeze standings (#1143).
+        """
         if not self.scoreboard_freeze_at:
             return False
-        return timezone.now() >= self.scoreboard_freeze_at and self.status == EventStatus.ACTIVE.value
+        return timezone.now() >= self.scoreboard_freeze_at and self.status in (
+            EventStatus.ACTIVE.value,
+            EventStatus.PAUSED.value,
+        )
 
     @property
     def is_modifiable(self) -> bool:

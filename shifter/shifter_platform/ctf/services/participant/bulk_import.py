@@ -126,7 +126,8 @@ def bulk_import_participants(
 
     participants_data = _parse_participants_csv(csv_content)
     seen_emails = _emails_or_raise_on_duplicate(participants_data)
-    _assert_event_accepts_import(event, participants_data)
+    # Capacity is asserted under the event row lock inside the transaction
+    # below (#1145), so concurrent imports cannot race past max_participants.
 
     existing = CTFParticipant.objects.filter(
         event=event,
@@ -141,6 +142,10 @@ def bulk_import_participants(
 
     created: list[CTFParticipant] = []
     with transaction.atomic():
+        # Lock the event so the capacity assert and the inserts cannot race past
+        # max_participants under concurrent imports (#1145).
+        CTFEvent.objects.select_for_update().get(pk=event.pk)
+        _assert_event_accepts_import(event, participants_data)
         for name, email in participants_data:
             participant = CTFParticipant.objects.create(
                 event=event,

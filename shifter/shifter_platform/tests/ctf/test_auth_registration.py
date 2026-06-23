@@ -525,42 +525,52 @@ class TestDualRoles:
         assert user.groups.filter(name=CTF_PARTICIPANT_GROUP).exists()
         mock_set_event.assert_called_once_with(user, mock_event.pk)
 
-    @patch("management.services.set_active_ctf_event")
-    @patch("management.services.get_user_profile")
-    @patch("django.contrib.auth.models.Group.objects")
-    def test_clearing_participant_does_not_remove_organizer(self, mock_group_objects, mock_get_profile, mock_set_event):
-        """Clearing participant should not affect organizer group."""
-        from ctf.services.participant.lifecycle import (
-            _clear_ctf_participant_profile,
-            _set_ctf_participant_profile,
+    @pytest.mark.django_db
+    def test_clearing_participant_does_not_remove_organizer(self, django_user_model):
+        """Clearing a user's participant profile must not remove their organizer
+        group: CTF Participant is platform-wide. Integration assertion (ADR-019):
+        real user/groups/event/participant, no first-party seam patches (#1142).
+        """
+        from datetime import timedelta
+
+        from django.contrib.auth.models import Group
+        from django.utils import timezone
+
+        from ctf.enums import EventStatus
+        from ctf.models import CTFEvent, CTFParticipant
+        from ctf.services.participant.lifecycle import _clear_ctf_participant_profile
+        from management.services import set_active_ctf_event
+
+        user = django_user_model.objects.create_user(username="org-part@test.com", email="org-part@test.com")
+        for group_name in (CTF_ORGANIZER_GROUP, CTF_PARTICIPANT_GROUP):
+            group, _ = Group.objects.get_or_create(name=group_name)
+            user.groups.add(group)
+
+        event = CTFEvent.objects.create(
+            name="Solo Event",
+            description="x",
+            created_by=user,
+            status=EventStatus.ACTIVE.value,
+            event_start=timezone.now() - timedelta(hours=2),
+            event_end=timezone.now() + timedelta(hours=6),
+            scenario_id="basic",
         )
-
-        user = _make_mock_user(
-            email="org@test.com",
-            groups={CTF_ORGANIZER_GROUP},
+        CTFParticipant.objects.create(
+            event=event,
+            user=user,
+            email=user.email,
+            name="P",
+            status="active",
+            registered_at=timezone.now(),
         )
+        set_active_ctf_event(user, event.pk)
 
-        mock_group = _MockGroup(CTF_PARTICIPANT_GROUP)
-        mock_group_objects.get_or_create.return_value = (mock_group, True)
-        mock_group_objects.filter.return_value.first.return_value = mock_group
-
-        mock_event = MagicMock()
-        mock_event.pk = "event-uuid"
-
-        profile = MagicMock()
-        profile.active_ctf_event_id = "event-uuid"
-        mock_get_profile.return_value = profile
-
-        # First set the participant profile (adds participant group)
-        _set_ctf_participant_profile(user, mock_event)
-
-        # Clear the participant profile
-        _clear_ctf_participant_profile(user, mock_event)
+        # No OTHER eligible participation, so the participant group is removed —
+        # but the organizer group must survive.
+        _clear_ctf_participant_profile(user, event)
 
         assert user.groups.filter(name=CTF_ORGANIZER_GROUP).exists()
         assert not user.groups.filter(name=CTF_PARTICIPANT_GROUP).exists()
-        # set_active_ctf_event called with None on clear
-        mock_set_event.assert_any_call(user, None)
 
     def test_dashboard_routes_organizer_to_mission_control(self, request_factory):
         """Dashboard router should route dual-role user to Mission Control."""

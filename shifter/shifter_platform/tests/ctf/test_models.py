@@ -208,6 +208,30 @@ class TestCTFEventModel:
 
         assert "scoreboard_freeze_at" in exc_info.value.message_dict
 
+    def test_scoreboard_freeze_persists_through_pause(self):
+        """#1143: a frozen scoreboard stays frozen while ACTIVE or PAUSED.
+
+        Pausing during the freeze window must not lift the freeze and leak
+        post-freeze standings.
+        """
+        now = timezone.now()
+        base = {
+            "name": "Freeze Event",
+            "created_by_id": 1,
+            "event_start": now - timedelta(hours=2),
+            "event_end": now + timedelta(hours=6),
+            "scoreboard_freeze_at": now - timedelta(minutes=5),  # freeze in effect
+        }
+        assert CTFEvent(**base, status=EventStatus.ACTIVE.value).is_scoreboard_frozen is True
+        # The fix: pausing keeps the board frozen.
+        assert CTFEvent(**base, status=EventStatus.PAUSED.value).is_scoreboard_frozen is True
+        # Before the cutoff -> not frozen.
+        not_yet = {**base, "scoreboard_freeze_at": now + timedelta(hours=1)}
+        assert CTFEvent(**not_yet, status=EventStatus.ACTIVE.value).is_scoreboard_frozen is False
+        # No freeze configured -> never frozen.
+        no_freeze = {**base, "scoreboard_freeze_at": None}
+        assert CTFEvent(**no_freeze, status=EventStatus.PAUSED.value).is_scoreboard_frozen is False
+
     def test_event_soft_delete(self):
         """Test soft delete sets deleted_at and calls save."""
         event = make_ctf_event()

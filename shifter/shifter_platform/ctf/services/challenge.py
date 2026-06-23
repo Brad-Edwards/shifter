@@ -320,8 +320,21 @@ def verify_flag(challenge: CTFChallenge, submitted_flag: str) -> bool:
     if flags:
         return any(verify_single_flag(flag_obj, submitted_flag) for flag_obj in flags)
 
-    # Backward compat: fall back to challenge.flag_hash
-    return _verify_hash(submitted_flag, challenge.flag_hash, challenge.id)
+    # Backward compat: fall back to the legacy challenge.flag_hash. A non-hash
+    # sentinel ("multi-flag" and similar) means the challenge relies on CTFFlag
+    # rows that have all been removed; verifying against it would silently reject
+    # every submission with no diagnostic. Log loudly and return False instead of
+    # failing quietly so the misconfiguration is visible (#1146).
+    legacy_hash = challenge.flag_hash
+    if not legacy_hash or not legacy_hash.startswith(("$2", "pbkdf2:", "sha256:")):
+        logger.error(
+            "Challenge %s has no flag records and no usable legacy flag_hash "
+            "(value=%r); every submission will be rejected. Re-add at least one flag.",
+            challenge.id,
+            legacy_hash,
+        )
+        return False
+    return _verify_hash(submitted_flag, legacy_hash, challenge.id)
 
 
 def _validate_programmable_config(validator_config: dict[str, Any] | None) -> None:
@@ -1396,33 +1409,42 @@ def add_prerequisite(
             details={"challenge_id": str(challenge_id)},
         )
 
-    # Check duplicate
-    if CTFChallengePrerequisite.objects.filter(
-        challenge=challenge,
-        required_challenge=required,
-    ).exists():
-        raise CTFValidationError(
-            "This prerequisite already exists",
-            details={
-                "challenge_id": str(challenge_id),
-                "required_challenge_id": str(required_challenge_id),
-            },
-        )
+    # Serialize prerequisite writes for this event so the duplicate and cycle
+    # checks and the insert cannot interleave with a concurrent edit (#1144).
+    # Without the lock, concurrent "A requires B" and "B requires A" each pass
+    # _would_create_cycle against the pre-write graph and together close an
+    # A<->B cycle (the unique constraint stops duplicate edges, not cycles),
+    # soft-bricking both challenges. The event row is the serialization point.
+    with transaction.atomic():
+        CTFEvent.objects.select_for_update().get(pk=challenge.event_id)
 
-    # Circular dependency check (BFS)
-    if _would_create_cycle(challenge_id, required_challenge_id):
-        raise CTFValidationError(
-            "Adding this prerequisite would create a circular dependency",
-            details={
-                "challenge_id": str(challenge_id),
-                "required_challenge_id": str(required_challenge_id),
-            },
-        )
+        # Check duplicate
+        if CTFChallengePrerequisite.objects.filter(
+            challenge=challenge,
+            required_challenge=required,
+        ).exists():
+            raise CTFValidationError(
+                "This prerequisite already exists",
+                details={
+                    "challenge_id": str(challenge_id),
+                    "required_challenge_id": str(required_challenge_id),
+                },
+            )
 
-    prereq = CTFChallengePrerequisite.objects.create(
-        challenge=challenge,
-        required_challenge=required,
-    )
+        # Circular dependency check (BFS)
+        if _would_create_cycle(challenge_id, required_challenge_id):
+            raise CTFValidationError(
+                "Adding this prerequisite would create a circular dependency",
+                details={
+                    "challenge_id": str(challenge_id),
+                    "required_challenge_id": str(required_challenge_id),
+                },
+            )
+
+        prereq = CTFChallengePrerequisite.objects.create(
+            challenge=challenge,
+            required_challenge=required,
+        )
 
     logger.info(
         "Added prerequisite: %s requires %s",
