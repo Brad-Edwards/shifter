@@ -532,7 +532,7 @@ def _resolve_gdc_network_fields(payload: dict[str, Any]) -> dict[str, Any]:
         ),
         "network_interface": str(payload.get("network_interface") or os.environ.get("GDC_NETWORK_INTERFACE", "vxlan0")),
         "dns_nameservers": tuple(
-            payload.get("dns_nameservers") or _parse_csv_env(os.environ.get("GDC_NETWORK_DNS_NAMESERVERS", "8.8.8.8"))
+            payload.get("dns_nameservers") or _parse_csv_env(os.environ.get("GDC_NETWORK_DNS_NAMESERVERS") or "8.8.8.8")
         ),
         "static_ip_reservation_count": int(
             payload.get("static_ip_reservation_count") or os.environ.get("GDC_STATIC_IP_RESERVATION_COUNT", "4")
@@ -563,7 +563,7 @@ def load_gdc_network_access_config() -> GDCNetworkAccessConfig | None:
         region=fields["region"],
         namespace_prefix=fields["namespace_prefix"].strip() or "range",
         network_interface=fields["network_interface"].strip() or "vxlan0",
-        dns_nameservers=fields["dns_nameservers"] or ("8.8.8.8",),
+        dns_nameservers=fields["dns_nameservers"],
         static_ip_reservation_count=fields["static_ip_reservation_count"],
     )
 

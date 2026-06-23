@@ -3924,12 +3924,8 @@ def _capture_terraform_outputs() -> dict:
     Used by the post-apply portal step; isolated from the deploy loop so
     the loop body stays at a reasonable nesting depth.
     """
-    result = subprocess.run(  # nosec B603 B607
-        ["terraform", "output", "-json"],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    cmd = ["terraform", "output", "-json"]
+    result = subprocess.run(cmd, capture_output=True, text=True, check=False)  # nosec B603 B607
     if result.returncode != 0:
         return {}
     return json.loads(result.stdout)
