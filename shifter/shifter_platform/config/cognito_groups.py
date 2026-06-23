@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from collections.abc import Mapping
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import User
@@ -12,10 +13,8 @@ COGNITO_GROUPS_CLAIM = "cognito:groups"
 SESSION_KEY = "cognito_groups"
 
 
-def normalize_cognito_groups(raw: Any) -> list[str]:
+def normalize_cognito_groups(raw: object) -> list[str]:
     """Return a normalized list of Cognito group names from a claim value."""
-    if not raw:
-        return []
     if isinstance(raw, str):
         return [raw]
     if isinstance(raw, list):
@@ -38,7 +37,7 @@ def persist_cognito_groups(user: User, groups: list[str], request: HttpRequest |
 
 def sync_cognito_groups_from_claims(
     user: User,
-    claims: dict[str, Any],
+    claims: Mapping[str, object],
     request: HttpRequest | None = None,
 ) -> None:
     """Update stored Cognito groups from verified OIDC claims."""

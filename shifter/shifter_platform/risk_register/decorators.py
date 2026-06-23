@@ -21,6 +21,7 @@ def risk_register_access_required(view_func: Callable[..., HttpResponse]) -> Cal
 
     @functools.wraps(view_func)
     def _wrapped(request: HttpRequest, *args, **kwargs) -> HttpResponse:
+        """Enforce Cognito group membership before delegating to the view."""
         if not request.user.is_authenticated:
             return redirect_to_login(request.get_full_path(), login_url=settings.LOGIN_URL)
         if not principal_has_risk_register_access(request):

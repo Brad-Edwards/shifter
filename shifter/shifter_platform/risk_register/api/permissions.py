@@ -81,7 +81,7 @@ class IsAuthenticatedOrAPIKey(AuditedPermissionMixin, permissions.BasePermission
 class HasRiskRegisterCognitoGroup(AuditedPermissionMixin, permissions.BasePermission):
     """Require membership in a configured Cognito group for risk register access."""
 
-    def has_permission(self, request, view):
+    def has_permission(self, request: Request, view: APIView) -> bool:
         if principal_has_risk_register_access(request):
             return True
         self._log_permission_denied(request, view, "Not in allowed Cognito group")

@@ -10,6 +10,7 @@ from risk_register.models import APIKey
 from shared.api_tokens.models import ApiToken
 
 if TYPE_CHECKING:
+    from django.contrib.auth.models import User
     from django.http import HttpRequest
 
 
@@ -18,7 +19,7 @@ def allowed_risk_register_cognito_groups() -> frozenset[str]:
     return frozenset(getattr(settings, "RISK_REGISTER_ALLOWED_COGNITO_GROUPS", ()))
 
 
-def cognito_groups_for_user(user) -> list[str]:
+def cognito_groups_for_user(user: User) -> list[str]:
     """Return Cognito groups last captured for ``user``."""
     from management.services import get_user_profile
 
@@ -27,30 +28,35 @@ def cognito_groups_for_user(user) -> list[str]:
 
 
 def _groups_intersect_allowed(groups: list[str]) -> bool:
+    """Return True when ``groups`` intersects the configured allow-list."""
     allowed = allowed_risk_register_cognito_groups()
     if not allowed:
         return False
     return bool(set(groups) & allowed)
 
 
+def _token_owner_has_access(auth: ApiToken | APIKey) -> bool:
+    owner = getattr(auth, "created_by", None)
+    if owner is None:
+        return False
+    return _groups_intersect_allowed(cognito_groups_for_user(owner))
+
+
+def _session_user_has_access(request: HttpRequest, user: User) -> bool:
+    session_groups = request.session.get("cognito_groups")
+    groups = list(session_groups) if session_groups is not None else cognito_groups_for_user(user)
+    return _groups_intersect_allowed(groups)
+
+
 def principal_has_risk_register_access(request: HttpRequest) -> bool:
     """Return True when the request principal is in an allowed Cognito group."""
-    if not allowed_risk_register_cognito_groups():
-        return False
-
+    allowed = allowed_risk_register_cognito_groups()
     auth = getattr(request, "auth", None)
     user = getattr(request, "user", None)
 
-    if isinstance(auth, (ApiToken, APIKey)):
-        owner = getattr(auth, "created_by", None)
-        if owner is None:
-            return False
-        return _groups_intersect_allowed(cognito_groups_for_user(owner))
-
-    if user and user.is_authenticated:
-        session_groups = request.session.get("cognito_groups")
-        if session_groups is not None:
-            return _groups_intersect_allowed(list(session_groups))
-        return _groups_intersect_allowed(cognito_groups_for_user(user))
-
-    return False
+    result = False
+    if allowed and isinstance(auth, (ApiToken, APIKey)):
+        result = _token_owner_has_access(auth)
+    elif allowed and user and user.is_authenticated:
+        result = _session_user_has_access(request, user)
+    return result
