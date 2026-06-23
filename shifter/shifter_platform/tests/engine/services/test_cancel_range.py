@@ -15,7 +15,7 @@ from django.contrib.auth import get_user_model
 from engine import cancel_range, cancel_range_by_request, create_range
 from engine.models import Range
 from shared.enums import ResourceStatus
-from shared.schemas import InstanceSpec, RangeContext, RangeSpec, RequestSpec, SubnetSpec
+from shared.schemas import InstanceSpec, RangeRef, RangeSpec, RequestSpec, SubnetSpec
 
 pytestmark = pytest.mark.django_db
 
@@ -27,9 +27,12 @@ def user(db):
     return User.objects.create_user(username="engine-cancel@example.com", email="engine-cancel@example.com")
 
 
-def _ctx(*, range_id, user_id, status=ResourceStatus.PENDING):
-    return RangeContext(
-        request_id=uuid4(), range_id=range_id, user_id=user_id, scenario_id="s", status=status, instances=[]
+def _ref(*, range_id, user_id, status=ResourceStatus.PENDING, request_id=None):
+    return RangeRef(
+        request_id=request_id or uuid4(),
+        range_id=range_id,
+        user_id=user_id,
+        status=status,
     )
 
 
@@ -60,36 +63,54 @@ class TestCancelRange:
         with pytest.raises(TypeError, match="cannot be None"):
             cancel_range(None)
 
-    def test_rejects_non_rangecontext(self):
-        with pytest.raises(TypeError, match="must be RangeContext"):
-            cancel_range("not-a-context")
+    def test_rejects_non_rangeref(self):
+        with pytest.raises(TypeError, match="must be RangeRef"):
+            cancel_range("not-a-ref")
 
     def test_pydantic_rejects_negative_range_id(self):
         with pytest.raises(ValueError):
-            RangeContext(
-                request_id=uuid4(), range_id=-1, user_id=1, scenario_id="s", status=ResourceStatus.PENDING, instances=[]
+            RangeRef(
+                request_id=uuid4(),
+                range_id=-1,
+                user_id=1,
+                status=ResourceStatus.PENDING,
             )
 
     def test_cancels_provisioning_range(self, user):
         range_obj = Range.objects.create(user=user, status=Range.Status.PROVISIONING)
-        cancel_range(_ctx(range_id=range_obj.id, user_id=user.id, status=ResourceStatus.PROVISIONING))
+        cancel_range(_ref(range_id=range_obj.id, user_id=user.id, status=ResourceStatus.PROVISIONING))
         range_obj.refresh_from_db()
         assert range_obj.status == Range.Status.DESTROYING
 
     def test_does_not_cancel_ready_range(self, user):
         range_obj = Range.objects.create(user=user, status=Range.Status.READY)
-        cancel_range(_ctx(range_id=range_obj.id, user_id=user.id, status=ResourceStatus.READY))
+        cancel_range(_ref(range_id=range_obj.id, user_id=user.id, status=ResourceStatus.READY))
         range_obj.refresh_from_db()
         assert range_obj.status == Range.Status.READY
 
+    def test_ignores_stale_cancellable_ref_when_db_is_ready(self, user):
+        """RangeRef.status is a snapshot; persisted Range.status is authoritative."""
+        range_obj = Range.objects.create(user=user, status=Range.Status.READY)
+        cancel_range(_ref(range_id=range_obj.id, user_id=user.id, status=ResourceStatus.PROVISIONING))
+        range_obj.refresh_from_db()
+        assert range_obj.status == Range.Status.READY
+
+    def test_cancels_when_db_is_cancellable_despite_stale_ref_status(self, user):
+        range_obj = Range.objects.create(user=user, status=Range.Status.PROVISIONING)
+        cancel_range(_ref(range_id=range_obj.id, user_id=user.id, status=ResourceStatus.READY))
+        range_obj.refresh_from_db()
+        assert range_obj.status == Range.Status.DESTROYING
+
     def test_missing_range_is_silent(self, user):
-        cancel_range(_ctx(range_id=999999, user_id=user.id, status=ResourceStatus.PENDING))
+        cancel_range(_ref(range_id=999999, user_id=user.id, status=ResourceStatus.PENDING))
 
     def test_logs_cancellation(self, user, caplog):
         range_obj = Range.objects.create(user=user, status=Range.Status.PENDING)
         with caplog.at_level(logging.INFO, logger="engine"):
-            cancel_range(_ctx(range_id=range_obj.id, user_id=user.id, status=ResourceStatus.PENDING))
+            cancel_range(_ref(range_id=range_obj.id, user_id=user.id, status=ResourceStatus.PENDING))
         assert "cancelled" in caplog.text.lower()
+        range_obj.refresh_from_db()
+        assert range_obj.status == Range.Status.DESTROYING
 
 
 class TestCancelRangeByRequest:

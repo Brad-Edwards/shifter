@@ -94,6 +94,9 @@ class TestProcessRangeEvent:
         assert msg["request_id"] == str(request_id)
         assert msg["new_status"] == ResourceStatus.PROVISIONING.value
         assert msg["error_message"] is None
+        assert msg["range_ref"]["request_id"] == str(request_id)
+        assert msg["range_ref"]["user_id"] == 42
+        assert msg["range_ref"]["status"] == ResourceStatus.PROVISIONING.value
 
     def test_includes_error_message_when_present(self):
         request_id = uuid4()
@@ -104,6 +107,7 @@ class TestProcessRangeEvent:
                     "event_type": "range.status.updated",
                     "request_id": str(request_id),
                     "new_status": ResourceStatus.FAILED.value,
+                    "user_id": 42,
                     "error_message": "Subnet exhausted",
                 }
             )
@@ -153,6 +157,7 @@ class TestProcessEventRouting:
                     "event_type": "range.status.updated",
                     "request_id": str(request_id),
                     "new_status": ResourceStatus.READY.value,
+                    "user_id": 42,
                 }
             )
         )

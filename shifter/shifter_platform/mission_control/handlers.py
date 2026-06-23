@@ -11,8 +11,10 @@ from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
 
 from shared.channels.groups import ngfw_event_group, range_event_group
+from shared.enums import ResourceStatus
 from shared.messages.envelope import parse_sns_message
 from shared.messages.events import EVENT_TYPE_NGFW
+from shared.schemas import RangeRef
 
 logger = logging.getLogger(__name__)
 
@@ -70,6 +72,8 @@ def process_range_event(message: str | dict) -> None:
         return
 
     request_id = event.get("request_id")
+    range_id = event.get("range_id")
+    user_id = event.get("user_id")
     new_status = event.get("new_status")
     error_message = event.get("error_message")
     event_id = event.get("event_id", "unknown")
@@ -78,15 +82,39 @@ def process_range_event(message: str | dict) -> None:
         logger.error("Missing request_id in range event: event_id=%s", event_id)
         return
 
+    if new_status is None:
+        logger.error("Missing new_status in range event: event_id=%s", event_id)
+        return
+
+    if user_id is None:
+        logger.error("Missing user_id in range event: event_id=%s", event_id)
+        return
+
+    try:
+        range_ref = RangeRef(
+            request_id=request_id,
+            range_id=range_id,
+            user_id=user_id,
+            status=ResourceStatus(new_status),
+        )
+    except (ValueError, TypeError):
+        logger.error(
+            "Invalid range status event payload: event_id=%s request_id=%s",
+            event_id,
+            request_id,
+        )
+        return
+
     channel_layer = get_channel_layer()
-    group_name = range_event_group(str(request_id))
+    group_name = range_event_group(str(range_ref.request_id))
 
     async_to_sync(channel_layer.group_send)(
         group_name,
         {
             "type": "range.status",
-            "request_id": str(request_id),
-            "new_status": new_status,
+            "range_ref": range_ref.model_dump(mode="json"),
+            "request_id": str(range_ref.request_id),
+            "new_status": range_ref.status.value,
             "error_message": error_message,
         },
     )
@@ -94,8 +122,8 @@ def process_range_event(message: str | dict) -> None:
     logger.info(
         "MC broadcast to group %s: request_id=%s status=%s event_id=%s",
         group_name,
-        request_id,
-        new_status,
+        range_ref.request_id,
+        range_ref.status.value,
         event_id,
     )
 
