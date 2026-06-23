@@ -5,7 +5,7 @@ from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
-from risk_register.api.permissions import IsAdminUser
+from risk_register.api.permissions import IsAdminUser, IsStaffSessionOrToken
 from risk_register.api.serializers import (
     APIKeyCreatedSerializer,
     APIKeyCreateSerializer,
@@ -18,11 +18,16 @@ from risk_register.api.serializers import (
     RiskUpdateSerializer,
 )
 from risk_register.models import APIKey, AuditLog, Comment, Risk
+from shared.api_tokens import scopes
+from shared.api_tokens.models import ApiToken
+from shared.api_tokens.permissions import require_scope
 
 
 def get_actor_info(request):
     """Extract actor type and ID from request for audit logging."""
-    if isinstance(request.auth, APIKey):
+    # A platform ApiToken or the legacy risk-register APIKey both authenticate
+    # without a Django user; attribute the audit row to the token/key.
+    if isinstance(request.auth, (APIKey, ApiToken)):
         return AuditLog.ActorType.APIKEY, request.auth.id
     elif request.user and request.user.is_authenticated:
         return AuditLog.ActorType.USER, request.user.id
@@ -49,9 +54,16 @@ def risk_to_dict(risk: Risk) -> dict:
 
 
 class RiskViewSet(viewsets.ModelViewSet):
-    """ViewSet for Risk CRUD operations. Admin only."""
+    """ViewSet for Risk CRUD operations.
 
-    permission_classes = [IsAdminUser]
+    Accepts a staff/superuser session or a platform API token scoped
+    ``risk:read`` (safe methods) / ``risk:write`` (mutations).
+    """
+
+    permission_classes = [
+        IsStaffSessionOrToken,
+        require_scope(scopes.RISK_READ, scopes.RISK_WRITE),
+    ]
 
     def get_serializer_class(self):
         if self.action == "create":
@@ -206,9 +218,16 @@ class RiskViewSet(viewsets.ModelViewSet):
 
 
 class CommentViewSet(viewsets.ViewSet):
-    """ViewSet for Comment operations (nested under risks). Admin only."""
+    """ViewSet for Comment operations (nested under risks).
 
-    permission_classes = [IsAdminUser]
+    Accepts a staff/superuser session or a platform API token scoped
+    ``risk:read`` (safe methods) / ``risk:write`` (mutations).
+    """
+
+    permission_classes = [
+        IsStaffSessionOrToken,
+        require_scope(scopes.RISK_READ, scopes.RISK_WRITE),
+    ]
 
     def list(self, request, risk_pk=None):
         """List comments for a risk.
