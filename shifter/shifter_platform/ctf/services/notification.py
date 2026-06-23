@@ -640,13 +640,35 @@ def _render_email(
             notification_type=lookup_type,
         ).first()
         if custom is not None:
-            from django.template import Context, Template
+            from ctf.services.email_template import (
+                allowed_placeholders,
+                build_safe_context,
+                find_template_violations,
+                render_safe_body,
+            )
 
-            # Safe: Django's template engine does not allow arbitrary code
-            # execution.  Only authenticated event organizers can write templates.
-            html_content = Template(custom.html_body).render(Context(context))
-            text_content = Template(custom.text_body).render(Context(context))
-            return html_content, text_content, custom.subject or ""
+            # Organizer-authored bodies are untrusted: never hand them to the
+            # Django template engine (CWE-1336). Validate against the flat
+            # placeholder policy and fail closed to the trusted default
+            # template on any unsupported syntax, even though writes are also
+            # validated -- stored rows can predate validators or arrive via
+            # admin / direct saves / restores.
+            allowed = allowed_placeholders(lookup_type)
+            violations = find_template_violations(custom.html_body, allowed) + find_template_violations(
+                custom.text_body, allowed
+            )
+            if violations:
+                logger.warning(
+                    "Custom email template for event %s (%s) failed safe-render "
+                    "validation; falling back to default template",
+                    getattr(event, "pk", None),
+                    lookup_type,
+                )
+            else:
+                scalars = build_safe_context(context)
+                html_content = render_safe_body(custom.html_body, scalars, escape=True)
+                text_content = render_safe_body(custom.text_body, scalars, escape=False)
+                return html_content, text_content, custom.subject or ""
 
     from shared.email import render_template
 

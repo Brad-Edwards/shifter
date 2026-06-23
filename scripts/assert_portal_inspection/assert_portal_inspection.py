@@ -78,7 +78,17 @@ def load_contract(tf_outputs: Mapping[str, Any]) -> dict:
 
 
 def _route_endpoint(route: Mapping[str, Any]) -> str | None:
-    return route.get("VpcEndpointId")
+    # A route targeting a Gateway Load Balancer VPC endpoint (the Network
+    # Firewall endpoint) is reported by EC2 DescribeRouteTables under
+    # GatewayId as "vpce-...", not VpcEndpointId. Accept either so the
+    # firewall-endpoint routes are recognized.
+    endpoint = route.get("VpcEndpointId")
+    if endpoint:
+        return endpoint
+    gateway = route.get("GatewayId")
+    if isinstance(gateway, str) and gateway.startswith("vpce-"):
+        return gateway
+    return None
 
 
 def _route_nat(route: Mapping[str, Any]) -> str | None:
@@ -140,10 +150,15 @@ def _check_endpoint_routes(
     """Every endpoint-targeted route must hit `expected_endpoint`; `required_cidrs` must be present."""
     seen_cidrs: set[str] = set()
     for route in routes:
+        cidr = route.get("DestinationCidrBlock")
+        if not cidr:
+            # Gateway VPC endpoint routes for S3 / DynamoDB also target a
+            # "vpce-..." gateway, but via a managed prefix list rather than a
+            # CIDR destination. They are not firewall inspection routes — skip.
+            continue
         endpoint = _route_endpoint(route)
         if endpoint is None:
             continue
-        cidr = route.get("DestinationCidrBlock", "")
         seen_cidrs.add(cidr)
         if route.get("State") == "blackhole":
             failures.append(f"route table {rt_id}: route to {cidr} via {endpoint!r} is blackhole")

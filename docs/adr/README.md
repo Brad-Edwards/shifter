@@ -82,6 +82,12 @@ Current mechanisms:
   AWS/GCP reusable deploy jobs. Reusable deploy jobs receive a
   `github_environment` input distinct from Terraform environment names so
   prod applies can be protected by the `aws-prod` GitHub Environment.
+  The deploy router passes `skip_tests: false` literally into
+  `_quality.yml`; commit-message flags such as `[skip tests]` are not
+  accepted on protected branches. Inside `_quality.yml`, `skip_tests` may
+  only skip unit-test, coverage, SonarCloud, and stack-smoke jobs; lint,
+  ADR conformance, IaC security, and other architecture gates always run
+  (ADR-003-R2, #760).
 - AWS ECR image identity: first-party AWS ECR repositories are immutable.
   Portal and engine deploy paths push run-scoped tags only as upload
   handles, then consume the resulting ECR digest through SSM/ECS

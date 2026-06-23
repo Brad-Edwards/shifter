@@ -219,6 +219,12 @@ class DeployWorkflowPlanScopeTests(unittest.TestCase):
         (workflow_dir / "_range.yml").write_text(
             range_workflow or self._terraform_workflow_text("range"), encoding="utf-8"
         )
+        (workflow_dir / "_quality.yml").write_text(
+            "jobs:\n"
+            "  adr-conformance:\n"
+            "    runs-on: ubuntu-latest\n",
+            encoding="utf-8",
+        )
 
     def _deploy_text(
         self,
@@ -318,6 +324,9 @@ class DeployWorkflowPlanScopeTests(unittest.TestCase):
             f"{quality_non_docs_filter}"
             f"{guardrail_docs_filter}"
             "  quality:\n"
+            "    uses: ./.github/workflows/_quality.yml\n"
+            "    with:\n"
+            "      skip_tests: false\n"
             "    if: |\n"
             f"      {quality_condition}\n"
             "  pr-gate:\n"
@@ -873,6 +882,47 @@ class DeployWorkflowPlanScopeTests(unittest.TestCase):
 
             self.assertEqual(len(violations), 1)
             self.assertIn("-lock-timeout=5m", violations[0].message)
+
+    def test_flags_commit_message_skip_tests_bypass(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            deploy = self._deploy_text().replace(
+                "skip_tests: false",
+                "skip_tests: ${{ steps.skip.outputs.skip_tests == 'true' }}",
+            )
+            deploy += (
+                "\n# legacy bypass\n"
+                'if echo "$COMMIT_MSG" | grep -qi "\\[skip tests\\]"; then\n'
+            )
+            self._write_workflows(repo_root, deploy, self._platform_text())
+
+            violations = ADR_GUARD.check_deploy_workflow_plan_scope(repo_root, None)
+
+            self.assertGreaterEqual(len(violations), 1)
+            self.assertTrue(
+                any(
+                    "skip" in v.message.lower() and v.rule_id == "ADR-003-R2"
+                    for v in violations
+                )
+            )
+
+    def test_flags_architecture_job_gated_on_skip_tests(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            self._write_workflows(repo_root, self._deploy_text(), self._platform_text())
+            (repo_root / ".github" / "workflows" / "_quality.yml").write_text(
+                "jobs:\n"
+                "  adr-conformance:\n"
+                "    if: ${{ !inputs.skip_tests }}\n"
+                "    runs-on: ubuntu-latest\n",
+                encoding="utf-8",
+            )
+
+            violations = ADR_GUARD.check_deploy_workflow_plan_scope(repo_root, None)
+
+            self.assertEqual(len(violations), 1)
+            self.assertIn("adr-conformance", violations[0].message)
+            self.assertIn("skip_tests", violations[0].message)
 
     def test_clean_real_repo_passes(self) -> None:
         violations = ADR_GUARD.check_deploy_workflow_plan_scope(ADR_GUARD.REPO_ROOT, None)
@@ -4058,6 +4108,29 @@ class NoTrackedGeneratedArtifactsTests(unittest.TestCase):
             self.assertEqual({v.rule_id for v in violations}, {"ADR-004-R8"})
             self.assertNotIn("challenge-local-token", violations[0].message)
 
+    def test_flags_polaris_operator_run_outputs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            script_dir = repo_root / "scripts" / "polaris-aws-range"
+            script_dir.mkdir(parents=True)
+            (script_dir / "provisioning_state.json").write_text('{"outcomes": {}}', encoding="utf-8")
+            (script_dir / "provisioning_status.md").write_text("# status", encoding="utf-8")
+            (script_dir / "health_report.md").write_text("# health", encoding="utf-8")
+            (script_dir / "postprovision_status.md").write_text("# post", encoding="utf-8")
+            (script_dir / "README.md").write_text("# docs", encoding="utf-8")
+
+            violations = ADR_GUARD.check_no_tracked_generated_artifacts(repo_root, None)
+
+            flagged_paths = {v.path for v in violations}
+            self.assertIn("scripts/polaris-aws-range/provisioning_state.json", flagged_paths)
+            self.assertIn("scripts/polaris-aws-range/provisioning_status.md", flagged_paths)
+            self.assertIn("scripts/polaris-aws-range/health_report.md", flagged_paths)
+            self.assertIn("scripts/polaris-aws-range/postprovision_status.md", flagged_paths)
+            self.assertNotIn("scripts/polaris-aws-range/README.md", flagged_paths)
+            for v in violations:
+                self.assertEqual(v.rule_id, "ADR-004-R8")
+                self.assertNotIn("outcomes", v.message)
+
     def test_clean_tree_emits_no_violations(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo_root = Path(tmp)
@@ -4100,6 +4173,15 @@ class NoTrackedGeneratedArtifactsTests(unittest.TestCase):
         self.assertIn("no-tracked-generated-artifacts", ADR_GUARD.CHECKS)
         self.assertIn("no-tracked-generated-artifacts", ADR_GUARD.CHECK_LEVELS["ci"])
         self.assertIn("no-tracked-generated-artifacts", ADR_GUARD.CHECK_LEVELS["fast"])
+
+    def test_real_repo_passes(self) -> None:
+        """Exercise the production git ls-files discovery path against the real repo."""
+        violations = ADR_GUARD.check_no_tracked_generated_artifacts(ADR_GUARD.REPO_ROOT, None)
+        self.assertEqual(
+            violations,
+            [],
+            msg=f"Unexpected no-tracked-generated-artifacts violations: {violations}",
+        )
 
 
 class NoPopulatedSecretEnvFilesTests(unittest.TestCase):
