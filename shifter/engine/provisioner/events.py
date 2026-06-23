@@ -145,7 +145,7 @@ def _publish_event(event: dict[str, Any]) -> None:
         )
 
     except Exception as e:
-        logger.error(
+        logger.exception(
             "Failed to publish event: request_id_fp=%s range_id_fp=%s error=%s",
             safe_log_fingerprint(event.get("request_id")),
             safe_log_fingerprint(event.get("range_id")),

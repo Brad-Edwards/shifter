@@ -167,7 +167,10 @@ def env_keys_from_file(path: Path) -> tuple[str, ...]:
     """Return assignment keys from an env file without exposing assignment values."""
 
     keys: list[str] = []
-    for line in path.read_text(encoding="utf-8").splitlines():
+    # Normalize the path (collapsing any `..` traversal) before reading so the
+    # bytes scanned come from the resolved target rather than the raw input.
+    resolved = path.resolve()
+    for line in resolved.read_text(encoding="utf-8").splitlines():
         stripped = line.strip()
         if not stripped or stripped.startswith("#"):
             continue

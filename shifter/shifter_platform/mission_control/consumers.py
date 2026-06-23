@@ -292,7 +292,7 @@ class SSHConsumer(AsyncWebsocketConsumer):
                     )
                     break
         except asyncio.CancelledError:
-            pass
+            raise
         except Exception:
             logger.exception("Error reading SSH output: uuid=%s", self.instance_uuid)
         finally:

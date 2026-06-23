@@ -16,6 +16,11 @@ from risk_register.models import (
     StrideCategory,
 )
 
+# SonarCloud S1192: extracted duplicated string literals.
+RISK_FORM_TEMPLATE = "risk_register/risk_form.html"
+RISK_DETAIL_URL = "risk_register:risk_detail"
+APIKEY_LIST_URL = "risk_register:apikey_list"
+
 
 def _get_user_id(request: HttpRequest) -> int:
     """Get authenticated user ID, raising if not authenticated.
@@ -113,7 +118,7 @@ def risk_create(request: HttpRequest) -> HttpResponse:
             messages.error(request, "Title and description are required.")
             return render(
                 request,
-                "risk_register/risk_form.html",
+                RISK_FORM_TEMPLATE,
                 {
                     "severity_choices": Severity.choices,
                     "status_choices": Status.choices,
@@ -147,7 +152,7 @@ def risk_create(request: HttpRequest) -> HttpResponse:
         )
 
         messages.success(request, f"Risk '{risk.title}' created successfully.")
-        return redirect("risk_register:risk_detail", pk=risk.pk)
+        return redirect(RISK_DETAIL_URL, pk=risk.pk)
 
     context = {
         "severity_choices": Severity.choices,
@@ -155,7 +160,7 @@ def risk_create(request: HttpRequest) -> HttpResponse:
         "stride_choices": StrideCategory.choices,
         "active_nav": "risks",
     }
-    return render(request, "risk_register/risk_form.html", context)
+    return render(request, RISK_FORM_TEMPLATE, context)
 
 
 @staff_member_required
@@ -196,7 +201,7 @@ def risk_edit(request: HttpRequest, pk: int) -> HttpResponse:
         )
 
         messages.success(request, f"Risk '{risk.title}' updated successfully.")
-        return redirect("risk_register:risk_detail", pk=risk.pk)
+        return redirect(RISK_DETAIL_URL, pk=risk.pk)
 
     context = {
         "risk": risk,
@@ -206,7 +211,7 @@ def risk_edit(request: HttpRequest, pk: int) -> HttpResponse:
         "editing": True,
         "active_nav": "risks",
     }
-    return render(request, "risk_register/risk_form.html", context)
+    return render(request, RISK_FORM_TEMPLATE, context)
 
 
 @staff_member_required
@@ -243,7 +248,7 @@ def risk_delete(request: HttpRequest, pk: int) -> HttpResponse:
         messages.success(request, f"Risk '{risk.title}' deleted.")
         return redirect("risk_register:risk_list")
 
-    return redirect("risk_register:risk_detail", pk=pk)
+    return redirect(RISK_DETAIL_URL, pk=pk)
 
 
 @staff_member_required
@@ -271,7 +276,7 @@ def risk_restore(request: HttpRequest, pk: int) -> HttpResponse:
 
         messages.success(request, f"Risk '{risk.title}' restored.")
 
-    return redirect("risk_register:risk_detail", pk=pk)
+    return redirect(RISK_DETAIL_URL, pk=pk)
 
 
 @staff_member_required
@@ -300,7 +305,7 @@ def risk_close(request: HttpRequest, pk: int) -> HttpResponse:
 
         messages.success(request, f"Risk '{risk.title}' closed.")
 
-    return redirect("risk_register:risk_detail", pk=pk)
+    return redirect(RISK_DETAIL_URL, pk=pk)
 
 
 @staff_member_required
@@ -325,7 +330,7 @@ def risk_reopen(request: HttpRequest, pk: int) -> HttpResponse:
 
         messages.success(request, f"Risk '{risk.title}' reopened.")
 
-    return redirect("risk_register:risk_detail", pk=pk)
+    return redirect(RISK_DETAIL_URL, pk=pk)
 
 
 @staff_member_required
@@ -356,7 +361,7 @@ def comment_add(request: HttpRequest, risk_pk: int) -> HttpResponse:
         else:
             messages.error(request, "Comment cannot be empty.")
 
-    return redirect("risk_register:risk_detail", pk=risk_pk)
+    return redirect(RISK_DETAIL_URL, pk=risk_pk)
 
 
 @staff_member_required
@@ -377,7 +382,7 @@ def comment_delete(request: HttpRequest, risk_pk: int, pk: int) -> HttpResponse:
 
         messages.success(request, "Comment deleted.")
 
-    return redirect("risk_register:risk_detail", pk=risk_pk)
+    return redirect(RISK_DETAIL_URL, pk=risk_pk)
 
 
 @staff_member_required
@@ -402,7 +407,7 @@ def apikey_create(request: HttpRequest) -> HttpResponse:
 
         if not name:
             messages.error(request, "Key name is required.")
-            return redirect("risk_register:apikey_list")
+            return redirect(APIKEY_LIST_URL)
 
         api_key, raw_key = APIKey.create_key(name=name, created_by=request.user)
 
@@ -424,7 +429,7 @@ def apikey_create(request: HttpRequest) -> HttpResponse:
         }
         return render(request, "risk_register/apikey_list.html", context)
 
-    return redirect("risk_register:apikey_list")
+    return redirect(APIKEY_LIST_URL)
 
 
 @staff_member_required
@@ -435,7 +440,7 @@ def apikey_revoke(request: HttpRequest, pk: int) -> HttpResponse:
     # Only allow revoking own keys unless admin
     if not request.user.is_staff and api_key.created_by != request.user:
         messages.error(request, "You can only revoke your own API keys.")
-        return redirect("risk_register:apikey_list")
+        return redirect(APIKEY_LIST_URL)
 
     if request.method == "POST":
         api_key.revoke()
@@ -450,7 +455,7 @@ def apikey_revoke(request: HttpRequest, pk: int) -> HttpResponse:
 
         messages.success(request, f"API key '{api_key.name}' revoked.")
 
-    return redirect("risk_register:apikey_list")
+    return redirect(APIKEY_LIST_URL)
 
 
 def _risk_to_dict(risk: Risk) -> dict:

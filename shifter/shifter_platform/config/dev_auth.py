@@ -16,6 +16,9 @@ from django.urls import reverse
 from config.user_type_sync import sync_user_type
 from shared.log_sanitize import safe_log_value
 
+# SonarCloud S1192: extracted duplicated string literals.
+DASHBOARD_URL = "mission_control:dashboard"
+
 logger = logging.getLogger(__name__)
 
 User = get_user_model()
@@ -25,9 +28,9 @@ VALID_DEV_USER_TYPES = {"standard", "ctf_organizer", "ctf_participant"}
 
 # Redirect URLs by user type
 USER_TYPE_REDIRECTS = {
-    "standard": "mission_control:dashboard",
+    "standard": DASHBOARD_URL,
     "ctf_organizer": "ctf:admin_dashboard",
-    "ctf_participant": "mission_control:dashboard",
+    "ctf_participant": DASHBOARD_URL,
 }
 
 
@@ -122,7 +125,7 @@ def dev_login(request):
         logger.info("Dev login: set user_type=%s for %s", safe_log_value(user_type), safe_log_value(email))
 
         # Redirect to appropriate dashboard
-        redirect_url = reverse(USER_TYPE_REDIRECTS.get(user_type, "mission_control:dashboard"))
+        redirect_url = reverse(USER_TYPE_REDIRECTS.get(user_type, DASHBOARD_URL))
         return HttpResponseRedirect(redirect_url)
 
     return render(request, "dev_login.html")
