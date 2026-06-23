@@ -129,6 +129,35 @@ class TestProcessRangeEvent:
         process_range_event(_sns({"event_type": "range.status.updated", "new_status": "ready"}))
         assert _receive(layer, channel) is None
 
+    def test_does_not_broadcast_when_user_id_missing(self):
+        request_id = uuid4()
+        layer, channel = _subscribe(range_event_group(str(request_id)))
+        process_range_event(
+            _sns(
+                {
+                    "event_type": "range.status.updated",
+                    "request_id": str(request_id),
+                    "new_status": ResourceStatus.READY.value,
+                }
+            )
+        )
+        assert _receive(layer, channel) is None
+
+    def test_does_not_broadcast_when_status_invalid(self):
+        request_id = uuid4()
+        layer, channel = _subscribe(range_event_group(str(request_id)))
+        process_range_event(
+            _sns(
+                {
+                    "event_type": "range.status.updated",
+                    "request_id": str(request_id),
+                    "new_status": "bogus_status",
+                    "user_id": 42,
+                }
+            )
+        )
+        assert _receive(layer, channel) is None
+
 
 class TestProcessNgfwEvent:
     def test_broadcasts_to_app_group(self):

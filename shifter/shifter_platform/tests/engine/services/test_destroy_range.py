@@ -60,6 +60,10 @@ def _request_spec(user_id):
 
 
 class TestDestroyRange:
+    def test_rejects_non_rangeref(self):
+        with pytest.raises(TypeError, match="must be RangeRef"):
+            destroy_range("not-a-ref")
+
     def test_destroyable_range_returns_true_and_sets_destroying(self, user):
         range_obj = Range.objects.create(user=user, status=Range.Status.READY)
         assert destroy_range(_ref(range_id=range_obj.id, user_id=user.id)) is True
@@ -78,6 +82,18 @@ class TestDestroyRange:
 
     def test_returns_false_when_not_found(self, user):
         assert destroy_range(_ref(range_id=999999, user_id=user.id)) is False
+
+    def test_destroys_via_request_id_when_range_id_none(self, user):
+        spec = _request_spec(user.id)
+        create_range(spec)
+        ref = RangeRef(
+            request_id=spec.request_id,
+            range_id=None,
+            user_id=user.id,
+            status=ResourceStatus.PROVISIONING,
+        )
+        assert destroy_range(ref) is True
+        assert Range.objects.get(request__request_id=spec.request_id).status == Range.Status.DESTROYING
 
     def test_logs_status_change(self, user, caplog):
         range_obj = Range.objects.create(user=user, status=Range.Status.READY)

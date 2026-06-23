@@ -112,6 +112,40 @@ class TestCancelRange:
         range_obj.refresh_from_db()
         assert range_obj.status == Range.Status.DESTROYING
 
+    def test_cancels_via_request_id_when_range_id_none(self, user):
+        spec = _request_spec(user.id)
+        create_range(spec)
+        cancel_range(
+            RangeRef(
+                request_id=spec.request_id,
+                range_id=None,
+                user_id=user.id,
+                status=ResourceStatus.PROVISIONING,
+            )
+        )
+        range_obj = Range.objects.get(request__request_id=spec.request_id)
+        assert range_obj.status == Range.Status.DESTROYING
+
+    def test_raises_when_ids_missing_after_construct(self, user):
+        ref = RangeRef.model_construct(
+            request_id=None,
+            range_id=None,
+            user_id=user.id,
+            status=ResourceStatus.PENDING,
+        )
+        with pytest.raises(ValueError, match="range_id or request_id"):
+            cancel_range(ref)
+
+    def test_raises_for_invalid_range_id_type(self, user):
+        ref = RangeRef.model_construct(
+            request_id=uuid4(),
+            range_id="not-an-int",
+            user_id=user.id,
+            status=ResourceStatus.PENDING,
+        )
+        with pytest.raises(ValueError, match="non-negative integer"):
+            cancel_range(ref)
+
 
 class TestCancelRangeByRequest:
     def test_returns_true_and_destroys_cancellable_range(self, user):
