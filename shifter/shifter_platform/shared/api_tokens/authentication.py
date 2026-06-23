@@ -20,7 +20,7 @@ from rest_framework import authentication, exceptions
 from shared.api_tokens.audit import TokenEvent, record_token_event
 from shared.api_tokens.models import TOKEN_PREFIX, ApiToken
 
-if TYPE_CHECKING:  # pragma: no cover - typing only
+if TYPE_CHECKING:
     from rest_framework.request import Request
 
 _DEFAULT_COALESCE_SECONDS = 300

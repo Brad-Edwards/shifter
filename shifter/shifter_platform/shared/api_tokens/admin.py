@@ -8,7 +8,8 @@ logged, listed, searchable, or routed through the messages/cookie framework.
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import datetime, timedelta
+from typing import TYPE_CHECKING, cast
 
 from django import forms
 from django.conf import settings
@@ -22,11 +23,19 @@ from shared.api_tokens.audit import TokenEvent, record_token_event
 from shared.api_tokens.models import ApiToken
 from shared.api_tokens.scopes import InvalidScopeError, validate_scopes
 
-_RAW_TOKEN_REQUEST_ATTR = "_api_tokens_created_raw"  # nosec B105 - request attribute name, not a credential
+if TYPE_CHECKING:
+    from django.contrib.auth.models import AbstractBaseUser
+    from django.db.models import QuerySet
+    from django.http import HttpRequest
+
+# Name of the request attribute that carries the one-time raw token between
+# save_model and response_add (not a credential, just an attribute key).
+_CREATED_RAW_ATTR = "_api_tokens_created_raw"
 _DEFAULT_MAX_TTL_DAYS = 365
 
 
 def _max_ttl_days() -> int:
+    """Return the configured maximum token lifetime in days."""
     return getattr(settings, "API_TOKEN_MAX_TTL_DAYS", _DEFAULT_MAX_TTL_DAYS)
 
 
@@ -39,16 +48,19 @@ class ApiTokenForm(forms.ModelForm):
     """
 
     class Meta:
+        """Form metadata: bind to ApiToken and expose only operator-set fields."""
+
         model = ApiToken
         fields = ["name", "scopes", "expires_at"]
 
-    def clean_scopes(self):
+    def clean_scopes(self) -> list[str]:
+        """Validate the submitted scopes against the central registry."""
         try:
             return validate_scopes(self.cleaned_data["scopes"] or [])
         except InvalidScopeError as exc:
             raise forms.ValidationError(str(exc)) from exc
 
-    def clean_expires_at(self):
+    def clean_expires_at(self) -> datetime:
         """Bound token lifetime to the configured maximum on every path.
 
         Tokens default to expiring at the ceiling rather than never, so every
@@ -68,6 +80,8 @@ class ApiTokenForm(forms.ModelForm):
 
 @admin.register(ApiToken)
 class ApiTokenAdmin(admin.ModelAdmin):
+    """Admin for API tokens: audited create (display-once) and revoke; no hard delete."""
+
     form = ApiTokenForm
     list_display = (
         "name",
@@ -89,9 +103,10 @@ class ApiTokenAdmin(admin.ModelAdmin):
 
     @admin.display(boolean=True, description="Active")
     def is_active(self, obj: ApiToken) -> bool:
+        """Column rendering whether the token is currently active."""
         return obj.is_active
 
-    def has_delete_permission(self, request, obj=None):
+    def has_delete_permission(self, request: HttpRequest, obj: ApiToken | None = None) -> bool:
         """Disable hard delete for a credential principal.
 
         Tokens are retired via the audited ``revoke_tokens`` action (which sets
@@ -101,13 +116,15 @@ class ApiTokenAdmin(admin.ModelAdmin):
         """
         return False
 
-    def save_model(self, request, obj, form, change):
+    def save_model(self, request: HttpRequest, obj: ApiToken, form: forms.ModelForm, change: bool) -> None:
+        """On add, mint the token via the model (audited); on change, persist normally."""
         if change:
             super().save_model(request, obj, form, change)
             return
         token, raw = ApiToken.create_token(
             name=obj.name,
-            created_by=request.user,
+            # Admin POST always carries an authenticated staff user.
+            created_by=cast("AbstractBaseUser", request.user),
             scopes=obj.scopes,
             expires_at=obj.expires_at,
         )
@@ -117,7 +134,7 @@ class ApiTokenAdmin(admin.ModelAdmin):
         obj.verifier_hash = token.verifier_hash
         obj.created_by = token.created_by
         obj.created_at = token.created_at
-        setattr(request, _RAW_TOKEN_REQUEST_ATTR, raw)
+        setattr(request, _CREATED_RAW_ATTR, raw)
         record_token_event(
             TokenEvent.CREATED,
             request=request,
@@ -126,8 +143,9 @@ class ApiTokenAdmin(admin.ModelAdmin):
             actor_id=request.user.id,
         )
 
-    def response_add(self, request, obj, post_url_continue=None):
-        raw = getattr(request, _RAW_TOKEN_REQUEST_ATTR, None)
+    def response_add(self, request: HttpRequest, obj: ApiToken, post_url_continue: str | None = None) -> HttpResponse:
+        """Render the one-time raw token server-side after a successful create."""
+        raw = getattr(request, _CREATED_RAW_ATTR, None)
         if not raw:
             return super().response_add(request, obj, post_url_continue)
         # Render the raw bearer token once, server-side. Deliberately NOT via the
@@ -147,7 +165,8 @@ class ApiTokenAdmin(admin.ModelAdmin):
         return HttpResponse(body)
 
     @admin.action(description="Revoke selected API tokens")
-    def revoke_tokens(self, request, queryset):
+    def revoke_tokens(self, request: HttpRequest, queryset: QuerySet[ApiToken]) -> None:
+        """Audited bulk revocation: set ``revoked_at`` and record each event."""
         revoked = 0
         for token in queryset:
             if token.revoked_at is not None:

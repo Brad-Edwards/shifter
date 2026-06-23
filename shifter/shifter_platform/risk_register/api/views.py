@@ -20,7 +20,7 @@ from risk_register.api.serializers import (
 from risk_register.models import APIKey, AuditLog, Comment, Risk
 from shared.api_tokens import scopes
 from shared.api_tokens.models import ApiToken
-from shared.api_tokens.permissions import RequireScope
+from shared.api_tokens.permissions import require_scope
 
 
 def get_actor_info(request):
@@ -62,7 +62,7 @@ class RiskViewSet(viewsets.ModelViewSet):
 
     permission_classes = [
         IsStaffSessionOrToken,
-        RequireScope(scopes.RISK_READ, scopes.RISK_WRITE),
+        require_scope(scopes.RISK_READ, scopes.RISK_WRITE),
     ]
 
     def get_serializer_class(self):
@@ -226,7 +226,7 @@ class CommentViewSet(viewsets.ViewSet):
 
     permission_classes = [
         IsStaffSessionOrToken,
-        RequireScope(scopes.RISK_READ, scopes.RISK_WRITE),
+        require_scope(scopes.RISK_READ, scopes.RISK_WRITE),
     ]
 
     def list(self, request, risk_pk=None):

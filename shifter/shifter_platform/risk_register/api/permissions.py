@@ -1,12 +1,19 @@
 """Permission classes for Risk Register API."""
 
+from __future__ import annotations
+
 import logging
+from typing import TYPE_CHECKING
 
 from rest_framework import permissions
 
 from risk_register.models import APIKey, AuditLog
 from risk_register.services import audit_log_from_request
 from shared.api_tokens.models import ApiToken
+
+if TYPE_CHECKING:
+    from rest_framework.request import Request
+    from rest_framework.views import APIView
 
 logger = logging.getLogger(__name__)
 
@@ -99,8 +106,8 @@ class IsStaffSessionOrToken(AuditedPermissionMixin, permissions.BasePermission):
     carry the required scope.
     """
 
-    def has_permission(self, request, view):
-        # A scoped platform ApiToken is admitted here; the sibling RequireScope
+    def has_permission(self, request: Request, view: APIView) -> bool:
+        # A scoped platform ApiToken is admitted here; the sibling require_scope
         # permission enforces the specific scope. The legacy risk_register APIKey
         # is intentionally NOT admitted: it carries no scopes and was already
         # denied on these viewsets by the prior IsAdminUser, so this preserves

@@ -5,12 +5,12 @@
     {
       "default": "300",
       "name": "API_TOKEN_LAST_USED_COALESCE_SECONDS",
-      "source_file": "config/settings.py"
+      "source_file": "config/_api_token_settings.py"
     },
     {
       "default": "365",
       "name": "API_TOKEN_MAX_TTL_DAYS",
-      "source_file": "config/settings.py"
+      "source_file": "config/_api_token_settings.py"
     },
     {
       "default": "'oidc'",

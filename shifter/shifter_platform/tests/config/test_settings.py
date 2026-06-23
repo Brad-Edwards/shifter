@@ -83,6 +83,9 @@ def test_api_token_policy_defaults(monkeypatch) -> None:
     for var in ("API_TOKEN_LAST_USED_COALESCE_SECONDS", "API_TOKEN_MAX_TTL_DAYS"):
         monkeypatch.delenv(var, raising=False)
 
+    # Token policy lives in a re-exported sub-module; evict it so the fresh
+    # settings load re-reads the (cleared) environment instead of the cache.
+    sys.modules.pop("config._api_token_settings", None)
     settings_module = _load_settings_module("config._settings_api_token_default_test")
 
     assert settings_module.API_TOKEN_LAST_USED_COALESCE_SECONDS == 300
@@ -100,6 +103,7 @@ def test_api_token_policy_read_from_env(monkeypatch) -> None:
     monkeypatch.setenv("API_TOKEN_LAST_USED_COALESCE_SECONDS", "60")
     monkeypatch.setenv("API_TOKEN_MAX_TTL_DAYS", "30")
 
+    sys.modules.pop("config._api_token_settings", None)
     settings_module = _load_settings_module("config._settings_api_token_env_test")
 
     assert settings_module.API_TOKEN_LAST_USED_COALESCE_SECONDS == 60

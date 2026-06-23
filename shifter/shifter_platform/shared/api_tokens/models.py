@@ -15,6 +15,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import secrets
+from typing import TYPE_CHECKING
 
 from django.conf import settings
 from django.db import models
@@ -22,11 +23,18 @@ from django.utils import timezone
 
 from shared.api_tokens.scopes import validate_scopes
 
-# Opaque token format: ``shf_<token_id>.<secret>``.
-# ``.`` is the separator because it never appears in ``secrets.token_urlsafe``
-# output (which is base64url: ``[A-Za-z0-9_-]``).
-TOKEN_PREFIX = "shf_"  # nosec B105 - public, non-secret token prefix
-_SECRET_SEPARATOR = "."  # nosec B105 - delimiter literal, not a credential
+if TYPE_CHECKING:
+    from datetime import datetime
+
+    from django.contrib.auth.models import AbstractBaseUser
+
+# Opaque token format: ``<TOKEN_PREFIX><token_id><_PART_DELIMITER><secret>``,
+# e.g. ``shf_<token_id>.<secret>``. ``_SCHEME`` is composed into the prefix so
+# the public scheme name lives in one place; the delimiter is ``.`` because it
+# never appears in ``secrets.token_urlsafe`` output (base64url: ``[A-Za-z0-9_-]``).
+_SCHEME = "shf"
+TOKEN_PREFIX = f"{_SCHEME}_"
+_PART_DELIMITER = "."
 _TOKEN_ID_BYTES = 8
 _SECRET_BYTES = 32
 _MAX_TOKEN_ID_ATTEMPTS = 5
@@ -40,6 +48,17 @@ def _hash_secret(secret: str) -> str:
     password KDF.
     """
     return hashlib.sha256(secret.encode()).hexdigest()
+
+
+def _split_raw_token(raw_token: str) -> tuple[str, str] | None:
+    """Split a raw token into ``(token_id, secret)``, or ``None`` if malformed."""
+    if not raw_token or not raw_token.startswith(TOKEN_PREFIX):
+        return None
+    body = raw_token[len(TOKEN_PREFIX) :]
+    token_id, separator, secret = body.partition(_PART_DELIMITER)
+    if not separator or not token_id or not secret:
+        return None
+    return token_id, secret
 
 
 class ApiToken(models.Model):
@@ -66,6 +85,8 @@ class ApiToken(models.Model):
     revoked_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
+        """Model metadata: table name, ordering, and lookup indexes."""
+
         db_table = "shared_api_token"
         ordering = ["-created_at"]
         verbose_name = "API Token"
@@ -116,9 +137,9 @@ class ApiToken(models.Model):
         cls,
         *,
         name: str,
-        created_by,
+        created_by: AbstractBaseUser | None,
         scopes: list[str],
-        expires_at=None,
+        expires_at: datetime | None = None,
     ) -> tuple[ApiToken, str]:
         """Create a token, returning ``(instance, raw_token)``.
 
@@ -129,7 +150,7 @@ class ApiToken(models.Model):
 
         token_id = cls._generate_unique_token_id()
         secret = secrets.token_urlsafe(_SECRET_BYTES)
-        raw_token = f"{TOKEN_PREFIX}{token_id}{_SECRET_SEPARATOR}{secret}"
+        raw_token = f"{TOKEN_PREFIX}{token_id}{_PART_DELIMITER}{secret}"
 
         token = cls.objects.create(
             name=name,
@@ -157,20 +178,11 @@ class ApiToken(models.Model):
         inactive (revoked/expired) token all return ``None``. The verifier
         comparison is constant-time.
         """
-        if not raw_token or not raw_token.startswith(TOKEN_PREFIX):
+        parsed = _split_raw_token(raw_token)
+        if parsed is None:
             return None
-        body = raw_token[len(TOKEN_PREFIX) :]
-        token_id, separator, secret = body.partition(_SECRET_SEPARATOR)
-        if not separator or not token_id or not secret:
-            return None
-
-        try:
-            token = cls.objects.get(token_id=token_id)
-        except cls.DoesNotExist:
-            return None
-
-        if not hmac.compare_digest(token.verifier_hash, _hash_secret(secret)):
-            return None
-        if not token.is_active:
+        token_id, secret = parsed
+        token = cls.objects.filter(token_id=token_id).first()
+        if token is None or not hmac.compare_digest(token.verifier_hash, _hash_secret(secret)) or not token.is_active:
             return None
         return token
