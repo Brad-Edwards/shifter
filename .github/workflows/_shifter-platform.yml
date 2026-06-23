@@ -1166,3 +1166,104 @@ jobs:
           python3 "${GITHUB_WORKSPACE}/scripts/portal_deploy/portal_deploy.py" verify-asg-image \
             --asg-name "$ASG_NAME" \
             --image-digest "$IMAGE_DIGEST"
+
+  verify:
+    permissions:
+      id-token: write
+      contents: read
+      pull-requests: write
+    name: Verify (${{ inputs.environment }})
+    runs-on: self-hosted
+    environment: ${{ inputs.github_environment }}
+    needs: deploy
+    if: inputs.apply_changes && github.event_name != 'pull_request' && needs.deploy.result == 'success'
+    env:
+      AWS_REGION: us-east-2
+      ENV: ${{ inputs.environment }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
+        with:
+          terraform_version: "1.13.3"
+          terraform_wrapper: false
+
+      - name: Resolve AWS deploy role
+        id: aws-role
+        env:
+          ENVIRONMENT: ${{ inputs.environment }}
+          AWS_ROLE_ARN_DEV: ${{ secrets.AWS_ROLE_ARN_DEV }}
+          AWS_ROLE_ARN_PROOF: ${{ secrets.AWS_ROLE_ARN_PROOF }}
+          AWS_ROLE_ARN_PROD: ${{ secrets.AWS_ROLE_ARN }}
+        run: |
+          case "$ENVIRONMENT" in
+            dev)
+              ROLE_SECRET_NAME="AWS_ROLE_ARN_DEV"
+              ROLE_ARN="$AWS_ROLE_ARN_DEV"
+              ;;
+            proof)
+              ROLE_SECRET_NAME="AWS_ROLE_ARN_PROOF"
+              ROLE_ARN="$AWS_ROLE_ARN_PROOF"
+              ;;
+            prod)
+              ROLE_SECRET_NAME="AWS_ROLE_ARN"
+              ROLE_ARN="$AWS_ROLE_ARN_PROD"
+              ;;
+            *)
+              echo "::error::Unsupported AWS environment: $ENVIRONMENT"
+              exit 1
+              ;;
+          esac
+          if [ -z "$ROLE_ARN" ]; then
+            echo "::error::Required secret ${ROLE_SECRET_NAME} is not set"
+            exit 1
+          fi
+          echo "role_arn=$ROLE_ARN" >> "$GITHUB_OUTPUT"
+      - uses: aws-actions/configure-aws-credentials@ececac1a45f3b08a01d2dd070d28d111c5fe6722 # v4.1.0
+        with:
+          role-to-assume: ${{ steps.aws-role.outputs.role_arn }}
+          aws-region: us-east-2
+
+      - name: Render Terraform backend configs
+        working-directory: ${{ github.workspace }}
+        env:
+          ENVIRONMENT: ${{ inputs.environment }}
+          TF_INFRA_STATE_BUCKET_DEV: ${{ secrets.TF_INFRA_STATE_BUCKET_DEV }}
+          TF_INFRA_STATE_BUCKET_PROOF: ${{ secrets.TF_INFRA_STATE_BUCKET_PROOF }}
+          TF_INFRA_STATE_BUCKET_PROD: ${{ secrets.TF_INFRA_STATE_BUCKET }}
+          AWS_REGION: us-east-2
+        run: |
+          set -euo pipefail
+          case "$ENVIRONMENT" in
+            dev)
+              BUCKET_SECRET_NAME="TF_INFRA_STATE_BUCKET_DEV"
+              STATE_BUCKET="${TF_INFRA_STATE_BUCKET_DEV}"
+              ;;
+            proof)
+              BUCKET_SECRET_NAME="TF_INFRA_STATE_BUCKET_PROOF"
+              STATE_BUCKET="${TF_INFRA_STATE_BUCKET_PROOF}"
+              ;;
+            prod)
+              BUCKET_SECRET_NAME="TF_INFRA_STATE_BUCKET"
+              STATE_BUCKET="${TF_INFRA_STATE_BUCKET_PROD}"
+              ;;
+            *)
+              echo "::error::Unsupported AWS environment: $ENVIRONMENT"
+              exit 1
+              ;;
+          esac
+          if [ -z "${STATE_BUCKET}" ]; then
+            echo "::error::Required secret ${BUCKET_SECRET_NAME} is not set for the ${ENVIRONMENT} Terraform backend"
+            exit 1
+          fi
+          python3 scripts/terraform/render_aws_backend_configs.py \
+            --bucket "${STATE_BUCKET}" \
+            --env "${ENV}" \
+            --stack portal \
+            --github-env
+
+      - name: Verify post-deploy health
+        run: |
+          python3 "${GITHUB_WORKSPACE}/scripts/portal_deploy/portal_deploy.py" verify-post-deploy \
+            --terraform-dir "${GITHUB_WORKSPACE}/platform/terraform/environments/${ENV}/portal" \
+            --backend-config "${SHIFTER_BACKEND_CONFIG_PATH}"
