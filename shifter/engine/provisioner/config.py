@@ -521,7 +521,7 @@ def _validate_gdc_access_fields(*, cluster_id: str, vxlan_cidr: str, region: str
         raise RuntimeError("GDC access secret must include region or RANGE_NETWORK_REGION/GCP_REGION must be set")
 
 
-def _resolve_gdc_network_fields(payload: dict) -> dict:
+def _resolve_gdc_network_fields(payload: dict[str, Any]) -> dict[str, Any]:
     """Resolve GDC network-access fields from the secret payload with env fallbacks."""
     return {
         "cluster_id": str(payload.get("cluster_id") or os.environ.get("GDC_CLUSTER_ID", "")).strip(),

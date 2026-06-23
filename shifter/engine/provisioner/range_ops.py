@@ -37,8 +37,9 @@ _GCP_OPERATION_MODES = {
 
 
 def _build_aws_lifecycle_entry(
-    entry: dict[str, object], state_dict: dict, uuid: object, role: str
+    entry: dict[str, object], state_dict: dict[str, object], uuid: object, role: str
 ) -> dict[str, object] | None:
+    """Finalize an AWS lifecycle entry, or None when the instance lacks an aws_instance_id."""
     aws_instance_id = state_dict.get("aws_instance_id")
     if not aws_instance_id:
         logger.warning(

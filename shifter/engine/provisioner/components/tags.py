@@ -34,6 +34,7 @@ UnitType = Literal["subnet", "instance"]
 
 
 def _validate_user_id(user_id: object) -> None:
+    """Reject a missing or non-negative-int user_id."""
     if user_id is None:
         raise ValueError("user_id is required")
     if not isinstance(user_id, int) or user_id < 0:
@@ -41,6 +42,7 @@ def _validate_user_id(user_id: object) -> None:
 
 
 def _validate_required_str(name: str, value: object) -> None:
+    """Reject an empty or non-string required field."""
     if not value:
         raise ValueError(f"{name} is required")
     if not isinstance(value, str):
@@ -48,6 +50,7 @@ def _validate_required_str(name: str, value: object) -> None:
 
 
 def _validate_unit_pairing(unit_type: object, unit_uuid: object) -> None:
+    """Reject invalid unit_type/unit_uuid pairings."""
     if unit_type is not None and not unit_uuid:
         raise ValueError(f"unit_uuid is required when unit_type is set (unit_type={unit_type!r})")
     if unit_uuid is not None and not unit_type:

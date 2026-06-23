@@ -83,7 +83,7 @@ def _is_provisioner_task(container_name: str) -> bool:
     return container_name == PROVISIONER_CONTAINER_NAME
 
 
-def _job_condition_reason(status: Any) -> str | None:
+def _job_condition_reason(status: object) -> str | None:
     """Return the message/reason of the first Failed/Complete Job condition, if any."""
     for condition in getattr(status, "conditions", None) or []:
         if getattr(condition, "type", "") in {"Failed", "Complete"}:
@@ -97,9 +97,7 @@ def _derive_job_state(*, active: int, failed: int, succeeded: int) -> str:
         return "SUCCEEDED"
     if failed > 0:
         return "FAILED"
-    if active > 0:
-        return "RUNNING"
-    return "SUBMITTED"
+    return "RUNNING" if active > 0 else "SUBMITTED"
 
 
 class GCPTaskRunner:

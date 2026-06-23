@@ -50,6 +50,7 @@ def _get_task_config() -> tuple[str, str, dict | None] | None:
 
 
 def _gcp_experiment_task_config(cluster: str, task_definition: str) -> tuple[str, str, dict | None] | None:
+    """Return the GCP experiment task config, or None when it is incomplete."""
     if not all([cluster, task_definition]):
         logger.warning(
             "GCP task configuration incomplete for experiment tasks. "
@@ -61,6 +62,7 @@ def _gcp_experiment_task_config(cluster: str, task_definition: str) -> tuple[str
 
 
 def _aws_experiment_task_config(cluster: str, task_definition: str) -> tuple[str, str, dict | None] | None:
+    """Return the AWS experiment task config (cluster, task def, network), or None when incomplete."""
     security_group_id: str = getattr(settings, "ENGINE_TASK_NETWORK_SECURITY_GROUP_ID", "") or getattr(
         settings, "ENGINE_ECS_SECURITY_GROUP_ID", ""
     )

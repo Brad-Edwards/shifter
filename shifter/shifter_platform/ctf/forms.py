@@ -10,7 +10,7 @@ This module provides Django forms for:
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from django import forms
 from django.core.exceptions import ValidationError
@@ -23,7 +23,7 @@ DATETIME_LOCAL_FORMAT = "%Y-%m-%dT%H:%M"
 CANCEL_EVENT_LABEL = "Cancel Event"
 
 if TYPE_CHECKING:
-    pass
+    from django.contrib.auth.models import User
 
 logger = logging.getLogger(__name__)
 
@@ -112,7 +112,7 @@ class CTFEventForm(forms.ModelForm):
 
         self._apply_bootstrap_css_classes()
 
-    def _populate_scenario_choices(self, user) -> None:
+    def _populate_scenario_choices(self, user: User | None) -> None:
         """Populate the scenario dropdown from the CMS registry, or accept any value."""
         if user is not None:
             from ctf.bridges import cms_list_scenarios
@@ -159,7 +159,7 @@ class CTFEventForm(forms.ModelForm):
         self._validate_scenario(cleaned_data)
         return cleaned_data
 
-    def _validate_event_times(self, cleaned_data: dict) -> None:
+    def _validate_event_times(self, cleaned_data: dict[str, Any]) -> None:
         event_start = cleaned_data.get("event_start")
         event_end = cleaned_data.get("event_end")
         registration_deadline = cleaned_data.get("registration_deadline")
@@ -176,7 +176,7 @@ class CTFEventForm(forms.ModelForm):
                 "Registration deadline must be before event start.",
             )
 
-    def _validate_team_settings(self, cleaned_data: dict) -> None:
+    def _validate_team_settings(self, cleaned_data: dict[str, Any]) -> None:
         team_mode = cleaned_data.get("team_mode", False)
         team_size_limit = cleaned_data.get("team_size_limit")
 
@@ -190,7 +190,7 @@ class CTFEventForm(forms.ModelForm):
             # Clear team_size_limit if team_mode is disabled
             cleaned_data["team_size_limit"] = None
 
-    def _validate_scenario(self, cleaned_data: dict) -> None:
+    def _validate_scenario(self, cleaned_data: dict[str, Any]) -> None:
         scenario_id = cleaned_data.get("scenario_id")
         if scenario_id and self._user is not None:
             from ctf.bridges import cms_list_scenarios

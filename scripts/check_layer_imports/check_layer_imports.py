@@ -82,25 +82,29 @@ def is_import_allowed(from_layer: str, module_path: str, allowed: dict[str, list
     return any(_entry_allows_import(entry, module_path) for entry in allowed_entries)
 
 
+def _dotted_facade_allows(entry: str, module_path: str) -> bool:
+    """Return True if a dotted facade ``entry`` permits ``module_path``.
+
+    Allow the exact facade and its PUBLIC submodules, but reject any path whose
+    remainder names a private split-package module (a component that starts with
+    "_", e.g. "cms.services._range_pause"). The facade is the cross-layer seam;
+    private submodules are not (ADR-001-R1).
+    """
+    if module_path == entry:
+        return True
+    if not module_path.startswith(entry + "."):
+        return False
+    remainder = module_path[len(entry) + 1 :]
+    return not any(part.startswith("_") for part in remainder.split("."))
+
+
 def _entry_allows_import(entry: str, module_path: str) -> bool:
     """Return True if a single allow-list ``entry`` permits importing ``module_path``."""
     if entry == "shared":
         # shared is the contracts layer — any submodule is allowed
         return module_path == "shared" or module_path.startswith("shared.")
-
     if "." in entry:
-        # Dotted path (e.g. "cms.services") — the public facade. Allow the
-        # exact facade and its PUBLIC submodules, but reject any path whose
-        # remainder names a private split-package module (a component that
-        # starts with "_", e.g. "cms.services._range_pause"). The facade is
-        # the cross-layer seam; private submodules are not (ADR-001-R1).
-        if module_path == entry:
-            return True
-        if module_path.startswith(entry + "."):
-            remainder = module_path[len(entry) + 1 :]
-            return not any(part.startswith("_") for part in remainder.split("."))
-        return False
-
+        return _dotted_facade_allows(entry, module_path)
     # Bare layer name — exact match only
     return module_path == entry
 

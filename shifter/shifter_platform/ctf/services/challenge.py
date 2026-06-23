@@ -238,6 +238,7 @@ def _verify_hash(submitted_flag: str, stored_hash: str, context_id: UUID) -> boo
 
 
 def _verify_regex_flag(flag_obj: CTFFlag, submitted_flag: str) -> bool:
+    """Verify a submitted flag against a regex CTFFlag."""
     # Regex flags: pattern stored as plaintext in flag_hash
     regex_flags = 0 if flag_obj.case_sensitive else re.IGNORECASE
     try:
@@ -247,7 +248,8 @@ def _verify_regex_flag(flag_obj: CTFFlag, submitted_flag: str) -> bool:
         return False
 
 
-def _verify_programmable_flag(flag_obj: CTFFlag, submitted_flag: str, config: dict) -> bool:
+def _verify_programmable_flag(flag_obj: CTFFlag, submitted_flag: str, config: dict[str, Any]) -> bool:
+    """Verify a submitted flag against a programmable validator CTFFlag."""
     from ctf.validators import get_validator
 
     validator_name = config.get("validator_name", "")
@@ -262,7 +264,8 @@ def _verify_programmable_flag(flag_obj: CTFFlag, submitted_flag: str, config: di
         return False
 
 
-def _verify_http_flag(flag_obj: CTFFlag, submitted_flag: str, config: dict) -> bool:
+def _verify_http_flag(flag_obj: CTFFlag, submitted_flag: str, config: dict[str, Any]) -> bool:
+    """Verify a submitted flag against an HTTP validator CTFFlag."""
     from ctf.validators import validate_http
 
     try:
@@ -273,6 +276,7 @@ def _verify_http_flag(flag_obj: CTFFlag, submitted_flag: str, config: dict) -> b
 
 
 def _verify_static_flag(flag_obj: CTFFlag, submitted_flag: str) -> bool:
+    """Verify a submitted flag against a static (hashed) CTFFlag."""
     # Static flags: hashed comparison
     value = submitted_flag if flag_obj.case_sensitive else submitted_flag.lower()
     return _verify_hash(value, flag_obj.flag_hash, flag_obj.id)

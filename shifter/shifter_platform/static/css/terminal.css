@@ -368,10 +368,6 @@
     display: flex;
 }
 
-.terminal-page:has(.mode-tabs) .terminal-tabs {
-    display: flex;
-}
-
 .terminal-page:has(.mode-split) .terminal-tabs {
     display: none;
 }

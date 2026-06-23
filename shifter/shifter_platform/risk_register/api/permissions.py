@@ -3,6 +3,7 @@
 import logging
 
 from rest_framework import permissions
+from rest_framework.request import Request
 
 from risk_register.models import APIKey, AuditLog
 from risk_register.services import audit_log_from_request
@@ -96,24 +97,22 @@ class IsOwnerOrAdmin(AuditedPermissionMixin, permissions.BasePermission):
     """
 
     @staticmethod
-    def _is_admin(request) -> bool:
+    def _is_admin(request: Request) -> bool:
         return bool(
             request.user and request.user.is_authenticated and (request.user.is_staff or request.user.is_superuser)
         )
 
     @staticmethod
-    def _owns_via_apikey(request, obj) -> bool:
-        return bool(
-            isinstance(request.auth, APIKey) and hasattr(obj, "author_apikey") and obj.author_apikey == request.auth
-        )
+    def _owns_via_apikey(request: Request, obj: object) -> bool:
+        return bool(isinstance(request.auth, APIKey) and getattr(obj, "author_apikey", None) == request.auth)
 
     @staticmethod
-    def _owns_via_user(request, obj) -> bool:
+    def _owns_via_user(request: Request, obj: object) -> bool:
         if not (request.user and request.user.is_authenticated):
             return False
-        if hasattr(obj, "author_user") and obj.author_user == request.user:
+        if getattr(obj, "author_user", None) == request.user:
             return True
-        return bool(hasattr(obj, "created_by") and obj.created_by == request.user)
+        return getattr(obj, "created_by", None) == request.user
 
     def has_object_permission(self, request, view, obj):
         if self._is_admin(request) or self._owns_via_apikey(request, obj) or self._owns_via_user(request, obj):

@@ -2540,6 +2540,7 @@ def prune_stale_gcp_terraform_bootstrap_keys(config: GDCBootstrapConfig) -> None
 
 
 def _ensure_terraform_bootstrap_service_account(config: GDCBootstrapConfig) -> None:
+    """Create the Terraform-bootstrap service account if it does not already exist."""
     if not gcloud_resource_exists(
         [
             "gcloud",
@@ -2566,6 +2567,7 @@ def _ensure_terraform_bootstrap_service_account(config: GDCBootstrapConfig) -> N
 
 
 def _grant_terraform_bootstrap_iam(config: GDCBootstrapConfig, member: str, bucket_url: str) -> None:
+    """Grant the bootstrap service account the project roles and state-bucket binding."""
     for role in GCP_TERRAFORM_BOOTSTRAP_ROLES:
         run_cmd(
             [
@@ -2602,6 +2604,7 @@ def _revoke_terraform_bootstrap_iam(
     key_id: str,
     previous_env: dict[str, str | None],
 ) -> None:
+    """Restore env vars and revoke the bootstrap key, project roles, and bucket binding."""
     for key, value in previous_env.items():
         if value is None:
             os.environ.pop(key, None)

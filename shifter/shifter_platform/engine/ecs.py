@@ -242,6 +242,7 @@ def _get_engine_task_config() -> tuple[str, str, dict[str, Any] | None] | None:
 
 
 def _gcp_engine_task_config(cluster: str, task_definition: str) -> tuple[str, str, dict[str, Any] | None] | None:
+    """Return the GCP engine task config, or None when it is incomplete."""
     if not all([cluster, task_definition]):
         logger.warning(
             "GCP task configuration incomplete, skipping task run. "
@@ -253,6 +254,7 @@ def _gcp_engine_task_config(cluster: str, task_definition: str) -> tuple[str, st
 
 
 def _aws_engine_task_config(cluster: str, task_definition: str) -> tuple[str, str, dict[str, Any] | None] | None:
+    """Return the AWS engine task config (cluster, task def, network), or None when incomplete."""
     security_group_id: str = (
         getattr(settings, "ENGINE_TASK_NETWORK_SECURITY_GROUP_ID", None)
         or getattr(settings, "ENGINE_ECS_SECURITY_GROUP_ID", None)

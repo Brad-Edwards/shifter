@@ -249,7 +249,8 @@ class SSMExecutor:
                 IncludeAllInstances=True,
             )
         except ClientError:
-            return  # Instance might not exist yet
+            # Instance might not exist yet
+            return
         statuses = ec2_response.get("InstanceStatuses", [])
         if not statuses:
             return
@@ -266,7 +267,8 @@ class SSMExecutor:
                 ]
             )
         except ClientError:
-            return False  # May fail if instance not registered yet
+            # May fail if instance not registered yet
+            return False
         instances = response.get("InstanceInformationList", [])
         if not instances:
             return False
