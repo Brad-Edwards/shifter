@@ -10,6 +10,8 @@ from datetime import datetime, timedelta
 from unittest.mock import patch
 
 import pytest
+from django.core.exceptions import ValidationError
+from django.db import IntegrityError
 from django.utils import timezone
 
 from ctf.enums import (
@@ -18,7 +20,7 @@ from ctf.enums import (
     EventStatus,
     ParticipantStatus,
 )
-from ctf.exceptions import CTFRateLimitError, CTFStateError
+from ctf.exceptions import CTFRateLimitError, CTFStateError, CTFValidationError
 from ctf.models import CTFChallenge, CTFEvent, CTFHint, CTFParticipant, CTFSubmission
 from ctf.services.hint import use_hint
 from ctf.services.scoring import calculate_score
@@ -608,3 +610,56 @@ class TestSubmitFlagHintPenalty:
 
         assert submission.points_awarded == 0
         assert calculate_score(hint_participant.id) == 0
+
+
+@pytest.mark.django_db
+class TestCorrectSubmissionUniqueness:
+    """Regression for #1135 / #1137: a correct submission is unique per
+    (participant, challenge), so concurrent correct submissions cannot
+    double-score and the attempt path cannot be raced past the cap."""
+
+    def test_second_correct_submit_raises_already_solved(self, participant, challenge):
+        # An existing correct submission makes any further submit_flag for the
+        # same challenge raise CTF_ALREADY_SOLVED (the under-lock guard) without
+        # creating a second correct row — no need to mock the flag check.
+        CTFSubmission.objects.create(
+            participant=participant, challenge=challenge, submitted_flag="FLAG{ok}", is_correct=True
+        )
+
+        with pytest.raises(CTFValidationError) as exc_info:
+            submit_flag(participant.id, challenge.id, "FLAG{ok}")
+        assert exc_info.value.code == "CTF_ALREADY_SOLVED"
+
+        # Still exactly one correct row, score counted once.
+        assert CTFSubmission.objects.filter(participant=participant, challenge=challenge, is_correct=True).count() == 1
+
+    def test_db_rejects_a_second_correct_row(self, participant, challenge):
+        # Backstop: even bypassing the service, a second active correct row for
+        # the same (participant, challenge) is rejected by ctf_unique_correct_submission.
+        # A sequential duplicate trips model.full_clean (ValidationError); a true
+        # concurrent insert trips the DB partial unique index (IntegrityError).
+        CTFSubmission.objects.create(participant=participant, challenge=challenge, submitted_flag="a", is_correct=True)
+        with pytest.raises((IntegrityError, ValidationError)):
+            CTFSubmission.objects.create(
+                participant=participant, challenge=challenge, submitted_flag="b", is_correct=True
+            )
+
+    def test_incorrect_rows_are_not_constrained(self, participant, challenge):
+        # The constraint is scoped to is_correct=True; many wrong attempts are fine.
+        for i in range(3):
+            CTFSubmission.objects.create(
+                participant=participant, challenge=challenge, submitted_flag=f"w{i}", is_correct=False
+            )
+        assert CTFSubmission.objects.filter(participant=participant, challenge=challenge).count() == 3
+
+    def test_soft_deleted_correct_row_allows_resolve(self, participant, challenge):
+        # Scoped to deleted_at IS NULL, so a correct submission removed (e.g. on a
+        # disqualification revert) does not permanently block a legitimate re-solve.
+        first = CTFSubmission.objects.create(
+            participant=participant, challenge=challenge, submitted_flag="a", is_correct=True
+        )
+        first.deleted_at = timezone.now()
+        first.save(update_fields=["deleted_at"])
+
+        # No IntegrityError now that the prior correct row is soft-deleted.
+        CTFSubmission.objects.create(participant=participant, challenge=challenge, submitted_flag="b", is_correct=True)

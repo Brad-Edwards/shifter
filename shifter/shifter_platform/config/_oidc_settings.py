@@ -41,10 +41,16 @@ __all__ = [
     "OIDC_USERNAME_ALGO",
     "PLATFORM_BOOTSTRAP_STAFF_EMAILS",
     "PLATFORM_BOOTSTRAP_SUPERUSER_EMAILS",
+    "RISK_REGISTER_ALLOWED_COGNITO_GROUPS",
     "SESSION_COOKIE_AGE",
 ]
 
 DEBUG = os.environ.get("DJANGO_DEBUG", "False").lower() == "true"
+
+
+def _env_list(name: str) -> list[str]:
+    """Parse comma-separated environment variables into stripped string lists."""
+    return [item.strip() for item in os.environ.get(name, "").split(",") if item.strip()]
 
 
 def _env_csv(name: str) -> list[str]:
@@ -164,3 +170,12 @@ OIDC_EXEMPT_URLS = [
 # won't expire their sessions. This ensures no surprises from Django defaults.
 # 14 days
 SESSION_COOKIE_AGE = 60 * 60 * 24 * 14
+
+# Risk register Cognito group gate (issue #151). Fail closed when unset outside tests.
+RISK_REGISTER_ALLOWED_COGNITO_GROUPS = _env_list("RISK_REGISTER_ALLOWED_COGNITO_GROUPS")
+if not RISK_REGISTER_ALLOWED_COGNITO_GROUPS and not IS_TEST_RUN:
+    warnings.warn(
+        "RISK_REGISTER_ALLOWED_COGNITO_GROUPS is unset; risk register access is denied for all principals.",
+        RuntimeWarning,
+        stacklevel=2,
+    )
