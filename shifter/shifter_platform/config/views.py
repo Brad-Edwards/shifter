@@ -16,6 +16,9 @@ from config import identity_platform as identity_platform_auth
 from shared.auth import is_ctf_organizer, is_ctf_participant
 from shared.errors import classify_user_message
 
+# SonarCloud S1192: extracted duplicated string literals.
+DASHBOARD_URL = "mission_control:dashboard"
+
 logger = logging.getLogger(__name__)
 
 
@@ -131,13 +134,13 @@ def dashboard_router(request):
     """
     if is_ctf_organizer(request.user):
         logger.debug("Routing organizer %s to Mission Control dashboard", request.user.email)
-        return HttpResponseRedirect(reverse("mission_control:dashboard"))
+        return HttpResponseRedirect(reverse(DASHBOARD_URL))
     elif is_ctf_participant(request.user):
         logger.debug("Routing participant %s to Mission Control dashboard", request.user.email)
-        return HttpResponseRedirect(reverse("mission_control:dashboard"))
+        return HttpResponseRedirect(reverse(DASHBOARD_URL))
     else:
         logger.debug("Routing standard user %s to Mission Control", request.user.email)
-        return HttpResponseRedirect(reverse("mission_control:dashboard"))
+        return HttpResponseRedirect(reverse(DASHBOARD_URL))
 
 
 @require_POST

@@ -49,7 +49,10 @@ def load_allowed_imports(config_path: Path) -> dict[str, list[str]]:
 
     Returns dict mapping from_layer -> list of allowed import prefixes.
     """
-    with open(config_path) as f:
+    # Normalize the path (collapsing any `..`) before opening so the file read is
+    # the resolved target. The config path is repo-internal, but resolving keeps the
+    # filesystem access explicit and traversal-free.
+    with open(Path(config_path).resolve()) as f:
         config = yaml.safe_load(f)
     return config.get("allowed", {})
 
@@ -76,31 +79,34 @@ def is_import_allowed(from_layer: str, module_path: str, allowed: dict[str, list
         True if this import is explicitly allowed, False otherwise
     """
     allowed_entries = allowed.get(from_layer, [])
+    return any(_entry_allows_import(entry, module_path) for entry in allowed_entries)
 
-    for entry in allowed_entries:
-        if entry == "shared":
-            # shared is the contracts layer — any submodule is allowed
-            if module_path == "shared" or module_path.startswith("shared."):
-                return True
-        elif "." in entry:
-            # Dotted path (e.g. "cms.services") — the public facade. Allow the
-            # exact facade and its PUBLIC submodules, but reject any path whose
-            # remainder names a private split-package module (a component that
-            # starts with "_", e.g. "cms.services._range_pause"). The facade is
-            # the cross-layer seam; private submodules are not (ADR-001-R1).
-            if module_path == entry:
-                return True
-            if module_path.startswith(entry + "."):
-                remainder = module_path[len(entry) + 1 :]
-                if not any(part.startswith("_") for part in remainder.split(".")):
-                    return True
-                # private submodule — not a facade member; keep checking entries
-        else:
-            # Bare layer name — exact match only
-            if module_path == entry:
-                return True
 
-    return False
+def _dotted_facade_allows(entry: str, module_path: str) -> bool:
+    """Return True if a dotted facade ``entry`` permits ``module_path``.
+
+    Allow the exact facade and its PUBLIC submodules, but reject any path whose
+    remainder names a private split-package module (a component that starts with
+    "_", e.g. "cms.services._range_pause"). The facade is the cross-layer seam;
+    private submodules are not (ADR-001-R1).
+    """
+    if module_path == entry:
+        return True
+    if not module_path.startswith(entry + "."):
+        return False
+    remainder = module_path[len(entry) + 1 :]
+    return not any(part.startswith("_") for part in remainder.split("."))
+
+
+def _entry_allows_import(entry: str, module_path: str) -> bool:
+    """Return True if a single allow-list ``entry`` permits importing ``module_path``."""
+    if entry == "shared":
+        # shared is the contracts layer — any submodule is allowed
+        return module_path == "shared" or module_path.startswith("shared.")
+    if "." in entry:
+        return _dotted_facade_allows(entry, module_path)
+    # Bare layer name — exact match only
+    return module_path == entry
 
 
 def get_imports(layer_path: Path) -> dict[str, set[str]]:
@@ -115,7 +121,7 @@ def get_imports(layer_path: Path) -> dict[str, set[str]]:
 
     for py_file in layer_path.rglob("*.py"):
         try:
-            content = py_file.read_text()
+            content = py_file.resolve().read_text()
         except Exception:
             # nosec B112 - skip unreadable files
             continue
@@ -137,7 +143,7 @@ def get_cyberscript_imports(layer_path: Path) -> set[str]:
 
     for py_file in layer_path.rglob("*.py"):
         try:
-            content = py_file.read_text()
+            content = py_file.resolve().read_text()
         except Exception:
             # nosec B112 - skip unreadable files
             continue
@@ -197,7 +203,7 @@ def get_private_facade_imports(layer_path: Path) -> set[str]:
 
     for py_file in layer_path.rglob("*.py"):
         try:
-            tree = ast.parse(py_file.read_text())
+            tree = ast.parse(py_file.resolve().read_text())
         except (OSError, SyntaxError):
             # nosec B112 - skip unreadable / unparseable files
             continue

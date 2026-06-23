@@ -318,15 +318,17 @@ class TestSSHConsumerReadOutput:
         assert message["data"] == "Hello World"
 
     @pytest.mark.asyncio
-    async def test_handles_cancelled_error_silently(self, consumer):
-        """CancelledError (from task cancellation) is handled silently."""
+    async def test_reraises_cancelled_error_after_cleanup(self, consumer):
+        """CancelledError propagates (cancellation must not be swallowed), but
+        cleanup still runs via the finally block."""
         mock_ssh = AsyncMock()
         mock_ssh.is_connected = True
         mock_ssh.receive.side_effect = asyncio.CancelledError()
         consumer.ssh_conn = mock_ssh
         consumer.instance_uuid = "test"
 
-        await consumer._read_ssh_output()
+        with pytest.raises(asyncio.CancelledError):
+            await consumer._read_ssh_output()
 
         consumer.close.assert_awaited_once()
 

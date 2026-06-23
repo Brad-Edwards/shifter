@@ -10,6 +10,9 @@ from django.utils import timezone
 
 from shared.db import SoftDeleteManager, SoftDeleteMixin, SoftDeleteQuerySet
 
+# SonarCloud S1192: extracted duplicated string literals.
+API_KEY_LABEL = "API Key"
+
 
 class Severity(models.TextChoices):
     """Risk severity levels."""
@@ -219,7 +222,7 @@ class APIKey(models.Model):
 
     class Meta:
         ordering = ["-created_at"]
-        verbose_name = "API Key"
+        verbose_name = API_KEY_LABEL
         verbose_name_plural = "API Keys"
         indexes = [
             models.Index(fields=["prefix"]),
@@ -340,7 +343,7 @@ class AuditLog(models.Model):
         # Risk Register entities
         RISK = "risk", "Risk"
         COMMENT = "comment", "Comment"
-        APIKEY = "apikey", "API Key"
+        APIKEY = "apikey", API_KEY_LABEL
         # Platform entities
         RANGE = "range", "Range"
         CREDENTIAL = "credential", "Credential"
@@ -355,7 +358,7 @@ class AuditLog(models.Model):
 
     class ActorType(models.TextChoices):
         USER = "user", "User"
-        APIKEY = "apikey", "API Key"
+        APIKEY = "apikey", API_KEY_LABEL
         SYSTEM = "system", "System"
         COGNITO = "cognito", "Cognito"
 

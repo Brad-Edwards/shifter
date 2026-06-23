@@ -161,7 +161,7 @@ def run_range_terraform(operation: str, request_id: str) -> None:
         _dispatch_terraform_operation(operation, request_id, range_id, user_id, range_spec)
     except Exception as e:
         error_msg = str(e)[:1000]
-        logger.error("Range Terraform operation failed: %s", error_msg)
+        logger.exception("Range Terraform operation failed: %s", error_msg)
         if operation == "up":
             _attempt_terraform_auto_cleanup(request_id, range_id, user_id, range_spec)
         publish_failed(
