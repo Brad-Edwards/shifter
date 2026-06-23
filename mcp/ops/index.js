@@ -32,6 +32,8 @@ import {
   DEFAULT_GITHUB_REPO,
   BASE_AMI_TYPES,
   PROMOTE_AMI_REF,
+  GCE_IMAGE_TYPES,
+  PROMOTE_GCE_IMAGE_REF,
   buildGhWorkflowRunArgs,
   ghExec,
   resolveGitRef,
@@ -605,6 +607,28 @@ function triggerAmiWorkflow({ workflow, ami_type, ref, actionsPath }) {
   );
 }
 
+// GCE image build/promote (issue #505, PLAT-001.10). Parallel to
+// triggerAmiWorkflow but passes the GCP-scoped `image_type` workflow input
+// (the GCE workflows never use the AWS `ami_type` input name). The dispatch
+// `--ref` is the single source of truth for the built branch: the GCE
+// workflows check out the dispatched ref (github.sha) rather than a separate
+// free-form input, so the branch reported here is the branch actually built.
+function triggerGceImageWorkflow({ workflow, image_type, ref, actionsPath }) {
+  const branch = ref ?? resolveGitRef(_REPO_ROOT);
+  ghExec(
+    buildGhWorkflowRunArgs({
+      workflow,
+      repo: DEFAULT_GITHUB_REPO,
+      ref: branch,
+      inputs: { image_type },
+    }),
+  );
+  return (
+    `Triggered ${workflow} for ${image_type} on ref ${branch}. ` +
+    `View at: https://github.com/${DEFAULT_GITHUB_REPO}/actions/workflows/${actionsPath}`
+  );
+}
+
 export function registerAllOpsTools(ctx) {
   // `approve` is the operator-confirmation MCP tool. The agent reads
 // the token off the operator's terminal (which the server printed to
@@ -667,6 +691,9 @@ const SafeName = z.string().regex(/^[\w.*?-]+$/, MSG_INVALID_CHARACTERS);
 const AmiTypeSchema = z
   .enum(BASE_AMI_TYPES)
   .describe("AMI type (kali, ubuntu, windows, dc, brokenbk)");
+const GceImageTypeSchema = z
+  .enum(GCE_IMAGE_TYPES)
+  .describe("GCE image type (ubuntu, brokenbk, kali, windows, dc)");
 const SecretIdSchema = z
   .string()
   .regex(/^[\w/+=.@-]+$/, MSG_INVALID_CHARACTERS);
@@ -2533,6 +2560,64 @@ registerTool(ctx, {
           ami_type,
           ref: PROMOTE_AMI_REF,
           actionsPath: "packer-promote.yml",
+        }),
+      );
+    } catch (e) {
+      return err(e);
+    }
+  },
+});
+
+// ==========================================================================
+// GitHub Actions — GCE image build / promote (issue #505, PLAT-001.10)
+// ==========================================================================
+
+registerTool(ctx, {
+  name: "build_gce_image",
+  klass: "infra_mutation",
+  description:
+    "Trigger packer-gcp.yml to build a GCE guest image in dev (the GCP analog of build_ami). Requires GH_TOKEN or GITHUB_TOKEN.",
+  schema: {
+    image_type: GceImageTypeSchema,
+    ref: SafePath.optional().describe(
+      "Branch to build from (default: current git branch, else dev)",
+    ),
+  },
+  handler: async ({ image_type, ref }) => {
+    try {
+      return ok(
+        triggerGceImageWorkflow({
+          workflow: "packer-gcp.yml",
+          image_type,
+          ref,
+          actionsPath: "packer-gcp.yml",
+        }),
+      );
+    } catch (e) {
+      return err(e);
+    }
+  },
+});
+
+registerTool(ctx, {
+  name: "promote_gce_image",
+  klass: "infra_mutation",
+  description:
+    "Trigger packer-gcp-promote.yml to promote a GCE image to prod (the GCP analog of promote_ami). Requires GH_TOKEN or GITHUB_TOKEN.",
+  schema: {
+    env: z
+      .literal("prod")
+      .describe("Must be prod — promotion updates production GCE images."),
+    image_type: GceImageTypeSchema,
+  },
+  handler: async ({ image_type }) => {
+    try {
+      return ok(
+        triggerGceImageWorkflow({
+          workflow: "packer-gcp-promote.yml",
+          image_type,
+          ref: PROMOTE_GCE_IMAGE_REF,
+          actionsPath: "packer-gcp-promote.yml",
         }),
       );
     } catch (e) {

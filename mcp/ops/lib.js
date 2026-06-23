@@ -36,6 +36,20 @@ export const BASE_AMI_TYPES = Object.freeze([
   "brokenbk",
 ]);
 
+/** Protected integration branch for prod GCE image promotion workflows. */
+export const PROMOTE_GCE_IMAGE_REF = "dev";
+
+// GCE image build/promote (issue #505, PLAT-001.10). Mirrors the AWS AMI
+// constants above for the GCP guest-image bake pipeline. The order matches the
+// `image_type` choices in .github/workflows/packer-gcp.yml.
+export const GCE_IMAGE_TYPES = Object.freeze([
+  "ubuntu",
+  "brokenbk",
+  "kali",
+  "windows",
+  "dc",
+]);
+
 /**
  * Build argv for `gh workflow run`. User-controlled values land as
  * literal argv elements; no shell interpolation (ADR-010).

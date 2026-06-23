@@ -42,6 +42,32 @@ operator email against the Terraform output `identity_allowed_email_domain`.
 When Terraform outputs are not available yet, it uses
 `SHIFTER_GCP_OPERATOR_EMAIL_DOMAIN` from the process environment.
 
+## GCP Packer image builds
+
+Consumed by `.github/workflows/packer-gcp.yml` (build) and
+`.github/workflows/packer-gcp-promote.yml` (promote). Builds run on
+`ubuntu-latest` with Workload Identity Federation (no long-lived SA keys);
+variables reach Packer as `PKR_VAR_*` environment values, never `-var` CLI
+flags. Reuses the deploy secrets `GCP_PROJECT_ID`, `GCP_SERVICE_ACCOUNT`,
+`GCP_WORKLOAD_IDENTITY_PROVIDER`, and the variable `GCP_REGION` from the table
+above, plus the following:
+
+| Name | Type | Required | Purpose |
+|------|------|----------|---------|
+| `GCP_PACKER_ZONE` | variable | no | Build zone. Defaults to `${GCP_REGION}-a`. |
+| `GCP_PACKER_NETWORK` | variable | no | Builder VPC network. Default `default`. |
+| `GCP_PACKER_SUBNETWORK` | variable | no | Builder subnetwork. Default `default`. |
+| `GCP_PACKER_SERVICE_ACCOUNT` | variable | no | Service account the builder VM runs as. Falls back to `GCP_SERVICE_ACCOUNT`. |
+| `GCP_PACKER_MACHINE_TYPE` | variable | no | Builder machine type. Default `e2-standard-2`. |
+| `GCP_PACKER_USE_INTERNAL_IP` | variable | no | `true` builds without an external IP (requires IAP `35.235.240.0/20` to the builder). Default `false`. |
+| `GCP_KALI_SOURCE_IMAGE` | secret | for `kali` | Operator-imported Kali GCE image name/self-link. GCP has no public Kali image; the `kali` build fails loud if this is unset. See `shifter/packer/gcp/README.md`. |
+| `GCP_DEV_PROJECT_ID` | secret | for promote | Source (dev) project for `packer-gcp-promote.yml`; the prod project is the `prod` environment's `GCP_PROJECT_ID`. |
+
+Images are published to the image family `shifter-<type>` (the version pointer;
+there is no SSM equivalent). For Windows/DC, the workflow generates a throwaway
+`winrm_bootstrap_password` per run and injects it via `PKR_VAR_*`; nothing is
+committed.
+
 ## AWS portal (`dev` / `prod`)
 
 Consumed by `.github/workflows/_shifter-platform.yml`. The committed
