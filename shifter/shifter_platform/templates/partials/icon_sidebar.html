@@ -221,7 +221,7 @@
                 </div>
             {% endif %}
             {# Risk Register - Staff only #}
-            {% if user.is_staff %}
+            {% if can_access_risk_register %}
                 <div class="tw-mx-3 tw-mb-2
                             {% if active_nav == 'risks' %}
                                 active-top-item
