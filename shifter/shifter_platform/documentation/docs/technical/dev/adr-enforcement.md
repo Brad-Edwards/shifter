@@ -123,6 +123,17 @@ The first slice intentionally stays small:
   first-party service functions, views, render/logging/transaction aliases,
   or model helpers.
 
+- `documentation-coverage`
+  Enforces ADR-022-R1 (GEN-001): every major platform feature listed in
+  `docs/adr/documentation-coverage.yaml` must declare at least one user doc and
+  at least one technical doc. The check validates the whole manifest on every
+  run (it ignores the changed-file list, like `adr-registry`): each referenced
+  doc must exist under the in-app docs tree (`docs_root`), must not live under a
+  `_deprecated`/hidden path, and must be reachable from an `index.md`. This
+  keeps the GEN-001 contract from silently regressing — for example when a
+  feature's doc is removed but its index link is left dangling. Adding a major
+  feature means adding a manifest entry pointing at its user and technical docs.
+
 - `import-linter`
   Adds package-level forbidden-import contracts across the main Django app layers.
 

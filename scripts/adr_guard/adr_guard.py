@@ -499,6 +499,166 @@ def check_guardrail_docs(repo_root: Path, files: list[str] | None) -> list[Viola
     ]
 
 
+DOCS_COVERAGE_MANIFEST = "docs/adr/documentation-coverage.yaml"
+DOCS_COVERAGE_RULE_ID = "ADR-022-R1"
+_DOCS_EXCLUDED_PART = "_deprecated"
+_MARKDOWN_LINK_PATTERN = re.compile(r"\]\(([^)\s]+)")
+
+
+def _normalize_doc_slug(value: str) -> str:
+    """Normalize a posix doc slug, resolving ``.``/``..`` segments."""
+    segments: list[str] = []
+    for segment in value.split("/"):
+        if segment in ("", "."):
+            continue
+        if segment == "..":
+            if segments:
+                segments.pop()
+            continue
+        segments.append(segment)
+    return "/".join(segments)
+
+
+def _doc_path_is_excluded(slug: str) -> bool:
+    """A doc under a ``_deprecated`` or hidden path part is not serveable."""
+    return any(part == _DOCS_EXCLUDED_PART or part.startswith(".") for part in slug.split("/") if part)
+
+
+def _collect_index_link_slugs(docs_root: Path) -> set[str]:
+    """Return the set of docs-root-relative slugs linked from any index.md."""
+    linked: set[str] = set()
+    if not docs_root.is_dir():
+        return linked
+    for index_file in docs_root.rglob("index.md"):
+        rel_parts = index_file.relative_to(docs_root).parts
+        if any(part == _DOCS_EXCLUDED_PART or part.startswith(".") for part in rel_parts):
+            continue
+        index_dir = "/".join(rel_parts[:-1])
+        try:
+            text = index_file.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        for target in _MARKDOWN_LINK_PATTERN.findall(text):
+            target = target.split("#", 1)[0].split("?", 1)[0]
+            if not target or "://" in target or target.startswith(("mailto:", "/")):
+                continue
+            if target.endswith(".md"):
+                target = target[: -len(".md")]
+            linked.add(_normalize_doc_slug(f"{index_dir}/{target}"))
+    return linked
+
+
+def check_documentation_coverage(repo_root: Path, files: list[str] | None) -> list[Violation]:
+    """Require every major feature to carry user and technical documentation.
+
+    The coverage manifest (``docs/adr/documentation-coverage.yaml``) is the
+    source of truth, so the check validates the whole manifest on every run
+    regardless of ``files`` (like ``check_adr_registry``). Each feature must
+    declare at least one user doc and one technical doc; every referenced doc
+    must exist as a serveable file under the in-app docs tree (not under a
+    ``_deprecated``/hidden path) and be reachable from an ``index.md``.
+    """
+    manifest_path = repo_root / DOCS_COVERAGE_MANIFEST
+    try:
+        manifest = _load_json_yaml(manifest_path)
+    except (OSError, ValueError, json.JSONDecodeError) as err:
+        return [Violation("documentation-coverage", DOCS_COVERAGE_RULE_ID, DOCS_COVERAGE_MANIFEST, str(err))]
+
+    if not isinstance(manifest, dict):
+        return [
+            Violation(
+                "documentation-coverage",
+                DOCS_COVERAGE_RULE_ID,
+                DOCS_COVERAGE_MANIFEST,
+                "documentation coverage manifest must be a JSON object",
+            )
+        ]
+
+    docs_root_rel = manifest.get("docs_root")
+    features = manifest.get("features")
+    if not isinstance(docs_root_rel, str) or not isinstance(features, list):
+        return [
+            Violation(
+                "documentation-coverage",
+                DOCS_COVERAGE_RULE_ID,
+                DOCS_COVERAGE_MANIFEST,
+                "manifest must define a string 'docs_root' and a list of 'features'",
+            )
+        ]
+
+    docs_root = repo_root / docs_root_rel
+    linked_slugs = _collect_index_link_slugs(docs_root)
+    violations: list[Violation] = []
+
+    for feature in features:
+        if not isinstance(feature, dict):
+            violations.append(
+                Violation(
+                    "documentation-coverage",
+                    DOCS_COVERAGE_RULE_ID,
+                    DOCS_COVERAGE_MANIFEST,
+                    "each feature entry must be a JSON object",
+                )
+            )
+            continue
+        feature_id = feature.get("id") or "<unknown>"
+        user_docs = feature.get("user_docs") or []
+        technical_docs = feature.get("technical_docs") or []
+        if not user_docs:
+            violations.append(
+                Violation(
+                    "documentation-coverage",
+                    DOCS_COVERAGE_RULE_ID,
+                    DOCS_COVERAGE_MANIFEST,
+                    f"feature {feature_id} must declare at least one user doc",
+                )
+            )
+        if not technical_docs:
+            violations.append(
+                Violation(
+                    "documentation-coverage",
+                    DOCS_COVERAGE_RULE_ID,
+                    DOCS_COVERAGE_MANIFEST,
+                    f"feature {feature_id} must declare at least one technical doc",
+                )
+            )
+        for rel in list(user_docs) + list(technical_docs):
+            slug = _normalize_doc_slug(rel)
+            doc_path = f"{docs_root_rel}/{slug}"
+            if _doc_path_is_excluded(slug):
+                violations.append(
+                    Violation(
+                        "documentation-coverage",
+                        DOCS_COVERAGE_RULE_ID,
+                        doc_path,
+                        f"feature {feature_id} references a deprecated or hidden doc that is not served",
+                    )
+                )
+                continue
+            if not (docs_root / slug).is_file():
+                violations.append(
+                    Violation(
+                        "documentation-coverage",
+                        DOCS_COVERAGE_RULE_ID,
+                        doc_path,
+                        f"feature {feature_id} references a missing doc",
+                    )
+                )
+                continue
+            doc_slug = slug[: -len(".md")] if slug.endswith(".md") else slug
+            if doc_slug not in linked_slugs:
+                violations.append(
+                    Violation(
+                        "documentation-coverage",
+                        DOCS_COVERAGE_RULE_ID,
+                        doc_path,
+                        f"feature {feature_id} references an orphaned doc not linked from any index.md",
+                    )
+                )
+
+    return violations
+
+
 CLOUD_ROOTS = (
     "shifter/shifter_platform/shared/cloud",
     "shifter/engine/provisioner/cloud",
@@ -5271,6 +5431,7 @@ CHECKS = {
     "deploy-verification-fail-loud": check_deploy_verification_fail_loud,
     "deploy-workflow-runner-exposure": check_deploy_runner_exposure,
     "no-live-cloud-identifiers": check_no_live_cloud_identifiers,
+    "documentation-coverage": check_documentation_coverage,
 }
 CHECK_LEVELS = {
     "fast": [
@@ -5292,6 +5453,7 @@ CHECK_LEVELS = {
         "deploy-verification-fail-loud",
         "deploy-workflow-runner-exposure",
         "no-live-cloud-identifiers",
+        "documentation-coverage",
     ],
     "ci": [
         "adr-registry",
@@ -5313,6 +5475,7 @@ CHECK_LEVELS = {
         "deploy-verification-fail-loud",
         "deploy-workflow-runner-exposure",
         "no-live-cloud-identifiers",
+        "documentation-coverage",
     ],
     "all": list(CHECKS),
 }
