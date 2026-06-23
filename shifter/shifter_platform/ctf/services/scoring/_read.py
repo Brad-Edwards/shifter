@@ -21,6 +21,7 @@ rebuildable from the authoritative rows, so the two strategies agree.
 from __future__ import annotations
 
 import logging
+from collections import defaultdict
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
@@ -357,48 +358,61 @@ def _recompute_team_scoreboard(
     if bracket_id is not None:
         member_count_filter &= Q(members__bracket_id=bracket_id)
 
-    teams = (
-        CTFTeam.objects.filter(event_id=event_id)
-        .annotate(
-            submission_score=Coalesce(
-                Subquery(
-                    submission_qs.order_by()
-                    .values("participant__team_id")
-                    .annotate(total=Coalesce(Sum("points_awarded"), 0))
-                    .values("total"),
-                    output_field=IntegerField(),
-                ),
-                0,
+    teams_qs = CTFTeam.objects.filter(event_id=event_id).annotate(
+        award_points=Coalesce(
+            Subquery(
+                award_qs.order_by()
+                .values("participant__team_id")
+                .annotate(total=Coalesce(Sum("points"), 0))
+                .values("total"),
+                output_field=IntegerField(),
             ),
-            award_points=Coalesce(
-                Subquery(
-                    award_qs.order_by()
-                    .values("participant__team_id")
-                    .annotate(total=Coalesce(Sum("points"), 0))
-                    .values("total"),
-                    output_field=IntegerField(),
-                ),
-                0,
+            0,
+        ),
+        solve_count=Coalesce(
+            Subquery(
+                submission_qs.order_by()
+                .values("participant__team_id")
+                .annotate(c=Count("challenge_id", distinct=True))
+                .values("c"),
+                output_field=IntegerField(),
             ),
-            computed_score=F("submission_score") + F("award_points"),
-            solve_count=Coalesce(
-                Subquery(
-                    submission_qs.order_by()
-                    .values("participant__team_id")
-                    .annotate(c=Count("challenge_id", distinct=True))
-                    .values("c"),
-                    output_field=IntegerField(),
-                ),
-                0,
-            ),
-            computed_member_count=Count("members", filter=member_count_filter, distinct=True),
-            last_solve_time=Subquery(
-                submission_qs.order_by().values("participant__team_id").annotate(m=Max("submitted_at")).values("m"),
-            ),
-        )
-        .annotate(order_last_solve=_nulls_last(F("last_solve_time")))
-        .order_by("-computed_score", "order_last_solve")
+            0,
+        ),
+        computed_member_count=Count("members", filter=member_count_filter, distinct=True),
+        last_solve_time=Subquery(
+            submission_qs.order_by().values("participant__team_id").annotate(m=Max("submitted_at")).values("m"),
+        ),
+        # Placeholder; the real, challenge-deduped score is set in Python below
+        # (the DB cannot Sum a per-challenge Max in one query).
+        computed_score=Value(0, output_field=IntegerField()),
     )
+
+    # Deduped submission points per team: a challenge solved by more than one
+    # teammate counts once, at its best (max) points (#1138). The DB cannot
+    # Sum() a Max() annotation in one query, so group by (team, challenge) ->
+    # max in the DB and sum the per-challenge maxes per team in Python. This is
+    # the cold (frozen / bracket) path, so per-team iteration is acceptable.
+    dedupe_qs = CTFSubmission.objects.filter(
+        is_correct=True,
+        participant__team__event_id=event_id,
+    ).filter(eligible_participant_q("participant__"))
+    if freeze_at:
+        dedupe_qs = dedupe_qs.filter(submitted_at__lt=freeze_at)
+    if bracket_id is not None:
+        dedupe_qs = dedupe_qs.filter(participant__bracket_id=bracket_id)
+    team_submission_points: dict[Any, int] = defaultdict(int)
+    for row in dedupe_qs.values("participant__team_id", "challenge_id").annotate(best=Max("points_awarded")):
+        team_submission_points[row["participant__team_id"]] += row["best"]
+
+    # Combine deduped submission points with awards, then rank in Python (the
+    # DB ordering used the flat submission_score annotation we removed). Ties
+    # break on earliest last solve, nulls last — matching the materialized path.
+    _MIN_AWARE = datetime.min.replace(tzinfo=UTC)
+    teams = list(teams_qs)
+    for team in teams:
+        team.computed_score = team_submission_points.get(team.id, 0) + team.award_points
+    teams.sort(key=lambda t: (-t.computed_score, t.last_solve_time is None, t.last_solve_time or _MIN_AWARE))
 
     if limit:
         teams = teams[:limit]
