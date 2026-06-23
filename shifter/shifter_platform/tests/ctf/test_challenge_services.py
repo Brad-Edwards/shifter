@@ -316,6 +316,33 @@ class TestMultiFlagVerification:
         assert verify_flag(challenge, "FLAG{legacy}") is True
         assert verify_flag(challenge, "FLAG{wrong}") is False
 
+    def test_verify_flag_sentinel_hash_fails_loudly(self, ctf_event_draft, caplog):
+        """#1146: a multi-flag challenge whose flag rows are all gone leaves a
+        sentinel flag_hash; verify_flag must not silently treat it as a hash."""
+        import logging
+
+        challenge = CTFChallenge.objects.create(
+            event=ctf_event_draft,
+            name="Emptied Multi-flag",
+            description="All CTFFlag rows removed; sentinel flag_hash remains",
+            category=ChallengeCategory.WEB.value,
+            points=100,
+            difficulty=ChallengeDifficulty.EASY.value,
+            flag_hash="multi-flag",
+        )
+        assert challenge.flags.count() == 0
+
+        # App loggers set propagate=False, so attach caplog's handler directly to
+        # the service logger to capture the loud error.
+        svc_logger = logging.getLogger("ctf.services.challenge")
+        svc_logger.addHandler(caplog.handler)
+        try:
+            with caplog.at_level(logging.ERROR, logger="ctf.services.challenge"):
+                assert verify_flag(challenge, "anything") is False
+        finally:
+            svc_logger.removeHandler(caplog.handler)
+        assert "every submission will be rejected" in caplog.text
+
     def test_verify_flag_static_case_insensitive(self, ctf_event_draft):
         """Static flag with case_sensitive=False normalizes to lowercase."""
         challenge = CTFChallenge.objects.create(
