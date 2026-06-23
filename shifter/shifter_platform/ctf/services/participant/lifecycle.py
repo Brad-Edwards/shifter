@@ -65,15 +65,8 @@ def invite_participant(
             },
         )
 
-    # Check max participants
-    if event.max_participants:
-        current_count = event.participants.count()
-        if current_count >= event.max_participants:
-            raise CTFValidationError(
-                f"Event has reached maximum participants ({event.max_participants})",
-                code="CTF_MAX_PARTICIPANTS_REACHED",
-                details={"event_id": str(event_id), "max": event.max_participants},
-            )
+    # Capacity is enforced under the event row lock inside the transaction
+    # below (#1145), so concurrent invites cannot race past max_participants.
 
     # Check for existing participant
     if CTFParticipant.objects.filter(event=event, email__iexact=email).exists():
@@ -94,6 +87,16 @@ def invite_participant(
             ) from None
 
     with transaction.atomic():
+        # Lock the event so the capacity check and the insert cannot race past
+        # max_participants under concurrent invites (#1145).
+        CTFEvent.objects.select_for_update().get(pk=event.pk)
+        if event.max_participants and event.participants.count() >= event.max_participants:
+            raise CTFValidationError(
+                f"Event has reached maximum participants ({event.max_participants})",
+                code="CTF_MAX_PARTICIPANTS_REACHED",
+                details={"event_id": str(event_id), "max": event.max_participants},
+            )
+
         participant = CTFParticipant.objects.create(
             event=event,
             email=email.lower().strip(),
@@ -318,24 +321,49 @@ def _set_ctf_participant_profile(user: User, event: CTFEvent) -> None:
 
 
 def _clear_ctf_participant_profile(user: User, event: CTFEvent) -> None:
-    """Remove CTF Participant group and clear active_ctf_event.
+    """Re-point or clear the user's CTF profile when removed from ``event``.
 
-    Only clears if the profile's active_ctf_event matches the given event,
-    to avoid clobbering a profile linked to a different event.
+    Only acts when the profile's ``active_ctf_event`` is the given event. The
+    CTF Participant group is platform-wide, so it must only be removed when the
+    user has no other eligible participation left; otherwise removing it (and
+    nulling ``active_ctf_event``) would lock the user out of unrelated events
+    they still belong to (#1142). When another eligible participation exists,
+    re-point ``active_ctf_event`` to it and keep the group.
     """
     from django.contrib.auth.models import Group
 
+    from ctf.services.participant.queries import eligible_participant_q
     from management.services import get_user_profile, set_active_ctf_event
     from shared.auth import CTF_PARTICIPANT_GROUP
 
     profile = get_user_profile(user)
-    if profile.active_ctf_event_id == event.pk:
-        participant_group = Group.objects.filter(name=CTF_PARTICIPANT_GROUP).first()
-        if participant_group:
-            user.groups.remove(participant_group)
-        set_active_ctf_event(user, None)
+    if profile.active_ctf_event_id != event.pk:
+        return
+
+    other = (
+        CTFParticipant.objects.filter(eligible_participant_q(), user=user)
+        .exclude(event=event)
+        .order_by("-event__event_start")
+        .first()
+    )
+    if other is not None:
+        # Still an eligible participant elsewhere: keep CTF access, just move the
+        # active event so role-scoped views resolve the remaining participation.
+        set_active_ctf_event(user, other.event_id)
         logger.info(
-            "Cleared CTF participant profile for user %s (event %s)",
+            "Re-pointed CTF active event for user %s from %s to %s",
             user.email,
             event.pk,
+            other.event_id,
         )
+        return
+
+    participant_group = Group.objects.filter(name=CTF_PARTICIPANT_GROUP).first()
+    if participant_group:
+        user.groups.remove(participant_group)
+    set_active_ctf_event(user, None)
+    logger.info(
+        "Cleared CTF participant profile for user %s (event %s)",
+        user.email,
+        event.pk,
+    )

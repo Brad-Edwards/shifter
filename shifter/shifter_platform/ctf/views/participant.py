@@ -6,6 +6,7 @@ import logging
 from typing import TYPE_CHECKING
 
 from django.contrib.auth.decorators import login_required
+from django.db import transaction
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import render
 from django.views.decorators.csrf import ensure_csrf_cookie
@@ -315,19 +316,26 @@ def team_join(request: HttpRequest) -> HttpResponse:
             team = CTFTeam.objects.filter(event=event, invite_code=invite_code).first()
             if not team:
                 error = "Invalid invite code."
-            elif team.is_full:
-                error = "This team is full."
             elif participant.team_id == team.id:
                 error = "You are already on this team."
             else:
-                _join_team_and_recompute(participant, team)
-                logger.info(
-                    "Participant %s joined team %s in event %s",
-                    participant.id,
-                    team.id,
-                    event.id,
-                )
-                return redirect("ctf:participant_team")
+                # Serialize concurrent joins on the team so the capacity check and
+                # the membership write cannot race past team_size_limit (#1140):
+                # lock the team row, then re-check is_full under the lock.
+                with transaction.atomic():
+                    locked_team = CTFTeam.objects.select_for_update().get(pk=team.pk)
+                    if locked_team.is_full:
+                        error = "This team is full."
+                    else:
+                        _join_team_and_recompute(participant, locked_team)
+                if error is None:
+                    logger.info(
+                        "Participant %s joined team %s in event %s",
+                        participant.id,
+                        team.id,
+                        event.id,
+                    )
+                    return redirect("ctf:participant_team")
 
     context = {
         "participant": participant,

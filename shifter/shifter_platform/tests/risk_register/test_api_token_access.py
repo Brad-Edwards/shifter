@@ -12,6 +12,8 @@ from rest_framework.test import APIClient
 from shared.api_tokens import scopes
 from shared.api_tokens.models import ApiToken
 
+from .conftest import grant_risk_register_access
+
 pytestmark = pytest.mark.django_db
 
 RISKS_URL = "/api/v1/risks/"
@@ -20,12 +22,14 @@ API_KEYS_URL = "/api/v1/api-keys/"
 
 @pytest.fixture
 def staff(django_user_model):
-    return django_user_model.objects.create_user(
+    user = django_user_model.objects.create_user(
         username="staff",
         email="staff@example.com",
         password="pw",
         is_staff=True,
     )
+    grant_risk_register_access(user)
+    return user
 
 
 @pytest.fixture

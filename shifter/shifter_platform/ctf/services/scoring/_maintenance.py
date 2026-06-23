@@ -103,20 +103,25 @@ def recompute_team_score(team_id: UUID | None) -> None:
         )
 
         if member_ids:
-            submissions = CTFSubmission.objects.filter(
+            correct = CTFSubmission.objects.filter(
                 participant_id__in=member_ids,
                 is_correct=True,
-            ).aggregate(
-                points=Coalesce(Sum("points_awarded"), 0),
-                solves=Count("challenge_id", distinct=True),
-                last_solve=Max("submitted_at"),
             )
+            # Dedupe by challenge: a challenge solved by more than one teammate
+            # counts once for the team, at its best (max) points. A plain
+            # Sum("points_awarded") double-counted shared solves (#1138). Summed
+            # in Python over the per-challenge maxes to avoid a nested DB
+            # aggregate; the distinct-challenge set is small.
+            per_challenge = list(
+                correct.values("challenge_id").annotate(best=Max("points_awarded")).values_list("best", flat=True)
+            )
+            challenge_points = sum(per_challenge)
+            last_solve = correct.aggregate(last_solve=Max("submitted_at"))["last_solve"]
             award_points = CTFAward.objects.filter(participant_id__in=member_ids).aggregate(
                 points=Coalesce(Sum("points"), 0),
             )["points"]
-            score = submissions["points"] + award_points
-            solve_count = submissions["solves"]
-            last_solve = submissions["last_solve"]
+            score = challenge_points + award_points
+            solve_count = len(per_challenge)
         else:
             score = 0
             solve_count = 0

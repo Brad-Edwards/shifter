@@ -4,7 +4,6 @@ Tests for Packer AMI build configuration.
 Run with: pytest shifter/packer/tests/test_packer.py -v
 """
 
-import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -165,18 +164,21 @@ class TestPackerTemplates:
     )
     def test_packer_validate(self):
         """Packer templates should be valid."""
-        os.chdir(PACKER_DIR)
         packer_path = shutil.which("packer")
 
+        # Pass cwd= rather than os.chdir() so the validate runs in PACKER_DIR
+        # without mutating the process-global working directory for the rest
+        # of the pytest session.
         # Init first
         # Security context: packer_path from shutil.which() in controlled test environment
-        subprocess.run([packer_path, "init", "."], capture_output=True)  # noqa: S603
+        subprocess.run([packer_path, "init", "."], capture_output=True, cwd=PACKER_DIR)  # noqa: S603
 
         # Validate with var-file (no defaults)
         result = subprocess.run(  # noqa: S603
             [packer_path, "validate", "-var-file=dev.pkrvars.hcl", "."],
             capture_output=True,
             text=True,
+            cwd=PACKER_DIR,
         )
         assert result.returncode == 0, f"Packer validate failed: {result.stderr}"
 
