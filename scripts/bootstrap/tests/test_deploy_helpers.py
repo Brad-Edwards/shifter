@@ -1,6 +1,8 @@
 """Unit tests for pure helper functions in deploy.py (issue #779 burndown)."""
 
 import os
+import subprocess
+from types import SimpleNamespace
 from unittest import mock
 
 import pytest
@@ -90,3 +92,28 @@ class TestMissingDependencyLines:
 
     def test_all_present(self):
         assert deploy._missing_dependency_lines({"sh": "POSIX shell"}) == []
+
+
+class TestTerraformHelpersFailurePaths:
+    # Mock subprocess (a process boundary, allowed by ADR-019) so the helpers'
+    # failure/exit branches run without a real terraform invocation.
+    def test_apply_iam_exits_when_apply_fails(self):
+        cfg = SimpleNamespace(env="prod")
+        with (
+            mock.patch.object(deploy.subprocess, "run", return_value=subprocess.CompletedProcess([], 1)),
+            pytest.raises(SystemExit),
+        ):
+            deploy._terraform_apply_iam(cfg, dry_run=False)
+
+    def test_role_arn_exits_when_output_fails(self):
+        cfg = SimpleNamespace(role_name="github-actions")
+        with (
+            mock.patch.object(deploy.subprocess, "run", return_value=subprocess.CompletedProcess([], 1, stdout="")),
+            pytest.raises(SystemExit),
+        ):
+            deploy._terraform_iam_role_arn(cfg, "123456789012", dry_run=False)
+
+    def test_role_arn_dry_run_is_synthetic(self):
+        cfg = SimpleNamespace(role_name="github-actions")
+        arn = deploy._terraform_iam_role_arn(cfg, "123456789012", dry_run=True)
+        assert arn == "arn:aws:iam::123456789012:role/github-actions"
