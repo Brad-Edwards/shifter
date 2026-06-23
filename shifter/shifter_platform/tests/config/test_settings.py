@@ -75,3 +75,36 @@ def test_portal_capacity_metrics_read_from_env(monkeypatch) -> None:
     assert settings_module.PORTAL_CAPACITY_METRICS_INTERVAL_SECONDS == 30
     assert settings_module.PORTAL_WORKER_SOFT_CONCURRENCY == 12
     assert settings_module.PORTAL_CAPACITY_NAME_PREFIX == "prod-portal"
+
+
+def test_api_token_policy_defaults(monkeypatch) -> None:
+    monkeypatch.setenv("TESTING", "1")
+    monkeypatch.setenv("DJANGO_SECRET_KEY", "shifter-platform-tests-secret-key")
+    for var in ("API_TOKEN_LAST_USED_COALESCE_SECONDS", "API_TOKEN_MAX_TTL_DAYS"):
+        monkeypatch.delenv(var, raising=False)
+
+    # Token policy lives in a re-exported sub-module; evict it so the fresh
+    # settings load re-reads the (cleared) environment instead of the cache.
+    sys.modules.pop("config._api_token_settings", None)
+    settings_module = _load_settings_module("config._settings_api_token_default_test")
+
+    assert settings_module.API_TOKEN_LAST_USED_COALESCE_SECONDS == 300
+    assert settings_module.API_TOKEN_MAX_TTL_DAYS == 365
+    # The platform token authenticator is the first DRF default.
+    assert (
+        settings_module.REST_FRAMEWORK["DEFAULT_AUTHENTICATION_CLASSES"][0]
+        == "shared.api_tokens.authentication.ApiTokenAuthentication"
+    )
+
+
+def test_api_token_policy_read_from_env(monkeypatch) -> None:
+    monkeypatch.setenv("TESTING", "1")
+    monkeypatch.setenv("DJANGO_SECRET_KEY", "shifter-platform-tests-secret-key")
+    monkeypatch.setenv("API_TOKEN_LAST_USED_COALESCE_SECONDS", "60")
+    monkeypatch.setenv("API_TOKEN_MAX_TTL_DAYS", "30")
+
+    sys.modules.pop("config._api_token_settings", None)
+    settings_module = _load_settings_module("config._settings_api_token_env_test")
+
+    assert settings_module.API_TOKEN_LAST_USED_COALESCE_SECONDS == 60
+    assert settings_module.API_TOKEN_MAX_TTL_DAYS == 30

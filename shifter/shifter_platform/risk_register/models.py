@@ -193,7 +193,17 @@ class Comment(SoftDeleteMixin, models.Model):
 
 
 class APIKey(models.Model):
-    """API key for programmatic access."""
+    """API key for programmatic access.
+
+    .. deprecated:: PLAT-102
+        Superseded by the platform-wide ``shared.api_tokens.ApiToken`` (scoped
+        bearer tokens). This legacy ``X-API-Key`` still authenticates, but — as
+        before this change — it carries no scopes and is not authorized on the
+        risk-register viewsets, which require an admin session or a scoped
+        ``ApiToken`` (the prior ``IsAdminUser`` already rejected API keys, so the
+        change is not a regression for legacy keys). Retirement/migration is
+        tracked in #1124. New integrations should use ``ApiToken``.
+    """
 
     name = models.CharField(max_length=100, help_text="Human-friendly name for this key")
     prefix = models.CharField(max_length=8, unique=True, help_text="Key prefix for identification")
