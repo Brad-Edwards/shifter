@@ -33,28 +33,29 @@ def _reload(range_id):
 
 class TestDestroyRange:
     def test_sets_status_to_destroying_and_soft_deletes(self, user, provision_range):
-        provision_range(user, range_id=42)
-        assert services.destroy_range(user, 42) is None
-        ri = _reload(42)
-        assert ri.status == ResourceStatus.DESTROYING.value
-        assert ri.deleted_at is not None
+        # range_id deliberately differs from pk; destroy resolves by pk (#1139).
+        ri = provision_range(user, range_id=42)
+        assert services.destroy_range(user, ri.pk) is None
+        reloaded = _reload(42)
+        assert reloaded.status == ResourceStatus.DESTROYING.value
+        assert reloaded.deleted_at is not None
 
     def test_records_deprovision_audit(self, user, provision_range):
-        provision_range(user, range_id=42)
-        services.destroy_range(user, 42)
+        ri = provision_range(user, range_id=42)
+        services.destroy_range(user, ri.pk)
         assert AuditLog.objects.filter(
-            entity_type=AuditLog.EntityType.RANGE, entity_id=42, action=AuditLog.Action.DEPROVISION
+            entity_type=AuditLog.EntityType.RANGE, entity_id=ri.pk, action=AuditLog.Action.DEPROVISION
         ).exists()
 
     def test_raises_cms_error_when_range_not_found(self, user):
-        with pytest.raises(CMSError, match="Range 999 not found"):
-            services.destroy_range(user, 999)
+        with pytest.raises(CMSError, match="Range 999999 not found"):
+            services.destroy_range(user, 999999)
 
     def test_raises_cms_error_when_not_owner(self, user, django_user_model, provision_range):
         other = django_user_model.objects.create_user(username="cms-d-other@e.com", email="cms-d-other@e.com")
-        provision_range(other, range_id=77)
-        with pytest.raises(CMSError, match="Range 77 not found"):
-            services.destroy_range(user, 77)
+        ri = provision_range(other, range_id=77)
+        with pytest.raises(CMSError, match="not found"):
+            services.destroy_range(user, ri.pk)
 
     def test_requires_user_argument(self):
         with pytest.raises(TypeError):

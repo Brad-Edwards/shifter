@@ -9,13 +9,13 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ._range_lifecycle import PAUSE_OP, run_by_range_id, run_by_request_id
+from ._range_lifecycle import PAUSE_OP, run_by_instance_pk, run_by_request_id
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import User
 
 
-def pause_range(user: User, range_id: int) -> None:
+def pause_range(user: User, range_instance_pk: int) -> None:
     """Pause a running range.
 
     Fetches RangeInstance, verifies ownership, updates CMS status to PAUSING,
@@ -23,17 +23,17 @@ def pause_range(user: User, range_id: int) -> None:
 
     Args:
         user: User requesting pause
-        range_id: ID of the range to pause
+        range_instance_pk: PK of the RangeInstance to pause
 
     Returns:
         None
 
     Raises:
-        TypeError: If user is None, invalid type, or range_id is invalid type
-        ValueError: If user has no ID (unsaved) or range_id is invalid
+        TypeError: If user is None, invalid type, or range_instance_pk is invalid type
+        ValueError: If user has no ID (unsaved) or range_instance_pk is invalid
         CMSError: If range not found, not owned by user, or not in pausable state
     """
-    run_by_range_id(user, range_id, PAUSE_OP)
+    run_by_instance_pk(user, range_instance_pk, PAUSE_OP)
 
 
 def pause_range_by_request_id(user: User, request_id: str) -> None:
