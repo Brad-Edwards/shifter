@@ -19,6 +19,40 @@ from shared.schemas import RangeRef
 logger = logging.getLogger(__name__)
 
 
+def _range_ref_from_status_event(event: dict) -> RangeRef | None:
+    """Build RangeRef from a range.status.updated event payload, or None when invalid."""
+    request_id = event.get("request_id")
+    range_id = event.get("range_id")
+    user_id = event.get("user_id")
+    new_status = event.get("new_status")
+    event_id = event.get("event_id", "unknown")
+
+    if not request_id:
+        logger.error("Missing request_id in range event: event_id=%s", event_id)
+        return None
+    if new_status is None:
+        logger.error("Missing new_status in range event: event_id=%s", event_id)
+        return None
+    if user_id is None:
+        logger.error("Missing user_id in range event: event_id=%s", event_id)
+        return None
+
+    try:
+        return RangeRef(
+            request_id=request_id,
+            range_id=range_id,
+            user_id=user_id,
+            status=ResourceStatus(new_status),
+        )
+    except (ValueError, TypeError):
+        logger.error(
+            "Invalid range status event payload: event_id=%s request_id=%s",
+            event_id,
+            request_id,
+        )
+        return None
+
+
 def process_event(message: str | dict) -> None:
     """Route event to appropriate handler based on event_type.
 
@@ -71,39 +105,12 @@ def process_range_event(message: str | dict) -> None:
         logger.debug("Ignoring event_type=%s", event_type)
         return
 
-    request_id = event.get("request_id")
-    range_id = event.get("range_id")
-    user_id = event.get("user_id")
-    new_status = event.get("new_status")
+    range_ref = _range_ref_from_status_event(event)
+    if range_ref is None:
+        return
+
     error_message = event.get("error_message")
     event_id = event.get("event_id", "unknown")
-
-    if not request_id:
-        logger.error("Missing request_id in range event: event_id=%s", event_id)
-        return
-
-    if new_status is None:
-        logger.error("Missing new_status in range event: event_id=%s", event_id)
-        return
-
-    if user_id is None:
-        logger.error("Missing user_id in range event: event_id=%s", event_id)
-        return
-
-    try:
-        range_ref = RangeRef(
-            request_id=request_id,
-            range_id=range_id,
-            user_id=user_id,
-            status=ResourceStatus(new_status),
-        )
-    except (ValueError, TypeError):
-        logger.error(
-            "Invalid range status event payload: event_id=%s request_id=%s",
-            event_id,
-            request_id,
-        )
-        return
 
     channel_layer = get_channel_layer()
     group_name = range_event_group(str(range_ref.request_id))
