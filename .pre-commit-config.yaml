@@ -257,6 +257,16 @@ repos:
         files: ^(platform/terraform/modules/portal/rds/main\.tf|platform/terraform/modules/guacamole/rds\.tf)$
         pass_filenames: false
 
+      # ADR-004-R11 / issue #147: pre-commit Checkov args must match the
+      # security-iac job (config path, scan directory, download_external_modules,
+      # soft_fail=false) so module inline skips behave the same locally and in CI.
+      - id: check-checkov-invocation-parity
+        name: Checkov pre-commit / CI invocation parity
+        entry: python3 scripts/check_checkov_invocation_parity/check_checkov_invocation_parity.py
+        language: system
+        files: ^(\.pre-commit-config\.yaml|\.github/workflows/_quality\.yml|platform/terraform/\.checkov\.yaml)$
+        pass_filenames: false
+
       # Pin the behavior of the custom check_tf_* IAM/security
       # checkers themselves. Their test suites (synthetic HCL fixtures
       # covering wildcards, list resources, scoped conditions, missing
@@ -382,7 +392,7 @@ repos:
         files: ^platform/terraform/
         pass_filenames: false
         args:
-          [--config-file, platform/terraform/.checkov.yaml, --directory, platform/terraform/]
+          [--config-file, platform/terraform/.checkov.yaml, --directory, platform/terraform/, --download-external-modules, "true"]
 
   # Kubernetes security and best practices
   - repo: local
