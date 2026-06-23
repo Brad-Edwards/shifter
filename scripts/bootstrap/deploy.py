@@ -207,6 +207,43 @@ def _validate_argv(cmd: list[str]) -> None:
             raise ValueError(f"argv[{index}] contains a NUL byte")
 
 
+_SENSITIVE_FLAG_HINTS = ("password", "secret", "token", "credential", "private-key", "passwd")
+
+
+def _looks_like_inline_secret(token: str) -> bool:
+    """Heuristically detect an argv token that may carry an inline credential."""
+    # Inline JSON/structured documents (e.g. IAM policy bodies, bootstrap XML)
+    # can embed credentials; long opaque tokens are likely keys/secrets.
+    if token[:1] in "{[":
+        return True
+    return len(token) >= 40 and not token.startswith("-") and not any(c in token for c in " /:")
+
+
+def _redact_argv_for_log(cmd: list[str]) -> str:
+    """Render an argv list for logging with secret-bearing tokens masked.
+
+    Masks the value following any flag whose name signals a secret, plus any
+    token that looks like an inline credential, so the deploy log never carries
+    a password, secret, or key in clear text (py/clear-text-logging).
+    """
+    redacted: list[str] = []
+    mask_next = False
+    for token in cmd:
+        if mask_next:
+            redacted.append("***")
+            mask_next = False
+            continue
+        lowered = token.lower()
+        if token.startswith("-") and any(hint in lowered for hint in _SENSITIVE_FLAG_HINTS):
+            redacted.append(token)
+            mask_next = True
+        elif _looks_like_inline_secret(token):
+            redacted.append("***")
+        else:
+            redacted.append(token)
+    return " ".join(redacted)
+
+
 def run_cmd(
     cmd: list[str],
     dry_run: bool = False,
@@ -220,7 +257,7 @@ def run_cmd(
         cmd = cmd[:1] + ["--profile", profile] + cmd[1:]
 
     _validate_argv(cmd)
-    cmd_str = " ".join(cmd)
+    cmd_str = _redact_argv_for_log(cmd)
     if dry_run:
         print(f"{Colors.BLUE}[DRY-RUN] Would run: {cmd_str}{Colors.END}")
         return None
