@@ -32,6 +32,8 @@ import {
   DEFAULT_GITHUB_REPO,
   BASE_AMI_TYPES,
   PROMOTE_AMI_REF,
+  GCE_IMAGE_TYPES,
+  PROMOTE_GCE_IMAGE_REF,
   buildGhWorkflowRunArgs,
   resolveGhToken,
   ghExec,
@@ -1180,5 +1182,50 @@ describe("BASE_AMI_TYPES", () => {
       "dc",
       "brokenbk",
     ]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// GCE image build/promote helpers (issue #505, PLAT-001.10)
+// ---------------------------------------------------------------------------
+describe("GCE_IMAGE_TYPES", () => {
+  it("matches the packer-gcp.yml image_type choices", () => {
+    assert.deepEqual([...GCE_IMAGE_TYPES], [
+      "ubuntu",
+      "brokenbk",
+      "kali",
+      "windows",
+      "dc",
+    ]);
+  });
+});
+
+describe("PROMOTE_GCE_IMAGE_REF", () => {
+  it("pins prod GCE promotion to the protected integration branch", () => {
+    assert.equal(PROMOTE_GCE_IMAGE_REF, "dev");
+  });
+});
+
+describe("buildGhWorkflowRunArgs for GCE image builds", () => {
+  it("targets packer-gcp.yml with the image_type input", () => {
+    assert.deepEqual(
+      buildGhWorkflowRunArgs({
+        workflow: "packer-gcp.yml",
+        repo: DEFAULT_GITHUB_REPO,
+        ref: "dev",
+        inputs: { image_type: "ubuntu" },
+      }),
+      [
+        "workflow",
+        "run",
+        "packer-gcp.yml",
+        "--repo",
+        DEFAULT_GITHUB_REPO,
+        "--ref",
+        "dev",
+        "-f",
+        "image_type=ubuntu",
+      ],
+    );
   });
 });
