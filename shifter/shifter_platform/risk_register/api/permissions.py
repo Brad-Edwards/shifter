@@ -6,6 +6,7 @@ from rest_framework import permissions
 
 from risk_register.models import APIKey, AuditLog
 from risk_register.services import audit_log_from_request
+from shared.api_tokens.models import ApiToken
 
 logger = logging.getLogger(__name__)
 
@@ -86,6 +87,32 @@ class IsAdminUser(AuditedPermissionMixin, permissions.BasePermission):
         )
         if not has_permission:
             self._log_permission_denied(request, view, "User is not admin")
+        return has_permission
+
+
+class IsStaffSessionOrToken(AuditedPermissionMixin, permissions.BasePermission):
+    """Allow a platform API token (its scope is its authorization, checked by a
+    sibling ``RequireScope`` permission) OR a staff/superuser session.
+
+    Anonymous requests and non-admin sessions are denied. Compose with
+    ``shared.api_tokens.permissions.RequireScope`` so token requests still must
+    carry the required scope.
+    """
+
+    def has_permission(self, request, view):
+        # A scoped platform ApiToken is admitted here; the sibling RequireScope
+        # permission enforces the specific scope. The legacy risk_register APIKey
+        # is intentionally NOT admitted: it carries no scopes and was already
+        # denied on these viewsets by the prior IsAdminUser, so this preserves
+        # (does not regress) legacy-key behavior. See #1124.
+        if isinstance(request.auth, ApiToken):
+            return True
+
+        has_permission = bool(
+            request.user and request.user.is_authenticated and (request.user.is_staff or request.user.is_superuser)
+        )
+        if not has_permission:
+            self._log_permission_denied(request, view, "Not an admin session or scoped token")
         return has_permission
 
 

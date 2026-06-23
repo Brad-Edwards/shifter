@@ -466,6 +466,10 @@ AWS_SES_REGION_ENDPOINT = "email.us-east-2.amazonaws.com"
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
+        # Platform-wide scoped bearer tokens (PLAT-102). Listed first so a
+        # supplied Bearer credential is resolved (and fails closed) here.
+        "shared.api_tokens.authentication.ApiTokenAuthentication",
+        # Legacy risk-register X-API-Key (deprecated; see #1124).
         "risk_register.api.authentication.APIKeyAuthentication",
         "rest_framework.authentication.SessionAuthentication",
     ],
@@ -485,6 +489,13 @@ ENVIRONMENT = require_environment()
 DEV_LOGIN_ALLOWED_CIDRS = _env_list("DEV_LOGIN_ALLOWED_CIDRS")
 # Trusted XFF proxy hops (single ALB -> 1); the audit source-IP resolver trusts that rightmost hop (SEC-4 #937).
 AUDIT_TRUSTED_PROXY_HOPS = _env_int("AUDIT_TRUSTED_PROXY_HOPS", 1)
+
+# Platform API token policy (PLAT-102).
+# Coalesce ApiToken.last_used_at writes to at most once per this many seconds,
+# so high-frequency token traffic does not amplify into a write per request.
+API_TOKEN_LAST_USED_COALESCE_SECONDS = _env_int("API_TOKEN_LAST_USED_COALESCE_SECONDS", 300)
+# Advisory maximum token lifetime (days) for the admin token-creation UI.
+API_TOKEN_MAX_TTL_DAYS = _env_int("API_TOKEN_MAX_TTL_DAYS", 365)
 
 # ------------------------------------------------------------------------------
 # Logging Configuration

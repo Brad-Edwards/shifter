@@ -3,6 +3,16 @@
   "schema_version": 1,
   "variables": [
     {
+      "default": "300",
+      "name": "API_TOKEN_LAST_USED_COALESCE_SECONDS",
+      "source_file": "config/settings.py"
+    },
+    {
+      "default": "365",
+      "name": "API_TOKEN_MAX_TTL_DAYS",
+      "source_file": "config/settings.py"
+    },
+    {
       "default": "'oidc'",
       "name": "AUTH_PROVIDER",
       "source_file": "config/_runtime_env.py"
