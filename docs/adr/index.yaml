@@ -63,7 +63,7 @@
       },
       {
         "id": "ADR-003-R3",
-        "description": "Deploy-verification steps must fail the run when the thing they verify did not happen, instead of warning and exiting 0. The Guacamole stabilization wait in _shifter-platform.yml must exit 1 on timeout (raise the timeout if first boot needs longer rather than downgrading the result). The engine ECS task-definition update in _shifter-engine.yml must exit 1 when the task-definition family cannot be described, with the only skip gated on the explicit first_deploy bootstrap input (surfaced as the aws_first_deploy workflow_dispatch input in deploy.yml, strict by default and settable only on manual dispatch).",
+        "description": "Deploy-verification steps must fail the run when the thing they verify did not happen, instead of warning and exiting 0. The Guacamole stabilization wait in _shifter-platform.yml must exit 1 on timeout (raise the timeout if first boot needs longer rather than downgrading the result). The engine ECS task-definition update in _shifter-engine.yml must exit 1 when the task-definition family cannot be described, with the only skip gated on the explicit first_deploy bootstrap input (surfaced as the aws_first_deploy workflow_dispatch input in deploy.yml, strict by default and settable only on manual dispatch). After portal deploy, the Verify job in _shifter-platform.yml must fail when portal ALB target health, /health/, Guacamole ECS rollouts, Guacamole target health, or /guacamole/ smoke probes are not satisfied; scripts/portal_deploy/portal_deploy.py verify-post-deploy must treat a non-ACTIVE Guacamole cluster as failure when Guacamole outputs are present.",
         "checks": ["deploy-verification-fail-loud"]
       },
       {

@@ -209,13 +209,18 @@ The first slice intentionally stays small:
   `_shifter-platform.yml` must `exit 1` on stabilization timeout (the FAILED
   circuit-breaker branch already does); raise the poll timeout if first boot
   legitimately needs longer rather than downgrading the timeout to a warning.
-  The `Update ECS task definition` step in `_shifter-engine.yml` must `exit 1`
-  when the ECS task-definition family cannot be described, so a missing or
-  typo'd family fails the deploy instead of silently skipping it forever; the
-  only permitted skip is gated on the explicit `first_deploy` bootstrap input,
-  surfaced as the `aws_first_deploy` `workflow_dispatch` input in `deploy.yml`
-  (strict by default, settable to `true` only on a manual dispatch for the
-  first-ever deploy to a fresh AWS environment).
+  The `Verify` job after portal deploy must fail when portal target-group
+  health, the public `/health/` probe, Guacamole ECS rollouts, Guacamole
+  target-group health, or the `/guacamole/` smoke probe are not satisfied;
+  `scripts/portal_deploy/portal_deploy.py verify-post-deploy` must treat a
+  non-`ACTIVE` Guacamole cluster as failure when Guacamole Terraform outputs
+  are present. The `Update ECS task definition` step in `_shifter-engine.yml`
+  must `exit 1` when the ECS task-definition family cannot be described, so a
+  missing or typo'd family fails the deploy instead of silently skipping it
+  forever; the only permitted skip is gated on the explicit `first_deploy`
+  bootstrap input, surfaced as the `aws_first_deploy` `workflow_dispatch` input
+  in `deploy.yml` (strict by default, settable to `true` only on a manual
+  dispatch for the first-ever deploy to a fresh AWS environment).
 
 - `TFLint`
   Adds Terraform linting on top of `terraform fmt` and `terraform validate`.

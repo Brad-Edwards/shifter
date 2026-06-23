@@ -10,12 +10,14 @@ import re
 import shlex
 import subprocess
 import sys
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
 
 Runner = Callable[..., subprocess.CompletedProcess[str]]
+SleepFn = Callable[[float], None]
 
 
 class PortalDeployError(RuntimeError):
@@ -61,6 +63,13 @@ def _terraform_output_value(outputs: dict[str, object], name: str) -> object:
     entry = outputs.get(name)
     if not isinstance(entry, dict) or "value" not in entry:
         raise PortalDeployError(f"Terraform output {name!r} is required")
+    return entry["value"]
+
+
+def _terraform_output_value_optional(outputs: dict[str, object], name: str) -> object | None:
+    entry = outputs.get(name)
+    if not isinstance(entry, dict) or "value" not in entry:
+        return None
     return entry["value"]
 
 
@@ -336,6 +345,293 @@ def verify_asg_image_digest(
     return instance_ids
 
 
+@dataclass(frozen=True)
+class PostDeployVerification:
+    domain_name: str
+    portal_target_group_arn: str
+    guacamole_target_group_arn: str = ""
+    guacamole_ecs_cluster_name: str = ""
+    guacd_service_name: str = ""
+    guacamole_client_service_name: str = ""
+
+
+def parse_post_deploy_outputs(raw_json: str) -> PostDeployVerification:
+    try:
+        outputs = json.loads(raw_json)
+    except json.JSONDecodeError as exc:
+        raise PortalDeployError("terraform output -json returned invalid JSON") from exc
+    if not isinstance(outputs, dict):
+        raise PortalDeployError("terraform output -json must return an object")
+
+    domain_name = str(_terraform_output_value(outputs, "domain_name") or "")
+    portal_target_group_arn = str(
+        _terraform_output_value(outputs, "portal_target_group_arn") or ""
+    )
+    if not domain_name:
+        raise PortalDeployError("Terraform output 'domain_name' is required for post-deploy verification")
+    if not portal_target_group_arn:
+        raise PortalDeployError(
+            "Terraform output 'portal_target_group_arn' is required for post-deploy verification"
+        )
+
+    return PostDeployVerification(
+        domain_name=domain_name,
+        portal_target_group_arn=portal_target_group_arn,
+        guacamole_target_group_arn=str(
+            _terraform_output_value_optional(outputs, "guacamole_target_group_arn") or ""
+        ),
+        guacamole_ecs_cluster_name=str(
+            _terraform_output_value_optional(outputs, "guacamole_ecs_cluster_name") or ""
+        ),
+        guacd_service_name=str(_terraform_output_value_optional(outputs, "guacd_service_name") or ""),
+        guacamole_client_service_name=str(
+            _terraform_output_value_optional(outputs, "guacamole_client_service_name") or ""
+        ),
+    )
+
+
+def _target_health_states(target_group_arn: str, *, runner: Runner) -> list[str]:
+    result = _run(
+        [
+            "aws",
+            "elbv2",
+            "describe-target-health",
+            "--target-group-arn",
+            target_group_arn,
+            "--output",
+            "json",
+        ],
+        runner=runner,
+    )
+    payload = json.loads(result.stdout)
+    descriptions = payload.get("TargetHealthDescriptions", [])
+    if not isinstance(descriptions, list):
+        raise PortalDeployError("Unexpected target health response shape")
+    states: list[str] = []
+    for item in descriptions:
+        if not isinstance(item, dict):
+            continue
+        health = item.get("TargetHealth")
+        if isinstance(health, dict) and isinstance(health.get("State"), str):
+            states.append(health["State"])
+    return states
+
+
+def wait_target_group_healthy(
+    target_group_arn: str,
+    *,
+    runner: Runner = subprocess.run,
+    sleep_fn: SleepFn = time.sleep,
+    timeout_seconds: int = 600,
+    poll_interval_seconds: int = 15,
+) -> None:
+    if not target_group_arn:
+        raise PortalDeployError("Target group health verification requires a target group ARN")
+
+    deadline = time.monotonic() + timeout_seconds
+    last_states: list[str] = []
+    while True:
+        last_states = _target_health_states(target_group_arn, runner=runner)
+        if last_states and all(state == "healthy" for state in last_states):
+            print(f"Target group healthy ({len(last_states)} target(s)): {target_group_arn}")
+            return
+        if time.monotonic() >= deadline:
+            states_summary = ", ".join(last_states) if last_states else "no registered targets"
+            raise PortalDeployError(
+                f"Target group did not become healthy within {timeout_seconds}s "
+                f"({states_summary})"
+            )
+        sleep_fn(poll_interval_seconds)
+
+
+def verify_https_endpoint(
+    url: str,
+    *,
+    expected_status_codes: set[int],
+    runner: Runner = subprocess.run,
+) -> None:
+    result = runner(
+        ["curl", "-sS", "-o", "/dev/null", "-w", "%{http_code}", url],
+        check=False,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    status_text = result.stdout.strip()
+    if result.returncode != 0 or not status_text.isdigit():
+        raise PortalDeployError(
+            f"HTTPS probe failed for {url} (exit={result.returncode}, code={status_text or 'n/a'})"
+        )
+    status_code = int(status_text)
+    if status_code not in expected_status_codes:
+        expected = ", ".join(str(code) for code in sorted(expected_status_codes))
+        raise PortalDeployError(
+            f"HTTPS probe for {url} returned {status_code}; expected one of [{expected}]"
+        )
+    print(f"HTTPS probe succeeded for {url} (HTTP {status_code})")
+
+
+def _ecs_cluster_status(cluster_name: str, *, runner: Runner) -> str:
+    result = _run(
+        [
+            "aws",
+            "ecs",
+            "describe-clusters",
+            "--clusters",
+            cluster_name,
+            "--query",
+            "clusters[0].status",
+            "--output",
+            "text",
+        ],
+        runner=runner,
+    )
+    return result.stdout.strip()
+
+
+def _ecs_primary_rollout_state(
+    cluster_name: str,
+    service_name: str,
+    *,
+    runner: Runner,
+) -> str:
+    result = _run(
+        [
+            "aws",
+            "ecs",
+            "describe-services",
+            "--cluster",
+            cluster_name,
+            "--services",
+            service_name,
+            "--query",
+            "services[0].deployments[?status=='PRIMARY'] | [0].rolloutState",
+            "--output",
+            "text",
+        ],
+        runner=runner,
+    )
+    return result.stdout.strip() or "UNKNOWN"
+
+
+def wait_ecs_services_stable(
+    *,
+    cluster_name: str,
+    service_names: list[str],
+    runner: Runner = subprocess.run,
+    sleep_fn: SleepFn = time.sleep,
+    timeout_seconds: int = 1200,
+    poll_interval_seconds: int = 30,
+) -> None:
+    if not cluster_name or not service_names:
+        raise PortalDeployError("ECS stability verification requires a cluster and service names")
+
+    deadline = time.monotonic() + timeout_seconds
+    while True:
+        states = {
+            service_name: _ecs_primary_rollout_state(cluster_name, service_name, runner=runner)
+            for service_name in service_names
+        }
+        print("ECS rollout states: " + ", ".join(f"{name}={state}" for name, state in states.items()))
+        if all(state == "COMPLETED" for state in states.values()):
+            return
+        if any(state == "FAILED" for state in states.values()):
+            raise PortalDeployError(
+                f"Guacamole ECS deployment failed on cluster {cluster_name}: {states}"
+            )
+        if time.monotonic() >= deadline:
+            raise PortalDeployError(
+                f"Guacamole ECS services did not stabilize within {timeout_seconds}s: {states}"
+            )
+        sleep_fn(poll_interval_seconds)
+
+
+def verify_post_deploy(
+    verification: PostDeployVerification,
+    *,
+    runner: Runner = subprocess.run,
+    sleep_fn: SleepFn = time.sleep,
+    portal_target_timeout_seconds: int = 600,
+    guacamole_target_timeout_seconds: int = 600,
+    ecs_timeout_seconds: int = 1200,
+) -> None:
+    wait_target_group_healthy(
+        verification.portal_target_group_arn,
+        runner=runner,
+        sleep_fn=sleep_fn,
+        timeout_seconds=portal_target_timeout_seconds,
+    )
+    verify_https_endpoint(
+        f"https://{verification.domain_name}/health/",
+        expected_status_codes={200},
+        runner=runner,
+    )
+
+    if not (
+        verification.guacamole_ecs_cluster_name
+        and verification.guacamole_target_group_arn
+        and verification.guacd_service_name
+        and verification.guacamole_client_service_name
+    ):
+        print("Guacamole outputs are incomplete; skipping Guacamole post-deploy verification")
+        return
+
+    cluster_status = _ecs_cluster_status(
+        verification.guacamole_ecs_cluster_name,
+        runner=runner,
+    )
+    if cluster_status != "ACTIVE":
+        raise PortalDeployError(
+            "Guacamole cluster "
+            f"{verification.guacamole_ecs_cluster_name!r} is {cluster_status!r}; "
+            "post-deploy verification requires an ACTIVE cluster"
+        )
+
+    wait_ecs_services_stable(
+        cluster_name=verification.guacamole_ecs_cluster_name,
+        service_names=[
+            verification.guacd_service_name,
+            verification.guacamole_client_service_name,
+        ],
+        runner=runner,
+        sleep_fn=sleep_fn,
+        timeout_seconds=ecs_timeout_seconds,
+    )
+    wait_target_group_healthy(
+        verification.guacamole_target_group_arn,
+        runner=runner,
+        sleep_fn=sleep_fn,
+        timeout_seconds=guacamole_target_timeout_seconds,
+    )
+    verify_https_endpoint(
+        f"https://{verification.domain_name}/guacamole/",
+        expected_status_codes={200, 302},
+        runner=runner,
+    )
+
+
+def verify_post_deploy_from_commands(
+    *,
+    terraform_dir: str,
+    backend_config: str,
+    runner: Runner = subprocess.run,
+    sleep_fn: SleepFn = time.sleep,
+) -> None:
+    _run(
+        ["terraform", "init", f"-backend-config={backend_config}"],
+        cwd=terraform_dir,
+        runner=runner,
+    )
+    terraform_outputs = _run(
+        ["terraform", "output", "-json"],
+        cwd=terraform_dir,
+        runner=runner,
+    )
+    verification = parse_post_deploy_outputs(terraform_outputs.stdout)
+    verify_post_deploy(verification, runner=runner, sleep_fn=sleep_fn)
+    print("Post-deploy health verification succeeded")
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -352,6 +648,10 @@ def _build_parser() -> argparse.ArgumentParser:
     verify_parser = subparsers.add_parser("verify-asg-image")
     verify_parser.add_argument("--asg-name", required=True)
     verify_parser.add_argument("--image-digest", required=True)
+
+    verify_post_deploy_parser = subparsers.add_parser("verify-post-deploy")
+    verify_post_deploy_parser.add_argument("--terraform-dir", required=True)
+    verify_post_deploy_parser.add_argument("--backend-config", required=True)
     return parser
 
 
@@ -372,6 +672,11 @@ def main(argv: list[str] | None = None) -> int:
                 image_digest=args.image_digest,
             )
             print(f"Verified portal image digest on {len(instance_ids)} ASG instance(s)")
+        elif args.command == "verify-post-deploy":
+            verify_post_deploy_from_commands(
+                terraform_dir=args.terraform_dir,
+                backend_config=args.backend_config,
+            )
         return 0
     except subprocess.CalledProcessError as exc:
         stderr = (exc.stderr or "").strip()

@@ -156,6 +156,16 @@ output "alb_security_group_id" {
   value       = module.alb.security_group_id
 }
 
+output "portal_target_group_arn" {
+  description = "ARN of the portal application target group"
+  value       = module.alb.target_group_arn
+}
+
+output "domain_name" {
+  description = "Public portal hostname served by the ALB"
+  value       = var.domain_name
+}
+
 # ------------------------------------------------------------------------------
 # App Secrets
 # ------------------------------------------------------------------------------
@@ -263,6 +273,21 @@ output "engine_ecs_task_role_arn" {
 output "guacamole_target_group_arn" {
   description = "ARN of the Guacamole target group"
   value       = module.guacamole.target_group_arn
+}
+
+output "guacamole_ecs_cluster_name" {
+  description = "Name of the Guacamole ECS cluster"
+  value       = module.guacamole.ecs_cluster_name
+}
+
+output "guacd_service_name" {
+  description = "Name of the guacd ECS service"
+  value       = module.guacamole.guacd_service_name
+}
+
+output "guacamole_client_service_name" {
+  description = "Name of the guacamole-client ECS service"
+  value       = module.guacamole.guacamole_client_service_name
 }
 
 output "guacamole_json_auth_secret_arn" {
