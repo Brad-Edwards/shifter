@@ -503,6 +503,24 @@ class TestAPIParticipantImport:
         assert CTFParticipant.objects.filter(event=ctf_event, email="one@example.com").exists()
         assert CTFParticipant.objects.filter(event=ctf_event, email="two@example.com").exists()
 
+    def test_non_object_elements_are_per_item_errors_not_500(self, authenticated_organizer_client, ctf_event):
+        """#1149: non-object array elements yield per-item errors, never a 500."""
+        url = reverse("ctf:api_participant_import", kwargs={"event_id": ctf_event.id})
+
+        import json
+
+        response = authenticated_organizer_client.post(
+            url,
+            data=json.dumps({"participants": ["notadict", 1, None]}),
+            content_type="application/json",
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["imported"] == 0
+        assert len(data["errors"]) == 3
+        assert all("object" in e["error"] for e in data["errors"])
+
 
 class TestAPIParticipantResendInvite:
     """Tests for resending participant invites."""

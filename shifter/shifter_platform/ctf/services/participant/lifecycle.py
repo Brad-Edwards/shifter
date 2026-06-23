@@ -65,15 +65,8 @@ def invite_participant(
             },
         )
 
-    # Check max participants
-    if event.max_participants:
-        current_count = event.participants.count()
-        if current_count >= event.max_participants:
-            raise CTFValidationError(
-                f"Event has reached maximum participants ({event.max_participants})",
-                code="CTF_MAX_PARTICIPANTS_REACHED",
-                details={"event_id": str(event_id), "max": event.max_participants},
-            )
+    # Capacity is enforced under the event row lock inside the transaction
+    # below (#1145), so concurrent invites cannot race past max_participants.
 
     # Check for existing participant
     if CTFParticipant.objects.filter(event=event, email__iexact=email).exists():
@@ -94,6 +87,16 @@ def invite_participant(
             ) from None
 
     with transaction.atomic():
+        # Lock the event so the capacity check and the insert cannot race past
+        # max_participants under concurrent invites (#1145).
+        CTFEvent.objects.select_for_update().get(pk=event.pk)
+        if event.max_participants and event.participants.count() >= event.max_participants:
+            raise CTFValidationError(
+                f"Event has reached maximum participants ({event.max_participants})",
+                code="CTF_MAX_PARTICIPANTS_REACHED",
+                details={"event_id": str(event_id), "max": event.max_participants},
+            )
+
         participant = CTFParticipant.objects.create(
             event=event,
             email=email.lower().strip(),
