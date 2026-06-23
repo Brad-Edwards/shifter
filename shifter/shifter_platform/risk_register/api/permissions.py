@@ -1,11 +1,20 @@
 """Permission classes for Risk Register API."""
 
+from __future__ import annotations
+
 import logging
+from typing import TYPE_CHECKING
 
 from rest_framework import permissions
+from rest_framework.request import Request
 
 from risk_register.models import APIKey, AuditLog
 from risk_register.services import audit_log_from_request
+from shared.api_tokens.models import ApiToken
+
+if TYPE_CHECKING:
+    from rest_framework.request import Request
+    from rest_framework.views import APIView
 
 logger = logging.getLogger(__name__)
 
@@ -89,27 +98,59 @@ class IsAdminUser(AuditedPermissionMixin, permissions.BasePermission):
         return has_permission
 
 
+class IsStaffSessionOrToken(AuditedPermissionMixin, permissions.BasePermission):
+    """Allow a platform API token (its scope is its authorization, checked by a
+    sibling ``RequireScope`` permission) OR a staff/superuser session.
+
+    Anonymous requests and non-admin sessions are denied. Compose with
+    ``shared.api_tokens.permissions.RequireScope`` so token requests still must
+    carry the required scope.
+    """
+
+    def has_permission(self, request: Request, view: APIView) -> bool:
+        # A scoped platform ApiToken is admitted here; the sibling require_scope
+        # permission enforces the specific scope. The legacy risk_register APIKey
+        # is intentionally NOT admitted: it carries no scopes and was already
+        # denied on these viewsets by the prior IsAdminUser, so this preserves
+        # (does not regress) legacy-key behavior. See #1124.
+        if isinstance(request.auth, ApiToken):
+            return True
+
+        has_permission = bool(
+            request.user and request.user.is_authenticated and (request.user.is_staff or request.user.is_superuser)
+        )
+        if not has_permission:
+            self._log_permission_denied(request, view, "Not an admin session or scoped token")
+        return has_permission
+
+
 class IsOwnerOrAdmin(AuditedPermissionMixin, permissions.BasePermission):
     """
     Allow access if user owns the object or is an admin.
     For API keys, allow access to objects they created.
     """
 
+    @staticmethod
+    def _is_admin(request: Request) -> bool:
+        return bool(
+            request.user and request.user.is_authenticated and (request.user.is_staff or request.user.is_superuser)
+        )
+
+    @staticmethod
+    def _owns_via_apikey(request: Request, obj: object) -> bool:
+        return bool(isinstance(request.auth, APIKey) and getattr(obj, "author_apikey", None) == request.auth)
+
+    @staticmethod
+    def _owns_via_user(request: Request, obj: object) -> bool:
+        if not (request.user and request.user.is_authenticated):
+            return False
+        if getattr(obj, "author_user", None) == request.user:
+            return True
+        return getattr(obj, "created_by", None) == request.user
+
     def has_object_permission(self, request, view, obj):
-        # Admins can access anything
-        if request.user and request.user.is_authenticated and (request.user.is_staff or request.user.is_superuser):
+        if self._is_admin(request) or self._owns_via_apikey(request, obj) or self._owns_via_user(request, obj):
             return True
-
-        # Check ownership for API keys
-        if isinstance(request.auth, APIKey) and hasattr(obj, "author_apikey") and obj.author_apikey == request.auth:
-            return True
-
-        # Check ownership for users
-        if request.user and request.user.is_authenticated:
-            if hasattr(obj, "author_user") and obj.author_user == request.user:
-                return True
-            if hasattr(obj, "created_by") and obj.created_by == request.user:
-                return True
 
         # Log access denied
         obj_name = type(obj).__name__

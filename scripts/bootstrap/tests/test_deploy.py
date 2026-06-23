@@ -2461,7 +2461,8 @@ class TestGcpPlatformCoreContracts:
             / "terraform"
             / "gcp"
             / "modules"
-            / "platform-core"
+            / "portal"
+            / "iam"
             / "main.tf"
         )
         module_main = module_path.read_text()
@@ -2480,7 +2481,8 @@ class TestGcpPlatformCoreContracts:
             / "terraform"
             / "gcp"
             / "modules"
-            / "platform-core"
+            / "portal"
+            / "iam"
             / "main.tf"
         )
         module_main = module_path.read_text()
@@ -2497,7 +2499,8 @@ class TestGcpPlatformCoreContracts:
             / "terraform"
             / "gcp"
             / "modules"
-            / "platform-core"
+            / "portal"
+            / "iam"
             / "main.tf"
         )
         module_main = module_path.read_text()
@@ -2513,7 +2516,8 @@ class TestGcpPlatformCoreContracts:
             / "terraform"
             / "gcp"
             / "modules"
-            / "platform-core"
+            / "portal"
+            / "identity-platform"
             / "main.tf"
         )
         module_main = module_path.read_text()
@@ -2534,7 +2538,8 @@ class TestGcpPlatformCoreContracts:
             / "terraform"
             / "gcp"
             / "modules"
-            / "platform-core"
+            / "portal"
+            / "ingress"
             / "main.tf"
         )
         module_main = module_path.read_text()

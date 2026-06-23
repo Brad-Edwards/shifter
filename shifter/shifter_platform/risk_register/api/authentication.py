@@ -22,6 +22,12 @@ class APIKeyAuthentication(authentication.BaseAuthentication):
 
     Clients should authenticate by passing the API key in the X-API-Key header.
     Example: X-API-Key: rr_live_abc123...
+
+    .. deprecated:: PLAT-102
+        Superseded by ``shared.api_tokens.authentication.ApiTokenAuthentication``
+        (scoped ``Authorization: Bearer shf_...`` tokens). Still authenticates
+        for backward compatibility (behavior unchanged by this change);
+        retirement is tracked in #1124.
     """
 
     keyword = "X-API-Key"

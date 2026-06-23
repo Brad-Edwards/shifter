@@ -116,12 +116,14 @@ def _emit_rendered(rendered: str, output: str | None, backend: str) -> int:
     if output is None:
         sys.stdout.write(rendered)
         return 0
-    output_path = Path(output)
     try:
+        # Normalize the operator-supplied path (collapsing `..`); a NUL byte in
+        # ``output`` raises ValueError here rather than reaching the filesystem.
+        output_path = Path(output).resolve()
         output_path.write_text(rendered, encoding="utf-8")
-    except OSError as exc:
+    except (OSError, ValueError) as exc:
         detail = getattr(exc, "strerror", None) or str(exc)
-        print(f"{output_path}: could not write rendered tfvars: {detail}", file=sys.stderr)
+        print(f"{output!r}: could not write rendered tfvars: {detail}", file=sys.stderr)
         return 1
     print(f"{output_path}: wrote range egress bridge tfvars ({backend}).", file=sys.stderr)
     return 0

@@ -120,7 +120,15 @@
     "expires_on": "2027-05-26",
     "paths": [
       "platform/terraform/modules/log-aggregation/s3.tf",
-      "platform/terraform/modules/engine-state/",
+      "platform/terraform/modules/engine-state/"
+    ]
+  },
+  {
+    "rule_id": "ADR-004-R11",
+    "owner": "@Brad-Edwards",
+    "reason": "CKV_AWS_18 / CKV_AWS_21 / CKV_AWS_144 / CKV2_AWS_62 (S3 access logging / versioning / cross-region replication / event notifications): portal user-uploads bucket stores ephemeral presigned-PUT data only; authoritative state is in RDS. Versioning is disabled to avoid retaining deleted uploads (#109). Access logging awaits the unified logging strategy (#310). Cross-region replication evaluated and rejected — CRR requires versioning, adds destination-bucket/KMS/replication-role cost, and the upload data is re-creatable; see docs/architecture/s3-bucket-hardening-preflight.md § Cross-Region Replication Evaluation (#143). Event notifications are omitted until a real consumer exists.",
+    "expires_on": "2027-05-26",
+    "paths": [
       "platform/terraform/modules/portal/s3/"
     ]
   },

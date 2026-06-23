@@ -21,6 +21,9 @@ from shared.cloud import get_object_storage
 from shared.cloud.exceptions import CloudStorageError
 from shared.log_sanitize import safe_log, safe_log_value
 
+# SonarCloud S1192: extracted duplicated string literals.
+BUCKET_NOT_CONFIGURED_MSG = "AWS_S3_BUCKET_NAME is not configured"
+
 logger = logging.getLogger(__name__)
 
 # Character set kept end-to-end aligned with
@@ -104,7 +107,7 @@ def generate_script_upload_url(user_id: int, filename: str) -> tuple[str, str]:
     """
     if not settings.AWS_S3_BUCKET_NAME:
         logger.error("generate_script_upload_url: AWS_S3_BUCKET_NAME not configured")
-        raise S3Error("AWS_S3_BUCKET_NAME is not configured")
+        raise S3Error(BUCKET_NOT_CONFIGURED_MSG)
 
     safe_filename = _normalize_script_filename_segment(filename)
     unique_id = uuid.uuid4().hex[:12]
@@ -119,7 +122,7 @@ def generate_script_upload_url(user_id: int, filename: str) -> tuple[str, str]:
             expires_in=settings.SCRIPT_UPLOAD_URL_EXPIRES,
         )
     except CloudStorageError as e:
-        logger.error("generate_script_upload_url: failed user_id=%s error=%s", user_id, safe_log(str(e)))
+        logger.exception("generate_script_upload_url: failed user_id=%s error=%s", user_id, safe_log(str(e)))
         raise S3Error(str(e)) from e
 
     logger.debug("generate_script_upload_url: success user_id=%s s3_key=%s", user_id, safe_log(s3_key))
@@ -141,7 +144,7 @@ def generate_presigned_download_url(s3_key: str, expires_in: int = 3600) -> str:
     """
     if not settings.AWS_S3_BUCKET_NAME:
         logger.error("generate_presigned_download_url: AWS_S3_BUCKET_NAME not configured")
-        raise S3Error("AWS_S3_BUCKET_NAME is not configured")
+        raise S3Error(BUCKET_NOT_CONFIGURED_MSG)
 
     try:
         storage = get_object_storage()
@@ -151,7 +154,7 @@ def generate_presigned_download_url(s3_key: str, expires_in: int = 3600) -> str:
             expires_in=expires_in,
         )
     except CloudStorageError as e:
-        logger.error("generate_presigned_download_url: failed s3_key=%s error=%s", safe_log(s3_key), safe_log(str(e)))
+        logger.exception("generate_presigned_download_url: failed s3_key=%s", safe_log(s3_key))
         raise S3Error(str(e)) from e
 
     logger.debug("generate_presigned_download_url: success s3_key=%s", safe_log(s3_key))
@@ -169,7 +172,7 @@ def delete_s3_object(s3_key: str) -> None:
     """
     if not settings.AWS_S3_BUCKET_NAME:
         logger.error("delete_s3_object: AWS_S3_BUCKET_NAME not configured")
-        raise S3Error("AWS_S3_BUCKET_NAME is not configured")
+        raise S3Error(BUCKET_NOT_CONFIGURED_MSG)
 
     try:
         storage = get_object_storage()
@@ -191,7 +194,7 @@ def read_script_header(s3_key: str, max_bytes: int) -> bytes:
     """
     if not settings.AWS_S3_BUCKET_NAME:
         logger.error("read_script_header: AWS_S3_BUCKET_NAME not configured")
-        raise S3Error("AWS_S3_BUCKET_NAME is not configured")
+        raise S3Error(BUCKET_NOT_CONFIGURED_MSG)
 
     try:
         storage = get_object_storage()
@@ -223,7 +226,7 @@ def verify_s3_object(s3_key: str) -> tuple[int, str]:
     """
     if not settings.AWS_S3_BUCKET_NAME:
         logger.error("verify_s3_object: AWS_S3_BUCKET_NAME not configured")
-        raise S3Error("AWS_S3_BUCKET_NAME is not configured")
+        raise S3Error(BUCKET_NOT_CONFIGURED_MSG)
 
     try:
         storage = get_object_storage()

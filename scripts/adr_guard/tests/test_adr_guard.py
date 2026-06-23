@@ -53,6 +53,20 @@ class AdrGuardTests(unittest.TestCase):
                 self.assertEqual(violations[0].rule_id, "ADR-002-R1")
                 self.assertEqual(violations[0].path, path)
 
+    def test_guardrail_docs_satisfied_when_docs_updated(self) -> None:
+        """A guardrail change accompanied by a docs change passes.
+
+        Exercises the `_is_docs_file` early-return in `check_guardrail_docs`;
+        without this positive case, inverting or deleting that guard would
+        flag every PR that correctly updates ADR docs alongside a guardrail.
+        """
+        violations = ADR_GUARD.check_guardrail_docs(
+            ADR_GUARD.REPO_ROOT,
+            ["scripts/adr_guard/adr_guard.py", "docs/adr/documentation-coverage.yaml"],
+        )
+
+        self.assertEqual(violations, [], msg=f"Unexpected violations: {violations}")
+
     def test_adr_registry_rejects_unknown_exception_rule(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo_root = Path(tmp)
@@ -5056,6 +5070,192 @@ class NoLiveCloudIdentifiersTests(unittest.TestCase):
         self.assertIn("no-live-cloud-identifiers", ADR_GUARD.CHECKS)
         self.assertIn("no-live-cloud-identifiers", ADR_GUARD.CHECK_LEVELS["ci"])
         self.assertIn("no-live-cloud-identifiers", ADR_GUARD.CHECK_LEVELS["fast"])
+
+    def test_portal_s3_cross_region_replication_exception_is_scoped(self) -> None:
+        """Portal user-uploads CRR waiver (#143) must not share log-archive paths."""
+        exceptions = ADR_GUARD.load_adr_exceptions(ADR_GUARD.REPO_ROOT)
+        portal_path = "platform/terraform/modules/portal/s3/"
+        portal_entries = [
+            entry
+            for entry in exceptions
+            if portal_path in (entry.get("paths") or [])
+        ]
+        self.assertEqual(len(portal_entries), 1, portal_entries)
+        self.assertEqual(portal_entries[0]["paths"], [portal_path])
+        reason = portal_entries[0]["reason"]
+        self.assertIn("CKV_AWS_144", reason)
+        self.assertIn("s3-bucket-hardening-preflight.md", reason)
+
+        log_entries = [
+            entry
+            for entry in exceptions
+            if any("log-aggregation" in path for path in (entry.get("paths") or []))
+        ]
+        self.assertTrue(log_entries, "expected a log-aggregation exception entry")
+        for entry in log_entries:
+            self.assertNotIn(
+                portal_path,
+                entry.get("paths") or [],
+                msg=f"log entry must not include portal path: {entry}",
+            )
+
+
+class DocumentationCoverageTests(unittest.TestCase):
+    """ADR-022-R1: major features carry user and technical documentation."""
+
+    DOCS_ROOT = "shifter/shifter_platform/documentation/docs"
+
+    def _write_repo(self, repo_root: Path, manifest: object, docs: dict[str, str]) -> None:
+        adr_dir = repo_root / "docs" / "adr"
+        adr_dir.mkdir(parents=True)
+        if isinstance(manifest, str):
+            (adr_dir / "documentation-coverage.yaml").write_text(manifest, encoding="utf-8")
+        else:
+            (adr_dir / "documentation-coverage.yaml").write_text(
+                json.dumps(manifest), encoding="utf-8"
+            )
+        for rel, body in docs.items():
+            path = repo_root / self.DOCS_ROOT / rel
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(body, encoding="utf-8")
+
+    def _manifest(self, features: list[dict]) -> dict:
+        return {"docs_root": self.DOCS_ROOT, "features": features}
+
+    def _feature(self, **overrides: object) -> dict:
+        feature = {
+            "id": "demo",
+            "title": "Demo",
+            "requirement": "GEN-001",
+            "user_docs": ["features/demo.md"],
+            "technical_docs": ["technical/demo.md"],
+        }
+        feature.update(overrides)
+        return feature
+
+    def _good_docs(self) -> dict[str, str]:
+        return {
+            "features/index.md": "# Features\n\n- [Demo](demo)\n",
+            "features/demo.md": "# Demo\n\nUser guide.\n",
+            "technical/index.md": "# Technical\n\n- [Demo](demo)\n",
+            "technical/demo.md": "# Demo\n\nTechnical notes.\n",
+        }
+
+    def test_well_formed_coverage_passes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            self._write_repo(repo_root, self._manifest([self._feature()]), self._good_docs())
+
+            violations = ADR_GUARD.check_documentation_coverage(repo_root, None)
+
+            self.assertEqual(violations, [], msg=f"Unexpected violations: {violations}")
+
+    def test_missing_doc_flagged(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            docs = self._good_docs()
+            del docs["technical/demo.md"]
+            self._write_repo(repo_root, self._manifest([self._feature()]), docs)
+
+            violations = ADR_GUARD.check_documentation_coverage(repo_root, None)
+
+            self.assertEqual(len(violations), 1)
+            self.assertEqual(violations[0].rule_id, "ADR-022-R1")
+            self.assertIn("technical/demo.md", violations[0].path)
+            self.assertIn("missing", violations[0].message.lower())
+
+    def test_feature_without_user_doc_flagged(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            self._write_repo(
+                repo_root,
+                self._manifest([self._feature(user_docs=[])]),
+                self._good_docs(),
+            )
+
+            violations = ADR_GUARD.check_documentation_coverage(repo_root, None)
+
+            self.assertEqual(len(violations), 1)
+            self.assertIn("user", violations[0].message.lower())
+
+    def test_feature_without_technical_doc_flagged(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            self._write_repo(
+                repo_root,
+                self._manifest([self._feature(technical_docs=[])]),
+                self._good_docs(),
+            )
+
+            violations = ADR_GUARD.check_documentation_coverage(repo_root, None)
+
+            self.assertEqual(len(violations), 1)
+            self.assertIn("technical", violations[0].message.lower())
+
+    def test_deprecated_doc_flagged(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            docs = self._good_docs()
+            docs["_deprecated/old.md"] = "# Old\n"
+            docs["_deprecated/index.md"] = "# Deprecated\n\n- [Old](old)\n"
+            self._write_repo(
+                repo_root,
+                self._manifest([self._feature(technical_docs=["_deprecated/old.md"])]),
+                docs,
+            )
+
+            violations = ADR_GUARD.check_documentation_coverage(repo_root, None)
+
+            self.assertEqual(len(violations), 1)
+            self.assertIn("_deprecated/old.md", violations[0].path)
+
+    def test_orphaned_doc_flagged(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            docs = self._good_docs()
+            # technical/demo.md exists but no index links to it.
+            docs["technical/index.md"] = "# Technical\n\nNothing linked here.\n"
+            self._write_repo(repo_root, self._manifest([self._feature()]), docs)
+
+            violations = ADR_GUARD.check_documentation_coverage(repo_root, None)
+
+            self.assertEqual(len(violations), 1)
+            self.assertIn("technical/demo.md", violations[0].path)
+            self.assertIn("orphan", violations[0].message.lower())
+
+    def test_malformed_manifest_flagged(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            self._write_repo(repo_root, "not json {", {})
+
+            violations = ADR_GUARD.check_documentation_coverage(repo_root, None)
+
+            self.assertEqual(len(violations), 1)
+            self.assertEqual(violations[0].rule_id, "ADR-022-R1")
+            self.assertIn("docs/adr/documentation-coverage.yaml", violations[0].path)
+
+    def test_root_relative_index_link_satisfies_coverage(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            docs = {
+                "index.md": "# Docs\n\n- [Demo](features/demo)\n- [Tech](technical/demo)\n",
+                "features/demo.md": "# Demo\n",
+                "technical/demo.md": "# Demo tech\n",
+            }
+            self._write_repo(repo_root, self._manifest([self._feature()]), docs)
+
+            violations = ADR_GUARD.check_documentation_coverage(repo_root, None)
+
+            self.assertEqual(violations, [], msg=f"Unexpected violations: {violations}")
+
+    def test_real_repo_manifest_passes(self) -> None:
+        violations = ADR_GUARD.check_documentation_coverage(ADR_GUARD.REPO_ROOT, None)
+        self.assertEqual(violations, [], msg=f"Unexpected violations: {violations}")
+
+    def test_check_registered_at_ci_and_fast_levels(self) -> None:
+        self.assertIn("documentation-coverage", ADR_GUARD.CHECKS)
+        self.assertIn("documentation-coverage", ADR_GUARD.CHECK_LEVELS["ci"])
+        self.assertIn("documentation-coverage", ADR_GUARD.CHECK_LEVELS["fast"])
 
 
 if __name__ == "__main__":
