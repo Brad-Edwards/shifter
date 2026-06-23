@@ -204,6 +204,33 @@ class TestMaterializedEquivalence:
         assert stats["Empty"]["score"] == 0
         assert stats["Empty"]["member_count"] == 0
 
+    def test_team_score_dedupes_shared_challenge_solves(self, organizer_user):
+        # #1138: two teammates solving the SAME challenge count once for the
+        # team, at the best (max) points — not summed twice. Asserts both the
+        # materialized and the frozen/authoritative recompute paths agree.
+        event = _make_event(organizer_user, team_mode=True)
+        c1 = _make_challenge(event, points=100)
+        now = timezone.now()
+
+        team = CTFTeam.objects.create(event=event, name="Dup")
+        m1 = _make_participant(event, "M1", team=team)
+        m2 = _make_participant(event, "M2", team=team)
+
+        _solve(m1, c1, points=100, at=now - timedelta(minutes=20))
+        # Same challenge, fewer points (e.g. a hint penalty) for the second solver.
+        _solve(m2, c1, points=80, at=now - timedelta(minutes=10))
+
+        recompute_event_leaderboard(event.id)
+
+        materialized = get_team_scoreboard(event.id)
+        authoritative = get_team_scoreboard(event.id, freeze_at=_FAR_FUTURE)
+        assert _by_team(materialized) == _by_team(authoritative)
+
+        stats = {r["name"]: r for r in materialized}
+        # Counted once at the max (100), not 100 + 80.
+        assert stats["Dup"]["score"] == 100
+        assert stats["Dup"]["solve_count"] == 1
+
 
 # ---------------------------------------------------------------------------
 # Scoreboard behavior contract
@@ -415,12 +442,15 @@ class TestMaintenance:
         from ctf.services.participant import disqualify_participant
 
         event = _make_event(organizer_user, team_mode=True)
-        c = _make_challenge(event, points=100)
+        # Distinct challenges so each member's contribution is independent; a
+        # shared challenge would dedupe to a single count (see #1138).
+        c1 = _make_challenge(event, points=100)
+        c2 = _make_challenge(event, points=100)
         team = CTFTeam.objects.create(event=event, name="Alpha")
         keep = _make_participant(event, "Keep", team=team)
         drop = _make_participant(event, "Drop", team=team)
-        _solve(keep, c, points=100)
-        _solve(drop, c, points=100)
+        _solve(keep, c1, points=100)
+        _solve(drop, c2, points=100)
         recompute_event_leaderboard(event.id)
         team.refresh_from_db()
         assert team.cached_score == 200
