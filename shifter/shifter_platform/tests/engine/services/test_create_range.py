@@ -8,7 +8,7 @@ on persisted state and return values, not on mocked ORM/interpreter/ECS calls.
 """
 
 import logging
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import pytest
 from django.contrib.auth import get_user_model
@@ -16,7 +16,7 @@ from django.test import override_settings
 
 from engine import create_range
 from engine.models import Range
-from shared.schemas import InstanceSpec, RangeSpec, RequestSpec, SubnetSpec
+from shared.schemas import InstanceSpec, RangeRef, RangeSpec, RequestSpec, SubnetSpec
 
 pytestmark = pytest.mark.django_db
 
@@ -46,11 +46,14 @@ def user(db):
 
 
 class TestCreateRangePersistence:
-    def test_returns_request_id_as_uuid(self, user):
+    def test_returns_range_ref(self, user):
         spec = make_request_spec(user_id=user.id)
         result = create_range(spec)
-        assert isinstance(result, UUID)
-        assert result == spec.request_id
+        assert isinstance(result, RangeRef)
+        assert result.request_id == spec.request_id
+        assert result.user_id == user.id
+        assert result.range_id is not None
+        assert result.range_id > 0
 
     def test_persists_range_for_the_looked_up_user(self, user):
         create_range(make_request_spec(user_id=user.id))
@@ -135,12 +138,14 @@ class TestCreateRangeErrorValidation:
 class TestCreateRangeLogging:
     def test_logs_scenario_and_user_on_entry(self, user, caplog):
         with caplog.at_level(logging.DEBUG, logger="engine"):
-            create_range(make_request_spec(user_id=user.id, scenario_id="advanced-persistent-threat"))
+            ref = create_range(make_request_spec(user_id=user.id, scenario_id="advanced-persistent-threat"))
+        assert isinstance(ref, RangeRef)
         assert "advanced-persistent-threat" in caplog.text
         assert str(user.id) in caplog.text
 
     def test_logs_range_creation(self, user, caplog):
         with caplog.at_level(logging.INFO, logger="engine"):
-            create_range(make_request_spec(user_id=user.id))
+            ref = create_range(make_request_spec(user_id=user.id))
         range_obj = Range.objects.get()
+        assert isinstance(ref, RangeRef)
         assert str(range_obj.id) in caplog.text

@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 from shared.enums import CANCELLABLE_STATUSES, ResourceStatus
-from shared.schemas import RangeContext, RangeSpec, RequestSpec
+from shared.schemas import RangeRef, RangeSpec, RequestSpec
 from shared.schemas.persistence import wrap_persisted_spec
 
 from ._common import EngineError, _resolve_instance_host
@@ -30,7 +30,7 @@ def _atomic() -> ContextManager[None]:
     return _es.transaction.atomic()
 
 
-def create_range(request_spec: RequestSpec) -> UUID:
+def create_range(request_spec: RequestSpec) -> RangeRef:
     """Provision infrastructure for range.
 
     Interprets the RequestSpec into Engine models (Request, Instance),
@@ -70,7 +70,12 @@ def create_range(request_spec: RequestSpec) -> UUID:
         range_obj.save(update_fields=["step_function_execution_arn"])
         logger.info("create_range: started ECS task=%s", task_arn)
 
-    return request_spec.request_id
+    return RangeRef(
+        request_id=request_spec.request_id,
+        range_id=range_obj.id,
+        user_id=range_spec.user_id,
+        status=ResourceStatus(range_obj.status),
+    )
 
 
 def _persist_range_atomically(
@@ -137,7 +142,7 @@ def _persist_range_atomically(
     return range_obj
 
 
-def destroy_range(request: RangeContext) -> bool:
+def destroy_range(range_ref: RangeRef) -> bool:
     """Tear down range infrastructure.
 
     Sets status to DESTROYING and triggers async ECS teardown.
@@ -148,16 +153,19 @@ def destroy_range(request: RangeContext) -> bool:
     from engine.ecs import start_teardown
     from engine.models import Range
 
-    if request.range_id is None:
-        return _destroy_via_request_id(request.request_id)
+    if not isinstance(range_ref, RangeRef):
+        raise TypeError(f"range_ref must be RangeRef, got {type(range_ref).__name__}")
 
-    logger.debug("destroy_range: range_id=%s", request.range_id)
+    if range_ref.range_id is None:
+        return _destroy_via_request_id(range_ref.request_id)
+
+    logger.debug("destroy_range: range_id=%s", range_ref.range_id)
     try:
-        range_obj = Range.objects.get(id=request.range_id)
+        range_obj = Range.objects.get(id=range_ref.range_id)
     except Range.DoesNotExist:
-        logger.warning("destroy_range: range not found range_id=%s", request.range_id)
+        logger.warning("destroy_range: range not found range_id=%s", range_ref.range_id)
         return False
-    return _apply_destroy_to_range(range_obj, request.range_id, request.user_id, start_teardown)
+    return _apply_destroy_to_range(range_obj, range_ref.range_id, range_ref.user_id, start_teardown)
 
 
 def _destroy_via_request_id(request_id: UUID | None) -> bool:
@@ -194,54 +202,53 @@ def _apply_destroy_to_range(
     return True
 
 
-def cancel_range(range_ctx: RangeContext) -> None:
+def cancel_range(range_ref: RangeRef) -> None:
     """Cancel in-progress provisioning.
 
     Only works for ranges in PENDING or PROVISIONING status.
     Sets status directly to DESTROYING without triggering teardown.
     """
-    if range_ctx is None:
-        logger.error("cancel_range called with None range_ctx")
-        raise TypeError("range_ctx cannot be None")
-    if not isinstance(range_ctx, RangeContext):
-        logger.error("cancel_range called with invalid type: %s", type(range_ctx).__name__)
-        raise TypeError(f"range_ctx must be RangeContext, got {type(range_ctx).__name__}")
+    if range_ref is None:
+        logger.error("cancel_range called with None range_ref")
+        raise TypeError("range_ref cannot be None")
+    if not isinstance(range_ref, RangeRef):
+        logger.error("cancel_range called with invalid type: %s", type(range_ref).__name__)
+        raise TypeError(f"range_ref must be RangeRef, got {type(range_ref).__name__}")
 
-    if range_ctx.range_id is None:
-        if range_ctx.request_id:
-            cancel_range_by_request(range_ctx.request_id)
+    if range_ref.range_id is None:
+        if range_ref.request_id:
+            cancel_range_by_request(range_ref.request_id)
             return
         logger.error("cancel_range called with both range_id and request_id as None")
-        raise ValueError("range_ctx must have either range_id or request_id")
+        raise ValueError("range_ref must have either range_id or request_id")
 
-    if not isinstance(range_ctx.range_id, int) or range_ctx.range_id < 0:
-        logger.error("cancel_range called with invalid range_id: %s", range_ctx.range_id)
-        raise ValueError("range_ctx.range_id must be a non-negative integer")
+    if not isinstance(range_ref.range_id, int) or range_ref.range_id < 0:
+        logger.error("cancel_range called with invalid range_id: %s", range_ref.range_id)
+        raise ValueError("range_ref.range_id must be a non-negative integer")
 
     logger.debug(
         "cancel_range: range_id=%s user_id=%s status=%s",
-        range_ctx.range_id,
-        range_ctx.user_id,
-        range_ctx.status,
+        range_ref.range_id,
+        range_ref.user_id,
+        range_ref.status,
     )
     from engine.models import Range
 
-    range_id = range_ctx.range_id
+    range_id = range_ref.range_id
     try:
         range_obj = Range.objects.get(id=range_id)
     except Range.DoesNotExist:
         logger.warning("cancel_range: range not found range_id=%s", range_id)
         return
 
-    if range_ctx.status not in CANCELLABLE_STATUSES:
+    if ResourceStatus(range_obj.status) not in CANCELLABLE_STATUSES:
         logger.warning(
             "cancel_range: range not cancellable range_id=%s status=%s",
             range_id,
-            range_ctx.status,
+            range_obj.status,
         )
         return
 
-    range_ctx.status = ResourceStatus.DESTROYING
     range_obj.status = Range.Status.DESTROYING
     range_obj.save(update_fields=["status"])
     # Provisioner will poll for status and destroy when it sees DESTROYING
