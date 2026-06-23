@@ -14,11 +14,32 @@ locals {
 
   # Parameter Store path prefix
   ps_prefix = "/shifter/${var.environment}/portal"
+
+  # Django ENVIRONMENT value for the portal container. Mirrors
+  # local.django_environment in the portal/ec2 module (which sets it on the
+  # user_data boot path); the deploy script reads it from this parameter so
+  # the deploy-time migrate/run sets the same ENVIRONMENT and
+  # config.settings require_environment() does not fail closed (#948).
+  # Keep the two mappings in sync.
+  django_environment = (
+    var.environment == "dev" ? "development" :
+    var.environment == "prod" ? "production" :
+    var.environment
+  )
 }
 
 # ------------------------------------------------------------------------------
 # Parameter Store - Deployment Configuration
 # ------------------------------------------------------------------------------
+
+resource "aws_ssm_parameter" "environment" {
+  name        = "${local.ps_prefix}/environment"
+  description = "Django ENVIRONMENT value for the portal container (config.settings)"
+  type        = "String"
+  value       = local.django_environment
+
+  tags = local.common_tags
+}
 
 resource "aws_ssm_parameter" "image_tag" {
   name        = "${local.ps_prefix}/image-tag"

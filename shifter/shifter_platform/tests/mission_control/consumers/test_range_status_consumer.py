@@ -125,6 +125,29 @@ class TestRangeStatusConsumerRangeStatus:
         }
 
     @pytest.mark.asyncio
+    async def test_prefers_range_ref_payload(self, consumer):
+        """range_status() hydrates from RangeRef when range_ref is present."""
+        consumer.request_id = TEST_REQUEST_ID
+
+        event = {
+            "type": "range_status",
+            "range_ref": {
+                "request_id": TEST_REQUEST_ID,
+                "range_id": 7,
+                "user_id": 42,
+                "status": ResourceStatus.PROVISIONING.value,
+            },
+            "request_id": TEST_REQUEST_ID,
+            "new_status": ResourceStatus.READY.value,
+            "error_message": None,
+        }
+        await consumer.range_status(event)
+
+        message = json.loads(consumer.send.call_args[1]["text_data"])
+        assert message["request_id"] == TEST_REQUEST_ID
+        assert message["status"] == ResourceStatus.PROVISIONING.value
+
+    @pytest.mark.asyncio
     async def test_includes_error_message_on_failure(self, consumer):
         """range_status() includes error message for failed ranges."""
         consumer.request_id = TEST_REQUEST_ID

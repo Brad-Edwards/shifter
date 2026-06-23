@@ -94,6 +94,9 @@ class TestProcessRangeEvent:
         assert msg["request_id"] == str(request_id)
         assert msg["new_status"] == ResourceStatus.PROVISIONING.value
         assert msg["error_message"] is None
+        assert msg["range_ref"]["request_id"] == str(request_id)
+        assert msg["range_ref"]["user_id"] == 42
+        assert msg["range_ref"]["status"] == ResourceStatus.PROVISIONING.value
 
     def test_includes_error_message_when_present(self):
         request_id = uuid4()
@@ -104,6 +107,7 @@ class TestProcessRangeEvent:
                     "event_type": "range.status.updated",
                     "request_id": str(request_id),
                     "new_status": ResourceStatus.FAILED.value,
+                    "user_id": 42,
                     "error_message": "Subnet exhausted",
                 }
             )
@@ -123,6 +127,35 @@ class TestProcessRangeEvent:
         channel = f"recv-{uuid4()}"
         async_to_sync(layer.group_add)("range_status_unknown", channel)
         process_range_event(_sns({"event_type": "range.status.updated", "new_status": "ready"}))
+        assert _receive(layer, channel) is None
+
+    def test_does_not_broadcast_when_user_id_missing(self):
+        request_id = uuid4()
+        layer, channel = _subscribe(range_event_group(str(request_id)))
+        process_range_event(
+            _sns(
+                {
+                    "event_type": "range.status.updated",
+                    "request_id": str(request_id),
+                    "new_status": ResourceStatus.READY.value,
+                }
+            )
+        )
+        assert _receive(layer, channel) is None
+
+    def test_does_not_broadcast_when_status_invalid(self):
+        request_id = uuid4()
+        layer, channel = _subscribe(range_event_group(str(request_id)))
+        process_range_event(
+            _sns(
+                {
+                    "event_type": "range.status.updated",
+                    "request_id": str(request_id),
+                    "new_status": "bogus_status",
+                    "user_id": 42,
+                }
+            )
+        )
         assert _receive(layer, channel) is None
 
 
@@ -153,6 +186,7 @@ class TestProcessEventRouting:
                     "event_type": "range.status.updated",
                     "request_id": str(request_id),
                     "new_status": ResourceStatus.READY.value,
+                    "user_id": 42,
                 }
             )
         )
