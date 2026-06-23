@@ -907,5 +907,27 @@
       "shifter/engine/provisioner/terraform/modules/range/main.tf",
       "docs/architecture/range-single-az-placement.md"
     ]
+  },
+  {
+    "id": "ADR-022",
+    "title": "Major platform features carry user and technical documentation",
+    "status": "accepted",
+    "scope": "repository",
+    "decision": "GEN-001 is enforced by a repo-native documentation coverage manifest plus an adr_guard check. Each major platform feature is enumerated in docs/adr/documentation-coverage.yaml with at least one user doc and one technical doc; the documentation-coverage check validates that every referenced doc exists under the in-app docs tree, is not under a _deprecated/hidden path, and is reachable from an index.md. 'Major platform feature' is an issue/PR classification recorded in the manifest, not a runtime model; the check enforces documentation existence and discoverability, not prose depth (that stays a review concern).",
+    "rules": [
+      {
+        "id": "ADR-022-R1",
+        "description": "Every feature in docs/adr/documentation-coverage.yaml must declare at least one user doc and at least one technical doc. Each referenced doc must exist under the manifest's docs_root, must not live under a _deprecated or hidden path, and must be linked from an index.md so it is discoverable. The check validates the whole manifest on every run regardless of the changed-file set.",
+        "checks": ["documentation-coverage"]
+      }
+    ],
+    "exceptions": [],
+    "enforcement": ["pre-commit", "ci", "agent-policy"],
+    "evidence": [
+      "docs/adr/documentation-coverage.yaml",
+      "scripts/adr_guard/adr_guard.py",
+      "scripts/adr_guard/tests/test_adr_guard.py",
+      "shifter/shifter_platform/documentation/docs/technical/dev/adr-enforcement.md"
+    ]
   }
 ]
