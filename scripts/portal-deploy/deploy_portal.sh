@@ -269,7 +269,13 @@ run_containers() {
   local stop_timeout="${DOCKER_STOP_TIMEOUT:-35}"
   docker pull "$image"
   docker stop --time "$stop_timeout" portal worker-cms worker-engine worker-mc ctf-scheduler guacamole-bootstrap-prune 2>/dev/null || true
-  docker rm portal worker-cms worker-engine worker-mc ctf-scheduler guacamole-bootstrap-prune 2>/dev/null || true
+  # Force-remove so a redeploy is idempotent. `docker stop` above does the
+  # graceful drain (#931); a plain `docker rm` then fails for any container
+  # still running (e.g. one the stop did not fully stop / a restart-policy
+  # race), the failure is swallowed by `|| true`, and the subsequent
+  # `docker run --name <x>` aborts with "name already in use". `-f` removes
+  # regardless of state so the new containers always get their names.
+  docker rm -f portal worker-cms worker-engine worker-mc ctf-scheduler guacamole-bootstrap-prune 2>/dev/null || true
   docker run -d --name portal --restart unless-stopped -p 8000:8000 "${common_env[@]}" "$image"
   docker run -d --name worker-cms --restart unless-stopped "${worker_health_base[@]}" \
     "--health-cmd=find /tmp/worker-cms-heartbeat -mmin -2 | grep -q ." \
@@ -408,11 +414,15 @@ main() {
   append_env_if_set GUACAMOLE_API_BASE_URL "$guacamole_api_base_url"
   append_env_if_set DC_DOMAIN_PASSWORD_SECRET_ARN "$dc_domain_password_secret_arn"
 
-  if [[ "$PS_PREFIX" == *"/dev/"* ]]; then
-    append_env DJANGO_ALLOWED_HOSTS "${domain_name},localhost,127.0.0.1"
-  else
-    append_env DJANGO_ALLOWED_HOSTS "$domain_name"
-  fi
+  # localhost / 127.0.0.1 must be in ALLOWED_HOSTS in EVERY environment: the
+  # path-scoped HealthCheckMiddleware (#477) rewrites the Host of /health
+  # probes to "localhost" so AWS ALB / Docker health checks (which arrive
+  # with the LB internal IP or localhost as Host) are admitted. Without them
+  # the portal target group health check fails closed (DisallowedHost -> 400
+  # -> unhealthy -> 504). The bypass is scoped to /health, so these are not
+  # accepted application hosts on any other path. Matches
+  # scripts/gcp/render_runtime_env.py (the canonical GCP renderer).
+  append_env DJANGO_ALLOWED_HOSTS "${domain_name},localhost,127.0.0.1"
   append_env DJANGO_CSRF_TRUSTED_ORIGINS "https://${domain_name}"
   append_env SITE_URL "https://${domain_name}"
   append_env ENGINE_ECS_CLUSTER_ARN "$engine_ecs_cluster_arn"

@@ -29,6 +29,12 @@ import {
   buildSsmSendCommandArgs,
   buildRunManageArgs,
   buildPoolConfig,
+  DEFAULT_GITHUB_REPO,
+  BASE_AMI_TYPES,
+  PROMOTE_AMI_REF,
+  buildGhWorkflowRunArgs,
+  ghExec,
+  resolveGitRef,
 } from "./lib.js";
 import {
   loadPolicy,
@@ -59,6 +65,9 @@ function spawnAws(profile, args, options = {}) {
 }
 
 const { Pool } = pg;
+
+const _HERE = path.dirname(fileURLToPath(import.meta.url));
+const _REPO_ROOT = path.resolve(_HERE, "..", "..");
 
 const PROFILES = {
   dev: process.env.PANW_SHIFTER_DEV_PROFILE,
@@ -639,6 +648,9 @@ const SafePath = z
   .string()
   .regex(/^[\w/.:\-[\]#, ]+$/, MSG_INVALID_CHARACTERS);
 const SafeName = z.string().regex(/^[\w.*?-]+$/, MSG_INVALID_CHARACTERS);
+const AmiTypeSchema = z
+  .enum(BASE_AMI_TYPES)
+  .describe("AMI type (kali, ubuntu, windows, dc, brokenbk)");
 const SecretIdSchema = z
   .string()
   .regex(/^[\w/+=.@-]+$/, MSG_INVALID_CHARACTERS);
@@ -2456,6 +2468,80 @@ registerTool(ctx, {
 });
 
 // ==========================================================================
+// GitHub Actions — AMI build / promote (issue #411)
+// ==========================================================================
+
+function triggerAmiWorkflow({ workflow, ami_type, ref, actionsPath }) {
+  const branch = ref ?? resolveGitRef(_REPO_ROOT);
+  ghExec(
+    buildGhWorkflowRunArgs({
+      workflow,
+      repo: DEFAULT_GITHUB_REPO,
+      ref: branch,
+      inputs: { ami_type },
+    }),
+  );
+  return (
+    `Triggered ${workflow} for ${ami_type} on ref ${branch}. ` +
+    `View at: https://github.com/${DEFAULT_GITHUB_REPO}/actions/workflows/${actionsPath}`
+  );
+}
+
+registerTool(ctx, {
+  name: "build_ami",
+  klass: "infra_mutation",
+  description:
+    "Trigger packer.yml to build an AMI in dev (equivalent to ./scripts/ami.sh -b <type>). Requires GH_TOKEN or GITHUB_TOKEN.",
+  schema: {
+    ami_type: AmiTypeSchema,
+    ref: SafePath.optional().describe(
+      "Branch to build from (default: current git branch, else dev)",
+    ),
+  },
+  handler: async ({ ami_type, ref }) => {
+    try {
+      return ok(
+        triggerAmiWorkflow({
+          workflow: "packer.yml",
+          ami_type,
+          ref,
+          actionsPath: "packer.yml",
+        }),
+      );
+    } catch (e) {
+      return err(e);
+    }
+  },
+});
+
+registerTool(ctx, {
+  name: "promote_ami",
+  klass: "infra_mutation",
+  description:
+    "Trigger packer-promote.yml to promote an AMI to prod (equivalent to ./scripts/ami.sh -p <type>). Requires GH_TOKEN or GITHUB_TOKEN.",
+  schema: {
+    env: z
+      .literal("prod")
+      .describe("Must be prod — promotion updates production AMIs."),
+    ami_type: AmiTypeSchema,
+  },
+  handler: async ({ ami_type }) => {
+    try {
+      return ok(
+        triggerAmiWorkflow({
+          workflow: "packer-promote.yml",
+          ami_type,
+          ref: PROMOTE_AMI_REF,
+          actionsPath: "packer-promote.yml",
+        }),
+      );
+    } catch (e) {
+      return err(e);
+    }
+  },
+});
+
+// ==========================================================================
 // S3
 // ==========================================================================
 
@@ -3076,8 +3162,6 @@ registerTool(ctx, {
 // registered — fail closed is the only correct path.
 async function main() {
   installLiveProcessHandlers();
-  const _HERE = path.dirname(fileURLToPath(import.meta.url));
-  const _REPO_ROOT = path.resolve(_HERE, "..", "..");
   const server = new McpServer({ name: "shifter-ops", version: "1.0.0" });
   const policy = loadPolicy({
     path: path.join(_REPO_ROOT, ".shifter.yaml"),
