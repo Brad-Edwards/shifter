@@ -391,11 +391,47 @@ def _get_ngfw_provider_metadata(state: dict[str, Any], cloud_provider: str) -> d
     return {}
 
 
+def _infer_ngfw_cloud_provider(data_attachment_id: str, route_next_hop_ip: str, env_default: str) -> str:
+    """Infer the cloud provider when state omits an explicit ``cloud_provider``.
+
+    GCP data attachments are namespaced KubeVirt references such as
+    ``"<namespace>/<vm>:eth1"``; AWS ENI ids (``"eni-..."``) never contain a
+    ``"/"`` or ``":"``. Inferring AWS from any ``data_attachment_id`` would
+    misclassify a GCP NGFW whose explicit ``cloud_provider`` was dropped.
+    """
+    if data_attachment_id:
+        return "gcp" if ("/" in data_attachment_id or ":" in data_attachment_id) else "aws"
+    if route_next_hop_ip:
+        return "gcp"
+    return env_default
+
+
+def _resolve_ngfw_attachment_mode(
+    payload: dict[str, Any],
+    provider_metadata: dict[str, Any],
+    cloud_provider: str,
+    data_attachment_id: str,
+    route_next_hop_ip: str,
+) -> str:
+    """Resolve the attachment mode, falling back to a provider-appropriate default."""
+    default_mode = ""
+    if cloud_provider == "gcp" and (route_next_hop_ip or data_attachment_id):
+        default_mode = "gdc-static-route"
+    elif cloud_provider == "aws" and data_attachment_id:
+        default_mode = "aws-route-table-eni"
+    return _first_non_empty_string(
+        payload.get("attachment_mode"),
+        provider_metadata.get("attachment_mode"),
+        default_mode,
+    )
+
+
 def resolve_ngfw_attachment_config(state: dict[str, Any] | None) -> NGFWAttachmentConfig:
     """Resolve provider-neutral NGFW attachment details from stored state."""
     payload = state if isinstance(state, dict) else {}
     explicit_provider = _first_non_empty_string(payload.get("cloud_provider")).lower()
-    cloud_provider = explicit_provider or os.environ.get("CLOUD_PROVIDER", "aws").lower()
+    env_default = os.environ.get("CLOUD_PROVIDER", "aws").lower()
+    cloud_provider = explicit_provider or env_default
     provider_metadata = _get_ngfw_provider_metadata(payload, cloud_provider)
 
     management_ip = _first_non_empty_string(
@@ -427,21 +463,10 @@ def resolve_ngfw_attachment_config(state: dict[str, Any] | None) -> NGFWAttachme
         provider_metadata.get("attachment_id"),
     )
     if not explicit_provider:
-        if data_attachment_id:
-            # GCP data attachments are namespaced KubeVirt references such as
-            # "<namespace>/<vm>:eth1"; AWS ENI ids ("eni-...") never contain a
-            # "/" or ":". Inferring AWS from any data_attachment_id would
-            # misclassify a GCP NGFW whose explicit cloud_provider was dropped.
-            is_gcp_shaped = "/" in data_attachment_id or ":" in data_attachment_id
-            cloud_provider = "gcp" if is_gcp_shaped else "aws"
-        elif route_next_hop_ip:
-            cloud_provider = "gcp"
+        cloud_provider = _infer_ngfw_cloud_provider(data_attachment_id, route_next_hop_ip, env_default)
         provider_metadata = _get_ngfw_provider_metadata(payload, cloud_provider)
-    attachment_mode = _first_non_empty_string(
-        payload.get("attachment_mode"),
-        provider_metadata.get("attachment_mode"),
-        "gdc-static-route" if cloud_provider == "gcp" and (route_next_hop_ip or data_attachment_id) else "",
-        "aws-route-table-eni" if cloud_provider == "aws" and data_attachment_id else "",
+    attachment_mode = _resolve_ngfw_attachment_mode(
+        payload, provider_metadata, cloud_provider, data_attachment_id, route_next_hop_ip
     )
 
     return NGFWAttachmentConfig(
