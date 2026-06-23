@@ -269,7 +269,13 @@ run_containers() {
   local stop_timeout="${DOCKER_STOP_TIMEOUT:-35}"
   docker pull "$image"
   docker stop --time "$stop_timeout" portal worker-cms worker-engine worker-mc ctf-scheduler guacamole-bootstrap-prune 2>/dev/null || true
-  docker rm portal worker-cms worker-engine worker-mc ctf-scheduler guacamole-bootstrap-prune 2>/dev/null || true
+  # Force-remove so a redeploy is idempotent. `docker stop` above does the
+  # graceful drain (#931); a plain `docker rm` then fails for any container
+  # still running (e.g. one the stop did not fully stop / a restart-policy
+  # race), the failure is swallowed by `|| true`, and the subsequent
+  # `docker run --name <x>` aborts with "name already in use". `-f` removes
+  # regardless of state so the new containers always get their names.
+  docker rm -f portal worker-cms worker-engine worker-mc ctf-scheduler guacamole-bootstrap-prune 2>/dev/null || true
   docker run -d --name portal --restart unless-stopped -p 8000:8000 "${common_env[@]}" "$image"
   docker run -d --name worker-cms --restart unless-stopped "${worker_health_base[@]}" \
     "--health-cmd=find /tmp/worker-cms-heartbeat -mmin -2 | grep -q ." \
