@@ -184,6 +184,7 @@
       "scripts/check_tf_kms_secrets_grant/check_tf_kms_secrets_grant.py",
       "scripts/check_tf_rds_security/check_tf_rds_security.py",
       "scripts/check_portal_target_sg_sources/check_portal_target_sg_sources.py",
+      "scripts/check_checkov_invocation_parity/check_checkov_invocation_parity.py",
       "platform/terraform/.checkov.yaml",
       "docs/adr/exceptions.yaml",
       "docs/architecture/checkov-soft-fail-preflight-757.md",
