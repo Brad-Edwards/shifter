@@ -3585,7 +3585,7 @@ def _terraform_iam_role_arn(config: BootstrapConfig, account_id: str, dry_run: b
         error("Failed to get role ARN from Terraform output")
         sys.exit(1)
     role_arn = result.stdout.strip()
-    success(f"Production IAM role created: {role_arn}")
+    success("Production IAM role created")
     return role_arn
 
 
@@ -3918,11 +3918,17 @@ def walkthrough_github_secrets(bootstrap_result: dict, dry_run: bool = False) ->
     github_repo = bootstrap_result["github_repo"]
     bucket_name = bootstrap_result["bucket_name"]
 
+    # The role ARN is the value of the GitHub secret. Rather than echoing it to
+    # the terminal (and the operator's scrollback), point the operator at the
+    # authoritative Terraform output, so no role/secret value is written to the
+    # deploy log (CodeQL py/clear-text-logging).
+    role_arn_source = "run `terraform output -raw github_actions_role_arn` in platform/terraform/global/iam"
+
     print("CI/CD needs the IAM role ARN to authenticate with AWS.\n")
 
     subheader("GitHub Secret to Add")
     print(f"  {Colors.BOLD}Name:{Colors.END}  {secret_name}")
-    print(f"  {Colors.BOLD}Value:{Colors.END} {role_arn}")
+    print(f"  {Colors.BOLD}Value:{Colors.END} ({role_arn_source})")
     print(f"\n  {Colors.BOLD}Name:{Colors.END}  TF_INFRA_STATE_BUCKET")
     print(f"  {Colors.BOLD}Value:{Colors.END} (same S3 state bucket shown above)")
 
@@ -3941,7 +3947,7 @@ def walkthrough_github_secrets(bootstrap_result: dict, dry_run: bool = False) ->
     print(f"  1. Go to: https://github.com/{github_org}/{github_repo}/settings/secrets/actions")
     print("  2. Click 'New repository secret'")
     print(f"  3. Name: {secret_name}")
-    print(f"  4. Value: {role_arn}")
+    print(f"  4. Value: {role_arn_source}")
     print("  5. Click 'Add secret'")
     print("  6. Add another secret named TF_INFRA_STATE_BUCKET with the state bucket value above")
     wait_for_user("Add the GitHub secrets, then press Enter to continue.")
