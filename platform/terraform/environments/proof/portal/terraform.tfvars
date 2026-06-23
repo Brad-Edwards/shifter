@@ -163,7 +163,13 @@ enable_waf_logging     = true
 # Portal east-west inspection (#122)
 # ------------------------------------------------------------------------------
 
-enable_portal_inspection    = true
+# Disabled on proof: per-AZ Network Firewall inspection requires the portal in
+# every AZ the ALB spans. proof runs a single instance (enable_autoscaling =
+# false) in one AZ, so the cross-AZ ALB node routes ALB->portal through the
+# firewall endpoint in one AZ and the return path through the other, and the
+# stateful firewall drops the asymmetric flow (intermittent 504s on the
+# cross-AZ ALB node). Re-enable only alongside a multi-AZ portal.
+enable_portal_inspection    = false
 firewall_log_retention_days = 365
 
 # proof: allow intentional teardown; apply once with this false before destroying
