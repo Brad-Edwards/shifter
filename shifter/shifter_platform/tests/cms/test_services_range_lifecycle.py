@@ -35,11 +35,11 @@ def _range_no_request(user, *, range_id=42):
 
 class TestDestroyRangeValidation:
     def test_raises_typeerror_for_none_range_id(self, user):
-        with pytest.raises(TypeError, match="range_id cannot be None"):
+        with pytest.raises(TypeError, match="range_instance_pk cannot be None"):
             services.destroy_range(user, None)
 
     def test_raises_typeerror_for_wrong_type(self, user):
-        with pytest.raises(TypeError, match="range_id must be an int"):
+        with pytest.raises(TypeError, match="range_instance_pk must be an int"):
             services.destroy_range(user, "not-int")
 
     def test_raises_valueerror_for_negative(self, user):
@@ -47,9 +47,9 @@ class TestDestroyRangeValidation:
             services.destroy_range(user, -1)
 
     def test_raises_cms_error_when_no_request(self, user):
-        _range_no_request(user, range_id=42)
+        ri = _range_no_request(user, range_id=42)
         with pytest.raises(CMSError, match="no associated request"):
-            services.destroy_range(user, 42)
+            services.destroy_range(user, ri.pk)
 
 
 class TestCancelRangeValidation:
@@ -126,11 +126,11 @@ class TestCancelRangeByRequestId:
 
 class TestPauseRangeValidation:
     def test_raises_typeerror_for_none_range_id(self, user):
-        with pytest.raises(TypeError, match="range_id cannot be None"):
+        with pytest.raises(TypeError, match="range_instance_pk cannot be None"):
             services.pause_range(user, None)
 
     def test_raises_typeerror_for_wrong_type(self, user):
-        with pytest.raises(TypeError, match="range_id must be an int"):
+        with pytest.raises(TypeError, match="range_instance_pk must be an int"):
             services.pause_range(user, "x")
 
     def test_raises_valueerror_for_negative(self, user):
@@ -138,18 +138,18 @@ class TestPauseRangeValidation:
             services.pause_range(user, -2)
 
     def test_raises_cms_error_when_no_request(self, user):
-        _range_no_request(user, range_id=42)
+        ri = _range_no_request(user, range_id=42)
         with pytest.raises(CMSError, match="no associated request"):
-            services.pause_range(user, 42)
+            services.pause_range(user, ri.pk)
 
 
 class TestResumeRangeValidation:
     def test_raises_typeerror_for_none_range_id(self, user):
-        with pytest.raises(TypeError, match="range_id cannot be None"):
+        with pytest.raises(TypeError, match="range_instance_pk cannot be None"):
             services.resume_range(user, None)
 
     def test_raises_typeerror_for_wrong_type(self, user):
-        with pytest.raises(TypeError, match="range_id must be an int"):
+        with pytest.raises(TypeError, match="range_instance_pk must be an int"):
             services.resume_range(user, "x")
 
     def test_raises_valueerror_for_negative(self, user):
@@ -157,9 +157,9 @@ class TestResumeRangeValidation:
             services.resume_range(user, -2)
 
     def test_raises_cms_error_when_no_request(self, user):
-        _range_no_request(user, range_id=42)
+        ri = _range_no_request(user, range_id=42)
         with pytest.raises(CMSError, match="no associated request"):
-            services.resume_range(user, 42)
+            services.resume_range(user, ri.pk)
 
 
 class TestPauseResumeByRequestIdValidation:

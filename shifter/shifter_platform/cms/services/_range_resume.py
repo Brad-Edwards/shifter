@@ -9,13 +9,13 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ._range_lifecycle import RESUME_OP, run_by_range_id, run_by_request_id
+from ._range_lifecycle import RESUME_OP, run_by_instance_pk, run_by_request_id
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import User
 
 
-def resume_range(user: User, range_id: int) -> None:
+def resume_range(user: User, range_instance_pk: int) -> None:
     """Resume a paused range.
 
     Fetches RangeInstance, verifies ownership, updates CMS status to RESUMING,
@@ -23,17 +23,17 @@ def resume_range(user: User, range_id: int) -> None:
 
     Args:
         user: User requesting resume
-        range_id: ID of the range to resume
+        range_instance_pk: PK of the RangeInstance to resume
 
     Returns:
         None
 
     Raises:
-        TypeError: If user is None, invalid type, or range_id is invalid type
-        ValueError: If user has no ID (unsaved) or range_id is invalid
+        TypeError: If user is None, invalid type, or range_instance_pk is invalid type
+        ValueError: If user has no ID (unsaved) or range_instance_pk is invalid
         CMSError: If range not found, not owned by user, or not in resumable state
     """
-    run_by_range_id(user, range_id, RESUME_OP)
+    run_by_instance_pk(user, range_instance_pk, RESUME_OP)
 
 
 def resume_range_by_request_id(user: User, request_id: str) -> None:

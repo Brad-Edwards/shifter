@@ -123,8 +123,14 @@ def _attempt_transition(
     )
 
 
-def run_by_range_id(user: User, range_id: int, op: _LifecycleOp) -> None:
-    """Run a pause/resume operation against a range identified by ``range_id``.
+def run_by_instance_pk(user: User, range_instance_pk: int, op: _LifecycleOp) -> None:
+    """Run a pause/resume operation against a range by its ``RangeInstance`` PK.
+
+    The PK is the identifier callers hold: ``find_range_instance_id_by_request``
+    and ``get_range_status_by_id`` are both PK-keyed, so lifecycle lookups must
+    use the PK too — not the legacy, nullable ``RangeInstance.range_id`` field
+    (the engine Range id), which is unset for new Request-based ranges and would
+    otherwise miss or resolve the wrong range (issue #1139).
 
     Fetches the RangeInstance, verifies ownership, updates CMS status, then
     delegates to the engine facade. Status is reverted and a ``CMSError`` raised
@@ -133,58 +139,77 @@ def run_by_range_id(user: User, range_id: int, op: _LifecycleOp) -> None:
     label = op.name
     _validate_caller_user(user, label)
 
-    if range_id is None:
-        logger.error("%s called with None range_id for user_id=%s", label, user.id)
-        raise TypeError("range_id cannot be None")
+    if range_instance_pk is None:
+        logger.error("%s called with None range_instance_pk for user_id=%s", label, user.id)
+        raise TypeError("range_instance_pk cannot be None")
 
-    if not isinstance(range_id, int):
-        logger.error("%s called with invalid range_id type: %s", label, type(range_id).__name__)
-        msg = f"range_id must be an int, got {type(range_id).__name__}"
+    if not isinstance(range_instance_pk, int):
+        logger.error(
+            "%s called with invalid range_instance_pk type: %s",
+            label,
+            type(range_instance_pk).__name__,
+        )
+        msg = f"range_instance_pk must be an int, got {type(range_instance_pk).__name__}"
         raise TypeError(msg)
 
-    if range_id < 0:
-        logger.error("%s called with negative range_id=%s for user_id=%s", label, range_id, user.id)
-        raise ValueError("range_id must be non-negative")
+    if range_instance_pk < 0:
+        logger.error(
+            "%s called with negative range_instance_pk=%s for user_id=%s",
+            label,
+            range_instance_pk,
+            user.id,
+        )
+        raise ValueError("range_instance_pk must be non-negative")
 
-    logger.debug("%s called for user_id=%s, range_id=%s", label, user.id, range_id)
+    logger.debug("%s called for user_id=%s, range_instance_pk=%s", label, user.id, range_instance_pk)
 
     try:
-        instance = RangeInstance.objects.get(range_id=range_id)
+        instance = RangeInstance.objects.get(pk=range_instance_pk)
     except RangeInstance.DoesNotExist:
-        logger.warning("%s: range not found for user_id=%s, range_id=%s", label, user.id, range_id)
-        raise CMSError(f"Range {range_id} not found") from None
+        logger.warning(
+            "%s: range not found for user_id=%s, range_instance_pk=%s",
+            label,
+            user.id,
+            range_instance_pk,
+        )
+        raise CMSError(f"Range {range_instance_pk} not found") from None
 
     if instance.user_id != user.id:
         logger.error(
-            "%s: access denied - range_id=%s owned by user_id=%s, requested by user_id=%s",
+            "%s: access denied - range_instance_pk=%s owned by user_id=%s, requested by user_id=%s",
             label,
-            range_id,
+            range_instance_pk,
             instance.user_id,
             user.id,
         )
-        raise CMSError(f"Range {range_id} not found")
+        raise CMSError(f"Range {range_instance_pk} not found")
 
     try:
         request_id = instance.request.request_id if instance.request else None
         if request_id is None:
-            logger.error("%s: no request_id for range_id=%s, cannot %s", label, range_id, op.verb)
+            logger.error(
+                "%s: no request_id for range_instance_pk=%s, cannot %s",
+                label,
+                range_instance_pk,
+                op.verb,
+            )
             raise CMSError("Range has no associated request")
 
         _attempt_transition(
             instance,
             op,
             request_id=request_id,
-            audit_entity_id=range_id,
+            audit_entity_id=range_instance_pk,
             user=user,
             label=label,
-            engine_false_detail=f"range_id={range_id}",
+            engine_false_detail=f"range_instance_pk={range_instance_pk}",
         )
 
-        logger.info("%s completed: range_id=%s user_id=%s", label, range_id, user.id)
+        logger.info("%s completed: range_instance_pk=%s user_id=%s", label, range_instance_pk, user.id)
     except (TypeError, ValueError, CMSError):
         raise
     except Exception:
-        logger.exception("Error in %s: user_id=%s range_id=%s", label, user.id, range_id)
+        logger.exception("Error in %s: user_id=%s range_instance_pk=%s", label, user.id, range_instance_pk)
         raise
 
 

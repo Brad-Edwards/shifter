@@ -52,54 +52,79 @@ def _request_id_of(range_instance):
 
 class TestPauseRange:
     def test_pauses_a_ready_range(self, user, provision_range):
-        provision_range(user, range_id=42, engine_status=EngineRange.Status.READY)
+        # range_id deliberately differs from pk to prove the lifecycle path
+        # resolves by RangeInstance PK, not the engine range_id field (#1139).
+        ri = provision_range(user, range_id=42, engine_status=EngineRange.Status.READY)
         with override_settings(**ECS_SETTINGS), patch("boto3.client", return_value=_ecs_client()):
-            services.pause_range(user, 42)
-        assert RangeInstance.objects.get(range_id=42).status == ResourceStatus.PAUSING.value
+            services.pause_range(user, ri.pk)
+        assert RangeInstance.objects.get(pk=ri.pk).status == ResourceStatus.PAUSING.value
 
     def test_reverts_and_raises_when_engine_rejects(self, user, provision_range):
         # Engine Range is PROVISIONING (not pausable) -> engine pause returns
         # False -> CMS reverts to READY and raises.
-        provision_range(user, range_id=42, engine_status=EngineRange.Status.PROVISIONING)
+        ri = provision_range(user, range_id=42, engine_status=EngineRange.Status.PROVISIONING)
         with pytest.raises(CMSError, match="cannot be paused"):
-            services.pause_range(user, 42)
-        assert RangeInstance.objects.get(range_id=42).status == ResourceStatus.READY.value
+            services.pause_range(user, ri.pk)
+        assert RangeInstance.objects.get(pk=ri.pk).status == ResourceStatus.READY.value
 
     def test_raises_cms_error_when_range_not_found(self, user):
         with pytest.raises(CMSError, match="not found"):
-            services.pause_range(user, 999)
+            services.pause_range(user, 999999)
 
     def test_raises_cms_error_when_not_owner(self, user, django_user_model, provision_range):
         other = django_user_model.objects.create_user(username="cms-p-other@e.com", email="cms-p-other@e.com")
-        provision_range(other, range_id=55, engine_status=EngineRange.Status.READY)
+        ri = provision_range(other, range_id=55, engine_status=EngineRange.Status.READY)
         with pytest.raises(CMSError, match="not found"):
-            services.pause_range(user, 55)
+            services.pause_range(user, ri.pk)
 
 
 class TestResumeRange:
     def test_resumes_a_paused_range(self, user, provision_range):
-        provision_range(user, range_id=42, engine_status=EngineRange.Status.PAUSED)
+        # range_id deliberately differs from pk (see #1139).
+        ri = provision_range(user, range_id=42, engine_status=EngineRange.Status.PAUSED)
         with override_settings(**ECS_SETTINGS), patch("boto3.client", return_value=_ecs_client()):
-            services.resume_range(user, 42)
-        assert RangeInstance.objects.get(range_id=42).status == ResourceStatus.RESUMING.value
+            services.resume_range(user, ri.pk)
+        assert RangeInstance.objects.get(pk=ri.pk).status == ResourceStatus.RESUMING.value
 
     def test_reverts_and_raises_when_engine_rejects(self, user, provision_range):
         # Engine Range is PROVISIONING (not resumable) -> engine resume returns
         # False -> CMS reverts to PAUSED and raises.
-        provision_range(user, range_id=42, engine_status=EngineRange.Status.PROVISIONING)
+        ri = provision_range(user, range_id=42, engine_status=EngineRange.Status.PROVISIONING)
         with pytest.raises(CMSError, match="cannot be resumed"):
-            services.resume_range(user, 42)
-        assert RangeInstance.objects.get(range_id=42).status == ResourceStatus.PAUSED.value
+            services.resume_range(user, ri.pk)
+        assert RangeInstance.objects.get(pk=ri.pk).status == ResourceStatus.PAUSED.value
 
     def test_raises_cms_error_when_range_not_found(self, user):
         with pytest.raises(CMSError, match="not found"):
-            services.resume_range(user, 999)
+            services.resume_range(user, 999999)
 
     def test_raises_cms_error_when_not_owner(self, user, django_user_model, provision_range):
         other = django_user_model.objects.create_user(username="cms-r-other@e.com", email="cms-r-other@e.com")
-        provision_range(other, range_id=66, engine_status=EngineRange.Status.PAUSED)
+        ri = provision_range(other, range_id=66, engine_status=EngineRange.Status.PAUSED)
         with pytest.raises(CMSError, match="not found"):
-            services.resume_range(user, 66)
+            services.resume_range(user, ri.pk)
+
+
+class TestLifecycleResolvesByPk:
+    """Regression for #1139.
+
+    CTF stores ``RangeInstance.pk`` (``find_range_instance_id_by_request`` is
+    PK-keyed) and the lifecycle bridges pass it straight through. The lifecycle
+    ops must therefore resolve by PK, never the legacy nullable ``range_id``
+    engine field. Here ``range_id`` is set far from the small auto PK so the two
+    can never coincide.
+    """
+
+    def test_pause_resolves_by_pk_not_range_id_field(self, user, provision_range):
+        ri = provision_range(user, range_id=999_999, engine_status=EngineRange.Status.READY)
+        assert ri.pk != ri.range_id
+        # Passing the engine range_id value must NOT resolve the instance.
+        with pytest.raises(CMSError, match="not found"):
+            services.pause_range(user, ri.range_id)
+        # Passing the PK resolves and pauses it.
+        with override_settings(**ECS_SETTINGS), patch("boto3.client", return_value=_ecs_client()):
+            services.pause_range(user, ri.pk)
+        assert RangeInstance.objects.get(pk=ri.pk).status == ResourceStatus.PAUSING.value
 
 
 class TestPauseRangeByRequestId:
