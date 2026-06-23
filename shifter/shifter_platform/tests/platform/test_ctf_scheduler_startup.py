@@ -79,12 +79,11 @@ def test_aws_deploy_paths_start_ctf_scheduler_container(path: Path) -> None:
     # long-lived connections drain before SIGKILL; the timeout token differs
     # between the templated user-data and the redeploy script.
     assert "docker stop --time " in deployment_text
-    assert f"portal worker-cms worker-engine worker-mc {SCHEDULER_NAME}" in deployment_text
-    # user_data.sh uses a plain `docker rm`; deploy_portal.sh uses `docker rm -f`
-    # (intentional: a plain rm fails for a still-running container). Accept both.
+    container_rm_targets = f"portal worker-cms worker-engine worker-mc {SCHEDULER_NAME}"
+    assert container_rm_targets in deployment_text
     assert (
-        f"docker rm portal worker-cms worker-engine worker-mc {SCHEDULER_NAME}" in deployment_text
-        or f"docker rm -f portal worker-cms worker-engine worker-mc {SCHEDULER_NAME}" in deployment_text
+        f"docker rm {container_rm_targets}" in deployment_text
+        or f"docker rm -f {container_rm_targets}" in deployment_text
     )
     assert "health-interval 30s" in deployment_text
     assert "health-timeout 5s" in deployment_text
