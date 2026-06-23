@@ -574,7 +574,13 @@ class DeployPortalScriptTests(unittest.TestCase):
             log = (root / "calls.log").read_text(encoding="utf-8")
             self.assertIn("TERMINAL_MAX_SESSIONS=0", log)
 
-    def test_non_dev_allowed_hosts_excludes_localhost_aliases(self) -> None:
+    def test_non_dev_allowed_hosts_includes_localhost_aliases(self) -> None:
+        # localhost / 127.0.0.1 must be in ALLOWED_HOSTS in every environment:
+        # the path-scoped HealthCheckMiddleware (#477) rewrites the Host of
+        # /health probes to "localhost", so the ALB / Docker health checks are
+        # only admitted when localhost is allowed. Excluding it for non-dev
+        # fails the portal target group health check closed (DisallowedHost ->
+        # 400 -> unhealthy -> 504). Matches scripts/gcp/render_runtime_env.py.
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             env = self._install_stubs(root)
@@ -589,10 +595,7 @@ class DeployPortalScriptTests(unittest.TestCase):
 
             self.assertEqual(result.returncode, 0, result.stderr)
             log = (root / "calls.log").read_text(encoding="utf-8")
-            self.assertRegex(
-                log, r"DJANGO_ALLOWED_HOSTS=portal\.dev\.example\.test(?!,)"
-            )
-            self.assertNotIn(
+            self.assertIn(
                 "DJANGO_ALLOWED_HOSTS=portal.dev.example.test,localhost,127.0.0.1",
                 log,
             )
