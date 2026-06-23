@@ -26,7 +26,17 @@ class EnvBinding:
     source_file: str
 
 
-_EXPLICIT_BINDINGS = (EnvBinding(name="ENVIRONMENT", default=None, source_file="config/settings.py"),)
+_API_POLICY_FILE = "config/_api_token_settings.py"
+
+# Vars read through the `_env_int` / `_env_bool` / `require_environment` helpers
+# rather than a literal `os.environ.get(...)` call are invisible to the AST
+# walker below, so they are declared explicitly here to stay in the manifest
+# (PLAT-102 token policy knobs, per the preflight config-binding guardrail).
+_EXPLICIT_BINDINGS = (
+    EnvBinding(name="ENVIRONMENT", default=None, source_file="config/settings.py"),
+    EnvBinding(name="API_TOKEN_LAST_USED_COALESCE_SECONDS", default="300", source_file=_API_POLICY_FILE),
+    EnvBinding(name="API_TOKEN_MAX_TTL_DAYS", default="365", source_file=_API_POLICY_FILE),
+)
 
 
 def _default_repr(node: ast.expr | None) -> str | None:

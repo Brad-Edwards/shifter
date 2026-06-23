@@ -24,6 +24,7 @@ load_dotenv()
 # silence Sonar's S2208 (no-wildcard) guidance — for a settings module
 # the wildcard *is* the contract (Django's official split-settings
 # pattern uses ``from .base import *``).
+from config._api_token_settings import *  # NOSONAR  # noqa: E402
 from config._channels import *  # NOSONAR  # noqa: E402
 from config._channels import _build_channel_layers  # noqa: E402
 from config._cloud import *  # NOSONAR  # noqa: E402
@@ -466,6 +467,9 @@ AWS_SES_REGION_ENDPOINT = "email.us-east-2.amazonaws.com"
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
+        # Scoped bearer tokens first (PLAT-102; fails closed), then legacy
+        # X-API-Key (deprecated, #1124), then session.
+        "shared.api_tokens.authentication.ApiTokenAuthentication",
         "risk_register.api.authentication.APIKeyAuthentication",
         "rest_framework.authentication.SessionAuthentication",
     ],

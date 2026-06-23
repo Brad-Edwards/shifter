@@ -7,6 +7,11 @@ import uuid
 from django.conf import settings
 from django.db import models
 
+# ApiToken lives in the cohesive shared.api_tokens package but belongs to the
+# ``shared`` app; importing it here ensures Django discovers it and emits its
+# migration under shared/migrations/.
+from shared.api_tokens.models import ApiToken  # noqa: F401
+
 
 class WebSocketNotification(models.Model):
     """Durable per-recipient queue for browser WebSocket notifications."""
