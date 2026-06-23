@@ -17,6 +17,7 @@ from channels.generic.websocket import AsyncWebsocketConsumer
 from django.contrib.auth.models import AnonymousUser
 
 from shared.enums import WebSocketCloseCode
+from shared.schemas import RangeRef
 
 logger = logging.getLogger(__name__)
 
@@ -101,12 +102,23 @@ class RangeStatusConsumer(AsyncWebsocketConsumer):
 
         Called when a status update is broadcast to the range group.
         """
+        range_ref_payload = event.get("range_ref")
+        request_id: str
+        status: str
+        if range_ref_payload:
+            range_ref = RangeRef.model_validate(range_ref_payload)
+            request_id = str(range_ref.request_id)
+            status = range_ref.status.value
+        else:
+            request_id = str(event.get("request_id", ""))
+            status = str(event.get("new_status", ""))
+
         await self.send(
             text_data=json.dumps(
                 {
                     "type": "status",
-                    "request_id": event.get("request_id"),
-                    "status": event.get("new_status"),
+                    "request_id": request_id,
+                    "status": status,
                     "error_message": event.get("error_message"),
                 }
             )
