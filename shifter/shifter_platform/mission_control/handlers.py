@@ -6,6 +6,7 @@ These handlers process range and NGFW status updates and broadcast them to WebSo
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
@@ -19,28 +20,27 @@ from shared.schemas import RangeRef
 logger = logging.getLogger(__name__)
 
 
-def _range_ref_from_status_event(event: dict) -> RangeRef | None:
+def _range_ref_from_status_event(event: dict[str, Any]) -> RangeRef | None:
     """Build RangeRef from a range.status.updated event payload, or None when invalid."""
-    request_id = event.get("request_id")
-    range_id = event.get("range_id")
-    user_id = event.get("user_id")
-    new_status = event.get("new_status")
     event_id = event.get("event_id", "unknown")
+    request_id = event.get("request_id")
+    new_status = event.get("new_status")
+    user_id = event.get("user_id")
 
-    if not request_id:
-        logger.error("Missing request_id in range event: event_id=%s", event_id)
-        return None
-    if new_status is None:
-        logger.error("Missing new_status in range event: event_id=%s", event_id)
-        return None
-    if user_id is None:
-        logger.error("Missing user_id in range event: event_id=%s", event_id)
+    if not request_id or new_status is None or user_id is None:
+        logger.error(
+            "Invalid range status event payload: event_id=%s request_id=%s new_status=%s user_id=%s",
+            event_id,
+            request_id,
+            new_status,
+            user_id,
+        )
         return None
 
     try:
         return RangeRef(
             request_id=request_id,
-            range_id=range_id,
+            range_id=event.get("range_id"),
             user_id=user_id,
             status=ResourceStatus(new_status),
         )
