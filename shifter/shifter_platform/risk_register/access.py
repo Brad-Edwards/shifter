@@ -36,6 +36,7 @@ def _groups_intersect_allowed(groups: list[str]) -> bool:
 
 
 def _token_owner_has_access(auth: ApiToken | APIKey) -> bool:
+    """Return True when the token or API key owner belongs to an allowed group."""
     owner = getattr(auth, "created_by", None)
     if owner is None:
         return False
@@ -43,6 +44,7 @@ def _token_owner_has_access(auth: ApiToken | APIKey) -> bool:
 
 
 def _session_user_has_access(request: HttpRequest, user: User) -> bool:
+    """Return True when the session or profile groups satisfy the allow-list."""
     session_groups = request.session.get("cognito_groups")
     groups = list(session_groups) if session_groups is not None else cognito_groups_for_user(user)
     return _groups_intersect_allowed(groups)
