@@ -172,6 +172,8 @@ behavior is real.
 
 - [`secrets-rotation-strategy-preflight-159.md`](secrets-rotation-strategy-preflight-159.md):
   binding architecture guardrails.
+- [`../dev/secrets-rotation-runbook.md`](../dev/secrets-rotation-runbook.md):
+  operator procedures for each shipped mechanism.
 - [`technical/dev/secrets.md`](../../shifter/shifter_platform/documentation/docs/technical/dev/secrets.md):
   secret inventory and high-level operator notes.
 - [`../dev/deploy-secrets.md`](../dev/deploy-secrets.md): deploy-time secret

@@ -261,6 +261,29 @@ resource "aws_iam_role_policy" "range_ssh_keys" {
   })
 }
 
+# IAM policy for RDS IAM database authentication (#159).
+# The long-running portal (web + workers) connects to the database as the
+# dedicated rds_iam runtime user with a short-lived token instead of a stored
+# password (config.db_backends.rds_iam; mission_control migration 0041 creates
+# the user). Scoped to that single DB user on this RDS instance's resource id,
+# mirroring modules/engine-provisioner/iam.tf's rds_iam_auth grant for the
+# provisioner Lambda user.
+resource "aws_iam_role_policy" "rds_iam_auth" {
+  name = "rds-iam-auth"
+  role = aws_iam_role.this.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = "rds-db:connect"
+        Resource = "arn:aws:rds-db:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:dbuser:${var.db_resource_id}/${var.db_iam_runtime_user}"
+      }
+    ]
+  })
+}
+
 # IAM policy for reading NGFW SSH keys from Secrets Manager
 # SSH keys are stored at: shifter/{env}/ngfw/{instance_uuid}/ssh-key
 # Required for NGFW CLI access feature via Guacamole SSH

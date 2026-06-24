@@ -72,6 +72,8 @@ _test_secret_key_default = "django-tests-secret-key" if IS_TEST_RUN else None
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", _test_secret_key_default)
 if not SECRET_KEY:
     raise ValueError("DJANGO_SECRET_KEY environment variable is required")
+# SECRET_KEY_FALLBACKS (zero-downtime rotation) lives in config._database_settings.
+
 DEBUG = _env_bool("DJANGO_DEBUG", False)
 ALLOWED_HOSTS = os.environ.get("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
 # Required for debug context processor
@@ -252,31 +254,10 @@ CTF_SCHEDULER_STALE_TASK_MINUTES = _env_int("CTF_SCHEDULER_STALE_TASK_MINUTES", 
 
 from config._capacity_settings import *  # noqa: E402  # NOSONAR
 
-# Database
-# Use SQLite for local dev/tests, PostgreSQL for deployed environments
-if os.environ.get("TESTING") == "1":
-    DATABASES = {
-        "default": {
-            "ENGINE": "django.db.backends.sqlite3",
-            "NAME": BASE_DIR / "db.sqlite3",
-        }
-    }
-else:
-    DATABASES = {
-        "default": {
-            "ENGINE": "django.db.backends.postgresql",
-            "NAME": os.environ.get("DB_NAME", "shifter"),
-            "USER": os.environ.get("DB_USER"),
-            "PASSWORD": os.environ.get("DB_PASSWORD"),
-            "HOST": os.environ.get("DB_HOST", "localhost"),
-            "PORT": os.environ.get("DB_PORT", "5432"),
-            # Connection settings (can tune CONN_MAX_AGE for connection reuse)
-            "CONN_MAX_AGE": 0,
-            "OPTIONS": {
-                "connect_timeout": 10,
-            },
-        }
-    }
+# Database and SECRET_KEY rotation settings (DATABASES, SECRET_KEY_FALLBACKS).
+# Split into config/_database_settings.py to keep this module under the S104
+# 500-line cap; the IAM-auth DB path lives there (issue #159).
+from config._database_settings import *  # noqa: E402  # NOSONAR
 
 # Password validation
 AUTH_PASSWORD_VALIDATORS = [
