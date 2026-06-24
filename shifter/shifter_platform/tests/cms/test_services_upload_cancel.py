@@ -7,11 +7,13 @@ and ``shared.cloud`` AWS adapter mocked only at the ``boto3`` boundary, instead
 of patching ``verify_upload_token`` / ``delete_agent``.
 """
 
+from datetime import timedelta
 from unittest.mock import MagicMock, patch
 
 import pytest
 from botocore.exceptions import ClientError
 from django.contrib.auth import get_user_model
+from freezegun import freeze_time
 
 from cms import services
 from cms.assets.upload_token import generate_upload_token
@@ -89,9 +91,12 @@ class TestCancelUploadTokenValidation:
             services.cancel_upload(user, "not-a-valid-token")
 
     def test_raises_cmserror_on_expired_token(self, user, settings):
-        settings.AGENT_UPLOAD_URL_EXPIRES = -100  # token expires immediately
-        with pytest.raises(CMSError, match="Invalid upload token"):
-            services.cancel_upload(user, _token(user))
+        settings.AGENT_UPLOAD_URL_EXPIRES = 60
+        with freeze_time("2024-06-01T12:00:00Z") as frozen:
+            token = _token(user)
+            frozen.tick(timedelta(seconds=61))
+            with pytest.raises(CMSError, match="Invalid upload token"):
+                services.cancel_upload(user, token)
 
 
 class TestCancelUploadBestEffortDelete:
