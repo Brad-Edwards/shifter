@@ -222,6 +222,15 @@ The first slice intentionally stays small:
   in `deploy.yml` (strict by default, settable to `true` only on a manual
   dispatch for the first-ever deploy to a fresh AWS environment).
 
+  Enforces ADR-003-R6: after successful AWS dev portal deploy verification,
+  `_shifter-platform.yml` may run an advisory `post-deploy-smoke` job that
+  executes `scripts/smoke-test.sh` via `portal_deploy.py run-manage-on-portal`.
+  The job must stay dev-only (`inputs.is_dev`), use `continue-on-error: true`,
+  request `issues: write` only for failure issue creation, declare `SMOKE_*`
+  secrets on the reusable workflow, and poll SSM command status until the
+  requested manage timeout rather than using the fixed-limit
+  `aws ssm wait command-executed` waiter.
+
 - `TFLint`
   Adds Terraform linting on top of `terraform fmt` and `terraform validate`.
   The initial profile is intentionally narrow: it leaves existing repo-wide

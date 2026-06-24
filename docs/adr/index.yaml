@@ -67,6 +67,11 @@
         "checks": ["deploy-verification-fail-loud"]
       },
       {
+        "id": "ADR-003-R6",
+        "description": "After successful AWS dev portal deploy verification, _shifter-platform.yml may run an advisory post-deploy range smoke job (post-deploy-smoke) that executes scripts/smoke-test.sh via scripts/portal_deploy/portal_deploy.py run-manage-on-portal. The job must remain dev-only (inputs.is_dev), continue-on-error so deploy success is not blocked, request issues: write only for failure issue creation, and declare SMOKE_* secrets on the reusable workflow. Long-running portal manage commands must poll SSM command status until the requested timeout rather than relying on the fixed-limit aws ssm wait command-executed waiter.",
+        "checks": ["deploy-verification-fail-loud", "deploy-workflow-runner-exposure"]
+      },
+      {
         "id": "ADR-003-R4",
         "description": "AWS portal deployment mode must have one authoritative source: the deploy workflow derives single-instance vs. ASG mode from Terraform outputs, not from a GitHub Actions variable. The single-instance path must fail unless exactly one running tagged portal instance matches Terraform state, and the ASG path must verify the deployed image digest on every in-service instance after refresh.",
         "checks": ["portal-deploy-mode-source-of-truth"]
