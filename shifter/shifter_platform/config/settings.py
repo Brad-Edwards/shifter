@@ -115,6 +115,10 @@ INSTALLED_APPS = [
     "health_check.storage",
     "config.apps.PortalConfig",
     "rest_framework",
+    # Anymail provides the GCP transactional-email backends (SendGrid / Mailgun);
+    # AWS continues to use django-ses. Loaded in all environments so the
+    # EMAIL_BACKEND choice is purely runtime config (see config/_email.py).
+    "anymail",
     "mission_control.apps.MissionControlConfig",
     "risk_register.apps.RiskRegisterConfig",
     "documentation.apps.DocumentationConfig",
@@ -456,10 +460,12 @@ CTF_DEFAULT_RANGE_SPINUP_MINUTES = int(os.environ.get("CTF_DEFAULT_RANGE_SPINUP_
 CTF_DEFAULT_CLEANUP_DELAY_HOURS = int(os.environ.get("CTF_DEFAULT_CLEANUP_DELAY_HOURS", "24"))
 CTFD_PLATFORM_URL = os.environ.get("CTFD_PLATFORM_URL", "https://ctf.shifter.example.com/login")
 
-# Email - SES
-EMAIL_BACKEND = os.environ.get("EMAIL_BACKEND", "django.core.mail.backends.console.EmailBackend")
-AWS_SES_REGION_NAME = "us-east-2"
-AWS_SES_REGION_ENDPOINT = "email.us-east-2.amazonaws.com"
+# Email
+# Provider-aware email backend config (AWS SES / GCP SaaS via anymail / console
+# fallback) lives in ``config/_email`` so the email keys have a single owner and
+# this module stays under the 500-line cap (Sonar S104). See that module for the
+# AWS-vs-GCP delivery model and the never-committed ESP API-key handling.
+from config._email import *  # NOSONAR  # noqa: E402
 
 # ------------------------------------------------------------------------------
 # Django REST Framework Configuration

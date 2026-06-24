@@ -123,6 +123,22 @@ if [[ -n "${REDIS_SECRET_ID:-}" ]]; then
     unset REDIS_SECRET
 fi
 
+# Hydrate the transactional-email ESP (SendGrid/Mailgun) API key from Secret
+# Manager when the GCP runtime advertises it (PLAT-002, #671).
+# EMAIL_API_KEY_SECRET_ID is rendered into the pod env by
+# scripts/gcp/render_runtime_env.py; the API key itself never travels via the
+# runtime ConfigMap or generated env file. The payload is JSON ({"api_key":
+# "..."}) and flows through stdin into `python -c` so the secret value is not
+# exposed in process argv. Email is optional: this block is skipped (console
+# backend) when no secret is configured, so AWS (django-ses, IAM) and
+# unconfigured deployments are unaffected.
+if [[ -n "${EMAIL_API_KEY_SECRET_ID:-}" ]]; then
+    EMAIL_SECRET=$(fetch_runtime_secret "$EMAIL_API_KEY_SECRET_ID")
+    EMAIL_API_KEY=$(echo "$EMAIL_SECRET" | python -c "import sys, json; print(json.load(sys.stdin)['api_key'])")
+    export EMAIL_API_KEY
+    unset EMAIL_SECRET
+fi
+
 # ------------------------------------------------------------------------------
 # Wait for database
 # ------------------------------------------------------------------------------
