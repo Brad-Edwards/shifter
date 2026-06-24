@@ -10,6 +10,8 @@ VariantName = Literal["linux", "windows"]
 
 @dataclass(frozen=True)
 class SmokeVariant:
+    """Catalog scenario and timing configuration for one smoke variant."""
+
     name: VariantName
     scenario_id: str
     required_agent_keys: tuple[str, ...]
@@ -39,6 +41,7 @@ VARIANTS: dict[VariantName, SmokeVariant] = {
 
 
 def parse_variant(raw: str) -> SmokeVariant:
+    """Parse a CLI variant name into a configured SmokeVariant."""
     key = raw.strip().lower()
     if key not in VARIANTS:
         allowed = ", ".join(sorted(VARIANTS))

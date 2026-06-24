@@ -6,7 +6,7 @@ import logging
 import os
 import time
 from argparse import ArgumentParser
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 from django.contrib.auth import get_user_model
@@ -21,8 +21,13 @@ from shared.enums import ResourceStatus
 
 logger = logging.getLogger(__name__)
 
+if TYPE_CHECKING:
+    from django.contrib.auth.models import User
+
 
 class Command(BaseCommand):
+    """Provision, probe, and destroy a catalog range for post-deploy smoke."""
+
     help = "Provision a dev range, verify connectivity, and tear it down for post-deploy smoke"
 
     def add_arguments(self, parser: ArgumentParser) -> None:
@@ -61,7 +66,8 @@ class Command(BaseCommand):
         if failure is not None:
             raise CommandError(str(failure)) from failure
 
-    def _load_smoke_user(self):
+    def _load_smoke_user(self) -> User:
+        """Resolve the portal user that owns smoke-provisioned ranges."""
         email = os.environ.get("SMOKE_TEST_USER_EMAIL", "").strip()
         if not email:
             raise CommandError("SMOKE_TEST_USER_EMAIL is required")
@@ -71,7 +77,7 @@ class Command(BaseCommand):
             raise CommandError(f"Smoke user not found for email {email!r}")
         return user
 
-    def _provision_range(self, user, variant: SmokeVariant) -> UUID:
+    def _provision_range(self, user: User, variant: SmokeVariant) -> UUID:
         agents_by_os = build_agents_by_os(variant)
         context = cms_services.create_range(
             user,
@@ -99,7 +105,12 @@ class Command(BaseCommand):
             f"timed out after {variant.provision_timeout_seconds}s waiting for READY (request_id={request_id})"
         )
 
-    def _verify_connectivity(self, user, request_id: UUID, variant: SmokeVariant) -> None:
+    def _verify_connectivity(
+        self,
+        user: User,
+        request_id: UUID,
+        variant: SmokeVariant,
+    ) -> None:
         range_context = cms_services.get_range_by_request_id(user, str(request_id))
         if range_context.status != ResourceStatus.READY:
             raise CommandError(f"range not READY for connectivity probe (status={range_context.status})")
@@ -134,6 +145,6 @@ class Command(BaseCommand):
                 time.sleep(15)
         raise CommandError(f"connectivity probe failed: {last_error}")
 
-    def _destroy_range(self, user, request_id: UUID) -> None:
+    def _destroy_range(self, user: User, request_id: UUID) -> None:
         cms_services.destroy_range_by_request_id(user, str(request_id))
         self.stdout.write(f"destroy requested for request_id={request_id}")

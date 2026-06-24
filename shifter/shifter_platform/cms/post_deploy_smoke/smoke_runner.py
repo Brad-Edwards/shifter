@@ -9,6 +9,7 @@ from cms.post_deploy_smoke.variants import SmokeVariant
 
 
 def build_agents_by_os(variant: SmokeVariant, env: Mapping[str, str] | None = None) -> dict[str, int]:
+    """Resolve required SMOKE_* agent IDs for the selected variant."""
     env = env or os.environ
     agents: dict[str, int] = {}
     for key in variant.required_agent_keys:
@@ -27,6 +28,7 @@ def select_probe_target(
     attacker_uuid: str,
     windows_uuid: str | None = None,
 ) -> tuple[str, str]:
+    """Choose the protocol and instance UUID to probe for the variant."""
     if variant.primary_protocol == "ssh":
         if not attacker_uuid:
             raise ValueError("attacker instance uuid is required for linux smoke")
