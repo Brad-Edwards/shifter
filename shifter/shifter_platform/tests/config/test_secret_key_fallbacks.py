@@ -10,43 +10,43 @@ import json
 
 import pytest
 
-from config.settings import SECRET_KEY_FALLBACKS_MAX, _parse_secret_key_fallbacks
+from config._database_settings import SECRET_KEY_FALLBACKS_MAX, parse_secret_key_fallbacks
 
 
 @pytest.mark.parametrize("raw", ["", "   ", "\n\n", "[]"])
 def test_empty_inputs_yield_no_fallbacks(raw):
-    assert _parse_secret_key_fallbacks(raw) == []
+    assert parse_secret_key_fallbacks(raw) == []
 
 
 def test_json_array_is_parsed_in_order():
-    assert _parse_secret_key_fallbacks('["old1", "old2"]') == ["old1", "old2"]
+    assert parse_secret_key_fallbacks('["old1", "old2"]') == ["old1", "old2"]
 
 
 def test_json_array_filters_blank_entries():
-    assert _parse_secret_key_fallbacks('["old1", "", "  ", "old2"]') == ["old1", "old2"]
+    assert parse_secret_key_fallbacks('["old1", "", "  ", "old2"]') == ["old1", "old2"]
 
 
 def test_newline_separated_fallback_form():
-    assert _parse_secret_key_fallbacks("old1\nold2\n") == ["old1", "old2"]
+    assert parse_secret_key_fallbacks("old1\nold2\n") == ["old1", "old2"]
 
 
 def test_newline_form_preserves_commas_in_keys():
     # Django SECRET_KEYs can contain commas, so the non-JSON form splits on
     # newlines (not commas) to keep each key intact.
-    assert _parse_secret_key_fallbacks("ke,y1\nkey2") == ["ke,y1", "key2"]
+    assert parse_secret_key_fallbacks("ke,y1\nkey2") == ["ke,y1", "key2"]
 
 
 def test_non_list_json_is_rejected():
     with pytest.raises(ValueError, match="array of strings"):
-        _parse_secret_key_fallbacks('{"old": 1}')
+        parse_secret_key_fallbacks('{"old": 1}')
 
 
 def test_max_count_is_allowed():
     keys = [f"key{i}" for i in range(SECRET_KEY_FALLBACKS_MAX)]
-    assert _parse_secret_key_fallbacks(json.dumps(keys)) == keys
+    assert parse_secret_key_fallbacks(json.dumps(keys)) == keys
 
 
 def test_exceeding_max_count_is_rejected():
     keys = [f"key{i}" for i in range(SECRET_KEY_FALLBACKS_MAX + 1)]
     with pytest.raises(ValueError, match="maximum is"):
-        _parse_secret_key_fallbacks(json.dumps(keys))
+        parse_secret_key_fallbacks(json.dumps(keys))

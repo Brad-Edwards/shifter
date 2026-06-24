@@ -11,7 +11,6 @@ name it always has.
 
 from __future__ import annotations
 
-import json
 import os
 from pathlib import Path
 
@@ -73,43 +72,7 @@ _test_secret_key_default = "django-tests-secret-key" if IS_TEST_RUN else None
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", _test_secret_key_default)
 if not SECRET_KEY:
     raise ValueError("DJANGO_SECRET_KEY environment variable is required")
-
-# Maximum number of previous signing keys honoured during a SECRET_KEY
-# rotation. Bounded so a stale/oversized fallback list cannot turn every
-# signature check into an unbounded scan.
-SECRET_KEY_FALLBACKS_MAX = 5
-
-
-def _parse_secret_key_fallbacks(raw: str) -> list[str]:
-    """Parse the ``DJANGO_SECRET_KEY_FALLBACKS`` value into a bounded list.
-
-    Accepts a JSON array of strings (the shape the entrypoint hydrates from the
-    app secret bundle) and falls back to newline-separated values. Older
-    SECRET_KEYs may contain commas, so newlines (not commas) separate the
-    fallback form. Returns at most ``SECRET_KEY_FALLBACKS_MAX`` non-empty keys.
-    """
-    raw = (raw or "").strip()
-    if not raw:
-        return []
-    keys: list[str]
-    try:
-        parsed = json.loads(raw)
-    except json.JSONDecodeError:
-        keys = [line.strip() for line in raw.splitlines()]
-    else:
-        if not isinstance(parsed, list):
-            raise ValueError("DJANGO_SECRET_KEY_FALLBACKS JSON must be an array of strings")
-        keys = [str(item).strip() for item in parsed]
-    keys = [key for key in keys if key]
-    if len(keys) > SECRET_KEY_FALLBACKS_MAX:
-        raise ValueError(f"DJANGO_SECRET_KEY_FALLBACKS has {len(keys)} keys; the maximum is {SECRET_KEY_FALLBACKS_MAX}")
-    return keys
-
-
-# Previous signing keys kept valid during a SECRET_KEY rotation so existing
-# signed sessions/cookies survive the rollout (zero forced logout). Empty in
-# steady state; populated from the app secret bundle only while rotating.
-SECRET_KEY_FALLBACKS = _parse_secret_key_fallbacks(os.environ.get("DJANGO_SECRET_KEY_FALLBACKS", ""))
+# SECRET_KEY_FALLBACKS (zero-downtime rotation) lives in config._database_settings.
 
 DEBUG = _env_bool("DJANGO_DEBUG", False)
 ALLOWED_HOSTS = os.environ.get("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
@@ -291,50 +254,10 @@ CTF_SCHEDULER_STALE_TASK_MINUTES = _env_int("CTF_SCHEDULER_STALE_TASK_MINUTES", 
 
 from config._capacity_settings import *  # noqa: E402  # NOSONAR
 
-# Database
-# Use SQLite for local dev/tests, PostgreSQL for deployed environments
-if os.environ.get("TESTING") == "1":
-    DATABASES = {
-        "default": {
-            "ENGINE": "django.db.backends.sqlite3",
-            "NAME": BASE_DIR / "db.sqlite3",
-        }
-    }
-else:
-    # When DB_IAM_AUTH is enabled the running app connects with an RDS IAM
-    # token instead of a stored password (see config.db_backends.rds_iam). The
-    # entrypoint turns this on for the AWS runtime *after* migrations have run
-    # as the password-authenticated owner, so migrations keep using the stock
-    # backend and the runtime connection holds no long-lived password. RDS
-    # rejects IAM auth over an unencrypted link, so SSL is enforced via
-    # OPTIONS; DB_SSLMODE defaults to "require" (encrypted; the private-VPC
-    # RDS is not publicly reachable) and can be raised to "verify-full" with
-    # DB_SSL_ROOT_CERT pointing at the RDS CA bundle.
-    _db_iam_auth = _env_bool("DB_IAM_AUTH", False)
-    _db_options: dict[str, object] = {"connect_timeout": 10}
-    if _db_iam_auth:
-        _db_engine = "config.db_backends.rds_iam"
-        _db_options["sslmode"] = os.environ.get("DB_SSLMODE", "require")
-        _db_ssl_root_cert = os.environ.get("DB_SSL_ROOT_CERT", "").strip()
-        if _db_ssl_root_cert:
-            _db_options["sslrootcert"] = _db_ssl_root_cert
-    else:
-        _db_engine = "django.db.backends.postgresql"
-    DATABASES = {
-        "default": {
-            "ENGINE": _db_engine,
-            "NAME": os.environ.get("DB_NAME", "shifter"),
-            "USER": os.environ.get("DB_USER"),
-            # Ignored under IAM auth (the backend mints a token); retained for
-            # the password path (local/dev and the migration owner).
-            "PASSWORD": os.environ.get("DB_PASSWORD"),
-            "HOST": os.environ.get("DB_HOST", "localhost"),
-            "PORT": os.environ.get("DB_PORT", "5432"),
-            # Connection settings (can tune CONN_MAX_AGE for connection reuse)
-            "CONN_MAX_AGE": 0,
-            "OPTIONS": _db_options,
-        }
-    }
+# Database and SECRET_KEY rotation settings (DATABASES, SECRET_KEY_FALLBACKS).
+# Split into config/_database_settings.py to keep this module under the S104
+# 500-line cap; the IAM-auth DB path lives there (issue #159).
+from config._database_settings import *  # noqa: E402  # NOSONAR
 
 # Password validation
 AUTH_PASSWORD_VALIDATORS = [

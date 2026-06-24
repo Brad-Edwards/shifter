@@ -21,20 +21,21 @@ from __future__ import annotations
 
 import os
 import threading
-from typing import Any
 
 import boto3
+from botocore.client import BaseClient
 from django.core.exceptions import ImproperlyConfigured
 from django.db.backends.postgresql import base
 
 # boto3 clients are thread-safe and cache instance-role credentials (which the
 # SDK refreshes automatically), so one client per region is reused across
 # connections rather than constructed per connect.
-_clients: dict[str, Any] = {}
+_clients: dict[str, BaseClient] = {}
 _clients_lock = threading.Lock()
 
 
 def _resolve_region() -> str:
+    """Return the AWS region used to sign IAM tokens, failing loud if unset."""
     region = (
         os.environ.get("DB_IAM_REGION") or os.environ.get("AWS_REGION") or os.environ.get("AWS_DEFAULT_REGION") or ""
     ).strip()
@@ -43,7 +44,8 @@ def _resolve_region() -> str:
     return region
 
 
-def _rds_client(region: str) -> Any:
+def _rds_client(region: str) -> BaseClient:
+    """Return a cached boto3 RDS client for ``region`` (created once per region)."""
     client = _clients.get(region)
     if client is None:
         with _clients_lock:
@@ -62,7 +64,7 @@ def generate_iam_auth_token(host: str, port: int, user: str, region: str) -> str
 class DatabaseWrapper(base.DatabaseWrapper):
     """PostgreSQL wrapper that injects an RDS IAM token as the password."""
 
-    def get_connection_params(self) -> dict:
+    def get_connection_params(self) -> dict[str, object]:
         params = super().get_connection_params()
         host = params.get("host")
         user = params.get("user")
