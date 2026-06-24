@@ -41,10 +41,10 @@ Runtime secrets accessed by the portal at startup.
 | `shifter-{env}-portal-db-credentials` | RDS connection (host, port, user, password, dbname) |
 | `shifter-{env}-portal-app` | Django SECRET_KEY, other app secrets |
 | `shifter-{env}-portal-cognito` | OIDC client ID, client secret, domain |
-| `shifter-{env}-portal-dc-domain` | Domain-controller domain Administrator password (`DC_DOMAIN_PASSWORD`) — used by the engine provisioner to promote prebaked DC AMIs and to domain-join victims |
+| `shifter-{env}-portal-dc-domain` | Domain-controller domain Administrator password (`DC_DOMAIN_PASSWORD`), used by the engine provisioner to promote prebaked DC AMIs and to domain-join victims |
 
 The domain-controller password is a live credential. It must not appear in
-committed tfvars, workflow YAML, Terraform plan comments, or command logs —
+committed tfvars, workflow YAML, Terraform plan comments, or command logs,
 only in Secrets Manager and (like every other portal secret) in restricted
 Terraform state.
 
@@ -59,10 +59,10 @@ stack creates the secret with a live `AWSCURRENT` value and wires its ARN into
 the engine ECS task definition (`secrets = [...]`) and the portal SSM parameter
 (`${ps_prefix}/dc-domain-password-secret-arn`). The engine provisioner uses
 that value to promote each prebaked DC AMI (the AMI ships AD DS binaries; the
-domain — and its Administrator password — is created per range at provision
+domain (and its Administrator password) is created per range at provision
 time) and to domain-join victims; the portal Django container reads it at
 runtime via `entrypoint.sh`. There is no out-of-band
-`aws secretsmanager create-secret` / `put-secret-value` step — a fresh
+`aws secretsmanager create-secret` / `put-secret-value` step. A fresh
 environment is fully provisioned by the normal bootstrap → `terraform apply`
 flow, same as every other secret in the stack.
 
@@ -200,8 +200,8 @@ channel). See `docs/architecture/vm-guest-credential-preflight-762.md`.
    `administrators_authorized_keys`, the engine provisioner runs
    `SetLocalPasswordPlan` via `SetupOrchestrator`:
    - Linux (kali, ubuntu): the password is piped through `chpasswd`
-     stdin — never as a `chpasswd` argv.
-   - Windows victim: `Set-LocalUser -Password (ConvertTo-SecureString …)` —
+     stdin, never as a `chpasswd` argv.
+   - Windows victim: `Set-LocalUser -Password (ConvertTo-SecureString …)`,
      never as a `net user` argv.
    - `SetupOrchestrator.SENSITIVE_CONTEXT_KEY_PARTS` masks the value
      in captured stdout/stderr because the context key is
@@ -213,12 +213,12 @@ channel). See `docs/architecture/vm-guest-credential-preflight-762.md`.
    `shared.cloud.get_secrets_store().get_secret()`. If the fetch fails
    (deleted secret, IAM regression), the portal raises a
    non-sensitive `ValueError` that the Mission Control RDP view maps
-   to HTTP 400 — same envelope as a missing reference.
+   to HTTP 400, the same envelope as a missing reference.
 
 #### DC role
 
 The DC role keeps the deployment-scoped `DC_DOMAIN_PASSWORD` contract
-documented below — a DC host's local Administrator account *is* the
+documented below: a DC host's local Administrator account *is* the
 domain Administrator account, so per-instance rotation is handled
 through DC promotion rather than the per-instance secret.
 
@@ -232,7 +232,7 @@ AWS path, the same as the existing per-instance SSH-key precedent
 Terraform state lives in the S3 backend with bucket-level encryption
 and least-privilege IAM access; this is the established mitigation.
 Eliminating state exposure entirely would require external secret
-generation (e.g., a Lambda invoking `aws secretsmanager create-secret`)
+generation (for example, a Lambda invoking `aws secretsmanager create-secret`)
 and is a separate workstream.
 
 #### Residual SSM Run Command body exposure (AWS)
@@ -267,7 +267,7 @@ Per-instance rotation is achieved by destroying and re-provisioning
 the range; the Terraform `random_password` regenerates, the new value
 replaces the previous secret version, and `SetLocalPasswordPlan` pushes
 it on the next provision. Image rebuilds (Packer) do **not** rotate
-live credentials — they only refresh the bootstrap scripts shipped on
+live credentials; they only refresh the bootstrap scripts shipped on
 first boot.
 
 ### Domain Controller Administrator Password
@@ -291,7 +291,7 @@ rotation pick up the new value without a task-definition redeploy.
    ```
    (or terminate the portal EC2 and let the ASG relaunch).
 3. Re-provision any ranges whose DC was promoted with the old value so the live
-   domain credential matches the secret again — existing ranges keep the old
+   domain credential matches the secret again; existing ranges keep the old
    password until they are re-provisioned. No engine provisioner task-definition
    redeploy is required; the next ECS task launch reads the rotated value.
 
