@@ -88,6 +88,16 @@
       "source_file": "config/settings.py"
     },
     {
+      "default": "'require'",
+      "name": "DB_SSLMODE",
+      "source_file": "config/settings.py"
+    },
+    {
+      "default": "''",
+      "name": "DB_SSL_ROOT_CERT",
+      "source_file": "config/settings.py"
+    },
+    {
       "default": null,
       "name": "DB_USER",
       "source_file": "config/settings.py"
@@ -110,6 +120,11 @@
     {
       "default": "_test_secret_key_default",
       "name": "DJANGO_SECRET_KEY",
+      "source_file": "config/settings.py"
+    },
+    {
+      "default": "''",
+      "name": "DJANGO_SECRET_KEY_FALLBACKS",
       "source_file": "config/settings.py"
     },
     {
