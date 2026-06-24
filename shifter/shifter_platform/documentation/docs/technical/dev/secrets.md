@@ -145,18 +145,28 @@ aws secretsmanager create-secret \
 
 ## Rotating Secrets
 
+The bullets below are high-level operator notes, not a full production rotation
+strategy. The production rotation policy per credential class is
+`docs/architecture/secrets-rotation-strategy.md`; before changing production
+rotation behavior, apply the architecture guardrails in
+`docs/architecture/secrets-rotation-strategy-preflight-159.md`.
+
 ### Database Password
-1. Update in Secrets Manager
-2. Restart portal container (picks up new value)
+The current portal reads `DB_PASSWORD` at container startup. Rotating the
+database password must keep the actual RDS password and the Secret Manager JSON
+bundle consistent, then restart/drain portal processes so they hydrate the new
+value. Updating only one side is not a completed rotation.
 
 ### Django SECRET_KEY
-1. Update in Secrets Manager
-2. Restart portal (existing sessions invalidated)
+Updating `django_secret_key` in the app secret and restarting the portal
+invalidates existing sessions unless explicit `SECRET_KEY_FALLBACKS` support is
+added first. Do not rotate `field_encryption_key` as a side effect of rotating
+`django_secret_key`.
 
 ### Cognito Client Secret
-1. Rotate in Cognito console
-2. Update in Secrets Manager
-3. Restart portal
+Treat this as a coordinated Cognito app-client credential swap. Keep old and
+new client credentials available through portal deploy/drain; do not delete the
+old client while old portal processes can still use it.
 
 ### VM guest passwords (per-instance)
 
