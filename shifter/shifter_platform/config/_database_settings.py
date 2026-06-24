@@ -63,7 +63,7 @@ def parse_secret_key_fallbacks(raw: str) -> list[str]:
 SECRET_KEY_FALLBACKS = parse_secret_key_fallbacks(os.environ.get("DJANGO_SECRET_KEY_FALLBACKS", ""))
 
 
-def _build_databases() -> dict:
+def _build_databases() -> dict[str, dict[str, object]]:
     """Return the DATABASES setting (SQLite under TESTING, else PostgreSQL)."""
     if os.environ.get("TESTING") == "1":
         return {
