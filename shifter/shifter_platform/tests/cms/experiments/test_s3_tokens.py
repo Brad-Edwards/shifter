@@ -3,7 +3,10 @@
 Tests the HMAC token logic -- no real S3 calls needed.
 """
 
+from datetime import timedelta
+
 import pytest
+from freezegun import freeze_time
 
 from cms.experiments.s3 import (
     _normalize_script_filename_segment,
@@ -56,10 +59,14 @@ class TestUploadToken:
             verify_upload_token("no-dot-separator", user_id=1)
 
     def test_expired_token_raises(self, settings):
-        settings.SCRIPT_UPLOAD_URL_EXPIRES = -1
-        token = generate_upload_token(user_id=1, s3_key="scripts/1/x.py", name="Test", filename="x.py", file_size=100)
-        with pytest.raises(ValueError, match="expired"):
-            verify_upload_token(token, user_id=1)
+        settings.SCRIPT_UPLOAD_URL_EXPIRES = 60
+        with freeze_time("2024-06-01T12:00:00Z") as frozen:
+            token = generate_upload_token(
+                user_id=1, s3_key="scripts/1/x.py", name="Test", filename="x.py", file_size=100
+            )
+            frozen.tick(timedelta(seconds=61))
+            with pytest.raises(ValueError, match="expired"):
+                verify_upload_token(token, user_id=1)
 
 
 class TestScriptFilenameNormalization:
