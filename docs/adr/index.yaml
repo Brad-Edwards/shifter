@@ -930,5 +930,42 @@
       "scripts/adr_guard/tests/test_adr_guard.py",
       "shifter/shifter_platform/documentation/docs/technical/dev/adr-enforcement.md"
     ]
+  },
+  {
+    "id": "ADR-023",
+    "title": "Agent risk audit findings use canonical internal identity and sanitized public tracking",
+    "status": "accepted",
+    "scope": "repository",
+    "decision": "Repeatable agent-driven risk audits treat the Risk Register as the canonical internal store for detailed findings and GitHub issues as sanitized tracking proxies only. A tracked risk has one opaque persisted `risk_key`; same-risk matching is based on a versioned structural tuple, not titles, prose, GitHub issue numbers, or database primary keys. Public GitHub issue content is generated from a sanitized summary policy and must not copy Risk Register detail, exploit evidence, raw scanner output, internal topology, live cloud identifiers, or secrets. Risk Register writes, GitHub issue creation/update, severity or confidence promotion, and lifecycle changes require an explicit human review gate. Productized writes reuse the Risk Register API/service/audit path, Cognito group authorization, and exact `shared.api_tokens` `risk:read` / `risk:write` scopes; operator MCP runs may use `mcp/ops` named DB tools only with the MCP policy/audit evidence surface called out explicitly.",
+    "rules": [
+      {
+        "id": "ADR-023-R1",
+        "description": "Risk Register entries are the internal source of truth for detailed agent risk-audit findings. GitHub issues are sanitized tracking proxies and may carry only coarse component, broad risk class, high-level mitigation objective, review/status labels, and an opaque `Risk-Key`; they must not carry exploit steps, proof-of-concept commands, secrets, raw logs, scanner output, internal endpoints/topology, or live cloud identifiers.",
+        "checks": []
+      },
+      {
+        "id": "ADR-023-R2",
+        "description": "Same-risk matching uses an opaque persisted `risk_key` plus a versioned normalized tuple covering component scope, asset class, risk kind, control failure, actor vector, precondition class, and impact class. Future implementation must add explicit structured Risk Register metadata or link tables when needed; it must not hide machine identity, dedupe fingerprints, confidence, last-seen state, or GitHub links in free-form descriptions or comments.",
+        "checks": []
+      },
+      {
+        "id": "ADR-023-R3",
+        "description": "Risk-audit automation may analyze the repository and propose Risk Register or GitHub updates, but writes, issue creation/update, severity or confidence promotion, and lifecycle changes require a human review gate. Product/API mutations reuse the existing Risk Register auth, serializer, service, and audit paths; operator MCP direct-table workflows must rely on `.shifter.yaml`, `mcp/ops/policy.js`, and `mcp/ops/audit.js` as their evidence surface.",
+        "checks": []
+      }
+    ],
+    "exceptions": [],
+    "enforcement": ["agent-policy"],
+    "evidence": [
+      "docs/architecture/agent-risk-audit-preflight-163.md",
+      "shifter/shifter_platform/risk_register/models.py",
+      "shifter/shifter_platform/risk_register/api/serializers.py",
+      "shifter/shifter_platform/risk_register/api/views.py",
+      "shifter/shifter_platform/risk_register/services.py",
+      "shifter/shifter_platform/shared/api_tokens",
+      "mcp/ops/index.js",
+      "mcp/ops/policy.js",
+      "mcp/ops/audit.js"
+    ]
   }
 ]
