@@ -28,6 +28,7 @@ from config._api_token_settings import *  # NOSONAR  # noqa: E402
 from config._channels import *  # NOSONAR  # noqa: E402
 from config._channels import _build_channel_layers  # noqa: E402
 from config._cloud import *  # NOSONAR  # noqa: E402
+from config._email import *  # NOSONAR  # noqa: E402
 from config._guacamole_settings import *  # NOSONAR  # noqa: E402
 from config._logging_config import *  # NOSONAR  # noqa: E402
 from config._runtime_env import AUTH_PROVIDER, IS_TEST_RUN, require_environment  # noqa: E402
@@ -115,9 +116,7 @@ INSTALLED_APPS = [
     "health_check.storage",
     "config.apps.PortalConfig",
     "rest_framework",
-    # Anymail provides the GCP transactional-email backends (SendGrid / Mailgun);
-    # AWS continues to use django-ses. Loaded in all environments so the
-    # EMAIL_BACKEND choice is purely runtime config (see config/_email.py).
+    # GCP SendGrid/Mailgun email backends (AWS uses django-ses); see config/_email.py.
     "anymail",
     "mission_control.apps.MissionControlConfig",
     "risk_register.apps.RiskRegisterConfig",
@@ -459,13 +458,6 @@ CTF_FROM_EMAIL = os.environ.get("CTF_FROM_EMAIL", "ctf@example.com")
 CTF_DEFAULT_RANGE_SPINUP_MINUTES = int(os.environ.get("CTF_DEFAULT_RANGE_SPINUP_MINUTES", "30"))
 CTF_DEFAULT_CLEANUP_DELAY_HOURS = int(os.environ.get("CTF_DEFAULT_CLEANUP_DELAY_HOURS", "24"))
 CTFD_PLATFORM_URL = os.environ.get("CTFD_PLATFORM_URL", "https://ctf.shifter.example.com/login")
-
-# Email
-# Provider-aware email backend config (AWS SES / GCP SaaS via anymail / console
-# fallback) lives in ``config/_email`` so the email keys have a single owner and
-# this module stays under the 500-line cap (Sonar S104). See that module for the
-# AWS-vs-GCP delivery model and the never-committed ESP API-key handling.
-from config._email import *  # NOSONAR  # noqa: E402
 
 # ------------------------------------------------------------------------------
 # Django REST Framework Configuration
