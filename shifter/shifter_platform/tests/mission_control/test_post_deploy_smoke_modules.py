@@ -38,6 +38,41 @@ def test_probe_ssh_failure() -> None:
         probe_ssh_endpoint("10.0.0.1", 22, connect_fn=lambda _h, _p, _t: False)
 
 
+def test_parse_variant_unknown() -> None:
+    with pytest.raises(ValueError, match="unknown smoke variant"):
+        parse_variant("bogus")
+
+
+def test_build_agents_by_os_windows_success() -> None:
+    agents = build_agents_by_os(
+        VARIANTS["windows"],
+        env={"SMOKE_WINDOWS_AGENT_ID": "7", "SMOKE_LINUX_AGENT_ID": "8"},
+    )
+    assert agents == {"windows": 7, "linux": 8}
+
+
+def test_issue_body_empty_fields() -> None:
+    payload = SmokeIssuePayload(
+        environment="dev",
+        provider="aws",
+        variant="linux",
+        commit_sha="abcdef1234567890",
+        workflow_run_url="https://example.test/run/1",
+        summary="",
+        log_excerpt="",
+    )
+    body = issue_body(payload)
+    assert "_No summary provided._" in body
+    assert "(empty)" in body
+
+
+def test_select_probe_target_linux() -> None:
+    assert select_probe_target(VARIANTS["linux"], attacker_uuid="attacker-1") == (
+        "ssh",
+        "attacker-1",
+    )
+
+
 def test_select_probe_target_windows() -> None:
     assert select_probe_target(
         VARIANTS["windows"],
