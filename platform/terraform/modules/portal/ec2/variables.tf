@@ -339,3 +339,14 @@ variable "worker_health_alarm_actions" {
   type        = list(string)
   default     = []
 }
+
+variable "db_resource_id" {
+  description = "RDS DbiResourceId (db-XXXX) used to scope the rds-db:connect grant for the portal runtime IAM database user (#159)."
+  type        = string
+}
+
+variable "db_iam_runtime_user" {
+  description = "PostgreSQL role the portal runtime connects as via RDS IAM authentication (created by mission_control migration 0041)."
+  type        = string
+  default     = "portal_runtime"
+}

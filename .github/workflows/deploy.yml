@@ -551,12 +551,14 @@ jobs:
     name: Shifter Platform
     needs: [changes, quality, core, range, shifter-engine]
     # `_shifter-platform.yml` jobs (plan, push-guacamole-images, apply,
-    # build, deploy) all request `id-token: write` (AWS OIDC) and
-    # `pull-requests: write` (plan comments). Caller grants the union.
+    # build, deploy, post-deploy-smoke) request `id-token: write` (AWS OIDC),
+    # `pull-requests: write` (plan comments), and `issues: write` (smoke
+    # failure issues). Caller grants the union.
     permissions:
       contents: read
       id-token: write
       pull-requests: write
+      issues: write
     if: |
       always() &&
       github.event_name != 'pull_request' &&
@@ -593,3 +595,6 @@ jobs:
       TF_INFRA_STATE_BUCKET_DEV: ${{ secrets.TF_INFRA_STATE_BUCKET_DEV }}
       TF_INFRA_STATE_BUCKET_PROOF: ${{ secrets.TF_INFRA_STATE_BUCKET_PROOF }}
       TF_VARS_PROOF_PORTAL: ${{ secrets.TF_VARS_PROOF_PORTAL }}
+      SMOKE_TEST_USER_EMAIL: ${{ secrets.SMOKE_TEST_USER_EMAIL }}
+      SMOKE_LINUX_AGENT_ID: ${{ secrets.SMOKE_LINUX_AGENT_ID }}
+      SMOKE_WINDOWS_AGENT_ID: ${{ secrets.SMOKE_WINDOWS_AGENT_ID }}

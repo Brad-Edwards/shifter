@@ -28,6 +28,8 @@ from config._api_token_settings import *  # NOSONAR  # noqa: E402
 from config._channels import *  # NOSONAR  # noqa: E402
 from config._channels import _build_channel_layers  # noqa: E402
 from config._cloud import *  # NOSONAR  # noqa: E402
+from config._drf_settings import *  # NOSONAR  # noqa: E402
+from config._email import *  # NOSONAR  # noqa: E402
 from config._guacamole_settings import *  # NOSONAR  # noqa: E402
 from config._logging_config import *  # NOSONAR  # noqa: E402
 from config._runtime_env import AUTH_PROVIDER, IS_TEST_RUN, require_environment  # noqa: E402
@@ -72,6 +74,8 @@ _test_secret_key_default = "django-tests-secret-key" if IS_TEST_RUN else None
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", _test_secret_key_default)
 if not SECRET_KEY:
     raise ValueError("DJANGO_SECRET_KEY environment variable is required")
+# SECRET_KEY_FALLBACKS (zero-downtime rotation) lives in config._database_settings.
+
 DEBUG = _env_bool("DJANGO_DEBUG", False)
 ALLOWED_HOSTS = os.environ.get("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
 # Required for debug context processor
@@ -115,6 +119,10 @@ INSTALLED_APPS = [
     "health_check.storage",
     "config.apps.PortalConfig",
     "rest_framework",
+    "drf_spectacular",
+    "drf_spectacular_sidecar",
+    # GCP SendGrid/Mailgun email backends (AWS uses django-ses); see config/_email.py.
+    "anymail",
     "mission_control.apps.MissionControlConfig",
     "risk_register.apps.RiskRegisterConfig",
     "documentation.apps.DocumentationConfig",
@@ -252,31 +260,10 @@ CTF_SCHEDULER_STALE_TASK_MINUTES = _env_int("CTF_SCHEDULER_STALE_TASK_MINUTES", 
 
 from config._capacity_settings import *  # noqa: E402  # NOSONAR
 
-# Database
-# Use SQLite for local dev/tests, PostgreSQL for deployed environments
-if os.environ.get("TESTING") == "1":
-    DATABASES = {
-        "default": {
-            "ENGINE": "django.db.backends.sqlite3",
-            "NAME": BASE_DIR / "db.sqlite3",
-        }
-    }
-else:
-    DATABASES = {
-        "default": {
-            "ENGINE": "django.db.backends.postgresql",
-            "NAME": os.environ.get("DB_NAME", "shifter"),
-            "USER": os.environ.get("DB_USER"),
-            "PASSWORD": os.environ.get("DB_PASSWORD"),
-            "HOST": os.environ.get("DB_HOST", "localhost"),
-            "PORT": os.environ.get("DB_PORT", "5432"),
-            # Connection settings (can tune CONN_MAX_AGE for connection reuse)
-            "CONN_MAX_AGE": 0,
-            "OPTIONS": {
-                "connect_timeout": 10,
-            },
-        }
-    }
+# Database and SECRET_KEY rotation settings (DATABASES, SECRET_KEY_FALLBACKS).
+# Split into config/_database_settings.py to keep this module under the S104
+# 500-line cap; the IAM-auth DB path lives there (issue #159).
+from config._database_settings import *  # noqa: E402  # NOSONAR
 
 # Password validation
 AUTH_PASSWORD_VALIDATORS = [
@@ -455,30 +442,6 @@ CTF_FROM_EMAIL = os.environ.get("CTF_FROM_EMAIL", "ctf@example.com")
 CTF_DEFAULT_RANGE_SPINUP_MINUTES = int(os.environ.get("CTF_DEFAULT_RANGE_SPINUP_MINUTES", "30"))
 CTF_DEFAULT_CLEANUP_DELAY_HOURS = int(os.environ.get("CTF_DEFAULT_CLEANUP_DELAY_HOURS", "24"))
 CTFD_PLATFORM_URL = os.environ.get("CTFD_PLATFORM_URL", "https://ctf.shifter.example.com/login")
-
-# Email - SES
-EMAIL_BACKEND = os.environ.get("EMAIL_BACKEND", "django.core.mail.backends.console.EmailBackend")
-AWS_SES_REGION_NAME = "us-east-2"
-AWS_SES_REGION_ENDPOINT = "email.us-east-2.amazonaws.com"
-
-# ------------------------------------------------------------------------------
-# Django REST Framework Configuration
-# ------------------------------------------------------------------------------
-
-REST_FRAMEWORK = {
-    "DEFAULT_AUTHENTICATION_CLASSES": [
-        # Scoped bearer tokens first (PLAT-102; fails closed), then legacy
-        # X-API-Key (deprecated, #1124), then session.
-        "shared.api_tokens.authentication.ApiTokenAuthentication",
-        "risk_register.api.authentication.APIKeyAuthentication",
-        "rest_framework.authentication.SessionAuthentication",
-    ],
-    "DEFAULT_PERMISSION_CLASSES": [
-        "rest_framework.permissions.IsAuthenticated",
-    ],
-    "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
-    "PAGE_SIZE": 50,
-}
 
 # ------------------------------------------------------------------------------
 # Environment

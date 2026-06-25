@@ -201,6 +201,27 @@ variable "identity_allowed_emails" {
   default     = []
 }
 
+# Transactional email (PLAT-002, #671). Optional: leave email_backend empty for
+# the console fallback. When set, an unseeded ESP API-key Secret Manager secret
+# is created for the operator to populate (never committed). See gcp/README.md.
+variable "email_backend" {
+  description = "Django EMAIL_BACKEND for GCP; empty = console fallback (no email secret created)."
+  type        = string
+  default     = ""
+}
+
+variable "email_from_address" {
+  description = "DEFAULT_FROM_EMAIL for outbound mail when email_backend is set."
+  type        = string
+  default     = ""
+}
+
+variable "email_sender_domain" {
+  description = "Mailgun sender domain (MAILGUN_SENDER_DOMAIN); ignored for SendGrid."
+  type        = string
+  default     = ""
+}
+
 # ------------------------------------------------------------------------------
 # Range Egress (PLAT-220)
 # ------------------------------------------------------------------------------

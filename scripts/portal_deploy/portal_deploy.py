@@ -610,6 +610,122 @@ def verify_post_deploy(
     )
 
 
+def _portal_manage_script(manage_args: list[str]) -> str:
+    if not manage_args:
+        raise PortalDeployError("run-manage-on-portal requires at least one manage.py argument")
+    quoted_args = " ".join(shlex.quote(arg) for arg in manage_args)
+    return "\n".join(
+        [
+            "set -euo pipefail",
+            "sudo docker exec portal bash -c '",
+            "set -euo pipefail",
+            "while IFS= read -r -d \"\" kv; do export \"$kv\"; done < /proc/1/environ",
+            "cd /app",
+            f"python manage.py {quoted_args}",
+            "'",
+        ]
+    )
+
+
+def _wait_ssm_command(
+    *,
+    command_id: str,
+    instance_id: str,
+    timeout_seconds: int,
+    runner: Runner = subprocess.run,
+    sleep_fn: SleepFn = time.sleep,
+    poll_interval_seconds: int = 15,
+) -> dict[str, object]:
+    deadline = time.monotonic() + timeout_seconds
+    last_status = ""
+    while time.monotonic() < deadline:
+        invocation = _run(
+            [
+                "aws",
+                "ssm",
+                "get-command-invocation",
+                "--command-id",
+                command_id,
+                "--instance-id",
+                instance_id,
+                "--output",
+                "json",
+            ],
+            runner=runner,
+        )
+        payload = json.loads(invocation.stdout)
+        status = str(payload.get("Status") or "")
+        last_status = status
+        if status in {"Success", "Cancelled", "TimedOut", "Failed", "Cancelling"}:
+            return payload
+        sleep_fn(poll_interval_seconds)
+    raise PortalDeployError(
+        f"SSM command {command_id} on {instance_id} did not reach a terminal state "
+        f"within {timeout_seconds}s (last status={last_status or 'unknown'})"
+    )
+
+
+def run_manage_on_portal(
+    *,
+    instance_id: str = "",
+    asg_name: str = "",
+    manage_args: list[str],
+    timeout_seconds: int = 7200,
+    runner: Runner = subprocess.run,
+) -> str:
+    """Run ``python manage.py …`` inside the portal container via SSM."""
+    if instance_id:
+        instance_ids = [instance_id]
+    elif asg_name:
+        instance_ids = _in_service_asg_instance_ids(asg_name, runner=runner)
+        if not instance_ids:
+            raise PortalDeployError(f"No in-service instances found in ASG {asg_name!r}")
+        instance_ids = instance_ids[:1]
+    else:
+        raise PortalDeployError("run-manage-on-portal requires instance_id or asg_name")
+
+    parameters = "commands=" + json.dumps([_portal_manage_script(manage_args)])
+    send_command = _run(
+        [
+            "aws",
+            "ssm",
+            "send-command",
+            "--document-name",
+            "AWS-RunShellScript",
+            "--instance-ids",
+            *instance_ids,
+            "--parameters",
+            parameters,
+            "--timeout-seconds",
+            str(timeout_seconds),
+            "--query",
+            "Command.CommandId",
+            "--output",
+            "text",
+        ],
+        runner=runner,
+    )
+    command_id = send_command.stdout.strip()
+    if not command_id or command_id == "None":
+        raise PortalDeployError("SSM did not return a command id for portal manage command")
+
+    target_instance_id = instance_ids[0]
+    payload = _wait_ssm_command(
+        command_id=command_id,
+        instance_id=target_instance_id,
+        timeout_seconds=timeout_seconds,
+        runner=runner,
+    )
+    status = str(payload.get("Status") or "")
+    stdout = str(payload.get("StandardOutputContent") or "")
+    stderr = str(payload.get("StandardErrorContent") or "")
+    if status != "Success":
+        raise PortalDeployError(
+            f"Portal manage command failed on {target_instance_id}: status={status} stderr={stderr[-2000:]}"
+        )
+    return stdout
+
+
 def verify_post_deploy_from_commands(
     *,
     terraform_dir: str,
@@ -652,6 +768,16 @@ def _build_parser() -> argparse.ArgumentParser:
     verify_post_deploy_parser = subparsers.add_parser("verify-post-deploy")
     verify_post_deploy_parser.add_argument("--terraform-dir", required=True)
     verify_post_deploy_parser.add_argument("--backend-config", required=True)
+
+    run_manage_parser = subparsers.add_parser("run-manage-on-portal")
+    run_manage_parser.add_argument("--instance-id", default="")
+    run_manage_parser.add_argument("--asg-name", default="")
+    run_manage_parser.add_argument(
+        "manage_args",
+        nargs=argparse.REMAINDER,
+        help="Arguments passed to manage.py after the subcommand name",
+    )
+    run_manage_parser.add_argument("--timeout-seconds", type=int, default=7200)
     return parser
 
 
@@ -677,6 +803,16 @@ def main(argv: list[str] | None = None) -> int:
                 terraform_dir=args.terraform_dir,
                 backend_config=args.backend_config,
             )
+        elif args.command == "run-manage-on-portal":
+            manage_args = [arg for arg in args.manage_args if arg != "--"]
+            output = run_manage_on_portal(
+                instance_id=args.instance_id,
+                asg_name=args.asg_name,
+                manage_args=manage_args,
+                timeout_seconds=args.timeout_seconds,
+            )
+            if output.strip():
+                print(output.rstrip())
         return 0
     except subprocess.CalledProcessError as exc:
         stderr = (exc.stderr or "").strip()

@@ -363,6 +363,55 @@ class PostDeployVerificationTests(unittest.TestCase):
                 ecs_timeout_seconds=30,
             )
 
+    def test_portal_manage_script_inherits_entrypoint_env(self) -> None:
+        script = portal_deploy._portal_manage_script(
+            ["run_post_deploy_smoke", "--variant", "linux"]
+        )
+        self.assertIn("/proc/1/environ", script)
+        self.assertIn("run_post_deploy_smoke", script)
+        self.assertIn("docker exec portal", script)
+
+    def test_wait_ssm_command_polls_until_success(self) -> None:
+        runner = FakeRunner()
+        runner.queue(json.dumps({"Status": "InProgress"}))
+        runner.queue(
+            json.dumps(
+                {
+                    "Status": "Success",
+                    "StandardOutputContent": "ok",
+                    "StandardErrorContent": "",
+                }
+            )
+        )
+        payload = portal_deploy._wait_ssm_command(
+            command_id="cmd-123",
+            instance_id="i-abc",
+            timeout_seconds=60,
+            runner=runner,
+            sleep_fn=lambda _seconds: None,
+            poll_interval_seconds=1,
+        )
+        self.assertEqual(payload["Status"], "Success")
+        self.assertEqual(len(runner.calls), 2)
+        self.assertEqual(runner.calls[0][:3], ["aws", "ssm", "get-command-invocation"])
+        self.assertNotIn(
+            ["aws", "ssm", "wait", "command-executed"],
+            [call[:4] for call in runner.calls],
+        )
+
+    def test_wait_ssm_command_times_out_before_terminal_status(self) -> None:
+        runner = FakeRunner()
+        runner.queue(json.dumps({"Status": "InProgress"}))
+        with self.assertRaisesRegex(portal_deploy.PortalDeployError, "did not reach a terminal state"):
+            portal_deploy._wait_ssm_command(
+                command_id="cmd-123",
+                instance_id="i-abc",
+                timeout_seconds=0,
+                runner=runner,
+                sleep_fn=lambda _seconds: None,
+                poll_interval_seconds=0,
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

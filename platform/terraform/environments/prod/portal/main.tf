@@ -386,6 +386,11 @@ module "redis" {
   redis_at_rest_kms_key_arn = aws_kms_key.redis_at_rest.arn
   is_active_channel_backend = var.enable_redis
 
+  # Automatic Redis AUTH rotation (#159): only where the portal runs on a
+  # refreshable ASG, so the rotation Lambda can roll consumers to the new token.
+  enable_auth_rotation = var.enable_autoscaling
+  portal_asg_name      = module.ec2.asg_name
+
   # CloudWatch Alarms
   enable_alarms = var.alarm_email != ""
   alarm_actions = var.alarm_email != "" ? [aws_sns_topic.alerts.arn] : []
@@ -410,7 +415,13 @@ module "cognito" {
   logout_urls           = ["https://${var.domain_name}/"]
   allowed_email_domains = var.allowed_email_domains
   allowed_emails        = var.allowed_emails
-  deletion_protection   = true
+
+  # Client-secret rotation (#159): operator-triggered Lambda + scheduled email reminder.
+  portal_asg_name          = module.ec2.asg_name
+  enable_autoscaling       = var.enable_autoscaling
+  alerts_topic_arn         = aws_sns_topic.alerts.arn
+  enable_rotation_reminder = var.alarm_email != ""
+  deletion_protection      = true
 
   tags = var.tags
 }
@@ -592,6 +603,7 @@ module "ec2" {
     module.redis.redis_secret_arn != "" ? [module.redis.redis_secret_arn] : [],
   )
   secrets_manager_kms_key_arn = aws_kms_key.secrets_manager.arn
+  db_resource_id              = module.rds.db_resource_id
   s3_bucket_arn               = module.s3.bucket_arn
   app_port                    = var.app_port
   root_volume_size            = var.ec2_root_volume_size

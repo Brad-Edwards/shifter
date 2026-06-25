@@ -134,6 +134,21 @@ output "runtime_secret_ids" {
   value       = module.portal_secrets.runtime_secret_ids
 }
 
+output "email_config" {
+  description = <<-EOT
+    Transactional-email runtime config consumed by scripts/gcp/render_runtime_env.py
+    (PLAT-002, #671). null when email_backend is empty (console fallback). When set,
+    api_key_secret_id references the unseeded Secret Manager secret the operator
+    populates with the ESP API key; the key value is never part of this output.
+  EOT
+  value = var.email_backend == "" ? null : {
+    backend           = var.email_backend
+    from_email        = var.email_from_address
+    sender_domain     = var.email_sender_domain
+    api_key_secret_id = module.portal_secrets.runtime_secret_ids["email"]
+  }
+}
+
 output "workload_service_accounts" {
   description = "Workload service accounts by logical role."
   value       = module.portal_iam.workload_service_accounts
