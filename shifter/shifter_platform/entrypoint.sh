@@ -59,6 +59,15 @@ if [[ -n "${DB_SECRET_ID:-}" ]] && [[ -n "${APP_SECRET_ID:-}" ]]; then
     DJANGO_SECRET_KEY=$(echo "$APP_SECRET" | python -c "import sys, json; print(json.load(sys.stdin)['django_secret_key'])")
     export DJANGO_SECRET_KEY
 
+    # Optional previous signing keys for a zero-downtime SECRET_KEY rotation
+    # (config.settings.SECRET_KEY_FALLBACKS). Absent in steady state; the app
+    # secret bundle carries `django_secret_key_fallbacks` (a JSON array) only
+    # while a rotation is in flight. `.get(..., [])` keeps a bundle without the
+    # field valid, and re-serialising to JSON preserves any comma in an old key
+    # through the env var.
+    DJANGO_SECRET_KEY_FALLBACKS=$(echo "$APP_SECRET" | python -c "import sys, json; print(json.dumps(json.load(sys.stdin).get('django_secret_key_fallbacks', [])))")
+    export DJANGO_SECRET_KEY_FALLBACKS
+
     # Export field encryption key with proper base64 padding (Fernet requires it)
     FIELD_ENCRYPTION_KEY=$(echo "$APP_SECRET" | python -c "
 import sys, json
@@ -175,6 +184,25 @@ if [[ -z "${SKIP_MIGRATIONS:-}" ]]; then
     python manage.py migrate --noinput
 else
     echo "Skipping migrations (SKIP_MIGRATIONS is set)"
+fi
+
+# ------------------------------------------------------------------------------
+# Switch the long-running connection to RDS IAM authentication (AWS only)
+# ------------------------------------------------------------------------------
+# The DB wait and migrations above ran as the password-authenticated master
+# user (schema owner / migrator). The long-running app and workers instead
+# connect as a dedicated rds_iam runtime user with a short-lived token
+# (config.db_backends.rds_iam via DB_IAM_AUTH), so the runtime process holds no
+# database password. Gated to the AWS deployed path: CLOUD_PROVIDER aws AND a
+# DB secret was hydrated from Secrets Manager, so local docker-compose (direct
+# DB_PASSWORD, no DB_SECRET_ID) and GCP stay on their existing auth.
+# DB_IAM_AUTH_RUNTIME=false is the break-glass escape hatch (keep password auth
+# for a one-off privileged manage.py command run as the master user).
+if [[ "${CLOUD_PROVIDER:-aws}" == "aws" && -n "${DB_SECRET_ID:-}" && "${DB_IAM_AUTH_RUNTIME:-true}" == "true" ]]; then
+    echo "Switching runtime database connection to RDS IAM authentication (user ${DB_IAM_USER:-portal_runtime})..."
+    export DB_IAM_AUTH=true
+    export DB_USER="${DB_IAM_USER:-portal_runtime}"
+    unset DB_PASSWORD
 fi
 
 # Run command passed as arguments, or default to gunicorn + uvicorn workers.

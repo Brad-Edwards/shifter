@@ -80,27 +80,42 @@
     {
       "default": "'localhost'",
       "name": "DB_HOST",
-      "source_file": "config/settings.py"
+      "source_file": "config/_database_settings.py"
+    },
+    {
+      "default": "'false'",
+      "name": "DB_IAM_AUTH",
+      "source_file": "config/_database_settings.py"
     },
     {
       "default": "'shifter'",
       "name": "DB_NAME",
-      "source_file": "config/settings.py"
+      "source_file": "config/_database_settings.py"
     },
     {
       "default": null,
       "name": "DB_PASSWORD",
-      "source_file": "config/settings.py"
+      "source_file": "config/_database_settings.py"
     },
     {
       "default": "'5432'",
       "name": "DB_PORT",
-      "source_file": "config/settings.py"
+      "source_file": "config/_database_settings.py"
+    },
+    {
+      "default": "'require'",
+      "name": "DB_SSLMODE",
+      "source_file": "config/_database_settings.py"
+    },
+    {
+      "default": "''",
+      "name": "DB_SSL_ROOT_CERT",
+      "source_file": "config/_database_settings.py"
     },
     {
       "default": null,
       "name": "DB_USER",
-      "source_file": "config/settings.py"
+      "source_file": "config/_database_settings.py"
     },
     {
       "default": "'webmaster@localhost'",
@@ -134,6 +149,11 @@
     },
     {
       "default": "_CONSOLE_BACKEND",
+      "name": "DJANGO_SECRET_KEY_FALLBACKS",
+      "source_file": "config/_database_settings.py"
+    },
+    {
+      "default": "'django.core.mail.backends.console.EmailBackend'",
       "name": "EMAIL_BACKEND",
       "source_file": "config/_email.py"
     },

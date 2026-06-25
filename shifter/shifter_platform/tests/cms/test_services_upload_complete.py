@@ -9,11 +9,13 @@ against the persisted ``AgentConfig`` / ``AuditLog`` rows, instead of patching
 ``tag_s3_object`` / ``create_agent``.
 """
 
+from datetime import timedelta
 from unittest.mock import MagicMock, patch
 
 import pytest
 from botocore.exceptions import ClientError
 from django.contrib.auth import get_user_model
+from freezegun import freeze_time
 
 from cms import services
 from cms.assets.upload_token import generate_upload_token
@@ -124,9 +126,12 @@ class TestCompleteUploadUserAndTokenValidation:
             services.complete_upload(user, "not-a-valid-token")
 
     def test_raises_cmserror_on_expired_token(self, user, settings):
-        settings.AGENT_UPLOAD_URL_EXPIRES = -100
-        with pytest.raises(CMSError, match="Invalid upload token"):
-            services.complete_upload(user, _token(user))
+        settings.AGENT_UPLOAD_URL_EXPIRES = 60
+        with freeze_time("2024-06-01T12:00:00Z") as frozen:
+            token = _token(user)
+            frozen.tick(timedelta(seconds=61))
+            with pytest.raises(CMSError, match="Invalid upload token"):
+                services.complete_upload(user, token)
 
 
 class TestCompleteUploadObjectValidation:
