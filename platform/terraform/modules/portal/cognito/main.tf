@@ -2,6 +2,10 @@
 # Cognito User Pool
 # ------------------------------------------------------------------------------
 
+locals {
+  iam_name_prefix = coalesce(var.iam_name_prefix, var.name_prefix)
+}
+
 resource "aws_cognito_user_pool" "main" {
   name = "${var.name_prefix}-users"
 
@@ -187,7 +191,8 @@ resource "aws_lambda_permission" "cognito_invoke" {
 # ------------------------------------------------------------------------------
 
 resource "aws_iam_role" "lambda_exec" {
-  name = "${var.name_prefix}-cognito-lambda-role"
+  name                 = "${local.iam_name_prefix}-cognito-lambda-role"
+  permissions_boundary = var.permissions_boundary_arn
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"

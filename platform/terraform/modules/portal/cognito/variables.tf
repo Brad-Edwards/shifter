@@ -3,6 +3,12 @@ variable "name_prefix" {
   type        = string
 }
 
+variable "iam_name_prefix" {
+  description = "Prefix for IAM role and instance profile names (defaults to name_prefix)"
+  type        = string
+  default     = null
+}
+
 variable "environment" {
   description = "Environment name (e.g., prod, dev) - used for logging"
   type        = string
@@ -107,4 +113,9 @@ variable "cognito_rotation_reminder_days" {
     condition     = var.cognito_rotation_reminder_days >= 1 && var.cognito_rotation_reminder_days <= 365
     error_message = "cognito_rotation_reminder_days must be between 1 and 365."
   }
+}
+
+variable "permissions_boundary_arn" {
+  description = "Permissions boundary ARN required on CI-created shifter-* roles"
+  type        = string
 }

@@ -21,8 +21,10 @@ provider "aws" {
 }
 
 locals {
-  name_prefix                 = "${var.environment}-portal"
-  alb_access_logs_bucket_name = "${local.name_prefix}-alb-logs-${var.environment}-${data.aws_caller_identity.current.account_id}"
+  name_prefix                      = "${var.environment}-portal"
+  iam_name_prefix                  = "shifter-${var.environment}-portal"
+  ci_role_permissions_boundary_arn = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:policy/shifter-${var.environment}-ci-role-boundary"
+  alb_access_logs_bucket_name      = "${local.name_prefix}-alb-logs-${var.environment}-${data.aws_caller_identity.current.account_id}"
   # Add padding to field_encryption_key (b64_url doesn't include padding, but Fernet requires it)
   field_encryption_key_padded = "${random_id.field_encryption_key.b64_url}="
 }
@@ -280,11 +282,13 @@ resource "aws_kms_alias" "redis_at_rest" {
 module "vpc" {
   source = "../../../modules/portal/vpc"
 
-  name_prefix        = local.name_prefix
-  vpc_cidr           = var.vpc_cidr
-  az_count           = var.az_count
-  enable_nat_gateway = var.enable_nat_gateway
-  tags               = var.tags
+  name_prefix              = local.name_prefix
+  iam_name_prefix          = local.iam_name_prefix
+  permissions_boundary_arn = local.ci_role_permissions_boundary_arn
+  vpc_cidr                 = var.vpc_cidr
+  az_count                 = var.az_count
+  enable_nat_gateway       = var.enable_nat_gateway
+  tags                     = var.tags
 
   # Phase 5: VPC Flow Logs
   enable_flow_logs   = var.enable_vpc_flow_logs
@@ -307,6 +311,8 @@ module "rds" {
   source = "../../../modules/portal/rds"
 
   name_prefix                = local.name_prefix
+  iam_name_prefix            = local.iam_name_prefix
+  permissions_boundary_arn   = local.ci_role_permissions_boundary_arn
   secrets_kms_key_arn        = aws_kms_key.secrets_manager.arn
   vpc_id                     = module.vpc.vpc_id
   subnet_ids                 = module.vpc.private_subnet_ids
@@ -405,16 +411,18 @@ module "redis" {
 module "cognito" {
   source = "../../../modules/portal/cognito"
 
-  name_prefix           = local.name_prefix
-  environment           = var.environment
-  aws_region            = var.aws_region
-  log_retention_days    = var.log_retention_days
-  secrets_kms_key_arn   = aws_kms_key.secrets_manager.arn
-  cognito_domain_prefix = var.cognito_domain_prefix
-  callback_urls         = ["https://${var.domain_name}/oidc/callback/"]
-  logout_urls           = ["https://${var.domain_name}/"]
-  allowed_email_domains = var.allowed_email_domains
-  allowed_emails        = var.allowed_emails
+  name_prefix              = local.name_prefix
+  iam_name_prefix          = local.iam_name_prefix
+  permissions_boundary_arn = local.ci_role_permissions_boundary_arn
+  environment              = var.environment
+  aws_region               = var.aws_region
+  log_retention_days       = var.log_retention_days
+  secrets_kms_key_arn      = aws_kms_key.secrets_manager.arn
+  cognito_domain_prefix    = var.cognito_domain_prefix
+  callback_urls            = ["https://${var.domain_name}/oidc/callback/"]
+  logout_urls              = ["https://${var.domain_name}/"]
+  allowed_email_domains    = var.allowed_email_domains
+  allowed_emails           = var.allowed_emails
 
   # Client-secret rotation (#159): operator-triggered Lambda + scheduled email reminder.
   portal_asg_name          = module.ec2.asg_name
@@ -555,16 +563,18 @@ module "ec2" {
   # Worker-container health alarm (#953) notifies the shared alerts topic.
   worker_health_alarm_actions = var.alarm_email != "" ? [aws_sns_topic.alerts.arn] : []
 
-  aws_region            = var.aws_region
-  environment           = var.environment
-  ec2_ami_id            = var.ec2_ami_id
-  name_prefix           = local.name_prefix
-  vpc_id                = module.vpc.vpc_id
-  subnet_id             = module.vpc.private_subnet_ids[0]
-  alb_security_group_id = module.alb.security_group_id
-  instance_type         = var.ec2_instance_type
-  ecr_repository_arn    = data.terraform_remote_state.foundation.outputs.portal_ecr_arn
-  ecr_repository_url    = data.terraform_remote_state.foundation.outputs.portal_ecr_url
+  aws_region               = var.aws_region
+  environment              = var.environment
+  ec2_ami_id               = var.ec2_ami_id
+  name_prefix              = local.name_prefix
+  iam_name_prefix          = local.iam_name_prefix
+  permissions_boundary_arn = local.ci_role_permissions_boundary_arn
+  vpc_id                   = module.vpc.vpc_id
+  subnet_id                = module.vpc.private_subnet_ids[0]
+  alb_security_group_id    = module.alb.security_group_id
+  instance_type            = var.ec2_instance_type
+  ecr_repository_arn       = data.terraform_remote_state.foundation.outputs.portal_ecr_arn
+  ecr_repository_url       = data.terraform_remote_state.foundation.outputs.portal_ecr_url
   # The Redis AUTH token secret (#938) is included only on the in-transit-
   # encryption path; the single-node path returns "" and must not reach the IAM
   # Resource list (an empty ARN is invalid).
@@ -764,6 +774,8 @@ module "engine_provisioner" {
   source = "../../../modules/engine-provisioner"
 
   name_prefix                 = local.name_prefix
+  iam_name_prefix             = local.iam_name_prefix
+  permissions_boundary_arn    = local.ci_role_permissions_boundary_arn
   environment                 = var.environment
   tags                        = var.tags
   log_retention_days          = var.log_retention_days
@@ -863,10 +875,12 @@ moved {
 module "guacamole" {
   source = "../../../modules/guacamole"
 
-  name_prefix         = local.name_prefix
-  environment         = var.environment
-  tags                = var.tags
-  secrets_kms_key_arn = aws_kms_key.secrets_manager.arn
+  name_prefix              = local.name_prefix
+  iam_name_prefix          = local.iam_name_prefix
+  permissions_boundary_arn = local.ci_role_permissions_boundary_arn
+  environment              = var.environment
+  tags                     = var.tags
+  secrets_kms_key_arn      = aws_kms_key.secrets_manager.arn
 
   # Networking (Portal VPC)
   vpc_id                   = module.vpc.vpc_id
@@ -980,11 +994,13 @@ module "ses" {
 module "log_aggregation" {
   source = "../../../modules/log-aggregation"
 
-  name_prefix            = local.name_prefix
-  environment            = var.environment
-  aws_region             = var.aws_region
-  log_retention_days     = var.log_retention_days
-  enable_log_aggregation = var.enable_log_aggregation
+  name_prefix              = local.name_prefix
+  iam_name_prefix          = local.iam_name_prefix
+  permissions_boundary_arn = local.ci_role_permissions_boundary_arn
+  environment              = var.environment
+  aws_region               = var.aws_region
+  log_retention_days       = var.log_retention_days
+  enable_log_aggregation   = var.enable_log_aggregation
 
   # Phase 5: ALB and WAF logging
   enable_alb_access_logs = var.enable_alb_access_logs
@@ -1032,7 +1048,9 @@ resource "aws_cloudwatch_log_group" "bedrock" {
 resource "aws_iam_role" "bedrock_logging" {
   count = var.enable_bedrock_logging ? 1 : 0
 
-  name = "${local.name_prefix}-bedrock-logging"
+  name = "${local.iam_name_prefix}-bedrock-logging"
+
+  permissions_boundary = local.ci_role_permissions_boundary_arn
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
