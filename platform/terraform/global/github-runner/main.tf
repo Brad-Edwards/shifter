@@ -190,6 +190,32 @@ resource "aws_iam_role_policy" "ecr" {
   })
 }
 
+# IAM policy for the runner host-health monitor (#292) to publish CloudWatch
+# metrics. cloudwatch:PutMetricData has no resource-level scoping, so least
+# privilege is expressed through the cloudwatch:namespace condition, constraining
+# it to the runner-specific Shifter/RunnerHealth namespace (distinct from
+# Shifter/WorkerHealth so runner and worker alarms cannot cross-trip).
+resource "aws_iam_role_policy" "cloudwatch_metrics" {
+  name = "cloudwatch-metrics"
+  role = aws_iam_role.runner.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["cloudwatch:PutMetricData"]
+        Resource = "*"
+        Condition = {
+          StringEquals = {
+            "cloudwatch:namespace" = "Shifter/RunnerHealth"
+          }
+        }
+      }
+    ]
+  })
+}
+
 # ------------------------------------------------------------------------------
 # EC2 On-Demand Instance
 # ------------------------------------------------------------------------------
@@ -214,6 +240,14 @@ resource "aws_instance" "runner" {
     volume_size = 50
     volume_type = "gp3"
   }
+
+  # user_data is a first-boot-only path, so editing it does not run on an
+  # already-running host. The health monitor (#292) lives in user_data, so
+  # rolling it out to existing runners requires replacing them: this forces a
+  # new instance whenever user_data changes, which re-runs the install. A
+  # replaced runner must be re-registered (see README) - it is a "generated"
+  # resource, so replacement is the accepted rollout mechanism.
+  user_data_replace_on_change = true
 
   user_data_base64 = base64encode(<<-EOF
     #!/bin/bash
@@ -245,6 +279,26 @@ resource "aws_instance" "runner" {
     chown -R ec2-user:ec2-user /home/ec2-user/actions-runner
 
     echo "Runner downloaded. Register with ./config.sh (see README)."
+
+    # --------------------------------------------------------------------------
+    # Host-health monitor (#292)
+    # --------------------------------------------------------------------------
+    # Publish the runner systemd-service liveness to CloudWatch so a stopped
+    # service - or a hung host that stops publishing entirely - surfaces as an
+    # alarm instead of going silent. Artifacts are tracked under
+    # runner-health/ and embedded via filebase64 to avoid heredoc escaping.
+    echo '${filebase64("${path.module}/runner-health/shifter-runner-health.sh")}' | base64 -d > /usr/local/bin/shifter-runner-health.sh
+    chmod 0755 /usr/local/bin/shifter-runner-health.sh
+    echo '${filebase64("${path.module}/runner-health/shifter-runner-health.service")}' | base64 -d > /etc/systemd/system/shifter-runner-health.service
+    echo '${filebase64("${path.module}/runner-health/shifter-runner-health.timer")}' | base64 -d > /etc/systemd/system/shifter-runner-health.timer
+
+    # Per-runner metric dimension. This MUST be written before enabling the
+    # timer: EnvironmentFile=- makes a missing file silent, so a wrong order
+    # would make the first run emit under RunnerName=unknown.
+    echo 'RUNNER_HEALTH_NAME=shifter-github-runner-${count.index + 1}' > /etc/shifter-runner-health.env
+
+    systemctl daemon-reload
+    systemctl enable --now shifter-runner-health.timer
   EOF
   )
 
