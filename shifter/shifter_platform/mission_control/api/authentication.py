@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from rest_framework.authentication import SessionAuthentication
+from rest_framework.request import Request
 
 
 class CsrfExemptSessionAuthentication(SessionAuthentication):
@@ -14,5 +15,5 @@ class CsrfExemptSessionAuthentication(SessionAuthentication):
     platform DRF defaults.
     """
 
-    def enforce_csrf(self, request) -> None:
+    def enforce_csrf(self, request: Request) -> None:
         return None

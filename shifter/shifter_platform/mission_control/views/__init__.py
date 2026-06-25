@@ -105,6 +105,7 @@ def _api_view(name: str) -> Callable[..., HttpResponseBase]:
     """
 
     def _wrapped(request: object, *args: Any, **kwargs: Any) -> HttpResponseBase:
+        """Dispatch to the lazily imported DRF view callable."""
         from mission_control.api import views as api_views
 
         return getattr(api_views, name)(request, *args, **kwargs)

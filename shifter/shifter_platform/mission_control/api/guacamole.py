@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from collections.abc import Callable
+from logging import Logger
+from typing import TYPE_CHECKING
 from uuid import UUID
 
 from django.http import HttpResponse, JsonResponse
@@ -225,7 +227,7 @@ def _range_bootstrap_response(
     user: User,
     protocol: str,
     target_id: str,
-    build_url: Any,
+    build_url: Callable[[], str],
 ) -> JsonResponse:
     """Create a bootstrap response with canonical route names when applicable."""
     return _guacamole_bootstrap_response(
@@ -278,7 +280,7 @@ def _clear_parked_url(bootstrap: GuacamoleBootstrapRequest) -> None:
         bootstrap.save(update_fields=("result_url", "updated_at"))
 
 
-def _range_logger() -> Any:
+def _range_logger() -> Logger:
     """Resolve the shared Mission Control logger used by legacy Guacamole code."""
     from mission_control.views._common import _logger
 
