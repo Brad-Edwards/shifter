@@ -210,6 +210,12 @@ repos:
         language: system
         files: ^platform/terraform/modules/engine-provisioner/iam\.tf$
 
+      - id: check-tf-iam-role-naming
+        name: AWS IAM role naming seam (shifter-* prefix)
+        entry: python3 scripts/check_tf_iam_role_naming/check_tf_iam_role_naming.py
+        language: system
+        files: ^platform/terraform/(modules/.+|global/iam/github-oidc\.tf|environments/.+/main\.tf)$
+
       # Custom: Secrets Manager kms:Decrypt grant check (issue #52).
       # Ensures every aws_iam_role defined in scoped files that reads
       # the portal Secrets Manager CMK has an attached
@@ -287,6 +293,7 @@ repos:
           bash -c '
           python3 -m unittest scripts.check_tf_iam_ec2_scope.test_check_tf_iam_ec2_scope &&
           python3 -m unittest scripts.check_tf_iam_elb_scope.test_check_tf_iam_elb_scope &&
+          python3 -m unittest scripts.check_tf_iam_role_naming.test_check_tf_iam_role_naming &&
           python3 -m unittest scripts.check_tf_sg_cidrs.test_check_tf_sg_cidrs &&
           python3 -m unittest scripts.check_tf_kms_secrets_grant.test_check_tf_kms_secrets_grant &&
           python3 -m unittest scripts.check_tf_rds_security.test_check_tf_rds_security &&

@@ -16,7 +16,8 @@ data "aws_caller_identity" "current" {}
 # ------------------------------------------------------------------------------
 
 resource "aws_iam_role" "range_instance" {
-  name = "${var.name_prefix}-range-instance"
+  name                 = "${local.iam_name_prefix}-range-instance"
+  permissions_boundary = var.permissions_boundary_arn
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -127,7 +128,7 @@ resource "aws_iam_role_policy" "range_instance_ssm_params" {
 }
 
 resource "aws_iam_instance_profile" "range_instance" {
-  name = "${var.name_prefix}-range-instance"
+  name = "${local.iam_name_prefix}-range-instance"
   role = aws_iam_role.range_instance.name
 
   tags = merge(var.tags, {

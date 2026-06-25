@@ -4,7 +4,8 @@
 # Used by ECS to pull container images and write logs
 
 resource "aws_iam_role" "ecs_execution" {
-  name = "${var.name_prefix}-pulumi-ecs-execution"
+  name                 = "${local.iam_name_prefix}-pulumi-ecs-execution"
+  permissions_boundary = var.permissions_boundary_arn
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -102,7 +103,8 @@ resource "aws_iam_role_policy" "ecs_execution_kms" {
 # Used by the engine provisioner container for AWS operations
 
 resource "aws_iam_role" "ecs_task" {
-  name = "${var.name_prefix}-pulumi-ecs-task"
+  name                 = "${local.iam_name_prefix}-pulumi-ecs-task"
+  permissions_boundary = var.permissions_boundary_arn
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
