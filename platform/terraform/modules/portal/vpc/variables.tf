@@ -5,6 +5,12 @@ variable "name_prefix" {
   type        = string
 }
 
+variable "iam_name_prefix" {
+  description = "Prefix for IAM role and instance profile names (defaults to name_prefix)"
+  type        = string
+  default     = null
+}
+
 variable "vpc_cidr" {
   description = "CIDR block for the VPC"
   type        = string
@@ -83,4 +89,9 @@ variable "firewall_subnet_cidr" {
   description = "CIDR block for the dedicated portal inspection firewall subnet. Must not overlap with the public, private, public-workload, or other reserved subnets in vpc_cidr. Default places it at the top of the VPC /16 to avoid collision with the public/private/public-workload /20 tiers."
   type        = string
   default     = ""
+}
+
+variable "permissions_boundary_arn" {
+  description = "Permissions boundary ARN required on CI-created shifter-* roles"
+  type        = string
 }

@@ -5,6 +5,12 @@ variable "name_prefix" {
   type        = string
 }
 
+variable "iam_name_prefix" {
+  description = "Prefix for IAM role and instance profile names (defaults to name_prefix)"
+  type        = string
+  default     = null
+}
+
 variable "vpc_cidr" {
   description = "CIDR block for the VPC (e.g., 10.1.0.0/16)"
   type        = string
@@ -135,4 +141,9 @@ variable "enable_ngfw_infrastructure" {
   description = "Enable persistent NGFW infrastructure (subnet, security groups, IAM role)"
   type        = bool
   default     = false
+}
+
+variable "permissions_boundary_arn" {
+  description = "Permissions boundary ARN required on CI-created shifter-* roles"
+  type        = string
 }

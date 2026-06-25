@@ -57,7 +57,8 @@ resource "aws_lambda_function" "rotation" {
 # ------------------------------------------------------------------------------
 
 resource "aws_iam_role" "rotation" {
-  name = "${var.name_prefix}-cognito-rotation-role"
+  name                 = "${local.iam_name_prefix}-cognito-rotation-role"
+  permissions_boundary = var.permissions_boundary_arn
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -173,7 +174,8 @@ resource "aws_scheduler_schedule" "rotation_reminder" {
 resource "aws_iam_role" "reminder" {
   count = var.enable_rotation_reminder ? 1 : 0
 
-  name = "${var.name_prefix}-cognito-reminder-role"
+  name                 = "${local.iam_name_prefix}-cognito-reminder-role"
+  permissions_boundary = var.permissions_boundary_arn
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
