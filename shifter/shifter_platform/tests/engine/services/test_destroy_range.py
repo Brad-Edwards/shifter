@@ -18,6 +18,8 @@ from engine.models import Range
 from shared.enums import ResourceStatus
 from shared.schemas import InstanceSpec, RangeRef, RangeSpec, RequestSpec, SubnetSpec
 
+from .conftest import ECS_TASK_ARN
+
 pytestmark = pytest.mark.django_db
 
 User = get_user_model()
@@ -70,6 +72,19 @@ class TestDestroyRange:
         range_obj.refresh_from_db()
         assert range_obj.status == Range.Status.DESTROYING
 
+    def test_destroy_sets_teardown_arn_without_overwriting_provisioning(self, user, ecs_dispatch):
+        spec = _request_spec(user.id)
+        create_range(spec)
+        range_obj = Range.objects.get()
+        Range.objects.filter(id=range_obj.id).update(status=Range.Status.READY)
+        provisioning_arn = range_obj.provisioning_task_arn
+        assert provisioning_arn == ECS_TASK_ARN
+
+        assert destroy_range(_ref(range_id=range_obj.id, user_id=user.id)) is True
+        range_obj.refresh_from_db()
+        assert range_obj.provisioning_task_arn == provisioning_arn
+        assert range_obj.teardown_task_arn == ECS_TASK_ARN
+
     def test_idempotent_when_already_destroying(self, user):
         range_obj = Range.objects.create(user=user, status=Range.Status.DESTROYING)
         assert destroy_range(_ref(range_id=range_obj.id, user_id=user.id)) is True
@@ -121,6 +136,7 @@ class TestDestroyRangeByRequest:
         create_range(spec)
         Range.objects.filter(request__request_id=spec.request_id).update(status=Range.Status.DESTROYING)
         assert destroy_range_by_request(spec.request_id) is True
+        assert Range.objects.get(request__request_id=spec.request_id).status == Range.Status.DESTROYING
 
     def test_returns_false_when_already_destroyed(self, user):
         spec = _request_spec(user.id)
