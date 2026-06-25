@@ -37,3 +37,25 @@ variable "github_repo" {
   type        = string
   default     = "shifter"
 }
+
+# ------------------------------------------------------------------------------
+# Health monitoring (#292)
+# ------------------------------------------------------------------------------
+
+variable "alarm_email" {
+  description = "Optional email address subscribed to the runner-alerts SNS topic. Empty disables the email subscription; Slack/Teams can subscribe to the topic separately."
+  type        = string
+  default     = ""
+}
+
+variable "enable_system_auto_recovery" {
+  description = "Add an EC2 recover action to the StatusCheckFailed_System alarm. Scoped to system status checks (AWS-hardware faults) only; instance-check, CPU, and runner-service alarms always notify rather than auto-act."
+  type        = bool
+  default     = true
+}
+
+variable "cpu_alarm_threshold" {
+  description = "Average CPU utilization percent that, when sustained, alarms as a hang proxy."
+  type        = number
+  default     = 95
+}
