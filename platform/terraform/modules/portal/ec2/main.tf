@@ -68,6 +68,59 @@ resource "aws_cloudwatch_metric_alarm" "unhealthy_workers" {
   })
 }
 
+# Log-derived SQS worker restart signal (#274). Distinct from the #953 host
+# supervisor's Shifter/WorkerHealth metrics and from Shifter/PortalCapacity.
+# Per-queue series for diagnostics; a separate aggregate series feeds the alarm
+# because CloudWatch alarms require a concrete metric, not SEARCH().
+resource "aws_cloudwatch_log_metric_filter" "worker_restarts" {
+  name           = "${var.name_prefix}-worker-restarts"
+  log_group_name = aws_cloudwatch_log_group.portal.name
+  pattern        = "{ ($.message = \"*Worker restart detected*\") && ($.labels.worker_queue = \"*\") }"
+
+  metric_transformation {
+    name      = "WorkerRestarts"
+    namespace = "Shifter/Workers/${var.name_prefix}"
+    value     = "1"
+
+    dimensions = {
+      Queue = "$.labels.worker_queue"
+    }
+  }
+}
+
+resource "aws_cloudwatch_log_metric_filter" "worker_restarts_aggregate" {
+  name           = "${var.name_prefix}-worker-restarts-aggregate"
+  log_group_name = aws_cloudwatch_log_group.portal.name
+  pattern        = "{ ($.message = \"*Worker restart detected*\") && ($.labels.worker_queue = \"*\") }"
+
+  metric_transformation {
+    name          = "WorkerRestartsTotal"
+    namespace     = "Shifter/Workers/${var.name_prefix}"
+    value         = "1"
+    default_value = "0"
+  }
+}
+
+resource "aws_cloudwatch_metric_alarm" "worker_restart_rate" {
+  alarm_name          = "${var.name_prefix}-worker-restart-rate"
+  alarm_description   = "SQS workers restarting frequently on ${var.name_prefix} (#274)"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 1
+  metric_name         = "WorkerRestartsTotal"
+  namespace           = "Shifter/Workers/${var.name_prefix}"
+  period              = var.worker_restart_alarm_period_seconds
+  statistic           = "Sum"
+  threshold           = var.worker_restart_alarm_threshold
+  treat_missing_data  = "notBreaching"
+
+  alarm_actions = var.worker_health_alarm_actions
+  ok_actions    = var.worker_health_alarm_actions
+
+  tags = merge(local.common_tags, {
+    Name = "${var.name_prefix}-worker-restart-rate"
+  })
+}
+
 # ------------------------------------------------------------------------------
 # IAM Role for EC2
 # ------------------------------------------------------------------------------
