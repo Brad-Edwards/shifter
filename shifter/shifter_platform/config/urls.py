@@ -24,7 +24,6 @@ urlpatterns = [
     path("logout/", logout_view, name="logout"),
     path("mission-control/", include("mission_control.urls")),
     path("risk-register/", include("risk_register.urls")),
-    path("mission-control/experiments/", include("cms.experiments.urls")),
     path("scenario-editor/", include("cms.scenario_editor.urls")),
     path("docs/", include("documentation.urls")),
     path("api/v1/", include((api_urls.urlpatterns, api_urls.app_name), namespace="v1")),
@@ -46,6 +45,11 @@ urlpatterns.append(path("oidc/authenticate/", legacy_oidc_authenticate, name="le
 
 if settings.AUTH_PROVIDER == "oidc":
     urlpatterns.append(path("oidc/", include("mozilla_django_oidc.urls")))
+
+# Experiments is half-built and off by default (#1195). Only register its routes
+# when explicitly enabled so the unfinished feature is not reachable.
+if settings.EXPERIMENTS_ENABLED:
+    urlpatterns.append(path("mission-control/experiments/", include("cms.experiments.urls")))
 
 # Keep the routes stable across environments and enforce production blocking in the views.
 urlpatterns += [
