@@ -28,6 +28,7 @@ from config._api_token_settings import *  # NOSONAR  # noqa: E402
 from config._channels import *  # NOSONAR  # noqa: E402
 from config._channels import _build_channel_layers  # noqa: E402
 from config._cloud import *  # NOSONAR  # noqa: E402
+from config._drf_settings import *  # NOSONAR  # noqa: E402
 from config._email import *  # NOSONAR  # noqa: E402
 from config._guacamole_settings import *  # NOSONAR  # noqa: E402
 from config._logging_config import *  # NOSONAR  # noqa: E402
@@ -118,6 +119,8 @@ INSTALLED_APPS = [
     "health_check.storage",
     "config.apps.PortalConfig",
     "rest_framework",
+    "drf_spectacular",
+    "drf_spectacular_sidecar",
     # GCP SendGrid/Mailgun email backends (AWS uses django-ses); see config/_email.py.
     "anymail",
     "mission_control.apps.MissionControlConfig",
@@ -439,25 +442,6 @@ CTF_FROM_EMAIL = os.environ.get("CTF_FROM_EMAIL", "ctf@example.com")
 CTF_DEFAULT_RANGE_SPINUP_MINUTES = int(os.environ.get("CTF_DEFAULT_RANGE_SPINUP_MINUTES", "30"))
 CTF_DEFAULT_CLEANUP_DELAY_HOURS = int(os.environ.get("CTF_DEFAULT_CLEANUP_DELAY_HOURS", "24"))
 CTFD_PLATFORM_URL = os.environ.get("CTFD_PLATFORM_URL", "https://ctf.shifter.example.com/login")
-
-# ------------------------------------------------------------------------------
-# Django REST Framework Configuration
-# ------------------------------------------------------------------------------
-
-REST_FRAMEWORK = {
-    "DEFAULT_AUTHENTICATION_CLASSES": [
-        # Scoped bearer tokens first (PLAT-102; fails closed), then legacy
-        # X-API-Key (deprecated, #1124), then session.
-        "shared.api_tokens.authentication.ApiTokenAuthentication",
-        "risk_register.api.authentication.APIKeyAuthentication",
-        "rest_framework.authentication.SessionAuthentication",
-    ],
-    "DEFAULT_PERMISSION_CLASSES": [
-        "rest_framework.permissions.IsAuthenticated",
-    ],
-    "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
-    "PAGE_SIZE": 50,
-}
 
 # ------------------------------------------------------------------------------
 # Environment

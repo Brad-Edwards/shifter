@@ -4,6 +4,7 @@ from django.conf import settings
 from django.contrib import admin
 from django.urls import include, path
 
+from config import api_urls
 from config.dev_auth import dev_login, dev_logout
 from config.health import CoarseHealthCheckView
 from config.views import (
@@ -26,7 +27,7 @@ urlpatterns = [
     path("mission-control/experiments/", include("cms.experiments.urls")),
     path("scenario-editor/", include("cms.scenario_editor.urls")),
     path("docs/", include("documentation.urls")),
-    path("api/v1/", include("risk_register.api.urls")),
+    path("api/v1/", include((api_urls.urlpatterns, api_urls.app_name), namespace="v1")),
     path("ctf/", include("ctf.urls")),
     path("admin/", admin.site.urls),
     # /health and /health/ both resolve to the same dependency-aware probe

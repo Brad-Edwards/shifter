@@ -144,16 +144,16 @@
     },
     {
       "default": "''",
+      "name": "DJANGO_SECRET_KEY_FALLBACKS",
+      "source_file": "config/_database_settings.py"
+    },
+    {
+      "default": "''",
       "name": "EMAIL_API_KEY",
       "source_file": "config/_email.py"
     },
     {
       "default": "_CONSOLE_BACKEND",
-      "name": "DJANGO_SECRET_KEY_FALLBACKS",
-      "source_file": "config/_database_settings.py"
-    },
-    {
-      "default": "'django.core.mail.backends.console.EmailBackend'",
       "name": "EMAIL_BACKEND",
       "source_file": "config/_email.py"
     },
