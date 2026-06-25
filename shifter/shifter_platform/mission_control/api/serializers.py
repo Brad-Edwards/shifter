@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from rest_framework import serializers
 
 AGENT_TYPE_CHOICES = ("xdr", "xdr_collector", "cloud_identity_engine")
@@ -19,7 +21,7 @@ class LaunchRangeSerializer(serializers.Serializer):
             raise serializers.ValidationError("agent_id is required")
         return value
 
-    def validate(self, attrs: dict) -> dict:
+    def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
         if "agents" not in attrs and "agent_id" not in attrs:
             raise serializers.ValidationError("Either 'agents' or 'agent_id' is required")
         return attrs
@@ -31,7 +33,7 @@ class RangeLifecycleSerializer(serializers.Serializer):
     request_id = serializers.UUIDField(required=False)
     range_id = serializers.IntegerField(min_value=1, required=False)
 
-    def validate(self, attrs: dict) -> dict:
+    def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
         if "request_id" not in attrs and "range_id" not in attrs:
             raise serializers.ValidationError("request_id or range_id is required")
         return attrs
@@ -45,7 +47,7 @@ class UploadInitiateSerializer(serializers.Serializer):
     file_size = serializers.JSONField(required=False)
     agent_type = serializers.CharField(required=False, allow_blank=True, default="xdr", trim_whitespace=True)
 
-    def validate(self, attrs: dict) -> dict:
+    def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
         name = attrs.get("name", "")
         filename = attrs.get("filename", "")
         file_size = attrs.get("file_size", 0)
@@ -130,7 +132,7 @@ class ScriptUploadSerializer(serializers.Serializer):
     filename = serializers.CharField(required=False, allow_blank=True, trim_whitespace=True)
     file_size = serializers.JSONField(required=False)
 
-    def validate(self, attrs: dict) -> dict:
+    def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
         if attrs.get("upload_token"):
             return attrs
         name = attrs.get("name", "")

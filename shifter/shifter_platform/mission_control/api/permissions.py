@@ -40,6 +40,8 @@ def block_participant_lifecycle_permission(verb: str) -> type[permissions.BasePe
     """Build a DRF permission equivalent of ``block_ctf_participant_only``."""
 
     class _BlockParticipantLifecycle(permissions.BasePermission):
+        """Block participant-only users from disallowed lifecycle actions."""
+
         message = "Forbidden"
 
         def has_permission(self, request: Request, view: APIView) -> bool:

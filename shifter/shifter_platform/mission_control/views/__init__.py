@@ -17,7 +17,10 @@ submodule code sees.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
+from typing import Any
 
+from django.http import HttpResponseBase
 from django.shortcuts import render
 
 from cms.services import (
@@ -92,7 +95,7 @@ from ._pages import (
 )
 
 
-def _api_view(name: str):
+def _api_view(name: str) -> Callable[..., HttpResponseBase]:
     """Lazily resolve Mission Control DRF view callables.
 
     ``mission_control.api.views`` imports private helpers from this package, so
@@ -101,7 +104,7 @@ def _api_view(name: str):
     the DRF module until request dispatch or a direct test call.
     """
 
-    def _wrapped(request, *args, **kwargs):
+    def _wrapped(request: object, *args: Any, **kwargs: Any) -> HttpResponseBase:
         from mission_control.api import views as api_views
 
         return getattr(api_views, name)(request, *args, **kwargs)
