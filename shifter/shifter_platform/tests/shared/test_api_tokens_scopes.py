@@ -19,12 +19,19 @@ class TestKnownScopes:
         assert scopes.RISK_READ in scopes.KNOWN_SCOPES
         assert scopes.RISK_WRITE in scopes.KNOWN_SCOPES
 
-    def test_migration_scopes_are_reserved(self):
-        # Reserved for the PLAT-106 per-app migrations; known but not yet
-        # enforced by any endpoint.
+    def test_migration_scopes_are_registered(self):
+        # Mission Control scopes are enforced by PLAT-106 issue #1120; CTF/CMS
+        # scopes remain registered for their follow-on migrations.
         for reserved in (
             "mission_control:range:read",
             "mission_control:range:write",
+            "mission_control:upload:write",
+            "mission_control:guacamole:read",
+            "mission_control:ngfw:read",
+            "mission_control:ngfw:write",
+            "mission_control:credentials:write",
+            "mission_control:script:read",
+            "mission_control:script:write",
             "ctf:event:read",
             "ctf:event:write",
             "ctf:play:write",

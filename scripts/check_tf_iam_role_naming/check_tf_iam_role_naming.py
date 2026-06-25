@@ -132,6 +132,8 @@ def check_github_oidc_iam_scoped(path: Path, text: str) -> list[Violation]:
 
 
 def check_file(path: Path) -> list[Violation]:
+    if path.suffix != ".tf":
+        return []
     text = path.read_text(encoding="utf-8")
     lines = text.splitlines()
     violations = check_iam_resource_names(path, lines)

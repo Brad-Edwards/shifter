@@ -377,6 +377,7 @@ module "redis" {
   source = "../../../modules/portal/redis"
 
   name_prefix                = local.name_prefix
+  iam_name_prefix            = local.iam_name_prefix
   vpc_id                     = module.vpc.vpc_id
   subnet_ids                 = module.vpc.private_subnet_ids
   allowed_security_group_ids = [module.ec2.security_group_id]
