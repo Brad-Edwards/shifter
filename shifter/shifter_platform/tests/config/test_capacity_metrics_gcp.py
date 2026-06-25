@@ -145,30 +145,32 @@ def test_emitter_is_fail_soft_when_monitoring_write_raises():
 # ---------------------------------------------------------------------------
 
 
-def test_resolve_default_client_factory_selects_by_provider():
+def test_resolve_default_client_factory_selects_by_provider(monkeypatch):
     # The provider routing is what production relies on (asgi calls
-    # build_emitter_from_config with no explicit factory and cloud_provider from
-    # settings). AWS keeps the boto3 factory; GCP returns a distinct closure that
-    # builds a Cloud Monitoring client.
-    assert capacity_metrics._resolve_default_client_factory("aws") is capacity_metrics._default_client_factory
-    assert capacity_metrics._resolve_default_client_factory("AWS") is capacity_metrics._default_client_factory
-    gcp_factory = capacity_metrics._resolve_default_client_factory("gcp")
+    # build_emitter_from_config with no explicit factory; the resolver reads
+    # CLOUD_PROVIDER from settings). AWS keeps the boto3 factory; GCP returns a
+    # distinct closure that builds a Cloud Monitoring client.
+    from django.conf import settings as django_settings
+
+    monkeypatch.setattr(django_settings, "CLOUD_PROVIDER", "aws")
+    assert capacity_metrics._resolve_default_client_factory() is capacity_metrics._default_client_factory
+
+    monkeypatch.setattr(django_settings, "CLOUD_PROVIDER", "GCP")
+    gcp_factory = capacity_metrics._resolve_default_client_factory()
     assert gcp_factory is not capacity_metrics._default_client_factory
     assert callable(gcp_factory)
 
 
 def test_build_emitter_with_no_factory_routes_through_provider_resolution(monkeypatch):
     # With client_factory=None (the production call shape), the builder MUST go
-    # through _resolve_default_client_factory(cloud_provider). Patch that seam so
-    # the routing branch is actually exercised — a regression that ignored
-    # cloud_provider would fail here.
+    # through _resolve_default_client_factory(). Patch that seam so the routing
+    # branch is actually exercised — a regression that ignored it would fail here.
     fake = _FakeMonitoringClient()
-    seen_providers = []
-
+    resolver_calls = []
     built_clients = []
 
-    def fake_resolver(cloud_provider):
-        seen_providers.append(cloud_provider)
+    def fake_resolver():
+        resolver_calls.append(True)
 
         def _factory():
             client = GCPMonitoringClient(client=fake, project_id=PROJECT, now=lambda: TS)
@@ -185,18 +187,17 @@ def test_build_emitter_with_no_factory_routes_through_provider_resolution(monkey
         interval_seconds=60,
         soft_concurrency=6,
         terminal_max_sessions=8,
-        cloud_provider="gcp",
         client_factory=None,
         collector=lambda *_: capacity_metrics.compute_snapshot(
             in_flight=0, terminal_active=0, soft_concurrency=6, terminal_max_sessions=8
         ),
     )
     try:
-        # The builder resolved the factory for the GCP provider (not AWS) and used
-        # the GCP client it produced. (The started daemon emits asynchronously, so
-        # the call count is not asserted here — see the write-path tests for that.)
+        # The builder routed through the provider resolver and used the client it
+        # produced. (The started daemon emits asynchronously, so the call count is
+        # not asserted here — see the write-path tests for that.)
         assert emitter is not None
-        assert seen_providers == ["gcp"]
+        assert resolver_calls == [True]
         assert len(built_clients) == 1
     finally:
         if emitter is not None:
@@ -219,7 +220,6 @@ def test_build_emitter_honors_explicitly_injected_factory():
         interval_seconds=60,
         soft_concurrency=6,
         terminal_max_sessions=8,
-        cloud_provider="gcp",
         client_factory=explicit_factory,
         collector=lambda *_: capacity_metrics.compute_snapshot(
             in_flight=0, terminal_active=0, soft_concurrency=6, terminal_max_sessions=8

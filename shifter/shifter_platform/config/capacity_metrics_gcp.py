@@ -21,7 +21,10 @@ import logging
 import re
 import time
 from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
+
+if TYPE_CHECKING:
+    from google.cloud.monitoring_v3 import MetricServiceClient
 
 logger = logging.getLogger(__name__)
 
@@ -76,23 +79,30 @@ def build_time_series(
 class GCPMonitoringClient:
     """``put_metric_data``-compatible adapter that writes to Cloud Monitoring.
 
-    Implements the same surface ``PortalCapacityEmitter`` calls on the boto3
-    CloudWatch client, so the emitter does not branch on provider. ``now`` is
-    injectable so the timestamp is testable without patching the clock.
+    Implements the same dynamic surface ``PortalCapacityEmitter`` calls on the
+    boto3 CloudWatch client (``put_metric_data(Namespace=..., MetricData=...)``),
+    so the emitter does not branch on provider. ``now`` is injectable so the
+    timestamp is testable without patching the clock.
     """
 
-    def __init__(self, *, client: Any, project_id: str, now: Callable[[], float] = time.time) -> None:
+    def __init__(self, *, client: MetricServiceClient, project_id: str, now: Callable[[], float] = time.time) -> None:
         self._client = client
         self._project_id = project_id
         self._project_name = f"projects/{project_id}"
         self._now = now
 
-    def put_metric_data(self, *, Namespace: str, MetricData: list[dict[str, Any]]) -> None:
-        """Write one gauge point per metric. ``Namespace`` is accepted for
-        boto3 signature parity; the namespace is encoded in the metric type."""
+    def put_metric_data(self, **kwargs: object) -> None:
+        """Write one gauge point per metric to Cloud Monitoring.
+
+        Mirrors the boto3 ``put_metric_data`` surface: ``MetricData`` carries the
+        gauge entries the emitter builds. The CloudWatch ``Namespace`` keyword is
+        accepted for signature parity but unused — the namespace is encoded in
+        the metric type prefix.
+        """
         from google.cloud import monitoring_v3
 
-        mappings = build_time_series(MetricData, project_id=self._project_id, timestamp_seconds=int(self._now()))
+        metric_data = cast("list[dict[str, Any]]", kwargs["MetricData"])
+        mappings = build_time_series(metric_data, project_id=self._project_id, timestamp_seconds=int(self._now()))
         time_series = [monitoring_v3.TimeSeries(mapping) for mapping in mappings]
         self._client.create_time_series(name=self._project_name, time_series=time_series)
 
@@ -106,6 +116,7 @@ def build_gcp_client_factory() -> Callable[[], GCPMonitoringClient]:
     """
 
     def _factory() -> GCPMonitoringClient:
+        """Construct a Cloud Monitoring-backed capacity client for this worker."""
         from google.cloud import monitoring_v3
 
         from shared.cloud.gcp.base import get_project_id

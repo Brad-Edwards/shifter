@@ -181,10 +181,12 @@ def build_metric_data(snapshot: CapacitySnapshot, name_prefix: str) -> list[dict
 
 
 class _CloudWatchClient(Protocol):
-    """Minimal metrics-client surface the emitter calls (boto3 CloudWatch and the
-    GCP Cloud Monitoring adapter both satisfy this exact contract)."""
+    """Minimal metrics-client surface the emitter calls. The emitter invokes
+    ``put_metric_data(Namespace=..., MetricData=...)`` (the boto3 CloudWatch
+    surface); the GCP Cloud Monitoring adapter mirrors that dynamic surface so
+    the emitter never branches on provider."""
 
-    def put_metric_data(self, *, Namespace: str, MetricData: list[dict[str, object]]) -> object: ...
+    def put_metric_data(self, **kwargs: object) -> object: ...
 
 
 SnapshotCollector = Callable[[int, int], CapacitySnapshot]
@@ -258,15 +260,18 @@ def _default_client_factory() -> _CloudWatchClient:
     return boto3.client("cloudwatch")
 
 
-def _resolve_default_client_factory(cloud_provider: str) -> Callable[[], _CloudWatchClient]:
-    """Pick the per-provider metrics client factory (PLAT-002, #671).
+def _resolve_default_client_factory() -> Callable[[], _CloudWatchClient]:
+    """Pick the per-provider metrics client factory from ``CLOUD_PROVIDER`` (PLAT-002, #671).
 
     GCP publishes the same gauges to Cloud Monitoring through a
     ``put_metric_data``-compatible adapter; google libs are imported lazily by
     the factory so the AWS path never loads them. Any other provider keeps the
     CloudWatch (boto3) factory.
     """
-    if cloud_provider.lower() == "gcp":
+    from django.conf import settings
+
+    provider = str(getattr(settings, "CLOUD_PROVIDER", "aws")).lower()
+    if provider == "gcp":
         from config.capacity_metrics_gcp import build_gcp_client_factory
 
         return build_gcp_client_factory()
@@ -280,21 +285,20 @@ def build_emitter_from_config(
     interval_seconds: int,
     soft_concurrency: int,
     terminal_max_sessions: int,
-    cloud_provider: str = "aws",
     client_factory: Callable[[], _CloudWatchClient] | None = None,
     collector: SnapshotCollector = collect_snapshot,
 ) -> PortalCapacityEmitter | None:
     """Build and start a per-worker emitter, or return ``None`` when it must not run.
 
     The metrics client is provider-aware: AWS publishes to CloudWatch (boto3),
-    GCP to Cloud Monitoring, selected by ``cloud_provider`` unless an explicit
-    ``client_factory`` is injected (tests). Returns ``None`` (logging a bounded
-    reason) and never raises when metrics are disabled, the ``NamePrefix``
-    dimension is missing, or the client cannot be constructed — worker boot must
-    never fail because of an optional observability signal.
+    GCP to Cloud Monitoring, selected from ``settings.CLOUD_PROVIDER`` unless an
+    explicit ``client_factory`` is injected (tests). Returns ``None`` (logging a
+    bounded reason) and never raises when metrics are disabled, the
+    ``NamePrefix`` dimension is missing, or the client cannot be constructed —
+    worker boot must never fail because of an optional observability signal.
     """
     if client_factory is None:
-        client_factory = _resolve_default_client_factory(cloud_provider)
+        client_factory = _resolve_default_client_factory()
     # Refuse to start (logging a bounded reason) rather than raise: an optional
     # observability signal must never fail worker boot. Disabled is silent; an
     # enabled-but-unlabelled emitter is an error because its series could not
