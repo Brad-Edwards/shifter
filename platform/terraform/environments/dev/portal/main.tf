@@ -415,7 +415,13 @@ module "cognito" {
   logout_urls           = ["https://${var.domain_name}/"]
   allowed_email_domains = var.allowed_email_domains
   allowed_emails        = var.allowed_emails
-  deletion_protection   = false
+
+  # Client-secret rotation (#159): operator-triggered Lambda + scheduled email reminder.
+  portal_asg_name          = module.ec2.asg_name
+  enable_autoscaling       = var.enable_autoscaling
+  alerts_topic_arn         = aws_sns_topic.alerts.arn
+  enable_rotation_reminder = var.alarm_email != ""
+  deletion_protection      = false
 
   # Dev: longer token validity for less frequent MFA prompts
   access_token_validity_hours = 8

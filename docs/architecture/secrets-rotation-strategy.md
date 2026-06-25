@@ -80,7 +80,7 @@ The issue poses four questions. The platform-wide answers:
 | Secret class | Cadence (baseline) | Automation mode | Downtime posture | Notification / audit |
 | --- | --- | --- | --- | --- |
 | RDS portal DB credentials | N/A (no stored password under IAM auth; the IAM principal is the credential) | IAM database authentication (per-connection token); no secret rotation | Zero-downtime: token minted per connection, SSL enforced | Audit the principal/policy change only; alert on auth-failure spikes |
-| Cognito / OIDC client secret | 180 days, or immediately on exposure | Coordinated rotation (manual/deploy-driven) with app-client overlap | Old/new client overlap through instance drain; no delete-before-drain | Notify before and after; audit app-client id / secret ARN, not the value |
+| Cognito / OIDC client secret | 180 days, or immediately on exposure | Operator-triggered blue/green rotation (on-demand Lambda creates a new app client; no in-place secret-rotation API) + scheduled email reminder | New client created and bundle swapped; old client overlaps through ASG drain; no delete-before-drain | Reminder email on cadence; audit app-client id / secret ARN, not the value |
 | Django `SECRET_KEY` | Annual, before production handoff, or on exposure | Coordinated rotation with `SECRET_KEY_FALLBACKS` | Zero-downtime via fallback keys; bounded fallback list | Notify operators (sessions may revalidate); audit the rotation event only |
 | Platform API tokens (`ApiToken`) | Bounded by token TTL; default max 365 days, integrations choose shorter | Built-in expiry + audited revoke; not cloud-secret rotation | No restart: issue replacement, swap client, revoke old after overlap | Reuse `shared.api_tokens` audit → `AuditLog`; raw token shown once, never logged |
 | Legacy `risk_register.APIKey` | Must set explicit `expires_at`; not for new integrations | Expiry / revocation only | No restart; migrate new work to `ApiToken` | Reuse existing `AuditLog`; no parallel audit table |
@@ -171,8 +171,9 @@ Delivered incrementally on `159-secrets-rotation`:
 3. **PR3**: the Redis AUTH automatic-rotation Lambda (ElastiCache `ROTATE` +
    ASG-refresh finalize), with its runbook; the #757 exception narrowed to drop
    Redis.
-4. **PR4** (planned): Cognito client-secret rotation (new-client blue/green) and
-   API-token cadence guidance.
+4. **PR4**: Cognito client-secret rotation (operator-triggered blue/green
+   Lambda + scheduled email reminder) and API-token cadence guidance. Closes the
+   issue.
 
 Operator runbooks for each mechanism land with the implementing PR, once the
 behavior is real.
