@@ -180,10 +180,11 @@
   {
     "rule_id": "ADR-004-R11",
     "owner": "@Brad-Edwards",
-    "reason": "Cognito pre-signup Lambda (CKV_AWS_50 / CKV_AWS_115 / CKV_AWS_116 / CKV_AWS_117 / CKV_AWS_173 / CKV_AWS_272): invoked synchronously by Cognito from AWS-owned infrastructure. DLQ does not apply to sync invocations; reserved concurrency would block legitimate signups; VPC config forces Cognito VPC endpoints for no security gain; env vars are non-sensitive allowlists; code signing needs CodeArtifact + Signer. Inline skips carry the per-rule justification.",
+    "reason": "Cognito pre-signup Lambda (main.tf) and the operator-triggered client-secret rotation Lambda (rotation.tf, #159) (CKV_AWS_50 / CKV_AWS_115 / CKV_AWS_116 / CKV_AWS_117 / CKV_AWS_173 / CKV_AWS_272): pre-signup is invoked synchronously by Cognito from AWS-owned infrastructure; the rotation Lambda is invoked on demand by an operator and calls only public AWS APIs (Cognito, Secrets Manager, Auto Scaling). DLQ does not apply to these invocations; reserved concurrency is unnecessary; a VPC config buys no security for AWS-API-only calls; env vars are non-sensitive (allowlists / a secret ARN reference); code signing needs CodeArtifact + Signer. CKV_AWS_297 (rotation.tf): the EventBridge Scheduler reminder's input is a non-sensitive reminder message (no secret data), and the portal Secrets CMK is kms:ViaService-scoped to Secrets Manager so the scheduler cannot use it; a CMK adds no protection. Inline skips carry the per-rule justification.",
     "expires_on": "2027-05-26",
     "paths": [
-      "platform/terraform/modules/portal/cognito/main.tf"
+      "platform/terraform/modules/portal/cognito/main.tf",
+      "platform/terraform/modules/portal/cognito/rotation.tf"
     ]
   },
   {
