@@ -125,6 +125,12 @@ def start_experiment_task(
         ValueError: If command is not a valid operation.
         CloudTaskError: If the ECS RunTask API call fails.
     """
+    # Defense-in-depth: the experiments feature is half-built and off by default
+    # (#1195). Even if a run is reached programmatically, never launch the (non-
+    # existent) executor when the feature is disabled.
+    if not getattr(settings, "EXPERIMENTS_ENABLED", False):
+        logger.info("Experiments disabled (EXPERIMENTS_ENABLED is false); not launching experiment task.")
+        return None
     if experiment_id is None or not isinstance(experiment_id, int):
         raise TypeError(f"experiment_id must be an int, got {type(experiment_id).__name__}")
     if run_id is None or not isinstance(run_id, int):
