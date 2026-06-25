@@ -66,6 +66,9 @@ module "platform_core" {
   dns_record_ttl                = var.dns_record_ttl
   identity_allowed_email_domain = var.identity_allowed_email_domain
   identity_allowed_emails       = var.identity_allowed_emails
+  email_backend                 = var.email_backend
+  email_from_address            = var.email_from_address
+  email_sender_domain           = var.email_sender_domain
   range_egress_mode             = var.range_egress_mode
   range_egress_allowed_cidrs    = var.range_egress_allowed_cidrs
   labels                        = local.labels

@@ -37,14 +37,31 @@ def _rendered_keys(rendered: str) -> set[str]:
     return {line.split("=", 1)[0] for line in rendered.splitlines() if line and not line.startswith("#")}
 
 
+MAILGUN_BACKEND = "anymail.backends.mailgun.EmailBackend"
+SENDGRID_BACKEND = "anymail.backends.sendgrid.EmailBackend"
+EMAIL_SECRET_ID = "projects/shifter-gcp-dev/secrets/shifter-gcp-dev-email"
+
+# A complete Mailgun email_config exercises every optional email key
+# (EMAIL_BACKEND, DEFAULT_FROM_EMAIL, EMAIL_API_KEY_SECRET_ID,
+# MAILGUN_SENDER_DOMAIN) so the runtime-inventory key-match test can assert the
+# full optional set renders.
+_FULL_MAILGUN_EMAIL_CONFIG = {
+    "backend": MAILGUN_BACKEND,
+    "from_email": "noreply@shifter.example.test",
+    "sender_domain": "mg.shifter.example.test",
+    "api_key_secret_id": EMAIL_SECRET_ID,
+}
+
+
 def _outputs(
     *,
     public_hostname: str = "portal.example.test",
     managed_tls_enabled: bool = True,
     identity_allowed_email_domain: str = "paloaltonetworks.com",
     identity_allowed_emails: list[str] | None = None,
+    email_config: dict | None = None,
 ) -> dict[str, object]:
-    return {
+    outputs = {
         "assets_bucket_name": {"value": "shifter-gcp-dev-gcp-dev-assets"},
         "terraform_state_bucket_name": {"value": "shifter-gcp-dev-terraform-state"},
         "platform_events_topic_id": {"value": "projects/shifter-gcp-dev/topics/shifter-gcp-dev-events"},
@@ -103,6 +120,9 @@ def _outputs(
         "range_network_region": {"value": "us-central1"},
         "portal_network_cidrs": {"value": ["10.40.0.0/20", "10.44.0.0/16"]},
     }
+    if email_config is not None:
+        outputs["email_config"] = {"value": email_config}
+    return outputs
 
 
 def test_render_env_emits_production_security_profile():
@@ -152,7 +172,10 @@ def test_render_env_keys_match_runtime_inventory(monkeypatch):
     monkeypatch.setenv("PLATFORM_BOOTSTRAP_STAFF_EMAILS", "admin@example.com")
     monkeypatch.setenv("PLATFORM_BOOTSTRAP_SUPERUSER_EMAILS", "admin@example.com")
     rendered = module.render_env(
-        _outputs(identity_allowed_emails=["alice@example.com", "bob@example.com"]),
+        _outputs(
+            identity_allowed_emails=["alice@example.com", "bob@example.com"],
+            email_config=_FULL_MAILGUN_EMAIL_CONFIG,
+        ),
         image_tag=PINNED_IMAGE_TAG,
     )
 
@@ -276,6 +299,101 @@ def test_render_env_fails_closed_when_redis_secret_id_missing():
 
     with pytest.raises(ValueError, match='runtime_secret_ids\\["redis"\\]'):
         module.render_env(outputs, image_tag=PINNED_IMAGE_TAG)
+
+
+def test_render_env_omits_email_when_unconfigured():
+    """Email is optional: with no email_config output the renderer emits no
+    EMAIL_* keys and the portal falls back to the console backend."""
+    module = _load_module("render_runtime_env.py", "render_runtime_env")
+
+    rendered = module.render_env(_outputs(), image_tag=PINNED_IMAGE_TAG)
+
+    for key in ("EMAIL_BACKEND", "DEFAULT_FROM_EMAIL", "EMAIL_API_KEY_SECRET_ID", "MAILGUN_SENDER_DOMAIN"):
+        assert f"{key}=" not in rendered
+
+
+def test_render_env_emits_sendgrid_email_config():
+    """A SendGrid email_config renders the backend, sender, and secret reference
+    but no Mailgun sender domain."""
+    module = _load_module("render_runtime_env.py", "render_runtime_env")
+
+    rendered = module.render_env(
+        _outputs(
+            email_config={
+                "backend": SENDGRID_BACKEND,
+                "from_email": "noreply@shifter.example.test",
+                "api_key_secret_id": EMAIL_SECRET_ID,
+            }
+        ),
+        image_tag=PINNED_IMAGE_TAG,
+    )
+
+    assert f"EMAIL_BACKEND={SENDGRID_BACKEND}\n" in rendered
+    assert "DEFAULT_FROM_EMAIL=noreply@shifter.example.test\n" in rendered
+    assert f"EMAIL_API_KEY_SECRET_ID={EMAIL_SECRET_ID}\n" in rendered
+    assert "MAILGUN_SENDER_DOMAIN=" not in rendered
+
+
+def test_render_env_emits_mailgun_sender_domain():
+    module = _load_module("render_runtime_env.py", "render_runtime_env")
+
+    rendered = module.render_env(_outputs(email_config=_FULL_MAILGUN_EMAIL_CONFIG), image_tag=PINNED_IMAGE_TAG)
+
+    assert f"EMAIL_BACKEND={MAILGUN_BACKEND}\n" in rendered
+    assert "MAILGUN_SENDER_DOMAIN=mg.shifter.example.test\n" in rendered
+
+
+def test_render_env_never_emits_email_api_key_value():
+    """Structural secret-leakage gate: the runtime env carries only the secret
+    REFERENCE; the ESP API key is hydrated by entrypoint.sh from Secret Manager."""
+    module = _load_module("render_runtime_env.py", "render_runtime_env")
+
+    rendered = module.render_env(
+        _outputs(
+            email_config={
+                "backend": SENDGRID_BACKEND,
+                "from_email": "noreply@shifter.example.test",
+                "api_key_secret_id": EMAIL_SECRET_ID,
+                # An api_key value here must never be rendered even if present.
+                "api_key": "SG.must-not-render",
+            }
+        ),
+        image_tag=PINNED_IMAGE_TAG,
+    )
+
+    assert "SG.must-not-render" not in rendered
+    for key in ("EMAIL_API_KEY", "SENDGRID_API_KEY", "MAILGUN_API_KEY"):
+        assert f"{key}=" not in rendered
+
+
+@pytest.mark.parametrize(
+    ("email_config", "expected_missing"),
+    [
+        # no secret id
+        ({"backend": SENDGRID_BACKEND, "from_email": "noreply@shifter.example.test"}, "api_key_secret_id"),
+        # no backend
+        ({"api_key_secret_id": EMAIL_SECRET_ID, "from_email": "noreply@shifter.example.test"}, "backend"),
+        # enabled SendGrid without a From address -> would send as webmaster@localhost
+        ({"backend": SENDGRID_BACKEND, "api_key_secret_id": EMAIL_SECRET_ID}, "from_email"),
+        # enabled Mailgun without its required sender domain
+        (
+            {
+                "backend": MAILGUN_BACKEND,
+                "from_email": "noreply@shifter.example.test",
+                "api_key_secret_id": EMAIL_SECRET_ID,
+            },
+            "sender_domain",
+        ),
+    ],
+)
+def test_render_env_fails_closed_on_incomplete_email(email_config, expected_missing):
+    """An enabled email_config that cannot actually send (missing backend, secret
+    id, From address, or — for Mailgun — sender domain) fails at render time
+    rather than silently dropping mail or sending as webmaster@localhost."""
+    module = _load_module("render_runtime_env.py", "render_runtime_env")
+
+    with pytest.raises(ValueError, match=expected_missing):
+        module.render_env(_outputs(email_config=email_config), image_tag=PINNED_IMAGE_TAG)
 
 
 def test_render_env_preserves_bootstrap_admin_lists_from_environment(monkeypatch):

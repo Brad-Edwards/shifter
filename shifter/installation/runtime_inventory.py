@@ -81,6 +81,14 @@ GCP_OPTIONAL_GENERATED_RUNTIME_ENV_KEYS: frozenset[str] = frozenset(
         "IDENTITY_ALLOWED_EMAILS",
         "PLATFORM_BOOTSTRAP_STAFF_EMAILS",
         "PLATFORM_BOOTSTRAP_SUPERUSER_EMAILS",
+        # Transactional email (PLAT-002, #671) — emitted only when the operator
+        # configures a SendGrid/Mailgun sender; EMAIL_API_KEY_SECRET_ID is a
+        # Secret Manager reference, not the key value. MAILGUN_SENDER_DOMAIN is
+        # emitted only for the Mailgun backend.
+        "EMAIL_BACKEND",
+        "DEFAULT_FROM_EMAIL",
+        "EMAIL_API_KEY_SECRET_ID",
+        "MAILGUN_SENDER_DOMAIN",
     }
 )
 

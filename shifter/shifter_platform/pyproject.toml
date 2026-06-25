@@ -11,6 +11,9 @@ dependencies = [
     "channels-redis",
     "daphne",
     "django>=6.0.6",
+    # GCP transactional-email backends (SendGrid / Mailgun) for PLAT-002 parity;
+    # AWS continues to use django-ses. See config/_email.py.
+    "django-anymail",
     "django-encrypted-model-fields>=0.6.5",
     "django-health-check<5.0",
     "django-ses",

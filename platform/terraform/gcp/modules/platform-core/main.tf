@@ -27,13 +27,20 @@ locals {
     "experiments",
   ])
 
-  runtime_secrets = {
+  # Email is opt-in: the ESP API-key secret is created (unseeded, operator-
+  # populated) only when email_backend is set (PLAT-002, #671). Unlike the other
+  # bundles this one is NOT seeded by Terraform — the API key is never committed.
+  email_runtime_secrets = var.email_backend == "" ? {} : {
+    "email" = "Transactional-email ESP (SendGrid/Mailgun) API key; operator-populated, never seeded by Terraform."
+  }
+
+  runtime_secrets = merge({
     "app"                 = "Django runtime secret bundle (SECRET_KEY and field encryption key)."
     "db"                  = "Database connection secret bundle for the platform control plane."
     "guacamole-db"        = "Database connection secret bundle for the Guacamole client."
     "guacamole-json-auth" = "Guacamole JSON auth signing key."
     "redis"               = "Redis AUTH token for the platform control-plane cache (ADR-008-R6)."
-  }
+  }, local.email_runtime_secrets)
 
   required_services = toset([
     "artifactregistry.googleapis.com",

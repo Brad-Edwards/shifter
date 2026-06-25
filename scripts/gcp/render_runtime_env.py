@@ -60,6 +60,64 @@ def _string_list(raw: object) -> list[str]:
     return [str(item).strip() for item in raw if str(item).strip()]
 
 
+_MAILGUN_EMAIL_BACKEND = "anymail.backends.mailgun.EmailBackend"
+
+
+def _email_runtime_values(outputs: dict[str, object]) -> dict[str, str]:
+    """Optional transactional-email runtime env for GCP (PLAT-002, #671).
+
+    Email is **optional**: when no ``email_config`` Terraform output is present
+    the portal falls back to the console backend (``config/_email.py``). When
+    the output *is* present it must be complete — ``backend`` and
+    ``api_key_secret_id`` are both required — so a half-configured deployment
+    fails at render time rather than silently dropping mail.
+
+    Only the secret **reference** (``EMAIL_API_KEY_SECRET_ID``) is emitted here;
+    the ESP API key itself is hydrated from Secret Manager by ``entrypoint.sh``
+    and never travels through this ConfigMap-bound env (same posture as the
+    Redis AUTH bundle, ADR-008).
+    """
+    raw = outputs.get("email_config")
+    config = raw.get("value") if isinstance(raw, dict) else None
+    if not isinstance(config, dict) or not config:
+        return {}
+
+    backend = str(config.get("backend", "")).strip()
+    secret_id = str(config.get("api_key_secret_id", "")).strip()
+    from_email = str(config.get("from_email", "")).strip()
+    sender_domain = str(config.get("sender_domain", "")).strip()
+
+    # Fail closed on an enabled-but-unusable sender. A non-empty email_config
+    # means the operator opted into real delivery, so every field the ESP needs
+    # to send must be present: both backends need a From address (otherwise mail
+    # goes out as Django's webmaster@localhost), and Mailgun additionally needs
+    # its sender domain. Surface the gap at render time, not as a runtime send
+    # failure.
+    missing = []
+    if not backend:
+        missing.append("backend")
+    if not secret_id:
+        missing.append("api_key_secret_id")
+    if not from_email:
+        missing.append("from_email")
+    if backend == _MAILGUN_EMAIL_BACKEND and not sender_domain:
+        missing.append("sender_domain")
+    if missing:
+        raise ValueError(
+            "GCP email_config is incomplete (missing: " + ", ".join(missing) + "); "
+            "refusing to render an email runtime that cannot send"
+        )
+
+    email_values = {
+        "EMAIL_BACKEND": backend,
+        "EMAIL_API_KEY_SECRET_ID": secret_id,
+        "DEFAULT_FROM_EMAIL": from_email,
+    }
+    if backend == _MAILGUN_EMAIL_BACKEND:
+        email_values["MAILGUN_SENDER_DOMAIN"] = sender_domain
+    return email_values
+
+
 def _validated_image_tag(image_tag: str) -> str:
     tag = image_tag.strip()
     if not tag:
@@ -215,6 +273,11 @@ def render_env(outputs: dict[str, object], *, image_tag: str) -> str:
         )
     values["REDIS_TLS"] = "true"
     values["REDIS_SECRET_ID"] = redis_secret_id
+
+    # Optional transactional-email runtime env (PLAT-002, #671). Absent ->
+    # console backend; present -> SendGrid/Mailgun via anymail with the API key
+    # hydrated from Secret Manager by the entrypoint.
+    values.update(_email_runtime_values(outputs))
 
     return "".join(f"{key}={value}\n" for key, value in values.items())
 
