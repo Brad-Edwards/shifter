@@ -7,9 +7,13 @@ already DRF. Fills a real gap: there was no HTTP-level DRF auth test before.
 from __future__ import annotations
 
 import pytest
+from rest_framework.authentication import SessionAuthentication
 from rest_framework.test import APIClient
 
+from risk_register.api.authentication import APIKeyAuthentication
+from risk_register.api.views import CommentViewSet, RiskViewSet
 from shared.api_tokens import scopes
+from shared.api_tokens.authentication import ApiTokenAuthentication
 from shared.api_tokens.models import ApiToken
 
 from .conftest import grant_risk_register_access
@@ -60,6 +64,11 @@ class TestTokenReadAccess:
         token.revoke()
         assert _bearer(client, raw).get(RISKS_URL).status_code == 401
 
+    def test_legacy_risk_register_key_auth_is_view_local(self):
+        expected = [ApiTokenAuthentication, APIKeyAuthentication, SessionAuthentication]
+        assert RiskViewSet.authentication_classes == expected
+        assert CommentViewSet.authentication_classes == expected
+
 
 class TestTokenWriteAccess:
     def test_read_token_cannot_create(self, client, staff):
@@ -96,3 +105,19 @@ class TestAdminOnlyEndpointRejectsTokens:
         # api-keys management stays session-admin only; a token is authenticated
         # but not an admin, so it is forbidden.
         assert _bearer(client, raw).get(API_KEYS_URL).status_code == 403
+
+
+class TestRiskRegisterErrorEnvelope:
+    def test_manual_restore_error_uses_platform_api_envelope(self, client, staff):
+        from risk_register.models import Risk
+
+        risk = Risk.objects.create(title="T", description="D")
+        client.force_authenticate(user=staff)
+
+        resp = client.post(f"{RISKS_URL}{risk.pk}/restore/")
+
+        assert resp.status_code == 400
+        payload = resp.json()
+        assert payload["error"]["code"] == "bad_request"
+        assert payload["error"]["message"] == "Risk is not deleted"
+        assert payload["error"]["request_id"]
