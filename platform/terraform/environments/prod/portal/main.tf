@@ -386,6 +386,11 @@ module "redis" {
   redis_at_rest_kms_key_arn = aws_kms_key.redis_at_rest.arn
   is_active_channel_backend = var.enable_redis
 
+  # Automatic Redis AUTH rotation (#159): only where the portal runs on a
+  # refreshable ASG, so the rotation Lambda can roll consumers to the new token.
+  enable_auth_rotation = var.enable_autoscaling
+  portal_asg_name      = module.ec2.asg_name
+
   # CloudWatch Alarms
   enable_alarms = var.alarm_email != ""
   alarm_actions = var.alarm_email != "" ? [aws_sns_topic.alerts.arn] : []

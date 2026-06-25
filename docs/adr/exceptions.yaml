@@ -21,14 +21,13 @@
   {
     "rule_id": "ADR-004-R11",
     "owner": "@Brad-Edwards",
-    "reason": "CKV2_AWS_57 (Secrets Manager rotation): rotation requires a custom Lambda that knows how to update the consumer-side credential (AD Administrator password, NGFW SSH key baked into Panorama config, Cognito client secret bound to the IdP, Redis AUTH token requiring an ElastiCache modify + coordinated portal restart). Building one rotation Lambda per consumer is out of scope for #757; manual rotation procedures are documented in each module that owns the secret. Each affected secret carries an inline `# checkov:skip=CKV2_AWS_57` pointer back to this entry.",
+    "reason": "CKV2_AWS_57 (Secrets Manager rotation): rotation requires a custom Lambda that knows how to update the consumer-side credential (AD Administrator password, NGFW SSH key baked into Panorama config, Cognito client secret bound to the IdP). Building one rotation Lambda per remaining consumer is out of scope for #757; manual rotation procedures are documented in each module that owns the secret. Each affected secret carries an inline `# checkov:skip=CKV2_AWS_57` pointer back to this entry. The portal Redis AUTH token is excluded: it now has an automatic rotation Lambda (portal/redis/rotation.tf, #159).",
     "expires_on": "2026-11-26",
     "paths": [
       "platform/terraform/modules/engine-provisioner/",
       "platform/terraform/modules/guacamole/",
       "platform/terraform/modules/portal/cognito/",
       "platform/terraform/modules/portal/rds/",
-      "platform/terraform/modules/portal/redis/",
       "platform/terraform/environments/dev/portal/",
       "platform/terraform/environments/prod/portal/",
       "platform/terraform/global/dev-box/",
@@ -185,6 +184,15 @@
     "expires_on": "2027-05-26",
     "paths": [
       "platform/terraform/modules/portal/cognito/main.tf"
+    ]
+  },
+  {
+    "rule_id": "ADR-004-R11",
+    "owner": "@Brad-Edwards",
+    "reason": "Redis AUTH rotation Lambda (CKV_AWS_50 / CKV_AWS_115 / CKV_AWS_116 / CKV_AWS_173 / CKV_AWS_272, #159): a scheduled Secrets Manager rotation function. DLQ and reserved concurrency do not apply (Secrets Manager invokes it serially and owns the retry/alarm lifecycle); env vars are non-sensitive (replication-group id, Redis host/port, ASG name) and the AUTH token is read from Secrets Manager, never an env var; X-Ray adds no observability over CloudWatch logs; code signing needs CodeArtifact + Signer. Inline skips carry the per-rule justification.",
+    "expires_on": "2027-05-26",
+    "paths": [
+      "platform/terraform/modules/portal/redis/rotation.tf"
     ]
   },
   {
