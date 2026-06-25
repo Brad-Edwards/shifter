@@ -32,6 +32,11 @@ Design contract (see
   never a scale-in input, so missing data cannot scale in a saturated fleet.
 - The emitter never shells out, never reads request bodies or terminal streams,
   and never labels a metric with anything but the environment ``NamePrefix``.
+- Provider-aware publishing (PLAT-002, #671): AWS writes to CloudWatch via
+  boto3; GCP writes the same gauges to Cloud Monitoring via the adapter in
+  ``config/capacity_metrics_gcp.py``, selected by ``CLOUD_PROVIDER``. The
+  emitter itself is provider-agnostic — it always builds the same MetricData
+  and calls ``put_metric_data`` on whichever client the factory returned.
 """
 
 from __future__ import annotations
@@ -176,9 +181,10 @@ def build_metric_data(snapshot: CapacitySnapshot, name_prefix: str) -> list[dict
 
 
 class _CloudWatchClient(Protocol):
-    """Minimal CloudWatch client surface used by the emitter (boto3-compatible)."""
+    """Minimal metrics-client surface the emitter calls (boto3 CloudWatch and the
+    GCP Cloud Monitoring adapter both satisfy this exact contract)."""
 
-    def put_metric_data(self, **kwargs: object) -> object: ...
+    def put_metric_data(self, *, Namespace: str, MetricData: list[dict[str, object]]) -> object: ...
 
 
 SnapshotCollector = Callable[[int, int], CapacitySnapshot]
@@ -252,6 +258,21 @@ def _default_client_factory() -> _CloudWatchClient:
     return boto3.client("cloudwatch")
 
 
+def _resolve_default_client_factory(cloud_provider: str) -> Callable[[], _CloudWatchClient]:
+    """Pick the per-provider metrics client factory (PLAT-002, #671).
+
+    GCP publishes the same gauges to Cloud Monitoring through a
+    ``put_metric_data``-compatible adapter; google libs are imported lazily by
+    the factory so the AWS path never loads them. Any other provider keeps the
+    CloudWatch (boto3) factory.
+    """
+    if cloud_provider.lower() == "gcp":
+        from config.capacity_metrics_gcp import build_gcp_client_factory
+
+        return build_gcp_client_factory()
+    return _default_client_factory
+
+
 def build_emitter_from_config(
     *,
     enabled: bool,
@@ -259,16 +280,21 @@ def build_emitter_from_config(
     interval_seconds: int,
     soft_concurrency: int,
     terminal_max_sessions: int,
-    client_factory: Callable[[], _CloudWatchClient] = _default_client_factory,
+    cloud_provider: str = "aws",
+    client_factory: Callable[[], _CloudWatchClient] | None = None,
     collector: SnapshotCollector = collect_snapshot,
 ) -> PortalCapacityEmitter | None:
     """Build and start a per-worker emitter, or return ``None`` when it must not run.
 
-    Returns ``None`` (logging a bounded reason) and never raises when metrics are
-    disabled, the ``NamePrefix`` dimension is missing, or the CloudWatch client
-    cannot be constructed — worker boot must never fail because of an optional
-    observability signal.
+    The metrics client is provider-aware: AWS publishes to CloudWatch (boto3),
+    GCP to Cloud Monitoring, selected by ``cloud_provider`` unless an explicit
+    ``client_factory`` is injected (tests). Returns ``None`` (logging a bounded
+    reason) and never raises when metrics are disabled, the ``NamePrefix``
+    dimension is missing, or the client cannot be constructed — worker boot must
+    never fail because of an optional observability signal.
     """
+    if client_factory is None:
+        client_factory = _resolve_default_client_factory(cloud_provider)
     # Refuse to start (logging a bounded reason) rather than raise: an optional
     # observability signal must never fail worker boot. Disabled is silent; an
     # enabled-but-unlabelled emitter is an error because its series could not
@@ -285,7 +311,7 @@ def build_emitter_from_config(
         # Fail-soft: never break worker boot on a client-init error. Log a bounded,
         # sanitized message, not the traceback (raw exception text is forbidden by
         # the #940 preflight anti-patterns).
-        _logger.warning("portal-capacity metrics: CloudWatch client init failed: %s", safe_log_value(str(exc)))
+        _logger.warning("portal-capacity metrics: client init failed: %s", safe_log_value(str(exc)))
         return None
     emitter = PortalCapacityEmitter(
         client=client,

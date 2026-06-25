@@ -52,6 +52,7 @@ portal_capacity_emitter = build_emitter_from_config(
     interval_seconds=settings.PORTAL_CAPACITY_METRICS_INTERVAL_SECONDS,
     soft_concurrency=settings.PORTAL_WORKER_SOFT_CONCURRENCY,
     terminal_max_sessions=settings.TERMINAL_MAX_SESSIONS,
+    cloud_provider=settings.CLOUD_PROVIDER,
 )
 
 # Import routing after Django setup

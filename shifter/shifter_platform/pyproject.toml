@@ -19,6 +19,9 @@ dependencies = [
     "django-ses",
     "djangorestframework",
     "firebase-admin",
+    # GCP Cloud Monitoring publisher for the portal capacity emitter (PLAT-002);
+    # AWS uses boto3/CloudWatch. Lazy-imported so AWS flows never load it.
+    "google-cloud-monitoring",
     "gunicorn",
     "markdown",
     "mozilla-django-oidc",
