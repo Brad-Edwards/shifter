@@ -97,6 +97,39 @@ def test_api_token_policy_defaults(monkeypatch) -> None:
     )
 
 
+def test_platform_drf_convention_defaults(monkeypatch) -> None:
+    monkeypatch.setenv("TESTING", "1")
+    monkeypatch.setenv("DJANGO_SECRET_KEY", "shifter-platform-tests-secret-key")
+
+    settings_module = _load_settings_module("config._settings_platform_drf_test")
+
+    assert "drf_spectacular" in settings_module.INSTALLED_APPS
+    assert "drf_spectacular_sidecar" in settings_module.INSTALLED_APPS
+    assert settings_module.REST_FRAMEWORK["DEFAULT_AUTHENTICATION_CLASSES"] == [
+        "shared.api_tokens.authentication.ApiTokenAuthentication",
+        "rest_framework.authentication.SessionAuthentication",
+    ]
+    assert settings_module.REST_FRAMEWORK["EXCEPTION_HANDLER"] == "shared.api.errors.api_exception_handler"
+    assert settings_module.REST_FRAMEWORK["DEFAULT_SCHEMA_CLASS"] == "drf_spectacular.openapi.AutoSchema"
+    assert settings_module.REST_FRAMEWORK["DEFAULT_VERSIONING_CLASS"] == "rest_framework.versioning.NamespaceVersioning"
+    assert settings_module.REST_FRAMEWORK["ALLOWED_VERSIONS"] == ["v1"]
+    assert settings_module.REST_FRAMEWORK["DEFAULT_VERSION"] == "v1"
+    assert settings_module.REST_FRAMEWORK["DEFAULT_FILTER_BACKENDS"] == [
+        "rest_framework.filters.SearchFilter",
+        "rest_framework.filters.OrderingFilter",
+    ]
+
+    spectacular = settings_module.SPECTACULAR_SETTINGS
+    assert spectacular["TITLE"] == "Shifter Platform API"
+    assert spectacular["VERSION"] == "v1"
+    assert spectacular["SCHEMA_PATH_PREFIX"] == r"/api/v[0-9]+"
+    assert spectacular["SERVE_INCLUDE_SCHEMA"] is False
+    assert spectacular["SERVE_PERMISSIONS"] == ["shared.api.permissions.IsAuthenticatedSessionOrApiToken"]
+    assert spectacular["SWAGGER_UI_DIST"] == "SIDECAR"
+    assert spectacular["SWAGGER_UI_FAVICON_HREF"] == "SIDECAR"
+    assert spectacular["REDOC_DIST"] == "SIDECAR"
+
+
 def test_api_token_policy_read_from_env(monkeypatch) -> None:
     monkeypatch.setenv("TESTING", "1")
     monkeypatch.setenv("DJANGO_SECRET_KEY", "shifter-platform-tests-secret-key")

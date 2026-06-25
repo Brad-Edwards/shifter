@@ -2,9 +2,11 @@
 
 from django.shortcuts import get_object_or_404
 from rest_framework import status, viewsets
+from rest_framework.authentication import SessionAuthentication
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
+from risk_register.api.authentication import APIKeyAuthentication
 from risk_register.api.permissions import HasRiskRegisterCognitoGroup, IsAdminUser, IsStaffSessionOrToken
 from risk_register.api.serializers import (
     APIKeyCreatedSerializer,
@@ -18,7 +20,9 @@ from risk_register.api.serializers import (
     RiskUpdateSerializer,
 )
 from risk_register.models import APIKey, AuditLog, Comment, Risk
+from shared.api.errors import api_error_response
 from shared.api_tokens import scopes
+from shared.api_tokens.authentication import ApiTokenAuthentication
 from shared.api_tokens.models import ApiToken
 from shared.api_tokens.permissions import require_scope
 
@@ -60,6 +64,7 @@ class RiskViewSet(viewsets.ModelViewSet):
     ``risk:read`` (safe methods) / ``risk:write`` (mutations).
     """
 
+    authentication_classes = [ApiTokenAuthentication, APIKeyAuthentication, SessionAuthentication]
     permission_classes = [
         HasRiskRegisterCognitoGroup,
         IsStaffSessionOrToken,
@@ -193,9 +198,11 @@ class RiskViewSet(viewsets.ModelViewSet):
         self.check_object_permissions(request, instance)
 
         if not instance.is_deleted:
-            return Response(
-                {"error": "bad_request", "message": "Risk is not deleted"},
-                status=status.HTTP_400_BAD_REQUEST,
+            return api_error_response(
+                code="bad_request",
+                message="Risk is not deleted",
+                status_code=status.HTTP_400_BAD_REQUEST,
+                request=request,
             )
 
         previous_state = risk_to_dict(instance)
@@ -225,6 +232,8 @@ class CommentViewSet(viewsets.ViewSet):
     ``risk:read`` (safe methods) / ``risk:write`` (mutations).
     """
 
+    authentication_classes = [ApiTokenAuthentication, APIKeyAuthentication, SessionAuthentication]
+    serializer_class = CommentSerializer
     permission_classes = [
         HasRiskRegisterCognitoGroup,
         IsStaffSessionOrToken,
@@ -313,6 +322,7 @@ class CommentViewSet(viewsets.ViewSet):
 class APIKeyViewSet(viewsets.ViewSet):
     """ViewSet for API key management."""
 
+    serializer_class = APIKeySerializer
     permission_classes = [HasRiskRegisterCognitoGroup, IsAdminUser]
 
     def list(self, request):
@@ -367,9 +377,11 @@ class APIKeyViewSet(viewsets.ViewSet):
         api_key = get_object_or_404(APIKey, pk=pk)
 
         if not api_key.is_active:
-            return Response(
-                {"error": "bad_request", "message": "API key is already revoked"},
-                status=status.HTTP_400_BAD_REQUEST,
+            return api_error_response(
+                code="bad_request",
+                message="API key is already revoked",
+                status_code=status.HTTP_400_BAD_REQUEST,
+                request=request,
             )
 
         api_key.revoke()

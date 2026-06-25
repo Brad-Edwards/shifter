@@ -3,8 +3,9 @@
 Operator procedures for the mechanisms defined in
 [`../architecture/secrets-rotation-strategy.md`](../architecture/secrets-rotation-strategy.md).
 This file grows as each mechanism ships; it currently covers RDS IAM database
-authentication, Django `SECRET_KEY` rotation (issue #159, PR2), and automatic
-Redis AUTH token rotation (PR3).
+authentication, Django `SECRET_KEY` rotation (issue #159, PR2), automatic Redis
+AUTH token rotation (PR3), and Cognito client-secret rotation plus API-token
+cadence (PR4).
 
 Apply the architecture guardrails in
 [`../architecture/secrets-rotation-strategy-preflight-159.md`](../architecture/secrets-rotation-strategy-preflight-159.md)
@@ -147,3 +148,51 @@ Lambda cannot reach Redis (the `testSecret` step) or the ElastiCache modify
 fails, the new token is not promoted and the previous token remains in use, so
 the Channels layer keeps working. Investigate the Lambda log group, then let
 the next scheduled attempt proceed or force one with `rotate-secret`.
+
+## Cognito client secret: operator-triggered rotation
+
+Cognito has no API to rotate an app client's secret in place, so rotation is a
+blue/green client replacement run on demand by an operator. It is **not**
+scheduled: a scheduled EventBridge reminder emails the admin when rotation is
+due (default 180 days, `cognito_rotation_reminder_days`, published to the portal
+alerts SNS topic).
+
+Components (`platform/terraform/modules/portal/cognito`):
+
+- `rotation.tf` provisions an on-demand rotation Lambda (`lambda/cognito_rotation.py`)
+  with scoped IAM, plus the EventBridge Scheduler reminder + its SNS-publish role.
+- The Lambda describes the current app client, creates a new one copying its
+  config, writes the new `client_id` / `client_secret` into the OIDC bundle,
+  and refreshes the portal ASG so containers rehydrate the new client. The
+  previous client is left in place.
+- The OIDC secret bundle's `secret_string` is `ignore_changes` in Terraform:
+  Terraform bootstraps the initial client; the Lambda owns the bundle after.
+
+### Procedure
+
+1. Run the rotation: `aws lambda invoke --function-name <name_prefix>-cognito-rotation /dev/stdout`.
+   The response reports `new_client_id` and `previous_client_id`; the secret
+   value never appears in the output or logs.
+2. The Lambda triggers an ASG instance refresh; wait for it to complete so all
+   portal instances are serving with the new client.
+3. Confirm login works against the new client. The previous client stays valid
+   during this window, so in-flight sessions are unaffected.
+4. After the refresh has drained in, retire the previous client:
+   `aws cognito-idp delete-user-pool-client --user-pool-id <pool> --client-id <previous_client_id>`.
+   Do **not** delete the Terraform-managed bootstrap client while it is the
+   active one.
+5. Reconcile Terraform: a later `terraform apply` leaves the bundle untouched
+   (`ignore_changes`); the Terraform-managed client remains defined but unused.
+   Audit the app-client id only, never the secret.
+
+## API tokens and legacy API keys: cadence
+
+Platform API tokens (`shared.api_tokens.ApiToken`) are not cloud-secret
+rotations; they expire and are revoked. Issue them with a bounded TTL
+(`API_TOKEN_MAX_TTL_DAYS`, default 365; integrations should choose shorter),
+and rotate by issuing a replacement, updating the client, and revoking the old
+token after overlap. Create/revoke are audited via `shared.api_tokens` →
+`AuditLog`; the raw token is shown once and never logged.
+
+The legacy `risk_register.APIKey` is a compatibility surface only: every key
+must carry an explicit `expires_at`, and new integrations use `ApiToken`.
