@@ -285,6 +285,10 @@ jobs:
           python3 scripts/check_tf_iam_elb_scope/check_tf_iam_elb_scope.py \
             platform/terraform/modules/engine-provisioner/iam.tf
 
+      - name: Run check-tf-iam-role-naming
+        run: |
+          python3 scripts/check_tf_iam_role_naming/check_tf_iam_role_naming.py
+
       # ADR-004-R12 / issue #140: first-party RDS instances must keep
       # IAM DB auth enabled and explicitly pin a CA identifier. Checkov
       # enforces IAM auth, but CKV_AWS_211 currently passes when the CA
@@ -326,6 +330,7 @@ jobs:
         run: |
           python3 -m unittest scripts.check_tf_iam_ec2_scope.test_check_tf_iam_ec2_scope
           python3 -m unittest scripts.check_tf_iam_elb_scope.test_check_tf_iam_elb_scope
+          python3 -m unittest scripts.check_tf_iam_role_naming.test_check_tf_iam_role_naming
           python3 -m unittest scripts.check_tf_sg_cidrs.test_check_tf_sg_cidrs
           python3 -m unittest scripts.check_tf_kms_secrets_grant.test_check_tf_kms_secrets_grant
           python3 -m unittest scripts.check_tf_rds_security.test_check_tf_rds_security

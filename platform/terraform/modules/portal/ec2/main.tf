@@ -13,7 +13,8 @@ locals {
   common_tags = merge(var.tags, {
     Module = "ec2"
   })
-  log_group_name = "/portal/${var.name_prefix}"
+  iam_name_prefix = coalesce(var.iam_name_prefix, var.name_prefix)
+  log_group_name  = "/portal/${var.name_prefix}"
   django_environment = (
     var.environment == "dev" ? "development" :
     var.environment == "prod" ? "production" :
@@ -73,7 +74,8 @@ resource "aws_cloudwatch_metric_alarm" "unhealthy_workers" {
 # ------------------------------------------------------------------------------
 
 resource "aws_iam_role" "this" {
-  name = "${var.name_prefix}-ec2-role"
+  name                 = "${local.iam_name_prefix}-ec2-role"
+  permissions_boundary = var.permissions_boundary_arn
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -527,7 +529,7 @@ resource "aws_iam_role_policy" "lifecycle_action" {
 }
 
 resource "aws_iam_instance_profile" "this" {
-  name = "${var.name_prefix}-ec2-profile"
+  name = "${local.iam_name_prefix}-ec2-profile"
   role = aws_iam_role.this.name
 
   tags = local.common_tags

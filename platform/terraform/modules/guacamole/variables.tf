@@ -7,6 +7,12 @@ variable "name_prefix" {
   type        = string
 }
 
+variable "iam_name_prefix" {
+  description = "Prefix for IAM role and instance profile names (defaults to name_prefix)"
+  type        = string
+  default     = null
+}
+
 variable "target_deregistration_delay_seconds" {
   description = <<-EOT
     Guacamole target-group deregistration delay in seconds, allowing in-flight
@@ -307,4 +313,9 @@ variable "domain_name" {
   description = "Portal domain name (for constructing Guacamole redirect URI)"
   type        = string
   default     = ""
+}
+
+variable "permissions_boundary_arn" {
+  description = "Permissions boundary ARN required on CI-created shifter-* roles"
+  type        = string
 }
