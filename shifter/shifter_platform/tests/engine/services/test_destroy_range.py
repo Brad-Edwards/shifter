@@ -131,6 +131,19 @@ class TestDestroyRangeByRequest:
         assert destroy_range_by_request(spec.request_id) is True
         assert Range.objects.get(request__request_id=spec.request_id).status == Range.Status.DESTROYING
 
+    def test_destroy_by_request_sets_teardown_without_overwriting_provisioning(self, user, ecs_dispatch):
+        spec = _request_spec(user.id)
+        create_range(spec)
+        range_obj = Range.objects.get(request__request_id=spec.request_id)
+        Range.objects.filter(id=range_obj.id).update(status=Range.Status.READY)
+        provisioning_arn = range_obj.provisioning_task_arn
+        assert provisioning_arn == ECS_TASK_ARN
+
+        assert destroy_range_by_request(spec.request_id) is True
+        range_obj.refresh_from_db()
+        assert range_obj.provisioning_task_arn == provisioning_arn
+        assert range_obj.teardown_task_arn == ECS_TASK_ARN
+
     def test_idempotent_for_already_destroying(self, user):
         spec = _request_spec(user.id)
         create_range(spec)
