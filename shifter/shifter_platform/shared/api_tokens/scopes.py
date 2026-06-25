@@ -20,11 +20,21 @@ from collections.abc import Iterable
 RISK_READ = "risk:read"
 RISK_WRITE = "risk:write"
 
-# --- Reserved for the PLAT-106 per-app migrations -----------------------------
-# Known/valid so tokens can be minted ahead of the migration, but no endpoint
-# enforces them yet. The migration issues (#1120-#1122) wire these in.
+# --- Mission Control API (PLAT-106 / issue #1120) -----------------------------
+# Wired by subsurface instead of overloading a single coarse Mission Control
+# token audience.
 MISSION_CONTROL_RANGE_READ = "mission_control:range:read"
 MISSION_CONTROL_RANGE_WRITE = "mission_control:range:write"
+MISSION_CONTROL_UPLOAD_WRITE = "mission_control:upload:write"
+MISSION_CONTROL_GUACAMOLE_READ = "mission_control:guacamole:read"
+MISSION_CONTROL_NGFW_READ = "mission_control:ngfw:read"
+MISSION_CONTROL_NGFW_WRITE = "mission_control:ngfw:write"
+MISSION_CONTROL_CREDENTIALS_WRITE = "mission_control:credentials:write"
+MISSION_CONTROL_SCRIPT_READ = "mission_control:script:read"
+MISSION_CONTROL_SCRIPT_WRITE = "mission_control:script:write"
+
+# --- Reserved for later PLAT-106 per-app migrations ---------------------------
+# Known/valid so tokens can be minted ahead of the CTF/CMS migrations.
 CTF_EVENT_READ = "ctf:event:read"
 CTF_EVENT_WRITE = "ctf:event:write"
 CTF_PLAY_WRITE = "ctf:play:write"
@@ -37,6 +47,13 @@ KNOWN_SCOPES: frozenset[str] = frozenset(
         RISK_WRITE,
         MISSION_CONTROL_RANGE_READ,
         MISSION_CONTROL_RANGE_WRITE,
+        MISSION_CONTROL_UPLOAD_WRITE,
+        MISSION_CONTROL_GUACAMOLE_READ,
+        MISSION_CONTROL_NGFW_READ,
+        MISSION_CONTROL_NGFW_WRITE,
+        MISSION_CONTROL_CREDENTIALS_WRITE,
+        MISSION_CONTROL_SCRIPT_READ,
+        MISSION_CONTROL_SCRIPT_WRITE,
         CTF_EVENT_READ,
         CTF_EVENT_WRITE,
         CTF_PLAY_WRITE,

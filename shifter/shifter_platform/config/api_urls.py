@@ -10,5 +10,6 @@ app_name = "api"
 urlpatterns = [
     path("schema/", SpectacularAPIView.as_view(api_version="v1"), name="openapi-schema"),
     path("docs/", SpectacularSwaggerView.as_view(url_name="v1:openapi-schema"), name="api-docs"),
+    path("mission-control/", include("mission_control.api.urls")),
     path("", include("risk_register.api.urls")),
 ]

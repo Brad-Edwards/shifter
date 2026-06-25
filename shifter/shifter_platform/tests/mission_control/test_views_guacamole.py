@@ -15,12 +15,14 @@ first-party patching) and unchanged.
 from __future__ import annotations
 
 import json
+import time
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 import pytest
 from botocore.exceptions import ClientError
 from django.test import RequestFactory
+from rest_framework.test import force_authenticate
 
 pytestmark = pytest.mark.django_db
 
@@ -66,6 +68,7 @@ def _post(rf, path, payload, user):
     req = rf.post(path, data=body, content_type="application/json")
     req.user = user
     req.session = {}
+    force_authenticate(req, user=user)
     return req
 
 
@@ -78,6 +81,7 @@ def _get_status(rf, user, request_id):
 
     request = rf.get(f"/mc/api/guacamole/bootstrap/{request_id}/")
     request.user = user
+    force_authenticate(request, user=user)
     return guacamole_bootstrap_status(request, request_id)
 
 
@@ -86,6 +90,7 @@ def _get_open(rf, user, request_id):
 
     request = rf.get(f"/mc/api/guacamole/bootstrap/{request_id}/open/")
     request.user = user
+    force_authenticate(request, user=user)
     return guacamole_bootstrap_open(request, request_id)
 
 
@@ -454,6 +459,20 @@ class TestGuacamoleSSHURL:
                 # The worker independently reached the Secrets Manager boundary
                 # and is blocked there — i.e. the fetch is off the request path.
                 assert reached_secrets.wait(timeout=5)
+                release.set()
+
+                from mission_control.models import GuacamoleBootstrapRequest
+
+                bootstrap = GuacamoleBootstrapRequest.objects.get(pk=_json(response)["request_id"])
+                deadline = time.time() + 5
+                active_statuses = (
+                    GuacamoleBootstrapRequest.Status.PENDING,
+                    GuacamoleBootstrapRequest.Status.RUNNING,
+                )
+                while bootstrap.status in active_statuses and time.time() < deadline:
+                    time.sleep(0.05)
+                    bootstrap.refresh_from_db()
+                assert bootstrap.status == GuacamoleBootstrapRequest.Status.SUCCEEDED
         finally:
             release.set()
 

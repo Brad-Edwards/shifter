@@ -20,6 +20,7 @@ import pytest
 from botocore.exceptions import ClientError
 from django.contrib.auth import get_user_model
 from django.test import RequestFactory
+from rest_framework.test import force_authenticate
 
 from mission_control.views import api_ngfw_ssh_url, guacamole_bootstrap_status
 
@@ -62,6 +63,7 @@ def guac_configured(guac_secret, settings):
 def _post_request(rf, user, app_id):
     request = rf.post(f"/mc/ngfw/{app_id}/ssh-url/")
     request.user = user
+    force_authenticate(request, user=user)
     return request
 
 
@@ -72,6 +74,7 @@ def _json(response):
 def _status_response(rf, user, request_id):
     request = rf.get(f"/mc/api/guacamole/bootstrap/{request_id}/")
     request.user = user
+    force_authenticate(request, user=user)
     return guacamole_bootstrap_status(request, request_id)
 
 
@@ -122,7 +125,7 @@ class TestApiNGFWSSHURL:
 
         response = api_ngfw_ssh_url(request, "some-uuid")
 
-        assert response.status_code == 302
+        assert response.status_code == 401
 
     def test_returns_400_for_non_owner(self, rf, user, other_user, guac_secret, make_ngfw):
         # Ownership resolution moved into the bootstrap worker (#929), so the
@@ -236,9 +239,10 @@ class TestApiNGFWSSHURL:
         app_id = str(ngfw.uuid)
         request = _post_request(rf, user, app_id)
 
-        with secrets_boundary(), guac_exchange(), caplog.at_level(logging.INFO, logger="mission_control"):
+        with secrets_boundary(), guac_exchange() as exchange, caplog.at_level(logging.INFO, logger="mission_control"):
             api_ngfw_ssh_url(request, app_id)
 
+        assert len(exchange.requests) == 1
         assert app_id in caplog.text
 
     def test_logs_permission_denied_errors(self, rf, user, other_user, guac_secret, make_ngfw, caplog):
@@ -249,4 +253,4 @@ class TestApiNGFWSSHURL:
         with caplog.at_level(logging.ERROR, logger="mission_control"):
             api_ngfw_ssh_url(request, app_id)
 
-        assert "permission" in caplog.text.lower() or app_id in caplog.text
+        assert "permission" in caplog.text.lower()

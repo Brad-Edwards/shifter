@@ -35,7 +35,7 @@ def _json(response):
 class TestGetRange:
     def test_requires_login(self):
         response = Client().get(reverse("mission_control:get_range"))
-        assert response.status_code == 302
+        assert response.status_code == 401
 
     def test_returns_no_range_when_none_exists(self, authenticated_client):
         client, _ = authenticated_client(email="norange@example.com")
@@ -95,7 +95,7 @@ class TestLaunchRange:
             data="{}",
             content_type="application/json",
         )
-        assert response.status_code == 302
+        assert response.status_code == 401
 
     def test_rejects_invalid_json(self, authenticated_client):
         client, _ = authenticated_client(email="badjson@example.com")
@@ -167,7 +167,7 @@ class TestCancelRange:
             data="{}",
             content_type="application/json",
         )
-        assert response.status_code == 302
+        assert response.status_code == 401
 
     def test_requires_identifier(self, authenticated_client):
         client, _ = authenticated_client(email="cancelnoid@example.com")
@@ -286,7 +286,7 @@ class TestDestroyRange:
             data="{}",
             content_type="application/json",
         )
-        assert response.status_code == 302
+        assert response.status_code == 401
 
     def test_destroy_nonexistent_range(self, authenticated_client):
         client, _ = authenticated_client(email="destroyghost@example.com")
