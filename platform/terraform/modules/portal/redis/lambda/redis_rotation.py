@@ -153,6 +153,8 @@ def _finish_secret(sm, arn: str, version: str) -> None:
 def _redis_auth_check(host: str, port: int, token: str) -> None:
     """Open a TLS connection and verify a RESP AUTH succeeds."""
     context = ssl.create_default_context()
+    # Disallow TLS 1.0/1.1 (ElastiCache in-transit encryption supports 1.2+).
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
     with socket.create_connection((host, port), timeout=5) as sock:
         with context.wrap_socket(sock, server_hostname=host) as tls:
             tls.sendall(b"AUTH " + token.encode() + b"\r\n")

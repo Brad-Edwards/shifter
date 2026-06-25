@@ -189,7 +189,7 @@
   {
     "rule_id": "ADR-004-R11",
     "owner": "@Brad-Edwards",
-    "reason": "Redis AUTH rotation Lambda (CKV_AWS_50 / CKV_AWS_115 / CKV_AWS_116 / CKV_AWS_173 / CKV_AWS_272, #159): a scheduled Secrets Manager rotation function. DLQ and reserved concurrency do not apply (Secrets Manager invokes it serially and owns the retry/alarm lifecycle); env vars are non-sensitive (replication-group id, Redis host/port, ASG name) and the AUTH token is read from Secrets Manager, never an env var; X-Ray adds no observability over CloudWatch logs; code signing needs CodeArtifact + Signer. Inline skips carry the per-rule justification.",
+    "reason": "Redis AUTH rotation Lambda + rotation resource (CKV_AWS_50 / CKV_AWS_115 / CKV_AWS_116 / CKV_AWS_173 / CKV_AWS_272 / CKV_AWS_304, #159): a scheduled Secrets Manager rotation function. DLQ and reserved concurrency do not apply (Secrets Manager invokes it serially and owns the retry/alarm lifecycle); env vars are non-sensitive (replication-group id, Redis host/port, ASG name) and the AUTH token is read from Secrets Manager, never an env var; X-Ray adds no observability over CloudWatch logs; code signing needs CodeArtifact + Signer. CKV_AWS_304: rotation IS configured and redis_auth_rotation_days is bounded to <=90 by variable validation, so the cadence is always within the 90-day window; Checkov cannot resolve the variable default. Inline skips carry the per-rule justification.",
     "expires_on": "2027-05-26",
     "paths": [
       "platform/terraform/modules/portal/redis/rotation.tf"

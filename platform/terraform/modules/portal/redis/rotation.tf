@@ -129,6 +129,7 @@ resource "aws_lambda_permission" "rotation" {
 resource "aws_secretsmanager_secret_rotation" "redis_auth" {
   count = local.rotation_enabled ? 1 : 0
 
+  # checkov:skip=CKV_AWS_304:Rotation is configured here; redis_auth_rotation_days is bounded to <=90 by variable validation, so the cadence is always within the 90-day window. Checkov cannot resolve the variable default to confirm it.
   secret_id           = aws_secretsmanager_secret.redis_auth[0].id
   rotation_lambda_arn = aws_lambda_function.rotation[0].arn
 

@@ -60,13 +60,13 @@ variable "redis_at_rest_kms_key_arn" {
 }
 
 variable "redis_auth_rotation_days" {
-  description = "Automatic rotation interval (days) for the Redis AUTH token secret (#159). Applies only on the enable_replication path."
+  description = "Automatic rotation interval (days) for the Redis AUTH token secret (#159). Bounded to at most 90 days to stay within the security rotation window (CKV_AWS_304); applies only on the rotation-enabled path."
   type        = number
   default     = 90
 
   validation {
-    condition     = var.redis_auth_rotation_days >= 1 && var.redis_auth_rotation_days <= 365
-    error_message = "redis_auth_rotation_days must be between 1 and 365."
+    condition     = var.redis_auth_rotation_days >= 1 && var.redis_auth_rotation_days <= 90
+    error_message = "redis_auth_rotation_days must be between 1 and 90 (the security rotation window)."
   }
 }
 
