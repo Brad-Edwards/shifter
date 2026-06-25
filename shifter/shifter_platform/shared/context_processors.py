@@ -13,8 +13,12 @@ from shared.auth import can_edit_cms_authoring
 logger = logging.getLogger(__name__)
 
 
-def feature_flags(request: HttpRequest) -> dict[str, bool]:
-    """Expose non-secret feature flags to templates (e.g. nav gating)."""
+def feature_flags(_request: HttpRequest) -> dict[str, bool]:
+    """Expose non-secret feature flags to templates (e.g. nav gating).
+
+    ``_request`` is part of Django's context-processor contract but unused here —
+    the flags come from settings, not the request.
+    """
     return {
         # Experiments is half-built and off by default (#1195); the nav link must
         # not render when its routes aren't registered (config/urls.py).
