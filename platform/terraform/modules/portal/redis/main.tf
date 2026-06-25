@@ -146,7 +146,9 @@ resource "random_password" "redis_auth" {
 resource "aws_secretsmanager_secret" "redis_auth" {
   count = var.enable_replication ? 1 : 0
 
-  # checkov:skip=CKV2_AWS_57:Redis AUTH token rotation requires an ElastiCache modify + coordinated consumer restart; manual rotation is documented here. Principled deferral via ADR-004-R11 exception (#757).
+  # CKV2_AWS_57 (rotation configured): satisfied by aws_secretsmanager_secret_rotation
+  # in rotation.tf (#159) — a custom Lambda rotates the AUTH token via the
+  # ElastiCache ROTATE strategy.
   name                    = "shifter-${var.name_prefix}-redis-auth"
   description             = "Redis AUTH token for the portal Django Channels backbone (#938)"
   recovery_window_in_days = 0 # Immediate deletion, avoids naming conflicts on recreate (matches RDS/app secrets)
@@ -167,6 +169,12 @@ resource "aws_secretsmanager_secret_version" "redis_auth" {
 
   secret_id     = aws_secretsmanager_secret.redis_auth[0].id
   secret_string = jsonencode({ password = random_password.redis_auth[0].result })
+
+  lifecycle {
+    # Terraform writes only the initial token; the rotation Lambda (rotation.tf,
+    # #159) owns subsequent AWSCURRENT versions, so do not revert secret_string.
+    ignore_changes = [secret_string]
+  }
 }
 
 # ------------------------------------------------------------------------------
@@ -218,6 +226,12 @@ resource "aws_elasticache_replication_group" "ha" {
   })
 
   lifecycle {
+    # The AUTH token is rotated out-of-band by the rotation Lambda (rotation.tf,
+    # #159) via the ElastiCache ROTATE strategy. Terraform bootstraps the
+    # initial token from random_password.redis_auth; ignoring auth_token here
+    # stops a later apply from reverting the live (rotated) token.
+    ignore_changes = [auth_token]
+
     precondition {
       condition     = length(var.allowed_security_group_ids) > 0 || length(var.allowed_cidr_blocks) > 0
       error_message = "portal/redis: at least one of allowed_security_group_ids or allowed_cidr_blocks must be non-empty so the Redis security group has an ingress source."
