@@ -11,6 +11,7 @@ from uuid import UUID
 
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand, CommandError
+from django.utils.crypto import get_random_string
 
 from cms import services as cms_services
 from cms.post_deploy_smoke.probe import probe_rdp_endpoint, probe_ssh_endpoint
@@ -18,6 +19,7 @@ from cms.post_deploy_smoke.smoke_runner import build_agents_by_os, select_probe_
 from cms.post_deploy_smoke.variants import SmokeVariant, parse_variant
 from engine.services import get_rdp_connection_info, get_ssh_connection_info
 from shared.enums import ResourceStatus
+from shared.log_sanitize import safe_log_value
 
 logger = logging.getLogger(__name__)
 
@@ -67,14 +69,25 @@ class Command(BaseCommand):
             raise CommandError(str(failure)) from failure
 
     def _load_smoke_user(self) -> User:
-        """Resolve the portal user that owns smoke-provisioned ranges."""
+        """Resolve or create the portal user that owns smoke-provisioned ranges."""
         email = os.environ.get("SMOKE_TEST_USER_EMAIL", "").strip()
         if not email:
             raise CommandError("SMOKE_TEST_USER_EMAIL is required")
         user_model = get_user_model()
         user = user_model.objects.filter(email__iexact=email).first()
-        if user is None:
-            raise CommandError(f"Smoke user not found for email {email!r}")
+        if user is not None:
+            return user
+        user = user_model.objects.create_user(
+            username=email,
+            email=email,
+            password=get_random_string(32),
+        )
+        logger.info(
+            "run_post_deploy_smoke: created smoke user id=%s email=%s",
+            user.id,
+            safe_log_value(email),
+        )
+        self.stdout.write(f"created smoke user email={email}")
         return user
 
     def _provision_range(self, user: User, variant: SmokeVariant) -> UUID:
