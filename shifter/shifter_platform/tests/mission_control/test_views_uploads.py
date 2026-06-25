@@ -42,7 +42,7 @@ def _s3_mock():
 
 class TestInitiateUpload:
     def test_requires_login(self):
-        assert _post(Client(), INITIATE, {}).status_code == 302
+        assert _post(Client(), INITIATE, {}).status_code == 401
 
     def test_returns_400_for_invalid_json(self, authenticated_client):
         client, _ = authenticated_client(email="up-json@example.com")

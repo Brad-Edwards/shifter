@@ -18,6 +18,8 @@ from engine import create_range
 from engine.models import Range
 from shared.schemas import InstanceSpec, RangeRef, RangeSpec, RequestSpec, SubnetSpec
 
+from .conftest import ECS_TASK_ARN
+
 pytestmark = pytest.mark.django_db
 
 User = get_user_model()
@@ -85,12 +87,19 @@ class TestCreateRangePersistence:
     @override_settings(LOCAL_PROVISIONER=None, ENGINE_TASK_CLUSTER="", ENGINE_ECS_CLUSTER_ARN="")
     def test_no_task_arn_stored_when_ecs_unconfigured(self, user):
         # With no local provisioner and no ECS cluster configured,
-        # start_range_provisioning returns None, so no Step Functions ARN is
-        # recorded. Pinned via override_settings so the precondition holds
-        # regardless of settings leaked by other tests under xdist. (The
-        # ARN-present path is covered by the engine.ecs suites.)
+        # start_range_provisioning returns None, so no task ARN is recorded.
+        # Pinned via override_settings so the precondition holds regardless of
+        # settings leaked by other tests under xdist.
         create_range(make_request_spec(user_id=user.id))
-        assert Range.objects.get().step_function_execution_arn == ""
+        range_obj = Range.objects.get()
+        assert range_obj.provisioning_task_arn == ""
+        assert range_obj.teardown_task_arn == ""
+
+    def test_stores_provisioning_task_arn_when_ecs_configured(self, user, ecs_dispatch):
+        create_range(make_request_spec(user_id=user.id))
+        range_obj = Range.objects.get()
+        assert range_obj.provisioning_task_arn == ECS_TASK_ARN
+        assert range_obj.teardown_task_arn == ""
 
 
 class TestCreateRangeErrorValidation:

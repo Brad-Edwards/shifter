@@ -14,6 +14,7 @@ import json
 import pytest
 from django.contrib.auth import get_user_model
 from django.test import RequestFactory
+from rest_framework.test import force_authenticate
 
 from mission_control.views import guacamole_bootstrap_status, guacamole_ssh_url
 
@@ -51,21 +52,25 @@ def guac_configured(settings):
 
 def _post_request(rf, user, payload=None):
     request = rf.post(
-        "/mc/api/guacamole/ssh-url/",
+        "/mission-control/api/guacamole/ssh-url/",
         data=json.dumps(payload or {"instance_uuid": INSTANCE_UUID}),
         content_type="application/json",
     )
     request.user = user
+    force_authenticate(request, user=user)
     return request
 
 
 def _json(response):
+    if hasattr(response, "render") and not getattr(response, "is_rendered", True):
+        response.render()
     return json.loads(response.content)
 
 
 def _status_response(rf, user, request_id):
-    request = rf.get(f"/mc/api/guacamole/bootstrap/{request_id}/")
+    request = rf.get(f"/mission-control/api/guacamole/bootstrap/{request_id}/")
     request.user = user
+    force_authenticate(request, user=user)
     return guacamole_bootstrap_status(request, request_id)
 
 
@@ -116,11 +121,12 @@ class TestApiInstanceSSHURL:
 
     def test_returns_400_for_invalid_json(self, rf, user):
         request = rf.post(
-            "/mc/api/guacamole/ssh-url/",
+            "/mission-control/api/guacamole/ssh-url/",
             data="{not-json",
             content_type="application/json",
         )
         request.user = user
+        force_authenticate(request, user=user)
 
         response = guacamole_ssh_url(request)
 
