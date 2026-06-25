@@ -386,6 +386,11 @@ module "redis" {
   redis_at_rest_kms_key_arn = aws_kms_key.redis_at_rest.arn
   is_active_channel_backend = var.enable_redis
 
+  # Automatic Redis AUTH rotation (#159): only where the portal runs on a
+  # refreshable ASG, so the rotation Lambda can roll consumers to the new token.
+  enable_auth_rotation = var.enable_autoscaling
+  portal_asg_name      = module.ec2.asg_name
+
   # CloudWatch Alarms
   enable_alarms = var.alarm_email != ""
   alarm_actions = var.alarm_email != "" ? [aws_sns_topic.alerts.arn] : []
@@ -410,7 +415,13 @@ module "cognito" {
   logout_urls           = ["https://${var.domain_name}/"]
   allowed_email_domains = var.allowed_email_domains
   allowed_emails        = var.allowed_emails
-  deletion_protection   = true
+
+  # Client-secret rotation (#159): operator-triggered Lambda + scheduled email reminder.
+  portal_asg_name          = module.ec2.asg_name
+  enable_autoscaling       = var.enable_autoscaling
+  alerts_topic_arn         = aws_sns_topic.alerts.arn
+  enable_rotation_reminder = var.alarm_email != ""
+  deletion_protection      = true
 
   tags = var.tags
 }
@@ -431,6 +442,30 @@ resource "aws_sns_topic_subscription" "alerts_email" {
   topic_arn = aws_sns_topic.alerts.arn
   protocol  = "email"
   endpoint  = var.alarm_email
+}
+
+# ------------------------------------------------------------------------------
+# Backup-Failure Alerting (#160)
+# ------------------------------------------------------------------------------
+# RDS reports backup/snapshot failures as RDS events, delivered through an RDS
+# event subscription to a CMK-encrypted SNS topic. This cannot reuse the shared
+# `aws_sns_topic.alerts` above (AWS-managed key cannot grant the RDS service
+# principal), so the module owns a dedicated CMK + topic. See
+# docs/ops/disaster-recovery.md.
+
+module "backup_alerts" {
+  source = "../../../modules/portal/backup-alerts"
+
+  name_prefix = local.name_prefix
+  environment = var.environment
+  alarm_email = var.alarm_email
+
+  db_instance_identifiers = compact([
+    module.rds.db_instance_id,
+    module.guacamole.db_instance_id,
+  ])
+
+  tags = var.tags
 }
 
 # ------------------------------------------------------------------------------

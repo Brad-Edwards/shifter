@@ -19,8 +19,16 @@ Production rotation for these credential classes:
 - **RDS PostgreSQL credentials**: portal and adjacent worker database access.
 - **Cognito / OIDC client secret**: Django login.
 - **Django `SECRET_KEY`**: session and signature validation.
+- **Redis AUTH token**: the ElastiCache replication group backing the Django
+  Channels layer.
 - **Platform API tokens** (`shared.api_tokens.ApiToken`) and the legacy
   `risk_register.APIKey` compatibility surface.
+
+Scenario and range-infrastructure secrets are **out of scope**: the DC domain
+(Active Directory Administrator) password and the NGFW SSH key are range
+scenario content, not platform production credentials. They are covered by the
+documented-manual approach in ADR-004-R11 exception #757, and the DC password
+in particular must stay constant for scenario reproducibility.
 
 Each class is a separate lifecycle. They share storage (cloud secret managers)
 and deployment plumbing, but they do not share rotation semantics. The
@@ -40,13 +48,13 @@ The issue poses four questions. The platform-wide answers:
    [policy table](#policy). Cadences are calendar baselines; any suspected
    exposure or personnel event triggers immediate rotation regardless of
    schedule.
-2. **Automatic vs manual?** Mixed, by class. Password-shaped secrets with no
-   session/identity coupling (Redis AUTH, DC domain password) move to AWS
-   Secrets Manager automatic rotation. Identity- and session-coupled secrets
-   (Cognito client secret, Django `SECRET_KEY`) use coordinated rotation
-   because automatic rotation cannot satisfy their drain/overlap requirements
-   under the current startup-hydration runtime. RDS removes the rotating
-   credential entirely by moving to IAM database authentication.
+2. **Automatic vs manual?** Mixed, by class. The Redis AUTH token (no
+   session/identity coupling) moves to AWS Secrets Manager automatic rotation.
+   Identity- and session-coupled secrets (Cognito client secret, Django
+   `SECRET_KEY`) use coordinated rotation because automatic rotation cannot
+   satisfy their drain/overlap requirements under the current startup-hydration
+   runtime. RDS removes the rotating credential entirely by moving to IAM
+   database authentication.
 3. **How to handle rotation without downtime?** The portal hydrates secret
    values into process environment **once at startup**; updating a secret
    version does not affect running processes. Zero-downtime therefore depends
@@ -58,9 +66,9 @@ The issue poses four questions. The platform-wide answers:
      key valid across the rollout, so sessions survive.
    - Cognito: an old/new app-client overlap window keeps logins working until
      old portal instances drain.
-   - Redis AUTH / DC password: rotation completes with a coordinated consumer
-     restart (ASG instance refresh / range re-provision); the rotation Lambda
-     stages the new version, the restart picks it up.
+   - Redis AUTH: the rotation Lambda applies the new token with the ElastiCache
+     `ROTATE` strategy (previous token stays valid), then refreshes the portal
+     ASG so containers rehydrate it; no Channels-layer interruption.
 4. **Who is notified?** The environment alert channel (`alarm_email` SNS topic)
    for operator notification and `risk_register.AuditLog` for durable evidence.
    Notifications and audit records carry the secret **class, environment, and a
@@ -72,12 +80,11 @@ The issue poses four questions. The platform-wide answers:
 | Secret class | Cadence (baseline) | Automation mode | Downtime posture | Notification / audit |
 | --- | --- | --- | --- | --- |
 | RDS portal DB credentials | N/A (no stored password under IAM auth; the IAM principal is the credential) | IAM database authentication (per-connection token); no secret rotation | Zero-downtime: token minted per connection, SSL enforced | Audit the principal/policy change only; alert on auth-failure spikes |
-| Cognito / OIDC client secret | 180 days, or immediately on exposure | Coordinated rotation (manual/deploy-driven) with app-client overlap | Old/new client overlap through instance drain; no delete-before-drain | Notify before and after; audit app-client id / secret ARN, not the value |
+| Cognito / OIDC client secret | 180 days, or immediately on exposure | Operator-triggered blue/green rotation (on-demand Lambda creates a new app client; no in-place secret-rotation API) + scheduled email reminder | New client created and bundle swapped; old client overlaps through ASG drain; no delete-before-drain | Reminder email on cadence; audit app-client id / secret ARN, not the value |
 | Django `SECRET_KEY` | Annual, before production handoff, or on exposure | Coordinated rotation with `SECRET_KEY_FALLBACKS` | Zero-downtime via fallback keys; bounded fallback list | Notify operators (sessions may revalidate); audit the rotation event only |
 | Platform API tokens (`ApiToken`) | Bounded by token TTL; default max 365 days, integrations choose shorter | Built-in expiry + audited revoke; not cloud-secret rotation | No restart: issue replacement, swap client, revoke old after overlap | Reuse `shared.api_tokens` audit → `AuditLog`; raw token shown once, never logged |
 | Legacy `risk_register.APIKey` | Must set explicit `expires_at`; not for new integrations | Expiry / revocation only | No restart; migrate new work to `ApiToken` | Reuse existing `AuditLog`; no parallel audit table |
-| Redis AUTH token | 90 days, or on exposure | AWS Secrets Manager automatic rotation | Coordinated consumer restart picks up the staged version | Alert on rotation result; audit the version stage transition |
-| DC domain password | 90 days, or on exposure | AWS Secrets Manager automatic rotation | Re-promote / re-provision affected DCs after staging | Alert on rotation result; audit the version stage transition |
+| Redis AUTH token | 90 days, or on exposure | AWS Secrets Manager automatic rotation (custom Lambda, ElastiCache `ROTATE`) | Previous token stays valid; ASG instance refresh rehydrates consumers | Alert on rotation result; audit the version stage transition |
 
 ## Per-class strategy
 
@@ -155,15 +162,18 @@ Terraform outputs, or issue comments.
 
 ## Delivery
 
-Implemented across three PRs on `159-secrets-rotation`:
+Delivered incrementally on `159-secrets-rotation`:
 
 1. **PR1 (this document)**: the strategy.
 2. **PR2**: RDS IAM database authentication (Django connection layer +
    Terraform IAM/grant) and Django `SECRET_KEY_FALLBACKS`, with the RDS cutover
    and rollback and `SECRET_KEY` rotation runbooks.
-3. **PR3**: Secrets Manager rotation Lambdas for Redis AUTH and the DC domain
-   password, Cognito coordinated rotation with the app-client overlap window,
-   notification/audit wiring, and API-token cadence guidance.
+3. **PR3**: the Redis AUTH automatic-rotation Lambda (ElastiCache `ROTATE` +
+   ASG-refresh finalize), with its runbook; the #757 exception narrowed to drop
+   Redis.
+4. **PR4**: Cognito client-secret rotation (operator-triggered blue/green
+   Lambda + scheduled email reminder) and API-token cadence guidance. Closes the
+   issue.
 
 Operator runbooks for each mechanism land with the implementing PR, once the
 behavior is real.
