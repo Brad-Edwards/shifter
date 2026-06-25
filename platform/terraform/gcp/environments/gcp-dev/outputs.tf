@@ -129,6 +129,11 @@ output "runtime_secret_ids" {
   value       = module.platform_core.runtime_secret_ids
 }
 
+output "email_config" {
+  description = "Transactional-email runtime config for render_runtime_env.py (PLAT-002, #671); null when email is unconfigured."
+  value       = module.platform_core.email_config
+}
+
 output "control_plane_database" {
   description = "Control-plane database connection metadata."
   value       = module.platform_core.control_plane_database

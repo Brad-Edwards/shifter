@@ -258,6 +258,39 @@ variable "identity_allowed_emails" {
   default     = []
 }
 
+# Transactional email (PLAT-002, #671). GCP has no native SES equivalent, so a
+# GCP deployment sends through an operator-chosen SaaS (SendGrid/Mailgun) via
+# django-anymail. Email is OPTIONAL: leave email_backend empty (the default) to
+# fall back to the console backend with no Secret Manager secret created. When
+# set, an unseeded Secret Manager secret is created for the ESP API key; the
+# operator populates it out-of-band (it is never committed). See the GCP
+# Terraform README.
+variable "email_backend" {
+  description = "Django EMAIL_BACKEND for GCP; empty = console fallback (no email secret created)."
+  type        = string
+  default     = ""
+
+  validation {
+    condition = contains(
+      ["", "anymail.backends.sendgrid.EmailBackend", "anymail.backends.mailgun.EmailBackend"],
+      var.email_backend,
+    )
+    error_message = "email_backend must be empty, the SendGrid, or the Mailgun anymail backend."
+  }
+}
+
+variable "email_from_address" {
+  description = "DEFAULT_FROM_EMAIL for outbound mail when email_backend is set."
+  type        = string
+  default     = ""
+}
+
+variable "email_sender_domain" {
+  description = "Mailgun sender domain (MAILGUN_SENDER_DOMAIN); ignored for SendGrid."
+  type        = string
+  default     = ""
+}
+
 variable "range_provisioner_ports" {
   description = "TCP ports the platform provisioner is allowed to reach on the range VPC. Used to construct the range-allow-platform-provisioner firewall rule. The range VPC otherwise denies all ingress (ADR-008-R4)."
   type        = list(number)
