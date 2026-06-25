@@ -40,6 +40,15 @@ ATTACH_ALLOWLIST_POLICIES: tuple[str, ...] = (
     "AWSLambdaBasicExecutionRole",
     "AmazonRDSEnhancedMonitoringRole",
 )
+ATTACHMENT_RESOURCE_RE = re.compile(
+    r'^\s*resource\s+"aws_iam_role_policy_attachment"\s+"([^"]+)"\s*\{'
+)
+# AWS caps a role at 10 managed-policy attachments. Consolidating the OIDC
+# deploy role by AWS category (#254) keeps it well under that hard limit with
+# headroom for future domains. The cap fails the build before the role drifts
+# back toward the limit; adding a service should extend an existing category
+# policy, not a new attachment.
+OIDC_ATTACHMENT_CAP = 6
 
 
 @dataclass
@@ -131,12 +140,30 @@ def check_github_oidc_iam_scoped(path: Path, text: str) -> list[Violation]:
     return violations
 
 
+def check_github_oidc_attachment_cap(path: Path, lines: list[str]) -> list[Violation]:
+    attachment_lines = [
+        idx for idx, line in enumerate(lines) if ATTACHMENT_RESOURCE_RE.match(line)
+    ]
+    if len(attachment_lines) > OIDC_ATTACHMENT_CAP:
+        return [
+            Violation(
+                path,
+                attachment_lines[OIDC_ATTACHMENT_CAP] + 1,
+                f"github-oidc role must attach at most {OIDC_ATTACHMENT_CAP} "
+                f"managed policies (found {len(attachment_lines)}); consolidate by "
+                "AWS category to keep headroom under the AWS 10-policy limit (#254)",
+            )
+        ]
+    return []
+
+
 def check_file(path: Path) -> list[Violation]:
     text = path.read_text(encoding="utf-8")
     lines = text.splitlines()
     violations = check_iam_resource_names(path, lines)
     if path.name == "github-oidc.tf":
         violations.extend(check_github_oidc_iam_scoped(path, text))
+        violations.extend(check_github_oidc_attachment_cap(path, lines))
     return violations
 
 

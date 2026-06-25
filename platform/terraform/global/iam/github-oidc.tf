@@ -73,12 +73,241 @@ resource "aws_iam_role" "github_actions" {
 }
 
 # ------------------------------------------------------------------------------
-# Managed IAM Policies (split to avoid size limits)
+# Managed IAM Policies
+#
+# Consolidated by AWS service category (#254) to stay under AWS's hard limit of
+# 10 managed policies per role. Five domain policies (compute, networking, data,
+# security, management) leave headroom for future growth: a new service should
+# extend an existing category, not add an eleventh attachment. The
+# `check_tf_iam_role_naming` gate enforces the attachment cap. Consolidation is a
+# structural move of existing statements; no permissions are broadened.
 # ------------------------------------------------------------------------------
 
-# Core Infrastructure: ECR, S3 state, DynamoDB locking
-resource "aws_iam_policy" "core_infrastructure" {
-  name = "shifter-${var.environment}-core-infrastructure"
+# Permissions boundary applied to every CI-created shifter-* role (#253).
+# Standalone policy referenced by the security policy's iam:CreateRole condition;
+# intentionally NOT attached to the github_actions role.
+resource "aws_iam_policy" "ci_role_permissions_boundary" {
+  name = "shifter-${var.environment}-ci-role-boundary"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid      = "DenyIamEscalation"
+        Effect   = "Deny"
+        Action   = "iam:*"
+        Resource = "*"
+      }
+    ]
+  })
+}
+
+# Compute: EC2, Auto Scaling, Lambda, ECS
+# checkov:skip=CKV_AWS_355:CI/CD requires broad compute permissions for infrastructure management. Risk accepted, see #44
+# checkov:skip=CKV_AWS_290:CI/CD requires broad compute permissions for infrastructure management. Risk accepted, see #44
+# checkov:skip=CKV_AWS_289:CI/CD requires broad compute permissions for infrastructure management. Risk accepted, see #44
+# checkov:skip=CKV_AWS_287:CI/CD requires broad compute permissions for infrastructure management. Risk accepted, see #44
+# NOTE: Not best practice. Project in rapid development - velocity impact of permissions errors
+# and size of inline policies outweigh need for pure least privilege. Risk accepted.
+resource "aws_iam_policy" "compute" {
+  # checkov:skip=CKV_AWS_287:CI/CD requires broad compute permissions for infrastructure management. Risk accepted, see #44
+  name = "shifter-${var.environment}-compute"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      # TODO: Scope down EC2 permissions - see GitHub issue for audit
+      {
+        Sid      = "EC2"
+        Effect   = "Allow"
+        Action   = ["ec2:*"]
+        Resource = "*"
+      },
+      {
+        Sid    = "AutoScaling"
+        Effect = "Allow"
+        Action = [
+          "autoscaling:CreateAutoScalingGroup",
+          "autoscaling:DeleteAutoScalingGroup",
+          "autoscaling:DescribeAutoScalingGroups",
+          "autoscaling:UpdateAutoScalingGroup",
+          "autoscaling:CreateLaunchConfiguration",
+          "autoscaling:DeleteLaunchConfiguration",
+          "autoscaling:DescribeLaunchConfigurations",
+          "autoscaling:CreateOrUpdateTags",
+          "autoscaling:DeleteTags",
+          "autoscaling:DescribeTags",
+          "autoscaling:PutScalingPolicy",
+          "autoscaling:DeletePolicy",
+          "autoscaling:DescribePolicies",
+          "autoscaling:SetDesiredCapacity",
+          "autoscaling:TerminateInstanceInAutoScalingGroup",
+          "autoscaling:StartInstanceRefresh",
+          "autoscaling:DescribeInstanceRefreshes",
+          "autoscaling:DescribeScalingActivities"
+        ]
+        Resource = "*"
+      },
+      {
+        Sid    = "Lambda"
+        Effect = "Allow"
+        Action = [
+          "lambda:CreateFunction",
+          "lambda:DeleteFunction",
+          "lambda:GetFunction",
+          "lambda:GetFunctionConfiguration",
+          "lambda:GetFunctionCodeSigningConfig",
+          "lambda:UpdateFunctionCode",
+          "lambda:UpdateFunctionConfiguration",
+          "lambda:ListVersionsByFunction",
+          "lambda:PublishVersion",
+          "lambda:AddPermission",
+          "lambda:RemovePermission",
+          "lambda:GetPolicy",
+          "lambda:TagResource",
+          "lambda:UntagResource",
+          "lambda:ListTags"
+        ]
+        Resource = "arn:aws:lambda:${var.aws_region}:${data.aws_caller_identity.current.account_id}:function:*"
+      },
+      {
+        Sid    = "LambdaLayers"
+        Effect = "Allow"
+        Action = [
+          "lambda:PublishLayerVersion",
+          "lambda:GetLayerVersion",
+          "lambda:DeleteLayerVersion",
+          "lambda:ListLayerVersions"
+        ]
+        Resource = "arn:aws:lambda:${var.aws_region}:${data.aws_caller_identity.current.account_id}:layer:*"
+      },
+      {
+        Sid    = "ECS"
+        Effect = "Allow"
+        Action = [
+          "ecs:*"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
+}
+
+# Networking: VPC, ELB, ACM, WAFv2, Network Firewall
+# checkov:skip=CKV_AWS_355:CI/CD requires broad networking permissions for infrastructure management. Risk accepted, see #44
+# checkov:skip=CKV_AWS_290:CI/CD requires broad networking permissions for infrastructure management. Risk accepted, see #44
+# checkov:skip=CKV_AWS_289:CI/CD requires broad networking permissions for infrastructure management. Risk accepted, see #44
+# checkov:skip=CKV_AWS_287:CI/CD requires broad networking permissions for infrastructure management. Risk accepted, see #44
+# NOTE: Not best practice. Project in rapid development - velocity impact of permissions errors
+# and size of inline policies outweigh need for pure least privilege. Risk accepted.
+resource "aws_iam_policy" "networking" {
+  name = "shifter-${var.environment}-networking"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "VPC"
+        Effect = "Allow"
+        Action = [
+          "ec2:*Vpc*",
+          "ec2:*Subnet*",
+          "ec2:*RouteTable*",
+          "ec2:*Route",
+          "ec2:*InternetGateway*",
+          "ec2:*NatGateway*",
+          "ec2:*Address*",
+          "ec2:*SecurityGroup*",
+          "ec2:*Tags",
+          "ec2:Describe*",
+          "ec2:CreateTags",
+          "ec2:DeleteTags",
+          "ec2:CreateFlowLogs",
+          "ec2:DeleteFlowLogs",
+          "ec2:DescribeFlowLogs"
+        ]
+        Resource = "*"
+      },
+      {
+        Sid      = "ELB"
+        Effect   = "Allow"
+        Action   = ["elasticloadbalancing:*"]
+        Resource = "*"
+      },
+      {
+        Sid      = "ACM"
+        Effect   = "Allow"
+        Action   = ["acm:*"]
+        Resource = "*"
+      },
+      {
+        Sid    = "WAFv2"
+        Effect = "Allow"
+        Action = [
+          "wafv2:CreateWebACL",
+          "wafv2:DeleteWebACL",
+          "wafv2:GetWebACL",
+          "wafv2:UpdateWebACL",
+          "wafv2:ListWebACLs",
+          "wafv2:AssociateWebACL",
+          "wafv2:DisassociateWebACL",
+          "wafv2:GetWebACLForResource",
+          "wafv2:ListResourcesForWebACL",
+          "wafv2:ListTagsForResource",
+          "wafv2:TagResource",
+          "wafv2:UntagResource",
+          "wafv2:DescribeManagedRuleGroup",
+          "wafv2:ListAvailableManagedRuleGroups"
+        ]
+        Resource = "*"
+      },
+      {
+        Sid    = "NetworkFirewall"
+        Effect = "Allow"
+        Action = [
+          "network-firewall:CreateFirewall",
+          "network-firewall:DeleteFirewall",
+          "network-firewall:DescribeFirewall",
+          "network-firewall:UpdateFirewallDeleteProtection",
+          "network-firewall:UpdateFirewallDescription",
+          "network-firewall:UpdateFirewallPolicy",
+          "network-firewall:UpdateFirewallPolicyChangeProtection",
+          "network-firewall:UpdateSubnetChangeProtection",
+          "network-firewall:AssociateFirewallPolicy",
+          "network-firewall:DisassociateSubnets",
+          "network-firewall:AssociateSubnets",
+          "network-firewall:CreateFirewallPolicy",
+          "network-firewall:DeleteFirewallPolicy",
+          "network-firewall:DescribeFirewallPolicy",
+          "network-firewall:UpdateFirewallPolicy",
+          "network-firewall:CreateRuleGroup",
+          "network-firewall:DeleteRuleGroup",
+          "network-firewall:DescribeRuleGroup",
+          "network-firewall:UpdateRuleGroup",
+          "network-firewall:ListFirewalls",
+          "network-firewall:ListFirewallPolicies",
+          "network-firewall:ListRuleGroups",
+          "network-firewall:TagResource",
+          "network-firewall:UntagResource",
+          "network-firewall:ListTagsForResource",
+          "network-firewall:DescribeLoggingConfiguration",
+          "network-firewall:UpdateLoggingConfiguration"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
+}
+
+# Data: ECR, S3, DynamoDB, Pulumi state, RDS, ElastiCache
+# checkov:skip=CKV_AWS_355:CI/CD requires broad data-store permissions for infrastructure management. Risk accepted, see #44
+# checkov:skip=CKV_AWS_290:CI/CD requires broad data-store permissions for infrastructure management. Risk accepted, see #44
+# checkov:skip=CKV_AWS_289:CI/CD requires broad data-store permissions for infrastructure management. Risk accepted, see #44
+# checkov:skip=CKV_AWS_287:CI/CD requires broad data-store permissions for infrastructure management. Risk accepted, see #44
+# NOTE: Not best practice. Project in rapid development - velocity impact of permissions errors
+# and size of inline policies outweigh need for pure least privilege. Risk accepted.
+resource "aws_iam_policy" "data" {
+  name = "shifter-${var.environment}-data"
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -156,43 +385,53 @@ resource "aws_iam_policy" "core_infrastructure" {
           "dynamodb:UpdateContinuousBackups"
         ]
         Resource = "arn:aws:dynamodb:${var.aws_region}:${data.aws_caller_identity.current.account_id}:table/*-range-pulumi-locks"
-      }
-    ]
-  })
-}
-
-# VPC Networking
-# checkov:skip=CKV_AWS_355:CI/CD requires broad VPC permissions for infrastructure management. Risk accepted, see #44
-# checkov:skip=CKV_AWS_290:CI/CD requires broad VPC permissions for infrastructure management. Risk accepted, see #44
-# checkov:skip=CKV_AWS_289:CI/CD requires broad VPC permissions for infrastructure management. Risk accepted, see #44
-# checkov:skip=CKV_AWS_287:CI/CD requires broad VPC permissions for infrastructure management. Risk accepted, see #44
-# NOTE: Not best practice. Project in rapid development - velocity impact of permissions errors
-# and size of inline policies outweigh need for pure least privilege. Risk accepted.
-resource "aws_iam_policy" "vpc_networking" {
-  name = "shifter-${var.environment}-vpc-networking"
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
+      },
       {
-        Sid    = "VPC"
+        Sid    = "RDS"
         Effect = "Allow"
         Action = [
-          "ec2:*Vpc*",
-          "ec2:*Subnet*",
-          "ec2:*RouteTable*",
-          "ec2:*Route",
-          "ec2:*InternetGateway*",
-          "ec2:*NatGateway*",
-          "ec2:*Address*",
-          "ec2:*SecurityGroup*",
-          "ec2:*Tags",
-          "ec2:Describe*",
-          "ec2:CreateTags",
-          "ec2:DeleteTags",
-          "ec2:CreateFlowLogs",
-          "ec2:DeleteFlowLogs",
-          "ec2:DescribeFlowLogs"
+          "rds:CreateDBInstance",
+          "rds:DeleteDBInstance",
+          "rds:DescribeDBInstances",
+          "rds:ModifyDBInstance",
+          "rds:RebootDBInstance",
+          "rds:StartDBInstance",
+          "rds:StopDBInstance",
+          "rds:CreateDBSubnetGroup",
+          "rds:DeleteDBSubnetGroup",
+          "rds:DescribeDBSubnetGroups",
+          "rds:ModifyDBSubnetGroup",
+          "rds:CreateDBParameterGroup",
+          "rds:DeleteDBParameterGroup",
+          "rds:DescribeDBParameterGroups",
+          "rds:ModifyDBParameterGroup",
+          "rds:DescribeDBParameters",
+          "rds:AddTagsToResource",
+          "rds:RemoveTagsFromResource",
+          "rds:ListTagsForResource",
+          "rds:DescribeDBEngineVersions",
+          "rds:DescribeOrderableDBInstanceOptions"
+        ]
+        Resource = "*"
+      },
+      {
+        Sid    = "ElastiCache"
+        Effect = "Allow"
+        Action = [
+          "elasticache:CreateCacheCluster",
+          "elasticache:DeleteCacheCluster",
+          "elasticache:DescribeCacheClusters",
+          "elasticache:ModifyCacheCluster",
+          "elasticache:CreateCacheSubnetGroup",
+          "elasticache:DeleteCacheSubnetGroup",
+          "elasticache:DescribeCacheSubnetGroups",
+          "elasticache:ModifyCacheSubnetGroup",
+          "elasticache:DescribeCacheParameterGroups",
+          "elasticache:DescribeCacheParameters",
+          "elasticache:DescribeEngineDefaultParameters",
+          "elasticache:AddTagsToResource",
+          "elasticache:RemoveTagsFromResource",
+          "elasticache:ListTagsForResource"
         ]
         Resource = "*"
       }
@@ -200,131 +439,16 @@ resource "aws_iam_policy" "vpc_networking" {
   })
 }
 
-# EC2 Instances, Auto Scaling, and Launch Templates
-# checkov:skip=CKV_AWS_355:CI/CD requires broad EC2 permissions for infrastructure management. Risk accepted, see #44
-# checkov:skip=CKV_AWS_290:CI/CD requires broad EC2 permissions for infrastructure management. Risk accepted, see #44
-# checkov:skip=CKV_AWS_289:CI/CD requires broad EC2 permissions for infrastructure management. Risk accepted, see #44
-# checkov:skip=CKV_AWS_287:CI/CD requires broad EC2 permissions for infrastructure management. Risk accepted, see #44
+# Security: IAM (scoped), Secrets Manager, KMS
+# checkov:skip=CKV_AWS_355:CI/CD requires broad Secrets/KMS permissions. Risk accepted, see #44
+# checkov:skip=CKV_AWS_290:CI/CD requires broad Secrets/KMS permissions. Risk accepted, see #44
+# checkov:skip=CKV_AWS_289:CI/CD requires broad Secrets/KMS permissions. Risk accepted, see #44
+# checkov:skip=CKV_AWS_287:CI/CD requires broad Secrets/KMS permissions. Risk accepted, see #44
 # NOTE: Not best practice. Project in rapid development - velocity impact of permissions errors
 # and size of inline policies outweigh need for pure least privilege. Risk accepted.
-resource "aws_iam_policy" "ec2_instances" {
-  # checkov:skip=CKV_AWS_287:CI/CD requires broad EC2 permissions for infrastructure management. Risk accepted, see #44
-  name = "shifter-${var.environment}-ec2-instances"
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      # TODO: Scope down EC2 permissions - see GitHub issue for audit
-      {
-        Sid      = "EC2"
-        Effect   = "Allow"
-        Action   = ["ec2:*"]
-        Resource = "*"
-      },
-      {
-        Sid    = "AutoScaling"
-        Effect = "Allow"
-        Action = [
-          "autoscaling:CreateAutoScalingGroup",
-          "autoscaling:DeleteAutoScalingGroup",
-          "autoscaling:DescribeAutoScalingGroups",
-          "autoscaling:UpdateAutoScalingGroup",
-          "autoscaling:CreateLaunchConfiguration",
-          "autoscaling:DeleteLaunchConfiguration",
-          "autoscaling:DescribeLaunchConfigurations",
-          "autoscaling:CreateOrUpdateTags",
-          "autoscaling:DeleteTags",
-          "autoscaling:DescribeTags",
-          "autoscaling:PutScalingPolicy",
-          "autoscaling:DeletePolicy",
-          "autoscaling:DescribePolicies",
-          "autoscaling:SetDesiredCapacity",
-          "autoscaling:TerminateInstanceInAutoScalingGroup",
-          "autoscaling:StartInstanceRefresh",
-          "autoscaling:DescribeInstanceRefreshes",
-          "autoscaling:DescribeScalingActivities"
-        ]
-        Resource = "*"
-      }
-    ]
-  })
-}
-
-# ELB and ACM
-# checkov:skip=CKV_AWS_355:CI/CD requires broad ELB/ACM permissions for infrastructure management. Risk accepted, see #44
-# checkov:skip=CKV_AWS_290:CI/CD requires broad ELB/ACM permissions for infrastructure management. Risk accepted, see #44
-# checkov:skip=CKV_AWS_289:CI/CD requires broad ELB/ACM permissions for infrastructure management. Risk accepted, see #44
-# checkov:skip=CKV_AWS_287:CI/CD requires broad ELB/ACM permissions for infrastructure management. Risk accepted, see #44
-# NOTE: Not best practice. Project in rapid development - velocity impact of permissions errors
-# and size of inline policies outweigh need for pure least privilege. Risk accepted.
-# checkov:skip=CKV_AWS_355:CI/CD requires WAFv2 permissions. Risk accepted, see #44
-# checkov:skip=CKV_AWS_290:CI/CD requires WAFv2 permissions. Risk accepted, see #44
-# checkov:skip=CKV_AWS_289:CI/CD requires WAFv2 permissions. Risk accepted, see #44
-# checkov:skip=CKV_AWS_287:CI/CD requires WAFv2 permissions. Risk accepted, see #44
-resource "aws_iam_policy" "elb_acm" {
-  name = "shifter-${var.environment}-elb-acm"
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Sid      = "ELB"
-        Effect   = "Allow"
-        Action   = ["elasticloadbalancing:*"]
-        Resource = "*"
-      },
-      {
-        Sid      = "ACM"
-        Effect   = "Allow"
-        Action   = ["acm:*"]
-        Resource = "*"
-      },
-      {
-        Sid    = "WAFv2"
-        Effect = "Allow"
-        Action = [
-          "wafv2:CreateWebACL",
-          "wafv2:DeleteWebACL",
-          "wafv2:GetWebACL",
-          "wafv2:UpdateWebACL",
-          "wafv2:ListWebACLs",
-          "wafv2:AssociateWebACL",
-          "wafv2:DisassociateWebACL",
-          "wafv2:GetWebACLForResource",
-          "wafv2:ListResourcesForWebACL",
-          "wafv2:ListTagsForResource",
-          "wafv2:TagResource",
-          "wafv2:UntagResource",
-          "wafv2:DescribeManagedRuleGroup",
-          "wafv2:ListAvailableManagedRuleGroups"
-        ]
-        Resource = "*"
-      }
-    ]
-  })
-}
-
-# Permissions boundary applied to every CI-created shifter-* role (#253).
-resource "aws_iam_policy" "ci_role_permissions_boundary" {
-  name = "shifter-${var.environment}-ci-role-boundary"
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Sid      = "DenyIamEscalation"
-        Effect   = "Deny"
-        Action   = "iam:*"
-        Resource = "*"
-      }
-    ]
-  })
-}
-
-# IAM Scoped (roles and instance profiles)
-# Restricted to shifter-* naming after #253 role standardization.
-resource "aws_iam_policy" "iam_scoped" {
-  name = "shifter-${var.environment}-iam-scoped"
+# IAM statements stay restricted to shifter-* naming after #253 role standardization.
+resource "aws_iam_policy" "security" {
+  name = "shifter-${var.environment}-security"
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -416,50 +540,107 @@ resource "aws_iam_policy" "iam_scoped" {
         Effect   = "Allow"
         Action   = ["iam:CreateServiceLinkedRole"]
         Resource = "arn:aws:iam::*:role/aws-service-role/*"
+      },
+      {
+        Sid    = "SecretsManager"
+        Effect = "Allow"
+        Action = [
+          "secretsmanager:CreateSecret",
+          "secretsmanager:DeleteSecret",
+          "secretsmanager:DescribeSecret",
+          "secretsmanager:GetSecretValue",
+          "secretsmanager:PutSecretValue",
+          "secretsmanager:UpdateSecret",
+          "secretsmanager:TagResource",
+          "secretsmanager:UntagResource",
+          "secretsmanager:GetResourcePolicy",
+          "secretsmanager:PutResourcePolicy",
+          "secretsmanager:DeleteResourcePolicy"
+        ]
+        Resource = "arn:aws:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:shifter-*"
+      },
+      {
+        Sid      = "SecretsManagerRandom"
+        Effect   = "Allow"
+        Action   = ["secretsmanager:GetRandomPassword"]
+        Resource = "*"
+      },
+      {
+        Sid    = "KMS"
+        Effect = "Allow"
+        Action = [
+          "kms:CreateKey",
+          "kms:DescribeKey",
+          "kms:CreateAlias",
+          "kms:DeleteAlias",
+          "kms:ListAliases",
+          "kms:Encrypt",
+          "kms:Decrypt",
+          "kms:GenerateDataKey",
+          "kms:TagResource",
+          "kms:UntagResource",
+          "kms:ScheduleKeyDeletion",
+          "kms:GetKeyPolicy",
+          "kms:PutKeyPolicy",
+          "kms:EnableKeyRotation",
+          "kms:GetKeyRotationStatus"
+        ]
+        Resource = "*"
       }
     ]
   })
 }
 
-# Lambda compute (Cognito pre-signup and related functions; no Step Functions in this stack)
-resource "aws_iam_policy" "lambda_ops" {
-  name = "shifter-${var.environment}-lambda-ops"
+# Management: SSM, Cognito, CloudWatch (Logs + Alarms), SNS, EventBridge
+# checkov:skip=CKV_AWS_355:CI/CD requires broad SSM/Cognito/observability permissions. Risk accepted, see #44
+# checkov:skip=CKV_AWS_290:CI/CD requires broad SSM/Cognito/observability permissions. Risk accepted, see #44
+# checkov:skip=CKV_AWS_289:CI/CD requires broad SSM/Cognito/observability permissions. Risk accepted, see #44
+# checkov:skip=CKV_AWS_287:CI/CD requires broad SSM/Cognito/observability permissions. Risk accepted, see #44
+# NOTE: Not best practice. Project in rapid development - velocity impact of permissions errors
+# and size of inline policies outweigh need for pure least privilege. Risk accepted.
+resource "aws_iam_policy" "management" {
+  # checkov:skip=CKV_AWS_287:CI/CD requires broad SSM/Cognito/observability permissions. Risk accepted, see #44
+  name = "shifter-${var.environment}-management"
 
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
       {
-        Sid    = "Lambda"
+        Sid    = "SSMRunCommand"
         Effect = "Allow"
         Action = [
-          "lambda:CreateFunction",
-          "lambda:DeleteFunction",
-          "lambda:GetFunction",
-          "lambda:GetFunctionConfiguration",
-          "lambda:GetFunctionCodeSigningConfig",
-          "lambda:UpdateFunctionCode",
-          "lambda:UpdateFunctionConfiguration",
-          "lambda:ListVersionsByFunction",
-          "lambda:PublishVersion",
-          "lambda:AddPermission",
-          "lambda:RemovePermission",
-          "lambda:GetPolicy",
-          "lambda:TagResource",
-          "lambda:UntagResource",
-          "lambda:ListTags"
+          "ssm:SendCommand",
+          "ssm:GetCommandInvocation",
+          "ssm:ListCommandInvocations",
+          "ssm:DescribeInstanceInformation"
         ]
-        Resource = "arn:aws:lambda:${var.aws_region}:${data.aws_caller_identity.current.account_id}:function:*"
+        Resource = "*"
       },
       {
-        Sid    = "LambdaLayers"
+        Sid    = "SSMParameterStore"
         Effect = "Allow"
         Action = [
-          "lambda:PublishLayerVersion",
-          "lambda:GetLayerVersion",
-          "lambda:DeleteLayerVersion",
-          "lambda:ListLayerVersions"
+          "ssm:PutParameter",
+          "ssm:GetParameter",
+          "ssm:GetParameters",
+          "ssm:DeleteParameter",
+          "ssm:DescribeParameters",
+          "ssm:AddTagsToResource",
+          "ssm:RemoveTagsFromResource",
+          "ssm:ListTagsForResource"
         ]
-        Resource = "arn:aws:lambda:${var.aws_region}:${data.aws_caller_identity.current.account_id}:layer:*"
+        Resource = [
+          # Range parameters for DC config
+          "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter/shifter/*/range/*",
+          # AMI IDs for Kali, victim, windows, dc
+          "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter/shifter/ami/*"
+        ]
+      },
+      {
+        Sid      = "Cognito"
+        Effect   = "Allow"
+        Action   = ["cognito-idp:*"]
+        Resource = "*"
       },
       {
         Sid    = "CloudWatchLogs"
@@ -551,247 +732,6 @@ resource "aws_iam_policy" "lambda_ops" {
           "events:UntagResource"
         ]
         Resource = "arn:aws:events:${var.aws_region}:${data.aws_caller_identity.current.account_id}:rule/*-portal-*"
-      },
-      {
-        Sid    = "ECS"
-        Effect = "Allow"
-        Action = [
-          "ecs:*"
-        ]
-        Resource = "*"
-      }
-    ]
-  })
-}
-
-# RDS and ElastiCache (managed data stores)
-# checkov:skip=CKV_AWS_355:CI/CD requires broad RDS/ElastiCache permissions. Risk accepted, see #44
-# checkov:skip=CKV_AWS_290:CI/CD requires broad RDS/ElastiCache permissions. Risk accepted, see #44
-# checkov:skip=CKV_AWS_289:CI/CD requires broad RDS/ElastiCache permissions. Risk accepted, see #44
-# checkov:skip=CKV_AWS_287:CI/CD requires broad RDS/ElastiCache permissions. Risk accepted, see #44
-# NOTE: Not best practice. Project in rapid development - velocity impact of permissions errors
-# and size of inline policies outweigh need for pure least privilege. Risk accepted.
-resource "aws_iam_policy" "rds" {
-  name = "shifter-${var.environment}-rds"
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Sid    = "RDS"
-        Effect = "Allow"
-        Action = [
-          "rds:CreateDBInstance",
-          "rds:DeleteDBInstance",
-          "rds:DescribeDBInstances",
-          "rds:ModifyDBInstance",
-          "rds:RebootDBInstance",
-          "rds:StartDBInstance",
-          "rds:StopDBInstance",
-          "rds:CreateDBSubnetGroup",
-          "rds:DeleteDBSubnetGroup",
-          "rds:DescribeDBSubnetGroups",
-          "rds:ModifyDBSubnetGroup",
-          "rds:CreateDBParameterGroup",
-          "rds:DeleteDBParameterGroup",
-          "rds:DescribeDBParameterGroups",
-          "rds:ModifyDBParameterGroup",
-          "rds:DescribeDBParameters",
-          "rds:AddTagsToResource",
-          "rds:RemoveTagsFromResource",
-          "rds:ListTagsForResource",
-          "rds:DescribeDBEngineVersions",
-          "rds:DescribeOrderableDBInstanceOptions"
-        ]
-        Resource = "*"
-      },
-      {
-        Sid    = "ElastiCache"
-        Effect = "Allow"
-        Action = [
-          "elasticache:CreateCacheCluster",
-          "elasticache:DeleteCacheCluster",
-          "elasticache:DescribeCacheClusters",
-          "elasticache:ModifyCacheCluster",
-          "elasticache:CreateCacheSubnetGroup",
-          "elasticache:DeleteCacheSubnetGroup",
-          "elasticache:DescribeCacheSubnetGroups",
-          "elasticache:ModifyCacheSubnetGroup",
-          "elasticache:DescribeCacheParameterGroups",
-          "elasticache:DescribeCacheParameters",
-          "elasticache:DescribeEngineDefaultParameters",
-          "elasticache:AddTagsToResource",
-          "elasticache:RemoveTagsFromResource",
-          "elasticache:ListTagsForResource"
-        ]
-        Resource = "*"
-      }
-    ]
-  })
-}
-
-# Secrets Manager and KMS
-# checkov:skip=CKV_AWS_355:CI/CD requires broad Secrets/KMS permissions. Risk accepted, see #44
-# checkov:skip=CKV_AWS_290:CI/CD requires broad Secrets/KMS permissions. Risk accepted, see #44
-# checkov:skip=CKV_AWS_289:CI/CD requires broad Secrets/KMS permissions. Risk accepted, see #44
-# checkov:skip=CKV_AWS_287:CI/CD requires broad Secrets/KMS permissions. Risk accepted, see #44
-# NOTE: Not best practice. Project in rapid development - velocity impact of permissions errors
-# and size of inline policies outweigh need for pure least privilege. Risk accepted.
-resource "aws_iam_policy" "secrets_kms" {
-  name = "shifter-${var.environment}-secrets-kms"
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Sid    = "SecretsManager"
-        Effect = "Allow"
-        Action = [
-          "secretsmanager:CreateSecret",
-          "secretsmanager:DeleteSecret",
-          "secretsmanager:DescribeSecret",
-          "secretsmanager:GetSecretValue",
-          "secretsmanager:PutSecretValue",
-          "secretsmanager:UpdateSecret",
-          "secretsmanager:TagResource",
-          "secretsmanager:UntagResource",
-          "secretsmanager:GetResourcePolicy",
-          "secretsmanager:PutResourcePolicy",
-          "secretsmanager:DeleteResourcePolicy"
-        ]
-        Resource = "arn:aws:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:shifter-*"
-      },
-      {
-        Sid      = "SecretsManagerRandom"
-        Effect   = "Allow"
-        Action   = ["secretsmanager:GetRandomPassword"]
-        Resource = "*"
-      },
-      {
-        Sid    = "KMS"
-        Effect = "Allow"
-        Action = [
-          "kms:CreateKey",
-          "kms:DescribeKey",
-          "kms:CreateAlias",
-          "kms:DeleteAlias",
-          "kms:ListAliases",
-          "kms:Encrypt",
-          "kms:Decrypt",
-          "kms:GenerateDataKey",
-          "kms:TagResource",
-          "kms:UntagResource",
-          "kms:ScheduleKeyDeletion",
-          "kms:GetKeyPolicy",
-          "kms:PutKeyPolicy",
-          "kms:EnableKeyRotation",
-          "kms:GetKeyRotationStatus"
-        ]
-        Resource = "*"
-      }
-    ]
-  })
-}
-
-# SSM and Cognito
-# checkov:skip=CKV_AWS_355:CI/CD requires broad SSM/Cognito permissions. Risk accepted, see #44
-# checkov:skip=CKV_AWS_290:CI/CD requires broad SSM/Cognito permissions. Risk accepted, see #44
-# checkov:skip=CKV_AWS_289:CI/CD requires broad SSM/Cognito permissions. Risk accepted, see #44
-# checkov:skip=CKV_AWS_287:CI/CD requires broad SSM/Cognito permissions. Risk accepted, see #44
-# NOTE: Not best practice. Project in rapid development - velocity impact of permissions errors
-# and size of inline policies outweigh need for pure least privilege. Risk accepted.
-resource "aws_iam_policy" "ssm_cognito" {
-  # checkov:skip=CKV_AWS_287:CI/CD requires broad SSM/Cognito permissions. Risk accepted, see #44
-  name = "shifter-${var.environment}-ssm-cognito"
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Sid    = "SSMRunCommand"
-        Effect = "Allow"
-        Action = [
-          "ssm:SendCommand",
-          "ssm:GetCommandInvocation",
-          "ssm:ListCommandInvocations",
-          "ssm:DescribeInstanceInformation"
-        ]
-        Resource = "*"
-      },
-      {
-        Sid    = "SSMParameterStore"
-        Effect = "Allow"
-        Action = [
-          "ssm:PutParameter",
-          "ssm:GetParameter",
-          "ssm:GetParameters",
-          "ssm:DeleteParameter",
-          "ssm:DescribeParameters",
-          "ssm:AddTagsToResource",
-          "ssm:RemoveTagsFromResource",
-          "ssm:ListTagsForResource"
-        ]
-        Resource = [
-          # Range parameters for DC config
-          "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter/shifter/*/range/*",
-          # AMI IDs for Kali, victim, windows, dc
-          "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter/shifter/ami/*"
-        ]
-      },
-      {
-        Sid      = "Cognito"
-        Effect   = "Allow"
-        Action   = ["cognito-idp:*"]
-        Resource = "*"
-      }
-    ]
-  })
-}
-
-# Network Firewall
-# checkov:skip=CKV_AWS_355:CI/CD requires Network Firewall permissions. Risk accepted, see #44
-# checkov:skip=CKV_AWS_290:CI/CD requires Network Firewall permissions. Risk accepted, see #44
-# checkov:skip=CKV_AWS_289:CI/CD requires Network Firewall permissions. Risk accepted, see #44
-# checkov:skip=CKV_AWS_287:CI/CD requires Network Firewall permissions. Risk accepted, see #44
-resource "aws_iam_policy" "network_firewall" {
-  name = "shifter-${var.environment}-network-firewall"
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Sid    = "NetworkFirewall"
-        Effect = "Allow"
-        Action = [
-          "network-firewall:CreateFirewall",
-          "network-firewall:DeleteFirewall",
-          "network-firewall:DescribeFirewall",
-          "network-firewall:UpdateFirewallDeleteProtection",
-          "network-firewall:UpdateFirewallDescription",
-          "network-firewall:UpdateFirewallPolicy",
-          "network-firewall:UpdateFirewallPolicyChangeProtection",
-          "network-firewall:UpdateSubnetChangeProtection",
-          "network-firewall:AssociateFirewallPolicy",
-          "network-firewall:DisassociateSubnets",
-          "network-firewall:AssociateSubnets",
-          "network-firewall:CreateFirewallPolicy",
-          "network-firewall:DeleteFirewallPolicy",
-          "network-firewall:DescribeFirewallPolicy",
-          "network-firewall:UpdateFirewallPolicy",
-          "network-firewall:CreateRuleGroup",
-          "network-firewall:DeleteRuleGroup",
-          "network-firewall:DescribeRuleGroup",
-          "network-firewall:UpdateRuleGroup",
-          "network-firewall:ListFirewalls",
-          "network-firewall:ListFirewallPolicies",
-          "network-firewall:ListRuleGroups",
-          "network-firewall:TagResource",
-          "network-firewall:UntagResource",
-          "network-firewall:ListTagsForResource",
-          "network-firewall:DescribeLoggingConfiguration",
-          "network-firewall:UpdateLoggingConfiguration"
-        ]
-        Resource = "*"
       }
     ]
   })
@@ -801,54 +741,81 @@ resource "aws_iam_policy" "network_firewall" {
 # Policy Attachments
 # ------------------------------------------------------------------------------
 
-resource "aws_iam_role_policy_attachment" "core_infrastructure" {
+resource "aws_iam_role_policy_attachment" "compute" {
   role       = aws_iam_role.github_actions.name
-  policy_arn = aws_iam_policy.core_infrastructure.arn
+  policy_arn = aws_iam_policy.compute.arn
 }
 
-resource "aws_iam_role_policy_attachment" "vpc_networking" {
+resource "aws_iam_role_policy_attachment" "networking" {
   role       = aws_iam_role.github_actions.name
-  policy_arn = aws_iam_policy.vpc_networking.arn
+  policy_arn = aws_iam_policy.networking.arn
 }
 
-resource "aws_iam_role_policy_attachment" "ec2_instances" {
+resource "aws_iam_role_policy_attachment" "data" {
   role       = aws_iam_role.github_actions.name
-  policy_arn = aws_iam_policy.ec2_instances.arn
+  policy_arn = aws_iam_policy.data.arn
 }
 
-resource "aws_iam_role_policy_attachment" "elb_acm" {
+resource "aws_iam_role_policy_attachment" "security" {
   role       = aws_iam_role.github_actions.name
-  policy_arn = aws_iam_policy.elb_acm.arn
+  policy_arn = aws_iam_policy.security.arn
 }
 
-resource "aws_iam_role_policy_attachment" "iam_scoped" {
+resource "aws_iam_role_policy_attachment" "management" {
   role       = aws_iam_role.github_actions.name
-  policy_arn = aws_iam_policy.iam_scoped.arn
+  policy_arn = aws_iam_policy.management.arn
 }
 
-resource "aws_iam_role_policy_attachment" "lambda_ops" {
-  role       = aws_iam_role.github_actions.name
-  policy_arn = aws_iam_policy.lambda_ops.arn
+# ------------------------------------------------------------------------------
+# Migration: safe detach-before-attach rollout for the #254 consolidation
+#
+# The role already holds AWS's hard maximum of 10 managed-policy attachments.
+# Going to 5 attachments cannot be done by introducing 5 brand-new attachment
+# resources while the 10 old ones are orphaned: Terraform does not guarantee it
+# destroys orphaned attachments before creating new ones, so the role would
+# momentarily exceed 10 attachments mid-apply and AWS would reject it with
+# LimitExceededException.
+#
+# These `moved` blocks repoint five existing attachment addresses onto the five
+# consolidated policies instead. Because each address already exists in state,
+# Terraform treats the policy_arn change as an in-place REPLACEMENT (policy_arn
+# is ForceNew), which under the default lifecycle is destroy-before-create:
+# the old policy is detached, then the new one attached, on the same address -
+# the count never rises. The remaining five old attachment resources
+# (core_infrastructure, elb_acm, lambda_ops, secrets_kms, network_firewall) are
+# absent from the config and are destroyed (detached), taking the role from 10
+# down to 5. The role therefore stays at or below 10 attachments at every point
+# of the apply, with no net-new attachment addresses created.
+#
+# On a fresh environment with no prior state these blocks are no-ops and the
+# five attachments are created normally (nothing to exceed). The blocks are
+# one-time migration aids; they may be removed once every environment's global
+# IAM state has been applied.
+# ------------------------------------------------------------------------------
+
+moved {
+  from = aws_iam_role_policy_attachment.ec2_instances
+  to   = aws_iam_role_policy_attachment.compute
 }
 
-resource "aws_iam_role_policy_attachment" "rds" {
-  role       = aws_iam_role.github_actions.name
-  policy_arn = aws_iam_policy.rds.arn
+moved {
+  from = aws_iam_role_policy_attachment.vpc_networking
+  to   = aws_iam_role_policy_attachment.networking
 }
 
-resource "aws_iam_role_policy_attachment" "secrets_kms" {
-  role       = aws_iam_role.github_actions.name
-  policy_arn = aws_iam_policy.secrets_kms.arn
+moved {
+  from = aws_iam_role_policy_attachment.rds
+  to   = aws_iam_role_policy_attachment.data
 }
 
-resource "aws_iam_role_policy_attachment" "ssm_cognito" {
-  role       = aws_iam_role.github_actions.name
-  policy_arn = aws_iam_policy.ssm_cognito.arn
+moved {
+  from = aws_iam_role_policy_attachment.iam_scoped
+  to   = aws_iam_role_policy_attachment.security
 }
 
-resource "aws_iam_role_policy_attachment" "network_firewall" {
-  role       = aws_iam_role.github_actions.name
-  policy_arn = aws_iam_policy.network_firewall.arn
+moved {
+  from = aws_iam_role_policy_attachment.ssm_cognito
+  to   = aws_iam_role_policy_attachment.management
 }
 
 # ------------------------------------------------------------------------------
