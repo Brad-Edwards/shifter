@@ -449,6 +449,30 @@ resource "aws_sns_topic_subscription" "alerts_email" {
 }
 
 # ------------------------------------------------------------------------------
+# Backup-Failure Alerting (#160)
+# ------------------------------------------------------------------------------
+# RDS reports backup/snapshot failures as RDS events, delivered through an RDS
+# event subscription to a CMK-encrypted SNS topic. This cannot reuse the shared
+# `aws_sns_topic.alerts` above (AWS-managed key cannot grant the RDS service
+# principal), so the module owns a dedicated CMK + topic. See
+# docs/ops/disaster-recovery.md.
+
+module "backup_alerts" {
+  source = "../../../modules/portal/backup-alerts"
+
+  name_prefix = local.name_prefix
+  environment = var.environment
+  alarm_email = var.alarm_email
+
+  db_instance_identifiers = compact([
+    module.rds.db_instance_id,
+    module.guacamole.db_instance_id,
+  ])
+
+  tags = var.tags
+}
+
+# ------------------------------------------------------------------------------
 # Messaging (SNS/SQS)
 # ------------------------------------------------------------------------------
 
