@@ -90,10 +90,27 @@ def test_run_post_deploy_smoke_missing_user_email(monkeypatch) -> None:
         call_command("run_post_deploy_smoke")
 
 
-def test_run_post_deploy_smoke_unknown_user(monkeypatch, db) -> None:
-    monkeypatch.setenv("SMOKE_TEST_USER_EMAIL", "missing@test.example")
-    with pytest.raises(CommandError, match="Smoke user not found"):
-        call_command("run_post_deploy_smoke")
+def test_run_post_deploy_smoke_creates_missing_user(
+    monkeypatch,
+    fast_clock,
+    smoke_command_mocks,
+    db,
+) -> None:
+    email = "smoke-dev@test.example"
+    monkeypatch.setenv("SMOKE_TEST_USER_EMAIL", email)
+    assert User.objects.filter(email__iexact=email).count() == 0
+    request_id = uuid4()
+    smoke_command_mocks.cms.create_range.return_value = SimpleNamespace(request_id=str(request_id))
+    smoke_command_mocks.cms.find_range_instance_id_by_request.return_value = 1
+    smoke_command_mocks.cms.get_range_status_by_id.return_value = ResourceStatus.READY.value
+    smoke_command_mocks.cms.get_range_by_request_id.return_value = _range_context()
+    smoke_command_mocks.ssh_info.return_value = {"host": "10.0.0.1", "port": 22}
+
+    call_command("run_post_deploy_smoke", "--variant", "linux", "--poll-interval", "1")
+
+    user = User.objects.get(email__iexact=email)
+    smoke_command_mocks.cms.create_range.assert_called_once()
+    assert smoke_command_mocks.cms.create_range.call_args[0][0] == user
 
 
 def test_run_post_deploy_smoke_provision_timeout(
