@@ -22,6 +22,22 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+_TASK_ARN_FIELDS = {
+    "provision": "provisioning_task_arn",
+    "destroy": "teardown_task_arn",
+}
+
+
+def _persist_task_arn(range_obj: Range, operation: str, task_arn: str | None) -> None:
+    """Store an ECS task identifier on the operation-specific Range field."""
+    if not task_arn:
+        return
+    field_name = _TASK_ARN_FIELDS.get(operation)
+    if field_name is None:
+        raise ValueError(f"Unknown range task operation: {operation}")
+    setattr(range_obj, field_name, task_arn)
+    range_obj.save(update_fields=[field_name])
+
 
 def _atomic() -> ContextManager[None]:
     """Late-bound ``engine.services.transaction.atomic()`` so tests can patch the package-level name."""
@@ -66,8 +82,7 @@ def create_range(request_spec: RequestSpec) -> RangeRef:
 
     task_arn = start_range_provisioning(request_spec.request_id)
     if task_arn:
-        range_obj.step_function_execution_arn = task_arn
-        range_obj.save(update_fields=["step_function_execution_arn"])
+        _persist_task_arn(range_obj, "provision", task_arn)
         logger.info("create_range: started ECS task=%s", task_arn)
 
     return RangeRef(
@@ -196,8 +211,7 @@ def _apply_destroy_to_range(
 
     task_arn = start_teardown(range_id, user_id)
     if task_arn:
-        range_obj.step_function_execution_arn = task_arn
-        range_obj.save(update_fields=["step_function_execution_arn"])
+        _persist_task_arn(range_obj, "destroy", task_arn)
         logger.info("destroy_range: started ECS task=%s", task_arn)
     return True
 
@@ -296,8 +310,7 @@ def _apply_destroy_by_request(
 
     task_arn = start_range_teardown(request_id)
     if task_arn:
-        range_obj.step_function_execution_arn = task_arn
-        range_obj.save(update_fields=["step_function_execution_arn"])
+        _persist_task_arn(range_obj, "destroy", task_arn)
         logger.info("destroy_range_by_request: started ECS task=%s", task_arn)
     return True
 

@@ -284,9 +284,21 @@ class Range(models.Model):
     )
     chat_url = models.URLField(max_length=500, blank=True, default="")
 
-    # Step Functions tracking
+    # Step Functions tracking (legacy — prefer provisioning_task_arn / teardown_task_arn)
     step_function_execution_arn = models.CharField(
-        max_length=500, blank=True, default="", help_text="Step Functions execution ARN"
+        max_length=500, blank=True, default="", help_text="Legacy ECS task ARN (deprecated)"
+    )
+    provisioning_task_arn = models.CharField(
+        max_length=500,
+        blank=True,
+        default="",
+        help_text="ECS/GCP task identifier for the provisioning operation",
+    )
+    teardown_task_arn = models.CharField(
+        max_length=500,
+        blank=True,
+        default="",
+        help_text="ECS/GCP task identifier for the teardown operation",
     )
 
     # Shifter Engine fields (v2)
