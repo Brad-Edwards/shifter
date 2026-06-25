@@ -28,6 +28,7 @@ from config._api_token_settings import *  # NOSONAR  # noqa: E402
 from config._channels import *  # NOSONAR  # noqa: E402
 from config._channels import _build_channel_layers  # noqa: E402
 from config._cloud import *  # NOSONAR  # noqa: E402
+from config._drf_settings import *  # NOSONAR  # noqa: E402
 from config._guacamole_settings import *  # NOSONAR  # noqa: E402
 from config._logging_config import *  # NOSONAR  # noqa: E402
 from config._runtime_env import AUTH_PROVIDER, IS_TEST_RUN, require_environment  # noqa: E402
@@ -117,6 +118,8 @@ INSTALLED_APPS = [
     "health_check.storage",
     "config.apps.PortalConfig",
     "rest_framework",
+    "drf_spectacular",
+    "drf_spectacular_sidecar",
     "mission_control.apps.MissionControlConfig",
     "risk_register.apps.RiskRegisterConfig",
     "documentation.apps.DocumentationConfig",
@@ -441,25 +444,6 @@ CTFD_PLATFORM_URL = os.environ.get("CTFD_PLATFORM_URL", "https://ctf.shifter.exa
 EMAIL_BACKEND = os.environ.get("EMAIL_BACKEND", "django.core.mail.backends.console.EmailBackend")
 AWS_SES_REGION_NAME = "us-east-2"
 AWS_SES_REGION_ENDPOINT = "email.us-east-2.amazonaws.com"
-
-# ------------------------------------------------------------------------------
-# Django REST Framework Configuration
-# ------------------------------------------------------------------------------
-
-REST_FRAMEWORK = {
-    "DEFAULT_AUTHENTICATION_CLASSES": [
-        # Scoped bearer tokens first (PLAT-102; fails closed), then legacy
-        # X-API-Key (deprecated, #1124), then session.
-        "shared.api_tokens.authentication.ApiTokenAuthentication",
-        "risk_register.api.authentication.APIKeyAuthentication",
-        "rest_framework.authentication.SessionAuthentication",
-    ],
-    "DEFAULT_PERMISSION_CLASSES": [
-        "rest_framework.permissions.IsAuthenticated",
-    ],
-    "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
-    "PAGE_SIZE": 50,
-}
 
 # ------------------------------------------------------------------------------
 # Environment
