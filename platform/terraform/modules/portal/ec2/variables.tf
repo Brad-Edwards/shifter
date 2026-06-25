@@ -341,9 +341,21 @@ variable "instance_refresh_min_healthy_percentage" {
 }
 
 variable "worker_health_alarm_actions" {
-  description = "SNS topic ARNs notified when the UnhealthyWorkers alarm (#953) fires; empty disables alarm notifications"
+  description = "SNS topic ARNs notified when worker lifecycle alarms (#953 unhealthy workers, #274 restart rate) fire; empty disables alarm notifications"
   type        = list(string)
   default     = []
+}
+
+variable "worker_restart_alarm_threshold" {
+  description = "Aggregate WorkerRestarts count above which the restart-rate alarm notifies (#274)"
+  type        = number
+  default     = 3
+}
+
+variable "worker_restart_alarm_period_seconds" {
+  description = "Evaluation period in seconds for the worker restart-rate alarm (#274)"
+  type        = number
+  default     = 300
 }
 
 variable "db_resource_id" {

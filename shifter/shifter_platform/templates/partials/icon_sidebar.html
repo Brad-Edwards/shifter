@@ -318,7 +318,8 @@
 </span>
                     </a>
                 </div>
-                {# Experiments - Staff or Threat Research group #}
+                {# Experiments - Staff or Threat Research group. Half-built; off by default (#1195). #}
+                {% if experiments_enabled %}
                 <div class="tw-mx-3 tw-mb-2
                             {% if active_nav == 'experiments' %}
                                 active-top-item
@@ -347,6 +348,7 @@
 </span>
                     </a>
                 </div>
+                {% endif %}
             {% endif %}
             {# Documentation (hidden for CTF-only participants) #}
             {% if not is_ctf_participant_only %}
