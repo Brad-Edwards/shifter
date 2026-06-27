@@ -195,6 +195,10 @@ jobs:
           # runs as the same SA. Pin the worker to the internal-IP builder subnet
           # so it complies with the compute.vmExternalIpAccess org policy.
           BUILD_SA="${GCP_PACKER_SERVICE_ACCOUNT:-${GCP_SERVICE_ACCOUNT}}"
+          # A user-managed Cloud Build SA can't write to the default
+          # gs://<projnum>.cloudbuild-logs bucket, so --log-location is required
+          # alongside --cloudbuild-service-account. Point it at the image bucket,
+          # where the build SA already holds storage.objectAdmin.
           gcloud compute images export \
             --image="${IMAGE_NAME}" \
             --destination-uri="${DEST}" \
@@ -203,7 +207,8 @@ jobs:
             --zone="${ZONE}" \
             ${GCP_PACKER_SUBNETWORK:+--subnet="${GCP_PACKER_SUBNETWORK}"} \
             --cloudbuild-service-account="${BUILD_SA}" \
-            --compute-service-account="${BUILD_SA}"
+            --compute-service-account="${BUILD_SA}" \
+            --log-location="gs://${GCP_GDC_VM_IMAGE_BUCKET}/export-logs"
           GDC_VAR="GDC_$(echo "${IMAGE_TYPE}" | tr '[:lower:]' '[:upper:]')_IMAGE_URL"
           {
             echo "## GDC VM Runtime disk exported"
