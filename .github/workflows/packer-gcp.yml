@@ -1,0 +1,172 @@
+name: Packer GCE Image Build
+
+# Builds a Shifter guest image on Google Compute Engine, parallel to the AWS
+# packer.yml flow (issue #505, PLAT-001.10). Runs on a GitHub-hosted runner
+# (the self-hosted pool is AWS-only and cannot reach a GCE builder VM) and
+# authenticates with Workload Identity Federation — no long-lived SA keys.
+#
+# The published image is the contract: each build writes image
+# `${image_prefix}-<type>-<timestamp>` into image family `${image_prefix}-<type>`.
+# Consumers resolve the newest non-deprecated image in the family (the GCP-native
+# analog of the AWS /shifter/ami/* SSM parameter — there is no SSM equivalent).
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_type:
+        description: 'GCE image to build'
+        required: true
+        type: choice
+        options:
+          - ubuntu
+          - brokenbk
+          - kali
+          - windows
+          - dc
+      environment:
+        description: 'GCP environment to build in'
+        required: true
+        type: choice
+        options:
+          - dev
+          - proof
+        default: dev
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build ${{ inputs.image_type }} GCE image in ${{ inputs.environment }}
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    permissions:
+      contents: read
+      id-token: write
+    defaults:
+      run:
+        working-directory: shifter/packer
+    env:
+      IMAGE_TYPE: ${{ inputs.image_type }}
+    steps:
+      # Build from the dispatched ref (github.sha), which GitHub already gates
+      # by workflow_dispatch permission. No free-form `inputs.ref` is accepted:
+      # a privileged, cloud-credentialed build must not run code from an
+      # arbitrary caller-supplied branch (#505 codex security review).
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+
+      - name: Install dependencies
+        run: uv sync --dev
+
+      - name: Run Packer tests
+        run: uv run pytest tests/ -v
+
+      - name: Setup Packer
+        uses: hashicorp/setup-packer@ce93c3c08a6c2ff2275bf4b54ff0d9a75f6c9789 # v3.4.0
+        with:
+          version: latest
+
+      - name: Ensure GCP build auth is configured
+        env:
+          GCP_SERVICE_ACCOUNT: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+          GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+        run: |
+          if [ -z "${GCP_SERVICE_ACCOUNT}" ] || [ -z "${GCP_WORKLOAD_IDENTITY_PROVIDER}" ]; then
+            echo "::error::GCP_SERVICE_ACCOUNT and GCP_WORKLOAD_IDENTITY_PROVIDER must be configured for GCE image builds. See docs/dev/deploy-secrets.md."
+            exit 1
+          fi
+
+      - id: auth
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db
+        with:
+          version: ">= 416.0.0"
+
+      - name: Resolve Packer variables from secrets/variables
+        env:
+          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          GCP_REGION: ${{ vars.GCP_REGION || 'us-central1' }}
+          GCP_PACKER_ZONE: ${{ vars.GCP_PACKER_ZONE }}
+          GCP_PACKER_NETWORK: ${{ vars.GCP_PACKER_NETWORK || 'default' }}
+          GCP_PACKER_SUBNETWORK: ${{ vars.GCP_PACKER_SUBNETWORK || 'default' }}
+          GCP_PACKER_SERVICE_ACCOUNT: ${{ vars.GCP_PACKER_SERVICE_ACCOUNT }}
+          GCP_PACKER_MACHINE_TYPE: ${{ vars.GCP_PACKER_MACHINE_TYPE || 'e2-standard-2' }}
+          GCP_PACKER_USE_INTERNAL_IP: ${{ vars.GCP_PACKER_USE_INTERNAL_IP || 'false' }}
+          GCP_SERVICE_ACCOUNT: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+          GCP_KALI_SOURCE_IMAGE: ${{ secrets.GCP_KALI_SOURCE_IMAGE }}
+        run: |
+          if [ -z "${GCP_PROJECT_ID}" ]; then
+            echo "::error::Required secret GCP_PROJECT_ID is not set. See docs/dev/deploy-secrets.md."
+            exit 1
+          fi
+          ZONE="${GCP_PACKER_ZONE:-${GCP_REGION}-a}"
+          # The builder VM runs as the Packer service account if configured,
+          # otherwise the WIF-impersonated deploy service account.
+          BUILDER_SA="${GCP_PACKER_SERVICE_ACCOUNT:-${GCP_SERVICE_ACCOUNT}}"
+          # Export as PKR_VAR_* so Packer reads them from the environment — never
+          # as -var CLI flags (which would expose values in the process list).
+          {
+            echo "PKR_VAR_project_id=${GCP_PROJECT_ID}"
+            echo "PKR_VAR_zone=${ZONE}"
+            echo "PKR_VAR_network=${GCP_PACKER_NETWORK}"
+            echo "PKR_VAR_subnetwork=${GCP_PACKER_SUBNETWORK}"
+            echo "PKR_VAR_service_account_email=${BUILDER_SA}"
+            echo "PKR_VAR_image_prefix=shifter"
+            echo "PKR_VAR_machine_type=${GCP_PACKER_MACHINE_TYPE}"
+            echo "PKR_VAR_use_internal_ip=${GCP_PACKER_USE_INTERNAL_IP}"
+          } >> "$GITHUB_ENV"
+          # Kali has no public GCP image — it needs an operator-imported base.
+          if [ "${IMAGE_TYPE}" = "kali" ]; then
+            if [ -z "${GCP_KALI_SOURCE_IMAGE}" ]; then
+              echo "::error::Building kali needs secret GCP_KALI_SOURCE_IMAGE (an imported Kali GCE image). See shifter/packer/gcp/README.md."
+              exit 1
+            fi
+            echo "PKR_VAR_kali_source_image=${GCP_KALI_SOURCE_IMAGE}" >> "$GITHUB_ENV"
+          fi
+
+      - name: Generate WinRM bootstrap secret (Windows/DC only)
+        if: inputs.image_type == 'windows' || inputs.image_type == 'dc'
+        run: |
+          # Throwaway local-admin password for the build VM only; the VM is
+          # sysprepped and discarded so it never reaches the published image.
+          # Masked in logs and written via $GITHUB_ENV, never echoed or on argv.
+          WINRM_PW="$(openssl rand -base64 24)"
+          echo "::add-mask::${WINRM_PW}"
+          echo "PKR_VAR_winrm_bootstrap_password=${WINRM_PW}" >> "$GITHUB_ENV"
+
+      - name: Initialize Packer
+        working-directory: shifter/packer/gcp
+        run: packer init .
+
+      - name: Validate template
+        working-directory: shifter/packer/gcp
+        run: packer validate -only="googlecompute.${IMAGE_TYPE}" .
+
+      - name: Build GCE image
+        working-directory: shifter/packer/gcp
+        run: |
+          packer build -color=false -only="googlecompute.${IMAGE_TYPE}" .
+          IMAGE_NAME=$(jq -r '.builds[-1].artifact_id' "${IMAGE_TYPE}-manifest.json")
+          {
+            echo "## ${{ inputs.environment }} GCE Image Build Complete"
+            echo "- **Type:** ${IMAGE_TYPE}"
+            echo "- **Environment:** ${{ inputs.environment }}"
+            echo "- **Image:** \`${IMAGE_NAME}\`"
+            echo "- **Family:** \`shifter-${IMAGE_TYPE}\` (consumers resolve newest in family)"
+            echo ""
+            echo "**Next step:** Verify in ${{ inputs.environment }} before promoting to prod."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload manifest
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ inputs.image_type }}-gce-manifest
+          path: shifter/packer/gcp/${{ inputs.image_type }}-manifest.json

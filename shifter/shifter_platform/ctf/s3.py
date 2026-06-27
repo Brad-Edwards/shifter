@@ -15,6 +15,9 @@ from django.conf import settings
 from shared.log_sanitize import safe_log_value
 from shared.s3 import get_s3_client, sanitize_s3_filename
 
+# SonarCloud S1192: extracted duplicated string literals.
+BUCKET_NOT_CONFIGURED_MSG = "AWS_S3_BUCKET_NAME is not configured"
+
 logger = logging.getLogger(__name__)
 
 # Constraints
@@ -130,7 +133,7 @@ def upload_challenge_file(
         CTFFileError: If upload fails.
     """
     if not settings.AWS_S3_BUCKET_NAME:
-        raise CTFFileError("AWS_S3_BUCKET_NAME is not configured")
+        raise CTFFileError(BUCKET_NOT_CONFIGURED_MSG)
 
     safe_filename = sanitize_s3_filename(filename)
     unique_id = uuid4().hex[:12]
@@ -178,7 +181,7 @@ def delete_challenge_file(s3_key: str) -> None:
         CTFFileError: If delete fails.
     """
     if not settings.AWS_S3_BUCKET_NAME:
-        raise CTFFileError("AWS_S3_BUCKET_NAME is not configured")
+        raise CTFFileError(BUCKET_NOT_CONFIGURED_MSG)
 
     try:
         client = get_s3_client()
@@ -205,7 +208,7 @@ def generate_download_url(s3_key: str, filename: str, expires_in: int = 300) -> 
         CTFFileError: If URL generation fails.
     """
     if not settings.AWS_S3_BUCKET_NAME:
-        raise CTFFileError("AWS_S3_BUCKET_NAME is not configured")
+        raise CTFFileError(BUCKET_NOT_CONFIGURED_MSG)
 
     safe_filename = sanitize_s3_filename(filename)
     # Strip characters that could cause HTTP header injection (S5131).

@@ -10,7 +10,7 @@ from datetime import timedelta
 from typing import TYPE_CHECKING
 from uuid import UUID
 
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import QuerySet
 from django.utils import timezone
 
@@ -194,39 +194,15 @@ def submit_flag(
 
     event = participant.event
 
-    # Check if already solved
-    existing_correct = CTFSubmission.objects.filter(
-        participant=participant,
-        challenge=challenge,
-        is_correct=True,
-    ).exists()
-
-    if existing_correct:
-        raise CTFValidationError(
-            "Challenge already solved",
-            code="CTF_ALREADY_SOLVED",
-            details={"challenge_id": str(challenge_id)},
-        )
-
-    all_submissions = CTFSubmission.objects.filter(
-        participant=participant,
-        challenge=challenge,
-    )
-    attempt_count = _check_attempt_limit_or_raise(all_submissions, event, challenge, challenge_id)
-    _check_submission_cooldown_or_raise(participant, challenge, challenge_id)
-
-    # Calculate hint penalty
+    # Verify the flag and compute points BEFORE taking the participant row lock:
+    # a programmable/http flag check can be slow or make an outbound call, and we
+    # must not hold the lock across it. These reads do not mutate state.
     from ctf.services.hint import get_total_hint_penalty
 
     total_hint_penalty = get_total_hint_penalty(participant.id, challenge.id)
-
-    # Verify flag
     is_correct = verify_flag(challenge, submitted_flag.strip())
-
-    # Calculate points
-    points = 0
+    points = challenge.calculate_points_with_penalty(total_hint_penalty) if is_correct else 0
     if is_correct:
-        points = challenge.calculate_points_with_penalty(total_hint_penalty)
         logger.info(
             "Correct flag submitted: participant=%s, challenge=%s, points=%d",
             participant_id,
@@ -240,20 +216,57 @@ def submit_flag(
             safe_log_value(challenge_id),
         )
 
-    # Create submission
+    # Serialize per participant so the already-solved / attempt-limit / cooldown
+    # checks and the INSERT cannot interleave with a concurrent submission for
+    # the same challenge (#1135, #1137). Without the lock two concurrent correct
+    # submissions both passed the already-solved check and double-scored, and
+    # concurrent wrong guesses both passed the max_attempts cap. The reads below
+    # run under select_for_update so they are authoritative; the partial unique
+    # constraint on (participant, challenge) WHERE is_correct is the DB backstop.
     with transaction.atomic():
-        submission = CTFSubmission.objects.create(
-            participant=participant,
-            challenge=challenge,
-            submitted_flag=submitted_flag,
-            is_correct=is_correct,
-            points_awarded=points,
-            attempt_number=attempt_count + 1,
-            ip_address=ip_address,
-        )
+        CTFParticipant.objects.select_for_update().get(pk=participant.id)
+
+        submissions = CTFSubmission.objects.filter(participant=participant, challenge=challenge)
+        if submissions.filter(is_correct=True).exists():
+            raise CTFValidationError(
+                "Challenge already solved",
+                code="CTF_ALREADY_SOLVED",
+                details={"challenge_id": str(challenge_id)},
+            )
+        attempt_count = _check_attempt_limit_or_raise(submissions, event, challenge, challenge_id)
+        _check_submission_cooldown_or_raise(participant, challenge, challenge_id)
+
+        try:
+            submission = CTFSubmission.objects.create(
+                participant=participant,
+                challenge=challenge,
+                submitted_flag=submitted_flag,
+                is_correct=is_correct,
+                points_awarded=points,
+                attempt_number=attempt_count + 1,
+                ip_address=ip_address,
+            )
+        except IntegrityError as exc:
+            # ctf_unique_correct_submission backstop: another correct submission
+            # for this (participant, challenge) committed first.
+            raise CTFValidationError(
+                "Challenge already solved",
+                code="CTF_ALREADY_SOLVED",
+                details={"challenge_id": str(challenge_id)},
+            ) from exc
 
         # Update participant last active
         participant.update_last_active()
+
+        # Maintain the materialized leaderboard (issue #850) in the same
+        # transaction as the authoritative write. Only a correct submission
+        # changes score/solve-count/last-solve, so incorrect attempts stay
+        # cheap (no recompute) — important under wrong-answer load.
+        if is_correct:
+            from ctf.services.scoring import recompute_participant_score, recompute_team_score
+
+            recompute_participant_score(participant.id)
+            recompute_team_score(participant.team_id)
 
     return submission
 
@@ -351,7 +364,7 @@ def rate_challenge(
     # participant_id for an INVITED or DISQUALIFIED row would otherwise
     # bypass the access predicate the views apply via
     # `is_active_participant`. Mirror that here.
-    from ctf.services.participant import _PLAYING_PARTICIPANT_STATUSES
+    from ctf.services.participant.queries import _PLAYING_PARTICIPANT_STATUSES
 
     if participant.registered_at is None or participant.status not in _PLAYING_PARTICIPANT_STATUSES:
         from ctf.exceptions import CTFStateError as _CTFStateError

@@ -9,9 +9,9 @@ binding the module-level constants used in the re-export.
 from __future__ import annotations
 
 import os
-import sys
 import warnings
-from pathlib import Path
+
+from config._runtime_env import AUTH_PROVIDER, IS_TEST_RUN
 
 __all__ = [
     "AUTHENTICATION_BACKENDS",
@@ -41,15 +41,16 @@ __all__ = [
     "OIDC_USERNAME_ALGO",
     "PLATFORM_BOOTSTRAP_STAFF_EMAILS",
     "PLATFORM_BOOTSTRAP_SUPERUSER_EMAILS",
+    "RISK_REGISTER_ALLOWED_COGNITO_GROUPS",
     "SESSION_COOKIE_AGE",
 ]
 
-# Re-derive the toggles the OIDC block needs. These are also defined in
-# ``config.settings`` but importing them from there would create a cycle
-# (settings.py imports this module).
-AUTH_PROVIDER = os.environ.get("AUTH_PROVIDER", "oidc").strip().lower()
-IS_TEST_RUN = os.environ.get("TESTING") == "1" or Path(sys.argv[0]).name == "pytest"
 DEBUG = os.environ.get("DJANGO_DEBUG", "False").lower() == "true"
+
+
+def _env_list(name: str) -> list[str]:
+    """Parse comma-separated environment variables into stripped string lists."""
+    return [item.strip() for item in os.environ.get(name, "").split(",") if item.strip()]
 
 
 def _env_csv(name: str) -> list[str]:
@@ -141,7 +142,7 @@ OIDC_OP_LOGOUT_URL_METHOD = "config.oidc.provider_logout_url" if AUTH_PROVIDER =
 OIDC_CREATE_USER = True
 
 # Use email as username (default is sha1 hash of email)
-OIDC_USERNAME_ALGO = "config.oidc.generate_username"
+OIDC_USERNAME_ALGO = "config.username.generate_username"
 
 # URLs exempt from OIDC authentication (public pages)
 # Must be URL paths starting with "/" or view names (not regex patterns)
@@ -158,6 +159,8 @@ OIDC_EXEMPT_URLS = [
     "/dev-logout/",
     # CTF magic link registration (token is the auth)
     "/ctf/register/",
+    # CTF magic link token exchange (token is the auth; CSRF-protected POST)
+    "/ctf/register/exchange/",
     # CTF help page
     "/ctf/help/",
 ]
@@ -167,3 +170,12 @@ OIDC_EXEMPT_URLS = [
 # won't expire their sessions. This ensures no surprises from Django defaults.
 # 14 days
 SESSION_COOKIE_AGE = 60 * 60 * 24 * 14
+
+# Risk register Cognito group gate (issue #151). Fail closed when unset outside tests.
+RISK_REGISTER_ALLOWED_COGNITO_GROUPS = _env_list("RISK_REGISTER_ALLOWED_COGNITO_GROUPS")
+if not RISK_REGISTER_ALLOWED_COGNITO_GROUPS and not IS_TEST_RUN:
+    warnings.warn(
+        "RISK_REGISTER_ALLOWED_COGNITO_GROUPS is unset; risk register access is denied for all principals.",
+        RuntimeWarning,
+        stacklevel=2,
+    )

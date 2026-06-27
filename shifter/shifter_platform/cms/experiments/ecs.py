@@ -45,15 +45,24 @@ def _get_task_config() -> tuple[str, str, dict | None] | None:
     )
 
     if provider == "gcp":
-        if not all([cluster, task_definition]):
-            logger.warning(
-                "GCP task configuration incomplete for experiment tasks. "
-                "Required: ENGINE_TASK_NAMESPACE/ENGINE_TASK_CLUSTER and "
-                "EXPERIMENT_TASK_DEFINITION or ENGINE_TASK_IMAGE/ENGINE_TASK_DEFINITION."
-            )
-            return None
-        return cluster, task_definition, None
+        return _gcp_experiment_task_config(cluster, task_definition)
+    return _aws_experiment_task_config(cluster, task_definition)
 
+
+def _gcp_experiment_task_config(cluster: str, task_definition: str) -> tuple[str, str, dict | None] | None:
+    """Return the GCP experiment task config, or None when it is incomplete."""
+    if not all([cluster, task_definition]):
+        logger.warning(
+            "GCP task configuration incomplete for experiment tasks. "
+            "Required: ENGINE_TASK_NAMESPACE/ENGINE_TASK_CLUSTER and "
+            "EXPERIMENT_TASK_DEFINITION or ENGINE_TASK_IMAGE/ENGINE_TASK_DEFINITION."
+        )
+        return None
+    return cluster, task_definition, None
+
+
+def _aws_experiment_task_config(cluster: str, task_definition: str) -> tuple[str, str, dict | None] | None:
+    """Return the AWS experiment task config (cluster, task def, network), or None when incomplete."""
     security_group_id: str = getattr(settings, "ENGINE_TASK_NETWORK_SECURITY_GROUP_ID", "") or getattr(
         settings, "ENGINE_ECS_SECURITY_GROUP_ID", ""
     )
@@ -116,6 +125,12 @@ def start_experiment_task(
         ValueError: If command is not a valid operation.
         CloudTaskError: If the ECS RunTask API call fails.
     """
+    # Defense-in-depth: the experiments feature is half-built and off by default
+    # (#1195). Even if a run is reached programmatically, never launch the (non-
+    # existent) executor when the feature is disabled.
+    if not getattr(settings, "EXPERIMENTS_ENABLED", False):
+        logger.info("Experiments disabled (EXPERIMENTS_ENABLED is false); not launching experiment task.")
+        return None
     if experiment_id is None or not isinstance(experiment_id, int):
         raise TypeError(f"experiment_id must be an int, got {type(experiment_id).__name__}")
     if run_id is None or not isinstance(run_id, int):

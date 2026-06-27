@@ -18,11 +18,13 @@ from ctf.enums import (
     ChallengeCategory,
     ChallengeDifficulty,
     EventStatus,
+    NotificationType,
     ParticipantStatus,
     ScheduledTaskStatus,
 )
 from ctf.models import (
     CTFChallenge,
+    CTFEmailTemplate,
     CTFEvent,
     CTFParticipant,
     CTFScheduledTask,
@@ -205,6 +207,30 @@ class TestCTFEventModel:
             event.clean()
 
         assert "scoreboard_freeze_at" in exc_info.value.message_dict
+
+    def test_scoreboard_freeze_persists_through_pause(self):
+        """#1143: a frozen scoreboard stays frozen while ACTIVE or PAUSED.
+
+        Pausing during the freeze window must not lift the freeze and leak
+        post-freeze standings.
+        """
+        now = timezone.now()
+        base = {
+            "name": "Freeze Event",
+            "created_by_id": 1,
+            "event_start": now - timedelta(hours=2),
+            "event_end": now + timedelta(hours=6),
+            "scoreboard_freeze_at": now - timedelta(minutes=5),  # freeze in effect
+        }
+        assert CTFEvent(**base, status=EventStatus.ACTIVE.value).is_scoreboard_frozen is True
+        # The fix: pausing keeps the board frozen.
+        assert CTFEvent(**base, status=EventStatus.PAUSED.value).is_scoreboard_frozen is True
+        # Before the cutoff -> not frozen.
+        not_yet = {**base, "scoreboard_freeze_at": now + timedelta(hours=1)}
+        assert CTFEvent(**not_yet, status=EventStatus.ACTIVE.value).is_scoreboard_frozen is False
+        # No freeze configured -> never frozen.
+        no_freeze = {**base, "scoreboard_freeze_at": None}
+        assert CTFEvent(**no_freeze, status=EventStatus.PAUSED.value).is_scoreboard_frozen is False
 
     def test_event_soft_delete(self):
         """Test soft delete sets deleted_at and calls save."""
@@ -615,3 +641,38 @@ class TestCTFScheduledTaskModel:
         assert task.status == ScheduledTaskStatus.FAILED.value
         assert task.error_message == "Connection timeout"
         assert task.executed_at is not None
+
+
+# -----------------------------------------------------------------------------
+# CTFEmailTemplate Model Tests
+# -----------------------------------------------------------------------------
+
+
+class TestCTFEmailTemplateModel:
+    """Tests for CTFEmailTemplate.clean() placeholder validation (issue #1095)."""
+
+    def test_clean_accepts_allowlisted_placeholders(self):
+        template = CTFEmailTemplate(
+            notification_type=NotificationType.INVITE.value,
+            html_body="<p>Hi {{ participant_name }}, join {{ event_name }}</p>",
+            text_body="Hi {{ participant_name }}",
+        )
+        template.clean()  # should not raise
+
+    def test_clean_rejects_template_tags(self):
+        template = CTFEmailTemplate(
+            notification_type=NotificationType.INVITE.value,
+            html_body="{% load i18n %}<p>{{ event_name }}</p>",
+            text_body="{{ event_name }}",
+        )
+        with pytest.raises(ValidationError):
+            template.clean()
+
+    def test_clean_rejects_attribute_traversal(self):
+        template = CTFEmailTemplate(
+            notification_type=NotificationType.INVITE.value,
+            html_body="<p>{{ event.created_by.password }}</p>",
+            text_body="hi",
+        )
+        with pytest.raises(ValidationError):
+            template.clean()

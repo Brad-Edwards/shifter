@@ -11,11 +11,19 @@ dependencies = [
     "channels-redis",
     "daphne",
     "django>=6.0.6",
+    # GCP transactional-email backends (SendGrid / Mailgun) for PLAT-002 parity;
+    # AWS continues to use django-ses. See config/_email.py.
+    "django-anymail",
     "django-encrypted-model-fields>=0.6.5",
     "django-health-check<5.0",
     "django-ses",
     "djangorestframework",
+    "drf-spectacular>=0.29.0",
+    "drf-spectacular-sidecar>=2026.6.1",
     "firebase-admin",
+    # GCP Cloud Monitoring publisher for the portal capacity emitter (PLAT-002);
+    # AWS uses boto3/CloudWatch. Lazy-imported so AWS flows never load it.
+    "google-cloud-monitoring",
     "gunicorn",
     "markdown",
     "mozilla-django-oidc",
@@ -48,6 +56,7 @@ dev = [
     "pre-commit>=4.5.0",
     "pytest-asyncio>=1.3.0",
     "pytest-xdist>=3.5.0",
+    "freezegun>=1.5.5",
     "mypy>=2.1.0",
     "django-stubs>=6.0.4",
     "types-requests>=2.33.0.20260513",

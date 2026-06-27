@@ -1,3 +1,4 @@
+import json
 import subprocess
 import unittest
 
@@ -203,6 +204,212 @@ class PortalDeployAsgVerificationTests(unittest.TestCase):
             portal_deploy.verify_asg_image_digest(
                 asg_name="dev-portal-asg-abc123",
                 image_digest="",
+            )
+
+
+class FakeSleep:
+    def __init__(self) -> None:
+        self.calls: list[float] = []
+
+    def __call__(self, seconds: float) -> None:
+        self.calls.append(seconds)
+
+
+class PostDeployVerificationTests(unittest.TestCase):
+    def test_parse_post_deploy_outputs_requires_portal_contracts(self) -> None:
+        raw = json.dumps(
+            {
+                "domain_name": {"value": "dev.example.com"},
+                "portal_target_group_arn": {"value": "arn:aws:elasticloadbalancing:us-east-2:1:targetgroup/p/abc"},
+            }
+        )
+        parsed = portal_deploy.parse_post_deploy_outputs(raw)
+        self.assertEqual(parsed.domain_name, "dev.example.com")
+        self.assertEqual(
+            parsed.portal_target_group_arn,
+            "arn:aws:elasticloadbalancing:us-east-2:1:targetgroup/p/abc",
+        )
+        self.assertEqual(parsed.guacamole_ecs_cluster_name, "")
+
+    def test_parse_post_deploy_outputs_reads_optional_guacamole_fields(self) -> None:
+        raw = json.dumps(
+            {
+                "domain_name": {"value": "dev.example.com"},
+                "portal_target_group_arn": {"value": "arn:portal-tg"},
+                "guacamole_target_group_arn": {"value": "arn:guac-tg"},
+                "guacamole_ecs_cluster_name": {"value": "dev-portal-guacamole"},
+                "guacd_service_name": {"value": "dev-portal-guacd"},
+                "guacamole_client_service_name": {"value": "dev-portal-guacamole-client"},
+            }
+        )
+        parsed = portal_deploy.parse_post_deploy_outputs(raw)
+        self.assertEqual(parsed.guacamole_target_group_arn, "arn:guac-tg")
+        self.assertEqual(parsed.guacamole_ecs_cluster_name, "dev-portal-guacamole")
+
+    def test_wait_target_group_healthy_succeeds_when_all_targets_healthy(self) -> None:
+        runner = FakeRunner()
+        runner.queue(
+            json.dumps(
+                {
+                    "TargetHealthDescriptions": [
+                        {"TargetHealth": {"State": "healthy"}},
+                        {"TargetHealth": {"State": "healthy"}},
+                    ]
+                }
+            )
+        )
+        portal_deploy.wait_target_group_healthy(
+            "arn:portal-tg",
+            runner=runner,
+            sleep_fn=lambda _seconds: None,
+            timeout_seconds=30,
+            poll_interval_seconds=1,
+        )
+        self.assertEqual(runner.calls[0][:3], ["aws", "elbv2", "describe-target-health"])
+
+    def test_wait_target_group_healthy_times_out_on_unhealthy_targets(self) -> None:
+        runner = FakeRunner()
+        runner.queue(
+            json.dumps(
+                {
+                    "TargetHealthDescriptions": [
+                        {"TargetHealth": {"State": "unhealthy", "Reason": "Target.FailedHealthChecks"}}
+                    ]
+                }
+            )
+        )
+        runner.queue(
+            json.dumps(
+                {
+                    "TargetHealthDescriptions": [
+                        {"TargetHealth": {"State": "unhealthy", "Reason": "Target.FailedHealthChecks"}}
+                    ]
+                }
+            )
+        )
+        sleep = FakeSleep()
+        with self.assertRaisesRegex(portal_deploy.PortalDeployError, "did not become healthy"):
+            portal_deploy.wait_target_group_healthy(
+                "arn:portal-tg",
+                runner=runner,
+                sleep_fn=sleep,
+                timeout_seconds=0,
+                poll_interval_seconds=0,
+            )
+
+    def test_verify_https_endpoint_accepts_expected_status(self) -> None:
+        runner = FakeRunner()
+        runner.responses = [
+            subprocess.CompletedProcess([], 0, stdout="200\n", stderr=""),
+        ]
+        portal_deploy.verify_https_endpoint(
+            "https://dev.example.com/health/",
+            expected_status_codes={200},
+            runner=runner,
+        )
+        self.assertIn("https://dev.example.com/health/", runner.calls[0])
+
+    def test_verify_https_endpoint_rejects_unexpected_status(self) -> None:
+        runner = FakeRunner()
+        runner.responses = [
+            subprocess.CompletedProcess([], 0, stdout="503\n", stderr=""),
+        ]
+        with self.assertRaisesRegex(portal_deploy.PortalDeployError, "503"):
+            portal_deploy.verify_https_endpoint(
+                "https://dev.example.com/health/",
+                expected_status_codes={200},
+                runner=runner,
+            )
+
+    def test_wait_ecs_services_stable_requires_completed_rollouts(self) -> None:
+        runner = FakeRunner()
+        runner.queue("COMPLETED\n")
+        runner.queue("COMPLETED\n")
+        portal_deploy.wait_ecs_services_stable(
+            cluster_name="dev-portal-guacamole",
+            service_names=["dev-portal-guacd", "dev-portal-guacamole-client"],
+            runner=runner,
+            sleep_fn=lambda _seconds: None,
+            timeout_seconds=30,
+            poll_interval_seconds=1,
+        )
+        self.assertEqual(len(runner.calls), 2)
+        for call, service_name in zip(runner.calls, ["dev-portal-guacd", "dev-portal-guacamole-client"], strict=True):
+            self.assertEqual(call[:3], ["aws", "ecs", "describe-services"])
+            self.assertIn("--cluster", call)
+            self.assertIn("dev-portal-guacamole", call)
+            self.assertIn(service_name, call)
+
+    def test_verify_post_deploy_fails_when_guacamole_cluster_inactive(self) -> None:
+        runner = FakeRunner()
+        verification = portal_deploy.PostDeployVerification(
+            domain_name="dev.example.com",
+            portal_target_group_arn="arn:portal-tg",
+            guacamole_target_group_arn="arn:guac-tg",
+            guacamole_ecs_cluster_name="dev-portal-guacamole",
+            guacd_service_name="dev-portal-guacd",
+            guacamole_client_service_name="dev-portal-guacamole-client",
+        )
+        runner.queue(json.dumps({"TargetHealthDescriptions": [{"TargetHealth": {"State": "healthy"}}]}))
+        runner.responses.append(subprocess.CompletedProcess([], 0, stdout="200\n", stderr=""))
+        runner.queue("INACTIVE\n")
+        with self.assertRaisesRegex(portal_deploy.PortalDeployError, "ACTIVE cluster"):
+            portal_deploy.verify_post_deploy(
+                verification,
+                runner=runner,
+                sleep_fn=lambda _seconds: None,
+                portal_target_timeout_seconds=30,
+                guacamole_target_timeout_seconds=30,
+                ecs_timeout_seconds=30,
+            )
+
+    def test_portal_manage_script_inherits_entrypoint_env(self) -> None:
+        script = portal_deploy._portal_manage_script(
+            ["run_post_deploy_smoke", "--variant", "linux"]
+        )
+        self.assertIn("/proc/1/environ", script)
+        self.assertIn("run_post_deploy_smoke", script)
+        self.assertIn("docker exec portal", script)
+
+    def test_wait_ssm_command_polls_until_success(self) -> None:
+        runner = FakeRunner()
+        runner.queue(json.dumps({"Status": "InProgress"}))
+        runner.queue(
+            json.dumps(
+                {
+                    "Status": "Success",
+                    "StandardOutputContent": "ok",
+                    "StandardErrorContent": "",
+                }
+            )
+        )
+        payload = portal_deploy._wait_ssm_command(
+            command_id="cmd-123",
+            instance_id="i-abc",
+            timeout_seconds=60,
+            runner=runner,
+            sleep_fn=lambda _seconds: None,
+            poll_interval_seconds=1,
+        )
+        self.assertEqual(payload["Status"], "Success")
+        self.assertEqual(len(runner.calls), 2)
+        self.assertEqual(runner.calls[0][:3], ["aws", "ssm", "get-command-invocation"])
+        self.assertNotIn(
+            ["aws", "ssm", "wait", "command-executed"],
+            [call[:4] for call in runner.calls],
+        )
+
+    def test_wait_ssm_command_times_out_before_terminal_status(self) -> None:
+        runner = FakeRunner()
+        runner.queue(json.dumps({"Status": "InProgress"}))
+        with self.assertRaisesRegex(portal_deploy.PortalDeployError, "did not reach a terminal state"):
+            portal_deploy._wait_ssm_command(
+                command_id="cmd-123",
+                instance_id="i-abc",
+                timeout_seconds=0,
+                runner=runner,
+                sleep_fn=lambda _seconds: None,
+                poll_interval_seconds=0,
             )
 
 

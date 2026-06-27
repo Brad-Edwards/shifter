@@ -42,6 +42,32 @@ operator email against the Terraform output `identity_allowed_email_domain`.
 When Terraform outputs are not available yet, it uses
 `SHIFTER_GCP_OPERATOR_EMAIL_DOMAIN` from the process environment.
 
+## GCP Packer image builds
+
+Consumed by `.github/workflows/packer-gcp.yml` (build) and
+`.github/workflows/packer-gcp-promote.yml` (promote). Builds run on
+`ubuntu-latest` with Workload Identity Federation (no long-lived SA keys);
+variables reach Packer as `PKR_VAR_*` environment values, never `-var` CLI
+flags. Reuses the deploy secrets `GCP_PROJECT_ID`, `GCP_SERVICE_ACCOUNT`,
+`GCP_WORKLOAD_IDENTITY_PROVIDER`, and the variable `GCP_REGION` from the table
+above, plus the following:
+
+| Name | Type | Required | Purpose |
+|------|------|----------|---------|
+| `GCP_PACKER_ZONE` | variable | no | Build zone. Defaults to `${GCP_REGION}-a`. |
+| `GCP_PACKER_NETWORK` | variable | no | Builder VPC network. Default `default`. |
+| `GCP_PACKER_SUBNETWORK` | variable | no | Builder subnetwork. Default `default`. |
+| `GCP_PACKER_SERVICE_ACCOUNT` | variable | no | Service account the builder VM runs as. Falls back to `GCP_SERVICE_ACCOUNT`. |
+| `GCP_PACKER_MACHINE_TYPE` | variable | no | Builder machine type. Default `e2-standard-2`. |
+| `GCP_PACKER_USE_INTERNAL_IP` | variable | no | `true` builds without an external IP (requires IAP `35.235.240.0/20` to the builder). Default `false`. |
+| `GCP_KALI_SOURCE_IMAGE` | secret | for `kali` | Operator-imported Kali GCE image name/self-link. GCP has no public Kali image; the `kali` build fails loud if this is unset. See `shifter/packer/gcp/README.md`. |
+| `GCP_DEV_PROJECT_ID` | secret | for promote | Source (dev) project for `packer-gcp-promote.yml`; the prod project is the `prod` environment's `GCP_PROJECT_ID`. |
+
+Images are published to the image family `shifter-<type>` (the version pointer;
+there is no SSM equivalent). For Windows/DC, the workflow generates a throwaway
+`winrm_bootstrap_password` per run and injects it via `PKR_VAR_*`; nothing is
+committed.
+
 ## AWS portal (`dev` / `prod`)
 
 Consumed by `.github/workflows/_shifter-platform.yml`. The committed
@@ -77,6 +103,25 @@ For AWS local deploys, write the same HCL to a gitignored
 `terraform apply` from a workstation that has the target role (see
 **Local development** below).
 
+## AWS core (`dev` / `proof` / `prod`)
+
+Consumed by `.github/workflows/_core.yml`. The committed
+`platform/terraform/environments/<env>/main.tf` defines shared ECR repos and
+S3 budget alerts. Budget notification recipients are deployment-owned: the
+workflow's `Render local.auto.tfvars from deployment secret` step writes
+`budget_alert_email` into a gitignored `local.auto.tfvars` before Terraform
+runs. The step picks the secret by environment and fails loud (`::error::`) when
+the active environment's secret is empty.
+
+| Name | Kind | Required | Notes |
+|---|---|---|---|
+| `TF_VARS_DEV_CORE` | secret | yes (dev) | Whole-file `local.auto.tfvars` payload for the dev core root. Must set `budget_alert_email` to a real operations address. |
+| `TF_VARS_PROOF_CORE` | secret | yes (proof) | As above, for the proof core root. |
+| `TF_VARS_PROD_CORE` | secret | yes (prod) | As above, for the prod core root. |
+
+See `platform/terraform/environments/<env>/local.auto.tfvars.example` for the
+minimum HCL shape.
+
 ### Fresh AWS account bootstrap order
 
 For a new AWS account, bootstrap the backend and CI identity before trying
@@ -84,7 +129,8 @@ to use the `aws-dev` deploy branch:
 
 1. Run `./scripts/bootstrap/deploy.py bootstrap --env dev --profile <profile>`.
    This creates the shared S3 state bucket, creates the GitHub OIDC role,
-   updates `AWS_ROLE_ARN_DEV`, and rewrites the dev `.s3.tfbackend` files.
+   sets `AWS_ROLE_ARN_DEV` and `TF_INFRA_STATE_BUCKET`, and writes
+   per-instance Terraform backend configs under `~/.shifter/<env>-<bucket>/`.
 2. Update `platform/terraform/global/github-runner/dev.tfvars` with the
    target account's VPC/subnet IDs, apply the runner root, and register each
    runner with GitHub. AWS deploy workflows use `runs-on: self-hosted`, and
@@ -98,9 +144,11 @@ to use the `aws-dev` deploy branch:
 4. Review `TF_VARS_DEV_PORTAL` for account-specific values such as domain
    names, alarm email, SSH allowlists, and bucket names. Review
    `TF_VARS_DEV_RANGE` for range deployment values such as the agent S3 bucket
-   and the regional PAN-OS VM-Series AMI. Bootstrap configures the AWS role
-   secret and backend files; the deploy workflows fail loud when the active
-   portal or range tfvars secret is missing.
+   and the regional PAN-OS VM-Series AMI, and set `SHIFTER_CONFIG_DEV_RANGE` to
+   the deployment's `shifter.yaml` (its `settings.range_egress` is rendered into
+   the range egress allowlist). Bootstrap configures the AWS role secret and
+   backend files; the deploy workflows fail loud when the active portal or range
+   tfvars secret, or the range `shifter.yaml`, is missing.
 5. For the first deploy in a moved or fresh account, run the `Deploy`
    workflow manually with `workflow_dispatch` on `aws-dev`. Manual dispatch
    forces the full AWS chain (Core -> Range -> Engine -> Platform). A plain
@@ -178,6 +226,17 @@ Guacamole targets. The targets therefore allow ingress both from the ALB
 security group and from the portal public subnet CIDRs; the CIDR rule is still
 VPC-local and is required for the routed middlebox path.
 
+`enable_portal_inspection` defaults to `false` in the committed
+`platform/terraform/environments/<env>/portal/terraform.tfvars` (#932). A deploy
+that wants inspection sets `enable_portal_inspection = true` in its
+`TF_VARS_<ENV>_PORTAL` secret payload (rendered as `local.auto.tfvars`, which
+overrides the committed baseline). Enabling it removes the direct private → NAT
+default route, so the portal apply job runs
+`scripts/assert_portal_inspection/assert_portal_inspection.py` after
+`terraform apply`: it fails the deploy if the live route tables do not point at
+healthy per-AZ Network Firewall endpoints, instead of silently blackholing
+egress. The assertion is a no-op when inspection is off.
+
 ## AWS range (`dev` / `prod`)
 
 Consumed by `.github/workflows/_range.yml`. The committed
@@ -190,8 +249,10 @@ matching whole-file secret into `local.auto.tfvars`, and fails loud
 
 | Name | Kind | Required | Notes |
 |---|---|---|---|
-| `TF_VARS_DEV_RANGE` | secret | yes (dev) | Whole-file `local.auto.tfvars` payload for the dev range root, rendered verbatim over the committed baseline before `terraform plan` / `apply`. |
+| `TF_VARS_DEV_RANGE` | secret | yes (dev) | Whole-file `local.auto.tfvars` payload for the dev range root, rendered verbatim over the committed baseline before `terraform plan` / `apply`. Carries only the non-egress overrides below, **not** `victim_allowed_cidrs`. |
 | `TF_VARS_PROD_RANGE` | secret | yes (prod) | As above, for the prod range root. |
+| `SHIFTER_CONFIG_DEV_RANGE` | secret | yes (dev) | Full deployment `shifter.yaml` (root installation config) for dev. The workflow renders its `settings.range_egress` into `victim_allowed_cidrs.auto.tfvars` before `terraform plan` / `apply`, so the egress allowlist is sourced once from `shifter.yaml` (#1015). |
+| `SHIFTER_CONFIG_PROD_RANGE` | secret | yes (prod) | As above, for the prod range. |
 
 At minimum, each `TF_VARS_<ENV>_RANGE` payload must set the deployment-specific
 values stripped from the committed baseline:
@@ -202,6 +263,15 @@ values stripped from the committed baseline:
   deployment configuration, not a credential; keep it in the overlay so the
   shared repo does not prescribe a marketplace version/region for every
   deployment.
+
+The range egress allowlist (`victim_allowed_cidrs`) is **not** part of
+`TF_VARS_<ENV>_RANGE`. The workflow's `Render range egress allowlist from
+shifter.yaml` step (in both the `plan` and `apply` jobs) writes
+`SHIFTER_CONFIG_<ENV>_RANGE` to an ephemeral file and runs `shifter-config
+render` to generate `victim_allowed_cidrs.auto.tfvars`, so the configured policy
+and the deployed firewall cannot drift (#958 / #1015). Putting
+`victim_allowed_cidrs` in `TF_VARS_<ENV>_RANGE` re-creates that drift; keep it
+out of the whole-file secret.
 
 Local operators use the same model: write those values to a gitignored
 `local.auto.tfvars` alongside the range `terraform.tfvars`. In this repo's
@@ -221,7 +291,8 @@ For the PLAT-220 range egress allowlist:
 | ------------------------------------------------------------------------------------ | ----------------------------------------------------- |
 | `platform/terraform/environments/{dev,prod}/range/terraform.tfvars`                  | committed; empty `victim_allowed_cidrs` baseline      |
 | `platform/terraform/environments/{dev,prod}/range/local.auto.tfvars.example`         | committed; shape reference                            |
-| `platform/terraform/environments/{dev,prod}/range/local.auto.tfvars`                 | gitignored; operator writes account values and `victim_allowed_cidrs` |
+| `platform/terraform/environments/{dev,prod}/range/local.auto.tfvars`                 | gitignored; operator's non-egress account overrides (NOT `victim_allowed_cidrs`) |
+| `platform/terraform/environments/{dev,prod}/range/victim_allowed_cidrs.auto.tfvars`  | gitignored; rendered by `shifter-config render` (CI: from `SHIFTER_CONFIG_<ENV>_RANGE`; local: from your `shifter.yaml`) |
 
 Source for the PANW Cortex XSIAM/XDR allowlist:
 <https://docs-cortex.paloaltonetworks.com/r/Cortex-XSIAM/Cortex-XSIAM-Administrator-Guide/Resources-Required-to-Enable-Access>.
@@ -231,10 +302,10 @@ between `shifter.yaml.settings.range_egress` and the Terraform inputs.
 
 ## GCP range (`gcp-dev`)
 
-The GCP range network egress allowlist piggy-backs on the existing
-`gcp-dev` `local.auto.tfvars` (rendered from secrets/variables by
-`.github/workflows/_gcp-dev.yml` for CI deploys, or operator-authored for
-local apply). Two new Terraform variables expose the platform contract:
+The GCP range network egress allowlist is rendered from the deployment's
+`shifter.yaml` into a dedicated `range_egress.auto.tfvars`, separate from the
+`gcp-dev` `local.auto.tfvars` (which carries project / hostname / identity /
+control-plane inputs). Two Terraform variables expose the platform contract:
 
 | Variable                       | Type           | Meaning                                                                          |
 | ------------------------------ | -------------- | -------------------------------------------------------------------------------- |
@@ -242,22 +313,30 @@ local apply). Two new Terraform variables expose the platform contract:
 | `range_egress_allowed_cidrs`   | `list(string)` | CIDR allowlist when `range_egress_mode = "allowlist"`                            |
 
 The committed `terraform.tfvars` baseline sets `range_egress_mode =
-"status-quo"`. Deployments that want enforcement add the matching block to
-`local.auto.tfvars`:
+"status-quo"`. Deployments that want enforcement set
+`settings.range_egress` in `shifter.yaml`; the deploy renders it into
+`range_egress.auto.tfvars` (gitignored), which Terraform auto-loads alongside
+the baseline.
 
-```hcl
-range_egress_mode          = "allowlist"
-range_egress_allowed_cidrs = [
-  "203.0.113.0/24",
-]
-```
+| Name | Kind | Required | Notes |
+|---|---|---|---|
+| `SHIFTER_CONFIG_GCP_DEV` | secret | yes | Full deployment `shifter.yaml` (root installation config) for `gcp-dev`. The `_gcp-dev.yml` `Render range egress allowlist from shifter.yaml` step writes it to an ephemeral file and runs `shifter-config render` to generate `${TF_DIR}/range_egress.auto.tfvars` before `terraform apply`; the step fails loud when the secret is empty. |
 
-No additional GitHub secret is required for PLAT-220 today — the existing
-`_gcp-dev.yml` "Render local.auto.tfvars from secrets/variables" step can
-emit these two keys when a future repository variable adds them. CIDRs are
-operator configuration, not secrets, so they may live in repository
-variables; declare a GitHub secret only if your deployment classifies the
-allowlist as sensitive.
+- **CI (`_gcp-dev.yml`)** renders `range_egress.auto.tfvars` from
+  `SHIFTER_CONFIG_GCP_DEV`.
+- **`scripts/bootstrap/deploy.py gdc-bootstrap`** renders the same file from
+  the resolved `shifter.yaml` (`--shifter-config` → `$SHIFTER_CONFIG` →
+  repo-root `shifter.yaml`) before the control-plane apply, failing loud if no
+  root config is found.
+- **Local `terraform` runs** use the operator workflow in
+  `docs/architecture/range-egress-ip-allowlist.md` (run `shifter-config render`
+  by hand, then `terraform apply`).
+
+`shifter.yaml` holds secret *references*, not values, but it is the
+deployment's authoritative config; carry it as a GitHub secret so CI does not
+read a second, drift-prone copy of the allowlist. Do **not** also set
+`range_egress_mode` / `range_egress_allowed_cidrs` in `local.auto.tfvars`;
+that re-introduces the drift this flow removes.
 
 ## Local development
 

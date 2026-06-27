@@ -1,6 +1,5 @@
 """Tests for experiment models -- pure unit tests, no DB access."""
 
-from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 import pytest
@@ -131,6 +130,39 @@ def _make_experiment_script(experiment=None, **kwargs):
 
 
 # ---------------------------------------------------------------------------
+# Real-DB helpers (for behavior tests of save()/transition_to/active_for_user)
+# ---------------------------------------------------------------------------
+
+
+def _db_user(user_model):
+    suffix = uuid4().hex[:8]
+    return user_model.objects.create_user(username=f"exp-{suffix}@e.com", email=f"exp-{suffix}@e.com")
+
+
+def _db_experiment(user_model, **kwargs):
+    fields = {"name": "Test Exp", "scenario_id": "basic", "total_runs": 5, "max_parallel_runs": 3}
+    fields.update(kwargs)
+    return Experiment.objects.create(user=_db_user(user_model), **fields)
+
+
+def _db_run(experiment, **kwargs):
+    fields = {"run_number": 1}
+    fields.update(kwargs)
+    return ExperimentRun.objects.create(experiment=experiment, **fields)
+
+
+def _db_script_asset(user, **kwargs):
+    fields = {
+        "name": "Active",
+        "s3_key": "scripts/1/abc123_attack.py",
+        "original_filename": "attack.py",
+        "file_size_bytes": 512,
+    }
+    fields.update(kwargs)
+    return ScriptAsset.objects.create(user=user, **fields)
+
+
+# ---------------------------------------------------------------------------
 # ScriptAsset
 # ---------------------------------------------------------------------------
 
@@ -152,18 +184,20 @@ class TestScriptAssetModel:
         script = _make_script_asset(deleted_at=timezone.now())
         assert script.is_deleted
 
-    def test_active_for_user(self):
-        """active_for_user filters ScriptAsset.objects (SoftDeleteManager, active-only)."""
-        user = _make_user()
-        first_item = _make_script_asset(name="Active")
-        fake_qs = MagicMock()
-        fake_qs.count.return_value = 1
-        fake_qs.first.return_value = first_item
-        with patch.object(ScriptAsset.objects, "filter", return_value=fake_qs) as mock_filter:
-            result = ScriptAsset.active_for_user(user)
-            mock_filter.assert_called_once_with(user=user)
-            assert result.count() == 1
-            assert result.first().name == "Active"
+    @pytest.mark.django_db
+    def test_active_for_user(self, django_user_model):
+        """active_for_user (a SoftDeleteManager) returns the user's active scripts."""
+        from django.utils import timezone
+
+        user = django_user_model.objects.create_user(username="sa-active@e.com", email="sa-active@e.com")
+        _db_script_asset(user, name="Active", s3_key="scripts/1/active.py")
+        deleted = _db_script_asset(user, name="Deleted", s3_key="scripts/1/deleted.py")
+        deleted.deleted_at = timezone.now()
+        deleted.save(update_fields=["deleted_at"])
+
+        result = ScriptAsset.active_for_user(user)
+        assert result.count() == 1
+        assert result.first().name == "Active"
 
     def test_file_size_mb(self):
         script = _make_script_asset(file_size_bytes=1048576)
@@ -186,24 +220,28 @@ class TestExperimentModel:
         exp = _make_experiment()
         assert exp.uuid is not None
 
-    @patch.object(Experiment, "save")
-    def test_transition_draft_to_queued(self, mock_save):
-        exp = _make_experiment(status=ExperimentStatus.DRAFT.value)
+    @pytest.mark.django_db
+    def test_transition_draft_to_queued(self, django_user_model):
+        exp = _db_experiment(django_user_model, status=ExperimentStatus.DRAFT.value)
         exp.transition_to(ExperimentStatus.QUEUED)
+        exp.refresh_from_db()
         assert exp.status == ExperimentStatus.QUEUED.value
-        mock_save.assert_called_once()
 
-    @patch.object(Experiment, "save")
-    def test_transition_running_sets_started_at(self, mock_save):
-        exp = _make_experiment(status=ExperimentStatus.QUEUED.value)
+    @pytest.mark.django_db
+    def test_transition_running_sets_started_at(self, django_user_model):
+        exp = _db_experiment(django_user_model, status=ExperimentStatus.QUEUED.value)
         exp.transition_to(ExperimentStatus.RUNNING)
+        exp.refresh_from_db()
         assert exp.started_at is not None
         assert exp.status == ExperimentStatus.RUNNING.value
 
-    @patch.object(Experiment, "save")
-    def test_transition_completed_sets_completed_at(self, mock_save):
-        exp = _make_experiment(status=ExperimentStatus.RUNNING.value, started_at="2024-01-01")
+    @pytest.mark.django_db
+    def test_transition_completed_sets_completed_at(self, django_user_model):
+        from django.utils import timezone
+
+        exp = _db_experiment(django_user_model, status=ExperimentStatus.RUNNING.value, started_at=timezone.now())
         exp.transition_to(ExperimentStatus.COMPLETED)
+        exp.refresh_from_db()
         assert exp.completed_at is not None
         assert exp.status == ExperimentStatus.COMPLETED.value
 
@@ -295,23 +333,25 @@ class TestExperimentRunModel:
         run = _make_experiment_run()
         assert run.uuid is not None
 
-    @patch.object(ExperimentRun, "save")
-    def test_transition_happy_path(self, mock_save):
-        run = _make_experiment_run()
+    @pytest.mark.django_db
+    def test_transition_happy_path(self, django_user_model):
+        run = _db_run(_db_experiment(django_user_model))
         run.transition_to(RunStatus.PROVISIONING)
         assert run.started_at is not None
         run.transition_to(RunStatus.EXECUTING_VICTIMS)
         run.transition_to(RunStatus.EXECUTING_ATTACKER)
         run.transition_to(RunStatus.COLLECTING)
         run.transition_to(RunStatus.COMPLETED)
+        run.refresh_from_db()
         assert run.completed_at is not None
         assert run.status == RunStatus.COMPLETED.value
 
-    @patch.object(ExperimentRun, "save")
-    def test_transition_to_failed(self, mock_save):
-        run = _make_experiment_run()
+    @pytest.mark.django_db
+    def test_transition_to_failed(self, django_user_model):
+        run = _db_run(_db_experiment(django_user_model))
         run.transition_to(RunStatus.PROVISIONING)
         run.transition_to(RunStatus.FAILED)
+        run.refresh_from_db()
         assert run.completed_at is not None
         assert run.status == RunStatus.FAILED.value
 

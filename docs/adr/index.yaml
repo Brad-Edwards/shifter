@@ -8,7 +8,7 @@
     "rules": [
       {
         "id": "ADR-001-R1",
-        "description": "Cross-layer imports must conform to scripts/check_layer_imports/layer_imports.yaml.",
+        "description": "Cross-layer imports must conform to scripts/check_layer_imports/layer_imports.yaml; service-package imports expose only the public facade (for example, cms.services), not private split-package implementation submodules such as cms.services._range_pause or from cms.services import _range_pause; only shared may import cyberscript directly.",
         "checks": ["layer-imports"]
       },
       {
@@ -63,8 +63,13 @@
       },
       {
         "id": "ADR-003-R3",
-        "description": "Deploy-verification steps must fail the run when the thing they verify did not happen, instead of warning and exiting 0. The Guacamole stabilization wait in _shifter-platform.yml must exit 1 on timeout (raise the timeout if first boot needs longer rather than downgrading the result). The engine ECS task-definition update in _shifter-engine.yml must exit 1 when the task-definition family cannot be described, with the only skip gated on the explicit first_deploy bootstrap input (surfaced as the aws_first_deploy workflow_dispatch input in deploy.yml, strict by default and settable only on manual dispatch).",
+        "description": "Deploy-verification steps must fail the run when the thing they verify did not happen, instead of warning and exiting 0. The Guacamole stabilization wait in _shifter-platform.yml must exit 1 on timeout (raise the timeout if first boot needs longer rather than downgrading the result). The engine ECS task-definition update in _shifter-engine.yml must exit 1 when the task-definition family cannot be described, with the only skip gated on the explicit first_deploy bootstrap input (surfaced as the aws_first_deploy workflow_dispatch input in deploy.yml, strict by default and settable only on manual dispatch). After portal deploy, the Verify job in _shifter-platform.yml must fail when portal ALB target health, /health/, Guacamole ECS rollouts, Guacamole target health, or /guacamole/ smoke probes are not satisfied; scripts/portal_deploy/portal_deploy.py verify-post-deploy must treat a non-ACTIVE Guacamole cluster as failure when Guacamole outputs are present.",
         "checks": ["deploy-verification-fail-loud"]
+      },
+      {
+        "id": "ADR-003-R6",
+        "description": "After successful AWS dev portal deploy verification, _shifter-platform.yml may run an advisory post-deploy range smoke job (post-deploy-smoke) that executes scripts/smoke-test.sh via scripts/portal_deploy/portal_deploy.py run-manage-on-portal. The job must remain dev-only (inputs.is_dev), continue-on-error so deploy success is not blocked, request issues: write only for failure issue creation, and declare SMOKE_* secrets on the reusable workflow. Long-running portal manage commands must poll SSM command status until the requested timeout rather than relying on the fixed-limit aws ssm wait command-executed waiter.",
+        "checks": ["deploy-verification-fail-loud", "deploy-workflow-runner-exposure"]
       },
       {
         "id": "ADR-003-R4",
@@ -137,7 +142,7 @@
       },
       {
         "id": "ADR-004-R8",
-        "description": "Generated and pre-staging sensitive artifacts must not be tracked in source: Terraform plan outputs (tfplan, tfplan.binary, plan.out, *.tfplan) under platform/terraform/environments/ and platform/terraform/gcp/environments/, Polaris range build output under scenario-dev/polaris/build/, and license/authcode bootstrap material (authcodes, *.authcodes) under temp/bootstrap/. The blocked path/name set is centralized in scripts/adr_guard/adr_guard.py; the guardrail fails closed and emits repo-relative paths only, never file contents.",
+        "description": "Generated and pre-staging sensitive artifacts must not be tracked in source: Terraform plan outputs (tfplan, tfplan.binary, plan.out, *.tfplan) under platform/terraform/environments/ and platform/terraform/gcp/environments/, Polaris range build output under scenario-dev/polaris/build/, Polaris AWS operator run outputs (provisioning_state.json, provisioning_status.md, health_report.md, postprovision_status.md) under scripts/polaris-aws-range/, and license/authcode bootstrap material (authcodes, *.authcodes) under temp/bootstrap/. The blocked path/name set is centralized in scripts/adr_guard/adr_guard.py; the guardrail fails closed and emits repo-relative paths only, never file contents.",
         "checks": ["no-tracked-generated-artifacts"]
       },
       {
@@ -159,6 +164,26 @@
         "id": "ADR-004-R12",
         "description": "First-party AWS RDS DB instances under `platform/terraform/modules/portal/rds/main.tf` and `platform/terraform/modules/guacamole/rds.tf` MUST keep `iam_database_authentication_enabled = true` and MUST explicitly set `ca_cert_identifier` to a non-empty expression. Checkov covers IAM authentication through CKV_AWS_161, but CKV_AWS_211 currently passes when the CA attribute is absent; the repo-native `scripts/check_tf_rds_security/check_tf_rds_security.py` checker closes that gap. The checker is wired as the `check-tf-rds-security` pre-commit hook and a CI step in `.github/workflows/_quality.yml`, and its unittest suite is included in the `check_tf_*` checker tests.",
         "checks": []
+      },
+      {
+        "id": "ADR-004-R13",
+        "description": "Portal target-service security groups MUST NOT admit ingress from the whole public subnet tier. Every `aws_security_group_rule` ingress in `platform/terraform/environments/{dev,prod}/portal/main.tf` whose `security_group_id` is the Django EC2 SG (`module.ec2.security_group_id`) or the Guacamole client SG (`module.guacamole.guacamole_client_security_group_id`) MUST source either from a security-group reference (`source_security_group_id`, the preferred posture on the inspection-off path) or from the ALB-only `module.vpc.alb_ingress_subnet_cidrs` output. `module.vpc.public_subnet_cidrs`, `module.vpc.public_workload_subnet_cidrs`, or any other CIDR source is rejected because those tiers contain or may contain workloads other than the ALB (the standalone CTFd instance lives in the public-workload tier). AWS Network Firewall breaks SG referencing across the routed inspection middlebox, so the inspected ALB->target path legitimately needs a CIDR rule; scoping it to the ALB-only tier keeps CTFd fenced off Django:8000 / Guacamole:8080 while preserving the inspection path. Backstops the #911 NET-2 / #933 segmentation regression where the CIDR rule was scoped to `public_subnet_cidrs` and gave CTFd direct L4 reach past the ALB/WAF/`/admin` deny. The checker is `scripts/check_portal_target_sg_sources/check_portal_target_sg_sources.py`, wired as the `check-portal-target-sg-sources` pre-commit hook and a CI step in `.github/workflows/_quality.yml`, with its unittest suite included in the `check_tf_*` checker tests.",
+        "checks": []
+      },
+      {
+        "id": "ADR-004-R14",
+        "description": "Tracked files MUST NOT contain live AWS infrastructure identifiers: 12-digit AWS account IDs, VPC IDs (`vpc-<hex>`), subnet IDs (`subnet-<hex>`), or Shifter S3 bucket names that are account-ID-suffixed (`shifter-...-<12 digits>`) or UUID-suffixed infra/state buckets (`shifter-[dev-]infra-<uuid>`). These are low-entropy but reconnaissance-sensitive in a public repo and are not caught by gitleaks (which targets high-entropy secrets); this is the complementary backstop. Detection is by pattern in the centralized `no-live-cloud-identifiers` check in `scripts/adr_guard/adr_guard.py`, never by a denylist of real values. The allowlist is a small fixed set of 12-digit runs that are not Shifter accounts: AWS documentation example account IDs (123456789012, 111122223333), the all-zero placeholder, and public AMI-publisher account IDs (Canonical 099720109477, OffSec/Kali 679593333241). Placeholder and example forms (`vpc-xxxxxxxx`, `<your-account-id>`) are not matched because the patterns require hex / 12 literal digits, so there is no universal `<...>` wildcard a real value can hide behind. Real values that MUST stay committed are cleared via scoped `docs/adr/exceptions.yaml` entries with `rule_id: ADR-004-R14`, owner, reason, `expires_on`, and `paths`: vendor connector templates under `platform/cloudformation/` (Prisma Cloud account IDs must be exact), S3 backend/state buckets read directly by `terraform init` (`*.s3.tfbackend`, `platform/terraform/global/tssummit-ranges/*`, the remote-state data sources in `platform/terraform/environments/*/portal/main.tf`, and the operational state-bucket map in `mcp/ops/index.js`), and synthetic 12-digit PAN firewall serial-number fixtures in `shifter/engine/provisioner/tests/test_main.py`. `.lock` files and binary assets are skipped. Violation messages name the repo-relative path, line, and identifier kind only — never the value. Dependency lock files and binary assets are not scanned. The check runs at the `fast` and `ci` levels and is wired into `.pre-commit-config.yaml` and `.github/workflows/_quality.yml`. Closes the #911 SEC-2 / NET-10 / DP-7 identifier-strip gap and blocks reintroduction.",
+        "checks": ["no-live-cloud-identifiers"]
+      },
+      {
+        "id": "ADR-004-R15",
+        "description": "Committed Terraform under `platform/terraform/` must not ship operational placeholders in `.tf` sources: hardcoded `YOUR_EMAIL@example.com` budget-alert recipients, `subscriber_email_addresses` literals pointing at `@example.com`, or a managed `AdministratorAccess` attachment on the GitHub Actions OIDC role in `platform/terraform/global/iam/github-oidc.tf`. Real alert recipients belong in gitignored `local.auto.tfvars` or the per-environment `TF_VARS_<ENV>_CORE` / `TF_VARS_<ENV>_PORTAL` deploy secrets; CI OIDC permissions stay on scoped policies. Enforced by `no-terraform-operational-placeholders` and `github-oidc-no-admin-access` in `scripts/adr_guard/adr_guard.py` at the `fast` and `ci` levels.",
+        "checks": ["no-terraform-operational-placeholders", "github-oidc-no-admin-access"]
+      },
+      {
+        "id": "ADR-004-R16",
+        "description": "Mission Control runtime code MUST NOT contain hardcoded CTF challenge flag literals. The `no-mission-control-flag-literals` check in `scripts/adr_guard/adr_guard.py` scans the `shifter/shifter_platform/mission_control/` package (all runtime; its tests live under `shifter/shifter_platform/tests/mission_control/`, outside scope) and the `shifter/shifter_platform/templates/mission_control/` template tree (covering inline `<script>` JavaScript) for answer-shaped `FLAG{...}` literals (case-insensitive). Detection is by pattern, never by a denylist of real values. Format-hint placeholders that describe the answer shape rather than carry one are intentionally NOT flagged: an empty body (`FLAG{}`), the ellipsis form (`FLAG{...}`), and angle-bracket templates (`FLAG{<16-hex>}`). The path scope deliberately excludes tests, docs, the native `ctf` app (`CTFChallenge`/`CTFFlag` and `ctf.services`/templates, where `FLAG{...}` is a documented format hint), and Polaris scenario content under `scenario-dev/polaris/`, where flags are legitimate challenge content. Challenge answers belong to the CTF/CTFd content domain, not the Mission Control application path. CTF flags are low-entropy and are not caught by gitleaks (which targets high-entropy secrets); this is the complementary repo-specific backstop. Violation messages name the repo-relative path and line only — never the matched value. The check runs at the `fast` and `ci` levels via the existing `python3 scripts/adr_guard/adr_guard.py --all --level ci` invocation in pre-commit and `.github/workflows/_quality.yml`. Closes the #560 regression gap (the `box_info` literal-flag map removed during the mission_control views package split) and blocks reintroduction.",
+        "checks": ["no-mission-control-flag-literals"]
       }
     ],
     "exceptions": [],
@@ -173,6 +198,8 @@
       "scripts/adr_guard/adr_guard.py",
       "scripts/check_tf_kms_secrets_grant/check_tf_kms_secrets_grant.py",
       "scripts/check_tf_rds_security/check_tf_rds_security.py",
+      "scripts/check_portal_target_sg_sources/check_portal_target_sg_sources.py",
+      "scripts/check_checkov_invocation_parity/check_checkov_invocation_parity.py",
       "platform/terraform/.checkov.yaml",
       "docs/adr/exceptions.yaml",
       "docs/architecture/checkov-soft-fail-preflight-757.md",
@@ -719,7 +746,7 @@
     "title": "Range network egress is a platform-level policy, applied uniformly on AWS and GCP",
     "status": "accepted",
     "scope": "repository",
-    "decision": "Range egress is configured once at the platform level (`settings.range_egress` in shifter.yaml) and applied uniformly across supported cloud backends. The configuration shape is provider-neutral (`mode` + `allowed_cidrs`), validated by shifter/installation/range_egress.py, and bridged into AWS Network Firewall rule groups (platform/terraform/modules/range/vpc/firewall.tf) and GCP VPC firewall egress rules (platform/terraform/gcp/modules/platform-core/main.tf). The default mode (`status-quo`) preserves each backend's existing posture so the policy is opt-in. CIDRs are operator configuration, not secrets, but the per-deployment allowlist values live in gitignored `local.auto.tfvars` overrides — the committed Terraform baseline carries an empty allowlist so the repo is OSS-publishable without exposing any operator's allowlist (PLAT-220, #775).",
+    "decision": "Range egress is configured once at the platform level (`settings.range_egress` in shifter.yaml) and applied uniformly across supported cloud backends. The configuration shape is provider-neutral (`mode` + `allowed_cidrs`), validated by shifter/installation/range_egress.py, and bridged into AWS Network Firewall rule groups (platform/terraform/modules/range/vpc/firewall.tf) and GCP VPC firewall egress rules (platform/terraform/gcp/modules/platform-core/main.tf). The default mode (`status-quo`) preserves each backend's existing posture so the policy is opt-in. CIDRs are operator configuration, not secrets, and per-deployment values must not be committed; follow-up #958 closes the remaining drift by requiring provider-specific Terraform bridge inputs to be rendered from the validated root policy instead of hand-maintained as a second allowlist copy.",
     "rules": [
       {
         "id": "ADR-017-R1",
@@ -728,12 +755,17 @@
       },
       {
         "id": "ADR-017-R2",
-        "description": "Per-deployment range egress allowlist values must not be committed to the repository. Operators write the values into a gitignored `local.auto.tfvars` (or any `*.auto.tfvars.local`) alongside the env's `terraform.tfvars`; the committed Terraform baseline ships an empty allowlist. `.gitignore` blocks the prior committed forms (`victim_allowed_cidrs*.auto.tfvars`, `range_egress*.auto.tfvars`) from being re-introduced.",
+        "description": "Per-deployment range egress allowlist values must not be committed to the repository. Provider bridge values live only in gitignored deployment override files such as `local.auto.tfvars` (or any `*.auto.tfvars.local`) alongside the env's `terraform.tfvars`; the committed Terraform baseline ships an empty allowlist. `.gitignore` blocks the prior committed forms (`victim_allowed_cidrs*.auto.tfvars`, `range_egress*.auto.tfvars`) from being re-introduced.",
         "checks": ["no-plaintext-secrets-in-tfvars"]
       },
       {
         "id": "ADR-017-R3",
         "description": "Default behavior when `settings.range_egress` is omitted (or `mode: status-quo`) is documented per backend: AWS retains the existing Network Firewall posture (enabled by default, deny-all with documented allow lanes); GCP retains its existing Cloud NAT egress (no enforcement). `mode: deny-all` and `mode: allowlist` apply the documented platform contract uniformly on both clouds (deny-all base on the range VPC; HTTPS allow on TCP 443 to the operator-declared CIDRs).",
+        "checks": []
+      },
+      {
+        "id": "ADR-017-R4",
+        "description": "Deploy-time or local renderer paths for range egress must consume the normalized `settings.range_egress` policy from `shifter/installation/range_egress.py` / `load_root_config` and render provider-specific Terraform bridge variables from that policy. Operators must not maintain a separate CIDR allowlist copy in both root config and tfvars; provider variables remain internal and Terraform validation remains a direct-use backstop.",
         "checks": []
       }
     ],
@@ -757,6 +789,7 @@
       "platform/terraform/gcp/environments/gcp-dev/main.tf",
       "platform/terraform/gcp/environments/gcp-dev/terraform.tfvars",
       "docs/architecture/range-egress-ip-allowlist.md",
+      "docs/architecture/range-egress-allowlist-render-preflight-958.md",
       "docs/dev/deploy-secrets.md",
       ".gitignore"
     ]
@@ -824,6 +857,130 @@
       "scripts/adr_guard/tests/test_adr_guard.py",
       "docs/adr/README.md",
       "shifter/shifter_platform/documentation/docs/technical/dev/adr-enforcement.md"
+    ]
+  },
+  {
+    "id": "ADR-020",
+    "title": "Range internet isolation is enforced by routing and Network Firewall default-deny, not security-group egress",
+    "status": "accepted",
+    "scope": "repository",
+    "decision": "All concurrent per-user ranges share one stable range VPC, each range in its own ephemeral subnet. Range network isolation splits responsibility across two layers by design: per-subnet security groups (`aws_security_group.subnet` in shifter/engine/provisioner/terraform/modules/range/main.tf) own local L4 reachability and gate only ingress (the subnet's own CIDR, `connected_to` peers, and portal SSH/RDP), while the route table plus AWS Network Firewall own internet egress containment. The security groups intentionally allow all egress (`0.0.0.0/0`, protocol -1) because security groups cannot express the domain/SNI allowlists, direct-IP-SNI rejection, and all-protocol default-deny the range needs; encoding a partial egress allowlist there would be redundant with and weaker than the firewall. The all-egress security group is acceptable only because every range route table sends `0.0.0.0/0` to the firewall endpoint (`aws_route.private_to_firewall` in platform/terraform/modules/range/vpc/firewall.tf; runtime `aws_route.firewall`) and the firewall STRICT_ORDER policy drops all unmatched egress at priority 100 (`drop_all`), with narrow allow lanes for victim IPs/domains, DNS to 8.8.8.8, and NTP. Blast radius: a compromised range host cannot reach another range (target security-group ingress denies it) and cannot reach the internet except through the firewall's allowlisted lanes. Cross-range and participant internet isolation therefore relies on the Network Firewall default-deny, not on security groups (review finding NET-7). The rationale and live model are recorded in docs/architecture/range-isolation-model.md; the configurable egress allowlist layered on this base is ADR-017.",
+    "rules": [
+      {
+        "id": "ADR-020-R1",
+        "description": "Per-range security groups gate ingress only (own subnet CIDR, `connected_to` peers, and portal SSH/RDP) and intentionally allow all egress. Security groups must not be documented or relied upon as the control for range internet-egress isolation.",
+        "checks": []
+      },
+      {
+        "id": "ADR-020-R2",
+        "description": "Range internet-egress isolation is owned by the route table (user-subnet `0.0.0.0/0` to the firewall endpoint) plus the AWS Network Firewall STRICT_ORDER default-deny (`drop_all`, priority 100). The all-egress security groups are acceptable only while that route-table-to-firewall path and default-deny remain intact; weakening either is a security-posture change requiring a matching ADR update.",
+        "checks": []
+      },
+      {
+        "id": "ADR-020-R3",
+        "description": "`enable_network_firewall = false` routes user subnets straight to NAT (`aws_route.private_to_nat`) and removes the default-deny, leaving the all-egress security groups unrestricted; it is an explicit dev-only opt-out. Making the firewall optional in any production profile requires its own ADR and guardrail.",
+        "checks": []
+      }
+    ],
+    "exceptions": [],
+    "enforcement": ["agent-policy"],
+    "evidence": [
+      "shifter/engine/provisioner/terraform/modules/range/main.tf",
+      "platform/terraform/modules/range/vpc/main.tf",
+      "platform/terraform/modules/range/vpc/firewall.tf",
+      "platform/terraform/modules/range/vpc/nat.tf",
+      "docs/architecture/range-isolation-model.md",
+      "docs/architecture/range-egress-ip-allowlist.md"
+    ]
+  },
+  {
+    "id": "ADR-021",
+    "title": "Range placement is single-AZ; multi-AZ is deferred",
+    "status": "accepted",
+    "scope": "repository",
+    "decision": "The stable range VPC and every concurrent range placed in it are pinned to a single availability zone, the first AZ the account exposes (`local.primary_az = data.aws_availability_zones.available.names[0]` in platform/terraform/modules/range/vpc/nat.tf). The NAT, firewall, persistent-NGFW, and SSM-endpoint subnets are placed in that AZ; the AZ is published as the module `availability_zone` output, bound into the provisioner as `RANGE_AVAILABILITY_ZONE` (platform/terraform/modules/engine-provisioner/task_definition.tf, shifter/engine/provisioner/config.py), and applied to runtime range subnets and instances (shifter/engine/provisioner/terraform/modules/range/main.tf). `ec2:RunInstances` is IAM-constrained to that AZ (platform/terraform/modules/engine-provisioner/iam.tf). This is a deliberate cost-and-simplicity decision for ephemeral ranges: one NAT Gateway and one firewall endpoint serve all ranges, inter-AZ data-transfer charges are avoided, and routing/endpoint placement stays single-target. It accepts a concentrated failure domain (a single-AZ impairment takes out all concurrent ranges) and a capacity ceiling bounded by one AZ. Explicit decision: multi-AZ range placement is not warranted now (review finding NET-8); it is revisited if ranges gain non-reprovisionable durable state, an availability SLO is placed on individual active ranges, or one AZ's capacity becomes the binding constraint. The rationale, trade-offs, and future placement seam are recorded in docs/architecture/range-single-az-placement.md.",
+    "rules": [
+      {
+        "id": "ADR-021-R1",
+        "description": "The range VPC and all concurrent ranges are placed in a single availability zone, selected once as the account's first AZ and propagated through the `availability_zone` output, `RANGE_AVAILABILITY_ZONE`, and the `ec2:AvailabilityZone` IAM condition. This is the accepted posture for ephemeral ranges and trades availability and per-AZ capacity for cost and simplicity.",
+        "checks": []
+      },
+      {
+        "id": "ADR-021-R2",
+        "description": "Multi-AZ range placement is deferred. If later warranted it must be introduced as an explicit placement contract -- an environment-owned ordered zone list, a per-range placement selector feeding both stable and runtime modules, and a deterministic per-AZ egress target (firewall endpoint per AZ) so the ADR-020 default-deny holds in every AZ -- not as an ad-hoc `multi_az` boolean or a stray `data.aws_availability_zones` lookup in the runtime module.",
+        "checks": []
+      }
+    ],
+    "exceptions": [],
+    "enforcement": ["agent-policy"],
+    "evidence": [
+      "platform/terraform/modules/range/vpc/nat.tf",
+      "platform/terraform/modules/range/vpc/outputs.tf",
+      "platform/terraform/modules/engine-provisioner/task_definition.tf",
+      "platform/terraform/modules/engine-provisioner/iam.tf",
+      "shifter/engine/provisioner/config.py",
+      "shifter/engine/provisioner/terraform_vars.py",
+      "shifter/engine/provisioner/terraform/modules/range/main.tf",
+      "docs/architecture/range-single-az-placement.md"
+    ]
+  },
+  {
+    "id": "ADR-022",
+    "title": "Major platform features carry user and technical documentation",
+    "status": "accepted",
+    "scope": "repository",
+    "decision": "GEN-001 is enforced by a repo-native documentation coverage manifest plus an adr_guard check. Each major platform feature is enumerated in docs/adr/documentation-coverage.yaml with at least one user doc and one technical doc; the documentation-coverage check validates that every referenced doc exists under the in-app docs tree, is not under a _deprecated/hidden path, and is reachable from an index.md. 'Major platform feature' is an issue/PR classification recorded in the manifest, not a runtime model; the check enforces documentation existence and discoverability, not prose depth (that stays a review concern).",
+    "rules": [
+      {
+        "id": "ADR-022-R1",
+        "description": "Every feature in docs/adr/documentation-coverage.yaml must declare at least one user doc and at least one technical doc. Each referenced doc must exist under the manifest's docs_root, must not live under a _deprecated or hidden path, and must be linked from an index.md so it is discoverable. The check validates the whole manifest on every run regardless of the changed-file set.",
+        "checks": ["documentation-coverage"]
+      }
+    ],
+    "exceptions": [],
+    "enforcement": ["pre-commit", "ci", "agent-policy"],
+    "evidence": [
+      "docs/adr/documentation-coverage.yaml",
+      "scripts/adr_guard/adr_guard.py",
+      "scripts/adr_guard/tests/test_adr_guard.py",
+      "shifter/shifter_platform/documentation/docs/technical/dev/adr-enforcement.md"
+    ]
+  },
+  {
+    "id": "ADR-023",
+    "title": "Agent risk audit findings use canonical internal identity and sanitized public tracking",
+    "status": "accepted",
+    "scope": "repository",
+    "decision": "Repeatable agent-driven risk audits treat the Risk Register as the canonical internal store for detailed findings and GitHub issues as sanitized tracking proxies only. A tracked risk has one opaque persisted `risk_key`; same-risk matching is based on a versioned structural tuple, not titles, prose, GitHub issue numbers, or database primary keys. Public GitHub issue content is generated from a sanitized summary policy and must not copy Risk Register detail, exploit evidence, raw scanner output, internal topology, live cloud identifiers, or secrets. Risk Register writes, GitHub issue creation/update, severity or confidence promotion, and lifecycle changes require an explicit human review gate. Productized writes reuse the Risk Register API/service/audit path, Cognito group authorization, and exact `shared.api_tokens` `risk:read` / `risk:write` scopes; operator MCP runs may use `mcp/ops` named DB tools only with the MCP policy/audit evidence surface called out explicitly.",
+    "rules": [
+      {
+        "id": "ADR-023-R1",
+        "description": "Risk Register entries are the internal source of truth for detailed agent risk-audit findings. GitHub issues are sanitized tracking proxies and may carry only coarse component, broad risk class, high-level mitigation objective, review/status labels, and an opaque `Risk-Key`; they must not carry exploit steps, proof-of-concept commands, secrets, raw logs, scanner output, internal endpoints/topology, or live cloud identifiers.",
+        "checks": []
+      },
+      {
+        "id": "ADR-023-R2",
+        "description": "Same-risk matching uses an opaque persisted `risk_key` plus a versioned normalized tuple covering component scope, asset class, risk kind, control failure, actor vector, precondition class, and impact class. Future implementation must add explicit structured Risk Register metadata or link tables when needed; it must not hide machine identity, dedupe fingerprints, confidence, last-seen state, or GitHub links in free-form descriptions or comments.",
+        "checks": []
+      },
+      {
+        "id": "ADR-023-R3",
+        "description": "Risk-audit automation may analyze the repository and propose Risk Register or GitHub updates, but writes, issue creation/update, severity or confidence promotion, and lifecycle changes require a human review gate. Product/API mutations reuse the existing Risk Register auth, serializer, service, and audit paths; operator MCP direct-table workflows must rely on `.shifter.yaml`, `mcp/ops/policy.js`, and `mcp/ops/audit.js` as their evidence surface.",
+        "checks": []
+      }
+    ],
+    "exceptions": [],
+    "enforcement": ["agent-policy"],
+    "evidence": [
+      "docs/architecture/agent-risk-audit-preflight-163.md",
+      "shifter/shifter_platform/risk_register/models.py",
+      "shifter/shifter_platform/risk_register/api/serializers.py",
+      "shifter/shifter_platform/risk_register/api/views.py",
+      "shifter/shifter_platform/risk_register/services.py",
+      "shifter/shifter_platform/shared/api_tokens",
+      "mcp/ops/index.js",
+      "mcp/ops/policy.js",
+      "mcp/ops/audit.js"
     ]
   }
 ]

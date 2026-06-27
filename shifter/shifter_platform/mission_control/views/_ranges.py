@@ -12,6 +12,7 @@ from django.views.decorators.http import require_GET, require_POST
 
 from mission_control.utils import build_connection_urls
 from risk_register.models import AuditLog
+from shared.auth import block_ctf_participant_only
 from shared.errors import classify_user_message
 from shared.exceptions import CMSError
 from shared.log_sanitize import safe_log_value
@@ -82,6 +83,7 @@ def _resolve_launch_agents(user: User, data: dict[str, Any]) -> dict[str, int]:
 
 @login_required
 @require_POST
+@block_ctf_participant_only("launch")
 def launch_range(request: HttpRequest) -> JsonResponse:
     """
     Launch a new cyber range.
@@ -209,6 +211,7 @@ def _dispatch_range_lifecycle(
 
 @login_required
 @require_POST
+@block_ctf_participant_only("cancel")
 def cancel_range(request: HttpRequest) -> JsonResponse:
     """
     Cancel a provisioning range.
@@ -230,6 +233,7 @@ def cancel_range(request: HttpRequest) -> JsonResponse:
 
 @login_required
 @require_POST
+@block_ctf_participant_only("destroy")
 def destroy_range(request: HttpRequest) -> JsonResponse:
     """
     Destroy an active, paused, or failed range.
@@ -251,6 +255,7 @@ def destroy_range(request: HttpRequest) -> JsonResponse:
 
 @login_required
 @require_POST
+@block_ctf_participant_only("pause")
 def pause_range(request: HttpRequest) -> JsonResponse:
     """
     Pause an active range.
@@ -272,6 +277,7 @@ def pause_range(request: HttpRequest) -> JsonResponse:
 
 @login_required
 @require_POST
+@block_ctf_participant_only("resume")
 def resume_range(request: HttpRequest) -> JsonResponse:
     """
     Resume a paused range.

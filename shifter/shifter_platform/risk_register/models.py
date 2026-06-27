@@ -10,6 +10,9 @@ from django.utils import timezone
 
 from shared.db import SoftDeleteManager, SoftDeleteMixin, SoftDeleteQuerySet
 
+# SonarCloud S1192: extracted duplicated string literals.
+API_KEY_LABEL = "API Key"
+
 
 class Severity(models.TextChoices):
     """Risk severity levels."""
@@ -190,7 +193,17 @@ class Comment(SoftDeleteMixin, models.Model):
 
 
 class APIKey(models.Model):
-    """API key for programmatic access."""
+    """API key for programmatic access.
+
+    .. deprecated:: PLAT-102
+        Superseded by the platform-wide ``shared.api_tokens.ApiToken`` (scoped
+        bearer tokens). This legacy ``X-API-Key`` still authenticates, but — as
+        before this change — it carries no scopes and is not authorized on the
+        risk-register viewsets, which require an admin session or a scoped
+        ``ApiToken`` (the prior ``IsAdminUser`` already rejected API keys, so the
+        change is not a regression for legacy keys). Retirement/migration is
+        tracked in #1124. New integrations should use ``ApiToken``.
+    """
 
     name = models.CharField(max_length=100, help_text="Human-friendly name for this key")
     prefix = models.CharField(max_length=8, unique=True, help_text="Key prefix for identification")
@@ -209,7 +222,7 @@ class APIKey(models.Model):
 
     class Meta:
         ordering = ["-created_at"]
-        verbose_name = "API Key"
+        verbose_name = API_KEY_LABEL
         verbose_name_plural = "API Keys"
         indexes = [
             models.Index(fields=["prefix"]),
@@ -312,6 +325,8 @@ class AuditLog(models.Model):
         LOGOUT = "logout", "Logout"
         LOGIN_FAILED = "login_failed", "Login Failed"
         ACCESS_DENIED = "access_denied", "Access Denied"
+        # Authorization
+        ROLE_SYNC = "role_sync", "Role Sync"
         # Sessions
         CONNECT = "connect", "Connect"
         DISCONNECT = "disconnect", "Disconnect"
@@ -328,7 +343,7 @@ class AuditLog(models.Model):
         # Risk Register entities
         RISK = "risk", "Risk"
         COMMENT = "comment", "Comment"
-        APIKEY = "apikey", "API Key"
+        APIKEY = "apikey", API_KEY_LABEL
         # Platform entities
         RANGE = "range", "Range"
         CREDENTIAL = "credential", "Credential"
@@ -343,7 +358,7 @@ class AuditLog(models.Model):
 
     class ActorType(models.TextChoices):
         USER = "user", "User"
-        APIKEY = "apikey", "API Key"
+        APIKEY = "apikey", API_KEY_LABEL
         SYSTEM = "system", "System"
         COGNITO = "cognito", "Cognito"
 

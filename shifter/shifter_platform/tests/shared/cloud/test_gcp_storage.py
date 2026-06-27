@@ -1,4 +1,11 @@
-"""Tests for GCPObjectStorage.read_object_header."""
+"""Behavior tests for GCPObjectStorage.read_object_header.
+
+Drives the real ``GCPObjectStorage`` (including its real ``_get_client``, which
+lazily imports ``google.cloud.storage`` and constructs a ``Client``) and mocks
+only the google-cloud-storage boundary: ``google.cloud.storage.Client`` is
+patched to return a fake client, instead of patching the first-party
+``_get_client`` method directly.
+"""
 
 from unittest.mock import MagicMock, patch
 
@@ -16,7 +23,7 @@ class TestReadObjectHeader:
         fake_blob.download_as_bytes.return_value = b"\x50\x4b\x03\x04rest"
         fake_client.bucket.return_value.blob.return_value = fake_blob
 
-        with patch.object(storage, "_get_client", return_value=fake_client):
+        with patch("google.cloud.storage.Client", return_value=fake_client):
             result = storage.read_object_header("my-bucket", "my-key", max_bytes=512)
 
         assert result == b"\x50\x4b\x03\x04rest"
@@ -33,7 +40,7 @@ class TestReadObjectHeader:
         fake_blob.download_as_bytes.return_value = b"y" * 2048
         fake_client.bucket.return_value.blob.return_value = fake_blob
 
-        with patch.object(storage, "_get_client", return_value=fake_client):
+        with patch("google.cloud.storage.Client", return_value=fake_client):
             result = storage.read_object_header("b", "k", max_bytes=64)
 
         assert len(result) <= 64
@@ -52,5 +59,5 @@ class TestReadObjectHeader:
         fake_blob.download_as_bytes.side_effect = RuntimeError("transport error")
         fake_client.bucket.return_value.blob.return_value = fake_blob
 
-        with patch.object(storage, "_get_client", return_value=fake_client), pytest.raises(CloudStorageError):
+        with patch("google.cloud.storage.Client", return_value=fake_client), pytest.raises(CloudStorageError):
             storage.read_object_header("b", "k", max_bytes=512)

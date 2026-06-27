@@ -37,6 +37,8 @@ on:
         required: true
       AWS_ROLE_ARN_DEV:
         required: true
+      AWS_ROLE_ARN_PROOF:
+        required: false
 
 env:
   AWS_REGION: us-east-2
@@ -51,7 +53,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - name: Build provisioner image locally
-        run: docker build --no-cache -t shifter-engine-validate ./shifter/engine/provisioner
+        run: docker build --no-cache -f shifter/engine/provisioner/Dockerfile -t shifter-engine-validate ./shifter
 
   build:
     name: Build (${{ inputs.environment }})
@@ -66,13 +68,44 @@ jobs:
       image_tag: ${{ steps.image.outputs.tag }}
       image_digest: ${{ steps.build.outputs.digest }}
     env:
-      ECR_REPOSITORY: ${{ inputs.is_dev && 'shifter-dev-pulumi-provisioner' || 'shifter-prod-pulumi-provisioner' }}
+      ECR_REPOSITORY: shifter-${{ inputs.environment }}-pulumi-provisioner
     steps:
       - uses: actions/checkout@v6
 
+      - name: Resolve AWS deploy role
+        id: aws-role
+        env:
+          ENVIRONMENT: ${{ inputs.environment }}
+          AWS_ROLE_ARN_DEV: ${{ secrets.AWS_ROLE_ARN_DEV }}
+          AWS_ROLE_ARN_PROOF: ${{ secrets.AWS_ROLE_ARN_PROOF }}
+          AWS_ROLE_ARN_PROD: ${{ secrets.AWS_ROLE_ARN }}
+        run: |
+          case "$ENVIRONMENT" in
+            dev)
+              ROLE_SECRET_NAME="AWS_ROLE_ARN_DEV"
+              ROLE_ARN="$AWS_ROLE_ARN_DEV"
+              ;;
+            proof)
+              ROLE_SECRET_NAME="AWS_ROLE_ARN_PROOF"
+              ROLE_ARN="$AWS_ROLE_ARN_PROOF"
+              ;;
+            prod)
+              ROLE_SECRET_NAME="AWS_ROLE_ARN"
+              ROLE_ARN="$AWS_ROLE_ARN_PROD"
+              ;;
+            *)
+              echo "::error::Unsupported AWS environment: $ENVIRONMENT"
+              exit 1
+              ;;
+          esac
+          if [ -z "$ROLE_ARN" ]; then
+            echo "::error::Required secret ${ROLE_SECRET_NAME} is not set"
+            exit 1
+          fi
+          echo "role_arn=$ROLE_ARN" >> "$GITHUB_OUTPUT"
       - uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ inputs.is_dev && secrets.AWS_ROLE_ARN_DEV || secrets.AWS_ROLE_ARN }}
+          role-to-assume: ${{ steps.aws-role.outputs.role_arn }}
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Login to Amazon ECR
@@ -92,7 +125,8 @@ jobs:
         id: build
         uses: docker/build-push-action@v5
         with:
-          context: ./shifter/engine/provisioner
+          context: ./shifter
+          file: ./shifter/engine/provisioner/Dockerfile
           push: true
           tags: |
             ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ steps.image.outputs.tag }}
@@ -107,17 +141,48 @@ jobs:
     needs: build
     if: inputs.deploy_changes && github.event_name != 'pull_request'
     env:
-      TASK_FAMILY: ${{ inputs.is_dev && 'dev-portal-pulumi-provisioner' || 'prod-portal-pulumi-provisioner' }}
+      TASK_FAMILY: ${{ inputs.environment }}-portal-pulumi-provisioner
     steps:
+      - name: Resolve AWS deploy role
+        id: aws-role
+        env:
+          ENVIRONMENT: ${{ inputs.environment }}
+          AWS_ROLE_ARN_DEV: ${{ secrets.AWS_ROLE_ARN_DEV }}
+          AWS_ROLE_ARN_PROOF: ${{ secrets.AWS_ROLE_ARN_PROOF }}
+          AWS_ROLE_ARN_PROD: ${{ secrets.AWS_ROLE_ARN }}
+        run: |
+          case "$ENVIRONMENT" in
+            dev)
+              ROLE_SECRET_NAME="AWS_ROLE_ARN_DEV"
+              ROLE_ARN="$AWS_ROLE_ARN_DEV"
+              ;;
+            proof)
+              ROLE_SECRET_NAME="AWS_ROLE_ARN_PROOF"
+              ROLE_ARN="$AWS_ROLE_ARN_PROOF"
+              ;;
+            prod)
+              ROLE_SECRET_NAME="AWS_ROLE_ARN"
+              ROLE_ARN="$AWS_ROLE_ARN_PROD"
+              ;;
+            *)
+              echo "::error::Unsupported AWS environment: $ENVIRONMENT"
+              exit 1
+              ;;
+          esac
+          if [ -z "$ROLE_ARN" ]; then
+            echo "::error::Required secret ${ROLE_SECRET_NAME} is not set"
+            exit 1
+          fi
+          echo "role_arn=$ROLE_ARN" >> "$GITHUB_OUTPUT"
       - uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ inputs.is_dev && secrets.AWS_ROLE_ARN_DEV || secrets.AWS_ROLE_ARN }}
+          role-to-assume: ${{ steps.aws-role.outputs.role_arn }}
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Update ECS task definition
         env:
           IMAGE_DIGEST: ${{ needs.build.outputs.image_digest }}
-          ECR_REPOSITORY: ${{ inputs.is_dev && 'shifter-dev-pulumi-provisioner' || 'shifter-prod-pulumi-provisioner' }}
+          ECR_REPOSITORY: shifter-${{ inputs.environment }}-pulumi-provisioner
           FIRST_DEPLOY: ${{ inputs.first_deploy }}
         run: |
           if [[ -z "$IMAGE_DIGEST" || ! "$IMAGE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then

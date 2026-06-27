@@ -420,7 +420,7 @@ class TestRenderEmail:
     @patch("django.template.loader.render_to_string")
     def test_renders_templates(self, mock_render, ctf_event, ctf_participant):
         """Renders both HTML and text templates."""
-        registration_url = "https://example.com/ctf/register/?token=test-token"
+        registration_url = "https://example.com/ctf/register/#token=test-token"
 
         mock_render.side_effect = [
             f"<html>{ctf_event.name} {registration_url}</html>",
@@ -432,7 +432,6 @@ class TestRenderEmail:
             {
                 "event": ctf_event,
                 "participant": ctf_participant,
-                "invite_token": "test-token",
                 "registration_url": registration_url,
             },
         )
@@ -445,41 +444,83 @@ class TestRenderEmail:
         assert mock_render.call_count == 2
 
 
+class TestBuildRegistrationUrl:
+    """The invite token must ride in the URL fragment, never the query string."""
+
+    def test_token_in_fragment_not_query_string(self):
+        """_build_registration_url emits #token=, never ?token= (SonarCloud S8435)."""
+        from django.test import override_settings
+
+        with override_settings(SITE_URL="https://example.com"):
+            url = notification._build_registration_url("abc123")
+
+        assert url == "https://example.com/ctf/register/#token=abc123"
+        assert "?token=" not in url
+        assert "#token=abc123" in url
+
+
+@pytest.mark.django_db
 class TestInvitedAtNotSetAtCreation:
-    """Verify invite_participant and bulk_import don't set invited_at."""
+    """The real invite/import paths must not stamp ``invited_at`` at creation.
 
-    @patch("ctf.services.participant.invite_participant")
-    def test_invite_participant_does_not_set_invited_at(self, mock_invite, ctf_event):
-        """invite_participant() should not set invited_at (send_invitations does)."""
-        mock_p = MagicMock()
-        mock_p.invited_at = None
-        mock_invite.return_value = mock_p
+    ``invited_at`` is owned by ``send_invitations`` (it marks when the magic-link
+    email actually went out), so creation must leave it unset. These tests run the
+    real service functions against the real ORM (per ADR-019: no first-party
+    internal patching) and assert on the observable persisted state — if the real
+    code started stamping ``invited_at`` on creation, the assertion fails.
+    """
 
+    @pytest.fixture
+    def importable_event(self, db):
+        """A real registration-open event with no deadline / cap.
+
+        Creates its own organizer user rather than reusing a shared fixture,
+        because this module shadows the ``organizer_user`` name with a Mock.
+        """
+        from datetime import timedelta
+
+        from django.contrib.auth import get_user_model
+        from django.utils import timezone
+
+        from ctf.enums import EventStatus
+        from ctf.models import CTFEvent
+
+        creator = get_user_model().objects.create_user(
+            username="invite-token-organizer@test.com",
+            email="invite-token-organizer@test.com",
+        )
+        return CTFEvent.objects.create(
+            name="Invite Token Event",
+            description="Event for invited_at-at-creation tests",
+            created_by=creator,
+            status=EventStatus.REGISTRATION.value,
+            event_start=timezone.now() + timedelta(days=1),
+            event_end=timezone.now() + timedelta(days=1, hours=8),
+            scenario_id="basic",
+        )
+
+    def test_invite_participant_does_not_set_invited_at(self, importable_event):
+        """invite_participant() leaves invited_at unset on the created participant."""
         from ctf.services import participant as participant_service
 
-        p = participant_service.invite_participant(
-            event_id=ctf_event.pk,
+        participant = participant_service.invite_participant(
+            event_id=importable_event.pk,
             email="newinvite@test.com",
             name="New Invite",
         )
-        assert p.invited_at is None
 
-    @patch("ctf.services.participant.bulk_import_participants")
-    def test_bulk_import_does_not_set_invited_at(self, mock_bulk, ctf_event):
-        """bulk_import_participants() should not set invited_at."""
-        mock_p1 = MagicMock()
-        mock_p1.invited_at = None
-        mock_p2 = MagicMock()
-        mock_p2.invited_at = None
-        mock_bulk.return_value = [mock_p1, mock_p2]
+        assert participant.invited_at is None
 
+    def test_bulk_import_does_not_set_invited_at(self, importable_event):
+        """bulk_import_participants() leaves invited_at unset on every created participant."""
         from ctf.services import participant as participant_service
 
         csv_content = "Alice,alice@test.com\nBob,bob@test.com"
-        created = participant_service.bulk_import_participants(ctf_event.pk, csv_content)
+        created = participant_service.bulk_import_participants(importable_event.pk, csv_content)
+
         assert len(created) == 2
-        for p in created:
-            assert p.invited_at is None
+        for participant in created:
+            assert participant.invited_at is None
 
 
 # ---------------------------------------------------------------------------
@@ -613,16 +654,19 @@ class TestRenderEmailWithCustomTemplate:
         assert mock_render.call_count == 2
 
     def test_uses_custom_template_when_present(self):
-        """Renders from DB template instead of filesystem when custom exists."""
+        """Renders from DB template via safe placeholder substitution."""
 
         class _SimpleEvent:
             name = "My Custom Event"
+            description = ""
+            event_start = None
+            event_end = None
 
         event = _SimpleEvent()
 
         mock_template = MagicMock()
-        mock_template.html_body = "<html>Hello {{ event.name }}</html>"
-        mock_template.text_body = "Hello {{ event.name }}"
+        mock_template.html_body = "<html>Hello {{ event_name }}</html>"
+        mock_template.text_body = "Hello {{ event_name }}"
         mock_template.subject = "Custom Subject"
 
         with patch("ctf.models.CTFEmailTemplate.objects") as mock_qs:

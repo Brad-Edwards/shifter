@@ -11,6 +11,7 @@ set -euo pipefail
 
 # Configuration from Terraform template
 AWS_REGION="${aws_region}"
+DJANGO_ENVIRONMENT="${django_environment}"
 ECR_REPOSITORY_URL="${ecr_repository_url}"
 LOG_GROUP_NAME="${log_group_name}"
 PS_PREFIX="${ssm_parameter_store_prefix}"
@@ -143,6 +144,42 @@ validate_bootstrap_email_list() {
   fi
 }
 
+# Portal runtime capacity knobs (#930) are non-secret integers fed from SSM into
+# the container env, then interpolated into the `eval docker run` argv below. A
+# non-integer value is rejected before any container starts so the argv cannot be
+# injected. Empty is always allowed (parameter unset -> image default applies).
+#
+# validate_uint accepts 0 because the app treats a <= 0 TERMINAL_* cap as
+# "disabled" (a deliberate break-glass; tfvars validation keeps deployed values
+# positive). validate_positive_int additionally rejects 0, for knobs like the
+# worker count where 0 is never valid.
+validate_uint() {
+  local name="$1"
+  local value="$2"
+  if [[ -n "$value" && ! "$value" =~ ^[0-9]+$ ]]; then
+    echo "Invalid $name: expected a non-negative integer"
+    exit 1
+  fi
+}
+
+validate_positive_int() {
+  local name="$1"
+  local value="$2"
+  if [[ -n "$value" && ! "$value" =~ ^[1-9][0-9]*$ ]]; then
+    echo "Invalid $name: expected a positive integer"
+    exit 1
+  fi
+}
+
+validate_bool() {
+  local name="$1"
+  local value="$2"
+  if [[ -n "$value" && "$value" != "true" && "$value" != "false" ]]; then
+    echo "Invalid $name: expected 'true' or 'false'"
+    exit 1
+  fi
+}
+
 image_ref() {
   local registry="$1"
   local repository="$2"
@@ -179,6 +216,11 @@ SQS_ENGINE_URL=$(get_param "$PS_PREFIX/sqs-engine-url")
 SQS_MC_URL=$(get_param "$PS_PREFIX/sqs-mc-url")
 REDIS_ENDPOINT=$(get_param "$PS_PREFIX/redis-endpoint" || echo "")
 CHANNEL_LAYER_BACKEND=$(get_param "$PS_PREFIX/channel-layer-backend" 2>/dev/null || echo "")
+# Redis AUTH + in-transit encryption (#938). Present only on the secure path;
+# entrypoint.sh hydrates REDIS_SECRET_ID into REDIS_PASSWORD/REDIS_CA_PEM.
+REDIS_SECRET_ARN=$(get_param "$PS_PREFIX/redis-secret-arn" 2>/dev/null || echo "")
+REDIS_TLS=$(get_param "$PS_PREFIX/redis-tls" 2>/dev/null || echo "")
+REDIS_CA_MODE=$(get_param "$PS_PREFIX/redis-ca-mode" 2>/dev/null || echo "")
 GUACAMOLE_SECRET_ARN=$(get_param "$PS_PREFIX/guacamole-secret-arn" 2>/dev/null || echo "")
 DC_DOMAIN_PASSWORD_SECRET_ARN=$(get_param "$PS_PREFIX/dc-domain-password-secret-arn" 2>/dev/null || echo "")
 GUACAMOLE_BASE_URL=$(get_param "$PS_PREFIX/guacamole-base-url" 2>/dev/null || echo "")
@@ -192,6 +234,31 @@ PLATFORM_BOOTSTRAP_SUPERUSER_EMAILS=$(get_param "$PS_PREFIX/platform-bootstrap-s
 validate_bootstrap_email_list "PLATFORM_BOOTSTRAP_STAFF_EMAILS" "$PLATFORM_BOOTSTRAP_STAFF_EMAILS"
 validate_bootstrap_email_list "PLATFORM_BOOTSTRAP_SUPERUSER_EMAILS" "$PLATFORM_BOOTSTRAP_SUPERUSER_EMAILS"
 
+# Portal runtime capacity tunables (#930). Process-local: the per-instance
+# ceiling is PORTAL_WEB_WORKERS * TERMINAL_MAX_SESSIONS. Same parameter names the
+# SSM redeploy path (scripts/portal-deploy/deploy_portal.sh) reads; validated as
+# integers before they reach the docker argv, and only emitted when set.
+PORTAL_WEB_WORKERS=$(get_param "$PS_PREFIX/portal-web-workers" 2>/dev/null || echo "")
+TERMINAL_MAX_SESSIONS=$(get_param "$PS_PREFIX/terminal-max-sessions" 2>/dev/null || echo "")
+TERMINAL_MAX_SESSIONS_PER_USER=$(get_param "$PS_PREFIX/terminal-max-sessions-per-user" 2>/dev/null || echo "")
+TERMINAL_IDLE_TIMEOUT_SECONDS=$(get_param "$PS_PREFIX/terminal-idle-timeout-seconds" 2>/dev/null || echo "")
+TERMINAL_MAX_SESSION_SECONDS=$(get_param "$PS_PREFIX/terminal-max-session-seconds" 2>/dev/null || echo "")
+TERMINAL_READ_POLL_SECONDS=$(get_param "$PS_PREFIX/terminal-read-poll-seconds" 2>/dev/null || echo "")
+validate_positive_int "PORTAL_WEB_WORKERS" "$PORTAL_WEB_WORKERS"
+validate_uint "TERMINAL_MAX_SESSIONS" "$TERMINAL_MAX_SESSIONS"
+validate_uint "TERMINAL_MAX_SESSIONS_PER_USER" "$TERMINAL_MAX_SESSIONS_PER_USER"
+validate_uint "TERMINAL_IDLE_TIMEOUT_SECONDS" "$TERMINAL_IDLE_TIMEOUT_SECONDS"
+validate_uint "TERMINAL_MAX_SESSION_SECONDS" "$TERMINAL_MAX_SESSION_SECONDS"
+validate_uint "TERMINAL_READ_POLL_SECONDS" "$TERMINAL_READ_POLL_SECONDS"
+
+# Portal web capacity metrics (#940). Enable flag + busy-ratio denominator come
+# from SSM (same params the SSM redeploy path reads); the NamePrefix dimension
+# comes from the Terraform name_prefix so it matches the CloudWatch alarms.
+PORTAL_CAPACITY_METRICS_ENABLED=$(get_param "$PS_PREFIX/portal-capacity-metrics-enabled" 2>/dev/null || echo "")
+PORTAL_WORKER_SOFT_CONCURRENCY=$(get_param "$PS_PREFIX/portal-worker-soft-concurrency" 2>/dev/null || echo "")
+validate_bool "PORTAL_CAPACITY_METRICS_ENABLED" "$PORTAL_CAPACITY_METRICS_ENABLED"
+validate_positive_int "PORTAL_WORKER_SOFT_CONCURRENCY" "$PORTAL_WORKER_SOFT_CONCURRENCY"
+
 IMAGE=$(image_ref "$ECR_REGISTRY" "$ECR_REPOSITORY" "$IMAGE_DIGEST" "$IMAGE_TAG")
 echo "Deploying image: $IMAGE"
 
@@ -199,6 +266,7 @@ echo "Deploying image: $IMAGE"
 # Build container environment variables
 # ------------------------------------------------------------------------------
 COMMON_ENV="-e AWS_REGION=$AWS_REGION"
+COMMON_ENV="$COMMON_ENV -e ENVIRONMENT=$DJANGO_ENVIRONMENT"
 COMMON_ENV="$COMMON_ENV -e AWS_S3_BUCKET_NAME=$S3_BUCKET"
 COMMON_ENV="$COMMON_ENV -e DB_SECRET_ARN=$DB_SECRET_ARN"
 COMMON_ENV="$COMMON_ENV -e APP_SECRET_ARN=$APP_SECRET_ARN"
@@ -217,6 +285,19 @@ COMMON_ENV="$COMMON_ENV -e SQS_MC_URL=$SQS_MC_URL"
 # Add Redis if configured
 if [[ -n "$REDIS_ENDPOINT" ]]; then
   COMMON_ENV="$COMMON_ENV -e REDIS_HOST=$REDIS_ENDPOINT"
+fi
+
+# Redis AUTH + in-transit encryption (#938). Only the secret reference and
+# non-secret flags travel here; the AUTH token is hydrated from Secrets Manager
+# by entrypoint.sh, never passed via docker argv.
+if [[ -n "$REDIS_SECRET_ARN" ]]; then
+  COMMON_ENV="$COMMON_ENV -e REDIS_SECRET_ID=$REDIS_SECRET_ARN"
+fi
+if [[ -n "$REDIS_TLS" ]]; then
+  COMMON_ENV="$COMMON_ENV -e REDIS_TLS=$REDIS_TLS"
+fi
+if [[ -n "$REDIS_CA_MODE" ]]; then
+  COMMON_ENV="$COMMON_ENV -e REDIS_CA_MODE=$REDIS_CA_MODE"
 fi
 
 # Channel-layer backend posture (ADR-018, #849), decoupled from autoscaling.
@@ -263,6 +344,37 @@ if [[ -n "$PLATFORM_BOOTSTRAP_SUPERUSER_EMAILS" ]]; then
   COMMON_ENV="$COMMON_ENV -e PLATFORM_BOOTSTRAP_SUPERUSER_EMAILS=$PLATFORM_BOOTSTRAP_SUPERUSER_EMAILS"
 fi
 
+# Portal runtime capacity tunables (#930), validated as integers above.
+if [[ -n "$PORTAL_WEB_WORKERS" ]]; then
+  COMMON_ENV="$COMMON_ENV -e PORTAL_WEB_WORKERS=$PORTAL_WEB_WORKERS"
+fi
+if [[ -n "$TERMINAL_MAX_SESSIONS" ]]; then
+  COMMON_ENV="$COMMON_ENV -e TERMINAL_MAX_SESSIONS=$TERMINAL_MAX_SESSIONS"
+fi
+if [[ -n "$TERMINAL_MAX_SESSIONS_PER_USER" ]]; then
+  COMMON_ENV="$COMMON_ENV -e TERMINAL_MAX_SESSIONS_PER_USER=$TERMINAL_MAX_SESSIONS_PER_USER"
+fi
+if [[ -n "$TERMINAL_IDLE_TIMEOUT_SECONDS" ]]; then
+  COMMON_ENV="$COMMON_ENV -e TERMINAL_IDLE_TIMEOUT_SECONDS=$TERMINAL_IDLE_TIMEOUT_SECONDS"
+fi
+if [[ -n "$TERMINAL_MAX_SESSION_SECONDS" ]]; then
+  COMMON_ENV="$COMMON_ENV -e TERMINAL_MAX_SESSION_SECONDS=$TERMINAL_MAX_SESSION_SECONDS"
+fi
+if [[ -n "$TERMINAL_READ_POLL_SECONDS" ]]; then
+  COMMON_ENV="$COMMON_ENV -e TERMINAL_READ_POLL_SECONDS=$TERMINAL_READ_POLL_SECONDS"
+fi
+
+# Portal web capacity metrics (#940), validated above. The NamePrefix dimension
+# is the Terraform name_prefix so the emitted series matches the CloudWatch
+# alarms/dashboard; it is always set so an enabled emitter is never unlabelled.
+COMMON_ENV="$COMMON_ENV -e PORTAL_CAPACITY_NAME_PREFIX=${name_prefix}"
+if [[ -n "$PORTAL_CAPACITY_METRICS_ENABLED" ]]; then
+  COMMON_ENV="$COMMON_ENV -e PORTAL_CAPACITY_METRICS_ENABLED=$PORTAL_CAPACITY_METRICS_ENABLED"
+fi
+if [[ -n "$PORTAL_WORKER_SOFT_CONCURRENCY" ]]; then
+  COMMON_ENV="$COMMON_ENV -e PORTAL_WORKER_SOFT_CONCURRENCY=$PORTAL_WORKER_SOFT_CONCURRENCY"
+fi
+
 if [[ -n "$CTFD_PLATFORM_URL" ]]; then
   COMMON_ENV="$COMMON_ENV -e CTFD_PLATFORM_URL=$CTFD_PLATFORM_URL"
 fi
@@ -278,8 +390,13 @@ echo "Pulling image..."
 docker pull "$IMAGE"
 
 echo "Stopping existing containers..."
-docker stop portal worker-cms worker-engine worker-mc ctf-scheduler 2>/dev/null || true
-docker rm portal worker-cms worker-engine worker-mc ctf-scheduler 2>/dev/null || true
+# Docker stop timeout exceeds the Gunicorn graceful-timeout (30s) so long-lived
+# terminal/WebSocket connections drain before SIGKILL (issue #931). Sized below
+# the ASG termination drain window.
+docker stop --time ${docker_stop_timeout} portal worker-cms worker-engine worker-mc ctf-scheduler guacamole-bootstrap-prune 2>/dev/null || true
+# Force-remove so a redeploy is idempotent (matches scripts/portal-deploy/deploy_portal.sh,
+# #1127); the docker stop above already does the graceful drain (#931).
+docker rm -f portal worker-cms worker-engine worker-mc ctf-scheduler guacamole-bootstrap-prune 2>/dev/null || true
 
 echo "Starting portal..."
 eval docker run -d --name portal --restart unless-stopped -p 8000:8000 $COMMON_ENV "$IMAGE"
@@ -290,10 +407,12 @@ WORKER_CMS_HEALTH="--health-cmd='find /tmp/worker-cms-heartbeat -mmin -2 | grep 
 WORKER_ENGINE_HEALTH="--health-cmd='find /tmp/worker-engine-heartbeat -mmin -2 | grep -q .'"
 WORKER_MC_HEALTH="--health-cmd='find /tmp/worker-mc-heartbeat -mmin -2 | grep -q .'"
 CTF_SCHEDULER_HEALTH="--health-cmd='find /tmp/ctf-scheduler-heartbeat -mmin -2 | grep -q .'"
+GUAC_PRUNE_HEALTH="--health-cmd='find /tmp/guacamole-bootstrap-prune-heartbeat -mmin -2 | grep -q .'"
 eval docker run -d --name worker-cms --restart unless-stopped $WORKER_HEALTH_BASE "$WORKER_CMS_HEALTH" $COMMON_ENV "$IMAGE" python manage.py run_worker --queue cms
 eval docker run -d --name worker-engine --restart unless-stopped $WORKER_HEALTH_BASE "$WORKER_ENGINE_HEALTH" $COMMON_ENV "$IMAGE" python manage.py run_worker --queue engine
 eval docker run -d --name worker-mc --restart unless-stopped $WORKER_HEALTH_BASE "$WORKER_MC_HEALTH" $COMMON_ENV "$IMAGE" python manage.py run_worker --queue mc
 eval docker run -d --name ctf-scheduler --restart unless-stopped $WORKER_HEALTH_BASE "$CTF_SCHEDULER_HEALTH" $COMMON_ENV "$IMAGE" python manage.py run_ctf_scheduler
+eval docker run -d --name guacamole-bootstrap-prune --restart unless-stopped $WORKER_HEALTH_BASE "$GUAC_PRUNE_HEALTH" $COMMON_ENV "$IMAGE" python manage.py run_guacamole_bootstrap_prune
 
 echo "All containers started:"
 docker ps

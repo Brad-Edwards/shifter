@@ -9,10 +9,11 @@ Getting started as a Shifter developer.
 3. [Installation Config](installation-config) - `shifter.yaml` schema and validation
 4. [CI/CD](ci-cd) - How deployments work
 5. [Secrets](secrets) - What secrets exist, where they live
-6. [Terraform](terraform) - Infrastructure patterns
-7. [Cloud Adapters](cloud-adapters) - Cloud abstraction layer
-8. [Principles](principles) - Engineering philosophy
-9. [ADR Enforcement](adr-enforcement) - Architecture guardrails and policy checks
+6. [Platform API Development](api) - DRF endpoints, scopes, schema, and error envelopes
+7. [Terraform](terraform) - Infrastructure patterns
+8. [Cloud Adapters](cloud-adapters) - Cloud abstraction layer
+9. [Principles](principles) - Engineering philosophy
+10. [ADR Enforcement](adr-enforcement) - Architecture guardrails and policy checks
 
 ## Prerequisites
 

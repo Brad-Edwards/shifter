@@ -194,7 +194,8 @@ document.addEventListener('DOMContentLoaded', function() {
         uploader = new DirectUploader({
             initiateUrl: uploadUrl,
             completeUrl: uploadUrl,
-            cancelUrl: uploadUrl,
+            cancelUrl: null,
+            cancelOnUnload: false,
             csrfToken: csrfToken,
             maxSizeMB: 1,
 

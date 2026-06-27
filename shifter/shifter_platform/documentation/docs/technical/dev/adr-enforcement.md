@@ -54,6 +54,15 @@ The first slice intentionally stays small:
 
 - `layer-imports`
   Enforces the existing cross-layer import policy from `scripts/check_layer_imports/layer_imports.yaml`.
+  Service-package imports may use only the public facade (for example
+  `cms.services`); private split-package submodules such as
+  `cms.services._range_pause` are not cross-layer seams. This covers both the
+  dotted form (`import cms.services._range_pause`) and the
+  `from cms.services import _range_pause` form, the latter detected via an AST
+  pass since the regex scan only sees the facade module path. The rule is
+  mirrored in `scripts/adr_guard/adr_guard.py` and the standalone
+  `scripts/check_layer_imports/check_layer_imports.py` so local and CI
+  enforcement agree; `shared` remains the freely-importable contracts layer.
 
 - `guardrail-docs`
   Requires guardrail changes to update ADR or developer docs in the same change.
@@ -74,6 +83,12 @@ The first slice intentionally stays small:
   cross-verifies that `PYTHON_COMPLEXITY_GATE_PYPROJECTS` matches the
   `id: ruff` hook working directories in `.pre-commit-config.yaml`, so
   a new lint surface cannot be added in one place without the other.
+  Standalone verifier scripts under `scripts/` that ship their own
+  `pyproject.toml` (for example the post-apply deploy checks such as
+  `scripts/assert_portal_inspection`, added for issue #932) are gated
+  surfaces too: registering one means adding its directory to both
+  `.pre-commit-config.yaml` and `PYTHON_COMPLEXITY_GATE_PYPROJECTS` in
+  the same change.
   The complexity computation itself is Ruff's job; this check is the
   config-shape backstop against silent gate removal. Existing
   high-complexity functions carry per-function `# noqa: C901`
@@ -107,6 +122,17 @@ The first slice intentionally stays small:
   at service boundaries, or real framework test clients over patching
   first-party service functions, views, render/logging/transaction aliases,
   or model helpers.
+
+- `documentation-coverage`
+  Enforces ADR-022-R1 (GEN-001): every major platform feature listed in
+  `docs/adr/documentation-coverage.yaml` must declare at least one user doc and
+  at least one technical doc. The check validates the whole manifest on every
+  run (it ignores the changed-file list, like `adr-registry`): each referenced
+  doc must exist under the in-app docs tree (`docs_root`), must not live under a
+  `_deprecated`/hidden path, and must be reachable from an `index.md`. This
+  keeps the GEN-001 contract from silently regressing — for example when a
+  feature's doc is removed but its index link is left dangling. Adding a major
+  feature means adding a manifest entry pointing at its user and technical docs.
 
 - `import-linter`
   Adds package-level forbidden-import contracts across the main Django app layers.
@@ -142,6 +168,13 @@ The first slice intentionally stays small:
   condition, and consumed by the platform `build` job through the
   `portal_image_changes` input so an app-only push to an environment branch
   builds and converges the portal image without running Terraform. The check
+  also requires `.github/workflows/deploy.yml` to pass `skip_tests: false`
+  literally into `_quality.yml` (no commit-message parsing or dynamic outputs)
+  and requires lint, architecture, and security jobs in `_quality.yml` to stay
+  independent of `inputs.skip_tests` so the flag can only skip unit-test jobs
+  when a caller opts in; the deploy router never opts in (#760). Negative
+  fixtures in `scripts/adr_guard/tests/test_adr_guard.py` include a minimal
+  `_quality.yml` stub so plan-scope tests isolate one violation at a time. The check
   requires deploy concurrency to queue branch/manual runs rather than cancel
   in-flight applies; PR cancellation may remain enabled. It also requires every
   core, range, and platform `terraform plan` / saved-plan `terraform apply`
@@ -176,13 +209,27 @@ The first slice intentionally stays small:
   `_shifter-platform.yml` must `exit 1` on stabilization timeout (the FAILED
   circuit-breaker branch already does); raise the poll timeout if first boot
   legitimately needs longer rather than downgrading the timeout to a warning.
-  The `Update ECS task definition` step in `_shifter-engine.yml` must `exit 1`
-  when the ECS task-definition family cannot be described, so a missing or
-  typo'd family fails the deploy instead of silently skipping it forever; the
-  only permitted skip is gated on the explicit `first_deploy` bootstrap input,
-  surfaced as the `aws_first_deploy` `workflow_dispatch` input in `deploy.yml`
-  (strict by default, settable to `true` only on a manual dispatch for the
-  first-ever deploy to a fresh AWS environment).
+  The `Verify` job after portal deploy must fail when portal target-group
+  health, the public `/health/` probe, Guacamole ECS rollouts, Guacamole
+  target-group health, or the `/guacamole/` smoke probe are not satisfied;
+  `scripts/portal_deploy/portal_deploy.py verify-post-deploy` must treat a
+  non-`ACTIVE` Guacamole cluster as failure when Guacamole Terraform outputs
+  are present. The `Update ECS task definition` step in `_shifter-engine.yml`
+  must `exit 1` when the ECS task-definition family cannot be described, so a
+  missing or typo'd family fails the deploy instead of silently skipping it
+  forever; the only permitted skip is gated on the explicit `first_deploy`
+  bootstrap input, surfaced as the `aws_first_deploy` `workflow_dispatch` input
+  in `deploy.yml` (strict by default, settable to `true` only on a manual
+  dispatch for the first-ever deploy to a fresh AWS environment).
+
+  Enforces ADR-003-R6: after successful AWS dev portal deploy verification,
+  `_shifter-platform.yml` may run an advisory `post-deploy-smoke` job that
+  executes `scripts/smoke-test.sh` via `portal_deploy.py run-manage-on-portal`.
+  The job must stay dev-only (`inputs.is_dev`), use `continue-on-error: true`,
+  request `issues: write` only for failure issue creation, declare `SMOKE_*`
+  secrets on the reusable workflow, and poll SSM command status until the
+  requested manage timeout rather than using the fixed-limit
+  `aws ssm wait command-executed` waiter.
 
 - `TFLint`
   Adds Terraform linting on top of `terraform fmt` and `terraform validate`.
@@ -427,6 +474,31 @@ The first slice intentionally stays small:
   committed credentials it ignores and prevents reintroduction of
   the failure mode resolved by PR #1207 (issue #1195). Enforces
   ADR-004-R9.
+
+- `no-mission-control-flag-literals`
+  Architecture check that fails the build when Mission Control
+  runtime code carries a hardcoded CTF challenge flag. It scans the
+  `shifter/shifter_platform/mission_control/` package (all runtime;
+  its tests live under `shifter/shifter_platform/tests/mission_control/`,
+  outside scope) and the `shifter/shifter_platform/templates/mission_control/`
+  template tree (including inline `<script>` JavaScript) for
+  answer-shaped `FLAG{...}` literals (case-insensitive). Detection is
+  by pattern, never by a denylist of real values. Format-hint
+  placeholders that describe the answer shape rather than carry one
+  are intentionally **not** flagged: an empty body (`FLAG{}`), the
+  ellipsis form (`FLAG{...}`), and angle-bracket templates
+  (`FLAG{<16-hex>}`). The path scope deliberately excludes tests,
+  docs, the native `ctf` app (where `FLAG{...}` is a documented
+  format hint), and Polaris scenario content under
+  `scenario-dev/polaris/`, where flags are legitimate challenge
+  content. Failure reporting names the repo-relative path and line
+  only; the matched value is never echoed. CTF flags are low-entropy
+  and are not caught by gitleaks; this is the complementary
+  repo-specific backstop. Challenge answers belong to the CTF/CTFd
+  content domain, not the Mission Control application path. Closes
+  the #560 regression gap (the `box_info` literal-flag map removed
+  during the mission_control views package split) and blocks
+  reintroduction. Enforces ADR-004-R16.
 
 - `rds-pending-modifications`
   Post-`terraform apply` gate in `_shifter-platform.yml`. Reads the portal

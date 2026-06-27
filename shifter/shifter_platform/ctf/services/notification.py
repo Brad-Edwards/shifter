@@ -14,6 +14,10 @@ from ctf.exceptions import CTFNotFoundError
 from ctf.models import CTFEvent, CTFNotification, CTFParticipant
 from shared.log_sanitize import safe_log
 
+# SonarCloud S1192: extracted duplicated string literals.
+NO_ORGANIZER_EMAIL_LOG = "Cannot notify: event %s has no organizer email"
+EVENT_NOT_FOUND_LOG = "Cannot notify: event %s not found"
+
 if TYPE_CHECKING:
     from datetime import datetime
 
@@ -57,7 +61,9 @@ def send_invitations(event_id: UUID) -> dict[str, Any]:
                 {
                     "event": event,
                     "participant": participant,
-                    "invite_token": participant.invite_token,
+                    # Expose only the registration URL, not the raw token, so
+                    # organizer-authored templates cannot reintroduce the token
+                    # into a query string or other leak surface (#1088).
                     "registration_url": registration_url,
                 },
                 event=event,
@@ -420,12 +426,12 @@ def notify_organizer_provision_failure(
     try:
         event = CTFEvent.objects.get(pk=event_id)
     except CTFEvent.DoesNotExist:
-        logger.error("Cannot notify: event %s not found", event_id)
+        logger.error(EVENT_NOT_FOUND_LOG, event_id)
         return
 
     organizer = event.created_by
     if not organizer or not organizer.email:
-        logger.warning("Cannot notify: event %s has no organizer email", event_id)
+        logger.warning(NO_ORGANIZER_EMAIL_LOG, event_id)
         return
 
     html_content, text_content, custom_subject = _render_email(
@@ -469,12 +475,12 @@ def notify_organizer_event_start(event_id: UUID) -> None:
     try:
         event = CTFEvent.objects.get(pk=event_id)
     except CTFEvent.DoesNotExist:
-        logger.error("Cannot notify: event %s not found", event_id)
+        logger.error(EVENT_NOT_FOUND_LOG, event_id)
         return
 
     organizer = event.created_by
     if not organizer or not organizer.email:
-        logger.warning("Cannot notify: event %s has no organizer email", event_id)
+        logger.warning(NO_ORGANIZER_EMAIL_LOG, event_id)
         return
 
     html_content, text_content, custom_subject = _render_email(
@@ -514,12 +520,12 @@ def notify_organizer_event_end(event_id: UUID) -> None:
     try:
         event = CTFEvent.objects.get(pk=event_id)
     except CTFEvent.DoesNotExist:
-        logger.error("Cannot notify: event %s not found", event_id)
+        logger.error(EVENT_NOT_FOUND_LOG, event_id)
         return
 
     organizer = event.created_by
     if not organizer or not organizer.email:
-        logger.warning("Cannot notify: event %s has no organizer email", event_id)
+        logger.warning(NO_ORGANIZER_EMAIL_LOG, event_id)
         return
 
     html_content, text_content, custom_subject = _render_email(
@@ -556,13 +562,18 @@ def notify_organizer_event_end(event_id: UUID) -> None:
 def _build_registration_url(invite_token: str) -> str:
     """Build a full registration URL from an invite token.
 
-    Uses Django's reverse() to generate the path, then prepends the
-    configured site URL to produce an absolute link suitable for emails.
+    The token is placed in the URL *fragment* (``#token=...``), never the query
+    string. Browsers do not send the fragment to the server, so the credential
+    stays out of proxy/ALB access logs, the request formatter, and the
+    ``Referer`` header (SonarCloud ``pythonenterprise:S8435``). The registration
+    page's JavaScript reads the fragment and POSTs it to the token-exchange
+    endpoint. ``token_urlsafe`` output is already fragment-safe, so no
+    percent-encoding is required.
     """
     from django.conf import settings
     from django.urls import reverse
 
-    path = reverse("ctf:ctf_register") + f"?token={invite_token}"
+    path = reverse("ctf:ctf_register") + f"#token={invite_token}"
     base = (getattr(settings, "SITE_URL", "") or "").rstrip("/")
     return f"{base}{path}"
 
@@ -629,13 +640,35 @@ def _render_email(
             notification_type=lookup_type,
         ).first()
         if custom is not None:
-            from django.template import Context, Template
+            from ctf.services.email_template import (
+                allowed_placeholders,
+                build_safe_context,
+                find_template_violations,
+                render_safe_body,
+            )
 
-            # Safe: Django's template engine does not allow arbitrary code
-            # execution.  Only authenticated event organizers can write templates.
-            html_content = Template(custom.html_body).render(Context(context))
-            text_content = Template(custom.text_body).render(Context(context))
-            return html_content, text_content, custom.subject or ""
+            # Organizer-authored bodies are untrusted: never hand them to the
+            # Django template engine (CWE-1336). Validate against the flat
+            # placeholder policy and fail closed to the trusted default
+            # template on any unsupported syntax, even though writes are also
+            # validated -- stored rows can predate validators or arrive via
+            # admin / direct saves / restores.
+            allowed = allowed_placeholders(lookup_type)
+            violations = find_template_violations(custom.html_body, allowed) + find_template_violations(
+                custom.text_body, allowed
+            )
+            if violations:
+                logger.warning(
+                    "Custom email template for event %s (%s) failed safe-render "
+                    "validation; falling back to default template",
+                    getattr(event, "pk", None),
+                    lookup_type,
+                )
+            else:
+                scalars = build_safe_context(context)
+                html_content = render_safe_body(custom.html_body, scalars, escape=True)
+                text_content = render_safe_body(custom.text_body, scalars, escape=False)
+                return html_content, text_content, custom.subject or ""
 
     from shared.email import render_template
 

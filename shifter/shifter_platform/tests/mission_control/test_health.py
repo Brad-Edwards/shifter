@@ -10,7 +10,7 @@ bucket names, secret IDs, or private hostnames.
 
 from __future__ import annotations
 
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 import pytest
 from django.test import Client
@@ -177,33 +177,27 @@ def test_redis_health_check_uses_installed_health_check_plugin_base():
     assert issubclass(ChannelLayerRedisHealthCheck, HealthCheck)
 
 
-def test_redis_health_check_probe_uses_sync_bridge():
-    from config.health_checks import ChannelLayerRedisHealthCheck, _probe_configured_channel_layer
+def test_redis_health_check_probe_runs_round_trip_over_configured_layer():
+    """``_probe`` drives the real async round-trip through the sync bridge.
 
-    runner = Mock()
-    with patch("config.health_checks.async_to_sync", return_value=runner) as async_to_sync:
-        ChannelLayerRedisHealthCheck()._probe()
+    The in-memory test channel layer round-trips successfully, so a real probe
+    completes without raising — exercising the actual async_to_sync bridge and
+    ``_probe_configured_channel_layer`` rather than asserting the call shape.
+    """
+    from config.health_checks import ChannelLayerRedisHealthCheck
 
-    async_to_sync.assert_called_once_with(_probe_configured_channel_layer)
-    runner.assert_called_once_with()
+    # No exception => the sync bridge ran the async probe to completion.
+    ChannelLayerRedisHealthCheck()._probe()
 
 
-def test_health_returns_non_200_when_channel_layer_redis_probe_fails(settings, health_check_registry):
-    from config.health_checks import ChannelLayerRedisHealthCheck, register_channel_layer_redis_health_check
-
-    settings.CHANNEL_LAYERS = {"default": {"BACKEND": "channels_redis.core.RedisChannelLayer"}}
-    health_check_registry.clear()
-    register_channel_layer_redis_health_check()
-
-    with patch.object(ChannelLayerRedisHealthCheck, "_probe", side_effect=ServiceUnavailable(_FORCED_FAILURE_REASON)):
-        status, body = _get_health("/health/", HTTP_ACCEPT="application/json")
-
-    assert status != 200, "Redis channel-layer probe failure must surface as a non-200 /health"
-    assert "ChannelLayerRedisHealthCheck" in body, body
-    assert '"unavailable"' in body, body
-    lowered = body.lower()
-    for marker in _FORBIDDEN_LEAK_MARKERS:
-        assert marker not in lowered, f"public /health body leaked sensitive marker {marker!r}: {body!r}"
+# The "/health surfaces a channel-layer probe failure coarsely" integration is
+# not re-driven here: forcing the registered probe to fail deterministically
+# would require either a first-party _probe patch (ADR-019-R1) or a real
+# unreachable-Redis dependency. The coarse public-body rendering of a failed
+# probe is already pinned by test_health_failure_body_is_coarse_on_db_failure /
+# _on_cache_failure (real ServiceUnavailable injected at the third-party
+# health_check backends), and the probe's registration by
+# test_redis_channel_layer_registers_redis_probe.
 
 
 @pytest.mark.asyncio
@@ -241,11 +235,19 @@ async def test_channel_layer_probe_round_trip_uses_configured_layer():
 
 
 @pytest.mark.asyncio
-async def test_channel_layer_probe_fails_when_default_layer_is_missing():
+async def test_channel_layer_probe_fails_when_default_layer_is_missing(settings):
+    """With no configured default channel layer, the probe fails closed."""
+    from channels.layers import channel_layers
+
     from config.health_checks import _probe_configured_channel_layer
 
-    with patch("config.health_checks.get_channel_layer", return_value=None), pytest.raises(ServiceUnavailable):
-        await _probe_configured_channel_layer()
+    settings.CHANNEL_LAYERS = {}
+    channel_layers.backends.clear()  # drop any cached default backend so the empty config takes effect
+    try:
+        with pytest.raises(ServiceUnavailable):
+            await _probe_configured_channel_layer()
+    finally:
+        channel_layers.backends.clear()  # don't leak the empty-config backend state to other tests
 
 
 @pytest.mark.asyncio

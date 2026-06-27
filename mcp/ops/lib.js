@@ -8,6 +8,7 @@
 // module governs the argv-array contract that ADR-010 enforces;
 // see `mcp/ngfw/lib.js` and `mcp/ops/SECURITY.md` for context.
 
+import { spawnSync } from "node:child_process";
 import { buildSsmSendCommandArgs } from "../shared/aws-helpers.js";
 
 export {
@@ -19,6 +20,135 @@ export {
   awsText,
   buildSsmSendCommandArgs,
 } from "../shared/aws-helpers.js";
+
+// --- GitHub Actions (gh CLI) ---
+
+export const DEFAULT_GITHUB_REPO = "Brad-Edwards/shifter";
+
+/** Protected integration branch for prod AMI promotion workflows. */
+export const PROMOTE_AMI_REF = "dev";
+
+export const BASE_AMI_TYPES = Object.freeze([
+  "kali",
+  "ubuntu",
+  "windows",
+  "dc",
+  "brokenbk",
+]);
+
+/** Protected integration branch for prod GCE image promotion workflows. */
+export const PROMOTE_GCE_IMAGE_REF = "dev";
+
+// GCE image build/promote (issue #505, PLAT-001.10). Mirrors the AWS AMI
+// constants above for the GCP guest-image bake pipeline. The order matches the
+// `image_type` choices in .github/workflows/packer-gcp.yml.
+export const GCE_IMAGE_TYPES = Object.freeze([
+  "ubuntu",
+  "brokenbk",
+  "kali",
+  "windows",
+  "dc",
+]);
+
+/**
+ * Build argv for `gh workflow run`. User-controlled values land as
+ * literal argv elements; no shell interpolation (ADR-010).
+ */
+export function buildGhWorkflowRunArgs({ workflow, repo, ref, inputs = {} }) {
+  if (typeof workflow !== "string" || workflow.trim() === "") {
+    throw new TypeError("buildGhWorkflowRunArgs: workflow is required");
+  }
+  if (typeof repo !== "string" || repo.trim() === "") {
+    throw new TypeError("buildGhWorkflowRunArgs: repo is required");
+  }
+  if (typeof ref !== "string" || ref.trim() === "") {
+    throw new TypeError("buildGhWorkflowRunArgs: ref is required");
+  }
+  if (inputs === null || typeof inputs !== "object" || Array.isArray(inputs)) {
+    throw new TypeError("buildGhWorkflowRunArgs: inputs must be an object");
+  }
+  const args = ["workflow", "run", workflow, "--repo", repo, "--ref", ref];
+  for (const [key, value] of Object.entries(inputs)) {
+    args.push("-f", `${key}=${String(value)}`);
+  }
+  return args;
+}
+
+export function resolveGhToken(env = process.env) {
+  const token = env.GH_TOKEN || env.GITHUB_TOKEN;
+  if (typeof token !== "string" || token.trim() === "") {
+    throw new Error(
+      "GitHub token not configured. Set GH_TOKEN or GITHUB_TOKEN in the MCP environment.",
+    );
+  }
+  return token.trim();
+}
+
+function ghOperationLabel(args) {
+  if (!Array.isArray(args) || args.length < 2) return "gh";
+  return `gh ${args.slice(0, 2).join(" ")}`;
+}
+
+function defaultGhRunner(argv, options) {
+  return spawnSync("gh", argv, options); // NOSONAR
+}
+
+export function ghExec(args, options = {}) {
+  if (!Array.isArray(args)) {
+    throw new TypeError(
+      "gh CLI args must be an argv array, not a shell string.",
+    );
+  }
+  const {
+    env = process.env,
+    runner = defaultGhRunner,
+    timeoutMs = 60000,
+    token,
+  } = options;
+  const ghToken = token ?? resolveGhToken(env);
+  const label = ghOperationLabel(args);
+  const result = runner(args, {
+    encoding: "utf-8",
+    timeout: timeoutMs,
+    env: { ...env, GH_TOKEN: ghToken, GITHUB_TOKEN: ghToken },
+  });
+  if (result.error) {
+    const wrapped = new Error(`${label}: ${result.error.message}`);
+    wrapped.cause = result.error;
+    throw wrapped;
+  }
+  if (result.status !== 0) {
+    const stderr = (result.stderr || "").trim();
+    const detail = stderr || `exited with status ${result.status}`;
+    throw new Error(`${label}: ${detail}`);
+  }
+  return (result.stdout || "").trim();
+}
+
+function defaultGitRunner(argv, options) {
+  return spawnSync("git", argv, options); // NOSONAR
+}
+
+/**
+ * Resolve the current git branch for workflow `--ref`, mirroring
+ * `scripts/ami.sh`. Falls back to `defaultRef` when git is unavailable.
+ */
+export function resolveGitRef(cwd, options = {}) {
+  const { runner = defaultGitRunner, defaultRef = "dev" } = options;
+  const result = runner(["rev-parse", "--abbrev-ref", "HEAD"], {
+    cwd,
+    encoding: "utf-8",
+    timeout: 5000,
+  });
+  if (result.error || result.status !== 0) {
+    return defaultRef;
+  }
+  const ref = (result.stdout || "").trim();
+  if (!ref || ref === "HEAD") {
+    return defaultRef;
+  }
+  return ref;
+}
 
 // --- AWS ---
 

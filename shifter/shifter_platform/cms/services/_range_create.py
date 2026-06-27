@@ -11,6 +11,7 @@ from cms.models import AgentConfig, RangeInstance
 from risk_register.models import AuditLog
 from shared.constants import USER_CANNOT_BE_NONE, USER_MUST_BE_SAVED
 from shared.enums import ResourceStatus
+from shared.schemas.persistence import wrap_persisted_spec
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import User
@@ -115,11 +116,11 @@ def _assert_no_active_range(user: User) -> None:
 
 
 def _load_scenario_template_or_raise(scenario: str) -> ScenarioTemplate:
-    """Return the scenario template or raise CMSError if not found."""
-    from cms.scenarios.registry import load_scenario_template as load_scenario
+    """Return the demo scenario template or raise CMSError if not found."""
+    from cms.scenarios.registry import load_demo_scenario_template
 
     try:
-        return load_scenario(scenario)
+        return load_demo_scenario_template(scenario)
     except ValueError as e:
         logger.error("create_range: scenario '%s' not found", scenario)
         raise CMSError(str(e)) from e
@@ -185,7 +186,7 @@ def _persist_range_instance_record(
         scenario_id=scenario,
         user_id=user.id,
         agent=first_agent,
-        range_spec=range_spec.model_dump(mode="json"),
+        range_spec=wrap_persisted_spec("range_spec", range_spec),
     )
 
 

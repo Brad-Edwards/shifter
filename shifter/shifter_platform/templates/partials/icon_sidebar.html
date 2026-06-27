@@ -221,7 +221,7 @@
                 </div>
             {% endif %}
             {# Risk Register - Staff only #}
-            {% if user.is_staff %}
+            {% if can_access_risk_register %}
                 <div class="tw-mx-3 tw-mb-2
                             {% if active_nav == 'risks' %}
                                 active-top-item
@@ -318,7 +318,8 @@
 </span>
                     </a>
                 </div>
-                {# Experiments - Staff or Threat Research group #}
+                {# Experiments - Staff or Threat Research group. Half-built; off by default (#1195). #}
+                {% if experiments_enabled %}
                 <div class="tw-mx-3 tw-mb-2
                             {% if active_nav == 'experiments' %}
                                 active-top-item
@@ -347,6 +348,7 @@
 </span>
                     </a>
                 </div>
+                {% endif %}
             {% endif %}
             {# Documentation (hidden for CTF-only participants) #}
             {% if not is_ctf_participant_only %}
@@ -383,7 +385,7 @@
             {% if not is_ctf_participant_only %}
                 {# Settings #}
                 <div>
-                    <a href="#" class="nav-menu-item nav-menu-item-level-0">
+                    <a href="{% url 'mission_control:settings' %}" class="nav-menu-item nav-menu-item-level-0">
                         <span class="nav-icon">
                             <svg width="24"
                                  height="24"
@@ -428,7 +430,7 @@
                 </div>
                 {# Help #}
                 <div>
-                    <a href="#" class="nav-menu-item nav-menu-item-level-0">
+                    <a href="{% url 'documentation:index' %}" class="nav-menu-item nav-menu-item-level-0">
                         <span class="nav-icon">
                             <svg width="24"
                                  height="24"

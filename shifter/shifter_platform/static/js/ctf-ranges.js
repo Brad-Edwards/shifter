@@ -9,6 +9,9 @@
  * - Status polling after provisioning
  */
 
+// SonarCloud S1192: extracted duplicated string literals.
+const API_PARTICIPANTS_BASE = '/ctf/api/participants/';
+
 class CTFRangeManager {
     constructor(options) {
         this.csrfToken = options.csrfToken;
@@ -30,49 +33,26 @@ class CTFRangeManager {
     }
 
     _bindPerParticipantButtons() {
-        let self = this;
-
-        document.querySelectorAll('.btn-provision').forEach(function(btn) {
-            btn.addEventListener('click', function() {
-                let participantId = this.dataset.participantId;
-                self.provisionOne(participantId, this);
+        const bindAction = (selector, handler) => {
+            document.querySelectorAll(selector).forEach((btn) => {
+                btn.addEventListener('click', () => {
+                    handler(btn.dataset.participantId, btn);
+                });
             });
-        });
+        };
 
-        document.querySelectorAll('.btn-destroy').forEach(function(btn) {
-            btn.addEventListener('click', function() {
-                let participantId = this.dataset.participantId;
-                self.destroyOne(participantId, this);
-            });
-        });
-
-        document.querySelectorAll('.btn-stop').forEach(function(btn) {
-            btn.addEventListener('click', function() {
-                let participantId = this.dataset.participantId;
-                self.stopOne(participantId, this);
-            });
-        });
-
-        document.querySelectorAll('.btn-start').forEach(function(btn) {
-            btn.addEventListener('click', function() {
-                let participantId = this.dataset.participantId;
-                self.startOne(participantId, this);
-            });
-        });
-
-        document.querySelectorAll('.btn-restart').forEach(function(btn) {
-            btn.addEventListener('click', function() {
-                let participantId = this.dataset.participantId;
-                self.restartOne(participantId, this);
-            });
-        });
+        bindAction('.btn-provision', (id, btn) => this.provisionOne(id, btn));
+        bindAction('.btn-destroy', (id, btn) => this.destroyOne(id, btn));
+        bindAction('.btn-stop', (id, btn) => this.stopOne(id, btn));
+        bindAction('.btn-start', (id, btn) => this.startOne(id, btn));
+        bindAction('.btn-restart', (id, btn) => this.restartOne(id, btn));
     }
 
     async provisionAll() {
         if (!confirm('Provision ranges for all unassigned participants?')) return;
 
         let btn = document.getElementById('btn-provision-all');
-        this._setButtonLoading(btn, 'Provisioning...');
+        this._setButtonLoading(btn, 'Queuing...');
 
         try {
             let response = await fetch(this.provisionAllUrl, {
@@ -90,20 +70,74 @@ class CTFRangeManager {
                 return;
             }
 
-            let msg = 'Provisioned: ' + data.successful + ', Failed: ' + data.failed;
-            if (data.errors && data.errors.length > 0) {
-                msg += '\n\nErrors:\n';
-                data.errors.forEach(function(e) {
-                    msg += '- ' + e.error + '\n';
-                });
-            }
-            alert(msg);
-            this._reload();
+            // Provisioning now runs in the background; show live progress
+            // instead of blocking on a synchronous result.
+            this._showProgress('Provisioning queued. Tracking progress...');
+            this.startProgressPolling();
         } catch (err) {
             alert('Error provisioning ranges: ' + err.message);
         } finally {
             this._clearButtonLoading(btn, 'Provision All Ranges');
         }
+    }
+
+    startProgressPolling() {
+        if (this.statusPollInterval) return;
+        this.statusPollInterval = setInterval(() => this._pollProgress(), this.statusPollDelay);
+        this._pollProgress();
+    }
+
+    _stopProgressPolling() {
+        if (this.statusPollInterval) {
+            clearInterval(this.statusPollInterval);
+            this.statusPollInterval = null;
+        }
+    }
+
+    async _pollProgress() {
+        let response;
+        try {
+            response = await fetch(this.rangeListUrl, {
+                method: 'GET',
+                headers: { 'X-CSRFToken': this.csrfToken },
+            });
+        } catch {
+            return; // transient; keep polling
+        }
+        if (!response.ok) return;
+
+        let data = await response.json();
+        let progress = data.progress || {};
+        let counts = progress.counts || {};
+        let task = progress.task || null;
+
+        this._renderProgress(counts, task);
+
+        // Done once no spin-up task is queued/running and nothing is mid-provision.
+        let provisioning = counts.provisioning || 0;
+        if (!task && provisioning <= 0) {
+            this._stopProgressPolling();
+            this._reload();
+        }
+    }
+
+    _showProgress(message) {
+        let el = document.getElementById('provision-progress');
+        if (!el) return;
+        el.textContent = message;
+        el.style.display = '';
+    }
+
+    _renderProgress(counts, task) {
+        let status = task ? task.status : 'idle';
+        this._showProgress(
+            'Status: ' + status +
+            ' — ready ' + (counts.ready || 0) +
+            ', provisioning ' + (counts.provisioning || 0) +
+            ', error ' + (counts.error || 0) +
+            ', not assigned ' + (counts.not_assigned || 0) +
+            ' / ' + (counts.total || 0)
+        );
     }
 
     async provisionOne(participantId, btn) {
@@ -112,7 +146,7 @@ class CTFRangeManager {
         this._setButtonLoading(btn, 'Provisioning...');
 
         try {
-            let url = '/ctf/api/participants/' + participantId + '/range/provision/';
+            let url = API_PARTICIPANTS_BASE + participantId + '/range/provision/';
             let response = await fetch(url, {
                 method: 'POST',
                 headers: {
@@ -142,7 +176,7 @@ class CTFRangeManager {
         this._setButtonLoading(btn, 'Destroying...');
 
         try {
-            let url = '/ctf/api/participants/' + participantId + '/range/destroy/';
+            let url = API_PARTICIPANTS_BASE + participantId + '/range/destroy/';
             let response = await fetch(url, {
                 method: 'POST',
                 headers: {
@@ -185,7 +219,7 @@ class CTFRangeManager {
         this._setButtonLoading(btn, loadingText);
 
         try {
-            let url = '/ctf/api/participants/' + participantId + '/range/' + action + '/';
+            let url = API_PARTICIPANTS_BASE + participantId + '/range/' + action + '/';
             let response = await fetch(url, {
                 method: 'POST',
                 headers: {
@@ -216,7 +250,7 @@ class CTFRangeManager {
     _setButtonLoading(btn, text) {
         if (!btn) return;
         btn.disabled = true;
-        btn.setAttribute('data-original-text', btn.textContent);
+        btn.dataset.originalText = btn.textContent;
         btn.textContent = text;
     }
 

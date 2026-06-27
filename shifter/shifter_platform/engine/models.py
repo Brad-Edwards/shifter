@@ -15,6 +15,7 @@ from django.conf import settings
 from django.db import models, transaction
 
 from shared.enums import RequestType
+from shared.schemas.persistence import unwrap_persisted_spec
 
 
 class Request(models.Model):
@@ -283,9 +284,21 @@ class Range(models.Model):
     )
     chat_url = models.URLField(max_length=500, blank=True, default="")
 
-    # Step Functions tracking
+    # Step Functions tracking (legacy — prefer provisioning_task_arn / teardown_task_arn)
     step_function_execution_arn = models.CharField(
-        max_length=500, blank=True, default="", help_text="Step Functions execution ARN"
+        max_length=500, blank=True, default="", help_text="Legacy ECS task ARN (deprecated)"
+    )
+    provisioning_task_arn = models.CharField(
+        max_length=500,
+        blank=True,
+        default="",
+        help_text="ECS/GCP task identifier for the provisioning operation",
+    )
+    teardown_task_arn = models.CharField(
+        max_length=500,
+        blank=True,
+        default="",
+        help_text="ECS/GCP task identifier for the teardown operation",
     )
 
     # Shifter Engine fields (v2)
@@ -325,7 +338,8 @@ class Range(models.Model):
         db_table = "mission_control_range"
 
     def __str__(self):
-        scenario = self.range_config.get("scenario_id", "unknown") if self.range_config else "unknown"
+        config = unwrap_persisted_spec(self.range_config) if self.range_config else {}
+        scenario = config.get("scenario_id", "unknown")
         return f"Range {self.id} ({scenario}) - {self.status}"
 
     @property
@@ -564,7 +578,8 @@ class Subnet(Instantiation):
         """
         if not self.spec:
             return []
-        instances = self.spec.get("instances", [])
+        spec_payload = unwrap_persisted_spec(self.spec)
+        instances = spec_payload.get("instances", [])
         return [inst.get("uuid") for inst in instances if inst.get("uuid")]
 
 

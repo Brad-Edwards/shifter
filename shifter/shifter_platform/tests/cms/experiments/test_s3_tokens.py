@@ -3,10 +3,10 @@
 Tests the HMAC token logic -- no real S3 calls needed.
 """
 
-from unittest.mock import patch
+from datetime import timedelta
 
 import pytest
-from cyberscript.script_context import ScriptExecutionContext
+from freezegun import freeze_time
 
 from cms.experiments.s3 import (
     _normalize_script_filename_segment,
@@ -14,14 +14,18 @@ from cms.experiments.s3 import (
     normalize_legacy_script_s3_key,
     verify_upload_token,
 )
+from shared.script_context import ScriptExecutionContext
 
 
 class TestUploadToken:
-    @patch("cms.experiments.s3.settings")
-    def test_roundtrip(self, mock_settings):
-        mock_settings.SECRET_KEY = "test-secret-key"
-        mock_settings.SCRIPT_UPLOAD_URL_EXPIRES = 600
+    """HMAC token round-trip against the real ``settings.SECRET_KEY``.
 
+    Only ``SCRIPT_UPLOAD_URL_EXPIRES`` is tuned (via the ``settings`` fixture);
+    the signing key is the real test key, so generate/verify share it.
+    """
+
+    def test_roundtrip(self, settings):
+        settings.SCRIPT_UPLOAD_URL_EXPIRES = 600
         token = generate_upload_token(
             user_id=1,
             s3_key="scripts/1/abc_test.py",
@@ -36,59 +40,33 @@ class TestUploadToken:
         assert payload["filename"] == "test.py"
         assert payload["file_size"] == 1024
 
-    @patch("cms.experiments.s3.settings")
-    def test_wrong_user_raises(self, mock_settings):
-        mock_settings.SECRET_KEY = "test-secret-key"
-        mock_settings.SCRIPT_UPLOAD_URL_EXPIRES = 600
-
-        token = generate_upload_token(
-            user_id=1,
-            s3_key="scripts/1/x.py",
-            name="Test",
-            filename="x.py",
-            file_size=100,
-        )
+    def test_wrong_user_raises(self, settings):
+        settings.SCRIPT_UPLOAD_URL_EXPIRES = 600
+        token = generate_upload_token(user_id=1, s3_key="scripts/1/x.py", name="Test", filename="x.py", file_size=100)
         with pytest.raises(ValueError, match="user mismatch"):
             verify_upload_token(token, user_id=2)
 
-    @patch("cms.experiments.s3.settings")
-    def test_tampered_token_raises(self, mock_settings):
-        mock_settings.SECRET_KEY = "test-secret-key"
-        mock_settings.SCRIPT_UPLOAD_URL_EXPIRES = 600
-
-        token = generate_upload_token(
-            user_id=1,
-            s3_key="scripts/1/x.py",
-            name="Test",
-            filename="x.py",
-            file_size=100,
-        )
+    def test_tampered_token_raises(self, settings):
+        settings.SCRIPT_UPLOAD_URL_EXPIRES = 600
+        token = generate_upload_token(user_id=1, s3_key="scripts/1/x.py", name="Test", filename="x.py", file_size=100)
         tampered = token[:-1] + ("a" if token[-1] != "a" else "b")
         with pytest.raises(ValueError, match="signature"):
             verify_upload_token(tampered, user_id=1)
 
-    @patch("cms.experiments.s3.settings")
-    def test_invalid_format_raises(self, mock_settings):
-        mock_settings.SECRET_KEY = "test-secret-key"
-        mock_settings.SCRIPT_UPLOAD_URL_EXPIRES = 600
-
+    def test_invalid_format_raises(self, settings):
+        settings.SCRIPT_UPLOAD_URL_EXPIRES = 600
         with pytest.raises(ValueError, match="format"):
             verify_upload_token("no-dot-separator", user_id=1)
 
-    @patch("cms.experiments.s3.settings")
-    def test_expired_token_raises(self, mock_settings):
-        mock_settings.SECRET_KEY = "test-secret-key"
-        mock_settings.SCRIPT_UPLOAD_URL_EXPIRES = -1
-
-        token = generate_upload_token(
-            user_id=1,
-            s3_key="scripts/1/x.py",
-            name="Test",
-            filename="x.py",
-            file_size=100,
-        )
-        with pytest.raises(ValueError, match="expired"):
-            verify_upload_token(token, user_id=1)
+    def test_expired_token_raises(self, settings):
+        settings.SCRIPT_UPLOAD_URL_EXPIRES = 60
+        with freeze_time("2024-06-01T12:00:00Z") as frozen:
+            token = generate_upload_token(
+                user_id=1, s3_key="scripts/1/x.py", name="Test", filename="x.py", file_size=100
+            )
+            frozen.tick(timedelta(seconds=61))
+            with pytest.raises(ValueError, match="expired"):
+                verify_upload_token(token, user_id=1)
 
 
 class TestScriptFilenameNormalization:

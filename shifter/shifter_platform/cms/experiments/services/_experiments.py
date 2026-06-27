@@ -116,7 +116,7 @@ def _resolve_experiment_scenario(scenario_id: str, user: User) -> ScenarioTempla
     """Verify access and load the scenario template; raise ExperimentValidationError on either failure."""
     try:
         _pkg.check_scenario_access(scenario_id, user)
-        return _pkg.load_scenario_template(scenario_id)
+        return _pkg.load_demo_scenario_template(scenario_id)
     except ValueError as e:
         logger.warning("create_experiment: invalid scenario_id=%s: %s", safe_log_value(scenario_id), safe_log_value(e))
         raise ExperimentValidationError(f"Invalid scenario: {e}") from e

@@ -44,10 +44,10 @@ class GCPNetworkInventory:
                 plural="networks",
             )
         except ApiException as e:
-            logger.error("list_subnet_cidrs: failed to list GDC Network objects for %s: %s", network_id, e)
+            logger.exception("list_subnet_cidrs: failed to list GDC Network objects for %s: %s", network_id, e)
             raise CloudNetworkInventoryError(f"Failed to list GDC scenario networks: {e}") from e
         except Exception as e:
-            logger.error("list_subnet_cidrs: failed to build GDC client for %s: %s", network_id, e)
+            logger.exception("list_subnet_cidrs: failed to build GDC client for %s: %s", network_id, e)
             raise CloudNetworkInventoryError(f"Failed to read GDC network inventory: {e}") from e
 
         cidrs: list[str] = []

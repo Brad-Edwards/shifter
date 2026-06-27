@@ -12,10 +12,11 @@ name it always has.
 from __future__ import annotations
 
 import os
-import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
+
+load_dotenv()
 
 # Sub-module re-exports. Each sub-module declares ``__all__`` so the
 # wildcard surfaces only the names that are part of the public Django
@@ -23,17 +24,18 @@ from dotenv import load_dotenv
 # silence Sonar's S2208 (no-wildcard) guidance — for a settings module
 # the wildcard *is* the contract (Django's official split-settings
 # pattern uses ``from .base import *``).
-from config._channels import *  # NOSONAR
-from config._channels import _build_channel_layers
-from config._cloud import *  # NOSONAR
-from config._logging_config import *  # NOSONAR
-from config._terminal_assets import *  # NOSONAR
-
-load_dotenv()
+from config._api_token_settings import *  # NOSONAR  # noqa: E402
+from config._channels import *  # NOSONAR  # noqa: E402
+from config._channels import _build_channel_layers  # noqa: E402
+from config._cloud import *  # NOSONAR  # noqa: E402
+from config._drf_settings import *  # NOSONAR  # noqa: E402
+from config._email import *  # NOSONAR  # noqa: E402
+from config._guacamole_settings import *  # NOSONAR  # noqa: E402
+from config._logging_config import *  # NOSONAR  # noqa: E402
+from config._runtime_env import AUTH_PROVIDER, IS_TEST_RUN, require_environment  # noqa: E402
+from config._terminal_assets import *  # NOSONAR  # noqa: E402
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-AUTH_PROVIDER = os.environ.get("AUTH_PROVIDER", "oidc").strip().lower()
-IS_TEST_RUN = os.environ.get("TESTING") == "1" or Path(sys.argv[0]).name == "pytest"
 
 
 def _env_bool(name: str, default: bool = False) -> bool:
@@ -72,6 +74,8 @@ _test_secret_key_default = "django-tests-secret-key" if IS_TEST_RUN else None
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", _test_secret_key_default)
 if not SECRET_KEY:
     raise ValueError("DJANGO_SECRET_KEY environment variable is required")
+# SECRET_KEY_FALLBACKS (zero-downtime rotation) lives in config._database_settings.
+
 DEBUG = _env_bool("DJANGO_DEBUG", False)
 ALLOWED_HOSTS = os.environ.get("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
 # Required for debug context processor
@@ -115,6 +119,10 @@ INSTALLED_APPS = [
     "health_check.storage",
     "config.apps.PortalConfig",
     "rest_framework",
+    "drf_spectacular",
+    "drf_spectacular_sidecar",
+    # GCP SendGrid/Mailgun email backends (AWS uses django-ses); see config/_email.py.
+    "anymail",
     "mission_control.apps.MissionControlConfig",
     "risk_register.apps.RiskRegisterConfig",
     "documentation.apps.DocumentationConfig",
@@ -134,6 +142,7 @@ MIDDLEWARE = [
     "config.middleware.HealthCheckMiddleware",
     # Request ID for audit logging correlation
     "config.middleware.RequestIDMiddleware",
+    "config.middleware.RequestInFlightMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
@@ -167,6 +176,7 @@ TEMPLATES = [
                 "mission_control.context_processors.active_range",
                 "mission_control.context_processors.terminal_cdn_assets",
                 "shared.context_processors.user_permissions",
+                "shared.context_processors.feature_flags",
                 "ctf.context_processors.ctf_navigation",
             ],
         },
@@ -186,6 +196,21 @@ REDIS_HOST = os.environ.get("REDIS_HOST", "")
 REDIS_PORT = int(os.environ.get("REDIS_PORT", "6379"))
 CHANNEL_LAYERS = _build_channel_layers(os.environ)
 
+# Shared WebSocket notification subsystem enablement (issue #941). The shared
+# persisted notification path (``/ws/notifications/``) has no front-end consumer,
+# so it is disabled by default: when off, publishing creates no per-recipient rows
+# and performs no channel-layer fan-out, and the shared socket is parked. Set to
+# "true" only once a real browser consumer, bounded fan-out, and scheduled pruning
+# exist. Non-secret boolean; absent env means disabled.
+WEBSOCKET_NOTIFICATIONS_ENABLED = _env_bool("WEBSOCKET_NOTIFICATIONS_ENABLED", False)
+
+# Experiments feature (cms/experiments) is half-built and not even alpha — its
+# command executor was never finished, so a run cannot complete on any cloud.
+# Off by default so the unfinished path can't launch a non-existent executor or
+# block deployment; URLs, nav, and the run-launch path are gated on this flag.
+# Revisit (build / redesign / remove) tracked in #1195.
+EXPERIMENTS_ENABLED = _env_bool("EXPERIMENTS_ENABLED", False)
+
 # Shared WebSocket notification replay bounds (issue #679).
 WEBSOCKET_NOTIFICATION_MAX_REPLAY = _env_int("WEBSOCKET_NOTIFICATION_MAX_REPLAY", 100)
 WEBSOCKET_NOTIFICATION_RETENTION_DAYS = _env_int("WEBSOCKET_NOTIFICATION_RETENTION_DAYS", 7)
@@ -198,46 +223,55 @@ WEBSOCKET_NOTIFICATION_RETENTION_DAYS = _env_int("WEBSOCKET_NOTIFICATION_RETENTI
 # read task. During a live event a burst of sessions (or a reconnect storm) can
 # saturate the event loop and exhaust file descriptors, making the whole portal
 # look unreliable. These bounds cap concurrency and reclaim idle/abandoned
-# sessions. They are env-tunable so limits can be adjusted during an event
-# without a redeploy; the caps are per ASGI process, which matches how the
-# portal is deployed. A value <= 0 disables that individual limit.
+# sessions. A value <= 0 disables that individual limit.
+#
+# The caps are PER WORKER PROCESS. The production portal runs Gunicorn with
+# PORTAL_WEB_WORKERS Uvicorn workers (entrypoint.sh, #174), and the
+# TerminalSessionRegistry is process-local (one registry per worker), so the
+# real per-instance ceiling is PORTAL_WEB_WORKERS * TERMINAL_MAX_SESSIONS and the
+# per-user worst case is PORTAL_WEB_WORKERS * TERMINAL_MAX_SESSIONS_PER_USER.
+# These knobs and PORTAL_WEB_WORKERS are wired through SSM/tfvars (#930), so an
+# operator can retune them on a running instance without an image rebuild
+# (update the parameter, then converge/restart the container).
 #
 # TERMINAL_READ_POLL_SECONDS is how often an idle session's read loop wakes to
 # enforce the timeouts; it does NOT add latency to terminal output (output is
 # delivered as soon as it arrives). The previous hard-coded 0.1s poll woke every
 # idle terminal ~10x/second; a multi-second interval cuts idle CPU by orders of
-# magnitude. See docs/architecture/terminal-websocket-capacity-preflight-847.md.
+# magnitude. See docs/architecture/terminal-websocket-capacity-847.md.
 TERMINAL_MAX_SESSIONS = _env_int("TERMINAL_MAX_SESSIONS", 200)
 TERMINAL_MAX_SESSIONS_PER_USER = _env_int("TERMINAL_MAX_SESSIONS_PER_USER", 10)
 TERMINAL_IDLE_TIMEOUT_SECONDS = _env_int("TERMINAL_IDLE_TIMEOUT_SECONDS", 1800)
 TERMINAL_MAX_SESSION_SECONDS = _env_int("TERMINAL_MAX_SESSION_SECONDS", 28800)
 TERMINAL_READ_POLL_SECONDS = _env_int("TERMINAL_READ_POLL_SECONDS", 30)
+# Bounded executor that runs blocking terminal-connect work (SSH connect, audit
+# writes, ownership lookups) off the default thread-sensitive sync_to_async lane
+# that serves HTTP page renders, so a terminal connect storm cannot head-of-line
+# block page renders on the same ASGI worker (#929). Per-process, like the caps
+# above.
+TERMINAL_CONNECT_EXECUTOR_WORKERS = _env_int("TERMINAL_CONNECT_EXECUTOR_WORKERS", 8)
+# Bounded admission gate on top of the terminal executor. ThreadPoolExecutor
+# caps concurrent workers but has an unbounded submission queue, so a connect
+# storm could still pile arbitrary blocking work in-process. Admission capacity
+# is workers + this slack; once it is exhausted run_terminal_sync rejects with
+# TerminalExecutorSaturated and the connect is closed with SERVICE_UNAVAILABLE
+# (4503, retryable) instead of being queued without limit (#929).
+TERMINAL_CONNECT_EXECUTOR_QUEUE_SLACK = _env_int("TERMINAL_CONNECT_EXECUTOR_QUEUE_SLACK", 16)
 
-# Database
-# Use SQLite for local dev/tests, PostgreSQL for deployed environments
-if os.environ.get("TESTING") == "1":
-    DATABASES = {
-        "default": {
-            "ENGINE": "django.db.backends.sqlite3",
-            "NAME": BASE_DIR / "db.sqlite3",
-        }
-    }
-else:
-    DATABASES = {
-        "default": {
-            "ENGINE": "django.db.backends.postgresql",
-            "NAME": os.environ.get("DB_NAME", "shifter"),
-            "USER": os.environ.get("DB_USER"),
-            "PASSWORD": os.environ.get("DB_PASSWORD"),
-            "HOST": os.environ.get("DB_HOST", "localhost"),
-            "PORT": os.environ.get("DB_PORT", "5432"),
-            # Connection settings (can tune CONN_MAX_AGE for connection reuse)
-            "CONN_MAX_AGE": 0,
-            "OPTIONS": {
-                "connect_timeout": 10,
-            },
-        }
-    }
+# CTF scheduler (run_ctf_scheduler) stale-task recovery window. A long
+# SPIN_UP_RANGES run heartbeats its task's updated_at, so this only needs to
+# exceed the maximum gap between heartbeats; the default is set well above the
+# legitimate spin-up window (default range_spinup_minutes=30) plus retry/poll
+# jitter so a genuinely in-flight spin-up is never marked FAILED on the
+# multi-node portal. See docs/architecture/ctf-scheduler-concurrency-preflight-942.md.
+CTF_SCHEDULER_STALE_TASK_MINUTES = _env_int("CTF_SCHEDULER_STALE_TASK_MINUTES", 120)
+
+from config._capacity_settings import *  # noqa: E402  # NOSONAR
+
+# Database and SECRET_KEY rotation settings (DATABASES, SECRET_KEY_FALLBACKS).
+# Split into config/_database_settings.py to keep this module under the S104
+# 500-line cap; the IAM-auth DB path lives there (issue #159).
+from config._database_settings import *  # noqa: E402  # NOSONAR
 
 # Password validation
 AUTH_PASSWORD_VALIDATORS = [
@@ -379,21 +413,28 @@ EXPERIMENT_MAX_TOTAL_RUNS = 10
 EXPERIMENT_MAX_PARALLEL_RUNS = 5
 
 # Guacamole RDP Integration
-# ------------------------------------------------------------------------------
-# JSON auth secret key for signing RDP session URLs
-# Must match the JSON_SECRET_KEY configured in Guacamole's ECS task definition
-# This is a hex string key (64-character/256-bit preferred) stored in Secrets Manager
-GUACAMOLE_JSON_AUTH_SECRET = os.environ.get("GUACAMOLE_JSON_AUTH_SECRET", "")
-# Public URL for browser (returned to client)
-GUACAMOLE_BASE_URL = os.environ.get("GUACAMOLE_BASE_URL", "/guacamole")
-# Internal URL for server-to-server API calls (defaults to base URL if not set)
-GUACAMOLE_API_BASE_URL = os.environ.get("GUACAMOLE_API_BASE_URL", "") or GUACAMOLE_BASE_URL
-# Bounded async bootstrap workers for Guacamole token creation. Each worker may
-# hold a blocking Guacamole /api/tokens request, so keep this intentionally low
-# and scale with portal instance count.
-GUACAMOLE_BOOTSTRAP_WORKERS = int(os.environ.get("GUACAMOLE_BOOTSTRAP_WORKERS", "4"))
-GUACAMOLE_BOOTSTRAP_TTL_SECONDS = int(os.environ.get("GUACAMOLE_BOOTSTRAP_TTL_SECONDS", "300"))
-GUACAMOLE_BOOTSTRAP_INLINE = _env_bool("GUACAMOLE_BOOTSTRAP_INLINE", False)
+# Guacamole connection + bootstrap settings live in ``config/_guacamole_settings``
+# (re-exported above) to keep this module under the 500-line cap (Sonar S104).
+
+# Bounded botocore connect/read timeouts for the AWS Secrets Manager client used
+# on/near the portal request path. A stalled Secrets Manager must fail fast
+# instead of hanging an ASGI worker on botocore's long defaults (#929).
+# AWS_SECRETS_MAX_ATTEMPTS is the total attempt count (first try + retries).
+AWS_SECRETS_CONNECT_TIMEOUT_SECONDS = _env_int("AWS_SECRETS_CONNECT_TIMEOUT_SECONDS", 2)
+AWS_SECRETS_READ_TIMEOUT_SECONDS = _env_int("AWS_SECRETS_READ_TIMEOUT_SECONDS", 5)
+AWS_SECRETS_MAX_ATTEMPTS = _env_int("AWS_SECRETS_MAX_ATTEMPTS", 2)
+# GCP counterpart: bounded per-request deadline for Secret Manager reads so a
+# stalled backend fails fast instead of hanging the calling thread (#929).
+GCP_SECRETS_REQUEST_TIMEOUT_SECONDS = _env_int("GCP_SECRETS_REQUEST_TIMEOUT_SECONDS", 5)
+
+# Bounded, in-process, provider-neutral cache of resolved secret VALUES, keyed by
+# secret reference (never by value), so a per-range connect storm collapses to one
+# Secrets Manager fetch per reference for the TTL window (#929). TTL bounds
+# staleness so credential rotation under the same reference converges and a
+# destroyed range's entries simply expire; no durable storage. TTL <= 0 disables
+# the cache. Values are never logged.
+SECRET_CACHE_TTL_SECONDS = _env_int("SECRET_CACHE_TTL_SECONDS", 300)
+SECRET_CACHE_MAX_ENTRIES = _env_int("SECRET_CACHE_MAX_ENTRIES", 256)
 # First-click readiness retry for the /api/tokens exchange (issue #395).
 # Bounded exponential backoff inside mission_control.guacamole guards against the
 # token-readiness race that surfaces as a redirect to the Guacamole login page on
@@ -410,34 +451,15 @@ CTF_DEFAULT_RANGE_SPINUP_MINUTES = int(os.environ.get("CTF_DEFAULT_RANGE_SPINUP_
 CTF_DEFAULT_CLEANUP_DELAY_HOURS = int(os.environ.get("CTF_DEFAULT_CLEANUP_DELAY_HOURS", "24"))
 CTFD_PLATFORM_URL = os.environ.get("CTFD_PLATFORM_URL", "https://ctf.shifter.example.com/login")
 
-# Email - SES
-EMAIL_BACKEND = os.environ.get("EMAIL_BACKEND", "django.core.mail.backends.console.EmailBackend")
-AWS_SES_REGION_NAME = "us-east-2"
-AWS_SES_REGION_ENDPOINT = "email.us-east-2.amazonaws.com"
-
-# ------------------------------------------------------------------------------
-# Django REST Framework Configuration
-# ------------------------------------------------------------------------------
-
-REST_FRAMEWORK = {
-    "DEFAULT_AUTHENTICATION_CLASSES": [
-        "risk_register.api.authentication.APIKeyAuthentication",
-        "rest_framework.authentication.SessionAuthentication",
-    ],
-    "DEFAULT_PERMISSION_CLASSES": [
-        "rest_framework.permissions.IsAuthenticated",
-    ],
-    "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
-    "PAGE_SIZE": 50,
-}
-
 # ------------------------------------------------------------------------------
 # Environment
 # ------------------------------------------------------------------------------
 
-ENVIRONMENT = os.environ.get("ENVIRONMENT", "production")
-DEV_LOGIN_ALLOWED_HOSTS = _env_list("DEV_LOGIN_ALLOWED_HOSTS") or ["localhost", "127.0.0.1", "[::1]"]
+ENVIRONMENT = require_environment()
+# Dev-auth admits the direct peer REMOTE_ADDR only (loopback + these CIDRs); Host is never trusted (SEC-3 #937).
 DEV_LOGIN_ALLOWED_CIDRS = _env_list("DEV_LOGIN_ALLOWED_CIDRS")
+# Trusted XFF proxy hops (single ALB -> 1); the audit source-IP resolver trusts that rightmost hop (SEC-4 #937).
+AUDIT_TRUSTED_PROXY_HOPS = _env_int("AUDIT_TRUSTED_PROXY_HOPS", 1)
 
 # ------------------------------------------------------------------------------
 # Logging Configuration

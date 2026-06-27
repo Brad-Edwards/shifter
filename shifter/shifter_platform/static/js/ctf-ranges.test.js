@@ -3,6 +3,7 @@ require('./ctf-ranges.js');
 function buildDOM() {
     return `
         <button id="btn-provision-all">Provision All Ranges</button>
+        <div id="provision-progress" style="display: none;"></div>
         <table>
             <tr>
                 <td>
@@ -42,6 +43,10 @@ describe('CTFRangeManager', () => {
         manager.init();
     });
 
+    afterEach(() => {
+        if (manager) manager._stopProgressPolling();
+    });
+
     describe('provisionAll', () => {
         test('sends POST to provision all URL with CSRF token', async () => {
             await manager.provisionAll();
@@ -66,33 +71,21 @@ describe('CTFRangeManager', () => {
             expect(fetchMock).not.toHaveBeenCalled();
         });
 
-        test('shows success message and reloads on success', async () => {
-            await manager.provisionAll();
-
-            expect(globalThis.alert).toHaveBeenCalledWith(
-                'Provisioned: 2, Failed: 0'
-            );
-            expect(manager._reload).toHaveBeenCalled();
-        });
-
-        test('shows errors in alert when some fail', async () => {
+        test('queues background provisioning and starts polling without a blocking alert', async () => {
+            let pollSpy = jest.spyOn(manager, 'startProgressPolling').mockImplementation(() => {});
             fetchMock.mockResolvedValue({
                 ok: true,
-                json: () => Promise.resolve({
-                    successful: 1,
-                    failed: 1,
-                    errors: [{ participant_id: 'p1', error: 'No agent configured' }],
-                }),
+                json: () => Promise.resolve({ event_id: 'evt-1', status: 'queued', task_id: 't1' }),
             });
 
             await manager.provisionAll();
 
-            expect(globalThis.alert).toHaveBeenCalledWith(
-                expect.stringContaining('No agent configured')
-            );
+            expect(globalThis.alert).not.toHaveBeenCalled();
+            expect(pollSpy).toHaveBeenCalled();
         });
 
-        test('shows error on non-ok response', async () => {
+        test('shows error on non-ok response and does not poll', async () => {
+            let pollSpy = jest.spyOn(manager, 'startProgressPolling').mockImplementation(() => {});
             fetchMock.mockResolvedValue({
                 ok: false,
                 json: () => Promise.resolve({ error: 'Event not found' }),
@@ -101,10 +94,12 @@ describe('CTFRangeManager', () => {
             await manager.provisionAll();
 
             expect(globalThis.alert).toHaveBeenCalledWith('Error: Event not found');
+            expect(pollSpy).not.toHaveBeenCalled();
             expect(manager._reload).not.toHaveBeenCalled();
         });
 
         test('disables button while loading', async () => {
+            jest.spyOn(manager, 'startProgressPolling').mockImplementation(() => {});
             let btn = document.getElementById('btn-provision-all');
 
             // Hold the fetch so we can check intermediate state
@@ -116,16 +111,56 @@ describe('CTFRangeManager', () => {
             let promise = manager.provisionAll();
 
             expect(btn.disabled).toBe(true);
-            expect(btn.textContent).toBe('Provisioning...');
+            expect(btn.textContent).toBe('Queuing...');
 
             resolveResponse({
                 ok: true,
-                json: () => Promise.resolve({ successful: 0, failed: 0, errors: [] }),
+                json: () => Promise.resolve({ status: 'queued', task_id: 't1' }),
             });
 
             await promise;
 
             expect(btn.disabled).toBe(false);
+        });
+    });
+
+    describe('progress polling', () => {
+        test('renders counts and reloads when provisioning is complete', async () => {
+            fetchMock.mockResolvedValue({
+                ok: true,
+                json: () => Promise.resolve({
+                    progress: { counts: { total: 2, ready: 2, provisioning: 0, error: 0, not_assigned: 0 }, task: null },
+                }),
+            });
+
+            await manager._pollProgress();
+
+            let el = document.getElementById('provision-progress');
+            expect(el.textContent).toContain('ready 2');
+            expect(manager._reload).toHaveBeenCalled();
+        });
+
+        test('keeps polling while a spin-up task is active', async () => {
+            fetchMock.mockResolvedValue({
+                ok: true,
+                json: () => Promise.resolve({
+                    progress: { counts: { total: 2, provisioning: 1 }, task: { status: 'running' } },
+                }),
+            });
+
+            await manager._pollProgress();
+
+            expect(manager._reload).not.toHaveBeenCalled();
+        });
+
+        test('startProgressPolling is idempotent', () => {
+            jest.spyOn(manager, '_pollProgress').mockResolvedValue(undefined);
+
+            manager.startProgressPolling();
+            let first = manager.statusPollInterval;
+            manager.startProgressPolling();
+
+            expect(manager.statusPollInterval).toBe(first);
         });
     });
 

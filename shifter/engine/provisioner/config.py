@@ -391,11 +391,47 @@ def _get_ngfw_provider_metadata(state: dict[str, Any], cloud_provider: str) -> d
     return {}
 
 
+def _infer_ngfw_cloud_provider(data_attachment_id: str, route_next_hop_ip: str, env_default: str) -> str:
+    """Infer the cloud provider when state omits an explicit ``cloud_provider``.
+
+    GCP data attachments are namespaced KubeVirt references such as
+    ``"<namespace>/<vm>:eth1"``; AWS ENI ids (``"eni-..."``) never contain a
+    ``"/"`` or ``":"``. Inferring AWS from any ``data_attachment_id`` would
+    misclassify a GCP NGFW whose explicit ``cloud_provider`` was dropped.
+    """
+    if data_attachment_id:
+        return "gcp" if ("/" in data_attachment_id or ":" in data_attachment_id) else "aws"
+    if route_next_hop_ip:
+        return "gcp"
+    return env_default
+
+
+def _resolve_ngfw_attachment_mode(
+    payload: dict[str, Any],
+    provider_metadata: dict[str, Any],
+    cloud_provider: str,
+    data_attachment_id: str,
+    route_next_hop_ip: str,
+) -> str:
+    """Resolve the attachment mode, falling back to a provider-appropriate default."""
+    default_mode = ""
+    if cloud_provider == "gcp" and (route_next_hop_ip or data_attachment_id):
+        default_mode = "gdc-static-route"
+    elif cloud_provider == "aws" and data_attachment_id:
+        default_mode = "aws-route-table-eni"
+    return _first_non_empty_string(
+        payload.get("attachment_mode"),
+        provider_metadata.get("attachment_mode"),
+        default_mode,
+    )
+
+
 def resolve_ngfw_attachment_config(state: dict[str, Any] | None) -> NGFWAttachmentConfig:
     """Resolve provider-neutral NGFW attachment details from stored state."""
     payload = state if isinstance(state, dict) else {}
     explicit_provider = _first_non_empty_string(payload.get("cloud_provider")).lower()
-    cloud_provider = explicit_provider or os.environ.get("CLOUD_PROVIDER", "aws").lower()
+    env_default = os.environ.get("CLOUD_PROVIDER", "aws").lower()
+    cloud_provider = explicit_provider or env_default
     provider_metadata = _get_ngfw_provider_metadata(payload, cloud_provider)
 
     management_ip = _first_non_empty_string(
@@ -427,16 +463,10 @@ def resolve_ngfw_attachment_config(state: dict[str, Any] | None) -> NGFWAttachme
         provider_metadata.get("attachment_id"),
     )
     if not explicit_provider:
-        if data_attachment_id:
-            cloud_provider = "aws"
-        elif route_next_hop_ip:
-            cloud_provider = "gcp"
+        cloud_provider = _infer_ngfw_cloud_provider(data_attachment_id, route_next_hop_ip, env_default)
         provider_metadata = _get_ngfw_provider_metadata(payload, cloud_provider)
-    attachment_mode = _first_non_empty_string(
-        payload.get("attachment_mode"),
-        provider_metadata.get("attachment_mode"),
-        "aws-route-table-eni" if data_attachment_id else "",
-        "gdc-static-route" if route_next_hop_ip else "",
+    attachment_mode = _resolve_ngfw_attachment_mode(
+        payload, provider_metadata, cloud_provider, data_attachment_id, route_next_hop_ip
     )
 
     return NGFWAttachmentConfig(
@@ -521,6 +551,25 @@ def _validate_gdc_access_fields(*, cluster_id: str, vxlan_cidr: str, region: str
         raise RuntimeError("GDC access secret must include region or RANGE_NETWORK_REGION/GCP_REGION must be set")
 
 
+def _resolve_gdc_network_fields(payload: dict[str, Any]) -> dict[str, Any]:
+    """Resolve GDC network-access fields from the secret payload with env fallbacks."""
+    return {
+        "cluster_id": str(payload.get("cluster_id") or os.environ.get("GDC_CLUSTER_ID", "")).strip(),
+        "vxlan_cidr": str(payload.get("vxlan_cidr") or os.environ.get("GDC_VXLAN_CIDR", "")).strip(),
+        "region": _resolve_gdc_access_region(payload),
+        "namespace_prefix": str(
+            payload.get("range_namespace_prefix") or os.environ.get("GDC_RANGE_NAMESPACE_PREFIX", "range")
+        ),
+        "network_interface": str(payload.get("network_interface") or os.environ.get("GDC_NETWORK_INTERFACE", "vxlan0")),
+        "dns_nameservers": tuple(
+            payload.get("dns_nameservers") or _parse_csv_env(os.environ.get("GDC_NETWORK_DNS_NAMESERVERS", ""))
+        ),
+        "static_ip_reservation_count": int(
+            payload.get("static_ip_reservation_count") or os.environ.get("GDC_STATIC_IP_RESERVATION_COUNT", "4")
+        ),
+    }
+
+
 def load_gdc_network_access_config() -> GDCNetworkAccessConfig | None:
     """Load the GDC access bundle from Secret Manager when configured."""
     secret_id = os.environ.get("GDC_ACCESS_SECRET_ID", "").strip()
@@ -531,32 +580,25 @@ def load_gdc_network_access_config() -> GDCNetworkAccessConfig | None:
 
     raw_secret = get_secrets_store().get_secret(secret_id)
     payload, kubeconfig = _decode_gdc_access_secret(raw_secret)
-    cluster_id = str(payload.get("cluster_id") or os.environ.get("GDC_CLUSTER_ID", "")).strip()
-    vxlan_cidr = str(payload.get("vxlan_cidr") or os.environ.get("GDC_VXLAN_CIDR", "")).strip()
-    region = _resolve_gdc_access_region(payload)
-    namespace_prefix = str(
-        payload.get("range_namespace_prefix") or os.environ.get("GDC_RANGE_NAMESPACE_PREFIX", "range")
+    fields = _resolve_gdc_network_fields(payload)
+    _validate_gdc_access_fields(
+        cluster_id=fields["cluster_id"], vxlan_cidr=fields["vxlan_cidr"], region=fields["region"]
     )
-    network_interface = str(payload.get("network_interface") or os.environ.get("GDC_NETWORK_INTERFACE", "vxlan0"))
-    dns_nameservers = tuple(
-        payload.get("dns_nameservers") or _parse_csv_env(os.environ.get("GDC_NETWORK_DNS_NAMESERVERS", "8.8.8.8"))
-    )
-    static_ip_reservation_count = int(
-        payload.get("static_ip_reservation_count") or os.environ.get("GDC_STATIC_IP_RESERVATION_COUNT", "4")
-    )
-    _validate_gdc_access_fields(cluster_id=cluster_id, vxlan_cidr=vxlan_cidr, region=region)
 
-    return GDCNetworkAccessConfig(
-        access_secret_id=secret_id,
-        kubeconfig=kubeconfig,
-        cluster_id=cluster_id,
-        vxlan_cidr=vxlan_cidr,
-        region=region,
-        namespace_prefix=namespace_prefix.strip() or "range",
-        network_interface=network_interface.strip() or "vxlan0",
-        dns_nameservers=dns_nameservers or ("8.8.8.8",),
-        static_ip_reservation_count=static_ip_reservation_count,
-    )
+    config_kwargs: dict[str, Any] = {
+        "access_secret_id": secret_id,
+        "kubeconfig": kubeconfig,
+        "cluster_id": fields["cluster_id"],
+        "vxlan_cidr": fields["vxlan_cidr"],
+        "region": fields["region"],
+        "namespace_prefix": fields["namespace_prefix"].strip() or "range",
+        "network_interface": fields["network_interface"].strip() or "vxlan0",
+        "static_ip_reservation_count": fields["static_ip_reservation_count"],
+    }
+    # Only override the dataclass default ("8.8.8.8",) when nameservers were resolved.
+    if fields["dns_nameservers"]:
+        config_kwargs["dns_nameservers"] = fields["dns_nameservers"]
+    return GDCNetworkAccessConfig(**config_kwargs)
 
 
 def load_gdc_vmruntime_config() -> GDCVMRuntimeConfig:
@@ -574,16 +616,10 @@ def load_gdc_vmruntime_config() -> GDCVMRuntimeConfig:
     )
 
 
-def load_gdc_palo_alto_vmseries_config() -> GDCPaloAltoVMSeriesConfig:
-    """Load Palo Alto VM-Series VM Runtime configuration for the GCP NGFW path."""
-    if not _is_active_gdc_range_plane():
-        raise RuntimeError("GDC Palo Alto VM-Series config is only valid when CLOUD_PROVIDER=gcp")
-
-    image_url = os.environ.get("GDC_VMSERIES_IMAGE_URL", "").strip()
-    bootstrap_bucket = os.environ.get("GDC_VMSERIES_BOOTSTRAP_BUCKET", "").strip()
-    data_network_name = os.environ.get("GDC_VMSERIES_DATA_NETWORK_NAME", "").strip()
-    route_next_hop_ip = os.environ.get("GDC_VMSERIES_ROUTE_NEXT_HOP_IP", "").strip()
-
+def _require_vmseries_env(
+    *, image_url: str, bootstrap_bucket: str, data_network_name: str, route_next_hop_ip: str
+) -> None:
+    """Raise if any required VM-Series env var is empty."""
     missing = [
         name
         for name, value in (
@@ -597,14 +633,44 @@ def load_gdc_palo_alto_vmseries_config() -> GDCPaloAltoVMSeriesConfig:
     if missing:
         raise RuntimeError("Missing required GDC Palo Alto VM-Series configuration: " + ", ".join(missing))
 
+
+def _resolve_vmseries_storage_and_secret() -> tuple[str, str]:
+    """Resolve VM-Series storage class and image secret with VM-runtime fallbacks."""
+    storage_class_name = (
+        os.environ.get("GDC_VMSERIES_STORAGE_CLASS", "").strip()
+        or os.environ.get("GDC_VM_STORAGE_CLASS", "local-shared").strip()
+        or "local-shared"
+    )
+    image_gcs_secret_id = (
+        os.environ.get("GDC_VMSERIES_IMAGE_GCS_SECRET_ID", "").strip()
+        or os.environ.get("GDC_VM_IMAGE_GCS_SECRET_ID", "").strip()
+    )
+    return storage_class_name, image_gcs_secret_id
+
+
+def load_gdc_palo_alto_vmseries_config() -> GDCPaloAltoVMSeriesConfig:
+    """Load Palo Alto VM-Series VM Runtime configuration for the GCP NGFW path."""
+    if not _is_active_gdc_range_plane():
+        raise RuntimeError("GDC Palo Alto VM-Series config is only valid when CLOUD_PROVIDER=gcp")
+
+    image_url = os.environ.get("GDC_VMSERIES_IMAGE_URL", "").strip()
+    bootstrap_bucket = os.environ.get("GDC_VMSERIES_BOOTSTRAP_BUCKET", "").strip()
+    data_network_name = os.environ.get("GDC_VMSERIES_DATA_NETWORK_NAME", "").strip()
+    route_next_hop_ip = os.environ.get("GDC_VMSERIES_ROUTE_NEXT_HOP_IP", "").strip()
+
+    _require_vmseries_env(
+        image_url=image_url,
+        bootstrap_bucket=bootstrap_bucket,
+        data_network_name=data_network_name,
+        route_next_hop_ip=route_next_hop_ip,
+    )
+    storage_class_name, image_gcs_secret_id = _resolve_vmseries_storage_and_secret()
+
     return GDCPaloAltoVMSeriesConfig(
         image_url=image_url,
         bootstrap_bucket=bootstrap_bucket,
-        storage_class_name=os.environ.get("GDC_VMSERIES_STORAGE_CLASS", "").strip()
-        or os.environ.get("GDC_VM_STORAGE_CLASS", "local-shared").strip()
-        or "local-shared",
-        image_gcs_secret_id=os.environ.get("GDC_VMSERIES_IMAGE_GCS_SECRET_ID", "").strip()
-        or os.environ.get("GDC_VM_IMAGE_GCS_SECRET_ID", "").strip(),
+        storage_class_name=storage_class_name,
+        image_gcs_secret_id=image_gcs_secret_id,
         namespace_prefix=os.environ.get("GDC_VMSERIES_NAMESPACE_PREFIX", "ngfw").strip() or "ngfw",
         management_network_name=os.environ.get("GDC_VMSERIES_MGMT_NETWORK_NAME", "pod-network").strip()
         or "pod-network",
@@ -719,7 +785,9 @@ def get_range_from_db(range_id: int) -> dict[str, Any]:
             raise ValueError(f"Range {range_id} not found")
 
         user_id = row[1]
-        range_config = row[3] or {}
+        from cyberscript.persisted_envelope import unwrap_persisted_spec
+
+        range_config = unwrap_persisted_spec(row[3] or {})
 
         # Check if scenario requires NGFW (ngfw: true in range_config)
         ngfw_enabled = range_config.get("ngfw", False)

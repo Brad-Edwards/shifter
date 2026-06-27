@@ -52,74 +52,78 @@ def _get_range_call(user: User, range_id: int) -> RangeInstance:
     return _cs.get_range(user, range_id)
 
 
-def destroy_range(user: User, range_id: int) -> None:
+def destroy_range(user: User, range_instance_pk: int) -> None:
     """Tear down range.
 
     Fetches RangeInstance, verifies ownership, updates CMS status to DESTROYING,
     then delegates to engine.services.destroy_range with RangeContext.
 
+    The PK is the identifier callers hold (``find_range_instance_id_by_request``
+    and ``get_range_status_by_id`` are PK-keyed); lookups must use the PK, not
+    the legacy nullable ``RangeInstance.range_id`` engine field (issue #1139).
+
     Args:
         user: User requesting destruction
-        range_id: ID of the range to destroy
+        range_instance_pk: PK of the RangeInstance to destroy
 
     Returns:
         None
 
     Raises:
-        TypeError: If user is None, invalid type, or range_id is invalid type
-        ValueError: If user has no ID (unsaved) or range_id is invalid
+        TypeError: If user is None, invalid type, or range_instance_pk is invalid type
+        ValueError: If user has no ID (unsaved) or range_instance_pk is invalid
         CMSError: If range not found or not owned by user
         EngineError: If engine fails to destroy range
     """
     _validate_caller_user(user, "destroy_range")
 
-    if range_id is None:
+    if range_instance_pk is None:
         logger.error(
-            "destroy_range called with None range_id for user_id=%s",
+            "destroy_range called with None range_instance_pk for user_id=%s",
             user.id,
         )
-        raise TypeError("range_id cannot be None")
+        raise TypeError("range_instance_pk cannot be None")
 
-    if not isinstance(range_id, int):
+    if not isinstance(range_instance_pk, int):
         logger.error(
-            "destroy_range called with invalid range_id type: %s",
-            type(range_id).__name__,
+            "destroy_range called with invalid range_instance_pk type: %s",
+            type(range_instance_pk).__name__,
         )
-        msg = f"range_id must be an int, got {type(range_id).__name__}"
+        msg = f"range_instance_pk must be an int, got {type(range_instance_pk).__name__}"
         raise TypeError(msg)
 
-    if range_id < 0:
+    if range_instance_pk < 0:
         logger.error(
-            "destroy_range called with negative range_id=%s for user_id=%s",
-            range_id,
+            "destroy_range called with negative range_instance_pk=%s for user_id=%s",
+            range_instance_pk,
             user.id,
         )
-        raise ValueError("range_id must be non-negative")
+        raise ValueError("range_instance_pk must be non-negative")
 
     logger.debug(
-        "destroy_range called for user_id=%s, range_id=%s",
+        "destroy_range called for user_id=%s, range_instance_pk=%s",
         user.id,
-        range_id,
+        range_instance_pk,
     )
 
     try:
-        instance = RangeInstance.objects.get(range_id=range_id)
+        instance = RangeInstance.objects.get(pk=range_instance_pk)
     except RangeInstance.DoesNotExist:
         logger.warning(
-            "destroy_range: range not found for user_id=%s, range_id=%s",
+            "destroy_range: range not found for user_id=%s, range_instance_pk=%s",
             user.id,
-            range_id,
+            range_instance_pk,
         )
-        raise CMSError(f"Range {range_id} not found") from None
+        raise CMSError(f"Range {range_instance_pk} not found") from None
 
     if instance.user_id != user.id:
         logger.error(
-            "destroy_range: access denied - range_id=%s owned by user_id=%s, requested by user_id=%s",
-            range_id,
+            "destroy_range: access denied - range_instance_pk=%s owned by user_id=%s, requested by user_id=%s",
+            range_instance_pk,
             instance.user_id,
             user.id,
         )
-        raise CMSError(f"Range {range_id} not found")
+        raise CMSError(f"Range {range_instance_pk} not found")
 
     try:
         instance.status = ResourceStatus.DESTROYING.value
@@ -129,16 +133,16 @@ def destroy_range(user: User, range_id: int) -> None:
         request_id = instance.request.request_id if instance.request else None
         if request_id is None:
             logger.error(
-                "destroy_range: no request_id for range_id=%s, cannot destroy",
-                range_id,
+                "destroy_range: no request_id for range_instance_pk=%s, cannot destroy",
+                range_instance_pk,
             )
-            raise CMSError(f"Range {range_id} has no associated request")
+            raise CMSError(f"Range {range_instance_pk} has no associated request")
 
         _engine_destroy_range_by_request_call(request_id)
 
         _audit_log_call(
             entity_type=AuditLog.EntityType.RANGE,
-            entity_id=range_id,
+            entity_id=range_instance_pk,
             action=AuditLog.Action.DEPROVISION,
             actor_type=AuditLog.ActorType.USER,
             actor_id=user.id,
@@ -150,8 +154,8 @@ def destroy_range(user: User, range_id: int) -> None:
         )
 
         logger.debug(
-            "destroy_range completed for range_id=%s request_id=%s user_id=%s",
-            range_id,
+            "destroy_range completed for range_instance_pk=%s request_id=%s user_id=%s",
+            range_instance_pk,
             request_id,
             user.id,
         )
@@ -160,9 +164,9 @@ def destroy_range(user: User, range_id: int) -> None:
         raise
     except Exception:
         logger.exception(
-            "Error in destroy_range for user_id=%s, range_id=%s",
+            "Error in destroy_range for user_id=%s, range_instance_pk=%s",
             user.id,
-            range_id,
+            range_instance_pk,
         )
         raise
 

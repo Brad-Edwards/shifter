@@ -185,6 +185,44 @@ def test_identity_platform_session_returns_mfa_enrollment_error(client, monkeypa
     assert response.json()["error"] == "mfa_enrollment_required"
 
 
+@override_settings(
+    AUTH_PROVIDER="identity_platform",
+    DEBUG=False,
+    IDENTITY_ALLOWED_EMAIL_DOMAIN="paloaltonetworks.com",
+)
+def test_identity_platform_session_does_not_leak_exception_detail(client, monkeypatch):
+    """A 403 auth failure surfaces only the fixed error code and a classified
+    message, never the raw exception text (CodeQL py/stack-trace-exposure).
+
+    IdentityPlatformAuthError is frequently raised with upstream API detail
+    interpolated in (e.g. the Identity Platform response body), so str(exc)
+    must not flow to the response.
+    """
+    from config import views
+
+    leaky_detail = "returned non-JSON response: <html>upstream 500 internal trace at module.func</html>"
+    monkeypatch.setattr(
+        views.identity_platform_auth,
+        "login_with_identity_token",
+        lambda request, id_token: (_ for _ in ()).throw(
+            views.identity_platform_auth.IdentityPlatformAuthError(leaky_detail)
+        ),
+    )
+
+    response = client.post(
+        reverse("identity_platform_session"),
+        data=json.dumps({"idToken": "boom"}),
+        content_type="application/json",
+    )
+
+    assert response.status_code == 403
+    body = response.json()
+    assert body["error"] == "identity_platform_auth_failed"
+    assert body["message"] == "Authentication failed"
+    for leaked in ("non-JSON", "<html>", "upstream", "internal", "trace", "module.func"):
+        assert leaked not in body["message"]
+
+
 @override_settings(AUTH_PROVIDER="identity_platform", DEBUG=False)
 def test_gcp_legacy_oidc_authenticate_redirects_to_platform_login(client):
     response = client.get("/oidc/authenticate/")
