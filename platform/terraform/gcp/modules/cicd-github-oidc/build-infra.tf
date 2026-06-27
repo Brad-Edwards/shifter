@@ -28,6 +28,11 @@ resource "google_compute_firewall" "packer_iap_ingress" {
   network   = var.platform_network
   direction = "INGRESS"
 
+  # Must out-prioritise the platform deny-external-ssh-rdp rule (priority 900),
+  # which denies tcp:22 from 0.0.0.0/0. A lower number wins, so this scoped IAP
+  # allow sits just ahead of it; the deny still covers all other sources.
+  priority = 800
+
   source_ranges           = ["35.235.240.0/20"] # NOSONAR - Google IAP TCP forwarding range.
   target_service_accounts = [google_service_account.packer_build.email]
 
