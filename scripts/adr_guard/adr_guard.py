@@ -3528,37 +3528,15 @@ def _writes_local_auto_tfvars(stripped_line: str) -> bool:
     return 0 <= redirect_pos < marker_pos
 
 
-def check_platform_renders_deploy_tfvars(repo_root: Path, files: list[str] | None) -> list[Violation]:
-    """Require AWS platform Terraform jobs to render local.auto.tfvars first.
-
-    The committed `terraform.tfvars` under `platform/terraform/environments/*/portal`
-    is an intentionally-broken `example.com` baseline. Each Terraform-running job
-    in `_shifter-platform.yml` must render the deployment-owned override into a
-    gitignored `local.auto.tfvars` before `terraform init/validate/plan/apply`
-    consumes variables, so deploys never apply the baseline (ADR-011-R7).
-    """
-    if files is not None and not any(
-        path in {_PLATFORM_WORKFLOW_PATH, _ADR_GUARD_SCRIPT_PATH} for path in files
-    ):
-        return []
-
-    platform_path = repo_root / _PLATFORM_WORKFLOW_PATH
-    if not platform_path.exists():
-        return [
-            _tfvars_render_violation(
-                _PLATFORM_WORKFLOW_PATH,
-                "Required workflow is missing; ADR-011-R7 cannot verify deploy tfvars rendering",
-            )
-        ]
-
-    text = platform_path.read_text(encoding="utf-8")
+def _tfvars_render_violations_for_workflow(workflow_path: str, text: str) -> list[Violation]:
+    """Return ADR-011-R7 violations for one reusable workflow file."""
     violations: list[Violation] = []
     for job in _TFVARS_RENDER_JOBS:
         block = _workflow_job_block(text, job)
         if not block:
             violations.append(
                 _tfvars_render_violation(
-                    _PLATFORM_WORKFLOW_PATH,
+                    workflow_path,
                     f"`{job}` job is missing; ADR-011-R7 expects it to render "
                     f"`{_LOCAL_AUTO_TFVARS}` before Terraform consumes variables",
                 )
@@ -3575,7 +3553,7 @@ def check_platform_renders_deploy_tfvars(repo_root: Path, files: list[str] | Non
         if render_idx is None:
             violations.append(
                 _tfvars_render_violation(
-                    _PLATFORM_WORKFLOW_PATH,
+                    workflow_path,
                     f"`{job}` job must render `{_LOCAL_AUTO_TFVARS}` from the deployment "
                     "secret (a step that writes the file, not merely names it) before "
                     "`terraform init/validate/plan/apply`, so the deploy never applies "
@@ -3585,11 +3563,40 @@ def check_platform_renders_deploy_tfvars(repo_root: Path, files: list[str] | Non
         elif tf_idx is not None and render_idx > tf_idx:
             violations.append(
                 _tfvars_render_violation(
-                    _PLATFORM_WORKFLOW_PATH,
+                    workflow_path,
                     f"`{job}` job renders `{_LOCAL_AUTO_TFVARS}` after a Terraform "
                     "command; the render must precede `terraform init/validate/plan/apply`",
                 )
             )
+    return violations
+
+
+def check_platform_renders_deploy_tfvars(repo_root: Path, files: list[str] | None) -> list[Violation]:
+    """Require AWS Terraform deploy jobs to render local.auto.tfvars first.
+
+    The committed `terraform.tfvars` under `platform/terraform/environments/*`
+    is an intentionally-broken `example.com` baseline. Each Terraform-running
+    job in the AWS reusable workflows must render the deployment-owned override
+    into a gitignored `local.auto.tfvars` before `terraform init/validate/plan/apply`
+    consumes variables, so deploys never apply the baseline (ADR-011-R7).
+    """
+    workflow_paths = (_PLATFORM_WORKFLOW_PATH, _CORE_WORKFLOW_PATH, _RANGE_WORKFLOW_PATH)
+    if files is not None and not any(
+        path in {*workflow_paths, _ADR_GUARD_SCRIPT_PATH} for path in files
+    ):
+        return []
+
+    violations: list[Violation] = []
+    for workflow_path in workflow_paths:
+        workflow_file = repo_root / workflow_path
+        if not workflow_file.exists():
+            continue
+        violations.extend(
+            _tfvars_render_violations_for_workflow(
+                workflow_path,
+                workflow_file.read_text(encoding="utf-8"),
+            )
+        )
     return violations
 
 
@@ -5389,6 +5396,73 @@ def _iter_identifier_candidates(repo_root: Path, files: list[str] | None) -> lis
     return tracked
 
 
+def check_no_terraform_operational_placeholders(repo_root: Path, files: list[str] | None) -> list[Violation]:
+    """Forbid operational placeholder strings in committed Terraform sources (ADR-004-R15).
+
+    Scans tracked ``platform/terraform/**/*.tf`` files for known non-operational
+    literals such as ``YOUR_EMAIL@example.com`` that must not ship in IaC. Real
+    alert recipients and similar values belong in gitignored ``local.auto.tfvars``
+    or deploy secrets, not hardcoded in ``.tf`` sources.
+    """
+    violations: list[Violation] = []
+    placeholder_patterns = (
+        re.compile(r"YOUR_EMAIL@example\.com", re.IGNORECASE),
+        re.compile(r"subscriber_email_addresses\s*=\s*\[[^\]]*@example\.com", re.IGNORECASE),
+    )
+    for rel in _iter_identifier_candidates(repo_root, files):
+        if not rel.startswith("platform/terraform/") or not rel.endswith(".tf"):
+            continue
+        path = repo_root / rel
+        if not path.is_file():
+            continue
+        for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+            for pattern in placeholder_patterns:
+                if pattern.search(line):
+                    violations.append(
+                        Violation(
+                            "no-terraform-operational-placeholders",
+                            "ADR-004-R15",
+                            rel,
+                            f"Operational placeholder detected in Terraform source (line {lineno}). "
+                            "Use a variable plus gitignored local.auto.tfvars or a deploy secret "
+                            "instead of committing example.com alert recipients.",
+                        )
+                    )
+                    break
+    return violations
+
+
+_GITHUB_OIDC_TF_PATH = "platform/terraform/global/iam/github-oidc.tf"
+
+
+def check_github_oidc_no_admin_access(repo_root: Path, files: list[str] | None) -> list[Violation]:
+    """Forbid AdministratorAccess attachment on the GitHub Actions OIDC role (ADR-004-R15)."""
+    if files is not None and _GITHUB_OIDC_TF_PATH not in files and not any(
+        path.endswith("adr_guard.py") for path in files
+    ):
+        return []
+
+    path = repo_root / _GITHUB_OIDC_TF_PATH
+    if not path.is_file():
+        return []
+
+    text = path.read_text(encoding="utf-8")
+    if re.search(
+        r'policy_arn\s*=\s*"arn:aws:iam::aws:policy/AdministratorAccess"',
+        text,
+    ):
+        return [
+            Violation(
+                "github-oidc-no-admin-access",
+                "ADR-004-R15",
+                _GITHUB_OIDC_TF_PATH,
+                "GitHub Actions OIDC role must not attach managed AdministratorAccess; "
+                "use scoped inline or managed policies required by CI workflows.",
+            )
+        ]
+    return []
+
+
 def check_no_live_cloud_identifiers(repo_root: Path, files: list[str] | None) -> list[Violation]:
     """Forbid live AWS infrastructure identifiers in tracked files (ADR-004-R14).
 
@@ -5431,6 +5505,8 @@ CHECKS = {
     "deploy-verification-fail-loud": check_deploy_verification_fail_loud,
     "deploy-workflow-runner-exposure": check_deploy_runner_exposure,
     "no-live-cloud-identifiers": check_no_live_cloud_identifiers,
+    "no-terraform-operational-placeholders": check_no_terraform_operational_placeholders,
+    "github-oidc-no-admin-access": check_github_oidc_no_admin_access,
     "documentation-coverage": check_documentation_coverage,
 }
 CHECK_LEVELS = {
@@ -5453,6 +5529,8 @@ CHECK_LEVELS = {
         "deploy-verification-fail-loud",
         "deploy-workflow-runner-exposure",
         "no-live-cloud-identifiers",
+        "no-terraform-operational-placeholders",
+        "github-oidc-no-admin-access",
         "documentation-coverage",
     ],
     "ci": [
@@ -5475,6 +5553,8 @@ CHECK_LEVELS = {
         "deploy-verification-fail-loud",
         "deploy-workflow-runner-exposure",
         "no-live-cloud-identifiers",
+        "no-terraform-operational-placeholders",
+        "github-oidc-no-admin-access",
         "documentation-coverage",
     ],
     "all": list(CHECKS),

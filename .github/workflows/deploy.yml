@@ -481,6 +481,9 @@ jobs:
       TF_INFRA_STATE_BUCKET_DEV: ${{ secrets.TF_INFRA_STATE_BUCKET_DEV }}
       TF_INFRA_STATE_BUCKET_PROOF: ${{ secrets.TF_INFRA_STATE_BUCKET_PROOF }}
       AWS_ROLE_ARN_PROOF: ${{ secrets.AWS_ROLE_ARN_PROOF }}
+      TF_VARS_DEV_CORE: ${{ secrets.TF_VARS_DEV_CORE }}
+      TF_VARS_PROOF_CORE: ${{ secrets.TF_VARS_PROOF_CORE }}
+      TF_VARS_PROD_CORE: ${{ secrets.TF_VARS_PROD_CORE }}
 
   range:
     name: Range
