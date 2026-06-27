@@ -113,3 +113,14 @@ resource "google_service_account_iam_member" "portal_sign_blob" {
   role               = "roles/iam.serviceAccountTokenCreator"
   member             = "serviceAccount:${google_service_account.workload["portal"].email}"
 }
+
+# The provisioner signs a V4 GCS download URL for each range instance's XDR
+# agent object so the range VM can fetch it during provisioning. Like the
+# portal, it runs under Workload Identity (token-only, no private key) and
+# signs via the IAM signBlob API, which requires serviceAccountTokenCreator
+# scoped to its own identity.
+resource "google_service_account_iam_member" "provisioner_sign_blob" {
+  service_account_id = google_service_account.workload["provisioner"].name
+  role               = "roles/iam.serviceAccountTokenCreator"
+  member             = "serviceAccount:${google_service_account.workload["provisioner"].email}"
+}
