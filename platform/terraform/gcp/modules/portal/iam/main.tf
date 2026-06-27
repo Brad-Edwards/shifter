@@ -101,3 +101,15 @@ resource "google_service_account_iam_member" "workload_identity" {
   role               = "roles/iam.workloadIdentityUser"
   member             = each.value
 }
+
+# The portal signs V4 GCS upload/download URLs (agent uploads, experiment
+# artifact downloads) via the IAM credentials signBlob API: Workload Identity
+# credentials carry only an access token and have no private key to sign URLs
+# locally. signBlob requires the service account to be able to mint signing
+# tokens for itself, so it holds serviceAccountTokenCreator scoped to its own
+# identity (not a project-wide grant).
+resource "google_service_account_iam_member" "portal_sign_blob" {
+  service_account_id = google_service_account.workload["portal"].name
+  role               = "roles/iam.serviceAccountTokenCreator"
+  member             = "serviceAccount:${google_service_account.workload["portal"].email}"
+}
