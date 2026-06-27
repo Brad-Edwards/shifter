@@ -289,7 +289,7 @@ class CheckTfIamSsmRangeScopeTest(unittest.TestCase):
 
     def test_full_wildcard_action_with_concrete_range_resource_passes(self) -> None:
         # Action="*" is broad but the resource is bound to a concrete range id,
-        # so it does not cross the range boundary that R16 guards.
+        # so it does not cross the range boundary that R17 guards.
         with tempfile.TemporaryDirectory() as tmp:
             tf = _write(
                 Path(tmp),

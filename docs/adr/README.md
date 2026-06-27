@@ -44,10 +44,15 @@ Current mechanisms:
     keeps engine-provisioner EC2 instance lifecycle actions scoped to
     Shifter-owned, Terraform-managed instances.
   - `check-tf-iam-ssm-range-scope`: local Terraform IAM hardening check
-    (ADR-004-R16) that stops the shared range guest instance role from
+    (ADR-004-R17) that stops the shared range guest instance role from
     being granted SSM Parameter Store access wildcarded across the
     environment or range segment (`parameter/shifter/*/range/*`); guards
     the #1178 cross-tenant credential-access fix.
+  - `check-tf-iam-ssm-scope`: local Terraform IAM hardening check that
+    keeps engine-provisioner SSM Run Command (`ssm:SendCommand`) and
+    `ec2:RebootInstances` scoped to Shifter range guest instances via
+    resource-tag conditions, so the task role cannot command portal or
+    runner instances.
   - `check-tf-rds-security`: local Terraform RDS hardening check that
     keeps the portal and Guacamole RDS instances on IAM DB auth and an
     explicit CA certificate identifier.
@@ -134,7 +139,7 @@ Current mechanisms:
   requires literal IAM DB auth enablement and an explicit non-empty CA
   certificate identifier, complementing Checkov's RDS policies.
 - `scripts/check_tf_iam_ssm_range_scope/check_tf_iam_ssm_range_scope.py`:
-  ADR-004-R16 IAM hardening check that rejects SSM Parameter Store grants
+  ADR-004-R17 IAM hardening check that rejects SSM Parameter Store grants
   on the shared range guest instance role whose Resource wildcards across
   the environment or range segment (`parameter/shifter/*/range/*` or an
   unbounded `parameter/shifter/<env>/range/*`). The provisioner
