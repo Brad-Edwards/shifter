@@ -244,6 +244,27 @@ def _complete_pending_for_authenticated_user(
     return None
 
 
+def _complete_pending_invite_in_transaction(
+    request: HttpRequest,
+    pending_id: str,
+) -> tuple[InviteExchangeResult | None, str | None]:
+    """Finish a pending invite under the participant row lock."""
+    participant, load_error = _load_pending_participant(request, pending_id)
+    if load_error is not None:
+        return load_error, None
+    assert participant is not None
+
+    state_error = _pending_participant_state_error(request, participant)
+    if state_error is not None:
+        return state_error, None
+
+    completion_error = _complete_pending_for_authenticated_user(request, participant)
+    if completion_error is not None:
+        return completion_error, None
+
+    return None, _dashboard_url()
+
+
 def complete_pending_invite(request: HttpRequest) -> InviteExchangeResult:
     """Finish onboarding for an existing account after platform login."""
     result = _pending_session_error(request)
@@ -252,19 +273,7 @@ def complete_pending_invite(request: HttpRequest) -> InviteExchangeResult:
     if result is None:
         pending_id = request.session["ctf_pending_invite_id"]
         with transaction.atomic():
-            participant, load_error = _load_pending_participant(request, pending_id)
-            if load_error is not None:
-                result = load_error
-            elif participant is not None:
-                state_error = _pending_participant_state_error(request, participant)
-                if state_error is not None:
-                    result = state_error
-                else:
-                    completion_error = _complete_pending_for_authenticated_user(request, participant)
-                    if completion_error is not None:
-                        result = completion_error
-                    else:
-                        redirect_url = _dashboard_url()
+            result, redirect_url = _complete_pending_invite_in_transaction(request, pending_id)
 
     if result is not None:
         return result
