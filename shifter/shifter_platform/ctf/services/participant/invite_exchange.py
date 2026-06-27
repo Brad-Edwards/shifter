@@ -48,6 +48,7 @@ def _invalid_invite_result(*, http_status: int = 400) -> InviteExchangeResult:
 
 
 def _dashboard_url() -> str:
+    """Return the post-enrollment Mission Control dashboard URL."""
     from django.urls import reverse
 
     return reverse(_DASHBOARD_URL_NAME)
@@ -194,13 +195,14 @@ def _pending_session_error(request: HttpRequest) -> InviteExchangeResult | None:
     """Validate session-bound pending invite state before completion."""
     pending_id = request.session.get("ctf_pending_invite_id")
     pending_user_id = request.session.get("ctf_pending_invite_user_id")
+    error: InviteExchangeResult | None = None
     if not pending_id or not pending_user_id:
-        return InviteExchangeResult(error="No pending invitation.", http_status=400)
-    if not request.user.is_authenticated:
-        return InviteExchangeResult(error="Authentication required.", http_status=401)
-    if request.user.pk != int(pending_user_id):
-        return _invalid_invite_result()
-    return None
+        error = InviteExchangeResult(error="No pending invitation.", http_status=400)
+    elif not request.user.is_authenticated:
+        error = InviteExchangeResult(error="Authentication required.", http_status=401)
+    elif request.user.pk != int(pending_user_id):
+        error = _invalid_invite_result()
+    return error
 
 
 def _load_pending_participant(
@@ -244,23 +246,26 @@ def _complete_pending_for_authenticated_user(
 
 def complete_pending_invite(request: HttpRequest) -> InviteExchangeResult:
     """Finish onboarding for an existing account after platform login."""
-    session_error = _pending_session_error(request)
-    if session_error is not None:
-        return session_error
+    result = _pending_session_error(request)
+    redirect_url: str | None = None
 
-    pending_id = request.session["ctf_pending_invite_id"]
-    with transaction.atomic():
-        participant, load_error = _load_pending_participant(request, pending_id)
-        if load_error is not None:
-            return load_error
-        assert participant is not None
+    if result is None:
+        pending_id = request.session["ctf_pending_invite_id"]
+        with transaction.atomic():
+            participant, load_error = _load_pending_participant(request, pending_id)
+            if load_error is not None:
+                result = load_error
+            elif participant is not None:
+                state_error = _pending_participant_state_error(request, participant)
+                if state_error is not None:
+                    result = state_error
+                else:
+                    completion_error = _complete_pending_for_authenticated_user(request, participant)
+                    if completion_error is not None:
+                        result = completion_error
+                    else:
+                        redirect_url = _dashboard_url()
 
-        state_error = _pending_participant_state_error(request, participant)
-        if state_error is not None:
-            return state_error
-
-        completion_error = _complete_pending_for_authenticated_user(request, participant)
-        if completion_error is not None:
-            return completion_error
-
-    return InviteExchangeResult(redirect=_dashboard_url())
+    if result is not None:
+        return result
+    return InviteExchangeResult(redirect=redirect_url)
