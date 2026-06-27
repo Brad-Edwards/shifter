@@ -165,6 +165,47 @@ jobs:
             echo "**Next step:** Verify in ${{ inputs.environment }} before promoting to prod."
           } >> "$GITHUB_STEP_SUMMARY"
 
+      # The packer build publishes a GCE image (the AWS-AMI analog). The GDC VM
+      # Runtime cannot consume a GCE image family directly - it imports a disk
+      # from a gs:// source - so export the built image to the GDC VM image
+      # bucket as a qcow2 the range provisioner references via GDC_*_IMAGE_URL.
+      - name: Export image to GCS for the GDC VM Runtime
+        working-directory: shifter/packer/gcp
+        env:
+          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          GCP_GDC_VM_IMAGE_BUCKET: ${{ vars.GCP_GDC_VM_IMAGE_BUCKET }}
+          GCP_REGION: ${{ vars.GCP_REGION || 'us-central1' }}
+          GCP_PACKER_ZONE: ${{ vars.GCP_PACKER_ZONE }}
+          GCP_PACKER_SUBNETWORK: ${{ vars.GCP_PACKER_SUBNETWORK }}
+          GCP_PACKER_SERVICE_ACCOUNT: ${{ vars.GCP_PACKER_SERVICE_ACCOUNT }}
+          GCP_SERVICE_ACCOUNT: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+        run: |
+          if [ -z "${GCP_GDC_VM_IMAGE_BUCKET}" ]; then
+            echo "::error::Required variable GCP_GDC_VM_IMAGE_BUCKET (the GDC VM Runtime image bucket) is not set. See docs/dev/deploy-secrets.md."
+            exit 1
+          fi
+          IMAGE_NAME=$(jq -r '.builds[-1].artifact_id' "${IMAGE_TYPE}-manifest.json")
+          ZONE="${GCP_PACKER_ZONE:-${GCP_REGION}-a}"
+          DEST="gs://${GCP_GDC_VM_IMAGE_BUCKET}/${IMAGE_TYPE}.qcow2"
+          # The export runs a Cloud Build worker VM; pin it to the internal-IP
+          # builder subnet so it complies with the compute.vmExternalIpAccess
+          # org policy (no external IP), and runs as the build service account.
+          gcloud compute images export \
+            --image="${IMAGE_NAME}" \
+            --destination-uri="${DEST}" \
+            --export-format=qcow2 \
+            --project="${GCP_PROJECT_ID}" \
+            --zone="${ZONE}" \
+            ${GCP_PACKER_SUBNETWORK:+--subnet="${GCP_PACKER_SUBNETWORK}"} \
+            --compute-service-account="${GCP_PACKER_SERVICE_ACCOUNT:-${GCP_SERVICE_ACCOUNT}}"
+          GDC_VAR="GDC_$(echo "${IMAGE_TYPE}" | tr '[:lower:]' '[:upper:]')_IMAGE_URL"
+          {
+            echo "## GDC VM Runtime disk exported"
+            echo "- **Image:** \`${IMAGE_NAME}\`"
+            echo "- **Disk:** \`${DEST}\`"
+            echo "- **Wire as:** \`${GDC_VAR}=${DEST}\` (see docs/architecture/gcp-guest-images.md)"
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Upload manifest
         uses: actions/upload-artifact@v7
         with:

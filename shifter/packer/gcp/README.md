@@ -61,15 +61,27 @@ CLI flags) so secrets cannot appear in a process list. See
 ### Kali base image
 
 GCP has no public Kali image (the AWS path uses an AWS Marketplace product
-code). Import one first, then pass it as `kali_source_image`:
+code; there is no Offensive-Security-published GCP image). Import Kali's
+official generic-cloud image once, then pass it as `kali_source_image`:
 
 ```bash
-gcloud compute images import shifter-kali-base \
-  --source-file=gs://<bucket>/kali-rolling.tar.gz --os=debian-11
+# Kali's official generic-cloud image is a raw disk in a tar.xz (kali.download).
+curl -fSLO https://kali.download/cloud-images/kali-<ver>/kali-linux-<ver>-cloud-genericcloud-amd64.tar.xz
+# verify the published SHA256, then repack as a GCE image tarball and create:
+tar xJf kali-linux-<ver>-cloud-genericcloud-amd64.tar.xz            # -> disk.raw
+tar --format=oldgnu -Sczf disk.raw.tar.gz disk.raw
+gcloud storage cp disk.raw.tar.gz gs://<bucket>/kali.disk.raw.tar.gz
+gcloud compute images create shifter-kali-base \
+  --source-uri=gs://<bucket>/kali.disk.raw.tar.gz --family=shifter-kali-base
 packer build -only='googlecompute.kali' -var="kali_source_image=shifter-kali-base" ...
 ```
 
-The build fails loud if `kali_source_image` is unset.
+`gcloud compute images create` is used rather than `gcloud compute images
+import --os=…`: the legacy importer rejects the compressed tarball and is being
+sunset. The generic-cloud image carries cloud-init's GCE datasource, which
+provisions the packer build's SSH key from metadata. The build fails loud if
+`kali_source_image` is unset. See `docs/architecture/gcp-guest-images.md` for
+the full build → export → wire pipeline.
 
 ### Windows / DC
 
