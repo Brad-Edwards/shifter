@@ -109,6 +109,7 @@ def _sample_gcp_control_plane_outputs(project_id: str = "prod-rwctxzl6shxk") -> 
             "value": {
                 "portal": f"shiftergcpdev-portal@{project_id}.iam.gserviceaccount.com",
                 "workers": f"shiftergcpdev-workers@{project_id}.iam.gserviceaccount.com",
+                "ctf-scheduler": f"shiftergcpdev-ctf-scheduler@{project_id}.iam.gserviceaccount.com",
                 "provisioner": f"shiftergcpdev-provisioner@{project_id}.iam.gserviceaccount.com",
             }
         },
@@ -892,7 +893,9 @@ class TestGdcRenderers:
         assert "ip link add vxlan0 type vxlan id 42" in rendered
         assert "fs.inotify.max_user_instances = 1024" in rendered
         assert 'configure_remote_host "10.240.0.3" "10.200.0.3"' in rendered
-        assert "StrictHostKeyChecking=yes" in rendered
+        # accept-new pins the host key on first contact (the freshly created VMs
+        # have no known_hosts entry yet) without the silent-MITM exposure of `no`.
+        assert "StrictHostKeyChecking=accept-new" in rendered
         assert "StrictHostKeyChecking=no" not in rendered
         assert "UserKnownHostsFile=/dev/null" not in rendered
 
@@ -904,7 +907,7 @@ class TestGdcRenderers:
 
         assert f"install -m 755 {config.staging_bundle_dir}/bmctl /usr/local/sbin/bmctl" in rendered
         assert "anthos-baremetal-release" not in rendered
-        assert "StrictHostKeyChecking yes" in rendered
+        assert "StrictHostKeyChecking accept-new" in rendered
         assert "StrictHostKeyChecking no" not in rendered
         assert "UserKnownHostsFile /dev/null" not in rendered
 
@@ -1028,6 +1031,20 @@ gke_master_authorized_cidrs = ["198.51.100.10/32"]
 
         terraform_output = json.dumps(_sample_gcp_control_plane_outputs(config.project_id))
 
+        # The apply provisions the Artifact Registry P4SA via the Service Usage
+        # REST API (urllib) before Terraform runs. Stub the network boundary
+        # (ADR-019: patch the HTTP seam, not the first-party function) so the
+        # test does not make a live, unauthenticated HTTP call.
+        class _FakeServiceIdentityResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self) -> bytes:
+                return b"{}"
+
         with (
             patch("deploy.get_repo_root", return_value=mock_repo_root),
             patch("deploy.gcloud_resource_exists", return_value=False),
@@ -1036,6 +1053,7 @@ gke_master_authorized_cidrs = ["198.51.100.10/32"]
             patch("deploy.wait_for_gcp_terraform_bootstrap_access") as mock_wait,
             patch("deploy.run_gcp_terraform_apply_with_retry") as mock_apply,
             patch("deploy.run_cmd") as mock_run_cmd,
+            patch("urllib.request.urlopen", return_value=_FakeServiceIdentityResponse()),
             patch("os.chdir"),
             patch(
                 "subprocess.run",
@@ -1258,6 +1276,13 @@ class TestGdcTerraformBootstrapCredentials:
             patch("deploy.gcloud_resource_exists", return_value=False),
             patch("deploy.prune_stale_gcp_terraform_bootstrap_keys") as mock_prune,
             patch("deploy.run_cmd", side_effect=fake_run_cmd) as mock_run_cmd,
+            # The project owner ADD binding goes through the retry helper, which
+            # shells out via subprocess.run (ADR-019: patch the process boundary,
+            # not the first-party helper).
+            patch(
+                "subprocess.run",
+                return_value=subprocess.CompletedProcess(["gcloud"], 0, stdout="", stderr=""),
+            ) as mock_subprocess,
             deploy.gcp_terraform_bootstrap_credentials(config) as credentials_path,
         ):
             assert Path(credentials_path).read_text() == '{"private_key_id":"bootstrap-key-id"}\n'
@@ -1272,9 +1297,15 @@ class TestGdcTerraformBootstrapCredentials:
             and cmd[4] == config.terraform_bootstrap_service_account_name
             for cmd in executed
         )
+        # The project owner ADD binding goes through the retry helper (ETag /
+        # member-propagation races) which shells out via subprocess.run; the
+        # bucket binding and all revoke calls stay on run_cmd. binding_cmd is
+        # ["gcloud", "projects", "add-iam-policy-binding", project_id, "--member",
+        # member, "--role", role, ...] so the role sits at index 7.
+        bound = [call.args[0] for call in mock_subprocess.call_args_list]
         assert any(
-            cmd[:4] == ["gcloud", "projects", "add-iam-policy-binding", config.project_id] and "roles/owner" in cmd
-            for cmd in executed
+            cmd[:4] == ["gcloud", "projects", "add-iam-policy-binding", config.project_id] and cmd[7] == "roles/owner"
+            for cmd in bound
         )
         assert any(
             cmd[:5]
@@ -1621,6 +1652,10 @@ class TestGdcControlPlaneHelmValues:
         assert (
             values["serviceAccounts"]["provisioner"]["annotations"]["iam.gke.io/gcp-service-account"]
             == "shiftergcpdev-provisioner@prod-rwctxzl6shxk.iam.gserviceaccount.com"
+        )
+        assert (
+            values["serviceAccounts"]["ctfScheduler"]["annotations"]["iam.gke.io/gcp-service-account"]
+            == "shiftergcpdev-ctf-scheduler@prod-rwctxzl6shxk.iam.gserviceaccount.com"
         )
         assert values["images"]["portal"]["repository"] == (
             "us-central1-docker.pkg.dev/prod-rwctxzl6shxk/shifter-gcp-dev-portal/portal"
@@ -2362,7 +2397,10 @@ class TestGkeGcloudAuthPlugin:
             deploy.ensure_gke_gcloud_auth_plugin()
 
         mock_error.assert_called_once()
-        assert "Automatic installation requires apt-based package tooling" in mock_error.call_args.args[0]
+        assert (
+            "Automatic installation requires the gcloud component manager or apt-based package tooling"
+            in mock_error.call_args.args[0]
+        )
 
 
 class TestGkeGcloudAuthPluginUserSpaceInstall:
@@ -2419,11 +2457,18 @@ class TestGdcBootstrapPrerequisites:
 
         with (
             patch("deploy.gcloud_resource_exists", return_value=True),
-            patch("deploy.run_cmd") as mock_run_cmd,
+            patch("deploy.run_cmd"),
+            patch(
+                "subprocess.run",
+                return_value=subprocess.CompletedProcess(["gcloud"], 0, stdout="", stderr=""),
+            ) as mock_subprocess,
         ):
             deploy.ensure_gdc_service_account(config)
 
-        granted_roles = [call.args[0][7] for call in mock_run_cmd.call_args_list]
+        # Role bindings go through the retry helper (member propagation / ETag
+        # races), which shells out via subprocess.run (ADR-019: patch the process
+        # boundary). binding_cmd carries the role at index 7.
+        granted_roles = [call.args[0][7] for call in mock_subprocess.call_args_list]
         assert "roles/compute.viewer" in granted_roles
 
     def test_gdc_service_account_waits_for_visibility_after_create(self):
@@ -2433,6 +2478,10 @@ class TestGdcBootstrapPrerequisites:
         with (
             patch("deploy.gcloud_resource_exists", side_effect=[False, False, False, True]),
             patch("deploy.run_cmd") as mock_run_cmd,
+            patch(
+                "subprocess.run",
+                return_value=subprocess.CompletedProcess(["gcloud"], 0, stdout="", stderr=""),
+            ) as mock_subprocess,
             patch("deploy.time.sleep") as mock_sleep,
         ):
             deploy.ensure_gdc_service_account(config)
@@ -2443,10 +2492,10 @@ class TestGdcBootstrapPrerequisites:
             "service-accounts",
             "create",
         ]
-        assert any(
-            call.args[0][0:3] == ["gcloud", "projects", "add-iam-policy-binding"]
-            for call in mock_run_cmd.call_args_list
-        )
+        # Bindings are applied through the retry helper (subprocess.run boundary)
+        # after the SA is visible.
+        bound = [call.args[0] for call in mock_subprocess.call_args_list]
+        assert any(cmd[:3] == ["gcloud", "projects", "add-iam-policy-binding"] for cmd in bound)
         assert mock_sleep.call_count == 2
 
 
@@ -2525,13 +2574,22 @@ class TestGcpPlatformCoreContracts:
         identity_platform_section = module_main.split('resource "google_identity_platform_config" "platform" {', 1)[1]
         assert "disabled_user_signup   = false" in identity_platform_section
         assert 'event_type   = "beforeCreate"' in identity_platform_section
+        # The blocking function is optional (Domain Restricted Sharing can block
+        # its allUsers invoker), so the trigger renders in a count-gated dynamic
+        # block and references the resource by index.
         assert (
-            "google_cloudfunctions_function.identity_platform_before_create.https_trigger_url"
+            "google_cloudfunctions_function.identity_platform_before_create[0].https_trigger_url"
             in identity_platform_section
         )
 
-    def test_cloud_armor_sqli_rule_opts_out_known_false_positive_signature(self):
-        """The edge WAF should not block the portal landing/login flow on the known false-positive rule."""
+    def test_cloud_armor_sqli_rule_uses_baseline_sensitivity(self):
+        """The edge WAF runs the SQLi ruleset at the PL1 baseline.
+
+        Sensitivity 1 keeps high-confidence SQLi coverage without false-positiving
+        on legitimate request bodies such as the base64url JWT the portal POSTs to
+        /auth/identity/session/ (higher levels denied it as
+        body_denied_by_security_policy and broke login).
+        """
         module_path = (
             Path(__file__).resolve().parents[3]
             / "platform"
@@ -2545,7 +2603,10 @@ class TestGcpPlatformCoreContracts:
         module_main = module_path.read_text()
 
         assert "evaluatePreconfiguredWaf('sqli-v33-stable'" in module_main
-        assert "owasp-crs-v030301-id942421-sqli" in module_main
+        assert "'sensitivity': 1" in module_main
+        # The per-rule opt-out was a band-aid for the over-aggressive PL4 setting;
+        # PL1 does not need it.
+        assert "opt_out_rule_ids" not in module_main
 
 
 class TestGdcBootstrapAssetUpload:

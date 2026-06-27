@@ -2,13 +2,15 @@ locals {
   workload_service_accounts = toset([
     "portal",
     "workers",
+    "ctf-scheduler",
     "provisioner",
   ])
 
   workload_identity_members = {
-    portal      = "serviceAccount:${var.project_id}.svc.id.goog[shifter-platform/portal]"
-    workers     = "serviceAccount:${var.project_id}.svc.id.goog[shifter-platform/workers]"
-    provisioner = "serviceAccount:${var.project_id}.svc.id.goog[shifter-jobs/provisioner]"
+    portal        = "serviceAccount:${var.project_id}.svc.id.goog[shifter-platform/portal]"
+    workers       = "serviceAccount:${var.project_id}.svc.id.goog[shifter-platform/workers]"
+    ctf-scheduler = "serviceAccount:${var.project_id}.svc.id.goog[shifter-platform/ctf-scheduler]"
+    provisioner   = "serviceAccount:${var.project_id}.svc.id.goog[shifter-jobs/provisioner]"
   }
 
   node_roles = toset([
@@ -30,6 +32,15 @@ locals {
       "roles/pubsub.subscriber",
       "roles/secretmanager.secretAccessor",
       "roles/storage.objectViewer",
+    ])
+    # The CTF scheduler polls Postgres for due tasks and triggers range
+    # provisioning via cms.services.create_range, which publishes a request to
+    # Pub/Sub for the provisioner to consume. It reads platform secrets at
+    # startup but never subscribes, manages secrets, or touches storage, so its
+    # identity is bounded to publish + secret read.
+    "ctf-scheduler" = toset([
+      "roles/pubsub.publisher",
+      "roles/secretmanager.secretAccessor",
     ])
     provisioner = toset([
       "roles/pubsub.publisher",

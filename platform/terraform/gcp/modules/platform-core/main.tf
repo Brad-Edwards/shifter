@@ -45,6 +45,9 @@ locals {
   required_services = toset([
     "artifactregistry.googleapis.com",
     "binaryauthorization.googleapis.com",
+    "cloudbuild.googleapis.com",
+    "cloudfunctions.googleapis.com",
+    "cloudkms.googleapis.com",
     "compute.googleapis.com",
     "container.googleapis.com",
     "identitytoolkit.googleapis.com",
@@ -165,18 +168,36 @@ module "portal_messaging" {
   depends_on = [module.project_services]
 }
 
+# The gen1 Identity Platform `beforeCreate` function is built by Cloud Build
+# running as the project's default compute service account. New projects no
+# longer auto-grant Editor to default service accounts
+# (iam.automaticIamGrantsForDefaultServiceAccounts is off by default), so the
+# build fails reading its `gcf-sources-*` bucket unless the build-worker role is
+# granted explicitly. `roles/cloudbuild.builds.builder` bundles the source-read,
+# logging, and Artifact Registry permissions a build needs. Only required when
+# the blocking function is deployed.
+resource "google_project_iam_member" "default_compute_cloud_build" {
+  count   = var.enable_identity_blocking_function ? 1 : 0
+  project = var.project_id
+  role    = "roles/cloudbuild.builds.builder"
+  member  = "serviceAccount:${module.project_services.project_number}-compute@developer.gserviceaccount.com"
+
+  depends_on = [module.project_services]
+}
+
 module "portal_identity_platform" {
   source = "../portal/identity-platform"
 
-  project_id                    = var.project_id
-  region                        = var.region
-  name_prefix                   = local.name_prefix
-  identity_authorized_domains   = local.identity_authorized_domains
-  identity_allowed_email_domain = var.identity_allowed_email_domain
-  identity_allowed_emails       = var.identity_allowed_emails
-  assets_bucket_name            = module.portal_gcs.assets_bucket_name
+  project_id                        = var.project_id
+  region                            = var.region
+  name_prefix                       = local.name_prefix
+  identity_authorized_domains       = local.identity_authorized_domains
+  identity_allowed_email_domain     = var.identity_allowed_email_domain
+  identity_allowed_emails           = var.identity_allowed_emails
+  assets_bucket_name                = module.portal_gcs.assets_bucket_name
+  enable_identity_blocking_function = var.enable_identity_blocking_function
 
-  depends_on = [module.project_services, module.portal_gcs]
+  depends_on = [module.project_services, module.portal_gcs, google_project_iam_member.default_compute_cloud_build]
 }
 
 module "portal_cloud_sql" {

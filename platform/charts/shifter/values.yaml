@@ -148,6 +148,12 @@ security:
 tmpVolume:
   sizeLimit: 256Mi
 
+# Writable media volume for the portal (Django MEDIA_ROOT=/app/media) under
+# readOnlyRootFilesystem. FileSystemStorage is per-pod; this satisfies the app's
+# storage backend and the storage health check.
+mediaVolume:
+  sizeLimit: 1Gi
+
 services:
   portal:
     annotations:

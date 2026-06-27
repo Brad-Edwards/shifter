@@ -11,10 +11,6 @@
         <link rel="icon"
               type="image/svg+xml"
               href="{% static 'images/favicon.svg' %}">
-        <link rel="stylesheet"
-              href="https://www.gstatic.com/firebasejs/ui/6.1.0/firebase-ui-auth.css"
-              integrity="sha384-0Wcwu737HAMd4dc+eWTBlwaXSABrcAJUjPk7K58aPdKIR9y7gexKB+CGg/2C8U35"
-              crossorigin="anonymous">
         <style>
         :root {
             --bg: #0f172a;
@@ -98,7 +94,9 @@
             font-weight: 600;
         }
 
-        input[type="text"] {
+        input[type="text"],
+        input[type="email"],
+        input[type="password"] {
             width: 100%;
             border-radius: 10px;
             border: 1px solid var(--panel-border);
@@ -145,46 +143,24 @@
             word-break: break-word;
         }
 
-        #firebaseui-auth-container {
-            min-height: 12rem;
+        .form-title {
+            font-size: 1.2rem;
+            margin: 0 0 1rem;
         }
 
-        .firebaseui-container {
+        .link-button {
+            width: auto;
+            margin-top: 1rem;
+            padding: 0;
             background: transparent;
-            color: var(--text);
-            box-shadow: none;
-            max-width: 100%;
-        }
-
-        .firebaseui-card-content,
-        .firebaseui-card-header,
-        .firebaseui-card-footer {
-            background: transparent;
-        }
-
-        .firebaseui-title,
-        .firebaseui-subtitle,
-        .firebaseui-text,
-        .firebaseui-label,
-        .firebaseui-input,
-        .firebaseui-link {
-            color: var(--text);
-        }
-
-        .firebaseui-textfield.mdl-textfield .mdl-textfield__label,
-        .firebaseui-textfield.mdl-textfield .firebaseui-label {
-            color: var(--muted);
-        }
-
-        .firebaseui-button {
-            border-radius: 10px;
-            text-transform: none;
+            color: var(--accent);
             font-weight: 600;
         }
 
-        #identity-auth-loader {
-            color: var(--muted);
-            margin-bottom: 1rem;
+        .link-button:hover {
+            background: transparent;
+            color: var(--accent-hover);
+            text-decoration: underline;
         }
 
         .help {
@@ -208,16 +184,45 @@
                     {% blocktrans %}@{{ allowed_email_domain }}{% endblocktrans %}
                     </code>
                     {% blocktrans trimmed %}
-                        . Sign-in and registration use Google Identity Platform's prebuilt web UI. Shifter only
-                        creates an application session after the provider confirms the identity token, verified
-                        email, and enrolled MFA state.
+                        . Sign in or register with your corporate email and password. Shifter only creates an
+                        application session after Identity Platform confirms the identity token, verified email,
+                        and enrolled MFA state.
                     {% endblocktrans %}
                 </p>
-                <div id="identity-auth-loader">
-                    {% trans "Loading authentication\u2026" %}
-                </div>
-                <div id="firebaseui-auth-container">
-                </div>
+                <h2 id="identity-auth-title" class="form-title">
+                    {% trans "Sign in" %}
+                </h2>
+                <form id="identity-auth-form" novalidate>
+                    <div class="field">
+                        <label for="identity-email">
+                            {% trans "Corporate email" %}
+                        </label>
+                        <input id="identity-email"
+                               type="email"
+                               name="email"
+                               autocomplete="username"
+                               inputmode="email"
+                               autocapitalize="none"
+                               spellcheck="false">
+                    </div>
+                    <div class="field">
+                        <label for="identity-password">
+                            {% trans "Password" %}
+                        </label>
+                        <input id="identity-password"
+                               type="password"
+                               name="password"
+                               autocomplete="current-password">
+                    </div>
+                    <button id="identity-auth-submit" type="submit">
+                        {% trans "Sign in" %}
+                    </button>
+                </form>
+                <button id="identity-auth-mode-toggle"
+                        class="link-button"
+                        type="button">
+                    {% trans "Need an account? Create one" %}
+                </button>
                 <p class="help">
                     {% blocktrans trimmed %}
                         CTF participant access still uses range invitation magic links and does not go through
@@ -292,15 +297,8 @@
             </section>
         </main>
         {{ identity_platform_config_json|json_script:"identity-platform-config" }}
-        <script src="https://www.gstatic.com/firebasejs/12.12.0/firebase-app-compat.js"
-                integrity="sha384-BWLdxLZH5wCOzUfOIXVAUxPbSf0ufGVklbRP7rYw1K8t6xJkrTV6mRq3bD5IdSs2"
-                crossorigin="anonymous"></script>
-        <script src="https://www.gstatic.com/firebasejs/12.12.0/firebase-auth-compat.js"
-                integrity="sha384-CYdpfP3gOKgSLevsNvb4KfaGRzR6mjdBfJIYh7t7wgL3ytSv0uqWzDpLcupTgQNf"
-                crossorigin="anonymous"></script>
-        <script src="https://www.gstatic.com/firebasejs/ui/6.1.0/firebase-ui-auth.js"
-                integrity="sha384-O425GKlvfdVtWnpoZspwu5pNL0Jkn34NVeyhT7t+rBULDlHAqjf/na9J0fSkwo6J"
-                crossorigin="anonymous"></script>
-        <script src="{% static 'js/identity_platform_auth.js' %}"></script>
+        {# The auth module imports the Firebase modular SDK (version-pinned) from #}
+        {# gstatic; TOTP MFA is only available through the modular API, not compat. #}
+        <script type="module" src="{% static 'js/identity_platform_auth.js' %}"></script>
     </body>
 </html>

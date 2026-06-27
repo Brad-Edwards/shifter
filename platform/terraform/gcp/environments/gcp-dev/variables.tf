@@ -201,6 +201,18 @@ variable "identity_allowed_emails" {
   default     = []
 }
 
+variable "enable_identity_blocking_function" {
+  description = <<-EOT
+    Deploy the gen1 beforeCreate blocking function enforcing the sign-up domain
+    allowlist at the Identity Platform layer. It requires an `allUsers` Cloud
+    Functions invoker binding, which a Domain Restricted Sharing org policy
+    forbids; set to false in such projects (the portal app still enforces the
+    allowlist fail-closed at login).
+  EOT
+  type        = bool
+  default     = true
+}
+
 # Transactional email (PLAT-002, #671). Optional: leave email_backend empty for
 # the console fallback. When set, an unseeded ESP API-key Secret Manager secret
 # is created for the operator to populate (never committed). See gcp/README.md.
