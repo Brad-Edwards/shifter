@@ -1004,19 +1004,24 @@ class TestRewriteGdcKubeconfig:
         )
         captured: dict[str, str] = {}
 
-        def fake_run_cmd(cmd, *args, **kwargs):
-            # sync publishes the payload via `gcloud secrets versions add
-            # --data-file <tmp>`; read that file to inspect what got stored.
+        def fake_subprocess_run(cmd, *args, **kwargs):
+            # Mock the process boundary (ADR-019: patch the boundary, not the
+            # first-party deploy helpers). Dispatch on the gcloud subcommand:
+            #   secrets describe        -> the access secret already exists
+            #   compute ssh ... cat     -> return the bmctl kubeconfig
+            #   secrets versions access -> no existing version (forces a write)
+            #   secrets versions add    -> capture the stored payload
+            if cmd[:3] == ["gcloud", "secrets", "describe"]:
+                return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+            if cmd[:3] == ["gcloud", "compute", "ssh"]:
+                return subprocess.CompletedProcess(cmd, 0, stdout=self._BMCTL_KUBECONFIG, stderr="")
+            if cmd[:4] == ["gcloud", "secrets", "versions", "access"]:
+                return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="NOT_FOUND: version not found")
             if cmd[:4] == ["gcloud", "secrets", "versions", "add"] and "--data-file" in cmd:
                 captured["payload"] = Path(cmd[cmd.index("--data-file") + 1]).read_text()
-            return None
+            return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
-        with (
-            patch("deploy.ensure_gdc_access_secret"),
-            patch("deploy.fetch_gdc_kubeconfig", return_value=self._BMCTL_KUBECONFIG),
-            patch("deploy.get_latest_gcp_secret_payload", return_value=None),
-            patch("deploy.run_cmd", side_effect=fake_run_cmd),
-        ):
+        with patch("deploy.subprocess.run", side_effect=fake_subprocess_run):
             deploy.sync_gdc_access_secret(config)
 
         assert "10.240.0.8:6444" in captured["payload"]
