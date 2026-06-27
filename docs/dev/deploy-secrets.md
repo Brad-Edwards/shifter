@@ -103,6 +103,25 @@ For AWS local deploys, write the same HCL to a gitignored
 `terraform apply` from a workstation that has the target role (see
 **Local development** below).
 
+## AWS core (`dev` / `proof` / `prod`)
+
+Consumed by `.github/workflows/_core.yml`. The committed
+`platform/terraform/environments/<env>/main.tf` defines shared ECR repos and
+S3 budget alerts. Budget notification recipients are deployment-owned: the
+workflow's `Render local.auto.tfvars from deployment secret` step writes
+`budget_alert_email` into a gitignored `local.auto.tfvars` before Terraform
+runs. The step picks the secret by environment and fails loud (`::error::`) when
+the active environment's secret is empty.
+
+| Name | Kind | Required | Notes |
+|---|---|---|---|
+| `TF_VARS_DEV_CORE` | secret | yes (dev) | Whole-file `local.auto.tfvars` payload for the dev core root. Must set `budget_alert_email` to a real operations address. |
+| `TF_VARS_PROOF_CORE` | secret | yes (proof) | As above, for the proof core root. |
+| `TF_VARS_PROD_CORE` | secret | yes (prod) | As above, for the prod core root. |
+
+See `platform/terraform/environments/<env>/local.auto.tfvars.example` for the
+minimum HCL shape.
+
 ### Fresh AWS account bootstrap order
 
 For a new AWS account, bootstrap the backend and CI identity before trying

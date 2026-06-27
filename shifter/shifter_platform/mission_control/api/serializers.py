@@ -76,7 +76,7 @@ class UploadCompleteSerializer(serializers.Serializer):
 class UploadCancelSerializer(serializers.Serializer):
     """Validate agent-upload cancel requests."""
 
-    upload_token = serializers.CharField(allow_blank=True, required=False, default="")
+    upload_token = serializers.CharField(allow_blank=False, required=True, trim_whitespace=True)
 
 
 class GuacamoleInstanceSerializer(serializers.Serializer):

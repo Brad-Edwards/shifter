@@ -498,7 +498,7 @@ The first slice intentionally stays small:
   content domain, not the Mission Control application path. Closes
   the #560 regression gap (the `box_info` literal-flag map removed
   during the mission_control views package split) and blocks
-  reintroduction. Enforces ADR-004-R15.
+  reintroduction. Enforces ADR-004-R16.
 
 - `rds-pending-modifications`
   Post-`terraform apply` gate in `_shifter-platform.yml`. Reads the portal
