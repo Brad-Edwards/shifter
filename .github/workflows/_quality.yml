@@ -285,6 +285,16 @@ jobs:
           python3 scripts/check_tf_iam_elb_scope/check_tf_iam_elb_scope.py \
             platform/terraform/modules/engine-provisioner/iam.tf
 
+      # Issue #1179: SSM Run Command IAM scoping on the engine provisioner
+      # ECS task role. Mirrors check-tf-iam-ec2-scope: rejects account-wide
+      # ssm:SendCommand / ec2:RebootInstances and requires the range-instance
+      # tag conditions so a provisioner compromise cannot command portal or
+      # runner instances. Pre-commit also enforces it locally.
+      - name: Run check-tf-iam-ssm-scope
+        run: |
+          python3 scripts/check_tf_iam_ssm_scope/check_tf_iam_ssm_scope.py \
+            platform/terraform/modules/engine-provisioner/iam.tf
+
       - name: Run check-tf-iam-role-naming
         run: |
           python3 scripts/check_tf_iam_role_naming/check_tf_iam_role_naming.py
@@ -330,6 +340,7 @@ jobs:
         run: |
           python3 -m unittest scripts.check_tf_iam_ec2_scope.test_check_tf_iam_ec2_scope
           python3 -m unittest scripts.check_tf_iam_elb_scope.test_check_tf_iam_elb_scope
+          python3 -m unittest scripts.check_tf_iam_ssm_scope.test_check_tf_iam_ssm_scope
           python3 -m unittest scripts.check_tf_iam_role_naming.test_check_tf_iam_role_naming
           python3 -m unittest scripts.check_tf_sg_cidrs.test_check_tf_sg_cidrs
           python3 -m unittest scripts.check_tf_kms_secrets_grant.test_check_tf_kms_secrets_grant
