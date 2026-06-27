@@ -210,6 +210,12 @@ repos:
         language: system
         files: ^platform/terraform/modules/engine-provisioner/iam\.tf$
 
+      - id: check-tf-iam-ssm-scope
+        name: AWS SSM Run Command IAM scoping (engine provisioner)
+        entry: python3 scripts/check_tf_iam_ssm_scope/check_tf_iam_ssm_scope.py
+        language: system
+        files: ^platform/terraform/modules/engine-provisioner/iam\.tf$
+
       - id: check-tf-iam-role-naming
         name: AWS IAM role naming seam (shifter-* prefix)
         entry: python3 scripts/check_tf_iam_role_naming/check_tf_iam_role_naming.py
@@ -293,6 +299,7 @@ repos:
           bash -c '
           python3 -m unittest scripts.check_tf_iam_ec2_scope.test_check_tf_iam_ec2_scope &&
           python3 -m unittest scripts.check_tf_iam_elb_scope.test_check_tf_iam_elb_scope &&
+          python3 -m unittest scripts.check_tf_iam_ssm_scope.test_check_tf_iam_ssm_scope &&
           python3 -m unittest scripts.check_tf_iam_role_naming.test_check_tf_iam_role_naming &&
           python3 -m unittest scripts.check_tf_sg_cidrs.test_check_tf_sg_cidrs &&
           python3 -m unittest scripts.check_tf_kms_secrets_grant.test_check_tf_kms_secrets_grant &&
@@ -300,7 +307,7 @@ repos:
           python3 -m unittest scripts.check_portal_target_sg_sources.test_check_portal_target_sg_sources
           '
         language: system
-        files: ^scripts/(check_tf_(iam_ec2_scope|iam_elb_scope|sg_cidrs|kms_secrets_grant|rds_security)|check_portal_target_sg_sources)/
+        files: ^scripts/(check_tf_(iam_ec2_scope|iam_elb_scope|iam_ssm_scope|sg_cidrs|kms_secrets_grant|rds_security)|check_portal_target_sg_sources)/
         pass_filenames: false
 
   # Kubernetes schema validation
