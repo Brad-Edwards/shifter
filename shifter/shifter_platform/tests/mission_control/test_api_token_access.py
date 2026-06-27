@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
 from uuid import UUID
 
 import pytest
 from rest_framework.test import APIClient
 
+from cms.assets.upload_token import generate_upload_token
 from mission_control.models import GuacamoleBootstrapRequest
 from shared.api_tokens import scopes
 from shared.api_tokens.models import ApiToken
@@ -16,6 +18,7 @@ pytestmark = pytest.mark.django_db
 
 RANGE_URL = "/api/v1/mission-control/range/"
 UPLOAD_INITIATE_URL = "/api/v1/mission-control/upload/initiate/"
+UPLOAD_CANCEL_URL = "/api/v1/mission-control/upload/cancel/"
 NGFW_LIST_URL = "/api/v1/mission-control/ngfw/list/"
 SCRIPTS_URL = "/api/v1/mission-control/scripts/"
 GUACAMOLE_RDP_URL = "/api/v1/mission-control/guacamole/rdp-url/"
@@ -39,6 +42,17 @@ def _bearer(client: APIClient, raw: str) -> APIClient:
 def _token(user, *granted_scopes: str) -> str:
     _, raw = ApiToken.create_token(name="mission-control", created_by=user, scopes=list(granted_scopes))
     return raw
+
+
+def _upload_token(user) -> str:
+    return generate_upload_token(
+        user_id=user.id,
+        s3_key=f"agents/{user.id}/agent.msi",
+        name="Agent",
+        filename="agent.msi",
+        os_slug="windows",
+        file_size=100,
+    )
 
 
 class TestRangeTokenAccess:
@@ -81,6 +95,21 @@ class TestUploadTokenAccess:
 
         assert response.status_code == 400
         assert response.json()["error"]["code"] == "invalid"
+
+    def test_upload_write_token_can_cancel_without_csrf(self, client, settings, user):
+        settings.AWS_S3_BUCKET_NAME = "test-bucket"
+        settings.AGENT_UPLOAD_URL_EXPIRES = 900
+        raw = _token(user, scopes.MISSION_CONTROL_UPLOAD_WRITE)
+
+        with patch("boto3.client", return_value=MagicMock()):
+            response = _bearer(client, raw).post(
+                UPLOAD_CANCEL_URL,
+                {"upload_token": _upload_token(user)},
+                format="json",
+            )
+
+        assert response.status_code == 200
+        assert response.json() == {"success": True}
 
 
 class TestSubsurfaceTokenAccess:
