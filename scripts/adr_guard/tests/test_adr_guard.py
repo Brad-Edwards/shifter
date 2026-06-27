@@ -5258,5 +5258,133 @@ class DocumentationCoverageTests(unittest.TestCase):
         self.assertIn("documentation-coverage", ADR_GUARD.CHECK_LEVELS["fast"])
 
 
+class MissionControlFlagLiteralsTests(unittest.TestCase):
+    """Tests for ADR-004-R15: forbid hardcoded CTF flag literals in Mission
+    Control runtime code (Python under the mission_control package and the
+    mission_control template tree, including inline template JavaScript).
+
+    The concrete answer-shaped literal is built programmatically so this
+    tracked test source never carries a real-looking flag value. Format-hint
+    placeholders (``FLAG{...}``, ``FLAG{<16-hex>}``, ``FLAG{}``) are written
+    literally because the check is required to pass them.
+    """
+
+    MC_PY = "shifter/shifter_platform/mission_control/views/_pages.py"
+    MC_TEMPLATE = "shifter/shifter_platform/templates/mission_control/walkthrough.html"
+    # An answer-shaped literal: assembled so the value never appears verbatim
+    # in tracked source and so the test does not self-flag a future repo-wide
+    # scanner.
+    CONCRETE = "FLAG{" + "deadbeefcafe1234" + "}"
+
+    def _write(self, repo_root: Path, rel: str, body: str) -> Path:
+        path = repo_root / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(body, encoding="utf-8")
+        return path
+
+    def test_flags_concrete_flag_in_mc_python(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            self._write(repo_root, self.MC_PY, f'box = {{"web": "{self.CONCRETE}"}}\n')
+            violations = ADR_GUARD.check_mission_control_no_flag_literals(repo_root, None)
+            self.assertEqual({v.path for v in violations}, {self.MC_PY})
+            for v in violations:
+                self.assertEqual(v.rule_id, "ADR-004-R15")
+                self.assertEqual(v.check, "no-mission-control-flag-literals")
+                # The matched flag value must never be echoed (preflight rule).
+                self.assertNotIn(self.CONCRETE, v.message)
+                self.assertNotIn("deadbeefcafe1234", v.message)
+
+    def test_flags_concrete_flag_in_mc_template(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            self._write(repo_root, self.MC_TEMPLATE, f"<script>const f = '{self.CONCRETE}';</script>\n")
+            violations = ADR_GUARD.check_mission_control_no_flag_literals(repo_root, None)
+            self.assertIn(self.MC_TEMPLATE, {v.path for v in violations})
+            for v in violations:
+                self.assertEqual(v.rule_id, "ADR-004-R15")
+                self.assertNotIn(self.CONCRETE, v.message)
+
+    def test_flags_lowercase_flag(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            self._write(repo_root, self.MC_PY, "answer = 'flag{" + "realanswer42" + "}'\n")
+            violations = ADR_GUARD.check_mission_control_no_flag_literals(repo_root, None)
+            self.assertEqual({v.path for v in violations}, {self.MC_PY})
+
+    def test_ignores_format_hint_placeholders(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            self._write(
+                repo_root,
+                self.MC_PY,
+                'HELP = "Submit answers in FLAG{...} form"\n'
+                'HINT = "shape is FLAG{<16-hex>}"\n'
+                'EMPTY = "FLAG{}"\n',
+            )
+            violations = ADR_GUARD.check_mission_control_no_flag_literals(repo_root, None)
+            self.assertEqual(violations, [], msg=f"Unexpected violations: {violations}")
+
+    def test_flags_concrete_answer_with_placeholder_like_chars(self) -> None:
+        # A concrete answer that merely contains an angle bracket, a dot, or
+        # other punctuation must NOT be exempted as a format-hint placeholder;
+        # the guard must fail closed (codex review, cycle 1).
+        bodies = (
+            "FLAG{" + "a1b2" + "<" + "c3d4" + ">}",  # bracket + text outside it
+            "FLAG{" + "real.answer.42" + "}",  # dots but a real answer
+            "FLAG{" + "ans" + "<wer>" + "}",  # text before the bracket token
+            "FLAG{" + "dead..beef" + "cafe" + "}",  # double-dot inside a real answer
+        )
+        for idx, body in enumerate(bodies):
+            with tempfile.TemporaryDirectory() as tmp:
+                repo_root = Path(tmp)
+                self._write(repo_root, self.MC_PY, f'X = "{body}"\n')
+                violations = ADR_GUARD.check_mission_control_no_flag_literals(repo_root, None)
+                self.assertEqual(
+                    {v.path for v in violations},
+                    {self.MC_PY},
+                    msg=f"body #{idx} ({body!r}) should be flagged, got {violations}",
+                )
+
+    def test_ignores_flags_outside_mc_scope(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            # Tests, native CTF, docs, Polaris content, and non-MC templates all
+            # legitimately carry flag literals; none are MC runtime surfaces.
+            self._write(repo_root, "shifter/shifter_platform/tests/mission_control/test_x.py", f'F = "{self.CONCRETE}"\n')
+            self._write(repo_root, "shifter/shifter_platform/ctf/models/challenge.py", f'F = "{self.CONCRETE}"\n')
+            self._write(repo_root, "shifter/shifter_platform/templates/ctf/board.html", f"<i>{self.CONCRETE}</i>\n")
+            self._write(repo_root, "docs/example.md", f"Example flag: {self.CONCRETE}\n")
+            self._write(repo_root, "scenario-dev/polaris/board/challenge.json", f'{{"flag": "{self.CONCRETE}"}}\n')
+            violations = ADR_GUARD.check_mission_control_no_flag_literals(repo_root, None)
+            self.assertEqual(violations, [], msg=f"Unexpected violations: {violations}")
+
+    def test_honors_files_arg(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            other = "shifter/shifter_platform/mission_control/api/_routes.py"
+            self._write(repo_root, self.MC_PY, f'A = "{self.CONCRETE}"\n')
+            self._write(repo_root, other, f'B = "{self.CONCRETE}"\n')
+            violations = ADR_GUARD.check_mission_control_no_flag_literals(repo_root, [self.MC_PY])
+            self.assertEqual({v.path for v in violations}, {self.MC_PY})
+
+    def test_ignores_non_mc_files_passed_via_files_arg(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            outside = "shifter/shifter_platform/ctf/services/challenge.py"
+            self._write(repo_root, outside, f'F = "{self.CONCRETE}"\n')
+            violations = ADR_GUARD.check_mission_control_no_flag_literals(repo_root, [outside])
+            self.assertEqual(violations, [])
+
+    def test_real_repo_passes(self) -> None:
+        violations = ADR_GUARD.check_mission_control_no_flag_literals(ADR_GUARD.REPO_ROOT, None)
+        self.assertEqual(violations, [], msg=f"Unexpected violations: {violations}")
+
+    def test_check_registered_at_ci_and_fast_levels(self) -> None:
+        self.assertIn("no-mission-control-flag-literals", ADR_GUARD.CHECKS)
+        self.assertIn("no-mission-control-flag-literals", ADR_GUARD.CHECK_LEVELS["ci"])
+        self.assertIn("no-mission-control-flag-literals", ADR_GUARD.CHECK_LEVELS["fast"])
+
+
 if __name__ == "__main__":
     unittest.main()

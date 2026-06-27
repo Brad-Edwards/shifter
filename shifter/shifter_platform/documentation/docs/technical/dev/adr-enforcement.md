@@ -475,6 +475,31 @@ The first slice intentionally stays small:
   the failure mode resolved by PR #1207 (issue #1195). Enforces
   ADR-004-R9.
 
+- `no-mission-control-flag-literals`
+  Architecture check that fails the build when Mission Control
+  runtime code carries a hardcoded CTF challenge flag. It scans the
+  `shifter/shifter_platform/mission_control/` package (all runtime;
+  its tests live under `shifter/shifter_platform/tests/mission_control/`,
+  outside scope) and the `shifter/shifter_platform/templates/mission_control/`
+  template tree (including inline `<script>` JavaScript) for
+  answer-shaped `FLAG{...}` literals (case-insensitive). Detection is
+  by pattern, never by a denylist of real values. Format-hint
+  placeholders that describe the answer shape rather than carry one
+  are intentionally **not** flagged: an empty body (`FLAG{}`), the
+  ellipsis form (`FLAG{...}`), and angle-bracket templates
+  (`FLAG{<16-hex>}`). The path scope deliberately excludes tests,
+  docs, the native `ctf` app (where `FLAG{...}` is a documented
+  format hint), and Polaris scenario content under
+  `scenario-dev/polaris/`, where flags are legitimate challenge
+  content. Failure reporting names the repo-relative path and line
+  only; the matched value is never echoed. CTF flags are low-entropy
+  and are not caught by gitleaks; this is the complementary
+  repo-specific backstop. Challenge answers belong to the CTF/CTFd
+  content domain, not the Mission Control application path. Closes
+  the #560 regression gap (the `box_info` literal-flag map removed
+  during the mission_control views package split) and blocks
+  reintroduction. Enforces ADR-004-R15.
+
 - `rds-pending-modifications`
   Post-`terraform apply` gate in `_shifter-platform.yml`. Reads the portal
   Terraform outputs, then calls `aws rds describe-db-instances` for each
