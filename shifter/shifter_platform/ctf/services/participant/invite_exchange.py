@@ -250,19 +250,21 @@ def _complete_pending_invite_in_transaction(
 ) -> tuple[InviteExchangeResult | None, str | None]:
     """Finish a pending invite under the participant row lock."""
     participant, load_error = _load_pending_participant(request, pending_id)
-    if load_error is not None:
-        return load_error, None
-    assert participant is not None
+    error = load_error
+    redirect_url: str | None = None
 
-    state_error = _pending_participant_state_error(request, participant)
-    if state_error is not None:
-        return state_error, None
+    if error is None:
+        assert participant is not None
+        error = _pending_participant_state_error(request, participant)
 
-    completion_error = _complete_pending_for_authenticated_user(request, participant)
-    if completion_error is not None:
-        return completion_error, None
+    if error is None:
+        assert participant is not None
+        error = _complete_pending_for_authenticated_user(request, participant)
 
-    return None, _dashboard_url()
+    if error is None:
+        redirect_url = _dashboard_url()
+
+    return error, redirect_url
 
 
 def complete_pending_invite(request: HttpRequest) -> InviteExchangeResult:
