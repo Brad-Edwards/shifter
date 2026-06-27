@@ -41,8 +41,15 @@ GDC VM Runtime imports the disk (auth: GDC_VM_IMAGE_GCS_SECRET_ID) and boots the
    `compute.vmExternalIpAccess` org policy. See `shifter/packer/gcp/README.md`.
 2. **Export** — the same workflow exports the built image to the GDC VM image
    bucket as `<type>.qcow2` (`gcloud compute images export`, a Cloud Build job
-   pinned to the builder subnet). The bucket is read-granted to the bare-metal
-   GCR identity the VM Runtime authenticates as.
+   pinned to the builder subnet). Both the Cloud Build identity
+   (`--cloudbuild-service-account`) and the daisy worker VM
+   (`--compute-service-account`) are pinned to the `…-packer` build SA — this
+   project's builds otherwise default to the Compute Engine default SA, which
+   the build SA cannot `actAs`. The build SA therefore holds `compute.admin`
+   plus `serviceAccountTokenCreator`/`serviceAccountUser` on itself (the export
+   mints an access token for, and runs the worker as, that same SA). The bucket
+   is read-granted to the bare-metal GCR identity the VM Runtime authenticates
+   as.
 3. **Wire** — set `GDC_<TYPE>_IMAGE_URL=gs://<bucket>/<type>.qcow2` in the
    bootstrap runtime contract (`scripts/bootstrap/deploy.py`) / the live
    `platform-runtime` ConfigMap. Sizing (`GDC_<TYPE>_VCPUS` / `MEMORY` /

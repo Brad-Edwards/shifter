@@ -68,8 +68,11 @@ variable "build_roles" {
   EOT
   type        = list(string)
   default = [
-    "roles/compute.instanceAdmin.v1",
-    "roles/compute.storageAdmin",
+    # compute.admin (superset of instanceAdmin.v1 + storageAdmin) is what the
+    # `gcloud compute images export` Cloud Build identity needs: daisy creates
+    # and tears down the export worker VM, its disks and snapshots, then writes
+    # the GCE image - no narrower predefined role covers that whole lifecycle.
+    "roles/compute.admin",
     "roles/iap.tunnelResourceAccessor",
     "roles/storage.admin",
     "roles/cloudbuild.builds.editor",

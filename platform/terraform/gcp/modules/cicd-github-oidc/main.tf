@@ -53,10 +53,23 @@ resource "google_service_account_iam_member" "packer_build_wif" {
 
 # The builder VM runs as this same service account, so the build SA needs
 # serviceAccountUser on ITSELF (not project-wide, which would let it run VMs as
-# any SA and trips CKV_GCP_49).
+# any SA and trips CKV_GCP_49). This also satisfies the `actAs` the caller needs
+# when it pins both the Cloud Build identity (--cloudbuild-service-account) and
+# the export worker VM (--compute-service-account) to this same SA.
 resource "google_service_account_iam_member" "packer_build_act_as_self" {
   service_account_id = google_service_account.packer_build.name
   role               = "roles/iam.serviceAccountUser"
+  member             = "serviceAccount:${google_service_account.packer_build.email}"
+}
+
+# `gcloud compute images export` runs as a Cloud Build job that mints a
+# short-lived access token for the export worker's compute service account. With
+# the build pinned to this SA (--cloudbuild-service-account), it generates that
+# token for itself, so it needs serviceAccountTokenCreator on ITSELF. Scoped to
+# this SA, not project-wide (mirrors the provisioner signBlob self-binding).
+resource "google_service_account_iam_member" "packer_build_token_creator_self" {
+  service_account_id = google_service_account.packer_build.name
+  role               = "roles/iam.serviceAccountTokenCreator"
   member             = "serviceAccount:${google_service_account.packer_build.email}"
 }
 

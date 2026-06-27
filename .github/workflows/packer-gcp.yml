@@ -187,9 +187,14 @@ jobs:
           IMAGE_NAME=$(jq -r '.builds[-1].artifact_id' "${IMAGE_TYPE}-manifest.json")
           ZONE="${GCP_PACKER_ZONE:-${GCP_REGION}-a}"
           DEST="gs://${GCP_GDC_VM_IMAGE_BUCKET}/${IMAGE_TYPE}.qcow2"
-          # The export runs a Cloud Build worker VM; pin it to the internal-IP
-          # builder subnet so it complies with the compute.vmExternalIpAccess
-          # org policy (no external IP), and runs as the build service account.
+          # The export runs as a Cloud Build job that spins up a daisy worker VM.
+          # Pin BOTH identities to the build SA: --cloudbuild-service-account so
+          # the build itself runs as our least-priv SA (this project's builds
+          # otherwise default to the Compute Engine default SA, which the build
+          # SA has no actAs on), and --compute-service-account so the worker VM
+          # runs as the same SA. Pin the worker to the internal-IP builder subnet
+          # so it complies with the compute.vmExternalIpAccess org policy.
+          BUILD_SA="${GCP_PACKER_SERVICE_ACCOUNT:-${GCP_SERVICE_ACCOUNT}}"
           gcloud compute images export \
             --image="${IMAGE_NAME}" \
             --destination-uri="${DEST}" \
@@ -197,7 +202,8 @@ jobs:
             --project="${GCP_PROJECT_ID}" \
             --zone="${ZONE}" \
             ${GCP_PACKER_SUBNETWORK:+--subnet="${GCP_PACKER_SUBNETWORK}"} \
-            --compute-service-account="${GCP_PACKER_SERVICE_ACCOUNT:-${GCP_SERVICE_ACCOUNT}}"
+            --cloudbuild-service-account="${BUILD_SA}" \
+            --compute-service-account="${BUILD_SA}"
           GDC_VAR="GDC_$(echo "${IMAGE_TYPE}" | tr '[:lower:]' '[:upper:]')_IMAGE_URL"
           {
             echo "## GDC VM Runtime disk exported"
