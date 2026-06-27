@@ -43,6 +43,11 @@ Current mechanisms:
   - `check-tf-iam-ec2-scope`: local Terraform IAM hardening check that
     keeps engine-provisioner EC2 instance lifecycle actions scoped to
     Shifter-owned, Terraform-managed instances.
+  - `check-tf-iam-ssm-scope`: local Terraform IAM hardening check that
+    keeps engine-provisioner SSM Run Command (`ssm:SendCommand`) and
+    `ec2:RebootInstances` scoped to Shifter range guest instances via
+    resource-tag conditions, so the task role cannot command portal or
+    runner instances.
   - `check-tf-rds-security`: local Terraform RDS hardening check that
     keeps the portal and Guacamole RDS instances on IAM DB auth and an
     explicit CA certificate identifier.
