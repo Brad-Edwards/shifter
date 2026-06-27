@@ -5,11 +5,11 @@ variable "aws_region" {
 }
 
 variable "environment" {
-  description = "Environment name (dev or prod)"
+  description = "Environment name (dev, prod, or proof)"
   type        = string
   validation {
-    condition     = contains(["dev", "prod"], var.environment)
-    error_message = "Environment must be 'dev' or 'prod'."
+    condition     = contains(["dev", "prod", "proof"], var.environment)
+    error_message = "Environment must be 'dev', 'prod', or 'proof'."
   }
 }
 
@@ -149,6 +149,23 @@ resource "aws_iam_policy" "compute" {
         Resource = "*"
       },
       {
+        Sid    = "ApplicationAutoScaling"
+        Effect = "Allow"
+        Action = [
+          "application-autoscaling:RegisterScalableTarget",
+          "application-autoscaling:DeregisterScalableTarget",
+          "application-autoscaling:DescribeScalableTargets",
+          "application-autoscaling:PutScalingPolicy",
+          "application-autoscaling:DeleteScalingPolicy",
+          "application-autoscaling:DescribeScalingPolicies",
+          "application-autoscaling:DescribeScalingActivities",
+          "application-autoscaling:ListTagsForResource",
+          "application-autoscaling:TagResource",
+          "application-autoscaling:UntagResource"
+        ]
+        Resource = "*"
+      },
+      {
         Sid    = "Lambda"
         Effect = "Allow"
         Action = [
@@ -186,6 +203,41 @@ resource "aws_iam_policy" "compute" {
         Effect = "Allow"
         Action = [
           "ecs:*"
+        ]
+        Resource = "*"
+      },
+      {
+        # Cloud Map service discovery (private DNS namespace + services) backing
+        # ECS services. Namespace creation is async, so GetOperation is required
+        # for Terraform to poll. Actions are not reliably ARN-addressable, so the
+        # statement scopes by action and keeps Resource "*".
+        Sid    = "ServiceDiscovery"
+        Effect = "Allow"
+        Action = [
+          "servicediscovery:GetNamespace",
+          "servicediscovery:ListNamespaces",
+          "servicediscovery:CreatePrivateDnsNamespace",
+          "servicediscovery:DeleteNamespace",
+          "servicediscovery:GetService",
+          "servicediscovery:ListServices",
+          "servicediscovery:CreateService",
+          "servicediscovery:UpdateService",
+          "servicediscovery:DeleteService",
+          "servicediscovery:GetOperation",
+          "servicediscovery:ListTagsForResource",
+          "servicediscovery:TagResource",
+          "servicediscovery:UntagResource"
+        ]
+        Resource = "*"
+      },
+      {
+        # Bedrock model-invocation logging configuration (account-level).
+        Sid    = "Bedrock"
+        Effect = "Allow"
+        Action = [
+          "bedrock:GetModelInvocationLoggingConfiguration",
+          "bedrock:PutModelInvocationLoggingConfiguration",
+          "bedrock:DeleteModelInvocationLoggingConfiguration"
         ]
         Resource = "*"
       }
@@ -257,7 +309,11 @@ resource "aws_iam_policy" "networking" {
           "wafv2:TagResource",
           "wafv2:UntagResource",
           "wafv2:DescribeManagedRuleGroup",
-          "wafv2:ListAvailableManagedRuleGroups"
+          "wafv2:ListAvailableManagedRuleGroups",
+          "wafv2:GetLoggingConfiguration",
+          "wafv2:PutLoggingConfiguration",
+          "wafv2:DeleteLoggingConfiguration",
+          "wafv2:ListLoggingConfigurations"
         ]
         Resource = "*"
       },
@@ -334,15 +390,32 @@ resource "aws_iam_policy" "data" {
           "s3:DeleteObject"
         ]
         Resource = [
+          # Prod state bucket (shifter-infra-*) and per-environment state
+          # buckets (shifter-dev-infra-*, shifter-proof-infra-*, ...).
           "arn:aws:s3:::shifter-infra-*",
-          "arn:aws:s3:::shifter-infra-*/*"
+          "arn:aws:s3:::shifter-infra-*/*",
+          "arn:aws:s3:::shifter-*-infra-*",
+          "arn:aws:s3:::shifter-*-infra-*/*"
         ]
       },
       {
-        Sid      = "S3UserStorage"
-        Effect   = "Allow"
-        Action   = ["s3:*"]
-        Resource = "arn:aws:s3:::shifter-user-storage-*"
+        Sid    = "S3UserStorage"
+        Effect = "Allow"
+        Action = ["s3:*"]
+        Resource = [
+          "arn:aws:s3:::shifter-user-storage-*",
+          "arn:aws:s3:::shifter-*-user-storage-*"
+        ]
+      },
+      {
+        Sid    = "S3PortalBuckets"
+        Effect = "Allow"
+        Action = ["s3:*"]
+        Resource = [
+          # Portal-owned buckets (logs, ALB access logs, etc.) named {env}-portal-*.
+          "arn:aws:s3:::*-portal-*",
+          "arn:aws:s3:::*-portal-*/*"
+        ]
       },
       {
         Sid    = "DynamoDB"
@@ -361,8 +434,10 @@ resource "aws_iam_policy" "data" {
           "s3:*"
         ]
         Resource = [
-          "arn:aws:s3:::*-range-pulumi-state",
-          "arn:aws:s3:::*-range-pulumi-state/*"
+          # Bucket names carry an account-id suffix (e.g. proof-range-pulumi-state-<acct>),
+          # so match the prefix with a trailing wildcard.
+          "arn:aws:s3:::*-range-pulumi-state*",
+          "arn:aws:s3:::*-range-pulumi-state*/*"
         ]
       },
       {
@@ -415,23 +490,27 @@ resource "aws_iam_policy" "data" {
         Resource = "*"
       },
       {
+        # ElastiCache (Redis) replication groups, clusters, and subnet groups for
+        # the portal. Describe/tag actions are not ARN-addressable, so the
+        # statement scopes by action and keeps Resource "*".
         Sid    = "ElastiCache"
         Effect = "Allow"
         Action = [
+          "elasticache:DescribeCacheClusters",
+          "elasticache:DescribeReplicationGroups",
+          "elasticache:DescribeCacheSubnetGroups",
           "elasticache:CreateCacheCluster",
           "elasticache:DeleteCacheCluster",
-          "elasticache:DescribeCacheClusters",
           "elasticache:ModifyCacheCluster",
+          "elasticache:CreateReplicationGroup",
+          "elasticache:DeleteReplicationGroup",
+          "elasticache:ModifyReplicationGroup",
           "elasticache:CreateCacheSubnetGroup",
           "elasticache:DeleteCacheSubnetGroup",
-          "elasticache:DescribeCacheSubnetGroups",
           "elasticache:ModifyCacheSubnetGroup",
-          "elasticache:DescribeCacheParameterGroups",
-          "elasticache:DescribeCacheParameters",
-          "elasticache:DescribeEngineDefaultParameters",
+          "elasticache:ListTagsForResource",
           "elasticache:AddTagsToResource",
-          "elasticache:RemoveTagsFromResource",
-          "elasticache:ListTagsForResource"
+          "elasticache:RemoveTagsFromResource"
         ]
         Resource = "*"
       }
@@ -454,10 +533,13 @@ resource "aws_iam_policy" "security" {
     Version = "2012-10-17"
     Statement = [
       {
-        Sid      = "IAMCreateRoleWithBoundary"
-        Effect   = "Allow"
-        Action   = ["iam:CreateRole"]
-        Resource = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/shifter-*"
+        Sid    = "IAMCreateRoleWithBoundary"
+        Effect = "Allow"
+        Action = ["iam:CreateRole"]
+        Resource = [
+          "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/shifter-*",
+          "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/${var.environment}-*"
+        ]
         Condition = {
           StringEquals = {
             "iam:PermissionsBoundary" = aws_iam_policy.ci_role_permissions_boundary.arn
@@ -480,7 +562,10 @@ resource "aws_iam_policy" "security" {
           "iam:GetRolePolicy",
           "iam:DeleteRolePolicy"
         ]
-        Resource = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/shifter-*"
+        Resource = [
+          "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/shifter-*",
+          "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/${var.environment}-*"
+        ]
       },
       {
         Sid    = "IAMAttachManagedPolicy"
@@ -489,7 +574,10 @@ resource "aws_iam_policy" "security" {
           "iam:AttachRolePolicy",
           "iam:DetachRolePolicy"
         ]
-        Resource = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/shifter-*"
+        Resource = [
+          "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/shifter-*",
+          "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/${var.environment}-*"
+        ]
         Condition = {
           ArnEquals = {
             "iam:PolicyArn" = [
@@ -513,13 +601,19 @@ resource "aws_iam_policy" "security" {
           "iam:TagInstanceProfile",
           "iam:UntagInstanceProfile"
         ]
-        Resource = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:instance-profile/shifter-*"
+        Resource = [
+          "arn:aws:iam::${data.aws_caller_identity.current.account_id}:instance-profile/shifter-*",
+          "arn:aws:iam::${data.aws_caller_identity.current.account_id}:instance-profile/${var.environment}-*"
+        ]
       },
       {
-        Sid      = "IAMPassRole"
-        Effect   = "Allow"
-        Action   = ["iam:PassRole"]
-        Resource = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/shifter-*"
+        Sid    = "IAMPassRole"
+        Effect = "Allow"
+        Action = ["iam:PassRole"]
+        Resource = [
+          "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/shifter-*",
+          "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/${var.environment}-*"
+        ]
         Condition = {
           StringEquals = {
             "iam:PassedToService" = [
@@ -540,6 +634,26 @@ resource "aws_iam_policy" "security" {
         Effect   = "Allow"
         Action   = ["iam:CreateServiceLinkedRole"]
         Resource = "arn:aws:iam::*:role/aws-service-role/*"
+      },
+      {
+        Sid    = "IAMManagedPolicies"
+        Effect = "Allow"
+        Action = [
+          "iam:CreatePolicy",
+          "iam:DeletePolicy",
+          "iam:GetPolicy",
+          "iam:GetPolicyVersion",
+          "iam:ListPolicyVersions",
+          "iam:CreatePolicyVersion",
+          "iam:DeletePolicyVersion",
+          "iam:ListEntitiesForPolicy",
+          "iam:TagPolicy",
+          "iam:UntagPolicy"
+        ]
+        Resource = [
+          "arn:aws:iam::${data.aws_caller_identity.current.account_id}:policy/shifter-*",
+          "arn:aws:iam::${data.aws_caller_identity.current.account_id}:policy/${var.environment}-*"
+        ]
       },
       {
         Sid    = "SecretsManager"
@@ -583,7 +697,8 @@ resource "aws_iam_policy" "security" {
           "kms:GetKeyPolicy",
           "kms:PutKeyPolicy",
           "kms:EnableKeyRotation",
-          "kms:GetKeyRotationStatus"
+          "kms:GetKeyRotationStatus",
+          "kms:ListResourceTags"
         ]
         Resource = "*"
       }
@@ -612,7 +727,10 @@ resource "aws_iam_policy" "management" {
           "ssm:SendCommand",
           "ssm:GetCommandInvocation",
           "ssm:ListCommandInvocations",
-          "ssm:DescribeInstanceInformation"
+          "ssm:DescribeInstanceInformation",
+          # DescribeParameters is a list action that does not support
+          # resource-level scoping; it must be granted on "*".
+          "ssm:DescribeParameters"
         ]
         Resource = "*"
       },
@@ -630,10 +748,9 @@ resource "aws_iam_policy" "management" {
           "ssm:ListTagsForResource"
         ]
         Resource = [
-          # Range parameters for DC config
-          "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter/shifter/*/range/*",
-          # AMI IDs for Kali, victim, windows, dc
-          "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter/shifter/ami/*"
+          # All shifter-namespaced parameters: range DC config, AMI IDs, and
+          # per-environment portal parameters (/shifter/<env>/portal/*).
+          "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter/shifter/*"
         ]
       },
       {
@@ -643,6 +760,11 @@ resource "aws_iam_policy" "management" {
         Resource = "*"
       },
       {
+        # CloudWatch Logs (log groups, streams, metric/subscription filters) for
+        # the portal/range/firehose log pipelines. Action set is scoped to the
+        # lifecycle Terraform exercises for these resources; log data is
+        # operational, not secret. Describe/List/Put actions do not support
+        # resource-level constraints, so Resource stays "*".
         Sid    = "CloudWatchLogs"
         Effect = "Allow"
         Action = [
@@ -650,50 +772,46 @@ resource "aws_iam_policy" "management" {
           "logs:DeleteLogGroup",
           "logs:DescribeLogGroups",
           "logs:PutRetentionPolicy",
-          "logs:TagLogGroup",
-          "logs:UntagLogGroup",
-          "logs:ListTagsLogGroup",
+          "logs:CreateLogStream",
+          "logs:DeleteLogStream",
+          "logs:DescribeLogStreams",
+          "logs:PutMetricFilter",
+          "logs:DeleteMetricFilter",
+          "logs:DescribeMetricFilters",
+          "logs:PutSubscriptionFilter",
+          "logs:DeleteSubscriptionFilter",
+          "logs:DescribeSubscriptionFilters",
+          "logs:AssociateKmsKey",
+          "logs:DisassociateKmsKey",
           "logs:ListTagsForResource",
           "logs:TagResource",
           "logs:UntagResource",
-          "logs:CreateLogDelivery",
-          "logs:DeleteLogDelivery",
-          "logs:GetLogDelivery",
-          "logs:ListLogDeliveries",
-          "logs:UpdateLogDelivery",
           "logs:PutResourcePolicy",
+          "logs:DeleteResourcePolicy",
           "logs:DescribeResourcePolicies",
-          "logs:DescribeLogGroups"
-        ]
-        Resource = "arn:aws:logs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:log-group:*"
-      },
-      {
-        Sid    = "CloudWatchLogsGlobal"
-        Effect = "Allow"
-        Action = [
-          "logs:CreateLogDelivery",
-          "logs:DeleteLogDelivery",
-          "logs:GetLogDelivery",
           "logs:ListLogDeliveries",
+          "logs:GetLogDelivery",
+          "logs:CreateLogDelivery",
           "logs:UpdateLogDelivery",
-          "logs:PutResourcePolicy",
-          "logs:DescribeResourcePolicies",
-          "logs:DescribeLogGroups"
+          "logs:DeleteLogDelivery"
         ]
         Resource = "*"
       },
       {
+        # CloudWatch metric alarms for portal/range. PutMetricAlarm and
+        # DeleteAlarms accept a resource ARN, but DescribeAlarms does not, so the
+        # statement keeps Resource "*" and scopes by action instead.
         Sid    = "CloudWatchAlarms"
         Effect = "Allow"
         Action = [
+          "cloudwatch:DescribeAlarms",
           "cloudwatch:PutMetricAlarm",
           "cloudwatch:DeleteAlarms",
-          "cloudwatch:DescribeAlarms",
           "cloudwatch:ListTagsForResource",
           "cloudwatch:TagResource",
           "cloudwatch:UntagResource"
         ]
-        Resource = "arn:aws:cloudwatch:${var.aws_region}:${data.aws_caller_identity.current.account_id}:alarm:*"
+        Resource = "*"
       },
       {
         Sid    = "SNS"
@@ -716,6 +834,44 @@ resource "aws_iam_policy" "management" {
         ]
       },
       {
+        Sid    = "SQS"
+        Effect = "Allow"
+        Action = ["sqs:*"]
+        Resource = [
+          "arn:aws:sqs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:*-portal-*",
+          "arn:aws:sqs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:*-range-*"
+        ]
+      },
+      {
+        # SES domain identity + DKIM for portal transactional email. Identity
+        # actions are not ARN-addressable, so the statement scopes by action and
+        # keeps Resource "*".
+        Sid    = "SES"
+        Effect = "Allow"
+        Action = [
+          "ses:VerifyDomainIdentity",
+          "ses:VerifyDomainDkim",
+          "ses:DeleteIdentity",
+          "ses:GetIdentityVerificationAttributes",
+          "ses:GetIdentityDkimAttributes",
+          "ses:SetIdentityDkimEnabled",
+          "ses:GetIdentityMailFromDomainAttributes",
+          "ses:GetIdentityNotificationAttributes",
+          "ses:ListIdentities"
+        ]
+        Resource = "*"
+      },
+      {
+        # Kinesis Firehose delivery streams for WAF / portal log pipelines.
+        Sid    = "Firehose"
+        Effect = "Allow"
+        Action = ["firehose:*"]
+        Resource = [
+          "arn:aws:firehose:${var.aws_region}:${data.aws_caller_identity.current.account_id}:deliverystream/*-portal-*",
+          "arn:aws:firehose:${var.aws_region}:${data.aws_caller_identity.current.account_id}:deliverystream/aws-waf-logs-*"
+        ]
+      },
+      {
         Sid    = "EventBridge"
         Effect = "Allow"
         Action = [
@@ -732,6 +888,18 @@ resource "aws_iam_policy" "management" {
           "events:UntagResource"
         ]
         Resource = "arn:aws:events:${var.aws_region}:${data.aws_caller_identity.current.account_id}:rule/*-portal-*"
+      },
+      {
+        Sid    = "Budgets"
+        Effect = "Allow"
+        Action = [
+          "budgets:ViewBudget",
+          "budgets:ModifyBudget",
+          "budgets:ListTagsForResource",
+          "budgets:TagResource",
+          "budgets:UntagResource"
+        ]
+        Resource = "arn:aws:budgets::${data.aws_caller_identity.current.account_id}:budget/shifter-*"
       }
     ]
   })

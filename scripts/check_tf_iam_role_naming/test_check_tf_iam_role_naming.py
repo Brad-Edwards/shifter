@@ -92,6 +92,49 @@ class CheckTfIamRoleNamingTest(unittest.TestCase):
             reasons = [v.reason for v in check_file(tf)]
         self.assertFalse(any("at most" in reason for reason in reasons))
 
+    def test_github_oidc_oversized_policy_doc_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            actions = ",\n".join(
+                f'"service:VeryLongActionName{n:04d}"' for n in range(300)
+            )
+            tf = _write(
+                Path(tmp),
+                "github-oidc.tf",
+                f"""
+                resource "aws_iam_policy" "management" {{
+                  policy = jsonencode({{
+                    Statement = [{{
+                      Action = [
+                        {actions}
+                      ]
+                      Resource = "*"
+                    }}]
+                  }})
+                }}
+                """,
+            )
+            reasons = [v.reason for v in check_file(tf)]
+        self.assertTrue(any("size limit" in reason for reason in reasons))
+
+    def test_github_oidc_policy_doc_within_limit_pass(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tf = _write(
+                Path(tmp),
+                "github-oidc.tf",
+                """
+                resource "aws_iam_policy" "management" {
+                  policy = jsonencode({
+                    Statement = [{
+                      Action   = ["logs:CreateLogGroup", "logs:DeleteLogGroup"]
+                      Resource = "*"
+                    }]
+                  })
+                }
+                """,
+            )
+            reasons = [v.reason for v in check_file(tf)]
+        self.assertFalse(any("size limit" in reason for reason in reasons))
+
     def test_github_oidc_shifter_pattern_with_attach_allowlist_passes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             tf = _write(

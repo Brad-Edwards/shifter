@@ -50,6 +50,17 @@ ATTACHMENT_RESOURCE_RE = re.compile(
 # policy, not a new attachment.
 OIDC_ATTACHMENT_CAP = 6
 
+IAM_POLICY_RESOURCE_RE = re.compile(r'^\s*resource\s+"aws_iam_policy"\s+"([^"]+)"\s*\{')
+# AWS caps a customer-managed policy document at 6,144 characters (whitespace
+# excluded). The OIDC deploy role consolidates many AWS services into 5 category
+# policies (#254), so a category can grow toward that ceiling as services are
+# added. This guard fails the build before a category exceeds the limit and the
+# deploy hits LimitExceeded at apply time. It measures the whitespace-stripped
+# HCL of each policy block, which is a conservative over-estimate of the rendered
+# JSON because the `${...account_id}`/`${...aws_region}` interpolations are
+# longer than the values they render to.
+OIDC_POLICY_DOC_LIMIT = 6144
+
 
 @dataclass
 class Violation:
@@ -157,6 +168,31 @@ def check_github_oidc_attachment_cap(path: Path, lines: list[str]) -> list[Viola
     return []
 
 
+def check_github_oidc_policy_doc_size(path: Path, lines: list[str]) -> list[Violation]:
+    violations: list[Violation] = []
+    idx = 0
+    while idx < len(lines):
+        match = IAM_POLICY_RESOURCE_RE.match(lines[idx])
+        if not match:
+            idx += 1
+            continue
+        _, block_lines = _extract_resource_block(lines, idx)
+        stripped = re.sub(r"\s+", "", "".join(block_lines))
+        if len(stripped) > OIDC_POLICY_DOC_LIMIT:
+            violations.append(
+                Violation(
+                    path,
+                    idx + 1,
+                    f"github-oidc managed policy \"{match.group(1)}\" is "
+                    f"{len(stripped)} chars (limit {OIDC_POLICY_DOC_LIMIT}); "
+                    "compact or split the category to stay under the AWS "
+                    "managed-policy document size limit (#254)",
+                )
+            )
+        idx += 1
+    return violations
+
+
 def check_file(path: Path) -> list[Violation]:
     text = path.read_text(encoding="utf-8")
     lines = text.splitlines()
@@ -164,6 +200,7 @@ def check_file(path: Path) -> list[Violation]:
     if path.name == "github-oidc.tf":
         violations.extend(check_github_oidc_iam_scoped(path, text))
         violations.extend(check_github_oidc_attachment_cap(path, lines))
+        violations.extend(check_github_oidc_policy_doc_size(path, lines))
     return violations
 
 
