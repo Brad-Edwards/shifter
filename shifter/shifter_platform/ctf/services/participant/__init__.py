@@ -4,6 +4,7 @@ Business logic for participant management, split across cohesive submodules
 (issue #889, python:S104):
 
 - ``lifecycle``: invite/resend/delete/disqualify and profile helpers;
+- ``invite_exchange``: one-time invite token exchange and pending completion;
 - ``bulk_import``: CSV parsing and bulk import;
 - ``queries``: eligibility predicates and participant lookups.
 
@@ -14,12 +15,14 @@ keeps working unchanged.
 from __future__ import annotations
 
 from .bulk_import import bulk_import_participants
-from .lifecycle import (
+from .invite_exchange import (
     InviteExchangeResult,
     complete_pending_invite,
+    exchange_invite_token,
+)
+from .lifecycle import (
     delete_participant,
     disqualify_participant,
-    exchange_invite_token,
     invite_participant,
     resend_invite,
 )
