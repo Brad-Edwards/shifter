@@ -30,6 +30,8 @@ class TestRegistrationDeadlineEnforcement:
 
         participant = invite_participant(ctf_event.pk, "early@test.com", "Early User")
         assert participant.email == "early@test.com"
+        assert participant.user_id is None
+        assert participant.registered_at is None
 
     def test_invite_allows_when_no_deadline(self, ctf_event):
         """invite_participant succeeds when no deadline is set."""

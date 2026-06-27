@@ -13,7 +13,6 @@ from django.utils import timezone
 from ctf.enums import ParticipantStatus
 from ctf.exceptions import CTFNotFoundError, CTFValidationError
 from ctf.models import CTFEvent, CTFParticipant
-from ctf.services.participant.lifecycle import _auto_register_participant
 from shared.log_sanitize import safe_log_value
 
 logger = logging.getLogger(__name__)
@@ -153,7 +152,6 @@ def bulk_import_participants(
                 name=name,
                 status=ParticipantStatus.INVITED.value,
             )
-            _auto_register_participant(participant)
             created.append(participant)
 
     logger.info(

@@ -30,12 +30,6 @@ logger = logging.getLogger(__name__)
 _SCOREBOARD_TEMPLATE = "ctf/participant/scoreboard.html"
 
 
-# Upper bound for an accepted invite token. Real tokens are
-# ``secrets.token_urlsafe(32)`` (~43 chars) stored in a 64-char column; anything
-# materially larger is rejected before any database lookup.
-_MAX_INVITE_TOKEN_LEN = 256
-
-
 @require_GET
 @ensure_csrf_cookie
 def ctf_register(request: HttpRequest) -> HttpResponse:
@@ -50,7 +44,12 @@ def ctf_register(request: HttpRequest) -> HttpResponse:
     and login. A ``Referrer-Policy: no-referrer`` header is set as defense in
     depth so the address-bar fragment cannot leak via outbound navigations.
     """
-    response = render(request, "ctf/participant/register.html", {})
+    complete_pending = bool(request.user.is_authenticated and request.session.get("ctf_pending_invite_id"))
+    response = render(
+        request,
+        "ctf/participant/register.html",
+        {"complete_pending": complete_pending},
+    )
     response["Referrer-Policy"] = "no-referrer"
     return response
 
@@ -60,18 +59,12 @@ def ctf_register(request: HttpRequest) -> HttpResponse:
 def ctf_register_exchange(request: HttpRequest) -> JsonResponse:
     """Consume an invite token from the JSON body and create a session.
 
-    The invite token IS the authentication. Participants are auto-registered at
-    add-time via ``_auto_register_participant()``, so every valid token maps to a
-    participant with a linked Django user. Token expiration is enforced via
-    ``is_invite_valid``. When ``MAGIC_LINK_SINGLE_USE`` is True, the token is
-    cleared after the first successful login. CSRF-protected via the cookie set
-    on the GET page; the credential is never echoed back in any response.
+    New participants are onboarded at exchange time. Existing platform accounts
+    must authenticate through the normal login flow before the invite enrolls
+    them. Token consumption is atomic and one-time.
     """
-    from django.conf import settings
-    from django.contrib.auth import login
-    from django.urls import reverse
-
-    from ctf.models import CTFParticipant
+    from ctf.services.participant import exchange_invite_token
+    from ctf.views import _parsing
 
     try:
         body = _parsing._parse_body_object(request)
@@ -79,31 +72,32 @@ def ctf_register_exchange(request: HttpRequest) -> JsonResponse:
     except _parsing._BodyParseError as e:
         return JsonResponse({"error": str(e)}, status=400)
 
-    participant = (
-        CTFParticipant.objects.filter(invite_token=token).select_related("user").first()
-        if token and len(token) <= _MAX_INVITE_TOKEN_LEN
-        else None
-    )
+    result = exchange_invite_token(request, token)
+    payload: dict[str, str | bool] = {}
+    if result.error:
+        payload["error"] = result.error
+    if result.redirect:
+        payload["redirect"] = result.redirect
+    if result.requires_login:
+        payload["requires_login"] = True
+        if result.login_url:
+            payload["login_url"] = result.login_url
+    return JsonResponse(payload, status=result.http_status)
 
-    error_message = None
-    if not token:
-        error_message = "Missing invite token."
-    elif not participant or not participant.user:
-        error_message = "Invalid invite token."
-    elif not participant.is_invite_valid:
-        error_message = "Invite token has expired."
-    if error_message:
-        return JsonResponse({"error": error_message}, status=400)
 
-    # error_message is None implies a valid participant with a linked user.
-    assert participant is not None and participant.user is not None
-    login(request, participant.user, backend="django.contrib.auth.backends.ModelBackend")
+@require_POST
+@ensure_csrf_cookie
+def ctf_register_complete(request: HttpRequest) -> JsonResponse:
+    """Complete a pending invite after the holder signed in with an existing account."""
+    from ctf.services.participant import complete_pending_invite
 
-    if getattr(settings, "MAGIC_LINK_SINGLE_USE", False):
-        participant.invite_token = ""  # nosec B105 — clearing token, not a password  # NOSONAR
-        participant.save(update_fields=["invite_token", "updated_at"])
-
-    return JsonResponse({"redirect": reverse("mission_control:dashboard")})
+    result = complete_pending_invite(request)
+    payload: dict[str, str] = {}
+    if result.error:
+        payload["error"] = result.error
+    if result.redirect:
+        payload["redirect"] = result.redirect
+    return JsonResponse(payload, status=result.http_status)
 
 
 @login_required

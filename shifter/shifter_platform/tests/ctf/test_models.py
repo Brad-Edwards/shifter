@@ -446,6 +446,14 @@ class TestCTFParticipantModel:
         p = make_participant(invite_token_expires=timezone.now() + expires_offset)
         assert p.is_invite_valid is expected
 
+    def test_participant_is_invite_valid_false_when_token_cleared(self):
+        """Burned or cleared tokens must not validate even before expiry."""
+        p = make_participant(
+            invite_token="",
+            invite_token_expires=timezone.now() + timedelta(days=7),
+        )
+        assert p.is_invite_valid is False
+
     @pytest.mark.parametrize(
         "aggregate_total,expected",
         [

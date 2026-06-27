@@ -413,6 +413,8 @@ class CTFParticipant(CTFBaseModel):
     @property
     def is_invite_valid(self) -> bool:
         """Return True if invite token is still valid."""
+        if not self.invite_token:
+            return False
         return self.invite_token_expires is not None and timezone.now() < self.invite_token_expires
 
     @property

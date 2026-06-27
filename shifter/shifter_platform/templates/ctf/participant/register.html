@@ -15,7 +15,10 @@
         <h2>
             {% trans "Signing you in…" %}
         </h2>
-        <p id="ctf-register-status" data-exchange-url="{% url 'ctf:ctf_register_exchange' %}">
+        <p id="ctf-register-status"
+           data-exchange-url="{% url 'ctf:ctf_register_exchange' %}"
+           data-complete-url="{% url 'ctf:ctf_register_complete' %}"
+           data-complete-pending="{% if complete_pending %}true{% else %}false{% endif %}">
             {% trans "Validating your invitation…" %}
         </p>
         <noscript>

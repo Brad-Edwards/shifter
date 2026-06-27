@@ -9,6 +9,8 @@
 
     const statusEl = document.getElementById("ctf-register-status");
     const exchangeUrl = statusEl.dataset.exchangeUrl;
+    const completeUrl = statusEl.dataset.completeUrl;
+    const completePending = statusEl.dataset.completePending === "true";
 
     function getCookie(name) {
         const value = "; " + document.cookie;
@@ -23,6 +25,44 @@
         statusEl.textContent = message;
     }
 
+    function postJson(url, body) {
+        return fetch(url, {
+            method: "POST",
+            credentials: "same-origin",
+            headers: {
+                "Content-Type": "application/json",
+                "X-CSRFToken": getCookie("csrftoken")
+            },
+            body: JSON.stringify(body)
+        })
+            .then(function (response) {
+                return response.json().then(function (data) {
+                    return { ok: response.ok, status: response.status, data: data };
+                });
+            });
+    }
+
+    function handleExchangeResult(result) {
+        if (result.ok && result.data.redirect) {
+            globalThis.location.replace(result.data.redirect);
+            return;
+        }
+        if (result.data.requires_login && result.data.login_url) {
+            globalThis.location.replace(result.data.login_url);
+            return;
+        }
+        setStatus(result.data.error || "Unable to complete sign-in.");
+    }
+
+    if (completePending) {
+        postJson(completeUrl, {})
+            .then(handleExchangeResult)
+            .catch(function () {
+                setStatus("Unable to complete sign-in. Please try again.");
+            });
+        return;
+    }
+
     const params = new URLSearchParams(globalThis.location.hash.replace(/^#/, ""));
     const token = params.get("token");
     // Scrub the token from the address bar / history immediately so it cannot
@@ -34,27 +74,8 @@
         return;
     }
 
-    fetch(exchangeUrl, {
-        method: "POST",
-        credentials: "same-origin",
-        headers: {
-            "Content-Type": "application/json",
-            "X-CSRFToken": getCookie("csrftoken")
-        },
-        body: JSON.stringify({ token: token })
-    })
-        .then(function (response) {
-            return response.json().then(function (data) {
-                return { ok: response.ok, data: data };
-            });
-        })
-        .then(function (result) {
-            if (result.ok && result.data.redirect) {
-                globalThis.location.replace(result.data.redirect);
-            } else {
-                setStatus(result.data.error || "Unable to complete sign-in.");
-            }
-        })
+    postJson(exchangeUrl, { token: token })
+        .then(handleExchangeResult)
         .catch(function () {
             setStatus("Unable to complete sign-in. Please try again.");
         });

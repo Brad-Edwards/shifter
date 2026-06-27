@@ -15,8 +15,11 @@ from __future__ import annotations
 
 from .bulk_import import bulk_import_participants
 from .lifecycle import (
+    InviteExchangeResult,
+    complete_pending_invite,
     delete_participant,
     disqualify_participant,
+    exchange_invite_token,
     invite_participant,
     resend_invite,
 )
@@ -29,10 +32,13 @@ from .queries import (
 )
 
 __all__ = [
+    "InviteExchangeResult",
     "bulk_import_participants",
+    "complete_pending_invite",
     "delete_participant",
     "disqualify_participant",
     "eligible_participant_q",
+    "exchange_invite_token",
     "get_participant",
     "get_participant_by_user",
     "invite_participant",

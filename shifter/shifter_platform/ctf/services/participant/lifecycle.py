@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import logging
 import secrets
+from dataclasses import dataclass
 from datetime import timedelta
 from typing import TYPE_CHECKING
+from urllib.parse import quote
 from uuid import UUID
 
 from django.conf import settings
@@ -19,8 +21,155 @@ from shared.log_sanitize import safe_log_value
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import User
+    from django.http import HttpRequest
 
 logger = logging.getLogger(__name__)
+
+_MAX_INVITE_TOKEN_LEN = 256
+
+
+@dataclass(frozen=True)
+class InviteExchangeResult:
+    """Outcome of an invite-token exchange or pending-invite completion."""
+
+    redirect: str | None = None
+    error: str | None = None
+    http_status: int = 200
+    requires_login: bool = False
+    login_url: str | None = None
+
+
+def _invalid_invite_result(*, http_status: int = 400) -> InviteExchangeResult:
+    return InviteExchangeResult(error="Invalid invite token.", http_status=http_status)
+
+
+def _clear_pending_invite_session(request: HttpRequest) -> None:
+    request.session.pop("ctf_pending_invite_id", None)
+    request.session.pop("ctf_pending_invite_user_id", None)
+    request.session.modified = True
+
+
+def _store_pending_invite_session(request: HttpRequest, participant: CTFParticipant, existing_user: User) -> None:
+    request.session["ctf_pending_invite_id"] = str(participant.pk)
+    request.session["ctf_pending_invite_user_id"] = str(existing_user.pk)
+    request.session.modified = True
+
+
+def _burn_invite_token(participant: CTFParticipant) -> None:
+    """Replace the invite token so the submitted credential cannot be reused."""
+    participant.invite_token = secrets.token_urlsafe(32)
+    participant.invite_token_expires = timezone.now()
+    participant.save(update_fields=["invite_token", "invite_token_expires", "updated_at"])
+
+
+def _create_user_for_participant(participant: CTFParticipant) -> User:
+    from django.contrib.auth.models import User
+
+    user = User.objects.create_user(
+        username=participant.email,
+        email=participant.email,
+        first_name=participant.name.split()[0] if participant.name else "",
+        last_name=" ".join(participant.name.split()[1:]) if participant.name else "",
+    )
+    user.set_unusable_password()
+    user.save()
+    return user
+
+
+def _complete_participant_registration(participant: CTFParticipant, user: User) -> None:
+    participant.user = user
+    participant.status = ParticipantStatus.REGISTERED.value
+    participant.registered_at = timezone.now()
+    participant.save(update_fields=["user", "status", "registered_at", "updated_at"])
+    _set_ctf_participant_profile(user, participant.event)
+
+
+def exchange_invite_token(request: HttpRequest, token: str) -> InviteExchangeResult:
+    """Validate and consume an invite token, onboarding the participant when allowed."""
+    from django.contrib.auth import login
+    from django.contrib.auth.models import User
+    from django.urls import reverse
+
+    token = token.strip()
+    if not token:
+        return InviteExchangeResult(error="Missing invite token.", http_status=400)
+    if len(token) > _MAX_INVITE_TOKEN_LEN:
+        return _invalid_invite_result()
+
+    user_to_login: User | None = None
+    redirect_url: str | None = None
+
+    with transaction.atomic():
+        participant = (
+            CTFParticipant.objects.select_for_update().filter(invite_token=token).select_related("event").first()
+        )
+        if participant is None or not participant.is_invite_valid or participant.user_id is not None:
+            return _invalid_invite_result()
+
+        existing_user = User.objects.filter(email__iexact=participant.email).first()
+        if existing_user is not None:
+            if not request.user.is_authenticated:
+                _burn_invite_token(participant)
+                _store_pending_invite_session(request, participant, existing_user)
+                login_path = reverse("platform_login")
+                next_path = quote(reverse("ctf:ctf_register"), safe="")
+                return InviteExchangeResult(
+                    error="Sign in with your existing account to accept this invitation.",
+                    http_status=401,
+                    requires_login=True,
+                    login_url=f"{login_path}?next={next_path}",
+                )
+            if request.user.pk != existing_user.pk:
+                return _invalid_invite_result()
+            _complete_participant_registration(participant, request.user)
+            _burn_invite_token(participant)
+            _clear_pending_invite_session(request)
+            redirect_url = reverse("mission_control:dashboard")
+        else:
+            user_to_login = _create_user_for_participant(participant)
+            _complete_participant_registration(participant, user_to_login)
+            _burn_invite_token(participant)
+            redirect_url = reverse("mission_control:dashboard")
+
+    if user_to_login is not None:
+        login(request, user_to_login, backend="django.contrib.auth.backends.ModelBackend")
+
+    return InviteExchangeResult(redirect=redirect_url)
+
+
+def complete_pending_invite(request: HttpRequest) -> InviteExchangeResult:
+    """Finish onboarding for an existing account after platform login."""
+    from django.contrib.auth.models import User
+    from django.urls import reverse
+
+    pending_id = request.session.get("ctf_pending_invite_id")
+    pending_user_id = request.session.get("ctf_pending_invite_user_id")
+    if not pending_id or not pending_user_id:
+        return InviteExchangeResult(error="No pending invitation.", http_status=400)
+    if not request.user.is_authenticated:
+        return InviteExchangeResult(error="Authentication required.", http_status=401)
+    if request.user.pk != int(pending_user_id):
+        return _invalid_invite_result()
+
+    with transaction.atomic():
+        try:
+            participant = CTFParticipant.objects.select_for_update().select_related("event").get(pk=pending_id)
+        except CTFParticipant.DoesNotExist:
+            _clear_pending_invite_session(request)
+            return _invalid_invite_result()
+
+        if participant.user_id is not None or participant.status != ParticipantStatus.INVITED.value:
+            _clear_pending_invite_session(request)
+            return _invalid_invite_result()
+
+        existing_user = User.objects.filter(email__iexact=participant.email).first()
+        if existing_user is None or existing_user.pk != request.user.pk:
+            return _invalid_invite_result()
+
+        _complete_participant_registration(participant, request.user)
+        _clear_pending_invite_session(request)
+
+    return InviteExchangeResult(redirect=reverse("mission_control:dashboard"))
 
 
 def invite_participant(
@@ -104,9 +253,6 @@ def invite_participant(
             team=team,
             status=ParticipantStatus.INVITED.value,
         )
-
-        # Auto-register: create Django user and link to participant
-        _auto_register_participant(participant)
 
         logger.info(
             "Invited participant %s to event %s (id: %s)",
@@ -264,29 +410,11 @@ def resend_invite(participant_id: UUID) -> CTFParticipant:
 def _auto_register_participant(participant: CTFParticipant) -> None:
     """Create a Django user and register the participant.
 
-    Find-or-creates a Django user from the participant's email (with an
-    unusable password), then links them and sets status to registered.
-    This eliminates the separate "registration" step — participants are
-    ready to access the platform as soon as they're added.
+    Used when onboarding completes at invite-token exchange time for
+    participant-only accounts with no pre-existing Django user.
     """
-    from django.contrib.auth.models import User
-
-    user = User.objects.filter(email__iexact=participant.email).first()
-    if user is None:
-        user = User.objects.create_user(
-            username=participant.email,
-            email=participant.email,
-            first_name=participant.name.split()[0] if participant.name else "",
-            last_name=" ".join(participant.name.split()[1:]) if participant.name else "",
-        )
-        user.set_unusable_password()
-        user.save()
-
-    participant.user = user
-    participant.status = ParticipantStatus.REGISTERED.value
-    participant.registered_at = timezone.now()
-    participant.save(update_fields=["user", "status", "registered_at", "updated_at"])
-    _set_ctf_participant_profile(user, participant.event)
+    user = _create_user_for_participant(participant)
+    _complete_participant_registration(participant, user)
 
     logger.info(
         "Auto-registered participant %s (user %s)",

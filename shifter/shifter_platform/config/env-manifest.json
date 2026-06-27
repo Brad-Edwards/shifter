@@ -363,7 +363,7 @@
       "source_file": "config/_oidc_settings.py"
     },
     {
-      "default": "'False'",
+      "default": "'True'",
       "name": "MAGIC_LINK_SINGLE_USE",
       "source_file": "config/_oidc_settings.py"
     },

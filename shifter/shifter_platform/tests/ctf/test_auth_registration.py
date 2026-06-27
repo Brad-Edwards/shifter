@@ -14,11 +14,13 @@ All tests run WITHOUT @pytest.mark.django_db by mocking the ORM.
 from __future__ import annotations
 
 import json
+from datetime import timedelta
 from unittest.mock import MagicMock, patch
 
 import pytest
-from django.test import RequestFactory, override_settings
+from django.test import RequestFactory
 from django.urls import reverse
+from django.utils import timezone
 
 from shared.auth import (
     CTF_ORGANIZER_GROUP,
@@ -262,39 +264,6 @@ class TestCTFRegisterExchange:
             content_type="application/json",
         )
 
-    @patch("django.contrib.auth.login")
-    @patch("ctf.models.CTFParticipant.objects")
-    def test_valid_token_logs_in_and_returns_redirect(self, mock_objects, mock_login, request_factory):
-        """Valid token with linked user logs in and returns the dashboard redirect."""
-        from ctf.views import ctf_register_exchange
-
-        mock_participant = MagicMock()
-        mock_participant.user = _make_mock_user(email="part@test.com")
-        mock_participant.is_invite_valid = True
-        mock_objects.filter.return_value.select_related.return_value.first.return_value = mock_participant
-
-        response = ctf_register_exchange(self._post(request_factory, "valid-token"))
-
-        assert response.status_code == 200
-        assert "/mission-control/" in json.loads(response.content)["redirect"]
-        mock_login.assert_called_once()
-
-    @patch("django.contrib.auth.login")
-    @patch("ctf.models.CTFParticipant.objects")
-    def test_repeated_token_use_works(self, mock_objects, mock_login, request_factory):
-        """Same token exchanged twice logs in both times (multi-use default)."""
-        from ctf.views import ctf_register_exchange
-
-        mock_participant = MagicMock()
-        mock_participant.user = _make_mock_user(email="part@test.com")
-        mock_participant.is_invite_valid = True
-        mock_objects.filter.return_value.select_related.return_value.first.return_value = mock_participant
-
-        for _ in range(2):
-            response = ctf_register_exchange(self._post(request_factory, "valid-token"))
-            assert response.status_code == 200
-            assert "/mission-control/" in json.loads(response.content)["redirect"]
-
     def test_missing_token_returns_400(self, request_factory):
         """Empty token returns a 400 JSON envelope."""
         from ctf.views import ctf_register_exchange
@@ -337,70 +306,21 @@ class TestCTFRegisterExchange:
         assert response.status_code == 400
         assert "error" in json.loads(response.content)
 
-    @patch("ctf.models.CTFParticipant.objects")
-    def test_invalid_token_returns_400(self, mock_objects, request_factory):
+    @pytest.mark.django_db
+    def test_invalid_token_returns_400(self, request_factory):
         """Unknown token returns 400."""
         from ctf.views import ctf_register_exchange
-
-        mock_objects.filter.return_value.select_related.return_value.first.return_value = None
 
         response = ctf_register_exchange(self._post(request_factory, "bogus-token-value"))
         assert response.status_code == 400
 
-    @patch("ctf.models.CTFParticipant.objects")
-    def test_token_without_linked_user_returns_400(self, mock_objects, request_factory):
-        """Token for a participant with no linked user returns 400."""
-        from ctf.views import ctf_register_exchange
-
-        mock_participant = MagicMock()
-        mock_participant.user = None
-        mock_objects.filter.return_value.select_related.return_value.first.return_value = mock_participant
-
-        response = ctf_register_exchange(self._post(request_factory, "invited-token"))
-        assert response.status_code == 400
-
-    @patch("django.contrib.auth.login")
-    @patch("ctf.models.CTFParticipant.objects")
-    def test_expired_token_rejected(self, mock_objects, mock_login, request_factory):
-        """Expired invite token returns 400 with an 'expired' message and no login."""
-        from ctf.views import ctf_register_exchange
-
-        mock_participant = MagicMock()
-        mock_participant.user = _make_mock_user(email="expired@test.com")
-        mock_participant.is_invite_valid = False
-        mock_objects.filter.return_value.select_related.return_value.first.return_value = mock_participant
-
-        response = ctf_register_exchange(self._post(request_factory, "expired-token"))
-        assert response.status_code == 400
-        assert "expired" in json.loads(response.content)["error"].lower()
-        mock_login.assert_not_called()
-
+    @pytest.mark.django_db
     def test_token_never_echoed_in_error(self, request_factory):
         """An error response must not echo the submitted token value."""
         from ctf.views import ctf_register_exchange
 
-        with patch("ctf.models.CTFParticipant.objects") as mock_objects:
-            mock_objects.filter.return_value.select_related.return_value.first.return_value = None
-            response = ctf_register_exchange(self._post(request_factory, "super-secret-token"))
-
+        response = ctf_register_exchange(self._post(request_factory, "super-secret-token"))
         assert "super-secret-token" not in response.content.decode()
-
-    @override_settings(MAGIC_LINK_SINGLE_USE=True)
-    @patch("django.contrib.auth.login")
-    @patch("ctf.models.CTFParticipant.objects")
-    def test_single_use_clears_token(self, mock_objects, mock_login, request_factory):
-        """When MAGIC_LINK_SINGLE_USE is True, the token is cleared after login."""
-        from ctf.views import ctf_register_exchange
-
-        mock_participant = MagicMock()
-        mock_participant.user = _make_mock_user(email="single@test.com")
-        mock_participant.is_invite_valid = True
-        mock_objects.filter.return_value.select_related.return_value.first.return_value = mock_participant
-
-        response = ctf_register_exchange(self._post(request_factory, "single-use-token"))
-        assert response.status_code == 200
-        mock_participant.save.assert_called_once()
-        assert mock_participant.invite_token == ""
 
     def test_get_method_not_allowed(self, request_factory):
         """The exchange endpoint only accepts POST."""
@@ -408,6 +328,73 @@ class TestCTFRegisterExchange:
 
         response = ctf_register_exchange(request_factory.get("/ctf/register/exchange/"))
         assert response.status_code == 405
+
+
+@pytest.mark.django_db
+class TestInviteTokenExchangeIntegration:
+    """Integration coverage for deferred onboarding and one-time invite tokens."""
+
+    @staticmethod
+    def _exchange(client, token: str):
+        client.get(reverse("ctf:ctf_register"))
+        return client.post(
+            reverse("ctf:ctf_register_exchange"),
+            data=json.dumps({"token": token}),
+            content_type="application/json",
+        )
+
+    def test_invite_leaves_participant_unregistered_until_exchange(self, ctf_event):
+        from ctf.services.participant import invite_participant
+
+        participant = invite_participant(ctf_event.pk, "new@example.com", "New User")
+        participant.refresh_from_db()
+        assert participant.user_id is None
+        assert participant.registered_at is None
+
+    def test_new_participant_token_is_single_use(self, client, ctf_participant_invited):
+        token = ctf_participant_invited.invite_token
+        first = self._exchange(client, token)
+        assert first.status_code == 200
+        ctf_participant_invited.refresh_from_db()
+        assert ctf_participant_invited.user_id is not None
+        second = self._exchange(client, token)
+        assert second.status_code == 400
+
+    def test_existing_user_requires_login_before_enrollment(self, client, ctf_participant_invited, django_user_model):
+        django_user_model.objects.create_user(username="invited@test.com", email="invited@test.com")
+        token = ctf_participant_invited.invite_token
+        response = self._exchange(client, token)
+        assert response.status_code == 401
+        body = response.json()
+        assert body["requires_login"] is True
+        ctf_participant_invited.refresh_from_db()
+        assert ctf_participant_invited.user_id is None
+        assert ctf_participant_invited.invite_token != token
+
+        second = self._exchange(client, token)
+        assert second.status_code == 400
+
+    def test_pending_invite_completes_after_login(self, client, ctf_participant_invited, django_user_model):
+        user = django_user_model.objects.create_user(username="invited@test.com", email="invited@test.com")
+        token = ctf_participant_invited.invite_token
+        self._exchange(client, token)
+        client.force_login(user)
+        client.get(reverse("ctf:ctf_register"))
+        response = client.post(
+            reverse("ctf:ctf_register_complete"),
+            data="{}",
+            content_type="application/json",
+        )
+        assert response.status_code == 200
+        ctf_participant_invited.refresh_from_db()
+        assert ctf_participant_invited.user_id == user.pk
+
+    def test_expired_token_rejected(self, client, ctf_participant_invited):
+        ctf_participant_invited.invite_token_expires = timezone.now() - timedelta(hours=1)
+        ctf_participant_invited.save(update_fields=["invite_token_expires", "updated_at"])
+        response = self._exchange(client, ctf_participant_invited.invite_token)
+        assert response.status_code == 400
+        assert "error" in response.json()
 
 
 class TestInviteRateLimit:

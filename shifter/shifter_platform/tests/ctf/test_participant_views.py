@@ -368,11 +368,11 @@ class TestAdminParticipantAddView:
         # Should redirect on success
         assert response.status_code == 302
 
-        # Participant should be created and auto-registered
+        # Participant should be created but not registered until invite exchange
         participant = CTFParticipant.objects.get(event=ctf_event, email="new@example.com")
         assert participant.name == "New Participant"
-        assert participant.status == ParticipantStatus.REGISTERED.value
-        assert participant.user is not None
+        assert participant.status == ParticipantStatus.INVITED.value
+        assert participant.user is None
 
     def test_rejects_duplicate_email(self, authenticated_organizer_client, ctf_event):
         """POST with duplicate email shows error."""
