@@ -953,6 +953,77 @@ class TestGdcRenderers:
         assert '"network_interface": "vxlan0"' in rendered
 
 
+class TestRewriteGdcKubeconfig:
+    """Tests for repointing the provisioner kubeconfig at the platform LB (D23)."""
+
+    _BMCTL_KUBECONFIG = (
+        "apiVersion: v1\n"
+        "clusters:\n"
+        "- cluster:\n"
+        "    certificate-authority-data: QUFB\n"
+        "    server: https://10.200.0.49:443\n"
+        "  name: cluster1\n"
+        "contexts:\n"
+        "- context:\n"
+        "    cluster: cluster1\n"
+        "    user: cluster1-admin\n"
+        "  name: cluster1-admin@cluster1\n"
+        "current-context: cluster1-admin@cluster1\n"
+        "users:\n"
+        "- name: cluster1-admin\n"
+        "  user:\n"
+        "    client-certificate-data: Q0ND\n"
+        "    client-key-data: S0tL\n"
+    )
+
+    def test_repoints_server_and_drops_ca_for_lb_endpoint(self):
+        rewritten = deploy.rewrite_gdc_kubeconfig_for_platform_access(self._BMCTL_KUBECONFIG, "10.240.0.8")
+
+        # Server now targets the LB on the apiserver backend port, with TLS
+        # verification disabled (the LB IP is not in the apiserver cert SANs).
+        assert "    server: https://10.240.0.8:6444" in rewritten
+        assert "    insecure-skip-tls-verify: true" in rewritten
+        # The now-unusable CA data is removed (mutually exclusive with skip-verify).
+        assert "certificate-authority-data" not in rewritten
+        # The overlay VIP is gone.
+        assert "10.200.0.49" not in rewritten
+        # Client credentials and context are preserved untouched.
+        assert "client-certificate-data: Q0ND" in rewritten
+        assert "client-key-data: S0tL" in rewritten
+        assert "current-context: cluster1-admin@cluster1" in rewritten
+
+    def test_honors_explicit_port_in_endpoint(self):
+        rewritten = deploy.rewrite_gdc_kubeconfig_for_platform_access(self._BMCTL_KUBECONFIG, "10.240.0.8:8443")
+        assert "    server: https://10.240.0.8:8443" in rewritten
+
+    def test_sync_rewrites_when_endpoint_configured(self):
+        config = deploy.GDCBootstrapConfig(
+            project_id="prod-rwctxzl6shxk",
+            cluster_id="cluster1",
+            control_plane_platform_endpoint="10.240.0.8",
+        )
+        captured: dict[str, str] = {}
+
+        def fake_run_cmd(cmd, *args, **kwargs):
+            # sync publishes the payload via `gcloud secrets versions add
+            # --data-file <tmp>`; read that file to inspect what got stored.
+            if cmd[:4] == ["gcloud", "secrets", "versions", "add"] and "--data-file" in cmd:
+                captured["payload"] = Path(cmd[cmd.index("--data-file") + 1]).read_text()
+            return None
+
+        with (
+            patch("deploy.ensure_gdc_access_secret"),
+            patch("deploy.fetch_gdc_kubeconfig", return_value=self._BMCTL_KUBECONFIG),
+            patch("deploy.get_latest_gcp_secret_payload", return_value=None),
+            patch("deploy.run_cmd", side_effect=fake_run_cmd),
+        ):
+            deploy.sync_gdc_access_secret(config)
+
+        assert "10.240.0.8:6444" in captured["payload"]
+        assert "insecure-skip-tls-verify" in captured["payload"]
+        assert "10.200.0.49" not in captured["payload"]
+
+
 class TestGdcBootstrapCluster:
     """Tests for deploy.gdc_bootstrap_cluster."""
 
