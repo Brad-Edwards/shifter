@@ -187,6 +187,12 @@ networkPolicy:
     - 199.36.153.4/30 # NOSONAR - restricted.googleapis.com VIP range.
     - 199.36.153.8/30 # NOSONAR - private.googleapis.com VIP range.
   privateServiceCidrs: []
+  # CIDR(s) covering the GDC range cluster's control-plane endpoint (the
+  # internal TCP load balancer fronting the apiserver on the peered range
+  # network). Empty on AWS; set by the GCP bootstrap so range-provisioning
+  # Jobs can reach the range cluster apiserver. See deploy.py gdc-bootstrap.
+  rangeClusterApiCidrs: []
+  rangeClusterApiPort: 6444
 
 ingress:
   enabled: true

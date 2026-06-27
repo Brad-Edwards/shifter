@@ -1764,7 +1764,27 @@ class TestGdcControlPlaneHelmValues:
                 "199.36.153.8/30",  # NOSONAR - private.googleapis.com VIP.
             ],
             "privateServiceCidrs": ["10.40.0.10/32", "10.40.0.20/32", "10.48.0.0/20"],
+            "rangeClusterApiCidrs": [],
+            "rangeClusterApiPort": 6444,
         }
+
+    def test_range_cluster_api_cidrs_from_control_plane_endpoint(self):
+        """The range-cluster egress allowlist mirrors the configured control-plane endpoint."""
+        config = deploy.GDCBootstrapConfig(
+            project_id="prod-rwctxzl6shxk",
+            cluster_id="cluster1",
+            control_plane_platform_endpoint="10.240.0.5:6444",
+        )
+        outputs = _sample_gcp_control_plane_outputs(config.project_id)
+        values = deploy.render_gcp_helm_values(
+            config,
+            outputs,
+            guacamole_db_payload={"username": "guac", "password": "supersecret"},
+            guacamole_json_secret="json-auth-key",
+            image_tag="abc1234",
+        )
+        assert values["networkPolicy"]["rangeClusterApiCidrs"] == ["10.240.0.5/32"]
+        assert values["networkPolicy"]["rangeClusterApiPort"] == 6444
 
     def test_rejects_insecure_public_bootstrap_values(self):
         """The Helm values renderer must refuse public bare-IP debug deployments on GCP."""

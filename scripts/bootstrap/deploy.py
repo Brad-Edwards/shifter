@@ -2376,6 +2376,11 @@ def render_gcp_helm_values(
             str(_get_output_value(outputs, "gke_services_cidr")).strip(),
         ]
     )
+    # The range-provisioning Jobs reach the GDC range cluster apiserver through
+    # the internal TCP load balancer on the peered range VPC (D23). Allow egress
+    # to exactly that endpoint host/port; empty until the endpoint is wired.
+    range_cluster_host, _, range_cluster_port = (config.control_plane_platform_endpoint or "").partition(":")
+    range_cluster_api_cidrs = _unique_nonempty_strings([_host_as_single_address_cidr(range_cluster_host)])
 
     return {
         "releaseNamespace": "shifter-system",
@@ -2466,6 +2471,8 @@ def render_gcp_helm_values(
                 "199.36.153.8/30",  # NOSONAR - private.googleapis.com VIP range.
             ],
             "privateServiceCidrs": private_service_cidrs,
+            "rangeClusterApiCidrs": range_cluster_api_cidrs,
+            "rangeClusterApiPort": int(range_cluster_port or _GDC_APISERVER_BACKEND_PORT),
         },
     }
 
