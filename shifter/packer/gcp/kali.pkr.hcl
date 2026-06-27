@@ -13,6 +13,12 @@ source "googlecompute" "kali" {
   source_image = var.kali_source_image
   ssh_username = "kali"
 
+  // The imported Kali base image is 25 GB, and the build adds the
+  // kali-linux-headless metapackage, Caldera and Claude Code on top. GCE
+  // rejects a boot disk smaller than the source image, and the plugin default
+  // (20 GB) is below 25 GB, so size it explicitly with install headroom.
+  disk_size = 40
+
   network               = var.network
   subnetwork            = var.subnetwork
   service_account_email = var.service_account_email
