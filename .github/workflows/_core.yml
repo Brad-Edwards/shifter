@@ -28,6 +28,12 @@ on:
         required: false
       AWS_ROLE_ARN_PROOF:
         required: false
+      TF_VARS_DEV_CORE:
+        required: false
+      TF_VARS_PROOF_CORE:
+        required: false
+      TF_VARS_PROD_CORE:
+        required: false
 
 jobs:
   plan:
@@ -83,6 +89,37 @@ jobs:
           terraform_version: "1.13.3"
       - run: terraform fmt -check -recursive
         working-directory: platform/terraform
+      - name: Render local.auto.tfvars from deployment secret
+        working-directory: platform/terraform/environments/${{ inputs.environment }}
+        env:
+          ENVIRONMENT: ${{ inputs.environment }}
+          TF_VARS_DEV_CORE: ${{ secrets.TF_VARS_DEV_CORE }}
+          TF_VARS_PROOF_CORE: ${{ secrets.TF_VARS_PROOF_CORE }}
+          TF_VARS_PROD_CORE: ${{ secrets.TF_VARS_PROD_CORE }}
+        run: |
+          case "$ENVIRONMENT" in
+            dev)
+              CORE_SECRET_NAME="TF_VARS_DEV_CORE"
+              TF_VARS_CORE="${TF_VARS_DEV_CORE}"
+              ;;
+            proof)
+              CORE_SECRET_NAME="TF_VARS_PROOF_CORE"
+              TF_VARS_CORE="${TF_VARS_PROOF_CORE}"
+              ;;
+            prod)
+              CORE_SECRET_NAME="TF_VARS_PROD_CORE"
+              TF_VARS_CORE="${TF_VARS_PROD_CORE}"
+              ;;
+            *)
+              echo "::error::Unsupported AWS environment: $ENVIRONMENT"
+              exit 1
+              ;;
+          esac
+          if [ -z "${TF_VARS_CORE}" ]; then
+            echo "::error::Required secret ${CORE_SECRET_NAME} is not set. See docs/dev/deploy-secrets.md."
+            exit 1
+          fi
+          printf '%s\n' "${TF_VARS_CORE}" > local.auto.tfvars
       - name: Render Terraform backend configs
         working-directory: ${{ github.workspace }}
         env:
@@ -194,6 +231,37 @@ jobs:
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: "1.13.3"
+      - name: Render local.auto.tfvars from deployment secret
+        working-directory: platform/terraform/environments/${{ inputs.environment }}
+        env:
+          ENVIRONMENT: ${{ inputs.environment }}
+          TF_VARS_DEV_CORE: ${{ secrets.TF_VARS_DEV_CORE }}
+          TF_VARS_PROOF_CORE: ${{ secrets.TF_VARS_PROOF_CORE }}
+          TF_VARS_PROD_CORE: ${{ secrets.TF_VARS_PROD_CORE }}
+        run: |
+          case "$ENVIRONMENT" in
+            dev)
+              CORE_SECRET_NAME="TF_VARS_DEV_CORE"
+              TF_VARS_CORE="${TF_VARS_DEV_CORE}"
+              ;;
+            proof)
+              CORE_SECRET_NAME="TF_VARS_PROOF_CORE"
+              TF_VARS_CORE="${TF_VARS_PROOF_CORE}"
+              ;;
+            prod)
+              CORE_SECRET_NAME="TF_VARS_PROD_CORE"
+              TF_VARS_CORE="${TF_VARS_PROD_CORE}"
+              ;;
+            *)
+              echo "::error::Unsupported AWS environment: $ENVIRONMENT"
+              exit 1
+              ;;
+          esac
+          if [ -z "${TF_VARS_CORE}" ]; then
+            echo "::error::Required secret ${CORE_SECRET_NAME} is not set. See docs/dev/deploy-secrets.md."
+            exit 1
+          fi
+          printf '%s\n' "${TF_VARS_CORE}" > local.auto.tfvars
       - name: Render Terraform backend configs
         working-directory: ${{ github.workspace }}
         env:
