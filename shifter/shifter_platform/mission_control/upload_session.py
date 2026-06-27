@@ -29,35 +29,24 @@ def check_upload_in_progress(session: dict[str, Any]) -> bool:
         bool: True if upload is in progress and lock is valid, False otherwise
     """
     lock_data = session.get("upload_lock")
-    if not lock_data:
-        return False
+    lock_active = isinstance(lock_data, dict) and time.time() - lock_data.get("started_at", 0) <= UPLOAD_LOCK_TIMEOUT
 
-    if not isinstance(lock_data, dict):
+    if lock_data and not lock_active:
         set_upload_in_progress(session, False)
-        return False
 
-    # Auto-expire stale locks
-    if time.time() - lock_data.get("started_at", 0) > UPLOAD_LOCK_TIMEOUT:
-        set_upload_in_progress(session, False)
-        return False
-
-    return True
+    return lock_active
 
 
 def upload_lock_matches_token(session: dict[str, Any], upload_token: str) -> bool:
     """Return whether the current non-expired upload lock matches the token."""
-    if not upload_token or not check_upload_in_progress(session):
-        return False
+    lock_data = session.get("upload_lock") if upload_token and check_upload_in_progress(session) else None
+    expected = lock_data.get(UPLOAD_LOCK_FINGERPRINT_KEY) if isinstance(lock_data, dict) else None
 
-    lock_data = session.get("upload_lock")
-    if not isinstance(lock_data, dict):
-        return False
-
-    expected = lock_data.get(UPLOAD_LOCK_FINGERPRINT_KEY)
-    if not isinstance(expected, str) or not expected:
-        return False
-
-    return hmac.compare_digest(expected, upload_token_fingerprint(upload_token))
+    return (
+        isinstance(expected, str)
+        and bool(expected)
+        and hmac.compare_digest(expected, upload_token_fingerprint(upload_token))
+    )
 
 
 def set_upload_in_progress(session: dict[str, Any], in_progress: bool, *, upload_token: str | None = None) -> None:

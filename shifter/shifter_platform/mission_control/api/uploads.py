@@ -105,6 +105,11 @@ class UploadCancelView(MissionControlAPIView):
 
     permission_classes = [IsAuthenticatedSessionOrApiToken, HasMissionControlActor, _upload_write_permission()]
 
+    def _has_cancel_authority(self, request: Request, upload_token: str) -> bool:
+        return isinstance(getattr(request, "auth", None), ApiToken) or upload_lock_matches_token(
+            request.session, upload_token
+        )
+
     def post(self, request: Request) -> Response:
         """Cancel a validated current upload and clear the session marker."""
         try:
@@ -118,17 +123,17 @@ class UploadCancelView(MissionControlAPIView):
 
         upload_token = data["upload_token"]
         user = self.actor_user()
-        if not isinstance(getattr(request, "auth", None), ApiToken) and not upload_lock_matches_token(
-            request.session, upload_token
-        ):
-            return self.bad_request("Upload cancel token is invalid or stale")
+        if self._has_cancel_authority(request, upload_token):
+            try:
+                # CMS validates the token and absorbs best-effort storage cleanup failures.
+                cms_cancel_upload(user, upload_token)
+                logger.info("Cancelled upload cleaned up: user=%s", safe_log_value(user.email))
+            except (ValueError, CMSError):
+                response = self.bad_request("Upload cancel token is invalid or stale")
+            else:
+                set_upload_in_progress(request.session, False)
+                response = Response({"success": True})
+        else:
+            response = self.bad_request("Upload cancel token is invalid or stale")
 
-        try:
-            # CMS validates the token and absorbs best-effort storage cleanup failures.
-            cms_cancel_upload(user, upload_token)
-            logger.info("Cancelled upload cleaned up: user=%s", safe_log_value(user.email))
-        except (ValueError, CMSError):
-            return self.bad_request("Upload cancel token is invalid or stale")
-
-        set_upload_in_progress(request.session, False)
-        return Response({"success": True})
+        return response
