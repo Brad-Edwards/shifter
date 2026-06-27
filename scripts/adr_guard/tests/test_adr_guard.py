@@ -1217,9 +1217,32 @@ class PlatformRendersDeployTfvarsTests(unittest.TestCase):
 
             violations = ADR_GUARD.check_platform_renders_deploy_tfvars(repo_root, None)
 
-            self.assertEqual(len(violations), 1)
-            self.assertEqual(violations[0].rule_id, "ADR-011-R7")
-            self.assertEqual(violations[0].path, ".github/workflows/_shifter-platform.yml")
+            self.assertEqual(violations, [])
+
+    def test_flags_present_core_workflow_missing_render(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            workflow_dir = repo_root / ".github" / "workflows"
+            workflow_dir.mkdir(parents=True)
+            (workflow_dir / "_core.yml").write_text(
+                "name: Core\n"
+                "jobs:\n"
+                "  plan:\n"
+                "    runs-on: self-hosted\n"
+                "    steps:\n"
+                f"{self._INIT_STEP}"
+                "  apply:\n"
+                "    runs-on: self-hosted\n"
+                "    steps:\n"
+                f"{self._INIT_STEP}",
+                encoding="utf-8",
+            )
+
+            violations = ADR_GUARD.check_platform_renders_deploy_tfvars(repo_root, None)
+
+            self.assertEqual(len(violations), 2)
+            self.assertTrue(all(v.rule_id == "ADR-011-R7" for v in violations))
+            self.assertTrue(all(v.path == ".github/workflows/_core.yml" for v in violations))
 
     def test_ignores_commented_render_line(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -5256,6 +5279,113 @@ class DocumentationCoverageTests(unittest.TestCase):
         self.assertIn("documentation-coverage", ADR_GUARD.CHECKS)
         self.assertIn("documentation-coverage", ADR_GUARD.CHECK_LEVELS["ci"])
         self.assertIn("documentation-coverage", ADR_GUARD.CHECK_LEVELS["fast"])
+
+
+class TerraformOperationalPlaceholderTests(unittest.TestCase):
+    def test_flags_your_email_placeholder_in_tf(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            tf_path = repo_root / "platform/terraform/environments/dev/main.tf"
+            tf_path.parent.mkdir(parents=True, exist_ok=True)
+            tf_path.write_text(
+                'subscriber_email_addresses = ["YOUR_EMAIL@example.com"]\n',
+                encoding="utf-8",
+            )
+
+            violations = ADR_GUARD.check_no_terraform_operational_placeholders(
+                repo_root,
+                ["platform/terraform/environments/dev/main.tf"],
+            )
+
+            self.assertEqual(len(violations), 1)
+            self.assertEqual(violations[0].rule_id, "ADR-004-R15")
+
+    def test_flags_example_com_subscriber_list_without_your_email_literal(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            tf_path = repo_root / "platform/terraform/environments/dev/main.tf"
+            tf_path.parent.mkdir(parents=True, exist_ok=True)
+            tf_path.write_text(
+                'subscriber_email_addresses = ["oncall@example.com"]\n',
+                encoding="utf-8",
+            )
+
+            violations = ADR_GUARD.check_no_terraform_operational_placeholders(
+                repo_root,
+                ["platform/terraform/environments/dev/main.tf"],
+            )
+
+            self.assertEqual(len(violations), 1)
+            self.assertEqual(violations[0].rule_id, "ADR-004-R15")
+
+    def test_clean_repo_passes_placeholder_check(self) -> None:
+        violations = ADR_GUARD.check_no_terraform_operational_placeholders(
+            ADR_GUARD.REPO_ROOT,
+            None,
+        )
+        self.assertEqual(violations, [], msg=f"Unexpected violations: {violations}")
+
+
+class GithubOidcNoAdminAccessTests(unittest.TestCase):
+    def test_flags_administrator_access_attachment(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            tf_path = repo_root / "platform/terraform/global/iam/github-oidc.tf"
+            tf_path.parent.mkdir(parents=True, exist_ok=True)
+            tf_path.write_text(
+                'resource "aws_iam_role_policy_attachment" "admin" {\n'
+                '  policy_arn = "arn:aws:iam::aws:policy/AdministratorAccess"\n'
+                "}\n",
+                encoding="utf-8",
+            )
+
+            violations = ADR_GUARD.check_github_oidc_no_admin_access(
+                repo_root,
+                ["platform/terraform/global/iam/github-oidc.tf"],
+            )
+
+            self.assertEqual(len(violations), 1)
+            self.assertEqual(violations[0].rule_id, "ADR-004-R15")
+
+    def test_clean_oidc_file_passes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            tf_path = repo_root / "platform/terraform/global/iam/github-oidc.tf"
+            tf_path.parent.mkdir(parents=True, exist_ok=True)
+            tf_path.write_text(
+                'resource "aws_iam_role_policy_attachment" "core" {\n'
+                '  policy_arn = aws_iam_policy.core_infrastructure.arn\n'
+                "}\n",
+                encoding="utf-8",
+            )
+
+            violations = ADR_GUARD.check_github_oidc_no_admin_access(
+                repo_root,
+                ["platform/terraform/global/iam/github-oidc.tf"],
+            )
+
+            self.assertEqual(violations, [])
+
+    def test_targeted_mode_skips_unrelated_files(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            tf_path = repo_root / "platform/terraform/global/iam/github-oidc.tf"
+            tf_path.parent.mkdir(parents=True, exist_ok=True)
+            tf_path.write_text(
+                'policy_arn = "arn:aws:iam::aws:policy/AdministratorAccess"\n',
+                encoding="utf-8",
+            )
+
+            violations = ADR_GUARD.check_github_oidc_no_admin_access(
+                repo_root,
+                ["platform/terraform/environments/dev/main.tf"],
+            )
+
+            self.assertEqual(violations, [])
+
+    def test_clean_repo_passes_oidc_admin_check(self) -> None:
+        violations = ADR_GUARD.check_github_oidc_no_admin_access(ADR_GUARD.REPO_ROOT, None)
+        self.assertEqual(violations, [], msg=f"Unexpected violations: {violations}")
 
 
 if __name__ == "__main__":
