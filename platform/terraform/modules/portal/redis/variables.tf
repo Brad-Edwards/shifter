@@ -5,6 +5,12 @@ variable "name_prefix" {
   type        = string
 }
 
+variable "iam_name_prefix" {
+  description = "Prefix for IAM resource names. Defaults to name_prefix for legacy callers."
+  type        = string
+  default     = null
+}
+
 variable "vpc_id" {
   description = "ID of the VPC"
   type        = string

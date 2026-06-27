@@ -44,11 +44,16 @@ def _authenticated_user_id(user: User) -> int:
     raise _BootstrapViewError(JsonResponse({"error": "Authenticated user id unavailable"}, status=500))
 
 
-def _bootstrap_urls(request_id: UUID) -> tuple[str, str]:
+def _bootstrap_urls(
+    request_id: UUID,
+    *,
+    status_url_name: str = "mission_control:guacamole_bootstrap_status",
+    open_url_name: str = "mission_control:guacamole_bootstrap_open",
+) -> tuple[str, str]:
     """Return the polling URL and compatibility opener URL for a bootstrap."""
     kwargs = {"request_id": request_id}
-    status_url = reverse("mission_control:guacamole_bootstrap_status", kwargs=kwargs)
-    open_url = reverse("mission_control:guacamole_bootstrap_open", kwargs=kwargs)
+    status_url = reverse(status_url_name, kwargs=kwargs)
+    open_url = reverse(open_url_name, kwargs=kwargs)
     return status_url, open_url
 
 
@@ -58,6 +63,8 @@ def guacamole_bootstrap_response(
     protocol: str,
     target_id: str,
     build_url: Callable[[], str],
+    status_url_name: str = "mission_control:guacamole_bootstrap_status",
+    open_url_name: str = "mission_control:guacamole_bootstrap_open",
 ) -> JsonResponse:
     """Enqueue Guacamole bootstrap work and return a pollable response."""
     try:
@@ -80,7 +87,11 @@ def guacamole_bootstrap_response(
         response["Retry-After"] = "1"
         return response
 
-    status_url, open_url = _bootstrap_urls(bootstrap.id)
+    status_url, open_url = _bootstrap_urls(
+        bootstrap.id,
+        status_url_name=status_url_name,
+        open_url_name=open_url_name,
+    )
     response = JsonResponse(
         {
             "request_id": str(bootstrap.id),

@@ -35,6 +35,50 @@ endpoint's session/domain permission. Scopes admit a token to an endpoint class;
 they do not replace object ownership, event membership, staff checks, CMS
 authoring checks, or service-layer state validation.
 
+Active Mission Control scopes:
+
+| Scope | Grants |
+| --- | --- |
+| `mission_control:range:read` | Current range, agents, and scenarios reads. |
+| `mission_control:range:write` | Range launch and lifecycle mutations. |
+| `mission_control:upload:write` | Agent upload initiate, complete, and cancel. |
+| `mission_control:guacamole:read` | Guacamole RDP/SSH bootstrap, status, and opener endpoints. |
+| `mission_control:ngfw:read` | NGFW listing. |
+| `mission_control:ngfw:write` | NGFW create and destroy. |
+| `mission_control:credentials:write` | Mission Control credential create and delete. |
+| `mission_control:script:read` | Experiment script listing, subject to CMS authoring checks. |
+| `mission_control:script:write` | Experiment script upload, subject to CMS authoring checks. |
+
+## Mission Control Migration Guardrails
+
+Mission Control JSON endpoints that move under `/api/v1/` should register
+through `config/api_urls.py`; `mission_control/urls.py` remains for
+server-rendered pages and temporary legacy compatibility only. DRF views may
+translate request/response shape, status codes, and schema metadata, but must
+continue to call the canonical service facades: `cms.services` for range,
+agent, upload, credential, NGFW, scenario, and script workflows; `engine.services`
+for terminal/Guacamole connection resolution already exposed through the
+Mission Control helpers; and `mission_control.guacamole_bootstrap` for the
+pollable signed-URL flow.
+
+Preserve the existing second-stage authorization after scope admission. Range
+lifecycle mutations still enforce `shared.auth.block_ctf_participant_only(...)`
+semantics and service-layer ownership/state checks. Staff or Threat Research
+authoring checks should use the shared predicates in `shared.auth`; do not
+recreate group-name logic in serializers or view classes. Token scopes stay in
+`shared.api_tokens.scopes`; add explicit new scopes there when a Mission Control
+subsurface needs a different token audience instead of hard-coding strings or
+overloading `mission_control:range:*`.
+
+Reuse existing request/domain contracts. Serializer fields may wrap current
+`shared.schemas` Pydantic contracts such as credential and app specs, but should
+not fork their validation rules. Upload and Guacamole responses carry secret or
+secret-adjacent material: presigned URLs, upload tokens, and signed Guacamole
+URLs must never be logged, included in OpenAPI examples, or returned more
+broadly than the current flow allows. The Guacamole bootstrap status endpoint
+must keep owner-scoped polling, single-use URL delivery, expiry handling,
+`Retry-After`, and worker-capacity behavior.
+
 ## Errors
 
 DRF exceptions use the platform envelope:
