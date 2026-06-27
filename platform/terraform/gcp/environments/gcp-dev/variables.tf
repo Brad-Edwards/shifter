@@ -254,3 +254,15 @@ variable "range_egress_allowed_cidrs" {
   type        = list(string)
   default     = []
 }
+
+variable "github_org" {
+  description = "GitHub organization allowed to federate into the packer build service account."
+  type        = string
+  default     = "Brad-Edwards"
+}
+
+variable "github_repo" {
+  description = "GitHub repository allowed to federate into the packer build service account."
+  type        = string
+  default     = "shifter"
+}

@@ -23,11 +23,26 @@ provider "google" {
 }
 
 locals {
+  name_prefix = "shifter-${var.environment}"
   labels = {
     environment = var.environment
     managed_by  = "terraform"
     project     = "shifter"
   }
+}
+
+# GitHub Actions -> GCP federation for the packer GCE image builds
+# (.github/workflows/packer-gcp.yml). Emits the GCP_WORKLOAD_IDENTITY_PROVIDER
+# and GCP_SERVICE_ACCOUNT values consumed as GitHub secrets.
+module "cicd_github_oidc" {
+  source = "../../modules/cicd-github-oidc"
+
+  project_id  = var.project_id
+  environment = var.environment
+  name_prefix = local.name_prefix
+  github_org  = var.github_org
+  github_repo = var.github_repo
+  labels      = local.labels
 }
 
 module "platform_core" {
