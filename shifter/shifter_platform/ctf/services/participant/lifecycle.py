@@ -26,6 +26,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _MAX_INVITE_TOKEN_LEN = 256
+_DASHBOARD_URL_NAME = "mission_control:dashboard"
 
 
 @dataclass(frozen=True)
@@ -40,16 +41,19 @@ class InviteExchangeResult:
 
 
 def _invalid_invite_result(*, http_status: int = 400) -> InviteExchangeResult:
+    """Return a standard invalid-invite response."""
     return InviteExchangeResult(error="Invalid invite token.", http_status=http_status)
 
 
 def _clear_pending_invite_session(request: HttpRequest) -> None:
+    """Drop any in-flight existing-account invite binding from the session."""
     request.session.pop("ctf_pending_invite_id", None)
     request.session.pop("ctf_pending_invite_user_id", None)
     request.session.modified = True
 
 
 def _store_pending_invite_session(request: HttpRequest, participant: CTFParticipant, existing_user: User) -> None:
+    """Bind a burned invite to the matching Django user for post-login completion."""
     request.session["ctf_pending_invite_id"] = str(participant.pk)
     request.session["ctf_pending_invite_user_id"] = str(existing_user.pk)
     request.session.modified = True
@@ -63,6 +67,7 @@ def _burn_invite_token(participant: CTFParticipant) -> None:
 
 
 def _create_user_for_participant(participant: CTFParticipant) -> User:
+    """Create a passwordless Django user for a new invite recipient."""
     from django.contrib.auth.models import User
 
     user = User.objects.create_user(
@@ -77,6 +82,7 @@ def _create_user_for_participant(participant: CTFParticipant) -> User:
 
 
 def _complete_participant_registration(participant: CTFParticipant, user: User) -> None:
+    """Link the participant row to a Django user and apply CTF profile state."""
     participant.user = user
     participant.status = ParticipantStatus.REGISTERED.value
     participant.registered_at = timezone.now()
@@ -91,45 +97,51 @@ def exchange_invite_token(request: HttpRequest, token: str) -> InviteExchangeRes
     from django.urls import reverse
 
     token = token.strip()
+    result: InviteExchangeResult | None = None
     if not token:
-        return InviteExchangeResult(error="Missing invite token.", http_status=400)
-    if len(token) > _MAX_INVITE_TOKEN_LEN:
-        return _invalid_invite_result()
+        result = InviteExchangeResult(error="Missing invite token.", http_status=400)
+    elif len(token) > _MAX_INVITE_TOKEN_LEN:
+        result = _invalid_invite_result()
 
     user_to_login: User | None = None
     redirect_url: str | None = None
 
-    with transaction.atomic():
-        participant = (
-            CTFParticipant.objects.select_for_update().filter(invite_token=token).select_related("event").first()
-        )
-        if participant is None or not participant.is_invite_valid or participant.user_id is not None:
-            return _invalid_invite_result()
+    if result is None:
+        with transaction.atomic():
+            participant = (
+                CTFParticipant.objects.select_for_update().filter(invite_token=token).select_related("event").first()
+            )
+            if participant is None or not participant.is_invite_valid or participant.user_id is not None:
+                result = _invalid_invite_result()
+            else:
+                existing_user = User.objects.filter(email__iexact=participant.email).first()
+                if existing_user is not None:
+                    if not request.user.is_authenticated:
+                        _burn_invite_token(participant)
+                        _store_pending_invite_session(request, participant, existing_user)
+                        login_path = reverse("platform_login")
+                        next_path = quote(reverse("ctf:ctf_register"), safe="")
+                        result = InviteExchangeResult(
+                            error="Sign in with your existing account to accept this invitation.",
+                            http_status=401,
+                            requires_login=True,
+                            login_url=f"{login_path}?next={next_path}",
+                        )
+                    elif request.user.pk != existing_user.pk:
+                        result = _invalid_invite_result()
+                    else:
+                        _complete_participant_registration(participant, request.user)
+                        _burn_invite_token(participant)
+                        _clear_pending_invite_session(request)
+                        redirect_url = reverse(_DASHBOARD_URL_NAME)
+                else:
+                    user_to_login = _create_user_for_participant(participant)
+                    _complete_participant_registration(participant, user_to_login)
+                    _burn_invite_token(participant)
+                    redirect_url = reverse(_DASHBOARD_URL_NAME)
 
-        existing_user = User.objects.filter(email__iexact=participant.email).first()
-        if existing_user is not None:
-            if not request.user.is_authenticated:
-                _burn_invite_token(participant)
-                _store_pending_invite_session(request, participant, existing_user)
-                login_path = reverse("platform_login")
-                next_path = quote(reverse("ctf:ctf_register"), safe="")
-                return InviteExchangeResult(
-                    error="Sign in with your existing account to accept this invitation.",
-                    http_status=401,
-                    requires_login=True,
-                    login_url=f"{login_path}?next={next_path}",
-                )
-            if request.user.pk != existing_user.pk:
-                return _invalid_invite_result()
-            _complete_participant_registration(participant, request.user)
-            _burn_invite_token(participant)
-            _clear_pending_invite_session(request)
-            redirect_url = reverse("mission_control:dashboard")
-        else:
-            user_to_login = _create_user_for_participant(participant)
-            _complete_participant_registration(participant, user_to_login)
-            _burn_invite_token(participant)
-            redirect_url = reverse("mission_control:dashboard")
+    if result is not None:
+        return result
 
     if user_to_login is not None:
         login(request, user_to_login, backend="django.contrib.auth.backends.ModelBackend")
@@ -144,32 +156,38 @@ def complete_pending_invite(request: HttpRequest) -> InviteExchangeResult:
 
     pending_id = request.session.get("ctf_pending_invite_id")
     pending_user_id = request.session.get("ctf_pending_invite_user_id")
+    result: InviteExchangeResult | None = None
+    redirect_url: str | None = None
+
     if not pending_id or not pending_user_id:
-        return InviteExchangeResult(error="No pending invitation.", http_status=400)
-    if not request.user.is_authenticated:
-        return InviteExchangeResult(error="Authentication required.", http_status=401)
-    if request.user.pk != int(pending_user_id):
-        return _invalid_invite_result()
+        result = InviteExchangeResult(error="No pending invitation.", http_status=400)
+    elif not request.user.is_authenticated:
+        result = InviteExchangeResult(error="Authentication required.", http_status=401)
+    elif request.user.pk != int(pending_user_id):
+        result = _invalid_invite_result()
+    else:
+        with transaction.atomic():
+            try:
+                participant = CTFParticipant.objects.select_for_update().select_related("event").get(pk=pending_id)
+            except CTFParticipant.DoesNotExist:
+                _clear_pending_invite_session(request)
+                result = _invalid_invite_result()
+            else:
+                if participant.user_id is not None or participant.status != ParticipantStatus.INVITED.value:
+                    _clear_pending_invite_session(request)
+                    result = _invalid_invite_result()
+                else:
+                    existing_user = User.objects.filter(email__iexact=participant.email).first()
+                    if existing_user is None or existing_user.pk != request.user.pk:
+                        result = _invalid_invite_result()
+                    else:
+                        _complete_participant_registration(participant, request.user)
+                        _clear_pending_invite_session(request)
+                        redirect_url = reverse(_DASHBOARD_URL_NAME)
 
-    with transaction.atomic():
-        try:
-            participant = CTFParticipant.objects.select_for_update().select_related("event").get(pk=pending_id)
-        except CTFParticipant.DoesNotExist:
-            _clear_pending_invite_session(request)
-            return _invalid_invite_result()
-
-        if participant.user_id is not None or participant.status != ParticipantStatus.INVITED.value:
-            _clear_pending_invite_session(request)
-            return _invalid_invite_result()
-
-        existing_user = User.objects.filter(email__iexact=participant.email).first()
-        if existing_user is None or existing_user.pk != request.user.pk:
-            return _invalid_invite_result()
-
-        _complete_participant_registration(participant, request.user)
-        _clear_pending_invite_session(request)
-
-    return InviteExchangeResult(redirect=reverse("mission_control:dashboard"))
+    if result is not None:
+        return result
+    return InviteExchangeResult(redirect=redirect_url)
 
 
 def invite_participant(
