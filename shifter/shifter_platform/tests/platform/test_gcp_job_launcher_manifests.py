@@ -65,6 +65,21 @@ def _metadata_namespace(document: dict[str, Any]) -> str:
     return document.get("metadata", {}).get("namespace", DEFAULT_NAMESPACE)
 
 
+def _job_launcher_role(documents: list[dict[str, Any]]) -> dict[str, Any]:
+    for document in documents:
+        if document.get("kind") == "Role" and document.get("metadata", {}).get("name") == "job-launcher":
+            return document
+    raise AssertionError("job-launcher Role not found")
+
+
+def _verbs_for(role: dict[str, Any], api_group: str, resource: str) -> set[str]:
+    verbs: set[str] = set()
+    for rule in role.get("rules", []):
+        if api_group in rule.get("apiGroups", []) and resource in rule.get("resources", []):
+            verbs.update(rule.get("verbs", []))
+    return verbs
+
+
 def _rbac_subjects(documents: list[dict[str, Any]]) -> set[tuple[str, str]]:
     subjects = set()
     for document in documents:
@@ -141,4 +156,32 @@ def test_job_launcher_rbac_subjects_match_token_mounting_workloads(
     assert _rbac_subjects(documents) == launcher_service_accounts, (
         f"{source_name} job-launcher RBAC subjects must exactly match the workloads "
         "that mount service account tokens for Kubernetes Job creation"
+    )
+
+
+@pytest.mark.parametrize(
+    ("source_name", "loader"),
+    [
+        ("base", _load_base_documents),
+        ("helm", _load_helm_documents),
+    ],
+)
+def test_job_launcher_role_grants_per_job_secret_lifecycle(
+    source_name: str,
+    loader: Any,
+) -> None:
+    """The launcher Role must allow the per-Job Secret lifecycle (issue #1185).
+
+    The GCP task runner creates a per-Job Secret for sensitive env vars, patches
+    it with the Job ownerReference, and deletes it on the unwind path; it also
+    deletes the Job when owner-reference installation fails. Without these verbs
+    range launch fails at create_namespaced_secret with a 403.
+    """
+    role = _job_launcher_role(loader())
+
+    assert {"create", "patch", "delete"} <= _verbs_for(role, "", "secrets"), (
+        f"{source_name} job-launcher Role must grant create/patch/delete on secrets"
+    )
+    assert {"create", "delete"} <= _verbs_for(role, "batch", "jobs"), (
+        f"{source_name} job-launcher Role must grant create and delete on jobs"
     )
