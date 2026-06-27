@@ -15,12 +15,11 @@ from cms.services import cancel_upload as cms_cancel_upload
 from cms.services import complete_upload as cms_complete_upload
 from cms.services import initiate_upload as cms_initiate_upload
 from mission_control.api._base import MissionControlAPIView, _upload_write_permission, _validated
-from mission_control.api.authentication import CsrfExemptSessionAuthentication
 from mission_control.api.permissions import HasMissionControlActor
 from mission_control.api.serializers import UploadCancelSerializer, UploadCompleteSerializer, UploadInitiateSerializer
-from mission_control.upload_session import check_upload_in_progress, set_upload_in_progress
+from mission_control.upload_session import check_upload_in_progress, set_upload_in_progress, upload_lock_matches_token
 from shared.api.permissions import IsAuthenticatedSessionOrApiToken
-from shared.api_tokens.authentication import ApiTokenAuthentication
+from shared.api_tokens.models import ApiToken
 from shared.errors import classify_user_message
 from shared.exceptions import CMSError
 from shared.log_sanitize import safe_log_value
@@ -63,7 +62,7 @@ class UploadInitiateView(MissionControlAPIView):
             )
             return self.bad_request(classify_user_message(str(exc), default="Upload could not be initiated"))
 
-        set_upload_in_progress(request.session, True)
+        set_upload_in_progress(request.session, True, upload_token=str(result["upload_token"]))
         safe_filename = filename.replace("\r", " ").replace("\n", " ").replace("\t", " ")[:200]
         safe_email = user.email.replace("\r", " ").replace("\n", " ").replace("\t", " ")[:200]
         logger.info("Upload initiated: user=%s filename=%s size=%d", safe_email, safe_filename, data["file_size"])
@@ -104,28 +103,32 @@ class UploadCompleteView(MissionControlAPIView):
 class UploadCancelView(MissionControlAPIView):
     """Cancel an in-progress agent upload."""
 
-    authentication_classes = [ApiTokenAuthentication, CsrfExemptSessionAuthentication]
     permission_classes = [IsAuthenticatedSessionOrApiToken, HasMissionControlActor, _upload_write_permission()]
 
     def post(self, request: Request) -> Response:
-        """Cancel upload state even when legacy sendBeacon sends an empty body."""
+        """Cancel a validated current upload and clear the session marker."""
         try:
             raw_data = request.data
         except ParseError:
-            raw_data = {}
+            return self.bad_request("Invalid request")
         data, error = _validated(self, UploadCancelSerializer, raw_data)
         if error is not None:
             return error
         assert data is not None
 
-        upload_token = data.get("upload_token", "")
+        upload_token = data["upload_token"]
         user = self.actor_user()
-        if upload_token:
-            try:
-                cms_cancel_upload(user, upload_token)
-                logger.info("Cancelled upload cleaned up: user=%s", safe_log_value(user.email))
-            except CMSError:
-                pass
+        if not isinstance(getattr(request, "auth", None), ApiToken) and not upload_lock_matches_token(
+            request.session, upload_token
+        ):
+            return self.bad_request("Upload cancel token is invalid or stale")
+
+        try:
+            # CMS validates the token and absorbs best-effort storage cleanup failures.
+            cms_cancel_upload(user, upload_token)
+            logger.info("Cancelled upload cleaned up: user=%s", safe_log_value(user.email))
+        except (ValueError, CMSError):
+            return self.bad_request("Upload cancel token is invalid or stale")
 
         set_upload_in_progress(request.session, False)
         return Response({"success": True})
