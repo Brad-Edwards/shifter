@@ -37,12 +37,17 @@ locals {
 module "cicd_github_oidc" {
   source = "../../modules/cicd-github-oidc"
 
-  project_id  = var.project_id
-  environment = var.environment
-  name_prefix = local.name_prefix
-  github_org  = var.github_org
-  github_repo = var.github_repo
-  labels      = local.labels
+  project_id       = var.project_id
+  environment      = var.environment
+  name_prefix      = local.name_prefix
+  region           = var.region
+  github_org       = var.github_org
+  github_repo      = var.github_repo
+  platform_network = module.platform_core.network_name
+  # The GDC VM Runtime reads gs:// disk images using the bare-metal GCR
+  # service account key carried in GDC_VM_IMAGE_GCS_SECRET_ID.
+  image_reader_service_accounts = ["baremetal-gcr@${var.project_id}.iam.gserviceaccount.com"]
+  labels                        = local.labels
 }
 
 module "platform_core" {
