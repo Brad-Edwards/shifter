@@ -16,6 +16,7 @@ engine NGFW instance with an attached range, which the real
 
 from __future__ import annotations
 
+from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 import pytest
@@ -31,6 +32,7 @@ from cms.services._ngfws import (
     _validate_ngfw_user,
 )
 from risk_register.models import AuditLog
+from shared.cloud.exceptions import CloudTaskError
 from shared.enums import RequestType, ResourceStatus
 from shared.schemas.app import NGFWAppContext, NGFWAppRef
 
@@ -325,6 +327,48 @@ class TestCreateNgfw:
     def test_validates_user(self):
         with pytest.raises(TypeError):
             create_ngfw(user=None, name="X", deployment_profile_id=1, registration_method="pin")
+
+    def test_marks_owned_records_failed_when_engine_dispatch_fails(self, user, deployment_profile, settings):
+        from cms.models import App as CMSApp
+        from cms.models import Instance as CMSInstance
+        from engine.models import App as EngineApp
+        from engine.models import Instance as EngineInstance
+
+        settings.CLOUD_PROVIDER = "aws"
+        settings.LOCAL_PROVISIONER = None
+        settings.ENGINE_TASK_CLUSTER = "test-cluster"
+        settings.ENGINE_TASK_DEFINITION = "test-taskdef"
+        settings.ENGINE_TASK_NETWORK_SECURITY_GROUP_ID = "sg-test"
+        settings.ENGINE_TASK_NETWORK_SUBNET_IDS = "subnet-aaa,subnet-bbb"
+        ecs_client = MagicMock()
+        ecs_client.run_task.return_value = {"tasks": [], "failures": [{"reason": "RESOURCE:CPU"}]}
+
+        with patch("boto3.client", return_value=ecs_client), pytest.raises(CloudTaskError):
+            create_ngfw(
+                user=user,
+                name="DispatchFailNGFW",
+                deployment_profile_id=deployment_profile.id,
+                registration_method="otp",
+                otp_value="OTP123",
+                otp_folder="folder/",
+            )
+
+        cms_app = CMSApp.all_objects.get(instance__request__user=user)
+        cms_instance = CMSInstance.all_objects.get(request__user=user)
+        assert cms_app.status == ResourceStatus.FAILED.value
+        assert cms_app.deleted_at is not None
+        assert cms_instance.status == ResourceStatus.FAILED.value
+        assert cms_instance.deleted_at is not None
+
+        engine_instance = EngineInstance.objects.get(request__request_id=cms_instance.request.request_id)
+        engine_app = EngineApp.objects.get(request__request_id=cms_instance.request.request_id)
+        assert engine_instance.status == ResourceStatus.FAILED.value
+        assert engine_app.status == ResourceStatus.FAILED.value
+        assert not AuditLog.objects.filter(
+            entity_type=AuditLog.EntityType.NGFW,
+            action=AuditLog.Action.PROVISION,
+            actor_id=user.id,
+        ).exists()
 
 
 # ---------------------------------------------------------------------------
