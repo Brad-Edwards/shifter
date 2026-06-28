@@ -422,6 +422,24 @@ def _dispatch_instance_setup_role(
     )
 
 
+_GDC_RANGE_TRANSPORT = "range-pod-ssh"
+_DEFAULT_SETUP_READY_TIMEOUT_SECONDS = 300
+_GDC_SETUP_READY_TIMEOUT_SECONDS = 600
+
+
+def _setup_ready_timeout(transport_name: str) -> int:
+    """SSH-ready budget for guest setup, by transport.
+
+    GDC VM Runtime guests boot on bare metal and run a full first-boot
+    cloud-init pass (datasource detection + host-key install + service restart)
+    before SSH is ready, which is materially slower than the EC2/SSM path the
+    300s default was tuned for, so the in-range transport gets a larger budget.
+    """
+    if transport_name == _GDC_RANGE_TRANSPORT:
+        return _GDC_SETUP_READY_TIMEOUT_SECONDS
+    return _DEFAULT_SETUP_READY_TIMEOUT_SECONDS
+
+
 def _run_single_instance_setup(
     instance_data: dict[str, Any],
     instance_id: str,
@@ -434,7 +452,7 @@ def _run_single_instance_setup(
     orchestrator = SetupOrchestrator(executor=execution.executor)
 
     logger.info("Waiting for %s connectivity on %s...", execution.transport_name, execution.target)
-    execution.wait_for_ready(timeout_seconds=300)
+    execution.wait_for_ready(timeout_seconds=_setup_ready_timeout(execution.transport_name))
     logger.info("Target %s is ready via %s", execution.target, execution.transport_name)
 
     ctx = _InstanceSetupCtx(
