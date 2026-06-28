@@ -76,6 +76,9 @@ jobs:
       pull-requests: write
     name: Plan (${{ inputs.environment }})
     runs-on: self-hosted
+    # Backstop only: bound a hung step so it can't hold the self-hosted runner
+    # for GitHub's 6h default (see #1220). Generous vs. real plan times.
+    timeout-minutes: 45
     needs: push-guacamole-images
     if: |
       always() &&
@@ -255,6 +258,8 @@ jobs:
       pull-requests: write
     name: Push Guacamole Images (${{ inputs.environment }})
     runs-on: self-hosted
+    # Backstop only (see #1220); generous vs. real image-push times.
+    timeout-minutes: 60
     environment: ${{ inputs.github_environment }}
     if: |
       inputs.apply_changes &&
@@ -352,6 +357,8 @@ jobs:
       pull-requests: write
     name: Apply (${{ inputs.environment }})
     runs-on: self-hosted
+    # Backstop only (see #1220). Generous so a cold apply is never cut off.
+    timeout-minutes: 120
     environment: ${{ inputs.github_environment }}
     needs: [plan, push-guacamole-images]
     if: |
@@ -673,6 +680,8 @@ jobs:
       pull-requests: write
     name: Build (${{ inputs.environment }})
     runs-on: self-hosted
+    # Backstop only (see #1220); generous vs. real image-build times.
+    timeout-minutes: 90
     environment: ${{ inputs.github_environment }}
     needs: apply
     # Runs for Terraform changes (after a successful apply) AND for
@@ -758,6 +767,8 @@ jobs:
       pull-requests: write
     name: Deploy (${{ inputs.environment }})
     runs-on: self-hosted
+    # Backstop only (see #1220); generous vs. real deploy/stabilization times.
+    timeout-minutes: 90
     environment: ${{ inputs.github_environment }}
     needs: build
     if: inputs.apply_changes && github.event_name != 'pull_request'
@@ -1180,6 +1191,8 @@ jobs:
       pull-requests: write
     name: Verify (${{ inputs.environment }})
     runs-on: self-hosted
+    # Backstop only (see #1220).
+    timeout-minutes: 60
     environment: ${{ inputs.github_environment }}
     needs: deploy
     if: inputs.apply_changes && github.event_name != 'pull_request' && needs.deploy.result == 'success'
@@ -1281,6 +1294,8 @@ jobs:
       issues: write
     name: Post-deploy smoke (${{ inputs.environment }})
     runs-on: self-hosted
+    # Backstop only (see #1220).
+    timeout-minutes: 60
     environment: ${{ inputs.github_environment }}
     needs: verify
     if: |
