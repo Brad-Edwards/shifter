@@ -5,7 +5,6 @@ from types import SimpleNamespace
 import pytest
 
 from risk_register.api.permissions import IsOwnerOrAdmin
-from risk_register.models import APIKey
 
 pytestmark = pytest.mark.django_db
 
@@ -30,21 +29,6 @@ class TestIsAdmin:
 
     def test_unauthenticated_is_not_admin(self):
         assert IsOwnerOrAdmin._is_admin(_request(_user(authenticated=False, staff=True))) is False
-
-
-class TestOwnsViaApikey:
-    def test_matching_apikey(self):
-        key = APIKey()
-        obj = SimpleNamespace(author_apikey=key)
-        assert IsOwnerOrAdmin._owns_via_apikey(_request(auth=key), obj) is True
-
-    def test_non_apikey_auth(self):
-        obj = SimpleNamespace(author_apikey="x")
-        assert IsOwnerOrAdmin._owns_via_apikey(_request(auth="not-a-key"), obj) is False
-
-    def test_missing_author_apikey(self):
-        key = APIKey()
-        assert IsOwnerOrAdmin._owns_via_apikey(_request(auth=key), SimpleNamespace()) is False
 
 
 class TestOwnsViaUser:

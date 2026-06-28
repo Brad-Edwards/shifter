@@ -214,7 +214,11 @@ Prioritized issues for implementing unified platform audit logging. See [Archite
 
 ---
 
-### AUDIT-005: Log API Key Authentication Events
+### AUDIT-005: Log API Key Authentication Events (OBSOLETE under PLAT-106 / #1124)
+
+> **Obsolete.** The legacy risk-register `X-API-Key` (`rr_live_`) credential and
+> its `APIKeyAuthentication` backend were retired. There is no API-key auth path
+> left to audit. Retained for historical context only.
 
 **Summary**: Audit API key auth success and failure.
 

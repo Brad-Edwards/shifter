@@ -8,7 +8,6 @@ from rest_framework.test import APIClient
 
 from config.cognito_groups import sync_cognito_groups_from_claims
 from config.oidc import ShifterOIDCBackend
-from risk_register.models import APIKey
 from shared.api_tokens import scopes
 from shared.api_tokens.models import ApiToken
 
@@ -77,30 +76,6 @@ class TestApiAccess:
         _, raw = ApiToken.create_token(name="r", created_by=authorized_user, scopes=[scopes.RISK_READ])
         api_client.credentials(HTTP_AUTHORIZATION=f"Bearer {raw}")
         assert api_client.get(RISKS_URL).status_code == 200
-
-
-class TestApiKeyRevokeScoping:
-    def test_non_staff_cannot_revoke_another_users_key(self, client, django_user_model):
-        owner = django_user_model.objects.create_user(
-            username="owner",
-            email="owner@example.com",
-            password="pw",
-            is_staff=False,
-        )
-        other = django_user_model.objects.create_user(
-            username="other",
-            email="other@example.com",
-            password="pw",
-            is_staff=False,
-        )
-        grant_risk_register_access(other)
-        key, _ = APIKey.create_key(name="owned", created_by=owner)
-
-        client.force_login(other)
-        response = client.post(f"/risk-register/api-keys/{key.pk}/revoke/")
-        assert response.status_code == 404
-        key.refresh_from_db()
-        assert key.revoked_at is None
 
 
 class TestOidcGroupCapture:

@@ -9,7 +9,7 @@ from rest_framework import permissions
 from rest_framework.request import Request
 
 from risk_register.access import principal_has_risk_register_access
-from risk_register.models import APIKey, AuditLog
+from risk_register.models import AuditLog
 from risk_register.services import audit_log_from_request
 from shared.api_tokens.models import ApiToken
 
@@ -59,25 +59,6 @@ class AuditedPermissionMixin:
             logger.exception("Failed to log permission denied event")
 
 
-class IsAuthenticatedOrAPIKey(AuditedPermissionMixin, permissions.BasePermission):
-    """
-    Allow access if user is authenticated OR valid API key is provided.
-    """
-
-    def has_permission(self, request, view):
-        # Check for authenticated user
-        if request.user and request.user.is_authenticated:
-            return True
-
-        # Check for API key authentication
-        if isinstance(request.auth, APIKey):
-            return True
-
-        # Log access denied
-        self._log_permission_denied(request, view, "No valid authentication")
-        return False
-
-
 class HasRiskRegisterCognitoGroup(AuditedPermissionMixin, permissions.BasePermission):
     """Require membership in a configured Cognito group for risk register access."""
 
@@ -91,15 +72,12 @@ class HasRiskRegisterCognitoGroup(AuditedPermissionMixin, permissions.BasePermis
 class IsAdminUser(AuditedPermissionMixin, permissions.BasePermission):
     """
     Allow access only to admin users (staff or superuser).
-    API keys cannot access admin-only endpoints.
+
+    Platform API tokens carry no Django user and so are not admins; they are
+    denied here without a special case.
     """
 
     def has_permission(self, request, view):
-        # API keys cannot access admin endpoints
-        if isinstance(request.auth, APIKey):
-            self._log_permission_denied(request, view, "API key not allowed for admin endpoint")
-            return False
-
         # Must be authenticated user with staff/superuser status
         has_permission = bool(
             request.user and request.user.is_authenticated and (request.user.is_staff or request.user.is_superuser)
@@ -120,10 +98,7 @@ class IsStaffSessionOrToken(AuditedPermissionMixin, permissions.BasePermission):
 
     def has_permission(self, request: Request, view: APIView) -> bool:
         # A scoped platform ApiToken is admitted here; the sibling require_scope
-        # permission enforces the specific scope. The legacy risk_register APIKey
-        # is intentionally NOT admitted: it carries no scopes and was already
-        # denied on these viewsets by the prior IsAdminUser, so this preserves
-        # (does not regress) legacy-key behavior. See #1124.
+        # permission enforces the specific scope.
         if isinstance(request.auth, ApiToken):
             return True
 
@@ -138,7 +113,6 @@ class IsStaffSessionOrToken(AuditedPermissionMixin, permissions.BasePermission):
 class IsOwnerOrAdmin(AuditedPermissionMixin, permissions.BasePermission):
     """
     Allow access if user owns the object or is an admin.
-    For API keys, allow access to objects they created.
     """
 
     @staticmethod
@@ -146,10 +120,6 @@ class IsOwnerOrAdmin(AuditedPermissionMixin, permissions.BasePermission):
         return bool(
             request.user and request.user.is_authenticated and (request.user.is_staff or request.user.is_superuser)
         )
-
-    @staticmethod
-    def _owns_via_apikey(request: Request, obj: object) -> bool:
-        return bool(isinstance(request.auth, APIKey) and getattr(obj, "author_apikey", None) == request.auth)
 
     @staticmethod
     def _owns_via_user(request: Request, obj: object) -> bool:
@@ -160,7 +130,7 @@ class IsOwnerOrAdmin(AuditedPermissionMixin, permissions.BasePermission):
         return getattr(obj, "created_by", None) == request.user
 
     def has_object_permission(self, request, view, obj):
-        if self._is_admin(request) or self._owns_via_apikey(request, obj) or self._owns_via_user(request, obj):
+        if self._is_admin(request) or self._owns_via_user(request, obj):
             return True
 
         # Log access denied
