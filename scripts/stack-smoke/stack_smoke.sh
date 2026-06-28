@@ -199,8 +199,14 @@ declare -a common_env=(
   -e "FIELD_ENCRYPTION_KEY=${FIELD_ENCRYPTION_KEY}"
   -e "DJANGO_ALLOWED_HOSTS=localhost,127.0.0.1,${WEB}"
   -e OIDC_RP_CLIENT_ID=stack-smoke-client
+  -e OIDC_RP_CLIENT_SECRET=stack-smoke-secret
   -e OIDC_ISSUER_URL=https://issuer.example.test
   -e OIDC_AUTH_DOMAIN=https://auth.example.test
+  # Production settings require EMAIL_BACKEND to be explicit (config/_email.py);
+  # real deploys pass it from rendered config. The smoke sends no mail, so use
+  # the console backend (the same value config/_email.py uses as its dev default)
+  # to satisfy the production import without any ESP/SES dependency.
+  -e EMAIL_BACKEND=django.core.mail.backends.console.EmailBackend
   -e "REDIS_HOST=${REDIS}" -e REDIS_PORT=6379
   -e CHANNEL_LAYER_BACKEND=redis
   # The shared notification websocket (SMOKE_WS_PATH) is parked by default
