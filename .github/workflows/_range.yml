@@ -60,6 +60,9 @@ jobs:
       pull-requests: write
     name: Plan (${{ inputs.environment }})
     runs-on: self-hosted
+    # Backstop only: bound a hung step so it can't hold the self-hosted runner
+    # for GitHub's 6h default (see #1220). Generous vs. real plan times.
+    timeout-minutes: 45
     if: github.event_name != 'pull_request'
     defaults:
       run:
@@ -245,6 +248,8 @@ jobs:
       pull-requests: write
     name: Apply (${{ inputs.environment }})
     runs-on: self-hosted
+    # Backstop only (see #1220). Generous so a cold apply is never cut off.
+    timeout-minutes: 120
     environment: ${{ inputs.github_environment }}
     needs: plan
     if: |
