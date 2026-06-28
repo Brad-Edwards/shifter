@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import logging
 import secrets
+from datetime import datetime, timedelta
+from typing import TYPE_CHECKING
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
@@ -21,6 +23,9 @@ from ctf.enums import (
 )
 
 from ._base import CTFBaseModel
+
+if TYPE_CHECKING:
+    from .event import CTFEvent
 
 logger = logging.getLogger(__name__)
 
@@ -383,10 +388,8 @@ class CTFParticipant(CTFBaseModel):
         super().save(*args, **kwargs)
 
     @staticmethod
-    def default_invite_token_expiry(event, *, now=None):
+    def default_invite_token_expiry(event: CTFEvent | None, *, now: datetime | None = None) -> datetime:
         """Return the default expiry for a participant magic-link token."""
-        from datetime import timedelta
-
         current_time = now or timezone.now()
         if event and event.event_end:
             event_max_hours = getattr(settings, "MAGIC_LINK_EVENT_MAX_EXPIRY_HOURS", None)
