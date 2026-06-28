@@ -170,6 +170,10 @@ class TestApplyRangeAssets:
                 ),
             ),
             patch("gdc_vmruntime_assets._render_user_data", return_value="<powershell>userdata</powershell>"),
+            patch(
+                "gdc_vmruntime_assets._ensure_cloudinit_secret",
+                return_value="range-42-victims-victim-1234-cloudinit",
+            ),
             patch("gdc_vmruntime_assets._wait_for_disk_ready"),
             patch(
                 "gdc_vmruntime_assets._wait_for_vm_ready",
@@ -223,6 +227,12 @@ class TestApplyRangeAssets:
         assert disk_body["spec"]["source"]["gcs"]["secretRef"] == "gdc-vm-image-gcs"
         assert vm_body["kind"] == "VirtualMachine"
         assert vm_body["spec"]["interfaces"][0]["ipAddresses"] == ["10.200.0.104/28"]
+        # GDC's admission webhook forbids inline cloudInit userData over 2048
+        # bytes, so the VM references a per-VM Secret via secretRef instead.
+        assert vm_body["spec"]["cloudInit"]["noCloud"] == {
+            "secretRef": {"name": "range-42-victims-victim-1234-cloudinit"}
+        }
+        assert "userData" not in vm_body["spec"]["cloudInit"]["noCloud"]
 
         assert result == [
             {
@@ -251,6 +261,78 @@ class TestApplyRangeAssets:
                 "gdc_node_name": "cluster1-abm-w1-001",
             }
         ]
+
+
+class TestEnsureCloudInitSecret:
+    """Unit coverage for the per-VM cloud-init userData Secret helper."""
+
+    @staticmethod
+    def _client_module():
+        return SimpleNamespace(
+            V1Secret=lambda metadata, type, string_data: SimpleNamespace(
+                metadata=metadata, type=type, string_data=string_data
+            ),
+            V1ObjectMeta=lambda name, namespace: SimpleNamespace(name=name, namespace=namespace),
+        )
+
+    def test_creates_secret_with_userdata_key(self):
+        from _gdc_vm_secrets import _ensure_cloudinit_secret
+
+        core_api = MagicMock()
+        api_exception = type("ApiException", (Exception,), {"status": 500})
+
+        name = _ensure_cloudinit_secret(
+            core_api,
+            self._client_module(),
+            "range-42",
+            "range-42-victims-victim-1234-cloudinit",
+            "#cloud-config\nhostname: target\n",
+            api_exception,
+        )
+
+        assert name == "range-42-victims-victim-1234-cloudinit"
+        core_api.create_namespaced_secret.assert_called_once()
+        body = core_api.create_namespaced_secret.call_args.kwargs["body"]
+        assert body.string_data == {"userData": "#cloud-config\nhostname: target\n"}
+        assert body.metadata.name == "range-42-victims-victim-1234-cloudinit"
+
+    def test_patches_existing_secret_on_conflict(self):
+        from _gdc_vm_secrets import _ensure_cloudinit_secret
+
+        api_exception = type("ApiException", (Exception,), {"status": 409})
+        core_api = MagicMock()
+        core_api.create_namespaced_secret.side_effect = api_exception()
+
+        name = _ensure_cloudinit_secret(
+            core_api,
+            self._client_module(),
+            "range-42",
+            "range-42-victims-victim-1234-cloudinit",
+            "userdata",
+            api_exception,
+        )
+
+        assert name == "range-42-victims-victim-1234-cloudinit"
+        core_api.patch_namespaced_secret.assert_called_once()
+
+    def test_reraises_non_conflict_errors(self):
+        import pytest
+
+        from _gdc_vm_secrets import _ensure_cloudinit_secret
+
+        api_exception = type("ApiException", (Exception,), {"status": 500})
+        core_api = MagicMock()
+        core_api.create_namespaced_secret.side_effect = api_exception()
+
+        with pytest.raises(api_exception):
+            _ensure_cloudinit_secret(
+                core_api,
+                self._client_module(),
+                "range-42",
+                "range-42-victims-victim-1234-cloudinit",
+                "userdata",
+                api_exception,
+            )
 
 
 class TestDestroyRangeAssets:

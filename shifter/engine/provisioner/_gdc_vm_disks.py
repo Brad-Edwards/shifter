@@ -80,7 +80,7 @@ def _build_vm_manifest(
     namespace: str,
     vm_name: str,
     disk_name: str,
-    user_data: str,
+    user_data_secret_name: str,
     labels: dict[str, str],
     network: _VMNetworkSpec,
     compute: _VMComputeSpec,
@@ -118,7 +118,7 @@ def _build_vm_manifest(
             ],
             "cloudInit": {
                 "noCloud": {
-                    "userData": user_data,
+                    "secretRef": {"name": user_data_secret_name},
                 }
             },
         },
