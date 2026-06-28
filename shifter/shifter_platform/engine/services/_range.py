@@ -354,32 +354,32 @@ def cancel_range_by_request(request_id: UUID) -> bool:
     range_obj = Range.objects.filter(request__request_id=request_id).first()
     if not range_obj:
         logger.warning("cancel_range_by_request: no range for request_id=%s", request_id)
-        return False
-
-    if range_obj.status == Range.Status.DESTROYING:
+        accepted = False
+    elif range_obj.status == Range.Status.DESTROYING:
         logger.info(
             "cancel_range_by_request: already destroying request_id=%s range_id=%s",
             request_id,
             range_obj.id,
         )
-        return True
-
-    if range_obj.status not in (Range.Status.PENDING, Range.Status.PROVISIONING):
+        accepted = True
+    elif range_obj.status not in (Range.Status.PENDING, Range.Status.PROVISIONING):
         logger.warning(
             "cancel_range_by_request: not cancellable status=%s request_id=%s",
             range_obj.status,
             request_id,
         )
-        return False
+        accepted = False
+    else:
+        range_obj.status = Range.Status.DESTROYING
+        range_obj.save(update_fields=["status"])
+        logger.info(
+            "cancel_range_by_request: cancelled request_id=%s range_id=%s",
+            request_id,
+            range_obj.id,
+        )
+        accepted = True
 
-    range_obj.status = Range.Status.DESTROYING
-    range_obj.save(update_fields=["status"])
-    logger.info(
-        "cancel_range_by_request: cancelled request_id=%s range_id=%s",
-        request_id,
-        range_obj.id,
-    )
-    return True
+    return accepted
 
 
 def get_instance_ips_by_uuid(range_id: int) -> dict[str, str]:

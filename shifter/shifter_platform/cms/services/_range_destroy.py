@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
+from datetime import datetime
 from typing import TYPE_CHECKING, Any
+from uuid import UUID
 
 from django.utils import timezone
 
@@ -24,18 +27,39 @@ logger = logging.getLogger(__name__)
 _RANGE_NOT_FOUND_MSG = "Range not found"
 
 
-def _engine_destroy_range_by_request_call(request_id: Any) -> Any:  # NOSONAR
+def _engine_destroy_range_by_request_call(request_id: UUID) -> bool:
     """Late-bound call so test patches of cms.services.engine_destroy_range_by_request apply."""
     from cms import services as _cs
 
-    return _cs.engine_destroy_range_by_request(request_id)
+    result: bool = _cs.engine_destroy_range_by_request(request_id)
+    return result
 
 
-def _engine_cancel_range_by_request_call(request_id: Any) -> Any:  # NOSONAR
+def _engine_cancel_range_by_request_call(request_id: UUID) -> bool:
     """Late-bound call so test patches of cms.services.engine_cancel_range_by_request apply."""
     from cms import services as _cs
 
-    return _cs.engine_cancel_range_by_request(request_id)
+    result: bool = _cs.engine_cancel_range_by_request(request_id)
+    return result
+
+
+_TransitionSpec = tuple[str, Callable[[UUID], bool], AuditLog.Action, str, str, bool]
+_DESTROY_TRANSITION: _TransitionSpec = (
+    ResourceStatus.DESTROYING.value,
+    _engine_destroy_range_by_request_call,
+    AuditLog.Action.DEPROVISION,
+    "Range cannot be destroyed in current state",
+    "destroy_range",
+    True,
+)
+_CANCEL_TRANSITION: _TransitionSpec = (
+    ResourceStatus.DESTROYING.value,
+    _engine_cancel_range_by_request_call,
+    AuditLog.Action.CANCEL,
+    "Range cannot be cancelled in current state",
+    "cancel_range",
+    False,
+)
 
 
 def _audit_log_call(**kwargs: Any) -> None:  # NOSONAR
@@ -55,17 +79,13 @@ def _get_range_call(user: User, range_id: int) -> RangeInstance:
 def _transition_then_dispatch(
     *,
     instance: RangeInstance,
-    target_status: str,
-    request_id: Any,
-    engine_call: Any,
+    request_id: UUID,
     user: User,
     audit_entity_id: int,
-    audit_action: AuditLog.Action,
-    failure_message: str,
-    label: str,
-    soft_delete: bool,
+    transition: _TransitionSpec,
 ) -> None:
     """Apply a CMS lifecycle transition, dispatch engine cleanup, and revert on rejection."""
+    target_status, engine_call, audit_action, failure_message, label, soft_delete = transition
     previous_status = instance.status
     previous_deleted_at = instance.deleted_at
     status_changed = previous_status != target_status or (soft_delete and previous_deleted_at is None)
@@ -108,7 +128,7 @@ def _transition_then_dispatch(
 def _restore_range_instance_status(
     instance: RangeInstance,
     previous_status: str,
-    previous_deleted_at: Any,
+    previous_deleted_at: datetime | None,
 ) -> None:
     """Restore CMS status/deleted_at after engine cleanup dispatch rejects."""
     instance.status = previous_status
@@ -200,15 +220,10 @@ def destroy_range(user: User, range_instance_pk: int) -> None:
 
         _transition_then_dispatch(
             instance=instance,
-            target_status=ResourceStatus.DESTROYING.value,
             request_id=request_id,
-            engine_call=_engine_destroy_range_by_request_call,
             user=user,
             audit_entity_id=range_instance_pk,
-            audit_action=AuditLog.Action.DEPROVISION,
-            failure_message="Range cannot be destroyed in current state",
-            label="destroy_range",
-            soft_delete=True,
+            transition=_DESTROY_TRANSITION,
         )
 
         logger.debug(
@@ -309,15 +324,10 @@ def cancel_range(user: User, range_id: int) -> None:
 
         _transition_then_dispatch(
             instance=instance,
-            target_status=ResourceStatus.DESTROYING.value,
             request_id=request_id,
-            engine_call=_engine_cancel_range_by_request_call,
             user=user,
             audit_entity_id=range_id,
-            audit_action=AuditLog.Action.CANCEL,
-            failure_message="Range cannot be cancelled in current state",
-            label="cancel_range",
-            soft_delete=False,
+            transition=_CANCEL_TRANSITION,
         )
     except (TypeError, ValueError, CMSError):
         raise
@@ -388,15 +398,10 @@ def destroy_range_by_request_id(user: User, request_id: str) -> None:
     try:
         _transition_then_dispatch(
             instance=instance,
-            target_status=ResourceStatus.DESTROYING.value,
             request_id=instance.request.request_id,
-            engine_call=_engine_destroy_range_by_request_call,
             user=user,
             audit_entity_id=instance.range_id or 0,
-            audit_action=AuditLog.Action.DEPROVISION,
-            failure_message="Range cannot be destroyed in current state",
-            label="destroy_range_by_request_id",
-            soft_delete=True,
+            transition=_DESTROY_TRANSITION,
         )
 
         logger.debug(
@@ -473,15 +478,10 @@ def cancel_range_by_request_id(user: User, request_id: str) -> None:
     try:
         _transition_then_dispatch(
             instance=instance,
-            target_status=ResourceStatus.DESTROYING.value,
             request_id=instance.request.request_id,
-            engine_call=_engine_cancel_range_by_request_call,
             user=user,
             audit_entity_id=instance.id,
-            audit_action=AuditLog.Action.CANCEL,
-            failure_message="Range cannot be cancelled in current state",
-            label="cancel_range_by_request_id",
-            soft_delete=False,
+            transition=_CANCEL_TRANSITION,
         )
 
         logger.debug(

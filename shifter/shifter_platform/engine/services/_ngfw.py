@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING
 from uuid import UUID
 
 from shared.enums import ResourceStatus
 from shared.schemas import InstanceSpec, RequestSpec
 
 from ._common import EngineError
+
+if TYPE_CHECKING:
+    from engine.models import Instance, Request
 
 logger = logging.getLogger(__name__)
 
@@ -59,15 +62,21 @@ def create_ngfw(request_spec: RequestSpec) -> UUID:
     return request.request_id
 
 
-def _set_ngfw_materialization_status(request: Any, status: str) -> None:
+def _set_ngfw_materialization_status(request: Request, status: str) -> None:
     """Persist engine NGFW Instance/App status for a request."""
+    from django.db.models import Prefetch
+
     from engine.models import App, Instance
 
-    ngfw_instances = Instance.objects.filter(request=request, role=Instance.Role.NGFW)
+    ngfw_apps = App.objects.filter(app_type=App.AppType.NGFW)
+    ngfw_instances = Instance.objects.filter(
+        request=request,
+        role=Instance.Role.NGFW,
+    ).prefetch_related(Prefetch("apps", queryset=ngfw_apps))
     for ngfw_instance in ngfw_instances:
         ngfw_instance.status = status
         ngfw_instance.save(update_fields=["status", "updated_at"])
-        for app in ngfw_instance.apps.filter(app_type=App.AppType.NGFW):
+        for app in ngfw_instance.apps.all():
             app.status = status
             app.save(update_fields=["status", "updated_at"])
 
@@ -115,7 +124,7 @@ def destroy_ngfw(request_id: UUID) -> bool:
 
 def _resolve_ngfw_instance_for_lifecycle(
     request_id: UUID, op_name: str, allowed_statuses: tuple[str, ...]
-) -> Any | None:
+) -> Instance | None:
     """Return the NGFW Instance row when it exists and its status permits ``op_name``."""
     from engine.models import Instance, Request
 
@@ -130,11 +139,11 @@ def _resolve_ngfw_instance_for_lifecycle(
 
 
 def _validate_ngfw_instance_status(
-    ngfw_instance: Any | None,
+    ngfw_instance: Instance | None,
     op_name: str,
     request_id: UUID,
     allowed_statuses: tuple[str, ...],
-) -> Any | None:
+) -> Instance | None:
     """Return the row only when it exists and its status is in ``allowed_statuses``."""
     if not ngfw_instance:
         logger.warning("%s_ngfw: no NGFW instance found for request_id=%s", op_name, request_id)
