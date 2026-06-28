@@ -247,21 +247,8 @@ def destroy_range(user: User, range_instance_pk: int) -> None:
 def cancel_range(user: User, range_id: int) -> None:
     """Cancel provisioning range.
 
-    Verifies ownership via get_range, then delegates to
-    engine.orchestration.cancel().
-
-    Args:
-        user: User requesting cancellation
-        range_id: ID of the range to cancel
-
-    Returns:
-        None
-
-    Raises:
-        TypeError: If user is None, invalid type, or range_id is invalid type
-        ValueError: If user has no ID (unsaved) or range_id is invalid
-        CMSError: If range not found or not owned by user
-        OrchestrationError: If range not in cancellable status
+    Verifies ownership via get_range, marks the CMS row destroying, and delegates
+    engine cancellation.
     """
     _validate_caller_user(user, "cancel_range")
 
