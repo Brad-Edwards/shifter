@@ -1,7 +1,5 @@
 """Risk Register models."""
 
-import hashlib
-import secrets
 from typing import Any
 
 from django.conf import settings
@@ -193,16 +191,17 @@ class Comment(SoftDeleteMixin, models.Model):
 
 
 class APIKey(models.Model):
-    """API key for programmatic access.
+    """Archival record of a retired risk-register API key.
 
     .. deprecated:: PLAT-102
-        Superseded by the platform-wide ``shared.api_tokens.ApiToken`` (scoped
-        bearer tokens). This legacy ``X-API-Key`` still authenticates, but — as
-        before this change — it carries no scopes and is not authorized on the
-        risk-register viewsets, which require an admin session or a scoped
-        ``ApiToken`` (the prior ``IsAdminUser`` already rejected API keys, so the
-        change is not a regression for legacy keys). Retirement/migration is
-        tracked in #1124. New integrations should use ``ApiToken``.
+    .. removed:: PLAT-106 (#1124)
+        The legacy ``rr_live_`` ``X-API-Key`` credential is retired: it no
+        longer authenticates, and there is no mint path. Superseded by the
+        platform-wide ``shared.api_tokens.ApiToken`` (scoped bearer tokens).
+        This model and its table are retained **archival-only** because
+        historical ``Comment.author_apikey`` rows and ``AuditLog`` entries
+        reference them; no runtime authentication or key creation happens here.
+        New integrations use ``ApiToken``.
     """
 
     name = models.CharField(max_length=100, help_text="Human-friendly name for this key")
@@ -244,65 +243,6 @@ class APIKey(models.Model):
     def display_key(self) -> str:
         """Return prefix with ellipsis for display."""
         return f"{self.prefix}..."
-
-    def revoke(self):
-        """Revoke this API key."""
-        self.revoked_at = timezone.now()
-        self.save(update_fields=["revoked_at"])
-
-    def update_last_used(self):
-        """Update last_used_at to current time."""
-        self.last_used_at = timezone.now()
-        self.save(update_fields=["last_used_at"])
-
-    @classmethod
-    def create_key(cls, name: str, created_by, expires_at=None) -> tuple["APIKey", str]:
-        """
-        Create a new API key.
-
-        Returns:
-            Tuple of (APIKey instance, raw key string).
-            The raw key is only available at creation time.
-        """
-        # Generate random key: rr_live_<32 random chars>
-        random_part = secrets.token_urlsafe(24)[:32]
-        raw_key = f"rr_live_{random_part}"
-        prefix = raw_key[:8]
-
-        # Hash the full key for storage
-        key_hash = hashlib.sha256(raw_key.encode()).hexdigest()
-
-        api_key = cls.objects.create(
-            name=name,
-            prefix=prefix,
-            key_hash=key_hash,
-            created_by=created_by,
-            expires_at=expires_at,
-        )
-        return api_key, raw_key
-
-    @classmethod
-    def authenticate(cls, raw_key: str) -> "APIKey | None":
-        """
-        Authenticate an API key.
-
-        Returns:
-            APIKey instance if valid, None otherwise.
-        """
-        if not raw_key or not raw_key.startswith("rr_live_"):
-            return None
-
-        prefix = raw_key[:8]
-        key_hash = hashlib.sha256(raw_key.encode()).hexdigest()
-
-        try:
-            api_key = cls.objects.get(prefix=prefix, key_hash=key_hash)
-            if api_key.is_active:
-                return api_key
-        except cls.DoesNotExist:
-            pass
-
-        return None
 
 
 class AuditLog(models.Model):

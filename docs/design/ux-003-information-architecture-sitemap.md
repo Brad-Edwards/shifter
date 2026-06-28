@@ -214,7 +214,9 @@ to staff or Threat Research users by the existing shared access policy.
 ### Risk Register
 
 Risk Register is an organizer and self-hosting surface for platform risk,
-exceptions, mitigations, API keys, and audit-oriented status.
+exceptions, mitigations, and audit-oriented status. Programmatic access uses
+the platform `ApiToken` (scoped bearer tokens); the legacy risk-register API
+key and its UI were retired (PLAT-106 / #1124).
 
 | Current page | Route | Primary user | Primary purpose |
 | --- | --- | --- | --- |
@@ -228,9 +230,6 @@ exceptions, mitigations, API keys, and audit-oriented status.
 | Reopen risk | `/risk-register/risks/<risk_id>/reopen/` | Organizer | Reopen a closed risk. |
 | Add comment | `/risk-register/risks/<risk_id>/comments/add/` | Organizer | Add risk discussion or review notes. |
 | Delete comment | `/risk-register/risks/<risk_id>/comments/<comment_id>/delete/` | Organizer | Remove a risk comment. |
-| API keys | `/risk-register/api-keys/` | Organizer | List Risk Register API keys. |
-| Create API key | `/risk-register/api-keys/create/` | Organizer | Create an API key. |
-| Revoke API key | `/risk-register/api-keys/<key_id>/revoke/` | Organizer | Revoke an API key. |
 
 ### Documentation
 
@@ -277,7 +276,6 @@ Shifter
 |-- Govern
 |   |-- Risk Register
 |   |-- Risk Detail
-|   |-- API Keys
 |   `-- Audit / Review Queues
 `-- Learn
     |-- Role Start
@@ -361,7 +359,6 @@ Govern navigation:
 
 - Risks
 - Exceptions and Mitigations
-- API Keys
 - Review Dates
 
 Learn navigation:
@@ -410,7 +407,7 @@ Users with both participant and organizer access need an explicit mode switch:
 
 - Participant mode: "Participate" appears as the current mode and routes to the
   active event experience.
-- Organizer mode: "Operate", "Author", "Govern", and "Learn" appear as
+- Organizer mode: "Operate," "Author," "Govern," and "Learn" appear as
   organizer surfaces.
 - Switching modes changes navigation structure and default landing page, but it
   does not grant permissions.
@@ -493,7 +490,6 @@ Use full pages for complex creation and editing:
 - Scenario YAML editing.
 - Range provisioning.
 - Risk creation and editing.
-- API key creation.
 
 Overlays must not become hidden routes for privileged functionality. They must
 call the same permission-checked endpoints as full-page flows.
