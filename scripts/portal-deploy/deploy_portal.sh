@@ -367,6 +367,9 @@ main() {
   redis_ca_mode=$(get_optional_param "$PS_PREFIX/redis-ca-mode")
   email_backend=$(get_optional_param "$PS_PREFIX/email-backend")
   ctf_from_email=$(get_optional_param "$PS_PREFIX/ctf-from-email")
+  if [[ -z "$email_backend" ]]; then
+    email_backend="django.core.mail.backends.console.EmailBackend"
+  fi
   platform_bootstrap_staff_emails=$(get_optional_param "$PS_PREFIX/platform-bootstrap-staff-emails")
   platform_bootstrap_superuser_emails=$(get_optional_param "$PS_PREFIX/platform-bootstrap-superuser-emails")
   validate_bootstrap_email_list "PLATFORM_BOOTSTRAP_STAFF_EMAILS" "$platform_bootstrap_staff_emails"
@@ -437,7 +440,7 @@ main() {
   append_env_if_set REDIS_SECRET_ID "$redis_secret_arn"
   append_env_if_set REDIS_TLS "$redis_tls"
   append_env_if_set REDIS_CA_MODE "$redis_ca_mode"
-  append_env_if_set EMAIL_BACKEND "$email_backend"
+  append_env EMAIL_BACKEND "$email_backend"
   append_env_if_set CTF_FROM_EMAIL "$ctf_from_email"
   append_env_if_set PLATFORM_BOOTSTRAP_STAFF_EMAILS "$platform_bootstrap_staff_emails"
   append_env_if_set PLATFORM_BOOTSTRAP_SUPERUSER_EMAILS "$platform_bootstrap_superuser_emails"

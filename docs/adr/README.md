@@ -114,7 +114,9 @@ Current mechanisms:
 - `.ground-control.yaml` and `.gc/plan-rules.md`: Ground Control
   workflow configuration and mandatory plan constraints. The
   `github_repo` value is the canonical GitHub target for agent issue,
-  PR, CI, and traceability operations.
+  PR, CI, and traceability operations. The optional `routing` block opts
+  the repository into per-step `/implement` routing while keeping the
+  workflow's gate contract in `.gc/plan-rules.md`.
 - `.importlinter`: Python package-level architecture contracts
 - `.tflint.hcl`: Terraform lint configuration with `tflint-ruleset-google`
   plugin. The initial rule set is intentionally conservative so it can

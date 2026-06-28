@@ -4,11 +4,9 @@ from __future__ import annotations
 
 import logging
 import secrets
-from datetime import timedelta
 from typing import TYPE_CHECKING
 from uuid import UUID
 
-from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 
@@ -223,12 +221,9 @@ def resend_invite(participant_id: UUID) -> CTFParticipant:
         ) from None
 
     now = timezone.now()
-    hours = getattr(settings, "MAGIC_LINK_EXPIRY_HOURS", 24)
-    config_expiry = now + timedelta(hours=hours)
-    token_expires = min(participant.event.event_end, config_expiry)
 
     participant.invite_token = secrets.token_urlsafe(32)
-    participant.invite_token_expires = token_expires
+    participant.invite_token_expires = CTFParticipant.default_invite_token_expiry(participant.event, now=now)
     participant.invited_at = now
     participant.save(update_fields=["invite_token", "invite_token_expires", "invited_at", "updated_at"])
 

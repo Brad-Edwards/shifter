@@ -42,12 +42,11 @@ def describe_database_posture(env: Mapping[str, str]) -> dict[str, object]:
     """Summarize database engine/host posture without credentials."""
     if env.get("TESTING") == "1":
         return {"engine": "sqlite", "host": None, "port": None, "name": None}
-    host = env.get("DB_HOST", "localhost").strip() or "localhost"
     return {
         "engine": "postgresql",
-        "host": host,
-        "port": env.get("DB_PORT", "5432").strip() or "5432",
-        "name": env.get("DB_NAME", "shifter").strip() or "shifter",
+        "host": env.get("DB_HOST", "").strip() or None,
+        "port": env.get("DB_PORT", "").strip() or None,
+        "name": env.get("DB_NAME", "").strip() or None,
     }
 
 

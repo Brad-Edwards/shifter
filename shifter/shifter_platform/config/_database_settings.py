@@ -16,6 +16,8 @@ import json
 import os
 from pathlib import Path
 
+from config._runtime_env import required_runtime_env
+
 __all__ = [
     "DATABASES",
     "SECRET_KEY_FALLBACKS",
@@ -91,16 +93,21 @@ def _build_databases() -> dict[str, dict[str, object]]:
             options["sslrootcert"] = ssl_root_cert
     else:
         engine = "django.db.backends.postgresql"
+    name = required_runtime_env("DB_NAME", dev_default="shifter")
+    user = required_runtime_env("DB_USER", dev_default="postgres")
+    host = required_runtime_env("DB_HOST", dev_default="localhost")
+    port = required_runtime_env("DB_PORT", dev_default="5432")
+    password = None if iam_auth else required_runtime_env("DB_PASSWORD", dev_default="postgres")
     return {
         "default": {
             "ENGINE": engine,
-            "NAME": os.environ.get("DB_NAME", "shifter"),
-            "USER": os.environ.get("DB_USER"),
+            "NAME": name,
+            "USER": user,
             # Ignored under IAM auth (the backend mints a token); retained for
             # the password path (local/dev and the migration owner).
-            "PASSWORD": os.environ.get("DB_PASSWORD"),
-            "HOST": os.environ.get("DB_HOST", "localhost"),
-            "PORT": os.environ.get("DB_PORT", "5432"),
+            "PASSWORD": password,
+            "HOST": host,
+            "PORT": port,
             # Connection settings (can tune CONN_MAX_AGE for connection reuse)
             "CONN_MAX_AGE": 0,
             "OPTIONS": options,

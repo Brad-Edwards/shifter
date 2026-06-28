@@ -11,6 +11,9 @@ from __future__ import annotations
 
 import importlib
 
+import pytest
+from django.core.exceptions import ImproperlyConfigured
+
 SENDGRID_BACKEND = "anymail.backends.sendgrid.EmailBackend"
 MAILGUN_BACKEND = "anymail.backends.mailgun.EmailBackend"
 CONSOLE_BACKEND = "django.core.mail.backends.console.EmailBackend"
@@ -68,6 +71,27 @@ def test_defaults_use_console_backend_and_no_anymail(monkeypatch) -> None:
 
     assert email_module.EMAIL_BACKEND == CONSOLE_BACKEND
     assert email_module.ANYMAIL == {}
+
+
+def test_production_requires_explicit_email_backend(monkeypatch) -> None:
+    for var in ("EMAIL_BACKEND", "DEFAULT_FROM_EMAIL", "EMAIL_API_KEY", "MAILGUN_SENDER_DOMAIN", "TESTING"):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.setenv("DJANGO_DEBUG", "false")
+
+    with pytest.raises(ImproperlyConfigured, match="EMAIL_BACKEND"):
+        _reload_email_module()
+
+
+def test_production_anymail_backend_requires_hydrated_api_key(monkeypatch) -> None:
+    for var in ("DEFAULT_FROM_EMAIL", "EMAIL_API_KEY", "MAILGUN_SENDER_DOMAIN", "TESTING"):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.setenv("DJANGO_DEBUG", "false")
+    monkeypatch.setenv("EMAIL_BACKEND", SENDGRID_BACKEND)
+
+    with pytest.raises(ImproperlyConfigured, match="EMAIL_API_KEY"):
+        _reload_email_module()
 
 
 def test_gcp_sendgrid_backend_reads_key_from_env(monkeypatch) -> None:
