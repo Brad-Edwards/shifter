@@ -871,7 +871,7 @@
       "target": "terraform_base.run_terraform"
     },
     {
-      "count": 1,
+      "count": 2,
       "path": "shifter/engine/provisioner/tests/test_ssh_executor.py",
       "target": "executors.ssh_executor.paramiko.SSHClient"
     },
