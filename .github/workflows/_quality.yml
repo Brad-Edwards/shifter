@@ -285,9 +285,29 @@ jobs:
           python3 scripts/check_tf_iam_elb_scope/check_tf_iam_elb_scope.py \
             platform/terraform/modules/engine-provisioner/iam.tf
 
+      # Issue #1179: SSM Run Command IAM scoping on the engine provisioner
+      # ECS task role. Mirrors check-tf-iam-ec2-scope: rejects account-wide
+      # ssm:SendCommand / ec2:RebootInstances and requires the range-instance
+      # tag conditions so a provisioner compromise cannot command portal or
+      # runner instances. Pre-commit also enforces it locally.
+      - name: Run check-tf-iam-ssm-scope
+        run: |
+          python3 scripts/check_tf_iam_ssm_scope/check_tf_iam_ssm_scope.py \
+            platform/terraform/modules/engine-provisioner/iam.tf
+
       - name: Run check-tf-iam-role-naming
         run: |
           python3 scripts/check_tf_iam_role_naming/check_tf_iam_role_naming.py
+
+      # Issue #1178: the shared range guest instance role must not grant SSM
+      # Parameter Store access on a Resource that wildcards the environment or
+      # range segment (parameter/shifter/*/range/*). Mirrors the
+      # check-tf-iam-ssm-range-scope pre-commit hook so a commit that skipped
+      # pre-commit cannot land the cross-range regression.
+      - name: Run check-tf-iam-ssm-range-scope
+        run: |
+          python3 scripts/check_tf_iam_ssm_range_scope/check_tf_iam_ssm_range_scope.py \
+            platform/terraform/modules/range/vpc/iam.tf
 
       # ADR-004-R12 / issue #140: first-party RDS instances must keep
       # IAM DB auth enabled and explicitly pin a CA identifier. Checkov
@@ -330,7 +350,9 @@ jobs:
         run: |
           python3 -m unittest scripts.check_tf_iam_ec2_scope.test_check_tf_iam_ec2_scope
           python3 -m unittest scripts.check_tf_iam_elb_scope.test_check_tf_iam_elb_scope
+          python3 -m unittest scripts.check_tf_iam_ssm_scope.test_check_tf_iam_ssm_scope
           python3 -m unittest scripts.check_tf_iam_role_naming.test_check_tf_iam_role_naming
+          python3 -m unittest scripts.check_tf_iam_ssm_range_scope.test_check_tf_iam_ssm_range_scope
           python3 -m unittest scripts.check_tf_sg_cidrs.test_check_tf_sg_cidrs
           python3 -m unittest scripts.check_tf_kms_secrets_grant.test_check_tf_kms_secrets_grant
           python3 -m unittest scripts.check_tf_rds_security.test_check_tf_rds_security

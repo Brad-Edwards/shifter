@@ -11,6 +11,7 @@ from django.http import JsonResponse
 from django.views.decorators.http import require_GET, require_POST
 
 from risk_register.services import get_client_ip
+from shared.log_sanitize import safe_log_value
 
 if TYPE_CHECKING:
     from django.http import HttpRequest
@@ -74,7 +75,14 @@ def _submit_flag_response(
         error_resp = _json_error(e, _CHALLENGE_ACTION_FAILED, 400)
     except CTFRateLimitError as e:
         retry_after = e.details.get("retry_after_seconds")
-        error_resp = _json_error(e, "Rate limit exceeded.", 429)
+        logger.warning("CTF API error (429): Rate limit exceeded. | %s", safe_log_value(str(e)))
+        payload: dict[str, Any] = {"error": "Rate limit exceeded."}
+        if retry_after is not None:
+            payload["retry_after_seconds"] = int(retry_after)
+        retry_at = e.details.get("retry_at")
+        if retry_at:
+            payload["retry_at"] = retry_at
+        error_resp = JsonResponse(payload, status=429)
         if retry_after:
             error_resp["Retry-After"] = str(int(retry_after))
     if error_resp is not None:

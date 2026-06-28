@@ -44,6 +44,13 @@ class CheckTfIamRoleNamingTest(unittest.TestCase):
             )
             self.assertEqual(check_file(tf), [])
 
+    def test_non_tf_inputs_are_ignored(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            artifact = Path(tmp) / "lambda.zip"
+            artifact.write_bytes(b"\x00\x8a\xff")
+
+            self.assertEqual(check_file(artifact), [])
+
     def test_github_oidc_legacy_patterns_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             tf = _write(

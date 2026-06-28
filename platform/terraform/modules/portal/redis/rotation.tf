@@ -17,6 +17,7 @@
 # single-instance path leaves the AUTH token to the documented manual rotation.
 locals {
   rotation_enabled = var.enable_replication && var.enable_auth_rotation
+  iam_name_prefix  = coalesce(var.iam_name_prefix, var.name_prefix)
 }
 
 data "archive_file" "rotation" {
@@ -147,7 +148,7 @@ resource "aws_secretsmanager_secret_rotation" "redis_auth" {
 resource "aws_iam_role" "rotation" {
   count = local.rotation_enabled ? 1 : 0
 
-  name = "${var.name_prefix}-redis-rotation-role"
+  name = "${local.iam_name_prefix}-redis-rotation-role"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"

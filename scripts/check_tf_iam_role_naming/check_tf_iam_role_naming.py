@@ -194,6 +194,8 @@ def check_github_oidc_policy_doc_size(path: Path, lines: list[str]) -> list[Viol
 
 
 def check_file(path: Path) -> list[Violation]:
+    if path.suffix != ".tf":
+        return []
     text = path.read_text(encoding="utf-8")
     lines = text.splitlines()
     violations = check_iam_resource_names(path, lines)

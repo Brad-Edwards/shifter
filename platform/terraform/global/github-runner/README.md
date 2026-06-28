@@ -76,6 +76,32 @@ aws ec2 describe-subnets \
   --output text
 ```
 
+## Health monitoring
+
+Each runner has CloudWatch alarms for EC2 instance/system status checks,
+sustained CPU (hang proxy), and runner-service liveness. A systemd timer
+(`shifter-runner-health.timer`, installed by `user_data`) publishes the
+`actions.runner.*` service state as the `Shifter/RunnerHealth:RunnerServiceActive`
+metric; its alarm treats missing data as breaching so a hung host that stops
+reporting alarms instead of going silent. Alarms notify the
+`shifter-github-runner-alerts` SNS topic
+(`terraform output runner_alerts_topic_arn`); set `alarm_email` to subscribe an
+inbox, or subscribe Slack/Teams to the topic. The system-status alarm can
+EC2-auto-recover when `enable_system_auto_recovery` is set (default on).
+
+A freshly applied host shows `RunnerServiceActive = 0` until you register the
+runner below; the `service-inactive` alarm clears once `svc.sh start` runs.
+
+The monitor installs via `user_data`, which runs only on first boot, so
+`aws_instance.runner` sets `user_data_replace_on_change = true`. Applying this
+change therefore **replaces** existing runners (re-running the install); a
+replaced runner must be re-registered. Roll out one runner at a time
+(`-target`) to avoid dropping all self-hosted capacity. See the runbook section
+on rolling out the monitor to existing runners.
+
+See the response runbook:
+[`docs/ops/github-runner-health-alerts.md`](../../../../docs/ops/github-runner-health-alerts.md).
+
 ## Registering a runner (one-time per instance)
 
 Each EC2 ships ready to register but not yet registered. `./config.sh`

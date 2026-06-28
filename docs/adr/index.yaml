@@ -177,12 +177,27 @@
       },
       {
         "id": "ADR-004-R15",
+        "description": "Committed Terraform under `platform/terraform/` must not ship operational placeholders in `.tf` sources: hardcoded `YOUR_EMAIL@example.com` budget-alert recipients, `subscriber_email_addresses` literals pointing at `@example.com`, or a managed `AdministratorAccess` attachment on the GitHub Actions OIDC role in `platform/terraform/global/iam/github-oidc.tf`. Real alert recipients belong in gitignored `local.auto.tfvars` or the per-environment `TF_VARS_<ENV>_CORE` / `TF_VARS_<ENV>_PORTAL` deploy secrets; CI OIDC permissions stay on scoped policies. Enforced by `no-terraform-operational-placeholders` and `github-oidc-no-admin-access` in `scripts/adr_guard/adr_guard.py` at the `fast` and `ci` levels.",
+        "checks": ["no-terraform-operational-placeholders", "github-oidc-no-admin-access"]
+      },
+      {
+        "id": "ADR-004-R16",
+        "description": "Mission Control runtime code MUST NOT contain hardcoded CTF challenge flag literals. The `no-mission-control-flag-literals` check in `scripts/adr_guard/adr_guard.py` scans the `shifter/shifter_platform/mission_control/` package (all runtime; its tests live under `shifter/shifter_platform/tests/mission_control/`, outside scope) and the `shifter/shifter_platform/templates/mission_control/` template tree (covering inline `<script>` JavaScript) for answer-shaped `FLAG{...}` literals (case-insensitive). Detection is by pattern, never by a denylist of real values. Format-hint placeholders that describe the answer shape rather than carry one are intentionally NOT flagged: an empty body (`FLAG{}`), the ellipsis form (`FLAG{...}`), and angle-bracket templates (`FLAG{<16-hex>}`). The path scope deliberately excludes tests, docs, the native `ctf` app (`CTFChallenge`/`CTFFlag` and `ctf.services`/templates, where `FLAG{...}` is a documented format hint), and Polaris scenario content under `scenario-dev/polaris/`, where flags are legitimate challenge content. Challenge answers belong to the CTF/CTFd content domain, not the Mission Control application path. CTF flags are low-entropy and are not caught by gitleaks (which targets high-entropy secrets); this is the complementary repo-specific backstop. Violation messages name the repo-relative path and line only — never the matched value. The check runs at the `fast` and `ci` levels via the existing `python3 scripts/adr_guard/adr_guard.py --all --level ci` invocation in pre-commit and `.github/workflows/_quality.yml`. Closes the #560 regression gap (the `box_info` literal-flag map removed during the mission_control views package split) and blocks reintroduction.",
+        "checks": ["no-mission-control-flag-literals"]
+      },
+      {
+        "id": "ADR-004-R17",
+        "description": "The shared range *guest* instance role (`aws_iam_role.range_instance` in `platform/terraform/modules/range/vpc/iam.tf`) MUST NOT be granted SSM Parameter Store access on a Resource that wildcards across the environment or range segment. Specifically, any `aws_iam_role_policy`/`aws_iam_policy` attached to a range-instance role whose statement carries an SSM parameter action (`ssm:PutParameter`/`GetParameter`/`GetParameters`/`GetParametersByPath`/`GetParameterHistory`/`DeleteParameter`/`DeleteParameters`/`LabelParameterVersion`, or a wildcard such as `ssm:*`/`ssm:Get*` covering them) MUST NOT use a Resource matching `parameter/shifter/*/range/...` (environment wildcard), `parameter/shifter/<env>/range/*` that is not bound to a concrete `${var.range_id}`/`${range_id}` token (range wildcard), or a full `*` Resource (which covers every environment and range). The checker is fail-closed for the all-wildcard shapes: a full wildcard `Action = \"*\"` is treated as granting SSM parameter access, and a full wildcard `Resource = \"*\"` is a violation, so a broad statement cannot slip past by omitting the literal `ssm:` action or `parameter/shifter` ARN. A correctly range-scoped grant `parameter/shifter/<env>/range/${var.range_id}/*` is allowed. The provisioner orchestrator role (`aws_iam_role.ecs_task` in `platform/terraform/modules/engine-provisioner/iam.tf`) legitimately holds an env-scoped `parameter/shifter/${var.environment}/range/*` grant and is NOT a range-instance role, so it is not inspected. Range guests do not use their instance role for Parameter Store at all: all range SSM access is brokered by the engine provisioner via Run Command (`{{ssm-secure:<name>}}` substitution and provisioner-side `ssm:GetParameter`), so a direct guest-role grant is both over-broad and unnecessary. Backstops the cross-tenant credential-access exposure resolved by #1178 (the role previously granted SSM Put/Get/Delete on `parameter/shifter/*/range/*`, wildcarded across every environment and range) and blocks reintroduction. Implemented in `scripts/check_tf_iam_ssm_range_scope/check_tf_iam_ssm_range_scope.py`, wired as the `check-tf-iam-ssm-range-scope` pre-commit hook and a CI step in `.github/workflows/_quality.yml`, with its unittest suite included in the `check_tf_*` checker tests. Currently scoped to `platform/terraform/modules/range/vpc/iam.tf`; expand the hook's `files:` regex and the CI invocation when another module defines a range-instance role.",
+        "checks": []
+      },
+      {
+        "id": "ADR-004-R18",
         "description": "The GitHub Actions OIDC deploy role in `platform/terraform/global/iam/github-oidc.tf` MUST keep its managed-policy attachments consolidated by AWS service category and at or below 6 `aws_iam_role_policy_attachment` resources, preserving headroom under AWS's hard limit of 10 managed policies per role. A new AWS service surface MUST be added by extending one of the existing category policies (`compute`, `networking`, `data`, `security`, `management`), not by adding another attachment. The cap is enforced by `scripts/check_tf_iam_role_naming/check_tf_iam_role_naming.py` (`OIDC_ATTACHMENT_CAP`), wired as the `check-tf-iam-role-naming` pre-commit hook, with its unittest suite included in the `check_tf_*` checker tests. The same checker preserves the deploy-role naming seam (`role/shifter-*`), the `iam:AttachRolePolicy` `iam:PolicyArn` allowlist, and the OIDC `iam_scoped` trust scoping. Consolidation moves IAM statements between category policies without broadening scopes or conditions; the migration uses `moved` blocks so existing environments replace attachment addresses in place (destroy-before-create) and never exceed 10 attachments mid-apply. Established by #254 when the role's 10 by-service policies were consolidated into 5 by-category policies.",
         "checks": []
       },
       {
-        "id": "ADR-004-R16",
-        "description": "Because the GitHub Actions OIDC deploy role consolidates many AWS services into 5 category managed policies (ADR-004-R15), each category policy document MUST stay under AWS's hard limit of 6,144 characters for a customer-managed policy, so a category can be extended with new deploy verbs without the deploy hitting `LimitExceeded` at apply time. The limit is enforced by `scripts/check_tf_iam_role_naming/check_tf_iam_role_naming.py` (`OIDC_POLICY_DOC_LIMIT`, `check_github_oidc_policy_doc_size`), wired as the `check-tf-iam-role-naming` pre-commit hook, with its unittest suite included in the `check_tf_*` checker tests. The checker measures the whitespace-stripped HCL of each `aws_iam_policy` block, a conservative over-estimate of the rendered JSON because the `${...account_id}`/`${...aws_region}` interpolations are longer than the values they render to, so a passing check guarantees the rendered document is also under the limit. When a category approaches the limit it MUST be compacted or split rather than allowed to overflow. Established by #254 when the by-category policies were extended to cover the full platform deploy surface under least privilege.",
+        "id": "ADR-004-R19",
+        "description": "Because the GitHub Actions OIDC deploy role consolidates many AWS services into 5 category managed policies (ADR-004-R18), each category policy document MUST stay under AWS's hard limit of 6,144 characters for a customer-managed policy, so a category can be extended with new deploy verbs without the deploy hitting `LimitExceeded` at apply time. The limit is enforced by `scripts/check_tf_iam_role_naming/check_tf_iam_role_naming.py` (`OIDC_POLICY_DOC_LIMIT`, `check_github_oidc_policy_doc_size`), wired as the `check-tf-iam-role-naming` pre-commit hook, with its unittest suite included in the `check_tf_*` checker tests. The checker measures the whitespace-stripped HCL of each `aws_iam_policy` block, a conservative over-estimate of the rendered JSON because the `${...account_id}`/`${...aws_region}` interpolations are longer than the values they render to, so a passing check guarantees the rendered document is also under the limit. When a category approaches the limit it MUST be compacted or split rather than allowed to overflow. Established by #254 when the by-category policies were extended to cover the full platform deploy surface under least privilege.",
         "checks": []
       }
     ],
@@ -198,6 +213,7 @@
       "scripts/adr_guard/adr_guard.py",
       "scripts/check_tf_kms_secrets_grant/check_tf_kms_secrets_grant.py",
       "scripts/check_tf_rds_security/check_tf_rds_security.py",
+      "scripts/check_tf_iam_ssm_range_scope/check_tf_iam_ssm_range_scope.py",
       "scripts/check_portal_target_sg_sources/check_portal_target_sg_sources.py",
       "scripts/check_tf_iam_role_naming/check_tf_iam_role_naming.py",
       "scripts/check_checkov_invocation_parity/check_checkov_invocation_parity.py",
@@ -268,6 +284,11 @@
         "id": "ADR-006-R3",
         "description": "Each Shifter Kubernetes namespace must have a default-deny NetworkPolicy covering both ingress and egress, and Shifter NetworkPolicies must use explicit service CIDRs instead of broad internet egress ranges.",
         "checks": ["k8s-network-policy-coverage"]
+      },
+      {
+        "id": "ADR-006-R4",
+        "description": "Creation of Jobs running as the privileged provisioner service account in the shifter-jobs namespace must be gated by a ValidatingAdmissionPolicy (present and byte-identical in platform/k8s/gcp/base/ and the helm-rendered output of platform/charts/shifter). The policy must deny such Jobs unless they mirror the full canonical GCPTaskRunner contract: submitted by the workers service account, single container named pulumi-provisioner, pinned ENGINE_TASK_IMAGE, no command (entrypoint) override, a range/ngfw command family, no envFrom, emptyDir-only volumes, the read-only/non-root/drop-ALL container security context, and restartPolicy Never. Pinning only the image is insufficient because the caller could keep the image and override the executable fields. RBAC cannot constrain serviceAccountName and the restricted PSS profile does not pin serviceAccountName, image, or command. Enforced at runtime by the cluster and in CI by the structural invariant tests.",
+        "checks": []
       }
     ],
     "exceptions": [],
@@ -276,6 +297,9 @@
       "platform/k8s/gcp/base/namespaces.yaml",
       "platform/k8s/gcp/base/networkpolicies.yaml",
       "platform/charts/shifter/templates/networkpolicies.yaml",
+      "platform/k8s/gcp/base/validatingadmissionpolicy-provisioner-jobs.yaml",
+      "platform/charts/shifter/templates/validatingadmissionpolicy-provisioner-jobs.yaml",
+      "shifter/shifter_platform/tests/platform/test_gcp_job_launcher_manifests.py",
       ".kube-linter.yaml",
       ".pre-commit-config.yaml",
       "scripts/adr_guard/adr_guard.py",
