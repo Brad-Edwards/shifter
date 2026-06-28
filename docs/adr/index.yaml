@@ -273,6 +273,11 @@
         "id": "ADR-006-R3",
         "description": "Each Shifter Kubernetes namespace must have a default-deny NetworkPolicy covering both ingress and egress, and Shifter NetworkPolicies must use explicit service CIDRs instead of broad internet egress ranges.",
         "checks": ["k8s-network-policy-coverage"]
+      },
+      {
+        "id": "ADR-006-R4",
+        "description": "Creation of Jobs running as the privileged provisioner service account in the shifter-jobs namespace must be gated by a ValidatingAdmissionPolicy (present and byte-identical in platform/k8s/gcp/base/ and the helm-rendered output of platform/charts/shifter). The policy must deny such Jobs unless they mirror the full canonical GCPTaskRunner contract: submitted by the workers service account, single container named pulumi-provisioner, pinned ENGINE_TASK_IMAGE, no command (entrypoint) override, a range/ngfw command family, no envFrom, emptyDir-only volumes, the read-only/non-root/drop-ALL container security context, and restartPolicy Never. Pinning only the image is insufficient because the caller could keep the image and override the executable fields. RBAC cannot constrain serviceAccountName and the restricted PSS profile does not pin serviceAccountName, image, or command. Enforced at runtime by the cluster and in CI by the structural invariant tests.",
+        "checks": []
       }
     ],
     "exceptions": [],
@@ -281,6 +286,9 @@
       "platform/k8s/gcp/base/namespaces.yaml",
       "platform/k8s/gcp/base/networkpolicies.yaml",
       "platform/charts/shifter/templates/networkpolicies.yaml",
+      "platform/k8s/gcp/base/validatingadmissionpolicy-provisioner-jobs.yaml",
+      "platform/charts/shifter/templates/validatingadmissionpolicy-provisioner-jobs.yaml",
+      "shifter/shifter_platform/tests/platform/test_gcp_job_launcher_manifests.py",
       ".kube-linter.yaml",
       ".pre-commit-config.yaml",
       "scripts/adr_guard/adr_guard.py",
