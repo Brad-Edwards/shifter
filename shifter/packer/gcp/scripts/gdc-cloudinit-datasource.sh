@@ -14,6 +14,21 @@
 # GCP-only and is intentionally NOT added to the shared cleanup script, because
 # AWS images must keep their Ec2 datasource.
 set -euo pipefail
+export DEBIAN_FRONTEND=noninteractive
+
+# cloud-init is what applies the GDC NoCloud userData (host key, authorized_keys,
+# first-boot setup script). The shared cleanup step runs `apt-get autoremove`,
+# which strips cloud-init from the GCE Debian->Kali image (it is an orphanable
+# dependency there, though not on ubuntu-os-cloud) -- so the Kali guest would
+# otherwise never run cloud-init at all. Ensure it is present and pinned as a
+# manually-installed package so a later autoremove cannot take it out again.
+if ! command -v cloud-init >/dev/null 2>&1; then
+  apt-get update
+  apt-get install -y cloud-init
+  apt-get clean
+  rm -rf /var/lib/apt/lists/*
+fi
+apt-mark manual cloud-init >/dev/null 2>&1 || true
 
 cat > /etc/cloud/cloud.cfg.d/99-shifter-gdc-datasource.cfg <<'CFG'
 # Shifter GDC VM Runtime guests boot from a NoCloud seed (cidata) built from
