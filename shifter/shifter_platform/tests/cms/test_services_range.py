@@ -6,12 +6,16 @@ settings, so provisioning is a no-op and no cloud mock is needed), instead of
 patching ``RangeInstance.objects`` / the engine call / the scenario loader.
 """
 
+from unittest.mock import MagicMock, patch
+
 import pytest
 from django.contrib.auth import get_user_model
 
 from cms import services
 from cms.exceptions import CMSError
 from cms.models import RangeInstance
+from shared.cloud.exceptions import CloudTaskError
+from shared.enums import ResourceStatus
 from tests.conftest import INVALID_RANGE_IDS, INVALID_USERS
 
 pytestmark = pytest.mark.django_db
@@ -138,6 +142,32 @@ class TestCreateRangeBehavior:
         before = AuditLog.objects.count()
         services.create_range(user, hydratable_scenario.scenario_id, {"windows": make_agent(user).id})
         assert AuditLog.objects.count() > before
+
+    def test_marks_owned_range_failed_when_engine_dispatch_fails(self, user, make_agent, hydratable_scenario, settings):
+        from engine.models import Range as EngineRange
+        from risk_register.models import AuditLog
+
+        settings.CLOUD_PROVIDER = "aws"
+        settings.LOCAL_PROVISIONER = None
+        settings.ENGINE_TASK_CLUSTER = "test-cluster"
+        settings.ENGINE_TASK_DEFINITION = "test-taskdef"
+        settings.ENGINE_TASK_NETWORK_SECURITY_GROUP_ID = "sg-test"
+        settings.ENGINE_TASK_NETWORK_SUBNET_IDS = "subnet-aaa,subnet-bbb"
+        ecs_client = MagicMock()
+        ecs_client.run_task.return_value = {"tasks": [], "failures": [{"reason": "RESOURCE:CPU"}]}
+
+        with patch("boto3.client", return_value=ecs_client), pytest.raises(CloudTaskError):
+            services.create_range(user, hydratable_scenario.scenario_id, {"windows": make_agent(user).id})
+
+        range_instance = RangeInstance.all_objects.get(user_id=user.id)
+        assert range_instance.status == ResourceStatus.FAILED.value
+        assert range_instance.deleted_at is not None
+        assert EngineRange.objects.get(user=user).status == EngineRange.Status.FAILED
+        assert not AuditLog.objects.filter(
+            entity_type=AuditLog.EntityType.RANGE,
+            action=AuditLog.Action.PROVISION,
+            actor_id=user.id,
+        ).exists()
 
 
 class TestCreateRangeReturn:
