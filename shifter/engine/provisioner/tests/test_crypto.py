@@ -70,3 +70,40 @@ class TestGenerateRdpPassword:
 
         with pytest.raises(ValueError, match="length must be >= 4"):
             generate_rdp_password(length=3)
+
+
+class TestGenerateSshHostKeypair:
+    """generate_ssh_host_keypair yields a cloud-init-installable Ed25519 host
+    key plus a known_hosts-ready public key (D31)."""
+
+    def test_returns_openssh_ed25519_private_and_public(self):
+        from utils.crypto import generate_ssh_host_keypair
+
+        private_key, public_key = generate_ssh_host_keypair()
+        assert private_key.startswith("-----BEGIN OPENSSH PRIVATE KEY-----")
+        assert private_key.rstrip().endswith("-----END OPENSSH PRIVATE KEY-----")
+        assert public_key.startswith("ssh-ed25519 ")
+
+    def test_public_key_matches_private_key(self):
+        from cryptography.hazmat.primitives import serialization
+
+        from utils.crypto import generate_ssh_host_keypair
+
+        private_key, public_key = generate_ssh_host_keypair()
+        loaded = serialization.load_ssh_private_key(private_key.encode(), password=None)
+        derived = (
+            loaded.public_key()
+            .public_bytes(
+                encoding=serialization.Encoding.OpenSSH,
+                format=serialization.PublicFormat.OpenSSH,
+            )
+            .decode()
+        )
+        assert derived.strip() == public_key.strip()
+
+    def test_calls_are_unique(self):
+        from utils.crypto import generate_ssh_host_keypair
+
+        first, _ = generate_ssh_host_keypair()
+        second, _ = generate_ssh_host_keypair()
+        assert first != second

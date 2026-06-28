@@ -68,6 +68,8 @@ class RangePodSSHExecutor(GuestSSHExecutor):
         poll_interval_seconds: int = 10,
         connect_timeout_seconds: int = 10,
         runner_pod_name: str = _RUNNER_POD_NAME,
+        host_public_key: str | None = None,
+        known_hosts_host: str | None = None,
     ):
         if not namespace or not network_name:
             raise ValueError("RangePodSSHExecutor requires range namespace and network_name")
@@ -84,12 +86,18 @@ class RangePodSSHExecutor(GuestSSHExecutor):
         self._runner_ready = False
         self._key_planted = False
         self._pull_secret_name: str | None = None
+        # Set by _provision_known_hosts (called from super().__init__) when a
+        # host key is supplied; the content is planted on the runner lazily.
+        self._known_hosts_content = ""
+        self._known_hosts_planted = False
         super().__init__(
             private_key=private_key,
             username=username,
             port=port,
             poll_interval_seconds=poll_interval_seconds,
             connect_timeout_seconds=connect_timeout_seconds,
+            host_public_key=host_public_key,
+            known_hosts_host=known_hosts_host,
         )
 
     def _provision_key(self, private_key: str) -> str:
@@ -101,6 +109,16 @@ class RangePodSSHExecutor(GuestSSHExecutor):
         """
         # Path is inside the range runner pod's ephemeral filesystem, not the local host.
         return f"/tmp/shifter-guest-key-{uuid.uuid4().hex}.pem"  # noqa: S108  # nosec
+
+    def _provision_known_hosts(self, host: str, host_public_key: str) -> str:
+        """The known_hosts lives on the runner pod; return a unique in-pod path.
+
+        The content is captured here and planted on first use (the runner pod
+        may not exist yet), mirroring the deferred key-planting flow.
+        """
+        self._known_hosts_content = f"{host} {host_public_key.strip()}\n"
+        # Path is inside the range runner pod's ephemeral filesystem, not the local host.
+        return f"/tmp/shifter-known-hosts-{uuid.uuid4().hex}"  # noqa: S108  # nosec
 
     # -- runner pod lifecycle -------------------------------------------------
 
@@ -276,11 +294,24 @@ class RangePodSSHExecutor(GuestSSHExecutor):
             )
         self._key_planted = True
 
+    def _ensure_known_hosts_planted(self) -> None:
+        if self._known_hosts_planted or not self._known_hosts_path:
+            return
+        kh_b64 = base64.b64encode(self._known_hosts_content.encode()).decode("ascii")
+        script = f"printf %s {shlex.quote(kh_b64)} | base64 -d > {shlex.quote(self._known_hosts_path)}"
+        rc, _out, err = self._exec(["/bin/sh", "-c", script], timeout_seconds=30)
+        if rc != 0:
+            raise GuestSSHConnectionError(
+                f"Failed to plant known_hosts on runner pod (rc={rc}): {err.decode('utf-8', 'replace')}"
+            )
+        self._known_hosts_planted = True
+
     # -- transport seam -------------------------------------------------------
 
     def _invoke_ssh(self, ssh_args: list[str], command_input: bytes, timeout_seconds: int) -> tuple[int, bytes, bytes]:
         self._ensure_runner()
         self._ensure_key_planted()
+        self._ensure_known_hosts_planted()
         script_b64 = base64.b64encode(command_input).decode("ascii")
         # Path is inside the range runner pod's ephemeral filesystem, not the local host.
         script_path = f"/tmp/shifter-cmd-{uuid.uuid4().hex}"  # noqa: S108  # nosec

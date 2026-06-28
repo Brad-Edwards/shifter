@@ -3,6 +3,15 @@
 # shell scripts with InvalidCloudInitUserdata). The original provisioning
 # script is embedded verbatim via write_files and executed once on first
 # boot via runcmd, preserving identical behavior to the AWS user-data path.
+#
+# The provisioner generates this guest's Ed25519 host key and installs it here
+# so the guest presents a host key the provisioner already knows (it seeds the
+# setup-runner's known_hosts with the matching public key). This lets the
+# runner keep StrictHostKeyChecking=yes with no trust-on-first-use window.
+ssh_keys:
+  ed25519_private: |
+    {{ host_private_key | indent(4) }}
+  ed25519_public: {{ host_public_key }}
 write_files:
   - path: /opt/shifter/gdc-user-data.sh
     permissions: '0755'

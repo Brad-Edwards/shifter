@@ -9,6 +9,32 @@ from jinja2 import Environment, FileSystemLoader
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 
+# The Linux GDC templates now render a provisioner-generated Ed25519 host key
+# into cloud-init ``ssh_keys:`` (trusted-side-channel host verification). These
+# tests exercise the raw templates, so the fixtures default representative
+# host-key material; the Windows template ignores the extra kwargs.
+_SAMPLE_HOST_PRIVATE_KEY = (
+    "-----BEGIN OPENSSH PRIVATE KEY-----\n"
+    "b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZWQy\n"
+    "NTUxOQAAACDTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTQAAAA==\n"
+    "-----END OPENSSH PRIVATE KEY-----\n"
+)
+_SAMPLE_HOST_PUBLIC_KEY = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITESTHOSTKEY shifter-host"
+
+
+class _HostKeyTemplate:
+    """Wrap a Jinja template, defaulting the host-key vars the Linux GDC
+    templates require so existing ``render()`` calls need not pass them."""
+
+    def __init__(self, template):
+        self._template = template
+
+    def render(self, **kwargs):
+        kwargs.setdefault("host_private_key", _SAMPLE_HOST_PRIVATE_KEY)
+        kwargs.setdefault("host_public_key", _SAMPLE_HOST_PUBLIC_KEY)
+        return self._template.render(**kwargs)
+
+
 class TestKaliTemplate:
     """Tests for Kali attacker user data template."""
 
@@ -18,7 +44,7 @@ class TestKaliTemplate:
         templates_dir = Path(__file__).parent.parent / "templates"
         # NOSONAR: autoescape=False - these are shell/PowerShell templates, not HTML
         env = Environment(loader=FileSystemLoader(str(templates_dir)), autoescape=False)
-        return env.get_template("kali.sh.j2")
+        return _HostKeyTemplate(env.get_template("kali.sh.j2"))
 
     def test_kali_template_hostname(self, kali_template):
         """hostname variable should be replaced."""
@@ -112,7 +138,7 @@ class TestVictimLinuxTemplate:
             loader=FileSystemLoader(str(templates_dir)),
             autoescape=False,
         )
-        return env.get_template("victim_linux.sh.j2")
+        return _HostKeyTemplate(env.get_template("victim_linux.sh.j2"))
 
     def test_victim_linux_template_configures_ssh(self, linux_template):
         """Template should configure SSH access."""
@@ -234,9 +260,9 @@ class TestTemplateContentSafety:
         # NOSONAR: autoescape=False - these are shell/PowerShell templates, not HTML
         env = Environment(loader=FileSystemLoader(str(templates_dir)), autoescape=False)
         return {
-            "kali": env.get_template("kali.sh.j2"),
-            "linux": env.get_template("victim_linux.sh.j2"),
-            "windows": env.get_template("victim_windows.ps1.j2"),
+            "kali": _HostKeyTemplate(env.get_template("kali.sh.j2")),
+            "linux": _HostKeyTemplate(env.get_template("victim_linux.sh.j2")),
+            "windows": _HostKeyTemplate(env.get_template("victim_windows.ps1.j2")),
         }
 
     def test_templates_use_strict_bash_mode(self, all_templates):

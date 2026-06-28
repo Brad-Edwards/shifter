@@ -93,10 +93,24 @@ class TestBuildGuestExecutionContext:
             runner_image="registry.example/runner:latest",
             private_key="PRIVATE KEY",
             username="Administrator",
+            host_public_key="",
+            known_hosts_host="10.200.2.10",
         )
 
         context.close()
         mock_executor.close.assert_called_once_with()
+
+    def test_gcp_forwards_guest_host_key_for_known_hosts(self, mocker, monkeypatch):
+        # The Ed25519 host key the provisioner installed via cloud-init flows to
+        # the executor so it can seed the runner's known_hosts (D31).
+        _store, mock_executor_cls = self._patch_gcp_deps(mocker, monkeypatch)
+
+        build_guest_execution_context(
+            self._gcp_instance(gdc_host_public_key="ssh-ed25519 AAAAHOSTKEY guest", os="ubuntu")
+        )
+
+        assert mock_executor_cls.call_args.kwargs["host_public_key"] == "ssh-ed25519 AAAAHOSTKEY guest"
+        assert mock_executor_cls.call_args.kwargs["known_hosts_host"] == "10.200.2.10"
 
     def test_gcp_prefers_explicit_ssh_username_from_instance_output(self, mocker, monkeypatch):
         _store, mock_executor_cls = self._patch_gcp_deps(mocker, monkeypatch)

@@ -65,7 +65,7 @@ class TestRenderUserData:
         # to SSM Run Command; different shapes per OS.
         import re
 
-        result = _render_user_data(
+        result, host_public_key = _render_user_data(
             {"role": role, "os_type": os_type},
             hostname="target-01",
             public_key=self._PUBLIC_KEY,
@@ -79,6 +79,8 @@ class TestRenderUserData:
         if os_type == "windows":
             assert "<powershell>" in result
             assert "administrators_authorized_keys" in result
+            # Windows (cloudbase-init) has no ssh_keys module; no host key.
+            assert host_public_key == ""
         else:
             # GDC VM Runtime only accepts #cloud-config user-data; the bash
             # provisioning script is embedded via write_files/runcmd.
@@ -88,6 +90,11 @@ class TestRenderUserData:
             doc = yaml.safe_load(result)
             assert doc["runcmd"] == ["/opt/shifter/gdc-user-data.sh"]
             assert doc["write_files"][0]["content"].startswith("#!/bin/bash")
+            # The provisioner installs a known Ed25519 host key via cloud-init
+            # and returns the matching public key for known_hosts seeding.
+            assert host_public_key.startswith("ssh-ed25519 ")
+            assert doc["ssh_keys"]["ed25519_public"].strip() == host_public_key.strip()
+            assert doc["ssh_keys"]["ed25519_private"].startswith("-----BEGIN OPENSSH PRIVATE KEY-----")
 
         # Negative assertions: no password value rendered. The
         # ``chpasswd_pattern`` matches ``echo "<user>:<user>" |
@@ -111,7 +118,7 @@ class TestRenderUserData:
         # what env var is present.
         monkeypatch.setenv("DC_DOMAIN_PASSWORD", "DomainPass123!")
 
-        result = _render_user_data(
+        result, _host_public_key = _render_user_data(
             {"role": "dc", "os_type": "windows"},
             hostname="dc-01",
             public_key="ssh-rsa AAAA",
@@ -176,7 +183,7 @@ class TestApplyRangeAssets:
                     "PerInstanceP4ss!",
                 ),
             ),
-            patch("gdc_vmruntime_assets._render_user_data", return_value="<powershell>userdata</powershell>"),
+            patch("gdc_vmruntime_assets._render_user_data", return_value=("<powershell>userdata</powershell>", "")),
             patch(
                 "gdc_vmruntime_assets._ensure_cloudinit_secret",
                 return_value="range-42-victims-victim-1234-cloudinit",
@@ -253,6 +260,7 @@ class TestApplyRangeAssets:
                 "instance_id": "range-42-victims-victim-1234",
                 "private_ip": "10.200.0.104",
                 "public_key": "ssh-rsa AAAA",
+                "gdc_host_public_key": "",
                 "ssh_key_secret_arn": "projects/test/secrets/range-42-victim-ssh",
                 "rdp_password_secret_arn": "projects/test/secrets/range-42-victim-rdp",
                 "gdc_rdp_password_secret_ref": "projects/test/secrets/range-42-victim-rdp",

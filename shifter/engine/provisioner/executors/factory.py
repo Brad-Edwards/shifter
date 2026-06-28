@@ -132,6 +132,12 @@ def _build_gcp_execution_context(
 
     private_key = get_secrets_store().get_secret(secret_id)
     username = instance_data.get("ssh_username") or instance_data.get("ssh_user") or get_ssh_username(os_type, role)
+    # Host key the provisioner installed on the guest via cloud-init (Linux
+    # only); seeds the runner's known_hosts so StrictHostKeyChecking=yes
+    # validates against a key obtained over a trusted side channel. Empty for
+    # Windows guests (cloudbase-init has no ssh_keys module), which leaves the
+    # known_hosts seam inert.
+    host_public_key = instance_data.get("gdc_host_public_key", "")
     core_api, client_module, api_exception = _build_range_kube_clients()
     executor = RangePodSSHExecutor(
         core_api=core_api,
@@ -142,6 +148,8 @@ def _build_gcp_execution_context(
         runner_image=runner_image,
         private_key=private_key,
         username=username,
+        host_public_key=host_public_key,
+        known_hosts_host=target,
     )
     return GuestExecutionContext(
         executor=executor,

@@ -35,7 +35,43 @@ class TestGuestSSHExecutorRunCommand:
         assert "BatchMode=yes" in ssh_args
         assert "StrictHostKeyChecking=no" not in ssh_args
         assert "UserKnownHostsFile=/dev/null" not in ssh_args
+        # With no provisioner-supplied host key, no known_hosts pinning is added.
+        assert not any(a.startswith("UserKnownHostsFile=") for a in ssh_args)
+        assert not any(a.startswith("HostKeyAlgorithms=") for a in ssh_args)
         assert mock_run.call_args.kwargs["input"].decode("utf-8").startswith("set -euo pipefail\necho ok")
+
+    def test_seeded_host_key_pins_known_hosts_and_keeps_strict_checking(self, mocker, tmp_path):
+        # D31: when the provisioner supplies the guest's host key, the executor
+        # validates strictly against a single-entry known_hosts (no TOFU) and
+        # pins ed25519 so the cloud-init-installed host key is the one matched.
+        mock_run = mocker.patch("executors.guest_ssh_executor.subprocess.run")
+        mock_run.return_value = MagicMock(returncode=0, stdout=b"ok\n", stderr=b"")
+
+        host_pubkey = "ssh-ed25519 AAAAHOSTKEY guest"
+        executor = GuestSSHExecutor(
+            private_key="PRIVATE KEY",
+            username="kali",
+            host_public_key=host_pubkey,
+            known_hosts_host="10.200.2.10",
+        )
+        try:
+            known_hosts_path = executor._known_hosts_path
+            assert known_hosts_path is not None
+            with open(known_hosts_path, encoding="utf-8") as fh:
+                assert fh.read() == "10.200.2.10 ssh-ed25519 AAAAHOSTKEY guest\n"
+
+            executor.run_command(instance_id="10.200.2.10", script="echo ok")
+            ssh_args = mock_run.call_args.args[0]
+            assert "StrictHostKeyChecking=yes" in ssh_args
+            assert f"UserKnownHostsFile={known_hosts_path}" in ssh_args
+            assert "GlobalKnownHostsFile=/dev/null" in ssh_args
+            assert "HostKeyAlgorithms=ssh-ed25519" in ssh_args
+        finally:
+            executor.close()
+        # close() removes the temp known_hosts file.
+        import os
+
+        assert not os.path.exists(known_hosts_path)
 
     def test_windows_run_command_uses_powershell_transport(self, mocker):
         mock_run = mocker.patch("executors.guest_ssh_executor.subprocess.run")

@@ -194,6 +194,65 @@ def test_invoke_ssh_runs_wrapped_command_via_exec(monkeypatch):
     assert "ssh" in wrapper and "kali@10.200.2.10" in wrapper
 
 
+def _make_executor_with_host_key(core_api):
+    return RangePodSSHExecutor(
+        core_api=core_api,
+        client_module=MagicMock(),
+        api_exception=_ApiException,
+        namespace="range-7",
+        network_name="range-7-core",
+        runner_image="registry.example/runner:latest",
+        private_key="PRIVATE-KEY-MATERIAL",
+        username="kali",
+        host_public_key="ssh-ed25519 AAAAHOSTKEY guest",
+        known_hosts_host="10.200.2.10",
+    )
+
+
+def test_provision_known_hosts_returns_in_pod_path_and_captures_content():
+    executor = _make_executor_with_host_key(MagicMock())
+    assert executor._known_hosts_path.startswith("/tmp/shifter-known-hosts-")  # noqa: S108 - in-pod path
+    assert executor._known_hosts_content == "10.200.2.10 ssh-ed25519 AAAAHOSTKEY guest\n"
+
+
+def test_invoke_ssh_plants_known_hosts_and_pins_in_ssh_args(monkeypatch):
+    executor = _make_executor_with_host_key(MagicMock())
+    executor._runner_ready = True
+    executor._key_planted = True
+    planted = []
+    calls = []
+
+    def fake_exec(command, timeout_seconds):
+        script = command[2]
+        if executor._known_hosts_path in script and "base64 -d" in script and "shifter-cmd" not in script:
+            planted.append(script)
+            return 0, b"", b""
+        calls.append(command)
+        return 0, b"ok\n", b""
+
+    monkeypatch.setattr(executor, "_exec", fake_exec)
+
+    ssh_args = [
+        "ssh",
+        "-i",
+        executor._key_path,
+        "-o",
+        f"UserKnownHostsFile={executor._known_hosts_path}",
+        "kali@10.200.2.10",
+        "bash",
+        "-se",
+    ]
+    rc, _out, _err = executor._invoke_ssh(ssh_args, b"echo hi\n", 30)
+
+    assert rc == 0
+    # known_hosts planted exactly once, base64-encoded.
+    assert len(planted) == 1
+    assert base64.b64encode(b"10.200.2.10 ssh-ed25519 AAAAHOSTKEY guest\n").decode() in planted[0]
+    # second invoke does not re-plant.
+    executor._invoke_ssh(ssh_args, b"echo hi2\n", 30)
+    assert len(planted) == 1
+
+
 def test_ensure_key_planted_execs_once(monkeypatch):
     executor = _make_executor(MagicMock())
     execs = []

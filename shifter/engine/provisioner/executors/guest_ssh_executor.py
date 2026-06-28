@@ -45,6 +45,8 @@ class GuestSSHExecutor:
         port: int = DEFAULT_SSH_PORT,
         poll_interval_seconds: int = 10,
         connect_timeout_seconds: int = 10,
+        host_public_key: str | None = None,
+        known_hosts_host: str | None = None,
     ):
         self._username = username
         self._port = port
@@ -52,6 +54,13 @@ class GuestSSHExecutor:
         self._connect_timeout = connect_timeout_seconds
         self._last_probe_detail = ""
         self._key_path = self._provision_key(private_key)
+        # When the provisioner installed a known host key on the guest (Linux
+        # GDC guests, via cloud-init ssh_keys:), seed a dedicated known_hosts so
+        # StrictHostKeyChecking=yes validates against a trusted-side-channel key
+        # rather than failing on an empty known_hosts. Inert (None) otherwise.
+        self._known_hosts_path: str | None = None
+        if host_public_key and known_hosts_host:
+            self._known_hosts_path = self._provision_known_hosts(known_hosts_host, host_public_key)
 
     def _provision_key(self, private_key: str) -> str:
         """Write the private key to a local temp file and return its path.
@@ -66,10 +75,26 @@ class GuestSSHExecutor:
             os.close(fd)
         return key_path
 
+    def _provision_known_hosts(self, host: str, host_public_key: str) -> str:
+        """Write a single-entry known_hosts file locally and return its path.
+
+        Subclasses that run ssh on a remote transport override this to return a
+        path on that transport (and plant the content there).
+        """
+        fd, path = tempfile.mkstemp(prefix="guest_known_hosts_", suffix="")
+        try:
+            os.write(fd, f"{host} {host_public_key.strip()}\n".encode())
+        finally:
+            os.close(fd)
+        return path
+
     def close(self) -> None:
-        """Remove the temporary SSH key file."""
+        """Remove the temporary SSH key and known_hosts files."""
         if hasattr(self, "_key_path") and os.path.exists(self._key_path):
             os.unlink(self._key_path)
+        known_hosts = getattr(self, "_known_hosts_path", None)
+        if known_hosts and os.path.exists(known_hosts):
+            os.unlink(known_hosts)
 
     def __enter__(self) -> GuestSSHExecutor:
         return self
@@ -81,7 +106,7 @@ class GuestSSHExecutor:
         self.close()
 
     def _build_ssh_args(self, host: str, remote_command: list[str]) -> list[str]:
-        return [
+        args = [
             "ssh",
             "-i",
             self._key_path,
@@ -95,9 +120,21 @@ class GuestSSHExecutor:
             f"ConnectTimeout={self._connect_timeout}",
             "-o",
             "LogLevel=ERROR",
-            f"{self._username}@{host}",
-            *remote_command,
         ]
+        if self._known_hosts_path:
+            # Validate strictly against the provisioner-seeded host key only:
+            # ignore the system known_hosts and pin ed25519 so the guest's
+            # cloud-init-installed host key is the one negotiated and matched.
+            args += [
+                "-o",
+                f"UserKnownHostsFile={self._known_hosts_path}",
+                "-o",
+                "GlobalKnownHostsFile=/dev/null",
+                "-o",
+                "HostKeyAlgorithms=ssh-ed25519",
+            ]
+        args += [f"{self._username}@{host}", *remote_command]
+        return args
 
     def _get_remote_command(self, document_name: str) -> list[str]:
         if document_name == "AWS-RunPowerShellScript":

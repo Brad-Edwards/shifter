@@ -166,7 +166,7 @@ def _build_pending_vm_runtime_instance(
         rdp_password_secret_ref: str | None = None
     else:
         rdp_password_secret_ref, _ = _ensure_rdp_password_secret(range_id, instance)
-    user_data = _render_user_data(instance, hostname, public_key)
+    user_data, host_public_key = _render_user_data(instance, hostname, public_key)
     cloudinit_secret_name = _ensure_cloudinit_secret(
         kube.core_api,
         kube.client_module,
@@ -233,6 +233,7 @@ def _build_pending_vm_runtime_instance(
         "ssh_secret_ref": ssh_secret_ref,
         "rdp_password_secret_ref": rdp_password_secret_ref,
         "public_key": public_key,
+        "host_public_key": host_public_key,
         "static_ip": static_ip,
     }
 
@@ -264,6 +265,7 @@ def _build_vm_runtime_output(
         "instance_id": pending["vm_name"],
         "private_ip": private_ip,
         "public_key": pending["public_key"],
+        "gdc_host_public_key": pending.get("host_public_key", ""),
         "ssh_key_secret_arn": pending["ssh_secret_ref"],
         "ssh_username": get_ssh_username(os_type, role),
         "gdc_vm_name": pending["vm_name"],
