@@ -50,6 +50,7 @@ class GuestSSHExecutor:
         self._port = port
         self._poll_interval = poll_interval_seconds
         self._connect_timeout = connect_timeout_seconds
+        self._last_probe_detail = ""
 
         fd, self._key_path = tempfile.mkstemp(prefix="guest_ssh_key_", suffix=".pem")
         try:
@@ -161,9 +162,18 @@ class GuestSSHExecutor:
                 timeout_seconds=max(self._connect_timeout + 5, 15),
                 document_name=document_name,
             )
-        except (GuestSSHConnectionError, TimeoutError):
+        except (GuestSSHConnectionError, TimeoutError) as exc:
+            self._last_probe_detail = f"{type(exc).__name__}: {exc}"
             return False
-        return result.success and "ready" in result.stdout.lower()
+        if result.success and "ready" in result.stdout.lower():
+            self._last_probe_detail = ""
+            return True
+        # Capture why the probe failed (e.g. host-key verification, auth,
+        # connection refused) so a readiness timeout is diagnosable instead
+        # of an opaque "did not become available".
+        detail = (result.stderr or result.stdout or "").strip()
+        self._last_probe_detail = f"exit={result.exit_code} {detail}".strip()
+        return False
 
     def wait_for_ready(
         self,
@@ -172,16 +182,26 @@ class GuestSSHExecutor:
         document_name: str = "AWS-RunShellScript",
     ) -> bool:
         start_time = time.time()
+        self._last_probe_detail = ""
         while True:
             elapsed = time.time() - start_time
             if elapsed > timeout_seconds:
-                raise TimeoutError(f"SSH on {target} did not become available within {timeout_seconds}s")
+                detail = self._last_probe_detail or "no probe diagnostic captured"
+                raise TimeoutError(
+                    f"SSH on {target} did not become available within {timeout_seconds}s (last probe: {detail})"
+                )
 
             if self._probe_ready(target, document_name):
                 logger.info("SSH ready on %s after %.1fs", target, elapsed)
                 return True
 
-            logger.info("Waiting for SSH on %s... (%.1fs / %ds)", target, elapsed, timeout_seconds)
+            logger.info(
+                "Waiting for SSH on %s... (%.1fs / %ds) last_probe=%s",
+                target,
+                elapsed,
+                timeout_seconds,
+                self._last_probe_detail or "(pending)",
+            )
             time.sleep(self._poll_interval)
 
     def wait_for_agent(

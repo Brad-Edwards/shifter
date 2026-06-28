@@ -108,6 +108,29 @@ class TestGuestSSHExecutorReadiness:
 
         assert executor._probe_ready.call_count == 3
 
+    def test_probe_ready_captures_failure_detail(self, mocker):
+        mock_run = mocker.patch("executors.guest_ssh_executor.subprocess.run")
+        mock_run.return_value = MagicMock(returncode=255, stdout=b"", stderr=b"Host key verification failed.\n")
+        executor = GuestSSHExecutor(private_key="PRIVATE KEY", username="ubuntu")
+        try:
+            assert executor._probe_ready("10.10.1.5", "AWS-RunShellScript") is False
+            assert "Host key verification failed" in executor._last_probe_detail
+            assert "exit=255" in executor._last_probe_detail
+        finally:
+            executor.close()
+
+    def test_wait_for_ready_timeout_includes_probe_detail(self, mocker):
+        mocker.patch("time.sleep")
+        mocker.patch("time.time", side_effect=[0.0, 0.0, 100.0])
+        mock_run = mocker.patch("executors.guest_ssh_executor.subprocess.run")
+        mock_run.return_value = MagicMock(returncode=255, stdout=b"", stderr=b"Host key verification failed.\n")
+        executor = GuestSSHExecutor(private_key="PRIVATE KEY", username="ubuntu", poll_interval_seconds=0)
+        try:
+            with pytest.raises(TimeoutError, match="Host key verification failed"):
+                executor.wait_for_ready("10.10.1.5", timeout_seconds=30)
+        finally:
+            executor.close()
+
     def test_reboot_and_wait_observes_offline_then_ready(self, mocker):
         mocker.patch("time.sleep")
         executor = GuestSSHExecutor(private_key="PRIVATE KEY", username="ubuntu", poll_interval_seconds=0)
