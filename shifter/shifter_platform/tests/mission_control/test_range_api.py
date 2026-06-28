@@ -57,10 +57,9 @@ class TestGetRange:
         assert data["has_range"] is True
         assert data["range"]["scenario_id"] == scenario_id
         assert data["range"]["user_id"] == user.id
-        # The persisted range is PENDING: create_range stores it and would move
-        # it to PROVISIONING only once the ECS task starts, which the test
-        # settings leave unconfigured.
-        assert data["range"]["status"] == "pending"
+        # CMS records the user-visible dispatch state before handing off to
+        # engine so failed dispatch can roll the owned row to FAILED.
+        assert data["range"]["status"] == "provisioning"
         assert data["range"]["is_active"] is True
         assert data["range"]["is_terminal"] is False
         # The launched range is the one returned.
