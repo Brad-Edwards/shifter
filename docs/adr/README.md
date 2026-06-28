@@ -82,11 +82,12 @@ Current mechanisms:
   `refactor`, `test`, `ci`, `build`, `perf`, `revert`. Subject must
   start with a lowercase letter.
 - `.github/workflows/_shifter-engine.yml`: engine image validation and
-  deployment. The validate job runs on GitHub-hosted runners because it
-  only performs a local Docker build; self-hosted runners are reserved
-  for the credentialed build and deploy jobs. The credentialed jobs run
-  only on trusted push / manual-dispatch paths, bind a GitHub
-  Environment, and update ECS with `repo@sha256` image identity.
+  deployment. The provisioner pytest gate and Docker-build validation run
+  on GitHub-hosted runners; self-hosted runners are reserved for the
+  credentialed build and deploy jobs. The credentialed jobs run only on
+  trusted push / manual-dispatch paths, bind a GitHub Environment, require
+  the provisioner test gate, and update ECS with `repo@sha256` image
+  identity.
 - `.github/workflows/deploy.yml`: deploy router. Pull-request events are
   hosted-only (`changes`, pre-commit, Quality, PR Gate) and never route
   AWS/GCP reusable deploy jobs. Reusable deploy jobs receive a

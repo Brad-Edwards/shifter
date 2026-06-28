@@ -7,14 +7,17 @@ of patching ``Request.objects`` / ``Instance.objects`` / ``start_ngfw_operation`
 
 from __future__ import annotations
 
+from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 import pytest
 from django.contrib.auth import get_user_model
 
-from engine.models import Instance, Request
-from engine.services import start_ngfw, stop_ngfw
+from engine.models import App, Instance, Request
+from engine.services import create_ngfw, start_ngfw, stop_ngfw
+from shared.cloud.exceptions import CloudTaskError
 from shared.enums import RequestType, ResourceStatus
+from shared.schemas import InstanceSpec, NGFWAppSpec, RequestSpec
 
 from .conftest import ecs_run_task_command
 
@@ -40,6 +43,33 @@ def _ngfw_for(request, status):
         os_type=Instance.OSType.PANOS,
         status=status,
         state={"management_ip": "10.1.5.10"},
+    )
+
+
+def _ngfw_request_spec(user_id):
+    app_id = uuid4()
+    instance_id = uuid4()
+    return RequestSpec(
+        request_id=uuid4(),
+        user_id=user_id,
+        items=[
+            InstanceSpec(
+                name="Edge NGFW",
+                uuid=str(instance_id),
+                role="ngfw",
+                os_type="panos",
+                ngfw_app=NGFWAppSpec(
+                    name="Edge NGFW",
+                    registration_method="otp",
+                    app_id=app_id,
+                    instance_id=instance_id,
+                    user_id=user_id,
+                    authcode="AUTH-XYZ",
+                    otp_value="OTP123",
+                    otp_folder="folder/",
+                ),
+            )
+        ],
     )
 
 
@@ -108,9 +138,47 @@ class TestStopNGFW:
 
 class TestCreateNGFWValidation:
     def test_raises_when_no_ngfw_instance_spec(self):
-        from engine.services import create_ngfw
         from shared.schemas import RequestSpec
 
         spec = RequestSpec(request_id=uuid4(), user_id=1, items=[])
         with pytest.raises(ValueError, match="must contain an NGFW"):
             create_ngfw(spec)
+
+
+class TestCreateNGFWPersistence:
+    def test_marks_ngfw_rows_provisioning(self, user):
+        spec = _ngfw_request_spec(user.id)
+        assert create_ngfw(spec) == spec.request_id
+
+        request = Request.objects.get(request_id=spec.request_id)
+        ngfw_instance = Instance.objects.get(request=request, role=Instance.Role.NGFW)
+        ngfw_app = App.objects.get(request=request, instance=ngfw_instance, app_type=App.AppType.NGFW)
+        assert ngfw_instance.status == ResourceStatus.PROVISIONING.value
+        assert ngfw_app.status == ResourceStatus.PROVISIONING.value
+
+    def test_reuses_existing_ngfw_request(self, user):
+        spec = _ngfw_request_spec(user.id)
+        create_ngfw(spec)
+        assert create_ngfw(spec) == spec.request_id
+        assert Request.objects.filter(request_id=spec.request_id).count() == 1
+        assert Instance.objects.filter(request__request_id=spec.request_id, role=Instance.Role.NGFW).count() == 1
+
+    def test_marks_ngfw_rows_failed_when_dispatch_fails(self, user, settings):
+        settings.CLOUD_PROVIDER = "aws"
+        settings.LOCAL_PROVISIONER = None
+        settings.ENGINE_TASK_CLUSTER = "test-cluster"
+        settings.ENGINE_TASK_DEFINITION = "test-taskdef"
+        settings.ENGINE_TASK_NETWORK_SECURITY_GROUP_ID = "sg-test"
+        settings.ENGINE_TASK_NETWORK_SUBNET_IDS = "subnet-aaa,subnet-bbb"
+        ecs_client = MagicMock()
+        ecs_client.run_task.return_value = {"tasks": [], "failures": [{"reason": "RESOURCE:CPU"}]}
+
+        spec = _ngfw_request_spec(user.id)
+        with patch("boto3.client", return_value=ecs_client), pytest.raises(CloudTaskError):
+            create_ngfw(spec)
+
+        request = Request.objects.get(request_id=spec.request_id)
+        ngfw_instance = Instance.objects.get(request=request, role=Instance.Role.NGFW)
+        ngfw_app = App.objects.get(request=request, instance=ngfw_instance, app_type=App.AppType.NGFW)
+        assert ngfw_instance.status == ResourceStatus.FAILED.value
+        assert ngfw_app.status == ResourceStatus.FAILED.value
