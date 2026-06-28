@@ -52,6 +52,70 @@ def _get_range_call(user: User, range_id: int) -> RangeInstance:
     return _cs.get_range(user, range_id)
 
 
+def _transition_then_dispatch(
+    *,
+    instance: RangeInstance,
+    target_status: str,
+    request_id: Any,
+    engine_call: Any,
+    user: User,
+    audit_entity_id: int,
+    audit_action: AuditLog.Action,
+    failure_message: str,
+    label: str,
+    soft_delete: bool,
+) -> None:
+    """Apply a CMS lifecycle transition, dispatch engine cleanup, and revert on rejection."""
+    previous_status = instance.status
+    previous_deleted_at = instance.deleted_at
+    status_changed = previous_status != target_status or (soft_delete and previous_deleted_at is None)
+
+    if status_changed:
+        instance.status = target_status
+        update_fields = ["status"]
+        if soft_delete:
+            instance.deleted_at = timezone.now()
+            update_fields.append("deleted_at")
+        instance.save(update_fields=update_fields)
+
+    try:
+        accepted = engine_call(request_id)
+    except Exception:
+        _restore_range_instance_status(instance, previous_status, previous_deleted_at)
+        raise
+
+    if not accepted:
+        _restore_range_instance_status(instance, previous_status, previous_deleted_at)
+        logger.warning("%s: engine rejected cleanup request_id=%s", label, request_id)
+        raise CMSError(failure_message)
+
+    if status_changed:
+        _audit_log_call(
+            entity_type=AuditLog.EntityType.RANGE,
+            entity_id=audit_entity_id,
+            action=audit_action,
+            actor_type=AuditLog.ActorType.USER,
+            actor_id=user.id,
+            previous_state={
+                "status": previous_status,
+                "scenario": instance.scenario_id,
+            },
+            new_state={"status": target_status},
+            request_id=str(request_id),
+        )
+
+
+def _restore_range_instance_status(
+    instance: RangeInstance,
+    previous_status: str,
+    previous_deleted_at: Any,
+) -> None:
+    """Restore CMS status/deleted_at after engine cleanup dispatch rejects."""
+    instance.status = previous_status
+    instance.deleted_at = previous_deleted_at
+    instance.save(update_fields=["status", "deleted_at"])
+
+
 def destroy_range(user: User, range_instance_pk: int) -> None:
     """Tear down range.
 
@@ -126,10 +190,6 @@ def destroy_range(user: User, range_instance_pk: int) -> None:
         raise CMSError(f"Range {range_instance_pk} not found")
 
     try:
-        instance.status = ResourceStatus.DESTROYING.value
-        instance.deleted_at = timezone.now()
-        instance.save(update_fields=["status", "deleted_at"])
-
         request_id = instance.request.request_id if instance.request else None
         if request_id is None:
             logger.error(
@@ -138,19 +198,17 @@ def destroy_range(user: User, range_instance_pk: int) -> None:
             )
             raise CMSError(f"Range {range_instance_pk} has no associated request")
 
-        _engine_destroy_range_by_request_call(request_id)
-
-        _audit_log_call(
-            entity_type=AuditLog.EntityType.RANGE,
-            entity_id=range_instance_pk,
-            action=AuditLog.Action.DEPROVISION,
-            actor_type=AuditLog.ActorType.USER,
-            actor_id=user.id,
-            previous_state={
-                "status": ResourceStatus.DESTROYING.value,
-                "scenario": instance.scenario_id,
-            },
-            request_id=str(request_id),
+        _transition_then_dispatch(
+            instance=instance,
+            target_status=ResourceStatus.DESTROYING.value,
+            request_id=request_id,
+            engine_call=_engine_destroy_range_by_request_call,
+            user=user,
+            audit_entity_id=range_instance_pk,
+            audit_action=AuditLog.Action.DEPROVISION,
+            failure_message="Range cannot be destroyed in current state",
+            label="destroy_range",
+            soft_delete=True,
         )
 
         logger.debug(
@@ -241,11 +299,6 @@ def cancel_range(user: User, range_id: int) -> None:
         raise
 
     try:
-        instance.status = ResourceStatus.DESTROYED.value
-        instance.save(update_fields=["status"])
-        if instance.status != ResourceStatus.DESTROYED.value:
-            raise CMSError("Range status not updated to DESTROYED")
-
         request_id = instance.request.request_id if instance.request else None
         if request_id is None:
             logger.error(
@@ -254,19 +307,17 @@ def cancel_range(user: User, range_id: int) -> None:
             )
             raise CMSError(f"Range {range_id} has no associated request")
 
-        _engine_cancel_range_by_request_call(request_id)
-
-        _audit_log_call(
-            entity_type=AuditLog.EntityType.RANGE,
-            entity_id=range_id,
-            action=AuditLog.Action.CANCEL,
-            actor_type=AuditLog.ActorType.USER,
-            actor_id=user.id,
-            previous_state={
-                "status": ResourceStatus.DESTROYED.value,
-                "scenario": instance.scenario_id,
-            },
-            request_id=str(request_id),
+        _transition_then_dispatch(
+            instance=instance,
+            target_status=ResourceStatus.DESTROYING.value,
+            request_id=request_id,
+            engine_call=_engine_cancel_range_by_request_call,
+            user=user,
+            audit_entity_id=range_id,
+            audit_action=AuditLog.Action.CANCEL,
+            failure_message="Range cannot be cancelled in current state",
+            label="cancel_range",
+            soft_delete=False,
         )
     except (TypeError, ValueError, CMSError):
         raise
@@ -335,23 +386,17 @@ def destroy_range_by_request_id(user: User, request_id: str) -> None:
         raise CMSError("Range has no associated request")
 
     try:
-        instance.status = ResourceStatus.DESTROYING.value
-        instance.deleted_at = timezone.now()
-        instance.save(update_fields=["status", "deleted_at"])
-
-        _engine_destroy_range_by_request_call(instance.request.request_id)
-
-        _audit_log_call(
-            entity_type=AuditLog.EntityType.RANGE,
-            entity_id=instance.range_id or 0,
-            action=AuditLog.Action.DEPROVISION,
-            actor_type=AuditLog.ActorType.USER,
-            actor_id=user.id,
-            previous_state={
-                "status": ResourceStatus.DESTROYING.value,
-                "scenario": instance.scenario_id,
-            },
-            request_id=str(request_id),
+        _transition_then_dispatch(
+            instance=instance,
+            target_status=ResourceStatus.DESTROYING.value,
+            request_id=instance.request.request_id,
+            engine_call=_engine_destroy_range_by_request_call,
+            user=user,
+            audit_entity_id=instance.range_id or 0,
+            audit_action=AuditLog.Action.DEPROVISION,
+            failure_message="Range cannot be destroyed in current state",
+            label="destroy_range_by_request_id",
+            soft_delete=True,
         )
 
         logger.debug(
@@ -426,22 +471,17 @@ def cancel_range_by_request_id(user: User, request_id: str) -> None:
         raise CMSError("Range has no associated request")
 
     try:
-        instance.status = ResourceStatus.DESTROYED.value
-        instance.save(update_fields=["status"])
-
-        _engine_cancel_range_by_request_call(instance.request.request_id)
-
-        _audit_log_call(
-            entity_type=AuditLog.EntityType.RANGE,
-            entity_id=instance.id,
-            action=AuditLog.Action.CANCEL,
-            actor_type=AuditLog.ActorType.USER,
-            actor_id=user.id,
-            previous_state={
-                "status": ResourceStatus.DESTROYED.value,
-                "scenario": instance.scenario_id,
-            },
-            request_id=str(instance.request.request_id),
+        _transition_then_dispatch(
+            instance=instance,
+            target_status=ResourceStatus.DESTROYING.value,
+            request_id=instance.request.request_id,
+            engine_call=_engine_cancel_range_by_request_call,
+            user=user,
+            audit_entity_id=instance.id,
+            audit_action=AuditLog.Action.CANCEL,
+            failure_message="Range cannot be cancelled in current state",
+            label="cancel_range_by_request_id",
+            soft_delete=False,
         )
 
         logger.debug(

@@ -18,6 +18,7 @@ def create_ngfw(request_spec: RequestSpec) -> UUID:
     """Provision NGFW infrastructure."""
     from engine.ecs import start_ngfw_provisioning
     from engine.interpreter import interpret
+    from engine.models import Request
 
     ngfw_spec: InstanceSpec | None = None
     for item in request_spec.items:
@@ -32,12 +33,22 @@ def create_ngfw(request_spec: RequestSpec) -> UUID:
     if not ngfw_spec.ngfw_app.is_hydrated:
         raise ValueError("ngfw_app must be hydrated with credential values")
 
+    existing_request = Request.objects.filter(request_id=request_spec.request_id).first()
+    if existing_request is not None:
+        logger.info("create_ngfw: reusing existing request_id=%s", request_spec.request_id)
+        return existing_request.request_id
+
     request = interpret(request_spec)
     logger.info("create_ngfw: interpreted request_id=%s", request_spec.request_id)
 
     ngfw_instance = request.instance_instantiations.filter(role="ngfw").first()
     if ngfw_instance:
-        task_arn = start_ngfw_provisioning(request.request_id)
+        _set_ngfw_materialization_status(request, ResourceStatus.PROVISIONING.value)
+        try:
+            task_arn = start_ngfw_provisioning(request.request_id)
+        except Exception:
+            _set_ngfw_materialization_status(request, ResourceStatus.FAILED.value)
+            raise
         if task_arn:
             logger.info(
                 "create_ngfw: started ECS task=%s for request=%s",
@@ -46,6 +57,19 @@ def create_ngfw(request_spec: RequestSpec) -> UUID:
             )
 
     return request.request_id
+
+
+def _set_ngfw_materialization_status(request: Any, status: str) -> None:
+    """Persist engine NGFW Instance/App status for a request."""
+    from engine.models import App, Instance
+
+    ngfw_instances = Instance.objects.filter(request=request, role=Instance.Role.NGFW)
+    for ngfw_instance in ngfw_instances:
+        ngfw_instance.status = status
+        ngfw_instance.save(update_fields=["status", "updated_at"])
+        for app in ngfw_instance.apps.filter(app_type=App.AppType.NGFW):
+            app.status = status
+            app.save(update_fields=["status", "updated_at"])
 
 
 def destroy_ngfw(request_id: UUID) -> bool:
