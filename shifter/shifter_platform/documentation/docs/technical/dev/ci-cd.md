@@ -103,6 +103,12 @@ non-docs changes make it true, ordinary docs-only changes make it false, and
 guardrail docs make it true even though they are documentation. PR Gate accepts
 a skipped Quality job only when `quality_relevant` is false.
 
+The Shifter Engine reusable workflow has an additional blocking provisioner
+pytest gate before local Docker validation, credentialed image build, and ECS
+deploy. This keeps deploy-triggering AWS branch runs from building or deploying
+the provisioner image when the top-level Quality job is legitimately skipped
+because the SHA was already validated on `dev`.
+
 - **ADR conformance**: `python3 scripts/adr_guard/adr_guard.py --all --level ci`
   Includes `adr-registry`, `layer-imports`, `cross-layer-model-imports`, and
   `cloud-factory-seam` (ADR-005-R1 cloud adapter parity).
@@ -134,7 +140,8 @@ a skipped Quality job only when `quality_relevant` is false.
   comments) require a matching entry in `docs/adr/exceptions.yaml` with
   owner, reason, expiry, affected paths, and the Checkov policy ID.
 - **Secret scanning**: gitleaks on newly introduced commits
-- **Coverage**: `shifter_platform` emits terminal and XML coverage reports
+- **Coverage**: `shifter_platform` and provisioner test jobs emit XML coverage
+  reports
 
 Commit-message or label-based test skips are not accepted by `deploy.yml`.
 

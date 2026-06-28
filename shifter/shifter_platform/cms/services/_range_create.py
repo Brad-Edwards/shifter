@@ -143,13 +143,12 @@ def _lookup_agents_by_os(user: User, agents_by_os: dict[str, int]) -> dict[str, 
     return {os_type: _get_agent_call(user, aid) for os_type, aid in agents_by_os.items()}
 
 
-def _create_cms_request_and_dispatch_engine(user: User, range_spec: RangeSpec) -> tuple[UUID, Request]:
-    """Create the CMS Request row, dispatch the engine, return (request_id, cms_request)."""
+def _create_cms_request(user: User) -> tuple[UUID, Request]:
+    """Create the CMS Request row and return (request_id, cms_request)."""
     from uuid import uuid4
 
     from cms.models import Request
     from shared.enums import RequestType
-    from shared.schemas import RequestSpec
 
     request_id = uuid4()
     cms_request = Request.objects.create(
@@ -162,13 +161,19 @@ def _create_cms_request_and_dispatch_engine(user: User, range_spec: RangeSpec) -
         request_id,
         user.id,
     )
+    return request_id, cms_request
+
+
+def _dispatch_engine_range(request_id: UUID, user: User, range_spec: RangeSpec) -> None:
+    """Dispatch range provisioning to engine for an already-owned CMS request."""
+    from shared.schemas import RequestSpec
+
     request_spec = RequestSpec(
         request_id=request_id,
         user_id=user.id,
         items=[range_spec],
     )
     _engine_create_range_call(request_spec)
-    return request_id, cms_request
 
 
 def _persist_range_instance_record(
@@ -177,17 +182,23 @@ def _persist_range_instance_record(
     user: User,
     agents: dict[str, AgentConfig],
     range_spec: RangeSpec,
-) -> None:
+) -> RangeInstance:
     """Persist the RangeInstance row tying the CMS Request to the hydrated spec."""
     # Store first agent for backward compatibility (field is nullable).
     first_agent = next(iter(agents.values()), None)
-    RangeInstance.objects.create(
+    return RangeInstance.objects.create(
         request=cms_request,
         scenario_id=scenario,
         user_id=user.id,
         agent=first_agent,
         range_spec=wrap_persisted_spec("range_spec", range_spec),
     )
+
+
+def _set_range_instance_status(range_instance: RangeInstance, status: ResourceStatus) -> None:
+    """Persist CMS status for a range instance using the existing public vocabulary."""
+    range_instance.status = status.value
+    range_instance.save(update_fields=["status"])
 
 
 def _audit_range_provision(
@@ -300,8 +311,14 @@ def create_range(
         agents = _lookup_agents_by_os(user, agents_by_os)
         range_spec = hydrate_scenario(scenario, user.id, agents)
 
-        request_id, cms_request = _create_cms_request_and_dispatch_engine(user, range_spec)
-        _persist_range_instance_record(cms_request, scenario, user, agents, range_spec)
+        request_id, cms_request = _create_cms_request(user)
+        range_instance = _persist_range_instance_record(cms_request, scenario, user, agents, range_spec)
+        _set_range_instance_status(range_instance, ResourceStatus.PROVISIONING)
+        try:
+            _dispatch_engine_range(request_id, user, range_spec)
+        except Exception:
+            _set_range_instance_status(range_instance, ResourceStatus.FAILED)
+            raise
         _audit_range_provision(request_id, scenario, user, agents, ngfw_enabled)
 
         logger.debug(

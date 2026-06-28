@@ -299,6 +299,15 @@ jobs:
         run: |
           python3 scripts/check_tf_iam_role_naming/check_tf_iam_role_naming.py
 
+      # ADR-004-R20 / issue #1222: the self-hosted deploy runner must not be
+      # placed in the account default VPC (a range's private-DNS VPC endpoints
+      # can hijack its AWS API resolution). Mirrors the check-tf-runner-network
+      # pre-commit hook so a commit that skipped pre-commit cannot drop the
+      # fail-closed default-VPC precondition from the runner stack.
+      - name: Run check-tf-runner-network
+        run: |
+          python3 scripts/check_tf_runner_network/check_tf_runner_network.py
+
       # Issue #1178: the shared range guest instance role must not grant SSM
       # Parameter Store access on a Resource that wildcards the environment or
       # range segment (parameter/shifter/*/range/*). Mirrors the
@@ -357,6 +366,7 @@ jobs:
           python3 -m unittest scripts.check_tf_kms_secrets_grant.test_check_tf_kms_secrets_grant
           python3 -m unittest scripts.check_tf_rds_security.test_check_tf_rds_security
           python3 -m unittest scripts.check_portal_target_sg_sources.test_check_portal_target_sg_sources
+          python3 -m unittest scripts.check_tf_runner_network.test_check_tf_runner_network
 
   # Pin the behavior of the Polaris CTFd workshop sync helpers. Issue #702
   # shipped 38/39 challenges unsubmittable because flag-row reconciliation

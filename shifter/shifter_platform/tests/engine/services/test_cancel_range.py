@@ -101,8 +101,12 @@ class TestCancelRange:
         range_obj.refresh_from_db()
         assert range_obj.status == Range.Status.DESTROYING
 
-    def test_missing_range_is_silent(self, user):
-        cancel_range(_ref(range_id=999999, user_id=user.id, status=ResourceStatus.PENDING))
+    def test_missing_range_is_silent(self, user, caplog):
+        with caplog.at_level(logging.WARNING, logger="engine"):
+            result = cancel_range(_ref(range_id=999999, user_id=user.id, status=ResourceStatus.PENDING))
+
+        assert result is None
+        assert "range not found range_id=999999" in caplog.text
 
     def test_logs_cancellation(self, user, caplog):
         range_obj = Range.objects.create(user=user, status=Range.Status.PENDING)
@@ -161,6 +165,12 @@ class TestCancelRangeByRequest:
         create_range(spec)
         Range.objects.filter(request__request_id=spec.request_id).update(status=Range.Status.READY)
         assert cancel_range_by_request(spec.request_id) is False
+
+    def test_returns_true_when_already_destroying(self, user):
+        spec = _request_spec(user.id)
+        create_range(spec)
+        Range.objects.filter(request__request_id=spec.request_id).update(status=Range.Status.DESTROYING)
+        assert cancel_range_by_request(spec.request_id) is True
 
     def test_returns_false_when_request_not_found(self, db):
         assert cancel_range_by_request(uuid4()) is False
