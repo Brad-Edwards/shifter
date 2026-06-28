@@ -33,7 +33,19 @@ _API_POLICY_FILE = "config/_api_token_settings.py"
 # walker below, so they are declared explicitly here to stay in the manifest
 # (PLAT-102 token policy knobs, per the preflight config-binding guardrail).
 _EXPLICIT_BINDINGS = (
+    EnvBinding(name="DB_HOST", default=None, source_file="config/_database_settings.py"),
+    EnvBinding(name="DB_NAME", default=None, source_file="config/_database_settings.py"),
+    EnvBinding(name="DB_PASSWORD", default=None, source_file="config/_database_settings.py"),
+    EnvBinding(name="DB_PORT", default=None, source_file="config/_database_settings.py"),
+    EnvBinding(name="DB_USER", default=None, source_file="config/_database_settings.py"),
+    EnvBinding(name="DJANGO_ALLOWED_HOSTS", default=None, source_file="config/settings.py"),
+    EnvBinding(name="EMAIL_BACKEND", default=None, source_file="config/_email.py"),
     EnvBinding(name="ENVIRONMENT", default=None, source_file="config/settings.py"),
+    EnvBinding(name="FIELD_ENCRYPTION_KEY", default=None, source_file="config/settings.py"),
+    EnvBinding(name="OIDC_AUTH_DOMAIN", default=None, source_file="config/_oidc_settings.py"),
+    EnvBinding(name="OIDC_ISSUER_URL", default=None, source_file="config/_oidc_settings.py"),
+    EnvBinding(name="OIDC_RP_CLIENT_ID", default=None, source_file="config/_oidc_settings.py"),
+    EnvBinding(name="OIDC_RP_CLIENT_SECRET", default=None, source_file="config/_oidc_settings.py"),
     EnvBinding(name="API_TOKEN_LAST_USED_COALESCE_SECONDS", default="300", source_file=_API_POLICY_FILE),
     EnvBinding(name="API_TOKEN_MAX_TTL_DAYS", default="365", source_file=_API_POLICY_FILE),
 )

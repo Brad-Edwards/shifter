@@ -78,7 +78,7 @@
       "source_file": "config/settings.py"
     },
     {
-      "default": "'localhost'",
+      "default": null,
       "name": "DB_HOST",
       "source_file": "config/_database_settings.py"
     },
@@ -88,7 +88,7 @@
       "source_file": "config/_database_settings.py"
     },
     {
-      "default": "'shifter'",
+      "default": null,
       "name": "DB_NAME",
       "source_file": "config/_database_settings.py"
     },
@@ -98,7 +98,7 @@
       "source_file": "config/_database_settings.py"
     },
     {
-      "default": "'5432'",
+      "default": null,
       "name": "DB_PORT",
       "source_file": "config/_database_settings.py"
     },
@@ -123,7 +123,7 @@
       "source_file": "config/_email.py"
     },
     {
-      "default": "'localhost,127.0.0.1'",
+      "default": null,
       "name": "DJANGO_ALLOWED_HOSTS",
       "source_file": "config/settings.py"
     },
@@ -153,7 +153,7 @@
       "source_file": "config/_email.py"
     },
     {
-      "default": "_CONSOLE_BACKEND",
+      "default": null,
       "name": "EMAIL_BACKEND",
       "source_file": "config/_email.py"
     },
@@ -248,7 +248,7 @@
       "source_file": "config/_cloud.py"
     },
     {
-      "default": "'VbMOEgh9VmS5lr0EsIS2sD9X1iy-Qd12i4kVZHdgPVE=' if ... else ''",
+      "default": null,
       "name": "FIELD_ENCRYPTION_KEY",
       "source_file": "config/settings.py"
     },
@@ -373,22 +373,22 @@
       "source_file": "config/_email.py"
     },
     {
-      "default": "'https://auth.example.test' if ... else ''",
+      "default": null,
       "name": "OIDC_AUTH_DOMAIN",
       "source_file": "config/_oidc_settings.py"
     },
     {
-      "default": "'https://issuer.example.test' if ... else ''",
+      "default": null,
       "name": "OIDC_ISSUER_URL",
       "source_file": "config/_oidc_settings.py"
     },
     {
       "default": null,
       "name": "OIDC_RP_CLIENT_ID",
-      "source_file": "config/settings.py"
+      "source_file": "config/_oidc_settings.py"
     },
     {
-      "default": "'test-oidc-client-secret' if ... else ''",
+      "default": null,
       "name": "OIDC_RP_CLIENT_SECRET",
       "source_file": "config/_oidc_settings.py"
     },
