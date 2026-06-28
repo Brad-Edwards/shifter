@@ -1,61 +1,73 @@
-#!/bin/bash
-set -euo pipefail
+#cloud-config
+# GDC VM Runtime accepts only `#cloud-config` user-data (it rejects bare
+# shell scripts with InvalidCloudInitUserdata). The original provisioning
+# script is embedded verbatim via write_files and executed once on first
+# boot via runcmd, preserving identical behavior to the AWS user-data path.
+write_files:
+  - path: /opt/shifter/gdc-user-data.sh
+    permissions: '0755'
+    owner: root:root
+    content: |
+      #!/bin/bash
+      set -euo pipefail
 
-# Log output
-exec > >(tee /var/log/user-data.log) 2>&1
-echo "Victim Linux instance booting..."
+      # Log output
+      exec > >(tee /var/log/user-data.log) 2>&1
+      echo "Victim Linux instance booting..."
 
-# Issue #762: the per-instance local password is set by the engine
-# provisioner via SSH after this VM reaches a reachable state — not
-# in user_data. The password value never appears in the rendered
-# cloud-init payload. See
-# shifter/engine/provisioner/plans/set_local_password_plan.py.
-ssh_user="{{ ssh_user }}"
-public_key="{{ public_key }}"
+      # Issue #762: the per-instance local password is set by the engine
+      # provisioner via SSH after this VM reaches a reachable state — not
+      # in user_data. The password value never appears in the rendered
+      # cloud-init payload. See
+      # shifter/engine/provisioner/plans/set_local_password_plan.py.
+      ssh_user="{{ ssh_user }}"
+      public_key="{{ public_key }}"
 
-# Ensure SSH/RDP packages exist on the base image
-if command -v apt-get >/dev/null 2>&1; then
-    export DEBIAN_FRONTEND=noninteractive
-    apt-get update
-    apt-get install -y openssh-server xrdp xorgxrdp || apt-get install -y openssh-server xrdp
-fi
+      # Ensure SSH/RDP packages exist on the base image
+      if command -v apt-get >/dev/null 2>&1; then
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update
+          apt-get install -y openssh-server xrdp xorgxrdp || apt-get install -y openssh-server xrdp
+      fi
 
-echo "Configuring SSH access for $ssh_user..."
-user_home=$(eval echo ~$ssh_user)
-mkdir -p "$user_home/.ssh"
-chmod 700 "$user_home/.ssh"
+      echo "Configuring SSH access for $ssh_user..."
+      user_home=$(eval echo ~$ssh_user)
+      mkdir -p "$user_home/.ssh"
+      chmod 700 "$user_home/.ssh"
 
-if [ -n "$public_key" ]; then
-    echo "$public_key" >> "$user_home/.ssh/authorized_keys"
-    chmod 600 "$user_home/.ssh/authorized_keys"
-    chown -R "$ssh_user:$ssh_user" "$user_home/.ssh"
-    echo "SSH key configured for $ssh_user"
-else
-    echo "No public key provided, skipping key auth setup"
-fi
+      if [ -n "$public_key" ]; then
+          echo "$public_key" >> "$user_home/.ssh/authorized_keys"
+          chmod 600 "$user_home/.ssh/authorized_keys"
+          chown -R "$ssh_user:$ssh_user" "$user_home/.ssh"
+          echo "SSH key configured for $ssh_user"
+      else
+          echo "No public key provided, skipping key auth setup"
+      fi
 
-# Enable password authentication for desktop/file-transfer tooling
-if [ -f /etc/ssh/sshd_config ]; then
-    sed -i 's/^#\?PasswordAuthentication .*/PasswordAuthentication yes/' /etc/ssh/sshd_config || true
-    if ! grep -q '^PasswordAuthentication yes' /etc/ssh/sshd_config; then
-        echo 'PasswordAuthentication yes' >> /etc/ssh/sshd_config
-    fi
-fi
+      # Enable password authentication for desktop/file-transfer tooling
+      if [ -f /etc/ssh/sshd_config ]; then
+          sed -i 's/^#\?PasswordAuthentication .*/PasswordAuthentication yes/' /etc/ssh/sshd_config || true
+          if ! grep -q '^PasswordAuthentication yes' /etc/ssh/sshd_config; then
+              echo 'PasswordAuthentication yes' >> /etc/ssh/sshd_config
+          fi
+      fi
 
-# Ensure SSH service is running (Ubuntu uses ssh, Amazon Linux uses sshd)
-if systemctl list-unit-files | grep -q "^ssh.service"; then
-    systemctl enable --now ssh || true
-elif systemctl list-unit-files | grep -q "^sshd.service"; then
-    systemctl enable --now sshd || true
-fi
+      # Ensure SSH service is running (Ubuntu uses ssh, Amazon Linux uses sshd)
+      if systemctl list-unit-files | grep -q "^ssh.service"; then
+          systemctl enable --now ssh || true
+      elif systemctl list-unit-files | grep -q "^sshd.service"; then
+          systemctl enable --now sshd || true
+      fi
 
-# Ensure xrdp is running for RDP access via Guacamole (Ubuntu AMI has xrdp installed)
-if systemctl list-unit-files | grep -q "^xrdp.service"; then
-    echo "Starting xrdp service..."
-    systemctl enable --now xrdp || true
-    systemctl status xrdp --no-pager || true
-    echo "xrdp service started"
-fi
+      # Ensure xrdp is running for RDP access via Guacamole (Ubuntu AMI has xrdp installed)
+      if systemctl list-unit-files | grep -q "^xrdp.service"; then
+          echo "Starting xrdp service..."
+          systemctl enable --now xrdp || true
+          systemctl status xrdp --no-pager || true
+          echo "xrdp service started"
+      fi
 
-# All other setup (hostname, XDR) stays in Shifter setup plans.
-echo "user_data complete. Shifter setup plans will handle remaining setup."
+      # All other setup (hostname, XDR) stays in Shifter setup plans.
+      echo "user_data complete. Shifter setup plans will handle remaining setup."
+runcmd:
+  - /opt/shifter/gdc-user-data.sh

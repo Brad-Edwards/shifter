@@ -39,17 +39,24 @@ class TestKaliTemplate:
         assert test_key in result
         assert "{{ public_key }}" not in result
 
-    def test_kali_template_valid_bash(self, kali_template):
-        """Output should be a valid bash script with required sections."""
+    def test_kali_template_is_cloud_config_wrapping_bash(self, kali_template):
+        """Output must be #cloud-config (GDC requirement) embedding a bash script."""
+        import yaml
+
         result = kali_template.render(
             hostname="shifter-kali-42",
             public_key="ssh-rsa AAAA...",
         )
-        assert result.strip().startswith("#!/bin/bash")
+        # GDC VM Runtime rejects non-#cloud-config user-data (InvalidCloudInitUserdata).
+        assert result.startswith("#cloud-config\n")
+        doc = yaml.safe_load(result)
+        assert doc["runcmd"] == ["/opt/shifter/gdc-user-data.sh"]
+        script = doc["write_files"][0]["content"]
+        assert script.startswith("#!/bin/bash")
         # Verify essential script components rather than arbitrary length
-        assert "hostnamectl set-hostname" in result  # Must set hostname
-        assert "authorized_keys" in result  # Must configure SSH
-        assert "echo" in result  # Must have logging/output
+        assert "hostnamectl set-hostname" in script  # Must set hostname
+        assert "authorized_keys" in script  # Must configure SSH
+        assert "echo" in script  # Must have logging/output
 
     def test_kali_template_sets_hostname(self, kali_template):
         """Template should set hostname."""
@@ -121,14 +128,21 @@ class TestVictimLinuxTemplate:
         # Should NOT install XDR (SSM does that)
         assert "curl" not in result
 
-    def test_victim_linux_template_valid_bash(self, linux_template):
-        """Output should be a valid bash script."""
+    def test_victim_linux_template_is_cloud_config_wrapping_bash(self, linux_template):
+        """Output must be #cloud-config (GDC requirement) embedding a bash script."""
+        import yaml
+
         result = linux_template.render(
             public_key="ssh-rsa test-key",
             ssh_user="ubuntu",
         )
-        assert result.strip().startswith("#!/bin/bash")
-        assert "set -euo pipefail" in result or "set -e" in result
+        # GDC VM Runtime rejects non-#cloud-config user-data (InvalidCloudInitUserdata).
+        assert result.startswith("#cloud-config\n")
+        doc = yaml.safe_load(result)
+        assert doc["runcmd"] == ["/opt/shifter/gdc-user-data.sh"]
+        script = doc["write_files"][0]["content"]
+        assert script.startswith("#!/bin/bash")
+        assert "set -euo pipefail" in script or "set -e" in script
 
     def test_victim_linux_template_explains_ssm(self, linux_template):
         """Template should explain that setup plans handle the remaining steps."""

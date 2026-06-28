@@ -80,7 +80,14 @@ class TestRenderUserData:
             assert "<powershell>" in result
             assert "administrators_authorized_keys" in result
         else:
-            assert result.lstrip().startswith("#!/bin/bash"), result[:80]
+            # GDC VM Runtime only accepts #cloud-config user-data; the bash
+            # provisioning script is embedded via write_files/runcmd.
+            import yaml
+
+            assert result.startswith("#cloud-config\n"), result[:80]
+            doc = yaml.safe_load(result)
+            assert doc["runcmd"] == ["/opt/shifter/gdc-user-data.sh"]
+            assert doc["write_files"][0]["content"].startswith("#!/bin/bash")
 
         # Negative assertions: no password value rendered. The
         # ``chpasswd_pattern`` matches ``echo "<user>:<user>" |
