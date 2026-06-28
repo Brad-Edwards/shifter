@@ -388,12 +388,10 @@ def create_ngfw(
             ),
         )
     except Exception as exc:
-        # Log only fixed failure text, sanitized correlation identifiers, and
-        # the exception *type* name. Do NOT use logger.exception / exc_info:
-        # the hydrator/engine failure path can carry registration secrets
-        # (authcode, otp_value, scm_pin) inside the exception message and
-        # traceback, and those must never reach operational logs.
-        logger.error(
+        # Sanitized log only: fixed text + correlation ids + exception *type*.
+        # NOT logger.exception/exc_info — hydrator/engine tracebacks can carry
+        # NGFW registration secrets (authcode/otp/scm_pin) and must not be logged.
+        logger.error(  # NOSONAR
             "create_ngfw failed for user_id=%s request_id=%s exc_type=%s; marking NGFW records FAILED",
             user.id,
             request_id,
