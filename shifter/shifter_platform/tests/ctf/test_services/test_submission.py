@@ -22,6 +22,7 @@ from ctf.enums import (
 )
 from ctf.exceptions import CTFRateLimitError, CTFStateError, CTFValidationError
 from ctf.models import CTFChallenge, CTFEvent, CTFHint, CTFParticipant, CTFSubmission
+from ctf.services.challenge import add_flag
 from ctf.services.hint import use_hint
 from ctf.services.scoring import calculate_score
 from ctf.services.submission import submit_flag
@@ -188,6 +189,33 @@ class TestSubmissionRateLimit:
         assert datetime.fromisoformat(details["retry_at"])
         assert "retry at" in str(exc_info.value).lower()
         assert details["cooldown_seconds"] == 10
+
+
+@pytest.mark.django_db
+class TestExactFlagSubmissions:
+    """Tests for exact static flag submissions (CTF-104)."""
+
+    def test_static_flag_submit_uses_exact_value_after_service_trim(self, participant, challenge, challenge_b):
+        """Static flags require exact content after submit_flag trims the attempt."""
+        add_flag(
+            challenge.id,
+            {"flag": "FLAG{exact}", "flag_type": "static"},
+            actor_id=challenge.event.created_by_id,
+        )
+        add_flag(
+            challenge_b.id,
+            {"flag": "FLAG{exact}", "flag_type": "static"},
+            actor_id=challenge_b.event.created_by_id,
+        )
+
+        correct = submit_flag(participant.id, challenge.id, "  FLAG{exact}  ")
+        incorrect = submit_flag(participant.id, challenge_b.id, "FLAG{exact}x")
+
+        assert correct.is_correct is True
+        assert correct.points_awarded == challenge.points
+        assert correct.submitted_flag == "  FLAG{exact}  "
+        assert incorrect.is_correct is False
+        assert incorrect.points_awarded == 0
 
 
 # ── Fixtures for attempt limit tests ─────────────────────────────────────

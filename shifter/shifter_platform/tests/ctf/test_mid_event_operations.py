@@ -8,6 +8,7 @@ import pytest
 from django.urls import reverse
 from django.utils import timezone
 
+from cms.models import RangeInstance
 from ctf.enums import ChallengeCategory, ChallengeDifficulty, EventStatus, ScheduledTaskStatus, ScheduledTaskType
 from ctf.models import CTFChallenge, CTFEvent, CTFFlag, CTFParticipant, CTFScheduledTask
 from ctf.services import update_event
@@ -279,6 +280,16 @@ class TestApiRangeStatusActiveEvent:
             event_end=timezone.now() + timedelta(hours=7),
             scenario_id="basic",
         )
+        older_range = RangeInstance.objects.create(
+            user_id=participant_user.pk,
+            scenario_id="basic",
+            status="ready",
+        )
+        newer_range = RangeInstance.objects.create(
+            user_id=participant_user.pk,
+            scenario_id="basic",
+            status="provisioning",
+        )
         older_participant = CTFParticipant.objects.create(
             event=older_event,
             user=participant_user,
@@ -286,6 +297,7 @@ class TestApiRangeStatusActiveEvent:
             name="Older Participant",
             status="active",
             registered_at=timezone.now(),
+            range_instance_id=older_range.pk,
             range_status="ready",
         )
         newer_participant = CTFParticipant.objects.create(
@@ -295,6 +307,7 @@ class TestApiRangeStatusActiveEvent:
             name="Newer Participant",
             status="active",
             registered_at=timezone.now(),
+            range_instance_id=newer_range.pk,
             range_status="provisioning",
         )
         set_active_ctf_event(participant_user, older_event.pk)
@@ -306,8 +319,10 @@ class TestApiRangeStatusActiveEvent:
         assert response.status_code == 200
         payload = response.json()
         assert payload["participant_id"] == str(older_participant.pk)
-        assert payload["status"] == "not_assigned"
+        assert payload["status"] == "ready"
+        assert payload["range_instance_id"] == older_range.pk
         assert newer_participant.pk != older_participant.pk
+        assert newer_participant.range_instance_id != older_participant.range_instance_id
 
 
 @pytest.mark.django_db
