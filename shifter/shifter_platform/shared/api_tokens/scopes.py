@@ -37,6 +37,7 @@ MISSION_CONTROL_SCRIPT_WRITE = "mission_control:script:write"
 # Known/valid so tokens can be minted ahead of the CTF/CMS migrations.
 CTF_EVENT_READ = "ctf:event:read"
 CTF_EVENT_WRITE = "ctf:event:write"
+CTF_PLAY_READ = "ctf:play:read"
 CTF_PLAY_WRITE = "ctf:play:write"
 CMS_AUTHORING_READ = "cms:authoring:read"
 CMS_AUTHORING_WRITE = "cms:authoring:write"
@@ -56,6 +57,7 @@ KNOWN_SCOPES: frozenset[str] = frozenset(
         MISSION_CONTROL_SCRIPT_WRITE,
         CTF_EVENT_READ,
         CTF_EVENT_WRITE,
+        CTF_PLAY_READ,
         CTF_PLAY_WRITE,
         CMS_AUTHORING_READ,
         CMS_AUTHORING_WRITE,
