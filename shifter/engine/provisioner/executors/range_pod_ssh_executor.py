@@ -157,10 +157,10 @@ class RangePodSSHExecutor(GuestSSHExecutor):
     def _mint_registry_token(self) -> str:
         """Mint a short-lived OAuth2 access token from the provisioner's ADC.
 
-        The provision Job runs under the ``workers`` Workload Identity, which
-        holds ``roles/artifactregistry.reader``; the kubelet presents this token
-        to Artifact Registry as the ``oauth2accesstoken`` user. Isolated as a
-        seam so tests need not touch real Google credentials.
+        The provision Job runs under the ``provisioner`` Workload Identity,
+        which holds ``roles/artifactregistry.reader``; the kubelet presents this
+        token to Artifact Registry as the ``oauth2accesstoken`` user. Isolated as
+        a seam so tests need not touch real Google credentials.
         """
         import google.auth
         from google.auth.transport.requests import Request as GoogleAuthRequest
