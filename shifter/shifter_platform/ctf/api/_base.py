@@ -160,7 +160,35 @@ class CTFLegacyAPIView(APIView):
         return cast(LegacyView, getattr(import_module(module_path), function_name))
 
 
+def legacy_api_view(
+    name: str,
+    legacy_view_path: str,
+    *,
+    permission_classes: Iterable[PermissionClass],
+    read_scopes: tuple[str, ...] = (),
+    write_scopes: tuple[str, ...] = (),
+) -> Callable[..., Any]:
+    """Create a DRF view callable that delegates to a legacy CTF JSON endpoint."""
+    view_class = cast(
+        type[CTFLegacyAPIView],
+        type(
+            name,
+            (CTFLegacyAPIView,),
+            {
+                "__module__": __name__,
+                "__doc__": f"DRF wrapper for {legacy_view_path}.",
+                "legacy_view_path": legacy_view_path,
+                "permission_classes": list(permission_classes),
+                "required_read_scopes": read_scopes,
+                "required_write_scopes": write_scopes,
+            },
+        ),
+    )
+    return cast(Callable[..., Any], view_class.as_view())
+
+
 def _required_scopes_for_method(method: str, view: APIView) -> Iterable[str]:
+    """Return the declared CTF token scopes for the incoming HTTP method."""
     scopes = getattr(view, "required_read_scopes", ()) if method in permissions.SAFE_METHODS else ()
     if method not in permissions.SAFE_METHODS:
         scopes = getattr(view, "required_write_scopes", ())
@@ -168,11 +196,13 @@ def _required_scopes_for_method(method: str, view: APIView) -> Iterable[str]:
 
 
 def _should_validate_json_body(request: HttpRequest) -> bool:
+    """Return true when the request content type should be parsed as JSON."""
     content_type = request.META.get("CONTENT_TYPE", "")
     return "json" in content_type.lower()
 
 
 def _request_body_empty(request: HttpRequest) -> bool:
+    """Return true when the request declares an empty body."""
     try:
         return int(request.META.get("CONTENT_LENGTH") or 0) == 0
     except ValueError:
@@ -180,16 +210,9 @@ def _request_body_empty(request: HttpRequest) -> bool:
 
 
 def _canonical_error_response(request: Request, response: HttpResponse) -> Response | None:
-    if not request.path.startswith("/api/v1/ctf/") or response.status_code < 400:
-        return None
-    if not isinstance(response, JsonResponse):
-        return None
-    try:
-        payload = json.loads(response.content.decode(response.charset or "utf-8"))
-    except (UnicodeDecodeError, ValueError):
-        return None
-    message = payload.get("error") if isinstance(payload, dict) else None
-    if not isinstance(message, str):
+    """Convert canonical CTF legacy flat-error JSON to the shared API envelope."""
+    message = _legacy_error_message(request, response)
+    if message is None:
         return None
 
     converted = api_error_response(
@@ -204,7 +227,21 @@ def _canonical_error_response(request: Request, response: HttpResponse) -> Respo
     return converted
 
 
+def _legacy_error_message(request: Request, response: HttpResponse) -> str | None:
+    """Extract a flat legacy error message when a response is eligible."""
+    message = None
+    if request.path.startswith("/api/v1/ctf/") and response.status_code >= 400 and isinstance(response, JsonResponse):
+        try:
+            payload = json.loads(response.content.decode(response.charset or "utf-8"))
+        except ValueError:
+            payload = None
+        if isinstance(payload, dict) and isinstance(payload.get("error"), str):
+            message = cast(str, payload["error"])
+    return message
+
+
 def _error_code_for_status(status_code: int) -> str:
+    """Map legacy CTF HTTP statuses onto the shared API error-code vocabulary."""
     return {
         400: "bad_request",
         403: "permission_denied",
