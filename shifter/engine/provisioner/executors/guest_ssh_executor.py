@@ -51,12 +51,20 @@ class GuestSSHExecutor:
         self._poll_interval = poll_interval_seconds
         self._connect_timeout = connect_timeout_seconds
         self._last_probe_detail = ""
+        self._key_path = self._provision_key(private_key)
 
-        fd, self._key_path = tempfile.mkstemp(prefix="guest_ssh_key_", suffix=".pem")
+    def _provision_key(self, private_key: str) -> str:
+        """Write the private key to a local temp file and return its path.
+
+        Subclasses that run ssh on a remote transport (e.g. inside a range
+        cluster pod) override this to return the key's path on that transport.
+        """
+        fd, key_path = tempfile.mkstemp(prefix="guest_ssh_key_", suffix=".pem")
         try:
             os.write(fd, private_key.encode())
         finally:
             os.close(fd)
+        return key_path
 
     def close(self) -> None:
         """Remove the temporary SSH key file."""
@@ -129,29 +137,37 @@ class GuestSSHExecutor:
 
         logger.info("Running %s script over SSH on %s as %s", document_name, host, self._username)
 
+        returncode, stdout_bytes, stderr_bytes = self._invoke_ssh(ssh_args, command_input.encode(), timeout_seconds)
+        return CommandResult(
+            success=returncode == 0,
+            exit_code=returncode,
+            stdout=stdout_bytes.decode("utf-8", errors="replace"),
+            stderr=stderr_bytes.decode("utf-8", errors="replace"),
+        )
+
+    def _invoke_ssh(self, ssh_args: list[str], command_input: bytes, timeout_seconds: int) -> tuple[int, bytes, bytes]:
+        """Run the ssh client locally and return (returncode, stdout, stderr).
+
+        This is the single transport seam: subclasses override it to run the
+        same ssh invocation from a different vantage point (e.g. a pod inside
+        the range cluster that has L2 reachability to the guest).
+        """
         try:
             result = subprocess.run(  # noqa: S603  # NOSONAR — trusted ssh binary with controlled args
                 ssh_args,
-                input=command_input.encode(),
+                input=command_input,
                 capture_output=True,
                 timeout=timeout_seconds,
                 check=False,
             )
         except subprocess.TimeoutExpired as e:
-            raise TimeoutError(f"SSH command timed out after {timeout_seconds}s on {host}") from e
+            raise TimeoutError(f"SSH command timed out after {timeout_seconds}s") from e
         except FileNotFoundError as e:
             raise GuestSSHConnectionError("ssh binary not found. Ensure openssh-client is installed.") from e
         except OSError as e:
-            raise GuestSSHConnectionError(f"SSH connection failed to {host}: {e}") from e
+            raise GuestSSHConnectionError(f"SSH subprocess failed: {e}") from e
 
-        stdout = result.stdout.decode("utf-8", errors="replace")
-        stderr = result.stderr.decode("utf-8", errors="replace")
-        return CommandResult(
-            success=result.returncode == 0,
-            exit_code=result.returncode,
-            stdout=stdout,
-            stderr=stderr,
-        )
+        return result.returncode, result.stdout, result.stderr
 
     def _probe_ready(self, host: str, document_name: str) -> bool:
         probe_script = "Write-Output ready" if document_name == "AWS-RunPowerShellScript" else "echo ready"

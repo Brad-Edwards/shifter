@@ -8,7 +8,6 @@ from typing import Any
 
 from cloud import get_secrets_store
 from executors.base import Executor
-from executors.guest_ssh_executor import GuestSSHExecutor
 from executors.ssm_executor import SSMExecutor
 
 _LINUX_DOCUMENT = "AWS-RunShellScript"
@@ -74,33 +73,7 @@ def build_guest_execution_context(
     document_name = get_setup_document_name(resolved_os_type)
 
     if resolved_provider == "gcp":
-        target = instance_data.get("private_ip", "")
-        if not target:
-            raise ValueError("GCP guest execution requires private_ip in instance output")
-
-        secret_id = instance_data.get("ssh_key_secret_arn", "")
-        if not secret_id:
-            raise ValueError("GCP guest execution requires ssh_key_secret_arn in instance output")
-
-        private_key = get_secrets_store().get_secret(secret_id)
-        username = (
-            instance_data.get("ssh_username")
-            or instance_data.get("ssh_user")
-            or get_ssh_username(
-                resolved_os_type,
-                resolved_role,
-            )
-        )
-        executor = GuestSSHExecutor(
-            private_key=private_key,
-            username=username,
-        )
-        return GuestExecutionContext(
-            executor=executor,
-            target=target,
-            document_name=document_name,
-            transport_name="ssh",
-        )
+        return _build_gcp_execution_context(instance_data, resolved_os_type, resolved_role, document_name)
 
     target = instance_data.get("instance_id", "")
     if not target:
@@ -111,4 +84,68 @@ def build_guest_execution_context(
         target=target,
         document_name=document_name,
         transport_name="ssm",
+    )
+
+
+def _build_range_kube_clients() -> tuple[Any, Any, type]:
+    """Build (CoreV1Api, kubernetes client module, ApiException) for the range cluster."""
+    from config import load_gdc_network_access_config
+    from gdc_range_networks import _build_kube_api_client, _import_kubernetes_modules
+
+    access = load_gdc_network_access_config()
+    if access is None:
+        raise RuntimeError("GDC range access config (GDC_ACCESS_SECRET_ID) is required for guest setup")
+    _unused, client_module, _config, api_exception = _import_kubernetes_modules()
+    api_client = _build_kube_api_client(access.kubeconfig)
+    core_api = client_module.CoreV1Api(api_client)
+    return core_api, client_module, api_exception
+
+
+def _build_gcp_execution_context(
+    instance_data: dict[str, Any],
+    os_type: str,
+    role: str,
+    document_name: str,
+) -> GuestExecutionContext:
+    """Build the in-range-cluster guest setup transport for a GDC VM Runtime guest.
+
+    GDC range VMs live on an isolated L2 segment unreachable from the platform
+    plane, so guest setup runs from a pod inside the range cluster attached to
+    the range NAD (see RangePodSSHExecutor).
+    """
+    from executors.range_pod_ssh_executor import RangePodSSHExecutor
+
+    target = instance_data.get("private_ip", "")
+    if not target:
+        raise ValueError("GCP guest execution requires private_ip in instance output")
+    secret_id = instance_data.get("ssh_key_secret_arn", "")
+    if not secret_id:
+        raise ValueError("GCP guest execution requires ssh_key_secret_arn in instance output")
+    namespace = instance_data.get("gdc_namespace", "")
+    network_name = instance_data.get("gdc_nad_name", "") or instance_data.get("gdc_network_name", "")
+    if not namespace or not network_name:
+        raise ValueError("GCP guest execution requires gdc_namespace and gdc_nad_name in instance output")
+
+    runner_image = os.environ.get("GDC_SETUP_RUNNER_IMAGE", "") or os.environ.get("ENGINE_TASK_IMAGE", "")
+    if not runner_image:
+        raise ValueError("GDC guest setup requires GDC_SETUP_RUNNER_IMAGE (or ENGINE_TASK_IMAGE) to be set")
+
+    private_key = get_secrets_store().get_secret(secret_id)
+    username = instance_data.get("ssh_username") or instance_data.get("ssh_user") or get_ssh_username(os_type, role)
+    core_api, client_module, api_exception = _build_range_kube_clients()
+    executor = RangePodSSHExecutor(
+        core_api=core_api,
+        client_module=client_module,
+        api_exception=api_exception,
+        namespace=namespace,
+        network_name=network_name,
+        runner_image=runner_image,
+        private_key=private_key,
+        username=username,
+    )
+    return GuestExecutionContext(
+        executor=executor,
+        target=target,
+        document_name=document_name,
+        transport_name="range-pod-ssh",
     )
