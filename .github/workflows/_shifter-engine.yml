@@ -58,6 +58,8 @@ jobs:
   build:
     name: Build (${{ inputs.environment }})
     runs-on: self-hosted
+    # Backstop only (see #1220); generous vs. real image-build times.
+    timeout-minutes: 90
     environment: ${{ inputs.github_environment }}
     needs: validate
     permissions:
@@ -135,6 +137,8 @@ jobs:
   deploy:
     name: Deploy (${{ inputs.environment }})
     runs-on: self-hosted
+    # Backstop only (see #1220); generous vs. real deploy times.
+    timeout-minutes: 90
     environment: ${{ inputs.github_environment }}
     permissions:
       id-token: write

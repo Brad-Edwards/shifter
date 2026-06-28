@@ -32,6 +32,7 @@ GCP_GENERATED_RUNTIME_ENV_KEYS: frozenset[str] = frozenset(
         "DJANGO_ALLOWED_HOSTS",
         "DJANGO_CSRF_TRUSTED_ORIGINS",
         "DJANGO_DEBUG",
+        "EMAIL_BACKEND",
         "ENGINE_TASK_IMAGE",
         "GDC_ACCESS_SECRET_ID",
         "GDC_NETWORK_DNS_NAMESERVERS",
@@ -82,10 +83,10 @@ GCP_OPTIONAL_GENERATED_RUNTIME_ENV_KEYS: frozenset[str] = frozenset(
         "PLATFORM_BOOTSTRAP_STAFF_EMAILS",
         "PLATFORM_BOOTSTRAP_SUPERUSER_EMAILS",
         # Transactional email (PLAT-002, #671) — emitted only when the operator
-        # configures a SendGrid/Mailgun sender; EMAIL_API_KEY_SECRET_ID is a
-        # Secret Manager reference, not the key value. MAILGUN_SENDER_DOMAIN is
-        # emitted only for the Mailgun backend.
-        "EMAIL_BACKEND",
+        # configures a SendGrid/Mailgun sender. EMAIL_BACKEND is always explicit
+        # in generated runtime env; these are the extra sender-specific keys.
+        # EMAIL_API_KEY_SECRET_ID is a Secret Manager reference, not the key
+        # value. MAILGUN_SENDER_DOMAIN is emitted only for the Mailgun backend.
         "DEFAULT_FROM_EMAIL",
         "EMAIL_API_KEY_SECRET_ID",
         "MAILGUN_SENDER_DOMAIN",
