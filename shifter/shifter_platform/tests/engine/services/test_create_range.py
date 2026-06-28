@@ -8,6 +8,7 @@ on persisted state and return values, not on mocked ORM/interpreter/ECS calls.
 """
 
 import logging
+from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 import pytest
@@ -16,6 +17,7 @@ from django.test import override_settings
 
 from engine import create_range
 from engine.models import Range
+from shared.cloud.exceptions import CloudTaskError
 from shared.schemas import InstanceSpec, RangeRef, RangeSpec, RequestSpec, SubnetSpec
 
 from .conftest import ECS_TASK_ARN
@@ -100,6 +102,32 @@ class TestCreateRangePersistence:
         range_obj = Range.objects.get()
         assert range_obj.provisioning_task_arn == ECS_TASK_ARN
         assert range_obj.teardown_task_arn == ""
+
+    def test_reuses_existing_range_for_same_request_id(self, user):
+        spec = make_request_spec(user_id=user.id)
+        first = create_range(spec)
+        second = create_range(spec)
+
+        assert second.range_id == first.range_id
+        assert Range.objects.count() == 1
+
+    def test_marks_range_failed_when_provisioning_dispatch_fails(self, user, settings):
+        settings.CLOUD_PROVIDER = "aws"
+        settings.LOCAL_PROVISIONER = None
+        settings.ENGINE_TASK_CLUSTER = "test-cluster"
+        settings.ENGINE_TASK_DEFINITION = "test-taskdef"
+        settings.ENGINE_TASK_NETWORK_SECURITY_GROUP_ID = "sg-test"
+        settings.ENGINE_TASK_NETWORK_SUBNET_IDS = "subnet-aaa,subnet-bbb"
+        ecs_client = MagicMock()
+        ecs_client.run_task.return_value = {"tasks": [], "failures": [{"reason": "RESOURCE:CPU"}]}
+
+        spec = make_request_spec(user_id=user.id)
+        with patch("boto3.client", return_value=ecs_client), pytest.raises(CloudTaskError):
+            create_range(spec)
+
+        range_obj = Range.objects.get(request__request_id=spec.request_id)
+        assert range_obj.status == Range.Status.FAILED
+        assert range_obj.error_message == "Provisioning dispatch failed"
 
 
 class TestCreateRangeErrorValidation:
