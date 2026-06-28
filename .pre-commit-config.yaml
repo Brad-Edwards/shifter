@@ -210,11 +210,30 @@ repos:
         language: system
         files: ^platform/terraform/modules/engine-provisioner/iam\.tf$
 
+      - id: check-tf-iam-ssm-scope
+        name: AWS SSM Run Command IAM scoping (engine provisioner)
+        entry: python3 scripts/check_tf_iam_ssm_scope/check_tf_iam_ssm_scope.py
+        language: system
+        files: ^platform/terraform/modules/engine-provisioner/iam\.tf$
+
       - id: check-tf-iam-role-naming
         name: AWS IAM role naming seam (shifter-* prefix)
         entry: python3 scripts/check_tf_iam_role_naming/check_tf_iam_role_naming.py
         language: system
         files: ^platform/terraform/(modules/.+|global/iam/github-oidc\.tf|environments/.+/main\.tf)$
+
+      # Issue #1178: the shared range *guest* instance role must not grant SSM
+      # Parameter Store access on a Resource that wildcards the environment or
+      # range segment (parameter/shifter/*/range/*), which would let any range
+      # guest read/modify every other range's credential namespace. Range
+      # guests do not use their instance role for Parameter Store; all range
+      # SSM access is brokered by the provisioner via Run Command. Scoped to the
+      # range VPC module IAM file where the range-instance role is defined.
+      - id: check-tf-iam-ssm-range-scope
+        name: AWS range-instance SSM parameter IAM scoping (#1178)
+        entry: python3 scripts/check_tf_iam_ssm_range_scope/check_tf_iam_ssm_range_scope.py
+        language: system
+        files: ^platform/terraform/modules/range/vpc/iam\.tf$
 
       # Custom: Secrets Manager kms:Decrypt grant check (issue #52).
       # Ensures every aws_iam_role defined in scoped files that reads
@@ -293,6 +312,8 @@ repos:
           bash -c '
           python3 -m unittest scripts.check_tf_iam_ec2_scope.test_check_tf_iam_ec2_scope &&
           python3 -m unittest scripts.check_tf_iam_elb_scope.test_check_tf_iam_elb_scope &&
+          python3 -m unittest scripts.check_tf_iam_ssm_scope.test_check_tf_iam_ssm_scope &&
+          python3 -m unittest scripts.check_tf_iam_ssm_range_scope.test_check_tf_iam_ssm_range_scope &&
           python3 -m unittest scripts.check_tf_iam_role_naming.test_check_tf_iam_role_naming &&
           python3 -m unittest scripts.check_tf_sg_cidrs.test_check_tf_sg_cidrs &&
           python3 -m unittest scripts.check_tf_kms_secrets_grant.test_check_tf_kms_secrets_grant &&
@@ -300,7 +321,7 @@ repos:
           python3 -m unittest scripts.check_portal_target_sg_sources.test_check_portal_target_sg_sources
           '
         language: system
-        files: ^scripts/(check_tf_(iam_ec2_scope|iam_elb_scope|sg_cidrs|kms_secrets_grant|rds_security)|check_portal_target_sg_sources)/
+        files: ^scripts/(check_tf_(iam_ec2_scope|iam_elb_scope|iam_ssm_scope|iam_ssm_range_scope|sg_cidrs|kms_secrets_grant|rds_security)|check_portal_target_sg_sources)/
         pass_filenames: false
 
   # Kubernetes schema validation
