@@ -95,6 +95,21 @@ class TestRenderUserData:
             assert host_public_key.startswith("ssh-ed25519 ")
             assert doc["ssh_keys"]["ed25519_public"].strip() == host_public_key.strip()
             assert doc["ssh_keys"]["ed25519_private"].startswith("-----BEGIN OPENSSH PRIVATE KEY-----")
+            # The setup script also installs the host key directly and restarts
+            # sshd (robust to the cloud-init ssh module's timing); the installed
+            # key must match the seeded public key.
+            script = doc["write_files"][0]["content"]
+            assert "/etc/ssh/ssh_host_ed25519_key" in script
+            assert "base64 -d > /etc/ssh/ssh_host_ed25519_key" in script
+            assert "systemctl restart ssh" in script
+            import base64 as _b64
+            import re as _re
+
+            m = _re.search(r"printf %s '([A-Za-z0-9+/=]+)' \| base64 -d", script)
+            assert m, "host key install line missing"
+            installed_priv = _b64.b64decode(m.group(1)).decode()
+            assert installed_priv.startswith("-----BEGIN OPENSSH PRIVATE KEY-----")
+            assert installed_priv.strip() == doc["ssh_keys"]["ed25519_private"].strip()
 
         # Negative assertions: no password value rendered. The
         # ``chpasswd_pattern`` matches ``echo "<user>:<user>" |

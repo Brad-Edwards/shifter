@@ -61,11 +61,25 @@ write_files:
           fi
       fi
 
-      # Ensure SSH service is running
+      # Install the provisioner-issued Ed25519 host key so this guest presents
+      # a host key the setup-runner already trusts (StrictHostKeyChecking=yes).
+      # Done here, in addition to cloud-init ssh_keys:, so it is robust to sshd
+      # having already started with a boot-generated key and to the NoCloud
+      # datasource being detected after the cloud-init ssh module ran. The
+      # restart below makes sshd serve the installed key.
+      printf %s '{{ host_private_key_b64 }}' | base64 -d > /etc/ssh/ssh_host_ed25519_key
+      chmod 600 /etc/ssh/ssh_host_ed25519_key
+      chown root:root /etc/ssh/ssh_host_ed25519_key
+      ssh-keygen -y -f /etc/ssh/ssh_host_ed25519_key > /etc/ssh/ssh_host_ed25519_key.pub
+      chmod 644 /etc/ssh/ssh_host_ed25519_key.pub
+
+      # Ensure SSH service is running and serving the installed host key
       if systemctl list-unit-files | grep -q "^ssh.service"; then
-          systemctl enable --now ssh || true
+          systemctl enable ssh || true
+          systemctl restart ssh || true
       elif systemctl list-unit-files | grep -q "^sshd.service"; then
-          systemctl enable --now sshd || true
+          systemctl enable sshd || true
+          systemctl restart sshd || true
       fi
 
       # Ensure xrdp is running for RDP access via Guacamole

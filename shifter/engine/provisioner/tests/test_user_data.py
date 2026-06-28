@@ -1,5 +1,6 @@
 """User data template tests for Shifter Engine."""
 
+import base64
 import sys
 from pathlib import Path
 
@@ -31,6 +32,10 @@ class _HostKeyTemplate:
 
     def render(self, **kwargs):
         kwargs.setdefault("host_private_key", _SAMPLE_HOST_PRIVATE_KEY)
+        kwargs.setdefault(
+            "host_private_key_b64",
+            base64.b64encode(_SAMPLE_HOST_PRIVATE_KEY.encode()).decode("ascii"),
+        )
         kwargs.setdefault("host_public_key", _SAMPLE_HOST_PUBLIC_KEY)
         return self._template.render(**kwargs)
 
