@@ -43,6 +43,11 @@ Current mechanisms:
   - `check-tf-iam-ec2-scope`: local Terraform IAM hardening check that
     keeps engine-provisioner EC2 instance lifecycle actions scoped to
     Shifter-owned, Terraform-managed instances.
+  - `check-tf-iam-ssm-range-scope`: local Terraform IAM hardening check
+    (ADR-004-R17) that stops the shared range guest instance role from
+    being granted SSM Parameter Store access wildcarded across the
+    environment or range segment (`parameter/shifter/*/range/*`); guards
+    the #1178 cross-tenant credential-access fix.
   - `check-tf-iam-ssm-scope`: local Terraform IAM hardening check that
     keeps engine-provisioner SSM Run Command (`ssm:SendCommand`) and
     `ec2:RebootInstances` scoped to Shifter range guest instances via
@@ -133,6 +138,13 @@ Current mechanisms:
   RDS hardening check for the two first-party AWS RDS instances. It
   requires literal IAM DB auth enablement and an explicit non-empty CA
   certificate identifier, complementing Checkov's RDS policies.
+- `scripts/check_tf_iam_ssm_range_scope/check_tf_iam_ssm_range_scope.py`:
+  ADR-004-R17 IAM hardening check that rejects SSM Parameter Store grants
+  on the shared range guest instance role whose Resource wildcards across
+  the environment or range segment (`parameter/shifter/*/range/*` or an
+  unbounded `parameter/shifter/<env>/range/*`). The provisioner
+  orchestrator role's env-scoped grant is not inspected. Guards the #1178
+  cross-tenant credential-access fix.
 - `scripts/adr_guard/adr_guard.py` `mcp-no-shell-exec` check:
   flags any file under `mcp/` (`.js`, `.mjs`, `.cjs`) that imports
   `child_process` (any shape: named, default, namespace, CommonJS
