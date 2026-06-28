@@ -11,7 +11,7 @@ from __future__ import annotations
 import os
 import warnings
 
-from config._runtime_env import AUTH_PROVIDER, IS_TEST_RUN
+from config._runtime_env import AUTH_PROVIDER, IS_TEST_RUN, required_runtime_env
 
 __all__ = [
     "AUTHENTICATION_BACKENDS",
@@ -81,8 +81,12 @@ MAGIC_LINK_EVENT_MAX_EXPIRY_HOURS = (
 MAGIC_LINK_SINGLE_USE = os.environ.get("MAGIC_LINK_SINGLE_USE", "False").lower() == "true"
 
 # OIDC settings - loaded from environment for AWS/Cognito deployments.
-OIDC_RP_CLIENT_ID = os.environ.get("OIDC_RP_CLIENT_ID", "test-oidc-client-id" if IS_TEST_RUN else "")
-OIDC_RP_CLIENT_SECRET = os.environ.get("OIDC_RP_CLIENT_SECRET", "test-oidc-client-secret" if IS_TEST_RUN else "")
+if AUTH_PROVIDER == "oidc":
+    OIDC_RP_CLIENT_ID = required_runtime_env("OIDC_RP_CLIENT_ID", dev_default="test-oidc-client-id")
+    OIDC_RP_CLIENT_SECRET = required_runtime_env("OIDC_RP_CLIENT_SECRET", dev_default="test-oidc-client-secret")
+else:
+    OIDC_RP_CLIENT_ID = os.environ.get("OIDC_RP_CLIENT_ID", "")
+    OIDC_RP_CLIENT_SECRET = os.environ.get("OIDC_RP_CLIENT_SECRET", "")
 IDENTITY_PLATFORM_API_KEY = os.environ.get("IDENTITY_PLATFORM_API_KEY", "")
 IDENTITY_PLATFORM_PROJECT_ID = os.environ.get("IDENTITY_PLATFORM_PROJECT_ID", "")
 IDENTITY_PLATFORM_AUTH_DOMAIN = os.environ.get("IDENTITY_PLATFORM_AUTH_DOMAIN", "")
@@ -96,13 +100,6 @@ IDENTITY_PLATFORM_TOTP_DISPLAY_NAME = os.environ.get(
 PLATFORM_BOOTSTRAP_STAFF_EMAILS = _env_csv("PLATFORM_BOOTSTRAP_STAFF_EMAILS")
 PLATFORM_BOOTSTRAP_SUPERUSER_EMAILS = _env_csv("PLATFORM_BOOTSTRAP_SUPERUSER_EMAILS")
 
-# Cognito endpoints
-# Cognito has two different base URLs:
-# - Auth domain: for OAuth endpoints (authorize, token, userInfo)
-# - Issuer URL: for JWKS (token verification)
-_oidc_auth_domain = os.environ.get("OIDC_AUTH_DOMAIN", "https://auth.example.test" if IS_TEST_RUN else "")
-_oidc_issuer = os.environ.get("OIDC_ISSUER_URL", "https://issuer.example.test" if IS_TEST_RUN else "")
-
 # Always define OIDC_OP_* variables to avoid runtime errors.
 # ``_oidc_placeholder`` indirection sidesteps bandit's B105 false-positive
 # on the empty-string literal for *_TOKEN_ENDPOINT (the variable name
@@ -114,19 +111,18 @@ OIDC_OP_TOKEN_ENDPOINT = _oidc_placeholder
 OIDC_OP_USER_ENDPOINT = _oidc_placeholder
 OIDC_OP_JWKS_ENDPOINT = _oidc_placeholder
 
-if AUTH_PROVIDER == "oidc" and _oidc_auth_domain and _oidc_issuer:
+if AUTH_PROVIDER == "oidc":
+    # Cognito has two different base URLs:
+    # - Auth domain: for OAuth endpoints (authorize, token, userInfo)
+    # - Issuer URL: for JWKS (token verification)
+    _oidc_auth_domain = required_runtime_env("OIDC_AUTH_DOMAIN", dev_default="https://auth.example.test")
+    _oidc_issuer = required_runtime_env("OIDC_ISSUER_URL", dev_default="https://issuer.example.test")
     # OAuth endpoints use the auth domain
     OIDC_OP_AUTHORIZATION_ENDPOINT = f"{_oidc_auth_domain}/oauth2/authorize"
     OIDC_OP_TOKEN_ENDPOINT = f"{_oidc_auth_domain}/oauth2/token"
     OIDC_OP_USER_ENDPOINT = f"{_oidc_auth_domain}/oauth2/userInfo"
     # JWKS uses the issuer URL
     OIDC_OP_JWKS_ENDPOINT = f"{_oidc_issuer}/.well-known/jwks.json"
-elif AUTH_PROVIDER == "oidc":
-    warnings.warn(
-        "OIDC_AUTH_DOMAIN or OIDC_ISSUER_URL is not set. OIDC endpoints are not configured.",
-        RuntimeWarning,
-        stacklevel=2,
-    )
 
 # Token verification
 OIDC_RP_SIGN_ALGO = "RS256"
