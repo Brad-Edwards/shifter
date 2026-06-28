@@ -50,6 +50,15 @@ _FORBIDDEN_LEAK_MARKERS = (
 pytestmark = pytest.mark.django_db
 
 
+@pytest.fixture(autouse=True)
+def _reset_audit_health_state():
+    from risk_register.audit_health import reset_audit_health
+
+    reset_audit_health()
+    yield
+    reset_audit_health()
+
+
 def _get_health(path: str = "/health/", **extra) -> tuple[int, str]:
     """Return (status_code, decoded body) for a GET against ``path``.
 
@@ -177,6 +186,36 @@ def test_redis_health_check_uses_installed_health_check_plugin_base():
     assert issubclass(ChannelLayerRedisHealthCheck, HealthCheck)
 
 
+def test_audit_health_check_registers_idempotently(health_check_registry):
+    from config.health_checks import AuditLogDegradedHealthCheck, register_audit_log_degraded_health_check
+
+    health_check_registry.clear()
+
+    register_audit_log_degraded_health_check()
+    register_audit_log_degraded_health_check()
+
+    assert [plugin for plugin, _ in health_check_registry].count(AuditLogDegradedHealthCheck) == 1
+
+
+def test_health_surfaces_degraded_audit_health_coarsely(health_check_registry):
+    from config.health_checks import register_audit_log_degraded_health_check
+    from risk_register.audit_health import mark_audit_degraded
+
+    health_check_registry.clear()
+    register_audit_log_degraded_health_check()
+
+    mark_audit_degraded(TypeError(_FORCED_FAILURE_REASON))
+
+    status, body = _get_health("/health/", HTTP_ACCEPT="application/json")
+
+    assert status != 200, "degraded audit health must be machine-visible on /health"
+    assert "AuditLogDegradedHealthCheck" in body, f"expected audit-health probe label in body, got: {body!r}"
+    assert '"unavailable"' in body, f"expected coarse 'unavailable' token in body, got: {body!r}"
+    lowered = body.lower()
+    for marker in _FORBIDDEN_LEAK_MARKERS:
+        assert marker not in lowered, f"public /health body leaked sensitive marker {marker!r}: {body!r}"
+
+
 def test_redis_health_check_probe_runs_round_trip_over_configured_layer():
     """``_probe`` drives the real async round-trip through the sync bridge.
 
@@ -186,8 +225,7 @@ def test_redis_health_check_probe_runs_round_trip_over_configured_layer():
     """
     from config.health_checks import ChannelLayerRedisHealthCheck
 
-    # No exception => the sync bridge ran the async probe to completion.
-    ChannelLayerRedisHealthCheck()._probe()
+    assert ChannelLayerRedisHealthCheck()._probe() is True
 
 
 # The "/health surfaces a channel-layer probe failure coarsely" integration is
