@@ -28,6 +28,12 @@ locals {
       "roles/storage.objectAdmin",
     ])
     workers = toset([
+      # The provision Job (run under the workers identity) mints a short-lived
+      # Artifact Registry access token and plants it as an imagePullSecret so the
+      # isolated GDC range cluster can pull the version-matched setup-runner
+      # image (RangePodSSHExecutor). AR read is the minimal grant that makes that
+      # token authorize; the range cluster has no native AR pull identity.
+      "roles/artifactregistry.reader",
       "roles/pubsub.publisher",
       "roles/pubsub.subscriber",
       "roles/secretmanager.secretAccessor",

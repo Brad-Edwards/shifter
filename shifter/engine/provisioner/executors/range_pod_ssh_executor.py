@@ -43,6 +43,11 @@ _RUNNER_POD_NAME = "shifter-setup-runner"
 _RUNNER_READY_TIMEOUT_SECONDS = 180
 _RUNNER_POLL_INTERVAL_SECONDS = 5
 _MANAGED_BY_LABEL = "shifter-provisioner"
+_PULL_SECRET_NAME = "shifter-runner-pull"  # noqa: S105  # nosec B105 - k8s Secret object name, not a credential
+# Registry hosts that need GCP credentials to pull. The isolated range cluster
+# can pull public registries (e.g. docker.io) anonymously but has no native
+# identity for Artifact Registry / GCR, so those get a minted-token pull secret.
+_GCP_REGISTRY_SUFFIXES = ("docker.pkg.dev", "gcr.io")
 
 
 class RangePodSSHExecutor(GuestSSHExecutor):
@@ -78,6 +83,7 @@ class RangePodSSHExecutor(GuestSSHExecutor):
         self._private_key_material = private_key
         self._runner_ready = False
         self._key_planted = False
+        self._pull_secret_name: str | None = None
         super().__init__(
             private_key=private_key,
             username=username,
@@ -104,6 +110,21 @@ class RangePodSSHExecutor(GuestSSHExecutor):
         return json.dumps([{"name": self._network_name, "interface": "net1"}])
 
     def _build_runner_manifest(self) -> dict:
+        spec = {
+            "enableServiceLinks": False,
+            "restartPolicy": "Always",
+            "containers": [
+                {
+                    "name": _RUNNER_CONTAINER,
+                    "image": self._runner_image,
+                    "imagePullPolicy": "IfNotPresent",
+                    "command": ["/bin/sh", "-c"],
+                    "args": ["trap : TERM INT; while true; do sleep 3600; done"],
+                }
+            ],
+        }
+        if self._pull_secret_name:
+            spec["imagePullSecrets"] = [{"name": self._pull_secret_name}]
         return {
             "apiVersion": "v1",
             "kind": "Pod",
@@ -116,20 +137,76 @@ class RangePodSSHExecutor(GuestSSHExecutor):
                 },
                 "annotations": {_NETWORKS_ANNOTATION: self._runner_networks_annotation()},
             },
-            "spec": {
-                "enableServiceLinks": False,
-                "restartPolicy": "Always",
-                "containers": [
-                    {
-                        "name": _RUNNER_CONTAINER,
-                        "image": self._runner_image,
-                        "imagePullPolicy": "IfNotPresent",
-                        "command": ["/bin/sh", "-c"],
-                        "args": ["trap : TERM INT; while true; do sleep 3600; done"],
-                    }
-                ],
-            },
+            "spec": spec,
         }
+
+    # -- image pull credentials ----------------------------------------------
+
+    def _registry_host(self) -> str:
+        return self._runner_image.split("/", 1)[0]
+
+    def _registry_needs_credentials(self) -> bool:
+        # AR hosts are "<region>-docker.pkg.dev" (hyphen before the suffix);
+        # GCR hosts are "gcr.io" / "<region>.gcr.io" (dot or exact).
+        host = self._registry_host()
+        return any(
+            host == suffix or host.endswith("." + suffix) or host.endswith("-" + suffix)
+            for suffix in _GCP_REGISTRY_SUFFIXES
+        )
+
+    def _mint_registry_token(self) -> str:
+        """Mint a short-lived OAuth2 access token from the provisioner's ADC.
+
+        The provision Job runs under the ``workers`` Workload Identity, which
+        holds ``roles/artifactregistry.reader``; the kubelet presents this token
+        to Artifact Registry as the ``oauth2accesstoken`` user. Isolated as a
+        seam so tests need not touch real Google credentials.
+        """
+        import google.auth
+        from google.auth.transport.requests import Request as GoogleAuthRequest
+
+        creds, _ = google.auth.default(scopes=["https://www.googleapis.com/auth/cloud-platform"])
+        creds.refresh(GoogleAuthRequest())
+        if not creds.token:
+            raise GuestSSHConnectionError("Failed to mint Artifact Registry access token for setup-runner pull")
+        return creds.token
+
+    def _ensure_pull_secret(self) -> None:
+        """Plant a dockerconfigjson pull secret in the range namespace if needed."""
+        if self._pull_secret_name is not None or not self._registry_needs_credentials():
+            return
+        token = self._mint_registry_token()
+        auth = base64.b64encode(f"oauth2accesstoken:{token}".encode()).decode("ascii")
+        dockercfg = {
+            "auths": {
+                self._registry_host(): {
+                    "username": "oauth2accesstoken",
+                    "password": token,
+                    "auth": auth,
+                }
+            }
+        }
+        data = base64.b64encode(json.dumps(dockercfg).encode()).decode("ascii")
+        body = {
+            "apiVersion": "v1",
+            "kind": "Secret",
+            "type": "kubernetes.io/dockerconfigjson",
+            "metadata": {
+                "name": _PULL_SECRET_NAME,
+                "namespace": self._namespace,
+                "labels": {"app.kubernetes.io/managed-by": _MANAGED_BY_LABEL},
+            },
+            "data": {".dockerconfigjson": data},
+        }
+        try:
+            self._core_api.create_namespaced_secret(namespace=self._namespace, body=body)
+        except self._api_exception as exc:
+            if exc.status != 409:
+                raise
+            # Refresh the token on an existing secret (a prior range run may have
+            # planted a now-expired token).
+            self._core_api.patch_namespaced_secret(name=_PULL_SECRET_NAME, namespace=self._namespace, body=body)
+        self._pull_secret_name = _PULL_SECRET_NAME
 
     def _runner_has_segment_ip(self, pod: dict) -> bool:
         annotations = (pod.get("metadata") or {}).get("annotations") or {}
@@ -145,6 +222,7 @@ class RangePodSSHExecutor(GuestSSHExecutor):
     def _ensure_runner(self) -> None:
         if self._runner_ready:
             return
+        self._ensure_pull_secret()
         body = self._build_runner_manifest()
         try:
             self._core_api.create_namespaced_pod(namespace=self._namespace, body=body)

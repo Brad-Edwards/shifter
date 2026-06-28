@@ -43,6 +43,88 @@ def _make_executor(core_api):
     )
 
 
+def _make_gcp_executor(core_api):
+    executor = RangePodSSHExecutor(
+        core_api=core_api,
+        client_module=MagicMock(),
+        api_exception=_ApiException,
+        namespace="range-7",
+        network_name="range-7-core",
+        runner_image="us-central1-docker.pkg.dev/proj/repo/runner:abc123",
+        private_key="PRIVATE-KEY-MATERIAL",
+        username="kali",
+    )
+    executor._mint_registry_token = lambda: "ya29.MINTED-TOKEN"  # type: ignore[method-assign]
+    return executor
+
+
+@pytest.mark.parametrize(
+    ("image", "needs"),
+    [
+        ("us-central1-docker.pkg.dev/proj/repo/runner:abc123", True),
+        ("gcr.io/proj/runner:latest", True),
+        ("us.gcr.io/proj/runner:latest", True),
+        ("docker.io/library/ubuntu:24.04", False),
+        ("registry.example/runner:latest", False),
+    ],
+)
+def test_registry_needs_credentials(image, needs):
+    executor = RangePodSSHExecutor(
+        core_api=MagicMock(),
+        client_module=MagicMock(),
+        api_exception=_ApiException,
+        namespace="range-7",
+        network_name="range-7-core",
+        runner_image=image,
+        private_key="K",
+        username="kali",
+    )
+    assert executor._registry_needs_credentials() is needs
+
+
+def test_ensure_pull_secret_plants_dockerconfigjson_for_artifact_registry():
+    core_api = MagicMock()
+    executor = _make_gcp_executor(core_api)
+
+    executor._ensure_pull_secret()
+
+    core_api.create_namespaced_secret.assert_called_once()
+    _args, kwargs = core_api.create_namespaced_secret.call_args
+    body = kwargs["body"]
+    assert kwargs["namespace"] == "range-7"
+    assert body["type"] == "kubernetes.io/dockerconfigjson"
+    cfg = json.loads(base64.b64decode(body["data"][".dockerconfigjson"]).decode())
+    entry = cfg["auths"]["us-central1-docker.pkg.dev"]
+    assert entry["username"] == "oauth2accesstoken"
+    assert entry["password"] == "ya29.MINTED-TOKEN"
+    assert base64.b64decode(entry["auth"]).decode() == "oauth2accesstoken:ya29.MINTED-TOKEN"
+    # The manifest now references the planted pull secret.
+    manifest = executor._build_runner_manifest()
+    assert manifest["spec"]["imagePullSecrets"] == [{"name": "shifter-runner-pull"}]
+
+
+def test_ensure_pull_secret_refreshes_existing_secret():
+    core_api = MagicMock()
+    core_api.create_namespaced_secret.side_effect = _ApiException(status=409)
+    executor = _make_gcp_executor(core_api)
+
+    executor._ensure_pull_secret()
+
+    core_api.patch_namespaced_secret.assert_called_once()
+    assert executor._pull_secret_name == "shifter-runner-pull"
+
+
+def test_ensure_pull_secret_skipped_for_public_registry():
+    core_api = MagicMock()
+    executor = _make_executor(core_api)  # registry.example -> no credentials
+
+    executor._ensure_pull_secret()
+
+    core_api.create_namespaced_secret.assert_not_called()
+    manifest = executor._build_runner_manifest()
+    assert "imagePullSecrets" not in manifest["spec"]
+
+
 def test_provision_key_returns_in_pod_path_not_local_file():
     executor = _make_executor(MagicMock())
     assert executor._key_path.startswith("/tmp/shifter-guest-key-")  # noqa: S108 - in-pod path
