@@ -4248,6 +4248,7 @@ PYTHON_COMPLEXITY_GATE_PYPROJECTS = (
     "scripts/check_layer_imports",
     "scripts/check_rds_pending_modifications",
     "scripts/assert_portal_inspection",
+    "scripts/handle_sd_replacement",
     "uat/event-load-harness",
 )
 
