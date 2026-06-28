@@ -100,6 +100,13 @@ repos:
         name: ruff-format (assert_portal_inspection)
         files: ^scripts/assert_portal_inspection/
       - id: ruff
+        name: ruff (handle_sd_replacement)
+        args: [--fix]
+        files: ^scripts/handle_sd_replacement/
+      - id: ruff-format
+        name: ruff-format (handle_sd_replacement)
+        files: ^scripts/handle_sd_replacement/
+      - id: ruff
         name: ruff (installation)
         args: [--fix]
         files: ^shifter/installation/
@@ -641,6 +648,14 @@ repos:
           bash -c 'cd scripts/assert_portal_inspection && uv run pytest tests/ -q'
         language: system
         files: ^scripts/assert_portal_inspection/
+        pass_filenames: false
+
+      - id: pytest-handle-sd-replacement
+        name: pytest (handle_sd_replacement)
+        entry: >-
+          bash -c 'cd scripts/handle_sd_replacement && uv run pytest tests/ -q'
+        language: system
+        files: ^scripts/handle_sd_replacement/
         pass_filenames: false
 
       - id: pytest-event-load-harness

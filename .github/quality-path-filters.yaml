@@ -32,6 +32,9 @@ check_layer_imports:
 check_rds_pending_modifications:
   - 'scripts/check_rds_pending_modifications/**'
 
+handle_sd_replacement:
+  - 'scripts/handle_sd_replacement/**'
+
 assert_portal_inspection:
   - 'scripts/assert_portal_inspection/**'
 
