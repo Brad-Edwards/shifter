@@ -261,5 +261,14 @@
     "paths": [
       "shifter/engine/provisioner/tests/test_main.py"
     ]
+  },
+  {
+    "rule_id": "ADR-019-R1",
+    "owner": "@Brad-Edwards",
+    "reason": "SSH executor secret-masking test (#418): test_ssh_executor.py grows from 1 to 2 patches of paramiko.SSHClient. The second patch tests that command text and device output containing secrets are not logged (test_run_command_does_not_log_secret_text); the first tests host-key verification policy setup. Both test observable behavior (security properties) at the network boundary, not internal implementation. No change in internal seam count.",
+    "expires_on": "2027-06-28",
+    "paths": [
+      "scripts/adr_guard/boundary_mock_baseline.json"
+    ]
   }
 ]
