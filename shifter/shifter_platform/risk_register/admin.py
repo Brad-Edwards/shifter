@@ -1,6 +1,7 @@
 """Django admin configuration for Risk Register."""
 
 from django.contrib import admin
+from django.http import HttpRequest
 
 from risk_register.models import APIKey, AuditLog, Comment, Risk
 
@@ -107,15 +108,15 @@ class APIKeyAdmin(admin.ModelAdmin):
     def is_active(self, obj):
         return obj.is_active
 
-    def has_add_permission(self, request):
+    def has_add_permission(self, request: HttpRequest) -> bool:
         """Minting is retired; no new keys may be created."""
         return False
 
-    def has_change_permission(self, request, obj=None):
+    def has_change_permission(self, request: HttpRequest, obj: APIKey | None = None) -> bool:
         """Archival rows are immutable."""
         return False
 
-    def has_delete_permission(self, request, obj=None):
+    def has_delete_permission(self, request: HttpRequest, obj: APIKey | None = None) -> bool:
         """Retain archival rows referenced by comments and audit logs."""
         return False
 
