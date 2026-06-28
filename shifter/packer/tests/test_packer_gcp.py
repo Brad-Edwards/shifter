@@ -115,12 +115,24 @@ class TestGcpWindowsSysprep:
 
 
 class TestGcpKaliSourceImage:
-    """Kali has no public GCP image; the builder consumes an imported image."""
+    """Kali has no public GCP image; the builder converts the debian-12 base."""
 
-    def test_kali_uses_source_image_variable(self):
+    def test_kali_builds_on_debian_base_and_converts(self):
         content = (GCP_DIR / "kali.pkr.hcl").read_text()
-        # No public Kali family on GCP — operator supplies an imported image.
-        assert "var.kali_source_image" in content
+        # No public Kali family on GCP, and the official genericcloud disk is not
+        # GCE-bootable, so the kali builder starts from the GCE-native debian-12
+        # base and converts it to Kali in its first provisioning script.
+        assert 'source_image_family     = "debian-12"' in content
+        assert "../scripts/kali/gce-debian-to-kali.sh" in content
+        # The imported-base path (and its variable) is fully retired.
+        assert "kali_source_image" not in content
+
+    def test_kali_conversion_script_preserves_guest_agent(self):
+        script = (PACKER_DIR / "scripts" / "kali" / "gce-debian-to-kali.sh").read_text()
+        # The Kali repos omit google-guest-agent; the conversion must re-assert
+        # it or the captured image loses metadata SSH + networking on GCE.
+        assert "google-guest-agent" in script
+        assert "--force-overwrite" in script
 
 
 class TestGcpPackerValidate:

@@ -76,33 +76,25 @@ Configure these once (`docs/dev/deploy-secrets.md`):
 | `GCP_PACKER_SUBNETWORK` | variable | module output `packer_builder_subnetwork` |
 | `GCP_PACKER_USE_INTERNAL_IP` | variable | `true` (IAP builds) |
 | `GCP_GDC_VM_IMAGE_BUCKET` | variable | module output `gdc_vm_image_bucket` |
-| `GCP_KALI_SOURCE_IMAGE` | secret | the imported Kali base image (below), `kali` only |
 
-## Kali base image (one-time prerequisite)
+## Kali (built on the debian-12 GCE base, no import)
 
-GCP has no first-party Kali image. (The only Marketplace listings are
-third-party repackages, not an Offensive-Security-published image; AWS keys off
-the official Kali Marketplace product, which has no GCP equivalent.) Import
-Kali's official generic-cloud image once; `packer-gcp.yml` then builds on top of
-it via `kali_source_image` / `GCP_KALI_SOURCE_IMAGE`:
+GCP has no first-party Kali image (the only Marketplace listings are third-party
+repackages, not an Offensive-Security-published image; AWS keys off the official
+Kali Marketplace product, which has no GCP equivalent). The obvious workaround —
+importing Kali's official generic-cloud disk — does **not** work on GCE: that
+disk ships no Google guest environment, so it never gets metadata-based SSH-key
+injection or GCE network setup and packer can never connect to it.
 
-```bash
-# Kali's official generic-cloud image is a raw disk in a tar.xz (kali.download).
-curl -fSLO https://kali.download/cloud-images/kali-<ver>/kali-linux-<ver>-cloud-genericcloud-amd64.tar.xz
-# verify the published SHA256, then:
-tar xJf kali-linux-<ver>-cloud-genericcloud-amd64.tar.xz   # -> disk.raw
-tar --format=oldgnu -Sczf disk.raw.tar.gz disk.raw          # GCE image tarball (sparse zeros compress small)
-gcloud storage cp disk.raw.tar.gz gs://<project>-kali-import/kali.disk.raw.tar.gz
-gcloud compute images create shifter-kali-base \
-  --source-uri=gs://<project>-kali-import/kali.disk.raw.tar.gz --family=shifter-kali-base
-# then set the GitHub secret GCP_KALI_SOURCE_IMAGE=shifter-kali-base
-```
-
-> The generic-cloud image carries cloud-init with the GCE datasource, which
-> provisions the packer build's SSH key from instance metadata. `gcloud compute
-> images import --os=…` (which installs the GCE guest environment) is the
-> alternative, but the legacy importer rejects the compressed tarball and is
-> being sunset, so the direct `images create` is used.
+Instead the kali builder starts from Google's GCE-native `debian-12` image and
+converts it to Kali Rolling in place, in its first provisioning script
+(`scripts/kali/gce-debian-to-kali.sh`): it adds Kali's official apt repo and
+keyring, `full-upgrade`s the base onto kali-rolling (with `--force-overwrite` to
+clear the 64-bit `time_t` library-transition file conflicts), and re-asserts
+Google's guest-environment apt repo so `google-guest-agent` survives the
+conversion (the Kali repos do not carry it). The remaining `scripts/kali/*`
+steps then install the Kali toolset, Caldera and Claude Code on top. No imported
+base image and no `GCP_KALI_SOURCE_IMAGE` secret are required.
 
 ## Operating the pipeline
 

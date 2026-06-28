@@ -101,7 +101,6 @@ jobs:
           GCP_PACKER_MACHINE_TYPE: ${{ vars.GCP_PACKER_MACHINE_TYPE || 'e2-standard-2' }}
           GCP_PACKER_USE_INTERNAL_IP: ${{ vars.GCP_PACKER_USE_INTERNAL_IP || 'false' }}
           GCP_SERVICE_ACCOUNT: ${{ secrets.GCP_SERVICE_ACCOUNT }}
-          GCP_KALI_SOURCE_IMAGE: ${{ secrets.GCP_KALI_SOURCE_IMAGE }}
         run: |
           if [ -z "${GCP_PROJECT_ID}" ]; then
             echo "::error::Required secret GCP_PROJECT_ID is not set. See docs/dev/deploy-secrets.md."
@@ -123,14 +122,9 @@ jobs:
             echo "PKR_VAR_machine_type=${GCP_PACKER_MACHINE_TYPE}"
             echo "PKR_VAR_use_internal_ip=${GCP_PACKER_USE_INTERNAL_IP}"
           } >> "$GITHUB_ENV"
-          # Kali has no public GCP image — it needs an operator-imported base.
-          if [ "${IMAGE_TYPE}" = "kali" ]; then
-            if [ -z "${GCP_KALI_SOURCE_IMAGE}" ]; then
-              echo "::error::Building kali needs secret GCP_KALI_SOURCE_IMAGE (an imported Kali GCE image). See shifter/packer/gcp/README.md."
-              exit 1
-            fi
-            echo "PKR_VAR_kali_source_image=${GCP_KALI_SOURCE_IMAGE}" >> "$GITHUB_ENV"
-          fi
+          # Kali has no public GCP image; the kali builder instead converts the
+          # debian-12 GCE base into Kali Rolling in its first provisioning script
+          # (no imported base image, so no source-image secret is required).
 
       - name: Generate WinRM bootstrap secret (Windows/DC only)
         if: inputs.image_type == 'windows' || inputs.image_type == 'dc'
