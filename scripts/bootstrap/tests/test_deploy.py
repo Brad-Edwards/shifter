@@ -3079,6 +3079,23 @@ class TestGcpBootstrapIdentityPlatform:
         assert "kali:kali" not in rendered
         assert "ubuntu:ubuntu" not in rendered
 
+    def test_render_gcp_platform_runtime_env_wires_guest_image_urls_from_bucket(self):
+        """Guest boot images resolve to the packer-gcp export bucket per environment, not blank or hardcoded."""
+        config = deploy.GDCBootstrapConfig(project_id="prod-rwctxzl6shxk", cluster_id="cluster1", environment="gcp-dev")
+
+        with patch("deploy.load_bootstrap_env_values", return_value={}):
+            rendered = deploy.render_gcp_platform_runtime_env(config)
+
+        bucket = "shifter-gcp-dev-gdc-vm-images"
+        assert f"GDC_UBUNTU_IMAGE_URL=gs://{bucket}/ubuntu.qcow2\n" in rendered
+        assert f"GDC_KALI_IMAGE_URL=gs://{bucket}/kali.qcow2\n" in rendered
+        assert f"GDC_WINDOWS_IMAGE_URL=gs://{bucket}/windows.qcow2\n" in rendered
+        assert f"GDC_DC_IMAGE_URL=gs://{bucket}/dc.qcow2\n" in rendered
+        # The VM Runtime disk must clear the kali export's 40 GiB virtual size.
+        assert "GDC_KALI_DISK_SIZE_GIB=40\n" in rendered
+        # Image URLs are never left blank now that the pipeline produces them.
+        assert "GDC_UBUNTU_IMAGE_URL=\n" not in rendered
+
 
 class TestGcpIdentityAdminApi:
     """Tests for the authenticated Identity Platform bootstrap admin requests."""

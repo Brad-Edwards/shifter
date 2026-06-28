@@ -661,6 +661,21 @@ class GDCBootstrapConfig:
         return f"shifter-{self.environment}-gdc-vm-image-gcs"
 
     @property
+    def gdc_vm_image_bucket(self) -> str:
+        """GCS bucket the packer-gcp image pipeline exports guest disks into.
+
+        Matches platform/terraform/gcp/modules/cicd-github-oidc (bucket
+        ``${name_prefix}-gdc-vm-images`` with ``name_prefix = shifter-${env}``),
+        so the VM Runtime boot images resolve to
+        ``gs://<bucket>/<guest>.qcow2`` without baking a per-env literal here.
+        """
+        return f"shifter-{self.environment}-gdc-vm-images"
+
+    def gdc_vm_image_url(self, guest: str) -> str:
+        """gs:// URL of the exported VM Runtime boot disk for a guest class."""
+        return f"gs://{self.gdc_vm_image_bucket}/{guest}.qcow2"
+
+    @property
     def workstation(self) -> GDCHost:
         return GDCHost(
             name=f"{self.cluster_id}-abm-ws0-001",
@@ -2066,20 +2081,22 @@ def render_gcp_platform_runtime_env(
         "GDC_VMSERIES_BOOTSTRAP_XML_TEMPLATE_SECRET_ID=",
         "# Guest access defaults for VM Runtime assets.",
         *_sample_guest_access_defaults(),
-        "# Set these to the VM Runtime boot images for each guest class.",
-        "GDC_KALI_IMAGE_URL=",
+        "# VM Runtime boot images, exported by the packer-gcp pipeline to the GDC",
+        "# VM image bucket. DISK_SIZE_GIB must be >= the exported qcow2 virtual",
+        "# size (the GCE builder disk size): ubuntu 20, kali 40, windows/dc 64.",
+        f"GDC_KALI_IMAGE_URL={config.gdc_vm_image_url('kali')}",
         "GDC_KALI_VCPUS=2",
         "GDC_KALI_MEMORY=4Gi",
-        "GDC_KALI_DISK_SIZE_GIB=20",
-        "GDC_UBUNTU_IMAGE_URL=",
+        "GDC_KALI_DISK_SIZE_GIB=40",
+        f"GDC_UBUNTU_IMAGE_URL={config.gdc_vm_image_url('ubuntu')}",
         "GDC_UBUNTU_VCPUS=1",
         "GDC_UBUNTU_MEMORY=2Gi",
         "GDC_UBUNTU_DISK_SIZE_GIB=20",
-        "GDC_WINDOWS_IMAGE_URL=",
+        f"GDC_WINDOWS_IMAGE_URL={config.gdc_vm_image_url('windows')}",
         "GDC_WINDOWS_VCPUS=2",
         "GDC_WINDOWS_MEMORY=8Gi",
         "GDC_WINDOWS_DISK_SIZE_GIB=64",
-        "GDC_DC_IMAGE_URL=",
+        f"GDC_DC_IMAGE_URL={config.gdc_vm_image_url('dc')}",
         "GDC_DC_VCPUS=2",
         "GDC_DC_MEMORY=8Gi",
         "GDC_DC_DISK_SIZE_GIB=64",
