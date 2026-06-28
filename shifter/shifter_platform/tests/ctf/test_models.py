@@ -12,6 +12,7 @@ from uuid import uuid4
 
 import pytest
 from django.core.exceptions import ValidationError
+from django.test import override_settings
 from django.utils import timezone
 
 from ctf.enums import (
@@ -445,6 +446,35 @@ class TestCTFParticipantModel:
         """Test is_invite_valid for various token expiry times."""
         p = make_participant(invite_token_expires=timezone.now() + expires_offset)
         assert p.is_invite_valid is expected
+
+    @override_settings(MAGIC_LINK_EXPIRY_HOURS=24)
+    def test_invite_expiry_uses_event_end_for_event_links(self):
+        """Event-backed magic links remain valid through the CTF event end."""
+        now = timezone.now()
+        event = make_ctf_event(event_end=now + timedelta(days=3))
+
+        expiry = CTFParticipant.default_invite_token_expiry(event, now=now)
+
+        assert expiry == event.event_end
+
+    @override_settings(MAGIC_LINK_EXPIRY_HOURS=24, MAGIC_LINK_EVENT_MAX_EXPIRY_HOURS=36)
+    def test_invite_expiry_honors_optional_event_maximum(self):
+        """Operators can explicitly cap unusually long event-backed token lifetimes."""
+        now = timezone.now()
+        event = make_ctf_event(event_end=now + timedelta(days=3))
+
+        expiry = CTFParticipant.default_invite_token_expiry(event, now=now)
+
+        assert expiry == now + timedelta(hours=36)
+
+    @override_settings(MAGIC_LINK_EXPIRY_HOURS=2)
+    def test_invite_expiry_falls_back_to_config_without_event_end(self):
+        """The configured hour TTL only applies when no event end is available."""
+        now = timezone.now()
+
+        expiry = CTFParticipant.default_invite_token_expiry(None, now=now)
+
+        assert expiry == now + timedelta(hours=2)
 
     @pytest.mark.parametrize(
         "aggregate_total,expected",
