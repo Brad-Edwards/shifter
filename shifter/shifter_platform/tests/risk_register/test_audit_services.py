@@ -17,6 +17,7 @@ from unittest.mock import MagicMock, Mock
 
 import pytest
 
+from risk_register.audit_health import get_audit_health_snapshot, reset_audit_health
 from risk_register.models import AuditLog
 from risk_register.services import (
     AuditEvent,
@@ -37,6 +38,13 @@ from risk_register.services import (
 )
 
 # ---- Fixtures ----
+
+
+@pytest.fixture(autouse=True)
+def _reset_audit_health_state():
+    reset_audit_health()
+    yield
+    reset_audit_health()
 
 
 @pytest.fixture
@@ -167,6 +175,39 @@ class TestAuditLog:
             )
         )
         assert result is None
+
+    def test_returns_none_failure_marks_audit_health_degraded(self):
+        result = audit_log(
+            AuditEvent(
+                entity_type=AuditLog.EntityType.RANGE,
+                entity_id=1,
+                action=AuditLog.Action.CREATE,
+                new_state={"bad": {1, 2, 3}},
+            )
+        )
+
+        snapshot = get_audit_health_snapshot()
+        assert result is None
+        assert snapshot.degraded is True
+        assert snapshot.failure_count == 1
+        assert snapshot.last_failure_reason == "TypeError"
+
+    def test_strict_failure_marks_audit_health_degraded_before_reraising(self):
+        with pytest.raises(TypeError):
+            audit_log(
+                AuditEvent(
+                    entity_type=AuditLog.EntityType.USER,
+                    entity_id=1,
+                    action=AuditLog.Action.ROLE_SYNC,
+                    new_state={"bad": {1, 2, 3}},
+                ),
+                strict=True,
+            )
+
+        snapshot = get_audit_health_snapshot()
+        assert snapshot.degraded is True
+        assert snapshot.failure_count == 1
+        assert snapshot.last_failure_reason == "TypeError"
 
 
 # ---- audit_role_sync() ----
@@ -390,6 +431,7 @@ class TestGetRequestId:
     def test_generates_when_missing(self, mock_request_simple):
         result = get_request_id(mock_request_simple)
         assert len(result) == 8  # uuid4()[:8]
+        int(result, 16)
 
 
 # ---- get_actor_from_request() ----

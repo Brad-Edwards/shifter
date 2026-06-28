@@ -358,6 +358,11 @@
       "source_file": "config/_logging_config.py"
     },
     {
+      "default": null,
+      "name": "MAGIC_LINK_EVENT_MAX_EXPIRY_HOURS",
+      "source_file": "config/_oidc_settings.py"
+    },
+    {
       "default": "'24'",
       "name": "MAGIC_LINK_EXPIRY_HOURS",
       "source_file": "config/_oidc_settings.py"

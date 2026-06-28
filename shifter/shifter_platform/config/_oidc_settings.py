@@ -69,8 +69,15 @@ else:
         "django.contrib.auth.backends.ModelBackend",
     ]
 
-# Magic link authentication (PLAT-101)
+# Magic link authentication (PLAT-101). Event-backed CTF participant links use
+# the event end as their expiry by default; MAGIC_LINK_EXPIRY_HOURS is the
+# fallback when no event end is available. Operators that need a stricter
+# event-link ceiling can set MAGIC_LINK_EVENT_MAX_EXPIRY_HOURS.
 MAGIC_LINK_EXPIRY_HOURS = int(os.environ.get("MAGIC_LINK_EXPIRY_HOURS", "24"))
+_MAGIC_LINK_EVENT_MAX_EXPIRY_HOURS = os.environ.get("MAGIC_LINK_EVENT_MAX_EXPIRY_HOURS")
+MAGIC_LINK_EVENT_MAX_EXPIRY_HOURS = (
+    int(_MAGIC_LINK_EVENT_MAX_EXPIRY_HOURS) if _MAGIC_LINK_EVENT_MAX_EXPIRY_HOURS else None
+)
 MAGIC_LINK_SINGLE_USE = os.environ.get("MAGIC_LINK_SINGLE_USE", "False").lower() == "true"
 
 # OIDC settings - loaded from environment for AWS/Cognito deployments.
