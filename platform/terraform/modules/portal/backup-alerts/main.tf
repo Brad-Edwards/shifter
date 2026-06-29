@@ -58,9 +58,13 @@ resource "aws_kms_key" "this" {
           "kms:Decrypt",
         ]
         Resource = "*"
+        # Confused-deputy guard scoped to this account's RDS event subscriptions.
+        # RDS CreateEventSubscription validation does not populate aws:SourceAccount,
+        # so an aws:SourceAccount condition fails with SNSNoAuthorization; AWS's
+        # documented key for RDS event subscriptions is aws:SourceArn (the es ARN).
         Condition = {
-          StringEquals = {
-            "aws:SourceAccount" = data.aws_caller_identity.current.account_id
+          ArnLike = {
+            "aws:SourceArn" = "arn:aws:rds:*:${data.aws_caller_identity.current.account_id}:es:*"
           }
         }
       },
@@ -129,10 +133,14 @@ data "aws_iam_policy_document" "topic" {
     }
     actions   = ["sns:Publish"]
     resources = [aws_sns_topic.this.arn]
+    # Confused-deputy guard scoped to this account's RDS event subscriptions.
+    # RDS CreateEventSubscription validation does not populate aws:SourceAccount
+    # (that condition fails with SNSNoAuthorization); AWS's documented key for
+    # RDS event subscriptions is aws:SourceArn (the es ARN).
     condition {
-      test     = "StringEquals"
-      variable = "aws:SourceAccount"
-      values   = [data.aws_caller_identity.current.account_id]
+      test     = "ArnLike"
+      variable = "aws:SourceArn"
+      values   = ["arn:aws:rds:*:${data.aws_caller_identity.current.account_id}:es:*"]
     }
   }
 }
