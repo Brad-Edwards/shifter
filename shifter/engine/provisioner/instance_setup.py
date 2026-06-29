@@ -243,18 +243,33 @@ def _install_xdr_or_raise(
     if agent_presigned_url:
         plan = plan_cls()
         ctx_obj = plan.get_context({"agent_presigned_url": agent_presigned_url})
-        result = orchestrator.orchestrate(execution.target, plan, ctx_obj, document_name=execution.document_name)
-        if result.success:
-            logger.info(success_log, instance_id)
-            return
         # GDC range guests sit on an isolated L2 segment with no egress, so the
         # agent installer (fetched from GCS) and the agent's subsequent
         # phone-home to Cortex/PAN-OS are both unreachable. Per #615 the XDR
         # agent is best-effort on the GDC in-range transport: log and continue
         # so the range still provisions end-to-end. Functional XDR-on-GDC is
         # tracked separately (it requires range-network egress). The AWS SSM
-        # path stays strict and raises.
-        if execution.transport_name == _GDC_RANGE_TRANSPORT:
+        # path stays strict and raises. The orchestrator both raises SetupError
+        # on step retry-exhaustion AND can return result.success=False, so both
+        # paths must honour the GDC deferral.
+        is_gdc = execution.transport_name == _GDC_RANGE_TRANSPORT
+        try:
+            result = orchestrator.orchestrate(execution.target, plan, ctx_obj, document_name=execution.document_name)
+        except SetupError as exc:
+            if is_gdc:
+                logger.warning(
+                    "XDR agent install raised on %s over %s; deferring XDR on "
+                    "GDC (range has no egress) and continuing: %s",
+                    instance_id,
+                    execution.transport_name,
+                    exc,
+                )
+                return
+            raise
+        if result.success:
+            logger.info(success_log, instance_id)
+            return
+        if is_gdc:
             logger.warning(
                 "XDR agent install did not complete on %s over %s; deferring XDR on "
                 "GDC (range has no egress) and continuing: %s",

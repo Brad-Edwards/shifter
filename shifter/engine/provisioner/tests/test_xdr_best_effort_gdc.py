@@ -31,6 +31,16 @@ class _FakeOrchestrator:
         return self._result
 
 
+class _RaisingOrchestrator:
+    """Mirrors the real orchestrator, which raises SetupError on step retry-exhaustion."""
+
+    def __init__(self, error):
+        self._error = error
+
+    def orchestrate(self, _target, _plan, _ctx, document_name=None):
+        raise SetupError(self._error)
+
+
 class _FakeExecution:
     def __init__(self, transport_name):
         self.target = "range-1-core-victim"
@@ -50,6 +60,18 @@ def _call(transport_name, *, success, error=""):
     )
 
 
+def _call_raising(transport_name, error):
+    _install_xdr_or_raise(
+        _RaisingOrchestrator(error),
+        _FakeExecution(transport_name),
+        _FakePlan,
+        agent_presigned_url="https://example.invalid/agent",
+        xdr_required=True,
+        failure_prefix="Linux XDR install failed",
+        success_log="Linux XDR agent installed on %s",
+    )
+
+
 def test_gdc_transport_defers_xdr_failure_without_raising():
     # No exception: the range still provisions end-to-end.
     _call(_GDC_RANGE_TRANSPORT, success=False, error="curl: could not resolve host")
@@ -58,6 +80,17 @@ def test_gdc_transport_defers_xdr_failure_without_raising():
 def test_aws_transport_raises_on_xdr_failure():
     with pytest.raises(SetupError, match="Linux XDR install failed"):
         _call("ssm", success=False, error="installer exited non-zero")
+
+
+def test_gdc_transport_defers_raised_setup_error():
+    # The real orchestrator raises SetupError on step retry-exhaustion
+    # (e.g. download_xdr_agent exhausts retries). GDC must still defer.
+    _call_raising(_GDC_RANGE_TRANSPORT, "Step 'download_xdr_agent' failed after all retry attempts")
+
+
+def test_aws_transport_propagates_raised_setup_error():
+    with pytest.raises(SetupError, match="download_xdr_agent"):
+        _call_raising("ssm", "Step 'download_xdr_agent' failed after all retry attempts")
 
 
 def test_successful_install_never_raises():
