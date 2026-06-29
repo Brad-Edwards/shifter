@@ -13,6 +13,19 @@ ssh_keys:
     {{ host_private_key | indent(4) }}
   ed25519_public: {{ host_public_key }}
 write_files:
+# Install the setup-runner's authorized key in the early cloud-init stage
+# (cc_write_files runs before the final-stage runcmd). The Kali image boots a
+# full graphical desktop and its cloud-init final stage can stall well past the
+# guest-setup SSH-ready window, so setting authorized_keys here (not in the
+# runcmd script below) lets the runner authenticate as soon as sshd is up,
+# independent of how long the final stage takes. cc_write_files creates the
+# parent .ssh directory; sshd StrictModes accepts a root-owned 0755 .ssh with a
+# kali-owned 0600 authorized_keys.
+- path: /home/kali/.ssh/authorized_keys
+  owner: kali:kali
+  permissions: '0600'
+  content: |
+    {{ public_key }}
 - path: /opt/shifter/gdc-user-data.sh
   permissions: '0755'
   owner: root:root

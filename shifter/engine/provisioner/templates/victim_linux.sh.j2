@@ -13,6 +13,17 @@ ssh_keys:
     {{ host_private_key | indent(4) }}
   ed25519_public: {{ host_public_key }}
 write_files:
+# Install the setup-runner's authorized key in the early cloud-init stage
+# (cc_write_files runs before the final-stage runcmd), so the runner can
+# authenticate as soon as sshd is up regardless of how long the final-stage
+# runcmd takes. cc_write_files creates the parent .ssh directory; sshd
+# StrictModes accepts a root-owned 0755 .ssh with a user-owned 0600
+# authorized_keys.
+- path: /home/{{ ssh_user }}/.ssh/authorized_keys
+  owner: {{ ssh_user }}:{{ ssh_user }}
+  permissions: '0600'
+  content: |
+    {{ public_key }}
 - path: /opt/shifter/gdc-user-data.sh
   permissions: '0755'
   owner: root:root

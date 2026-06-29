@@ -89,7 +89,8 @@ class TestRenderUserData:
             assert result.startswith("#cloud-config\n"), result[:80]
             doc = yaml.safe_load(result)
             assert doc["runcmd"] == ["/opt/shifter/gdc-user-data.sh"]
-            assert doc["write_files"][0]["content"].startswith("#!/bin/bash")
+            script = next(e["content"] for e in doc["write_files"] if e["path"].endswith("gdc-user-data.sh"))
+            assert script.startswith("#!/bin/bash")
             # The provisioner installs a known Ed25519 host key via cloud-init
             # and returns the matching public key for known_hosts seeding.
             assert host_public_key.startswith("ssh-ed25519 ")
@@ -98,7 +99,7 @@ class TestRenderUserData:
             # The setup script also installs the host key directly and restarts
             # sshd (robust to the cloud-init ssh module's timing); the installed
             # key must match the seeded public key.
-            script = doc["write_files"][0]["content"]
+            script = next(e["content"] for e in doc["write_files"] if e["path"].endswith("gdc-user-data.sh"))
             assert "/etc/ssh/ssh_host_ed25519_key" in script
             assert "base64 -d > /etc/ssh/ssh_host_ed25519_key" in script
             assert "systemctl restart ssh" in script

@@ -82,7 +82,7 @@ class TestKaliTemplate:
         assert result.startswith("#cloud-config\n")
         doc = yaml.safe_load(result)
         assert doc["runcmd"] == ["/opt/shifter/gdc-user-data.sh"]
-        script = doc["write_files"][0]["content"]
+        script = next(e["content"] for e in doc["write_files"] if e["path"].endswith("gdc-user-data.sh"))
         assert script.startswith("#!/bin/bash")
         # Verify essential script components rather than arbitrary length
         assert "hostnamectl set-hostname" in script  # Must set hostname
@@ -171,7 +171,7 @@ class TestVictimLinuxTemplate:
         assert result.startswith("#cloud-config\n")
         doc = yaml.safe_load(result)
         assert doc["runcmd"] == ["/opt/shifter/gdc-user-data.sh"]
-        script = doc["write_files"][0]["content"]
+        script = next(e["content"] for e in doc["write_files"] if e["path"].endswith("gdc-user-data.sh"))
         assert script.startswith("#!/bin/bash")
         assert "set -euo pipefail" in script or "set -e" in script
 
@@ -349,10 +349,29 @@ class TestGdcCloudInitMerge:
     def test_write_files_items_are_flush_left(self, linux_templates, which):
         """write_files / runcmd list items must sit at indent 0 (no leading spaces)."""
         result = linux_templates[which].render(hostname="h", public_key="ssh-rsa AAAA x@y", ssh_user="ubuntu")
-        assert "\nwrite_files:\n- path:" in result
-        assert "\nwrite_files:\n  - path:" not in result
+        # Flush-left list items present; no 2-space-indented items anywhere
+        # (a 2-space-indented `- path:` next to GDC's indent-0 item breaks YAML).
+        assert "\n- path:" in result
+        assert "\n  - path:" not in result
         assert "\nruncmd:\n- " in result
         assert "\nruncmd:\n  - " not in result
+
+    @pytest.mark.parametrize("which", ["kali", "linux"])
+    def test_authorized_keys_installed_in_early_write_files_stage(self, linux_templates, which):
+        """The runner key must be installed via write_files (early cloud-init stage),
+        not only in the final-stage runcmd, so auth works even when a guest's final
+        stage stalls (e.g. the heavy Kali desktop image)."""
+        import yaml
+
+        result = linux_templates[which].render(hostname="h", public_key="ssh-rsa AAAAKEY x@y", ssh_user="ubuntu")
+        doc = yaml.safe_load(result)
+        ak = [e for e in doc["write_files"] if e["path"].endswith("/.ssh/authorized_keys")]
+        assert len(ak) == 1, "expected exactly one authorized_keys write_files entry"
+        entry = ak[0]
+        assert entry["permissions"] == "0600"
+        assert "ssh-rsa AAAAKEY x@y" in entry["content"]
+        # Owner must be the connecting user, not root.
+        assert entry["owner"].split(":")[0] in entry["path"]
 
     @pytest.mark.parametrize("which", ["kali", "linux"])
     def test_survives_gdc_write_files_injection(self, linux_templates, which):
