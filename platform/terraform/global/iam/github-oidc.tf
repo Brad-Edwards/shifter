@@ -918,7 +918,12 @@ resource "aws_iam_policy" "management" {
           "sns:UntagResource",
           "sns:Subscribe",
           "sns:Unsubscribe",
-          "sns:GetSubscriptionAttributes"
+          "sns:GetSubscriptionAttributes",
+          # RDS CreateEventSubscription runs a connectivity test-publish to the
+          # target topic authorized with the *caller's* identity, so the deploy
+          # role must hold sns:Publish on the managed topics or the backup-alerts
+          # event subscription create fails with SNSNoAuthorization.
+          "sns:Publish"
         ]
         Resource = [
           "arn:aws:sns:${var.aws_region}:${data.aws_caller_identity.current.account_id}:*-portal-*",
