@@ -87,11 +87,34 @@ resource "aws_iam_role" "github_actions" {
 # Standalone policy referenced by the security policy's iam:CreateRole condition;
 # intentionally NOT attached to the github_actions role.
 resource "aws_iam_policy" "ci_role_permissions_boundary" {
+  # This is a permissions BOUNDARY, not a principal grant. A boundary caps the MAX permissions of
+  # the CI-created service roles it bounds; effective perms are the intersection of each role's own
+  # identity policy AND this boundary. The Allow*/* sets the ceiling to "anything", which the
+  # DenyIamEscalation below carves IAM out of, yielding "all except IAM escalation". Without the
+  # Allow* the boundary permits nothing and cripples every bounded role (e.g. firehose:PutRecord on
+  # the log-shipping role). The wildcard-policy checks below assume a grant policy and do not apply
+  # to boundary semantics. Risk accepted, see #44.
+  # checkov:skip=CKV_AWS_286:Boundary ceiling, not a principal grant; iam:* is denied so no escalation.
+  # checkov:skip=CKV_AWS_287:Boundary, not a grant; it only caps effective perms, never exposes creds.
+  # checkov:skip=CKV_AWS_288:Boundary, not a grant - no data-exfil risk; it only caps, never grants.
+  # checkov:skip=CKV_AWS_62:Boundary ceiling, not an administrative grant to any principal.
+  # checkov:skip=CKV_AWS_63:Action="*" is required for a boundary to permit non-IAM service actions.
+  # checkov:skip=CKV2_AWS_40:DenyIamEscalation removes IAM; the boundary does not allow full IAM.
   name = "shifter-${var.environment}-ci-role-boundary"
 
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
+      {
+        # A permissions boundary must explicitly ALLOW an action for a bounded role to use it
+        # (effective = identity policy ∩ boundary). This Allow* sets the ceiling to "anything",
+        # which the DenyIamEscalation below then carves IAM back out of, yielding the intended
+        # "all except IAM escalation" cap. It grants nothing on its own.
+        Sid      = "AllowAllExceptDenied"
+        Effect   = "Allow"
+        Action   = "*"
+        Resource = "*"
+      },
       {
         Sid      = "DenyIamEscalation"
         Effect   = "Deny"
