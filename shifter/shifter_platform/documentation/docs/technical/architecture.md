@@ -136,7 +136,7 @@ retry-policy, and operator-visible alerting parity (CloudWatch alarms on AWS;
 Cloud Monitoring alerts on GCP).
 
 See `docs/architecture/range-event-delivery-preflight-476.md` for the
-pre-implementation consistency model and cross-cutting constraints (ADR-024).
+pre-implementation consistency model and cross-cutting constraints (ADR-025).
 
 ## Cloud Adapters
 
