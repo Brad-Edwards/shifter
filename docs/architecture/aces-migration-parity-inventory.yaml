@@ -6,8 +6,9 @@
 # is not a runtime schema, not a parser input, and not an implementation plan.
 
 schema_version: 1
-generated_for: "issue-1230"
+generated_for: "issues-1230-1231"
 related_adr: docs/architecture/aces-migration-adr.md
+related_triage: docs/architecture/aces-cyberscript-issue-triage.md
 
 categories:
   - ACES SDL
