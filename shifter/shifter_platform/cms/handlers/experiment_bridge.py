@@ -7,7 +7,6 @@ from typing import Any
 
 from cms.experiments.events import publish_range_provisioned_for_experiment
 from cms.experiments.models import ExperimentRun
-from cms.experiments.schemas import RunStatus
 from cms.models import RangeInstance
 
 logger = logging.getLogger(__name__)
@@ -54,16 +53,14 @@ def notify_experiment_on_range_ready(
             provisioned_instances=provisioned_instances,
         )
     except Exception:
-        # Experiments require deterministic outcomes. If we cannot notify the
-        # experiment that its range is ready, the run cannot proceed and must
-        # be marked as FAILED to avoid silent orphaning.
+        # A transient broker/publish failure must NOT be converted into an
+        # irreversible FAILED transition.  Propagate so the SQS worker does
+        # not ack, and the message is redelivered (DLQ backstops poison pills).
         logger.exception(
             "notify_experiment_on_range_ready: failed to publish event for "
-            "experiment=%d run=%d (request_id=%s) — marking run as FAILED",
+            "experiment=%d run=%d (request_id=%s) — propagating for worker retry",
             run.experiment_id,
             run.pk,
             request_id,
         )
-        run.error_message = "Failed to publish range provisioning notification"
-        run.save(update_fields=["error_message"])
-        run.transition_to(RunStatus.FAILED)
+        raise

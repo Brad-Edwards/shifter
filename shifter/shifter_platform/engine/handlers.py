@@ -149,7 +149,7 @@ def _handle_status_updated(event: dict[str, Any]) -> None:
         range_obj.save(update_fields=update_fields)
     except Exception:
         logger.exception("DB error saving Range: range_id=%s", range_id)
-        return
+        raise  # transient DB failure — propagate so the worker/DLQ can retry
 
     # Audit log the status change
     audit_log_system_event(
