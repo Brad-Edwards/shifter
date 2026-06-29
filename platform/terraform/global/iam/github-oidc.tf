@@ -240,6 +240,28 @@ resource "aws_iam_policy" "compute" {
           "bedrock:DeleteModelInvocationLoggingConfiguration"
         ]
         Resource = "*"
+      },
+      {
+        # EventBridge Scheduler backing the Cognito client-secret rotation
+        # reminder (portal cognito module, created when alarm_email is set so
+        # enable_rotation_reminder is true). Scoped to the project/env schedule
+        # name prefixes in the default schedule group.
+        Sid    = "Scheduler"
+        Effect = "Allow"
+        Action = [
+          "scheduler:CreateSchedule",
+          "scheduler:GetSchedule",
+          "scheduler:UpdateSchedule",
+          "scheduler:DeleteSchedule",
+          "scheduler:ListSchedules",
+          "scheduler:TagResource",
+          "scheduler:UntagResource",
+          "scheduler:ListTagsForResource"
+        ]
+        Resource = [
+          "arn:aws:scheduler:${var.aws_region}:${data.aws_caller_identity.current.account_id}:schedule/default/shifter-*",
+          "arn:aws:scheduler:${var.aws_region}:${data.aws_caller_identity.current.account_id}:schedule/default/${var.environment}-*"
+        ]
       }
     ]
   })
@@ -590,6 +612,31 @@ resource "aws_iam_policy" "security" {
         }
       },
       {
+        # Attach/detach account-owned customer-managed policies (e.g. the
+        # ${env}-portal-pulumi-* managed policies the provisioner roles use).
+        # Scoped to roles and policies under the project/env name prefixes so
+        # this cannot attach arbitrary AWS-managed policies (that path stays
+        # gated by IAMAttachManagedPolicy's allow-list above).
+        Sid    = "IAMAttachCustomerManagedPolicy"
+        Effect = "Allow"
+        Action = [
+          "iam:AttachRolePolicy",
+          "iam:DetachRolePolicy"
+        ]
+        Resource = [
+          "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/shifter-*",
+          "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/${var.environment}-*"
+        ]
+        Condition = {
+          ArnLike = {
+            "iam:PolicyArn" = [
+              "arn:aws:iam::${data.aws_caller_identity.current.account_id}:policy/shifter-*",
+              "arn:aws:iam::${data.aws_caller_identity.current.account_id}:policy/${var.environment}-*"
+            ]
+          }
+        }
+      },
+      {
         Sid    = "IAMInstanceProfiles"
         Effect = "Allow"
         Action = [
@@ -624,7 +671,8 @@ resource "aws_iam_policy" "security" {
               "vpc-flow-logs.amazonaws.com",
               "firehose.amazonaws.com",
               "logs.amazonaws.com",
-              "bedrock.amazonaws.com"
+              "bedrock.amazonaws.com",
+              "scheduler.amazonaws.com"
             ]
           }
         }
