@@ -58,7 +58,7 @@
       },
       {
         "id": "ADR-003-R2",
-        "description": "AWS Terraform plan routing must stay scoped to Terraform-consumed files, while Quality routing must run by exclusion for pull requests and dev pushes: a dedicated quality_relevant output runs Quality unless the diff is ordinary docs-only, and guardrail docs such as .github/pull_request_template.md, .github/copilot-instructions.md, docs/adr/**, and adr-enforcement.md must remain quality-relevant. Non-deploy support/test paths such as scripts/polaris-aws-range/** and scenario-dev/polaris/tests/** must stay categorized through a dedicated quality_only filter/output without launching Terraform plans, image builds, or environment deploys. Commit-message or label-based test skips are not accepted. AWS deploy runs that can apply infrastructure must queue instead of cancelling an in-flight apply. Core, range, and platform Terraform plan and apply commands must wait for the backend state lock. Their apply jobs must create a local saved tfplan and apply that exact file instead of uploading raw binary plans as artifacts or running a fresh unplanned apply; platform Service Discovery replacement handling must inspect that same saved plan before apply. Portal application changes must keep reaching the portal image build/deploy path through the dedicated portal_image filter wired into the shifter_platform job trigger and the platform build job's portal_image_changes input, without widening the Terraform-scoped plan trigger.",
+        "description": "AWS Terraform plan routing must stay scoped to Terraform-consumed files, while Quality routing must run by exclusion for pull requests and dev pushes: a dedicated quality_relevant output runs Quality unless the diff is ordinary docs-only, and guardrail docs such as .github/pull_request_template.md, .github/copilot-instructions.md, docs/adr/**, and adr-enforcement.md must remain quality-relevant. Non-deploy support/test paths such as scripts/polaris-aws-range/** and scenario-dev/polaris/tests/** must stay categorized through a dedicated quality_only filter/output without launching Terraform plans, image builds, or environment deploys. Commit-message or label-based test skips are not accepted. AWS deploy runs that can apply infrastructure must queue instead of cancelling an in-flight apply. Core, range, and platform Terraform plan and apply commands must wait for the backend state lock. Their apply jobs must create a local saved tfplan and apply that exact file instead of uploading raw binary plans as artifacts or running a fresh unplanned apply; platform Service Discovery replacement handling must inspect that same saved plan before apply. When the saved plan deletes an aws_service_discovery_service, the pre-apply handler must drain every ECS service registered against it (scale to desiredCount=0, wait for tasks to stop and Cloud Map to deregister all instances, failing the run on timeout rather than warning), snapshot the original desired counts, and restore them after apply; restoration is mandatory because aws_ecs_service.guacd sets lifecycle.ignore_changes=[desired_count], so Terraform will not bring the service back on its own. Portal application changes must keep reaching the portal image build/deploy path through the dedicated portal_image filter wired into the shifter_platform job trigger and the platform build job's portal_image_changes input, without widening the Terraform-scoped plan trigger.",
         "checks": ["deploy-workflow-plan-scope"]
       },
       {
@@ -199,6 +199,11 @@
         "id": "ADR-004-R19",
         "description": "Because the GitHub Actions OIDC deploy role consolidates many AWS services into 5 category managed policies (ADR-004-R18), each category policy document MUST stay under AWS's hard limit of 6,144 characters for a customer-managed policy, so a category can be extended with new deploy verbs without the deploy hitting `LimitExceeded` at apply time. The limit is enforced by `scripts/check_tf_iam_role_naming/check_tf_iam_role_naming.py` (`OIDC_POLICY_DOC_LIMIT`, `check_github_oidc_policy_doc_size`), wired as the `check-tf-iam-role-naming` pre-commit hook, with its unittest suite included in the `check_tf_*` checker tests. The checker measures the whitespace-stripped HCL of each `aws_iam_policy` block, a conservative over-estimate of the rendered JSON because the `${...account_id}`/`${...aws_region}` interpolations are longer than the values they render to, so a passing check guarantees the rendered document is also under the limit. When a category approaches the limit it MUST be compacted or split rather than allowed to overflow. Established by #254 when the by-category policies were extended to cover the full platform deploy surface under least privilege.",
         "checks": []
+      },
+      {
+        "id": "ADR-004-R20",
+        "description": "The self-hosted GitHub Actions deploy runner defined in `platform/terraform/global/github-runner/main.tf` MUST NOT be placed in the account default VPC. A range's `private_dns_enabled` interface VPC endpoints override service hostnames for the entire VPC, so a range sharing the runner's VPC can hijack the runner's AWS API resolution and black-hole CI (the ~107-minute wedge that #1220's `timeout-minutes` only backstops). Valid placements are a dedicated runner VPC or the portal VPC private tier, selected via the operator-supplied `var.vpc_id` / `var.subnet_id` (live `vpc-*`/`subnet-*` IDs are never committed, per ADR-004-R14). Enforcement is fail-closed at plan/apply time: the stack resolves the account default VPC via `data.aws_vpcs.default` and an `aws_security_group.runner` `lifecycle.precondition` rejects `var.vpc_id` matching it, with a second precondition rejecting a `var.subnet_id` that does not belong to `var.vpc_id`. The presence of that guard is pinned by `scripts/check_tf_runner_network/check_tf_runner_network.py`, wired as the `check-tf-runner-network` pre-commit hook and the matching `_quality.yml` step, with its unittest suite included in the `check_tf_*` checker tests, so the precondition cannot be silently removed. Established by #1222.",
+        "checks": []
       }
     ],
     "exceptions": [],
@@ -216,6 +221,7 @@
       "scripts/check_tf_iam_ssm_range_scope/check_tf_iam_ssm_range_scope.py",
       "scripts/check_portal_target_sg_sources/check_portal_target_sg_sources.py",
       "scripts/check_tf_iam_role_naming/check_tf_iam_role_naming.py",
+      "scripts/check_tf_runner_network/check_tf_runner_network.py",
       "scripts/check_checkov_invocation_parity/check_checkov_invocation_parity.py",
       "platform/terraform/.checkov.yaml",
       "docs/adr/exceptions.yaml",
@@ -1062,6 +1068,49 @@
       "mcp/ops/index.js",
       "mcp/ops/policy.js",
       "mcp/ops/audit.js"
+    ]
+  },
+  {
+    "id": "ADR-024",
+    "title": "ACES migration uses a parity-gated parallel cutover",
+    "status": "accepted",
+    "scope": "repository",
+    "decision": "Shifter migrates toward ACES through a parallel path, a row-based parity inventory, explicit ACES manifest/conformance gates, and archive-after-cutover cleanup. Current Shifter behavior remains authoritative until the ACES path proves parity through the normal portal, CMS, engine, provisioner, CTF, experiment, Mission Control, artifact, status, and validation surfaces.",
+    "rules": [
+      {
+        "id": "ADR-024-R1",
+        "description": "ACES adoption must not replace current Shifter runtime behavior until a parallel ACES path has passed parity, manifest/conformance, portal/engine/provisioner, Polaris, CTF, experiment, Mission Control, artifact, status, and ADR guard validation.",
+        "checks": []
+      },
+      {
+        "id": "ADR-024-R2",
+        "description": "Every legacy migration surface tracked for ACES cutover must map to exactly one category in docs/architecture/aces-migration-parity-inventory.yaml: ACES SDL, ACES schema/profile gap, Shifter backend responsibility, validation gate, or archive/delete. Inventory rows cite canonical owners and must not become a second runtime schema, parser, status taxonomy, or exception envelope.",
+        "checks": []
+      },
+      {
+        "id": "ADR-024-R3",
+        "description": "Archive/delete is a post-cutover posture only. CyberScript, current CMS scenario templates, Polaris runtime material, CTF behavior, experiment execution, Mission Control, provisioner paths, artifact handling, status models, and validation gates remain current authority until replacement gates are implemented and green.",
+        "checks": []
+      }
+    ],
+    "exceptions": [],
+    "enforcement": ["agent-policy"],
+    "evidence": [
+      "docs/architecture/aces-migration-adr.md",
+      "docs/architecture/aces-migration-parity-inventory.yaml",
+      "scenario-dev/polaris/design/aces-sdl-validation-path.md",
+      "scenario-dev/polaris/sdl/README.md",
+      "shifter/shifter_platform/cms/scenarios/schema.py",
+      "shifter/shifter_platform/cms/scenarios/registry.py",
+      "shifter/shifter_platform/cms/scenarios/hydrator.py",
+      "shifter/shifter_platform/shared/schemas",
+      "shifter/cyberscript",
+      "shifter/shifter_platform/ctf",
+      "shifter/shifter_platform/cms/experiments",
+      "shifter/shifter_platform/mission_control",
+      "shifter/shifter_platform/engine",
+      "shifter/engine/provisioner",
+      "scripts/adr_guard/adr_guard.py"
     ]
   }
 ]

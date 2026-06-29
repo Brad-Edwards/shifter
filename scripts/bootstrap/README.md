@@ -56,8 +56,10 @@ runners are provisioned and registered.
 1. Run `bootstrap --env dev --profile <profile>` to create the shared dev
    state bucket, GitHub OIDC provider, and deploy role. Let it update
    `AWS_ROLE_ARN_DEV` and the dev `.s3.tfbackend` files.
-2. Update `platform/terraform/global/github-runner/dev.tfvars` with the
-   target account's VPC and subnet IDs.
+2. Apply the runner root with non-default runner network IDs. Use a dedicated
+   runner VPC or the portal VPC private tier; do not use the account default
+   VPC. Keep live VPC/subnet IDs in a gitignored override or another approved
+   deploy-time binding, not in tracked placeholder tfvars.
 3. Apply `platform/terraform/global/github-runner` and register each EC2
    runner with GitHub. Bootstrap does not create or register the self-hosted
    runners; their Terraform root is applied separately after the shared

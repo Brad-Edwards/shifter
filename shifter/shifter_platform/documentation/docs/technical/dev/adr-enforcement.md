@@ -193,6 +193,13 @@ The first slice intentionally stays small:
   required for fresh AWS accounts where the repositories exist but the tags have
   not been published yet.
 
+  The deploy workflow model tests in
+  `scripts/adr_guard/tests/test_deploy_workflow.py` also assert the engine
+  reusable workflow carries its own hosted provisioner pytest gate and that
+  `_shifter-engine.yml` image validation, image build, and deploy jobs all need
+  that gate. This keeps deploy-branch Quality skips from bypassing provisioner
+  tests on the image that is pushed and deployed.
+
 - `portal-deploy-mode-source-of-truth`
   Enforces ADR-003-R4 for the AWS portal deploy path. `_shifter-platform.yml`
   must call `scripts/portal_deploy/portal_deploy.py resolve-topology` instead

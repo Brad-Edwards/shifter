@@ -53,6 +53,7 @@ jobs:
       gcp_scripts: ${{ steps.detect.outputs.gcp_scripts }}
       check_layer_imports: ${{ steps.detect.outputs.check_layer_imports }}
       check_rds_pending_modifications: ${{ steps.detect.outputs.check_rds_pending_modifications }}
+      handle_sd_replacement: ${{ steps.detect.outputs.handle_sd_replacement }}
       assert_portal_inspection: ${{ steps.detect.outputs.assert_portal_inspection }}
       installation: ${{ steps.detect.outputs.installation }}
       event_load_harness: ${{ steps.detect.outputs.event_load_harness }}
@@ -299,6 +300,15 @@ jobs:
         run: |
           python3 scripts/check_tf_iam_role_naming/check_tf_iam_role_naming.py
 
+      # ADR-004-R20 / issue #1222: the self-hosted deploy runner must not be
+      # placed in the account default VPC (a range's private-DNS VPC endpoints
+      # can hijack its AWS API resolution). Mirrors the check-tf-runner-network
+      # pre-commit hook so a commit that skipped pre-commit cannot drop the
+      # fail-closed default-VPC precondition from the runner stack.
+      - name: Run check-tf-runner-network
+        run: |
+          python3 scripts/check_tf_runner_network/check_tf_runner_network.py
+
       # Issue #1178: the shared range guest instance role must not grant SSM
       # Parameter Store access on a Resource that wildcards the environment or
       # range segment (parameter/shifter/*/range/*). Mirrors the
@@ -357,6 +367,7 @@ jobs:
           python3 -m unittest scripts.check_tf_kms_secrets_grant.test_check_tf_kms_secrets_grant
           python3 -m unittest scripts.check_tf_rds_security.test_check_tf_rds_security
           python3 -m unittest scripts.check_portal_target_sg_sources.test_check_portal_target_sg_sources
+          python3 -m unittest scripts.check_tf_runner_network.test_check_tf_runner_network
 
   # Pin the behavior of the Polaris CTFd workshop sync helpers. Issue #702
   # shipped 38/39 challenges unsubmittable because flag-row reconciliation
@@ -527,6 +538,26 @@ jobs:
 
       - name: Lint Python
         working-directory: scripts/check_layer_imports
+        run: |
+          uv sync --group dev
+          uv run ruff check .
+          uv run ruff format --check .
+
+  handle-sd-replacement-lint:
+    permissions:
+      contents: read
+    name: Lint (handle_sd_replacement)
+    needs: [paths]
+    if: ${{ (needs.paths.outputs.run_all == 'true' || needs.paths.outputs.handle_sd_replacement == 'true') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+
+      - name: Lint Python
+        working-directory: scripts/handle_sd_replacement
         run: |
           uv sync --group dev
           uv run ruff check .
@@ -1242,6 +1273,27 @@ jobs:
           path: scripts/check_layer_imports/coverage.xml
           if-no-files-found: error
           retention-days: 1
+
+  handle-sd-replacement-tests:
+    permissions:
+      contents: read
+    name: Tests (handle_sd_replacement)
+    needs: [paths, handle-sd-replacement-lint]
+    if: ${{ !inputs.skip_tests && ((needs.paths.outputs.run_all == 'true' || needs.paths.outputs.handle_sd_replacement == 'true')) }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+
+      - name: Install dependencies
+        working-directory: scripts/handle_sd_replacement
+        run: uv sync --group dev
+
+      - name: Run tests
+        working-directory: scripts/handle_sd_replacement
+        run: uv run pytest tests/
 
   check-rds-pending-modifications-tests:
     permissions:
