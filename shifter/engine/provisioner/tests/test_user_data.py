@@ -310,3 +310,59 @@ class TestTemplateContentSafety:
         )
         assert "log" in linux_result.lower() or "echo" in linux_result.lower()
         assert "log" in windows_result.lower() or "Write-Host" in windows_result
+
+
+class TestGdcCloudInitMerge:
+    """Guard the GDC VM Runtime cloud-init merge contract.
+
+    GDC's VM controller text-injects its own ``write_files`` entry
+    (``/var/lib/cloud/scripts/per-boot/google_boot_init.sh``) immediately
+    after the ``write_files:`` key, as a flush-left (indent-0) block-sequence
+    item. If our own ``write_files`` items are indented (``  - path:``), the
+    merged document mixes indent-0 and indent-2 sequence items, which is
+    invalid YAML ("expected <block end>, but found '-'"). cloud-init then
+    discards the *entire* config, so ``ssh_keys``/``write_files``/``runcmd``
+    never apply and the guest serves a boot-generated host key (range setup
+    then fails host-key verification). Our list items must be flush-left so
+    the merged sequence stays uniform.
+    """
+
+    # Captured live from a GDC range VM's regenerated kubevm cloud-init secret.
+    _GDC_INJECTED_WRITE_FILE = (
+        "- path: /var/lib/cloud/scripts/per-boot/google_boot_init.sh\n"
+        "  encoding: b64\n"
+        "  permissions: '0744'\n"
+        "  content: IyEvYmluL2Jhc2gKZWNobyBoaQo=\n"
+    )
+
+    @pytest.fixture
+    def linux_templates(self):
+        templates_dir = Path(__file__).parent.parent / "templates"
+        # NOSONAR: autoescape=False - shell templates, not HTML
+        env = Environment(loader=FileSystemLoader(str(templates_dir)), autoescape=False)
+        return {
+            "kali": _HostKeyTemplate(env.get_template("kali.sh.j2")),
+            "linux": _HostKeyTemplate(env.get_template("victim_linux.sh.j2")),
+        }
+
+    @pytest.mark.parametrize("which", ["kali", "linux"])
+    def test_write_files_items_are_flush_left(self, linux_templates, which):
+        """write_files / runcmd list items must sit at indent 0 (no leading spaces)."""
+        result = linux_templates[which].render(hostname="h", public_key="ssh-rsa AAAA x@y", ssh_user="ubuntu")
+        assert "\nwrite_files:\n- path:" in result
+        assert "\nwrite_files:\n  - path:" not in result
+        assert "\nruncmd:\n- " in result
+        assert "\nruncmd:\n  - " not in result
+
+    @pytest.mark.parametrize("which", ["kali", "linux"])
+    def test_survives_gdc_write_files_injection(self, linux_templates, which):
+        """A simulated GDC per-boot write_files injection must keep the doc valid YAML."""
+        import yaml
+
+        result = linux_templates[which].render(hostname="h", public_key="ssh-rsa AAAA x@y", ssh_user="ubuntu")
+        merged = result.replace("write_files:\n", "write_files:\n" + self._GDC_INJECTED_WRITE_FILE, 1)
+        doc = yaml.safe_load(merged)
+        paths = [e.get("path") for e in doc["write_files"]]
+        assert "/var/lib/cloud/scripts/per-boot/google_boot_init.sh" in paths
+        assert "/opt/shifter/gdc-user-data.sh" in paths
+        assert doc["runcmd"] == ["/opt/shifter/gdc-user-data.sh"]
