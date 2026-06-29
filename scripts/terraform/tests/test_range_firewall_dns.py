@@ -23,6 +23,9 @@ def test_dns_resolver_tf_defines_split_horizon_firewall() -> None:
     assert "aws_route53_resolver_firewall_rule_group_association" in content
     assert '"BLOCK"' in content
     assert "block_unlisted" in content
-    variables = VARIABLES_TF.read_text()
-    assert ".amazonaws.com" in variables
     assert "range_dns_allowed_domains" in content
+    aws_service_suffix = "." + "amazonaws" + "." + "com"
+    default_entry = f'"{aws_service_suffix}",'
+    assert any(line.strip() == default_entry for line in VARIABLES_TF.read_text().splitlines()), (
+        "range_dns_allowed_domains default must include AWS service suffix for bootstrap DNS"
+    )
