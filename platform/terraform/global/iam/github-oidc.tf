@@ -530,7 +530,13 @@ resource "aws_iam_policy" "data" {
           "rds:RemoveTagsFromResource",
           "rds:ListTagsForResource",
           "rds:DescribeDBEngineVersions",
-          "rds:DescribeOrderableDBInstanceOptions"
+          "rds:DescribeOrderableDBInstanceOptions",
+          "rds:CreateEventSubscription",
+          "rds:DeleteEventSubscription",
+          "rds:ModifyEventSubscription",
+          "rds:DescribeEventSubscriptions",
+          "rds:AddSourceIdentifierToSubscription",
+          "rds:RemoveSourceIdentifierFromSubscription"
         ]
         Resource = "*"
       },
