@@ -113,7 +113,7 @@ def _append_kwarg_assignment(assignments: list[Any], values: list[Any], key: str
     values.append(value)
 
 
-def enqueue_event_outbox(event: dict, *, cur: Any = None) -> None:
+def enqueue_event_outbox(event: dict[str, object], *, cur: psycopg.Cursor[tuple[object, ...]] | None = None) -> None:
     """Insert an event into the transactional outbox for durable delivery.
 
     When ``cur`` is provided the INSERT is executed on that cursor and the

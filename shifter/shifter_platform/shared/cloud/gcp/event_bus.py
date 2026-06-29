@@ -16,8 +16,8 @@ _PUBSUB_IMPORT_ERROR = "GCP event bus support requires google-cloud-pubsub"
 class GCPEventBus:
     """Pub/Sub implementation of EventBus protocol."""
 
+    @staticmethod
     def publish(
-        self,
         topic_id: str,
         message: str,
         attributes: dict[str, str] | None = None,

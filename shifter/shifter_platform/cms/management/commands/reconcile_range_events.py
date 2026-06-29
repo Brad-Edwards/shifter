@@ -24,6 +24,7 @@ import contextlib
 import logging
 import tempfile
 import time
+from argparse import ArgumentParser
 from datetime import timedelta
 from pathlib import Path
 
@@ -151,6 +152,54 @@ def _is_allowed_recovery(from_status: str, to_status: str) -> bool:
 # ---------------------------------------------------------------------------
 
 
+def _apply_locked_range_instance(
+    instance: RangeInstance,
+    authoritative_status: str,
+) -> str:
+    """Acquire a row lock, re-check, and apply a status transition for one stale RangeInstance.
+
+    Handles the inner savepoint, re-lock under ``skip_locked=False``, idempotency
+    re-check after acquiring the lock, and the ``apply_range_status`` call.
+
+    Returns:
+        One of ``"reconciled"``, ``"converged"``, ``"skipped"``, or ``"failed"``.
+    """
+    try:
+        with transaction.atomic():
+            # Re-fetch under lock so concurrent workers don't double-apply.
+            try:
+                locked_instance = RangeInstance.all_objects.select_for_update(skip_locked=False).get(pk=instance.pk)
+            except RangeInstance.DoesNotExist:
+                return "skipped"
+
+            # Re-check after acquiring the lock — another worker may have
+            # already converged this row.
+            if locked_instance.status == authoritative_status:
+                return "converged"
+
+            if not _is_allowed_recovery(locked_instance.status, authoritative_status):
+                return "skipped"
+
+            applied = apply_range_status(
+                locked_instance,
+                authoritative_status,
+                provisioned_instances={},
+            )
+    except Exception:
+        # apply_range_status raised (transient DB/broker failure).  The
+        # savepoint is rolled back by the atomic() context manager before
+        # re-raising.  Log and count the failure so the batch continues;
+        # the next reconciler pass or the SQS retry will handle this row.
+        logger.exception(
+            "reconcile_range_instances: apply_range_status raised for "
+            "RangeInstance pk=%s — row skipped, batch continues",
+            safe_log_id(instance.pk),
+        )
+        return "failed"
+
+    return "reconciled" if applied else "converged"
+
+
 def reconcile_range_instances(
     stale_seconds: int,
     batch_size: int,
@@ -222,51 +271,72 @@ def reconcile_range_instances(
             instance.status,
             authoritative_status,
         )
-
-        try:
-            with transaction.atomic():
-                # Re-fetch under lock so concurrent workers don't double-apply.
-                try:
-                    locked_instance = RangeInstance.all_objects.select_for_update(skip_locked=False).get(pk=instance.pk)
-                except RangeInstance.DoesNotExist:
-                    counts["skipped"] += 1
-                    continue
-
-                # Re-check after acquiring the lock — another worker may have
-                # already converged this row.
-                if locked_instance.status == authoritative_status:
-                    counts["converged"] += 1
-                    continue
-
-                if not _is_allowed_recovery(locked_instance.status, authoritative_status):
-                    counts["skipped"] += 1
-                    continue
-
-                applied = apply_range_status(
-                    locked_instance,
-                    authoritative_status,
-                    provisioned_instances={},
-                )
-
-        except Exception:
-            # apply_range_status raised (transient DB/broker failure).  The
-            # savepoint is rolled back by the atomic() context manager before
-            # re-raising.  Log and count the failure so the batch continues;
-            # the next reconciler pass or the SQS retry will handle this row.
-            logger.exception(
-                "reconcile_range_instances: apply_range_status raised for "
-                "RangeInstance pk=%s — row skipped, batch continues",
-                safe_log_id(instance.pk),
-            )
-            counts["failed"] += 1
-            continue
-
-        if applied:
-            counts["reconciled"] += 1
-        else:
-            counts["converged"] += 1
+        outcome = _apply_locked_range_instance(instance, authoritative_status)
+        counts[outcome] += 1
 
     return counts
+
+
+def _reconcile_ready_run(run: ExperimentRun, counts: dict[str, int]) -> None:
+    """Lock, re-check, and drive one ExperimentRun stuck in PROVISIONING when engine is READY.
+
+    Acquires a row lock inside a savepoint, guards against concurrent convergence,
+    then calls ``handle_range_provisioned`` outside the transaction. Mutates
+    ``counts`` in place for every outcome.
+    """
+    with transaction.atomic():
+        try:
+            locked_run = ExperimentRun.objects.select_for_update(skip_locked=False).get(pk=run.pk)
+        except ExperimentRun.DoesNotExist:
+            counts["skipped"] += 1
+            return
+
+        # Guard: only reconcile if still in PROVISIONING.
+        if locked_run.status != RunStatus.PROVISIONING.value:
+            counts["converged"] += 1
+            return
+
+    logger.warning(
+        "reconcile_experiment_runs: drift detected — ExperimentRun pk=%s "
+        "status=provisioning but engine.Range status=ready; "
+        "calling handle_range_provisioned",
+        safe_log_id(run.pk),
+    )
+    orchestrator = ExperimentOrchestrator(run.experiment_id)
+    orchestrator.handle_range_provisioned(run.pk, {})
+    counts["reconciled"] += 1
+
+
+def _reconcile_terminal_run(run: ExperimentRun, authoritative_status: str, counts: dict[str, int]) -> None:
+    """Lock, re-check, and drive one ExperimentRun stuck in PROVISIONING when engine is terminal.
+
+    Acquires a row lock inside a savepoint, guards against a run already in a
+    terminal status, then calls ``handle_run_failed`` outside the transaction.
+    Mutates ``counts`` in place for every outcome.
+    """
+    with transaction.atomic():
+        try:
+            locked_run = ExperimentRun.objects.select_for_update(skip_locked=False).get(pk=run.pk)
+        except ExperimentRun.DoesNotExist:
+            counts["skipped"] += 1
+            return
+
+        if locked_run.status in {s.value for s in TERMINAL_RUN_STATUSES}:
+            counts["converged"] += 1
+            return
+
+    logger.warning(
+        "reconcile_experiment_runs: drift detected — ExperimentRun pk=%s "
+        "status=provisioning but engine.Range status=%s; calling handle_run_failed",
+        safe_log_id(run.pk),
+        authoritative_status,
+    )
+    orchestrator = ExperimentOrchestrator(run.experiment_id)
+    orchestrator.handle_run_failed(
+        run.pk,
+        f"Range reached {authoritative_status} during provisioning (reconciled)",
+    )
+    counts["reconciled"] += 1
 
 
 def reconcile_experiment_runs(
@@ -315,53 +385,9 @@ def reconcile_experiment_runs(
             continue
 
         if authoritative_status == ResourceStatus.READY.value:
-            with transaction.atomic():
-                try:
-                    locked_run = ExperimentRun.objects.select_for_update(skip_locked=False).get(pk=run.pk)
-                except ExperimentRun.DoesNotExist:
-                    counts["skipped"] += 1
-                    continue
-
-                # Guard: only reconcile if still in PROVISIONING.
-                if locked_run.status != RunStatus.PROVISIONING.value:
-                    counts["converged"] += 1
-                    continue
-
-            logger.warning(
-                "reconcile_experiment_runs: drift detected — ExperimentRun pk=%s "
-                "status=provisioning but engine.Range status=ready; "
-                "calling handle_range_provisioned",
-                safe_log_id(run.pk),
-            )
-            orchestrator = ExperimentOrchestrator(run.experiment_id)
-            orchestrator.handle_range_provisioned(run.pk, {})
-            counts["reconciled"] += 1
-
+            _reconcile_ready_run(run, counts)
         elif authoritative_status in _TERMINAL_STATUS_VALUES:
-            with transaction.atomic():
-                try:
-                    locked_run = ExperimentRun.objects.select_for_update(skip_locked=False).get(pk=run.pk)
-                except ExperimentRun.DoesNotExist:
-                    counts["skipped"] += 1
-                    continue
-
-                if locked_run.status in {s.value for s in TERMINAL_RUN_STATUSES}:
-                    counts["converged"] += 1
-                    continue
-
-            logger.warning(
-                "reconcile_experiment_runs: drift detected — ExperimentRun pk=%s "
-                "status=provisioning but engine.Range status=%s; calling handle_run_failed",
-                safe_log_id(run.pk),
-                authoritative_status,
-            )
-            orchestrator = ExperimentOrchestrator(run.experiment_id)
-            orchestrator.handle_run_failed(
-                run.pk,
-                f"Range reached {authoritative_status} during provisioning (reconciled)",
-            )
-            counts["reconciled"] += 1
-
+            _reconcile_terminal_run(run, authoritative_status, counts)
         else:
             # Engine also in a non-terminal state — not yet ready.
             counts["skipped"] += 1
@@ -375,13 +401,21 @@ def reconcile_experiment_runs(
 
 
 class Command(BaseCommand):
+    """Reconcile stale CMS projection rows against authoritative engine state.
+
+    Scans for RangeInstance and ExperimentRun rows whose status has not advanced
+    despite the corresponding engine.Range having moved forward, and re-drives the
+    appropriate domain transition. Runs once by default (suitable for a CronJob);
+    use --loop for persistent polling.
+    """
+
     help = (
         "Reconcile stale CMS RangeInstance and ExperimentRun rows against "
         "authoritative engine.Range status. Runs once by default (suitable "
         "for a CronJob); use --loop for persistent polling."
     )
 
-    def add_arguments(self, parser) -> None:
+    def add_arguments(self, parser: ArgumentParser) -> None:
         parser.add_argument(
             "--loop",
             action="store_true",

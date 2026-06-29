@@ -33,7 +33,7 @@ class Migration(migrations.Migration):
                 ("attempts", models.PositiveIntegerField(default=0)),
                 ("max_attempts", models.PositiveIntegerField(default=10)),
                 ("next_attempt_at", models.DateTimeField(db_index=True)),
-                ("last_error", models.TextField(blank=True, null=True)),
+                ("last_error", models.TextField(blank=True, default="")),
                 ("created_at", models.DateTimeField(auto_now_add=True)),
                 ("published_at", models.DateTimeField(blank=True, null=True)),
             ],

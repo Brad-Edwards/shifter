@@ -203,7 +203,8 @@ def process_event(message: str | dict) -> None:
         return
 
     logger.info("Processing event_type=%s event_id=%s", event_type, event_id)
-    handler(event)  # transient failures propagate; the worker/DLQ backstops poison
+    # transient failures propagate; the worker/DLQ backstops poison
+    handler(event)
 
 
 # ---------------------------------------------------------------------------

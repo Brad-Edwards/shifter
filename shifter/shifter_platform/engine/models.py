@@ -647,11 +647,13 @@ class RangeEventOutbox(models.Model):
     attempts = models.PositiveIntegerField(default=0)
     max_attempts = models.PositiveIntegerField(default=10)
     next_attempt_at = models.DateTimeField(db_index=True)
-    last_error = models.TextField(null=True, blank=True)  # noqa: DJ001 — NULL means "no error", not empty string
+    last_error = models.TextField(blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
     published_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
+        """Table configuration for the range event outbox."""
+
         db_table = "engine_range_event_outbox"
         indexes = [
             models.Index(fields=["status", "next_attempt_at"], name="engine_rang_status_6f706a_idx"),

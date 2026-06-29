@@ -25,7 +25,7 @@ import time
 from argparse import ArgumentParser
 from datetime import timedelta
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
@@ -35,6 +35,9 @@ from django.utils import timezone
 from engine.models import OutboxStatus, RangeEventOutbox
 from shared.cloud import get_event_bus
 from shared.cloud.exceptions import CloudEventBusError
+
+if TYPE_CHECKING:
+    from shared.cloud.types import EventBus
 
 logger = logging.getLogger(__name__)
 
@@ -133,7 +136,7 @@ class Command(BaseCommand):
             )
         return str(topic_id)
 
-    def _drain_batch(self, bus: Any, topic_id: str, batch_size: int) -> int:
+    def _drain_batch(self, bus: EventBus, topic_id: str, batch_size: int) -> int:
         """Select and process one bounded batch of due PENDING rows.
 
         Returns:
@@ -150,7 +153,7 @@ class Command(BaseCommand):
                 self._process_row(bus, topic_id, row)
         return len(rows)
 
-    def _process_row(self, bus: Any, topic_id: str, row: RangeEventOutbox) -> None:
+    def _process_row(self, bus: EventBus, topic_id: str, row: RangeEventOutbox) -> None:
         """Publish one outbox row and update its status.
 
         On success: marks PUBLISHED and sets published_at.

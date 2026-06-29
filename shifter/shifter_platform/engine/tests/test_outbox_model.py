@@ -32,11 +32,11 @@ class TestRangeEventOutboxDefaults:
         obj = RangeEventOutbox()
         assert obj.max_attempts == 10
 
-    def test_last_error_default_is_none(self):
+    def test_last_error_default_is_empty_string(self):
         from engine.models import RangeEventOutbox
 
         obj = RangeEventOutbox()
-        assert obj.last_error is None
+        assert obj.last_error == ""
 
     def test_published_at_default_is_none(self):
         from engine.models import RangeEventOutbox
