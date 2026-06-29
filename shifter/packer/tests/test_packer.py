@@ -327,3 +327,28 @@ class TestUbuntuClaudeCode:
         """Bedrock environment variables should be set."""
         assert "CLAUDE_CODE_USE_BEDROCK=1" in claude_content
         assert "AWS_REGION" in claude_content
+
+
+class TestWindowsServices:
+    """Test that Windows services.ps1 has correct XAMPP install invocation."""
+
+    @pytest.fixture
+    def services_content(self):
+        return (SCRIPTS_DIR / "windows" / "services.ps1").read_text()
+
+    def test_no_launchapps_arg(self, services_content):
+        """--launchapps is not a supported XAMPP unattended arg and must be absent."""
+        assert "--launchapps" not in services_content
+
+    def test_unattended_mode_present(self, services_content):
+        """XAMPP installer must be called with --mode unattended."""
+        assert "--mode unattended" in services_content
+
+    def test_passhru_used(self, services_content):
+        """Start-Process for XAMPP must capture the process object via -PassThru."""
+        assert "-PassThru" in services_content
+
+    def test_exitcode_guard(self, services_content):
+        """Script must check XAMPP exit code and call exit 1 on failure."""
+        assert "ExitCode" in services_content
+        assert "exit 1" in services_content

@@ -8,7 +8,7 @@ Two audit mechanisms exist:
 
 | Mechanism | Location | Scope | Storage |
 |-----------|----------|-------|---------|
-| `AuditLog` | `risk_register/models.py` | Risk, Comment, APIKey entities | Database |
+| `AuditLog` | `risk_register/models.py` | Risk, Comment, and archival APIKey entities (the `APIKEY` entity/actor enums are retained for historical rows; the credential is retired under PLAT-106 / #1124) | Database |
 | `ActivityLog` | `management/models.py` | Agent upload/delete only | Database |
 
 **Gaps**: Range lifecycle, credentials, authentication, user management, configuration changes unaudited.
