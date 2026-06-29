@@ -243,16 +243,27 @@ def _install_xdr_or_raise(
     if agent_presigned_url:
         plan = plan_cls()
         ctx_obj = plan.get_context({"agent_presigned_url": agent_presigned_url})
-        _run_setup_plan(
-            orchestrator,
-            execution,
-            plan,
-            ctx_obj,
-            execution.document_name,
-            failure_prefix=failure_prefix,
-        )
-        logger.info(success_log, instance_id)
-        return
+        result = orchestrator.orchestrate(execution.target, plan, ctx_obj, document_name=execution.document_name)
+        if result.success:
+            logger.info(success_log, instance_id)
+            return
+        # GDC range guests sit on an isolated L2 segment with no egress, so the
+        # agent installer (fetched from GCS) and the agent's subsequent
+        # phone-home to Cortex/PAN-OS are both unreachable. Per #615 the XDR
+        # agent is best-effort on the GDC in-range transport: log and continue
+        # so the range still provisions end-to-end. Functional XDR-on-GDC is
+        # tracked separately (it requires range-network egress). The AWS SSM
+        # path stays strict and raises.
+        if execution.transport_name == _GDC_RANGE_TRANSPORT:
+            logger.warning(
+                "XDR agent install did not complete on %s over %s; deferring XDR on "
+                "GDC (range has no egress) and continuing: %s",
+                instance_id,
+                execution.transport_name,
+                result.error,
+            )
+            return
+        raise SetupError(f"{failure_prefix}: {result.error}")
     if xdr_required:
         raise SetupError(f"XDR agent required but no URL provided for {instance_id}")
     logger.info("No XDR agent URL provided for %s (not required)", instance_id)
