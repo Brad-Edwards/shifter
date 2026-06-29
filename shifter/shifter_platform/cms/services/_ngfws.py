@@ -387,7 +387,16 @@ def create_ngfw(
                 otp_folder=otp_folder,
             ),
         )
-    except Exception:
+    except Exception as exc:
+        # Sanitized log only: fixed text + correlation ids + exception *type*.
+        # NOT logger.exception/exc_info — hydrator/engine tracebacks can carry
+        # NGFW registration secrets (authcode/otp/scm_pin) and must not be logged.
+        logger.error(  # NOSONAR
+            "create_ngfw failed for user_id=%s request_id=%s exc_type=%s; marking NGFW records FAILED",
+            user.id,
+            request_id,
+            type(exc).__name__,
+        )
         _set_cms_ngfw_status(instance, app, ResourceStatus.FAILED)
         raise
 

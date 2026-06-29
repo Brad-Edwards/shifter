@@ -370,6 +370,50 @@ class TestCreateNgfw:
             actor_id=user.id,
         ).exists()
 
+    def test_marks_owned_records_failed_when_hydration_fails(self, user, caplog):
+        """Hydrator failure marks CMS Instance/App FAILED and logs at ERROR without leaking secrets."""
+        import logging
+
+        from cms.models import App as CMSApp
+        from cms.models import Instance as CMSInstance
+
+        # A deployment profile with no authcode makes the real hydrate_ngfw raise
+        # CMSError during CMS->Engine translation, before any engine dispatch.
+        bad_profile = _credential(user, "deployment_profile", {"name": "dp"})
+
+        with caplog.at_level(logging.ERROR), pytest.raises(CMSError):
+            create_ngfw(
+                user=user,
+                name="HydrationFailNGFW",
+                deployment_profile_id=bad_profile.id,
+                registration_method="otp",
+                otp_value="OTP123",
+                otp_folder="folder/",
+            )
+
+        cms_app = CMSApp.all_objects.get(instance__request__user=user)
+        cms_instance = CMSInstance.all_objects.get(request__user=user)
+        assert cms_app.status == ResourceStatus.FAILED.value
+        assert cms_app.deleted_at is not None
+        assert cms_instance.status == ResourceStatus.FAILED.value
+        assert cms_instance.deleted_at is not None
+
+        assert not AuditLog.objects.filter(
+            entity_type=AuditLog.EntityType.NGFW,
+            action=AuditLog.Action.PROVISION,
+            actor_id=user.id,
+        ).exists()
+
+        # The service-boundary compensation logs the failure with request context.
+        # This service-level ERROR record is the red-green driver for the logging change.
+        assert any(record.name == "cms.services._ngfws" for record in caplog.records), (
+            "Expected an ERROR log from cms.services._ngfws"
+        )
+        assert str(user.id) in caplog.text, "Expected user_id in log message"
+        # Secrets must never appear in log output.
+        assert "OTP123" not in caplog.text, "OTP value must not appear in log"
+        assert "folder/" not in caplog.text, "OTP folder must not appear in log"
+
 
 # ---------------------------------------------------------------------------
 # destroy_ngfw
