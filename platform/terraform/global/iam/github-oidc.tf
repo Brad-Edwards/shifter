@@ -701,6 +701,21 @@ resource "aws_iam_policy" "security" {
         }
       },
       {
+        # RDS enhanced-monitoring role pass. RDS ModifyDBInstance does NOT populate the
+        # iam:PassedToService context key, so the conditional IAMPassRole statement above
+        # never matches and enabling enhanced monitoring fails with PassRole AccessDenied.
+        # Allow passing the enhanced-monitoring roles without that condition, but scope the
+        # resource tightly to *-rds-enhanced-monitoring roles. Their trust policy only permits
+        # monitoring.rds.amazonaws.com, so an unconditional pass of just these roles is safe.
+        Sid    = "IAMPassRoleRdsMonitoring"
+        Effect = "Allow"
+        Action = ["iam:PassRole"]
+        Resource = [
+          "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/shifter-*-rds-enhanced-monitoring",
+          "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/${var.environment}-*-rds-enhanced-monitoring"
+        ]
+      },
+      {
         Sid      = "IAMServiceLinkedRoles"
         Effect   = "Allow"
         Action   = ["iam:CreateServiceLinkedRole"]
