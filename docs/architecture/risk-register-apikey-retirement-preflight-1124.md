@@ -56,6 +56,10 @@ minting path is not.
   programmatic caller to the endpoint class; `risk_register.access` still proves
   the token owner belongs to an allowed Cognito group, and session callers still
   need staff/superuser permission where the current API requires it.
+- Keep `risk_register.access` on runtime principals only. After #1124, that
+  means `shared.api_tokens.ApiToken` plus authenticated sessions; the archival
+  `risk_register.models.APIKey` model must not be imported into access-policy
+  branches or accepted as a `request.auth` shape.
 - Treat `AuditLog.ActorType.APIKEY` and `AuditLog.EntityType.APIKEY` as durable
   historical enum values unless a separate audit-taxonomy migration updates the
   model, serializers, admin, docs, and tests together. Do not partially rename
@@ -74,7 +78,7 @@ minting path is not.
 | Platform DRF auth | `config/_drf_settings.py`, `ApiTokenAuthentication`, DRF `SessionAuthentication` | Risk-register endpoints should use the shared session/bearer-token path. No legacy app-local authenticator should remain as an accepting credential path. |
 | Scope admission | `shared.api_tokens.scopes`, `shared.api_tokens.permissions.require_scope` | Use `RISK_READ` and `RISK_WRITE`; do not add app-local booleans, wildcard scopes, or APIKey-specific scopes. |
 | Token lifecycle | `shared/api_tokens/{models,admin,audit,scopes,permissions}.py` | Replacement tokens use the one-time raw-token, bounded-TTL, revocation, and audit behavior already implemented there. |
-| Risk authorization | `risk_register.access.principal_has_risk_register_access`, `HasRiskRegisterCognitoGroup`, `IsStaffSessionOrToken` | Keep Cognito-group and staff/session semantics. Remove only the legacy key principal, not the second-stage domain gates. |
+| Risk authorization | `risk_register.access.principal_has_risk_register_access`, `HasRiskRegisterCognitoGroup`, `IsStaffSessionOrToken` | Keep Cognito-group and staff/session semantics. Runtime token branches accept `ApiToken` only; the archival `APIKey` model must not remain in access-policy imports or `request.auth` type checks. Remove only the legacy key principal, not the second-stage domain gates. |
 | Legacy key surfaces | `risk_register.models.APIKey`, `risk_register.api.authentication`, `risk_register.api.views.APIKeyViewSet`, `risk_register.api.serializers`, `risk_register.views.apikey_*`, `APIKeyAdmin` | Disable or remove runtime mint/auth surfaces deliberately. Preserve archival data only when needed for comments or audit history. |
 | Audit | `risk_register.services.AuditEvent`, `audit_log`, `audit_log_from_request`, `get_client_ip`, `get_request_id`, `shared.api_tokens.audit` | Use existing audit helpers and trusted client-IP resolution. Do not add a parallel credential-retirement audit table. |
 | Error envelopes | `shared.api.errors.api_exception_handler`, `api_error_response` | API retirement errors use the platform envelope and fixed messages. Do not echo raw header values, hashes, prefixes, or provider traces. |
