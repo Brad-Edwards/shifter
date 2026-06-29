@@ -173,18 +173,18 @@ def _apply_locked_range_instance(
                 return "skipped"
 
             # Re-check after acquiring the lock — another worker may have
-            # already converged this row.
+            # already converged this row — then guard the recovery transition.
             if locked_instance.status == authoritative_status:
-                return "converged"
-
-            if not _is_allowed_recovery(locked_instance.status, authoritative_status):
-                return "skipped"
-
-            applied = apply_range_status(
-                locked_instance,
-                authoritative_status,
-                provisioned_instances={},
-            )
+                outcome = "converged"
+            elif not _is_allowed_recovery(locked_instance.status, authoritative_status):
+                outcome = "skipped"
+            else:
+                applied = apply_range_status(
+                    locked_instance,
+                    authoritative_status,
+                    provisioned_instances={},
+                )
+                outcome = "reconciled" if applied else "converged"
     except Exception:
         # apply_range_status raised (transient DB/broker failure).  The
         # savepoint is rolled back by the atomic() context manager before
@@ -197,7 +197,7 @@ def _apply_locked_range_instance(
         )
         return "failed"
 
-    return "reconciled" if applied else "converged"
+    return outcome
 
 
 def reconcile_range_instances(
