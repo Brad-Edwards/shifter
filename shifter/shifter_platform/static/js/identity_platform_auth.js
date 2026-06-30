@@ -122,23 +122,19 @@ if (configScript) {
         }
     }
 
-    // Resolve a redirect target to a same-origin path, or null if it points
-    // anywhere else (or is unparseable). The session-exchange response and the
-    // injected config are trusted, but validating before navigating keeps an
-    // open redirect impossible even if either is tampered with.
+    // Resolve a redirect target to a safe, same-origin path, or null otherwise.
+    // Only a root-relative path ("/path") that is NOT protocol-relative
+    // ("//host") is allowed: this rejects absolute URLs, "javascript:" targets,
+    // and any off-origin destination, so the value handed to location.assign can
+    // never navigate (or script) off this origin. The session-exchange response
+    // and injected config are trusted; this keeps an open redirect / DOM-XSS
+    // impossible even if either is tampered with.
+    const SAFE_REDIRECT_PATH = /^\/(?!\/)[\w\-./~!$&'()*+,;=:@%?#[\]]*$/;
     function sameOriginPath(candidate) {
-        if (typeof candidate !== "string" || candidate === "") {
-            return null;
+        if (typeof candidate === "string" && SAFE_REDIRECT_PATH.test(candidate)) {
+            return candidate;
         }
-        try {
-            const url = new URL(candidate, globalThis.location.origin);
-            if (url.origin !== globalThis.location.origin) {
-                return null;
-            }
-            return `${url.pathname}${url.search}${url.hash}`;
-        } catch {
-            return null;
-        }
+        return null;
     }
 
     async function exchangeSession(user) {
