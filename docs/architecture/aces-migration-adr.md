@@ -92,6 +92,12 @@ and not Polaris-specific branches in Shifter core.
 
 ## Migration Constraints
 
+- CyberScript work during the parallel phase is limited to current-stack
+  compatibility, production bug fixes, documentation, and migration/archive
+  support. New scenario meaning, scenario DSL semantics, participant-runtime
+  semantics, or backend contract semantics belong in ACES SDL, an ACES
+  Shifter profile, or a later accepted ADR that explicitly widens the legacy
+  surface.
 - ACES integration must enter through `shared`, `cms.scenarios.*`,
   `cms.services`, and `engine.services` boundaries. Direct ACES or CyberScript
   imports outside `shared` remain disallowed unless a later ADR changes the
@@ -175,6 +181,9 @@ Archive/delete cleanup happens only after that rollback posture is explicit.
 - Issue and PR discussions can cite inventory rows by stable id.
 - ACES expressivity gaps are routed to ACES or ACES-profile work instead of
   being patched into Shifter as a private scenario language.
+- Existing CyberScript and scenario backlog items are triaged in
+  `docs/architecture/aces-cyberscript-issue-triage.md` so implementation work
+  can distinguish current-stack maintenance from ACES migration candidates.
 - Shifter backend responsibilities remain visible and testable.
 - The migration can progress incrementally without breaking current operators
   before parity is proven.

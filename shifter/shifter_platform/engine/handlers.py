@@ -129,12 +129,16 @@ def _handle_status_updated(event: dict[str, Any]) -> None:
     error_message = event.get("error_message")
     event_id = event.get("event_id", "unknown")
 
+    now = timezone.now()
     previous_status = range_obj.status
     range_obj.status = new_status
-    update_fields = ["status"]
+    # auto_now on updated_at is bypassed when save(update_fields=...) omits the
+    # field, so set it explicitly and include it in the partial save.
+    range_obj.updated_at = now
+    update_fields = ["status", "updated_at"]
 
     if new_status == ResourceStatus.READY.value:
-        range_obj.ready_at = timezone.now()
+        range_obj.ready_at = now
         update_fields.append("ready_at")
 
     if new_status == ResourceStatus.FAILED.value and error_message:
@@ -142,14 +146,15 @@ def _handle_status_updated(event: dict[str, Any]) -> None:
         update_fields.append("error_message")
 
     if new_status == ResourceStatus.DESTROYED.value:
-        range_obj.destroyed_at = timezone.now()
+        range_obj.destroyed_at = now
         update_fields.append("destroyed_at")
 
     try:
         range_obj.save(update_fields=update_fields)
     except Exception:
         logger.exception("DB error saving Range: range_id=%s", range_id)
-        return
+        # transient DB failure — propagate so the worker/DLQ can retry
+        raise
 
     # Audit log the status change
     audit_log_system_event(

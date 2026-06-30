@@ -9,7 +9,7 @@ import logging
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from events import publish_ngfw_event, publish_status_update
+from events import build_status_event, publish_ngfw_event
 from executors.aws_executor import AWSExecutor
 from orchestrators.ops_orchestrator import OpsOrchestrator
 from plans.ngfw_start import NGFWStartPlan
@@ -621,14 +621,12 @@ def run_range_pause(request_id: str) -> None:
         error_msg = f"Failed to pause {len(failures)}/{len(instances)} instances"
         logger.error("run_range_pause: %s", error_msg)
 
-        # Update status to failed
-        update_range_status(range_id, "failed", error_message=error_msg)
-        publish_status_update(
-            request_id=request_id,
-            range_id=range_id,
-            user_id=user_id,
-            new_status="failed",
+        # Update status and enqueue event atomically
+        update_range_status(
+            range_id,
+            "failed",
             error_message=error_msg,
+            outbox_event=build_status_event(request_id, range_id, user_id, "failed", error_msg),
         )
         raise RuntimeError(error_msg)
 
@@ -646,13 +644,12 @@ def run_range_pause(request_id: str) -> None:
             request_id,
         )
 
-    # Update range status to paused (after NGFW is paused)
-    update_range_status(range_id, "paused", paused_at="NOW()")
-    publish_status_update(
-        request_id=request_id,
-        range_id=range_id,
-        user_id=user_id,
-        new_status="paused",
+    # Update range status to paused and enqueue event atomically
+    update_range_status(
+        range_id,
+        "paused",
+        paused_at="NOW()",
+        outbox_event=build_status_event(request_id, range_id, user_id, "paused"),
     )
 
     logger.info(
@@ -695,13 +692,11 @@ def run_range_resume(request_id: str) -> None:
         # Fatal: range cannot resume without NGFW
         error_msg = f"Failed to start NGFW: {e}"
         logger.exception("run_range_resume: %s request_id=%s", error_msg, request_id)
-        update_range_status(range_id, "failed", error_message=error_msg)
-        publish_status_update(
-            request_id=request_id,
-            range_id=range_id,
-            user_id=user_id,
-            new_status="failed",
+        update_range_status(
+            range_id,
+            "failed",
             error_message=error_msg,
+            outbox_event=build_status_event(request_id, range_id, user_id, "failed", error_msg),
         )
         raise RuntimeError(error_msg) from e
 
@@ -747,27 +742,24 @@ def run_range_resume(request_id: str) -> None:
         error_msg = f"Failed to resume {len(failures)}/{len(instances)} instances"
         logger.error("run_range_resume: %s", error_msg)
 
-        # Update status to failed
-        update_range_status(range_id, "failed", error_message=error_msg)
-        publish_status_update(
-            request_id=request_id,
-            range_id=range_id,
-            user_id=user_id,
-            new_status="failed",
+        # Update status and enqueue event atomically
+        update_range_status(
+            range_id,
+            "failed",
             error_message=error_msg,
+            outbox_event=build_status_event(request_id, range_id, user_id, "failed", error_msg),
         )
         raise RuntimeError(error_msg)
 
     # Update instance statuses in database
     _update_instance_statuses(request_id, "ready")
 
-    # Update range status to ready
-    update_range_status(range_id, "ready", ready_at="NOW()")
-    publish_status_update(
-        request_id=request_id,
-        range_id=range_id,
-        user_id=user_id,
-        new_status="ready",
+    # Update range status to ready and enqueue event atomically
+    update_range_status(
+        range_id,
+        "ready",
+        ready_at="NOW()",
+        outbox_event=build_status_event(request_id, range_id, user_id, "ready"),
     )
 
     logger.info(
