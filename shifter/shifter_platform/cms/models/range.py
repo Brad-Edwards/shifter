@@ -71,6 +71,7 @@ class RangeInstance(SoftDeleteMixin, models.Model):
     status = models.CharField(max_length=20, default="pending")
     range_spec = models.JSONField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
     deleted_at = models.DateTimeField(null=True, blank=True)
 
     # ``objects`` is a SoftDeleteManager: every queryset pre-filters to

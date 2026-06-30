@@ -425,6 +425,17 @@ GUACAMOLE_TOKEN_RETRY_ATTEMPTS = int(os.environ.get("GUACAMOLE_TOKEN_RETRY_ATTEM
 GUACAMOLE_TOKEN_RETRY_BASE_DELAY_MS = int(os.environ.get("GUACAMOLE_TOKEN_RETRY_BASE_DELAY_MS", "200"))
 
 # ------------------------------------------------------------------------------
+# Range event reconciliation (Phase 3, #476)
+# ------------------------------------------------------------------------------
+
+# Seconds a RangeInstance must remain in a non-terminal status without being
+# updated before the reconciler considers it stale and re-drives the projection.
+RANGE_RECONCILE_STALE_SECONDS: int = int(os.environ.get("RANGE_RECONCILE_STALE_SECONDS", "300"))
+
+# Maximum RangeInstance rows the reconciler processes per run (bounded batch).
+RANGE_RECONCILE_BATCH_SIZE: int = int(os.environ.get("RANGE_RECONCILE_BATCH_SIZE", "100"))
+
+# ------------------------------------------------------------------------------
 # CTF Configuration
 # ------------------------------------------------------------------------------
 

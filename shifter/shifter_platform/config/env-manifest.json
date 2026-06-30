@@ -438,6 +438,16 @@
       "source_file": "config/_cloud.py"
     },
     {
+      "default": "'100'",
+      "name": "RANGE_RECONCILE_BATCH_SIZE",
+      "source_file": "config/settings.py"
+    },
+    {
+      "default": "'300'",
+      "name": "RANGE_RECONCILE_STALE_SECONDS",
+      "source_file": "config/settings.py"
+    },
+    {
       "default": "''",
       "name": "REDIS_HOST",
       "source_file": "config/settings.py"

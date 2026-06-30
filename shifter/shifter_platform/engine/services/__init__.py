@@ -20,7 +20,7 @@ from engine.ssh import SSHConnection
 from ._common import EngineError
 from ._lifecycle import pause_range, resume_range
 from ._ngfw import create_ngfw, destroy_ngfw, start_ngfw, stop_ngfw
-from ._queries import get_ranges_for_ngfw, get_user_ready_range_instances
+from ._queries import get_authoritative_range_status, get_ranges_for_ngfw, get_user_ready_range_instances
 from ._range import (
     cancel_range,
     cancel_range_by_request,
@@ -50,6 +50,7 @@ __all__ = (
     "destroy_ngfw",
     "destroy_range",
     "destroy_range_by_request",
+    "get_authoritative_range_status",
     "get_instance_ips_by_uuid",
     "get_range_status",
     "get_ranges_for_ngfw",
