@@ -131,10 +131,13 @@ to use the `aws-dev` deploy branch:
    This creates the shared S3 state bucket, creates the GitHub OIDC role,
    sets `AWS_ROLE_ARN_DEV` and `TF_INFRA_STATE_BUCKET`, and writes
    per-instance Terraform backend configs under `~/.shifter/<env>-<bucket>/`.
-2. Update `platform/terraform/global/github-runner/dev.tfvars` with the
-   target account's VPC/subnet IDs, apply the runner root, and register each
-   runner with GitHub. AWS deploy workflows use `runs-on: self-hosted`, and
-   bootstrap does not create the runners.
+2. Apply the runner root with non-default runner network IDs: either a
+   dedicated runner VPC or the portal VPC private tier. Do not use the account
+   default VPC, and do not commit live VPC/subnet IDs to tracked placeholder
+   tfvars; keep them in a gitignored operator override or another approved
+   deploy-time binding. Then register each runner with GitHub. AWS deploy
+   workflows use `runs-on: self-hosted`, and bootstrap does not create the
+   runners.
 3. Ensure `/shifter/ami/{kali,ubuntu,windows,dc}` exists in SSM Parameter
    Store before portal Terraform plans/applies. The Packer workflow updates
    these parameters after AMI builds; in a moved account, verify the Packer

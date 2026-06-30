@@ -76,6 +76,9 @@ jobs:
       pull-requests: write
     name: Plan (${{ inputs.environment }})
     runs-on: self-hosted
+    # Backstop only: bound a hung step so it can't hold the self-hosted runner
+    # for GitHub's 6h default (see #1220). Generous vs. real plan times.
+    timeout-minutes: 45
     needs: push-guacamole-images
     if: |
       always() &&
@@ -255,6 +258,8 @@ jobs:
       pull-requests: write
     name: Push Guacamole Images (${{ inputs.environment }})
     runs-on: self-hosted
+    # Backstop only (see #1220); generous vs. real image-push times.
+    timeout-minutes: 60
     environment: ${{ inputs.github_environment }}
     if: |
       inputs.apply_changes &&
@@ -352,6 +357,8 @@ jobs:
       pull-requests: write
     name: Apply (${{ inputs.environment }})
     runs-on: self-hosted
+    # Backstop only (see #1220). Generous so a cold apply is never cut off.
+    timeout-minutes: 120
     environment: ${{ inputs.github_environment }}
     needs: [plan, push-guacamole-images]
     if: |
@@ -508,69 +515,46 @@ jobs:
             --stack portal \
             --github-env
       - run: terraform init -backend-config="${SHIFTER_BACKEND_CONFIG_PATH}"
-      - name: Handle Service Discovery replacement
-        env:
-          ENV: ${{ inputs.environment }}
+      - name: Plan
         run: |
-          echo "Creating saved Terraform plan for Service Discovery check and apply..."
           terraform plan -detailed-exitcode -lock-timeout=5m -var-file="${SHIFTER_PORTAL_REMOTE_STATE_TFVARS}" -out=tfplan 2>&1 || PLAN_EXIT=$?
           if [ "${PLAN_EXIT:-0}" != "0" ] && [ "${PLAN_EXIT:-0}" != "2" ]; then
             echo "::error::Terraform plan failed with exit code ${PLAN_EXIT}"
             exit "${PLAN_EXIT}"
           fi
-
           if [ ! -f tfplan ]; then
             echo "::error::Terraform did not create the expected saved plan tfplan"
             exit 1
           fi
-
           terraform show -no-color tfplan
-
-          echo "Checking saved Terraform plan for Service Discovery changes..."
-          if terraform show -json tfplan | jq -e '.resource_changes[]? | select(.address | contains("service_discovery_service")) | select(.change.actions | index("delete"))' > /dev/null 2>&1; then
-            echo "Service Discovery service deletion detected - scaling down ECS services first"
-
-            # Find the Guacamole ECS cluster using AWS CLI directly (pattern: {env}-portal-guacamole)
-            CLUSTER_NAME="${ENV}-portal-guacamole"
-            echo "Looking for Guacamole cluster: $CLUSTER_NAME"
-
-            # Verify cluster exists
-            if aws ecs describe-clusters --clusters "$CLUSTER_NAME" --query "clusters[0].status" --output text 2>/dev/null | grep -q "ACTIVE"; then
-              echo "Found active Guacamole cluster: $CLUSTER_NAME"
-
-              # Scale down guacd service to deregister from Service Discovery
-              GUACD_SERVICE="${ENV}-portal-guacd"
-              echo "Scaling down guacd service: $GUACD_SERVICE"
-
-              if aws ecs describe-services --cluster "$CLUSTER_NAME" --services "$GUACD_SERVICE" --query "services[0].status" --output text 2>/dev/null | grep -q "ACTIVE"; then
-                echo "Scaling guacd service to 0..."
-                aws ecs update-service --cluster "$CLUSTER_NAME" --service "$GUACD_SERVICE" --desired-count 0 --no-cli-pager
-
-                # Wait for tasks to drain (max 2 minutes)
-                # shellcheck disable=SC2034
-                for i in $(seq 1 24); do
-                  RUNNING=$(aws ecs describe-services --cluster "$CLUSTER_NAME" --services "$GUACD_SERVICE" --query "services[0].runningCount" --output text 2>/dev/null || echo "0")
-                  if [ "$RUNNING" = "0" ]; then
-                    echo "All guacd tasks stopped"
-                    break
-                  fi
-                  echo "Waiting for tasks to stop... ($RUNNING running)"
-                  sleep 5
-                done
-
-                # Give Service Discovery time to deregister
-                echo "Waiting for Service Discovery to deregister instances..."
-                sleep 15
-              else
-                echo "guacd service not found or not active"
-              fi
-            else
-              echo "Guacamole cluster not found or not active"
-            fi
-          else
-            echo "No Service Discovery deletion in saved plan"
-          fi
+      - name: Drain Service Discovery registrations before apply
+        # Detects aws_service_discovery_service deletes in the saved plan and
+        # scales the affected ECS services to 0, polling until Cloud Map
+        # deregisters all instances. Writes sd_replacement_snapshot.json for
+        # the restore step. No-op (empty snapshot) when no SD deletion is planned.
+        # See scripts/handle_sd_replacement/handle_sd_replacement.py.
+        run: |
+          python3 "${GITHUB_WORKSPACE}/scripts/handle_sd_replacement/handle_sd_replacement.py" \
+            drain --tf-plan tfplan --tf-outputs-from .
       - run: terraform apply -lock-timeout=5m tfplan
+      - name: Restore ECS desired counts after apply
+        # Reads sd_replacement_snapshot.json written by the drain step and
+        # scales each ECS service back to its original desiredCount.
+        # Idempotent: no-op when the snapshot is empty or absent.
+        #
+        # Runs on every non-cancelled outcome (`!cancelled()`), including a
+        # failed drain or failed `terraform apply`. The drain step scales ECS
+        # services to 0 out of band, and aws_ecs_service.guacd ignores
+        # desired_count drift, so Terraform will NOT bring it back: if a
+        # failure between drain and this step skipped restore, the service
+        # would be stranded at 0. The failure-safe condition guarantees the
+        # out-of-band mutation always has its restore path. It does not mask a
+        # failed apply — the failed step still fails the job.
+        # See scripts/handle_sd_replacement/handle_sd_replacement.py.
+        if: ${{ !cancelled() }}
+        run: |
+          python3 "${GITHUB_WORKSPACE}/scripts/handle_sd_replacement/handle_sd_replacement.py" \
+            restore --snapshot sd_replacement_snapshot.json
       - name: Assert portal inspection route/endpoint wiring
         # When portal east-west inspection is enabled, the direct private->NAT
         # default route is removed, so a stale / wrong-AZ / unhealthy firewall
@@ -673,6 +657,8 @@ jobs:
       pull-requests: write
     name: Build (${{ inputs.environment }})
     runs-on: self-hosted
+    # Backstop only (see #1220); generous vs. real image-build times.
+    timeout-minutes: 90
     environment: ${{ inputs.github_environment }}
     needs: apply
     # Runs for Terraform changes (after a successful apply) AND for
@@ -758,6 +744,8 @@ jobs:
       pull-requests: write
     name: Deploy (${{ inputs.environment }})
     runs-on: self-hosted
+    # Backstop only (see #1220); generous vs. real deploy/stabilization times.
+    timeout-minutes: 90
     environment: ${{ inputs.github_environment }}
     needs: build
     if: inputs.apply_changes && github.event_name != 'pull_request'
@@ -1180,6 +1168,8 @@ jobs:
       pull-requests: write
     name: Verify (${{ inputs.environment }})
     runs-on: self-hosted
+    # Backstop only (see #1220).
+    timeout-minutes: 60
     environment: ${{ inputs.github_environment }}
     needs: deploy
     if: inputs.apply_changes && github.event_name != 'pull_request' && needs.deploy.result == 'success'
@@ -1281,6 +1271,8 @@ jobs:
       issues: write
     name: Post-deploy smoke (${{ inputs.environment }})
     runs-on: self-hosted
+    # Backstop only (see #1220).
+    timeout-minutes: 60
     environment: ${{ inputs.github_environment }}
     needs: verify
     if: |

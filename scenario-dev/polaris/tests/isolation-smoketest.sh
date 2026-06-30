@@ -67,6 +67,37 @@ must_not_reach() {
     fi
 }
 
+# Return 0 if src resolves domain, else 1.
+can_resolve() {
+    local src="$1" domain="$2"
+    docker exec "$src" python3 -c "
+import socket, sys
+try:
+    socket.getaddrinfo('$domain', None)
+    sys.exit(0)
+except socket.gaierror:
+    sys.exit(1)
+" >/dev/null 2>&1
+}
+
+must_resolve() {
+    local src="$1" domain="$2" label="$3"
+    if can_resolve "$src" "$domain"; then
+        pass "$src resolves $label ($domain)"
+    else
+        fail "$src did NOT resolve $label ($domain) — in-range DNS must work"
+    fi
+}
+
+must_not_resolve() {
+    local src="$1" domain="$2" label="$3"
+    if can_resolve "$src" "$domain"; then
+        fail "$src resolved $label ($domain) — external/sinkholed DNS must fail"
+    else
+        pass "$src did not resolve $label ($domain) (expected)"
+    fi
+}
+
 echo "NORTHSTORM network isolation smoketest"
 echo "Topology: shared/corporate/scada/lab/bunker-ot bridges + A2 VM at $A2_DC_IP"
 
@@ -259,6 +290,37 @@ must_not_reach a13-brain 172.20.0.10  80   "A0 website (shared)"
 must_not_reach a13-brain 172.20.10.40 445  "A4 SMB (corporate)"
 must_not_reach a13-brain 172.20.40.10 502  "A5 SCADA (scada)"
 must_not_reach a13-brain 172.20.30.30 5432 "A8 research DB (lab)"
+
+# =============================================================================
+# DNS egress containment (#1172)
+# Host-level checks exercise Route 53 Resolver DNS Firewall on the range VPC.
+# Container checks exercise the participant DNS path through the scenario dns
+# service once public-recursive upstream egress is removed.
+# =============================================================================
+echo
+echo "=== DNS egress containment ==="
+
+if command -v dig >/dev/null 2>&1; then
+    blocked_answer=$(dig +short @169.254.169.253 example.com 2>/dev/null | head -n1 || true)
+    if [[ -n "$blocked_answer" ]]; then
+        fail "host VPC resolver answered example.com — unlisted external DNS must be blocked"
+    else
+        pass "host VPC resolver blocked example.com (expected)"
+    fi
+
+    allowed_answer=$(dig +short @169.254.169.253 ssm.us-east-2.amazonaws.com 2>/dev/null | head -n1 || true)
+    if [[ -n "$allowed_answer" ]]; then
+        pass "host VPC resolver answered allowed .amazonaws.com bootstrap name"
+    else
+        fail "host VPC resolver did not answer ssm.us-east-2.amazonaws.com — bootstrap DNS must work"
+    fi
+else
+    echo "  [SKIP] dig not available on range host for VPC resolver checks" >&2
+fi
+
+must_not_resolve a14-kali "example.com" "external domain via participant DNS path"
+must_resolve a14-kali "dc01.boreas.local" "in-range DC hostname"
+must_not_reach a14-kali 8.8.8.8 53 "public recursive DNS (8.8.8.8:53)"
 
 echo
 echo "=================================================="

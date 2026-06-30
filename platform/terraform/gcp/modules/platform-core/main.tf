@@ -51,6 +51,7 @@ locals {
     "compute.googleapis.com",
     "container.googleapis.com",
     "identitytoolkit.googleapis.com",
+    "monitoring.googleapis.com",
     "pubsub.googleapis.com",
     "redis.googleapis.com",
     "run.googleapis.com",
@@ -164,6 +165,18 @@ module "portal_messaging" {
   name_prefix                  = local.name_prefix
   common_labels                = local.common_labels
   platform_event_subscriptions = local.platform_event_subscriptions
+
+  enable_dlq            = var.messaging_enable_dlq
+  max_delivery_attempts = var.messaging_max_delivery_attempts
+  dlq_retention         = var.messaging_dlq_retention
+  retry_min_backoff     = var.messaging_retry_min_backoff
+  retry_max_backoff     = var.messaging_retry_max_backoff
+
+  enable_alarms               = var.messaging_enable_alarms
+  alarm_queue_depth_threshold = var.messaging_alarm_queue_depth_threshold
+  alarm_message_age_threshold = var.messaging_alarm_message_age_threshold
+  alarm_dlq_threshold         = var.messaging_alarm_dlq_threshold
+  notification_channels       = var.messaging_notification_channels
 
   depends_on = [module.project_services]
 }

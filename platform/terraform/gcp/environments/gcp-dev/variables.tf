@@ -266,3 +266,67 @@ variable "github_repo" {
   type        = string
   default     = "shifter"
 }
+
+# ------------------------------------------------------------------------------
+# Messaging DLQ / Retry / Alerting
+# ------------------------------------------------------------------------------
+
+variable "messaging_enable_dlq" {
+  description = "Enable dead-letter topic and policy for platform event subscriptions."
+  type        = bool
+  default     = true
+}
+
+variable "messaging_max_delivery_attempts" {
+  description = "Max delivery attempts before a message moves to the dead-letter topic (GCP minimum 5)."
+  type        = number
+  default     = 5
+}
+
+variable "messaging_dlq_retention" {
+  description = "Message retention duration for the dead-letter subscription (e.g. '1209600s' = 14 days)."
+  type        = string
+  default     = "1209600s"
+}
+
+variable "messaging_retry_min_backoff" {
+  description = "Minimum backoff for the subscription retry policy (e.g. '10s')."
+  type        = string
+  default     = "10s"
+}
+
+variable "messaging_retry_max_backoff" {
+  description = "Maximum backoff for the subscription retry policy (e.g. '600s')."
+  type        = string
+  default     = "600s"
+}
+
+variable "messaging_enable_alarms" {
+  description = "Enable Cloud Monitoring alert policies for event subscription monitoring."
+  type        = bool
+  default     = false
+}
+
+variable "messaging_alarm_queue_depth_threshold" {
+  description = "Alert threshold for num_undelivered_messages on source subscriptions."
+  type        = number
+  default     = 100
+}
+
+variable "messaging_alarm_message_age_threshold" {
+  description = "Alert threshold in seconds for oldest_unacked_message_age on source subscriptions."
+  type        = number
+  default     = 300
+}
+
+variable "messaging_alarm_dlq_threshold" {
+  description = "Alert threshold for messages visible in the dead-letter subscription."
+  type        = number
+  default     = 1
+}
+
+variable "messaging_notification_channels" {
+  description = "Cloud Monitoring notification channel resource IDs for messaging alerts."
+  type        = list(string)
+  default     = []
+}

@@ -95,6 +95,145 @@ def _rbac_subjects(documents: list[dict[str, Any]]) -> set[tuple[str, str]]:
     return subjects
 
 
+# The canonical provisioner contract the admission policy pins. These must stay
+# aligned with shared.cloud.PROVISIONER_CONTAINER_NAME, the provisioner KSA in
+# platform/charts/shifter/values.yaml + platform/k8s/gcp/base/serviceaccounts.yaml,
+# and the runtime ENGINE_TASK_IMAGE published in the platform-runtime ConfigMap.
+PROVISIONER_POLICY_NAME = "restrict-provisioner-jobs"
+PROVISIONER_SERVICE_ACCOUNT = "provisioner"
+PROVISIONER_CONTAINER = "pulumi-provisioner"
+PROVISIONER_LAUNCHER_USERNAME = "system:serviceaccount:shifter-platform:workers"
+PROVISIONER_IMAGE_PARAM = "ENGINE_TASK_IMAGE"
+RUNTIME_PARAM_CONFIGMAP = "platform-runtime"
+PLATFORM_NAMESPACE = "shifter-platform"
+JOBS_NAMESPACE = "shifter-jobs"
+
+
+def _documents_by_kind(documents: list[dict[str, Any]], kind: str) -> dict[str, dict[str, Any]]:
+    return {document["metadata"]["name"]: document for document in documents if document.get("kind") == kind}
+
+
+def _policy(documents: list[dict[str, Any]]) -> dict[str, Any]:
+    policies = _documents_by_kind(documents, "ValidatingAdmissionPolicy")
+    assert PROVISIONER_POLICY_NAME in policies, (
+        f"a ValidatingAdmissionPolicy named {PROVISIONER_POLICY_NAME!r} must gate provisioner Jobs"
+    )
+    return policies[PROVISIONER_POLICY_NAME]
+
+
+def _binding(documents: list[dict[str, Any]]) -> dict[str, Any]:
+    bindings = _documents_by_kind(documents, "ValidatingAdmissionPolicyBinding")
+    assert PROVISIONER_POLICY_NAME in bindings, (
+        f"a ValidatingAdmissionPolicyBinding named {PROVISIONER_POLICY_NAME!r} must bind the policy"
+    )
+    return bindings[PROVISIONER_POLICY_NAME]
+
+
+def _policy_expressions(policy: dict[str, Any]) -> str:
+    """All CEL text the policy evaluates (variables + validation expressions)."""
+    spec = policy["spec"]
+    variable_expressions = [variable.get("expression", "") for variable in spec.get("variables", [])]
+    validation_expressions = [validation.get("expression", "") for validation in spec.get("validations", [])]
+    return "\n".join(variable_expressions + validation_expressions)
+
+
+@pytest.mark.parametrize(
+    ("source_name", "loader"),
+    [
+        ("base", _load_base_documents),
+        ("helm", _load_helm_documents),
+    ],
+)
+def test_provisioner_job_admission_policy_present(source_name: str, loader: Any) -> None:
+    documents = loader()
+    _policy(documents)  # asserts the policy is present
+    binding = _binding(documents)
+
+    assert binding["spec"]["policyName"] == PROVISIONER_POLICY_NAME, (
+        f"{source_name} binding must reference the provisioner policy"
+    )
+
+
+@pytest.mark.parametrize(
+    ("source_name", "loader"),
+    [
+        ("base", _load_base_documents),
+        ("helm", _load_helm_documents),
+    ],
+)
+def test_provisioner_job_admission_policy_invariants(source_name: str, loader: Any) -> None:
+    documents = loader()
+    policy = _policy(documents)
+    binding = _binding(documents)
+
+    # Fail closed: a CEL evaluation error must deny, not admit.
+    assert policy["spec"]["failurePolicy"] == "Fail", f"{source_name} policy must fail closed"
+
+    # The policy must constrain Job creation in the batch API group.
+    match_rules = policy["spec"]["matchConstraints"]["resourceRules"]
+    job_create_rule = any(
+        "batch" in rule.get("apiGroups", [])
+        and "jobs" in rule.get("resources", [])
+        and "CREATE" in rule.get("operations", [])
+        for rule in match_rules
+    )
+    assert job_create_rule, f"{source_name} policy must match batch/jobs CREATE"
+
+    # Image pin is parameterised off a ConfigMap (the live platform-runtime one).
+    assert policy["spec"]["paramKind"] == {"apiVersion": "v1", "kind": "ConfigMap"}, (
+        f"{source_name} policy must take its image pin from a ConfigMap param"
+    )
+
+    # The CEL must mirror the full canonical GCPTaskRunner Job contract, not just
+    # caller/image/identity. Pinning the image alone is insufficient: the caller
+    # could keep the image and override the entrypoint, args, env, or volumes. We
+    # assert on the literals so the policy cannot silently drop a constraint
+    # without failing this test. Each needle maps to a denial case:
+    #   provisioner SA gate; canonical submitter; container name; image pin;
+    #   no command/entrypoint override; range/ngfw command family; no envFrom;
+    #   emptyDir-only volumes; read-only-root-fs + drop-ALL security context;
+    #   restartPolicy Never.
+    expressions = _policy_expressions(policy)
+    for needle in (
+        f"'{PROVISIONER_SERVICE_ACCOUNT}'",
+        PROVISIONER_LAUNCHER_USERNAME,
+        f"'{PROVISIONER_CONTAINER}'",
+        PROVISIONER_IMAGE_PARAM,
+        "!has(c.command)",
+        "'range'",
+        "'ngfw'",
+        "c.envFrom",
+        "v.emptyDir",
+        "readOnlyRootFilesystem",
+        "'ALL'",
+        "'Never'",
+    ):
+        assert needle in expressions, f"{source_name} policy CEL must reference {needle!r}"
+
+    # Binding: hard deny, scoped to shifter-jobs, fail-closed on a missing param.
+    assert binding["spec"]["validationActions"] == ["Deny"], f"{source_name} binding must Deny"
+    param_ref = binding["spec"]["paramRef"]
+    assert param_ref["name"] == RUNTIME_PARAM_CONFIGMAP
+    assert param_ref["namespace"] == PLATFORM_NAMESPACE
+    assert param_ref["parameterNotFoundAction"] == "Deny", f"{source_name} binding param must fail closed"
+    namespace_selector = binding["spec"]["matchResources"]["namespaceSelector"]["matchLabels"]
+    assert namespace_selector.get("kubernetes.io/metadata.name") == JOBS_NAMESPACE, (
+        f"{source_name} binding must be scoped to the {JOBS_NAMESPACE} namespace"
+    )
+
+
+def test_provisioner_job_admission_policy_base_helm_equivalent() -> None:
+    base_documents = _load_base_documents()
+    helm_documents = _load_helm_documents()
+
+    assert _policy(base_documents) == _policy(helm_documents), (
+        "the provisioner admission policy must be identical in the static base and the Helm chart"
+    )
+    assert _binding(base_documents) == _binding(helm_documents), (
+        "the provisioner admission policy binding must be identical in the static base and the Helm chart"
+    )
+
+
 @pytest.mark.parametrize(
     ("source_name", "loader"),
     [

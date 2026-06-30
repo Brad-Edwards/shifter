@@ -113,8 +113,59 @@ def _append_kwarg_assignment(assignments: list[Any], values: list[Any], key: str
     values.append(value)
 
 
-def update_range_status(range_id: int, status: str, **kwargs: str | int | None) -> None:
-    """Update range status in database."""
+def enqueue_event_outbox(event: dict[str, object], *, cur: psycopg.Cursor[tuple[object, ...]] | None = None) -> None:
+    """Insert an event into the transactional outbox for durable delivery.
+
+    When ``cur`` is provided the INSERT is executed on that cursor and the
+    caller owns the surrounding transaction/commit (atomic with the state
+    change).  When ``cur`` is None a new connection is opened, the row is
+    inserted, and the connection is committed immediately.
+
+    Uses ON CONFLICT (event_id) DO NOTHING so the call is idempotent.
+
+    Args:
+        event: Full event dict; must contain ``event_id`` and ``event_type``.
+        cur:   Optional psycopg cursor sharing the caller's transaction.
+
+    Raises:
+        Exception: Any DB error is re-raised — callers must learn when durable
+            recording fails.
+    """
+    _insert_sql = """
+        INSERT INTO engine_range_event_outbox
+            (event_id, event_type, payload, status, attempts, max_attempts,
+             next_attempt_at, created_at)
+        VALUES
+            (%s, %s, %s, 'PENDING', 0, 10, NOW(), NOW())
+        ON CONFLICT (event_id) DO NOTHING
+    """
+    params = (str(event["event_id"]), event["event_type"], json.dumps(event))
+
+    if cur is not None:
+        cur.execute(_insert_sql, params)
+    else:
+        with get_db_connection() as conn:
+            with conn.cursor() as _cur:
+                _cur.execute(_insert_sql, params)
+            conn.commit()
+
+
+def update_range_status(
+    range_id: int,
+    status: str,
+    outbox_event: dict | None = None,
+    **kwargs: str | int | None,
+) -> None:
+    """Update range status in database.
+
+    Args:
+        range_id:     Primary key of the Range.
+        status:       New status string.
+        outbox_event: Optional event dict to insert into the outbox atomically
+                      with the status update.  When provided, the INSERT and
+                      the UPDATE commit in the same transaction.
+        **kwargs:     Additional column=value pairs for the UPDATE SET clause.
+    """
     logger.debug("update_range_status: range_id=%s status=%s kwargs=%s", range_id, status, list(kwargs.keys()))
     with get_db_connection() as conn:
         with conn.cursor() as cur:
@@ -132,6 +183,9 @@ def update_range_status(range_id: int, status: str, **kwargs: str | int | None) 
             values.append(range_id)
             query = sql.SQL("UPDATE mission_control_range SET {} WHERE id = %s").format(sql.SQL(", ").join(assignments))
             cur.execute(query, values)
+
+            if outbox_event is not None:
+                enqueue_event_outbox(outbox_event, cur=cur)
         conn.commit()
 
 
@@ -140,8 +194,18 @@ def write_provisioned_state(
     subnets: dict[str, dict[str, Any]],
     instances: list[dict[str, Any]],
     ngfw_instance_id: int | None = None,
+    outbox_event: dict | None = None,
 ) -> None:
-    """Write provisioned infrastructure state directly to database."""
+    """Write provisioned infrastructure state directly to database.
+
+    Args:
+        range_id:        Primary key of the Range.
+        subnets:         Mapping of subnet name → subnet data dict.
+        instances:       List of instance data dicts.
+        ngfw_instance_id: FK to the NGFW Instance, if any.
+        outbox_event:    Optional event dict to insert into the outbox
+                         atomically with the state writes.
+    """
     provider = _get_cloud_provider()
     with get_db_connection() as conn:
         with conn.cursor() as cur:
@@ -206,6 +270,9 @@ def write_provisioned_state(
                 range_id,
                 len(provisioned_instances),
             )
+
+            if outbox_event is not None:
+                enqueue_event_outbox(outbox_event, cur=cur)
 
         conn.commit()
     logger.info(

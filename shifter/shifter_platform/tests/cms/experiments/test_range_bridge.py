@@ -18,6 +18,7 @@ import pytest
 from botocore.exceptions import ClientError
 from django.contrib.auth import get_user_model
 
+from cms.experiments.events import ExperimentEventError
 from cms.experiments.models import Experiment, ExperimentRun
 from cms.experiments.schemas import RunStatus
 from cms.handlers import notify_experiment_on_range_ready, process_range_event
@@ -94,7 +95,13 @@ class TestNotifyExperimentOnRangeReady:
         notify_experiment_on_range_ready(ri, {})  # must not raise
         sqs_client.send_message.assert_not_called()
 
-    def test_marks_run_failed_on_sqs_error(self, user, sqs_client):
+    def test_transient_publish_error_propagates_and_does_not_mark_run_failed(self, user, sqs_client):
+        """A transient SQS publish failure PROPAGATES (not converted into a FAILED run).
+
+        The worker/DLQ retry path depends on the exception not being swallowed.
+        Irreversibly marking the run as FAILED here would be incorrect: a broker
+        hiccup should not permanently fail an experiment run.
+        """
         req = _request(user)
         run = _experiment_run(user, req)
         ri = _range_instance(user, request=req)
@@ -102,11 +109,11 @@ class TestNotifyExperimentOnRangeReady:
             {"Error": {"Code": "500", "Message": "SQS unavailable"}}, "SendMessage"
         )
 
-        notify_experiment_on_range_ready(ri, {"Workstation": {"instance_id": "i-abc123"}})
+        with pytest.raises(ExperimentEventError):
+            notify_experiment_on_range_ready(ri, {"Workstation": {"instance_id": "i-abc123"}})
 
         run.refresh_from_db()
-        assert run.status == RunStatus.FAILED.value
-        assert run.error_message == "Failed to publish range provisioning notification"
+        assert run.status == RunStatus.PENDING.value  # NOT transitioned to FAILED
 
 
 class TestProcessRangeEventBridgeIntegration:
@@ -140,3 +147,57 @@ class TestProcessRangeEventBridgeIntegration:
 
         process_range_event(self._event(req, user, new_status=ResourceStatus.PROVISIONING.value))
         sqs_client.send_message.assert_not_called()
+
+    def test_transient_sqs_error_propagates_through_process_range_event(self, user, sqs_client):
+        """Transient SQS publish failure propagates out of process_range_event.
+
+        The worker must not ack the message when the broker call fails — the
+        exception should reach the caller so the SQS visibility timeout expires
+        and the message is redelivered.
+        """
+        req = _request(user)
+        _experiment_run(user, req)
+        _range_instance(user, request=req, range_id=None)
+
+        sqs_client.send_message.side_effect = ClientError(
+            {"Error": {"Code": "500", "Message": "SQS unavailable"}}, "SendMessage"
+        )
+
+        with pytest.raises(ExperimentEventError):
+            process_range_event(self._event(req, user, new_status=ResourceStatus.READY.value))
+
+    def test_bridge_failure_rolls_back_status_so_retry_refires(self, user, sqs_client):
+        """A READY event whose experiment bridge fails must roll back the status.
+
+        Regression for the codex finding: apply_range_status saved status=READY
+        before firing the bridge, so a bridge failure left the row at READY and
+        the redelivered event was treated as an already-converged no-op, with the
+        bridge effect permanently skipped. The status write and the bridge must
+        be a single retryable unit: on bridge failure the status rolls back, and
+        the retry re-fires the bridge.
+        """
+        req = _request(user)
+        run = _experiment_run(user, req)
+        ri = _range_instance(user, request=req, range_id=None)
+
+        # First delivery: bridge publish fails -> status must NOT be left at READY.
+        sqs_client.send_message.side_effect = ClientError(
+            {"Error": {"Code": "500", "Message": "SQS unavailable"}}, "SendMessage"
+        )
+        with pytest.raises(ExperimentEventError):
+            process_range_event(self._event(req, user, new_status=ResourceStatus.READY.value))
+
+        ri.refresh_from_db()
+        assert ri.status == ResourceStatus.PROVISIONING.value  # rolled back, not READY
+
+        # Redelivery (retry): broker recovers -> status advances AND bridge fires.
+        # Reset call history (not side_effect) so _sent_body sees only the retry's publish.
+        sqs_client.send_message.side_effect = None
+        sqs_client.send_message.reset_mock()
+        provisioned = {"Workstation": {"instance_id": "i-abc123"}}
+        process_range_event(self._event(req, user, new_status=ResourceStatus.READY.value, instances=provisioned))
+
+        ri.refresh_from_db()
+        assert ri.status == ResourceStatus.READY.value
+        body = _sent_body(sqs_client)
+        assert body["run_id"] == run.pk

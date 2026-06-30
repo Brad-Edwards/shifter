@@ -31,3 +31,7 @@ class CloudQueueError(CloudError):
 
 class CloudSecretsError(CloudError):
     """Error during secrets retrieval operations."""
+
+
+class CloudEventBusError(CloudError):
+    """Error during event bus publish operations."""

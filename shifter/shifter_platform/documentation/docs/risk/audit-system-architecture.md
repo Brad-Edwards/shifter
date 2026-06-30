@@ -8,7 +8,7 @@ Two audit mechanisms exist:
 
 | Mechanism | Location | Scope | Storage |
 |-----------|----------|-------|---------|
-| `AuditLog` | `risk_register/models.py` | Risk, Comment, APIKey entities | Database |
+| `AuditLog` | `risk_register/models.py` | Risk, Comment, and archival APIKey entities (the `APIKEY` entity/actor enums are retained for historical rows; the credential is retired under PLAT-106 / #1124) | Database |
 | `ActivityLog` | `management/models.py` | Agent upload/delete only | Database |
 
 **Gaps**: Range lifecycle, credentials, authentication, user management, configuration changes unaudited.
@@ -39,6 +39,24 @@ graph TB
 ```
 
 All apps call `risk_register.services.audit_log()` to record events. AuditLog becomes the single source of truth.
+
+## Audit Failure Policy
+
+Audit writes are mode-dependent:
+
+- Safety-control audit writes use `audit_log(..., strict=True)`. These writes
+  are mandatory: persistence failure is re-raised so callers can fail closed and
+  roll back the mutation the audit row would have described.
+- Default audit writes are best-effort for the caller, but not silent. A failed
+  non-strict write records bounded process-local degraded state in
+  `risk_register.audit_health` before returning `None`.
+- Degraded audit health is exposed through the existing `django-health-check`
+  registry as `AuditLogDegradedHealthCheck`. Public `/health` keeps its coarse
+  body shape (`working` / `unavailable`) and never includes audit payloads,
+  request data, or raw database/serialization exception text.
+
+A durable retry queue for non-strict audit writes is a separate design: it must
+own queue storage, encryption, retention, replay, and operator reset semantics.
 
 ## Extended AuditLog Model
 

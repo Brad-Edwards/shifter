@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any
 
 from django.conf import settings
 
+from risk_register.audit_health import mark_audit_degraded
 from risk_register.models import AuditLog
 from shared.log_sanitize import safe_log_fingerprint
 
@@ -146,7 +147,8 @@ def audit_log(event: AuditEvent, *, strict: bool = False) -> AuditLog | None:
             safe_log_fingerprint(actor_id),
         )
         return entry
-    except Exception:
+    except Exception as exc:
+        mark_audit_degraded(exc)
         # Audit logging should never break the application
         op_name = str(action).replace("\r", " ").replace("\n", " ")[:100]
         op_target_kind = str(entity_type).replace("\r", " ").replace("\n", " ")[:100]

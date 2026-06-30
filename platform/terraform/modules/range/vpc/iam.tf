@@ -5,8 +5,13 @@
 # - SSM managed instance core policy for Systems Manager access
 # - S3 read access for agent installers
 # - Bedrock access for Claude Code on range instances
-# - SSM Parameter Store access for DC config (DC writes, domain members read)
 # - Instance profile to attach role to EC2 instances
+#
+# Range guests do NOT access SSM Parameter Store via this role: all range
+# SSM access is brokered by the engine provisioner via Run Command
+# (`{{ssm-secure:<name>}}` substitution and provisioner-side GetParameter).
+# A direct Parameter Store grant here would be over-broad and cross-tenant;
+# see issue #1178 and scripts/check_tf_iam_ssm_range_scope.
 
 # Data sources for constructing ARNs
 data "aws_caller_identity" "current" {}
@@ -81,47 +86,6 @@ resource "aws_iam_role_policy" "range_instance_bedrock" {
           "arn:aws:bedrock:*:*:inference-profile/*",
           "arn:aws:bedrock:*:*:foundation-model/*"
         ]
-      }
-    ]
-  })
-}
-
-# SSM Parameter Store access for DC configuration
-# DC instances write config after promotion, domain members read to join
-resource "aws_iam_role_policy" "range_instance_ssm_params" {
-  name = "ssm-dc-config"
-  role = aws_iam_role.range_instance.id
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Sid    = "SSMParameterAccess"
-        Effect = "Allow"
-        Action = [
-          "ssm:PutParameter",
-          "ssm:GetParameter",
-          "ssm:GetParameters",
-          "ssm:DeleteParameter"
-        ]
-        # Scoped to /shifter/*/range/* to cover all environments and ranges
-        Resource = "arn:aws:ssm:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:parameter/shifter/*/range/*"
-      },
-      {
-        Sid    = "KMSAccessForSSMSecureString"
-        Effect = "Allow"
-        Action = [
-          "kms:Decrypt",
-          "kms:Encrypt",
-          "kms:GenerateDataKey"
-        ]
-        # AWS managed key for SSM - scoped via condition
-        Resource = "*"
-        Condition = {
-          StringEquals = {
-            "kms:ViaService" = "ssm.${data.aws_region.current.name}.amazonaws.com"
-          }
-        }
       }
     ]
   })

@@ -32,6 +32,9 @@ check_layer_imports:
 check_rds_pending_modifications:
   - 'scripts/check_rds_pending_modifications/**'
 
+handle_sd_replacement:
+  - 'scripts/handle_sd_replacement/**'
+
 assert_portal_inspection:
   - 'scripts/assert_portal_inspection/**'
 
@@ -49,6 +52,7 @@ terraform:
   - 'scripts/check_tf_sg_cidrs/**'
   - 'scripts/check_tf_kms_secrets_grant/**'
   - 'scripts/check_tf_rds_security/**'
+  - 'scripts/check_tf_iam_ssm_range_scope/**'
   - 'scripts/check_portal_target_sg_sources/**'
 
 k8s:

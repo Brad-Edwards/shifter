@@ -107,6 +107,28 @@ workers:
         cpu: 250m
         memory: 256Mi
         ephemeral-storage: 256Mi
+  outboxDrainer:
+    replicas: 1
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+        ephemeral-storage: 128Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+        ephemeral-storage: 256Mi
+  reconciler:
+    replicas: 1
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+        ephemeral-storage: 128Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+        ephemeral-storage: 256Mi
 
 guacd:
   replicas: 1
