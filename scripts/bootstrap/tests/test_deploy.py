@@ -2392,7 +2392,7 @@ class TestGkeGcloudAuthPlugin:
     def test_skips_install_when_plugin_already_present(self):
         """No package-manager calls should run when the plugin is already on PATH."""
         with (
-            patch("deploy.shutil.which", return_value="/usr/bin/gke-gcloud-auth-plugin"),
+            patch("shutil.which", return_value="/usr/bin/gke-gcloud-auth-plugin"),
             patch("deploy.run_cmd") as mock_run_cmd,
         ):
             deploy.ensure_gke_gcloud_auth_plugin()
@@ -2418,7 +2418,7 @@ class TestGkeGcloudAuthPlugin:
             return result
 
         with (
-            patch("deploy.shutil.which", side_effect=which_side_effect),
+            patch("shutil.which", side_effect=which_side_effect),
             patch("deploy.os.geteuid", return_value=0),
             patch("deploy.run_cmd") as mock_run_cmd,
         ):
@@ -2451,7 +2451,7 @@ class TestGkeGcloudAuthPlugin:
             return result
 
         with (
-            patch("deploy.shutil.which", side_effect=which_side_effect),
+            patch("shutil.which", side_effect=which_side_effect),
             patch("deploy.os.geteuid", return_value=1000),
             patch("deploy.run_cmd") as mock_run_cmd,
         ):
@@ -2486,7 +2486,7 @@ class TestGkeGcloudAuthPlugin:
     def test_fails_when_plugin_missing_and_host_is_not_apt_based(self):
         """Bootstrap must fail clearly when it cannot satisfy the plugin prerequisite."""
         with (
-            patch("deploy.shutil.which", return_value=None),
+            patch("shutil.which", return_value=None),
             patch("deploy.error") as mock_error,
             pytest.raises(SystemExit),
         ):
@@ -4340,10 +4340,9 @@ class TestAddProjectIamBindingWithRetry:
             _completed(returncode=1, stderr="Service account sa@proj.iam.gserviceaccount.com does not exist."),
             _completed(returncode=0),
         ]
-        with (
-            patch("subprocess.run", side_effect=results) as mock_run,
-            patch("deploy.time.sleep") as mock_sleep,
-        ):
+        # sleep_seconds=0 makes the real time.sleep a no-op, so no first-party
+        # patch is needed to keep the retry fast (ADR-019).
+        with patch("subprocess.run", side_effect=results) as mock_run:
             deploy.add_project_iam_binding_with_retry(
                 "prod-rwctxzl6shxk",
                 "serviceAccount:sa@proj.iam.gserviceaccount.com",
@@ -4351,12 +4350,10 @@ class TestAddProjectIamBindingWithRetry:
                 sleep_seconds=0,
             )
         assert mock_run.call_count == 2
-        mock_sleep.assert_called_once()
 
     def test_non_retryable_failure_exits(self):
         with (
             patch("subprocess.run", return_value=_completed(returncode=1, stderr="PERMISSION_DENIED")),
-            patch("deploy.time.sleep"),
             pytest.raises(SystemExit),
         ):
             deploy.add_project_iam_binding_with_retry(
@@ -4367,7 +4364,6 @@ class TestAddProjectIamBindingWithRetry:
         race = _completed(returncode=1, stderr="concurrent policy changes")
         with (
             patch("subprocess.run", return_value=race) as mock_run,
-            patch("deploy.time.sleep"),
             pytest.raises(SystemExit),
         ):
             deploy.add_project_iam_binding_with_retry(
@@ -4375,6 +4371,7 @@ class TestAddProjectIamBindingWithRetry:
                 "serviceAccount:sa@proj.iam.gserviceaccount.com",
                 "roles/viewer",
                 max_attempts=3,
+                sleep_seconds=0,
             )
         assert mock_run.call_count == 3
 
@@ -4388,24 +4385,24 @@ class TestGcloudComponentsInstallGkePlugin:
     """Tests for deploy._gcloud_components_install_gke_plugin."""
 
     def test_returns_false_when_gcloud_absent(self):
-        with patch("deploy.shutil.which", return_value=None):
+        with patch("shutil.which", return_value=None):
             assert deploy._gcloud_components_install_gke_plugin() is False
 
     def test_dry_run_reports_success_without_running(self):
-        with patch("deploy.shutil.which", return_value="/usr/bin/gcloud"), patch("subprocess.run") as mock_run:
+        with patch("shutil.which", return_value="/usr/bin/gcloud"), patch("subprocess.run") as mock_run:
             assert deploy._gcloud_components_install_gke_plugin(dry_run=True) is True
         mock_run.assert_not_called()
 
     def test_returns_true_on_successful_install(self):
         with (
-            patch("deploy.shutil.which", return_value="/usr/bin/gcloud"),
+            patch("shutil.which", return_value="/usr/bin/gcloud"),
             patch("subprocess.run", return_value=_completed(returncode=0)),
         ):
             assert deploy._gcloud_components_install_gke_plugin() is True
 
     def test_returns_false_and_surfaces_stderr_on_failure(self, capsys):
         with (
-            patch("deploy.shutil.which", return_value="/usr/bin/gcloud"),
+            patch("shutil.which", return_value="/usr/bin/gcloud"),
             patch("subprocess.run", return_value=_completed(returncode=1, stderr="component manager disabled")),
         ):
             assert deploy._gcloud_components_install_gke_plugin() is False
@@ -4422,7 +4419,7 @@ class TestArtifactRegistryServiceIdentityDryRun:
 
     def test_dry_run_skips_network_calls(self):
         config = deploy.GDCBootstrapConfig(project_id="prod-rwctxzl6shxk", cluster_id="cluster1")
-        with patch("subprocess.run") as mock_run, patch("deploy.urllib_request.urlopen") as mock_urlopen:
+        with patch("subprocess.run") as mock_run, patch("urllib.request.urlopen") as mock_urlopen:
             deploy.ensure_gcp_artifact_registry_service_identity(config, dry_run=True)
         mock_run.assert_not_called()
         mock_urlopen.assert_not_called()

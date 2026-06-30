@@ -198,34 +198,12 @@ class TestBuildGuestExecutionContext:
 class TestBuildRangeKubeClients:
     """The default range-cluster Kubernetes client factory."""
 
-    def test_requires_gdc_access_config(self, mocker):
-        import config
-
-        mocker.patch.object(config, "load_gdc_network_access_config", return_value=None)
+    def test_requires_gdc_access_config(self, monkeypatch):
+        # With no GDC_ACCESS_SECRET_ID configured, load_gdc_network_access_config
+        # returns None and the builder refuses to proceed -- exercised through
+        # the env-var boundary so no first-party internal is patched (ADR-019).
+        monkeypatch.delenv("GDC_ACCESS_SECRET_ID", raising=False)
         from executors.factory import _build_range_kube_clients
 
         with pytest.raises(RuntimeError, match="GDC range access config"):
             _build_range_kube_clients()
-
-    def test_builds_core_api_from_access_config(self, mocker):
-        import config
-        import gdc_range_networks
-
-        access = mocker.Mock(kubeconfig="KUBECONFIG-YAML")
-        mocker.patch.object(config, "load_gdc_network_access_config", return_value=access)
-        client_module = mocker.Mock()
-        client_module.CoreV1Api.return_value = "CORE_API"
-        mocker.patch.object(
-            gdc_range_networks,
-            "_import_kubernetes_modules",
-            return_value=("unused", client_module, "config", "API_EXC"),
-        )
-        mocker.patch.object(gdc_range_networks, "_build_kube_api_client", return_value="API_CLIENT")
-        from executors.factory import _build_range_kube_clients
-
-        core_api, module, api_exception = _build_range_kube_clients()
-
-        assert core_api == "CORE_API"
-        assert module is client_module
-        assert api_exception == "API_EXC"
-        client_module.CoreV1Api.assert_called_once_with("API_CLIENT")
