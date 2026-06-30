@@ -99,7 +99,7 @@ if (configScript) {
     // enumeration protection is on, so map the codes to corporate-friendly copy
     // without leaking whether an account exists.
     function friendlyAuthError(error) {
-        switch (error && error.code) {
+        switch (error?.code) {
             case "auth/invalid-credential":
             case "auth/invalid-login-credentials":
             case "auth/wrong-password":
@@ -118,7 +118,7 @@ if (configScript) {
             case "auth/network-request-failed":
                 return "Could not reach the authentication service. Check your network and try again.";
             default:
-                return (error && error.message) || "Unable to authenticate.";
+                return error?.message || "Unable to authenticate.";
         }
     }
 
@@ -145,7 +145,7 @@ if (configScript) {
             }
             throw new Error(body.message || "Authentication failed.");
         }
-        window.location.assign(body.redirect_url || config.dashboardUrl);
+        globalThis.location.assign(body.redirect_url || config.dashboardUrl);
     }
 
     async function sendVerification(user) {
@@ -312,7 +312,7 @@ if (configScript) {
             // owns email-verification and MFA enrollment. A sign-in for an account
             // that already has a second factor rejects here with the resolver.
         } catch (error) {
-            if (error && error.code === "auth/multi-factor-auth-required") {
+            if (error?.code === "auth/multi-factor-auth-required") {
                 pendingResolver = getMultiFactorResolver(auth, error);
                 document.getElementById("identity-totp-signin-code").value = "";
                 clearBanner();

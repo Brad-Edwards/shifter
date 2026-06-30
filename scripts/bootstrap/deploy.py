@@ -1109,7 +1109,7 @@ def rewrite_gdc_kubeconfig_for_platform_access(kubeconfig: str, endpoint: str) -
             out.append(f"{indent}server: {server}")
             out.append(f"{indent}insecure-skip-tls-verify: true")
             continue
-        if stripped.startswith("certificate-authority-data:") or stripped.startswith("certificate-authority:"):
+        if stripped.startswith(("certificate-authority-data:", "certificate-authority:")):
             # Mutually exclusive with insecure-skip-tls-verify; drop it.
             continue
         out.append(line)
@@ -3253,13 +3253,33 @@ def _gcloud_components_install_gke_plugin(dry_run: bool = False) -> bool:
         text=True,
         check=False,
     )
-    if result.returncode == 0:
-        return True
     # Component manager disabled (apt/snap-managed gcloud) or another failure;
     # surface the reason and let the caller fall back to apt.
-    if result.stderr:
+    if result.returncode != 0 and result.stderr:
         print(result.stderr, end="", file=sys.stderr)
-    return False
+    return result.returncode == 0
+
+
+def _install_gke_plugin_via_apt(dry_run: bool = False) -> None:
+    """Install the GKE auth plugin via apt (fallback when the component manager is unavailable)."""
+    if not shutil.which("apt-get"):
+        error(
+            "gke-gcloud-auth-plugin is required for kubectl access to GKE and is not installed. "
+            "Automatic installation requires the gcloud component manager or apt-based package tooling."
+        )
+        sys.exit(1)
+    if os.geteuid() == 0:
+        command_prefix: list[str] = []
+    elif shutil.which("sudo"):
+        command_prefix = ["sudo"]
+    else:
+        install_gke_gcloud_auth_plugin_user_space(dry_run=dry_run)
+        return
+    run_cmd([*command_prefix, "apt-get", "update"], dry_run=dry_run)
+    run_cmd(
+        [*command_prefix, "apt-get", "install", "-y", "google-cloud-cli-gke-gcloud-auth-plugin"],
+        dry_run=dry_run,
+    )
 
 
 def ensure_gke_gcloud_auth_plugin(dry_run: bool = False) -> None:
@@ -3273,27 +3293,7 @@ def ensure_gke_gcloud_auth_plugin(dry_run: bool = False) -> None:
     # installs, where the google-cloud-cli apt repo that the apt paths below
     # require is typically not configured (the cause of a first-run failure).
     if not _gcloud_components_install_gke_plugin(dry_run=dry_run):
-        if shutil.which("apt-get"):
-            if os.geteuid() == 0:
-                command_prefix: list[str] = []
-            elif shutil.which("sudo"):
-                command_prefix = ["sudo"]
-            else:
-                command_prefix = None
-            if command_prefix is not None:
-                run_cmd([*command_prefix, "apt-get", "update"], dry_run=dry_run)
-                run_cmd(
-                    [*command_prefix, "apt-get", "install", "-y", "google-cloud-cli-gke-gcloud-auth-plugin"],
-                    dry_run=dry_run,
-                )
-            else:
-                install_gke_gcloud_auth_plugin_user_space(dry_run=dry_run)
-        else:
-            error(
-                "gke-gcloud-auth-plugin is required for kubectl access to GKE and is not installed. "
-                "Automatic installation requires the gcloud component manager or apt-based package tooling."
-            )
-            sys.exit(1)
+        _install_gke_plugin_via_apt(dry_run=dry_run)
 
     if dry_run:
         return

@@ -26,7 +26,7 @@ import shlex
 import time
 import uuid
 from types import ModuleType
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from executors.guest_ssh_executor import GuestSSHConnectionError, GuestSSHExecutor, TimeoutError
 
@@ -36,6 +36,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+_SHELL = "/bin/sh"
 _NETWORKS_ANNOTATION = "k8s.v1.cni.cncf.io/networks"
 _NETWORK_STATUS_ANNOTATION = "k8s.v1.cni.cncf.io/network-status"
 _RUNNER_CONTAINER = "runner"
@@ -70,7 +71,7 @@ class RangePodSSHExecutor(GuestSSHExecutor):
         runner_pod_name: str = _RUNNER_POD_NAME,
         host_public_key: str | None = None,
         known_hosts_host: str | None = None,
-    ):
+    ) -> None:
         if not namespace or not network_name:
             raise ValueError("RangePodSSHExecutor requires range namespace and network_name")
         if not runner_image:
@@ -108,7 +109,7 @@ class RangePodSSHExecutor(GuestSSHExecutor):
         clobbering one another on the shared runner.
         """
         # Path is inside the range runner pod's ephemeral filesystem, not the local host.
-        return f"/tmp/shifter-guest-key-{uuid.uuid4().hex}.pem"  # noqa: S108  # nosec
+        return f"/tmp/shifter-guest-key-{uuid.uuid4().hex}.pem"  # noqa: S108  # nosec  # NOSONAR
 
     def _provision_known_hosts(self, host: str, host_public_key: str) -> str:
         """The known_hosts lives on the runner pod; return a unique in-pod path.
@@ -118,7 +119,7 @@ class RangePodSSHExecutor(GuestSSHExecutor):
         """
         self._known_hosts_content = f"{host} {host_public_key.strip()}\n"
         # Path is inside the range runner pod's ephemeral filesystem, not the local host.
-        return f"/tmp/shifter-known-hosts-{uuid.uuid4().hex}"  # noqa: S108  # nosec
+        return f"/tmp/shifter-known-hosts-{uuid.uuid4().hex}"  # noqa: S108  # nosec  # NOSONAR
 
     # -- runner pod lifecycle -------------------------------------------------
 
@@ -127,7 +128,7 @@ class RangePodSSHExecutor(GuestSSHExecutor):
         # the range segment (VM IPs and gateway are in the NAD exclude list).
         return json.dumps([{"name": self._network_name, "interface": "net1"}])
 
-    def _build_runner_manifest(self) -> dict:
+    def _build_runner_manifest(self) -> dict[str, Any]:
         spec = {
             "enableServiceLinks": False,
             "restartPolicy": "Always",
@@ -136,7 +137,7 @@ class RangePodSSHExecutor(GuestSSHExecutor):
                     "name": _RUNNER_CONTAINER,
                     "image": self._runner_image,
                     "imagePullPolicy": "IfNotPresent",
-                    "command": ["/bin/sh", "-c"],
+                    "command": [_SHELL, "-c"],
                     "args": ["trap : TERM INT; while true; do sleep 3600; done"],
                 }
             ],
@@ -226,7 +227,7 @@ class RangePodSSHExecutor(GuestSSHExecutor):
             self._core_api.patch_namespaced_secret(name=_PULL_SECRET_NAME, namespace=self._namespace, body=body)
         self._pull_secret_name = _PULL_SECRET_NAME
 
-    def _runner_has_segment_ip(self, pod: dict) -> bool:
+    def _runner_has_segment_ip(self, pod: dict[str, Any]) -> bool:
         annotations = (pod.get("metadata") or {}).get("annotations") or {}
         raw_status = annotations.get(_NETWORK_STATUS_ANNOTATION)
         if not raw_status:
@@ -287,7 +288,7 @@ class RangePodSSHExecutor(GuestSSHExecutor):
         # umask 077 so the decoded key is private; written via base64 so the key
         # never appears verbatim in the pod filesystem write path.
         script = f"umask 077; printf %s {shlex.quote(key_b64)} | base64 -d > {shlex.quote(self._key_path)}"
-        rc, _out, err = self._exec(["/bin/sh", "-c", script], timeout_seconds=30)
+        rc, _out, err = self._exec([_SHELL, "-c", script], timeout_seconds=30)
         if rc != 0:
             raise GuestSSHConnectionError(
                 f"Failed to plant guest SSH key on runner pod (rc={rc}): {err.decode('utf-8', 'replace')}"
@@ -299,7 +300,7 @@ class RangePodSSHExecutor(GuestSSHExecutor):
             return
         kh_b64 = base64.b64encode(self._known_hosts_content.encode()).decode("ascii")
         script = f"printf %s {shlex.quote(kh_b64)} | base64 -d > {shlex.quote(self._known_hosts_path)}"
-        rc, _out, err = self._exec(["/bin/sh", "-c", script], timeout_seconds=30)
+        rc, _out, err = self._exec([_SHELL, "-c", script], timeout_seconds=30)
         if rc != 0:
             raise GuestSSHConnectionError(
                 f"Failed to plant known_hosts on runner pod (rc={rc}): {err.decode('utf-8', 'replace')}"
@@ -314,7 +315,7 @@ class RangePodSSHExecutor(GuestSSHExecutor):
         self._ensure_known_hosts_planted()
         script_b64 = base64.b64encode(command_input).decode("ascii")
         # Path is inside the range runner pod's ephemeral filesystem, not the local host.
-        script_path = f"/tmp/shifter-cmd-{uuid.uuid4().hex}"  # noqa: S108  # nosec
+        script_path = f"/tmp/shifter-cmd-{uuid.uuid4().hex}"  # noqa: S108  # nosec  # NOSONAR
         ssh_cmd = " ".join(shlex.quote(arg) for arg in ssh_args)
         # Deliver the command script to the guest via a runner-local file
         # (ssh ... < file) so the guest never sees script contents on its argv.
@@ -323,7 +324,7 @@ class RangePodSSHExecutor(GuestSSHExecutor):
             f"{ssh_cmd} < {shlex.quote(script_path)}; rc=$?; "
             f"rm -f {shlex.quote(script_path)}; exit $rc"
         )
-        return self._exec(["/bin/sh", "-c", wrapper], timeout_seconds=timeout_seconds)
+        return self._exec([_SHELL, "-c", wrapper], timeout_seconds=timeout_seconds)
 
     def _exec(self, command: list[str], timeout_seconds: int) -> tuple[int, bytes, bytes]:
         from kubernetes.stream import stream
@@ -358,7 +359,7 @@ class RangePodSSHExecutor(GuestSSHExecutor):
         return returncode, bytes(out), bytes(err)
 
     @staticmethod
-    def _exec_returncode(resp) -> int:
+    def _exec_returncode(resp: Any) -> int:
         """Extract the remote command exit code from a closed exec stream."""
         rc = getattr(resp, "returncode", None)
         if isinstance(rc, int):
@@ -369,14 +370,30 @@ class RangePodSSHExecutor(GuestSSHExecutor):
             raw = resp.read_channel(ERROR_CHANNEL)
         except Exception:
             return 1
+        return RangePodSSHExecutor._exit_code_from_error_status(raw)
+
+    @staticmethod
+    def _exit_code_from_error_status(raw: Any) -> int:
+        """Map a kubernetes exec ERROR_CHANNEL status payload to an exit code.
+
+        Empty payload means success (0). A malformed or non-Success payload
+        falls through to the ExitCode cause scan, which yields the generic
+        failure code 1 when no explicit exit code is present.
+        """
         if not raw:
             return 0
         try:
-            status = json.loads(raw)
+            parsed = json.loads(raw)
         except (ValueError, TypeError):
-            return 1
+            parsed = None
+        status = parsed if isinstance(parsed, dict) else {}
         if status.get("status") == "Success":
             return 0
+        return RangePodSSHExecutor._exit_code_from_causes(status)
+
+    @staticmethod
+    def _exit_code_from_causes(status: dict[str, Any]) -> int:
+        """Return the ExitCode cause value from a non-Success exec status, else 1."""
         for cause in (status.get("details") or {}).get("causes") or []:
             if cause.get("reason") == "ExitCode":
                 try:
