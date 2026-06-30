@@ -29,6 +29,33 @@ class GCPObjectStorage:
         except ImportError as e:
             raise CloudStorageError("GCP storage support requires google-cloud-storage") from e
 
+    @staticmethod
+    def _iam_signing_kwargs() -> dict[str, str]:
+        """Return ``generate_signed_url`` kwargs for IAM-based V4 signing.
+
+        Under Workload Identity the active credentials are compute-metadata
+        credentials that carry only an access token and have no private key, so
+        the client cannot sign a URL locally (it raises "you need a private key
+        to sign credentials"). Passing ``service_account_email`` +
+        ``access_token`` makes the client sign via the IAM credentials
+        ``signBlob`` API instead, which only needs the service account to hold
+        ``roles/iam.serviceAccountTokenCreator`` on itself.
+
+        Credentials that can sign locally (a service-account JSON key, e.g. some
+        dev setups) expose a ``signer`` and return an empty dict so the library
+        keeps signing with the key.
+        """
+        google_auth = import_google_module("google.auth")
+        auth_requests = import_google_module("google.auth.transport.requests")
+        credentials, _ = google_auth.default()
+        if getattr(credentials, "signer", None) is not None and getattr(credentials, "signer_email", None):
+            return {}
+        credentials.refresh(auth_requests.Request())
+        return {
+            "service_account_email": credentials.service_account_email,
+            "access_token": credentials.token,
+        }
+
     def upload_file(
         self,
         file_obj: BinaryIO,
@@ -155,6 +182,7 @@ class GCPObjectStorage:
                 expiration=timedelta(seconds=expires_in),
                 method="PUT",
                 content_type=content_type,
+                **self._iam_signing_kwargs(),
             )
         except Exception as e:
             logger.exception(
@@ -179,6 +207,7 @@ class GCPObjectStorage:
                 version="v4",
                 expiration=timedelta(seconds=expires_in),
                 method="GET",
+                **self._iam_signing_kwargs(),
             )
         except Exception as e:
             logger.exception(

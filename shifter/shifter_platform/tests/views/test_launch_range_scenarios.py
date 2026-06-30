@@ -142,14 +142,16 @@ class TestLaunchRangeScenarioValidation:
     def test_omitting_scenario_defaults_to_basic(self, launch_client, agent, scenario):
         """When no scenario is given the view defaults to 'basic' (a real builtin).
 
-        'basic' is a valid scenario, so it passes scenario validation rather than
-        being rejected as 'Invalid scenario' — it then fails hydration with this
-        Windows-only agent, which proves the default was accepted (not rejected).
+        'basic' is a valid scenario whose victim is `os_type: from_agent`, so it
+        hydrates against this Windows agent (the victim resolves to Windows) and
+        launches — proving the default was accepted, not rejected as 'Invalid
+        scenario'. (Regression: 'basic' previously 400'd in hydration even with
+        an agent because `from_agent` resolution was gated on `xdr_agent`.)
         """
         client, _user = launch_client
         response = _post(client, {"agent_id": agent.id})
-        assert response.status_code == 400
-        assert _json(response)["error"] != "Invalid scenario"
+        assert response.status_code == 200
+        assert _json(response)["range"]["scenario_id"] == "basic"
 
 
 # ---------------------------------------------------------------------------

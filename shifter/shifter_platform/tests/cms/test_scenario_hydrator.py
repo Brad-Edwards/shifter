@@ -32,6 +32,18 @@ BASIC_DEF = {
     "ngfw": False,
 }
 
+# Mirrors the shipped `basic.yaml`: the victim derives its OS from the
+# user-provided agent (`from_agent`) but is authored with `xdr_agent: false`.
+# Regression for the launch 400 where this combination left os_type unresolved.
+BASIC_NO_XDR_DEF = {
+    "instances": [
+        {"name": "Attacker", "role": "attacker", "os_type": "kali", "xdr_agent": False},
+        {"name": "Victim", "role": "victim", "os_type": "from_agent", "xdr_agent": False},
+    ],
+    "subnets": [{"name": "core", "instances": ["Attacker", "Victim"]}],
+    "ngfw": False,
+}
+
 AD_DEF = {
     "instances": [
         {"name": "Attacker", "role": "attacker", "os_type": "kali", "xdr_agent": False},
@@ -74,6 +86,11 @@ def user(db):
 @pytest.fixture
 def basic_scenario(db):
     return _db_scenario("hydrator-basic", BASIC_DEF)
+
+
+@pytest.fixture
+def basic_no_xdr_scenario(db):
+    return _db_scenario("hydrator-basic-no-xdr", BASIC_NO_XDR_DEF)
 
 
 @pytest.fixture
@@ -146,6 +163,19 @@ class TestHydrateScenarioOsResolution:
         result = hydrate_scenario(basic_scenario.scenario_id, user.id, windows_agent)
         attacker = next(i for i in result.all_instances if i.role == "attacker")
         assert attacker.os_type == "kali"
+
+    def test_resolves_from_agent_when_xdr_agent_false(self, user, basic_no_xdr_scenario, windows_agent):
+        """A `from_agent` victim resolves and embeds the agent even with xdr_agent=False.
+
+        Regression: the shipped `basic` victim is `from_agent` + `xdr_agent: false`;
+        resolution previously short-circuited on `not xdr_agent` and left os_type as
+        the literal "from_agent", failing InstanceSpec validation with a 400.
+        """
+        result = hydrate_scenario(basic_no_xdr_scenario.scenario_id, user.id, windows_agent)
+        victim = next(i for i in result.all_instances if i.role == "victim")
+        assert victim.os_type == "windows"
+        assert victim.agent is not None
+        assert victim.agent.s3_key == windows_agent["windows"].s3_key
 
 
 class TestHydrateScenarioAgentEmbedding:
