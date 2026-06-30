@@ -6,7 +6,6 @@ from typing import TYPE_CHECKING
 
 from django.conf import settings
 
-from risk_register.models import APIKey
 from shared.api_tokens.models import ApiToken
 
 if TYPE_CHECKING:
@@ -35,8 +34,8 @@ def _groups_intersect_allowed(groups: list[str]) -> bool:
     return bool(set(groups) & allowed)
 
 
-def _token_owner_has_access(auth: ApiToken | APIKey) -> bool:
-    """Return True when the token or API key owner belongs to an allowed group."""
+def _token_owner_has_access(auth: ApiToken) -> bool:
+    """Return True when the token owner belongs to an allowed group."""
     owner = getattr(auth, "created_by", None)
     if owner is None:
         return False
@@ -57,7 +56,7 @@ def principal_has_risk_register_access(request: HttpRequest) -> bool:
     user = getattr(request, "user", None)
 
     result = False
-    if allowed and isinstance(auth, (ApiToken, APIKey)):
+    if allowed and isinstance(auth, ApiToken):
         result = _token_owner_has_access(auth)
     elif allowed and user and user.is_authenticated:
         result = _session_user_has_access(request, user)

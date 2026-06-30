@@ -978,6 +978,62 @@
     ]
   },
   {
+    "id": "ADR-025",
+    "title": "Range and experiment events use transactional outbox and authoritative reconciliation for durable delivery",
+    "status": "accepted",
+    "scope": "shifter_platform",
+    "decision": "PostgreSQL is the authoritative state store for range, request, instance, and experiment-run state. Range and experiment events are correctness-critical propagation signals, not best-effort notifications. Every such event is made recoverable through two complementary layers: (1) a transactional outbox — the provisioner enqueues each event into `engine_range_event_outbox` in the same DB transaction as the authoritative state write, and the `drain_range_event_outbox` portal management command publishes PENDING rows to the SNS topic / Pub/Sub with exponential-backoff retry and a DLQ terminal state after max_attempts; (2) a DB-authoritative reconciler — the `reconcile_range_events` portal management command re-reads authoritative `engine.Range` state and idempotently re-drives stale CMS `RangeInstance` and experiment `ExperimentRun` projections through the existing handler/orchestrator/bridge seams. Consumer handlers propagate transient failures rather than swallowing them, engaging the worker ack-after-handler SQS retry and DLQ. Mission Control websocket fanout remains advisory. AWS SNS/SQS and GCP Pub/Sub messaging surfaces maintain dead-letter, retry-policy, and Cloud Monitoring alert parity.",
+    "rules": [
+      {
+        "id": "ADR-025-R1",
+        "description": "PostgreSQL is the authoritative state store for range, request, instance, and experiment-run state. Range and experiment events are correctness-critical propagation signals, not a replacement state store and not best-effort notifications. A lost or undelivered event must not leave CMS projections, experiment runs, or Engine state permanently stale without an operator-visible signal.",
+        "checks": []
+      },
+      {
+        "id": "ADR-025-R2",
+        "description": "Every correctness-critical event must have at least one durable recovery path: either (a) transactional outbox (`engine_range_event_outbox` enqueued atomically with the authoritative state write) with a drainer that publishes with exponential-backoff retry, a DLQ terminal state after max_attempts, and an operator alert; or (b) idempotent DB-authoritative reconciliation that re-reads `engine.Range` state and re-drives the affected domain projections through existing handler/orchestrator/bridge seams. The two paths are complementary and both are present in the shipping implementation.",
+        "checks": []
+      },
+      {
+        "id": "ADR-025-R3",
+        "description": "Consumer handlers must propagate transient DB or broker failures so the worker ack-after-handler retry and DLQ engage. Swallowing a transient exception and returning normally is not acceptable for correctness-critical events. Invalid, permanently unprocessable, or duplicate payloads may be deliberately logged and acknowledged; the distinction must be explicit in the handler.",
+        "checks": []
+      },
+      {
+        "id": "ADR-025-R4",
+        "description": "Mission Control websocket fanout is advisory only. It is a projection of authoritative state and is not a recovery path for lost events. Experiment continuation, CMS state convergence, and Engine status transitions must not depend on one-shot best-effort websocket delivery.",
+        "checks": []
+      },
+      {
+        "id": "ADR-025-R5",
+        "description": "The `engine_range_event_outbox` (`RangeEventOutbox`) durable persistence surface is a first-class Django model with an explicit Django migration. It carries ownership (engine app), retention (PENDING rows drained to terminal PUBLISHED or DLQ state by the drainer; rows with a terminal status are eligible for periodic cleanup), idempotency (each outbox row covers one atomic state write; the drainer publishes exactly once per PENDING row and transitions to terminal state on success), and replay semantics (PENDING rows can be re-drained by re-running `drain_range_event_outbox`). Hiding retry state in JSON columns, cache, Redis channels, local files, or task memory is not acceptable.",
+        "checks": []
+      },
+      {
+        "id": "ADR-025-R6",
+        "description": "AWS SNS/SQS and GCP Pub/Sub messaging surfaces must maintain parity on dead-letter configuration, retry/backoff policy, and operator-visible alerting (CloudWatch alarms on AWS; Cloud Monitoring alerts on GCP). Adding dead-letter, retry, or alerting posture to one provider requires the same change on the other provider's messaging module.",
+        "checks": []
+      }
+    ],
+    "exceptions": [],
+    "enforcement": ["agent-policy", "ci"],
+    "evidence": [
+      "shifter/shifter_platform/engine/models.py",
+      "shifter/shifter_platform/engine/migrations/0023_range_event_outbox.py",
+      "shifter/shifter_platform/engine/management/commands/drain_range_event_outbox.py",
+      "shifter/shifter_platform/cms/management/commands/reconcile_range_events.py",
+      "shifter/shifter_platform/cms/handlers/__init__.py",
+      "shifter/shifter_platform/cms/handlers/range_events.py",
+      "shifter/shifter_platform/cms/handlers/experiment_bridge.py",
+      "shifter/shifter_platform/engine/handlers.py",
+      "shifter/shifter_platform/mission_control/handlers.py",
+      "platform/terraform/modules/portal/messaging/main.tf",
+      "platform/terraform/gcp/modules/portal/messaging/main.tf",
+      "docs/architecture/range-event-delivery-preflight-476.md",
+      "shifter/shifter_platform/documentation/docs/technical/architecture.md"
+    ]
+  },
+  {
     "id": "ADR-023",
     "title": "Agent risk audit findings use canonical internal identity and sanitized public tracking",
     "status": "accepted",
@@ -1012,6 +1068,49 @@
       "mcp/ops/index.js",
       "mcp/ops/policy.js",
       "mcp/ops/audit.js"
+    ]
+  },
+  {
+    "id": "ADR-024",
+    "title": "ACES migration uses a parity-gated parallel cutover",
+    "status": "accepted",
+    "scope": "repository",
+    "decision": "Shifter migrates toward ACES through a parallel path, a row-based parity inventory, explicit ACES manifest/conformance gates, and archive-after-cutover cleanup. Current Shifter behavior remains authoritative until the ACES path proves parity through the normal portal, CMS, engine, provisioner, CTF, experiment, Mission Control, artifact, status, and validation surfaces.",
+    "rules": [
+      {
+        "id": "ADR-024-R1",
+        "description": "ACES adoption must not replace current Shifter runtime behavior until a parallel ACES path has passed parity, manifest/conformance, portal/engine/provisioner, Polaris, CTF, experiment, Mission Control, artifact, status, and ADR guard validation.",
+        "checks": []
+      },
+      {
+        "id": "ADR-024-R2",
+        "description": "Every legacy migration surface tracked for ACES cutover must map to exactly one category in docs/architecture/aces-migration-parity-inventory.yaml: ACES SDL, ACES schema/profile gap, Shifter backend responsibility, validation gate, or archive/delete. Inventory rows cite canonical owners and must not become a second runtime schema, parser, status taxonomy, or exception envelope.",
+        "checks": []
+      },
+      {
+        "id": "ADR-024-R3",
+        "description": "Archive/delete is a post-cutover posture only. CyberScript, current CMS scenario templates, Polaris runtime material, CTF behavior, experiment execution, Mission Control, provisioner paths, artifact handling, status models, and validation gates remain current authority until replacement gates are implemented and green.",
+        "checks": []
+      }
+    ],
+    "exceptions": [],
+    "enforcement": ["agent-policy"],
+    "evidence": [
+      "docs/architecture/aces-migration-adr.md",
+      "docs/architecture/aces-migration-parity-inventory.yaml",
+      "scenario-dev/polaris/design/aces-sdl-validation-path.md",
+      "scenario-dev/polaris/sdl/README.md",
+      "shifter/shifter_platform/cms/scenarios/schema.py",
+      "shifter/shifter_platform/cms/scenarios/registry.py",
+      "shifter/shifter_platform/cms/scenarios/hydrator.py",
+      "shifter/shifter_platform/shared/schemas",
+      "shifter/cyberscript",
+      "shifter/shifter_platform/ctf",
+      "shifter/shifter_platform/cms/experiments",
+      "shifter/shifter_platform/mission_control",
+      "shifter/shifter_platform/engine",
+      "shifter/engine/provisioner",
+      "scripts/adr_guard/adr_guard.py"
     ]
   }
 ]

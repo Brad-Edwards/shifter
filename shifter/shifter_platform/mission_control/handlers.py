@@ -81,7 +81,9 @@ def process_range_event(message: str | dict) -> None:
 
     This handler consumes range status events published by the Engine
     provisioner and broadcasts them to connected WebSocket clients
-    via the Django Channels layer.
+    via the Django Channels layer.  MC fanout is advisory (UI only) — if the
+    channel layer is not configured the event is acknowledged without broadcast
+    so the worker is never blocked or forced to retry on a UI-only transport.
 
     Args:
         message: SNS-wrapped message containing range event data.
@@ -96,7 +98,7 @@ def process_range_event(message: str | dict) -> None:
             }
 
     Returns:
-        None. Errors are logged and handled gracefully.
+        None.
     """
     event = parse_sns_message(message)
 
@@ -113,6 +115,13 @@ def process_range_event(message: str | dict) -> None:
     event_id = event.get("event_id", "unknown")
 
     channel_layer = get_channel_layer()
+    if channel_layer is None:
+        logger.warning(
+            "MC range event: channel layer not configured — acking without broadcast (request_id=%s event_id=%s)",
+            range_ref.request_id,
+            event_id,
+        )
+        return
     group_name = range_event_group(str(range_ref.request_id))
 
     async_to_sync(channel_layer.group_send)(
@@ -145,7 +154,9 @@ def process_ngfw_event(message: str | dict) -> None:
 
     This handler consumes NGFW status events published by the Engine
     provisioner and broadcasts them to connected WebSocket clients
-    via the Django Channels layer.
+    via the Django Channels layer.  MC fanout is advisory (UI only) — if the
+    channel layer is not configured the event is acknowledged without broadcast
+    so the worker is never blocked or forced to retry on a UI-only transport.
 
     Args:
         message: SNS-wrapped message containing NGFW event data.
@@ -160,7 +171,7 @@ def process_ngfw_event(message: str | dict) -> None:
             }
 
     Returns:
-        None. Errors are logged and handled gracefully.
+        None.
     """
     event = parse_sns_message(message)
 
@@ -180,6 +191,13 @@ def process_ngfw_event(message: str | dict) -> None:
         return
 
     channel_layer = get_channel_layer()
+    if channel_layer is None:
+        logger.warning(
+            "MC ngfw event: channel layer not configured — acking without broadcast (app_id=%s event_id=%s)",
+            app_id,
+            event_id,
+        )
+        return
     group_name = ngfw_event_group(app_id)
 
     async_to_sync(channel_layer.group_send)(
