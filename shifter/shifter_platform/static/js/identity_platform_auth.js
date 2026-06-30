@@ -349,7 +349,7 @@ if (configScript) {
     // `<script type="module">` entry point is transpiled to CommonJS by the
     // jsdom test harness, which cannot represent top-level await, so S7785
     // (prefer top-level await) is unsatisfiable here without breaking the suite.
-    async function initSessionPersistenceAndObserver() {  // NOSONAR
+    async function initSessionPersistenceAndObserver() {
         await setPersistence(auth, browserSessionPersistence);
         onAuthStateChanged(auth, (user) => {
             if (user) {
@@ -357,7 +357,7 @@ if (configScript) {
             }
         });
     }
-    initSessionPersistenceAndObserver();
+    initSessionPersistenceAndObserver(); // NOSONAR
 
     authForm.addEventListener("submit", (event) => {
         event.preventDefault();
