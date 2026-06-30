@@ -122,6 +122,25 @@ if (configScript) {
         }
     }
 
+    // Resolve a redirect target to a same-origin path, or null if it points
+    // anywhere else (or is unparseable). The session-exchange response and the
+    // injected config are trusted, but validating before navigating keeps an
+    // open redirect impossible even if either is tampered with.
+    function sameOriginPath(candidate) {
+        if (typeof candidate !== "string" || candidate === "") {
+            return null;
+        }
+        try {
+            const url = new URL(candidate, globalThis.location.origin);
+            if (url.origin !== globalThis.location.origin) {
+                return null;
+            }
+            return `${url.pathname}${url.search}${url.hash}`;
+        } catch {
+            return null;
+        }
+    }
+
     async function exchangeSession(user) {
         const idToken = await user.getIdToken(true);
         const response = await fetch(config.sessionExchangeUrl, {
@@ -145,7 +164,8 @@ if (configScript) {
             }
             throw new Error(body.message || "Authentication failed.");
         }
-        globalThis.location.assign(body.redirect_url || config.dashboardUrl);
+        const destination = sameOriginPath(body.redirect_url) || sameOriginPath(config.dashboardUrl) || "/";
+        globalThis.location.assign(destination);
     }
 
     async function sendVerification(user) {

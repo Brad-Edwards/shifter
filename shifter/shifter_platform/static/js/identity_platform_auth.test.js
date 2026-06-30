@@ -448,3 +448,45 @@ describe("exchange + TOTP guard branches", () => {
         expect(bannerText()).toMatch(/No TOTP enrollment is pending/);
     });
 });
+
+describe("session redirect safety", () => {
+    function withEnrolledFactor(fbAuth) {
+        fbAuth.multiFactor.mockReturnValue({
+            enrolledFactors: [{ uid: "factor-1" }],
+            getSession: jest.fn(async () => ({})),
+            enroll: jest.fn(),
+        });
+    }
+
+    test("follows a same-origin redirect path from the exchange", async () => {
+        const { fbAuth } = await bootstrap();
+        withEnrolledFactor(fbAuth);
+        global.fetch.mockResolvedValueOnce({ ok: true, json: async () => ({ redirect_url: "/secure/area" }) });
+        fbAuth.lastAuthObserver(makeUser());
+        await flush();
+        expect(bannerText()).toBe("");
+    });
+
+    test("ignores a cross-origin redirect target", async () => {
+        const { fbAuth } = await bootstrap();
+        withEnrolledFactor(fbAuth);
+        global.fetch.mockResolvedValueOnce({
+            ok: true,
+            json: async () => ({ redirect_url: "https://evil.example/phish" }),
+        });
+        fbAuth.lastAuthObserver(makeUser());
+        await flush();
+        // No error surfaced: the unsafe target is dropped in favour of the
+        // configured dashboard rather than navigating off-origin.
+        expect(bannerText()).toBe("");
+    });
+
+    test("falls back to the dashboard when the exchange omits a redirect", async () => {
+        const { fbAuth } = await bootstrap();
+        withEnrolledFactor(fbAuth);
+        global.fetch.mockResolvedValueOnce({ ok: true, json: async () => ({}) });
+        fbAuth.lastAuthObserver(makeUser());
+        await flush();
+        expect(bannerText()).toBe("");
+    });
+});
