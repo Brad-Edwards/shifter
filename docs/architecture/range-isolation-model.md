@@ -1,19 +1,18 @@
 # Range Network Isolation Model
 
-Scope: #959 (review finding NET-7). This document records the *existing* AWS
-range network isolation model and the blast-radius rationale for two design
-choices that were defensible but undocumented: per-range security groups allow
-all egress, and cross-range / participant containment is owned by the AWS
-Network Firewall default-deny rather than by security groups. ADR-020 records
-the binding decision; this document is its rationale and live-model reference.
+Scope: #959 (review finding NET-7). This document records the AWS range network
+isolation model and blast-radius rationale. ADR-020 records the binding
+decision; this document is its rationale and live-model reference. DNS
+split-horizon containment (#1172) is implemented in
+`platform/terraform/modules/range/vpc/dns_resolver.tf` and documented below.
+
 The preflight artifact is
 [range-isolation-placement-preflight-959.md](range-isolation-placement-preflight-959.md).
 The configurable egress allowlist layered on top of this base is ADR-017 /
 [range-egress-ip-allowlist.md](range-egress-ip-allowlist.md); this document does
-not duplicate that contract.
-
-This is documentation of the current posture. It changes no Terraform, security
-group, firewall policy, route table, or IAM behavior.
+not duplicate that contract. The DNS egress hardening preflight for issue #1172
+is
+[range-dns-egress-resolver-preflight-1172.md](range-dns-egress-resolver-preflight-1172.md).
 
 ## Topology in one paragraph
 
@@ -78,14 +77,35 @@ enforces default-deny:
 - **Policy (STRICT_ORDER, lower priority evaluated first):** NGFW-subnet bypass
   (priority 1, only with persistent NGFW infrastructure); victim IP allowlist on
   TCP 443 to PANW/GCP CIDRs (chunked); victim domain SNI/Host allowlist; optional
-  Kali domain allowlist; NTP (priority 98); DNS to `8.8.8.8` only (priority 99);
-  and **`drop ip $HOME_NET any -> $EXTERNAL_NET any` at priority 100, dropping
-  all unmatched egress** across all protocols and ports. A separate stateful rule
-  rejects TLS connections whose SNI is a literal IP address, so the domain
-  allowlist cannot be bypassed by dialing an IP directly.
+  Kali domain allowlist; NTP (priority 98); and **`drop ip $HOME_NET any ->
+  $EXTERNAL_NET any` at priority 100, dropping all unmatched egress** across
+  all protocols and ports. There is **no** Network Firewall allow rule for
+  UDP/TCP 53 to public recursive resolvers (the former `8.8.8.8:53` lane).
+  A separate stateful rule rejects TLS connections whose SNI is a literal IP
+  address, so the domain allowlist cannot be bypassed by dialing an IP directly.
 - The default SG of the range VPC is adopted and stripped to deny-all
   (`modules/range/vpc/main.tf` `aws_default_security_group.this`) so no workload
   can fall back to a permissive default.
+
+### DNS containment (split-horizon resolver)
+
+Range hosts use **AmazonProvidedDNS** (the VPC CIDR base + 2 address), set via
+VPC DHCP options (`modules/range/vpc/dns_resolver.tf`). Name resolution is
+filtered by **Route 53 Resolver DNS Firewall** before any external recursive
+lookup can succeed:
+
+- **ALLOW** suffixes required for the exercise (`victim_allowed_domains`) and
+  bootstrap/service names (`range_dns_allowed_domains`, default `.amazonaws.com`
+  for SSM/VPCE).
+- **BLOCK** all other names (`NODATA` response).
+
+Direct UDP/TCP 53 egress to public resolvers is not allowlisted in the Network
+Firewall policy, so a host cannot bypass the split-horizon resolver by dialing
+`8.8.8.8:53` (or any other public resolver). Resolver query logs land in
+CloudWatch with the same KMS/retention conventions as firewall logs.
+
+Issue #1172 tracks this posture; the preflight rationale is in
+[range-dns-egress-resolver-preflight-1172.md](range-dns-egress-resolver-preflight-1172.md).
 
 ## Cross-range and participant isolation
 
@@ -101,10 +121,12 @@ two layers above:
 - **Internet (egress / exfiltration / C2):** a compromised range host has open
   security-group egress, but the route-table-to-firewall path plus the
   default-deny means it can only reach the narrow allowlisted destinations
-  (victim XDR/XSIAM endpoints, DNS, NTP). It cannot reach an arbitrary internet
-  host to exfiltrate data, stage C2, or pivot out of the range. **This internet
-  containment relies on the Network Firewall default-deny, not on security
-  groups.**
+  (victim XDR/XSIAM endpoints, NTP). DNS queries use the in-VPC split-horizon
+  resolver; unknown external names are blocked at the Route 53 Resolver DNS
+  Firewall layer and direct public-recursive `*:53` egress is dropped. It cannot
+  open arbitrary internet TCP or UDP connections. **This internet containment
+  relies on the Network Firewall default-deny plus the split-horizon DNS policy,
+  not on security groups.**
 
 That division is the finding NET-7 documents: security groups own local
 reachability; the firewall owns internet egress. Neither layer provides VPC-level
@@ -140,6 +162,7 @@ is out of scope for this documentation issue.
 | Per-subnet SG (all egress, ingress allowlist) | `shifter/engine/provisioner/terraform/modules/range/main.tf` |
 | Default SG lockdown | `platform/terraform/modules/range/vpc/main.tf` |
 | Firewall policy, default-deny, IP-SNI reject, routing | `platform/terraform/modules/range/vpc/firewall.tf` |
+| Split-horizon DNS, DHCP, resolver query logs | `platform/terraform/modules/range/vpc/dns_resolver.tf` |
 | NAT path | `platform/terraform/modules/range/vpc/nat.tf` |
 | Configurable egress allowlist (layered on this base) | ADR-017, `docs/architecture/range-egress-ip-allowlist.md` |
 
