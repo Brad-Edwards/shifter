@@ -142,6 +142,11 @@
 
     // Expose for testing
     if (typeof module !== 'undefined' && module.exports) { // eslint-disable-line no-undef
-        module.exports = { formatLocalTime: formatLocalTime, formatDuration: formatDuration }; // eslint-disable-line no-undef
+        module.exports = { // eslint-disable-line no-undef
+            formatLocalTime: formatLocalTime,
+            formatDuration: formatDuration,
+            initLocalTimes: initLocalTimes,
+            initCountdown: initCountdown,
+        };
     }
 })();
