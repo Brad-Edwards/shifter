@@ -23,6 +23,11 @@ source "googlecompute" "windows" {
   winrm_password = var.winrm_bootstrap_password
   winrm_insecure = true
   winrm_use_ssl  = true
+  // NTLM (via Negotiate) instead of packer's default Basic auth: the bootstrap
+  // disables Basic on the WinRM service (and GCE's built-in listener defaults to
+  // Basic=false too), so Basic auth is rejected and packer otherwise hangs until
+  // winrm_timeout. NTLM authenticates the local packer_user over the TLS channel.
+  winrm_use_ntlm = true
   winrm_timeout  = "30m"
 
   network               = var.network
