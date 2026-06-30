@@ -164,3 +164,68 @@ class TestBuildGuestExecutionContext:
                     "role": "victim",
                 }
             )
+
+    def test_gcp_requires_ssh_key_secret(self, monkeypatch):
+        monkeypatch.setenv("CLOUD_PROVIDER", "gcp")
+        with pytest.raises(ValueError, match="ssh_key_secret_arn"):
+            build_guest_execution_context(
+                {
+                    "private_ip": "10.200.2.10",
+                    "gdc_namespace": "range-7",
+                    "gdc_nad_name": "range-7-core",
+                    "os": "ubuntu",
+                    "role": "victim",
+                }
+            )
+
+    def test_gcp_requires_runner_image_env(self, monkeypatch):
+        monkeypatch.setenv("CLOUD_PROVIDER", "gcp")
+        monkeypatch.delenv("GDC_SETUP_RUNNER_IMAGE", raising=False)
+        monkeypatch.delenv("ENGINE_TASK_IMAGE", raising=False)
+        with pytest.raises(ValueError, match="GDC_SETUP_RUNNER_IMAGE"):
+            build_guest_execution_context(
+                {
+                    "private_ip": "10.200.2.10",
+                    "ssh_key_secret_arn": "projects/test/secrets/range-vm-1-key",
+                    "gdc_namespace": "range-7",
+                    "gdc_nad_name": "range-7-core",
+                    "os": "ubuntu",
+                    "role": "victim",
+                }
+            )
+
+
+class TestBuildRangeKubeClients:
+    """The default range-cluster Kubernetes client factory."""
+
+    def test_requires_gdc_access_config(self, mocker):
+        import config
+
+        mocker.patch.object(config, "load_gdc_network_access_config", return_value=None)
+        from executors.factory import _build_range_kube_clients
+
+        with pytest.raises(RuntimeError, match="GDC range access config"):
+            _build_range_kube_clients()
+
+    def test_builds_core_api_from_access_config(self, mocker):
+        import config
+        import gdc_range_networks
+
+        access = mocker.Mock(kubeconfig="KUBECONFIG-YAML")
+        mocker.patch.object(config, "load_gdc_network_access_config", return_value=access)
+        client_module = mocker.Mock()
+        client_module.CoreV1Api.return_value = "CORE_API"
+        mocker.patch.object(
+            gdc_range_networks,
+            "_import_kubernetes_modules",
+            return_value=("unused", client_module, "config", "API_EXC"),
+        )
+        mocker.patch.object(gdc_range_networks, "_build_kube_api_client", return_value="API_CLIENT")
+        from executors.factory import _build_range_kube_clients
+
+        core_api, module, api_exception = _build_range_kube_clients()
+
+        assert core_api == "CORE_API"
+        assert module is client_module
+        assert api_exception == "API_EXC"
+        client_module.CoreV1Api.assert_called_once_with("API_CLIENT")

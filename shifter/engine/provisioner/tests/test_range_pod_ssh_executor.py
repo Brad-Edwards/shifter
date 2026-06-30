@@ -294,3 +294,249 @@ def test_exec_returncode_parsing(returncode_attr, channel_payload, expected):
     resp.returncode = returncode_attr
     resp.read_channel.return_value = channel_payload
     assert RangePodSSHExecutor._exec_returncode(resp) == expected
+
+
+# -- constructor validation --------------------------------------------------
+
+
+def test_init_rejects_empty_namespace():
+    with pytest.raises(ValueError, match="namespace and network_name"):
+        RangePodSSHExecutor(
+            core_api=MagicMock(),
+            client_module=MagicMock(),
+            api_exception=_ApiException,
+            namespace="",
+            network_name="range-7-core",
+            runner_image="registry.example/runner:latest",
+            private_key="K",
+            username="kali",
+        )
+
+
+def test_init_rejects_empty_runner_image():
+    with pytest.raises(ValueError, match="runner image"):
+        RangePodSSHExecutor(
+            core_api=MagicMock(),
+            client_module=MagicMock(),
+            api_exception=_ApiException,
+            namespace="range-7",
+            network_name="range-7-core",
+            runner_image="",
+            private_key="K",
+            username="kali",
+        )
+
+
+# -- token minting (real _mint_registry_token via injected google.auth) ------
+
+
+def _install_fake_google_auth(monkeypatch, token):
+    import sys
+    import types
+
+    creds = types.SimpleNamespace(token=token, refresh=lambda _req: None)
+    google_mod = types.ModuleType("google")
+    auth_mod = types.ModuleType("google.auth")
+    auth_mod.default = lambda scopes: (creds, "proj")
+    transport_mod = types.ModuleType("google.auth.transport")
+    requests_mod = types.ModuleType("google.auth.transport.requests")
+    requests_mod.Request = lambda: object()
+    google_mod.auth = auth_mod
+    auth_mod.transport = transport_mod
+    transport_mod.requests = requests_mod
+    monkeypatch.setitem(sys.modules, "google", google_mod)
+    monkeypatch.setitem(sys.modules, "google.auth", auth_mod)
+    monkeypatch.setitem(sys.modules, "google.auth.transport", transport_mod)
+    monkeypatch.setitem(sys.modules, "google.auth.transport.requests", requests_mod)
+
+
+def test_mint_registry_token_returns_access_token(monkeypatch):
+    _install_fake_google_auth(monkeypatch, "ya29.MINTED")
+    executor = _make_executor(MagicMock())
+    assert executor._mint_registry_token() == "ya29.MINTED"
+
+
+def test_mint_registry_token_raises_when_no_token(monkeypatch):
+    from executors.guest_ssh_executor import GuestSSHConnectionError
+
+    _install_fake_google_auth(monkeypatch, "")
+    executor = _make_executor(MagicMock())
+    with pytest.raises(GuestSSHConnectionError, match="mint Artifact Registry"):
+        executor._mint_registry_token()
+
+
+def test_ensure_pull_secret_reraises_non_conflict_error():
+    core_api = MagicMock()
+    core_api.create_namespaced_secret.side_effect = _ApiException(status=500)
+    executor = _make_gcp_executor(core_api)
+    with pytest.raises(_ApiException):
+        executor._ensure_pull_secret()
+
+
+# -- runner segment-IP readiness ---------------------------------------------
+
+
+def test_runner_has_segment_ip_false_without_status_annotation():
+    executor = _make_executor(MagicMock())
+    assert executor._runner_has_segment_ip({"metadata": {"annotations": {}}}) is False
+
+
+def test_runner_has_segment_ip_false_on_malformed_status():
+    executor = _make_executor(MagicMock())
+    pod = {"metadata": {"annotations": {"k8s.v1.cni.cncf.io/network-status": "{not json"}}}
+    assert executor._runner_has_segment_ip(pod) is False
+
+
+def test_runner_has_segment_ip_false_when_net1_has_no_ips():
+    executor = _make_executor(MagicMock())
+    pod = {
+        "metadata": {
+            "annotations": {"k8s.v1.cni.cncf.io/network-status": json.dumps([{"interface": "net1", "ips": []}])}
+        }
+    }
+    assert executor._runner_has_segment_ip(pod) is False
+
+
+# -- runner lifecycle error paths --------------------------------------------
+
+
+def test_ensure_runner_reraises_non_conflict_create_error(monkeypatch):
+    monkeypatch.setattr("executors.range_pod_ssh_executor.time.sleep", lambda *_a, **_k: None)
+    core_api = MagicMock()
+    core_api.create_namespaced_pod.side_effect = _ApiException(status=500)
+    executor = _make_executor(core_api)
+    with pytest.raises(_ApiException):
+        executor._ensure_runner()
+
+
+def test_wait_for_runner_ready_retries_on_404_then_succeeds(monkeypatch):
+    monkeypatch.setattr("executors.range_pod_ssh_executor.time.sleep", lambda *_a, **_k: None)
+    core_api = MagicMock()
+    core_api.read_namespaced_pod.side_effect = [_ApiException(status=404), _running_pod_with_segment_ip()]
+    executor = _make_executor(core_api)
+    executor._wait_for_runner_ready()  # returns without raising
+    assert core_api.read_namespaced_pod.call_count == 2
+
+
+def test_wait_for_runner_ready_reraises_non_404(monkeypatch):
+    monkeypatch.setattr("executors.range_pod_ssh_executor.time.sleep", lambda *_a, **_k: None)
+    core_api = MagicMock()
+    core_api.read_namespaced_pod.side_effect = _ApiException(status=500)
+    executor = _make_executor(core_api)
+    with pytest.raises(_ApiException):
+        executor._wait_for_runner_ready()
+
+
+def test_wait_for_runner_ready_raises_on_failed_phase(monkeypatch):
+    from executors.guest_ssh_executor import GuestSSHConnectionError
+
+    monkeypatch.setattr("executors.range_pod_ssh_executor.time.sleep", lambda *_a, **_k: None)
+    core_api = MagicMock()
+    failed = MagicMock()
+    failed.to_dict.return_value = {"status": {"phase": "Failed"}, "metadata": {"annotations": {}}}
+    core_api.read_namespaced_pod.return_value = failed
+    executor = _make_executor(core_api)
+    with pytest.raises(GuestSSHConnectionError, match="phase=Failed"):
+        executor._wait_for_runner_ready()
+
+
+def test_wait_for_runner_ready_times_out(monkeypatch):
+    from executors.guest_ssh_executor import GuestSSHConnectionError
+
+    monkeypatch.setattr("executors.range_pod_ssh_executor.time.sleep", lambda *_a, **_k: None)
+    # monotonic jumps past the deadline on the second read so the loop exits.
+    clock = iter([0.0, 0.0, 10_000.0, 10_000.0, 10_000.0])
+    monkeypatch.setattr("executors.range_pod_ssh_executor.time.monotonic", lambda: next(clock))
+    core_api = MagicMock()
+    pending = MagicMock()
+    pending.to_dict.return_value = {"status": {"phase": "Pending"}, "metadata": {"annotations": {}}}
+    core_api.read_namespaced_pod.return_value = pending
+    executor = _make_executor(core_api)
+    with pytest.raises(GuestSSHConnectionError, match="did not become ready"):
+        executor._wait_for_runner_ready()
+
+
+def test_ensure_known_hosts_planted_raises_on_failure(monkeypatch):
+    from executors.guest_ssh_executor import GuestSSHConnectionError
+
+    executor = _make_executor_with_host_key(MagicMock())
+    monkeypatch.setattr(executor, "_exec", lambda command, timeout_seconds: (1, b"", b"nope"))
+    with pytest.raises(GuestSSHConnectionError, match="plant known_hosts"):
+        executor._ensure_known_hosts_planted()
+
+
+# -- exec stream transport ---------------------------------------------------
+
+
+class _FakeStreamResp:
+    def __init__(self, returncode=0, chunks=(("out", "err"),)):
+        self.returncode = returncode
+        self._chunks = list(chunks)
+        self._closed = False
+
+    def is_open(self):
+        return bool(self._chunks)
+
+    def update(self, timeout=0):
+        self._current = self._chunks.pop(0)
+
+    def peek_stdout(self):
+        return bool(self._current[0])
+
+    def read_stdout(self):
+        return self._current[0]
+
+    def peek_stderr(self):
+        return bool(self._current[1])
+
+    def read_stderr(self):
+        return self._current[1]
+
+    def close(self):
+        self._closed = True
+
+
+def test_exec_streams_stdout_and_stderr(monkeypatch):
+    resp = _FakeStreamResp(returncode=0, chunks=[("hello\n", "warn\n")])
+    monkeypatch.setattr("kubernetes.stream.stream", lambda *a, **k: resp)
+    executor = _make_executor(MagicMock())
+    rc, out, err = executor._exec(["/bin/sh", "-c", "echo hello"], timeout_seconds=30)
+    assert rc == 0
+    assert out == b"hello\n"
+    assert err == b"warn\n"
+    assert resp._closed is True
+
+
+def test_exec_raises_on_timeout(monkeypatch):
+    from executors.guest_ssh_executor import TimeoutError as GuestTimeoutError
+
+    resp = _FakeStreamResp(returncode=0, chunks=[("x", "")])
+    monkeypatch.setattr("kubernetes.stream.stream", lambda *a, **k: resp)
+    executor = _make_executor(MagicMock())
+    with pytest.raises(GuestTimeoutError, match="timed out"):
+        executor._exec(["/bin/sh", "-c", "sleep"], timeout_seconds=-1)
+    assert resp._closed is True
+
+
+# -- exit-code extraction edge cases -----------------------------------------
+
+
+def test_exec_returncode_channel_read_error_returns_1():
+    resp = MagicMock()
+    resp.returncode = None
+    resp.read_channel.side_effect = RuntimeError("channel closed")
+    assert RangePodSSHExecutor._exec_returncode(resp) == 1
+
+
+def test_exit_code_from_error_status_empty_payload_is_success():
+    assert RangePodSSHExecutor._exit_code_from_error_status("") == 0
+    assert RangePodSSHExecutor._exit_code_from_error_status(None) == 0
+
+
+def test_exit_code_from_error_status_malformed_json_falls_through():
+    assert RangePodSSHExecutor._exit_code_from_error_status("{not json") == 1
+
+
+def test_exit_code_from_causes_non_numeric_message_returns_1():
+    status = {"details": {"causes": [{"reason": "ExitCode", "message": "not-a-number"}]}}
+    assert RangePodSSHExecutor._exit_code_from_causes(status) == 1

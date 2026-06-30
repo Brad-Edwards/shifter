@@ -4275,3 +4275,154 @@ class TestMainCLI:
             deploy.main()
 
             assert mock_gdc_bootstrap.call_args[1]["dry_run"] is True
+
+
+# =============================================================================
+# Test: _is_retryable_gcp_iam_binding_error()
+# =============================================================================
+
+
+def _completed(returncode=0, stdout="", stderr=""):
+    return subprocess.CompletedProcess(args=["gcloud"], returncode=returncode, stdout=stdout, stderr=stderr)
+
+
+class TestIsRetryableGcpIamBindingError:
+    """Tests for deploy._is_retryable_gcp_iam_binding_error."""
+
+    @pytest.mark.parametrize(
+        "message",
+        [
+            "Service account my-sa@proj.iam.gserviceaccount.com does not exist.",
+            "Error: there were concurrent policy changes. Please retry.",
+            "Request was the subject of a conflict, try again.",
+            "The provided Etag did not match the current Etag.",
+        ],
+    )
+    def test_classifies_transient_races_as_retryable(self, message):
+        assert deploy._is_retryable_gcp_iam_binding_error(message) is True
+
+    @pytest.mark.parametrize(
+        "message",
+        [
+            "PERMISSION_DENIED: caller lacks resourcemanager.projects.setIamPolicy",
+            "Role roles/nonexistent is not a valid predefined role.",
+            "",
+        ],
+    )
+    def test_classifies_other_errors_as_non_retryable(self, message):
+        assert deploy._is_retryable_gcp_iam_binding_error(message) is False
+
+
+# =============================================================================
+# Test: add_project_iam_binding_with_retry()
+# =============================================================================
+
+
+class TestAddProjectIamBindingWithRetry:
+    """Tests for deploy.add_project_iam_binding_with_retry."""
+
+    def test_dry_run_prints_and_skips_subprocess(self):
+        with patch("subprocess.run") as mock_run:
+            deploy.add_project_iam_binding_with_retry(
+                "prod-rwctxzl6shxk", "serviceAccount:sa@proj.iam.gserviceaccount.com", "roles/viewer", dry_run=True
+            )
+        mock_run.assert_not_called()
+
+    def test_returns_on_first_success(self):
+        with patch("subprocess.run", return_value=_completed(returncode=0)) as mock_run:
+            deploy.add_project_iam_binding_with_retry(
+                "prod-rwctxzl6shxk", "serviceAccount:sa@proj.iam.gserviceaccount.com", "roles/viewer"
+            )
+        mock_run.assert_called_once()
+
+    def test_retries_transient_race_then_succeeds(self):
+        results = [
+            _completed(returncode=1, stderr="Service account sa@proj.iam.gserviceaccount.com does not exist."),
+            _completed(returncode=0),
+        ]
+        with (
+            patch("subprocess.run", side_effect=results) as mock_run,
+            patch("deploy.time.sleep") as mock_sleep,
+        ):
+            deploy.add_project_iam_binding_with_retry(
+                "prod-rwctxzl6shxk",
+                "serviceAccount:sa@proj.iam.gserviceaccount.com",
+                "roles/viewer",
+                sleep_seconds=0,
+            )
+        assert mock_run.call_count == 2
+        mock_sleep.assert_called_once()
+
+    def test_non_retryable_failure_exits(self):
+        with (
+            patch("subprocess.run", return_value=_completed(returncode=1, stderr="PERMISSION_DENIED")),
+            patch("deploy.time.sleep"),
+            pytest.raises(SystemExit),
+        ):
+            deploy.add_project_iam_binding_with_retry(
+                "prod-rwctxzl6shxk", "serviceAccount:sa@proj.iam.gserviceaccount.com", "roles/viewer"
+            )
+
+    def test_exhausts_attempts_on_persistent_race(self):
+        race = _completed(returncode=1, stderr="concurrent policy changes")
+        with (
+            patch("subprocess.run", return_value=race) as mock_run,
+            patch("deploy.time.sleep"),
+            pytest.raises(SystemExit),
+        ):
+            deploy.add_project_iam_binding_with_retry(
+                "prod-rwctxzl6shxk",
+                "serviceAccount:sa@proj.iam.gserviceaccount.com",
+                "roles/viewer",
+                max_attempts=3,
+            )
+        assert mock_run.call_count == 3
+
+
+# =============================================================================
+# Test: _gcloud_components_install_gke_plugin()
+# =============================================================================
+
+
+class TestGcloudComponentsInstallGkePlugin:
+    """Tests for deploy._gcloud_components_install_gke_plugin."""
+
+    def test_returns_false_when_gcloud_absent(self):
+        with patch("deploy.shutil.which", return_value=None):
+            assert deploy._gcloud_components_install_gke_plugin() is False
+
+    def test_dry_run_reports_success_without_running(self):
+        with patch("deploy.shutil.which", return_value="/usr/bin/gcloud"), patch("subprocess.run") as mock_run:
+            assert deploy._gcloud_components_install_gke_plugin(dry_run=True) is True
+        mock_run.assert_not_called()
+
+    def test_returns_true_on_successful_install(self):
+        with (
+            patch("deploy.shutil.which", return_value="/usr/bin/gcloud"),
+            patch("subprocess.run", return_value=_completed(returncode=0)),
+        ):
+            assert deploy._gcloud_components_install_gke_plugin() is True
+
+    def test_returns_false_and_surfaces_stderr_on_failure(self, capsys):
+        with (
+            patch("deploy.shutil.which", return_value="/usr/bin/gcloud"),
+            patch("subprocess.run", return_value=_completed(returncode=1, stderr="component manager disabled")),
+        ):
+            assert deploy._gcloud_components_install_gke_plugin() is False
+        assert "component manager disabled" in capsys.readouterr().err
+
+
+# =============================================================================
+# Test: ensure_gcp_artifact_registry_service_identity() dry-run
+# =============================================================================
+
+
+class TestArtifactRegistryServiceIdentityDryRun:
+    """Tests for the dry-run branch of ensure_gcp_artifact_registry_service_identity."""
+
+    def test_dry_run_skips_network_calls(self):
+        config = deploy.GDCBootstrapConfig(project_id="prod-rwctxzl6shxk", cluster_id="cluster1")
+        with patch("subprocess.run") as mock_run, patch("deploy.urllib_request.urlopen") as mock_urlopen:
+            deploy.ensure_gcp_artifact_registry_service_identity(config, dry_run=True)
+        mock_run.assert_not_called()
+        mock_urlopen.assert_not_called()

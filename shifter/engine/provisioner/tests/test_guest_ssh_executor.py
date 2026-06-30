@@ -179,3 +179,36 @@ class TestGuestSSHExecutorReadiness:
             executor.close()
 
         run_command.assert_called_once()
+
+
+class TestGuestSSHExecutorProbeBranches:
+    """Cover the probe success/exception branches and OSError mapping."""
+
+    def test_probe_ready_returns_true_on_ready_output(self, mocker):
+        mock_run = mocker.patch("executors.guest_ssh_executor.subprocess.run")
+        mock_run.return_value = MagicMock(returncode=0, stdout=b"ready\n", stderr=b"")
+        executor = GuestSSHExecutor(private_key="PRIVATE KEY", username="ubuntu")
+        try:
+            assert executor._probe_ready("10.10.1.5", "AWS-RunShellScript") is True
+            assert executor._last_probe_detail == ""
+        finally:
+            executor.close()
+
+    def test_probe_ready_captures_connection_error_detail(self, mocker):
+        executor = GuestSSHExecutor(private_key="PRIVATE KEY", username="ubuntu")
+        mocker.patch.object(executor, "run_command", side_effect=GuestSSHConnectionError("connection refused"))
+        try:
+            assert executor._probe_ready("10.10.1.5", "AWS-RunShellScript") is False
+            assert "GuestSSHConnectionError" in executor._last_probe_detail
+            assert "connection refused" in executor._last_probe_detail
+        finally:
+            executor.close()
+
+    def test_os_error_maps_to_connection_error(self, mocker):
+        mocker.patch("executors.guest_ssh_executor.subprocess.run", side_effect=OSError("broken pipe"))
+        executor = GuestSSHExecutor(private_key="PRIVATE KEY", username="ubuntu")
+        try:
+            with pytest.raises(GuestSSHConnectionError, match="SSH subprocess failed"):
+                executor.run_command(instance_id="10.10.1.5", script="echo ok")
+        finally:
+            executor.close()
