@@ -326,18 +326,20 @@ if (configScript) {
         }
     }
 
-    // Set session persistence before registering the auth-state observer.
-    // Wrapped in an async IIFE rather than a module-level `await` so the module
+    // Set session persistence before registering the auth-state observer. Kept
+    // in a named async setup function (not a module-level await) so the module
     // body stays synchronous: this file is a classic `<script type="module">`
-    // entry point and nothing awaits its evaluation.
-    void (async () => {
+    // entry point, and the jsdom test harness transpiles it to CommonJS, which
+    // cannot represent top-level await.
+    async function initSessionPersistenceAndObserver() {
         await setPersistence(auth, browserSessionPersistence);
         onAuthStateChanged(auth, (user) => {
             if (user) {
                 void handleAuthenticatedUser(user, false);
             }
         });
-    })();
+    }
+    void initSessionPersistenceAndObserver();
 
     authForm.addEventListener("submit", (event) => {
         event.preventDefault();
