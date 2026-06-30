@@ -9,9 +9,11 @@ the sub-handlers.
 
 import json
 import logging
+from datetime import timedelta
 
 import pytest
 from django.contrib.auth import get_user_model
+from django.utils import timezone
 
 from engine.handlers import process_event, process_range_event
 from engine.models import Range
@@ -114,6 +116,16 @@ class TestProcessRangeEventStatusUpdates:
         process_range_event(_status_event(range_obj, new_status=ResourceStatus.PROVISIONING.value))
         assert AuditLog.objects.count() > before
 
+    def test_advances_updated_at(self, user):
+        range_obj = Range.objects.create(user=user, status=Range.Status.PENDING)
+        # auto_now is bypassed by save(update_fields=...), so force a stale
+        # baseline that the handler must overwrite.
+        stale = timezone.now() - timedelta(hours=1)
+        Range.objects.filter(id=range_obj.id).update(updated_at=stale)
+        process_range_event(_status_event(range_obj, new_status=ResourceStatus.PROVISIONING.value))
+        range_obj.refresh_from_db()
+        assert range_obj.updated_at > stale
+
 
 class TestProcessRangeEventInvalidInputs:
     def test_ignores_unknown_event_type(self, user):
@@ -122,11 +134,22 @@ class TestProcessRangeEventInvalidInputs:
         range_obj.refresh_from_db()
         assert range_obj.status == Range.Status.PENDING
 
-    def test_handles_missing_range(self, user):
+    def test_handles_missing_range(self, user, caplog):
         # No row with this id: handler logs a warning and makes no change.
-        process_range_event(
-            _sns({"event_type": "range.status.updated", "range_id": 999999, "user_id": user.id, "new_status": "ready"})
-        )
+        before = AuditLog.objects.count()
+        with caplog.at_level(logging.WARNING, logger="engine"):
+            process_range_event(
+                _sns(
+                    {
+                        "event_type": "range.status.updated",
+                        "range_id": 999999,
+                        "user_id": user.id,
+                        "new_status": "ready",
+                    }
+                )
+            )
+        assert "999999" in caplog.text
+        assert AuditLog.objects.count() == before
 
     def test_ignores_user_id_mismatch(self, user, django_user_model):
         other = django_user_model.objects.create_user(username="eh-other@example.com", email="eh-other@example.com")
@@ -178,6 +201,10 @@ class TestHandleProvisioned:
         assert range_obj.status == Range.Status.PROVISIONING
         assert range_obj.provisioned_instances is None
 
-    def test_handles_event_without_range_in_db(self, user):
+    def test_handles_event_without_range_in_db(self, user, caplog):
         # No matching range_id: handler is a log-only no-op, no exception.
-        process_range_event(_sns({"event_type": "range.provisioned", "range_id": 999999, "user_id": user.id}))
+        before = AuditLog.objects.count()
+        with caplog.at_level(logging.INFO, logger="engine"):
+            process_range_event(_sns({"event_type": "range.provisioned", "range_id": 999999, "user_id": user.id}))
+        assert "999999" in caplog.text
+        assert AuditLog.objects.count() == before
