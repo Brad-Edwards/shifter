@@ -162,6 +162,8 @@ class TestApplyRangeAssets:
         fake_client_module = SimpleNamespace(
             CoreV1Api=MagicMock(return_value=core_api),
             CustomObjectsApi=MagicMock(return_value=custom_api),
+            V1Secret=MagicMock(),
+            V1ObjectMeta=MagicMock(),
         )
         fake_api_exception = type("ApiException", (Exception,), {"status": 500})
         mock_access.return_value = GDCNetworkAccessConfig(
@@ -200,10 +202,9 @@ class TestApplyRangeAssets:
                 ),
             ),
             patch("gdc_vmruntime_assets._render_user_data", return_value=("<powershell>userdata</powershell>", "")),
-            patch(
-                "gdc_vmruntime_assets._ensure_cloudinit_secret",
-                return_value="range-42-victims-victim-1234-cloudinit",
-            ),
+            # _ensure_cloudinit_secret runs for real against the MagicMock kube
+            # client above; it create-or-patches the Secret and returns
+            # "<vm_name>-cloudinit", asserted on the VM manifest's secretRef below.
             patch("gdc_vmruntime_assets._wait_for_disk_ready"),
             patch(
                 "gdc_vmruntime_assets._wait_for_vm_ready",
@@ -381,6 +382,8 @@ class TestDestroyRangeAssets:
         fake_client_module = SimpleNamespace(
             CoreV1Api=MagicMock(return_value=core_api),
             CustomObjectsApi=MagicMock(return_value=custom_api),
+            V1Secret=MagicMock(),
+            V1ObjectMeta=MagicMock(),
         )
         fake_api_exception = type("ApiException", (Exception,), {"status": 500})
         mock_access.return_value = GDCNetworkAccessConfig(
@@ -451,6 +454,8 @@ class TestDestroyRangeAssets:
         fake_client_module = SimpleNamespace(
             CoreV1Api=MagicMock(return_value=core_api),
             CustomObjectsApi=MagicMock(return_value=custom_api),
+            V1Secret=MagicMock(),
+            V1ObjectMeta=MagicMock(),
         )
         fake_api_exception = type("ApiException", (Exception,), {"status": 500})
         mock_access.return_value = GDCNetworkAccessConfig(

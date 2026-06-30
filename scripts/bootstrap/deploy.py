@@ -2185,9 +2185,16 @@ def load_bootstrap_env_values() -> dict[str, str]:
     return values
 
 
-def resolve_gcp_bootstrap_operator_credentials() -> tuple[str, str] | None:
-    """Resolve the first operator email/password for the GCP identity bootstrap."""
-    values = load_bootstrap_env_values()
+def resolve_gcp_bootstrap_operator_credentials(
+    env_values: dict[str, str] | None = None,
+) -> tuple[str, str] | None:
+    """Resolve the first operator email/password for the GCP identity bootstrap.
+
+    ``env_values`` injects the resolved bootstrap env values (defaults to
+    :func:`load_bootstrap_env_values`); tests pass them directly so the
+    resolution logic is exercised without patching the loader.
+    """
+    values = load_bootstrap_env_values() if env_values is None else env_values
 
     email = (
         values.get("GCP_BOOTSTRAP_ADMIN_EMAIL")

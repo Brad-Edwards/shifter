@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -65,15 +66,27 @@ def build_guest_execution_context(
     provider: str | None = None,
     os_type: str | None = None,
     role: str | None = None,
+    kube_clients_builder: Callable[[], tuple[Any, Any, type]] | None = None,
 ) -> GuestExecutionContext:
-    """Resolve the transport, target, and shell family for guest setup."""
+    """Resolve the transport, target, and shell family for guest setup.
+
+    ``kube_clients_builder`` injects the range-cluster Kubernetes client factory
+    for the GCP path (defaults to the live :func:`_build_range_kube_clients`);
+    tests pass a stub so transport selection is exercised without a cluster.
+    """
     resolved_provider = provider or _get_provider()
     resolved_os_type = os_type or instance_data.get("os", "")
     resolved_role = role or instance_data.get("role", "")
     document_name = get_setup_document_name(resolved_os_type)
 
     if resolved_provider == "gcp":
-        return _build_gcp_execution_context(instance_data, resolved_os_type, resolved_role, document_name)
+        return _build_gcp_execution_context(
+            instance_data,
+            resolved_os_type,
+            resolved_role,
+            document_name,
+            kube_clients_builder=kube_clients_builder,
+        )
 
     target = instance_data.get("instance_id", "")
     if not target:
@@ -106,6 +119,8 @@ def _build_gcp_execution_context(
     os_type: str,
     role: str,
     document_name: str,
+    *,
+    kube_clients_builder: Callable[[], tuple[Any, Any, type]] | None = None,
 ) -> GuestExecutionContext:
     """Build the in-range-cluster guest setup transport for a GDC VM Runtime guest.
 
@@ -138,7 +153,8 @@ def _build_gcp_execution_context(
     # Windows guests (cloudbase-init has no ssh_keys module), which leaves the
     # known_hosts seam inert.
     host_public_key = instance_data.get("gdc_host_public_key", "")
-    core_api, client_module, api_exception = _build_range_kube_clients()
+    build_kube_clients = kube_clients_builder or _build_range_kube_clients
+    core_api, client_module, api_exception = build_kube_clients()
     executor = RangePodSSHExecutor(
         core_api=core_api,
         client_module=client_module,

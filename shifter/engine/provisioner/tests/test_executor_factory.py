@@ -64,69 +64,70 @@ class TestBuildGuestExecutionContext:
         mock_store = mocker.Mock()
         mock_store.get_secret.return_value = key_material
         mocker.patch("executors.factory.get_secrets_store", return_value=mock_store)
-        mocker.patch(
-            "executors.factory._build_range_kube_clients",
-            return_value=("CORE_API", "CLIENT_MODULE", RuntimeError),
-        )
-        mock_executor_cls = mocker.patch(
-            "executors.range_pod_ssh_executor.RangePodSSHExecutor",
-        )
-        return mock_store, mock_executor_cls
+        # The range-cluster Kubernetes client factory is injected, so the real
+        # RangePodSSHExecutor is built (and asserted via observable state) without
+        # reaching a live cluster -- no first-party internal patching needed.
+        kube_builder = mocker.Mock(return_value=("CORE_API", "CLIENT_MODULE", RuntimeError))
+        return mock_store, kube_builder
 
     def test_gcp_uses_in_range_pod_transport(self, mocker, monkeypatch):
-        mock_store, mock_executor_cls = self._patch_gcp_deps(mocker, monkeypatch)
-        mock_executor = mock_executor_cls.return_value
+        from executors.range_pod_ssh_executor import RangePodSSHExecutor
 
-        context = build_guest_execution_context(self._gcp_instance())
+        mock_store, kube_builder = self._patch_gcp_deps(mocker, monkeypatch)
 
-        assert context.executor is mock_executor
+        context = build_guest_execution_context(self._gcp_instance(), kube_clients_builder=kube_builder)
+
+        assert isinstance(context.executor, RangePodSSHExecutor)
         assert context.target == "10.200.2.10"
         assert context.document_name == "AWS-RunPowerShellScript"
         assert context.transport_name == "range-pod-ssh"
         mock_store.get_secret.assert_called_once_with("projects/test/secrets/range-vm-1-key")
-        mock_executor_cls.assert_called_once_with(
-            core_api="CORE_API",
-            client_module="CLIENT_MODULE",
-            api_exception=RuntimeError,
-            namespace="range-7",
-            network_name="range-7-core",
-            runner_image="registry.example/runner:latest",
-            private_key="PRIVATE KEY",
-            username="Administrator",
-            host_public_key="",
-            known_hosts_host="10.200.2.10",
-        )
+        kube_builder.assert_called_once_with()
 
-        context.close()
-        mock_executor.close.assert_called_once_with()
+        executor = context.executor
+        assert executor._core_api == "CORE_API"
+        assert executor._client_module == "CLIENT_MODULE"
+        assert executor._api_exception is RuntimeError
+        assert executor._namespace == "range-7"
+        assert executor._network_name == "range-7-core"
+        assert executor._runner_image == "registry.example/runner:latest"
+        assert executor._private_key_material == "PRIVATE KEY"
+        assert executor._username == "Administrator"
+        # Windows guest: no host key, so the known_hosts seam stays inert.
+        assert executor._known_hosts_path is None
 
     def test_gcp_forwards_guest_host_key_for_known_hosts(self, mocker, monkeypatch):
         # The Ed25519 host key the provisioner installed via cloud-init flows to
         # the executor so it can seed the runner's known_hosts (D31).
-        _store, mock_executor_cls = self._patch_gcp_deps(mocker, monkeypatch)
+        _store, kube_builder = self._patch_gcp_deps(mocker, monkeypatch)
 
-        build_guest_execution_context(
-            self._gcp_instance(gdc_host_public_key="ssh-ed25519 AAAAHOSTKEY guest", os="ubuntu")
+        context = build_guest_execution_context(
+            self._gcp_instance(gdc_host_public_key="ssh-ed25519 AAAAHOSTKEY guest", os="ubuntu"),
+            kube_clients_builder=kube_builder,
         )
 
-        assert mock_executor_cls.call_args.kwargs["host_public_key"] == "ssh-ed25519 AAAAHOSTKEY guest"
-        assert mock_executor_cls.call_args.kwargs["known_hosts_host"] == "10.200.2.10"
+        executor = context.executor
+        assert executor._known_hosts_path is not None
+        assert executor._known_hosts_content == "10.200.2.10 ssh-ed25519 AAAAHOSTKEY guest\n"
 
     def test_gcp_prefers_explicit_ssh_username_from_instance_output(self, mocker, monkeypatch):
-        _store, mock_executor_cls = self._patch_gcp_deps(mocker, monkeypatch)
+        _store, kube_builder = self._patch_gcp_deps(mocker, monkeypatch)
 
-        build_guest_execution_context(self._gcp_instance(ssh_username="custom-user", os="ubuntu"))
+        context = build_guest_execution_context(
+            self._gcp_instance(ssh_username="custom-user", os="ubuntu"),
+            kube_clients_builder=kube_builder,
+        )
 
-        assert mock_executor_cls.call_args.kwargs["username"] == "custom-user"
+        assert context.executor._username == "custom-user"
 
     def test_gcp_runner_image_falls_back_to_engine_task_image(self, mocker, monkeypatch):
-        _store, mock_executor_cls = self._patch_gcp_deps(mocker, monkeypatch)
+        _store, kube_builder = self._patch_gcp_deps(mocker, monkeypatch)
         monkeypatch.delenv("GDC_SETUP_RUNNER_IMAGE", raising=False)
         monkeypatch.setenv("ENGINE_TASK_IMAGE", "registry.example/provisioner:sha")
 
-        build_guest_execution_context(self._gcp_instance())
+        context = build_guest_execution_context(self._gcp_instance(), kube_clients_builder=kube_builder)
 
-        assert mock_executor_cls.call_args.kwargs["runner_image"] == "registry.example/provisioner:sha"
+        assert context.executor._runner_image == "registry.example/provisioner:sha"
 
     def test_gcp_requires_private_ip(self, monkeypatch):
         monkeypatch.setenv("CLOUD_PROVIDER", "gcp")

@@ -2903,19 +2903,16 @@ class TestGcpBootstrapIdentityPlatform:
 
     def test_resolve_gcp_bootstrap_operator_credentials_returns_none_when_missing(self):
         """Bootstrap should report no operator credentials when the env files do not provide them."""
-        with patch("deploy.load_bootstrap_env_values", return_value={}):
-            assert deploy.resolve_gcp_bootstrap_operator_credentials() is None
+        assert deploy.resolve_gcp_bootstrap_operator_credentials(env_values={}) is None
 
     def test_resolve_gcp_bootstrap_operator_credentials_uses_env_values(self):
         """Bootstrap should source the first operator credentials from env-backed values when present."""
-        with patch(
-            "deploy.load_bootstrap_env_values",
-            return_value={
+        credentials = deploy.resolve_gcp_bootstrap_operator_credentials(
+            env_values={
                 "GCP_BOOTSTRAP_ADMIN_EMAIL": "analyst@paloaltonetworks.com",
                 "GCP_BOOTSTRAP_ADMIN_PASSWORD": "correct-horse-battery-staple",
             },
-        ):
-            credentials = deploy.resolve_gcp_bootstrap_operator_credentials()
+        )
 
         assert credentials == ("analyst@paloaltonetworks.com", "correct-horse-battery-staple")
 
