@@ -322,6 +322,20 @@ must_not_resolve a14-kali "example.com" "external domain via participant DNS pat
 must_resolve a14-kali "dc01.boreas.local" "in-range DC hostname"
 must_not_reach a14-kali 8.8.8.8 53 "public recursive DNS (8.8.8.8:53)"
 
+# =============================================================================
+# Zero-egress posture (#1171 / ADR-026)
+# When ZERO_EGRESS=1, assert no path to external hosts, including lanes that
+# are allowlisted in allowlist mode (public DNS, NTP, HTTPS).
+# =============================================================================
+if [[ "${ZERO_EGRESS:-0}" == "1" ]]; then
+    echo
+    echo "=== zero-egress external containment ==="
+    must_not_reach a14-kali 1.1.1.1 443 "external HTTPS (Cloudflare)"
+    must_not_reach a14-kali 203.0.113.1 443 "external HTTPS (TEST-NET-3)"
+    must_not_reach a14-kali 129.6.15.28 123 "public NTP (time.nist.gov)"
+    must_not_resolve a14-kali "google.com" "external domain"
+fi
+
 echo
 echo "=================================================="
 echo "  PASS: $PASS_COUNT  FAIL: $FAIL"

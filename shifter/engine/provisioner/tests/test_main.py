@@ -714,6 +714,60 @@ class TestGdcProvisioning:
         assert variables["secrets_kms_key_arn"] == "arn:aws:kms:us-east-2:123456789012:key/abcd-1234"
         assert variables["kali_ami_id"] == "ami-deadbeef"
 
+    def test_build_range_terraform_variables_aws_range_egress_mode_from_env(self):
+        """AWS range tfvars carry range_egress_mode for the runtime module (#1171)."""
+        from terraform_vars import _build_range_terraform_variables
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setenv("CLOUD_PROVIDER", "aws")
+            mp.setenv("ENVIRONMENT", "dev")
+            mp.setenv("SECRETS_KMS_KEY_ARN", "arn:aws:kms:us-east-2:123456789012:key/abcd-1234")
+            mp.setenv("RANGE_INSTANCE_PROFILE_NAME", "shifter-dev-range-profile")
+            mp.setenv("RANGE_EGRESS_MODE", "none")
+            mp.setenv("S3_ENDPOINT_ID", "vpce-s3-test")
+            mp.setattr(
+                "terraform_vars.load_range_network_config",
+                MagicMock(
+                    return_value=SimpleNamespace(
+                        network_id="vpc-test",
+                        network_cidr="10.1.0.0/16",
+                        primary_portal_cidr="10.0.0.0/16",
+                    )
+                ),
+            )
+            mp.setattr("terraform_vars.get_range_availability_zone", MagicMock(return_value="us-east-2a"))
+            mp.setattr("terraform_vars.get_ami_id", MagicMock(return_value="ami-deadbeef"))
+            mp.setattr("terraform_vars.generate_presigned_url", MagicMock(return_value="https://signed.example/agent"))
+
+            variables = _build_range_terraform_variables(
+                request_id="req-aws-none",
+                range_id=1,
+                user_id=2,
+                range_spec={
+                    "ngfw": False,
+                    "subnets": [
+                        {
+                            "name": "attack",
+                            "uuid": "u1",
+                            "cidr": "10.1.1.0/28",
+                            "instances": [
+                                {
+                                    "uuid": "i1",
+                                    "name": "kali",
+                                    "role": "attacker",
+                                    "os_type": "kali",
+                                    "agent": {"s3_key": "agents/xdr.deb"},
+                                }
+                            ],
+                        }
+                    ],
+                },
+            )
+
+        assert variables["range_egress_mode"] == "none"
+        assert variables["s3_endpoint_id"] == ""
+        assert variables["subnets"][0]["instances"][0]["agent_presigned_url"] == ""
+
     def test_build_range_terraform_variables_aws_raises_when_secrets_kms_key_arn_missing(self):
         """Fail-fast on missing SECRETS_KMS_KEY_ARN for AWS range path (#213)."""
         from terraform_vars import _build_range_terraform_variables
