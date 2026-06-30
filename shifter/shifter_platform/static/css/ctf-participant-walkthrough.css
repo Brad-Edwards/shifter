@@ -9,7 +9,7 @@
 }
 
 .wt-ip-note {
-    background: rgb(255, 193, 7, 0.08);
+    background: #282314;
     border: 1px solid rgb(255, 193, 7, 0.25);
     border-radius: 6px;
     padding: 0.75rem 1rem;
@@ -19,7 +19,7 @@
 }
 
 .wt-ip-note code {
-    background: rgb(255, 255, 255, 0.1);
+    background: #2c2c2c;
     padding: 0.15em 0.4em;
     border-radius: 3px;
     color: #fff;

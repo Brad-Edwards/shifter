@@ -35,12 +35,12 @@
     border-radius: 3px;
 }
 
-.status-badge-draft { background: rgb(112, 112, 112, 0.15); color: #707070; }
-.status-badge-queued { background: rgb(250, 173, 20, 0.15); color: #faad14; }
-.status-badge-running { background: rgb(64, 169, 255, 0.15); color: #40a9ff; }
-.status-badge-completed { background: rgb(0, 210, 106, 0.15); color: #00d26a; }
-.status-badge-cancelled { background: rgb(112, 112, 112, 0.15); color: #b8b8b8; }
-.status-badge-failed { background: rgb(255, 77, 79, 0.15); color: #ff4d4f; }
+.status-badge-draft { background: #232323; color: #b8b8b8; }
+.status-badge-queued { background: #372c15; color: #faad14; }
+.status-badge-running { background: #1b2b38; color: #40a9ff; }
+.status-badge-completed { background: #123122; color: #00d26a; }
+.status-badge-cancelled { background: #232323; color: #b8b8b8; }
+.status-badge-failed { background: #381d1e; color: #ff4d4f; }
 
 .run-progress {
     font-size: 12px;

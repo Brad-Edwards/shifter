@@ -56,7 +56,7 @@
 }
 
 .error-list {
-    background: rgb(200, 50, 50, 0.15);
+    background: #301919;
     border: 1px solid rgb(200, 50, 50, 0.3);
     border-radius: 4px;
     padding: 12px 16px;
@@ -98,13 +98,13 @@
 }
 
 .validation-valid {
-    background: rgb(100, 200, 100, 0.15);
+    background: #213021;
     border: 1px solid rgb(100, 200, 100, 0.3);
     color: #8c8;
 }
 
 .validation-invalid {
-    background: rgb(200, 50, 50, 0.15);
+    background: #301919;
     border: 1px solid rgb(200, 50, 50, 0.3);
     color: #c88;
 }
@@ -125,13 +125,13 @@
 }
 
 .btn-danger {
-    background: rgb(200, 50, 50, 0.2);
+    background: #391b1b;
     color: #c66;
     border: 1px solid rgb(200, 50, 50, 0.3);
 }
 
 .btn-add {
-    background: rgb(100, 200, 100, 0.15);
+    background: #213021;
     color: #8c8;
     border: 1px solid rgb(100, 200, 100, 0.25);
 }
