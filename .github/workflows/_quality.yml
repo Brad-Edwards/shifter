@@ -782,6 +782,15 @@ jobs:
 
       - name: Run mypy
         working-directory: shifter/shifter_platform
+        # The django-stubs mypy plugin imports `config.settings` to construct
+        # itself, so the run needs synthetic, non-production Django env
+        # (matching the `mypy-shifter-platform` pre-commit hook) or the plugin
+        # raises and mypy exits with an INTERNAL ERROR. PYTHONPATH=".." makes
+        # the imported `cyberscript` package resolvable at settings-import time.
+        env:
+          DJANGO_DEBUG: "true"
+          DJANGO_SECRET_KEY: dummy-for-testing
+          PYTHONPATH: ".."
         run: uv run mypy .
 
   provisioner-typecheck:
