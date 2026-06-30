@@ -74,6 +74,14 @@ def _parse_body_object(request: HttpRequest, *, allow_empty: bool = False) -> di
         _BodyParseError: when the body is not valid JSON, or when the
             top-level JSON value is not an object.
     """
+    drf_body = getattr(request, "_ctf_drf_body_data", None)
+    if drf_body is not None:
+        if getattr(request, "_ctf_drf_body_empty", False) and not allow_empty:
+            raise _BodyParseError("Request body is required")
+        if not isinstance(drf_body, dict):
+            raise _BodyParseError("Request body must be a JSON object")
+        return dict(drf_body)
+
     raw = request.body
     if not raw:
         if allow_empty:

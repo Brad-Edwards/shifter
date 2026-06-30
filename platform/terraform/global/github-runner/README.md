@@ -8,6 +8,10 @@ let it deploy to both dev and prod.
 
 - `aws_instance.runner[count]`: Amazon Linux 2023, t3.large, no inbound
   rules (egress to GitHub/ECR/SSM). Access via SSM Session Manager.
+- Placement is controlled by `var.vpc_id` and `var.subnet_id`. The runner
+  network must be non-default and outside any VPC where range provisioning can
+  create private-DNS interface endpoints. Use a dedicated runner VPC or the
+  portal VPC private tier; do not place runners in the account default VPC.
 - IAM instance profile with inline SSM Session Manager and ECR push/pull
   policies. Inline policies avoid `iam:AttachRolePolicy`, which may be
   denied by AWS Organizations SCPs in fresh managed accounts.
@@ -56,25 +60,26 @@ The script reads `PANW_SHIFTER_DEV_PROFILE` from `.env`. AWS pager
 should be disabled (`export AWS_PAGER=""`) or `aws` calls will block on
 `less`.
 
-Before applying in a new account, update `dev.tfvars` with the account-local
-VPC and subnet. The runner instances need outbound internet access for GitHub,
-ECR, and SSM; the default VPC public subnet is acceptable for dev bootstrap.
+Before applying in a new account, choose a runner network that range
+provisioning cannot deploy into. Valid choices are a dedicated runner VPC or
+the portal VPC private tier. The runner subnet needs outbound egress for GitHub,
+ECR, SSM, and AWS APIs through NAT, an approved proxy, or VPC endpoints plus
+internet egress for GitHub. The account default VPC is not acceptable because
+range-created private-DNS interface endpoints affect every workload in that VPC.
+
+For the portal VPC option, use the portal Terraform outputs as the source for
+`vpc_id` and `subnet_id`:
 
 ```bash
-aws ec2 describe-vpcs \
-  --profile "$PANW_SHIFTER_DEV_PROFILE" \
-  --region us-east-2 \
-  --filters Name=is-default,Values=true \
-  --query 'Vpcs[0].VpcId' \
-  --output text
-
-aws ec2 describe-subnets \
-  --profile "$PANW_SHIFTER_DEV_PROFILE" \
-  --region us-east-2 \
-  --filters Name=default-for-az,Values=true \
-  --query 'Subnets[?AvailabilityZone==`us-east-2a`].SubnetId | [0]' \
-  --output text
+cd platform/terraform/environments/dev/portal
+terraform output vpc_id
+terraform output private_subnet_ids
 ```
+
+Do not commit live VPC or subnet IDs to the placeholder tfvars files. Keep
+deployment-specific IDs in a gitignored operator override or another approved
+deploy-time binding. See the preflight note:
+[`docs/architecture/github-runner-network-isolation-preflight-1222.md`](../../../../docs/architecture/github-runner-network-isolation-preflight-1222.md).
 
 ## Health monitoring
 

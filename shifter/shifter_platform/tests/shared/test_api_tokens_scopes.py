@@ -34,6 +34,7 @@ class TestKnownScopes:
             "mission_control:script:write",
             "ctf:event:read",
             "ctf:event:write",
+            "ctf:play:read",
             "ctf:play:write",
             "cms:authoring:read",
             "cms:authoring:write",

@@ -18,14 +18,18 @@ Provider model
   logs. Only the backend choice, sender address, and (for Mailgun) the sender
   domain are non-secret config.
 
-When no backend is configured the console backend is used — email is optional,
-so an unconfigured deployment degrades to console output rather than failing
-closed.
+Email is optional only when the selected backend is explicit. Dev/test/build
+imports default to the console backend; production runtimes must pass
+``EMAIL_BACKEND`` so a missing renderer/SSM value does not silently discard mail.
 """
 
 from __future__ import annotations
 
 import os
+
+from django.core.exceptions import ImproperlyConfigured
+
+from config._runtime_env import required_runtime_env, runtime_allows_dev_defaults
 
 __all__ = [
     "ANYMAIL",
@@ -50,9 +54,8 @@ def build_anymail_config(email_backend: str, api_key: str, *, mailgun_sender_dom
     """Build the Django ``ANYMAIL`` settings dict for the selected ESP backend.
 
     Returns an empty dict for non-anymail backends or when no API key has been
-    hydrated — an ESP backend without a key is treated as unconfigured rather
-    than emitting an empty-credential entry. The ``api_key`` is a runtime secret
-    value; callers must never log or persist it to checked-in config.
+    hydrated. The ``api_key`` is a runtime secret value; callers must never log
+    or persist it to checked-in config.
     """
     key_name = _ANYMAIL_API_KEY_NAMES.get(email_backend)
     if not key_name or not api_key:
@@ -63,8 +66,15 @@ def build_anymail_config(email_backend: str, api_key: str, *, mailgun_sender_dom
     return config
 
 
-EMAIL_BACKEND = os.environ.get("EMAIL_BACKEND", _CONSOLE_BACKEND)
+EMAIL_BACKEND = required_runtime_env("EMAIL_BACKEND", dev_default=_CONSOLE_BACKEND)
 DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL", "webmaster@localhost")
+_EMAIL_API_KEY = os.environ.get("EMAIL_API_KEY", "")
+_MAILGUN_SENDER_DOMAIN = os.environ.get("MAILGUN_SENDER_DOMAIN", "")
+
+if _ANYMAIL_API_KEY_NAMES.get(EMAIL_BACKEND) and not _EMAIL_API_KEY and not runtime_allows_dev_defaults():
+    raise ImproperlyConfigured(f"EMAIL_API_KEY environment variable is required when EMAIL_BACKEND={EMAIL_BACKEND}")
+if EMAIL_BACKEND == _MAILGUN_BACKEND and not _MAILGUN_SENDER_DOMAIN and not runtime_allows_dev_defaults():
+    raise ImproperlyConfigured("MAILGUN_SENDER_DOMAIN environment variable is required when EMAIL_BACKEND is Mailgun")
 
 # django-ses (AWS path) reads these; inert under any non-SES backend. Defaults
 # preserve the prior hardcoded us-east-2 values so AWS delivery is unchanged.
@@ -75,6 +85,6 @@ AWS_SES_REGION_ENDPOINT = os.environ.get("AWS_SES_REGION_ENDPOINT", "email.us-ea
 # runtime (entrypoint secret hydration); it is never a checked-in value.
 ANYMAIL = build_anymail_config(
     EMAIL_BACKEND,
-    os.environ.get("EMAIL_API_KEY", ""),
-    mailgun_sender_domain=os.environ.get("MAILGUN_SENDER_DOMAIN", ""),
+    _EMAIL_API_KEY,
+    mailgun_sender_domain=_MAILGUN_SENDER_DOMAIN,
 )

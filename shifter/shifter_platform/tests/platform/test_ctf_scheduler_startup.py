@@ -79,7 +79,12 @@ def test_aws_deploy_paths_start_ctf_scheduler_container(path: Path) -> None:
     # long-lived connections drain before SIGKILL; the timeout token differs
     # between the templated user-data and the redeploy script.
     assert "docker stop --time " in deployment_text
-    container_rm_targets = f"portal worker-cms worker-engine worker-mc {SCHEDULER_NAME}"
+    # All portal workers must appear in the stop/rm lists; the order is:
+    # portal, queue workers, outbox drainer, reconciler, ctf-scheduler, guacamole-prune.
+    container_rm_targets = (
+        f"portal worker-cms worker-engine worker-mc worker-outbox-drainer worker-reconciler "
+        f"{SCHEDULER_NAME} guacamole-bootstrap-prune"
+    )
     assert container_rm_targets in deployment_text
     assert (
         f"docker rm {container_rm_targets}" in deployment_text
@@ -93,6 +98,8 @@ def test_aws_deploy_paths_start_ctf_scheduler_container(path: Path) -> None:
         "worker-cms-heartbeat",
         "worker-engine-heartbeat",
         "worker-mc-heartbeat",
+        "worker-outbox-drainer-heartbeat",
+        "worker-reconciler-heartbeat",
         "ctf-scheduler-heartbeat",
     ):
         assert f"/tmp/{heartbeat} -mmin -2 | grep -q ." in deployment_text  # noqa: S108

@@ -6,12 +6,14 @@ already DRF. Fills a real gap: there was no HTTP-level DRF auth test before.
 
 from __future__ import annotations
 
+import hashlib
+
 import pytest
 from rest_framework.authentication import SessionAuthentication
 from rest_framework.test import APIClient
 
-from risk_register.api.authentication import APIKeyAuthentication
 from risk_register.api.views import CommentViewSet, RiskViewSet
+from risk_register.models import APIKey
 from shared.api_tokens import scopes
 from shared.api_tokens.authentication import ApiTokenAuthentication
 from shared.api_tokens.models import ApiToken
@@ -64,8 +66,10 @@ class TestTokenReadAccess:
         token.revoke()
         assert _bearer(client, raw).get(RISKS_URL).status_code == 401
 
-    def test_legacy_risk_register_key_auth_is_view_local(self):
-        expected = [ApiTokenAuthentication, APIKeyAuthentication, SessionAuthentication]
+    def test_risk_register_auth_is_token_and_session_only(self):
+        # PLAT-106 / #1124: the legacy risk_register APIKeyAuthentication is
+        # retired; the surface authenticates only via platform ApiToken + session.
+        expected = [ApiTokenAuthentication, SessionAuthentication]
         assert RiskViewSet.authentication_classes == expected
         assert CommentViewSet.authentication_classes == expected
 
@@ -99,12 +103,28 @@ class TestSessionStillWorks:
         assert client.get(RISKS_URL).status_code == 200
 
 
-class TestAdminOnlyEndpointRejectsTokens:
-    def test_token_cannot_reach_api_keys_admin_endpoint(self, client, staff):
+class TestApiKeysEndpointRetired:
+    def test_api_keys_endpoint_is_gone(self, client, staff):
+        # The legacy /api/v1/api-keys/ management endpoint was retired with the
+        # risk_register APIKey (PLAT-106 / #1124); it no longer routes.
         _, raw = ApiToken.create_token(name="w", created_by=staff, scopes=[scopes.RISK_WRITE])
-        # api-keys management stays session-admin only; a token is authenticated
-        # but not an admin, so it is forbidden.
-        assert _bearer(client, raw).get(API_KEYS_URL).status_code == 403
+        assert _bearer(client, raw).get(API_KEYS_URL).status_code == 404
+
+
+class TestLegacyApiKeyHeaderInert:
+    def test_x_api_key_header_does_not_authenticate(self, client, staff):
+        # An archival rr_live_ key must not authenticate: no authenticator reads
+        # X-API-Key anymore, so the request is unauthenticated (401), not merely
+        # forbidden (403).
+        raw = "rr_live_" + "z" * 32
+        APIKey.objects.create(
+            name="archival",
+            prefix=raw[:8],
+            key_hash=hashlib.sha256(raw.encode()).hexdigest(),
+            created_by=staff,
+        )
+        client.credentials(HTTP_X_API_KEY=raw)
+        assert client.get(RISKS_URL).status_code == 401
 
 
 class TestRiskRegisterErrorEnvelope:

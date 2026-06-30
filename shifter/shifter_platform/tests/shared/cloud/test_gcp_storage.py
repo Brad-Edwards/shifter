@@ -61,3 +61,87 @@ class TestReadObjectHeader:
 
         with patch("google.cloud.storage.Client", return_value=fake_client), pytest.raises(CloudStorageError):
             storage.read_object_header("b", "k", max_bytes=512)
+
+
+class TestPresignedUrlIamSigning:
+    """V4 signed-URL generation must sign via the IAM signBlob API under
+    Workload Identity (no local private key) and locally when a key is present.
+    """
+
+    @staticmethod
+    def _wi_credentials():
+        # Compute/Workload-Identity creds: token only, no local signer.
+        creds = MagicMock()
+        creds.signer = None
+        creds.signer_email = None
+        creds.service_account_email = "portal@example.iam.gserviceaccount.com"
+        creds.token = "wi-access-token"
+        return creds
+
+    @staticmethod
+    def _key_credentials():
+        # Service-account JSON-key creds: can sign locally.
+        creds = MagicMock()
+        creds.signer = MagicMock()
+        creds.signer_email = "key@example.iam.gserviceaccount.com"
+        return creds
+
+    def test_upload_url_uses_iam_signblob_under_workload_identity(self):
+        storage = GCPObjectStorage()
+        fake_client = MagicMock()
+        fake_blob = MagicMock()
+        fake_blob.generate_signed_url.return_value = "https://signed/put"
+        fake_client.bucket.return_value.blob.return_value = fake_blob
+        creds = self._wi_credentials()
+
+        with (
+            patch("google.cloud.storage.Client", return_value=fake_client),
+            patch("google.auth.default", return_value=(creds, "proj")),
+        ):
+            url = storage.generate_presigned_upload_url("b", "k", "application/octet-stream", 600)
+
+        assert url == "https://signed/put"
+        creds.refresh.assert_called_once()
+        kwargs = fake_blob.generate_signed_url.call_args.kwargs
+        assert kwargs["service_account_email"] == "portal@example.iam.gserviceaccount.com"
+        assert kwargs["access_token"] == "wi-access-token"
+        assert kwargs["method"] == "PUT"
+
+    def test_download_url_uses_iam_signblob_under_workload_identity(self):
+        storage = GCPObjectStorage()
+        fake_client = MagicMock()
+        fake_blob = MagicMock()
+        fake_blob.generate_signed_url.return_value = "https://signed/get"
+        fake_client.bucket.return_value.blob.return_value = fake_blob
+        creds = self._wi_credentials()
+
+        with (
+            patch("google.cloud.storage.Client", return_value=fake_client),
+            patch("google.auth.default", return_value=(creds, "proj")),
+        ):
+            url = storage.generate_presigned_download_url("b", "k", 600)
+
+        assert url == "https://signed/get"
+        kwargs = fake_blob.generate_signed_url.call_args.kwargs
+        assert kwargs["service_account_email"] == "portal@example.iam.gserviceaccount.com"
+        assert kwargs["access_token"] == "wi-access-token"
+        assert kwargs["method"] == "GET"
+
+    def test_local_key_credentials_sign_without_iam_kwargs(self):
+        storage = GCPObjectStorage()
+        fake_client = MagicMock()
+        fake_blob = MagicMock()
+        fake_blob.generate_signed_url.return_value = "https://signed/put"
+        fake_client.bucket.return_value.blob.return_value = fake_blob
+        creds = self._key_credentials()
+
+        with (
+            patch("google.cloud.storage.Client", return_value=fake_client),
+            patch("google.auth.default", return_value=(creds, "proj")),
+        ):
+            storage.generate_presigned_upload_url("b", "k", "application/octet-stream", 600)
+
+        creds.refresh.assert_not_called()
+        kwargs = fake_blob.generate_signed_url.call_args.kwargs
+        assert "service_account_email" not in kwargs
+        assert "access_token" not in kwargs

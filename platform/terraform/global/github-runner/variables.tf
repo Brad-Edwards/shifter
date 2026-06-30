@@ -16,7 +16,7 @@ variable "vpc_id" {
 }
 
 variable "subnet_id" {
-  description = "Subnet ID for the runner (should be public for GitHub connectivity)"
+  description = "Subnet ID for the runner. Must be in a non-default, runner-isolated network and have outbound egress for GitHub, ECR, SSM, and AWS APIs."
   type        = string
 }
 

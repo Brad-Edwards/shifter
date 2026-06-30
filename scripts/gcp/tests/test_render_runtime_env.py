@@ -301,14 +301,14 @@ def test_render_env_fails_closed_when_redis_secret_id_missing():
         module.render_env(outputs, image_tag=PINNED_IMAGE_TAG)
 
 
-def test_render_env_omits_email_when_unconfigured():
-    """Email is optional: with no email_config output the renderer emits no
-    EMAIL_* keys and the portal falls back to the console backend."""
+def test_render_env_emits_console_backend_when_email_unconfigured():
+    """Email is optional, but the runtime backend choice is explicit."""
     module = _load_module("render_runtime_env.py", "render_runtime_env")
 
     rendered = module.render_env(_outputs(), image_tag=PINNED_IMAGE_TAG)
 
-    for key in ("EMAIL_BACKEND", "DEFAULT_FROM_EMAIL", "EMAIL_API_KEY_SECRET_ID", "MAILGUN_SENDER_DOMAIN"):
+    assert "EMAIL_BACKEND=django.core.mail.backends.console.EmailBackend\n" in rendered
+    for key in ("DEFAULT_FROM_EMAIL", "EMAIL_API_KEY_SECRET_ID", "MAILGUN_SENDER_DOMAIN"):
         assert f"{key}=" not in rendered
 
 

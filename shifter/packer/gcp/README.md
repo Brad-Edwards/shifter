@@ -27,7 +27,7 @@ There is no GCP equivalent of the AWS `/shifter/ami/*` SSM parameter. Instead:
 - A GCP project with the Compute Engine API enabled and a build network/subnet
 - A service account with image-build permissions (Compute Instance Admin,
   Service Account User, Storage)
-- For `kali`: an **imported** Kali base image (see below)
+- For `kali`: nothing extra — it converts the `debian-12` base to Kali (see below)
 
 ## Quick start
 
@@ -54,22 +54,37 @@ CLI flags) so secrets cannot appear in a process list. See
 |------|--------|-------|
 | `ubuntu` | `ubuntu-2204-lts` (ubuntu-os-cloud) | Reuses `../scripts/ubuntu` |
 | `brokenbk` | `ubuntu-2204-lts` (ubuntu-os-cloud) | Reuses `../scripts/brokenbk` |
-| `kali` | **operator-imported** (`kali_source_image`) | No public Kali GCP image |
+| `kali` | `debian-12` (debian-cloud), converted to Kali | No public Kali GCP image |
 | `windows` | `windows-2022` (windows-cloud) | WinRM + GCESysprep |
 | `dc` | `windows-2022` (windows-cloud) | AD DS via `PACKER_ROLE=dc` |
 
-### Kali base image
+### Kali (debian-12 base, converted to Kali Rolling)
 
 GCP has no public Kali image (the AWS path uses an AWS Marketplace product
-code). Import one first, then pass it as `kali_source_image`:
+code; there is no Offensive-Security-published GCP image). Importing Kali's
+official generic-cloud disk does **not** work on GCE: it has no Google guest
+environment, so it never gets metadata-based SSH-key injection or GCE network
+setup and packer can never connect to it.
+
+Instead the kali builder starts from Google's GCE-native `debian-12` image and
+its first provisioning script (`../scripts/kali/gce-debian-to-kali.sh`) converts
+it to Kali Rolling in place: add Kali's official apt repo + keyring,
+`full-upgrade` onto kali-rolling (`--force-overwrite` clears the 64-bit `time_t`
+library-transition file conflicts), and re-assert Google's guest-environment apt
+repo so `google-guest-agent` survives (the Kali repos omit it). No imported base
+image and no `kali_source_image` / `GCP_KALI_SOURCE_IMAGE` are required:
 
 ```bash
-gcloud compute images import shifter-kali-base \
-  --source-file=gs://<bucket>/kali-rolling.tar.gz --os=debian-11
-packer build -only='googlecompute.kali' -var="kali_source_image=shifter-kali-base" ...
+packer build -only='googlecompute.kali' \
+  -var="project_id=my-proj" -var="zone=us-central1-a" \
+  -var="network=default" -var="subnetwork=default" \
+  -var="service_account_email=packer-builder@my-proj.iam.gserviceaccount.com" \
+  -var="image_prefix=shifter" -var="machine_type=e2-standard-2" \
+  -var="use_internal_ip=false" .
 ```
 
-The build fails loud if `kali_source_image` is unset.
+See `docs/architecture/gcp-guest-images.md` for the full build → export → wire
+pipeline.
 
 ### Windows / DC
 

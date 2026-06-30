@@ -60,7 +60,7 @@ above, plus the following:
 | `GCP_PACKER_SERVICE_ACCOUNT` | variable | no | Service account the builder VM runs as. Falls back to `GCP_SERVICE_ACCOUNT`. |
 | `GCP_PACKER_MACHINE_TYPE` | variable | no | Builder machine type. Default `e2-standard-2`. |
 | `GCP_PACKER_USE_INTERNAL_IP` | variable | no | `true` builds without an external IP (requires IAP `35.235.240.0/20` to the builder). Default `false`. |
-| `GCP_KALI_SOURCE_IMAGE` | secret | for `kali` | Operator-imported Kali GCE image name/self-link. GCP has no public Kali image; the `kali` build fails loud if this is unset. See `shifter/packer/gcp/README.md`. |
+| `GCP_GDC_VM_IMAGE_BUCKET` | variable | for export | GCS bucket the built image is exported into as a `gs://` qcow2 for the GDC VM Runtime (Terraform output `gdc_vm_image_bucket`). The export step fails loud if unset. See `docs/architecture/gcp-guest-images.md`. |
 | `GCP_DEV_PROJECT_ID` | secret | for promote | Source (dev) project for `packer-gcp-promote.yml`; the prod project is the `prod` environment's `GCP_PROJECT_ID`. |
 
 Images are published to the image family `shifter-<type>` (the version pointer;
@@ -131,10 +131,13 @@ to use the `aws-dev` deploy branch:
    This creates the shared S3 state bucket, creates the GitHub OIDC role,
    sets `AWS_ROLE_ARN_DEV` and `TF_INFRA_STATE_BUCKET`, and writes
    per-instance Terraform backend configs under `~/.shifter/<env>-<bucket>/`.
-2. Update `platform/terraform/global/github-runner/dev.tfvars` with the
-   target account's VPC/subnet IDs, apply the runner root, and register each
-   runner with GitHub. AWS deploy workflows use `runs-on: self-hosted`, and
-   bootstrap does not create the runners.
+2. Apply the runner root with non-default runner network IDs: either a
+   dedicated runner VPC or the portal VPC private tier. Do not use the account
+   default VPC, and do not commit live VPC/subnet IDs to tracked placeholder
+   tfvars; keep them in a gitignored operator override or another approved
+   deploy-time binding. Then register each runner with GitHub. AWS deploy
+   workflows use `runs-on: self-hosted`, and bootstrap does not create the
+   runners.
 3. Ensure `/shifter/ami/{kali,ubuntu,windows,dc}` exists in SSM Parameter
    Store before portal Terraform plans/applies. The Packer workflow updates
    these parameters after AMI builds; in a moved account, verify the Packer

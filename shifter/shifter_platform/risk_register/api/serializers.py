@@ -2,7 +2,7 @@
 
 from rest_framework import serializers
 
-from risk_register.models import APIKey, AuditLog, Comment, Risk, StrideCategory
+from risk_register.models import AuditLog, Comment, Risk, StrideCategory
 
 # SonarCloud S1192: extracted duplicated string literals.
 LIKELIHOOD_RANGE_MSG = "Likelihood score must be between 1 and 5"
@@ -167,43 +167,6 @@ class CommentCreateSerializer(serializers.Serializer):
     """Serializer for creating comments."""
 
     content = serializers.CharField(min_length=1)
-
-
-class APIKeySerializer(serializers.ModelSerializer):
-    """Serializer for APIKey model (read operations)."""
-
-    is_active = serializers.BooleanField(read_only=True)
-    display_key = serializers.CharField(read_only=True)
-
-    class Meta:
-        model = APIKey
-        fields = [
-            "id",
-            "name",
-            "prefix",
-            "display_key",
-            "created_at",
-            "last_used_at",
-            "expires_at",
-            "is_active",
-        ]
-        read_only_fields = fields
-
-
-class APIKeyCreateSerializer(serializers.Serializer):
-    """Serializer for creating API keys."""
-
-    name = serializers.CharField(max_length=100)
-    expires_at = serializers.DateTimeField(required=False, allow_null=True)
-
-
-class APIKeyCreatedSerializer(serializers.Serializer):
-    """Serializer for API key creation response (includes raw key)."""
-
-    id = serializers.IntegerField()
-    name = serializers.CharField()
-    key = serializers.CharField()
-    prefix = serializers.CharField()
 
 
 class AuditLogSerializer(serializers.ModelSerializer):

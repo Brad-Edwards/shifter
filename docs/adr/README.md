@@ -43,6 +43,11 @@ Current mechanisms:
   - `check-tf-iam-ec2-scope`: local Terraform IAM hardening check that
     keeps engine-provisioner EC2 instance lifecycle actions scoped to
     Shifter-owned, Terraform-managed instances.
+  - `check-tf-iam-ssm-range-scope`: local Terraform IAM hardening check
+    (ADR-004-R17) that stops the shared range guest instance role from
+    being granted SSM Parameter Store access wildcarded across the
+    environment or range segment (`parameter/shifter/*/range/*`); guards
+    the #1178 cross-tenant credential-access fix.
   - `check-tf-iam-ssm-scope`: local Terraform IAM hardening check that
     keeps engine-provisioner SSM Run Command (`ssm:SendCommand`) and
     `ec2:RebootInstances` scoped to Shifter range guest instances via
@@ -77,11 +82,12 @@ Current mechanisms:
   `refactor`, `test`, `ci`, `build`, `perf`, `revert`. Subject must
   start with a lowercase letter.
 - `.github/workflows/_shifter-engine.yml`: engine image validation and
-  deployment. The validate job runs on GitHub-hosted runners because it
-  only performs a local Docker build; self-hosted runners are reserved
-  for the credentialed build and deploy jobs. The credentialed jobs run
-  only on trusted push / manual-dispatch paths, bind a GitHub
-  Environment, and update ECS with `repo@sha256` image identity.
+  deployment. The provisioner pytest gate and Docker-build validation run
+  on GitHub-hosted runners; self-hosted runners are reserved for the
+  credentialed build and deploy jobs. The credentialed jobs run only on
+  trusted push / manual-dispatch paths, bind a GitHub Environment, require
+  the provisioner test gate, and update ECS with `repo@sha256` image
+  identity.
 - `.github/workflows/deploy.yml`: deploy router. Pull-request events are
   hosted-only (`changes`, pre-commit, Quality, PR Gate) and never route
   AWS/GCP reusable deploy jobs. Reusable deploy jobs receive a
@@ -109,7 +115,9 @@ Current mechanisms:
 - `.ground-control.yaml` and `.gc/plan-rules.md`: Ground Control
   workflow configuration and mandatory plan constraints. The
   `github_repo` value is the canonical GitHub target for agent issue,
-  PR, CI, and traceability operations.
+  PR, CI, and traceability operations. The optional `routing` block opts
+  the repository into per-step `/implement` routing while keeping the
+  workflow's gate contract in `.gc/plan-rules.md`.
 - `.importlinter`: Python package-level architecture contracts
 - `.tflint.hcl`: Terraform lint configuration with `tflint-ruleset-google`
   plugin. The initial rule set is intentionally conservative so it can
@@ -133,6 +141,13 @@ Current mechanisms:
   RDS hardening check for the two first-party AWS RDS instances. It
   requires literal IAM DB auth enablement and an explicit non-empty CA
   certificate identifier, complementing Checkov's RDS policies.
+- `scripts/check_tf_iam_ssm_range_scope/check_tf_iam_ssm_range_scope.py`:
+  ADR-004-R17 IAM hardening check that rejects SSM Parameter Store grants
+  on the shared range guest instance role whose Resource wildcards across
+  the environment or range segment (`parameter/shifter/*/range/*` or an
+  unbounded `parameter/shifter/<env>/range/*`). The provisioner
+  orchestrator role's env-scoped grant is not inspected. Guards the #1178
+  cross-tenant credential-access fix.
 - `scripts/adr_guard/adr_guard.py` `mcp-no-shell-exec` check:
   flags any file under `mcp/` (`.js`, `.mjs`, `.cjs`) that imports
   `child_process` (any shape: named, default, namespace, CommonJS

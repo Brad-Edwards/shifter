@@ -159,6 +159,63 @@ class TestProcessRangeEvent:
         assert _receive(layer, channel) is None
 
 
+class TestChannelLayerNoneGuard:
+    """MC fanout is advisory — a None channel layer must never crash the worker."""
+
+    def test_range_event_returns_without_crash_when_channel_layer_none(self):
+        """process_range_event returns (acks) when channel layer is not configured."""
+        from django.test import override_settings
+
+        request_id = uuid4()
+        with override_settings(CHANNEL_LAYERS={}):
+            # Must not raise AttributeError or any other exception
+            process_range_event(
+                _sns(
+                    {
+                        "event_type": "range.status.updated",
+                        "request_id": str(request_id),
+                        "new_status": ResourceStatus.READY.value,
+                        "user_id": 42,
+                    }
+                )
+            )
+
+    def test_ngfw_event_returns_without_crash_when_channel_layer_none(self):
+        """process_ngfw_event returns (acks) when channel layer is not configured."""
+        from django.test import override_settings
+
+        app_id = str(uuid4())
+        with override_settings(CHANNEL_LAYERS={}):
+            # Must not raise AttributeError or any other exception
+            process_ngfw_event(
+                _sns(
+                    {
+                        "event_type": EVENT_TYPE_NGFW,
+                        "app_id": app_id,
+                        "status": "ready",
+                    }
+                )
+            )
+
+    def test_range_event_still_broadcasts_when_channel_layer_configured(self):
+        """Normal path still group_sends when the channel layer is available."""
+        request_id = uuid4()
+        layer, channel = _subscribe(range_event_group(str(request_id)))
+        process_range_event(
+            _sns(
+                {
+                    "event_type": "range.status.updated",
+                    "request_id": str(request_id),
+                    "new_status": ResourceStatus.PROVISIONING.value,
+                    "user_id": 42,
+                }
+            )
+        )
+        msg = _receive(layer, channel)
+        assert msg is not None
+        assert msg["new_status"] == ResourceStatus.PROVISIONING.value
+
+
 class TestProcessNgfwEvent:
     def test_broadcasts_to_app_group(self):
         app_id = str(uuid4())

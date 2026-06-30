@@ -20,18 +20,3 @@ class ApiTokenAuthenticationScheme(OpenApiAuthenticationExtension):
             "bearerFormat": "shf",
             "description": "Platform API token with scopes from shared.api_tokens.scopes.",
         }
-
-
-class LegacyRiskRegisterApiKeyAuthenticationScheme(OpenApiAuthenticationExtension):
-    """Document the deprecated risk-register API key while compatibility remains."""
-
-    target_class = "risk_register.api.authentication.APIKeyAuthentication"
-    name = "RiskRegisterApiKeyAuth"
-
-    def get_security_definition(self, auto_schema: Any) -> dict[str, str]:
-        return {
-            "type": "apiKey",
-            "in": "header",
-            "name": "X-API-Key",
-            "description": "Deprecated risk-register API key; new integrations use ApiTokenAuth.",
-        }
