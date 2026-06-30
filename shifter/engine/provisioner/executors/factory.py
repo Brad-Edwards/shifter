@@ -85,7 +85,7 @@ def build_guest_execution_context(
             resolved_os_type,
             resolved_role,
             document_name,
-            kube_clients_builder=kube_clients_builder,
+            kube_clients_builder=kube_clients_builder or _build_range_kube_clients,
         )
 
     target = instance_data.get("instance_id", "")
@@ -120,7 +120,7 @@ def _build_gcp_execution_context(
     role: str,
     document_name: str,
     *,
-    kube_clients_builder: Callable[[], tuple[Any, Any, type]] | None = None,
+    kube_clients_builder: Callable[[], tuple[Any, Any, type]],
 ) -> GuestExecutionContext:
     """Build the in-range-cluster guest setup transport for a GDC VM Runtime guest.
 
@@ -153,8 +153,7 @@ def _build_gcp_execution_context(
     # Windows guests (cloudbase-init has no ssh_keys module), which leaves the
     # known_hosts seam inert.
     host_public_key = instance_data.get("gdc_host_public_key", "")
-    build_kube_clients = kube_clients_builder or _build_range_kube_clients
-    core_api, client_module, api_exception = build_kube_clients()
+    core_api, client_module, api_exception = kube_clients_builder()
     executor = RangePodSSHExecutor(
         core_api=core_api,
         client_module=client_module,
