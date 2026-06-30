@@ -247,7 +247,15 @@ run_migrations() {
 
   echo "Running database migrations..."
   docker pull "$image"
-  docker run --rm "${common_env[@]}" -e SKIP_MIGRATIONS=1 "$image" python manage.py migrate --noinput
+  # DB_IAM_AUTH_RUNTIME=false keeps this one-off migrate on the password-
+  # authenticated master user (schema owner). The image entrypoint otherwise
+  # switches the connection to the rds_iam runtime user (portal_runtime) before
+  # exec'ing this command, which is wrong for migrations: that user is *created*
+  # by a migration (mission_control 0041) and holds only DML grants, so on a
+  # fresh database it does not exist yet and the connect fails with
+  # "password authentication failed for user portal_runtime". Migrations must
+  # run as the master; the runtime containers below still switch to IAM auth.
+  docker run --rm "${common_env[@]}" -e SKIP_MIGRATIONS=1 -e DB_IAM_AUTH_RUNTIME=false "$image" python manage.py migrate --noinput
 }
 
 run_containers() {

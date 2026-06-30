@@ -499,6 +499,38 @@ resource "aws_iam_role_policy" "sqs_kms" {
   })
 }
 
+resource "aws_iam_role_policy" "s3_kms" {
+  name = "s3-kms-access"
+  role = aws_iam_role.this.id
+
+  # The portal user-storage bucket is SSE-KMS encrypted with a CMK and its
+  # bucket policy *enforces* that CMK (modules/portal/s3). The CMK key policy
+  # grants the account root for the s3 ViaService path, which delegates the
+  # decision to IAM — so the instance role must hold kms:GenerateDataKey
+  # (uploads) and kms:Decrypt (downloads) on the key or every challenge-file
+  # PutObject/GetObject fails with AccessDenied / SNS-style KMS errors.
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "kms:Decrypt",
+          "kms:GenerateDataKey",
+          "kms:DescribeKey"
+        ]
+        Resource = var.s3_kms_key_arn
+        Condition = {
+          StringEquals = {
+            "kms:CallerAccount" = data.aws_caller_identity.current.account_id
+            "kms:ViaService"    = "s3.${var.aws_region}.amazonaws.com"
+          }
+        }
+      }
+    ]
+  })
+}
+
 resource "aws_iam_role_policy" "ses_send" {
   count = var.enable_ses ? 1 : 0
 

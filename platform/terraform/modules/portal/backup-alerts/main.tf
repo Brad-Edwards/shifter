@@ -48,8 +48,18 @@ resource "aws_kms_key" "this" {
       },
       {
         # Let the RDS event service generate the per-message data key and
-        # decrypt it to deliver notifications to the encrypted topic. Scoped to
-        # this account via aws:SourceAccount to prevent confused-deputy use.
+        # decrypt it to deliver notifications to the encrypted topic.
+        #
+        # No aws:SourceArn / aws:SourceAccount confused-deputy condition: RDS
+        # CreateEventSubscription performs an authorization test-publish through
+        # the events.rds.amazonaws.com principal *before* the subscription
+        # exists, so it carries no es: ARN and no source-account context. Any
+        # condition therefore fails that test-publish with SNSNoAuthorization
+        # and makes the subscription un-creatable (verified empirically on proof
+        # with both aws:SourceAccount and aws:SourceArn forms). The grant is
+        # instead bounded structurally: a single service principal acting only
+        # on this account's own CMK (the key policy applies to this key alone),
+        # used solely to deliver this account's RDS events to its own topic.
         Sid       = "AllowRdsEventsToUseKey"
         Effect    = "Allow"
         Principal = { Service = "events.rds.amazonaws.com" }
@@ -58,11 +68,6 @@ resource "aws_kms_key" "this" {
           "kms:Decrypt",
         ]
         Resource = "*"
-        Condition = {
-          StringEquals = {
-            "aws:SourceAccount" = data.aws_caller_identity.current.account_id
-          }
-        }
       },
     ]
   })
@@ -118,8 +123,20 @@ data "aws_iam_policy_document" "topic" {
     }
   }
 
-  # Let the RDS event service publish notifications to this topic, scoped to
-  # this account to prevent confused-deputy use.
+  # Let the RDS event service publish notifications to this topic.
+  #
+  # No aws:SourceArn / aws:SourceAccount confused-deputy condition: RDS
+  # CreateEventSubscription runs an authorization test-publish through the
+  # events.rds.amazonaws.com principal *before* the subscription exists, so the
+  # publish carries no es: ARN and no source-account context. A condition on
+  # this statement makes that test-publish fail with SNSNoAuthorization and the
+  # subscription un-creatable (verified empirically on proof: both
+  # aws:SourceAccount and aws:SourceArn forms produced SNSNoAuthorization).
+  # The grant is bounded structurally instead: one service principal, one topic
+  # ARN. Residual exposure if another account learns this exact topic ARN and
+  # points its own RDS event subscription at it is limited to that account's RDS
+  # event metadata arriving in this topic's ops inbox (noise) -- no read access
+  # and no data exfiltration from this account.
   statement {
     sid    = "AllowRdsEventsToPublish"
     effect = "Allow"
@@ -129,11 +146,6 @@ data "aws_iam_policy_document" "topic" {
     }
     actions   = ["sns:Publish"]
     resources = [aws_sns_topic.this.arn]
-    condition {
-      test     = "StringEquals"
-      variable = "aws:SourceAccount"
-      values   = [data.aws_caller_identity.current.account_id]
-    }
   }
 }
 
