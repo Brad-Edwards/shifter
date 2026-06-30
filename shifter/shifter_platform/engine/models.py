@@ -10,12 +10,16 @@ Infrastructure lifecycle models for Shifter platform.
 """
 
 import uuid
+from typing import TYPE_CHECKING
 
 from django.conf import settings
 from django.db import models, transaction
 
 from shared.enums import RequestType
 from shared.schemas.persistence import unwrap_persisted_spec
+
+if TYPE_CHECKING:
+    from django.contrib.auth.models import User
 
 
 class Request(models.Model):
@@ -397,7 +401,7 @@ class Range(models.Model):
         ).first()
 
     @classmethod
-    def resolve_active_for_instance(cls, user, instance_uuid):
+    def resolve_active_for_instance(cls, user: "User", instance_uuid: str) -> "Range | None":
         """Return the user's active range that contains instance_uuid, or None.
 
         Iterates the user's active ranges (same status set as get_active_for_user)

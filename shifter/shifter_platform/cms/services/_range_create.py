@@ -18,6 +18,7 @@ if TYPE_CHECKING:
 
     from cms.models import Request
     from cms.scenarios.schema import ScenarioTemplate
+    from shared.enums import RangeSource
     from shared.schemas.range import RangeContext, RangeSpec
 
 logger = logging.getLogger(__name__)
@@ -37,7 +38,7 @@ def _audit_log_call(**kwargs: Any) -> None:  # NOSONAR
     _cs.audit_log(_cs.AuditEvent(**kwargs))
 
 
-def _get_active_range_call(user: User, range_source: Any = None) -> Any:  # NOSONAR
+def _get_active_range_call(user: User, range_source: RangeSource | None = None) -> Any:  # NOSONAR
     """Look up active range through the package to honor test patches."""
     from cms import services as _cs
 
@@ -102,7 +103,7 @@ def _validate_create_range_agents_by_os(user: User, agents_by_os: dict[str, int]
         raise TypeError(msg)
 
 
-def _assert_no_active_range(user: User, range_source: Any = None) -> None:
+def _assert_no_active_range(user: User, range_source: RangeSource | None = None) -> None:
     """Raise CMSError if the user already has an active range for the given source."""
     existing = _get_active_range_call(user, range_source)
     if existing:
@@ -183,7 +184,7 @@ def _persist_range_instance_record(
     user: User,
     agents: dict[str, AgentConfig],
     range_spec: RangeSpec,
-    range_source: Any = None,
+    range_source: RangeSource | None = None,
 ) -> RangeInstance:
     """Persist the RangeInstance row tying the CMS Request to the hydrated spec."""
     from shared.enums import RangeSource
@@ -271,7 +272,7 @@ def create_range(
     scenario: str,
     agents_by_os: dict[str, int],
     ngfw_enabled: bool = False,
-    range_source: Any = None,
+    range_source: RangeSource | None = None,
 ) -> RangeContext:
     """Validate, hydrate, and trigger range provisioning.
 
