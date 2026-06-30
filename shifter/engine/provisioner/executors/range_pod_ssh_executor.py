@@ -33,6 +33,7 @@ from executors.guest_ssh_executor import GuestSSHConnectionError, GuestSSHExecut
 if TYPE_CHECKING:
     from kubernetes.client import CoreV1Api
     from kubernetes.client.exceptions import ApiException
+    from kubernetes.stream.ws_client import WSClient
 
 logger = logging.getLogger(__name__)
 
@@ -359,7 +360,7 @@ class RangePodSSHExecutor(GuestSSHExecutor):
         return returncode, bytes(out), bytes(err)
 
     @staticmethod
-    def _exec_returncode(resp: Any) -> int:
+    def _exec_returncode(resp: WSClient) -> int:
         """Extract the remote command exit code from a closed exec stream."""
         rc = getattr(resp, "returncode", None)
         if isinstance(rc, int):
@@ -373,7 +374,7 @@ class RangePodSSHExecutor(GuestSSHExecutor):
         return RangePodSSHExecutor._exit_code_from_error_status(raw)
 
     @staticmethod
-    def _exit_code_from_error_status(raw: Any) -> int:
+    def _exit_code_from_error_status(raw: str | None) -> int:
         """Map a kubernetes exec ERROR_CHANNEL status payload to an exit code.
 
         Empty payload means success (0). A malformed or non-Success payload

@@ -20,7 +20,10 @@ apt-get update
 apt-get install -y --no-install-recommends ca-certificates curl gnupg
 
 echo "=== Adding Kali official apt repository + keyring ==="
-curl -fsSL --proto-redir =https https://archive.kali.org/archive-keyring.gpg \
+# --proto =https restricts the transfer to HTTPS; no -L (the keyring is served
+# directly, so following redirects -- and risking an HTTPS->HTTP downgrade -- is
+# neither needed nor wanted).
+curl -fsS --proto =https https://archive.kali.org/archive-keyring.gpg \
   -o /usr/share/keyrings/kali-archive-keyring.gpg
 echo "deb [signed-by=/usr/share/keyrings/kali-archive-keyring.gpg] http://http.kali.org/kali kali-rolling main contrib non-free non-free-firmware" \
   > /etc/apt/sources.list.d/kali.list
@@ -29,7 +32,7 @@ echo "deb [signed-by=/usr/share/keyrings/kali-archive-keyring.gpg] http://http.k
 rm -f /etc/apt/sources.list /etc/apt/sources.list.d/debian.sources
 
 echo "=== Pinning the Google guest environment so the conversion keeps it ==="
-curl -fsSL --proto-redir =https https://packages.cloud.google.com/apt/doc/apt-key.gpg \
+curl -fsS --proto =https https://packages.cloud.google.com/apt/doc/apt-key.gpg \
   | gpg --dearmor -o /usr/share/keyrings/cloud.google.gpg
 echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt google-compute-engine-bookworm-stable main" \
   > /etc/apt/sources.list.d/google-compute-engine.list
