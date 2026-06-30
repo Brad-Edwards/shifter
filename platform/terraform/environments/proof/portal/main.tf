@@ -666,6 +666,7 @@ module "ec2" {
   sqs_queue_arns  = values(module.messaging.sqs_queue_arns)
   sqs_queue_urls  = module.messaging.sqs_queue_urls
   sqs_kms_key_arn = module.messaging.kms_key_arn
+  s3_kms_key_arn  = aws_kms_key.portal_s3.arn
 
   # Parameter Store prefix for user_data bootstrap
   ssm_parameter_store_prefix = module.ssm.parameter_store_prefix

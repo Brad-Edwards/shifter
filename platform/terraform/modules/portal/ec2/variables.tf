@@ -268,6 +268,11 @@ variable "sqs_kms_key_arn" {
   type        = string
 }
 
+variable "s3_kms_key_arn" {
+  description = "ARN of the CMK encrypting the portal user-storage S3 bucket (SSE-KMS). The instance role needs kms:GenerateDataKey/Decrypt on it (via the s3 service) to read and write challenge file attachments."
+  type        = string
+}
+
 # ------------------------------------------------------------------------------
 # Bootstrap Configuration (Parameter Store + Lifecycle Hook)
 # ------------------------------------------------------------------------------

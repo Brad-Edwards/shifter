@@ -72,4 +72,15 @@ module "platform_core" {
   range_egress_mode             = var.range_egress_mode
   range_egress_allowed_cidrs    = var.range_egress_allowed_cidrs
   labels                        = local.labels
+
+  messaging_enable_dlq                  = var.messaging_enable_dlq
+  messaging_max_delivery_attempts       = var.messaging_max_delivery_attempts
+  messaging_dlq_retention               = var.messaging_dlq_retention
+  messaging_retry_min_backoff           = var.messaging_retry_min_backoff
+  messaging_retry_max_backoff           = var.messaging_retry_max_backoff
+  messaging_enable_alarms               = var.messaging_enable_alarms
+  messaging_alarm_queue_depth_threshold = var.messaging_alarm_queue_depth_threshold
+  messaging_alarm_message_age_threshold = var.messaging_alarm_message_age_threshold
+  messaging_alarm_dlq_threshold         = var.messaging_alarm_dlq_threshold
+  messaging_notification_channels       = var.messaging_notification_channels
 }

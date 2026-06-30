@@ -247,7 +247,15 @@ run_migrations() {
 
   echo "Running database migrations..."
   docker pull "$image"
-  docker run --rm "${common_env[@]}" -e SKIP_MIGRATIONS=1 "$image" python manage.py migrate --noinput
+  # DB_IAM_AUTH_RUNTIME=false keeps this one-off migrate on the password-
+  # authenticated master user (schema owner). The image entrypoint otherwise
+  # switches the connection to the rds_iam runtime user (portal_runtime) before
+  # exec'ing this command, which is wrong for migrations: that user is *created*
+  # by a migration (mission_control 0041) and holds only DML grants, so on a
+  # fresh database it does not exist yet and the connect fails with
+  # "password authentication failed for user portal_runtime". Migrations must
+  # run as the master; the runtime containers below still switch to IAM auth.
+  docker run --rm "${common_env[@]}" -e SKIP_MIGRATIONS=1 -e DB_IAM_AUTH_RUNTIME=false "$image" python manage.py migrate --noinput
 }
 
 run_containers() {
@@ -268,14 +276,14 @@ run_containers() {
   # (issue #931). DOCKER_STOP_TIMEOUT must stay below the ASG termination drain.
   local stop_timeout="${DOCKER_STOP_TIMEOUT:-35}"
   docker pull "$image"
-  docker stop --time "$stop_timeout" portal worker-cms worker-engine worker-mc ctf-scheduler guacamole-bootstrap-prune 2>/dev/null || true
+  docker stop --time "$stop_timeout" portal worker-cms worker-engine worker-mc worker-outbox-drainer worker-reconciler ctf-scheduler guacamole-bootstrap-prune 2>/dev/null || true
   # Force-remove so a redeploy is idempotent. `docker stop` above does the
   # graceful drain (#931); a plain `docker rm` then fails for any container
   # still running (e.g. one the stop did not fully stop / a restart-policy
   # race), the failure is swallowed by `|| true`, and the subsequent
   # `docker run --name <x>` aborts with "name already in use". `-f` removes
   # regardless of state so the new containers always get their names.
-  docker rm -f portal worker-cms worker-engine worker-mc ctf-scheduler guacamole-bootstrap-prune 2>/dev/null || true
+  docker rm -f portal worker-cms worker-engine worker-mc worker-outbox-drainer worker-reconciler ctf-scheduler guacamole-bootstrap-prune 2>/dev/null || true
   docker run -d --name portal --restart unless-stopped -p 8000:8000 "${common_env[@]}" "$image"
   docker run -d --name worker-cms --restart unless-stopped "${worker_health_base[@]}" \
     "--health-cmd=find /tmp/worker-cms-heartbeat -mmin -2 | grep -q ." \
@@ -286,6 +294,12 @@ run_containers() {
   docker run -d --name worker-mc --restart unless-stopped "${worker_health_base[@]}" \
     "--health-cmd=find /tmp/worker-mc-heartbeat -mmin -2 | grep -q ." \
     "${common_env[@]}" "$image" python manage.py run_worker --queue mc
+  docker run -d --name worker-outbox-drainer --restart unless-stopped "${worker_health_base[@]}" \
+    "--health-cmd=find /tmp/worker-outbox-drainer-heartbeat -mmin -2 | grep -q ." \
+    "${common_env[@]}" "$image" python manage.py drain_range_event_outbox --loop --interval 10
+  docker run -d --name worker-reconciler --restart unless-stopped "${worker_health_base[@]}" \
+    "--health-cmd=find /tmp/worker-reconciler-heartbeat -mmin -2 | grep -q ." \
+    "${common_env[@]}" "$image" python manage.py reconcile_range_events --loop --interval 60
   docker run -d --name ctf-scheduler --restart unless-stopped "${worker_health_base[@]}" \
     "--health-cmd=find /tmp/ctf-scheduler-heartbeat -mmin -2 | grep -q ." \
     "${common_env[@]}" "$image" python manage.py run_ctf_scheduler
@@ -335,6 +349,7 @@ main() {
   local terminal_read_poll_seconds
   local portal_capacity_metrics_enabled
   local portal_worker_soft_concurrency
+  local range_events_topic_id
   local environment
 
   environment=$(get_param "$PS_PREFIX/environment")
@@ -401,6 +416,10 @@ main() {
   validate_bool "PORTAL_CAPACITY_METRICS_ENABLED" "$portal_capacity_metrics_enabled"
   validate_positive_int "PORTAL_WORKER_SOFT_CONCURRENCY" "$portal_worker_soft_concurrency"
 
+  # Range event outbox topic ID (#476). Required by the outbox drainer; passed
+  # as a non-secret env var (topic ARN, not a credential).
+  range_events_topic_id=$(get_optional_param "$PS_PREFIX/range-events-topic-id")
+
   local image
   image=$(image_ref "$ecr_registry" "$ecr_repository" "$image_digest" "$image_tag")
   echo "Deploying image: $image"
@@ -453,6 +472,7 @@ main() {
   append_env PORTAL_CAPACITY_NAME_PREFIX "$WORKER_HEALTH_NAME_PREFIX"
   append_env_if_set PORTAL_CAPACITY_METRICS_ENABLED "$portal_capacity_metrics_enabled"
   append_env_if_set PORTAL_WORKER_SOFT_CONCURRENCY "$portal_worker_soft_concurrency"
+  append_env_if_set RANGE_EVENTS_TOPIC_ID "$range_events_topic_id"
 
   run_migrations "$image" "${DOCKER_ENV[@]}"
   if [[ "$MIGRATE_ONLY" == "true" ]]; then
