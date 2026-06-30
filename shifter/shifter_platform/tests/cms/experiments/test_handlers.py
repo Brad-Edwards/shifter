@@ -33,8 +33,37 @@ class TestProcessEvent:
         mock_orch_cls.assert_not_called()
 
     @patch("cms.experiments.handlers.ExperimentOrchestrator")
+    def test_handler_transient_exception_propagates(self, mock_orch_cls):
+        """Transient handler exception propagates — blanket swallow has been removed.
+
+        The worker must not ack the message when a handler raises transiently.
+        The DLQ backstops poison pills after maxReceiveCount deliveries.
+        """
+        mock_orch = MagicMock()
+        mock_orch_cls.return_value = mock_orch
+        mock_orch.schedule_runs.side_effect = Exception("transient DB error")
+
+        with pytest.raises(Exception, match="transient DB error"):
+            process_event({"event_type": "experiment.start", "experiment_id": 42})
+
+    @patch("cms.experiments.handlers.ExperimentOrchestrator")
+    def test_unknown_event_type_still_acked_not_raised(self, mock_orch_cls):
+        """Unknown event_type → permanently unroutable, returns without raising (ack)."""
+        # Must not raise — returning is the correct deliberate ack for unknowns
+        process_event({"event_type": "experiment.no_such_type", "event_id": "xyz"})
+        mock_orch_cls.assert_not_called()
+
+    @pytest.mark.django_db
+    @patch("cms.experiments.handlers.ExperimentOrchestrator")
     def test_experiment_start_schedules_runs(self, mock_orch_cls):
-        """experiment.start event creates orchestrator and calls schedule_runs."""
+        """experiment.start event creates orchestrator and calls schedule_runs.
+
+        Requires DB access: the downstream _broadcast_experiment_status helper
+        queries Experiment to resolve the recipient; with the blanket exception
+        swallow removed, a RuntimeError (database not allowed) would propagate
+        if the test ran without the DB marker.  With the marker, the missing
+        experiment row correctly yields DoesNotExist → recipient=None → no-op.
+        """
         mock_orch = MagicMock()
         mock_orch_cls.return_value = mock_orch
 
@@ -218,14 +247,12 @@ class TestEventHandlers:
         from cms.experiments import handlers
 
         with (
-            patch.object(handlers, "ExperimentOrchestrator") as mock_orchestrator,
             patch.object(handlers, "_broadcast_experiment_status") as mock_experiment_broadcast,
             patch.object(handlers, "_broadcast_run_status_for") as mock_run_broadcast,
             patch.object(handlers, "_broadcast_experiment_status_if_terminal") as mock_terminal_broadcast,
         ):
             getattr(handlers, handler_name)(event)
 
-        mock_orchestrator.assert_not_called()
         mock_experiment_broadcast.assert_not_called()
         mock_run_broadcast.assert_not_called()
         mock_terminal_broadcast.assert_not_called()
@@ -259,7 +286,14 @@ class TestEventHandlers:
         mock_orchestrator.handle_range_provisioned.assert_called_once_with(5, instances)
         mock_broadcast.assert_called_once_with(10, 5)
 
-    def test_victim_scripts_completed_handler_dispatches_and_broadcasts_run_status(self):
+    @pytest.mark.parametrize(
+        ("handler_func", "orch_method"),
+        [
+            ("_handle_victim_scripts_completed", "handle_victim_scripts_completed"),
+            ("_handle_attacker_scripts_completed", "handle_attacker_scripts_completed"),
+        ],
+    )
+    def test_scripts_completed_handler_dispatches_and_broadcasts_run_status(self, handler_func, orch_method):
         from cms.experiments import handlers
 
         mock_orchestrator = MagicMock()
@@ -267,24 +301,10 @@ class TestEventHandlers:
             patch.object(handlers, "ExperimentOrchestrator", return_value=mock_orchestrator) as mock_orchestrator_cls,
             patch.object(handlers, "_broadcast_run_status_for") as mock_broadcast,
         ):
-            handlers._handle_victim_scripts_completed({"experiment_id": 10, "run_id": 5})
+            getattr(handlers, handler_func)({"experiment_id": 10, "run_id": 5})
 
         mock_orchestrator_cls.assert_called_once_with(10)
-        mock_orchestrator.handle_victim_scripts_completed.assert_called_once_with(5)
-        mock_broadcast.assert_called_once_with(10, 5)
-
-    def test_attacker_scripts_completed_handler_dispatches_and_broadcasts_run_status(self):
-        from cms.experiments import handlers
-
-        mock_orchestrator = MagicMock()
-        with (
-            patch.object(handlers, "ExperimentOrchestrator", return_value=mock_orchestrator) as mock_orchestrator_cls,
-            patch.object(handlers, "_broadcast_run_status_for") as mock_broadcast,
-        ):
-            handlers._handle_attacker_scripts_completed({"experiment_id": 10, "run_id": 5})
-
-        mock_orchestrator_cls.assert_called_once_with(10)
-        mock_orchestrator.handle_attacker_scripts_completed.assert_called_once_with(5)
+        getattr(mock_orchestrator, orch_method).assert_called_once_with(5)
         mock_broadcast.assert_called_once_with(10, 5)
 
     def test_artifacts_collected_handler_dispatches_and_broadcasts_statuses(self):

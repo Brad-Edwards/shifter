@@ -93,3 +93,15 @@ class SecretsStore(Protocol):
     """Protocol for secrets retrieval (Secrets Manager, Secret Manager, etc.)."""
 
     def get_secret(self, secret_id: str) -> str: ...
+
+
+@runtime_checkable
+class EventBus(Protocol):
+    """Protocol for publishing events to a topic (SNS, Pub/Sub, etc.)."""
+
+    def publish(
+        self,
+        topic_id: str,
+        message: str,
+        attributes: dict[str, str] | None = None,
+    ) -> None: ...

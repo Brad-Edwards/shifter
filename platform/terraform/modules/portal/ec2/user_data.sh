@@ -229,6 +229,10 @@ DB_HOST_OVERRIDE=$(get_param "$PS_PREFIX/db-host-override" 2>/dev/null || echo "
 EMAIL_BACKEND=$(get_param "$PS_PREFIX/email-backend")
 CTF_FROM_EMAIL=$(get_param "$PS_PREFIX/ctf-from-email")
 CTFD_PLATFORM_URL=$(get_param "$PS_PREFIX/ctfd-platform-url" 2>/dev/null || echo "")
+# Range event outbox topic ID (#476). Required by the outbox drainer; emitted
+# into COMMON_ENV so the drainer container can publish to SNS. The value is a
+# topic ARN (not a secret), so it is safe to pass as a non-secret env var.
+RANGE_EVENTS_TOPIC_ID=$(get_param "$PS_PREFIX/range-events-topic-id" 2>/dev/null || echo "")
 PLATFORM_BOOTSTRAP_STAFF_EMAILS=$(get_param "$PS_PREFIX/platform-bootstrap-staff-emails" 2>/dev/null || echo "")
 PLATFORM_BOOTSTRAP_SUPERUSER_EMAILS=$(get_param "$PS_PREFIX/platform-bootstrap-superuser-emails" 2>/dev/null || echo "")
 validate_bootstrap_email_list "PLATFORM_BOOTSTRAP_STAFF_EMAILS" "$PLATFORM_BOOTSTRAP_STAFF_EMAILS"
@@ -379,6 +383,14 @@ if [[ -n "$CTFD_PLATFORM_URL" ]]; then
   COMMON_ENV="$COMMON_ENV -e CTFD_PLATFORM_URL=$CTFD_PLATFORM_URL"
 fi
 
+# Range event topic ID (#476). The outbox drainer publishes directly to SNS;
+# the value must be present for the drainer to function. Pass unconditionally
+# so a missing SSM param surfaces as an empty-string at boot rather than a
+# silent omission — the drainer fails closed (CommandError) if unset.
+if [[ -n "$RANGE_EVENTS_TOPIC_ID" ]]; then
+  COMMON_ENV="$COMMON_ENV -e RANGE_EVENTS_TOPIC_ID=$RANGE_EVENTS_TOPIC_ID"
+fi
+
 # Migrations are deploy-owned. Runtime containers skip boot-time migration so
 # ASG refreshes and warm-pool reuse cannot race the same RDS schema.
 COMMON_ENV="$COMMON_ENV -e SKIP_MIGRATIONS=1"
@@ -393,10 +405,10 @@ echo "Stopping existing containers..."
 # Docker stop timeout exceeds the Gunicorn graceful-timeout (30s) so long-lived
 # terminal/WebSocket connections drain before SIGKILL (issue #931). Sized below
 # the ASG termination drain window.
-docker stop --time ${docker_stop_timeout} portal worker-cms worker-engine worker-mc ctf-scheduler guacamole-bootstrap-prune 2>/dev/null || true
+docker stop --time ${docker_stop_timeout} portal worker-cms worker-engine worker-mc worker-outbox-drainer worker-reconciler ctf-scheduler guacamole-bootstrap-prune 2>/dev/null || true
 # Force-remove so a redeploy is idempotent (matches scripts/portal-deploy/deploy_portal.sh,
 # #1127); the docker stop above already does the graceful drain (#931).
-docker rm -f portal worker-cms worker-engine worker-mc ctf-scheduler guacamole-bootstrap-prune 2>/dev/null || true
+docker rm -f portal worker-cms worker-engine worker-mc worker-outbox-drainer worker-reconciler ctf-scheduler guacamole-bootstrap-prune 2>/dev/null || true
 
 echo "Starting portal..."
 eval docker run -d --name portal --restart unless-stopped -p 8000:8000 $COMMON_ENV "$IMAGE"
@@ -408,9 +420,13 @@ WORKER_ENGINE_HEALTH="--health-cmd='find /tmp/worker-engine-heartbeat -mmin -2 |
 WORKER_MC_HEALTH="--health-cmd='find /tmp/worker-mc-heartbeat -mmin -2 | grep -q .'"
 CTF_SCHEDULER_HEALTH="--health-cmd='find /tmp/ctf-scheduler-heartbeat -mmin -2 | grep -q .'"
 GUAC_PRUNE_HEALTH="--health-cmd='find /tmp/guacamole-bootstrap-prune-heartbeat -mmin -2 | grep -q .'"
+OUTBOX_DRAINER_HEALTH="--health-cmd='find /tmp/worker-outbox-drainer-heartbeat -mmin -2 | grep -q .'"
+RECONCILER_HEALTH="--health-cmd='find /tmp/worker-reconciler-heartbeat -mmin -2 | grep -q .'"
 eval docker run -d --name worker-cms --restart unless-stopped $WORKER_HEALTH_BASE "$WORKER_CMS_HEALTH" $COMMON_ENV "$IMAGE" python manage.py run_worker --queue cms
 eval docker run -d --name worker-engine --restart unless-stopped $WORKER_HEALTH_BASE "$WORKER_ENGINE_HEALTH" $COMMON_ENV "$IMAGE" python manage.py run_worker --queue engine
 eval docker run -d --name worker-mc --restart unless-stopped $WORKER_HEALTH_BASE "$WORKER_MC_HEALTH" $COMMON_ENV "$IMAGE" python manage.py run_worker --queue mc
+eval docker run -d --name worker-outbox-drainer --restart unless-stopped $WORKER_HEALTH_BASE "$OUTBOX_DRAINER_HEALTH" $COMMON_ENV "$IMAGE" python manage.py drain_range_event_outbox --loop --interval 10
+eval docker run -d --name worker-reconciler --restart unless-stopped $WORKER_HEALTH_BASE "$RECONCILER_HEALTH" $COMMON_ENV "$IMAGE" python manage.py reconcile_range_events --loop --interval 60
 eval docker run -d --name ctf-scheduler --restart unless-stopped $WORKER_HEALTH_BASE "$CTF_SCHEDULER_HEALTH" $COMMON_ENV "$IMAGE" python manage.py run_ctf_scheduler
 eval docker run -d --name guacamole-bootstrap-prune --restart unless-stopped $WORKER_HEALTH_BASE "$GUAC_PRUNE_HEALTH" $COMMON_ENV "$IMAGE" python manage.py run_guacamole_bootstrap_prune
 
