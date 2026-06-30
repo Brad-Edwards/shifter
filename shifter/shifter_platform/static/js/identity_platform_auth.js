@@ -346,18 +346,22 @@ if (configScript) {
         }
     }
 
-    // Set session persistence before registering the auth-state observer. A
-    // promise chain (rather than a module-level await) keeps the module body
-    // synchronous: this file is a classic `<script type="module">` entry point,
-    // and the jsdom test harness transpiles it to CommonJS, which cannot
-    // represent top-level await.
-    void setPersistence(auth, browserSessionPersistence).then(() => {
+    // Set session persistence BEFORE registering the auth-state observer so the
+    // first auth-state event already uses SESSION (not the default LOCAL)
+    // persistence -- a deliberate security choice. A named async setup function
+    // preserves that ordering without a module-level `await`: this
+    // `<script type="module">` entry point is transpiled to CommonJS by the
+    // jsdom test harness, which cannot represent top-level await, so S7785
+    // (prefer top-level await) is unsatisfiable here without breaking the suite.
+    async function initSessionPersistenceAndObserver() {  // NOSONAR
+        await setPersistence(auth, browserSessionPersistence);
         onAuthStateChanged(auth, (user) => {
             if (user) {
                 void handleAuthenticatedUser(user, false);
             }
         });
-    });
+    }
+    initSessionPersistenceAndObserver();
 
     authForm.addEventListener("submit", (event) => {
         event.preventDefault();
