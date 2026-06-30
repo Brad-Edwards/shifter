@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 
 import pytest
-from jinja2 import Environment, FileSystemLoader
+from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -338,8 +338,10 @@ class TestGdcCloudInitMerge:
     @pytest.fixture
     def linux_templates(self):
         templates_dir = Path(__file__).parent.parent / "templates"
-        # NOSONAR: autoescape=False - shell templates, not HTML
-        env = Environment(loader=FileSystemLoader(str(templates_dir)), autoescape=False)
+        env = Environment(
+            loader=FileSystemLoader(str(templates_dir)),
+            autoescape=select_autoescape(["html", "xml"]),
+        )
         return {
             "kali": _HostKeyTemplate(env.get_template("kali.sh.j2")),
             "linux": _HostKeyTemplate(env.get_template("victim_linux.sh.j2")),
