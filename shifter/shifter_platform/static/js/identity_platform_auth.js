@@ -326,12 +326,18 @@ if (configScript) {
         }
     }
 
-    await setPersistence(auth, browserSessionPersistence);
-    onAuthStateChanged(auth, (user) => {
-        if (user) {
-            void handleAuthenticatedUser(user, false);
-        }
-    });
+    // Set session persistence before registering the auth-state observer.
+    // Wrapped in an async IIFE rather than a module-level `await` so the module
+    // body stays synchronous: this file is a classic `<script type="module">`
+    // entry point and nothing awaits its evaluation.
+    void (async () => {
+        await setPersistence(auth, browserSessionPersistence);
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                void handleAuthenticatedUser(user, false);
+            }
+        });
+    })();
 
     authForm.addEventListener("submit", (event) => {
         event.preventDefault();
