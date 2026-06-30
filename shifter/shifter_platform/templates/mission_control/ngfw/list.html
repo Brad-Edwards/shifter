@@ -156,9 +156,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 const response = await fetch('{% url "mission_control:api_ngfw_list" %}');
                 const data = await response.json();
 
-                // Find this NGFW in the response
-                const ngfw = data.ngfws.find(n => n.id === ngfwId);
-                if (ngfw) {
+                // Confirm this NGFW is present in the response
+                const ngfwPresent = data.ngfws.some(n => n.id === ngfwId);
+                if (ngfwPresent) {
                     // Reload page to show updated status
                     globalThis.location.reload();
                 }
