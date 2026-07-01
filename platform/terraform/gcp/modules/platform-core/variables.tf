@@ -258,6 +258,18 @@ variable "identity_allowed_emails" {
   default     = []
 }
 
+variable "enable_identity_blocking_function" {
+  description = <<-EOT
+    Deploy the gen1 beforeCreate blocking function enforcing the sign-up domain
+    allowlist at the Identity Platform layer. It requires an `allUsers` Cloud
+    Functions invoker binding, which a Domain Restricted Sharing org policy
+    forbids; set to false in such projects (the portal app still enforces the
+    allowlist fail-closed at login).
+  EOT
+  type        = bool
+  default     = true
+}
+
 # Transactional email (PLAT-002, #671). GCP has no native SES equivalent, so a
 # GCP deployment sends through an operator-chosen SaaS (SendGrid/Mailgun) via
 # django-anymail. Email is OPTIONAL: leave email_backend empty (the default) to

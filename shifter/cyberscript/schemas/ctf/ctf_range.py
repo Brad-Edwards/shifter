@@ -92,9 +92,11 @@ class CTFRangeSpec(RangeSpecBase):
 
         # Zone network references
         for z in self.zones:
-            for n in z.networks:
-                if n not in network_names:
-                    raise ValueError(f"zone {z.name!r} references unknown network {n!r}")
+            for net_ref in z.networks:
+                if net_ref not in network_names:
+                    raise ValueError(
+                        f"zone {z.name!r} references unknown network {net_ref!r}"
+                    )
 
         # Network zone references
         for n in self.networks:

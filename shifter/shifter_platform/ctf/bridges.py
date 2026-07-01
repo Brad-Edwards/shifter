@@ -59,14 +59,22 @@ class RangeProvisionResult:
 
 
 def cms_create_range(user, scenario, agents_by_os, ngfw_enabled) -> RangeProvisionResult:
-    """Create a range via CMS."""
+    """Create a CTF range via CMS.
+
+    Passes range_source=RangeSource.CTF so the CMS admission check is scoped
+    to CTF ranges, allowing the user to hold both a Mission Control range and a
+    CTF range simultaneously (#450). The source is server-derived here and is
+    never caller-supplied.
+    """
     import cms.services as cms_services
+    from shared.enums import RangeSource
 
     result = cms_services.create_range(
         user=user,
         scenario=scenario,
         agents_by_os=agents_by_os,
         ngfw_enabled=ngfw_enabled,
+        range_source=RangeSource.CTF,
     )
     return RangeProvisionResult(request_id=result.request_id)
 

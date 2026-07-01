@@ -14,9 +14,14 @@
     "testMatch": [
       "**/static/js/**/*.test.js"
     ],
+    "moduleNameMapper": {
+      "^https://www\\.gstatic\\.com/firebasejs/[^/]+/firebase-app\\.js$": "<rootDir>/static/js/__mocks__/firebase-app.js",
+      "^https://www\\.gstatic\\.com/firebasejs/[^/]+/firebase-auth\\.js$": "<rootDir>/static/js/__mocks__/firebase-auth.js"
+    },
     "collectCoverageFrom": [
       "static/js/**/*.js",
-      "!**/*.test.js"
+      "!**/*.test.js",
+      "!static/js/__mocks__/**"
     ],
     "coverageReporters": [
       "text",
@@ -25,7 +30,10 @@
     ]
   },
   "devDependencies": {
+    "@babel/core": "^8.0.1",
+    "@babel/preset-env": "^8.0.2",
     "@eslint/js": "^10.0.1",
+    "babel-jest": "^30.4.1",
     "eslint": "^10.3.0",
     "eslint-plugin-security": "^4.0.0",
     "globals": "^17.6.0",
