@@ -258,12 +258,11 @@ class TestApplyRangeAssets:
         assert disk_body["spec"]["source"]["gcs"]["secretRef"] == "gdc-vm-image-gcs"
         assert vm_body["kind"] == "VirtualMachine"
         assert vm_body["spec"]["interfaces"][0]["ipAddresses"] == ["10.200.0.104/28"]
-        # GDC's admission webhook forbids inline cloudInit userData over 2048
-        # bytes, so the VM references a per-VM Secret via secretRef instead.
-        assert vm_body["spec"]["cloudInit"]["noCloud"] == {
-            "secretRef": {"name": "range-42-victims-victim-1234-cloudinit"}
-        }
-        assert "userData" not in vm_body["spec"]["cloudInit"]["noCloud"]
+        # This is a Windows VM: GDC's VM webhook forbids cloudInit on Windows
+        # guests, so no NoCloud seed is attached (the guest self-configures from
+        # the baked image and takes its static IP from the interface spec).
+        assert vm_body["spec"]["osType"] == "Windows"
+        assert "cloudInit" not in vm_body["spec"]
 
         assert result == [
             {
@@ -597,3 +596,33 @@ def test_run_power_operation_stops_vm_and_waits_for_stopped(mock_access, mock_cl
         "range-42-victims-victim-1234",
         fake_api_exception,
     )
+
+
+def test_build_vm_manifest_attaches_cloudinit_only_for_linux():
+    """GDC forbids cloudInit on Windows VMs; Linux gets the NoCloud seed."""
+    from _gdc_vm_disks import _build_vm_manifest, _VMComputeSpec, _VMNetworkSpec
+
+    network = _VMNetworkSpec(network_name="range-9-core", static_ip="10.200.0.10", subnet_cidr="10.200.0.0/28")
+
+    linux = _build_vm_manifest(
+        namespace="range-9",
+        vm_name="range-9-core-attacker",
+        disk_name="range-9-core-attacker-boot",
+        user_data_secret_name="range-9-core-attacker-cloudinit",
+        labels={},
+        network=network,
+        compute=_VMComputeSpec(os_label="Linux", vcpus=2, memory="4Gi"),
+    )
+    assert linux["spec"]["cloudInit"]["noCloud"] == {"secretRef": {"name": "range-9-core-attacker-cloudinit"}}
+
+    windows = _build_vm_manifest(
+        namespace="range-9",
+        vm_name="range-9-core-dc",
+        disk_name="range-9-core-dc-boot",
+        user_data_secret_name="range-9-core-dc-cloudinit",
+        labels={},
+        network=network,
+        compute=_VMComputeSpec(os_label="Windows", vcpus=2, memory="8Gi"),
+    )
+    assert "cloudInit" not in windows["spec"]
+    assert windows["spec"]["osType"] == "Windows"

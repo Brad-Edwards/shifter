@@ -87,6 +87,39 @@ def _build_vm_manifest(
 ) -> dict[str, Any]:
     """Build the ``VirtualMachine`` custom resource manifest."""
     prefix_length = network.subnet_cidr.split("/", 1)[1]
+    spec: dict[str, Any] = {
+        "osType": compute.os_label,
+        "compute": {
+            "cpu": {"vcpus": compute.vcpus},
+            "memory": {"capacity": compute.memory},
+        },
+        "interfaces": [
+            {
+                "name": "eth0",
+                "networkName": network.network_name,
+                "ipAddresses": [f"{network.static_ip}/{prefix_length}"],
+                "default": True,
+            }
+        ],
+        "disks": [
+            {
+                "boot": True,
+                "autoDelete": False,
+                "virtualMachineDiskName": disk_name,
+            }
+        ],
+    }
+    # GDC's VM webhook forbids cloudInit on Windows VMs ("CloudInit is only
+    # supported for Linux VMs"). The NoCloud seed carries the Linux host-key /
+    # authorized_keys / first-boot script; Windows guests self-configure from
+    # the baked image (e.g. the polaris-dc first-boot promotion task) and take
+    # their static IP from the interface spec above, so no seed is attached.
+    if compute.os_label == "Linux":
+        spec["cloudInit"] = {
+            "noCloud": {
+                "secretRef": {"name": user_data_secret_name},
+            }
+        }
     return {
         "apiVersion": f"{_VM_GROUP}/{_VM_VERSION}",
         "kind": "VirtualMachine",
@@ -95,31 +128,5 @@ def _build_vm_manifest(
             "namespace": namespace,
             "labels": labels,
         },
-        "spec": {
-            "osType": compute.os_label,
-            "compute": {
-                "cpu": {"vcpus": compute.vcpus},
-                "memory": {"capacity": compute.memory},
-            },
-            "interfaces": [
-                {
-                    "name": "eth0",
-                    "networkName": network.network_name,
-                    "ipAddresses": [f"{network.static_ip}/{prefix_length}"],
-                    "default": True,
-                }
-            ],
-            "disks": [
-                {
-                    "boot": True,
-                    "autoDelete": False,
-                    "virtualMachineDiskName": disk_name,
-                }
-            ],
-            "cloudInit": {
-                "noCloud": {
-                    "secretRef": {"name": user_data_secret_name},
-                }
-            },
-        },
+        "spec": spec,
     }
