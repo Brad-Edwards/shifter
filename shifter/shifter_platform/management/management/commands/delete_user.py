@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from argparse import ArgumentParser
 from typing import Any
 
 from django.contrib.auth import get_user_model
@@ -16,7 +17,7 @@ class Command(BaseCommand):
 
     help = "Delete a Django user by email (testing utility)"
 
-    def add_arguments(self, parser) -> None:
+    def add_arguments(self, parser: ArgumentParser) -> None:
         parser.add_argument("email", help="Email address of the user to delete")
         parser.add_argument(
             "--dry-run",
