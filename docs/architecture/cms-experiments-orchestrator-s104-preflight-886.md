@@ -6,6 +6,10 @@ Date: 2026-06-22
 
 Tracking issue: <https://github.com/Brad-Edwards/shifter/issues/886>
 
+Superseded note: ADR-027 / issue #1195 removed the legacy `cms.experiments`
+orchestrator. This preflight is historical and no longer describes active
+implementation guidance.
+
 This issue is requirement-free. The GitHub issue title, body, and acceptance
 criteria are the shipping contract.
 

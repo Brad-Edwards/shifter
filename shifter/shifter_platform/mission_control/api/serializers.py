@@ -118,30 +118,3 @@ class CredentialCreateSerializer(serializers.Serializer):
         if value not in ("scm", "deployment_profile"):
             raise serializers.ValidationError(f"Invalid credential type: {value}")
         return value
-
-
-class ScriptUploadSerializer(serializers.Serializer):
-    """Validate script upload requests.
-
-    The endpoint is a two-step legacy-compatible flow: ``upload_token`` means
-    completion; otherwise ``name``/``filename``/``file_size`` initiate.
-    """
-
-    upload_token = serializers.CharField(required=False, allow_blank=True)
-    name = serializers.CharField(required=False, allow_blank=True, trim_whitespace=True)
-    filename = serializers.CharField(required=False, allow_blank=True, trim_whitespace=True)
-    file_size = serializers.JSONField(required=False)
-
-    def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
-        if attrs.get("upload_token"):
-            return attrs
-        name = attrs.get("name", "")
-        filename = attrs.get("filename", "")
-        file_size = attrs.get("file_size", 0)
-        if not name:
-            raise serializers.ValidationError("Script name is required")
-        if not filename:
-            raise serializers.ValidationError("Filename is required")
-        if not isinstance(file_size, int) or file_size <= 0:
-            raise serializers.ValidationError("Valid file size is required")
-        return attrs

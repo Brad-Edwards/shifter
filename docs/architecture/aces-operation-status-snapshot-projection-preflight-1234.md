@@ -6,12 +6,16 @@ snapshot, and range projection persistence".
 Status: pre-implementation architecture guidance. This note does not implement
 models, migrations, APIs, event handlers, or UI projections.
 
+ADR-027 note: legacy experiment bridge and `cms.experiments` references in this
+preflight describe the pre-removal state. Future experiment status projection
+must come from a new ACES-backed design rather than the deleted app.
+
 ## Boundary
 
 ADR-024 remains the controlling migration decision: current Shifter runtime
 behavior is authoritative until the parallel ACES path passes parity,
-manifest/conformance, portal/engine/provisioner, CTF, experiment, Mission
-Control, artifact, status, and validation gates.
+manifest/conformance, portal/engine/provisioner, CTF, Mission Control, artifact,
+status, and validation gates. Legacy experiments are the ADR-027 exception.
 
 The #1234 boundary is persistence and projection:
 
@@ -23,9 +27,9 @@ The #1234 boundary is persistence and projection:
   `request_id` is the primary operation identity for ACES-backed ranges.
 - `engine.Range` remains Shifter's authoritative mutable runtime state for
   range lifecycle and provider-owned realization.
-- `cms.RangeInstance`, Mission Control status cards, websocket payloads, CTF
-  range views, and experiment bridge state are compatibility projections over
-  authoritative state. They must not become a second ACES record store.
+- `cms.RangeInstance`, Mission Control status cards, websocket payloads, and CTF
+  range views are compatibility projections over authoritative state. They must
+  not become a second ACES record store.
 - Runtime snapshots are operational observation records. They are not archival
   experiment history, not audit logs, not raw provider dumps, and not a place
   to stuff run transcripts, prompts, challenge evidence, flags, or generated

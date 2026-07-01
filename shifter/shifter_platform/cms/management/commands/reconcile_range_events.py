@@ -1,10 +1,9 @@
 """Reconcile stale CMS projection rows against authoritative engine state.
 
-Scans for CMS ``RangeInstance`` and ``ExperimentRun`` rows whose status has
-not advanced despite the corresponding authoritative ``engine.Range`` having
-moved forward.  When drift is found the reconciler re-drives the same domain
-transition the live event would have triggered, via shared helpers and the
-existing orchestrator entry points.
+Scans for CMS ``RangeInstance`` rows whose status has not advanced despite the
+corresponding authoritative ``engine.Range`` having moved forward. When drift
+is found the reconciler re-drives the same domain transition the live event
+would have triggered.
 
 Operational characteristics:
 - One-shot by default (process a bounded batch and exit), suitable for a
@@ -33,9 +32,6 @@ from django.core.management.base import BaseCommand
 from django.db import transaction
 from django.utils import timezone
 
-from cms.experiments.models import ExperimentRun
-from cms.experiments.orchestrator.coordinator import ExperimentOrchestrator
-from cms.experiments.schemas import TERMINAL_RUN_STATUSES, RunStatus
 from cms.handlers.range_events import apply_range_status
 from cms.models import RangeInstance
 from engine.services import get_authoritative_range_status
@@ -277,124 +273,6 @@ def reconcile_range_instances(
     return counts
 
 
-def _reconcile_ready_run(run: ExperimentRun, counts: dict[str, int]) -> None:
-    """Lock, re-check, and drive one ExperimentRun stuck in PROVISIONING when engine is READY.
-
-    Acquires a row lock inside a savepoint, guards against concurrent convergence,
-    then calls ``handle_range_provisioned`` outside the transaction. Mutates
-    ``counts`` in place for every outcome.
-    """
-    with transaction.atomic():
-        try:
-            locked_run = ExperimentRun.objects.select_for_update(skip_locked=False).get(pk=run.pk)
-        except ExperimentRun.DoesNotExist:
-            counts["skipped"] += 1
-            return
-
-        # Guard: only reconcile if still in PROVISIONING.
-        if locked_run.status != RunStatus.PROVISIONING.value:
-            counts["converged"] += 1
-            return
-
-    logger.warning(
-        "reconcile_experiment_runs: drift detected — ExperimentRun pk=%s "
-        "status=provisioning but engine.Range status=ready; "
-        "calling handle_range_provisioned",
-        safe_log_id(run.pk),
-    )
-    orchestrator = ExperimentOrchestrator(run.experiment_id)
-    orchestrator.handle_range_provisioned(run.pk, {})
-    counts["reconciled"] += 1
-
-
-def _reconcile_terminal_run(run: ExperimentRun, authoritative_status: str, counts: dict[str, int]) -> None:
-    """Lock, re-check, and drive one ExperimentRun stuck in PROVISIONING when engine is terminal.
-
-    Acquires a row lock inside a savepoint, guards against a run already in a
-    terminal status, then calls ``handle_run_failed`` outside the transaction.
-    Mutates ``counts`` in place for every outcome.
-    """
-    with transaction.atomic():
-        try:
-            locked_run = ExperimentRun.objects.select_for_update(skip_locked=False).get(pk=run.pk)
-        except ExperimentRun.DoesNotExist:
-            counts["skipped"] += 1
-            return
-
-        if locked_run.status in {s.value for s in TERMINAL_RUN_STATUSES}:
-            counts["converged"] += 1
-            return
-
-    logger.warning(
-        "reconcile_experiment_runs: drift detected — ExperimentRun pk=%s "
-        "status=provisioning but engine.Range status=%s; calling handle_run_failed",
-        safe_log_id(run.pk),
-        authoritative_status,
-    )
-    orchestrator = ExperimentOrchestrator(run.experiment_id)
-    orchestrator.handle_run_failed(
-        run.pk,
-        f"Range reached {authoritative_status} during provisioning (reconciled)",
-    )
-    counts["reconciled"] += 1
-
-
-def reconcile_experiment_runs(
-    stale_seconds: int,
-    batch_size: int,
-) -> dict[str, int]:
-    """Reconcile ExperimentRun rows stuck in PROVISIONING.
-
-    Finds runs that have been in PROVISIONING past the staleness threshold and
-    whose authoritative engine.Range has advanced to READY or a terminal status.
-
-    Args:
-        stale_seconds: Age threshold applied to ``started_at``.
-        batch_size: Maximum rows to process per run.
-
-    Returns:
-        Counts dict with keys ``reconciled``, ``converged``, ``skipped``,
-        ``no_engine_range``.
-    """
-    cutoff = timezone.now() - timedelta(seconds=stale_seconds)
-    counts: dict[str, int] = {
-        "reconciled": 0,
-        "converged": 0,
-        "skipped": 0,
-        "no_engine_range": 0,
-    }
-
-    stale_runs = list(
-        ExperimentRun.objects.filter(
-            status=RunStatus.PROVISIONING.value,
-            started_at__isnull=False,
-            started_at__lt=cutoff,
-            request_id__isnull=False,
-        )[:batch_size]
-    )
-
-    for run in stale_runs:
-        authoritative_status = get_authoritative_range_status(request_id=run.request_id)
-
-        if authoritative_status is None:
-            logger.warning(
-                "reconcile_experiment_runs: no engine.Range found for ExperimentRun pk=%s (skipping)",
-                safe_log_id(run.pk),
-            )
-            counts["no_engine_range"] += 1
-            continue
-
-        if authoritative_status == ResourceStatus.READY.value:
-            _reconcile_ready_run(run, counts)
-        elif authoritative_status in _TERMINAL_STATUS_VALUES:
-            _reconcile_terminal_run(run, authoritative_status, counts)
-        else:
-            # Engine also in a non-terminal state — not yet ready.
-            counts["skipped"] += 1
-
-    return counts
-
-
 # ---------------------------------------------------------------------------
 # Management command
 # ---------------------------------------------------------------------------
@@ -403,15 +281,15 @@ def reconcile_experiment_runs(
 class Command(BaseCommand):
     """Reconcile stale CMS projection rows against authoritative engine state.
 
-    Scans for RangeInstance and ExperimentRun rows whose status has not advanced
-    despite the corresponding engine.Range having moved forward, and re-drives the
-    appropriate domain transition. Runs once by default (suitable for a CronJob);
-    use --loop for persistent polling.
+    Scans for RangeInstance rows whose status has not advanced despite the
+    corresponding engine.Range having moved forward, and re-drives the
+    appropriate domain transition. Runs once by default (suitable for a
+    CronJob); use --loop for persistent polling.
     """
 
     help = (
-        "Reconcile stale CMS RangeInstance and ExperimentRun rows against "
-        "authoritative engine.Range status. Runs once by default (suitable "
+        "Reconcile stale CMS RangeInstance rows against authoritative "
+        "engine.Range status. Runs once by default (suitable "
         "for a CronJob); use --loop for persistent polling."
     )
 
@@ -477,22 +355,20 @@ class Command(BaseCommand):
     def _run_once(self, stale_seconds: int, batch_size: int) -> None:
         """Execute one reconciliation pass and log the summary."""
         ri_counts = reconcile_range_instances(stale_seconds, batch_size)
-        run_counts = reconcile_experiment_runs(stale_seconds, batch_size)
 
-        total_reconciled = ri_counts["reconciled"] + run_counts["reconciled"]
-        total_converged = ri_counts["converged"] + run_counts["converged"]
-        total_skipped = ri_counts["skipped"] + run_counts["skipped"]
-        total_no_engine = ri_counts["no_engine_range"] + run_counts["no_engine_range"]
+        total_reconciled = ri_counts["reconciled"]
+        total_converged = ri_counts["converged"]
+        total_skipped = ri_counts["skipped"]
+        total_no_engine = ri_counts["no_engine_range"]
 
         log_fn = logger.warning if total_reconciled > 0 else logger.info
         log_fn(
             "reconcile_range_events: pass complete — "
             "reconciled=%d converged=%d skipped=%d no_engine_range=%d "
-            "(range_instances: %r) (experiment_runs: %r)",
+            "(range_instances: %r)",
             total_reconciled,
             total_converged,
             total_skipped,
             total_no_engine,
             ri_counts,
-            run_counts,
         )

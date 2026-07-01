@@ -6,12 +6,17 @@ Mission Control alignment".
 Status: pre-implementation architecture guidance. This note does not implement
 models, migrations, APIs, UI, command execution, access flows, or a cutover.
 
+ADR-027 note: legacy `cms.experiments` references in this preflight describe the
+pre-removal state. Future experiment or participant command execution must use
+a new ACES-backed design rather than restoring the deleted app.
+
 ## Boundary
 
 ADR-024 remains the controlling migration decision: current Shifter behavior is
 authoritative until a parallel ACES path passes the parity inventory,
-manifest/conformance, portal/engine/provisioner, CTF, experiment, Mission
-Control, artifact, status, audit, and validation gates.
+manifest/conformance, portal/engine/provisioner, CTF, Mission Control, artifact,
+status, audit, and validation gates. Legacy experiments are the ADR-027
+exception.
 
 The participant-runtime boundary for #1236 is four separate concerns:
 

@@ -4,7 +4,6 @@ import pytest
 from django.test import override_settings
 
 from cms.assets import s3 as assets_s3
-from cms.experiments import s3 as experiments_s3
 from ctf import s3 as ctf_s3
 from ctf.s3 import CTFFileError
 
@@ -13,10 +12,6 @@ pytestmark = pytest.mark.django_db
 
 # (module, callable returning the result of invoking the function with dummy args)
 CASES = [
-    lambda: experiments_s3.generate_script_upload_url(1, "f.py"),
-    lambda: experiments_s3.generate_presigned_download_url("scripts/1/x.py"),
-    lambda: experiments_s3.delete_s3_object("scripts/1/x.py"),
-    lambda: experiments_s3.read_script_header("scripts/1/x.py", 16),
     lambda: ctf_s3.delete_challenge_file("ctf/x"),
     lambda: ctf_s3.generate_download_url("ctf/x", "x.txt"),
     lambda: assets_s3.verify_s3_object_exists("agents/x"),

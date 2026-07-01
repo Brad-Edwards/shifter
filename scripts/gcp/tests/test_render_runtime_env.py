@@ -70,7 +70,6 @@ def _outputs(
                 "cms": "projects/shifter-gcp-dev/subscriptions/shifter-gcp-dev-cms",
                 "engine": "projects/shifter-gcp-dev/subscriptions/shifter-gcp-dev-engine",
                 "mc": "projects/shifter-gcp-dev/subscriptions/shifter-gcp-dev-mc",
-                "experiments": "projects/shifter-gcp-dev/subscriptions/shifter-gcp-dev-experiments",
             }
         },
         "runtime_secret_ids": {

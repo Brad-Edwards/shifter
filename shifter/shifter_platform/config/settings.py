@@ -129,7 +129,6 @@ INSTALLED_APPS = [
     "cms.apps.CMSConfig",
     "management.apps.ManagementConfig",
     "shared.apps.SharedConfig",
-    "cms.experiments.apps.ExperimentsConfig",
     "ctf.apps.CtfConfig",
 ]
 
@@ -173,7 +172,6 @@ TEMPLATES = [
                 "mission_control.context_processors.active_range",
                 "mission_control.context_processors.terminal_cdn_assets",
                 "shared.context_processors.user_permissions",
-                "shared.context_processors.feature_flags",
                 "ctf.context_processors.ctf_navigation",
             ],
         },
@@ -200,13 +198,6 @@ CHANNEL_LAYERS = _build_channel_layers(os.environ)
 # "true" only once a real browser consumer, bounded fan-out, and scheduled pruning
 # exist. Non-secret boolean; absent env means disabled.
 WEBSOCKET_NOTIFICATIONS_ENABLED = _env_bool("WEBSOCKET_NOTIFICATIONS_ENABLED", False)
-
-# Experiments feature (cms/experiments) is half-built and not even alpha — its
-# command executor was never finished, so a run cannot complete on any cloud.
-# Off by default so the unfinished path can't launch a non-existent executor or
-# block deployment; URLs, nav, and the run-launch path are gated on this flag.
-# Revisit (build / redesign / remove) tracked in #1195.
-EXPERIMENTS_ENABLED = _env_bool("EXPERIMENTS_ENABLED", False)
 
 # Shared WebSocket notification replay bounds (issue #679).
 WEBSOCKET_NOTIFICATION_MAX_REPLAY = _env_int("WEBSOCKET_NOTIFICATION_MAX_REPLAY", 100)

@@ -115,8 +115,8 @@ rows:
     legacy_field: ScriptExecutionContext
     category: Shifter backend responsibility
     aces_target: ACES participant/runtime contracts only after equal prompt and artifact boundaries exist
-    shifter_owner: shared.script_context, cms.experiments.orchestrator.execution_plan
-    validation_evidence: shifter/shifter_platform/tests/cms/experiments/test_orchestrator_command_safety.py
+    shifter_owner: shared.script_context
+    validation_evidence: shifter/cyberscript/tests/test_script_context.py; shifter/shifter_platform/tests/shared/
     next_issue_kind: design-only
     candidate_issue_title: Define ACES participant-runtime parity for experiment command execution
     notes: This is a security boundary for shell, prompt, S3 key, transcript, and instance-id handling.
@@ -243,72 +243,72 @@ rows:
 
   - id: experiment.lifecycle
     surface: experiment
-    legacy_source: shifter/shifter_platform/cms/experiments/schemas.py
+    legacy_source: removed legacy cms.experiments schemas (ADR-027 / issue #1195)
     legacy_field: ExperimentStatus, RunStatus, transitions
-    category: ACES schema/profile gap
+    category: archive/delete
     aces_target: ACES experiment-core and runtime status contracts
-    shifter_owner: cms.experiments.schemas
-    validation_evidence: shifter/shifter_platform/tests/cms/experiments/test_services.py
+    shifter_owner: ADR-027
+    validation_evidence: docs/architecture/experiments-removal-adr.md; shifter/shifter_platform/tests/cms/test_experiments_removed.py
     next_issue_kind: design-only
     candidate_issue_title: Map Shifter experiment lifecycle to ACES experiment-core contracts
-    notes: Status parity must distinguish Shifter operational state from ACES archival experiment records.
+    notes: Legacy Shifter experiment statuses were removed with the half-built feature. Future ACES experiment lifecycle work must define a new accepted runtime contract rather than depending on deleted status strings.
 
   - id: experiment.execution-plan
     surface: experiment
-    legacy_source: shifter/shifter_platform/cms/experiments/orchestrator/execution_plan.py
+    legacy_source: removed legacy cms.experiments execution planner (ADR-027 / issue #1195)
     legacy_field: build_execution_plan, ScriptCommand, RunExecutionPlan
-    category: Shifter backend responsibility
+    category: archive/delete
     aces_target: ACES participant runtime adapter after profile support exists
-    shifter_owner: cms.experiments.orchestrator
-    validation_evidence: shifter/shifter_platform/tests/cms/experiments/test_orchestrator_command_safety.py
+    shifter_owner: ADR-027
+    validation_evidence: docs/architecture/experiments-removal-adr.md; shifter/shifter_platform/tests/cms/test_experiments_removed.py
     next_issue_kind: implementation-candidate
     candidate_issue_title: Adapt ACES participant runtime contracts to Shifter experiment execution
-    notes: The current AWS-only SSM execution boundary remains explicit.
+    notes: The AWS-only legacy planner is removed. Future execution work must enter through a new ACES-backed design and provider-aware Shifter runtime boundary.
 
   - id: aces.execution-plan-references
     surface: experiment
-    legacy_source: shifter/shifter_platform/cms/experiments/orchestrator/execution_plan.py
+    legacy_source: removed legacy cms.experiments execution planner (ADR-027 / issue #1195)
     legacy_field: RunExecutionPlan and ScriptCommand references
     category: ACES schema/profile gap
     aces_target: ACES execution-plan reference records after a matching operation profile exists
-    shifter_owner: cms.experiments.orchestrator, shared.script_context
-    validation_evidence: shifter/shifter_platform/tests/cms/experiments/test_orchestrator_command_safety.py
+    shifter_owner: future ACES-backed experiment design, shared.script_context
+    validation_evidence: docs/architecture/experiments-removal-adr.md; future replacement tests
     next_issue_kind: implementation-candidate
     candidate_issue_title: "#1273: Persist ACES operation sidecar records without copying Shifter command strings"
     notes: ACES sidecars may reference execution-plan identity, but Shifter command strings stay behind ScriptExecutionContext and must not be copied into snapshots.
 
   - id: experiment.artifacts
     surface: artifact
-    legacy_source: shifter/shifter_platform/cms/experiments/models.py
+    legacy_source: removed legacy cms.experiments models (ADR-027 / issue #1195)
     legacy_field: experiment run artifacts and Claude transcript artifacts
-    category: ACES schema/profile gap
+    category: archive/delete
     aces_target: ACES evidence/provenance and experiment-run artifact contracts
-    shifter_owner: cms.experiments
-    validation_evidence: shifter/shifter_platform/tests/cms/experiments/
+    shifter_owner: ADR-027
+    validation_evidence: docs/architecture/experiments-removal-adr.md; shifter/shifter_platform/tests/cms/test_experiments_removed.py
     next_issue_kind: design-only
     candidate_issue_title: Define ACES evidence mapping for Shifter experiment artifacts
     notes: Artifact identity and redaction rules need a contract map before implementation.
 
   - id: aces.participant-runtime-sidecars
     surface: participant-runtime
-    legacy_source: shifter/shifter_platform/cms/experiments/models.py; shifter/shifter_platform/engine/models.py; shifter/shifter_platform/ctf/models/
-    legacy_field: ExperimentRun, Range, CTFParticipant, and runtime participant/access correlation fields
+    legacy_source: removed legacy cms.experiments models; shifter/shifter_platform/engine/models.py; shifter/shifter_platform/ctf/models/
+    legacy_field: removed ExperimentRun, Range, CTFParticipant, and runtime participant/access correlation fields
     category: ACES schema/profile gap
     aces_target: ACES participant implementation and participant runtime records with profile/version discriminators
-    shifter_owner: shared contracts, cms.experiments, ctf.services, engine.services, mission_control.api
+    shifter_owner: shared contracts, future ACES-backed experiment design, ctf.services, engine.services, mission_control.api
     validation_evidence: future #1288 implementation tests and ACES participant-runtime contract validation
     next_issue_kind: implementation-candidate
     candidate_issue_title: "#1288: Implement participant runtime API and storage sidecars"
-    notes: ACES participant records must be first-class sidecars keyed by explicit profile/version and ownership fields; they must not be hidden in RangeInstance.range_spec, Range.provisioned_instances, ExperimentRun.metadata, event payloads, or AuditLog JSON.
+    notes: ACES participant records must be first-class sidecars keyed by explicit profile/version and ownership fields; they must not be hidden in RangeInstance.range_spec, Range.provisioned_instances, deleted ExperimentRun metadata, event payloads, or AuditLog JSON.
 
   - id: aces.participant-history-evidence
     surface: artifact
-    legacy_source: shifter/shifter_platform/cms/experiments/orchestrator/execution_plan.py; shifter/shifter_platform/cms/experiments/models.py; shifter/cyberscript/script_context.py
+    legacy_source: removed legacy cms.experiments execution/model code; shifter/cyberscript/script_context.py
     legacy_field: ScriptExecutionContext, ScriptCommand, RunArtifact, ExperimentArtifact, Claude transcript artifacts, and behavior-history evidence references
     category: ACES schema/profile gap
     aces_target: ACES behavior-history and evidence records carrying artifact refs, digests, provenance, capture profile, retention class, and redaction status
-    shifter_owner: cms.experiments, shared.script_context, shared.uploads, shared.cloud, risk_register.services.audit_log
-    validation_evidence: future #1289 implementation tests plus existing command-safety and artifact tests
+    shifter_owner: future ACES-backed experiment design, shared.script_context, shared.uploads, shared.cloud, risk_register.services.audit_log
+    validation_evidence: future #1289 implementation tests plus ADR-027 removal evidence
     next_issue_kind: implementation-candidate
     candidate_issue_title: "#1289: Capture participant runtime history and evidence"
     notes: Evidence records are reference-oriented. Rendered commands, prompt bodies, script bodies, transcript bodies, terminal streams, token URLs, SSH keys, RDP passwords, CTF flags, provider payloads, and presigned URLs stay out of ACES records.
@@ -407,7 +407,7 @@ rows:
     validation_evidence: shifter/shifter_platform/tests/engine/; shifter/shifter_platform/tests/cms/
     next_issue_kind: implementation-candidate
     candidate_issue_title: "#1273: Implement operation receipt/status/snapshot persistence sidecar"
-    notes: The sidecar is keyed by request_id and profile/version; it must not overload RangeInstance.range_spec, Range.provisioned_instances, ExperimentRun metadata, AuditLog JSON, or event payloads.
+    notes: The sidecar is keyed by request_id and profile/version; it must not overload RangeInstance.range_spec, Range.provisioned_instances, deleted ExperimentRun metadata, AuditLog JSON, or event payloads.
 
   - id: provisioner.polaris-aws-path
     surface: provisioner

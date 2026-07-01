@@ -871,41 +871,6 @@
       "target": "terraform_base.run_terraform"
     },
     {
-      "count": 2,
-      "path": "shifter/shifter_platform/tests/cms/experiments/test_handlers.py",
-      "target": "channels.layers.get_channel_layer"
-    },
-    {
-      "count": 1,
-      "path": "shifter/shifter_platform/tests/cms/experiments/test_handlers.py",
-      "target": "cms.experiments.handlers.Experiment"
-    },
-    {
-      "count": 12,
-      "path": "shifter/shifter_platform/tests/cms/experiments/test_handlers.py",
-      "target": "cms.experiments.handlers.ExperimentOrchestrator"
-    },
-    {
-      "count": 1,
-      "path": "shifter/shifter_platform/tests/cms/experiments/test_handlers.py",
-      "target": "cms.experiments.handlers.ExperimentRun"
-    },
-    {
-      "count": 2,
-      "path": "shifter/shifter_platform/tests/cms/experiments/test_handlers.py",
-      "target": "cms.experiments.handlers._broadcast_experiment_status"
-    },
-    {
-      "count": 3,
-      "path": "shifter/shifter_platform/tests/cms/experiments/test_handlers.py",
-      "target": "cms.experiments.handlers._broadcast_experiment_status_if_terminal"
-    },
-    {
-      "count": 5,
-      "path": "shifter/shifter_platform/tests/cms/experiments/test_handlers.py",
-      "target": "cms.experiments.handlers._broadcast_run_status_for"
-    },
-    {
       "count": 1,
       "path": "shifter/shifter_platform/tests/ctf/conftest.py",
       "target": "cms.services.create_range"
