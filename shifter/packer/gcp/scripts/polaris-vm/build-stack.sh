@@ -37,8 +37,32 @@ for _ in 1 2 3 4 5; do
 done
 
 apt-get update
-apt-get install -y docker.io jq unzip curl ca-certificates openssh-client
+apt-get install -y docker.io jq unzip curl ca-certificates openssh-client sudo
 systemctl enable --now docker
+
+# The scenario models this host as an os_type=kali attacker, so the GDC range
+# setup-runner SSHes in as `kali` and the kali.sh.j2 cloud-init seed installs
+# the per-instance key into /home/kali/.ssh (owner kali:kali). The generic kali
+# image ships that user; this Ubuntu docker host must provide it too. Give it:
+#   - passwordless sudo (LinuxBootstrapPlan runs privileged host commands),
+#   - docker group membership (the polaris range-bootstrap seam runs
+#     `docker compose ...` over this SSH session, not via sudo),
+#   - ownership of /opt/polaris so the seam can rewrite docker-compose.override.
+# Match the generic kali image: cloud-init's default_user is kali and the
+# account stays unlocked so a per-instance password can be set on first boot.
+if ! id kali >/dev/null 2>&1; then
+  useradd -m -s /bin/bash kali
+fi
+usermod -aG sudo,docker kali
+install -d -m 0755 /etc/sudoers.d
+echo 'kali ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/90-kali
+chmod 0440 /etc/sudoers.d/90-kali
+cat > /etc/cloud/cloud.cfg.d/90_shifter.cfg <<'EOF'
+system_info:
+  default_user:
+    name: kali
+    lock_passwd: false
+EOF
 
 # docker compose v2 plugin is not in the 22.04 apt repo; install the release
 # binary directly (same version the AWS bake pins).
@@ -56,6 +80,9 @@ install -d /opt/polaris
 gsutil cp "${POLARIS_BUILD_TARBALL_URI}" /opt/polaris/polaris-build.tar.gz
 tar xzf /opt/polaris/polaris-build.tar.gz -C /opt/polaris
 rm -f /opt/polaris/polaris-build.tar.gz
+# The range-bootstrap seam (run over SSH as kali) rewrites
+# docker-compose.override.yml under this tree, so kali must own it.
+chown -R kali:kali /opt/polaris
 
 BUILD_DIR=/opt/polaris/scenario-dev/polaris/build
 test -f "${BUILD_DIR}/docker-compose.yml" || {
