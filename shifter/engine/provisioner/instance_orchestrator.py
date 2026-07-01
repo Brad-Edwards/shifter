@@ -69,6 +69,17 @@ def _setup_dc_instances_blocking(
     for dc_inst in dc_instances:
         inst_uuid = dc_inst.get("uuid", "")
         inst_config = uuid_to_config.get(inst_uuid, {})
+        # The polaris-dc image self-promotes to BOREAS.LOCAL via a baked
+        # first-boot scheduled task (GCESysprep cannot generalize a promoted
+        # DC, so promotion is deferred to first boot rather than driven over
+        # SSH/SSM here). Its IP is still resolved for downstream joins /
+        # the polaris-vm bootstrap; only the SSH-driven promotion is skipped.
+        if inst_config.get("ami_key") == "polaris-dc":
+            logger.info(
+                "Skipping SSH-driven DC setup for self-configuring polaris-dc %s",
+                dc_inst.get("instance_id", ""),
+            )
+            continue
         dc_config = inst_config.get("dc_config", {})
         agent_url = get_agent_presigned_url(inst_config)
         _run_dc_setup(

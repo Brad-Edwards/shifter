@@ -560,6 +560,77 @@ class TestGdcProvisioning:
         mock_dc_setup.assert_not_called()
         mock_single_setup.assert_not_called()
 
+    def test_polaris_dc_skips_ssh_dc_setup_but_resolves_ip(self, monkeypatch):
+        from instance_orchestrator import run_instance_setup
+
+        mock_dc_setup = MagicMock()
+        captured = {}
+
+        def record_other(*, instance_data, instance_id, spec):
+            captured["dc_ip"] = spec.domain_join.dc_ip
+            captured["domain"] = spec.domain_join.domain_name
+
+        monkeypatch.setattr("instance_orchestrator._run_dc_setup", mock_dc_setup)
+        monkeypatch.setattr("instance_orchestrator.get_agent_presigned_url", MagicMock(return_value=""))
+        monkeypatch.setattr(
+            "instance_orchestrator._run_single_instance_setup",
+            MagicMock(side_effect=record_other),
+        )
+        monkeypatch.setattr(
+            "instance_orchestrator._run_polaris_range_bootstrap", MagicMock()
+        )
+        monkeypatch.setattr(
+            "instance_orchestrator._set_attacker_container_password_after_bootstrap", MagicMock()
+        )
+        run_instance_setup(
+            instances_output=[
+                {
+                    "uuid": "dc-uuid",
+                    "asset_type": "vm_runtime_vm",
+                    "role": "dc",
+                    "os": "windows",
+                    "instance_id": "range-9-polaris-dc",
+                    "private_ip": "10.200.2.59",
+                },
+                {
+                    "uuid": "kali-uuid",
+                    "asset_type": "vm_runtime_vm",
+                    "role": "attacker",
+                    "os": "kali",
+                    "instance_id": "range-9-polaris-kali",
+                    "public_key": "ssh-rsa AAAA",
+                    "private_ip": "10.200.2.60",
+                },
+            ],
+            range_spec={
+                "subnets": [
+                    {
+                        "instances": [
+                            {
+                                "uuid": "dc-uuid",
+                                "role": "dc",
+                                "os_type": "windows",
+                                "ami_key": "polaris-dc",
+                                "dc_config": {"domain_name": "boreas.local"},
+                            },
+                            {
+                                "uuid": "kali-uuid",
+                                "role": "attacker",
+                                "os_type": "kali",
+                                "ami_key": "polaris-vm",
+                            },
+                        ]
+                    }
+                ]
+            },
+        )
+
+        # SSH-driven promotion skipped, but the DC IP/domain still flow to the
+        # attacker's setup (the polaris-vm seam needs the DC IP).
+        mock_dc_setup.assert_not_called()
+        assert captured["dc_ip"] == "10.200.2.59"
+        assert captured["domain"] == "boreas.local"
+
     def test_polaris_bootstrap_runs_before_container_password_push(self, monkeypatch):
         from instance_orchestrator import _setup_one_other_instance
 
