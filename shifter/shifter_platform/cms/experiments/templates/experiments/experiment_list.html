@@ -4,66 +4,7 @@
     Experiments
 {% endblock %}
 {% block extra_css %}
-    <style>
-    .experiment-table {
-        width: 100%;
-        border-collapse: collapse;
-    }
-    .experiment-table th,
-    .experiment-table td {
-        padding: 10px 12px;
-        text-align: left;
-        border-bottom: 1px solid var(--xdr-border);
-    }
-    .experiment-table th {
-        font-size: 11px;
-        font-weight: 600;
-        color: var(--xdr-text-secondary);
-        text-transform: uppercase;
-    }
-    .experiment-table tbody tr:hover {
-        background: var(--xdr-hover);
-        cursor: pointer;
-    }
-    .status-badge {
-        display: inline-flex;
-        align-items: center;
-        font-size: 11px;
-        font-weight: 500;
-        text-transform: uppercase;
-        padding: 2px 8px;
-        border-radius: 3px;
-    }
-    .status-badge-draft { background: rgba(112, 112, 112, 0.15); color: #707070; }
-    .status-badge-queued { background: rgba(250, 173, 20, 0.15); color: #faad14; }
-    .status-badge-running { background: rgba(64, 169, 255, 0.15); color: #40a9ff; }
-    .status-badge-completed { background: rgba(0, 210, 106, 0.15); color: #00d26a; }
-    .status-badge-cancelled { background: rgba(112, 112, 112, 0.15); color: #b8b8b8; }
-    .status-badge-failed { background: rgba(255, 77, 79, 0.15); color: #ff4d4f; }
-    .run-progress {
-        font-size: 12px;
-        color: var(--xdr-text-secondary);
-    }
-    .pagination {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 12px;
-        padding: 16px 0;
-        font-size: 13px;
-        color: var(--xdr-text-secondary);
-    }
-    .pagination a {
-        color: #40a9ff;
-        text-decoration: none;
-        padding: 4px 12px;
-        border: 1px solid var(--xdr-border);
-        border-radius: 4px;
-    }
-    .pagination a:hover {
-        background: var(--xdr-hover);
-    }
-    </style>
+    <link rel="stylesheet" href="{% static 'css/experiments-list.css' %}">
 {% endblock %}
 {% block content %}
     <div class="page-header-row">
@@ -159,7 +100,7 @@
                 <p>
                     {% trans "Create your first experiment to get started" %}
                 </p>
-                <div style="margin-top: 16px;">
+                <div class="mt-lg">
                     <a href="{% url 'experiments:experiment_create' %}"
                        class="btn btn-primary">{% trans "New Experiment" %}</a>
                 </div>
