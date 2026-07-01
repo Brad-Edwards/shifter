@@ -1,5 +1,5 @@
 from django.db import migrations
-
+from django.db.migrations.recorder import MigrationRecorder
 
 EXPERIMENT_TABLES = (
     "experiments_runartifact",
@@ -11,13 +11,15 @@ EXPERIMENT_TABLES = (
 )
 
 
-def remove_legacy_experiments(_apps, schema_editor):
+def remove_legacy_experiments(apps, schema_editor):
     suffix = " CASCADE" if schema_editor.connection.vendor == "postgresql" else ""
     with schema_editor.connection.cursor() as cursor:
         for table in EXPERIMENT_TABLES:
             cursor.execute(f"DROP TABLE IF EXISTS {schema_editor.quote_name(table)}{suffix}")
-        cursor.execute("DELETE FROM django_content_type WHERE app_label = %s", ["experiments"])
-        cursor.execute("DELETE FROM django_migrations WHERE app = %s", ["experiments"])
+
+    content_type = apps.get_model("contenttypes", "ContentType")
+    content_type.objects.using(schema_editor.connection.alias).filter(app_label="experiments").delete()
+    MigrationRecorder(schema_editor.connection).migration_qs.filter(app="experiments").delete()
 
 
 class Migration(migrations.Migration):
