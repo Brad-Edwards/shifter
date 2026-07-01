@@ -16,6 +16,8 @@ HELP_DRY_RUN = "Show what would be done"
 
 # Colors for terminal output
 class Colors:
+    """ANSI escape sequences used by the interactive bootstrap CLI."""
+
     HEADER = "\033[95m"
     BLUE = "\033[94m"
     CYAN = "\033[96m"
@@ -28,18 +30,22 @@ class Colors:
 
 
 def info(msg: str) -> None:
+    """Emit an informational operator message."""
     _emit_line(f"{Colors.CYAN}ℹ {msg}{Colors.END}")
 
 
 def success(msg: str) -> None:
+    """Emit a success operator message."""
     _emit_line(f"{Colors.GREEN}✓ {msg}{Colors.END}")
 
 
 def warn(msg: str) -> None:
+    """Emit a warning operator message."""
     _emit_line(f"{Colors.YELLOW}⚠ {msg}{Colors.END}")
 
 
 def error(msg: str) -> None:
+    """Emit an error operator message."""
     _emit_line(f"{Colors.RED}✗ {msg}{Colors.END}")
 
 
@@ -50,12 +56,14 @@ def _emit_line(text: str) -> None:
 
 
 def header(msg: str) -> None:
+    """Print a major section heading."""
     print(f"\n{Colors.BOLD}{Colors.HEADER}{'=' * 60}{Colors.END}")
     print(f"{Colors.BOLD}{Colors.HEADER}{msg}{Colors.END}")
     print(f"{Colors.BOLD}{Colors.HEADER}{'=' * 60}{Colors.END}\n")
 
 
 def subheader(msg: str) -> None:
+    """Print a minor section heading."""
     print(f"\n{Colors.BOLD}{Colors.CYAN}--- {msg} ---{Colors.END}\n")
 
 
@@ -306,10 +314,14 @@ GCP_IAP_TCP_SOURCE_RANGE = "35.235.240.0/20"
 
 @dataclass
 class BootstrapConfig:
+    """AWS bootstrap defaults and derived resource names."""
+
+    # Default AWS bootstrap region. Multi-region support is outside issue #687.
     env: str
-    region: str = "us-east-2"  # TODO: Make configurable via CLI argument if multi-region support needed
-    github_org: str = "Brad-Edwards"  # USER-SPECIFIC: Change to your GitHub organization
-    github_repo: str = "shifter"  # USER-SPECIFIC: Change to your repository name
+    region: str = "us-east-2"
+    # Default GitHub target; forked deployments can override the config object.
+    github_org: str = "Brad-Edwards"
+    github_repo: str = "shifter"
 
     @property
     def bucket_prefix(self) -> str:

@@ -5,7 +5,6 @@ import os
 import subprocess  # nosec B404
 import sys
 from pathlib import Path
-from typing import Any
 
 import terraform_backend as tb
 from bootstrap_core import (
@@ -52,7 +51,7 @@ def _component_stack_dir(env: str, component: str) -> str:
     return f"environments/{env}/{component}"
 
 
-def _capture_terraform_outputs() -> dict:
+def _capture_terraform_outputs() -> dict[str, object]:
     """Return parsed `terraform output -json`, or empty dict on failure.
 
     Used by the post-apply portal step; isolated from the deploy loop so
@@ -101,7 +100,7 @@ def _terraform_plan_or_exit(component: str, dry_run: bool, *, var_files: list[Pa
         sys.exit(1)
 
 
-def _terraform_apply_or_exit(component: str) -> dict[str, Any]:
+def _terraform_apply_or_exit(component: str) -> dict[str, object]:
     """Show plan, confirm, apply, and capture outputs (for portal). Exits on failure."""
     print(f"\n{Colors.BOLD}Plan Summary:{Colors.END}")
     subprocess.run(["terraform", "show", "-no-color", "tfplan"], check=False)  # nosec B603 B607
@@ -158,7 +157,7 @@ def _deploy_terraform_component(
     dry_run: bool,
     *,
     bucket_name: str | None = None,
-) -> dict[str, Any]:
+) -> dict[str, object]:
     """Run init/plan/apply for one Terraform component; return any captured outputs."""
     _require_component_deploy(component, dry_run)
 
@@ -203,7 +202,7 @@ def terraform_deploy(
     dry_run: bool = False,
     *,
     bucket_name: str | None = None,
-) -> dict[str, Any]:
+) -> dict[str, object]:
     """Deploy all Terraform components in order."""
     header(f"Deploying {env.upper()} Infrastructure")
 
@@ -216,7 +215,7 @@ def terraform_deploy(
         ("portal", "Portal infrastructure (VPC, RDS, EC2, ALB, Cognito)"),
     ]
 
-    outputs: dict[str, Any] = {}
+    outputs: dict[str, object] = {}
     for i, (component, description) in enumerate(components, 1):
         header(f"Step {i}/{len(components)}: {description}")
         info(f"Component: {component}")

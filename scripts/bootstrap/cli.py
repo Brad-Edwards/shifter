@@ -125,7 +125,7 @@ def _missing_dependency_lines(commands: dict[str, str]) -> list[str]:
     return [f"  - {cmd}: {desc}" for cmd, desc in commands.items() if not shutil.which(cmd)]
 
 
-def check_dependencies(command: str | None = None):
+def check_dependencies(command: str | None = None) -> None:
     """Check command-specific dependencies before starting."""
     required = {"git": "Git - https://git-scm.com/downloads"}
 
@@ -167,7 +167,8 @@ def check_dependencies(command: str | None = None):
         print()
 
 
-def main():
+def main() -> None:
+    """Parse CLI arguments and dispatch the requested bootstrap operation."""
     parser = argparse.ArgumentParser(
         description="Shifter deployment CLI - interactive deployment guide",
         formatter_class=argparse.RawDescriptionHelpFormatter,

@@ -28,7 +28,7 @@ def _terminal_line(text: str = "") -> None:
     write_stdout(f"{text}\n")
 
 
-def walkthrough_backend_config(bootstrap_result: dict, dry_run: bool = False) -> None:
+def walkthrough_backend_config(bootstrap_result: dict[str, object], dry_run: bool = False) -> None:
     """Write per-instance Terraform backend configs outside the product repo."""
     header("Write Instance Terraform Backend Configuration")
 
@@ -163,7 +163,7 @@ def _configure_github_secrets_via_gh(
     return False
 
 
-def walkthrough_github_secrets(bootstrap_result: dict, dry_run: bool = False) -> None:
+def walkthrough_github_secrets(bootstrap_result: dict[str, object], dry_run: bool = False) -> None:
     """Walk user through setting GitHub secrets."""
     header("Configure GitHub Secrets")
 
@@ -209,7 +209,7 @@ def walkthrough_github_secrets(bootstrap_result: dict, dry_run: bool = False) ->
     success("GitHub secrets configured")
 
 
-def walkthrough_acm_validation(outputs: dict, dry_run: bool = False) -> None:
+def walkthrough_acm_validation(outputs: dict[str, object], dry_run: bool = False) -> None:
     """Walk user through ACM certificate validation."""
     header("ACM Certificate Validation")
 
@@ -240,7 +240,7 @@ def walkthrough_acm_validation(outputs: dict, dry_run: bool = False) -> None:
         success("ACM validation records added")
 
 
-def walkthrough_dns_setup(outputs: dict, dry_run: bool = False) -> None:
+def walkthrough_dns_setup(outputs: dict[str, object], dry_run: bool = False) -> None:
     """Walk user through pointing domain to ALB."""
     header("Point Domain to Load Balancer")
 
@@ -262,11 +262,11 @@ def walkthrough_dns_setup(outputs: dict, dry_run: bool = False) -> None:
         success("Domain DNS configured")
 
 
-def walkthrough_cognito_user(outputs: dict, env: str, profile: str, dry_run: bool = False) -> None:
+def walkthrough_cognito_user(outputs: dict[str, object], env: str, profile: str, dry_run: bool = False) -> None:
     """Walk user through creating first Cognito user."""
     header("Create First User")
 
-    print("You need at least one user to log into the portal.\n")
+    print(f"You need at least one user to log into the {env} portal.\n")
 
     if "cognito_user_pool_id" in outputs:
         pool_id = outputs["cognito_user_pool_id"]["value"]

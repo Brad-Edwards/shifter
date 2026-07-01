@@ -9,8 +9,10 @@ import subprocess  # nosec B404
 import sys
 import tempfile
 import time
+from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
+from types import ModuleType
 from urllib import error as urllib_error
 from urllib import parse as urllib_parse
 from urllib import request as urllib_request
@@ -56,9 +58,10 @@ from gdc_cluster import (
 )
 
 _GUACAMOLE_RUNTIME_RESOURCE_NAME = "guacamole-runtime"
+_K8S_PART_OF_LABEL = "app.kubernetes.io/part-of"
 
 
-def _load_python_script_module(script_path: Path, module_name: str):
+def _load_python_script_module(script_path: Path, module_name: str) -> ModuleType:
     """Load a local Python script as a module without changing repo packaging."""
     spec = importlib.util.spec_from_file_location(module_name, script_path)
     if spec is None or spec.loader is None:
@@ -68,7 +71,7 @@ def _load_python_script_module(script_path: Path, module_name: str):
     return module
 
 
-def _get_output_value(outputs: dict[str, dict[str, object]], key: str):
+def _get_output_value(outputs: dict[str, dict[str, object]], key: str) -> object:
     """Return the Terraform output value for a key or raise a clear error."""
     try:
         return outputs[key]["value"]
@@ -354,6 +357,7 @@ def _validate_gcp_bootstrap_operator_email(
 
 
 def _gcp_identity_access_token() -> str:
+    """Return a gcloud access token for Identity Platform admin calls."""
     result = subprocess.run(  # nosec B603 B607
         ["gcloud", "auth", "print-access-token"],
         capture_output=True,
@@ -373,6 +377,7 @@ def _gcp_identity_admin_request(
     path: str,
     payload: dict[str, object],
 ) -> dict[str, object]:
+    """Call one validated Identity Platform admin endpoint."""
     del outputs
     access_token = _gcp_identity_access_token()
     url = f"https://identitytoolkit.googleapis.com/v1{path}"
@@ -967,7 +972,7 @@ def _revoke_terraform_bootstrap_iam(
 
 
 @contextmanager
-def gcp_terraform_bootstrap_credentials(config: GDCBootstrapConfig):
+def gcp_terraform_bootstrap_credentials(config: GDCBootstrapConfig) -> Iterator[Path]:
     """Provision temporary ADC-compatible credentials for Terraform bootstrap."""
     _ensure_terraform_bootstrap_service_account(config)
 
@@ -1231,7 +1236,7 @@ def render_gcp_guacamole_runtime_secret_manifest(
         "metadata": {
             "name": _GUACAMOLE_RUNTIME_RESOURCE_NAME,
             "namespace": "shifter-platform",
-            "labels": {"app.kubernetes.io/part-of": "shifter"},
+            "labels": {_K8S_PART_OF_LABEL: "shifter"},
         },
         "type": "Opaque",
         "stringData": {
@@ -1473,7 +1478,7 @@ def list_gcp_helm_cutover_resources(namespace: str) -> list[str]:
         [
             "deploy,svc,sa,cm,secret,ingress,rs,pod,job,cronjob,sts,ds",
             "-l",
-            "app.kubernetes.io/part-of=shifter",
+            f"{_K8S_PART_OF_LABEL}=shifter",
         ],
         namespace,
         "legacy Helm-cutover",
@@ -1574,14 +1579,14 @@ def ensure_gcp_control_plane_namespaces(dry_run: bool = False) -> None:
     """Ensure Helm target namespaces exist outside of the release lifecycle."""
     namespace_specs = {
         "shifter-platform": {
-            "app.kubernetes.io/part-of": "shifter",
+            _K8S_PART_OF_LABEL: "shifter",
             "shifter.dev/plane": "control",
             "pod-security.kubernetes.io/enforce": "restricted",
             "pod-security.kubernetes.io/audit": "restricted",
             "pod-security.kubernetes.io/warn": "restricted",
         },
         "shifter-jobs": {
-            "app.kubernetes.io/part-of": "shifter",
+            _K8S_PART_OF_LABEL: "shifter",
             "shifter.dev/plane": "jobs",
             "pod-security.kubernetes.io/enforce": "restricted",
             "pod-security.kubernetes.io/audit": "restricted",

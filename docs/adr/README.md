@@ -128,7 +128,12 @@ Current mechanisms:
   `sonar.html.fileHeader` enforces the ADR-015 file-header convention
   on HTML templates by failing `Web:HeaderCheck` on any template that
   does not begin with the canonical two-line SPDX Django-comment
-  header.
+  header. Bootstrap-specific `sonar.issue.ignore.multicriteria`
+  entries are limited to `scripts/bootstrap/**` and cover
+  subprocess argv false positives, fixed infrastructure CIDR defaults,
+  generic module/control-flow size rules, and scanner-consumed inline
+  pragmas; bootstrap still runs Ruff, pytest+coverage, Bandit, and ADR
+  guard in local and CI quality gates.
 - `.kube-linter.yaml`: Kubernetes security and best-practice linting
   configuration (enforces ADR-006 checks)
 - `Checkov`: Terraform and Kubernetes IaC security scanning. ADR-004-R11

@@ -397,7 +397,7 @@ def _delete_bootstrap_role(config: BootstrapConfig, *, profile: str, dry_run: bo
     success("Bootstrap role deleted - using Terraform-managed role going forward")
 
 
-def bootstrap_account(config: BootstrapConfig, profile: str, dry_run: bool = False) -> dict:
+def bootstrap_account(config: BootstrapConfig, profile: str, dry_run: bool = False) -> dict[str, object]:
     """Bootstrap AWS account with state backend and IAM role."""
     header(f"Bootstrapping {config.env.upper()} AWS Account")
 
