@@ -42,7 +42,8 @@ class StandardScoringStrategy:
     ``calculate_points_with_penalty`` (no duplicated hint math here).
     """
 
-    def points_for_solve(self, challenge: CTFChallenge, total_hint_penalty: int) -> int:
+    @staticmethod
+    def points_for_solve(challenge: CTFChallenge, total_hint_penalty: int) -> int:
         return challenge.calculate_points_with_penalty(total_hint_penalty)
 
 
