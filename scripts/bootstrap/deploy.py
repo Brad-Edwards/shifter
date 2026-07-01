@@ -559,6 +559,14 @@ class GDCBootstrapConfig:
     control_plane_vip: str = "10.200.0.49"
     ingress_vip: str = "10.200.0.50"
     address_pool: str = "10.200.0.50-10.200.0.70"
+    # Platform-reachable control-plane endpoint for the GKE-hosted provisioner
+    # (D23). The bmctl kubeconfig points at control_plane_vip, which lives on the
+    # cluster's VXLAN overlay and is unreachable from the platform VPC. Terraform
+    # fronts the control-plane nodes with an internal TCP load balancer on the
+    # peered range VPC and passes its address here so the stored kubeconfig is
+    # rewritten to a reachable endpoint. "host" or "host:port" (default port
+    # 6444, the kube-apiserver bundled-LB backend port).
+    control_plane_platform_endpoint: str | None = None
     machine_type: str = "n1-standard-8"
     boot_disk_size_gb: int = 200
     boot_disk_type: str = "pd-ssd"
@@ -653,6 +661,21 @@ class GDCBootstrapConfig:
         return f"shifter-{self.environment}-gdc-vm-image-gcs"
 
     @property
+    def gdc_vm_image_bucket(self) -> str:
+        """GCS bucket the packer-gcp image pipeline exports guest disks into.
+
+        Matches platform/terraform/gcp/modules/cicd-github-oidc (bucket
+        ``${name_prefix}-gdc-vm-images`` with ``name_prefix = shifter-${env}``),
+        so the VM Runtime boot images resolve to
+        ``gs://<bucket>/<guest>.qcow2`` without baking a per-env literal here.
+        """
+        return f"shifter-{self.environment}-gdc-vm-images"
+
+    def gdc_vm_image_url(self, guest: str) -> str:
+        """gs:// URL of the exported VM Runtime boot disk for a guest class."""
+        return f"gs://{self.gdc_vm_image_bucket}/{guest}.qcow2"
+
+    @property
     def workstation(self) -> GDCHost:
         return GDCHost(
             name=f"{self.cluster_id}-abm-ws0-001",
@@ -701,19 +724,30 @@ def parse_env_file(path: Path) -> dict[str, str]:
 
 
 def read_gcp_control_plane_security_inputs(tf_dir: Path) -> dict[str, object]:
-    """Read the security-sensitive Terraform inputs from terraform.tfvars."""
-    tfvars_path = tf_dir / "terraform.tfvars"
-    contents = tfvars_path.read_text() if tfvars_path.exists() else ""
+    """Read the security-sensitive Terraform inputs, honoring ``*.auto.tfvars`` overrides.
 
-    public_hostname_match = re.search(r'(?m)^\s*public_hostname\s*=\s*"([^"]*)"\s*$', contents)
-    managed_tls_match = re.search(r"(?m)^\s*enable_managed_tls\s*=\s*(true|false)\s*$", contents)
-    cidr_block_match = re.search(r"gke_master_authorized_cidrs\s*=\s*\[(.*?)\]", contents, re.DOTALL)
+    Operators set deployment-specific values (project_id, public_hostname,
+    gke_master_authorized_cidrs, ...) in a gitignored ``local.auto.tfvars`` per
+    the committed ``terraform.tfvars`` header, and Terraform auto-loads
+    ``*.auto.tfvars`` with the local values winning. The validator must read the
+    same effective values, not just ``terraform.tfvars`` — otherwise a correctly
+    configured operator hits a false "requires gke_master_authorized_cidrs"
+    failure. Terraform's load order is ``terraform.tfvars`` then ``*.auto.tfvars``
+    alphabetically, with later assignments winning, so we scan in that order and
+    take the last value of each setting.
+    """
+    tfvars_files = [tf_dir / "terraform.tfvars", *sorted(tf_dir.glob("*.auto.tfvars"))]
+    contents = "\n".join(path.read_text() for path in tfvars_files if path.exists())
+
+    public_hostname_matches = re.findall(r'(?m)^\s*public_hostname\s*=\s*"([^"]*)"\s*$', contents)
+    managed_tls_matches = re.findall(r"(?m)^\s*enable_managed_tls\s*=\s*(true|false)\s*$", contents)
+    cidr_block_matches = re.findall(r"gke_master_authorized_cidrs\s*=\s*\[(.*?)\]", contents, re.DOTALL)
 
     return {
-        "public_hostname": public_hostname_match.group(1).strip() if public_hostname_match else "",
-        "enable_managed_tls": bool(managed_tls_match and managed_tls_match.group(1) == "true"),
+        "public_hostname": public_hostname_matches[-1].strip() if public_hostname_matches else "",
+        "enable_managed_tls": bool(managed_tls_matches and managed_tls_matches[-1] == "true"),
         "gke_master_authorized_cidrs": (
-            [match.strip() for match in re.findall(r'"([^"]+)"', cidr_block_match.group(1))] if cidr_block_match else []
+            [match.strip() for match in re.findall(r'"([^"]+)"', cidr_block_matches[-1])] if cidr_block_matches else []
         ),
     }
 
@@ -917,7 +951,13 @@ def render_gdc_prepare_workstation_script(config: GDCBootstrapConfig) -> str:
         install -m 644 {config.staging_bundle_dir}/id_rsa.pub /root/.ssh/id_rsa.pub
         install -m 600 {config.staging_bundle_dir}/bm-gcr.json /root/bm-gcr.json
         install -m 755 {config.staging_bundle_dir}/bmctl /usr/local/sbin/bmctl
-        printf 'Host *\\n  StrictHostKeyChecking yes\\n  BatchMode yes\\n' >/root/.ssh/config
+        # accept-new (not yes): the workstation has never contacted the freshly
+        # created cluster nodes, so their host keys are not yet known. accept-new
+        # pins each node's key on first connect but still rejects a *changed*
+        # key later, which is the correct posture for first-boot provisioning of
+        # private-network nodes (plain `yes` aborts; `no` disables the change
+        # check entirely). Applies to bmctl's node SSH too via this Host * block.
+        printf 'Host *\\n  StrictHostKeyChecking accept-new\\n  BatchMode yes\\n' >/root/.ssh/config
         chmod 600 /root/.ssh/config
         """
     )
@@ -954,7 +994,7 @@ def render_gdc_prepare_hosts_script(config: GDCBootstrapConfig) -> str:
         "configure_remote_host() {",
         '  local host_ip="$1"',
         '  local vxlan_ip="$2"',
-        "  ssh -o StrictHostKeyChecking=yes -o BatchMode=yes \\",
+        "  ssh -o StrictHostKeyChecking=accept-new -o BatchMode=yes \\",
         '    "root@${host_ip}" "bash -s" -- "${vxlan_ip}" <<\'EOF\'',
         "set -euo pipefail",
         'vxlan_ip="$1"',
@@ -1030,6 +1070,50 @@ def render_gdc_install_helper_script(config: GDCBootstrapConfig) -> str:
         chmod +x /usr/local/bin/shifter-gdc-kubeconfig
         """
     )
+
+
+_GDC_APISERVER_BACKEND_PORT = 6444
+
+
+def rewrite_gdc_kubeconfig_for_platform_access(kubeconfig: str, endpoint: str) -> str:
+    """Repoint a bmctl kubeconfig at a platform-reachable control-plane endpoint.
+
+    The kubeconfig generated by bmctl targets the cluster's bundled-LB
+    ``controlPlaneVIP`` (e.g. ``https://10.200.0.49:443``), which lives on the
+    cluster's VXLAN overlay and is unreachable from the platform VPC where the
+    provisioner runs (D23). Terraform fronts the control-plane nodes with an
+    internal TCP load balancer on the peered range VPC; this rewrites every
+    cluster ``server`` to that endpoint (kube-apiserver listens on
+    ``*:6444``).
+
+    The apiserver serving certificate's SANs only cover the overlay VIP and the
+    per-node overlay IPs/hostnames, never the load-balancer address, so server
+    identity cannot be verified against the LB IP without re-issuing the
+    cluster certs. Rather than touch the running cluster's certs, the rewritten
+    kubeconfig sets ``insecure-skip-tls-verify: true`` and drops the now-unusable
+    ``certificate-authority(-data)``. The channel stays TLS-encrypted and the
+    client still authenticates with its credentials; access is bounded to the
+    provisioner by VPC peering scope, the range-VPC firewall, and the
+    ``shifter-jobs`` NetworkPolicy.
+
+    Implemented as a line transform (no YAML dependency: the bootstrap is
+    dependency-free) over the standard bmctl kubeconfig shape.
+    """
+    host, _, port = endpoint.partition(":")
+    server = f"https://{host}:{port or _GDC_APISERVER_BACKEND_PORT}"
+    out: list[str] = []
+    for line in kubeconfig.splitlines():
+        stripped = line.lstrip()
+        indent = line[: len(line) - len(stripped)]
+        if stripped.startswith("server:"):
+            out.append(f"{indent}server: {server}")
+            out.append(f"{indent}insecure-skip-tls-verify: true")
+            continue
+        if stripped.startswith(("certificate-authority-data:", "certificate-authority:")):
+            # Mutually exclusive with insecure-skip-tls-verify; drop it.
+            continue
+        out.append(line)
+    return "\n".join(out) + ("\n" if kubeconfig.endswith("\n") else "")
 
 
 def build_gdc_access_secret_payload(config: GDCBootstrapConfig, kubeconfig: str) -> str:
@@ -1239,6 +1323,85 @@ def wait_for_gdc_service_account_visible(
     )
 
 
+def _is_retryable_gcp_iam_binding_error(message: str) -> bool:
+    """Return True when a project IAM binding failed with a transient error worth retrying.
+
+    Two distinct races are covered:
+
+    1. **Member propagation** — service-account creation is eventually consistent
+       *across* GCP subsystems: a new SA can resolve via ``gcloud iam
+       service-accounts describe`` while ``add-iam-policy-binding`` still rejects
+       it as nonexistent ("service account ... does not exist") for a short window.
+
+    2. **Concurrent policy change (ETag conflict)** — ``add-iam-policy-binding`` is
+       a read-modify-write; if the project IAM policy changes between read and
+       write (e.g. Google asynchronously provisioning service agents right after an
+       API enable), the write fails with "concurrent policy changes" / an ETag
+       mismatch. GCP's guidance for this is to retry with exponential backoff.
+
+    Both are first-run/transient and clear on retry.
+    """
+    normalized_message = message.lower()
+    member_not_yet_visible = "does not exist" in normalized_message and "service account" in normalized_message
+    concurrent_policy_change = (
+        "concurrent policy change" in normalized_message
+        or "the subject of a conflict" in normalized_message
+        or ("etag" in normalized_message and "did not match" in normalized_message)
+    )
+    return member_not_yet_visible or concurrent_policy_change
+
+
+def add_project_iam_binding_with_retry(
+    project_id: str,
+    member: str,
+    role: str,
+    *,
+    dry_run: bool = False,
+    max_attempts: int = 12,
+    sleep_seconds: int = 5,
+) -> None:
+    """Bind a project IAM role, retrying transient binding races — member
+    propagation and concurrent-policy-change (ETag) conflicts — with backoff
+    (see ``_is_retryable_gcp_iam_binding_error``)."""
+    binding_cmd = [
+        "gcloud",
+        "projects",
+        "add-iam-policy-binding",
+        project_id,
+        "--member",
+        member,
+        "--role",
+        role,
+        "--no-user-output-enabled",
+    ]
+    if dry_run:
+        print(f"{Colors.BLUE}[DRY-RUN] Would run: {_redact_argv_for_log(binding_cmd)}{Colors.END}")
+        return
+
+    info(f"Running: {_redact_argv_for_log(binding_cmd)}")
+    for attempt in range(1, max_attempts + 1):
+        result = subprocess.run(binding_cmd, capture_output=True, text=True, check=False)  # nosec B603 B607
+        if result.stdout:
+            print(result.stdout, end="")
+        if result.stderr:
+            print(result.stderr, end="", file=sys.stderr)
+        if result.returncode == 0:
+            return
+
+        combined_output = "\n".join(part for part in (result.stdout, result.stderr) if part).strip()
+        if _is_retryable_gcp_iam_binding_error(combined_output) and attempt < max_attempts:
+            warn(
+                f"Transient IAM binding race for {role} on {member} "
+                f"(propagation or concurrent policy change); retrying in {sleep_seconds}s "
+                f"({attempt}/{max_attempts})"
+            )
+            time.sleep(sleep_seconds)
+            continue
+
+        error(f"Command failed: Command '{' '.join(binding_cmd)}' returned non-zero exit status {result.returncode}.")
+        sys.exit(1)
+
+
 def ensure_gdc_service_account(config: GDCBootstrapConfig, dry_run: bool = False) -> None:
     """Create the shared GDC service account and grant the required project roles."""
     service_account_exists = gcloud_resource_exists(
@@ -1272,20 +1435,7 @@ def ensure_gdc_service_account(config: GDCBootstrapConfig, dry_run: bool = False
 
     member = f"serviceAccount:{config.service_account_email}"
     for role in GDC_SERVICE_ACCOUNT_ROLES:
-        run_cmd(
-            [
-                "gcloud",
-                "projects",
-                "add-iam-policy-binding",
-                config.project_id,
-                "--member",
-                member,
-                "--role",
-                role,
-                "--no-user-output-enabled",
-            ],
-            dry_run=dry_run,
-        )
+        add_project_iam_binding_with_retry(config.project_id, member, role, dry_run=dry_run)
 
 
 def ensure_gdc_access_secret(config: GDCBootstrapConfig, dry_run: bool = False) -> None:
@@ -1603,7 +1753,10 @@ def get_gdc_instance_ssh_metadata(config: GDCBootstrapConfig, host_name: str) ->
 
 def sync_gdc_instance_ssh_metadata(config: GDCBootstrapConfig, ssh_metadata_path: Path, dry_run: bool = False) -> None:
     """Ensure all instances trust the current bootstrap key pair."""
-    expected_metadata = ssh_metadata_path.read_text().strip()
+    # In dry-run the staging step does not materialise the ssh-metadata file, and
+    # the per-host comparison below is skipped, so avoid reading a file that does
+    # not exist (the metadata is only needed to short-circuit unchanged hosts).
+    expected_metadata = "" if dry_run else ssh_metadata_path.read_text().strip()
     for host in config.all_hosts:
         if not dry_run:
             current_metadata = get_gdc_instance_ssh_metadata(config, host.name).strip()
@@ -1752,6 +1905,11 @@ def sync_gdc_access_secret(config: GDCBootstrapConfig, dry_run: bool = False) ->
     """Publish the current GDC kubeconfig and range-plane settings to Secret Manager."""
     ensure_gdc_access_secret(config, dry_run=dry_run)
     kubeconfig = fetch_gdc_kubeconfig(config, dry_run=dry_run)
+    if config.control_plane_platform_endpoint:
+        # Repoint the provisioner kubeconfig at the platform-reachable
+        # control-plane load balancer; the bmctl kubeconfig targets the
+        # overlay VIP that the platform VPC cannot reach (D23).
+        kubeconfig = rewrite_gdc_kubeconfig_for_platform_access(kubeconfig, config.control_plane_platform_endpoint)
     payload = build_gdc_access_secret_payload(config, kubeconfig)
 
     if dry_run:
@@ -1923,20 +2081,22 @@ def render_gcp_platform_runtime_env(
         "GDC_VMSERIES_BOOTSTRAP_XML_TEMPLATE_SECRET_ID=",
         "# Guest access defaults for VM Runtime assets.",
         *_sample_guest_access_defaults(),
-        "# Set these to the VM Runtime boot images for each guest class.",
-        "GDC_KALI_IMAGE_URL=",
+        "# VM Runtime boot images, exported by the packer-gcp pipeline to the GDC",
+        "# VM image bucket. DISK_SIZE_GIB must be >= the exported qcow2 virtual",
+        "# size (the GCE builder disk size): ubuntu 20, kali 40, windows/dc 64.",
+        f"GDC_KALI_IMAGE_URL={config.gdc_vm_image_url('kali')}",
         "GDC_KALI_VCPUS=2",
         "GDC_KALI_MEMORY=4Gi",
-        "GDC_KALI_DISK_SIZE_GIB=20",
-        "GDC_UBUNTU_IMAGE_URL=",
+        "GDC_KALI_DISK_SIZE_GIB=40",
+        f"GDC_UBUNTU_IMAGE_URL={config.gdc_vm_image_url('ubuntu')}",
         "GDC_UBUNTU_VCPUS=1",
         "GDC_UBUNTU_MEMORY=2Gi",
         "GDC_UBUNTU_DISK_SIZE_GIB=20",
-        "GDC_WINDOWS_IMAGE_URL=",
+        f"GDC_WINDOWS_IMAGE_URL={config.gdc_vm_image_url('windows')}",
         "GDC_WINDOWS_VCPUS=2",
         "GDC_WINDOWS_MEMORY=8Gi",
         "GDC_WINDOWS_DISK_SIZE_GIB=64",
-        "GDC_DC_IMAGE_URL=",
+        f"GDC_DC_IMAGE_URL={config.gdc_vm_image_url('dc')}",
         "GDC_DC_VCPUS=2",
         "GDC_DC_MEMORY=8Gi",
         "GDC_DC_DISK_SIZE_GIB=64",
@@ -2025,9 +2185,16 @@ def load_bootstrap_env_values() -> dict[str, str]:
     return values
 
 
-def resolve_gcp_bootstrap_operator_credentials() -> tuple[str, str] | None:
-    """Resolve the first operator email/password for the GCP identity bootstrap."""
-    values = load_bootstrap_env_values()
+def resolve_gcp_bootstrap_operator_credentials(
+    env_values: dict[str, str] | None = None,
+) -> tuple[str, str] | None:
+    """Resolve the first operator email/password for the GCP identity bootstrap.
+
+    ``env_values`` injects the resolved bootstrap env values (defaults to
+    :func:`load_bootstrap_env_values`); tests pass them directly so the
+    resolution logic is exercised without patching the loader.
+    """
+    values = load_bootstrap_env_values() if env_values is None else env_values
 
     email = (
         values.get("GCP_BOOTSTRAP_ADMIN_EMAIL")
@@ -2233,6 +2400,11 @@ def render_gcp_helm_values(
             str(_get_output_value(outputs, "gke_services_cidr")).strip(),
         ]
     )
+    # The range-provisioning Jobs reach the GDC range cluster apiserver through
+    # the internal TCP load balancer on the peered range VPC (D23). Allow egress
+    # to exactly that endpoint host/port; empty until the endpoint is wired.
+    range_cluster_host, _, range_cluster_port = (config.control_plane_platform_endpoint or "").partition(":")
+    range_cluster_api_cidrs = _unique_nonempty_strings([_host_as_single_address_cidr(range_cluster_host)])
 
     return {
         "releaseNamespace": "shifter-system",
@@ -2245,6 +2417,11 @@ def render_gcp_helm_values(
             "workers": {
                 "annotations": {
                     _GKE_WORKLOAD_IDENTITY_ANNOTATION: service_accounts["workers"],
+                }
+            },
+            "ctfScheduler": {
+                "annotations": {
+                    _GKE_WORKLOAD_IDENTITY_ANNOTATION: service_accounts["ctf-scheduler"],
                 }
             },
             "provisioner": {
@@ -2318,6 +2495,8 @@ def render_gcp_helm_values(
                 "199.36.153.8/30",  # NOSONAR - private.googleapis.com VIP range.
             ],
             "privateServiceCidrs": private_service_cidrs,
+            "rangeClusterApiCidrs": range_cluster_api_cidrs,
+            "rangeClusterApiPort": int(range_cluster_port or _GDC_APISERVER_BACKEND_PORT),
         },
     }
 
@@ -2606,19 +2785,7 @@ def _ensure_terraform_bootstrap_service_account(config: GDCBootstrapConfig) -> N
 def _grant_terraform_bootstrap_iam(config: GDCBootstrapConfig, member: str, bucket_url: str) -> None:
     """Grant the bootstrap service account the project roles and state-bucket binding."""
     for role in GCP_TERRAFORM_BOOTSTRAP_ROLES:
-        run_cmd(
-            [
-                "gcloud",
-                "projects",
-                "add-iam-policy-binding",
-                config.project_id,
-                "--member",
-                member,
-                "--role",
-                role,
-                "--no-user-output-enabled",
-            ]
-        )
+        add_project_iam_binding_with_retry(config.project_id, member, role)
     run_cmd(
         [
             "gcloud",
@@ -2791,6 +2958,62 @@ def render_range_egress_tfvars(repo_root: Path, config_path: Path, output_path: 
     )
 
 
+def ensure_gcp_artifact_registry_service_identity(config: GDCBootstrapConfig, dry_run: bool = False) -> None:
+    """Force-create the Artifact Registry service agent (P4SA) before Terraform.
+
+    On a fresh project the AR service agent
+    (``service-<num>@gcp-sa-artifactregistry.iam.gserviceaccount.com``) does not
+    exist until its service identity is provisioned. The platform-core Terraform
+    grants that agent the CMEK encrypter role on the Artifact Registry key ring,
+    which 400s ("service account ... does not exist") on the first apply of a
+    blank-slate project. Provisioning the identity here — idempotent on reruns —
+    lets the control-plane apply succeed without operator intervention.
+
+    Uses the Service Usage ``generateServiceIdentity`` REST endpoint (GA-accessible
+    via the active credentials; the ``gcloud beta`` component is not required).
+    """
+    service = "artifactregistry.googleapis.com"
+    if dry_run:
+        info(f"[DRY-RUN] Would provision the {service} service identity (P4SA)")
+        return
+
+    # generateServiceIdentity requires the service enabled. Terraform's
+    # project_services module also enables it (idempotent), but the identity must
+    # exist before that module's CMEK IAM grant runs.
+    run_cmd(["gcloud", "services", "enable", service, "--project", config.project_id])
+
+    access_token = _gcp_identity_access_token()
+    url = (
+        "https://serviceusage.googleapis.com/v1beta1/"
+        f"projects/{config.project_id}/services/{service}:generateServiceIdentity"
+    )
+    parsed_url = urllib_parse.urlparse(url)
+    if parsed_url.scheme != "https" or parsed_url.netloc != "serviceusage.googleapis.com" or parsed_url.query:
+        raise RuntimeError(f"Refusing to call unexpected Service Usage endpoint: {url}")
+    request = urllib_request.Request(  # noqa: S310 - URL is validated immediately above
+        url,
+        data=b"",
+        headers={
+            "Authorization": f"Bearer {access_token}",
+            "Content-Type": "application/json",
+            "X-Goog-User-Project": config.project_id,
+        },
+        method="POST",
+    )
+    try:
+        with urllib_request.urlopen(request, timeout=30) as response:  # nosec B310  # noqa: S310
+            json.loads(response.read().decode("utf-8"))
+        success(f"Ensured {service} service identity exists")
+    except urllib_error.HTTPError as exc:  # pragma: no cover - exercised via unit tests with monkeypatch
+        body = exc.read().decode("utf-8") if exc.fp is not None else ""
+        try:
+            parsed = json.loads(body) if body else {}
+        except json.JSONDecodeError:
+            parsed = {}
+        message = parsed.get("error", {}).get("message", exc.reason)
+        raise RuntimeError(f"Failed to provision {service} service identity: {message}") from exc
+
+
 def apply_gcp_control_plane_terraform(
     config: GDCBootstrapConfig, dry_run: bool = False
 ) -> dict[str, dict[str, object]]:
@@ -2839,6 +3062,11 @@ def apply_gcp_control_plane_terraform(
     # Render the range egress bridge tfvars from shifter.yaml before Terraform consumes
     # the variables, so the deployed firewall matches settings.range_egress (#1015).
     render_range_egress_tfvars(repo_root, shifter_config_path, tf_dir / RANGE_EGRESS_BRIDGE_FILENAME, dry_run=dry_run)
+
+    # Provision the Artifact Registry service agent before Terraform grants it the
+    # CMEK encrypter role; on a fresh project the agent does not exist yet and the
+    # grant would 400 on first apply.
+    ensure_gcp_artifact_registry_service_identity(config, dry_run=dry_run)
 
     original_dir = os.getcwd()
     os.chdir(tf_dir)
@@ -2933,8 +3161,10 @@ def push_gcp_control_plane_images(
             repo_root / "shifter" / "shifter_platform" / "Dockerfile",
         ),
         (
+            # Context is the shifter/ root: the Dockerfile COPYs engine/provisioner/
+            # and the sibling cyberscript/ lib (issue #1103), both relative to shifter/.
             f"{image_roots['pulumi-provisioner']}:{pinned_image_tag}",
-            repo_root / "shifter" / "engine" / "provisioner",
+            repo_root / "shifter",
             repo_root / "shifter" / "engine" / "provisioner" / "Dockerfile",
         ),
         (
@@ -3003,37 +3233,67 @@ def install_gke_gcloud_auth_plugin_user_space(dry_run: bool = False) -> None:
         destination_binary.chmod(0o755)
 
 
+def _gcloud_components_install_gke_plugin(dry_run: bool = False) -> bool:
+    """Install the GKE auth plugin via the gcloud component manager.
+
+    This is the portable method for SDK/tarball gcloud installs, where the
+    ``google-cloud-cli`` apt repo (which the apt-based paths require) is typically
+    not configured. Returns True on success, False when the component manager is
+    unavailable or disabled (e.g. apt/snap-managed gcloud), so the caller falls
+    back to apt.
+    """
+    if not shutil.which("gcloud"):
+        return False
+    if dry_run:
+        info("[DRY-RUN] Would run: gcloud components install gke-gcloud-auth-plugin --quiet")
+        return True
+    result = subprocess.run(  # nosec B603 B607
+        ["gcloud", "components", "install", "gke-gcloud-auth-plugin", "--quiet"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    # Component manager disabled (apt/snap-managed gcloud) or another failure;
+    # surface the reason and let the caller fall back to apt.
+    if result.returncode != 0 and result.stderr:
+        print(result.stderr, end="", file=sys.stderr)
+    return result.returncode == 0
+
+
+def _install_gke_plugin_via_apt(dry_run: bool = False) -> None:
+    """Install the GKE auth plugin via apt (fallback when the component manager is unavailable)."""
+    if not shutil.which("apt-get"):
+        error(
+            "gke-gcloud-auth-plugin is required for kubectl access to GKE and is not installed. "
+            "Automatic installation requires the gcloud component manager or apt-based package tooling."
+        )
+        sys.exit(1)
+    if os.geteuid() == 0:
+        command_prefix: list[str] = []
+    elif shutil.which("sudo"):
+        command_prefix = ["sudo"]
+    else:
+        install_gke_gcloud_auth_plugin_user_space(dry_run=dry_run)
+        return
+    run_cmd([*command_prefix, "apt-get", "update"], dry_run=dry_run)
+    run_cmd(
+        [*command_prefix, "apt-get", "install", "-y", "google-cloud-cli-gke-gcloud-auth-plugin"],
+        dry_run=dry_run,
+    )
+
+
 def ensure_gke_gcloud_auth_plugin(dry_run: bool = False) -> None:
     """Ensure the kubectl GKE auth plugin is present on the bootstrap host."""
     if shutil.which("gke-gcloud-auth-plugin"):
         return
 
-    if shutil.which("apt-get"):
-        command_prefix: list[str] = []
-        if os.geteuid() == 0:
-            warn("Installing gke-gcloud-auth-plugin for kubectl access to GKE")
-            run_cmd([*command_prefix, "apt-get", "update"], dry_run=dry_run)
-            run_cmd(
-                [*command_prefix, "apt-get", "install", "-y", "google-cloud-cli-gke-gcloud-auth-plugin"],
-                dry_run=dry_run,
-            )
-        elif shutil.which("sudo"):
-            command_prefix = ["sudo"]
-            warn("Installing gke-gcloud-auth-plugin for kubectl access to GKE")
-            run_cmd([*command_prefix, "apt-get", "update"], dry_run=dry_run)
-            run_cmd(
-                [*command_prefix, "apt-get", "install", "-y", "google-cloud-cli-gke-gcloud-auth-plugin"],
-                dry_run=dry_run,
-            )
-        else:
-            warn("Installing gke-gcloud-auth-plugin into ~/.local/bin for kubectl access to GKE")
-            install_gke_gcloud_auth_plugin_user_space(dry_run=dry_run)
-    else:
-        error(
-            "gke-gcloud-auth-plugin is required for kubectl access to GKE and is not installed. "
-            "Automatic installation requires apt-based package tooling."
-        )
-        sys.exit(1)
+    warn("Installing gke-gcloud-auth-plugin for kubectl access to GKE")
+
+    # Prefer the gcloud component manager: it works for SDK/tarball gcloud
+    # installs, where the google-cloud-cli apt repo that the apt paths below
+    # require is typically not configured (the cause of a first-run failure).
+    if not _gcloud_components_install_gke_plugin(dry_run=dry_run):
+        _install_gke_plugin_via_apt(dry_run=dry_run)
 
     if dry_run:
         return

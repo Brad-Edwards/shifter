@@ -34,16 +34,18 @@ def _render_identity_platform_login(request, *, status_code: int = 200):
         request,
         "identity_platform_login.html",
         {
-            "identity_platform_config_json": json.dumps(
-                {
-                    **client_config,
-                    "sessionExchangeUrl": reverse("identity_platform_session"),
-                    "dashboardUrl": reverse("dashboard_router"),
-                    "loginUrl": reverse("platform_login"),
-                    "passwordResetUrl": reverse("platform_login"),
-                    "verificationContinueUrl": f"{site_url}{reverse('platform_login')}",
-                }
-            ),
+            # Pass the dict itself; the template's `json_script` filter does the
+            # single JSON encoding. Pre-serializing here would double-encode, so
+            # the browser's JSON.parse would yield a string and config.apiKey
+            # would be undefined (Firebase init then fails auth/invalid-api-key).
+            "identity_platform_config_json": {
+                **client_config,
+                "sessionExchangeUrl": reverse("identity_platform_session"),
+                "dashboardUrl": reverse("dashboard_router"),
+                "loginUrl": reverse("platform_login"),
+                "passwordResetUrl": reverse("platform_login"),
+                "verificationContinueUrl": f"{site_url}{reverse('platform_login')}",
+            },
             "allowed_email_domain": client_config["allowedEmailDomain"],
         },
         status=status_code,
@@ -56,13 +58,13 @@ def _render_identity_platform_logout(request):
         request,
         "identity_platform_logout.html",
         {
-            "identity_platform_logout_config_json": json.dumps(
-                {
-                    **client_config,
-                    "redirectUrl": settings.LOGOUT_REDIRECT_URL,
-                    "loginUrl": reverse("platform_login"),
-                }
-            )
+            # Pass the dict; the template's `json_script` filter encodes once.
+            # (See _render_identity_platform_login for the double-encode hazard.)
+            "identity_platform_logout_config_json": {
+                **client_config,
+                "redirectUrl": settings.LOGOUT_REDIRECT_URL,
+                "loginUrl": reverse("platform_login"),
+            }
         },
     )
 

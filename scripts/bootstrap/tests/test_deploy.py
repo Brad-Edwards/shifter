@@ -109,6 +109,7 @@ def _sample_gcp_control_plane_outputs(project_id: str = "prod-rwctxzl6shxk") -> 
             "value": {
                 "portal": f"shiftergcpdev-portal@{project_id}.iam.gserviceaccount.com",
                 "workers": f"shiftergcpdev-workers@{project_id}.iam.gserviceaccount.com",
+                "ctf-scheduler": f"shiftergcpdev-ctf-scheduler@{project_id}.iam.gserviceaccount.com",
                 "provisioner": f"shiftergcpdev-provisioner@{project_id}.iam.gserviceaccount.com",
             }
         },
@@ -892,7 +893,9 @@ class TestGdcRenderers:
         assert "ip link add vxlan0 type vxlan id 42" in rendered
         assert "fs.inotify.max_user_instances = 1024" in rendered
         assert 'configure_remote_host "10.240.0.3" "10.200.0.3"' in rendered
-        assert "StrictHostKeyChecking=yes" in rendered
+        # accept-new pins the host key on first contact (the freshly created VMs
+        # have no known_hosts entry yet) without the silent-MITM exposure of `no`.
+        assert "StrictHostKeyChecking=accept-new" in rendered
         assert "StrictHostKeyChecking=no" not in rendered
         assert "UserKnownHostsFile=/dev/null" not in rendered
 
@@ -904,7 +907,7 @@ class TestGdcRenderers:
 
         assert f"install -m 755 {config.staging_bundle_dir}/bmctl /usr/local/sbin/bmctl" in rendered
         assert "anthos-baremetal-release" not in rendered
-        assert "StrictHostKeyChecking yes" in rendered
+        assert "StrictHostKeyChecking accept-new" in rendered
         assert "StrictHostKeyChecking no" not in rendered
         assert "UserKnownHostsFile /dev/null" not in rendered
 
@@ -948,6 +951,82 @@ class TestGdcRenderers:
         assert '"cluster_id": "cluster1"' in rendered
         assert '"vxlan_cidr": "10.200.0.0/24"' in rendered
         assert '"network_interface": "vxlan0"' in rendered
+
+
+class TestRewriteGdcKubeconfig:
+    """Tests for repointing the provisioner kubeconfig at the platform LB (D23)."""
+
+    _BMCTL_KUBECONFIG = (
+        "apiVersion: v1\n"
+        "clusters:\n"
+        "- cluster:\n"
+        "    certificate-authority-data: QUFB\n"
+        "    server: https://10.200.0.49:443\n"
+        "  name: cluster1\n"
+        "contexts:\n"
+        "- context:\n"
+        "    cluster: cluster1\n"
+        "    user: cluster1-admin\n"
+        "  name: cluster1-admin@cluster1\n"
+        "current-context: cluster1-admin@cluster1\n"
+        "users:\n"
+        "- name: cluster1-admin\n"
+        "  user:\n"
+        "    client-certificate-data: Q0ND\n"
+        "    client-key-data: S0tL\n"
+    )
+
+    def test_repoints_server_and_drops_ca_for_lb_endpoint(self):
+        rewritten = deploy.rewrite_gdc_kubeconfig_for_platform_access(self._BMCTL_KUBECONFIG, "10.240.0.8")
+
+        # Server now targets the LB on the apiserver backend port, with TLS
+        # verification disabled (the LB IP is not in the apiserver cert SANs).
+        assert "    server: https://10.240.0.8:6444" in rewritten
+        assert "    insecure-skip-tls-verify: true" in rewritten
+        # The now-unusable CA data is removed (mutually exclusive with skip-verify).
+        assert "certificate-authority-data" not in rewritten
+        # The overlay VIP is gone.
+        assert "10.200.0.49" not in rewritten
+        # Client credentials and context are preserved untouched.
+        assert "client-certificate-data: Q0ND" in rewritten
+        assert "client-key-data: S0tL" in rewritten
+        assert "current-context: cluster1-admin@cluster1" in rewritten
+
+    def test_honors_explicit_port_in_endpoint(self):
+        rewritten = deploy.rewrite_gdc_kubeconfig_for_platform_access(self._BMCTL_KUBECONFIG, "10.240.0.8:8443")
+        assert "    server: https://10.240.0.8:8443" in rewritten
+
+    def test_sync_rewrites_when_endpoint_configured(self):
+        config = deploy.GDCBootstrapConfig(
+            project_id="prod-rwctxzl6shxk",
+            cluster_id="cluster1",
+            control_plane_platform_endpoint="10.240.0.8",
+        )
+        captured: dict[str, str] = {}
+
+        def fake_subprocess_run(cmd, *args, **kwargs):
+            # Mock the process boundary (ADR-019: patch the boundary, not the
+            # first-party deploy helpers). Dispatch on the gcloud subcommand:
+            #   secrets describe        -> the access secret already exists
+            #   compute ssh ... cat     -> return the bmctl kubeconfig
+            #   secrets versions access -> no existing version (forces a write)
+            #   secrets versions add    -> capture the stored payload
+            if cmd[:3] == ["gcloud", "secrets", "describe"]:
+                return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+            if cmd[:3] == ["gcloud", "compute", "ssh"]:
+                return subprocess.CompletedProcess(cmd, 0, stdout=self._BMCTL_KUBECONFIG, stderr="")
+            if cmd[:4] == ["gcloud", "secrets", "versions", "access"]:
+                return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="NOT_FOUND: version not found")
+            if cmd[:4] == ["gcloud", "secrets", "versions", "add"] and "--data-file" in cmd:
+                captured["payload"] = Path(cmd[cmd.index("--data-file") + 1]).read_text()
+            return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+        with patch("deploy.subprocess.run", side_effect=fake_subprocess_run):
+            deploy.sync_gdc_access_secret(config)
+
+        assert "10.240.0.8:6444" in captured["payload"]
+        assert "insecure-skip-tls-verify" in captured["payload"]
+        assert "10.200.0.49" not in captured["payload"]
 
 
 class TestGdcBootstrapCluster:
@@ -1028,6 +1107,20 @@ gke_master_authorized_cidrs = ["198.51.100.10/32"]
 
         terraform_output = json.dumps(_sample_gcp_control_plane_outputs(config.project_id))
 
+        # The apply provisions the Artifact Registry P4SA via the Service Usage
+        # REST API (urllib) before Terraform runs. Stub the network boundary
+        # (ADR-019: patch the HTTP seam, not the first-party function) so the
+        # test does not make a live, unauthenticated HTTP call.
+        class _FakeServiceIdentityResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self) -> bytes:
+                return b"{}"
+
         with (
             patch("deploy.get_repo_root", return_value=mock_repo_root),
             patch("deploy.gcloud_resource_exists", return_value=False),
@@ -1036,6 +1129,7 @@ gke_master_authorized_cidrs = ["198.51.100.10/32"]
             patch("deploy.wait_for_gcp_terraform_bootstrap_access") as mock_wait,
             patch("deploy.run_gcp_terraform_apply_with_retry") as mock_apply,
             patch("deploy.run_cmd") as mock_run_cmd,
+            patch("urllib.request.urlopen", return_value=_FakeServiceIdentityResponse()),
             patch("os.chdir"),
             patch(
                 "subprocess.run",
@@ -1258,6 +1352,13 @@ class TestGdcTerraformBootstrapCredentials:
             patch("deploy.gcloud_resource_exists", return_value=False),
             patch("deploy.prune_stale_gcp_terraform_bootstrap_keys") as mock_prune,
             patch("deploy.run_cmd", side_effect=fake_run_cmd) as mock_run_cmd,
+            # The project owner ADD binding goes through the retry helper, which
+            # shells out via subprocess.run (ADR-019: patch the process boundary,
+            # not the first-party helper).
+            patch(
+                "subprocess.run",
+                return_value=subprocess.CompletedProcess(["gcloud"], 0, stdout="", stderr=""),
+            ) as mock_subprocess,
             deploy.gcp_terraform_bootstrap_credentials(config) as credentials_path,
         ):
             assert Path(credentials_path).read_text() == '{"private_key_id":"bootstrap-key-id"}\n'
@@ -1272,9 +1373,15 @@ class TestGdcTerraformBootstrapCredentials:
             and cmd[4] == config.terraform_bootstrap_service_account_name
             for cmd in executed
         )
+        # The project owner ADD binding goes through the retry helper (ETag /
+        # member-propagation races) which shells out via subprocess.run; the
+        # bucket binding and all revoke calls stay on run_cmd. binding_cmd is
+        # ["gcloud", "projects", "add-iam-policy-binding", project_id, "--member",
+        # member, "--role", role, ...] so the role sits at index 7.
+        bound = [call.args[0] for call in mock_subprocess.call_args_list]
         assert any(
-            cmd[:4] == ["gcloud", "projects", "add-iam-policy-binding", config.project_id] and "roles/owner" in cmd
-            for cmd in executed
+            cmd[:4] == ["gcloud", "projects", "add-iam-policy-binding", config.project_id] and cmd[7] == "roles/owner"
+            for cmd in bound
         )
         assert any(
             cmd[:5]
@@ -1622,6 +1729,10 @@ class TestGdcControlPlaneHelmValues:
             values["serviceAccounts"]["provisioner"]["annotations"]["iam.gke.io/gcp-service-account"]
             == "shiftergcpdev-provisioner@prod-rwctxzl6shxk.iam.gserviceaccount.com"
         )
+        assert (
+            values["serviceAccounts"]["ctfScheduler"]["annotations"]["iam.gke.io/gcp-service-account"]
+            == "shiftergcpdev-ctf-scheduler@prod-rwctxzl6shxk.iam.gserviceaccount.com"
+        )
         assert values["images"]["portal"]["repository"] == (
             "us-central1-docker.pkg.dev/prod-rwctxzl6shxk/shifter-gcp-dev-portal/portal"
         )
@@ -1658,7 +1769,27 @@ class TestGdcControlPlaneHelmValues:
                 "199.36.153.8/30",  # NOSONAR - private.googleapis.com VIP.
             ],
             "privateServiceCidrs": ["10.40.0.10/32", "10.40.0.20/32", "10.48.0.0/20"],
+            "rangeClusterApiCidrs": [],
+            "rangeClusterApiPort": 6444,
         }
+
+    def test_range_cluster_api_cidrs_from_control_plane_endpoint(self):
+        """The range-cluster egress allowlist mirrors the configured control-plane endpoint."""
+        config = deploy.GDCBootstrapConfig(
+            project_id="prod-rwctxzl6shxk",
+            cluster_id="cluster1",
+            control_plane_platform_endpoint="10.240.0.5:6444",
+        )
+        outputs = _sample_gcp_control_plane_outputs(config.project_id)
+        values = deploy.render_gcp_helm_values(
+            config,
+            outputs,
+            guacamole_db_payload={"username": "guac", "password": "supersecret"},
+            guacamole_json_secret="json-auth-key",
+            image_tag="abc1234",
+        )
+        assert values["networkPolicy"]["rangeClusterApiCidrs"] == ["10.240.0.5/32"]
+        assert values["networkPolicy"]["rangeClusterApiPort"] == 6444
 
     def test_rejects_insecure_public_bootstrap_values(self):
         """The Helm values renderer must refuse public bare-IP debug deployments on GCP."""
@@ -2261,7 +2392,7 @@ class TestGkeGcloudAuthPlugin:
     def test_skips_install_when_plugin_already_present(self):
         """No package-manager calls should run when the plugin is already on PATH."""
         with (
-            patch("deploy.shutil.which", return_value="/usr/bin/gke-gcloud-auth-plugin"),
+            patch("shutil.which", return_value="/usr/bin/gke-gcloud-auth-plugin"),
             patch("deploy.run_cmd") as mock_run_cmd,
         ):
             deploy.ensure_gke_gcloud_auth_plugin()
@@ -2287,7 +2418,7 @@ class TestGkeGcloudAuthPlugin:
             return result
 
         with (
-            patch("deploy.shutil.which", side_effect=which_side_effect),
+            patch("shutil.which", side_effect=which_side_effect),
             patch("deploy.os.geteuid", return_value=0),
             patch("deploy.run_cmd") as mock_run_cmd,
         ):
@@ -2320,7 +2451,7 @@ class TestGkeGcloudAuthPlugin:
             return result
 
         with (
-            patch("deploy.shutil.which", side_effect=which_side_effect),
+            patch("shutil.which", side_effect=which_side_effect),
             patch("deploy.os.geteuid", return_value=1000),
             patch("deploy.run_cmd") as mock_run_cmd,
         ):
@@ -2355,14 +2486,17 @@ class TestGkeGcloudAuthPlugin:
     def test_fails_when_plugin_missing_and_host_is_not_apt_based(self):
         """Bootstrap must fail clearly when it cannot satisfy the plugin prerequisite."""
         with (
-            patch("deploy.shutil.which", return_value=None),
+            patch("shutil.which", return_value=None),
             patch("deploy.error") as mock_error,
             pytest.raises(SystemExit),
         ):
             deploy.ensure_gke_gcloud_auth_plugin()
 
         mock_error.assert_called_once()
-        assert "Automatic installation requires apt-based package tooling" in mock_error.call_args.args[0]
+        assert (
+            "Automatic installation requires the gcloud component manager or apt-based package tooling"
+            in mock_error.call_args.args[0]
+        )
 
 
 class TestGkeGcloudAuthPluginUserSpaceInstall:
@@ -2419,11 +2553,18 @@ class TestGdcBootstrapPrerequisites:
 
         with (
             patch("deploy.gcloud_resource_exists", return_value=True),
-            patch("deploy.run_cmd") as mock_run_cmd,
+            patch("deploy.run_cmd"),
+            patch(
+                "subprocess.run",
+                return_value=subprocess.CompletedProcess(["gcloud"], 0, stdout="", stderr=""),
+            ) as mock_subprocess,
         ):
             deploy.ensure_gdc_service_account(config)
 
-        granted_roles = [call.args[0][7] for call in mock_run_cmd.call_args_list]
+        # Role bindings go through the retry helper (member propagation / ETag
+        # races), which shells out via subprocess.run (ADR-019: patch the process
+        # boundary). binding_cmd carries the role at index 7.
+        granted_roles = [call.args[0][7] for call in mock_subprocess.call_args_list]
         assert "roles/compute.viewer" in granted_roles
 
     def test_gdc_service_account_waits_for_visibility_after_create(self):
@@ -2433,6 +2574,10 @@ class TestGdcBootstrapPrerequisites:
         with (
             patch("deploy.gcloud_resource_exists", side_effect=[False, False, False, True]),
             patch("deploy.run_cmd") as mock_run_cmd,
+            patch(
+                "subprocess.run",
+                return_value=subprocess.CompletedProcess(["gcloud"], 0, stdout="", stderr=""),
+            ) as mock_subprocess,
             patch("deploy.time.sleep") as mock_sleep,
         ):
             deploy.ensure_gdc_service_account(config)
@@ -2443,10 +2588,10 @@ class TestGdcBootstrapPrerequisites:
             "service-accounts",
             "create",
         ]
-        assert any(
-            call.args[0][0:3] == ["gcloud", "projects", "add-iam-policy-binding"]
-            for call in mock_run_cmd.call_args_list
-        )
+        # Bindings are applied through the retry helper (subprocess.run boundary)
+        # after the SA is visible.
+        bound = [call.args[0] for call in mock_subprocess.call_args_list]
+        assert any(cmd[:3] == ["gcloud", "projects", "add-iam-policy-binding"] for cmd in bound)
         assert mock_sleep.call_count == 2
 
 
@@ -2525,13 +2670,22 @@ class TestGcpPlatformCoreContracts:
         identity_platform_section = module_main.split('resource "google_identity_platform_config" "platform" {', 1)[1]
         assert "disabled_user_signup   = false" in identity_platform_section
         assert 'event_type   = "beforeCreate"' in identity_platform_section
+        # The blocking function is optional (Domain Restricted Sharing can block
+        # its allUsers invoker), so the trigger renders in a count-gated dynamic
+        # block and references the resource by index.
         assert (
-            "google_cloudfunctions_function.identity_platform_before_create.https_trigger_url"
+            "google_cloudfunctions_function.identity_platform_before_create[0].https_trigger_url"
             in identity_platform_section
         )
 
-    def test_cloud_armor_sqli_rule_opts_out_known_false_positive_signature(self):
-        """The edge WAF should not block the portal landing/login flow on the known false-positive rule."""
+    def test_cloud_armor_sqli_rule_uses_baseline_sensitivity(self):
+        """The edge WAF runs the SQLi ruleset at the PL1 baseline.
+
+        Sensitivity 1 keeps high-confidence SQLi coverage without false-positiving
+        on legitimate request bodies such as the base64url JWT the portal POSTs to
+        /auth/identity/session/ (higher levels denied it as
+        body_denied_by_security_policy and broke login).
+        """
         module_path = (
             Path(__file__).resolve().parents[3]
             / "platform"
@@ -2545,7 +2699,10 @@ class TestGcpPlatformCoreContracts:
         module_main = module_path.read_text()
 
         assert "evaluatePreconfiguredWaf('sqli-v33-stable'" in module_main
-        assert "owasp-crs-v030301-id942421-sqli" in module_main
+        assert "'sensitivity': 1" in module_main
+        # The per-rule opt-out was a band-aid for the over-aggressive PL4 setting;
+        # PL1 does not need it.
+        assert "opt_out_rule_ids" not in module_main
 
 
 class TestGdcBootstrapAssetUpload:
@@ -2746,19 +2903,16 @@ class TestGcpBootstrapIdentityPlatform:
 
     def test_resolve_gcp_bootstrap_operator_credentials_returns_none_when_missing(self):
         """Bootstrap should report no operator credentials when the env files do not provide them."""
-        with patch("deploy.load_bootstrap_env_values", return_value={}):
-            assert deploy.resolve_gcp_bootstrap_operator_credentials() is None
+        assert deploy.resolve_gcp_bootstrap_operator_credentials(env_values={}) is None
 
     def test_resolve_gcp_bootstrap_operator_credentials_uses_env_values(self):
         """Bootstrap should source the first operator credentials from env-backed values when present."""
-        with patch(
-            "deploy.load_bootstrap_env_values",
-            return_value={
+        credentials = deploy.resolve_gcp_bootstrap_operator_credentials(
+            env_values={
                 "GCP_BOOTSTRAP_ADMIN_EMAIL": "analyst@paloaltonetworks.com",
                 "GCP_BOOTSTRAP_ADMIN_PASSWORD": "correct-horse-battery-staple",
             },
-        ):
-            credentials = deploy.resolve_gcp_bootstrap_operator_credentials()
+        )
 
         assert credentials == ("analyst@paloaltonetworks.com", "correct-horse-battery-staple")
 
@@ -2921,6 +3075,23 @@ class TestGcpBootstrapIdentityPlatform:
         assert "CortexSavesTheDay!" not in rendered
         assert "kali:kali" not in rendered
         assert "ubuntu:ubuntu" not in rendered
+
+    def test_render_gcp_platform_runtime_env_wires_guest_image_urls_from_bucket(self):
+        """Guest boot images resolve to the packer-gcp export bucket per environment, not blank or hardcoded."""
+        config = deploy.GDCBootstrapConfig(project_id="prod-rwctxzl6shxk", cluster_id="cluster1", environment="gcp-dev")
+
+        with patch("deploy.load_bootstrap_env_values", return_value={}):
+            rendered = deploy.render_gcp_platform_runtime_env(config)
+
+        bucket = "shifter-gcp-dev-gdc-vm-images"
+        assert f"GDC_UBUNTU_IMAGE_URL=gs://{bucket}/ubuntu.qcow2\n" in rendered
+        assert f"GDC_KALI_IMAGE_URL=gs://{bucket}/kali.qcow2\n" in rendered
+        assert f"GDC_WINDOWS_IMAGE_URL=gs://{bucket}/windows.qcow2\n" in rendered
+        assert f"GDC_DC_IMAGE_URL=gs://{bucket}/dc.qcow2\n" in rendered
+        # The VM Runtime disk must clear the kali export's 40 GiB virtual size.
+        assert "GDC_KALI_DISK_SIZE_GIB=40\n" in rendered
+        # Image URLs are never left blank now that the pipeline produces them.
+        assert "GDC_UBUNTU_IMAGE_URL=\n" not in rendered
 
 
 class TestGcpIdentityAdminApi:
@@ -4104,3 +4275,151 @@ class TestMainCLI:
             deploy.main()
 
             assert mock_gdc_bootstrap.call_args[1]["dry_run"] is True
+
+
+# =============================================================================
+# Test: _is_retryable_gcp_iam_binding_error()
+# =============================================================================
+
+
+def _completed(returncode=0, stdout="", stderr=""):
+    return subprocess.CompletedProcess(args=["gcloud"], returncode=returncode, stdout=stdout, stderr=stderr)
+
+
+class TestIsRetryableGcpIamBindingError:
+    """Tests for deploy._is_retryable_gcp_iam_binding_error."""
+
+    @pytest.mark.parametrize(
+        "message",
+        [
+            "Service account my-sa@proj.iam.gserviceaccount.com does not exist.",
+            "Error: there were concurrent policy changes. Please retry.",
+            "Request was the subject of a conflict, try again.",
+            "The provided Etag did not match the current Etag.",
+        ],
+    )
+    def test_classifies_transient_races_as_retryable(self, message):
+        assert deploy._is_retryable_gcp_iam_binding_error(message) is True
+
+    @pytest.mark.parametrize(
+        "message",
+        [
+            "PERMISSION_DENIED: caller lacks resourcemanager.projects.setIamPolicy",
+            "Role roles/nonexistent is not a valid predefined role.",
+            "",
+        ],
+    )
+    def test_classifies_other_errors_as_non_retryable(self, message):
+        assert deploy._is_retryable_gcp_iam_binding_error(message) is False
+
+
+# =============================================================================
+# Test: add_project_iam_binding_with_retry()
+# =============================================================================
+
+
+class TestAddProjectIamBindingWithRetry:
+    """Tests for deploy.add_project_iam_binding_with_retry."""
+
+    def test_dry_run_prints_and_skips_subprocess(self):
+        with patch("subprocess.run") as mock_run:
+            deploy.add_project_iam_binding_with_retry(
+                "prod-rwctxzl6shxk", "serviceAccount:sa@proj.iam.gserviceaccount.com", "roles/viewer", dry_run=True
+            )
+        mock_run.assert_not_called()
+
+    def test_returns_on_first_success(self):
+        with patch("subprocess.run", return_value=_completed(returncode=0)) as mock_run:
+            deploy.add_project_iam_binding_with_retry(
+                "prod-rwctxzl6shxk", "serviceAccount:sa@proj.iam.gserviceaccount.com", "roles/viewer"
+            )
+        mock_run.assert_called_once()
+
+    def test_retries_transient_race_then_succeeds(self):
+        results = [
+            _completed(returncode=1, stderr="Service account sa@proj.iam.gserviceaccount.com does not exist."),
+            _completed(returncode=0),
+        ]
+        # sleep_seconds=0 makes the real time.sleep a no-op, so no first-party
+        # patch is needed to keep the retry fast (ADR-019).
+        with patch("subprocess.run", side_effect=results) as mock_run:
+            deploy.add_project_iam_binding_with_retry(
+                "prod-rwctxzl6shxk",
+                "serviceAccount:sa@proj.iam.gserviceaccount.com",
+                "roles/viewer",
+                sleep_seconds=0,
+            )
+        assert mock_run.call_count == 2
+
+    def test_non_retryable_failure_exits(self):
+        with (
+            patch("subprocess.run", return_value=_completed(returncode=1, stderr="PERMISSION_DENIED")),
+            pytest.raises(SystemExit),
+        ):
+            deploy.add_project_iam_binding_with_retry(
+                "prod-rwctxzl6shxk", "serviceAccount:sa@proj.iam.gserviceaccount.com", "roles/viewer"
+            )
+
+    def test_exhausts_attempts_on_persistent_race(self):
+        race = _completed(returncode=1, stderr="concurrent policy changes")
+        with (
+            patch("subprocess.run", return_value=race) as mock_run,
+            pytest.raises(SystemExit),
+        ):
+            deploy.add_project_iam_binding_with_retry(
+                "prod-rwctxzl6shxk",
+                "serviceAccount:sa@proj.iam.gserviceaccount.com",
+                "roles/viewer",
+                max_attempts=3,
+                sleep_seconds=0,
+            )
+        assert mock_run.call_count == 3
+
+
+# =============================================================================
+# Test: _gcloud_components_install_gke_plugin()
+# =============================================================================
+
+
+class TestGcloudComponentsInstallGkePlugin:
+    """Tests for deploy._gcloud_components_install_gke_plugin."""
+
+    def test_returns_false_when_gcloud_absent(self):
+        with patch("shutil.which", return_value=None):
+            assert deploy._gcloud_components_install_gke_plugin() is False
+
+    def test_dry_run_reports_success_without_running(self):
+        with patch("shutil.which", return_value="/usr/bin/gcloud"), patch("subprocess.run") as mock_run:
+            assert deploy._gcloud_components_install_gke_plugin(dry_run=True) is True
+        mock_run.assert_not_called()
+
+    def test_returns_true_on_successful_install(self):
+        with (
+            patch("shutil.which", return_value="/usr/bin/gcloud"),
+            patch("subprocess.run", return_value=_completed(returncode=0)),
+        ):
+            assert deploy._gcloud_components_install_gke_plugin() is True
+
+    def test_returns_false_and_surfaces_stderr_on_failure(self, capsys):
+        with (
+            patch("shutil.which", return_value="/usr/bin/gcloud"),
+            patch("subprocess.run", return_value=_completed(returncode=1, stderr="component manager disabled")),
+        ):
+            assert deploy._gcloud_components_install_gke_plugin() is False
+        assert "component manager disabled" in capsys.readouterr().err
+
+
+# =============================================================================
+# Test: ensure_gcp_artifact_registry_service_identity() dry-run
+# =============================================================================
+
+
+class TestArtifactRegistryServiceIdentityDryRun:
+    """Tests for the dry-run branch of ensure_gcp_artifact_registry_service_identity."""
+
+    def test_dry_run_skips_network_calls(self):
+        config = deploy.GDCBootstrapConfig(project_id="prod-rwctxzl6shxk", cluster_id="cluster1")
+        with patch("subprocess.run") as mock_run, patch("urllib.request.urlopen") as mock_urlopen:
+            deploy.ensure_gcp_artifact_registry_service_identity(config, dry_run=True)
+        mock_run.assert_not_called()
+        mock_urlopen.assert_not_called()
