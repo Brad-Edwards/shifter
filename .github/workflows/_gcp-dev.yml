@@ -91,7 +91,12 @@ jobs:
 
   deploy:
     name: Deploy (${{ inputs.environment }})
-    runs-on: self-hosted
+    # Pin to the `dev` self-hosted pool: those runners' egress IPs are in the
+    # GKE master-authorized-networks allowlist. The `proof` pool shares the
+    # `self-hosted`/`shifter` labels but its IPs are not authorized, so a bare
+    # `self-hosted` target round-robins onto proof runners and the kubectl
+    # apply times out dialing the control-plane endpoint.
+    runs-on: [self-hosted, dev]
     environment: ${{ inputs.github_environment }}
     needs: validate
     if: inputs.deploy_changes && github.event_name != 'pull_request'
