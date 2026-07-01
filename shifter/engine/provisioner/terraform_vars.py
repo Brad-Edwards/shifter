@@ -44,10 +44,19 @@ def _resolve_tf_os_type(role: str, os_type: str) -> str:
 
 
 def _resolve_instance_type(role: str, tf_os_type: str, override: str | None) -> str:
-    """Pick the EC2 instance type: per-instance override wins; otherwise role/OS defaults."""
+    """Pick the EC2 instance type: per-instance override wins; otherwise role/OS defaults.
+
+    The EC2 instance type is only consumed by the AWS ``aws_instance`` path. GDC
+    ranges size VMs from vCPU/memory/disk profiles (``GDC_*_VCPUS`` / ``MEMORY`` /
+    ``DISK_SIZE_GIB``) via the VM Runtime asset builder, so the AWS
+    ``*_INSTANCE_TYPE`` env vars are intentionally absent on GCP. Don't require
+    them there — return the explicit override if any, otherwise an empty string.
+    """
     if override:
-        resolved = override
-    elif role == "attacker":
+        return override
+    if os.environ.get("CLOUD_PROVIDER", "aws").lower() == "gcp":
+        return ""
+    if role == "attacker":
         resolved = _get_kali_instance_type()
     elif role == "dc":
         resolved = _get_dc_instance_type()
@@ -58,8 +67,18 @@ def _resolve_instance_type(role: str, tf_os_type: str, override: str | None) -> 
     return resolved
 
 
+def _range_egress_mode() -> str:
+    """Return the validated AWS runtime egress mode from the task environment."""
+    mode = os.environ.get("RANGE_EGRESS_MODE", "allowlist").strip().lower()
+    if mode not in {"allowlist", "none"}:
+        raise ValueError(f"RANGE_EGRESS_MODE must be 'allowlist' or 'none', got {mode!r}")
+    return mode
+
+
 def _resolve_agent_presigned_url(inst: dict[str, Any]) -> str:
     """Generate a presigned URL for the instance's XDR agent S3 object, if any."""
+    if _range_egress_mode() == "none":
+        return ""
     agent_data = inst.get("agent") or {}
     agent_s3_key = agent_data.get("s3_key")
     if not agent_s3_key:
@@ -174,6 +193,7 @@ def _build_range_terraform_variables(
         ngfw_data_eni_id, ngfw_attachment = _resolve_ngfw_for_range(user_id, range_id)
 
     range_network = load_range_network_config()
+    egress_mode = _range_egress_mode()
     variables = {
         "range_id": range_id,
         "user_id": user_id,
@@ -182,8 +202,9 @@ def _build_range_terraform_variables(
         "vpc_id": range_network.network_id,
         "vpc_cidr": range_network.network_cidr,
         "availability_zone": get_range_availability_zone(),
-        "s3_endpoint_id": os.environ.get("S3_ENDPOINT_ID", ""),
+        "s3_endpoint_id": "" if egress_mode == "none" else os.environ.get("S3_ENDPOINT_ID", ""),
         "firewall_endpoint_id": os.environ.get("FIREWALL_ENDPOINT_ID", ""),
+        "range_egress_mode": egress_mode,
         "portal_vpc_cidr": range_network.primary_portal_cidr,
         "portal_vpc_peering_id": os.environ.get("PORTAL_VPC_PEERING_ID", ""),
         "ngfw_data_eni_id": ngfw_data_eni_id,

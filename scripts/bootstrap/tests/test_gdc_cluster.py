@@ -104,6 +104,7 @@ def _sample_gcp_control_plane_outputs(project_id: str = "prod-rwctxzl6shxk") -> 
             "value": {
                 "portal": f"shiftergcpdev-portal@{project_id}.iam.gserviceaccount.com",
                 "workers": f"shiftergcpdev-workers@{project_id}.iam.gserviceaccount.com",
+                "ctf-scheduler": f"shiftergcpdev-ctf-scheduler@{project_id}.iam.gserviceaccount.com",
                 "provisioner": f"shiftergcpdev-provisioner@{project_id}.iam.gserviceaccount.com",
             }
         },
@@ -314,7 +315,9 @@ class TestGdcRenderers:
         assert "ip link add vxlan0 type vxlan id 42" in rendered
         assert "fs.inotify.max_user_instances = 1024" in rendered
         assert 'configure_remote_host "10.240.0.3" "10.200.0.3"' in rendered
-        assert "StrictHostKeyChecking=yes" in rendered
+        # accept-new pins the host key on first contact for freshly created VMs
+        # without the silent-MITM exposure of `no`.
+        assert "StrictHostKeyChecking=accept-new" in rendered
         assert "StrictHostKeyChecking=no" not in rendered
         assert "UserKnownHostsFile=/dev/null" not in rendered
 
@@ -326,7 +329,7 @@ class TestGdcRenderers:
 
         assert f"install -m 755 {config.staging_bundle_dir}/bmctl /usr/local/sbin/bmctl" in rendered
         assert "anthos-baremetal-release" not in rendered
-        assert "StrictHostKeyChecking yes" in rendered
+        assert "StrictHostKeyChecking accept-new" in rendered
         assert "StrictHostKeyChecking no" not in rendered
         assert "UserKnownHostsFile /dev/null" not in rendered
 
@@ -370,6 +373,72 @@ class TestGdcRenderers:
         assert '"cluster_id": "cluster1"' in rendered
         assert '"vxlan_cidr": "10.200.0.0/24"' in rendered
         assert '"network_interface": "vxlan0"' in rendered
+
+
+class TestRewriteGdcKubeconfig:
+    """Tests for repointing the provisioner kubeconfig at the platform LB."""
+
+    _BMCTL_KUBECONFIG = (
+        "apiVersion: v1\n"
+        "clusters:\n"
+        "- cluster:\n"
+        "    certificate-authority-data: QUFB\n"
+        "    server: https://10.200.0.49:443\n"
+        "  name: cluster1\n"
+        "contexts:\n"
+        "- context:\n"
+        "    cluster: cluster1\n"
+        "    user: cluster1-admin\n"
+        "  name: cluster1-admin@cluster1\n"
+        "current-context: cluster1-admin@cluster1\n"
+        "users:\n"
+        "- name: cluster1-admin\n"
+        "  user:\n"
+        "    client-certificate-data: Q0ND\n"
+        "    client-key-data: S0tL\n"
+    )
+
+    def test_repoints_server_and_drops_ca_for_lb_endpoint(self):
+        rewritten = deploy.rewrite_gdc_kubeconfig_for_platform_access(self._BMCTL_KUBECONFIG, "10.240.0.8")
+
+        assert "    server: https://10.240.0.8:6444" in rewritten
+        assert "    insecure-skip-tls-verify: true" in rewritten
+        assert "certificate-authority-data" not in rewritten
+        assert "10.200.0.49" not in rewritten
+        assert "client-certificate-data: Q0ND" in rewritten
+        assert "client-key-data: S0tL" in rewritten
+        assert "current-context: cluster1-admin@cluster1" in rewritten
+
+    def test_honors_explicit_port_in_endpoint(self):
+        rewritten = deploy.rewrite_gdc_kubeconfig_for_platform_access(self._BMCTL_KUBECONFIG, "10.240.0.8:8443")
+
+        assert "    server: https://10.240.0.8:8443" in rewritten
+
+    def test_sync_rewrites_when_endpoint_configured(self):
+        config = deploy.GDCBootstrapConfig(
+            project_id="prod-rwctxzl6shxk",
+            cluster_id="cluster1",
+            control_plane_platform_endpoint="10.240.0.8",
+        )
+        captured: dict[str, str] = {}
+
+        def fake_subprocess_run(cmd, *args, **kwargs):
+            if cmd[:3] == ["gcloud", "secrets", "describe"]:
+                return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+            if cmd[:3] == ["gcloud", "compute", "ssh"]:
+                return subprocess.CompletedProcess(cmd, 0, stdout=self._BMCTL_KUBECONFIG, stderr="")
+            if cmd[:4] == ["gcloud", "secrets", "versions", "access"]:
+                return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="NOT_FOUND: version not found")
+            if cmd[:4] == ["gcloud", "secrets", "versions", "add"] and "--data-file" in cmd:
+                captured["payload"] = Path(cmd[cmd.index("--data-file") + 1]).read_text()
+            return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+        with patch("deploy.subprocess.run", side_effect=fake_subprocess_run):
+            deploy.sync_gdc_access_secret(config)
+
+        assert "10.240.0.8:6444" in captured["payload"]
+        assert "insecure-skip-tls-verify" in captured["payload"]
+        assert "10.200.0.49" not in captured["payload"]
 
 
 class TestGdcBootstrapCluster:
@@ -677,11 +746,15 @@ class TestGdcBootstrapPrerequisites:
 
         with (
             patch("deploy.gcloud_resource_exists", return_value=True),
-            patch("deploy.run_cmd") as mock_run_cmd,
+            patch("deploy.run_cmd"),
+            patch(
+                "subprocess.run",
+                return_value=subprocess.CompletedProcess(["gcloud"], 0, stdout="", stderr=""),
+            ) as mock_subprocess,
         ):
             deploy.ensure_gdc_service_account(config)
 
-        granted_roles = [call.args[0][7] for call in mock_run_cmd.call_args_list]
+        granted_roles = [call.args[0][7] for call in mock_subprocess.call_args_list]
         assert "roles/compute.viewer" in granted_roles
 
     def test_gdc_service_account_waits_for_visibility_after_create(self):
@@ -691,6 +764,10 @@ class TestGdcBootstrapPrerequisites:
         with (
             patch("deploy.gcloud_resource_exists", side_effect=[False, False, False, True]),
             patch("deploy.run_cmd") as mock_run_cmd,
+            patch(
+                "subprocess.run",
+                return_value=subprocess.CompletedProcess(["gcloud"], 0, stdout="", stderr=""),
+            ) as mock_subprocess,
             patch("deploy.time.sleep") as mock_sleep,
         ):
             deploy.ensure_gdc_service_account(config)
@@ -703,7 +780,7 @@ class TestGdcBootstrapPrerequisites:
         ]
         assert any(
             call.args[0][0:3] == ["gcloud", "projects", "add-iam-policy-binding"]
-            for call in mock_run_cmd.call_args_list
+            for call in mock_subprocess.call_args_list
         )
         assert mock_sleep.call_count == 2
 

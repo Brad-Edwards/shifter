@@ -23,6 +23,7 @@ from ._common import (
 if TYPE_CHECKING:
     from django.contrib.auth.models import User
 
+    from shared.enums import RangeSource
     from shared.schemas.range import RangeContext
 
 logger = logging.getLogger(__name__)
@@ -177,11 +178,12 @@ def get_range(user: User, range_id: int) -> RangeInstance:
         raise
 
 
-def get_active_range(user: User) -> RangeContext | None:
+def get_active_range(user: User, range_source: RangeSource | None = None) -> RangeContext | None:
     """Get user's active (non-deleted) range as a RangeContext projection.
 
     Returns the most recently created range that:
     - Belongs to the user
+    - Matches the given range_source (default: MISSION_CONTROL)
     - Is not soft-deleted (deleted_at is None)
 
     Note: Terminal statuses (DESTROYED, FAILED) automatically set deleted_at
@@ -195,17 +197,23 @@ def get_active_range(user: User) -> RangeContext | None:
 
     Args:
         user: User whose active range to retrieve
+        range_source: Provenance filter — which product path to query.
+            Defaults to MISSION_CONTROL so existing MC callers need no edits.
 
     Returns:
-        RangeContext if user has an active range, None otherwise
+        RangeContext if user has an active range for the given source, None otherwise
 
     Raises:
         TypeError: If user is None or invalid type
         ValidationError: If RangeContext creation fails validation
         Exception: Database errors are logged and propagated
     """
+    from shared.enums import RangeSource as _RangeSource
     from shared.enums import ResourceStatus
     from shared.schemas import InstanceContext, RangeContext
+
+    if range_source is None:
+        range_source = _RangeSource.MISSION_CONTROL
 
     if user is None:
         logger.error("get_active_range called with None user")
@@ -219,11 +227,11 @@ def get_active_range(user: User) -> RangeContext | None:
         msg = f"user must be a User instance, got {type(user).__name__}"
         raise TypeError(msg)
 
-    logger.debug("get_active_range called for user_id=%s", user.id)
+    logger.debug("get_active_range called for user_id=%s range_source=%s", user.id, range_source.value)
 
     try:
         instance = (
-            RangeInstance.objects.filter(user_id=user.id)
+            RangeInstance.objects.filter(user_id=user.id, range_source=range_source.value)
             .exclude(status=ResourceStatus.DESTROYING.value)
             .select_related("agent", "request")
             .order_by("-created_at")
@@ -272,8 +280,8 @@ def get_active_range(user: User) -> RangeContext | None:
         return None
 
 
-def has_ready_active_range(user: User) -> bool:
-    """Return whether the user's latest active range is READY, cheaply.
+def has_ready_active_range(user: User, range_source: RangeSource | None = None) -> bool:
+    """Return whether the user's latest active range for a source is READY, cheaply.
 
     Mirrors :func:`get_active_range`'s ownership filter and ``has_active_range``
     semantics (the most recently created non-DESTROYING range is READY) but reads
@@ -284,20 +292,26 @@ def has_ready_active_range(user: User) -> bool:
 
     Args:
         user: User whose active-range readiness to check.
+        range_source: Provenance filter. Defaults to MISSION_CONTROL so the
+            MC sidebar indicator reflects only Mission Control ranges.
 
     Returns:
-        True if the user's most recent non-DESTROYING range is READY.
+        True if the user's most recent non-DESTROYING range for the source is READY.
 
     Raises:
         TypeError: If user is None or an invalid type.
         ValueError: If user is unsaved (id is None).
     """
+    from shared.enums import RangeSource as _RangeSource
     from shared.enums import ResourceStatus
+
+    if range_source is None:
+        range_source = _RangeSource.MISSION_CONTROL
 
     _validate_caller_user(user, "has_ready_active_range")
 
     status = (
-        RangeInstance.objects.filter(user_id=user.id)
+        RangeInstance.objects.filter(user_id=user.id, range_source=range_source.value)
         .exclude(status=ResourceStatus.DESTROYING.value)
         .order_by("-created_at")
         .values_list("status", flat=True)

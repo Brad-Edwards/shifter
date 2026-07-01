@@ -28,10 +28,11 @@ def user(db):
     return User.objects.create_user(username="cms-range@example.com", email="cms-range@example.com")
 
 
-def _range_instance(user, *, range_id=None, scenario_id="basic", status="provisioning", agent=None):
-    return RangeInstance.objects.create(
-        scenario_id=scenario_id, user_id=user.id, range_id=range_id, status=status, agent=agent
-    )
+def _range_instance(user, *, range_id=None, scenario_id="basic", status="provisioning", agent=None, range_source=None):
+    kwargs = {"scenario_id": scenario_id, "user_id": user.id, "range_id": range_id, "status": status, "agent": agent}
+    if range_source is not None:
+        kwargs["range_source"] = range_source
+    return RangeInstance.objects.create(**kwargs)
 
 
 class TestListRanges:
@@ -266,3 +267,122 @@ class TestHasReadyActiveRange:
         with CaptureQueriesContext(connection) as ctx:
             services.has_ready_active_range(user)
         assert len(ctx.captured_queries) == 1
+
+
+class TestRangeSourceAdmission:
+    """Per-source admission: a user can hold one MC range and one CTF range simultaneously.
+
+    These are the primary behavior tests for issue #450. They drive the real
+    create_range / get_active_range stack against real DB rows so the admission
+    filter and the persistence of range_source are both exercised.
+    """
+
+    def test_user_with_mc_range_can_create_ctf_range(self, user, make_agent, hydratable_scenario):
+        """Active MC range must not block a CTF range creation (root-cause fix)."""
+        from shared.enums import RangeSource
+
+        agent = make_agent(user)
+        # Create a MC range (default)
+        services.create_range(user, hydratable_scenario.scenario_id, {"windows": agent.id})
+        # Creating a CTF range must succeed even though an MC range is active.
+        result = services.create_range(
+            user,
+            hydratable_scenario.scenario_id,
+            {"windows": agent.id},
+            range_source=RangeSource.CTF,
+        )
+        assert result is not None
+
+    def test_second_mc_range_still_blocked(self, user, make_agent, hydratable_scenario):
+        """Same-source MC admission is unchanged: second MC range is rejected."""
+        agent = make_agent(user)
+        services.create_range(user, hydratable_scenario.scenario_id, {"windows": agent.id})
+        with pytest.raises(CMSError, match="already have an active range"):
+            services.create_range(user, hydratable_scenario.scenario_id, {"windows": agent.id})
+
+    def test_second_ctf_range_still_blocked(self, user, make_agent, hydratable_scenario):
+        """Same-source CTF admission is unchanged: second CTF range is rejected."""
+        from shared.enums import RangeSource
+
+        agent = make_agent(user)
+        services.create_range(
+            user,
+            hydratable_scenario.scenario_id,
+            {"windows": agent.id},
+            range_source=RangeSource.CTF,
+        )
+        with pytest.raises(CMSError, match="already have an active range"):
+            services.create_range(
+                user,
+                hydratable_scenario.scenario_id,
+                {"windows": agent.id},
+                range_source=RangeSource.CTF,
+            )
+
+    def test_get_active_range_bare_call_returns_mc_range(self, user):
+        """Bare get_active_range(user) keeps MC semantics (backward-compat)."""
+        _range_instance(user, range_id=1, status="ready")  # MC default
+        result = services.get_active_range(user)
+        assert result is not None
+
+    def test_get_active_range_mc_does_not_return_ctf_range(self, user):
+        """get_active_range(user, MISSION_CONTROL) must ignore CTF rows."""
+        from shared.enums import RangeSource
+
+        _range_instance(user, range_id=1, status="ready", range_source=RangeSource.CTF.value)
+        result = services.get_active_range(user, RangeSource.MISSION_CONTROL)
+        assert result is None
+
+    def test_get_active_range_ctf_returns_ctf_range(self, user):
+        """get_active_range(user, CTF) must return a CTF-sourced row."""
+        from shared.enums import RangeSource
+
+        _range_instance(user, range_id=1, status="ready", range_source=RangeSource.CTF.value)
+        result = services.get_active_range(user, RangeSource.CTF)
+        assert result is not None
+
+    def test_get_active_range_separates_mc_and_ctf_rows(self, user):
+        """With both sources active, each get_active_range(user, source) returns its own row."""
+        from shared.enums import RangeSource
+
+        mc_ri = _range_instance(user, range_id=1, status="ready")
+        ctf_ri = _range_instance(user, range_id=2, status="ready", range_source=RangeSource.CTF.value)
+
+        mc_result = services.get_active_range(user, RangeSource.MISSION_CONTROL)
+        ctf_result = services.get_active_range(user, RangeSource.CTF)
+
+        assert mc_result is not None
+        assert ctf_result is not None
+        assert mc_result.range_id == mc_ri.range_id
+        assert ctf_result.range_id == ctf_ri.range_id
+
+    def test_range_source_defaults_to_mission_control_on_model(self, user):
+        """RangeInstance.range_source defaults to 'mission_control' for new rows."""
+        from shared.enums import RangeSource
+
+        ri = _range_instance(user, range_id=1)
+        ri.refresh_from_db()
+        assert ri.range_source == RangeSource.MISSION_CONTROL.value
+
+    def test_create_range_persists_ctf_source(self, user, make_agent, hydratable_scenario):
+        """create_range(range_source=CTF) persists 'ctf' on the RangeInstance row."""
+        from shared.enums import RangeSource
+
+        agent = make_agent(user)
+        services.create_range(
+            user,
+            hydratable_scenario.scenario_id,
+            {"windows": agent.id},
+            range_source=RangeSource.CTF,
+        )
+        ri = RangeInstance.objects.get(user_id=user.id)
+        assert ri.range_source == RangeSource.CTF.value
+
+    def test_create_range_default_persists_mc_source(self, user, make_agent, hydratable_scenario):
+        """create_range() with no range_source persists 'mission_control' on the row."""
+        from shared.enums import RangeSource
+
+        agent = make_agent(user)
+        services.create_range(user, hydratable_scenario.scenario_id, {"windows": agent.id})
+        ri = RangeInstance.objects.get(user_id=user.id)
+        assert ri.range_source == RangeSource.MISSION_CONTROL.value

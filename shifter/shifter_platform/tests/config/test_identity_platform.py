@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -54,9 +55,52 @@ def test_platform_login_renders_provider_driven_identity_page(client):
 
     assert response.status_code == 200
     assert b"identity_platform_auth.js" in response.content
-    assert b"firebase-ui-auth.js" in response.content
-    assert b'id="firebaseui-auth-container"' in response.content
-    assert b'id="identity-signin-form"' not in response.content
+    # Native email + password sign-in form (FirebaseUI's email-first flow is
+    # incompatible with email enumeration protection, so it was removed).
+    assert b'id="identity-email"' in response.content
+    assert b'id="identity-password"' in response.content
+    assert b'id="identity-auth-submit"' in response.content
+    assert b'id="identity-auth-mode-toggle"' in response.content
+    assert b"firebaseui" not in response.content
+    assert b"firebase-ui-auth" not in response.content
+    # TOTP MFA enrollment is only available through the modular Firebase SDK, so
+    # the auth script is loaded as a module and the compat builds are not used.
+    assert b'type="module"' in response.content
+    assert b"firebase-app-compat" not in response.content
+    assert b"firebase-auth-compat" not in response.content
+
+
+@override_settings(
+    AUTH_PROVIDER="identity_platform",
+    DEBUG=False,
+    SITE_URL="https://portal.example.test",
+    IDENTITY_PLATFORM_API_KEY="test-api-key",
+    IDENTITY_PLATFORM_PROJECT_ID="test-project",
+)
+def test_platform_login_embeds_parseable_identity_config(client):
+    """The embedded ``json_script`` config must parse to a dict in one pass.
+
+    Regression for the double-encoding defect: the view used to pre-serialize the
+    config with ``json.dumps`` and the template re-encodes it via ``json_script``,
+    so the browser's single ``JSON.parse`` yielded a *string*, ``config.apiKey``
+    was ``undefined``, and Firebase init failed with ``auth/invalid-api-key`` —
+    leaving the login page stuck on "Loading authentication...".
+    """
+    response = client.get(reverse("platform_login"))
+    assert response.status_code == 200
+
+    match = re.search(
+        r'<script id="identity-platform-config" type="application/json">(.*?)</script>',
+        response.content.decode("utf-8"),
+        re.DOTALL,
+    )
+    assert match is not None, "identity-platform-config json_script block not rendered"
+
+    config = json.loads(match.group(1))
+    assert isinstance(config, dict), "embedded config must decode to an object, not a string"
+    assert config["apiKey"] == "test-api-key"
+    assert config["projectId"] == "test-project"
+    assert config["authDomain"] == "test-project.firebaseapp.com"
 
 
 @override_settings(

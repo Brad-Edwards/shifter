@@ -9,13 +9,16 @@ from pathlib import Path
 from textwrap import dedent
 
 from bootstrap_core import (
+    _GDC_APISERVER_BACKEND_PORT,
     _UNKNOWN_ERROR,
     _YAML_METADATA,
     GCP_IAP_TCP_SOURCE_RANGE,
     GDC_API_SERVICES,
     GDC_SERVICE_ACCOUNT_ROLES,
+    Colors,
     GDCBootstrapConfig,
     GDCHost,
+    _redact_argv_for_log,
     error,
     gcloud_resource_exists,
     get_latest_gcp_secret_payload,
@@ -150,7 +153,9 @@ def render_gdc_prepare_workstation_script(config: GDCBootstrapConfig) -> str:
         install -m 644 {config.staging_bundle_dir}/id_rsa.pub /root/.ssh/id_rsa.pub
         install -m 600 {config.staging_bundle_dir}/bm-gcr.json /root/bm-gcr.json
         install -m 755 {config.staging_bundle_dir}/bmctl /usr/local/sbin/bmctl
-        printf 'Host *\\n  StrictHostKeyChecking yes\\n  BatchMode yes\\n' >/root/.ssh/config
+        # accept-new pins each freshly created node's host key on first contact
+        # while still rejecting a changed key on later connections.
+        printf 'Host *\\n  StrictHostKeyChecking accept-new\\n  BatchMode yes\\n' >/root/.ssh/config
         chmod 600 /root/.ssh/config
         """
     )
@@ -187,7 +192,7 @@ def render_gdc_prepare_hosts_script(config: GDCBootstrapConfig) -> str:
         "configure_remote_host() {",
         '  local host_ip="$1"',
         '  local vxlan_ip="$2"',
-        "  ssh -o StrictHostKeyChecking=yes -o BatchMode=yes \\",
+        "  ssh -o StrictHostKeyChecking=accept-new -o BatchMode=yes \\",
         '    "root@${host_ip}" "bash -s" -- "${vxlan_ip}" <<\'EOF\'',
         "set -euo pipefail",
         'vxlan_ip="$1"',
@@ -263,6 +268,24 @@ def render_gdc_install_helper_script(config: GDCBootstrapConfig) -> str:
         chmod +x /usr/local/bin/shifter-gdc-kubeconfig
         """
     )
+
+
+def rewrite_gdc_kubeconfig_for_platform_access(kubeconfig: str, endpoint: str) -> str:
+    """Repoint a bmctl kubeconfig at a platform-reachable control-plane endpoint."""
+    host, _, port = endpoint.partition(":")
+    server = f"https://{host}:{port or _GDC_APISERVER_BACKEND_PORT}"
+    out: list[str] = []
+    for line in kubeconfig.splitlines():
+        stripped = line.lstrip()
+        indent = line[: len(line) - len(stripped)]
+        if stripped.startswith("server:"):
+            out.append(f"{indent}server: {server}")
+            out.append(f"{indent}insecure-skip-tls-verify: true")
+            continue
+        if stripped.startswith(("certificate-authority-data:", "certificate-authority:")):
+            continue
+        out.append(line)
+    return "\n".join(out) + ("\n" if kubeconfig.endswith("\n") else "")
 
 
 def build_gdc_access_secret_payload(config: GDCBootstrapConfig, kubeconfig: str) -> str:
@@ -472,6 +495,66 @@ def wait_for_gdc_service_account_visible(
     )
 
 
+def _is_retryable_gcp_iam_binding_error(message: str) -> bool:
+    """Return True when a project IAM binding failed with a transient race."""
+    normalized_message = message.lower()
+    member_not_yet_visible = "does not exist" in normalized_message and "service account" in normalized_message
+    concurrent_policy_change = (
+        "concurrent policy change" in normalized_message
+        or "the subject of a conflict" in normalized_message
+        or ("etag" in normalized_message and "did not match" in normalized_message)
+    )
+    return member_not_yet_visible or concurrent_policy_change
+
+
+def add_project_iam_binding_with_retry(
+    project_id: str,
+    member: str,
+    role: str,
+    *,
+    dry_run: bool = False,
+    max_attempts: int = 12,
+    sleep_seconds: int = 5,
+) -> None:
+    """Bind a project IAM role, retrying member propagation and ETag races."""
+    binding_cmd = [
+        "gcloud",
+        "projects",
+        "add-iam-policy-binding",
+        project_id,
+        "--member",
+        member,
+        "--role",
+        role,
+        "--no-user-output-enabled",
+    ]
+    if dry_run:
+        print(f"{Colors.BLUE}[DRY-RUN] Would run: {_redact_argv_for_log(binding_cmd)}{Colors.END}")
+        return
+
+    info(f"Running: {_redact_argv_for_log(binding_cmd)}")
+    for attempt in range(1, max_attempts + 1):
+        result = subprocess.run(binding_cmd, capture_output=True, text=True, check=False)  # nosec B603 B607
+        if result.stdout:
+            print(result.stdout, end="")
+        if result.stderr:
+            print(result.stderr, end="", file=sys.stderr)
+        if result.returncode == 0:
+            return
+
+        combined_output = "\n".join(part for part in (result.stdout, result.stderr) if part).strip()
+        if _is_retryable_gcp_iam_binding_error(combined_output) and attempt < max_attempts:
+            warn(
+                f"Transient IAM binding race for {role} on {member}; "
+                f"retrying in {sleep_seconds}s ({attempt}/{max_attempts})"
+            )
+            time.sleep(sleep_seconds)
+            continue
+
+        error(f"Command failed: Command '{' '.join(binding_cmd)}' returned non-zero exit status {result.returncode}.")
+        sys.exit(1)
+
+
 def ensure_gdc_service_account(config: GDCBootstrapConfig, dry_run: bool = False) -> None:
     """Create the shared GDC service account and grant the required project roles."""
     service_account_exists = gcloud_resource_exists(
@@ -505,20 +588,7 @@ def ensure_gdc_service_account(config: GDCBootstrapConfig, dry_run: bool = False
 
     member = f"serviceAccount:{config.service_account_email}"
     for role in GDC_SERVICE_ACCOUNT_ROLES:
-        run_cmd(
-            [
-                "gcloud",
-                "projects",
-                "add-iam-policy-binding",
-                config.project_id,
-                "--member",
-                member,
-                "--role",
-                role,
-                "--no-user-output-enabled",
-            ],
-            dry_run=dry_run,
-        )
+        add_project_iam_binding_with_retry(config.project_id, member, role, dry_run=dry_run)
 
 
 def ensure_gdc_access_secret(config: GDCBootstrapConfig, dry_run: bool = False) -> None:
@@ -844,7 +914,7 @@ def get_gdc_instance_ssh_metadata(config: GDCBootstrapConfig, host_name: str) ->
 
 def sync_gdc_instance_ssh_metadata(config: GDCBootstrapConfig, ssh_metadata_path: Path, dry_run: bool = False) -> None:
     """Ensure all instances trust the current bootstrap key pair."""
-    expected_metadata = ssh_metadata_path.read_text().strip()
+    expected_metadata = "" if dry_run else ssh_metadata_path.read_text().strip()
     for host in config.all_hosts:
         if not dry_run:
             current_metadata = get_gdc_instance_ssh_metadata(config, host.name).strip()
@@ -986,7 +1056,10 @@ def fetch_gdc_kubeconfig(config: GDCBootstrapConfig, dry_run: bool = False) -> s
     if result is None or not result.stdout.strip():
         error("Failed to read the GDC kubeconfig from the admin workstation")
         sys.exit(1)
-    return result.stdout
+    kubeconfig = result.stdout
+    if config.control_plane_platform_endpoint:
+        kubeconfig = rewrite_gdc_kubeconfig_for_platform_access(kubeconfig, config.control_plane_platform_endpoint)
+    return kubeconfig
 
 
 def sync_gdc_access_secret(config: GDCBootstrapConfig, dry_run: bool = False) -> None:

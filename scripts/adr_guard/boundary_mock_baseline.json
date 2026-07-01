@@ -81,7 +81,7 @@
       "target": "deploy.Path.home"
     },
     {
-      "count": 2,
+      "count": 3,
       "path": "scripts/bootstrap/tests/test_gcp_control_plane.py",
       "target": "deploy._gcp_identity_access_token"
     },
@@ -136,7 +136,7 @@
       "target": "deploy.list_gcp_helm_cutover_resources"
     },
     {
-      "count": 4,
+      "count": 3,
       "path": "scripts/bootstrap/tests/test_gcp_control_plane.py",
       "target": "deploy.load_bootstrap_env_values"
     },
@@ -176,7 +176,7 @@
       "target": "deploy.run_gcp_terraform_init_with_retry"
     },
     {
-      "count": 6,
+      "count": 10,
       "path": "scripts/bootstrap/tests/test_gcp_control_plane.py",
       "target": "deploy.shutil.which"
     },
@@ -191,7 +191,7 @@
       "target": "deploy.time.sleep"
     },
     {
-      "count": 2,
+      "count": 4,
       "path": "scripts/bootstrap/tests/test_gcp_control_plane.py",
       "target": "deploy.urllib_request.urlopen"
     },
@@ -424,11 +424,6 @@
       "count": 2,
       "path": "shifter/engine/provisioner/tests/test_config.py",
       "target": "cloud.get_secrets_store"
-    },
-    {
-      "count": 2,
-      "path": "shifter/engine/provisioner/tests/test_executor_factory.py",
-      "target": "executors.factory.GuestSSHExecutor"
     },
     {
       "count": 1,

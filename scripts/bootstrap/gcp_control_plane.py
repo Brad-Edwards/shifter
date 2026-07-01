@@ -16,6 +16,7 @@ from urllib import parse as urllib_parse
 from urllib import request as urllib_request
 
 from bootstrap_core import (
+    _GDC_APISERVER_BACKEND_PORT,
     _GDC_SCENARIO_POD_KALI_IMAGE,
     _GKE_WORKLOAD_IDENTITY_ANNOTATION,
     _UNKNOWN_ERROR,
@@ -40,6 +41,7 @@ from bootstrap_core import (
     warn,
 )
 from gdc_cluster import (
+    add_project_iam_binding_with_retry,
     ensure_gdc_apis,
     ensure_gdc_instances,
     ensure_gdc_network,
@@ -165,20 +167,22 @@ def render_gcp_platform_runtime_env(
         "GDC_VMSERIES_BOOTSTRAP_XML_TEMPLATE_SECRET_ID=",
         "# Guest access defaults for VM Runtime assets.",
         *_sample_guest_access_defaults(),
-        "# Set these to the VM Runtime boot images for each guest class.",
-        "GDC_KALI_IMAGE_URL=",
+        "# VM Runtime boot images, exported by the packer-gcp pipeline to the GDC",
+        "# VM image bucket. DISK_SIZE_GIB must be >= the exported qcow2 virtual",
+        "# size (the GCE builder disk size): ubuntu 20, kali 40, windows/dc 64.",
+        f"GDC_KALI_IMAGE_URL={config.gdc_vm_image_url('kali')}",
         "GDC_KALI_VCPUS=2",
         "GDC_KALI_MEMORY=4Gi",
-        "GDC_KALI_DISK_SIZE_GIB=20",
-        "GDC_UBUNTU_IMAGE_URL=",
+        "GDC_KALI_DISK_SIZE_GIB=40",
+        f"GDC_UBUNTU_IMAGE_URL={config.gdc_vm_image_url('ubuntu')}",
         "GDC_UBUNTU_VCPUS=1",
         "GDC_UBUNTU_MEMORY=2Gi",
         "GDC_UBUNTU_DISK_SIZE_GIB=20",
-        "GDC_WINDOWS_IMAGE_URL=",
+        f"GDC_WINDOWS_IMAGE_URL={config.gdc_vm_image_url('windows')}",
         "GDC_WINDOWS_VCPUS=2",
         "GDC_WINDOWS_MEMORY=8Gi",
         "GDC_WINDOWS_DISK_SIZE_GIB=64",
-        "GDC_DC_IMAGE_URL=",
+        f"GDC_DC_IMAGE_URL={config.gdc_vm_image_url('dc')}",
         "GDC_DC_VCPUS=2",
         "GDC_DC_MEMORY=8Gi",
         "GDC_DC_DISK_SIZE_GIB=64",
@@ -267,9 +271,9 @@ def load_bootstrap_env_values() -> dict[str, str]:
     return values
 
 
-def resolve_gcp_bootstrap_operator_credentials() -> tuple[str, str] | None:
+def resolve_gcp_bootstrap_operator_credentials(env_values: dict[str, str] | None = None) -> tuple[str, str] | None:
     """Resolve the first operator email/password for the GCP identity bootstrap."""
-    values = load_bootstrap_env_values()
+    values = load_bootstrap_env_values() if env_values is None else env_values
 
     email = (
         values.get("GCP_BOOTSTRAP_ADMIN_EMAIL")
@@ -478,6 +482,7 @@ def _helm_service_account_values(service_accounts: dict[str, str]) -> dict[str, 
     return {
         "portal": {"annotations": {_GKE_WORKLOAD_IDENTITY_ANNOTATION: service_accounts["portal"]}},
         "workers": {"annotations": {_GKE_WORKLOAD_IDENTITY_ANNOTATION: service_accounts["workers"]}},
+        "ctfScheduler": {"annotations": {_GKE_WORKLOAD_IDENTITY_ANNOTATION: service_accounts["ctf-scheduler"]}},
         "provisioner": {"annotations": {_GKE_WORKLOAD_IDENTITY_ANNOTATION: service_accounts["provisioner"]}},
     }
 
@@ -524,7 +529,11 @@ def _helm_backend_config_values(edge_policy_name: str) -> dict[str, object]:
     }
 
 
-def _helm_network_policy_values(private_service_cidrs: list[str]) -> dict[str, object]:
+def _helm_network_policy_values(
+    private_service_cidrs: list[str],
+    range_cluster_api_cidrs: list[str],
+    range_cluster_api_port: int,
+) -> dict[str, object]:
     """Return network-policy CIDR values for the Helm release."""
     return {
         "enabled": True,
@@ -537,6 +546,8 @@ def _helm_network_policy_values(private_service_cidrs: list[str]) -> dict[str, o
             "199.36.153.8/30",  # NOSONAR - private.googleapis.com VIP range.
         ],
         "privateServiceCidrs": private_service_cidrs,
+        "rangeClusterApiCidrs": range_cluster_api_cidrs,
+        "rangeClusterApiPort": range_cluster_api_port,
     }
 
 
@@ -562,6 +573,11 @@ def render_gcp_helm_values(
         bootstrap_operator_email=bootstrap_operator_email,
     )
     edge_policy_name = str(_get_output_value(outputs, "cloud_armor_security_policy_name")).strip()
+    # The range-provisioning Jobs reach the GDC range cluster apiserver through
+    # the internal TCP load balancer on the peered range VPC. Allow egress to
+    # exactly that endpoint host/port; empty until the endpoint is wired.
+    range_cluster_host, _, range_cluster_port = (config.control_plane_platform_endpoint or "").partition(":")
+    range_cluster_api_cidrs = _unique_nonempty_strings([_host_as_single_address_cidr(range_cluster_host)])
 
     return {
         "releaseNamespace": "shifter-system",
@@ -583,7 +599,11 @@ def render_gcp_helm_values(
             managed_tls_enabled=managed_tls_enabled,
         ),
         "services": _helm_backend_config_values(edge_policy_name),
-        "networkPolicy": _helm_network_policy_values(_gcp_private_service_cidrs(outputs)),
+        "networkPolicy": _helm_network_policy_values(
+            _gcp_private_service_cidrs(outputs),
+            range_cluster_api_cidrs,
+            int(range_cluster_port or _GDC_APISERVER_BACKEND_PORT),
+        ),
     }
 
 
@@ -871,19 +891,7 @@ def _ensure_terraform_bootstrap_service_account(config: GDCBootstrapConfig) -> N
 def _grant_terraform_bootstrap_iam(config: GDCBootstrapConfig, member: str, bucket_url: str) -> None:
     """Grant the bootstrap service account the project roles and state-bucket binding."""
     for role in GCP_TERRAFORM_BOOTSTRAP_ROLES:
-        run_cmd(
-            [
-                "gcloud",
-                "projects",
-                "add-iam-policy-binding",
-                config.project_id,
-                "--member",
-                member,
-                "--role",
-                role,
-                "--no-user-output-enabled",
-            ]
-        )
+        add_project_iam_binding_with_retry(config.project_id, member, role)
     run_cmd(
         [
             "gcloud",
@@ -1056,6 +1064,49 @@ def render_range_egress_tfvars(repo_root: Path, config_path: Path, output_path: 
     )
 
 
+def ensure_gcp_artifact_registry_service_identity(config: GDCBootstrapConfig, dry_run: bool = False) -> None:
+    """Force-create the Artifact Registry service agent before Terraform grants it IAM."""
+    service = "artifactregistry.googleapis.com"
+    if dry_run:
+        info(f"[DRY-RUN] Would provision the {service} service identity (P4SA)")
+        return
+
+    # Terraform also enables the service, but the service identity must exist
+    # before Terraform grants that identity the CMEK encrypter role.
+    run_cmd(["gcloud", "services", "enable", service, "--project", config.project_id])
+
+    access_token = _gcp_identity_access_token()
+    url = (
+        "https://serviceusage.googleapis.com/v1beta1/"
+        f"projects/{config.project_id}/services/{service}:generateServiceIdentity"
+    )
+    parsed_url = urllib_parse.urlparse(url)
+    if parsed_url.scheme != "https" or parsed_url.netloc != "serviceusage.googleapis.com" or parsed_url.query:
+        raise RuntimeError(f"Refusing to call unexpected Service Usage endpoint: {url}")
+    request = urllib_request.Request(  # noqa: S310 - URL is validated immediately above
+        url,
+        data=b"",
+        headers={
+            "Authorization": f"Bearer {access_token}",
+            "Content-Type": "application/json",
+            "X-Goog-User-Project": config.project_id,
+        },
+        method="POST",
+    )
+    try:
+        with urllib_request.urlopen(request, timeout=30) as response:  # nosec B310  # noqa: S310
+            json.loads(response.read().decode("utf-8"))
+        success(f"Ensured {service} service identity exists")
+    except urllib_error.HTTPError as exc:  # pragma: no cover - exercised via unit tests with monkeypatch
+        body = exc.read().decode("utf-8") if exc.fp is not None else ""
+        try:
+            parsed = json.loads(body) if body else {}
+        except json.JSONDecodeError:
+            parsed = {}
+        message = parsed.get("error", {}).get("message", exc.reason)
+        raise RuntimeError(f"Failed to provision {service} service identity: {message}") from exc
+
+
 def apply_gcp_control_plane_terraform(
     config: GDCBootstrapConfig, dry_run: bool = False
 ) -> dict[str, dict[str, object]]:
@@ -1104,6 +1155,10 @@ def apply_gcp_control_plane_terraform(
     # Render the range egress bridge tfvars from shifter.yaml before Terraform consumes
     # the variables, so the deployed firewall matches settings.range_egress (#1015).
     render_range_egress_tfvars(repo_root, shifter_config_path, tf_dir / RANGE_EGRESS_BRIDGE_FILENAME, dry_run=dry_run)
+
+    # Provision the Artifact Registry service agent before Terraform grants it
+    # CMEK permissions; fresh projects do not have the identity yet.
+    ensure_gcp_artifact_registry_service_identity(config, dry_run=dry_run)
 
     original_dir = os.getcwd()
     os.chdir(tf_dir)
@@ -1199,7 +1254,9 @@ def push_gcp_control_plane_images(
         ),
         (
             f"{image_roots['pulumi-provisioner']}:{pinned_image_tag}",
-            repo_root / "shifter" / "engine" / "provisioner",
+            # The Dockerfile copies engine/provisioner/ and sibling cyberscript/
+            # paths, both relative to shifter/.
+            repo_root / "shifter",
             repo_root / "shifter" / "engine" / "provisioner" / "Dockerfile",
         ),
         (
@@ -1268,37 +1325,55 @@ def install_gke_gcloud_auth_plugin_user_space(dry_run: bool = False) -> None:
         destination_binary.chmod(0o755)
 
 
+def _gcloud_components_install_gke_plugin(dry_run: bool = False) -> bool:
+    """Install the GKE auth plugin via the gcloud component manager when available."""
+    if not shutil.which("gcloud"):
+        return False
+    if dry_run:
+        info("[DRY-RUN] Would run: gcloud components install gke-gcloud-auth-plugin --quiet")
+        return True
+    result = subprocess.run(  # nosec B603 B607
+        ["gcloud", "components", "install", "gke-gcloud-auth-plugin", "--quiet"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0 and result.stderr:
+        print(result.stderr, end="", file=sys.stderr)
+    return result.returncode == 0
+
+
+def _install_gke_plugin_via_apt(dry_run: bool = False) -> None:
+    """Install the GKE auth plugin via apt as a fallback."""
+    if not shutil.which("apt-get"):
+        error(
+            "gke-gcloud-auth-plugin is required for kubectl access to GKE and is not installed. "
+            "Automatic installation requires the gcloud component manager or apt-based package tooling."
+        )
+        sys.exit(1)
+    if os.geteuid() == 0:
+        command_prefix: list[str] = []
+    elif shutil.which("sudo"):
+        command_prefix = ["sudo"]
+    else:
+        install_gke_gcloud_auth_plugin_user_space(dry_run=dry_run)
+        return
+    run_cmd([*command_prefix, "apt-get", "update"], dry_run=dry_run)
+    run_cmd(
+        [*command_prefix, "apt-get", "install", "-y", "google-cloud-cli-gke-gcloud-auth-plugin"],
+        dry_run=dry_run,
+    )
+
+
 def ensure_gke_gcloud_auth_plugin(dry_run: bool = False) -> None:
     """Ensure the kubectl GKE auth plugin is present on the bootstrap host."""
     if shutil.which("gke-gcloud-auth-plugin"):
         return
 
-    if shutil.which("apt-get"):
-        command_prefix: list[str] = []
-        if os.geteuid() == 0:
-            warn("Installing gke-gcloud-auth-plugin for kubectl access to GKE")
-            run_cmd([*command_prefix, "apt-get", "update"], dry_run=dry_run)
-            run_cmd(
-                [*command_prefix, "apt-get", "install", "-y", "google-cloud-cli-gke-gcloud-auth-plugin"],
-                dry_run=dry_run,
-            )
-        elif shutil.which("sudo"):
-            command_prefix = ["sudo"]
-            warn("Installing gke-gcloud-auth-plugin for kubectl access to GKE")
-            run_cmd([*command_prefix, "apt-get", "update"], dry_run=dry_run)
-            run_cmd(
-                [*command_prefix, "apt-get", "install", "-y", "google-cloud-cli-gke-gcloud-auth-plugin"],
-                dry_run=dry_run,
-            )
-        else:
-            warn("Installing gke-gcloud-auth-plugin into ~/.local/bin for kubectl access to GKE")
-            install_gke_gcloud_auth_plugin_user_space(dry_run=dry_run)
-    else:
-        error(
-            "gke-gcloud-auth-plugin is required for kubectl access to GKE and is not installed. "
-            "Automatic installation requires apt-based package tooling."
-        )
-        sys.exit(1)
+    warn("Installing gke-gcloud-auth-plugin for kubectl access to GKE")
+
+    if not _gcloud_components_install_gke_plugin(dry_run=dry_run):
+        _install_gke_plugin_via_apt(dry_run=dry_run)
 
     if dry_run:
         return

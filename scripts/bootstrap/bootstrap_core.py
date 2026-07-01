@@ -359,6 +359,14 @@ class GDCBootstrapConfig:
     control_plane_vip: str = "10.200.0.49"
     ingress_vip: str = "10.200.0.50"
     address_pool: str = "10.200.0.50-10.200.0.70"
+    # Platform-reachable control-plane endpoint for the GKE-hosted provisioner
+    # (D23). The bmctl kubeconfig points at control_plane_vip, which lives on the
+    # cluster's VXLAN overlay and is unreachable from the platform VPC. Terraform
+    # fronts the control-plane nodes with an internal TCP load balancer on the
+    # peered range VPC and passes its address here so the stored kubeconfig is
+    # rewritten to a reachable endpoint. "host" or "host:port" (default port
+    # 6444, the kube-apiserver bundled-LB backend port).
+    control_plane_platform_endpoint: str | None = None
     machine_type: str = "n1-standard-8"
     boot_disk_size_gb: int = 200
     boot_disk_type: str = "pd-ssd"
@@ -453,6 +461,15 @@ class GDCBootstrapConfig:
         return f"shifter-{self.environment}-gdc-vm-image-gcs"
 
     @property
+    def gdc_vm_image_bucket(self) -> str:
+        """GCS bucket the packer-gcp image pipeline exports guest disks into."""
+        return f"shifter-{self.environment}-gdc-vm-images"
+
+    def gdc_vm_image_url(self, guest: str) -> str:
+        """gs:// URL of the exported VM Runtime boot disk for a guest class."""
+        return f"gs://{self.gdc_vm_image_bucket}/{guest}.qcow2"
+
+    @property
     def workstation(self) -> GDCHost:
         return GDCHost(
             name=f"{self.cluster_id}-abm-ws0-001",
@@ -501,19 +518,19 @@ def parse_env_file(path: Path) -> dict[str, str]:
 
 
 def read_gcp_control_plane_security_inputs(tf_dir: Path) -> dict[str, object]:
-    """Read the security-sensitive Terraform inputs from terraform.tfvars."""
-    tfvars_path = tf_dir / "terraform.tfvars"
-    contents = tfvars_path.read_text() if tfvars_path.exists() else ""
+    """Read security-sensitive Terraform inputs, honoring ``*.auto.tfvars`` overrides."""
+    tfvars_files = [tf_dir / "terraform.tfvars", *sorted(tf_dir.glob("*.auto.tfvars"))]
+    contents = "\n".join(path.read_text() for path in tfvars_files if path.exists())
 
-    public_hostname_match = re.search(r'(?m)^\s*public_hostname\s*=\s*"([^"]*)"\s*$', contents)
-    managed_tls_match = re.search(r"(?m)^\s*enable_managed_tls\s*=\s*(true|false)\s*$", contents)
-    cidr_block_match = re.search(r"gke_master_authorized_cidrs\s*=\s*\[(.*?)\]", contents, re.DOTALL)
+    public_hostname_matches = re.findall(r'(?m)^\s*public_hostname\s*=\s*"([^"]*)"\s*$', contents)
+    managed_tls_matches = re.findall(r"(?m)^\s*enable_managed_tls\s*=\s*(true|false)\s*$", contents)
+    cidr_block_matches = re.findall(r"gke_master_authorized_cidrs\s*=\s*\[(.*?)\]", contents, re.DOTALL)
 
     return {
-        "public_hostname": public_hostname_match.group(1).strip() if public_hostname_match else "",
-        "enable_managed_tls": bool(managed_tls_match and managed_tls_match.group(1) == "true"),
+        "public_hostname": public_hostname_matches[-1].strip() if public_hostname_matches else "",
+        "enable_managed_tls": bool(managed_tls_matches and managed_tls_matches[-1] == "true"),
         "gke_master_authorized_cidrs": (
-            [match.strip() for match in re.findall(r'"([^"]+)"', cidr_block_match.group(1))] if cidr_block_match else []
+            [match.strip() for match in re.findall(r'"([^"]+)"', cidr_block_matches[-1])] if cidr_block_matches else []
         ),
     }
 
@@ -615,6 +632,7 @@ def get_latest_gcp_secret_payload(secret_id: str, project_id: str) -> str | None
 
 
 _UNKNOWN_ERROR = "unknown error"
+_GDC_APISERVER_BACKEND_PORT = 6444
 _GKE_WORKLOAD_IDENTITY_ANNOTATION = "iam.gke.io/gcp-service-account"
 _GDC_SCENARIO_POD_KALI_IMAGE = (
     "docker.io/kalilinux/kali-rolling@sha256:256893c92bbd289b07d9ef8a62e75f9c7cb3d9e570fb3d3725b2e86b9acd5728"

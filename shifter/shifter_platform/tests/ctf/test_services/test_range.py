@@ -570,3 +570,71 @@ class TestGetProvisionProgress:
 
         assert progress["task"] is None
         assert progress["counts"]["total"] == 0
+
+
+class TestCmsBridgeRangeSource:
+    """Bridge seam: cms_create_range must forward range_source=RangeSource.CTF (#450).
+
+    DB-backed behavior test (ADR-019: assert observable behavior, do not patch the
+    first-party ``cms.services.create_range`` seam). Drives the real bridge ->
+    cms.services -> persistence stack and asserts the resulting range is stored
+    with CTF provenance, so a Mission Control range for the same user remains a
+    separate admission slot.
+    """
+
+    # Scenario that hydrates with a single Windows agent and no cloud calls,
+    # mirroring the CMS behavior-test fixture (tests/cms/conftest.py).
+    _HYDRATABLE_DEFINITION = {
+        "instances": [
+            {"name": "Attacker", "role": "attacker", "os_type": "kali", "xdr_agent": False},
+            {"name": "Target", "role": "victim", "os_type": "windows", "xdr_agent": True},
+        ],
+        "subnets": [{"name": "core", "instances": ["Attacker", "Target"]}],
+        "ngfw": False,
+    }
+
+    @pytest.fixture
+    def _ctf_scenario_and_agent(self, participant_user):
+        from cms.models import AgentConfig, OperatingSystem, Scenario
+
+        windows_os, _ = OperatingSystem.objects.get_or_create(
+            slug="windows", defaults={"name": "Windows", "extensions": [".msi"]}
+        )
+        scenario = Scenario.objects.create(
+            scenario_id="ctf-bridge-test",
+            name="CTF Bridge Test Range",
+            description="Hydratable scenario for the CTF bridge provenance test.",
+            definition=self._HYDRATABLE_DEFINITION,
+            created_by=participant_user,
+            updated_by=participant_user,
+        )
+        agent = AgentConfig.objects.create(
+            name="CTF Test XDR Agent",
+            s3_key="agents/test/agent.msi",
+            original_filename="agent.msi",
+            file_size_bytes=50_000_000,
+            sha256_hash="abc123",
+            user=participant_user,
+            os=windows_os,
+        )
+        return scenario, agent
+
+    def test_cms_create_range_persists_ctf_range_source(self, participant_user, _ctf_scenario_and_agent):
+        """ctf.bridges.cms_create_range stores the range with CTF provenance."""
+        from cms.models import RangeInstance
+        from ctf.bridges import cms_create_range
+        from shared.enums import RangeSource
+
+        scenario, agent = _ctf_scenario_and_agent
+
+        result = cms_create_range(
+            user=participant_user,
+            scenario=scenario.scenario_id,
+            agents_by_os={"windows": agent.id},
+            ngfw_enabled=False,
+        )
+
+        assert isinstance(result, RangeProvisionResult)
+        instance = RangeInstance.objects.get(request__request_id=result.request_id)
+        assert instance.range_source == RangeSource.CTF.value
+        assert instance.user_id == participant_user.id
