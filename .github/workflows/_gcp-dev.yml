@@ -361,9 +361,19 @@ jobs:
           )
           if replacements == 0:
             raise SystemExit(f"::error file={str(path)}::No image newTag entries found to pin")
-          else:
-            path.write_text(updated, encoding="utf-8")
-            print(f"Pinned {replacements} image tags in {path} to {short_sha}")
+
+          # The committed newName values carry a placeholder Artifact Registry
+          # project; rewrite it to the deployment's real AR project (taken from
+          # the build's PORTAL_IMAGE_ROOT) so pods pull from where the images were
+          # actually pushed, not the committed placeholder.
+          project = re.search(r"pkg\.dev/([^/]+)/", os.environ["PORTAL_IMAGE_ROOT"]).group(1)
+          updated, name_fixes = re.subn(
+            r"(?m)^(\s*newName:\s*\S*?pkg\.dev/)[^/]+/",
+            rf"\g<1>{project}/",
+            updated,
+          )
+          path.write_text(updated, encoding="utf-8")
+          print(f"Pinned {replacements} tags to {short_sha}; rewrote {name_fixes} image projects to {project}")
           PY
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
       - name: Build and push portal image
