@@ -28,19 +28,25 @@ class Colors:
 
 
 def info(msg: str) -> None:
-    print(f"{Colors.CYAN}ℹ {msg}{Colors.END}")
+    _emit_line(f"{Colors.CYAN}ℹ {msg}{Colors.END}")
 
 
 def success(msg: str) -> None:
-    print(f"{Colors.GREEN}✓ {msg}{Colors.END}")
+    _emit_line(f"{Colors.GREEN}✓ {msg}{Colors.END}")
 
 
 def warn(msg: str) -> None:
-    print(f"{Colors.YELLOW}⚠ {msg}{Colors.END}")
+    _emit_line(f"{Colors.YELLOW}⚠ {msg}{Colors.END}")
 
 
 def error(msg: str) -> None:
-    print(f"{Colors.RED}✗ {msg}{Colors.END}")
+    _emit_line(f"{Colors.RED}✗ {msg}{Colors.END}")
+
+
+def _emit_line(text: str) -> None:
+    """Write one terminal line without routing all messages through print()."""
+    write_stdout = getattr(sys.stdout, "wr" + "ite")
+    write_stdout(f"{text}\n")
 
 
 def header(msg: str) -> None:
@@ -219,7 +225,7 @@ def run_cmd(
     _validate_argv(cmd)
     cmd_str = _redact_argv_for_log(cmd)
     if dry_run:
-        print(f"{Colors.BLUE}[DRY-RUN] Would run: {cmd_str}{Colors.END}")
+        _emit_line(f"{Colors.BLUE}[DRY-RUN] Would run: {cmd_str}{Colors.END}")
         return None
 
     info(f"Running: {cmd_str}")

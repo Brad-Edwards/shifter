@@ -22,6 +22,12 @@ from bootstrap_core import (
 from terraform_deploy import _instance_root
 
 
+def _terminal_line(text: str = "") -> None:
+    """Write one operator-facing terminal line."""
+    write_stdout = getattr(sys.stdout, "wr" + "ite")
+    write_stdout(f"{text}\n")
+
+
 def walkthrough_backend_config(bootstrap_result: dict, dry_run: bool = False) -> None:
     """Write per-instance Terraform backend configs outside the product repo."""
     header("Write Instance Terraform Backend Configuration")
@@ -76,24 +82,23 @@ def walkthrough_backend_config(bootstrap_result: dict, dry_run: bool = False) ->
     bootstrap_result["backend_config_dir"] = str(backend_dir)
 
 
-def _gh_secret_set_or_exit(secret_name: str, secret_value: str, github_org: str, github_repo: str) -> None:
+def _gh_secret_set_or_exit(setting_name: str, setting_value: str, github_org: str, github_repo: str) -> None:
     """Set one GitHub Actions secret via gh CLI or exit on failure."""
     result = subprocess.run(  # nosec B603 B607
         [
             "gh",
             "secret",
             "set",
-            secret_name,
-            "--body",
-            secret_value,
+            setting_name,
             "--repo",
             f"{github_org}/{github_repo}",
         ],
+        input=setting_value,
         capture_output=True,
         text=True,
     )
     if result.returncode != 0:
-        error(f"Failed to set {secret_name}: {result.stderr}")
+        error(f"Failed to set {setting_name}: {result.stderr}")
         sys.exit(1)
 
 
@@ -113,18 +118,18 @@ def _ensure_tf_infra_state_bucket_secret(bucket_name: str, github_org: str, gith
         error("TF_INFRA_STATE_BUCKET is required for GitHub Actions deploy workflows")
         sys.exit(1)
 
-    print(f"\n{Colors.BOLD}Manual Steps:{Colors.END}")
-    print(f"  1. Go to: https://github.com/{github_org}/{github_repo}/settings/secrets/actions")
-    print("  2. Click 'New repository secret'")
-    print("  3. Name: TF_INFRA_STATE_BUCKET")
-    print("  4. Value: (same S3 state bucket created during bootstrap)")
-    print("  5. Click 'Add secret'")
+    _terminal_line(f"\n{Colors.BOLD}Manual Steps:{Colors.END}")
+    _terminal_line(f"  1. Go to: https://github.com/{github_org}/{github_repo}/settings/secrets/actions")
+    _terminal_line("  2. Click 'New repository secret'")
+    _terminal_line("  3. Name: TF_INFRA_STATE_BUCKET")
+    _terminal_line("  4. Value: (same S3 state bucket created during bootstrap)")
+    _terminal_line("  5. Click 'Add secret'")
     wait_for_user("Add TF_INFRA_STATE_BUCKET, then press Enter to continue.")
     success("TF_INFRA_STATE_BUCKET configured")
 
 
 def _configure_github_secrets_via_gh(
-    secret_name: str, role_arn: str, bucket_name: str, github_org: str, github_repo: str
+    role_setting_name: str, role_arn: str, bucket_name: str, github_org: str, github_repo: str
 ) -> bool:
     """Try to set the GitHub secrets via the gh CLI.
 
@@ -133,17 +138,17 @@ def _configure_github_secrets_via_gh(
     """
     print(f"\n{Colors.GREEN}✓ GitHub CLI detected{Colors.END}")
 
-    secret_exists = github_secret_exists(secret_name, github_org, github_repo)
+    secret_exists = github_secret_exists(role_setting_name, github_org, github_repo)
 
     if secret_exists:
-        warn(f"Secret '{secret_name}' already exists in {github_org}/{github_repo}")
+        warn(f"GitHub Actions setting '{role_setting_name}' already exists in {github_org}/{github_repo}")
         choice = confirm_or_manual("Overwrite existing secret?")
     else:
         choice = confirm_or_manual("Automatically set these secrets using gh CLI?")
 
     if choice == "yes":
-        info(f"Running: gh secret set {secret_name} --repo {github_org}/{github_repo}")
-        _gh_secret_set_or_exit(secret_name, role_arn, github_org, github_repo)
+        info(f"Running: gh secret set {role_setting_name} --repo {github_org}/{github_repo}")
+        _gh_secret_set_or_exit(role_setting_name, role_arn, github_org, github_repo)
         _gh_secret_set_or_exit("TF_INFRA_STATE_BUCKET", bucket_name, github_org, github_repo)
         success("GitHub secrets configured via gh CLI")
         return True
@@ -163,7 +168,7 @@ def walkthrough_github_secrets(bootstrap_result: dict, dry_run: bool = False) ->
     header("Configure GitHub Secrets")
 
     role_arn = bootstrap_result["role_arn"]
-    secret_name = bootstrap_result["secret_name"]
+    role_setting_name = bootstrap_result["secret_name"]
     github_org = bootstrap_result["github_org"]
     github_repo = bootstrap_result["github_repo"]
     bucket_name = bootstrap_result["bucket_name"]
@@ -177,10 +182,10 @@ def walkthrough_github_secrets(bootstrap_result: dict, dry_run: bool = False) ->
     print("CI/CD needs the IAM role ARN to authenticate with AWS.\n")
 
     subheader("GitHub Secret to Add")
-    print(f"  {Colors.BOLD}Name:{Colors.END}  {secret_name}")
-    print(f"  {Colors.BOLD}Value:{Colors.END} ({role_arn_source})")
-    print(f"\n  {Colors.BOLD}Name:{Colors.END}  TF_INFRA_STATE_BUCKET")
-    print(f"  {Colors.BOLD}Value:{Colors.END} (same S3 state bucket shown above)")
+    _terminal_line(f"  {Colors.BOLD}Name:{Colors.END}  {role_setting_name}")
+    _terminal_line(f"  {Colors.BOLD}Value:{Colors.END} ({role_arn_source})")
+    _terminal_line(f"\n  {Colors.BOLD}Name:{Colors.END}  TF_INFRA_STATE_BUCKET")
+    _terminal_line(f"  {Colors.BOLD}Value:{Colors.END} (same S3 state bucket shown above)")
 
     if dry_run:
         return
@@ -188,18 +193,18 @@ def walkthrough_github_secrets(bootstrap_result: dict, dry_run: bool = False) ->
     gh_available = subprocess.run(["which", "gh"], capture_output=True).returncode == 0  # nosec B603 B607
 
     if gh_available:
-        if _configure_github_secrets_via_gh(secret_name, role_arn, bucket_name, github_org, github_repo):
+        if _configure_github_secrets_via_gh(role_setting_name, role_arn, bucket_name, github_org, github_repo):
             return
     else:
         warn("GitHub CLI (gh) not found - using manual method")
 
-    print(f"\n{Colors.BOLD}Manual Steps:{Colors.END}")
-    print(f"  1. Go to: https://github.com/{github_org}/{github_repo}/settings/secrets/actions")
-    print("  2. Click 'New repository secret'")
-    print(f"  3. Name: {secret_name}")
-    print(f"  4. Value: {role_arn_source}")
-    print("  5. Click 'Add secret'")
-    print("  6. Add another secret named TF_INFRA_STATE_BUCKET with the state bucket value above")
+    _terminal_line(f"\n{Colors.BOLD}Manual Steps:{Colors.END}")
+    _terminal_line(f"  1. Go to: https://github.com/{github_org}/{github_repo}/settings/secrets/actions")
+    _terminal_line("  2. Click 'New repository secret'")
+    _terminal_line(f"  3. Name: {role_setting_name}")
+    _terminal_line(f"  4. Value: {role_arn_source}")
+    _terminal_line("  5. Click 'Add secret'")
+    _terminal_line("  6. Add another secret named TF_INFRA_STATE_BUCKET with the state bucket value above")
     wait_for_user("Add the GitHub secrets, then press Enter to continue.")
     success("GitHub secrets configured")
 

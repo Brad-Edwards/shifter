@@ -281,8 +281,8 @@ class TestWalkthroughGithubSecrets:
             set_calls = [c for c in gh_calls if "set" in c[0][0]]
             assert len(set_calls) == 2
 
-    def test_includes_role_arn_in_gh_secret_command(self, bootstrap_config, mock_stdin_tty):
-        """Function passes correct role ARN to gh secret set."""
+    def test_passes_role_arn_to_gh_secret_stdin(self, bootstrap_config, mock_stdin_tty):
+        """Function passes the role ARN to gh over stdin, not argv."""
         bootstrap_result = self._bootstrap_result()
 
         with (
@@ -306,9 +306,9 @@ class TestWalkthroughGithubSecrets:
             gh_calls = [c for c in mock_run.call_args_list if c[0][0][0] == "gh" and "set" in c[0][0]]
             assert len(gh_calls) > 0
 
-            # Should include the role ARN
             cmd = gh_calls[0][0][0]
-            assert "arn:aws:iam::123456789012:role/test-role" in " ".join(cmd)
+            assert "arn:aws:iam::123456789012:role/test-role" not in " ".join(cmd)
+            assert gh_calls[0].kwargs["input"] == "arn:aws:iam::123456789012:role/test-role"
 
     # ---------------------------------------------------------------------
     # Manual fallback

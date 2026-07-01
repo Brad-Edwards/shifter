@@ -55,6 +55,8 @@ from gdc_cluster import (
     wait_for_gdc_ssh,
 )
 
+_GUACAMOLE_RUNTIME_RESOURCE_NAME = "guacamole-runtime"
+
 
 def _load_python_script_module(script_path: Path, module_name: str):
     """Load a local Python script as a module without changing repo packaging."""
@@ -555,12 +557,10 @@ def render_gcp_helm_values(
     config: GDCBootstrapConfig,
     outputs: dict[str, dict[str, object]],
     *,
-    guacamole_db_payload: dict[str, str],
-    guacamole_json_secret: str,
     image_tag: str,
     bootstrap_operator_email: str | None = None,
 ) -> dict[str, object]:
-    """Render Helm values for the Shifter release from Terraform outputs and runtime secrets."""
+    """Render non-secret Helm values for the Shifter release from Terraform outputs."""
     pinned_image_tag = validate_image_tag(image_tag)
     image_roots = _get_output_value(outputs, "artifact_registry_image_roots")
     service_accounts = _get_output_value(outputs, "workload_service_accounts")
@@ -584,13 +584,9 @@ def render_gcp_helm_values(
         "serviceAccounts": _helm_service_account_values(service_accounts),
         "runtimeEnv": runtime_env,
         "guacamoleRuntimeSecret": {
-            "enabled": True,
-            "name": "guacamole-runtime",
-            "stringData": {
-                "POSTGRESQL_USER": guacamole_db_payload["username"],
-                "POSTGRESQL_PASSWORD": guacamole_db_payload["password"],
-                "JSON_SECRET_KEY": guacamole_json_secret,
-            },
+            "enabled": False,
+            "name": _GUACAMOLE_RUNTIME_RESOURCE_NAME,
+            "stringData": {},
         },
         "images": _helm_image_values(image_roots, pinned_image_tag),
         "ingress": _helm_ingress_values(
@@ -1213,23 +1209,84 @@ def stage_gcp_control_plane_values(
     bootstrap_operator_email: str | None = None,
 ) -> Path:
     """Stage the generated Helm values file for the Shifter release."""
-    runtime_secret_ids = _get_output_value(outputs, "runtime_secret_ids")
-    guacamole_db_payload = json.loads(fetch_gcp_secret_payload(runtime_secret_ids["guacamole-db"], config.project_id))
-    guacamole_json_secret = fetch_gcp_secret_payload(
-        runtime_secret_ids["guacamole-json-auth"],
-        config.project_id,
-    ).strip()
     values = render_gcp_helm_values(
         config,
         outputs,
-        guacamole_db_payload=guacamole_db_payload,
-        guacamole_json_secret=guacamole_json_secret,
         image_tag=image_tag,
         bootstrap_operator_email=bootstrap_operator_email,
     )
     values_path = staging_root / "shifter.values.generated.json"
     values_path.write_text(json.dumps(values, indent=2, sort_keys=True))
     return values_path
+
+
+def render_gcp_guacamole_runtime_secret_manifest(
+    guacamole_db_payload: dict[str, str],
+    guacamole_json_auth_value: str,
+) -> dict[str, object]:
+    """Render the Kubernetes Secret manifest consumed by guacamole-client."""
+    return {
+        "apiVersion": "v1",
+        "kind": "Secret",
+        "metadata": {
+            "name": _GUACAMOLE_RUNTIME_RESOURCE_NAME,
+            "namespace": "shifter-platform",
+            "labels": {"app.kubernetes.io/part-of": "shifter"},
+        },
+        "type": "Opaque",
+        "stringData": {
+            "POSTGRESQL_USER": guacamole_db_payload["username"],
+            "POSTGRESQL_PASSWORD": guacamole_db_payload["password"],
+            "JSON_SECRET_KEY": guacamole_json_auth_value,
+        },
+    }
+
+
+def sync_gcp_guacamole_runtime_secret(
+    config: GDCBootstrapConfig,
+    outputs: dict[str, dict[str, object]],
+    *,
+    dry_run: bool = False,
+) -> bool:
+    """Sync guacamole-client runtime credentials to Kubernetes without writing them to disk."""
+    if dry_run:
+        info("[DRY-RUN] Would sync guacamole-runtime Kubernetes Secret from GCP Secret Manager")
+        return False
+
+    runtime_secret_ids = _get_output_value(outputs, "runtime_secret_ids")
+    guacamole_db_payload = json.loads(fetch_gcp_secret_payload(runtime_secret_ids["guacamole-db"], config.project_id))
+    guacamole_json_auth_value = fetch_gcp_secret_payload(
+        runtime_secret_ids["guacamole-json-auth"],
+        config.project_id,
+    ).strip()
+    manifest = render_gcp_guacamole_runtime_secret_manifest(guacamole_db_payload, guacamole_json_auth_value)
+    result = subprocess.run(  # nosec B603 B607
+        ["kubectl", "apply", "-f", "-"],
+        input=json.dumps(manifest),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.stdout:
+        print(result.stdout, end="")
+    if result.stderr:
+        print(result.stderr, end="", file=sys.stderr)
+    if result.returncode != 0:
+        raise RuntimeError("Failed to sync guacamole-runtime Kubernetes Secret")
+    status = result.stdout.strip().lower()
+    return "created" in status or "configured" in status
+
+
+def restart_gcp_guacamole_client(dry_run: bool = False) -> None:
+    """Restart guacamole-client so updated external Secret values are picked up."""
+    run_cmd(
+        ["kubectl", "-n", "shifter-platform", "rollout", "restart", "deployment/guacamole-client"],
+        dry_run=dry_run,
+    )
+    run_cmd(
+        ["kubectl", "-n", "shifter-platform", "rollout", "status", "deployment/guacamole-client", "--timeout=5m"],
+        dry_run=dry_run,
+    )
 
 
 def push_gcp_control_plane_images(
@@ -1596,6 +1653,7 @@ def deploy_gcp_control_plane_with_helm(
     )
     prepare_gcp_helm_cutover(dry_run=dry_run)
     ensure_gcp_control_plane_namespaces(dry_run=dry_run)
+    guacamole_runtime_changed = sync_gcp_guacamole_runtime_secret(config, outputs, dry_run=dry_run)
     run_cmd(
         [
             "helm",
@@ -1619,6 +1677,8 @@ def deploy_gcp_control_plane_with_helm(
         ],
         dry_run=dry_run,
     )
+    if guacamole_runtime_changed:
+        restart_gcp_guacamole_client(dry_run=dry_run)
 
 
 def get_gcp_managed_certificate_status(

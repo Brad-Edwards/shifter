@@ -648,8 +648,20 @@ class TestGdcControlPlaneRollout:
         chart_dir = Path(__file__).resolve().parents[3] / "platform" / "charts" / "shifter"
         environment_values_path = chart_dir / "values-gcp-dev.yaml"
 
+        def subprocess_run(cmd, **kwargs):
+            if cmd[:4] == ["gcloud", "secrets", "versions", "access"]:
+                secret_name = cmd[cmd.index("--secret") + 1]
+                if secret_name == "shifter-gcp-dev-guacamole-db":
+                    return subprocess.CompletedProcess(cmd, 0, stdout='{"username":"guac","password":"supersecret"}')
+                if secret_name == "shifter-gcp-dev-guacamole-json-auth":
+                    return subprocess.CompletedProcess(cmd, 0, stdout="json-auth-key\n")
+            if cmd == ["kubectl", "apply", "-f", "-"]:
+                return subprocess.CompletedProcess(cmd, 0, stdout="secret/guacamole-runtime configured\n", stderr="")
+            return subprocess.CompletedProcess(cmd, 1, stdout="", stderr=f"unexpected command: {cmd}")
+
         with (
             patch("deploy.run_cmd") as mock_run_cmd,
+            patch("deploy.subprocess.run", side_effect=subprocess_run),
             patch("deploy.ensure_gke_gcloud_auth_plugin") as mock_ensure_plugin,
             patch("deploy.prepare_gcp_helm_cutover") as mock_prepare_cutover,
             patch("deploy.ensure_gcp_control_plane_namespaces") as mock_ensure_namespaces,
@@ -691,6 +703,23 @@ class TestGdcControlPlaneRollout:
             "15m",
             "--history-max",
             "10",
+        ]
+        assert commands[2] == [
+            "kubectl",
+            "-n",
+            "shifter-platform",
+            "rollout",
+            "restart",
+            "deployment/guacamole-client",
+        ]
+        assert commands[3] == [
+            "kubectl",
+            "-n",
+            "shifter-platform",
+            "rollout",
+            "status",
+            "deployment/guacamole-client",
+            "--timeout=5m",
         ]
 
     def test_bootstrap_control_plane_creates_operator_before_helm_and_waits_for_dns_tls_after_release(self):
@@ -737,8 +766,8 @@ class TestGdcBootstrapPrerequisites:
 
         enable_call = mock_run_cmd.call_args_list[1]
         assert enable_call.args[0][:3] == ["gcloud", "services", "enable"]
-        assert "storage.googleapis.com" in enable_call.args[0]
-        assert "iap.googleapis.com" in enable_call.args[0]
+        enabled_services = set(enable_call.args[0])
+        assert {"storage.googleapis.com", "iap.googleapis.com"}.issubset(enabled_services)
 
     def test_gdc_service_account_grants_compute_viewer_for_bmctl(self):
         """The bootstrap service account must be able to read Compute zone metadata for bmctl."""

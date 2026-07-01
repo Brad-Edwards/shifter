@@ -877,8 +877,6 @@ class TestGdcControlPlaneHelmValues:
         values = deploy.render_gcp_helm_values(
             config,
             outputs,
-            guacamole_db_payload={"username": "guac", "password": "supersecret"},
-            guacamole_json_secret="json-auth-key",
             image_tag=PINNED_IMAGE_TAG,
         )
 
@@ -924,10 +922,10 @@ class TestGdcControlPlaneHelmValues:
             values["runtimeEnv"]["ENGINE_TASK_IMAGE"] == "us-central1-docker.pkg.dev/prod-rwctxzl6shxk/"
             "shifter-gcp-dev-pulumi-provisioner/pulumi-provisioner:abc1234"
         )
-        assert values["guacamoleRuntimeSecret"]["stringData"] == {
-            "POSTGRESQL_USER": "guac",
-            "POSTGRESQL_PASSWORD": "supersecret",
-            "JSON_SECRET_KEY": "json-auth-key",
+        assert values["guacamoleRuntimeSecret"] == {
+            "enabled": False,
+            "name": "guacamole-runtime",
+            "stringData": {},
         }
         assert values["services"]["portal"]["backendConfig"]["securityPolicyName"] == "shifter-gcp-dev-edge"
         assert values["services"]["guacamoleClient"]["backendConfig"]["enabled"] is True
@@ -959,8 +957,6 @@ class TestGdcControlPlaneHelmValues:
         values = deploy.render_gcp_helm_values(
             config,
             outputs,
-            guacamole_db_payload={"username": "guac", "password": "supersecret"},
-            guacamole_json_secret="json-auth-key",
             image_tag=PINNED_IMAGE_TAG,
         )
 
@@ -978,8 +974,6 @@ class TestGdcControlPlaneHelmValues:
             deploy.render_gcp_helm_values(
                 config,
                 outputs,
-                guacamole_db_payload={"username": "guac", "password": "supersecret"},
-                guacamole_json_secret="json-auth-key",
                 image_tag=PINNED_IMAGE_TAG,
             )
 
@@ -991,8 +985,6 @@ class TestGdcControlPlaneHelmValues:
             deploy.render_gcp_helm_values(
                 config,
                 outputs,
-                guacamole_db_payload={"username": "guac", "password": "supersecret"},
-                guacamole_json_secret="json-auth-key",
                 image_tag="latest",
             )
 
@@ -1061,8 +1053,6 @@ class TestGdcControlPlaneHelmChart:
                 deploy.render_gcp_helm_values(
                     config,
                     outputs,
-                    guacamole_db_payload={"username": "guac", "password": "supersecret"},
-                    guacamole_json_secret="json-auth-key",
                     image_tag=PINNED_IMAGE_TAG,
                 )
             )
@@ -1112,6 +1102,72 @@ class TestGdcControlPlaneHelmChart:
         assert "name: shifter-gcp-dev-edge" in output
         assert 'cloud.google.com/backend-config: "{\\"default\\":\\"portal-web\\"}"' in output
         assert 'cloud.google.com/backend-config: "{\\"default\\":\\"guacamole-client\\"}"' in output
+
+
+class TestGdcControlPlaneGuacamoleRuntimeSecret:
+    """Tests for syncing guacamole-client runtime credentials outside Helm values."""
+
+    def test_renders_guacamole_runtime_secret_manifest(self):
+        manifest = deploy.render_gcp_guacamole_runtime_secret_manifest(
+            {"username": "guac", "password": "supersecret"},
+            "json-auth-key",
+        )
+
+        assert manifest == {
+            "apiVersion": "v1",
+            "kind": "Secret",
+            "metadata": {
+                "name": "guacamole-runtime",
+                "namespace": "shifter-platform",
+                "labels": {"app.kubernetes.io/part-of": "shifter"},
+            },
+            "type": "Opaque",
+            "stringData": {
+                "POSTGRESQL_USER": "guac",
+                "POSTGRESQL_PASSWORD": "supersecret",
+                "JSON_SECRET_KEY": "json-auth-key",
+            },
+        }
+
+    def test_syncs_guacamole_runtime_secret_through_kubectl_stdin(self):
+        config = deploy.GDCBootstrapConfig(project_id="prod-rwctxzl6shxk", cluster_id="cluster1")
+        outputs = _sample_gcp_control_plane_outputs(config.project_id)
+
+        def subprocess_run(cmd, **kwargs):
+            if cmd[:4] == ["gcloud", "secrets", "versions", "access"]:
+                secret_name = cmd[cmd.index("--secret") + 1]
+                if secret_name == "shifter-gcp-dev-guacamole-db":
+                    return subprocess.CompletedProcess(cmd, 0, stdout='{"username":"guac","password":"supersecret"}')
+                if secret_name == "shifter-gcp-dev-guacamole-json-auth":
+                    return subprocess.CompletedProcess(cmd, 0, stdout="json-auth-key\n")
+            if cmd == ["kubectl", "apply", "-f", "-"]:
+                return subprocess.CompletedProcess(cmd, 0, stdout="secret/guacamole-runtime configured\n", stderr="")
+            return subprocess.CompletedProcess(cmd, 1, stdout="", stderr=f"unexpected command: {cmd}")
+
+        with patch("deploy.subprocess.run", side_effect=subprocess_run) as mock_run:
+            changed = deploy.sync_gcp_guacamole_runtime_secret(config, outputs)
+
+        assert changed is True
+        calls = [call.args[0] for call in mock_run.call_args_list]
+        assert calls[0][:4] == ["gcloud", "secrets", "versions", "access"]
+        assert calls[0][calls[0].index("--secret") + 1] == "shifter-gcp-dev-guacamole-db"
+        assert calls[1][:4] == ["gcloud", "secrets", "versions", "access"]
+        assert calls[1][calls[1].index("--secret") + 1] == "shifter-gcp-dev-guacamole-json-auth"
+        assert calls[2] == ["kubectl", "apply", "-f", "-"]
+        assert "supersecret" not in " ".join(calls[2])
+        applied = json.loads(mock_run.call_args_list[2].kwargs["input"])
+        assert applied["metadata"]["name"] == "guacamole-runtime"
+        assert applied["stringData"]["POSTGRESQL_PASSWORD"] == "supersecret"
+
+    def test_dry_run_does_not_fetch_or_apply_guacamole_runtime_secret(self):
+        config = deploy.GDCBootstrapConfig(project_id="prod-rwctxzl6shxk", cluster_id="cluster1")
+        outputs = _sample_gcp_control_plane_outputs(config.project_id)
+
+        with patch("deploy.subprocess.run") as mock_run:
+            changed = deploy.sync_gcp_guacamole_runtime_secret(config, outputs, dry_run=True)
+
+        assert changed is False
+        mock_run.assert_not_called()
 
 
 class TestGdcControlPlaneNamespaces:

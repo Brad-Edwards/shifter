@@ -11,6 +11,7 @@ All external dependencies are mocked. No actual AWS calls, file operations,
 or subprocess executions occur during tests.
 """
 
+import re
 import subprocess
 from pathlib import Path
 from unittest.mock import patch
@@ -343,9 +344,10 @@ class TestCheckDependencies:
                 deploy.check_dependencies()
 
             captured = capsys.readouterr()
-            assert "https://docs.aws.amazon.com" in captured.out
-            assert "https://developer.hashicorp.com" in captured.out
-            assert "https://git-scm.com" in captured.out
+            urls = set(re.findall(r"https://[^\s)]+", captured.out))
+            assert "https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html" in urls
+            assert "https://developer.hashicorp.com/terraform/downloads" in urls
+            assert "https://git-scm.com/downloads" in urls
 
     def test_gdc_bootstrap_checks_gcp_platform_toolchain(self):
         """The GDC bootstrap path should require the full GCP deploy toolchain."""
