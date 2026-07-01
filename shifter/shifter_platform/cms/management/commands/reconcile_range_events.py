@@ -231,8 +231,11 @@ def reconcile_range_instances(
                 status__in=[s.value for s in ResourceStatus if s.value not in _TERMINAL_STATUS_VALUES],
                 updated_at__lt=cutoff,
             )
+            # ``request`` is nullable, so ``select_related`` emits a LEFT OUTER
+            # JOIN. Postgres rejects ``FOR UPDATE`` on the nullable side of an
+            # outer join, so lock only the RangeInstance rows (``of=("self",)``).
             .select_related("request")
-            .select_for_update(skip_locked=True)[:batch_size]
+            .select_for_update(skip_locked=True, of=("self",))[:batch_size]
         )
 
     for instance in stale_instances:

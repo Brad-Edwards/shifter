@@ -1,0 +1,24 @@
+id: basic-no-agent
+name: Basic Range (No Agent)
+description: >-
+  A basic attacker-victim range with a Kali Linux attacker and an Ubuntu victim,
+  provisioned without any XDR agent. The victim OS is fixed (not derived from a
+  user-provided agent), so the range provisions with no agent upload or install.
+  Used to validate range provisioning independently of the agent pipeline.
+enabled: false
+ngfw: false
+
+instances:
+  - name: Attacker
+    role: attacker
+    os_type: kali
+    xdr_agent: false
+
+  - name: Workstation
+    role: victim
+    os_type: ubuntu
+    xdr_agent: false
+
+subnets:
+  - name: core
+    instances: [Attacker, Workstation]
