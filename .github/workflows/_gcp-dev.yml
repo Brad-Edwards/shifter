@@ -99,6 +99,8 @@ jobs:
       contents: read
       id-token: write
     env:
+      GCP_ENVIRONMENT: ${{ inputs.environment }}
+      USE_GKE_GCLOUD_AUTH_PLUGIN: "True"
       TF_DIR: platform/terraform/gcp/environments/${{ inputs.environment }}
       K8S_OVERLAY_DIR: platform/k8s/gcp/overlays/${{ inputs.environment }}
       TF_BACKEND_PREFIX: shifter/${{ inputs.environment }}/platform-core
@@ -126,6 +128,10 @@ jobs:
       - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db
         with:
           version: ">= 416.0.0"
+          install_components: gke-gcloud-auth-plugin
+      - uses: azure/setup-kubectl@776406bce94f63e41d621b960d78ee25c8b76ede
+        with:
+          version: v1.34.1
       - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd
         with:
           terraform_version: "1.7.1"
@@ -229,11 +235,12 @@ jobs:
             local member="$1"
             local role="$2"
             local has_binding
+            # `gcloud storage buckets get-iam-policy` does not accept --filter on
+            # all gcloud versions, so pull the policy as JSON and test the
+            # (role, member) pair with python instead.
             has_binding=$(gcloud storage buckets get-iam-policy "gs://${TF_STATE_BUCKET}" \
-              --project="${PROJECT_ID}" \
-              --flatten="bindings[].members" \
-              --filter="bindings.role=${role} AND bindings.members=${member}" \
-              --format='value(bindings.members)')
+              --project="${PROJECT_ID}" --format=json \
+              | python3 -c "import json,sys; p=json.load(sys.stdin); print('yes' if any(b.get('role')=='${role}' and '${member}' in (b.get('members') or []) for b in (p.get('bindings') or [])) else '')")
             if [ -n "${has_binding}" ]; then
               gcloud storage buckets remove-iam-policy-binding "gs://${TF_STATE_BUCKET}" \
                 --project="${PROJECT_ID}" \
@@ -268,16 +275,30 @@ jobs:
       - name: Capture Terraform outputs
         working-directory: ${{ env.TF_DIR }}
         run: terraform output -json > /tmp/gcp-terraform-outputs.json
+      - name: Configure kubectl for the GKE cluster
+        env:
+          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+        run: |
+          CLUSTER=$(python3 -c "import json;print(json.load(open('/tmp/gcp-terraform-outputs.json'))['gke_cluster_name']['value'])")
+          LOCATION=$(python3 -c "import json;print(json.load(open('/tmp/gcp-terraform-outputs.json'))['gke_cluster_location']['value'])")
+          gcloud container clusters get-credentials "${CLUSTER}" \
+            --region "${LOCATION}" --project "${GCP_PROJECT_ID}"
       - name: Seed Identity Platform bootstrap operator
         if: env.GCP_BOOTSTRAP_ADMIN_EMAIL != '' && env.GCP_BOOTSTRAP_ADMIN_PASSWORD != ''
+        # Run under the bootstrap project's interpreter (Python 3.12 + its deps);
+        # the runner's system python3 is too old for deploy.py's `X | None` unions.
         run: |
-          python3 - <<'PY'
+          uv run --project scripts/bootstrap python - <<'PY'
           import importlib.util
           import json
           import os
+          import sys
           from pathlib import Path
 
           module_path = Path("scripts/bootstrap/deploy.py")
+          # deploy.py imports sibling modules (terraform_backend, ...); put its
+          # directory on sys.path so those resolve when loaded by file location.
+          sys.path.insert(0, str(module_path.parent))
           spec = importlib.util.spec_from_file_location("bootstrap_deploy", module_path)
           if spec is None or spec.loader is None:
               raise RuntimeError(f"Unable to load bootstrap module from {module_path}")
@@ -340,9 +361,32 @@ jobs:
           )
           if replacements == 0:
             raise SystemExit(f"::error file={str(path)}::No image newTag entries found to pin")
-          else:
-            path.write_text(updated, encoding="utf-8")
-            print(f"Pinned {replacements} image tags in {path} to {short_sha}")
+
+          # The committed newName values carry a placeholder Artifact Registry
+          # project; rewrite it to the deployment's real AR project (taken from
+          # the build's PORTAL_IMAGE_ROOT) so pods pull from where the images were
+          # actually pushed, not the committed placeholder.
+          project = re.search(r"pkg\.dev/([^/]+)/", os.environ["PORTAL_IMAGE_ROOT"]).group(1)
+          updated, name_fixes = re.subn(
+            r"(?m)^(\s*newName:\s*\S*?pkg\.dev/)[^/]+/",
+            rf"\g<1>{project}/",
+            updated,
+          )
+          path.write_text(updated, encoding="utf-8")
+          print(f"Pinned {replacements} tags to {short_sha}; rewrote {name_fixes} image projects to {project}")
+
+          # The Workload Identity GSA annotations carry the same placeholder
+          # project; point them at the deployment project so the pods' KSAs
+          # impersonate real (existing) service accounts.
+          sa_patch = Path(os.environ["K8S_OVERLAY_DIR"]) / "patch-serviceaccounts.patch"
+          if sa_patch.exists():
+            sa_updated, sa_fixes = re.subn(
+              r"(@)[^.@]+(\.iam\.gserviceaccount\.com)",
+              rf"\g<1>{project}\g<2>",
+              sa_patch.read_text(encoding="utf-8"),
+            )
+            sa_patch.write_text(sa_updated, encoding="utf-8")
+            print(f"Rewrote {sa_fixes} service-account GSA projects to {project}")
           PY
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
       - name: Build and push portal image
