@@ -571,7 +571,10 @@ class TestGdcProvisioning:
             assert instance_data["instance_id"] == "i-polaris"
             assert spec.set_local_password is False
 
-        def record_bootstrap(*, instance_id, dc_ip, public_key):
+        def record_bootstrap(*, instance_id, dc_ip, public_key, instance_data, os_type, role):
+            assert instance_data["instance_id"] == "i-polaris"
+            assert os_type == "kali"
+            assert role == "attacker"
             events.append(("bootstrap", dc_ip, public_key))
 
         def record_container_password(*, instance_data, instance_id, container_name, ssh_user):

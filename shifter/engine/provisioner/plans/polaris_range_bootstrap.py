@@ -42,6 +42,11 @@ from ._polaris_scripts import (
 from .base import SetupStep
 
 
+def _is_gdc() -> bool:
+    """True when the active range plane is GCP/GDC (vs AWS)."""
+    return os.environ.get("CLOUD_PROVIDER", "aws").lower() == "gcp"
+
+
 class PolarisRangeBootstrapPlan:
     """Per-range polaris VM bootstrap.
 
@@ -68,39 +73,53 @@ class PolarisRangeBootstrapPlan:
     - polaris-splice-watcher.service is active.
     """
 
-    steps: ClassVar[list[SetupStep]] = [
-        SetupStep(
-            name="polaris_range_bootstrap",
-            script=POLARIS_RANGE_BOOTSTRAP_SCRIPT,
-            timeout_seconds=300,
-            requires_reboot=False,
-        ),
-        SetupStep(
-            name="polaris_fetch_tests",
-            script=FETCH_POLARIS_TESTS_SCRIPT,
-            timeout_seconds=120,
-            requires_reboot=False,
-        ),
-        SetupStep(
-            name="polaris_install_splice_watcher",
-            script=INSTALL_SPLICE_WATCHER_SCRIPT,
-            timeout_seconds=60,
-            requires_reboot=False,
-        ),
-        SetupStep(
-            name="polaris_kali_bedrock_shard",
-            script=KALI_BEDROCK_SHARD_SCRIPT,
-            timeout_seconds=180,
-            requires_reboot=False,
-        ),
-    ]
-
     verify_step: ClassVar[SetupStep] = SetupStep(
         name="verify_polaris_range",
         script=VERIFY_POLARIS_BOOTSTRAP_SCRIPT,
         timeout_seconds=60,
         is_verification=True,
     )
+
+    def __init__(self) -> None:
+        # Steps 1 (override-rewrite + container-recreate) and 3 (splice-watcher)
+        # are cloud-agnostic and always run. Steps 2 (fetch_tests) and 4
+        # (kali_bedrock_shard) are AWS-only: on GDC the tests tree is already
+        # baked into the polaris-vm image (no S3 fetch), and Bedrock/IMDS have
+        # no GDC equivalent, so they are dropped.
+        self.steps: list[SetupStep] = [
+            SetupStep(
+                name="polaris_range_bootstrap",
+                script=POLARIS_RANGE_BOOTSTRAP_SCRIPT,
+                timeout_seconds=300,
+                requires_reboot=False,
+            ),
+        ]
+        if not _is_gdc():
+            self.steps.append(
+                SetupStep(
+                    name="polaris_fetch_tests",
+                    script=FETCH_POLARIS_TESTS_SCRIPT,
+                    timeout_seconds=120,
+                    requires_reboot=False,
+                )
+            )
+        self.steps.append(
+            SetupStep(
+                name="polaris_install_splice_watcher",
+                script=INSTALL_SPLICE_WATCHER_SCRIPT,
+                timeout_seconds=60,
+                requires_reboot=False,
+            )
+        )
+        if not _is_gdc():
+            self.steps.append(
+                SetupStep(
+                    name="polaris_kali_bedrock_shard",
+                    script=KALI_BEDROCK_SHARD_SCRIPT,
+                    timeout_seconds=180,
+                    requires_reboot=False,
+                )
+            )
 
     @staticmethod
     def get_context(instance: object) -> dict[str, Any]:
@@ -144,13 +163,16 @@ class PolarisRangeBootstrapPlan:
             "anthropic_small_fast_model",
             "us.anthropic.claude-haiku-4-5-20251001-v1:0",
         )
+        # The S3 tests fetch (polaris_fetch_tests step) is AWS-only; on GDC the
+        # tests tree is baked into the polaris-vm image, so the bucket is not
+        # required and these template vars go unused.
         polaris_tests_bucket = (
             os.environ.get("POLARIS_TESTS_BUCKET")
             or os.environ.get("AGENT_STORAGE_BUCKET")
             or os.environ.get("AGENT_S3_BUCKET")
             or ""
         )
-        if not polaris_tests_bucket:
+        if not polaris_tests_bucket and not _is_gdc():
             raise ValueError(
                 "PolarisRangeBootstrapPlan requires POLARIS_TESTS_BUCKET or "
                 "AGENT_S3_BUCKET so the range host can fetch the smoketest tarball"

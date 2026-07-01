@@ -136,6 +136,9 @@ def _setup_one_other_instance(
                 instance_id=inst_id,
                 dc_ip=actual_dc_ip or "",
                 public_key=inst.get("public_key", ""),
+                instance_data=inst,
+                os_type=spec.os_type,
+                role=spec.role,
             )
             _set_attacker_container_password_after_bootstrap(
                 instance_data=inst,
