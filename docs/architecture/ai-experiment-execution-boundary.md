@@ -20,9 +20,10 @@ defense in depth; they are not the security boundary.
 
 ## Execution scope
 
-Claude Code execution is allowed only from the experiment executor path that
-builds commands through `ScriptExecutionContext`. The allowed invocation prefix
-is:
+This document governs non-interactive experiment-dispatched Claude Code runs.
+Within that experiment automation boundary, Claude Code execution is allowed
+only from the experiment executor path that builds commands through
+`ScriptExecutionContext`. The allowed invocation prefix is:
 
 ```text
 claude --dangerously-skip-permissions --output-format stream-json
@@ -33,6 +34,10 @@ launched inside provisioned experiment ranges and must run non-interactively.
 Any additional Claude privilege flag, alternate output format, or bypass of
 `ScriptExecutionContext` is a security-sensitive change and must update this
 document and the policy-versioned tests in the same PR.
+
+Interactive range-box Claude startup is a separate user-terminal concern. It is
+not authorized by this experiment policy and must keep its own boundary; see
+`claude-code-autostart-preflight-180.md`.
 
 ## Files and artifacts
 
