@@ -76,6 +76,25 @@ class TestPolarisRangeBootstrapPlan:
         assert context["polaris_tests_bucket"] == "shifter-dev-user-storage-123"
         assert context["polaris_tests_key"] == "polaris/tests/polaris-tests.tar.gz"
 
+    def test_kali_host_ports_are_default_on_aws(self, monkeypatch):
+        from plans.polaris_range_bootstrap import PolarisRangeBootstrapPlan
+
+        monkeypatch.setenv("CLOUD_PROVIDER", "aws")
+        monkeypatch.setenv("AGENT_S3_BUCKET", "b")
+        context = PolarisRangeBootstrapPlan.get_context(MockPolarisInstance())
+        assert context["kali_ssh_port_mapping"] == "22:22"
+        assert context["kali_rdp_port_mapping"] == "3389:3389"
+
+    def test_kali_host_ports_avoid_host_sshd_on_gdc(self, monkeypatch):
+        from plans.polaris_range_bootstrap import PolarisRangeBootstrapPlan
+
+        # On GDC the host sshd owns 22 (setup-runner transport), so the a14-kali
+        # container must publish on alternate host ports.
+        monkeypatch.setenv("CLOUD_PROVIDER", "gcp")
+        context = PolarisRangeBootstrapPlan.get_context(MockPolarisInstance())
+        assert context["kali_ssh_port_mapping"] == "2222:22"
+        assert context["kali_rdp_port_mapping"] == "33890:3389"
+
     def test_get_context_allows_explicit_tests_bucket_and_key(self, monkeypatch):
         from plans.polaris_range_bootstrap import PolarisRangeBootstrapPlan
 

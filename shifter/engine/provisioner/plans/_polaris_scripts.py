@@ -53,8 +53,8 @@ cat > docker-compose.override.yml.new <<COMPOSE_EOF
 services:
   a14-kali:
     ports:
-      - "22:22"
-      - "3389:3389"
+      - "{{ kali_ssh_port_mapping }}"
+      - "{{ kali_rdp_port_mapping }}"
     environment:
       KALI_AUTHORIZED_KEY: "$KALI_PUBKEY"
       KALI_SPLICE_PRIVATE_KEY_B64: "$SPLICE_PRIVATE_KEY_B64"

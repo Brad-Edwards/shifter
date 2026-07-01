@@ -179,6 +179,18 @@ class PolarisRangeBootstrapPlan:
             )
         polaris_tests_key = os.environ.get("POLARIS_TESTS_KEY", "polaris/tests/polaris-tests.tar.gz")
 
+        # a14-kali host-port publishing. On AWS the host sshd is masked, so the
+        # container binds host 22/3389 for the portal terminal + Guacamole RDP.
+        # On GDC the host sshd owns 22 (the setup-runner reaches the guest over
+        # host SSH — there is no SSM), so the container binds 22/3389 would fail
+        # "address already in use"; publish on alternate host ports instead.
+        if _is_gdc():
+            kali_ssh_port_mapping = "2222:22"
+            kali_rdp_port_mapping = "33890:3389"
+        else:
+            kali_ssh_port_mapping = "22:22"
+            kali_rdp_port_mapping = "3389:3389"
+
         return {
             "dc_ip": dc_ip,
             "public_key": public_key,
@@ -186,4 +198,6 @@ class PolarisRangeBootstrapPlan:
             "anthropic_small_fast_model": anthropic_small_fast_model,
             "polaris_tests_bucket": polaris_tests_bucket,
             "polaris_tests_key": polaris_tests_key,
+            "kali_ssh_port_mapping": kali_ssh_port_mapping,
+            "kali_rdp_port_mapping": kali_rdp_port_mapping,
         }
