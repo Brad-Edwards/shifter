@@ -45,8 +45,33 @@ _EVENT_MUTABLE_FIELDS = frozenset(
         "rating_visibility",
         "scoreboard_visible",
         "scoreboard_freeze_at",
+        "scoring_mode",
     }
 )
+
+
+def _validate_scoring_mode(event_data: dict[str, Any]) -> None:
+    """Reject an unknown ``scoring_mode`` with a controlled 400.
+
+    The model field constrains choices, but the JSON API path bypasses form
+    validation, so validate here to surface a `CTFValidationError` (400) rather
+    than persisting an invalid value that would later fall back to standard.
+    """
+    from ctf.enums import ScoringMode
+
+    if "scoring_mode" not in event_data:
+        return
+    try:
+        ScoringMode(event_data["scoring_mode"])
+    except ValueError:
+        raise CTFValidationError(
+            "Invalid scoring mode",
+            code="CTF_INVALID_SCORING_MODE",
+            details={
+                "scoring_mode": event_data["scoring_mode"],
+                "valid_modes": [m.value for m in ScoringMode],
+            },
+        ) from None
 
 
 def create_event(user: User, event_data: dict[str, Any]) -> CTFEvent:
@@ -81,6 +106,8 @@ def create_event(user: User, event_data: dict[str, Any]) -> CTFEvent:
             "Event end must be after event start",
             code="CTF_INVALID_DATES",
         )
+
+    _validate_scoring_mode(event_data)
 
     # Filter to allowed fields only — prevent mass assignment of status,
     # created_by, id, timestamps, etc.
@@ -162,6 +189,7 @@ def update_event(event_id: UUID, event_data: dict[str, Any]) -> CTFEvent:
     new_start = event_data.get("event_start", event.event_start)
     new_end = event_data.get("event_end", event.event_end)
     _validate_event_time_range(new_start, new_end)
+    _validate_scoring_mode(event_data)
 
     safe_data = {k: v for k, v in event_data.items() if k in _EVENT_MUTABLE_FIELDS}
     old_event_end = event.event_end
