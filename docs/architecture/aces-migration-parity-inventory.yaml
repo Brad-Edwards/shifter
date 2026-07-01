@@ -6,7 +6,7 @@
 # is not a runtime schema, not a parser input, and not an implementation plan.
 
 schema_version: 1
-generated_for: "issues-1230-1231"
+generated_for: "issues-1230-1236"
 related_adr: docs/architecture/aces-migration-adr.md
 related_triage: docs/architecture/aces-cyberscript-issue-triage.md
 
@@ -23,6 +23,7 @@ surfaces:
   - Polaris
   - CTF
   - experiment
+  - participant-runtime
   - Mission Control
   - provisioner
   - artifact
@@ -288,6 +289,30 @@ rows:
     candidate_issue_title: Define ACES evidence mapping for Shifter experiment artifacts
     notes: Artifact identity and redaction rules need a contract map before implementation.
 
+  - id: aces.participant-runtime-sidecars
+    surface: participant-runtime
+    legacy_source: shifter/shifter_platform/cms/experiments/models.py; shifter/shifter_platform/engine/models.py; shifter/shifter_platform/ctf/models/
+    legacy_field: ExperimentRun, Range, CTFParticipant, and runtime participant/access correlation fields
+    category: ACES schema/profile gap
+    aces_target: ACES participant implementation and participant runtime records with profile/version discriminators
+    shifter_owner: shared contracts, cms.experiments, ctf.services, engine.services, mission_control.api
+    validation_evidence: future #1288 implementation tests and ACES participant-runtime contract validation
+    next_issue_kind: implementation-candidate
+    candidate_issue_title: "#1288: Implement participant runtime API and storage sidecars"
+    notes: ACES participant records must be first-class sidecars keyed by explicit profile/version and ownership fields; they must not be hidden in RangeInstance.range_spec, Range.provisioned_instances, ExperimentRun.metadata, event payloads, or AuditLog JSON.
+
+  - id: aces.participant-history-evidence
+    surface: artifact
+    legacy_source: shifter/shifter_platform/cms/experiments/orchestrator/execution_plan.py; shifter/shifter_platform/cms/experiments/models.py; shifter/cyberscript/script_context.py
+    legacy_field: ScriptExecutionContext, ScriptCommand, RunArtifact, ExperimentArtifact, Claude transcript artifacts, and behavior-history evidence references
+    category: ACES schema/profile gap
+    aces_target: ACES behavior-history and evidence records carrying artifact refs, digests, provenance, capture profile, retention class, and redaction status
+    shifter_owner: cms.experiments, shared.script_context, shared.uploads, shared.cloud, risk_register.services.audit_log
+    validation_evidence: future #1289 implementation tests plus existing command-safety and artifact tests
+    next_issue_kind: implementation-candidate
+    candidate_issue_title: "#1289: Capture participant runtime history and evidence"
+    notes: Evidence records are reference-oriented. Rendered commands, prompt bodies, script bodies, transcript bodies, terminal streams, token URLs, SSH keys, RDP passwords, CTF flags, provider payloads, and presigned URLs stay out of ACES records.
+
   - id: mission-control.range-ui
     surface: Mission Control
     legacy_source: shifter/shifter_platform/mission_control/views/_ranges.py
@@ -323,6 +348,18 @@ rows:
     next_issue_kind: implementation-candidate
     candidate_issue_title: "#1276: Surface ACES-backed range projections in Mission Control UI"
     notes: ACES status is a projection layer; current range lifecycle UX and websocket behavior remain the compatibility surface during migration.
+
+  - id: aces.participant-access-projection
+    surface: Mission Control
+    legacy_source: shifter/shifter_platform/mission_control/consumers.py; shifter/shifter_platform/mission_control/views/_guacamole.py; shifter/shifter_platform/mission_control/api/
+    legacy_field: browser terminal websockets, Guacamole RDP/SSH bootstrap, NGFW SSH, range status websockets, and Mission Control access projection fields
+    category: Shifter backend responsibility
+    aces_target: read-only ACES participant/runtime/access-channel projection fields after participant-runtime sidecars exist
+    shifter_owner: mission_control.api, mission_control.views, engine.services, shared.api.errors, shared.api_tokens.scopes
+    validation_evidence: future #1290 UI/API tests plus existing mission_control terminal, Guacamole, and range API tests
+    next_issue_kind: implementation-candidate
+    candidate_issue_title: "#1290: Project participant runtime access in Mission Control"
+    notes: Terminal, SSH, RDP/Guacamole, NGFW SSH, and backend command dispatch are Shifter access-channel projections. They may expose ACES-backed read-only fields, but they do not become authorization, lifecycle truth, evidence redaction, or authored scenario semantics.
 
   - id: mission-control.terminal-guacamole
     surface: Mission Control
@@ -491,3 +528,15 @@ rows:
     next_issue_kind: implementation-candidate
     candidate_issue_title: Publish and validate a Shifter ACES backend manifest
     notes: Cutover requires a published profile claim validated by ACES conformance, not prose.
+
+  - id: validation.participant-runtime-conformance
+    surface: validation
+    legacy_source: docs/architecture/aces-runtime-target-backend-manifest-preflight-1233.md; future Shifter backend manifest
+    legacy_field: backend capability claim and participant-runtime conformance gate
+    category: validation gate
+    aces_target: ACES participant-runtime lifecycle/history/evidence contract conformance
+    shifter_owner: future Shifter ACES backend adapter, scripts/adr_guard, ACES conformance tooling
+    validation_evidence: future #1291 conformance run and ADR guard coverage
+    next_issue_kind: implementation-candidate
+    candidate_issue_title: "#1291: Add participant runtime manifest and conformance gate"
+    notes: Shifter must not claim ACES participant_runtime capability until ACES publishes the lifecycle/history contracts and the Shifter path passes conformance without weakening current Mission Control, import, scope, terminal, Guacamole, or secret-scanning gates.
