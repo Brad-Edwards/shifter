@@ -178,7 +178,6 @@ def _apply_locked_range_instance(
                 applied = apply_range_status(
                     locked_instance,
                     authoritative_status,
-                    provisioned_instances={},
                 )
                 outcome = "reconciled" if applied else "converged"
     except Exception:

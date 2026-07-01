@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
 
 from django.db import transaction
 
@@ -44,7 +43,6 @@ def apply_range_status(
     new_status: str,
     *,
     extra_update_fields: list[str] | None = None,
-    provisioned_instances: dict[str, Any] | None = None,
 ) -> bool:
     """Update a RangeInstance's status and fire downstream CTF bridge.
 
@@ -65,8 +63,6 @@ def apply_range_status(
         extra_update_fields: Additional model fields whose values have been
             set on ``instance`` and should be persisted in the same save
             call (e.g. ``["range_id"]`` when the event backfills the id).
-        provisioned_instances: Retained for API compatibility with callers that
-            pass range-ready instance details; no longer used by this handler.
 
     Returns:
         ``True`` if the status was changed and bridges were fired;
@@ -167,7 +163,6 @@ def process_range_event(message: str | dict) -> None:
         instance,
         new_status,
         extra_update_fields=extra_fields or None,
-        provisioned_instances=event.get("instances", {}),
     )
 
     if applied:
