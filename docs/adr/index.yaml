@@ -1098,6 +1098,7 @@
     "evidence": [
       "docs/architecture/aces-migration-adr.md",
       "docs/architecture/aces-migration-parity-inventory.yaml",
+      "docs/architecture/aces-runtime-target-backend-manifest-preflight-1233.md",
       "scenario-dev/polaris/design/aces-sdl-validation-path.md",
       "scenario-dev/polaris/sdl/README.md",
       "shifter/shifter_platform/cms/scenarios/schema.py",
