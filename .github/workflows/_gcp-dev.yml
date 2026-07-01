@@ -100,6 +100,7 @@ jobs:
       id-token: write
     env:
       GCP_ENVIRONMENT: ${{ inputs.environment }}
+      USE_GKE_GCLOUD_AUTH_PLUGIN: "True"
       TF_DIR: platform/terraform/gcp/environments/${{ inputs.environment }}
       K8S_OVERLAY_DIR: platform/k8s/gcp/overlays/${{ inputs.environment }}
       TF_BACKEND_PREFIX: shifter/${{ inputs.environment }}/platform-core
@@ -127,6 +128,10 @@ jobs:
       - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db
         with:
           version: ">= 416.0.0"
+          install_components: gke-gcloud-auth-plugin
+      - uses: azure/setup-kubectl@776406bce94f63e41d621b960d78ee25c8b76ede
+        with:
+          version: v1.34.1
       - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd
         with:
           terraform_version: "1.7.1"
@@ -270,6 +275,14 @@ jobs:
       - name: Capture Terraform outputs
         working-directory: ${{ env.TF_DIR }}
         run: terraform output -json > /tmp/gcp-terraform-outputs.json
+      - name: Configure kubectl for the GKE cluster
+        env:
+          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+        run: |
+          CLUSTER=$(python3 -c "import json;print(json.load(open('/tmp/gcp-terraform-outputs.json'))['gke_cluster_name']['value'])")
+          LOCATION=$(python3 -c "import json;print(json.load(open('/tmp/gcp-terraform-outputs.json'))['gke_cluster_location']['value'])")
+          gcloud container clusters get-credentials "${CLUSTER}" \
+            --region "${LOCATION}" --project "${GCP_PROJECT_ID}"
       - name: Seed Identity Platform bootstrap operator
         if: env.GCP_BOOTSTRAP_ADMIN_EMAIL != '' && env.GCP_BOOTSTRAP_ADMIN_PASSWORD != ''
         # Run under the bootstrap project's interpreter (Python 3.12 + its deps);
