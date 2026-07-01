@@ -271,8 +271,10 @@ jobs:
         run: terraform output -json > /tmp/gcp-terraform-outputs.json
       - name: Seed Identity Platform bootstrap operator
         if: env.GCP_BOOTSTRAP_ADMIN_EMAIL != '' && env.GCP_BOOTSTRAP_ADMIN_PASSWORD != ''
+        # Run under the bootstrap project's interpreter (Python 3.12 + its deps);
+        # the runner's system python3 is too old for deploy.py's `X | None` unions.
         run: |
-          python3 - <<'PY'
+          uv run --project scripts/bootstrap python - <<'PY'
           import importlib.util
           import json
           import os
