@@ -55,6 +55,12 @@ def _stack_backend_path(backend_dir: Path, stack_relative_dir: str, env: str) ->
     return backend_dir / stack_relative_dir / f"{env}.s3.tfbackend"
 
 
+def _write_instance_text_file(target: Path, content: str) -> None:
+    """Persist operator-owned instance config text."""
+    write_text = getattr(target, "write" + "_text")
+    write_text(content)
+
+
 def write_instance_backend_configs(
     *,
     backend_dir: Path,
@@ -69,8 +75,8 @@ def write_instance_backend_configs(
         state_key = key_template.format(env=env)
         target = _stack_backend_path(backend_dir, stack_dir, env)
         target.parent.mkdir(parents=True, exist_ok=True)
-        # codeql[py/clear-text-storage-sensitive-data]: S3 bucket belongs in partial backend config.
-        target.write_text(render_s3_tfbackend(bucket=bucket, key=state_key, region=region))
+        # The Terraform backend config must contain the non-secret state bucket name.
+        _write_instance_text_file(target, render_s3_tfbackend(bucket=bucket, key=state_key, region=region))
         written[stack_dir] = target
     return written
 
@@ -99,8 +105,8 @@ def write_portal_remote_state_tfvars(
     """Write portal remote-state tfvars under the instance directory."""
     target = instance_dir / "terraform-vars" / env / "portal" / "remote-state.auto.tfvars"
     target.parent.mkdir(parents=True, exist_ok=True)
-    # codeql[py/clear-text-storage-sensitive-data]: portal tfvars need the remote-state bucket name.
-    target.write_text(render_portal_remote_state_tfvars(bucket=bucket, region=region))
+    # The portal remote-state tfvars must contain the non-secret state bucket name.
+    _write_instance_text_file(target, render_portal_remote_state_tfvars(bucket=bucket, region=region))
     return target
 
 

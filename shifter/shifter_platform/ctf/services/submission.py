@@ -198,10 +198,11 @@ def submit_flag(
     # a programmable/http flag check can be slow or make an outbound call, and we
     # must not hold the lock across it. These reads do not mutate state.
     from ctf.services.hint import get_total_hint_penalty
+    from ctf.services.scoring import calculate_solve_points
 
     total_hint_penalty = get_total_hint_penalty(participant.id, challenge.id)
     is_correct = verify_flag(challenge, submitted_flag.strip())
-    points = challenge.calculate_points_with_penalty(total_hint_penalty) if is_correct else 0
+    points = calculate_solve_points(event, challenge, total_hint_penalty) if is_correct else 0
     if is_correct:
         logger.info(
             "Correct flag submitted: participant=%s, challenge=%s, points=%d",
