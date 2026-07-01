@@ -20,6 +20,8 @@ on:
           - kali
           - windows
           - dc
+          - polaris-vm
+          - polaris-dc
 
 permissions:
   contents: read

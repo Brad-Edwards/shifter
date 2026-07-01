@@ -1196,6 +1196,8 @@ describe("GCE_IMAGE_TYPES", () => {
       "kali",
       "windows",
       "dc",
+      "polaris-vm",
+      "polaris-dc",
     ]);
   });
 });

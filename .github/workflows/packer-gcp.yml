@@ -23,6 +23,8 @@ on:
           - kali
           - windows
           - dc
+          - polaris-vm
+          - polaris-dc
       environment:
         description: 'GCP environment to build in'
         required: true
@@ -126,8 +128,21 @@ jobs:
           # debian-12 GCE base into Kali Rolling in its first provisioning script
           # (no imported base image, so no source-image secret is required).
 
+      - name: Resolve polaris build tarball (polaris-vm only)
+        if: inputs.image_type == 'polaris-vm'
+        env:
+          POLARIS_BUILD_TARBALL_URI: ${{ vars.GCP_POLARIS_BUILD_TARBALL_URI }}
+        run: |
+          # Private GCS URI of the polaris compose-stack tarball (mirrored from
+          # the AWS S3 bake tarball; carries CTF answers so it is never committed).
+          if [ -z "${POLARIS_BUILD_TARBALL_URI}" ]; then
+            echo "::error::GCP_POLARIS_BUILD_TARBALL_URI must be set for polaris-vm builds. See docs/dev/deploy-secrets.md."
+            exit 1
+          fi
+          echo "PKR_VAR_polaris_build_tarball_uri=${POLARIS_BUILD_TARBALL_URI}" >> "$GITHUB_ENV"
+
       - name: Generate WinRM bootstrap secret (Windows/DC only)
-        if: inputs.image_type == 'windows' || inputs.image_type == 'dc'
+        if: inputs.image_type == 'windows' || inputs.image_type == 'dc' || inputs.image_type == 'polaris-dc'
         run: |
           # Throwaway local-admin password for the build VM only; the VM is
           # sysprepped and discarded so it never reaches the published image.
