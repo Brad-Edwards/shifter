@@ -354,9 +354,12 @@ jobs:
           path = Path(os.environ["K8S_OVERLAY_DIR"]) / "kustomization.yaml"
           content = path.read_text(encoding="utf-8")
 
+          # Quote the tag: a short SHA can be all-digits (e.g. "2002027"), which
+          # YAML would parse as a number and kustomize rejects for the string
+          # newTag field ("cannot unmarshal number ... of type string").
           updated, replacements = re.subn(
             r"(?m)^(\s*newTag:\s*)\S+\s*$",
-            lambda match: f"{match.group(1)}{short_sha}",
+            lambda match: f'{match.group(1)}"{short_sha}"',
             content,
           )
           if replacements == 0:
