@@ -17,6 +17,11 @@ source "googlecompute" "dc" {
   winrm_password = var.winrm_bootstrap_password
   winrm_insecure = true
   winrm_use_ssl  = true
+  // NTLM (via Negotiate) instead of packer's default Basic auth: the bootstrap
+  // disables Basic on the WinRM service (and GCE's built-in listener defaults to
+  // Basic=false too), so Basic auth is rejected and packer otherwise hangs until
+  // winrm_timeout. NTLM authenticates the local packer_user over the TLS channel.
+  winrm_use_ntlm = true
   winrm_timeout  = "30m"
 
   network               = var.network
@@ -26,6 +31,11 @@ source "googlecompute" "dc" {
 
   use_internal_ip  = var.use_internal_ip
   omit_external_ip = var.use_internal_ip
+  // Tunnel WinRM (5986) through IAP when building without an external IP, so the
+  // CI runner reaches the builder's internal IP the same way the Linux builds
+  // tunnel SSH. Without this packer connects straight to the unroutable
+  // internal IP and hangs until winrm_timeout.
+  use_iap = var.use_internal_ip
 
   // Shared HTTPS WinRM bootstrap (single source of truth in locals.pkr.hcl):
   // self-signed listener on 5986, Basic/unencrypted disabled, only 5986 open.

@@ -159,14 +159,20 @@ def _resolve_os_and_agent(
     Returns:
         Tuple of (resolved_os_type, agent_object or None).
     """
-    if not xdr_agent:
-        return template_os_type, None
-
+    # `from_agent` derives the victim OS from the user-provided agent, so it
+    # always needs an agent regardless of the `xdr_agent` flag (the flag gates
+    # fixed-OS agent installs, not OS resolution). Handle it before the
+    # `xdr_agent` gate so a `from_agent` instance with `xdr_agent: false` (e.g.
+    # the canonical `basic` victim) still resolves instead of leaking the
+    # literal "from_agent" into InstanceSpec validation.
     if template_os_type == "from_agent":
         agent_obj = next(iter(agents.values()), None)
         if agent_obj is None:
             raise ValueError(f"Instance '{name}' uses from_agent but no agent provided")
         return _resolve_agent_os(agent_obj), agent_obj
+
+    if not xdr_agent:
+        return template_os_type, None
 
     if template_os_type == "windows":
         return template_os_type, agents.get("windows")

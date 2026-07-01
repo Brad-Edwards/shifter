@@ -103,6 +103,13 @@ _GCP_PROVISIONER_ENV_KEYS = (
     "GDC_SCENARIO_POD_IMAGE_PULL_POLICY",
     "GDC_SCENARIO_POD_KALI_IMAGE",
     "GDC_SCENARIO_POD_UBUNTU_IMAGE",
+    # Image for the in-range-cluster guest setup-runner pod. GDC range VMs
+    # live on an isolated L2 segment, so guest SSH setup runs from a pod in
+    # the range cluster (RangePodSSHExecutor). GDC_SETUP_RUNNER_IMAGE is an
+    # explicit override; otherwise the provisioner falls back to its own
+    # image via ENGINE_TASK_IMAGE (forwarded here so it is set in the Job).
+    "GDC_SETUP_RUNNER_IMAGE",
+    "ENGINE_TASK_IMAGE",
     "RANGE_VPC_ID",
     "RANGE_VPC_CIDR",
     "RANGE_AVAILABILITY_ZONE",

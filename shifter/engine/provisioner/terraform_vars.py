@@ -44,10 +44,19 @@ def _resolve_tf_os_type(role: str, os_type: str) -> str:
 
 
 def _resolve_instance_type(role: str, tf_os_type: str, override: str | None) -> str:
-    """Pick the EC2 instance type: per-instance override wins; otherwise role/OS defaults."""
+    """Pick the EC2 instance type: per-instance override wins; otherwise role/OS defaults.
+
+    The EC2 instance type is only consumed by the AWS ``aws_instance`` path. GDC
+    ranges size VMs from vCPU/memory/disk profiles (``GDC_*_VCPUS`` / ``MEMORY`` /
+    ``DISK_SIZE_GIB``) via the VM Runtime asset builder, so the AWS
+    ``*_INSTANCE_TYPE`` env vars are intentionally absent on GCP. Don't require
+    them there — return the explicit override if any, otherwise an empty string.
+    """
     if override:
-        resolved = override
-    elif role == "attacker":
+        return override
+    if os.environ.get("CLOUD_PROVIDER", "aws").lower() == "gcp":
+        return ""
+    if role == "attacker":
         resolved = _get_kali_instance_type()
     elif role == "dc":
         resolved = _get_dc_instance_type()
