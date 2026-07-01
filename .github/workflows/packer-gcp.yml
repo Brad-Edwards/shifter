@@ -208,7 +208,11 @@ jobs:
           # gs://<projnum>.cloudbuild-logs bucket, so --log-location is required
           # alongside --cloudbuild-service-account. Point it at the image bucket,
           # where the build SA already holds storage.objectAdmin.
+          # --quiet: CI is non-interactive; the export otherwise prompts (e.g.
+          # to confirm the user-specified Cloud Build SA) and fails "not in an
+          # interactive session".
           gcloud compute images export \
+            --quiet \
             --image="${IMAGE_NAME}" \
             --destination-uri="${DEST}" \
             --export-format=qcow2 \
