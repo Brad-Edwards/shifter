@@ -8,7 +8,11 @@
 
 [CmdletBinding()]
 param(
-    [string]$AdminPassword = "CortexSavesTheDay!"
+    [string]$AdminPassword = "CortexSavesTheDay!",
+    # Upstream DNS forwarder for non-boreas.local queries. Defaults to the AWS
+    # link-local Route 53 Resolver for the AWS bake path; the GDC bake passes a
+    # routable resolver (e.g. 8.8.8.8) since GDC has no 169.254.169.253.
+    [string]$DnsForwarder = "169.254.169.253"
 )
 
 $ErrorActionPreference = "Stop"
@@ -40,9 +44,9 @@ for ($i = 0; $i -lt 60; $i++) {
 # the AMI was baked in). When a private SSM VPC endpoint exists in the
 # range VPC with PrivateDnsEnabled=true, the resolver returns the
 # endpoint's private IP automatically.
-Write-Host "Setting DNS forwarder to AWS VPC resolver (169.254.169.253)..."
+Write-Host "Setting DNS forwarder to $DnsForwarder..."
 try {
-    Set-DnsServerForwarder -IPAddress 169.254.169.253 -PassThru -ErrorAction Stop | Out-Null
+    Set-DnsServerForwarder -IPAddress $DnsForwarder -PassThru -ErrorAction Stop | Out-Null
     Write-Host "  forwarder set"
 } catch {
     Write-Host "  forwarder set FAILED: $($_.Exception.Message)"

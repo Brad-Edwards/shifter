@@ -50,6 +50,18 @@ variable "use_internal_ip" {
   DESC
 }
 
+variable "polaris_build_tarball_uri" {
+  type        = string
+  description = <<-DESC
+    GCS URI (gs://...) of the private POLARIS build tarball consumed by the
+    polaris-vm builder: the NORTHSTORM compose stack + per-asset Dockerfiles +
+    baked flag content, mirrored from the AWS S3 bake tarball. It carries CTF
+    answers and is never committed; the CI workflow passes it with -var. Unused
+    by the non-polaris builders.
+  DESC
+  default     = ""
+}
+
 variable "winrm_bootstrap_password" {
   type        = string
   sensitive   = true
