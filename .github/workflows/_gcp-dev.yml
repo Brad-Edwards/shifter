@@ -229,11 +229,12 @@ jobs:
             local member="$1"
             local role="$2"
             local has_binding
+            # `gcloud storage buckets get-iam-policy` does not accept --filter on
+            # all gcloud versions, so pull the policy as JSON and test the
+            # (role, member) pair with python instead.
             has_binding=$(gcloud storage buckets get-iam-policy "gs://${TF_STATE_BUCKET}" \
-              --project="${PROJECT_ID}" \
-              --flatten="bindings[].members" \
-              --filter="bindings.role=${role} AND bindings.members=${member}" \
-              --format='value(bindings.members)')
+              --project="${PROJECT_ID}" --format=json \
+              | python3 -c "import json,sys; p=json.load(sys.stdin); print('yes' if any(b.get('role')=='${role}' and '${member}' in (b.get('members') or []) for b in (p.get('bindings') or [])) else '')")
             if [ -n "${has_binding}" ]; then
               gcloud storage buckets remove-iam-policy-binding "gs://${TF_STATE_BUCKET}" \
                 --project="${PROJECT_ID}" \
