@@ -4,27 +4,7 @@
     Scripts
 {% endblock %}
 {% block extra_css %}
-    <style>
-    .script-table {
-        width: 100%;
-        border-collapse: collapse;
-    }
-    .script-table th,
-    .script-table td {
-        padding: 10px 12px;
-        text-align: left;
-        border-bottom: 1px solid var(--xdr-border);
-    }
-    .script-table th {
-        font-size: 11px;
-        font-weight: 600;
-        color: var(--xdr-text-secondary);
-        text-transform: uppercase;
-    }
-    .script-table tbody tr:hover {
-        background: var(--xdr-hover);
-    }
-    </style>
+    <link rel="stylesheet" href="{% static 'css/experiments-script-list.css' %}">
 {% endblock %}
 {% block content %}
     <div class="page-header-row">
@@ -89,7 +69,7 @@
                             <td class="text-right">
                                 <form method="post"
                                       action="{% url 'experiments:script_delete' script.pk %}"
-                                      style="display:inline">
+                                      class="d-inline">
                                     {% csrf_token %}
                                     <button type="submit"
                                             class="btn btn-danger btn-small"
@@ -112,7 +92,7 @@
                 <p>
                     {% trans "Upload Python scripts to use in your experiments" %}
                 </p>
-                <div style="margin-top: 16px;">
+                <div class="mt-lg">
                     <a href="{% url 'experiments:script_upload' %}"
                        class="btn btn-primary">{% trans "Upload Script" %}</a>
                 </div>

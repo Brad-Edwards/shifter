@@ -264,6 +264,18 @@ rows:
     candidate_issue_title: Adapt ACES participant runtime contracts to Shifter experiment execution
     notes: The current AWS-only SSM execution boundary remains explicit.
 
+  - id: aces.execution-plan-references
+    surface: experiment
+    legacy_source: shifter/shifter_platform/cms/experiments/orchestrator/execution_plan.py
+    legacy_field: RunExecutionPlan and ScriptCommand references
+    category: ACES schema/profile gap
+    aces_target: ACES execution-plan reference records after a matching operation profile exists
+    shifter_owner: cms.experiments.orchestrator, shared.script_context
+    validation_evidence: shifter/shifter_platform/tests/cms/experiments/test_orchestrator_command_safety.py
+    next_issue_kind: implementation-candidate
+    candidate_issue_title: "#1273: Persist ACES operation sidecar records without copying Shifter command strings"
+    notes: ACES sidecars may reference execution-plan identity, but Shifter command strings stay behind ScriptExecutionContext and must not be copied into snapshots.
+
   - id: experiment.artifacts
     surface: artifact
     legacy_source: shifter/shifter_platform/cms/experiments/models.py
@@ -287,6 +299,30 @@ rows:
     next_issue_kind: implementation-candidate
     candidate_issue_title: Expose ACES-backed range status through existing Mission Control views
     notes: Mission Control remains the product UI even if ACES supplies backend state.
+
+  - id: aces.operation-api-projection
+    surface: Mission Control
+    legacy_source: shifter/shifter_platform/mission_control/api/
+    legacy_field: range status and detail API projections
+    category: Shifter backend responsibility
+    aces_target: read-only ACES operation receipt, status, and snapshot projection fields
+    shifter_owner: mission_control.api, cms.api, shared.api.errors, shared.api_tokens.scopes
+    validation_evidence: shifter/shifter_platform/tests/mission_control/test_range_api.py
+    next_issue_kind: implementation-candidate
+    candidate_issue_title: "#1275: Expose read-only operation status and snapshot APIs"
+    notes: API projections must reuse existing auth, exact scopes, serializers, and safe error envelopes rather than adding an ACES-only API surface.
+
+  - id: aces.range-ui-projection
+    surface: Mission Control
+    legacy_source: shifter/shifter_platform/mission_control/views/_ranges.py
+    legacy_field: range dashboard, status cards, and websocket-fed range UX
+    category: Shifter backend responsibility
+    aces_target: ACES-backed range state projected into current Mission Control surfaces
+    shifter_owner: mission_control.views, mission_control.status_consumers, cms.handlers.range_events
+    validation_evidence: shifter/shifter_platform/tests/mission_control/test_range_api.py
+    next_issue_kind: implementation-candidate
+    candidate_issue_title: "#1276: Surface ACES-backed range projections in Mission Control UI"
+    notes: ACES status is a projection layer; current range lifecycle UX and websocket behavior remain the compatibility surface during migration.
 
   - id: mission-control.terminal-guacamole
     surface: Mission Control
@@ -324,6 +360,18 @@ rows:
     candidate_issue_title: Implement a Shifter ACES backend target through engine services
     notes: ACES backend work must adapt to services instead of reaching around them.
 
+  - id: aces.operation-sidecar-persistence
+    surface: provisioner
+    legacy_source: shifter/shifter_platform/engine/models.py
+    legacy_field: Request, Range, range_config, provisioned_instances, and lifecycle timestamps
+    category: Shifter backend responsibility
+    aces_target: operation-receipt-v1, operation-status-v1, runtime-snapshot-v1, and execution-plan reference sidecar records
+    shifter_owner: shared contracts, engine services, cms services
+    validation_evidence: shifter/shifter_platform/tests/engine/; shifter/shifter_platform/tests/cms/
+    next_issue_kind: implementation-candidate
+    candidate_issue_title: "#1273: Implement operation receipt/status/snapshot persistence sidecar"
+    notes: The sidecar is keyed by request_id and profile/version; it must not overload RangeInstance.range_spec, Range.provisioned_instances, ExperimentRun metadata, AuditLog JSON, or event payloads.
+
   - id: provisioner.polaris-aws-path
     surface: provisioner
     legacy_source: scripts/polaris-aws-range/
@@ -348,6 +396,18 @@ rows:
     candidate_issue_title: Decide which Shifter uploaded artifacts become ACES evidence references
     notes: Shifter owns storage, inspection, permissions, and secret handling for uploaded artifacts.
 
+  - id: aces.runtime-snapshot-retention
+    surface: artifact
+    legacy_source: engine.Range.provisioned_instances; cms.RangeInstance.range_spec; risk_register.AuditLog
+    legacy_field: runtime observation, snapshot, audit, and diagnostic JSON surfaces
+    category: Shifter backend responsibility
+    aces_target: bounded, redacted runtime-snapshot-v1 records plus optional short operational history
+    shifter_owner: shared contracts, engine services, cms services, risk_register.services.audit_log
+    validation_evidence: shifter/shifter_platform/tests/cms/; shifter/shifter_platform/tests/engine/
+    next_issue_kind: implementation-candidate
+    candidate_issue_title: "#1277: Implement snapshot retention, redaction, and audit rules"
+    notes: Runtime snapshots are operational observations, not archival experiment records, audit rows, provider dumps, transcripts, prompts, generated scripts, flags, or raw package bodies.
+
   - id: artifact.polaris-content
     surface: artifact
     legacy_source: scenario-dev/polaris/content-packages/polaris/
@@ -371,6 +431,18 @@ rows:
     next_issue_kind: design-only
     candidate_issue_title: Map Shifter lifecycle states to ACES operation status
     notes: Shifter keeps operator-facing lifecycle states; ACES status should be an adapter view.
+
+  - id: aces.operation-status-projection
+    surface: status
+    legacy_source: shifter/shifter_platform/cms/handlers/range_events.py; shifter/shifter_platform/cms/management/commands/reconcile_range_events.py
+    legacy_field: apply_range_status, RangeEventOutbox, ResourceStatus, and reconciler status recovery
+    category: Shifter backend responsibility
+    aces_target: ACES operation-status-v1 adapter view projected through existing Shifter range lifecycle seams
+    shifter_owner: engine.services, cms.handlers.range_events, shared.messages, mission_control.handlers
+    validation_evidence: shifter/shifter_platform/tests/cms/test_reconcile_range_events.py; shifter/shifter_platform/tests/mission_control/test_range_api.py
+    next_issue_kind: implementation-candidate
+    candidate_issue_title: "#1274: Project operation status through range event handling"
+    notes: Projection must remain recoverable through the outbox/reconciler path and must not add a second status enum, event bus, websocket topic, or lifecycle pipeline.
 
   - id: status.ctf-range
     surface: status
