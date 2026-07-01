@@ -276,9 +276,13 @@ jobs:
           import importlib.util
           import json
           import os
+          import sys
           from pathlib import Path
 
           module_path = Path("scripts/bootstrap/deploy.py")
+          # deploy.py imports sibling modules (terraform_backend, ...); put its
+          # directory on sys.path so those resolve when loaded by file location.
+          sys.path.insert(0, str(module_path.parent))
           spec = importlib.util.spec_from_file_location("bootstrap_deploy", module_path)
           if spec is None or spec.loader is None:
               raise RuntimeError(f"Unable to load bootstrap module from {module_path}")
