@@ -131,12 +131,14 @@ def enqueue_event_outbox(event: dict[str, object], *, cur: psycopg.Cursor[tuple[
         Exception: Any DB error is re-raised — callers must learn when durable
             recording fails.
     """
+    # last_error is NOT NULL (model default="" is app-level only, so the column
+    # has no DB default); set it explicitly since this raw insert bypasses the ORM.
     _insert_sql = """
         INSERT INTO engine_range_event_outbox
             (event_id, event_type, payload, status, attempts, max_attempts,
-             next_attempt_at, created_at)
+             next_attempt_at, created_at, last_error)
         VALUES
-            (%s, %s, %s, 'PENDING', 0, 10, NOW(), NOW())
+            (%s, %s, %s, 'PENDING', 0, 10, NOW(), NOW(), '')
         ON CONFLICT (event_id) DO NOTHING
     """
     params = (str(event["event_id"]), event["event_type"], json.dumps(event))

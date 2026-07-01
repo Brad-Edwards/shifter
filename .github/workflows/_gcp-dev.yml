@@ -387,6 +387,20 @@ jobs:
             )
             sa_patch.write_text(sa_updated, encoding="utf-8")
             print(f"Rewrote {sa_fixes} service-account GSA projects to {project}")
+
+          # The runtime env pins the same placeholder project; rewrite only the
+          # GCP project-ID vars (not the resource *names* that share the prefix)
+          # so default-project GCP calls (GCS image access, token minting, in
+          # both the portal and the provisioner job) hit the real project.
+          runtime_env = Path(os.environ["K8S_OVERLAY_DIR"]) / "platform-runtime.env"
+          if runtime_env.exists():
+            env_updated, env_fixes = re.subn(
+              r"(?m)^(GCP_PROJECT_ID=|GOOGLE_CLOUD_PROJECT=).*$",
+              lambda m: f"{m.group(1)}{project}",
+              runtime_env.read_text(encoding="utf-8"),
+            )
+            runtime_env.write_text(env_updated, encoding="utf-8")
+            print(f"Rewrote {env_fixes} runtime-env project vars to {project}")
           PY
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
       - name: Build and push portal image
