@@ -101,6 +101,7 @@ def _make_facade(name: str, module: ModuleType, original: Callable[..., object])
 
     @functools.wraps(original)
     def facade(*args: object, **kwargs: object) -> object:
+        """Delegate one legacy deploy export after syncing patched globals."""
         _sync_modules()
         return getattr(module, name)(*args, **kwargs)
 

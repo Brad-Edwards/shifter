@@ -79,6 +79,14 @@ def _get_output_value(outputs: dict[str, dict[str, object]], key: str) -> object
         raise KeyError(f"Missing Terraform output: {key}") from exc
 
 
+def _get_string_mapping_output(outputs: dict[str, dict[str, object]], key: str) -> dict[str, str]:
+    """Return a Terraform output value as a string mapping."""
+    value = _get_output_value(outputs, key)
+    if not isinstance(value, dict):
+        raise TypeError(f"Terraform output {key} must be a mapping")
+    return {str(item_key): str(item_value) for item_key, item_value in value.items()}
+
+
 def _merge_csv_env_values(*groups: list[str]) -> str:
     """Merge comma-separated values while preserving order and uniqueness."""
     ordered: list[str] = []
@@ -567,7 +575,7 @@ def render_gcp_helm_values(
 ) -> dict[str, object]:
     """Render non-secret Helm values for the Shifter release from Terraform outputs."""
     pinned_image_tag = validate_image_tag(image_tag)
-    image_roots = _get_output_value(outputs, "artifact_registry_image_roots")
+    image_roots = _get_string_mapping_output(outputs, "artifact_registry_image_roots")
     service_accounts = _get_output_value(outputs, "workload_service_accounts")
     public_hostname = str(_get_output_value(outputs, "public_hostname")).strip()
     managed_tls_enabled = bool(_get_output_value(outputs, "managed_tls_enabled"))
@@ -1258,7 +1266,7 @@ def sync_gcp_guacamole_runtime_secret(
         info("[DRY-RUN] Would sync guacamole-runtime Kubernetes Secret from GCP Secret Manager")
         return False
 
-    runtime_secret_ids = _get_output_value(outputs, "runtime_secret_ids")
+    runtime_secret_ids = _get_string_mapping_output(outputs, "runtime_secret_ids")
     guacamole_db_payload = json.loads(fetch_gcp_secret_payload(runtime_secret_ids["guacamole-db"], config.project_id))
     guacamole_json_auth_value = fetch_gcp_secret_payload(
         runtime_secret_ids["guacamole-json-auth"],
@@ -1302,7 +1310,7 @@ def push_gcp_control_plane_images(
 ) -> None:
     """Build and push the control-plane images to Artifact Registry."""
     pinned_image_tag = validate_image_tag(image_tag)
-    image_roots = _get_output_value(outputs, "artifact_registry_image_roots")
+    image_roots = _get_string_mapping_output(outputs, "artifact_registry_image_roots")
     artifact_registry_host = str(image_roots["portal"]).split("/")[0]
     repo_root = get_repo_root()
 
