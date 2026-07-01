@@ -1,354 +1,409 @@
 {
   "allowed_internal_patch_counts": [
     {
-      "count": 1,
-      "path": "scripts/bootstrap/tests/test_deploy.py",
-      "target": "deploy.Path.home"
-    },
-    {
-      "count": 2,
-      "path": "scripts/bootstrap/tests/test_deploy.py",
-      "target": "deploy._fetch_existing_gdc_bootstrap_material"
-    },
-    {
-      "count": 2,
-      "path": "scripts/bootstrap/tests/test_deploy.py",
-      "target": "deploy._gcp_identity_access_token"
-    },
-    {
-      "count": 4,
-      "path": "scripts/bootstrap/tests/test_deploy.py",
-      "target": "deploy._gcp_identity_admin_request"
-    },
-    {
-      "count": 2,
-      "path": "scripts/bootstrap/tests/test_deploy.py",
-      "target": "deploy._run_gcp_bootstrap_probe"
-    },
-    {
-      "count": 1,
-      "path": "scripts/bootstrap/tests/test_deploy.py",
-      "target": "deploy.apply_gcp_control_plane_terraform"
-    },
-    {
-      "count": 3,
-      "path": "scripts/bootstrap/tests/test_deploy.py",
-      "target": "deploy.bootstrap_account"
-    },
-    {
-      "count": 1,
-      "path": "scripts/bootstrap/tests/test_deploy.py",
-      "target": "deploy.bootstrap_gcp_control_plane"
-    },
-    {
       "count": 8,
-      "path": "scripts/bootstrap/tests/test_deploy.py",
-      "target": "deploy.check_dependencies"
-    },
-    {
-      "count": 18,
-      "path": "scripts/bootstrap/tests/test_deploy.py",
+      "path": "scripts/bootstrap/tests/test_aws_bootstrap.py",
       "target": "deploy.confirm"
     },
     {
-      "count": 8,
-      "path": "scripts/bootstrap/tests/test_deploy.py",
-      "target": "deploy.confirm_or_manual"
-    },
-    {
-      "count": 1,
-      "path": "scripts/bootstrap/tests/test_deploy.py",
-      "target": "deploy.deploy_gcp_control_plane_with_helm"
-    },
-    {
-      "count": 1,
-      "path": "scripts/bootstrap/tests/test_deploy.py",
-      "target": "deploy.ensure_gcp_control_plane_namespaces"
-    },
-    {
-      "count": 1,
-      "path": "scripts/bootstrap/tests/test_deploy.py",
-      "target": "deploy.ensure_gcp_identity_platform_operator"
-    },
-    {
-      "count": 1,
-      "path": "scripts/bootstrap/tests/test_deploy.py",
-      "target": "deploy.ensure_gdc_access_secret"
-    },
-    {
-      "count": 1,
-      "path": "scripts/bootstrap/tests/test_deploy.py",
-      "target": "deploy.ensure_gdc_apis"
-    },
-    {
-      "count": 1,
-      "path": "scripts/bootstrap/tests/test_deploy.py",
-      "target": "deploy.ensure_gdc_instances"
-    },
-    {
-      "count": 1,
-      "path": "scripts/bootstrap/tests/test_deploy.py",
-      "target": "deploy.ensure_gdc_network"
-    },
-    {
-      "count": 1,
-      "path": "scripts/bootstrap/tests/test_deploy.py",
-      "target": "deploy.ensure_gdc_service_account"
-    },
-    {
-      "count": 1,
-      "path": "scripts/bootstrap/tests/test_deploy.py",
-      "target": "deploy.ensure_gdc_vm_image_secret"
-    },
-    {
-      "count": 1,
-      "path": "scripts/bootstrap/tests/test_deploy.py",
-      "target": "deploy.ensure_gke_gcloud_auth_plugin"
-    },
-    {
-      "count": 1,
-      "path": "scripts/bootstrap/tests/test_deploy.py",
-      "target": "deploy.error"
-    },
-    {
-      "count": 1,
-      "path": "scripts/bootstrap/tests/test_deploy.py",
-      "target": "deploy.fetch_gdc_kubeconfig"
-    },
-    {
-      "count": 1,
-      "path": "scripts/bootstrap/tests/test_deploy.py",
-      "target": "deploy.full_deployment"
-    },
-    {
-      "count": 6,
-      "path": "scripts/bootstrap/tests/test_deploy.py",
-      "target": "deploy.gcloud_resource_exists"
-    },
-    {
-      "count": 1,
-      "path": "scripts/bootstrap/tests/test_deploy.py",
-      "target": "deploy.gcp_terraform_bootstrap_credentials"
-    },
-    {
-      "count": 2,
-      "path": "scripts/bootstrap/tests/test_deploy.py",
-      "target": "deploy.gdc_bootstrap_cluster"
-    },
-    {
       "count": 11,
-      "path": "scripts/bootstrap/tests/test_deploy.py",
+      "path": "scripts/bootstrap/tests/test_aws_bootstrap.py",
       "target": "deploy.get_aws_account_id"
     },
     {
-      "count": 1,
-      "path": "scripts/bootstrap/tests/test_deploy.py",
-      "target": "deploy.get_gcp_managed_certificate_status"
+      "count": 11,
+      "path": "scripts/bootstrap/tests/test_aws_bootstrap.py",
+      "target": "deploy.get_repo_root"
+    },
+    {
+      "count": 3,
+      "path": "scripts/bootstrap/tests/test_cli.py",
+      "target": "deploy.bootstrap_account"
+    },
+    {
+      "count": 8,
+      "path": "scripts/bootstrap/tests/test_cli.py",
+      "target": "deploy.check_dependencies"
     },
     {
       "count": 1,
-      "path": "scripts/bootstrap/tests/test_deploy.py",
-      "target": "deploy.get_gdc_instance_ssh_metadata"
+      "path": "scripts/bootstrap/tests/test_cli.py",
+      "target": "deploy.full_deployment"
     },
     {
       "count": 2,
-      "path": "scripts/bootstrap/tests/test_deploy.py",
-      "target": "deploy.get_latest_gcp_secret_payload"
+      "path": "scripts/bootstrap/tests/test_cli.py",
+      "target": "deploy.gdc_bootstrap_cluster"
     },
     {
-      "count": 32,
-      "path": "scripts/bootstrap/tests/test_deploy.py",
+      "count": 2,
+      "path": "scripts/bootstrap/tests/test_cli.py",
       "target": "deploy.get_repo_root"
     },
     {
       "count": 2,
-      "path": "scripts/bootstrap/tests/test_deploy.py",
-      "target": "deploy.helm_release_exists"
-    },
-    {
-      "count": 1,
-      "path": "scripts/bootstrap/tests/test_deploy.py",
-      "target": "deploy.install_gke_gcloud_auth_plugin_user_space"
-    },
-    {
-      "count": 2,
-      "path": "scripts/bootstrap/tests/test_deploy.py",
-      "target": "deploy.list_gcp_helm_cutover_resources"
-    },
-    {
-      "count": 4,
-      "path": "scripts/bootstrap/tests/test_deploy.py",
-      "target": "deploy.load_bootstrap_env_values"
-    },
-    {
-      "count": 3,
-      "path": "scripts/bootstrap/tests/test_deploy.py",
-      "target": "deploy.os.geteuid"
-    },
-    {
-      "count": 1,
-      "path": "scripts/bootstrap/tests/test_deploy.py",
-      "target": "deploy.prepare_gcp_helm_cutover"
-    },
-    {
-      "count": 1,
-      "path": "scripts/bootstrap/tests/test_deploy.py",
-      "target": "deploy.prompt_for_gcp_bootstrap_operator_credentials"
-    },
-    {
-      "count": 1,
-      "path": "scripts/bootstrap/tests/test_deploy.py",
-      "target": "deploy.prune_stale_gcp_terraform_bootstrap_keys"
-    },
-    {
-      "count": 1,
-      "path": "scripts/bootstrap/tests/test_deploy.py",
-      "target": "deploy.push_gcp_control_plane_images"
-    },
-    {
-      "count": 7,
-      "path": "scripts/bootstrap/tests/test_deploy.py",
-      "target": "deploy.resolve_gcp_bootstrap_operator_credentials"
-    },
-    {
-      "count": 23,
-      "path": "scripts/bootstrap/tests/test_deploy.py",
-      "target": "deploy.run_cmd"
-    },
-    {
-      "count": 1,
-      "path": "scripts/bootstrap/tests/test_deploy.py",
-      "target": "deploy.run_gcp_terraform_apply_with_retry"
-    },
-    {
-      "count": 1,
-      "path": "scripts/bootstrap/tests/test_deploy.py",
-      "target": "deploy.run_gcp_terraform_init_with_retry"
-    },
-    {
-      "count": 1,
-      "path": "scripts/bootstrap/tests/test_deploy.py",
-      "target": "deploy.run_gdc_workstation_script"
-    },
-    {
-      "count": 6,
-      "path": "scripts/bootstrap/tests/test_deploy.py",
-      "target": "deploy.shutil.which"
-    },
-    {
-      "count": 1,
-      "path": "scripts/bootstrap/tests/test_deploy.py",
-      "target": "deploy.stage_gcp_control_plane_values"
-    },
-    {
-      "count": 1,
-      "path": "scripts/bootstrap/tests/test_deploy.py",
-      "target": "deploy.stage_gdc_bootstrap_assets"
-    },
-    {
-      "count": 1,
-      "path": "scripts/bootstrap/tests/test_deploy.py",
-      "target": "deploy.sync_gdc_access_secret"
-    },
-    {
-      "count": 1,
-      "path": "scripts/bootstrap/tests/test_deploy.py",
-      "target": "deploy.sync_gdc_instance_ssh_metadata"
-    },
-    {
-      "count": 1,
-      "path": "scripts/bootstrap/tests/test_deploy.py",
-      "target": "deploy.sync_gdc_vm_image_secret"
-    },
-    {
-      "count": 1,
-      "path": "scripts/bootstrap/tests/test_deploy.py",
-      "target": "deploy.tempfile.TemporaryDirectory"
-    },
-    {
-      "count": 2,
-      "path": "scripts/bootstrap/tests/test_deploy.py",
+      "path": "scripts/bootstrap/tests/test_cli.py",
       "target": "deploy.terraform_deploy"
     },
     {
-      "count": 10,
-      "path": "scripts/bootstrap/tests/test_deploy.py",
-      "target": "deploy.time.sleep"
-    },
-    {
       "count": 1,
-      "path": "scripts/bootstrap/tests/test_deploy.py",
-      "target": "deploy.upload_gdc_assets"
-    },
-    {
-      "count": 2,
-      "path": "scripts/bootstrap/tests/test_deploy.py",
-      "target": "deploy.urllib_request.urlopen"
-    },
-    {
-      "count": 1,
-      "path": "scripts/bootstrap/tests/test_deploy.py",
-      "target": "deploy.verify_gcp_public_portal"
-    },
-    {
-      "count": 1,
-      "path": "scripts/bootstrap/tests/test_deploy.py",
-      "target": "deploy.wait_for_gcp_managed_certificate_active"
-    },
-    {
-      "count": 1,
-      "path": "scripts/bootstrap/tests/test_deploy.py",
-      "target": "deploy.wait_for_gcp_terraform_bootstrap_access"
-    },
-    {
-      "count": 1,
-      "path": "scripts/bootstrap/tests/test_deploy.py",
-      "target": "deploy.wait_for_gdc_ssh"
-    },
-    {
-      "count": 4,
-      "path": "scripts/bootstrap/tests/test_deploy.py",
-      "target": "deploy.wait_for_user"
-    },
-    {
-      "count": 1,
-      "path": "scripts/bootstrap/tests/test_deploy.py",
+      "path": "scripts/bootstrap/tests/test_cli.py",
       "target": "deploy.walkthrough_acm_validation"
     },
     {
       "count": 3,
-      "path": "scripts/bootstrap/tests/test_deploy.py",
+      "path": "scripts/bootstrap/tests/test_cli.py",
       "target": "deploy.walkthrough_backend_config"
     },
     {
       "count": 1,
-      "path": "scripts/bootstrap/tests/test_deploy.py",
+      "path": "scripts/bootstrap/tests/test_cli.py",
       "target": "deploy.walkthrough_cognito_user"
     },
     {
       "count": 1,
-      "path": "scripts/bootstrap/tests/test_deploy.py",
+      "path": "scripts/bootstrap/tests/test_cli.py",
       "target": "deploy.walkthrough_dns_setup"
     },
     {
       "count": 1,
-      "path": "scripts/bootstrap/tests/test_deploy.py",
+      "path": "scripts/bootstrap/tests/test_cli.py",
       "target": "deploy.walkthrough_final_steps"
     },
     {
-      "count": 1,
-      "path": "scripts/bootstrap/tests/test_deploy.py",
-      "target": "deploy.walkthrough_gcp_dns_setup_and_wait_for_tls"
+      "count": 3,
+      "path": "scripts/bootstrap/tests/test_cli.py",
+      "target": "deploy.walkthrough_github_secrets"
     },
     {
       "count": 1,
-      "path": "scripts/bootstrap/tests/test_deploy.py",
-      "target": "deploy.walkthrough_git_commit"
+      "path": "scripts/bootstrap/tests/test_gcp_control_plane.py",
+      "target": "deploy.Path.home"
     },
     {
       "count": 3,
-      "path": "scripts/bootstrap/tests/test_deploy.py",
-      "target": "deploy.walkthrough_github_secrets"
+      "path": "scripts/bootstrap/tests/test_gcp_control_plane.py",
+      "target": "deploy._gcp_identity_access_token"
+    },
+    {
+      "count": 4,
+      "path": "scripts/bootstrap/tests/test_gcp_control_plane.py",
+      "target": "deploy._gcp_identity_admin_request"
+    },
+    {
+      "count": 2,
+      "path": "scripts/bootstrap/tests/test_gcp_control_plane.py",
+      "target": "deploy._run_gcp_bootstrap_probe"
+    },
+    {
+      "count": 1,
+      "path": "scripts/bootstrap/tests/test_gcp_control_plane.py",
+      "target": "deploy.error"
+    },
+    {
+      "count": 2,
+      "path": "scripts/bootstrap/tests/test_gcp_control_plane.py",
+      "target": "deploy.gcloud_resource_exists"
+    },
+    {
+      "count": 1,
+      "path": "scripts/bootstrap/tests/test_gcp_control_plane.py",
+      "target": "deploy.gcp_terraform_bootstrap_credentials"
+    },
+    {
+      "count": 1,
+      "path": "scripts/bootstrap/tests/test_gcp_control_plane.py",
+      "target": "deploy.get_gcp_managed_certificate_status"
+    },
+    {
+      "count": 1,
+      "path": "scripts/bootstrap/tests/test_gcp_control_plane.py",
+      "target": "deploy.get_repo_root"
+    },
+    {
+      "count": 2,
+      "path": "scripts/bootstrap/tests/test_gcp_control_plane.py",
+      "target": "deploy.helm_release_exists"
+    },
+    {
+      "count": 1,
+      "path": "scripts/bootstrap/tests/test_gcp_control_plane.py",
+      "target": "deploy.install_gke_gcloud_auth_plugin_user_space"
+    },
+    {
+      "count": 2,
+      "path": "scripts/bootstrap/tests/test_gcp_control_plane.py",
+      "target": "deploy.list_gcp_helm_cutover_resources"
+    },
+    {
+      "count": 3,
+      "path": "scripts/bootstrap/tests/test_gcp_control_plane.py",
+      "target": "deploy.load_bootstrap_env_values"
+    },
+    {
+      "count": 3,
+      "path": "scripts/bootstrap/tests/test_gcp_control_plane.py",
+      "target": "deploy.os.geteuid"
+    },
+    {
+      "count": 1,
+      "path": "scripts/bootstrap/tests/test_gcp_control_plane.py",
+      "target": "deploy.prompt_for_gcp_bootstrap_operator_credentials"
+    },
+    {
+      "count": 1,
+      "path": "scripts/bootstrap/tests/test_gcp_control_plane.py",
+      "target": "deploy.prune_stale_gcp_terraform_bootstrap_keys"
+    },
+    {
+      "count": 7,
+      "path": "scripts/bootstrap/tests/test_gcp_control_plane.py",
+      "target": "deploy.resolve_gcp_bootstrap_operator_credentials"
+    },
+    {
+      "count": 8,
+      "path": "scripts/bootstrap/tests/test_gcp_control_plane.py",
+      "target": "deploy.run_cmd"
+    },
+    {
+      "count": 1,
+      "path": "scripts/bootstrap/tests/test_gcp_control_plane.py",
+      "target": "deploy.run_gcp_terraform_apply_with_retry"
+    },
+    {
+      "count": 1,
+      "path": "scripts/bootstrap/tests/test_gcp_control_plane.py",
+      "target": "deploy.run_gcp_terraform_init_with_retry"
+    },
+    {
+      "count": 10,
+      "path": "scripts/bootstrap/tests/test_gcp_control_plane.py",
+      "target": "deploy.shutil.which"
+    },
+    {
+      "count": 1,
+      "path": "scripts/bootstrap/tests/test_gcp_control_plane.py",
+      "target": "deploy.tempfile.TemporaryDirectory"
+    },
+    {
+      "count": 9,
+      "path": "scripts/bootstrap/tests/test_gcp_control_plane.py",
+      "target": "deploy.time.sleep"
+    },
+    {
+      "count": 4,
+      "path": "scripts/bootstrap/tests/test_gcp_control_plane.py",
+      "target": "deploy.urllib_request.urlopen"
+    },
+    {
+      "count": 1,
+      "path": "scripts/bootstrap/tests/test_gcp_control_plane.py",
+      "target": "deploy.verify_gcp_public_portal"
+    },
+    {
+      "count": 1,
+      "path": "scripts/bootstrap/tests/test_gcp_control_plane.py",
+      "target": "deploy.wait_for_gcp_managed_certificate_active"
+    },
+    {
+      "count": 1,
+      "path": "scripts/bootstrap/tests/test_gcp_control_plane.py",
+      "target": "deploy.wait_for_gcp_terraform_bootstrap_access"
+    },
+    {
+      "count": 1,
+      "path": "scripts/bootstrap/tests/test_gcp_control_plane.py",
+      "target": "deploy.wait_for_user"
+    },
+    {
+      "count": 2,
+      "path": "scripts/bootstrap/tests/test_gdc_cluster.py",
+      "target": "deploy._fetch_existing_gdc_bootstrap_material"
+    },
+    {
+      "count": 1,
+      "path": "scripts/bootstrap/tests/test_gdc_cluster.py",
+      "target": "deploy.apply_gcp_control_plane_terraform"
+    },
+    {
+      "count": 1,
+      "path": "scripts/bootstrap/tests/test_gdc_cluster.py",
+      "target": "deploy.bootstrap_gcp_control_plane"
+    },
+    {
+      "count": 1,
+      "path": "scripts/bootstrap/tests/test_gdc_cluster.py",
+      "target": "deploy.confirm"
+    },
+    {
+      "count": 1,
+      "path": "scripts/bootstrap/tests/test_gdc_cluster.py",
+      "target": "deploy.deploy_gcp_control_plane_with_helm"
+    },
+    {
+      "count": 1,
+      "path": "scripts/bootstrap/tests/test_gdc_cluster.py",
+      "target": "deploy.ensure_gcp_control_plane_namespaces"
+    },
+    {
+      "count": 1,
+      "path": "scripts/bootstrap/tests/test_gdc_cluster.py",
+      "target": "deploy.ensure_gcp_identity_platform_operator"
+    },
+    {
+      "count": 1,
+      "path": "scripts/bootstrap/tests/test_gdc_cluster.py",
+      "target": "deploy.ensure_gdc_access_secret"
+    },
+    {
+      "count": 1,
+      "path": "scripts/bootstrap/tests/test_gdc_cluster.py",
+      "target": "deploy.ensure_gdc_apis"
+    },
+    {
+      "count": 1,
+      "path": "scripts/bootstrap/tests/test_gdc_cluster.py",
+      "target": "deploy.ensure_gdc_instances"
+    },
+    {
+      "count": 1,
+      "path": "scripts/bootstrap/tests/test_gdc_cluster.py",
+      "target": "deploy.ensure_gdc_network"
+    },
+    {
+      "count": 1,
+      "path": "scripts/bootstrap/tests/test_gdc_cluster.py",
+      "target": "deploy.ensure_gdc_service_account"
+    },
+    {
+      "count": 1,
+      "path": "scripts/bootstrap/tests/test_gdc_cluster.py",
+      "target": "deploy.ensure_gdc_vm_image_secret"
+    },
+    {
+      "count": 1,
+      "path": "scripts/bootstrap/tests/test_gdc_cluster.py",
+      "target": "deploy.ensure_gke_gcloud_auth_plugin"
+    },
+    {
+      "count": 1,
+      "path": "scripts/bootstrap/tests/test_gdc_cluster.py",
+      "target": "deploy.fetch_gdc_kubeconfig"
+    },
+    {
+      "count": 4,
+      "path": "scripts/bootstrap/tests/test_gdc_cluster.py",
+      "target": "deploy.gcloud_resource_exists"
+    },
+    {
+      "count": 1,
+      "path": "scripts/bootstrap/tests/test_gdc_cluster.py",
+      "target": "deploy.get_gdc_instance_ssh_metadata"
+    },
+    {
+      "count": 2,
+      "path": "scripts/bootstrap/tests/test_gdc_cluster.py",
+      "target": "deploy.get_latest_gcp_secret_payload"
+    },
+    {
+      "count": 3,
+      "path": "scripts/bootstrap/tests/test_gdc_cluster.py",
+      "target": "deploy.get_repo_root"
+    },
+    {
+      "count": 1,
+      "path": "scripts/bootstrap/tests/test_gdc_cluster.py",
+      "target": "deploy.prepare_gcp_helm_cutover"
+    },
+    {
+      "count": 1,
+      "path": "scripts/bootstrap/tests/test_gdc_cluster.py",
+      "target": "deploy.push_gcp_control_plane_images"
+    },
+    {
+      "count": 14,
+      "path": "scripts/bootstrap/tests/test_gdc_cluster.py",
+      "target": "deploy.run_cmd"
+    },
+    {
+      "count": 1,
+      "path": "scripts/bootstrap/tests/test_gdc_cluster.py",
+      "target": "deploy.run_gdc_workstation_script"
+    },
+    {
+      "count": 1,
+      "path": "scripts/bootstrap/tests/test_gdc_cluster.py",
+      "target": "deploy.stage_gcp_control_plane_values"
+    },
+    {
+      "count": 1,
+      "path": "scripts/bootstrap/tests/test_gdc_cluster.py",
+      "target": "deploy.stage_gdc_bootstrap_assets"
+    },
+    {
+      "count": 1,
+      "path": "scripts/bootstrap/tests/test_gdc_cluster.py",
+      "target": "deploy.sync_gdc_access_secret"
+    },
+    {
+      "count": 1,
+      "path": "scripts/bootstrap/tests/test_gdc_cluster.py",
+      "target": "deploy.sync_gdc_instance_ssh_metadata"
+    },
+    {
+      "count": 1,
+      "path": "scripts/bootstrap/tests/test_gdc_cluster.py",
+      "target": "deploy.sync_gdc_vm_image_secret"
+    },
+    {
+      "count": 1,
+      "path": "scripts/bootstrap/tests/test_gdc_cluster.py",
+      "target": "deploy.time.sleep"
+    },
+    {
+      "count": 1,
+      "path": "scripts/bootstrap/tests/test_gdc_cluster.py",
+      "target": "deploy.upload_gdc_assets"
+    },
+    {
+      "count": 1,
+      "path": "scripts/bootstrap/tests/test_gdc_cluster.py",
+      "target": "deploy.wait_for_gdc_ssh"
+    },
+    {
+      "count": 1,
+      "path": "scripts/bootstrap/tests/test_gdc_cluster.py",
+      "target": "deploy.walkthrough_gcp_dns_setup_and_wait_for_tls"
+    },
+    {
+      "count": 6,
+      "path": "scripts/bootstrap/tests/test_terraform_deploy.py",
+      "target": "deploy.confirm"
+    },
+    {
+      "count": 10,
+      "path": "scripts/bootstrap/tests/test_terraform_deploy.py",
+      "target": "deploy.get_repo_root"
+    },
+    {
+      "count": 3,
+      "path": "scripts/bootstrap/tests/test_walkthrough.py",
+      "target": "deploy.confirm"
+    },
+    {
+      "count": 7,
+      "path": "scripts/bootstrap/tests/test_walkthrough.py",
+      "target": "deploy.confirm_or_manual"
+    },
+    {
+      "count": 1,
+      "path": "scripts/bootstrap/tests/test_walkthrough.py",
+      "target": "deploy.run_cmd"
+    },
+    {
+      "count": 3,
+      "path": "scripts/bootstrap/tests/test_walkthrough.py",
+      "target": "deploy.wait_for_user"
     },
     {
       "count": 1,
@@ -369,21 +424,6 @@
       "count": 2,
       "path": "shifter/engine/provisioner/tests/test_config.py",
       "target": "cloud.get_secrets_store"
-    },
-    {
-      "count": 11,
-      "path": "shifter/engine/provisioner/tests/test_events.py",
-      "target": "events._publish_event"
-    },
-    {
-      "count": 2,
-      "path": "shifter/engine/provisioner/tests/test_events.py",
-      "target": "events.get_event_bus"
-    },
-    {
-      "count": 2,
-      "path": "shifter/engine/provisioner/tests/test_executor_factory.py",
-      "target": "executors.factory.GuestSSHExecutor"
     },
     {
       "count": 1,
@@ -566,179 +606,9 @@
       "target": "gdc_vmseries_ngfw.load_gdc_palo_alto_vmseries_config"
     },
     {
-      "count": 7,
-      "path": "shifter/engine/provisioner/tests/test_get_range_data.py",
-      "target": "main.get_db_connection"
-    },
-    {
       "count": 1,
       "path": "shifter/engine/provisioner/tests/test_main.py",
       "target": "components.network.allocate_subnets"
-    },
-    {
-      "count": 1,
-      "path": "shifter/engine/provisioner/tests/test_main.py",
-      "target": "gdc_vmseries_ngfw.run_power_operation"
-    },
-    {
-      "count": 1,
-      "path": "shifter/engine/provisioner/tests/test_main.py",
-      "target": "instance_orchestrator._run_polaris_range_bootstrap"
-    },
-    {
-      "count": 2,
-      "path": "shifter/engine/provisioner/tests/test_main.py",
-      "target": "main.BootstrapPlan"
-    },
-    {
-      "count": 2,
-      "path": "shifter/engine/provisioner/tests/test_main.py",
-      "target": "main.DCSetupPlan"
-    },
-    {
-      "count": 2,
-      "path": "shifter/engine/provisioner/tests/test_main.py",
-      "target": "main.SetupOrchestrator"
-    },
-    {
-      "count": 1,
-      "path": "shifter/engine/provisioner/tests/test_main.py",
-      "target": "main._build_range_terraform_variables"
-    },
-    {
-      "count": 1,
-      "path": "shifter/engine/provisioner/tests/test_main.py",
-      "target": "main._get_dc_instance_type"
-    },
-    {
-      "count": 1,
-      "path": "shifter/engine/provisioner/tests/test_main.py",
-      "target": "main._get_kali_instance_type"
-    },
-    {
-      "count": 1,
-      "path": "shifter/engine/provisioner/tests/test_main.py",
-      "target": "main._get_victim_instance_type"
-    },
-    {
-      "count": 1,
-      "path": "shifter/engine/provisioner/tests/test_main.py",
-      "target": "main._get_windows_instance_type"
-    },
-    {
-      "count": 1,
-      "path": "shifter/engine/provisioner/tests/test_main.py",
-      "target": "main._run_dc_setup"
-    },
-    {
-      "count": 2,
-      "path": "shifter/engine/provisioner/tests/test_main.py",
-      "target": "main._run_single_instance_setup"
-    },
-    {
-      "count": 1,
-      "path": "shifter/engine/provisioner/tests/test_main.py",
-      "target": "main._set_attacker_container_password_after_bootstrap"
-    },
-    {
-      "count": 2,
-      "path": "shifter/engine/provisioner/tests/test_main.py",
-      "target": "main._should_promote_dc_at_runtime"
-    },
-    {
-      "count": 2,
-      "path": "shifter/engine/provisioner/tests/test_main.py",
-      "target": "main._should_run_dc_bootstrap_plan"
-    },
-    {
-      "count": 1,
-      "path": "shifter/engine/provisioner/tests/test_main.py",
-      "target": "main._update_range_config"
-    },
-    {
-      "count": 2,
-      "path": "shifter/engine/provisioner/tests/test_main.py",
-      "target": "main.build_guest_execution_context"
-    },
-    {
-      "count": 3,
-      "path": "shifter/engine/provisioner/tests/test_main.py",
-      "target": "main.generate_presigned_url"
-    },
-    {
-      "count": 1,
-      "path": "shifter/engine/provisioner/tests/test_main.py",
-      "target": "main.get_agent_presigned_url"
-    },
-    {
-      "count": 2,
-      "path": "shifter/engine/provisioner/tests/test_main.py",
-      "target": "main.get_ami_id"
-    },
-    {
-      "count": 1,
-      "path": "shifter/engine/provisioner/tests/test_main.py",
-      "target": "main.get_db_connection"
-    },
-    {
-      "count": 2,
-      "path": "shifter/engine/provisioner/tests/test_main.py",
-      "target": "main.get_ngfw_data_by_request_id"
-    },
-    {
-      "count": 3,
-      "path": "shifter/engine/provisioner/tests/test_main.py",
-      "target": "main.get_range_availability_zone"
-    },
-    {
-      "count": 2,
-      "path": "shifter/engine/provisioner/tests/test_main.py",
-      "target": "main.get_range_data_by_request_id"
-    },
-    {
-      "count": 2,
-      "path": "shifter/engine/provisioner/tests/test_main.py",
-      "target": "main.get_user_ngfw_data"
-    },
-    {
-      "count": 3,
-      "path": "shifter/engine/provisioner/tests/test_main.py",
-      "target": "main.load_range_network_config"
-    },
-    {
-      "count": 1,
-      "path": "shifter/engine/provisioner/tests/test_main.py",
-      "target": "main.publish_ngfw_event"
-    },
-    {
-      "count": 1,
-      "path": "shifter/engine/provisioner/tests/test_main.py",
-      "target": "main.publish_ready"
-    },
-    {
-      "count": 1,
-      "path": "shifter/engine/provisioner/tests/test_main.py",
-      "target": "main.publish_status_update"
-    },
-    {
-      "count": 1,
-      "path": "shifter/engine/provisioner/tests/test_main.py",
-      "target": "main.range_terraform_runner.apply_range"
-    },
-    {
-      "count": 1,
-      "path": "shifter/engine/provisioner/tests/test_main.py",
-      "target": "main.run_instance_setup"
-    },
-    {
-      "count": 2,
-      "path": "shifter/engine/provisioner/tests/test_main.py",
-      "target": "main.update_instance_state"
-    },
-    {
-      "count": 1,
-      "path": "shifter/engine/provisioner/tests/test_main.py",
-      "target": "main.write_provisioned_state"
     },
     {
       "count": 1,
@@ -828,11 +698,6 @@
     {
       "count": 2,
       "path": "shifter/engine/provisioner/tests/test_range_ops_provider_guard.py",
-      "target": "range_ops.publish_status_update"
-    },
-    {
-      "count": 2,
-      "path": "shifter/engine/provisioner/tests/test_range_ops_provider_guard.py",
       "target": "range_ops.update_range_status"
     },
     {
@@ -884,51 +749,6 @@
       "count": 9,
       "path": "shifter/engine/provisioner/tests/test_terraform_base.py",
       "target": "terraform_base.run_terraform"
-    },
-    {
-      "count": 5,
-      "path": "shifter/engine/provisioner/tests/test_terraform_destroy_failed_range.py",
-      "target": "main._build_range_terraform_variables"
-    },
-    {
-      "count": 1,
-      "path": "shifter/engine/provisioner/tests/test_terraform_destroy_failed_range.py",
-      "target": "main._run_terraform_destroy"
-    },
-    {
-      "count": 2,
-      "path": "shifter/engine/provisioner/tests/test_terraform_destroy_failed_range.py",
-      "target": "main._run_terraform_provision"
-    },
-    {
-      "count": 7,
-      "path": "shifter/engine/provisioner/tests/test_terraform_destroy_failed_range.py",
-      "target": "main.get_range_data_by_request_id"
-    },
-    {
-      "count": 3,
-      "path": "shifter/engine/provisioner/tests/test_terraform_destroy_failed_range.py",
-      "target": "main.mark_range_instances_destroyed"
-    },
-    {
-      "count": 4,
-      "path": "shifter/engine/provisioner/tests/test_terraform_destroy_failed_range.py",
-      "target": "main.publish_destroyed"
-    },
-    {
-      "count": 3,
-      "path": "shifter/engine/provisioner/tests/test_terraform_destroy_failed_range.py",
-      "target": "main.publish_failed"
-    },
-    {
-      "count": 7,
-      "path": "shifter/engine/provisioner/tests/test_terraform_destroy_failed_range.py",
-      "target": "main.range_terraform_runner"
-    },
-    {
-      "count": 3,
-      "path": "shifter/engine/provisioner/tests/test_terraform_destroy_failed_range.py",
-      "target": "main.remove_ngfw_subnets"
     },
     {
       "count": 3,
@@ -1049,6 +869,41 @@
       "count": 3,
       "path": "shifter/engine/provisioner/tests/test_terraform_runner.py",
       "target": "terraform_base.run_terraform"
+    },
+    {
+      "count": 2,
+      "path": "shifter/shifter_platform/tests/cms/experiments/test_handlers.py",
+      "target": "channels.layers.get_channel_layer"
+    },
+    {
+      "count": 1,
+      "path": "shifter/shifter_platform/tests/cms/experiments/test_handlers.py",
+      "target": "cms.experiments.handlers.Experiment"
+    },
+    {
+      "count": 12,
+      "path": "shifter/shifter_platform/tests/cms/experiments/test_handlers.py",
+      "target": "cms.experiments.handlers.ExperimentOrchestrator"
+    },
+    {
+      "count": 1,
+      "path": "shifter/shifter_platform/tests/cms/experiments/test_handlers.py",
+      "target": "cms.experiments.handlers.ExperimentRun"
+    },
+    {
+      "count": 2,
+      "path": "shifter/shifter_platform/tests/cms/experiments/test_handlers.py",
+      "target": "cms.experiments.handlers._broadcast_experiment_status"
+    },
+    {
+      "count": 3,
+      "path": "shifter/shifter_platform/tests/cms/experiments/test_handlers.py",
+      "target": "cms.experiments.handlers._broadcast_experiment_status_if_terminal"
+    },
+    {
+      "count": 5,
+      "path": "shifter/shifter_platform/tests/cms/experiments/test_handlers.py",
+      "target": "cms.experiments.handlers._broadcast_run_status_for"
     },
     {
       "count": 1,
@@ -1178,11 +1033,6 @@
     {
       "count": 1,
       "path": "shifter/shifter_platform/tests/ctf/test_api_view_flows.py",
-      "target": "ctf.services.range.provision_event_ranges"
-    },
-    {
-      "count": 1,
-      "path": "shifter/shifter_platform/tests/ctf/test_api_view_flows.py",
       "target": "ctf.services.resend_invite"
     },
     {
@@ -1193,41 +1043,6 @@
     {
       "count": 1,
       "path": "shifter/shifter_platform/tests/ctf/test_auth.py",
-      "target": "config.dev_auth.Group.objects.filter"
-    },
-    {
-      "count": 2,
-      "path": "shifter/shifter_platform/tests/ctf/test_auth.py",
-      "target": "config.dev_auth.Group.objects.get_or_create"
-    },
-    {
-      "count": 3,
-      "path": "shifter/shifter_platform/tests/ctf/test_auth.py",
-      "target": "config.dev_auth.User.objects.get_or_create"
-    },
-    {
-      "count": 3,
-      "path": "shifter/shifter_platform/tests/ctf/test_auth.py",
-      "target": "config.dev_auth.get_user_profile"
-    },
-    {
-      "count": 3,
-      "path": "shifter/shifter_platform/tests/ctf/test_auth.py",
-      "target": "config.dev_auth.login"
-    },
-    {
-      "count": 5,
-      "path": "shifter/shifter_platform/tests/ctf/test_auth.py",
-      "target": "config.oidc.Group.objects.get_or_create"
-    },
-    {
-      "count": 5,
-      "path": "shifter/shifter_platform/tests/ctf/test_auth.py",
-      "target": "config.oidc.get_user_profile"
-    },
-    {
-      "count": 2,
-      "path": "shifter/shifter_platform/tests/ctf/test_auth.py",
       "target": "ctf.models.CTFEvent.objects"
     },
     {
@@ -1236,24 +1051,9 @@
       "target": "ctf.models.CTFParticipant.objects"
     },
     {
-      "count": 2,
-      "path": "shifter/shifter_platform/tests/ctf/test_auth.py",
-      "target": "ctf.services.get_organizer_events"
-    },
-    {
-      "count": 1,
-      "path": "shifter/shifter_platform/tests/ctf/test_auth.py",
-      "target": "ctf.services.participant.is_active_participant"
-    },
-    {
-      "count": 10,
+      "count": 9,
       "path": "shifter/shifter_platform/tests/ctf/test_auth.py",
       "target": "management.services.get_user_profile"
-    },
-    {
-      "count": 1,
-      "path": "shifter/shifter_platform/tests/ctf/test_auth.py",
-      "target": "management.services.set_active_ctf_event"
     },
     {
       "count": 1,
@@ -1268,20 +1068,10 @@
     {
       "count": 2,
       "path": "shifter/shifter_platform/tests/ctf/test_auth_registration.py",
-      "target": "ctf.services.get_organizer_events"
-    },
-    {
-      "count": 1,
-      "path": "shifter/shifter_platform/tests/ctf/test_auth_registration.py",
-      "target": "ctf.services.participant.is_active_participant"
-    },
-    {
-      "count": 5,
-      "path": "shifter/shifter_platform/tests/ctf/test_auth_registration.py",
       "target": "management.services.get_user_profile"
     },
     {
-      "count": 2,
+      "count": 1,
       "path": "shifter/shifter_platform/tests/ctf/test_auth_registration.py",
       "target": "management.services.set_active_ctf_event"
     },
@@ -1301,7 +1091,7 @@
       "target": "ctf.context_processors.ctf_navigation"
     },
     {
-      "count": 3,
+      "count": 1,
       "path": "shifter/shifter_platform/tests/ctf/test_event_deletion.py",
       "target": "ctf.models.CTFChallengeFile.all_objects"
     },
@@ -1311,27 +1101,22 @@
       "target": "ctf.models.CTFEvent.all_objects"
     },
     {
-      "count": 3,
+      "count": 1,
       "path": "shifter/shifter_platform/tests/ctf/test_event_deletion.py",
       "target": "ctf.models.CTFParticipant.all_objects"
     },
     {
-      "count": 1,
-      "path": "shifter/shifter_platform/tests/ctf/test_event_deletion.py",
-      "target": "ctf.s3.delete_challenge_file"
-    },
-    {
-      "count": 5,
+      "count": 3,
       "path": "shifter/shifter_platform/tests/ctf/test_event_deletion.py",
       "target": "ctf.services.event.CTFEvent.all_objects"
     },
     {
-      "count": 3,
+      "count": 1,
       "path": "shifter/shifter_platform/tests/ctf/test_event_deletion.py",
       "target": "ctf.services.event._cancel_event_tasks"
     },
     {
-      "count": 3,
+      "count": 1,
       "path": "shifter/shifter_platform/tests/ctf/test_event_deletion.py",
       "target": "ctf.services.event.transaction.atomic"
     },
@@ -1344,11 +1129,6 @@
       "count": 2,
       "path": "shifter/shifter_platform/tests/ctf/test_event_deletion.py",
       "target": "ctf.services.get_event_stats"
-    },
-    {
-      "count": 2,
-      "path": "shifter/shifter_platform/tests/ctf/test_event_deletion.py",
-      "target": "ctf.services.range._destroy_single_range"
     },
     {
       "count": 1,
@@ -1366,7 +1146,7 @@
       "target": "ctf.context_processors.ctf_navigation"
     },
     {
-      "count": 7,
+      "count": 4,
       "path": "shifter/shifter_platform/tests/ctf/test_event_lifecycle.py",
       "target": "ctf.services.event.CTFEvent.objects"
     },
@@ -1381,12 +1161,12 @@
       "target": "ctf.services.event._schedule_event_tasks"
     },
     {
-      "count": 6,
+      "count": 5,
       "path": "shifter/shifter_platform/tests/ctf/test_event_lifecycle.py",
       "target": "ctf.services.event.transaction.atomic"
     },
     {
-      "count": 5,
+      "count": 4,
       "path": "shifter/shifter_platform/tests/ctf/test_event_lifecycle.py",
       "target": "ctf.services.range.cleanup_event_ranges"
     },
@@ -1461,19 +1241,9 @@
       "target": "ctf.models.CTFEmailTemplate.objects"
     },
     {
-      "count": 3,
+      "count": 1,
       "path": "shifter/shifter_platform/tests/ctf/test_organizer_access.py",
       "target": "ctf.models.CTFNotification.objects"
-    },
-    {
-      "count": 2,
-      "path": "shifter/shifter_platform/tests/ctf/test_organizer_access.py",
-      "target": "ctf.models.CTFParticipant.objects"
-    },
-    {
-      "count": 2,
-      "path": "shifter/shifter_platform/tests/ctf/test_organizer_access.py",
-      "target": "ctf.services.challenge.get_challenge"
     },
     {
       "count": 3,
@@ -1491,7 +1261,7 @@
       "target": "ctf.services.hint.use_hint"
     },
     {
-      "count": 4,
+      "count": 2,
       "path": "shifter/shifter_platform/tests/ctf/test_organizer_access.py",
       "target": "ctf.services.participant.is_active_participant"
     },
@@ -1514,31 +1284,6 @@
       "count": 4,
       "path": "shifter/shifter_platform/tests/ctf/test_programmable_flags_security.py",
       "target": "ctf.validators._build_https_connection"
-    },
-    {
-      "count": 2,
-      "path": "shifter/shifter_platform/tests/ctf/test_scoring.py",
-      "target": "ctf.models.CTFChallenge.objects"
-    },
-    {
-      "count": 1,
-      "path": "shifter/shifter_platform/tests/ctf/test_scoring.py",
-      "target": "ctf.services.scoring.CTFAward.objects"
-    },
-    {
-      "count": 1,
-      "path": "shifter/shifter_platform/tests/ctf/test_scoring.py",
-      "target": "ctf.services.scoring.CTFParticipant.objects"
-    },
-    {
-      "count": 2,
-      "path": "shifter/shifter_platform/tests/ctf/test_scoring.py",
-      "target": "ctf.services.scoring.CTFSubmission.objects"
-    },
-    {
-      "count": 1,
-      "path": "shifter/shifter_platform/tests/ctf/test_scoring.py",
-      "target": "ctf.services.scoring.CTFTeam.objects"
     },
     {
       "count": 1,
@@ -1641,16 +1386,6 @@
       "target": "ctf.services.notification._send_email"
     },
     {
-      "count": 1,
-      "path": "shifter/shifter_platform/tests/ctf/test_services/test_notification.py",
-      "target": "ctf.services.participant.bulk_import_participants"
-    },
-    {
-      "count": 1,
-      "path": "shifter/shifter_platform/tests/ctf/test_services/test_notification.py",
-      "target": "ctf.services.participant.invite_participant"
-    },
-    {
       "count": 2,
       "path": "shifter/shifter_platform/tests/ctf/test_services/test_range.py",
       "target": "ctf.bridges.cms_create_range"
@@ -1671,34 +1406,19 @@
       "target": "ctf.bridges.cms_get_range_status"
     },
     {
-      "count": 9,
+      "count": 2,
       "path": "shifter/shifter_platform/tests/ctf/test_services/test_range.py",
       "target": "ctf.models.CTFEvent.objects"
     },
     {
-      "count": 11,
+      "count": 3,
       "path": "shifter/shifter_platform/tests/ctf/test_services/test_range.py",
       "target": "ctf.models.CTFParticipant.objects"
     },
     {
-      "count": 2,
-      "path": "shifter/shifter_platform/tests/ctf/test_services/test_range.py",
-      "target": "ctf.services.notification.notify_organizer_provision_failure"
-    },
-    {
       "count": 1,
       "path": "shifter/shifter_platform/tests/ctf/test_services/test_range.py",
-      "target": "ctf.services.range.logger"
-    },
-    {
-      "count": 6,
-      "path": "shifter/shifter_platform/tests/ctf/test_services/test_range.py",
-      "target": "ctf.services.range.provision_participant_range_with_retry"
-    },
-    {
-      "count": 2,
-      "path": "shifter/shifter_platform/tests/ctf/test_services/test_range.py",
-      "target": "ctf.services.range.time.sleep"
+      "target": "ctf.services.notification.notify_organizer_provision_failure"
     },
     {
       "count": 2,
@@ -1754,42 +1474,6 @@
       "count": 5,
       "path": "shifter/shifter_platform/tests/scenario_editor/test_view_error_flows.py",
       "target": "cms.scenario_editor.services.validate_yaml"
-    },
-    {
-      "count": 2,
-      "path": "shifter/shifter_platform/tests/cms/experiments/test_handlers.py",
-      "target": "channels.layers.get_channel_layer"
-    },
-    {
-      "count": 1,
-      "path": "shifter/shifter_platform/tests/cms/experiments/test_handlers.py",
-      "target": "cms.experiments.handlers.Experiment"
-    },
-    {
-      "count": 12,
-      "path": "shifter/shifter_platform/tests/cms/experiments/test_handlers.py",
-      "target": "cms.experiments.handlers.ExperimentOrchestrator"
-    },
-    {
-      "count": 1,
-      "path": "shifter/shifter_platform/tests/cms/experiments/test_handlers.py",
-      "target": "cms.experiments.handlers.ExperimentRun"
-    },
-    {
-      "count": 2,
-      "path": "shifter/shifter_platform/tests/cms/experiments/test_handlers.py",
-      "target": "cms.experiments.handlers._broadcast_experiment_status"
-    },
-    {
-      "count": 3,
-      "path": "shifter/shifter_platform/tests/cms/experiments/test_handlers.py",
-      "target": "cms.experiments.handlers._broadcast_experiment_status_if_terminal"
-    },
-    {
-      "count": 6,
-      "path": "shifter/shifter_platform/tests/cms/experiments/test_handlers.py",
-      "target": "cms.experiments.handlers._broadcast_run_status_for"
     }
-  ],
-  "version": 1
+  ]
 }

@@ -126,6 +126,7 @@ def _event_detail_payload(event: CTFEvent) -> dict[str, Any]:
         "attempt_limit_mode": event.attempt_limit_mode,
         "attempt_limit_cooldown_seconds": event.attempt_limit_cooldown_seconds,
         "rating_visibility": event.rating_visibility,
+        "scoring_mode": event.scoring_mode,
         "scoreboard_visible": event.scoreboard_visible,
         "scoreboard_freeze_at": event.scoreboard_freeze_at.isoformat() if event.scoreboard_freeze_at else None,
     }
