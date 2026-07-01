@@ -204,6 +204,16 @@ set -euo pipefail
 WATCHER="/usr/local/bin/polaris-splice-watcher.sh"
 UNIT="/etc/systemd/system/polaris-splice-watcher.service"
 
+# Escalate when not already root. The AWS SSM path runs as root; the GDC
+# in-range SSH path connects as an unprivileged `kali` holding passwordless
+# sudo (same assumption as set_hostname / set_local_password). Writing to
+# /usr/local/bin + /etc/systemd/system and driving systemctl all require root.
+if [ "$(id -u)" -eq 0 ]; then
+    SUDO=""
+else
+    SUDO="sudo -n"
+fi
+
 # Quoted heredoc delimiter prevents host-side shell expansion — the
 # watcher's shell vars and command substitutions are interpreted at
 # watcher runtime, not now. Uses Go template tokens (docker --format);
@@ -212,7 +222,7 @@ UNIT="/etc/systemd/system/polaris-splice-watcher.service"
 # leaves them untouched. No bare word-only tokens appear inside the
 # braces anywhere in this heredoc — those would be matched and
 # treated as missing template variables by the renderer.
-cat > "$WATCHER" <<'WATCHER_EOF'
+$SUDO tee "$WATCHER" >/dev/null <<'WATCHER_EOF'
 #!/bin/bash
 # polaris-splice-watcher: poll A5 HMI state; when the generator goes
 # into thermal runaway (flag 19 earned), attach a14-kali to the
@@ -270,9 +280,9 @@ while true; do
   sleep "$POLL_INTERVAL_S"
 done
 WATCHER_EOF
-chmod +x "$WATCHER"
+$SUDO chmod +x "$WATCHER"
 
-cat > "$UNIT" <<UNIT_EOF
+$SUDO tee "$UNIT" >/dev/null <<UNIT_EOF
 [Unit]
 Description=Polaris splice watcher (attaches a14-kali to splice-link on flag 19)
 After=docker.service
@@ -288,9 +298,9 @@ RestartSec=10
 WantedBy=multi-user.target
 UNIT_EOF
 
-systemctl daemon-reload
-systemctl enable polaris-splice-watcher.service
-systemctl restart polaris-splice-watcher.service
+$SUDO systemctl daemon-reload
+$SUDO systemctl enable polaris-splice-watcher.service
+$SUDO systemctl restart polaris-splice-watcher.service
 
 echo "polaris splice watcher: installed and started"
 exit 0
