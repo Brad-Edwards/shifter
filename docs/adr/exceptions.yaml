@@ -270,5 +270,14 @@
     "paths": [
       "scripts/adr_guard/boundary_mock_baseline.json"
     ]
+  },
+  {
+    "rule_id": "ADR-019-R1",
+    "owner": "@Brad-Edwards",
+    "reason": "Bootstrap deploy test split (#687): scripts/bootstrap/tests/test_deploy.py was mechanically decomposed into behavior-focused test files. The baseline entries moved from the deleted monolithic file to the new split files so the ratchet still covers the same legacy seams; the aggregate bootstrap allowance shrank from 215 to 208 and no new internal patch target family was introduced.",
+    "expires_on": "2027-06-30",
+    "paths": [
+      "scripts/adr_guard/boundary_mock_baseline.json"
+    ]
   }
 ]

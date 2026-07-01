@@ -193,6 +193,13 @@ responses) and shrinks `boundary_mock_baseline.json` accordingly. Each group
 of suites lands as its own commit that removes the corresponding baseline
 entries. Completed so far:
 
+- `scripts/bootstrap`: issue #687 mechanically split the legacy
+  `test_deploy.py` suite into behavior-focused files. The ADR-019 baseline
+  entries were redistributed to the new paths with a dated exception because
+  the ratchet keys on `(test file, target)`; the aggregate bootstrap allowance
+  shrank from 215 to 208 and the deleted `walkthrough_git_commit` seam was not
+  carried forward.
+
 - `mission_control`: core range API, agents, models, and page-view suites
   (`test_range_api*`, `test_agents`, `test_models`, `test_views`,
   `test_engine_models`); engine-service view suites (`test_engine_services`,
