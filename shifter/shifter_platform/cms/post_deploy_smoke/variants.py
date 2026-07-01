@@ -23,8 +23,12 @@ class SmokeVariant:
 VARIANTS: dict[VariantName, SmokeVariant] = {
     "linux": SmokeVariant(
         name="linux",
+        # The basic scenario's victim is a `from_agent` instance, which requires
+        # a user-provided agent to resolve its OS; create_range rejects the
+        # launch with "requires at least one agent" otherwise. So the linux smoke
+        # must supply a linux agent (SMOKE_LINUX_AGENT_ID), same as windows.
         scenario_id="basic",
-        required_agent_keys=(),
+        required_agent_keys=("linux",),
         primary_protocol="ssh",
         provision_timeout_seconds=1800,
         connectivity_timeout_seconds=600,

@@ -138,8 +138,9 @@ stored in AWS SSM `/shifter/ami/*`.
   `.github/workflows/packer-gcp-promote.yml` (copies the newest dev-family image
   into the prod project's family and deprecates the previous head).
 - Image types: `ubuntu`, `brokenbk`, `kali`, `windows`, `dc`. **Kali** has no
-  public GCP image, so its builder consumes an operator-imported source image
-  (`kali_source_image`); see `shifter/packer/gcp/README.md`.
+  public GCP image and the official genericcloud disk is not GCE-bootable, so
+  its builder converts Google's `debian-12` base into Kali Rolling in its first
+  provisioning script; see `shifter/packer/gcp/README.md`.
 - Agent triggers: the `build_gce_image` / `promote_gce_image` MCP ops tools
   (`infra_mutation`), parallel to `build_ami` / `promote_ami`.
 

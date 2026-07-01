@@ -30,6 +30,8 @@ GCP_ENV = {
     "GDC_ACCESS_SECRET_ID": "projects/shifter-gcp-dev/secrets/shifter-gcp-dev-gdc-access",
     "GDC_VM_IMAGE_GCS_SECRET_ID": "projects/shifter-gcp-dev/secrets/shifter-gcp-dev-gdc-vm-image-gcs",
     "GDC_KALI_IMAGE_URL": "gs://images/kali.qcow2",
+    "GDC_SETUP_RUNNER_IMAGE": "us-central1-docker.pkg.dev/shifter-gcp-dev/runner:abc123",
+    "ENGINE_TASK_IMAGE": "us-central1-docker.pkg.dev/shifter-gcp-dev/pulumi-provisioner:abc123",
     # Shared guest passwords MUST NOT flow into the provisioner env after #762;
     # they are set here to prove they are filtered out, not forwarded.
     "GDC_WINDOWS_ADMIN_PASSWORD": "WinPass!",
@@ -76,6 +78,10 @@ class TestGcpProvisionerEnvOverrides:
         assert overrides["GDC_ACCESS_SECRET_ID"] == GCP_ENV["GDC_ACCESS_SECRET_ID"]
         assert overrides["GDC_VM_IMAGE_GCS_SECRET_ID"] == GCP_ENV["GDC_VM_IMAGE_GCS_SECRET_ID"]
         assert overrides["GDC_KALI_IMAGE_URL"] == GCP_ENV["GDC_KALI_IMAGE_URL"]
+        # The in-range guest setup-runner image (and the provisioner's own image
+        # as the default) must reach the provision Job for RangePodSSHExecutor.
+        assert overrides["GDC_SETUP_RUNNER_IMAGE"] == GCP_ENV["GDC_SETUP_RUNNER_IMAGE"]
+        assert overrides["ENGINE_TASK_IMAGE"] == GCP_ENV["ENGINE_TASK_IMAGE"]
         assert overrides["DB_HOST"] == GCP_ENV["DB_HOST"]
 
     def test_excludes_shared_guest_passwords(self, settings):
