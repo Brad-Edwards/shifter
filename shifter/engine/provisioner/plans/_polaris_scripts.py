@@ -67,9 +67,17 @@ services:
 COMPOSE_EOF
 mv docker-compose.override.yml.new docker-compose.override.yml
 
-# Force-recreate only the containers whose env vars changed. The other
-# 14 stay running undisturbed. a9-splice was added in #707 because the
-# A9 entrypoint now consumes A9_AUTHORIZED_KEY.
+# Bring up the full 17-service stack. On AWS the range host's user_data has
+# already done `docker compose up -d` before this per-range bootstrap runs, so
+# this is idempotent there (only ever creates anything missing). On GDC the
+# image is baked with `docker compose build` but NOT started, so this seam is
+# the first `up` — without it only the force-recreated services below would run
+# and the other 14 assets (a0-a8, a10-a13, a15, a16) would never start.
+docker compose up -d
+
+# Force-recreate the containers whose env vars changed so they pick up the
+# per-range override (DC IP, kali pubkey, splice keys). a9-splice was added in
+# #707 because the A9 entrypoint now consumes A9_AUTHORIZED_KEY.
 docker compose up -d --force-recreate dns a14-kali a9-splice
 
 # The baked compose attaches a14-kali to splice-link at container start
