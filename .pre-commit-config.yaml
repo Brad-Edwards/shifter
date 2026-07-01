@@ -581,7 +581,7 @@ repos:
       - id: pytest-packer
         name: pytest (packer)
         entry: >-
-          bash -c 'cd shifter/packer && uv run pytest tests/ -q --cov=.
+          bash -c 'cd shifter/packer && uv run python -m pytest tests/ -q --cov=.
           --cov-report=html:../../coverage/packer
           --cov-report=xml:coverage.xml
           --cov-report=term-missing:skip-covered'
