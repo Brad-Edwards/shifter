@@ -69,6 +69,11 @@ The first slice intentionally stays small:
   This is a changeset-level check (needs to see multiple files) so it runs in
   pre-commit and `--level fast`, but NOT in the per-edit Claude hook.
 
+- `no-agent-attribution`
+  Rejects AI/agent attribution markers in tracked text (agent `Co-authored-by`
+  trailers, Cursor marketing footers, Claude Code branding strings, etc.).
+  A `commit-msg` pre-commit hook blocks the same markers in commit messages.
+
 - `cross-layer-model-imports`
   Fails on direct cross-layer model imports inside service layers. The current tree already satisfies this rule, so it is part of the default guard.
 

@@ -6,7 +6,7 @@ import logging
 from django.conf import settings
 from django.contrib.auth import BACKEND_SESSION_KEY, login, logout
 from django.contrib.auth.decorators import login_required
-from django.http import HttpResponseForbidden, HttpResponseRedirect, JsonResponse
+from django.http import HttpRequest, HttpResponse, HttpResponseForbidden, HttpResponseRedirect, JsonResponse
 from django.shortcuts import render
 from django.urls import reverse
 from django.views.decorators.csrf import ensure_csrf_cookie
@@ -27,6 +27,12 @@ logger = logging.getLogger(__name__)
 def home(request):
     """Landing page - coming soon."""
     return render(request, "coming_soon.html")
+
+
+@require_http_methods(["GET", "HEAD"])
+def privacy_notice(request: HttpRequest) -> HttpResponse:
+    """Public privacy notice shell for operator-supplied content."""
+    return render(request, "privacy/notice.html")
 
 
 def _render_identity_platform_login(request, *, status_code: int = 200):

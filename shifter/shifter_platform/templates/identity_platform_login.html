@@ -143,5 +143,6 @@
         {# The auth module imports the Firebase modular SDK (version-pinned) from #}
         {# gstatic; TOTP MFA is only available through the modular API, not compat. #}
         <script type="module" src="{% static 'js/identity_platform_auth.js' %}"></script>
+        {% include "partials/cookie_notice.html" %}
     </body>
 </html>

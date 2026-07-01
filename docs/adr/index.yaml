@@ -35,6 +35,11 @@
         "id": "ADR-002-R1",
         "description": "Guardrail file changes must update docs/adr or the developer ADR enforcement docs in the same change.",
         "checks": ["guardrail-docs"]
+      },
+      {
+        "id": "ADR-002-R2",
+        "description": "Commit messages and tracked text must not contain AI/agent attribution markers (Co-authored-by agent lines, Cursor marketing footers, Claude Code branding, etc.).",
+        "checks": ["no-agent-attribution"]
       }
     ],
     "exceptions": [],
