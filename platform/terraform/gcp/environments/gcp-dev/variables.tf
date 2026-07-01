@@ -201,6 +201,18 @@ variable "identity_allowed_emails" {
   default     = []
 }
 
+variable "enable_identity_blocking_function" {
+  description = <<-EOT
+    Deploy the gen1 beforeCreate blocking function enforcing the sign-up domain
+    allowlist at the Identity Platform layer. It requires an `allUsers` Cloud
+    Functions invoker binding, which a Domain Restricted Sharing org policy
+    forbids; set to false in such projects (the portal app still enforces the
+    allowlist fail-closed at login).
+  EOT
+  type        = bool
+  default     = true
+}
+
 # Transactional email (PLAT-002, #671). Optional: leave email_backend empty for
 # the console fallback. When set, an unseeded ESP API-key Secret Manager secret
 # is created for the operator to populate (never committed). See gcp/README.md.
@@ -241,6 +253,18 @@ variable "range_egress_allowed_cidrs" {
   description = "IP CIDR allowlist for range egress (bridge for shifter.yaml settings.range_egress.allowed_cidrs)."
   type        = list(string)
   default     = []
+}
+
+variable "github_org" {
+  description = "GitHub organization allowed to federate into the packer build service account."
+  type        = string
+  default     = "Brad-Edwards"
+}
+
+variable "github_repo" {
+  description = "GitHub repository allowed to federate into the packer build service account."
+  type        = string
+  default     = "shifter"
 }
 
 # ------------------------------------------------------------------------------

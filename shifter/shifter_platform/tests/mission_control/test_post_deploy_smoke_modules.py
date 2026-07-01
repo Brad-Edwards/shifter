@@ -18,6 +18,17 @@ def test_build_agents_by_os_windows_requires_agent_ids() -> None:
         build_agents_by_os(VARIANTS["windows"], env={})
 
 
+def test_build_agents_by_os_linux_requires_agent_id() -> None:
+    # basic has a from_agent victim, so the linux smoke must supply a linux agent.
+    with pytest.raises(ValueError, match="SMOKE_LINUX_AGENT_ID"):
+        build_agents_by_os(VARIANTS["linux"], env={})
+
+
+def test_build_agents_by_os_linux_success() -> None:
+    agents = build_agents_by_os(VARIANTS["linux"], env={"SMOKE_LINUX_AGENT_ID": "8"})
+    assert agents == {"linux": 8}
+
+
 def test_issue_title_and_labels() -> None:
     payload = SmokeIssuePayload(
         environment="dev",
