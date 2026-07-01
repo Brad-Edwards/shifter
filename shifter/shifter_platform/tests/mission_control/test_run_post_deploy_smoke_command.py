@@ -58,6 +58,11 @@ def smoke_command_mocks(monkeypatch):
     monkeypatch.setattr(smoke_command, "probe_rdp_endpoint", mocks.probe_rdp)
     monkeypatch.setattr(smoke_command, "get_ssh_connection_info", mocks.ssh_info)
     monkeypatch.setattr(smoke_command, "get_rdp_connection_info", mocks.rdp_info)
+    # Both variants now resolve agents (basic's from_agent victim requires one),
+    # so provide the agent IDs the variants read. create_range is mocked, so the
+    # values are inert.
+    monkeypatch.setenv("SMOKE_LINUX_AGENT_ID", "43")
+    monkeypatch.setenv("SMOKE_WINDOWS_AGENT_ID", "42")
     return mocks
 
 
