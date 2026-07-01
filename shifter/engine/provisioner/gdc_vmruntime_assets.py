@@ -176,7 +176,11 @@ def _build_pending_vm_runtime_instance(
         kube.api_exception,
     )
     os_type = str(instance.get("os_type", "ubuntu"))
-    profile = vm_config.get_profile(role=str(instance.get("role", "victim")), os_type=os_type)
+    profile = vm_config.get_profile(
+        role=str(instance.get("role", "victim")),
+        os_type=os_type,
+        ami_key=str(instance.get("ami_key") or ""),
+    )
     labels = _asset_labels(range_id, request_uuid, subnet.subnet_name, str(instance.get("uuid", "")))
     disk_manifest = _build_disk_manifest(
         namespace=subnet.namespace,

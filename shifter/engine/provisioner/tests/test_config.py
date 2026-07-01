@@ -420,7 +420,37 @@ class TestRangeNetworkEnv:
                 memory="8Gi",
                 disk_size_gib=64,
             ),
+            # polaris_* URLs are unset here, so source_url is empty but the
+            # per-guest sizing defaults still load.
+            polaris_vm=GDCVMRuntimeProfile(source_url="", vcpus=8, memory="16Gi", disk_size_gib=80),
+            polaris_dc=GDCVMRuntimeProfile(source_url="", vcpus=2, memory="8Gi", disk_size_gib=120),
         )
+
+    def test_gdc_vmruntime_config_selects_polaris_image_by_ami_key(self, mocker):
+        mocker.patch.dict(
+            os.environ,
+            {
+                "CLOUD_PROVIDER": "gcp",
+                "GDC_KALI_IMAGE_URL": "gs://images/kali.qcow2",
+                "GDC_DC_IMAGE_URL": "gs://images/dc.qcow2",
+                "GDC_POLARIS_VM_IMAGE_URL": "gs://images/polaris-vm.qcow2",
+                "GDC_POLARIS_DC_IMAGE_URL": "gs://images/polaris-dc.qcow2",
+            },
+            clear=True,
+        )
+
+        config = load_gdc_vmruntime_config()
+
+        # ami_key selects the content-baked polaris image regardless of role/os_type.
+        assert config.get_profile(role="attacker", os_type="kali", ami_key="polaris-vm").source_url == (
+            "gs://images/polaris-vm.qcow2"
+        )
+        assert config.get_profile(role="dc", os_type="windows", ami_key="polaris-dc").source_url == (
+            "gs://images/polaris-dc.qcow2"
+        )
+        # No ami_key falls back to the generic role/os_type image.
+        assert config.get_profile(role="attacker", os_type="kali").source_url == "gs://images/kali.qcow2"
+        assert config.get_profile(role="dc", os_type="windows").source_url == "gs://images/dc.qcow2"
 
     def test_gdc_vmruntime_config_requires_matching_profile_when_selected(self, mocker):
         mocker.patch.dict(

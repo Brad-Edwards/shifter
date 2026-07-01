@@ -250,10 +250,26 @@ class GDCVMRuntimeConfig:
     ubuntu: GDCVMRuntimeProfile = field(default_factory=GDCVMRuntimeProfile)
     windows: GDCVMRuntimeProfile = field(default_factory=GDCVMRuntimeProfile)
     dc: GDCVMRuntimeProfile = field(default_factory=GDCVMRuntimeProfile)
+    # Scenario-specific content-baked images selected by ami_key (not role/
+    # os_type): the polaris CTF range ships dedicated polaris-vm (docker stack)
+    # and polaris-dc (BOREAS.LOCAL forest) images.
+    polaris_vm: GDCVMRuntimeProfile = field(default_factory=GDCVMRuntimeProfile)
+    polaris_dc: GDCVMRuntimeProfile = field(default_factory=GDCVMRuntimeProfile)
 
-    def get_profile(self, *, role: str, os_type: str) -> GDCVMRuntimeProfile:
-        """Return the matching VM Runtime profile for a scenario instance."""
-        if role == "dc":
+    def get_profile(self, *, role: str, os_type: str, ami_key: str = "") -> GDCVMRuntimeProfile:
+        """Return the matching VM Runtime profile for a scenario instance.
+
+        ``ami_key`` selects a scenario-specific content-baked image when set
+        (e.g. polaris-vm/polaris-dc); otherwise the generic role/os_type image
+        is used. On the AWS path ami_key resolves through SSM (/shifter/ami/*);
+        on GDC it selects a dedicated GDC_POLARIS_* image URL.
+        """
+        ami_key = (ami_key or "").strip()
+        if ami_key == "polaris-vm":
+            profile = self.polaris_vm
+        elif ami_key == "polaris-dc":
+            profile = self.polaris_dc
+        elif role == "dc":
             profile = self.dc
         elif os_type == "kali":
             profile = self.kali
@@ -264,8 +280,8 @@ class GDCVMRuntimeConfig:
 
         if not profile.source_url:
             raise RuntimeError(
-                f"Missing GDC VM Runtime image URL for role={role!r} os_type={os_type!r}. "
-                "Set the corresponding GDC_*_IMAGE_URL environment variable."
+                f"Missing GDC VM Runtime image URL for role={role!r} os_type={os_type!r} "
+                f"ami_key={ami_key!r}. Set the corresponding GDC_*_IMAGE_URL environment variable."
             )
         return profile
 
@@ -613,6 +629,10 @@ def load_gdc_vmruntime_config() -> GDCVMRuntimeConfig:
         ubuntu=_load_gdc_vm_profile("GDC_UBUNTU", default_vcpus=1, default_memory="2Gi", default_disk_size_gib=20),
         windows=_load_gdc_vm_profile("GDC_WINDOWS", default_vcpus=2, default_memory="8Gi", default_disk_size_gib=64),
         dc=_load_gdc_vm_profile("GDC_DC", default_vcpus=2, default_memory="8Gi", default_disk_size_gib=64),
+        # polaris-vm runs the 17-container stack (sized like the AWS m5.2xlarge);
+        # polaris-dc is a BOREAS.LOCAL forest DC.
+        polaris_vm=_load_gdc_vm_profile("GDC_POLARIS_VM", default_vcpus=8, default_memory="16Gi", default_disk_size_gib=80),
+        polaris_dc=_load_gdc_vm_profile("GDC_POLARIS_DC", default_vcpus=2, default_memory="8Gi", default_disk_size_gib=120),
     )
 
 
