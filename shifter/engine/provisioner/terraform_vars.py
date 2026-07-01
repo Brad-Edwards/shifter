@@ -98,7 +98,7 @@ def _build_tf_instance(inst: dict[str, Any]) -> dict[str, Any]:
     # Manager entry (e.g. shifter--ami--polaris-vm). Leave it empty on GCP.
     is_gcp = os.environ.get("CLOUD_PROVIDER", "aws").lower() == "gcp"
     ami_id = "" if is_gcp else (get_ami_id(ami_key) if ami_key else "")
-    return {
+    tf_instance = {
         "uuid": inst.get("uuid", ""),
         "name": inst.get("name", ""),
         "asset_type": inst.get("asset_type", "vm_runtime_vm"),
@@ -109,6 +109,13 @@ def _build_tf_instance(inst: dict[str, Any]) -> dict[str, Any]:
         "join_domain": inst.get("join_domain", False),
         "ami_id": ami_id,
     }
+    # On GCP the GDC VM Runtime asset builder consumes these normalized instance
+    # dicts (not the raw range_spec) and selects the image by ami_key
+    # (get_profile), so ami_key must survive normalization. It is added GCP-only
+    # so the AWS terraform module's instance object schema is unchanged.
+    if is_gcp and ami_key:
+        tf_instance["ami_key"] = ami_key
+    return tf_instance
 
 
 def _build_tf_subnets(spec_subnets: list[dict[str, Any]]) -> list[dict[str, Any]]:

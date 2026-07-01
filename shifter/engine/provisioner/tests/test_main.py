@@ -733,6 +733,9 @@ class TestGdcProvisioning:
             result = _build_tf_instance(inst)
 
         assert result["ami_id"] == ""
+        # ami_key must survive tf-normalization on GCP so the GDC asset builder
+        # (get_profile) can select the polaris image.
+        assert result["ami_key"] == "polaris-vm"
 
     def test_build_tf_instance_resolves_ami_id_on_aws(self):
         """On AWS ami_key resolves to an AMI ID via get_ami_id."""
@@ -745,6 +748,8 @@ class TestGdcProvisioning:
             result = _build_tf_instance(inst)
 
         assert result["ami_id"] == "ami-polaris"
+        # AWS keeps the terraform module's instance schema unchanged (no ami_key).
+        assert "ami_key" not in result
 
     def test_build_range_terraform_variables_aws_raises_when_secrets_kms_key_arn_missing(self):
         """Fail-fast on missing SECRETS_KMS_KEY_ARN for AWS range path (#213)."""
