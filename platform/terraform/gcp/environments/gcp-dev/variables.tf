@@ -213,7 +213,7 @@ variable "enable_identity_blocking_function" {
   # gcp-dev runs under a Domain Restricted Sharing org policy that forbids the
   # required `allUsers` invoker binding, so the blocking function is disabled
   # here; the portal enforces the same allowlist fail-closed at session creation.
-  default     = false
+  default = false
 }
 
 # Transactional email (PLAT-002, #671). Optional: leave email_backend empty for
