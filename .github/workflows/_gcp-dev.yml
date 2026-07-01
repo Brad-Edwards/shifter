@@ -374,6 +374,19 @@ jobs:
           )
           path.write_text(updated, encoding="utf-8")
           print(f"Pinned {replacements} tags to {short_sha}; rewrote {name_fixes} image projects to {project}")
+
+          # The Workload Identity GSA annotations carry the same placeholder
+          # project; point them at the deployment project so the pods' KSAs
+          # impersonate real (existing) service accounts.
+          sa_patch = Path(os.environ["K8S_OVERLAY_DIR"]) / "patch-serviceaccounts.patch"
+          if sa_patch.exists():
+            sa_updated, sa_fixes = re.subn(
+              r"(@)[^.@]+(\.iam\.gserviceaccount\.com)",
+              rf"\g<1>{project}\g<2>",
+              sa_patch.read_text(encoding="utf-8"),
+            )
+            sa_patch.write_text(sa_updated, encoding="utf-8")
+            print(f"Rewrote {sa_fixes} service-account GSA projects to {project}")
           PY
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
       - name: Build and push portal image
