@@ -533,15 +533,19 @@ a:hover {
 /* Display */
 .d-none { display: none; }
 .d-inline { display: inline; }
+.d-block { display: block; }
+.d-inline-block { display: inline-block; }
 
 /* Width */
 .w-full { width: 100%; }
 .w-100px { width: 100px; }
+.max-w-340 { max-width: 340px; }
 
 /* Flex / grid */
 .flex-1 { flex: 1; }
 .flex-wrap { flex-wrap: wrap; }
 .items-end { align-items: flex-end; }
+.justify-center { justify-content: center; }
 
 .flex-between-center {
     display: flex;
@@ -581,6 +585,7 @@ a:hover {
 
 /* Text */
 .text-left { text-align: left; }
+.text-center { text-align: center; }
 .text-mono { font-family: monospace; }
 
 .text-mono-sm {
