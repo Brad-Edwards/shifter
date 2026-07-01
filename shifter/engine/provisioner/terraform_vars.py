@@ -91,6 +91,13 @@ def _build_tf_instance(inst: dict[str, Any]) -> dict[str, Any]:
     tf_os_type = _resolve_tf_os_type(role, os_type)
     instance_type = _resolve_instance_type(role, tf_os_type, inst.get("instance_type"))
     ami_key = inst.get("ami_key")
+    # ami_id is an AWS concept resolved from the /shifter/ami/<key> SSM
+    # parameter. On GDC there is no AMI — the VM Runtime image is selected from
+    # the GDC_*_IMAGE_URL contract by role/os_type/ami_key in the asset builder
+    # (get_profile) — so resolving an AMI ID here would hit a nonexistent Secret
+    # Manager entry (e.g. shifter--ami--polaris-vm). Leave it empty on GCP.
+    is_gcp = os.environ.get("CLOUD_PROVIDER", "aws").lower() == "gcp"
+    ami_id = "" if is_gcp else (get_ami_id(ami_key) if ami_key else "")
     return {
         "uuid": inst.get("uuid", ""),
         "name": inst.get("name", ""),
@@ -100,7 +107,7 @@ def _build_tf_instance(inst: dict[str, Any]) -> dict[str, Any]:
         "instance_type": instance_type,
         "agent_presigned_url": _resolve_agent_presigned_url(inst),
         "join_domain": inst.get("join_domain", False),
-        "ami_id": get_ami_id(ami_key) if ami_key else "",
+        "ami_id": ami_id,
     }
 
 

@@ -717,6 +717,35 @@ class TestGdcProvisioning:
         assert variables["secrets_kms_key_arn"] == "arn:aws:kms:us-east-2:123456789012:key/abcd-1234"
         assert variables["kali_ami_id"] == "ami-deadbeef"
 
+    def test_build_tf_instance_skips_ami_id_on_gcp(self):
+        """On GCP there is no AMI: ami_id stays empty and get_ami_id is not called."""
+        from terraform_vars import _build_tf_instance
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setenv("CLOUD_PROVIDER", "gcp")
+            # get_ami_id would hit a nonexistent Secret Manager entry on GCP;
+            # make it explode so the test fails if the GCP path ever calls it.
+            mp.setattr(
+                "terraform_vars.get_ami_id",
+                MagicMock(side_effect=AssertionError("get_ami_id must not be called on GCP")),
+            )
+            inst = {"uuid": "u1", "name": "kali", "role": "attacker", "os_type": "kali", "ami_key": "polaris-vm"}
+            result = _build_tf_instance(inst)
+
+        assert result["ami_id"] == ""
+
+    def test_build_tf_instance_resolves_ami_id_on_aws(self):
+        """On AWS ami_key resolves to an AMI ID via get_ami_id."""
+        from terraform_vars import _build_tf_instance
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setenv("CLOUD_PROVIDER", "aws")
+            mp.setattr("terraform_vars.get_ami_id", MagicMock(return_value="ami-polaris"))
+            inst = {"uuid": "u1", "name": "kali", "role": "attacker", "os_type": "kali", "ami_key": "polaris-vm"}
+            result = _build_tf_instance(inst)
+
+        assert result["ami_id"] == "ami-polaris"
+
     def test_build_range_terraform_variables_aws_raises_when_secrets_kms_key_arn_missing(self):
         """Fail-fast on missing SECRETS_KMS_KEY_ARN for AWS range path (#213)."""
         from terraform_vars import _build_range_terraform_variables
