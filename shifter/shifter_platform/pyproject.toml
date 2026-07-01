@@ -156,16 +156,30 @@ exclude_dirs = [".venv", "tests"]
 skips = ["B101"]  # assert OK in production code for this project
 
 # Mypy - static type checking
+#
+# Type-check policy (#564). This package is an ENFORCED, blocking mypy scope:
+# the `shifter-platform-typecheck` CI job and the `mypy-shifter-platform`
+# pre-commit hook both run `mypy .` here and fail on any error. The enforced
+# scope is the whole package minus the TRANSITIONAL / out-of-scope dirs listed
+# in `exclude` below (migrations, tests, the local venv). The strictness flags
+# are intentionally permissive and tightened incrementally via per-module
+# `[[tool.mypy.overrides]]` (see `cms.services` for the strict precedent);
+# tightening is enforced as it lands, not deferred behind a swallowed CI step.
+# To temporarily exempt a module that cannot yet pass, add an explicit
+# per-module override with `ignore_errors = true` here - never reintroduce
+# `|| true` or `continue-on-error` in the workflow. This keeps the
+# enforced/transitional boundary in one machine-readable place that CI and
+# pre-commit share.
 [tool.mypy]
 python_version = "3.12"
 mypy_path = ".."  # Add shifter/ to path so cyberscript is importable
 plugins = ["mypy_django_plugin.main"]
+# Transitional / out-of-scope: not part of the enforced type-check estate.
 exclude = [
     "migrations/",
     ".venv/",
     "tests/",
 ]
-# Start permissive, tighten over time
 ignore_missing_imports = true
 warn_return_any = false
 warn_unused_ignores = true

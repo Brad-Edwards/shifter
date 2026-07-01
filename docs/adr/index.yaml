@@ -1098,6 +1098,7 @@
     "evidence": [
       "docs/architecture/aces-migration-adr.md",
       "docs/architecture/aces-migration-parity-inventory.yaml",
+      "docs/architecture/aces-runtime-target-backend-manifest-preflight-1233.md",
       "scenario-dev/polaris/design/aces-sdl-validation-path.md",
       "scenario-dev/polaris/sdl/README.md",
       "shifter/shifter_platform/cms/scenarios/schema.py",
@@ -1111,6 +1112,58 @@
       "shifter/shifter_platform/engine",
       "shifter/engine/provisioner",
       "scripts/adr_guard/adr_guard.py"
+    ]
+  },
+  {
+    "id": "ADR-026",
+    "title": "Commercial self-serve ranges may use a no-default-route zero-egress posture",
+    "status": "accepted",
+    "scope": "repository",
+    "decision": "Commercial self-serve training ranges with untrusted users may run in an explicit zero-egress posture where runtime participant subnet route tables have no `0.0.0.0/0` route and no NAT or Internet Gateway target. This extends ADR-020 by adding a second route-table posture alongside the existing AWS Network Firewall allowlist path, and extends ADR-017 by requiring any operator-facing egress-mode configuration to reuse the existing range-egress policy/renderer boundary rather than creating a second public schema. `allowlist` remains the default and preserves the trusted-event behavior: user subnet -> Network Firewall -> NAT -> IGW with STRICT_ORDER default-deny and documented allow lanes. `none` is not ADR-017 `deny-all`; `deny-all` is firewall enforcement with a default route, while `none` removes the default-route internet path. Runtime package/tool/agent/phone-home needs for `none` ranges must move to Packer bake time, in-range services, omitted integrations, or a dedicated proxy outside participant subnets.",
+    "rules": [
+      {
+        "id": "ADR-026-R1",
+        "description": "Zero-egress must be selected by an explicit validated mode. It must not be inferred from an empty or missing firewall endpoint, from `enable_network_firewall = false`, or from an empty allowlist. In `none` mode runtime range route tables must not create `aws_route.firewall`, any NAT target, or any `0.0.0.0/0` route.",
+        "checks": []
+      },
+      {
+        "id": "ADR-026-R2",
+        "description": "If zero-egress is operator-facing, it must extend the existing `settings.range_egress` / `RangeEgressPolicy` / `shifter-config render` path. Provider/runtime Terraform variables are bridge inputs only and must retain direct validation backstops. Operators must not maintain the egress mode in both root config and hand-authored tfvars or workflow inputs.",
+        "checks": []
+      },
+      {
+        "id": "ADR-026-R3",
+        "description": "Stable range VPC service endpoints reachable from participant subnets in the commercial shape (SSM, S3 gateway, STS, Bedrock, Route 53 Resolver, or future endpoints) must be deliberately classified as management-plane requirements, disabled for `none`, or replaced by in-range/proxy paths. Leaving an endpoint reachable by accident is not an acceptable zero-egress implementation.",
+        "checks": []
+      },
+      {
+        "id": "ADR-026-R4",
+        "description": "`none` ranges must boot without public internet dependencies. Runtime package installs, tooling fetches, XDR/XSIAM installer downloads, public DNS/NTP, and simulated phone-home must move to AMI bake time, in-range services, omitted integrations, or a proxy outside participant subnets. Existing allowlist-mode behavior must remain unchanged.",
+        "checks": []
+      },
+      {
+        "id": "ADR-026-R5",
+        "description": "Validation must include both infrastructure state and inside-range behavior: no NAT/IGW/default route on `none` subnet route tables, no reachability to external IPs or domains including previously allowlisted lanes, and focused regression coverage that allowlist mode still creates the Network Firewall route.",
+        "checks": []
+      }
+    ],
+    "exceptions": [],
+    "enforcement": ["agent-policy", "ci"],
+    "evidence": [
+      "docs/architecture/range-zero-egress-preflight-1171.md",
+      "docs/architecture/range-isolation-model.md",
+      "docs/architecture/range-egress-ip-allowlist.md",
+      "shifter/installation/range_egress.py",
+      "shifter/installation/render.py",
+      "platform/terraform/modules/range/vpc/firewall.tf",
+      "platform/terraform/modules/range/vpc/nat.tf",
+      "platform/terraform/modules/range/vpc/s3-endpoint.tf",
+      "platform/terraform/modules/range/vpc/ssm-endpoints.tf",
+      "shifter/engine/provisioner/terraform/modules/range/main.tf",
+      "shifter/engine/provisioner/terraform/modules/range/variables.tf",
+      "shifter/engine/provisioner/terraform_vars.py",
+      "shifter/packer/README.md",
+      "scenario-dev/polaris/tests/isolation-smoketest.sh"
     ]
   }
 ]
