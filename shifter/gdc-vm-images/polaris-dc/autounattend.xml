@@ -92,7 +92,12 @@
         </OSImage>
       </ImageInstall>
       <UserData>
-        <ProductKey><Key></Key></ProductKey>
+        <!-- NO <ProductKey>: the edition is chosen by ImageInstall/InstallFrom
+             (index 2 = Standard Desktop Eval). An empty <ProductKey><Key></Key>
+             makes Setup fail edition/license resolution and abort with "Windows
+             cannot find the Microsoft Software License Terms" (bisected via the
+             GDC vnc/screenshot endpoint: license page renders fine without
+             UserData; adding an empty ProductKey is what breaks it). -->
         <AcceptEula>true</AcceptEula>
         <FullName>Boreas</FullName>
         <Organization>Boreas Systems</Organization>
