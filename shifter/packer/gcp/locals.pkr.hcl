@@ -30,4 +30,34 @@ locals {
     netsh advfirewall firewall add rule name="WinRM-HTTPS-5986" protocol=TCP dir=in localport=5986 action=allow
     netsh advfirewall firewall delete rule name="WinRM-5985" protocol=TCP localport=5985
   EOT
+
+  # DC-specific bootstrap: the polaris-dc build promotes a BOREAS.LOCAL forest at
+  # bake time, which reboots and removes local accounts (only the built-in
+  # Administrator survives as the domain Administrator). So this bootstrap
+  # configures WinRM on the BUILT-IN Administrator (not a throwaway packer_user):
+  # its password is preserved across promotion, so packer's WinRM reconnect after
+  # the promotion reboot authenticates as the domain Administrator with the same
+  # password. The image is captured un-sysprepped (a promoted DC cannot be
+  # generalized), so the build password is overwritten by the CTF Administrator
+  # password (a2_setup.ps1) as the final provisioner before capture.
+  winrm_https_bootstrap_dc_ps1 = <<-EOT
+    $ErrorActionPreference = 'Stop'
+    $pw = ConvertTo-SecureString '${var.winrm_bootstrap_password}' -AsPlainText -Force
+    $admin = Get-LocalUser -Name 'Administrator'
+    $admin | Enable-LocalUser
+    Set-LocalUser -Name 'Administrator' -Password $pw -PasswordNeverExpires $true
+
+    winrm quickconfig -quiet
+    winrm set winrm/config/service '@{AllowUnencrypted="false"}'
+    winrm set winrm/config/service/auth '@{Basic="false"}'
+
+    $cert = New-SelfSignedCertificate -DnsName ([System.Net.Dns]::GetHostName()) -CertStoreLocation Cert:\LocalMachine\My
+    $thumb = $cert.Thumbprint
+    Remove-WSManInstance -ResourceURI winrm/config/Listener -SelectorSet @{Address="*";Transport="HTTPS"} -ErrorAction SilentlyContinue
+    New-WSManInstance -ResourceURI winrm/config/Listener -SelectorSet @{Address="*";Transport="HTTPS"} -ValueSet @{Hostname=([System.Net.Dns]::GetHostName());CertificateThumbprint=$thumb}
+    Remove-WSManInstance -ResourceURI winrm/config/Listener -SelectorSet @{Address="*";Transport="HTTP"} -ErrorAction SilentlyContinue
+
+    netsh advfirewall firewall add rule name="WinRM-HTTPS-5986" protocol=TCP dir=in localport=5986 action=allow
+    netsh advfirewall firewall delete rule name="WinRM-5985" protocol=TCP localport=5985
+  EOT
 }

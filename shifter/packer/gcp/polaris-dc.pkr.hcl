@@ -1,15 +1,15 @@
-// POLARIS polaris-dc GDC image: Windows Server 2022 with the AD DS + DNS
-// features installed and a first-boot task that promotes a fresh BOREAS.LOCAL
-// forest and seeds the polaris AD content (users/groups/SPNs/DCSync ACL/flags/
-// shares). Mirrors the AWS polaris-dc golden AMI, but the promotion is deferred
-// to the range VM's first boot because GCESysprep cannot generalize a promoted
-// domain controller — so the image is captured as an un-promoted member server
-// with the promotion staged.
+// POLARIS polaris-dc GDC image: a PRE-PROMOTED Windows Server 2022 BOREAS.LOCAL
+// domain controller with the polaris AD content baked in. Every range boots an
+// already-promoted DC (fast spin-up, no per-range promotion).
 //
-// Shares the WinRM-over-TLS bootstrap + sysprep flow with dc.pkr.hcl /
-// windows.pkr.hcl (locals.pkr.hcl). The AD content script is the single
-// source of truth scripts/polaris-aws-range/a2_setup.ps1 (parameterized DNS
-// forwarder); the GDC-specific promotion wrapper is scripts/polaris-dc/.
+// This is captured UN-SYSPREPPED on purpose: GCESysprep cannot generalize a
+// promoted DC, and on GDC (no GCE metadata server) a sysprepped image hangs at
+// OOBE with no network. Un-sysprepped, the specialized image boots straight to
+// the DC. WinRM is bootstrapped on the built-in Administrator (locals.pkr.hcl
+// winrm_https_bootstrap_dc_ps1) so the connection survives the promotion reboot
+// (the built-in Administrator becomes the domain Administrator, same password).
+// virtio-win drivers are staged so the guest binds GDC's virtio NIC (the GCE
+// image ships gVNIC, not virtio-net — the cause of the DC having no network).
 source "googlecompute" "polaris-dc" {
   project_id              = var.project_id
   zone                    = var.zone
@@ -19,12 +19,12 @@ source "googlecompute" "polaris-dc" {
   disk_size               = 100
 
   communicator   = "winrm"
-  winrm_username = "packer_user"
+  winrm_username = "Administrator"
   winrm_password = var.winrm_bootstrap_password
   winrm_insecure = true
   winrm_use_ssl  = true
   winrm_use_ntlm = true
-  winrm_timeout  = "30m"
+  winrm_timeout  = "40m"
 
   network               = var.network
   subnetwork            = var.subnetwork
@@ -36,12 +36,12 @@ source "googlecompute" "polaris-dc" {
   use_iap          = var.use_internal_ip
 
   metadata = {
-    windows-startup-script-ps1 = local.winrm_https_bootstrap_ps1
+    windows-startup-script-ps1 = local.winrm_https_bootstrap_dc_ps1
   }
 
   image_name        = "${var.image_prefix}-polaris-dc-{{timestamp}}"
   image_family      = "${var.image_prefix}-polaris-dc"
-  image_description = "POLARIS polaris-dc: Windows Server 2022, first-boot BOREAS.LOCAL forest + polaris AD content (GCE)"
+  image_description = "POLARIS polaris-dc: pre-promoted BOREAS.LOCAL DC with polaris AD content (GCE, un-sysprepped)"
   image_labels = {
     project    = "shifter"
     managed-by = "packer"
@@ -52,21 +52,26 @@ source "googlecompute" "polaris-dc" {
 build {
   sources = ["source.googlecompute.polaris-dc"]
 
-  // Base system configuration (RDP, firewall, WinRM, AD DS feature via dc role)
+  // Base system configuration (RDP, firewall, WinRM) in the dc role.
   provisioner "powershell" {
     environment_vars = ["PACKER_ROLE=dc"]
     script           = "../scripts/windows/base.ps1"
   }
 
-  // OpenSSH so the GDC range setup-runner can reach the DC
+  // OpenSSH (harmless; useful for operator access to the DC).
   provisioner "powershell" {
-    elevated_user     = "packer_user"
+    elevated_user     = "Administrator"
     elevated_password = var.winrm_bootstrap_password
     environment_vars  = ["PACKER_ROLE=dc"]
     script            = "../scripts/windows/services.ps1"
   }
 
-  // Stage the polaris content + promotion scripts under C:\polaris.
+  // Stage upstream virtio-win drivers so the guest binds GDC's virtio NIC.
+  provisioner "powershell" {
+    script = "scripts/polaris-dc/install-virtio.ps1"
+  }
+
+  // Stage the AD content seed for finalize.ps1 to run post-promotion.
   provisioner "powershell" {
     inline = ["New-Item -ItemType Directory -Force -Path C:\\polaris | Out-Null"]
   }
@@ -74,19 +79,25 @@ build {
     source      = "../../../scripts/polaris-aws-range/a2_setup.ps1"
     destination = "C:\\polaris\\a2_setup.ps1"
   }
-  provisioner "file" {
-    source      = "scripts/polaris-dc/promote-boreas.ps1"
-    destination = "C:\\polaris\\promote-boreas.ps1"
+
+  // Install AD DS/DNS, set forwarder + firewall-off, rename to dc01, and
+  // Install-ADDSForest with the reboot deferred to the windows-restart below.
+  provisioner "powershell" {
+    script = "scripts/polaris-dc/promote-bake.ps1"
   }
 
-  // Install AD DS/DNS features + register the first-boot promotion task.
-  provisioner "powershell" {
-    script = "scripts/polaris-dc/stage-firstboot.ps1"
+  // Apply the deferred promotion reboot; packer reconnects over WinRM as the
+  // domain Administrator once the DC is back up.
+  provisioner "windows-restart" {
+    restart_timeout = "20m"
   }
 
-  // GCESysprep (MUST BE LAST) — generalizes the un-promoted member server.
+  // Post-reboot: wait for AD DS, seed the polaris AD content (a2_setup.ps1).
+  // MUST BE LAST — a2_setup sets the CTF Administrator password.
   provisioner "powershell" {
-    script = "scripts/windows/sysprep.ps1"
+    elevated_user     = "Administrator"
+    elevated_password = var.winrm_bootstrap_password
+    script            = "scripts/polaris-dc/finalize.ps1"
   }
 
   post-processor "manifest" {
