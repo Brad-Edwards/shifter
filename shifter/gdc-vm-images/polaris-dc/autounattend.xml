@@ -1,0 +1,139 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Unattended install answer file for the GDC-native polaris-dc image.
+
+  This drives an automated Windows Server 2022 install on GDC VM Runtime
+  (KubeVirt/QEMU) the *supported* way (per the GDC bare-metal windows-vm doc):
+  install fresh from the Windows ISO with the virtio-container-disk attached, so
+  the installer writes a correct UEFI/GPT/ESP layout and binds the virtio disk +
+  net drivers by construction (no GCE-export firmware hacks).
+
+  Media layout at install time (attached to the install VM):
+    - boot disk         : empty 100Gi VirtualMachineDisk (install target)
+    - windows-iso       : cdrom, Windows Server 2022 eval ISO
+    - virtio-driver     : cdrom, quay.io/kubevirt/virtio-container-disk
+    - polaris-answer    : cdrom, this autounattend.xml + the AD content scripts
+
+  Windows Setup auto-reads autounattend.xml from the root of any attached
+  removable drive. The virtio drivers are loaded in the windowsPE pass via
+  DriverPaths that list the candidate cdrom letters for the virtio disk (its
+  drive letter is assigned at runtime, so several are listed; non-existent paths
+  are ignored). FirstLogonCommands runs the AD promotion + a2_setup post-install.
+-->
+<unattend xmlns="urn:schemas-microsoft-com:unattend">
+
+  <settings pass="windowsPE">
+    <component name="Microsoft-Windows-PnpCustomizationsWinPE" processorArchitecture="amd64"
+               publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS"
+               xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
+      <!-- Load the virtio storage (viostor/vioscsi) + network (NetKVM) drivers
+           from the virtio-container-disk cdrom. Its drive letter is assigned at
+           runtime, so list the common candidates; Setup skips paths that do not
+           exist. 2k22 = Windows Server 2022 driver subdir. -->
+      <DriverPaths>
+        <PathAndCredentials wcm:action="add" wcm:keyValue="1"><Path>D:\viostor\2k22\amd64</Path></PathAndCredentials>
+        <PathAndCredentials wcm:action="add" wcm:keyValue="2"><Path>E:\viostor\2k22\amd64</Path></PathAndCredentials>
+        <PathAndCredentials wcm:action="add" wcm:keyValue="3"><Path>F:\viostor\2k22\amd64</Path></PathAndCredentials>
+        <PathAndCredentials wcm:action="add" wcm:keyValue="4"><Path>D:\vioscsi\2k22\amd64</Path></PathAndCredentials>
+        <PathAndCredentials wcm:action="add" wcm:keyValue="5"><Path>E:\vioscsi\2k22\amd64</Path></PathAndCredentials>
+        <PathAndCredentials wcm:action="add" wcm:keyValue="6"><Path>F:\vioscsi\2k22\amd64</Path></PathAndCredentials>
+        <PathAndCredentials wcm:action="add" wcm:keyValue="7"><Path>D:\NetKVM\2k22\amd64</Path></PathAndCredentials>
+        <PathAndCredentials wcm:action="add" wcm:keyValue="8"><Path>E:\NetKVM\2k22\amd64</Path></PathAndCredentials>
+        <PathAndCredentials wcm:action="add" wcm:keyValue="9"><Path>F:\NetKVM\2k22\amd64</Path></PathAndCredentials>
+      </DriverPaths>
+    </component>
+
+    <component name="Microsoft-Windows-Setup" processorArchitecture="amd64"
+               publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS"
+               xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
+      <DiskConfiguration>
+        <Disk wcm:action="add">
+          <DiskID>0</DiskID>
+          <WillWipeDisk>true</WillWipeDisk>
+          <!-- UEFI/GPT layout: EFI System Partition + MSR + Windows. -->
+          <CreatePartitions>
+            <CreatePartition wcm:action="add"><Order>1</Order><Type>EFI</Type><Size>260</Size></CreatePartition>
+            <CreatePartition wcm:action="add"><Order>2</Order><Type>MSR</Type><Size>16</Size></CreatePartition>
+            <CreatePartition wcm:action="add"><Order>3</Order><Type>Primary</Type><Extend>true</Extend></CreatePartition>
+          </CreatePartitions>
+          <ModifyPartitions>
+            <ModifyPartition wcm:action="add"><Order>1</Order><PartitionID>1</PartitionID><Format>FAT32</Format><Label>System</Label></ModifyPartition>
+            <ModifyPartition wcm:action="add"><Order>2</Order><PartitionID>2</PartitionID></ModifyPartition>
+            <ModifyPartition wcm:action="add"><Order>3</Order><PartitionID>3</PartitionID><Format>NTFS</Format><Label>Windows</Label><Letter>C</Letter></ModifyPartition>
+          </ModifyPartitions>
+        </Disk>
+      </DiskConfiguration>
+      <ImageInstall>
+        <OSImage>
+          <!-- Windows Server 2022 Standard with the Desktop Experience. -->
+          <InstallFrom>
+            <MetaData wcm:action="add"><Key>/IMAGE/NAME</Key><Value>Windows Server 2022 SERVERSTANDARD</Value></MetaData>
+          </InstallFrom>
+          <InstallTo><DiskID>0</DiskID><PartitionID>3</PartitionID></InstallTo>
+        </OSImage>
+      </ImageInstall>
+      <UserData>
+        <ProductKey><Key></Key></ProductKey>
+        <AcceptEula>true</AcceptEula>
+        <FullName>Boreas</FullName>
+        <Organization>Boreas Systems</Organization>
+      </UserData>
+    </component>
+  </settings>
+
+  <settings pass="specialize">
+    <component name="Microsoft-Windows-Shell-Setup" processorArchitecture="amd64"
+               publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS"
+               xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
+      <ComputerName>dc01</ComputerName>
+    </component>
+  </settings>
+
+  <settings pass="oobeSystem">
+    <component name="Microsoft-Windows-International-Core" processorArchitecture="amd64"
+               publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS"
+               xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
+      <InputLocale>en-US</InputLocale>
+      <SystemLocale>en-US</SystemLocale>
+      <UILanguage>en-US</UILanguage>
+      <UserLocale>en-US</UserLocale>
+    </component>
+    <component name="Microsoft-Windows-Shell-Setup" processorArchitecture="amd64"
+               publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS"
+               xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
+      <OOBE>
+        <HideEULAPage>true</HideEULAPage>
+        <HideLocalAccountScreen>true</HideLocalAccountScreen>
+        <HideOnlineAccountScreens>true</HideOnlineAccountScreens>
+        <HideWirelessSetupInOOBE>true</HideWirelessSetupInOOBE>
+        <NetworkLocation>Work</NetworkLocation>
+        <ProtectYourPC>3</ProtectYourPC>
+      </OOBE>
+      <UserAccounts>
+        <AdministratorPassword>
+          <!-- The build/admin password. a2_setup.ps1 sets the final CTF
+               Administrator password (CortexSavesTheDay!) during the bake. -->
+          <Value>CortexSavesTheDay!</Value>
+          <PlainText>true</PlainText>
+        </AdministratorPassword>
+      </UserAccounts>
+      <AutoLogon>
+        <Enabled>true</Enabled>
+        <Username>Administrator</Username>
+        <Password><Value>CortexSavesTheDay!</Value><PlainText>true</PlainText></Password>
+        <LogonCount>3</LogonCount>
+      </AutoLogon>
+      <FirstLogonCommands>
+        <!-- Kick off the polaris DC bake. The answer cdrom's drive letter is
+             resolved by the bootstrap script itself (it searches removable
+             drives for polaris\bake.ps1). -->
+        <SynchronousCommand wcm:action="add">
+          <Order>1</Order>
+          <CommandLine>powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "foreach($d in (Get-Volume | ? {$_.DriveLetter}).DriveLetter){ $p = $d + ':\polaris\bake.ps1'; if(Test-Path $p){ Start-Process powershell -ArgumentList ('-NoProfile -ExecutionPolicy Bypass -File ' + $p) -Wait; break } }"</CommandLine>
+          <Description>Run polaris DC bake (AD promotion + a2_setup)</Description>
+        </SynchronousCommand>
+      </FirstLogonCommands>
+    </component>
+  </settings>
+
+</unattend>
