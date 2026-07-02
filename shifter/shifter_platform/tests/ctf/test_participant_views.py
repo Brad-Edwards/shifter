@@ -564,6 +564,7 @@ class TestAPIParticipantResendInvite:
     def test_resend_works_for_registered_participant(self, authenticated_organizer_client, ctf_participant):
         """Resend works for registered participants (sends magic link)."""
         # ctf_participant fixture has user linked (registered)
+        old_token = ctf_participant.invite_token
         url = reverse(
             "ctf:api_participant_resend_invite",
             kwargs={"participant_id": ctf_participant.id},
@@ -573,6 +574,10 @@ class TestAPIParticipantResendInvite:
         assert response.status_code == 200
         data = response.json()
         assert data["success"] is True
+        # The registered/ACTIVE path must still rotate the invite token, not
+        # just return success — otherwise a broken ACTIVE branch would pass.
+        ctf_participant.refresh_from_db()
+        assert ctf_participant.invite_token != old_token
 
 
 class TestTeamJoinCapacityGuard:

@@ -13,6 +13,8 @@ from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
 if TYPE_CHECKING:
+    from uuid import UUID
+
     from django.http import HttpRequest
 
     from ctf.models import (
@@ -23,11 +25,13 @@ if TYPE_CHECKING:
 from ctf.views import _access, _parsing
 from ctf.views._access import (
     ctf_participant_required,
+    ctf_role_required,
 )
 
 logger = logging.getLogger(__name__)
 
 _SCOREBOARD_TEMPLATE = "ctf/participant/scoreboard.html"
+_SOLVE_HISTORY_TEMPLATE = "ctf/participant/solve_history.html"
 
 
 # Upper bound for an accepted invite token. Real tokens are
@@ -230,6 +234,10 @@ def scoreboard(request: HttpRequest) -> HttpResponse:
 
     context = {
         "participant": participant,
+        # The scoreboard row partial and the auto-refresh JS both key the
+        # "You" highlight on ``participant_id``; without it in the context the
+        # highlight is dead on initial render and on refresh (issue #521).
+        "participant_id": str(participant.id),
         "event": event,
         "rankings": rankings,
         "bracket_rankings": bracket_rankings,
@@ -239,6 +247,67 @@ def scoreboard(request: HttpRequest) -> HttpResponse:
         "frozen": event.is_scoreboard_frozen,
     }
     return render(request, _SCOREBOARD_TEMPLATE, context)
+
+
+@login_required
+@ctf_role_required
+@require_GET
+def participant_solve_history(request: HttpRequest, participant_id: UUID) -> HttpResponse:
+    """Own-row solve-history drill-down from a scoreboard row.
+
+    Scope (issue #521 / CTF-401): a participant may open only their own solve
+    history; the event organizer may open any participant's history for events
+    they own. The projection is correct-solves-only and secret-safe (see
+    ``get_participant_solve_history``); ranking/tie-break semantics stay in
+    ``ctf.services.scoring`` and are not recomputed here.
+
+    Args:
+        participant_id: UUID of the participant whose history to render.
+    """
+    from ctf.exceptions import CTFNotFoundError
+    from ctf.services import get_participant
+    from ctf.services.submission import get_participant_solve_history
+
+    try:
+        target = get_participant(participant_id)
+    except CTFNotFoundError:
+        return HttpResponse("Not found", status=404)
+
+    user = _access._get_user(request)
+    role = _access.get_user_role(user)
+    is_event_organizer = role.is_ctf_organizer and target.event.created_by_id == user.pk
+    is_owner = target.user_id == user.pk
+    if not is_owner and not is_event_organizer:
+        logger.warning(
+            "CTF solve-history access denied for user %s on participant %s",
+            user.email,
+            target.id,
+        )
+        return HttpResponse("Forbidden", status=403)
+
+    event = target.event
+    # Non-organizers must not see history while the organizer has the
+    # scoreboard hidden, mirroring the scoreboard visibility gate.
+    if not is_event_organizer and not event.scoreboard_visible:
+        return render(
+            request,
+            _SOLVE_HISTORY_TEMPLATE,
+            {"participant": target, "event": event, "scoreboard_hidden": True},
+        )
+
+    # Apply the same frozen-scoreboard cutoff as the scoreboard itself: a
+    # non-organizer viewer must not see solves submitted after the freeze,
+    # since those rows are intentionally absent from the frozen scoreboard.
+    # Organizers always see the live history.
+    freeze_at = event.scoreboard_freeze_at if (event.is_scoreboard_frozen and not is_event_organizer) else None
+
+    context = {
+        "participant": target,
+        "event": event,
+        "frozen": event.is_scoreboard_frozen and not is_event_organizer,
+        "solves": get_participant_solve_history(target.id, freeze_at=freeze_at),
+    }
+    return render(request, _SOLVE_HISTORY_TEMPLATE, context)
 
 
 @login_required
