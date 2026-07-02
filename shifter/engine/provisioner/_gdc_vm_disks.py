@@ -125,7 +125,10 @@ def _build_vm_manifest(
         # BIOS (SeaBIOS), which cannot boot the GCE Windows Server 2022 image
         # (UEFI/GPT, no MBR boot code) -> "No bootable device". The Linux guest
         # images support legacy BIOS, so only Windows opts into UEFI.
-        spec["firmware"] = {"bootloader": {"type": "uefi"}}
+        # Secure Boot is disabled: GDC's OVMF has no Microsoft UEFI CA keys
+        # enrolled, so with it on the firmware rejects the (MS-signed) Windows
+        # bootloader with "Access Denied" -> "No bootable option or device".
+        spec["firmware"] = {"bootloader": {"type": "uefi", "enableSecureBoot": False}}
     return {
         "apiVersion": f"{_VM_GROUP}/{_VM_VERSION}",
         "kind": "VirtualMachine",
