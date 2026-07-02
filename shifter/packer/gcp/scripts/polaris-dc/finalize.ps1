@@ -35,5 +35,28 @@ Write-Host "Running a2_setup.ps1 (DNS forwarder $fwd)..."
 if ($LASTEXITCODE -ne $null -and $LASTEXITCODE -ne 0) {
     throw "a2_setup.ps1 failed with exit code $LASTEXITCODE"
 }
+
+# GDC's OVMF boots with empty NVRAM (the exported image loses its UEFI boot
+# variables), so it does not know the "Windows Boot Manager" entry and falls
+# back to the removable-media path \EFI\Boot\bootx64.efi. GCE Windows only ships
+# \EFI\Microsoft\Boot\bootmgfw.efi, so OVMF loops on a boot entry that never
+# chains into Windows. Copy the Windows Boot Manager to the fallback path so the
+# firmware boots it. (bootmgfw.efi reads \EFI\Microsoft\Boot\BCD regardless of
+# where it is launched from, so no BCD change is needed.)
+Write-Host "Staging Windows bootloader at the UEFI fallback path..."
+mountvol S: /S
+try {
+    if (-not (Test-Path "S:\EFI\Microsoft\Boot\bootmgfw.efi")) {
+        throw "bootmgfw.efi not found on the ESP; cannot stage UEFI fallback"
+    }
+    New-Item -ItemType Directory -Path "S:\EFI\Boot" -Force | Out-Null
+    Copy-Item "S:\EFI\Microsoft\Boot\bootmgfw.efi" "S:\EFI\Boot\bootx64.efi" -Force
+    Write-Host "  copied bootmgfw.efi -> S:\EFI\Boot\bootx64.efi"
+    Get-ChildItem "S:\EFI\Boot" | ForEach-Object { Write-Host "   ESP fallback: $($_.Name) $($_.Length)" }
+}
+finally {
+    mountvol S: /D
+}
+
 Write-Host "=== polaris-dc finalize complete ==="
 Stop-Transcript
