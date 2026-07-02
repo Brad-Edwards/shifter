@@ -38,6 +38,7 @@ import {
   ghExec,
   resolveGitRef,
 } from "./lib.js";
+import { installToolSchemaDialectNormalizer } from "../shared/tool-schema-dialect.js";
 import {
   loadPolicy,
   profileFromEnv,
@@ -3248,6 +3249,7 @@ registerTool(ctx, {
 async function main() {
   installLiveProcessHandlers();
   const server = new McpServer({ name: "shifter-ops", version: "1.0.0" });
+  installToolSchemaDialectNormalizer(server);
   const policy = loadPolicy({
     path: path.join(_REPO_ROOT, ".shifter.yaml"),
     profile: profileFromEnv(process.env),
