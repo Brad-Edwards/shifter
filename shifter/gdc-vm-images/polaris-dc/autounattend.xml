@@ -23,6 +23,21 @@
 <unattend xmlns="urn:schemas-microsoft-com:unattend">
 
   <settings pass="windowsPE">
+    <!-- WinPE language/locale. REQUIRED for an unattended install: it is what
+         the interactive "Language to install / Time / Keyboard" screen collects.
+         Without it Setup cannot resolve the (language-specific) license terms and
+         fails with "Windows cannot find the Microsoft Software License Terms". -->
+    <component name="Microsoft-Windows-International-Core-WinPE" processorArchitecture="amd64"
+               publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS"
+               xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
+      <SetupUILanguage><UILanguage>en-US</UILanguage></SetupUILanguage>
+      <InputLocale>en-US</InputLocale>
+      <SystemLocale>en-US</SystemLocale>
+      <UILanguage>en-US</UILanguage>
+      <UILanguageFallback>en-US</UILanguageFallback>
+      <UserLocale>en-US</UserLocale>
+    </component>
+
     <component name="Microsoft-Windows-PnpCustomizationsWinPE" processorArchitecture="amd64"
                publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS"
                xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
@@ -65,9 +80,13 @@
       </DiskConfiguration>
       <ImageInstall>
         <OSImage>
-          <!-- Windows Server 2022 Standard with the Desktop Experience. -->
+          <!-- Windows Server 2022 Standard, Desktop Experience = image index 2
+               in the eval install.wim (1=Standard Core, 2=Standard Desktop,
+               3=Datacenter Core, 4=Datacenter Desktop). Select by INDEX rather
+               than NAME: an unresolved InstallFrom is what Setup reports as
+               "Windows cannot find the Microsoft Software License Terms". -->
           <InstallFrom>
-            <MetaData wcm:action="add"><Key>/IMAGE/NAME</Key><Value>Windows Server 2022 SERVERSTANDARD</Value></MetaData>
+            <MetaData wcm:action="add"><Key>/IMAGE/INDEX</Key><Value>2</Value></MetaData>
           </InstallFrom>
           <InstallTo><DiskID>0</DiskID><PartitionID>3</PartitionID></InstallTo>
         </OSImage>
