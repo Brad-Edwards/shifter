@@ -42,10 +42,12 @@ locals {
   # password (a2_setup.ps1) as the final provisioner before capture.
   winrm_https_bootstrap_dc_ps1 = <<-EOT
     $ErrorActionPreference = 'Stop'
-    $pw = ConvertTo-SecureString '${var.winrm_bootstrap_password}' -AsPlainText -Force
-    $admin = Get-LocalUser -Name 'Administrator'
-    $admin | Enable-LocalUser
-    Set-LocalUser -Name 'Administrator' -Password $pw -PasswordNeverExpires $true
+    # Use the built-in Administrator (net user is bulletproof vs Set-LocalUser on
+    # a possibly-disabled account) so the identity survives the promotion reboot
+    # as the domain Administrator. The source builder is launched with
+    # disable-account-manager=true so the GCE guest agent does not reset this
+    # password out from under packer's WinRM connection.
+    net user Administrator '${var.winrm_bootstrap_password}' /active:yes
 
     winrm quickconfig -quiet
     winrm set winrm/config/service '@{AllowUnencrypted="false"}'

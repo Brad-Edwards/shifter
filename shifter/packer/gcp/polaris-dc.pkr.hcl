@@ -24,7 +24,7 @@ source "googlecompute" "polaris-dc" {
   winrm_insecure = true
   winrm_use_ssl  = true
   winrm_use_ntlm = true
-  winrm_timeout  = "40m"
+  winrm_timeout  = "30m"
 
   network               = var.network
   subnetwork            = var.subnetwork
@@ -37,6 +37,11 @@ source "googlecompute" "polaris-dc" {
 
   metadata = {
     windows-startup-script-ps1 = local.winrm_https_bootstrap_dc_ps1
+    // Stop the GCE guest agent from resetting the built-in Administrator
+    // password that the bootstrap sets (and that packer reconnects with after
+    // the promotion reboot). Without this the agent races the bootstrap and
+    // WinRM auth fails.
+    disable-account-manager = "true"
   }
 
   image_name        = "${var.image_prefix}-polaris-dc-{{timestamp}}"
