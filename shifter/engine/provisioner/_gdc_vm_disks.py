@@ -120,6 +120,12 @@ def _build_vm_manifest(
                 "secretRef": {"name": user_data_secret_name},
             }
         }
+    else:
+        # Windows guests need UEFI. The firmware bootloader defaults to legacy
+        # BIOS (SeaBIOS), which cannot boot the GCE Windows Server 2022 image
+        # (UEFI/GPT, no MBR boot code) -> "No bootable device". The Linux guest
+        # images support legacy BIOS, so only Windows opts into UEFI.
+        spec["firmware"] = {"bootloader": {"type": "uefi"}}
     return {
         "apiVersion": f"{_VM_GROUP}/{_VM_VERSION}",
         "kind": "VirtualMachine",

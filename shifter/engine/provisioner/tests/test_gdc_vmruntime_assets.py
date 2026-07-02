@@ -626,3 +626,7 @@ def test_build_vm_manifest_attaches_cloudinit_only_for_linux():
     )
     assert "cloudInit" not in windows["spec"]
     assert windows["spec"]["osType"] == "Windows"
+    # Windows must boot UEFI (GCE Windows Server 2022 is UEFI/GPT; SeaBIOS can't
+    # boot it -> "No bootable device"). Linux stays on the default legacy BIOS.
+    assert windows["spec"]["firmware"]["bootloader"]["type"] == "uefi"
+    assert "firmware" not in linux["spec"]
