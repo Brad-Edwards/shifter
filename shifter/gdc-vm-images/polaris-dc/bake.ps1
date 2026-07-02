@@ -26,6 +26,32 @@ $stage = if (Test-Path $phase) { Get-Content $phase -Raw } else { "promote" }
 if ($stage.Trim() -eq "promote") {
     Set-Content -Path $phase -Value "seed" -Encoding ascii
 
+    # Install ALL virtio drivers into the (SATA-installed) OS so the exported
+    # golden image boots on the virtio bus that real ranges use (viostor for the
+    # boot disk, NetKVM for the NIC, etc.). Setup ran off a SATA disk to avoid
+    # needing viostor in WinPE (GDC headless VMs give no console to load it
+    # interactively); here, with Windows fully up, we bake the drivers in. Find
+    # the virtio-container-disk cdrom by a signature file rather than a drive
+    # letter (GDC attaches several agent cdroms, so letters are not stable).
+    $virtio = $null
+    foreach ($v in (Get-Volume | Where-Object { $_.DriveLetter })) {
+        $probe = ($v.DriveLetter + ":\viostor")
+        if (Test-Path $probe) { $virtio = ($v.DriveLetter + ":"); break }
+    }
+    if ($virtio) {
+        Write-Host "Installing virtio drivers from $virtio ..."
+        # pnputil adds every matching .inf to the driver store so the OS can bind
+        # them at boot regardless of bus. 2k22 subdir = Windows Server 2022.
+        Get-ChildItem -Path "$virtio\" -Recurse -Filter *.inf |
+            Where-Object { $_.FullName -match '2k22' -and $_.FullName -match 'amd64' } |
+            ForEach-Object {
+                Write-Host "  pnputil add-driver $($_.FullName)"
+                & pnputil.exe /add-driver $_.FullName /install 2>&1 | Out-Null
+            }
+    } else {
+        Write-Host "WARNING: virtio cdrom not found; golden image may not boot on virtio"
+    }
+
     # Install OpenSSH server for operator access to the DC (optional but handy).
     Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0 -ErrorAction SilentlyContinue | Out-Null
     Set-Service -Name sshd -StartupType Automatic -ErrorAction SilentlyContinue
