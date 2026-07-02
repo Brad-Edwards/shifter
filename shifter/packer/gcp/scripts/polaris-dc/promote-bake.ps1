@@ -10,7 +10,7 @@
 # and finalize.ps1 seeds the AD content.
 #
 # Promotion is done at bake time (not first boot) so every range boots an
-# already-promoted DC — fast spin-up, no per-range 20-minute promotion. The
+# already-promoted DC - fast spin-up, no per-range 20-minute promotion. The
 # image is captured un-sysprepped because GCESysprep cannot generalize a
 # promoted domain controller (and on GDC there is no metadata server to answer
 # a sysprepped image's OOBE, which is why the earlier sysprepped build hung with
@@ -35,11 +35,12 @@ foreach ($feat in @("AD-Domain-Services", "DNS")) {
     }
 }
 
-if ($env:COMPUTERNAME -ne "DC01") {
-    Rename-Computer -NewName "dc01" -Force
-    Write-Host "  computer rename queued (dc01)"
-}
-
+# Note: the Windows hostname is intentionally NOT renamed to dc01. Renaming
+# leaves a pending-rename that Install-ADDSForest refuses to run over (it needs
+# its own reboot first), and the hostname is cosmetic here: the range DNS
+# container (172.20.0.2) is authoritative for dc01.boreas.local -> the DC IP, so
+# participants resolve dc01 regardless of the DC's Windows computer name, and
+# Kerberos/LDAP key off the domain (boreas.local), not the host name.
 Import-Module ADDSDeployment
 $secureDsrm = ConvertTo-SecureString $DsrmPassword -AsPlainText -Force
 Write-Host "  Install-ADDSForest BOREAS.LOCAL (reboot deferred to packer)..."

@@ -1,10 +1,10 @@
 # Install the virtio-win paravirtualized drivers into the Windows driver store.
 #
-# GDC VM Runtime (KubeVirt/QEMU) presents the guest a virtio NIC (via the
-# macvtap binding) and virtio block devices. GCE Windows images ship Google's
-# own network stack (gVNIC), not the upstream virtio-net (netkvm) driver, so on
-# GDC the guest comes up with NO usable NIC and never gets a DHCP lease — the
-# root cause of the polaris-dc having no network. Stage the upstream virtio-win
+# GDC VM Runtime (KubeVirt/QEMU) presents the guest a virtio NIC (macvtap
+# binding) and virtio block devices. GCE Windows images ship Google's own
+# network stack (gVNIC), not the upstream virtio-net (NetKVM) driver, so on GDC
+# the guest comes up with no usable NIC and never gets a DHCP lease -- the root
+# cause of the polaris-dc having no network. Stage the upstream virtio-win
 # drivers so Windows binds them when the virtio devices appear on GDC.
 #
 # pnputil /add-driver /install adds the packages to the driver store now (on the
@@ -31,14 +31,16 @@ Write-Host "Mounted at $drive"
 # by the guest agent) drivers.
 $os = "2k22"
 $arch = "amd64"
-foreach ($drv in @("NetKVM","viostor","vioscsi","Balloon","vioserial","qemupciserial")) {
-    $inf = Get-ChildItem -Path "$drive\$drv\$os\$arch" -Filter *.inf -ErrorAction SilentlyContinue |
-        Select-Object -First 1
-    if ($inf) {
-        Write-Host "  pnputil add-driver $($inf.FullName)"
-        pnputil /add-driver "$($inf.FullName)" /install | Out-Null
-    } else {
-        Write-Host "  (no inf for $drv under $drive\$drv\$os\$arch — skipping)"
+$drivers = @("NetKVM", "viostor", "vioscsi", "Balloon", "vioserial", "qemupciserial")
+foreach ($drv in $drivers) {
+    $dir = "$drive\$drv\$os\$arch"
+    $inf = Get-ChildItem -Path $dir -Filter "*.inf" -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($null -ne $inf) {
+        Write-Host ("  pnputil add-driver " + $inf.FullName)
+        pnputil /add-driver $inf.FullName /install | Out-Null
+    }
+    else {
+        Write-Host ("  no inf for " + $drv + " under " + $dir + "; skipping")
     }
 }
 

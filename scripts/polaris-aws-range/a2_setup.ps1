@@ -1,4 +1,4 @@
-# POLARIS A2 post-promotion setup — runs via SSM Run Command AFTER the DC
+# POLARIS A2 post-promotion setup - runs via SSM Run Command AFTER the DC
 # has rebooted out of Install-ADDSForest and AD DS is serving.
 #
 # Creates the OUs, users, groups, SPNs, DCSync ACL, Project-L info flag,
@@ -58,7 +58,7 @@ $DomainDn = (Get-ADDomain).DistinguishedName
 Write-Host "Domain DN: $DomainDn"
 
 # -----------------------------------------------------------------------
-# Phase 1 — Organizational units (matches design doc A2-domain-controller.md)
+# Phase 1 - Organizational units (matches design doc A2-domain-controller.md)
 # -----------------------------------------------------------------------
 $OuNames = @("Consulting", "Engineering", "Security", "Executive", "ServiceAccounts", "Disabled")
 foreach ($ou in $OuNames) {
@@ -72,7 +72,7 @@ foreach ($ou in $OuNames) {
 }
 
 # -----------------------------------------------------------------------
-# Phase 2 — Users. Each tuple: sam, displayName, givenName, sn, ou, password
+# Phase 2 - Users. Each tuple: sam, displayName, givenName, sn, ou, password
 # Passwords match the values the walkthroughs and smoketest hard-code.
 # -----------------------------------------------------------------------
 $Users = @(
@@ -127,7 +127,7 @@ foreach ($u in $Users) {
 Disable-ADAccount -Identity "j.chen"
 
 # -----------------------------------------------------------------------
-# Phase 3 — Groups, including the nested Engineering-Support > Research-
+# Phase 3 - Groups, including the nested Engineering-Support > Research-
 # Coordination > Project-L chain that flag 14 requires the participant to
 # unwrap.
 # -----------------------------------------------------------------------
@@ -175,7 +175,7 @@ Add-GroupMemberIdempotent -Group "Domain Admins"         -Members @("v.harlan")
 Add-GroupMemberIdempotent -Group "Backup Operators"      -Members @("svc-backup")
 
 # -----------------------------------------------------------------------
-# Phase 4 — SPNs + encryption types.
+# Phase 4 - SPNs + encryption types.
 # svc-backup and svc-scada need Kerberoastable SPNs. msDS-SupportedEncryptionTypes
 # set to include RC4_HMAC_MD5 (bit 4) so Kerberoast returns $krb5tgs$23$ hashes
 # that hashcat -m 13100 / john's krb5tgs format can crack.
@@ -203,7 +203,7 @@ foreach ($svc in $ServicePrincipalNames.Keys) {
 }
 
 # -----------------------------------------------------------------------
-# Phase 5 — DCSync ACL on svc-backup.
+# Phase 5 - DCSync ACL on svc-backup.
 # The walkthrough chain is Kerberoast -> crack -> secretsdump -just-dc-user.
 # secretsdump uses DRSUAPI Replication rights, which require both
 # "Replicating Directory Changes" and "Replicating Directory Changes All"
@@ -237,7 +237,7 @@ Set-Acl -Path $rootDn -AclObject $acl
 Write-Host "  svc-backup DCSync ACL set"
 
 # -----------------------------------------------------------------------
-# Phase 6 — Flag 14: Project-L.info attribute.
+# Phase 6 - Flag 14: Project-L.info attribute.
 # The walkthrough says the participant enumerates nested groups, finds
 # Project-L, then queries the `info` attribute. Set that here.
 # -----------------------------------------------------------------------
@@ -245,7 +245,7 @@ Set-ADGroup -Identity "Project-L" -Replace @{ info = "FLAG{2f8b4a6c1d9e7053}" }
 Write-Host "  Project-L info attribute set"
 
 # -----------------------------------------------------------------------
-# Phase 7 — Flag 16: badgelogs share with Petrov anomaly CSV.
+# Phase 7 - Flag 16: badgelogs share with Petrov anomaly CSV.
 # Share is readable by Domain Users (broad). CSV is drafted inline rather
 # than COPYed from the content dir because we want to control the row
 # format used by the smoketest grep.
@@ -287,7 +287,7 @@ if (-not (Get-SmbShare -Name "badgelogs" -ErrorAction SilentlyContinue)) {
 }
 
 # -----------------------------------------------------------------------
-# Phase 8 — Flag 17: admin_flag share. DA-only NTFS ACL + share ACL.
+# Phase 8 - Flag 17: admin_flag share. DA-only NTFS ACL + share ACL.
 # -----------------------------------------------------------------------
 $adminFlagRoot = "C:\Shares\admin_flag"
 New-Item -ItemType Directory -Path $adminFlagRoot -Force | Out-Null
@@ -315,7 +315,7 @@ if (-not (Get-SmbShare -Name "admin_flag" -ErrorAction SilentlyContinue)) {
 }
 
 # -----------------------------------------------------------------------
-# Phase 9 — Force a fresh Administrator password using the one the operator
+# Phase 9 - Force a fresh Administrator password using the one the operator
 # holds in Secrets Manager so the flag 17 pass-the-hash chain yields a hash
 # we can predict.
 # -----------------------------------------------------------------------
