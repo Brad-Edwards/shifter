@@ -1100,6 +1100,7 @@
       "docs/architecture/aces-migration-parity-inventory.yaml",
       "docs/architecture/aces-runtime-target-backend-manifest-preflight-1233.md",
       "docs/architecture/aces-operation-status-snapshot-projection-preflight-1234.md",
+      "docs/architecture/aces-polaris-acceptance-parity-gate-preflight-1237.md",
       "scenario-dev/polaris/design/aces-sdl-validation-path.md",
       "scenario-dev/polaris/sdl/README.md",
       "shifter/shifter_platform/cms/scenarios/schema.py",
