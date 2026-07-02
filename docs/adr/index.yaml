@@ -1205,5 +1205,35 @@
       "scripts/gcp/render_runtime_env.py",
       ".github/workflows/deploy.yml"
     ]
+  },
+  {
+    "id": "ADR-028",
+    "title": "CTF participant solve history is semi-private (participant and organizer only)",
+    "status": "accepted",
+    "scope": "shifter_platform",
+    "decision": "The individual scoreboard (CTF-401) exposes aggregate ranking data -- rank, display name, total score, solve count, and last-solve time -- publicly to all participants. A participant's per-challenge solve history is semi-private: it is visible only to that participant and to the event organizer, unless the participant explicitly chooses to share it. This clarifies and supersedes the literal reading of CTF-401's \"Participants shall be able to click a row to see that participant's solve history\" clause, which would expose every participant's per-challenge history to all participants. Rationale: aggregate standing is inherently public on a scoreboard, but which specific challenges a participant solved reveals skill areas and progress and enables targeting or collusion inference -- it is nobody's business except the participant and the organizer. Concretely, scoreboard rows link to the solve-history drill-down only for the viewer's own row; the ctf:participant_solve_history view authorizes own-participant-or-event-organizer. Solve-history projections are correct-solves-only and never expose submitted flag values, incorrect-attempt details, or attempt source IP addresses. Ranking and CTF-406 tie-breaking stay in ctf.services.scoring; presentation never re-ranks. Governing requirement: CTF-1404 (Solve History Visibility).",
+    "rules": [
+      {
+        "id": "ADR-028-R1",
+        "description": "Participant per-challenge solve history must be gated to the participant themselves or the event organizer. Scoreboard row drill-down links must render only for the viewer's own row; other rows stay display-only. Do not widen ctf:participant_solve_history to any-participant access to match CTF-401's literal wording -- CTF-1404 governs the semi-private posture.",
+        "checks": []
+      },
+      {
+        "id": "ADR-028-R2",
+        "description": "Any solve-history projection must be correct-solves-only and must never expose submitted flag values, incorrect-attempt details, or attempt source IP addresses to a participant-visible surface. Reuse ctf.services.submission.get_participant_solve_history rather than serialising raw CTFSubmission rows.",
+        "checks": []
+      }
+    ],
+    "exceptions": [],
+    "enforcement": ["agent-policy", "ci"],
+    "evidence": [
+      "docs/architecture/ctf-scoreboard-contract-preflight-521.md",
+      "shifter/shifter_platform/ctf/views/participant.py",
+      "shifter/shifter_platform/ctf/services/submission.py",
+      "shifter/shifter_platform/templates/ctf/includes/scoreboard_table.html",
+      "shifter/shifter_platform/templates/ctf/participant/scoreboard.html",
+      "shifter/shifter_platform/tests/ctf/test_scoreboard_views.py",
+      "shifter/shifter_platform/tests/ctf/test_submission_service.py"
+    ]
   }
 ]
