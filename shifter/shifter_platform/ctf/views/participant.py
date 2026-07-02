@@ -249,6 +249,39 @@ def scoreboard(request: HttpRequest) -> HttpResponse:
     return render(request, _SCOREBOARD_TEMPLATE, context)
 
 
+def _resolve_solve_history_access(
+    request: HttpRequest, participant_id: UUID
+) -> tuple[CTFParticipant | None, bool, HttpResponse | None]:
+    """Resolve the target participant and authorize solve-history access.
+
+    Returns ``(target, is_event_organizer, error_response)``. Access is
+    own-participant-or-event-organizer (issue #521 / CTF-401): a participant may
+    open only their own history; the organizer that owns the event may open any
+    participant's. Keeping the 404/403 returns here holds the view itself to a
+    single render path per outcome.
+    """
+    from ctf.exceptions import CTFNotFoundError
+    from ctf.services import get_participant
+
+    try:
+        target = get_participant(participant_id)
+    except CTFNotFoundError:
+        return None, False, HttpResponse("Not found", status=404)
+
+    user = _access._get_user(request)
+    role = _access.get_user_role(user)
+    is_event_organizer = role.is_ctf_organizer and target.event.created_by_id == user.pk
+    if target.user_id != user.pk and not is_event_organizer:
+        logger.warning(
+            "CTF solve-history access denied for user %s on participant %s",
+            user.email,
+            target.id,
+        )
+        return None, False, HttpResponse("Forbidden", status=403)
+
+    return target, is_event_organizer, None
+
+
 @login_required
 @ctf_role_required
 @require_GET
@@ -264,26 +297,12 @@ def participant_solve_history(request: HttpRequest, participant_id: UUID) -> Htt
     Args:
         participant_id: UUID of the participant whose history to render.
     """
-    from ctf.exceptions import CTFNotFoundError
-    from ctf.services import get_participant
     from ctf.services.submission import get_participant_solve_history
 
-    try:
-        target = get_participant(participant_id)
-    except CTFNotFoundError:
-        return HttpResponse("Not found", status=404)
-
-    user = _access._get_user(request)
-    role = _access.get_user_role(user)
-    is_event_organizer = role.is_ctf_organizer and target.event.created_by_id == user.pk
-    is_owner = target.user_id == user.pk
-    if not is_owner and not is_event_organizer:
-        logger.warning(
-            "CTF solve-history access denied for user %s on participant %s",
-            user.email,
-            target.id,
-        )
-        return HttpResponse("Forbidden", status=403)
+    target, is_event_organizer, error = _resolve_solve_history_access(request, participant_id)
+    if error is not None:
+        return error
+    assert target is not None
 
     event = target.event
     # Non-organizers must not see history while the organizer has the

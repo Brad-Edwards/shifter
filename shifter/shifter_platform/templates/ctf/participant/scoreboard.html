@@ -190,7 +190,10 @@
 var autoRefreshInterval = null;
 // Own-row solve-history link (issue #521). Only the current participant's row
 // is linkable; empty when the participant is unresolved.
-var solveHistoryUrl = "{% if participant %}{% url 'ctf:participant_solve_history' participant_id=participant.pk %}{% endif %}";
+var solveHistoryUrl = "";
+{% if participant %}
+solveHistoryUrl = "{% url 'ctf:participant_solve_history' participant_id=participant.pk %}";
+{% endif %}
 
 function refreshScoreboard() {
     var btn = document.getElementById('refresh-btn');
