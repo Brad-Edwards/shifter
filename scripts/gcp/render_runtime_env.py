@@ -193,8 +193,6 @@ def render_env(outputs: dict[str, object], *, image_tag: str) -> str:
         "QUEUE_ENGINE_PUBLISHER_ID": topic_id,
         "QUEUE_MC_CONSUMER_ID": subscriptions["mc"],
         "QUEUE_MC_PUBLISHER_ID": topic_id,
-        "QUEUE_EXPERIMENTS_CONSUMER_ID": subscriptions["experiments"],
-        "QUEUE_EXPERIMENTS_PUBLISHER_ID": topic_id,
         "DB_SECRET_ID": secret_ids["db"],
         "APP_SECRET_ID": secret_ids["app"],
         "GUACAMOLE_SECRET_ID": secret_ids["guacamole-json-auth"],
