@@ -64,16 +64,6 @@ def _credentials_write_permission() -> PermissionClass:
     return _scope_permission(scopes.MISSION_CONTROL_CREDENTIALS_WRITE)
 
 
-def _script_read_permission() -> PermissionClass:
-    """Build the Mission Control script-read scope permission."""
-    return _scope_permission(scopes.MISSION_CONTROL_SCRIPT_READ)
-
-
-def _script_write_permission() -> PermissionClass:
-    """Build the Mission Control script-write scope permission."""
-    return _scope_permission(scopes.MISSION_CONTROL_SCRIPT_READ, scopes.MISSION_CONTROL_SCRIPT_WRITE)
-
-
 class MissionControlAPIView(APIView):
     """Base class for authenticated Mission Control DRF endpoints."""
 

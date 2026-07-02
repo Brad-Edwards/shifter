@@ -836,10 +836,9 @@ class AuditLogSerializer(serializers.ModelSerializer):
 **Summary**: Audit experiment creation, start, cancellation, completion, and failure.
 
 **Files**:
-- `cms/experiments/services.py` - `create_experiment()`, `start_experiment()`, `cancel_experiment()`
-- `cms/experiments/orchestrator.py` - `_check_experiment_completion()`
+- Legacy experiment lifecycle files were removed by ADR-027 / issue #1195.
 
-**Status**: Implemented
+**Status**: Removed by ADR-027 / issue #1195
 
 **Acceptance Criteria**:
 - [x] Experiment creation logged
@@ -855,9 +854,9 @@ class AuditLogSerializer(serializers.ModelSerializer):
 **Summary**: Audit script upload completion and deletion.
 
 **Files**:
-- `cms/experiments/services.py` - `complete_script_upload()`, `delete_script()`
+- Legacy script asset files were removed by ADR-027 / issue #1195.
 
-**Status**: Implemented
+**Status**: Removed by ADR-027 / issue #1195
 
 **Acceptance Criteria**:
 - [x] Script upload completion logged
@@ -915,7 +914,7 @@ graph TD
 | P1 | 7 | Auth events, range lifecycle, credentials - **Partially done** |
 | P2 | 5 | Sessions, agents, NGFW, users, API - **Partially done** |
 | P3 | 3 | Middleware, archival, permission logging |
-| New | 4 | Pause/resume, experiments, scripts, scenario editor - **Done** |
+| New | 4 | Pause/resume, removed legacy experiments/scripts, scenario editor - **Done** |
 
 **Total**: 22 issues (12 implemented, 10 remaining)
 

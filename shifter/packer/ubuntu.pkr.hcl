@@ -64,6 +64,7 @@ build {
 
   provisioner "shell" {
     scripts = [
+      "scripts/common/claude-autostart-install.sh",
       "scripts/ubuntu/claude-code.sh",
       "scripts/common/cleanup.sh"
     ]
