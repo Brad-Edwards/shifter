@@ -62,16 +62,15 @@ def upload_agent(file_obj: BinaryIO, user_id: int, filename: str) -> tuple[str, 
     unique_id = uuid.uuid4().hex[:12]
     s3_key = f"agents/{user_id}/{unique_id}_{filename}"
 
-    # Calculate SHA256 while reading file
+    # Calculate SHA256 while reading file (single pass; do not retain chunks).
     sha256 = hashlib.sha256()
     file_obj.seek(0)
-    chunks = []
+    file_size = 0
     while chunk := file_obj.read(8192):
         sha256.update(chunk)
-        chunks.append(chunk)
+        file_size += len(chunk)
 
     sha256_hash = sha256.hexdigest()
-    file_size = sum(len(c) for c in chunks)
 
     # Reset for upload
     file_obj.seek(0)
