@@ -239,16 +239,6 @@
     },
     {
       "default": null,
-      "name": "EXPERIMENT_TASK_DEFINITION",
-      "source_file": "config/_cloud.py"
-    },
-    {
-      "default": "''",
-      "name": "EXPERIMENT_TASK_DEFINITION_ARN",
-      "source_file": "config/_cloud.py"
-    },
-    {
-      "default": null,
       "name": "FIELD_ENCRYPTION_KEY",
       "source_file": "config/settings.py"
     },

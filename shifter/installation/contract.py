@@ -91,7 +91,6 @@ class ProcessRole(StrEnum):
     PORTAL = "portal"
     WORKER = "worker"
     PROVISIONER = "provisioner"
-    EXPERIMENT_TASK = "experiment-task"
     RANGE_TASK = "range-task"
 
 

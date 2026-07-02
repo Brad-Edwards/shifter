@@ -6,6 +6,11 @@ ACES experiment-core".
 Status: pre-implementation architecture guidance. This note does not implement
 models, migrations, APIs, UI, event handlers, or a cutover.
 
+Superseded note: ADR-027 / issue #1195 removed the legacy `cms.experiments`
+runtime path. Future experiment-core work should start from a new ACES-backed
+design rather than using the removed legacy models, routes, or feature flag as
+compatibility records.
+
 ## Boundary
 
 ADR-024 remains the controlling migration decision: current Shifter behavior is

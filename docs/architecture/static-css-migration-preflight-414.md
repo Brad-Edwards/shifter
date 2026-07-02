@@ -11,6 +11,10 @@ This issue is requirement-free. The GitHub issue title, body, and acceptance
 criteria are the shipping contract. This note is intentionally not an
 implementation plan.
 
+ADR-027 note: legacy experiment templates and static CSS were removed by issue
+#1195. References below to `cms/experiments` describe the pre-removal state and
+are not current implementation guidance.
+
 ## Scope Boundary
 
 Treat this as a browser-facing Django template and static-asset hardening pass,

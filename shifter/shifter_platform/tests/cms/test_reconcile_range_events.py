@@ -1,9 +1,6 @@
 """Behaviour tests for Phase 3 reconcile_range_events command (#476).
 
-Drives real ORM rows; cloud boundaries (SQS publish) are mocked at the
-cms.experiments.events module — the seam where the experiment bridge calls
-out to the message bus.  Orchestrator DB transitions (select_for_update,
-ExperimentRun.transition_to) run against the real test database.
+Drives real ORM rows and the real CMS range projection helper.
 
 Import structure:
 - engine.models imported inside test functions (test code, not subject to
@@ -22,11 +19,8 @@ import pytest
 from django.contrib.auth import get_user_model
 from django.utils import timezone
 
-from cms.experiments.models import Experiment, ExperimentRun
-from cms.experiments.schemas import ExperimentStatus, RunStatus
 from cms.handlers.range_events import apply_range_status, process_range_event
 from cms.management.commands.reconcile_range_events import (
-    reconcile_experiment_runs,
     reconcile_range_instances,
 )
 from cms.models import RangeInstance
@@ -89,12 +83,6 @@ def _backdate_range_instance(instance: RangeInstance, seconds: int = 600) -> Non
     RangeInstance.all_objects.filter(pk=instance.pk).update(updated_at=old_ts)
 
 
-def _backdate_run(run: ExperimentRun, seconds: int = 600) -> None:
-    """Force started_at into the past."""
-    old_ts = timezone.now() - timedelta(seconds=seconds)
-    ExperimentRun.objects.filter(pk=run.pk).update(started_at=old_ts)
-
-
 def _ctf_signal_collector():
     """Returns (received_list, connect, disconnect) triple for range_status_changed."""
     received: list[dict] = []
@@ -142,39 +130,6 @@ class TestApplyRangeStatus:
         assert len(received) == 1
         assert received[0]["new_status"] == ResourceStatus.READY.value
         assert received[0]["previous_status"] == ResourceStatus.PROVISIONING.value
-
-    def test_fires_experiment_bridge_when_ready(self, db, settings):
-        """When status becomes READY the experiment bridge is invoked.
-
-        The bridge calls publish_range_provisioned_for_experiment, which sends
-        to SQS.  With boto3 mocked at the cloud boundary, SQS succeeds and the
-        full chain completes: apply_range_status returns True and the mock
-        client's send_message is called exactly once.
-        """
-        from unittest.mock import MagicMock
-
-        settings.CLOUD_PROVIDER = "aws"
-        settings.SQS_QUEUE_CONFIG = {"cms": {"url": "https://sqs.us-east-2.amazonaws.com/123/cms"}}
-
-        user = _user()
-        cms_req = _cms_request(user)
-        instance = _range_instance(user, cms_req, status=ResourceStatus.PROVISIONING.value)
-
-        experiment = Experiment.objects.create(user=user, name="Bridge Exp", scenario_id="basic")
-        ExperimentRun.objects.create(
-            experiment=experiment,
-            run_number=1,
-            request_id=cms_req.request_id,
-            status=RunStatus.PROVISIONING.value,
-            started_at=timezone.now(),
-        )
-
-        mock_sqs = MagicMock()
-        with patch("boto3.client", return_value=mock_sqs):
-            apply_range_status(instance, ResourceStatus.READY.value)
-
-        # Bridge was invoked: boto3 SQS send_message was called.
-        mock_sqs.send_message.assert_called_once()
 
     def test_does_not_fire_bridges_on_no_op(self, db):
         """Already-converged instance: bridges are never called."""
@@ -453,138 +408,6 @@ class TestReconcileRangeInstances:
         instance_2.refresh_from_db()
         assert instance_1.status == ResourceStatus.PROVISIONING.value  # unchanged (failed row)
         assert instance_2.status == ResourceStatus.READY.value  # reconciled
-
-
-# ---------------------------------------------------------------------------
-# reconcile_experiment_runs tests
-# ---------------------------------------------------------------------------
-
-
-class TestReconcileExperimentRuns:
-    def _make_experiment_and_run(self, user, *, request_id=None, run_status=RunStatus.PROVISIONING.value):
-        req_id = request_id or uuid4()
-        experiment = Experiment.objects.create(
-            user=user,
-            name="Reconcile Test Exp",
-            scenario_id="basic",
-            status=ExperimentStatus.RUNNING.value,
-        )
-        run = ExperimentRun.objects.create(
-            experiment=experiment,
-            run_number=1,
-            request_id=req_id,
-            status=run_status,
-            started_at=timezone.now(),
-        )
-        return experiment, run, req_id
-
-    def test_provisioning_run_with_ready_engine_calls_handle_range_provisioned(self, db):
-        """Run stuck in PROVISIONING, engine READY → orchestrator drives run to completion."""
-        user = _user()
-        _experiment, run, request_id = self._make_experiment_and_run(user)
-        _engine_request_and_range(user, request_id, engine_status=ResourceStatus.READY.value)
-        _backdate_run(run)
-
-        counts = reconcile_experiment_runs(stale_seconds=0, batch_size=100)
-
-        run.refresh_from_db()
-        assert counts["reconciled"] == 1
-        # No scripts on the experiment → orchestrator completes the run immediately.
-        assert run.status == RunStatus.COMPLETED.value
-
-    def test_idempotent_second_reconcile_is_noop(self, db):
-        """Second reconcile after run already advanced → no re-drive."""
-        user = _user()
-        _experiment, run, request_id = self._make_experiment_and_run(user)
-        _engine_request_and_range(user, request_id, engine_status=ResourceStatus.READY.value)
-        _backdate_run(run)
-
-        counts_first = reconcile_experiment_runs(stale_seconds=0, batch_size=100)
-        run.refresh_from_db()
-        assert counts_first["reconciled"] == 1
-        assert run.status == RunStatus.COMPLETED.value
-
-        # Second pass: run is no longer PROVISIONING, must be a no-op.
-        counts_second = reconcile_experiment_runs(stale_seconds=0, batch_size=100)
-        assert counts_second["reconciled"] == 0
-        assert counts_second["converged"] == 0  # not even in the query (not PROVISIONING)
-
-    def test_provisioning_run_with_failed_engine_calls_handle_run_failed(self, db):
-        """Run in PROVISIONING, engine FAILED → handle_run_failed called."""
-        user = _user()
-        _experiment, run, request_id = self._make_experiment_and_run(user)
-        _engine_request_and_range(user, request_id, engine_status=ResourceStatus.FAILED.value)
-        _backdate_run(run)
-
-        counts = reconcile_experiment_runs(stale_seconds=0, batch_size=100)
-
-        run.refresh_from_db()
-        assert counts["reconciled"] == 1
-        assert run.status == RunStatus.FAILED.value
-        assert "reconciled" in run.error_message
-
-    def test_not_yet_stale_is_skipped(self, db):
-        """Run started_at is recent → below staleness threshold, not processed."""
-        user = _user()
-        _experiment, run, request_id = self._make_experiment_and_run(user)
-        _engine_request_and_range(user, request_id, engine_status=ResourceStatus.READY.value)
-        # Do NOT backdate — started_at is just now.
-
-        counts = reconcile_experiment_runs(stale_seconds=300, batch_size=100)
-
-        assert counts["reconciled"] == 0
-        run.refresh_from_db()
-        assert run.status == RunStatus.PROVISIONING.value
-
-    def test_missing_engine_range_increments_no_engine_range_count(self, db):
-        """No engine.Range for run's request_id → no_engine_range, run untouched."""
-        user = _user()
-        _experiment, run, _ = self._make_experiment_and_run(user)
-        _backdate_run(run)
-
-        counts = reconcile_experiment_runs(stale_seconds=0, batch_size=100)
-
-        assert counts["no_engine_range"] == 1
-        assert counts["reconciled"] == 0
-        run.refresh_from_db()
-        assert run.status == RunStatus.PROVISIONING.value
-
-    def test_run_not_in_provisioning_is_invisible_to_reconciler(self, db):
-        """A run already advanced past PROVISIONING is not in the outer filter.
-
-        The outer query is ``filter(status=PROVISIONING)``, so a COMPLETED run
-        never enters the processing loop at all — reconciled and converged are
-        both 0 when the only stale run is already done.  This proves the outer
-        filter is the primary idempotency gate; the ``select_for_update`` re-
-        check inside the atomic block handles the concurrent-worker race case.
-        """
-        user = _user()
-        _experiment, run, request_id = self._make_experiment_and_run(user)
-        _engine_request_and_range(user, request_id, engine_status=ResourceStatus.READY.value)
-        # Advance the run to COMPLETED (simulates another worker having already acted).
-        ExperimentRun.objects.filter(pk=run.pk).update(
-            status=RunStatus.COMPLETED.value, started_at=timezone.now() - timedelta(seconds=600)
-        )
-
-        counts = reconcile_experiment_runs(stale_seconds=0, batch_size=100)
-
-        # Outer filter (status=PROVISIONING) excluded the row entirely.
-        assert counts["reconciled"] == 0
-        assert counts["converged"] == 0
-
-    def test_engine_provisioning_is_skipped(self, db):
-        """Engine also in a non-terminal state → nothing to reconcile yet."""
-        user = _user()
-        _experiment, run, request_id = self._make_experiment_and_run(user)
-        _engine_request_and_range(user, request_id, engine_status=ResourceStatus.PROVISIONING.value)
-        _backdate_run(run)
-
-        counts = reconcile_experiment_runs(stale_seconds=0, batch_size=100)
-
-        assert counts["skipped"] == 1
-        assert counts["reconciled"] == 0
-        run.refresh_from_db()
-        assert run.status == RunStatus.PROVISIONING.value
 
 
 # ---------------------------------------------------------------------------
