@@ -2,6 +2,10 @@
 
 Issue: #1186
 
+Superseded note: ADR-027 / issue #1195 removed the legacy experiments runtime
+path that this document described. Retain this note only as historical security
+context for any future ACES-backed experiment design.
+
 This document defines the v1 capability policy for experiment runs that invoke
 Claude Code from range infrastructure. The matching code-level policy version is
 `ai-experiment-execution-v1` in `cyberscript.script_context`.

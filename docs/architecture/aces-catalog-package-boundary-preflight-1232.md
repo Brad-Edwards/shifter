@@ -5,6 +5,10 @@ scenario package boundary".
 
 Status: pre-implementation guidance.
 
+ADR-027 note: legacy `cms.experiments` references in this preflight describe the
+pre-removal state. Future experiment capability must use a new ACES-backed
+design and must not restore the deleted app as the compatibility surface.
+
 This note records the catalog and package-boundary decisions for the first
 ACES vertical slice. It is not an implementation plan and does not change
 runtime behavior.

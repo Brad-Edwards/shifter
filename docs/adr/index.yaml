@@ -768,8 +768,7 @@
       "shifter/shifter_platform/entrypoint.sh",
       "shifter/shifter_platform/locale/en/LC_MESSAGES/django.po",
       "shifter/shifter_platform/tests/config/test_i18n_configuration.py",
-      "shifter/shifter_platform/templates",
-      "shifter/shifter_platform/cms/experiments/templates"
+      "shifter/shifter_platform/templates"
     ]
   },
   {
@@ -979,14 +978,14 @@
   },
   {
     "id": "ADR-025",
-    "title": "Range and experiment events use transactional outbox and authoritative reconciliation for durable delivery",
+    "title": "Range events use transactional outbox and authoritative reconciliation for durable delivery",
     "status": "accepted",
     "scope": "shifter_platform",
-    "decision": "PostgreSQL is the authoritative state store for range, request, instance, and experiment-run state. Range and experiment events are correctness-critical propagation signals, not best-effort notifications. Every such event is made recoverable through two complementary layers: (1) a transactional outbox — the provisioner enqueues each event into `engine_range_event_outbox` in the same DB transaction as the authoritative state write, and the `drain_range_event_outbox` portal management command publishes PENDING rows to the SNS topic / Pub/Sub with exponential-backoff retry and a DLQ terminal state after max_attempts; (2) a DB-authoritative reconciler — the `reconcile_range_events` portal management command re-reads authoritative `engine.Range` state and idempotently re-drives stale CMS `RangeInstance` and experiment `ExperimentRun` projections through the existing handler/orchestrator/bridge seams. Consumer handlers propagate transient failures rather than swallowing them, engaging the worker ack-after-handler SQS retry and DLQ. Mission Control websocket fanout remains advisory. AWS SNS/SQS and GCP Pub/Sub messaging surfaces maintain dead-letter, retry-policy, and Cloud Monitoring alert parity.",
+    "decision": "PostgreSQL is the authoritative state store for range, request, and instance state. Range events are correctness-critical propagation signals, not best-effort notifications. Every such event is made recoverable through two complementary layers: (1) a transactional outbox — the provisioner enqueues each event into `engine_range_event_outbox` in the same DB transaction as the authoritative state write, and the `drain_range_event_outbox` portal management command publishes PENDING rows to the SNS topic / Pub/Sub with exponential-backoff retry and a DLQ terminal state after max_attempts; (2) a DB-authoritative reconciler — the `reconcile_range_events` portal management command re-reads authoritative `engine.Range` state and idempotently re-drives stale CMS `RangeInstance` projections through the existing handler seam. Consumer handlers propagate transient failures rather than swallowing them, engaging the worker ack-after-handler SQS retry and DLQ. Mission Control websocket fanout remains advisory. AWS SNS/SQS and GCP Pub/Sub messaging surfaces maintain dead-letter, retry-policy, and Cloud Monitoring alert parity.",
     "rules": [
       {
         "id": "ADR-025-R1",
-        "description": "PostgreSQL is the authoritative state store for range, request, instance, and experiment-run state. Range and experiment events are correctness-critical propagation signals, not a replacement state store and not best-effort notifications. A lost or undelivered event must not leave CMS projections, experiment runs, or Engine state permanently stale without an operator-visible signal.",
+        "description": "PostgreSQL is the authoritative state store for range, request, and instance state. Range events are correctness-critical propagation signals, not a replacement state store and not best-effort notifications. A lost or undelivered event must not leave CMS range projections or Engine state permanently stale without an operator-visible signal.",
         "checks": []
       },
       {
@@ -1001,7 +1000,7 @@
       },
       {
         "id": "ADR-025-R4",
-        "description": "Mission Control websocket fanout is advisory only. It is a projection of authoritative state and is not a recovery path for lost events. Experiment continuation, CMS state convergence, and Engine status transitions must not depend on one-shot best-effort websocket delivery.",
+        "description": "Mission Control websocket fanout is advisory only. It is a projection of authoritative state and is not a recovery path for lost events. CMS state convergence and Engine status transitions must not depend on one-shot best-effort websocket delivery.",
         "checks": []
       },
       {
@@ -1024,7 +1023,6 @@
       "shifter/shifter_platform/cms/management/commands/reconcile_range_events.py",
       "shifter/shifter_platform/cms/handlers/__init__.py",
       "shifter/shifter_platform/cms/handlers/range_events.py",
-      "shifter/shifter_platform/cms/handlers/experiment_bridge.py",
       "shifter/shifter_platform/engine/handlers.py",
       "shifter/shifter_platform/mission_control/handlers.py",
       "platform/terraform/modules/portal/messaging/main.tf",
@@ -1075,11 +1073,11 @@
     "title": "ACES migration uses a parity-gated parallel cutover",
     "status": "accepted",
     "scope": "repository",
-    "decision": "Shifter migrates toward ACES through a parallel path, a row-based parity inventory, explicit ACES manifest/conformance gates, and archive-after-cutover cleanup. Current Shifter behavior remains authoritative until the ACES path proves parity through the normal portal, CMS, engine, provisioner, CTF, experiment, Mission Control, artifact, status, and validation surfaces.",
+    "decision": "Shifter migrates toward ACES through a parallel path, a row-based parity inventory, explicit ACES manifest/conformance gates, and archive-after-cutover cleanup. Current Shifter behavior remains authoritative until the ACES path proves parity through the normal portal, CMS, engine, provisioner, CTF, Mission Control, artifact, status, and validation surfaces. Legacy experiments are the explicit exception: ADR-027 removes the half-built `cms.experiments` path, so future experiment capability starts from a new ACES-backed design.",
     "rules": [
       {
         "id": "ADR-024-R1",
-        "description": "ACES adoption must not replace current Shifter runtime behavior until a parallel ACES path has passed parity, manifest/conformance, portal/engine/provisioner, Polaris, CTF, experiment, Mission Control, artifact, status, and ADR guard validation.",
+        "description": "ACES adoption must not replace current Shifter runtime behavior until a parallel ACES path has passed parity, manifest/conformance, portal/engine/provisioner, Polaris, CTF, Mission Control, artifact, status, and ADR guard validation. Legacy experiments are removed by ADR-027 and are not current runtime authority.",
         "checks": []
       },
       {
@@ -1089,7 +1087,7 @@
       },
       {
         "id": "ADR-024-R3",
-        "description": "Archive/delete is a post-cutover posture only. CyberScript, current CMS scenario templates, Polaris runtime material, CTF behavior, experiment execution, Mission Control, provisioner paths, artifact handling, status models, and validation gates remain current authority until replacement gates are implemented and green.",
+        "description": "Archive/delete is generally a post-cutover posture. CyberScript, current CMS scenario templates, Polaris runtime material, CTF behavior, Mission Control, provisioner paths, artifact handling, status models, and validation gates remain current authority until replacement gates are implemented and green. ADR-027 is the accepted exception for the removed legacy experiments path.",
         "checks": []
       }
     ],
@@ -1100,6 +1098,7 @@
       "docs/architecture/aces-migration-parity-inventory.yaml",
       "docs/architecture/aces-runtime-target-backend-manifest-preflight-1233.md",
       "docs/architecture/aces-operation-status-snapshot-projection-preflight-1234.md",
+      "docs/architecture/aces-polaris-acceptance-parity-gate-preflight-1237.md",
       "scenario-dev/polaris/design/aces-sdl-validation-path.md",
       "scenario-dev/polaris/sdl/README.md",
       "shifter/shifter_platform/cms/scenarios/schema.py",
@@ -1108,7 +1107,6 @@
       "shifter/shifter_platform/shared/schemas",
       "shifter/cyberscript",
       "shifter/shifter_platform/ctf",
-      "shifter/shifter_platform/cms/experiments",
       "shifter/shifter_platform/mission_control",
       "shifter/shifter_platform/engine",
       "shifter/engine/provisioner",
@@ -1165,6 +1163,47 @@
       "shifter/engine/provisioner/terraform_vars.py",
       "shifter/packer/README.md",
       "scenario-dev/polaris/tests/isolation-smoketest.sh"
+    ]
+  },
+  {
+    "id": "ADR-027",
+    "title": "Remove legacy experiments in favor of a future ACES-backed design",
+    "status": "accepted",
+    "scope": "shifter_platform",
+    "decision": "Shifter removes the half-built legacy `cms.experiments` feature instead of completing or redesigning it in place. The removal deletes the Django app, experiment/script UI and APIs, websocket/event/queue/runtime wiring, tests, specs, UAT artifacts, and legacy database tables. Future experiment capability must start from an accepted ACES-backed replacement design rather than reviving the deleted runtime path or feature flag.",
+    "rules": [
+      {
+        "id": "ADR-027-R1",
+        "description": "The legacy `cms.experiments` app and its Mission Control script/file surfaces must not be reintroduced without a new accepted ADR and replacement product/security review.",
+        "checks": []
+      },
+      {
+        "id": "ADR-027-R2",
+        "description": "Runtime, deployment, queue, websocket, API, navigation, and API-token scope surfaces must not advertise or route legacy experiments after removal.",
+        "checks": []
+      },
+      {
+        "id": "ADR-027-R3",
+        "description": "Future experiment capability starts from an ACES-backed contract and must not reuse `EXPERIMENTS_ENABLED`, `EXPERIMENT_PAYLOAD`, or the removed `cms.experiments` data model as the implementation shortcut.",
+        "checks": []
+      }
+    ],
+    "exceptions": [],
+    "enforcement": ["agent-policy", "ci"],
+    "evidence": [
+      "docs/architecture/experiments-removal-adr.md",
+      "docs/architecture/aces-migration-adr.md",
+      "shifter/shifter_platform/cms/migrations/0034_remove_legacy_experiments.py",
+      "shifter/shifter_platform/tests/cms/test_experiments_removed.py",
+      "shifter/shifter_platform/config/settings.py",
+      "shifter/shifter_platform/config/_cloud.py",
+      "shifter/shifter_platform/config/asgi.py",
+      "shifter/shifter_platform/config/urls.py",
+      "shifter/shifter_platform/mission_control/urls.py",
+      "shifter/shifter_platform/mission_control/api/urls.py",
+      "platform/terraform/gcp/modules/platform-core/main.tf",
+      "scripts/gcp/render_runtime_env.py",
+      ".github/workflows/deploy.yml"
     ]
   }
 ]
