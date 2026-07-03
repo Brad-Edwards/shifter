@@ -14,6 +14,18 @@ New-Item -ItemType Directory -Force -Path C:\polaris | Out-Null
 Start-Transcript -Path "C:\polaris\bake.log" -Append -Force
 Write-Host "=== polaris-dc bake $(Get-Date -Format o) ==="
 
+# Enable Windows SAC/EMS on serial (COM1). GDC Windows guests have no working
+# network until the virtio NIC + DHCP come up and no VNC input channel, so when
+# something goes wrong they sit at an unreachable black screen. SAC gives an
+# operator command prompt over the KubeVirt bidirectional serial console with no
+# network required. Takes effect on the next boot. (Consider disabling before
+# the final golden export if serial-console access is a concern.)
+try {
+    bcdedit /ems "{current}" on | Out-Null
+    bcdedit /emssettings EMSPORT:1 EMSBAUDRATE:115200 | Out-Null
+    Write-Host "SAC/EMS enabled on COM1"
+} catch { Write-Host "bcdedit ems error: $_" }
+
 # Resolve this script's own directory (the answer cdrom) so we can copy the
 # post-reboot script + a2_setup.ps1 to local disk (the cdrom letter can change
 # across the reboot; local C: is stable).
@@ -82,14 +94,18 @@ if ($stage.Trim() -eq "promote") {
         }
     }
 
-    # Register the post-reboot seed phase (this same script re-runs; phase=seed).
-    $runonce = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce"
-    Set-ItemProperty -Path $runonce -Name "PolarisBakeSeed" `
-        -Value ('powershell.exe -NoProfile -ExecutionPolicy Bypass -File "' + $MyInvocation.MyCommand.Path.Replace($src, "C:\polaris") + '"')
-    # Copy this script to C: so RunOnce can find it post-reboot.
+    # Register the post-reboot seed phase as a SYSTEM AtStartup scheduled task.
+    # RunOnce is unreliable here: after promotion the machine is a domain
+    # controller and the local-Administrator autologon that RunOnce depends on
+    # may not fire, so the seed would never run. A SYSTEM AtStartup task runs
+    # regardless of interactive logon. The seed phase unregisters the task after
+    # writing BAKE_DONE so it does not re-run in every range.
     Copy-Item $MyInvocation.MyCommand.Path "C:\polaris\bake.ps1" -Force
-    Set-ItemProperty -Path $runonce -Name "PolarisBakeSeed" `
-        -Value 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\polaris\bake.ps1"'
+    $act = New-ScheduledTaskAction -Execute "powershell.exe" `
+        -Argument '-NoProfile -ExecutionPolicy Bypass -File "C:\polaris\bake.ps1"'
+    $trig = New-ScheduledTaskTrigger -AtStartup
+    Register-ScheduledTask -TaskName "PolarisBakeSeed" -Action $act -Trigger $trig `
+        -User "NT AUTHORITY\SYSTEM" -RunLevel Highest -Force | Out-Null
 
     Import-Module ADDSDeployment
     $dsrm = ConvertTo-SecureString "DsrmR3store!2026" -AsPlainText -Force
@@ -118,5 +134,7 @@ if (-not $ok) { throw "AD DS did not come up after promotion" }
 if ($LASTEXITCODE -ne $null -and $LASTEXITCODE -ne 0) { throw "a2_setup failed: $LASTEXITCODE" }
 
 Set-Content -Path "C:\polaris\BAKE_DONE" -Value (Get-Date -Format o) -Encoding ascii
+# Unregister the seed task so it does not re-run when ranges boot the golden image.
+Unregister-ScheduledTask -TaskName "PolarisBakeSeed" -Confirm:$false -ErrorAction SilentlyContinue
 Write-Host "=== polaris-dc bake complete; BAKE_DONE written ==="
 Stop-Transcript
