@@ -56,6 +56,60 @@ def _get_db_scenarios() -> list[AnyScenarioTemplate]:
     return scenarios
 
 
+def _get_aces_sources() -> list[Any]:
+    """Load all ACES package-source rows for the catalog projection.
+
+    Returns:
+        List of AcesPackageSource instances.
+    """
+    from cms.models import AcesPackageSource
+
+    return list(AcesPackageSource.objects.all())
+
+
+def _aces_source_to_dict(source: Any, *, metadata: dict[str, Any] | None) -> dict[str, Any]:
+    """Build a catalog projection entry for an ACES package-source row.
+
+    ACES rows are provenance-only, so display fields are derived (name from
+    scenario_id, empty description). Access comes from the shared
+    ``ScenarioMetadata`` overlay; launchability is derived from conformance
+    readiness and is independent of access.
+
+    Args:
+        source: AcesPackageSource instance.
+        metadata: Override dict with enabled/staff_only, or None for defaults.
+
+    Returns:
+        Projection dict shaped like other catalog entries (id/name/enabled/
+        staff_only/is_default/agent_requirements) plus ACES source fields.
+    """
+    if metadata is not None:
+        enabled = metadata["enabled"]
+        staff_only = metadata.get("staff_only", False)
+    else:
+        enabled = True
+        staff_only = False
+
+    return {
+        "id": source.scenario_id,
+        "name": source.scenario_id,
+        "description": "",
+        "scenario_type": "aces",
+        "source_kind": source.source_kind,
+        "contract_kind": source.contract_kind,
+        "contract_profile": source.contract_profile,
+        "is_default": False,
+        "enabled": enabled,
+        "staff_only": staff_only,
+        "launchable": source.is_launchable,
+        "agent_requirements": {
+            "requires_windows": False,
+            "requires_linux": False,
+            "has_from_agent": False,
+        },
+    }
+
+
 def is_default_scenario(scenario_id: str) -> bool:
     """Check if a scenario_id corresponds to a YAML default.
 
@@ -133,6 +187,7 @@ def list_all_scenarios(user: User | None = None) -> list[dict[str, Any]]:
         result.append(entry)
 
     # DB customs (skip any whose scenario_id collides with a YAML default)
+    db_ids = set()
     for template in _get_db_scenarios():
         if template.id in yaml_ids:
             logger.warning(
@@ -140,9 +195,24 @@ def list_all_scenarios(user: User | None = None) -> list[dict[str, Any]]:
                 template.id,
             )
             continue
+        db_ids.add(template.id)
         meta = metadata_map.get(template.id)
         entry = _scenario_to_dict(template, is_default=False, metadata=meta)
         result.append(entry)
+
+    # ACES package-source entries (fail-closed: skip any whose scenario_id
+    # collides with an active legacy id — a YAML default or active DB custom —
+    # so an ACES row can never shadow a launchable legacy scenario).
+    known_ids = yaml_ids | db_ids
+    for source in _get_aces_sources():
+        if source.scenario_id in known_ids:
+            logger.warning(
+                "ACES package-source '%s' collides with an active legacy scenario_id, skipping",
+                safe_log_value(source.scenario_id),
+            )
+            continue
+        meta = metadata_map.get(source.scenario_id)
+        result.append(_aces_source_to_dict(source, metadata=meta))
 
     # Access filtering
     if user is not None and not (user.is_staff or user.is_superuser):

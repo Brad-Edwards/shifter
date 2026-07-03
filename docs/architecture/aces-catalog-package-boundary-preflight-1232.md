@@ -223,7 +223,9 @@ The design identifies these concrete implementation scopes:
 
 - #1252: add ACES package-source catalog persistence/projection with
   provenance, digest, lock, and launchability fields while reusing
-  `ScenarioMetadata`.
+  `ScenarioMetadata`; see
+  `docs/architecture/aces-package-source-catalog-preflight-1252.md` for the
+  issue-specific persistence/projection guardrails.
 - #1253: add ACES package/profile validation and registry integration behind
   `cms.scenarios.registry`, with no legacy `scenario_id` shadowing.
 - #1254: expose ACES catalog read-only fields in the scenario editor and CMS
