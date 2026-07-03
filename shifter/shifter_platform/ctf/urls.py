@@ -30,6 +30,11 @@ participant_patterns = [
     path("range/", views.participant_range, name="participant_range"),
     # Scoreboard
     path("scoreboard/", views.scoreboard, name="scoreboard"),
+    path(
+        "participants/<uuid:participant_id>/solves/",
+        views.participant_solve_history,
+        name="participant_solve_history",
+    ),
     # Team
     path("team/", views.participant_team, name="participant_team"),
     path("team/join/", views.team_join, name="team_join"),

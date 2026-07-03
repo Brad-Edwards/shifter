@@ -46,11 +46,6 @@ urlpatterns.append(path("oidc/authenticate/", legacy_oidc_authenticate, name="le
 if settings.AUTH_PROVIDER == "oidc":
     urlpatterns.append(path("oidc/", include("mozilla_django_oidc.urls")))
 
-# Experiments is half-built and off by default (#1195). Only register its routes
-# when explicitly enabled so the unfinished feature is not reachable.
-if settings.EXPERIMENTS_ENABLED:
-    urlpatterns.append(path("mission-control/experiments/", include("cms.experiments.urls")))
-
 # Keep the routes stable across environments and enforce production blocking in the views.
 urlpatterns += [
     path("dev-login/", dev_login, name="dev_login"),

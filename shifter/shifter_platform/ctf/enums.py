@@ -238,6 +238,26 @@ class AttemptLimitMode(StrEnum):
         return [(m.value, m.name.title()) for m in cls]
 
 
+class ScoringMode(StrEnum):
+    """Scoring strategy an event uses to award points for a correct solve.
+
+    STANDARD: fixed per-challenge point value (CTF-201). A correct flag awards
+    the challenge's full point value (less any cumulative hint penalty); points
+    do not change with the number of solves. This is the default and, today, the
+    only supported mode. The enum exists so future modes (e.g. dynamic) slot in
+    as one additional value plus one scoring-service strategy (CTF-002).
+    """
+
+    STANDARD = "standard"
+
+    def __str__(self) -> str:
+        return self.value
+
+    @classmethod
+    def choices(cls) -> list[tuple[str, str]]:
+        return [(m.value, m.name.title()) for m in cls]
+
+
 class RatingVisibility(StrEnum):
     """Controls whether challenge ratings are visible to participants.
 

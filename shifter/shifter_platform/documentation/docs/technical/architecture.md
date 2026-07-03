@@ -116,9 +116,9 @@ PUBLISHED. PENDING rows can be replayed by re-running the drainer.
 
 **Layer 2 — DB-authoritative reconciler.** The `reconcile_range_events` portal
 management command re-reads authoritative `engine.Range` state and
-idempotently re-drives stale CMS `RangeInstance` and experiment `ExperimentRun`
-projections through the existing handler, orchestrator, and bridge seams. It
-does not bypass domain invariants or write Engine models from CMS.
+idempotently re-drives stale CMS `RangeInstance` projections through the
+existing handler seam. It does not bypass domain invariants or write Engine
+models from CMS.
 
 **Consumer failure propagation.** Consumer handlers propagate transient DB or
 broker failures rather than swallowing them, so the worker ack-after-handler

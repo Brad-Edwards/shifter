@@ -1,5 +1,5 @@
 output "platform_events_topic_id" {
-  description = "Shared Pub/Sub topic for platform lifecycle and experiment events."
+  description = "Shared Pub/Sub topic for platform lifecycle events."
   value       = google_pubsub_topic.platform_events.id
 }
 

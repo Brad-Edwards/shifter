@@ -218,6 +218,40 @@ class TestClaudeCode:
         assert "CLAUDE_CODE_USE_BEDROCK=1" in claude_content
         assert "AWS_REGION" in claude_content
 
+    def test_kali_user_bashrc(self, claude_content):
+        """Mission Control SSH uses the kali user."""
+        assert "/home/kali/.bashrc" in claude_content
+
+    def test_autostart_installer(self, claude_content):
+        """Kali bake should install the shared autostart hook."""
+        assert "/usr/local/lib/shifter/claude-autostart-install.sh" in claude_content
+        assert "install_claude_autostart /home/kali/.bashrc" in claude_content
+
+
+class TestClaudeAutostartInstall:
+    """Test shared Claude autostart installer (#180)."""
+
+    @pytest.fixture
+    def autostart_content(self):
+        return (SCRIPTS_DIR / "common" / "claude-autostart-install.sh").read_text()
+
+    def test_installer_exists(self):
+        assert (SCRIPTS_DIR / "common" / "claude-autostart-install.sh").exists()
+
+    def test_canonical_command(self, autostart_content):
+        assert "claude --dangerously-skip-permissions" in autostart_content
+
+    def test_interactive_guards(self, autostart_content):
+        assert "[[ $- != *i* ]]" in autostart_content
+        assert "[[ ! -t 0 ]]" in autostart_content
+        assert "SHIFTER_CLAUDE_AUTOSTART_DONE" in autostart_content
+
+    def test_expected_users_only(self, autostart_content):
+        assert "kali|ubuntu" in autostart_content
+
+    def test_no_exec(self, autostart_content):
+        assert "exec claude" not in autostart_content
+
 
 class TestCleanup:
     """Test cleanup script."""
@@ -329,6 +363,11 @@ class TestUbuntuClaudeCode:
         """Bedrock environment variables should be set."""
         assert "CLAUDE_CODE_USE_BEDROCK=1" in claude_content
         assert "AWS_REGION" in claude_content
+
+    def test_autostart_installer(self, claude_content):
+        """Ubuntu victim bake should install the shared autostart hook."""
+        assert "/usr/local/lib/shifter/claude-autostart-install.sh" in claude_content
+        assert "install_claude_autostart /home/ubuntu/.bashrc" in claude_content
 
 
 class TestWindowsServices:

@@ -7,6 +7,10 @@ This note records the architecture guardrails for the rescope. It is
 intentionally not an implementation plan and does not change current runtime
 behavior.
 
+ADR-027 note: legacy `cms.experiments` references in this preflight describe the
+pre-removal state. Future experiment capability must use a new ACES-backed
+design and must not restore the deleted app as the compatibility surface.
+
 ## Boundary
 
 ADR-024 is the controlling architecture decision:

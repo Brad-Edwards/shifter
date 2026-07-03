@@ -38,6 +38,4 @@ urlpatterns = [
     path("ngfw/<uuid:app_id>/ssh-url/", views.GuacamoleNGFWSSHURLView.as_view(), name="ngfw-ssh-url"),
     path("credentials/", views.CredentialCreateView.as_view(), name="credential-create"),
     path("credentials/<int:credential_id>/delete/", views.CredentialDeleteView.as_view(), name="credential-delete"),
-    path("scripts/", views.ScriptListView.as_view(), name="scripts-list"),
-    path("scripts/upload/", views.ScriptUploadView.as_view(), name="scripts-upload"),
 ]
