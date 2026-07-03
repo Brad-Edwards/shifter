@@ -174,6 +174,30 @@ Cleanup must be issue-scoped after cutover evidence exists:
   Mission Control projection tests, and provisioner smoke evidence replace the
   same safety properties.
 
+## Follow-Up Cleanup Issues
+
+The cutover-execution and cleanup work above is tracked as GitHub issues so the
+follow-on lives in the backlog, not only in this note. Each is gated on the
+cutover evidence described here and carries a checklist against the parity
+inventory rows:
+
+- **#1310, execute controlled default cutover and rollback selector.** The
+  Cutover Sequence "Controlled default cutover" phase: flip the explicit
+  selector, reclaim the `polaris` id, and post the reviewed cutover record with
+  a reversible rollback selector and preserved legacy reference path.
+- **#1311, archive legacy scenario, CyberScript, and Polaris surfaces after
+  cutover.** The archive/delete cleanup buckets: `cyberscript.shared-reexports`,
+  the `cyberscript.schema-shims` compatibility wrappers, `scenario.yaml-defaults`
+  / `polaris.portal-template`, and the Polaris standalone/content evidence under
+  `scenario-dev/polaris/**` and `scripts/polaris-aws-range/**`.
+- **#1312, retire stale migration docs and legacy scenario/runtime tests after
+  cutover.** The experiment remnants, the CyberScript-triage re-review, and the
+  legacy-test conversion/removal once ACES-path tests replace the same safety
+  properties.
+
+These issues are filed now for visibility but must not be worked before their
+gating cutover evidence exists.
+
 ## Whole-Repo Scope
 
 Future implementation must evaluate changes against:
@@ -239,8 +263,10 @@ Future implementation must evaluate changes against:
 - No removal or archival of CyberScript, legacy scenario templates, current
   Polaris runtime material, CTF behavior, Mission Control, provisioner paths,
   artifacts, status models, or validation gates.
-- No GitHub issue creation, closure, merge, or tracking mutation from this
-  preflight.
+- No implementation, closure, or merge of the follow-up cleanup issues from
+  this plan. The cutover-execution and cleanup issues (#1310, #1311, #1312) are
+  filed for backlog visibility (see "Follow-Up Cleanup Issues") but are gated on
+  the cutover evidence and are not worked here.
 - No new Ground Control requirement UID for this requirement-free run.
 - No live AWS/GCP/CTFd operation, range mutation, AMI bake, or evidence-bundle
   generation in this preflight.
