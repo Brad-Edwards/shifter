@@ -52,6 +52,24 @@ if ($stage.Trim() -eq "promote") {
         Write-Host "WARNING: virtio cdrom not found; golden image may not boot on virtio"
     }
 
+    # Install the GDC guest agent so the DC's NIC gets its range-assigned IP.
+    # On GDC, Windows has no cloud-init; the provisioner sets interfaces[].
+    # ipAddresses and relies on the guest agent (attached as the "guest agent"
+    # cdrom) to apply it. GDC's autoInstallGuestAgent runs the agent's
+    # install.ps1 via a prepped-image hook that a raw ISO install bypasses, so
+    # do it explicitly. install.ps1 registers a SYSTEM startup scheduled task
+    # (guest-agent-launcher) that every boot copies the agent + the range's
+    # SA/config from the attached agent disks and runs `guest-agent.exe
+    # install/start`. The task persists in the golden image, so every range boot
+    # re-installs/starts the agent against that range's own disks.
+    $agentCd = (Get-Volume -FileSystemLabel "guest agent" -ErrorAction SilentlyContinue).DriveLetter
+    if ($agentCd) {
+        Write-Host "Installing GDC guest agent from ${agentCd}:\install.ps1"
+        try { & "${agentCd}:\install.ps1" } catch { Write-Host "guest-agent install.ps1 error: $_" }
+    } else {
+        Write-Host "WARNING: GDC guest-agent cdrom (label 'guest agent') not found; NIC IP will not be applied"
+    }
+
     # Install OpenSSH server for operator access to the DC (optional but handy).
     Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0 -ErrorAction SilentlyContinue | Out-Null
     Set-Service -Name sshd -StartupType Automatic -ErrorAction SilentlyContinue
