@@ -1,4 +1,5 @@
 id: basic
+# aws-dev portal redeploy trigger for #1168 G-C (no functional change)
 name: Basic Range
 description: A basic attacker-victim range with Kali Linux attacker and user-provided agent on victim.
 enabled: true
