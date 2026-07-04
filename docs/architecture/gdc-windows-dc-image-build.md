@@ -39,12 +39,14 @@ build.
 ```
 Windows Server 2022 eval ISO ──(repack)──► noprompt+UDF ISO ──► gs://…/iso/ws2022-noprompt.iso
                                                                         │
-answer ISO (autounattend.xml + bake.ps1 + a2_setup.ps1) ──► gs://…/iso/polaris-answer.iso
+answer ISO (autounattend.xml + $WinPEDriver$/{viostor,NetKVM} + bake.ps1 + a2_setup.ps1)
+                                                        └─► gs://…/iso/polaris-answer.iso
                                                                         │
-             build VM on cluster1 (empty boot disk + windows-iso + virtio-driver + answer)
+     build VM on cluster1 (empty VIRTIO boot disk + windows-iso + virtio-driver + answer)
                                                                         │
-   unattended install → OOBE auto-skip → FirstLogon bake.ps1 → virtio drivers, guest agent,
-   OpenSSH, promote BOREAS.LOCAL, (RunOnce) a2_setup content seed → BAKE_DONE
+   Setup auto-loads viostor from $WinPEDriver$ → installs on virtio → OOBE auto-skip →
+   FirstLogon bake.ps1 → NetKVM, guest agent, OpenSSH, promote BOREAS.LOCAL,
+   (SYSTEM AtStartup task) a2_setup content seed → BAKE_DONE → clean shutdown
                                                                         │
              export the boot disk → gs://…/polaris-dc.qcow2  (the golden image)
                                                                         │
@@ -115,35 +117,67 @@ iso.write("polaris-answer.iso"); iso.close()
 ```
 
 Windows Setup searches all removable media for `autounattend.xml`, so the
-separate answer disk is found automatically.
+separate answer disk is found automatically. **The answer ISO must also carry a
+`$WinPEDriver$` folder** with the W10 viostor + NetKVM drivers so Setup can see
+the virtio boot disk — see [Boot bus](#boot-bus-install-directly-on-virtio-via-winpedriver-the-critical-gotcha)
+below. That is the whole reason the install works headless on virtio.
 
-## Boot bus: SATA-first-then-switch (the critical gotcha)
+## Boot bus: install directly on virtio via `$WinPEDriver$` (the critical gotcha)
 
-The GDC doc installs Windows on a **virtio** boot disk with viostor loaded
-*during* Setup — but its method is **interactive** (`virtctl vnc` → "Load
-driver" → viostor). Automating that load via the autounattend `<DriverPaths>`
-does **not** work here (viostor never loads in WinPE regardless of the drive
-letter, so Setup aborts with *"could not apply the DiskConfiguration setting"* =
-no disk visible).
+Install Windows **directly on the virtio boot disk** so build-hardware ==
+range-hardware. Then there is **no bus switch → no hardware-change OOBE re-run**,
+and **no sysprep** (which would destroy a promoted DC's identity/SID). This is
+the AWS-AMI model: build and run on identical virtual hardware. The one
+requirement is that WinPE has the virtio storage driver (viostor) so Setup can
+see the disk.
 
-The reliable, documented, headless approach is the KubeVirt
-[#16703](https://github.com/kubevirt/kubevirt/issues/16703) **SATA-first-then-switch**:
+**Do NOT use autounattend `<DriverPaths>`.** Two things make it fail here:
 
-1. Install on a **SATA** boot disk (`VirtualMachine.spec.disks[].driver: sata`).
-   WinPE has native SATA drivers, so no viostor is needed during Setup.
-2. Do the AD promotion + `a2_setup` seed on SATA (it reboots on SATA — fine).
-3. Install viostor + NetKVM (`pnputil`) as the **very last** step, then **shut
-   down** (`Stop-Computer`). **Never reboot on SATA after viostor is installed** —
-   that produces an `INACCESSIBLE_BOOT_DEVICE` boot loop (Windows expects the
-   virtio storage controller that isn't there yet). This was the multi-week
-   black-screen/boot-loop blocker.
-4. Export the powered-off boot disk, or (to validate) recreate the VM with the
-   boot disk on the **virtio** bus and media detached. Windows then boots on
-   virtio with viostor as the boot driver (a couple of hardware-redetect reboots,
-   then stable).
+1. **Drive letters.** `<DriverPaths>` lists explicit paths like `E:\viostor\…`;
+   the virtio cdrom's letter is assigned at runtime, so the path rarely matches.
+2. **The folder name.** kubevirt's `virtio-container-disk` ships
+   `VIOSTOR/{2k12..2k19, w10, …}` — there is **no `2k22` folder**. Windows Server
+   2022 (build 20348) uses the **`w10`** driver. A `\viostor\2k22\amd64` path
+   points at nothing, viostor never loads, and Setup aborts with *"could not
+   apply the DiskConfiguration setting"* (= no target disk visible). This single
+   wrong path caused the entire multi-week boot-loop/OOBE detour.
 
-> Verified: a SATA-installed disk switched to virtio boots cleanly. Note the
-> switch can re-trigger OOBE on a bare install; a fully-promoted DC is past OOBE.
+**Use `$WinPEDriver$` instead.** Windows Setup automatically scans the root of
+every removable drive for a folder named exactly `$WinPEDriver$` and installs all
+drivers under it — **no drive letters, no `<DriverPaths>`**. Put the W10 viostor
++ NetKVM there, on the answer ISO:
+
+```
+/$WinPEDriver$/viostor/{VIOSTOR.INF,VIOSTOR.SYS,VIOSTOR.CAT}      # from VIOSTOR/w10/amd64
+/$WinPEDriver$/NetKVM/{NETKVM.INF,NETKVM.SYS,NETKVM.CAT,NETKVMCO.DLL}
+```
+
+Extract the drivers from the container disk (no Windows needed):
+
+```
+crane export quay.io/kubevirt/virtio-container-disk:latest - | tar -xO disk/downloaded > virtio.iso
+# then pull /VIOSTOR/W10/AMD64/* and /NETKVM/W10/AMD64/* out of virtio.iso with pycdlib
+```
+
+Build the answer ISO with pycdlib. The `$WinPEDriver$` folder needs an ISO-9660
+name without `$` (e.g. `WINPEDRV`), but its **Joliet** name must be
+`$WinPEDriver$` (Joliet is what Windows reads):
+
+```python
+iso.add_directory("/WINPEDRV",         joliet_path="/$WinPEDriver$")
+iso.add_directory("/WINPEDRV/VIOSTOR", joliet_path="/$WinPEDriver$/viostor")
+iso.add_file("VIOSTOR.INF", "/WINPEDRV/VIOSTOR/VIOSTOR.INF;1", joliet_path="/$WinPEDriver$/viostor/VIOSTOR.INF")
+# …same for .SYS/.CAT and the NetKVM files
+```
+
+viostor is boot-critical, so it is retained in the installed OS and the boot disk
+stays virtio for good. bake.ps1 then installs NetKVM into the OS (for the NIC)
+from the virtio cdrom's `w10\amd64` folder.
+
+> Verified 2026-07-04: WS2022 installs on virtio, autologons, promotes
+> BOREAS.LOCAL, and a2_setup seeds it — fully headless, no bus switch, no OOBE,
+> no sysprep. The boot disk is `virtio` in `VirtualMachine.spec.disks[]` the
+> whole time (never `driver: sata`).
 
 ## Observability: use `virtctl`, not hand-rolled clients
 
@@ -269,13 +303,19 @@ fixed at root cause:
 | `Press any key to boot from CD…` (times out → UEFI shell) | prompting El Torito boot image | repack ISO with `efisys_noprompt.bin` |
 | `installation sources are not valid` | plain ISO9660 repack; Setup needs UDF | rebuild with `genisoimage -udf` |
 | `cannot find the Microsoft Software License Terms` (aborts at *Setup is starting*) | empty `<ProductKey>` in the answer file | remove `<ProductKey>`; keep `<AcceptEula>` |
-| Setup hangs invisibly, no target disk | virtio boot disk, no viostor in headless WinPE | install onto a **SATA** boot disk |
+| Setup aborts *"could not apply the DiskConfiguration setting"* (no target disk) | viostor never loaded in WinPE — `<DriverPaths>` pointed at `\viostor\2k22\amd64`, a folder that **does not exist** (WS2022 uses the `w10` driver); drive letters are also unreliable | drop `<DriverPaths>`; auto-load W10 viostor via a **`$WinPEDriver$`** folder on the answer ISO |
+| DC promotes but is **never seeded** and never shuts down (BAKE_DONE never written) | bake's seed phase runs from `C:\polaris\bake.ps1`, so `Copy-Item (Join-Path $src a2_setup.ps1) C:\polaris\a2_setup.ps1` copies the file onto itself → throws under `ErrorActionPreference=Stop` → halts before a2_setup runs | guard the copy to run only when `$src` is the answer cdrom |
 | DC boots but **no network** ("no route to host") | Windows has no cloud-init; NIC IP applied by the GDC guest agent, which a raw install never ran | run the agent `install.ps1` in `bake.ps1` |
 
 ## Status
 
-Windows Server 2022 installs and promotes `BOREAS.LOCAL` natively on GDC
-(verified via the screenshot subresource). The guest-agent step that gives the
-DC its network is the current validation focus; once green, the remaining work
-is exporting the golden qcow2, wiring `GDC_POLARIS_DC_IMAGE_URL`, and validating
-a live range. See `#1170`.
+Windows Server 2022 installs **directly on virtio**, autologons, promotes
+`BOREAS.LOCAL`, and `a2_setup` seeds the AD content — fully headless on GDC, no
+bus switch, no OOBE, no sysprep (verified 2026-07-04: `boreas.local`, 18 users,
+`admin_flag`/`badgelogs` shares confirmed live via the SAC serial console).
+Remaining work: export the golden boot disk → qcow2, wire
+`GDC_POLARIS_DC_IMAGE_URL`, and validate a live range. See `#1170`.
+
+To stamp a **different domain**, change `Install-ADDSForest -DomainName` in
+`bake.ps1` and the domain references in `a2_setup.ps1`, rebuild the answer ISO
+(same `$WinPEDriver$` drivers), and re-run the build for a new golden qcow2.
