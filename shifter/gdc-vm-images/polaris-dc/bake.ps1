@@ -37,7 +37,13 @@ try {
 # Resolve this script's own directory (the answer cdrom) and copy a2_setup.ps1 to
 # local disk (the cdrom letter can change across the promotion reboot; C: is stable).
 $src = Split-Path -Parent $MyInvocation.MyCommand.Path
-Copy-Item (Join-Path $src "a2_setup.ps1") "C:\polaris\a2_setup.ps1" -Force
+# Copy a2_setup.ps1 to local disk in the promote phase (when $src is the answer
+# cdrom). Guard the self-copy: in the seed phase this script runs from
+# C:\polaris, so $src == C:\polaris and Copy-Item onto itself throws under
+# ErrorActionPreference=Stop, which would halt the bake before a2_setup runs.
+if ($src -ne "C:\polaris") {
+    Copy-Item (Join-Path $src "a2_setup.ps1") "C:\polaris\a2_setup.ps1" -Force
+}
 
 $phase = "C:\polaris\phase.txt"
 $stage = if (Test-Path $phase) { Get-Content $phase -Raw } else { "promote" }
