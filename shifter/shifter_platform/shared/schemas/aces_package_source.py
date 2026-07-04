@@ -122,7 +122,7 @@ def _validate_scalar(key: str, value: object) -> None:
     raise AcesPackageSourceError(f"provenance '{key}' value must be a scalar or list of scalars")
 
 
-def _require_provenance_size(provenance: dict) -> None:
+def _require_provenance_size(provenance: dict[str, object]) -> None:
     """Reject provenance whose serialized JSON exceeds the byte cap."""
     try:
         encoded = json.dumps(provenance)
