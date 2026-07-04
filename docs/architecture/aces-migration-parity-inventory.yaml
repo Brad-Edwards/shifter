@@ -523,11 +523,18 @@ rows:
     legacy_field: backend profile and conformance contract corpus
     category: validation gate
     aces_target: ACES backend manifest and conformance CLI
-    shifter_owner: future Shifter ACES backend adapter
-    validation_evidence: aces conformance backend --profile <shifter-profile>
+    shifter_owner: shifter/shifter_platform/shared/aces/manifest.py (provisioning-only manifest source, #1261); future Shifter ACES backend adapter
+    validation_evidence: aces conformance backend --profile provisioning-only; tests/shared/aces/test_backend_manifest_publication.py (#1261)
     next_issue_kind: implementation-candidate
     candidate_issue_title: Publish and validate a Shifter ACES backend manifest
-    notes: Cutover requires a published profile claim validated by ACES conformance, not prose.
+    notes: >-
+      #1261 published the provisioning-only backend-manifest-v2 source and bound
+      it to the ACES contract/profile tooling (schema/model validation, profile
+      contract coverage, and profile inference) via a publication test. Full
+      target conformance (aces conformance backend against a live RuntimeTarget)
+      still requires the provisioner adapter (#1262) and the conformance CI gate
+      (#1263). Cutover requires a published profile claim validated by ACES
+      conformance, not prose.
 
   - id: validation.participant-runtime-conformance
     surface: validation
