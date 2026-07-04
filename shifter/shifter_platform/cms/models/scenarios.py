@@ -174,3 +174,147 @@ class ScenarioMetadata(models.Model):
         status = "enabled" if self.enabled else "disabled"
         access = "staff-only" if self.staff_only else "all users"
         return f"{self.scenario_id}: {status}, {access}"
+
+
+class AcesPackageSource(models.Model):
+    """Provenance-only source record for an ACES package-backed catalog entry.
+
+    Keyed by ``scenario_id`` (a string, like :class:`ScenarioMetadata`) so it can
+    join the unified catalog projection beside YAML defaults and DB customs. It
+    stores *references and provenance only* — never raw ACES SDL, imported module
+    bodies, generated content, hydrated runtime specs, flags, credentials,
+    tokens, or runtime config (enforced by
+    :func:`shared.schemas.aces_package_source.validate_package_source`).
+
+    Access (enabled / staff_only) remains governed by :class:`ScenarioMetadata`;
+    this model adds no duplicate access flags. Launchability is derived from
+    conformance readiness (:attr:`is_launchable`), independent of access.
+    """
+
+    class SourceKind(models.TextChoices):
+        """How the package is resolved: repo-managed or object storage."""
+
+        REPO = "repo", "Repository-managed"
+        OBJECT = "object", "Object storage"
+
+    class ConformanceStatus(models.TextChoices):
+        """Conformance readiness of the package for its claimed profile."""
+
+        PENDING = "pending", "Pending"
+        PASSED = "passed", "Passed"
+        FAILED = "failed", "Failed"
+
+    id = models.UUIDField(primary_key=True, default=uuid4, editable=False)
+    scenario_id = models.SlugField(
+        max_length=100,
+        unique=True,
+        help_text="Catalog id for this ACES package-source entry",
+    )
+    source_kind = models.CharField(
+        max_length=16,
+        choices=SourceKind.choices,
+        default=SourceKind.REPO,
+        help_text="Where the package is resolved from (repo-managed or object storage)",
+    )
+    contract_kind = models.CharField(
+        max_length=32,
+        help_text="Package contract discriminator (e.g. 'aces')",
+    )
+    contract_profile = models.CharField(
+        max_length=128,
+        help_text="Contract profile the package claims (e.g. 'shifter')",
+    )
+    package_ref = models.CharField(
+        max_length=512,
+        help_text="Repo-relative path or object-storage key for the package root",
+    )
+    package_version = models.CharField(
+        max_length=128,
+        help_text="Immutable package version or ref",
+    )
+    package_digest = models.CharField(
+        max_length=71,
+        help_text="Package content digest ('sha256:<64 hex>')",
+    )
+    lock_ref = models.CharField(
+        max_length=512,
+        blank=True,
+        default="",
+        help_text="Repo-relative path or object-storage key for the lock artifact",
+    )
+    lock_digest = models.CharField(
+        max_length=71,
+        blank=True,
+        default="",
+        help_text="Lock artifact digest ('sha256:<64 hex>')",
+    )
+    provenance = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Bounded provenance references (repo/commit/tool/report); no secrets or bodies",
+    )
+    conformance_status = models.CharField(
+        max_length=16,
+        choices=ConformanceStatus.choices,
+        default=ConformanceStatus.PENDING,
+        help_text="Conformance readiness for the claimed profile",
+    )
+    conformance_report_ref = models.CharField(
+        max_length=512,
+        blank=True,
+        default="",
+        help_text="Reference to a conformance report (not its contents)",
+    )
+    registered_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="+",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        """Model options: ordering and human-readable names."""
+
+        ordering = ["scenario_id"]
+        verbose_name = "ACES Package Source"
+        verbose_name_plural = "ACES Package Sources"
+
+    def __str__(self) -> str:
+        return f"{self.scenario_id} ({self.contract_kind}/{self.contract_profile})"
+
+    def save(self, *args, **kwargs) -> None:
+        """Persist after enforcing the provenance-only contract.
+
+        Raises:
+            shared.schemas.aces_package_source.AcesPackageSourceError: if any
+                field or the provenance JSON violates the provenance-only shape.
+        """
+        from shared.schemas.aces_package_source import PackageSourceRecord, validate_package_source
+
+        self.provenance = validate_package_source(
+            PackageSourceRecord(
+                source_kind=self.source_kind,
+                contract_kind=self.contract_kind,
+                contract_profile=self.contract_profile,
+                package_ref=self.package_ref,
+                package_version=self.package_version,
+                package_digest=self.package_digest,
+                conformance_status=self.conformance_status,
+                lock_ref=self.lock_ref,
+                lock_digest=self.lock_digest,
+                conformance_report_ref=self.conformance_report_ref,
+                provenance=self.provenance,
+            )
+        )
+        super().save(*args, **kwargs)
+
+    @property
+    def is_launchable(self) -> bool:
+        """Whether this package source is ready to launch (conformance passed).
+
+        Launchability is separate from access: ``ScenarioMetadata`` governs
+        enabled / staff-only visibility, while launchability requires the
+        package to have passed conformance for its claimed profile.
+        """
+        return self.conformance_status == self.ConformanceStatus.PASSED
