@@ -50,9 +50,14 @@ class SSHConsumer(AsyncWebsocketConsumer):
         self._read_task: asyncio.Task[None] | None = None
         self.session_id: str = str(uuid.uuid4())[:8]
         self._user_id: int | None = None
+        self._user_email: str = ""
         self._session_acquired: bool = False
         self._session_start: float = 0.0
         self._last_activity: float = 0.0
+        # Bounded reason the session ended; the read loop overwrites it on
+        # timeout/EOF/error so the disconnect audit distinguishes a timeout from
+        # a plain user-initiated close.
+        self._close_reason: str = "user_close"
 
     async def connect(self) -> None:
         """Handle WebSocket connection request."""
@@ -95,6 +100,7 @@ class SSHConsumer(AsyncWebsocketConsumer):
             return None
 
         self._user_id = user.id
+        self._user_email = getattr(user, "email", "") or ""
         instance_uuid = self.scope["url_route"]["kwargs"].get("instance_uuid")
         if not instance_uuid:
             logger.warning("Terminal connection without instance_uuid")
@@ -154,6 +160,7 @@ class SSHConsumer(AsyncWebsocketConsumer):
                     session_id=self.session_id,
                     range_id=None,
                     session_type="terminal",
+                    email=getattr(user, "email", "") or "",
                 ),
                 source_ip=client_ip,
                 context=f"Permission denied for instance {instance_uuid}",
@@ -219,6 +226,7 @@ class SSHConsumer(AsyncWebsocketConsumer):
                 range_id=None,
                 session_type="terminal",
                 target_ip=instance_uuid,
+                email=self._user_email,
             ),
             source_ip=client_ip,
         )
@@ -274,6 +282,7 @@ class SSHConsumer(AsyncWebsocketConsumer):
                     self._last_activity = loop.time()
                 elif conn.at_eof():
                     logger.info("Terminal shell closed (EOF): uuid=%s", self.instance_uuid)
+                    self._close_reason = "shell_eof"
                     break
 
                 now = loop.time()
@@ -283,6 +292,7 @@ class SSHConsumer(AsyncWebsocketConsumer):
                         self.instance_uuid,
                         idle_timeout,
                     )
+                    self._close_reason = "idle_timeout"
                     break
                 if max_duration > 0 and now - self._session_start >= max_duration:
                     logger.info(
@@ -290,11 +300,13 @@ class SSHConsumer(AsyncWebsocketConsumer):
                         self.instance_uuid,
                         max_duration,
                     )
+                    self._close_reason = "max_duration"
                     break
         except asyncio.CancelledError:
             raise
         except Exception:
             logger.exception("Error reading SSH output: uuid=%s", self.instance_uuid)
+            self._close_reason = "error"
         finally:
             await self.close()
 
@@ -330,8 +342,9 @@ class SSHConsumer(AsyncWebsocketConsumer):
                 session=SessionInfo(
                     session_id=self.session_id,
                     session_type="terminal",
+                    email=self._user_email,
                 ),
-                context=f"close_code={close_code}",
+                context=f"close_code={close_code} reason={self._close_reason}",
             )
 
     async def receive(self, text_data: str | None = None, bytes_data: bytes | None = None) -> None:
