@@ -201,6 +201,9 @@ cython_debug/
 .cursor/*
 !.cursor/environment.json
 !.cursor/mcp.json
+!.cursor/cli.json
+!.cursor/hooks.json
+!.cursor/hooks/
 !.cursor/rules/
 
 # Node.js

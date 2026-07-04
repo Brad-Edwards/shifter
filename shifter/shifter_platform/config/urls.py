@@ -14,10 +14,12 @@ from config.views import (
     legacy_oidc_authenticate,
     logout_view,
     platform_login,
+    privacy_notice,
 )
 
 urlpatterns = [
     path("", home, name="home"),
+    path("privacy/", privacy_notice, name="privacy_notice"),
     path("login/", platform_login, name="platform_login"),
     path("auth/identity/session/", identity_platform_session, name="identity_platform_session"),
     path("dashboard/", dashboard_router, name="dashboard_router"),
