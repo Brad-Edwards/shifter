@@ -256,6 +256,10 @@ CTF_SCHEDULER_STALE_TASK_MINUTES = _env_int("CTF_SCHEDULER_STALE_TASK_MINUTES", 
 
 from config._capacity_settings import *  # noqa: E402  # NOSONAR
 
+# CTF regex-flag safety tunables (issue #1183): pattern/submission length caps
+# and the per-match timeout that bound organizer-controlled regex evaluation.
+from config._ctf_regex_settings import *  # noqa: E402  # NOSONAR
+
 # Database and SECRET_KEY rotation settings (DATABASES, SECRET_KEY_FALLBACKS).
 # Split into config/_database_settings.py to keep this module under the S104
 # 500-line cap; the IAM-auth DB path lives there (issue #159).
