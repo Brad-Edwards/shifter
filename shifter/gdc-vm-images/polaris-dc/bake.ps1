@@ -1,34 +1,41 @@
-# polaris-dc bake (runs on the natively-installed GDC Windows guest).
+# polaris-dc bake -- install-on-virtio path.
 #
-# Invoked by the autounattend FirstLogonCommand after a clean Windows Server
-# 2022 install (native on GDC VM Runtime, so UEFI/ESP/virtio are correct by
-# construction). Promotes a BOREAS.LOCAL forest and seeds the polaris AD content
-# via a2_setup.ps1 (staged next to this script on the answer cdrom). The
-# promotion reboots, so the post-reboot phase (a2_setup) is registered as a
-# RunOnce so it fires automatically after the reboot under the auto-logon admin.
+# Runs (via the autounattend FirstLogonCommand) on a Windows Server 2022 guest
+# installed DIRECTLY on the virtio disk. viostor (boot) + NetKVM (NIC) are
+# auto-loaded during Windows Setup from the answer ISO's $WinPEDriver$ folder
+# (W10\amd64 build -- this virtio-win ships no 2k22 dir), so the boot disk is
+# virtio and viostor is boot-critical by construction. Because the build VM and
+# every range boot the disk on the SAME virtio hardware, there is no bus switch,
+# hence no hardware-change OOBE re-run; and no sysprep, so AD DS stays intact.
 #
-# Writes C:\polaris\BAKE_DONE when finished so the build harness knows to stop
-# the VM and export the golden boot disk.
+# Promotes a BOREAS.LOCAL forest and seeds the polaris AD content via
+# a2_setup.ps1 (staged beside this script on the answer cdrom). The promotion
+# reboots, so the seed phase runs from a SYSTEM AtStartup scheduled task. Writes
+# C:\polaris\BAKE_DONE and shuts down cleanly for the golden-disk export.
 $ErrorActionPreference = "Stop"
 New-Item -ItemType Directory -Force -Path C:\polaris | Out-Null
 Start-Transcript -Path "C:\polaris\bake.log" -Append -Force
 Write-Host "=== polaris-dc bake $(Get-Date -Format o) ==="
 
-# Enable Windows SAC/EMS on serial (COM1). GDC Windows guests have no working
-# network until the virtio NIC + DHCP come up and no VNC input channel, so when
-# something goes wrong they sit at an unreachable black screen. SAC gives an
-# operator command prompt over the KubeVirt bidirectional serial console with no
-# network required. Takes effect on the next boot. (Consider disabling before
-# the final golden export if serial-console access is a concern.)
+# Firewall OFF and network-location prompt suppressed FIRST, before any step that
+# could block, so the DC is reachable on the range network no matter how far the
+# rest of the bake gets. (An unanswered "allow discovery" prompt classifies the
+# NIC as Public and drops inbound; disabling the profiles moots it.)
+try {
+    Set-NetFirewallProfile -Profile Domain,Public,Private -Enabled False -ErrorAction SilentlyContinue
+    New-Item "HKLM:\SYSTEM\CurrentControlSet\Control\Network\NewNetworkWindowOff" -Force -ErrorAction SilentlyContinue | Out-Null
+} catch { Write-Host "firewall/net-prompt: $_" }
+
+# Enable Windows SAC/EMS on serial (COM1) for a network-free operator console
+# over the KubeVirt serial channel. Takes effect next boot.
 try {
     bcdedit /ems "{current}" on | Out-Null
     bcdedit /emssettings EMSPORT:1 EMSBAUDRATE:115200 | Out-Null
     Write-Host "SAC/EMS enabled on COM1"
 } catch { Write-Host "bcdedit ems error: $_" }
 
-# Resolve this script's own directory (the answer cdrom) so we can copy the
-# post-reboot script + a2_setup.ps1 to local disk (the cdrom letter can change
-# across the reboot; local C: is stable).
+# Resolve this script's own directory (the answer cdrom) and copy a2_setup.ps1 to
+# local disk (the cdrom letter can change across the promotion reboot; C: is stable).
 $src = Split-Path -Parent $MyInvocation.MyCommand.Path
 Copy-Item (Join-Path $src "a2_setup.ps1") "C:\polaris\a2_setup.ps1" -Force
 
@@ -38,24 +45,25 @@ $stage = if (Test-Path $phase) { Get-Content $phase -Raw } else { "promote" }
 if ($stage.Trim() -eq "promote") {
     Set-Content -Path $phase -Value "seed" -Encoding ascii
 
-    # NOTE: virtio boot (viostor) + network (NetKVM) drivers are loaded during
-    # Windows Setup via the autounattend windowsPE <DriverPaths> (the documented
-    # path: install on the virtio disk with viostor loaded in Setup). We do NOT
-    # pnputil-install virtio drivers here: doing that post-install on a
-    # SATA-booted OS leaves Windows without viostor marked boot-critical and
-    # produces an INACCESSIBLE_BOOT_DEVICE boot loop on the next boot
-    # (KubeVirt #16703 / RH BZ 1908421). Boot disk is virtio throughout.
+    # Ensure NetKVM (virtio NIC) is installed into the OS from the virtio driver
+    # cdrom. viostor (boot) is already present from Setup's $WinPEDriver$ load.
+    # Use the W10 folder (this virtio-win has no 2k22). Safe to install/reboot:
+    # we are on virtio from install, so there is no INACCESSIBLE_BOOT_DEVICE risk.
+    $vd = $null
+    foreach ($v in (Get-Volume | Where-Object { $_.DriveLetter })) {
+        if (Test-Path ($v.DriveLetter + ":\NetKVM")) { $vd = ($v.DriveLetter + ":"); break }
+    }
+    if ($vd) {
+        foreach ($fld in @("w10", "2k22", "2k19")) {
+            $inf = "$vd\NetKVM\$fld\amd64\netkvm.inf"
+            if (Test-Path $inf) { Write-Host "installing NetKVM from $inf"; & pnputil.exe /add-driver $inf /install 2>&1 | Out-Null; break }
+        }
+    } else { Write-Host "NetKVM cdrom not found (NIC driver may already be present from Setup)" }
 
-    # Install the GDC guest agent so the DC's NIC gets its range-assigned IP.
-    # On GDC, Windows has no cloud-init; the provisioner sets interfaces[].
-    # ipAddresses and relies on the guest agent (attached as the "guest agent"
-    # cdrom) to apply it. GDC's autoInstallGuestAgent runs the agent's
-    # install.ps1 via a prepped-image hook that a raw ISO install bypasses, so
-    # do it explicitly. install.ps1 registers a SYSTEM startup scheduled task
-    # (guest-agent-launcher) that every boot copies the agent + the range's
-    # SA/config from the attached agent disks and runs `guest-agent.exe
-    # install/start`. The task persists in the golden image, so every range boot
-    # re-installs/starts the agent against that range's own disks.
+    # Install the GDC guest agent so each range boot applies that range's assigned
+    # NIC IP (Windows has no cloud-init on GDC; the provisioner sets the IP and the
+    # agent applies it). install.ps1 registers a SYSTEM startup task that persists
+    # in the golden image and re-runs against each range's own agent disks.
     $agentCd = (Get-Volume -FileSystemLabel "guest agent" -ErrorAction SilentlyContinue).DriveLetter
     if ($agentCd) {
         Write-Host "Installing GDC guest agent from ${agentCd}:\install.ps1"
@@ -64,11 +72,14 @@ if ($stage.Trim() -eq "promote") {
         Write-Host "WARNING: GDC guest-agent cdrom (label 'guest agent') not found; NIC IP will not be applied"
     }
 
-    # Install OpenSSH server for operator access to the DC (optional but handy).
-    Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0 -ErrorAction SilentlyContinue | Out-Null
-    Set-Service -Name sshd -StartupType Automatic -ErrorAction SilentlyContinue
-
-    Set-NetFirewallProfile -Profile Domain,Public,Private -Enabled False
+    # OpenSSH server -- best-effort and NON-BLOCKING. The OpenSSH.Server FoD source
+    # may be unreachable on the build network and Add-WindowsCapability would hang
+    # the whole bake; run it as a background job so it never blocks the promotion.
+    Start-Job -ScriptBlock {
+        Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0 -ErrorAction SilentlyContinue | Out-Null
+        Set-Service -Name sshd -StartupType Automatic -ErrorAction SilentlyContinue
+        Start-Service -Name sshd -ErrorAction SilentlyContinue
+    } | Out-Null
 
     foreach ($feat in @("AD-Domain-Services", "DNS")) {
         if (-not (Get-WindowsFeature -Name $feat).Installed) {
@@ -77,16 +88,14 @@ if ($stage.Trim() -eq "promote") {
     }
 
     # Register the post-reboot seed phase as a SYSTEM AtStartup scheduled task.
-    # RunOnce is unreliable here: after promotion the machine is a domain
-    # controller and the local-Administrator autologon that RunOnce depends on
-    # may not fire, so the seed would never run. A SYSTEM AtStartup task runs
-    # regardless of interactive logon. The seed phase unregisters the task after
-    # writing BAKE_DONE so it does not re-run in every range.
+    # RunOnce is unreliable on a fresh DC (the local-Administrator autologon it
+    # depends on may not fire post-promotion); a SYSTEM AtStartup task runs
+    # regardless. The seed phase unregisters it after writing BAKE_DONE.
     Copy-Item $MyInvocation.MyCommand.Path "C:\polaris\bake.ps1" -Force
     $act = New-ScheduledTaskAction -Execute "powershell.exe" `
         -Argument '-NoProfile -ExecutionPolicy Bypass -File "C:\polaris\bake.ps1"'
-    $trig = New-ScheduledTaskTrigger -AtStartup
-    Register-ScheduledTask -TaskName "PolarisBakeSeed" -Action $act -Trigger $trig `
+    Register-ScheduledTask -TaskName "PolarisBakeSeed" -Action $act `
+        -Trigger (New-ScheduledTaskTrigger -AtStartup) `
         -User "NT AUTHORITY\SYSTEM" -RunLevel Highest -Force | Out-Null
 
     Import-Module ADDSDeployment
@@ -104,7 +113,7 @@ if ($stage.Trim() -eq "promote") {
 
 # phase == seed: AD DS is up after the promotion reboot; seed the content.
 Write-Host "=== polaris-dc bake seed phase $(Get-Date -Format o) ==="
-Set-NetFirewallProfile -Profile Domain,Public,Private -Enabled False
+Set-NetFirewallProfile -Profile Domain,Public,Private -Enabled False -ErrorAction SilentlyContinue
 $ok = $false
 for ($i = 0; $i -lt 60; $i++) {
     try { Get-ADDomain -ErrorAction Stop | Out-Null; $ok = $true; break }
@@ -115,29 +124,9 @@ if (-not $ok) { throw "AD DS did not come up after promotion" }
 & powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\polaris\a2_setup.ps1" -DnsForwarder "8.8.8.8"
 if ($LASTEXITCODE -ne $null -and $LASTEXITCODE -ne 0) { throw "a2_setup failed: $LASTEXITCODE" }
 
-# Install viostor + NetKVM as the LAST step, after all SATA reboots (install +
-# promotion). The build installs on a SATA disk (WinPE sees SATA natively, so no
-# viostor is needed during Setup); the exported golden disk is then attached on
-# the virtio bus, and Windows boots on virtio with viostor as the boot driver
-# (KubeVirt #16703 SATA-first-then-switch). Installing viostor and then rebooting
-# ON SATA loops (INACCESSIBLE_BOOT_DEVICE), so this is the final action before a
-# clean shutdown -- the VM never reboots on SATA after viostor is present.
-$virtio = $null
-foreach ($v in (Get-Volume | Where-Object { $_.DriveLetter })) {
-    if (Test-Path ($v.DriveLetter + ":\viostor")) { $virtio = ($v.DriveLetter + ":"); break }
-}
-if ($virtio) {
-    Write-Host "installing viostor + NetKVM from $virtio (last step, then shut down)"
-    Get-ChildItem "$virtio\" -Recurse -Filter *.inf |
-        Where-Object { $_.FullName -match '2k22' -and $_.FullName -match 'amd64' -and $_.FullName -match 'viostor|NetKVM' } |
-        ForEach-Object { & pnputil.exe /add-driver $_.FullName /install 2>&1 | Out-Null }
-} else {
-    Write-Host "WARNING: virtio cdrom not found; the golden image will not boot on virtio"
-}
-
 Set-Content -Path "C:\polaris\BAKE_DONE" -Value (Get-Date -Format o) -Encoding ascii
 # Unregister the seed task so it does not re-run when ranges boot the golden image.
 Unregister-ScheduledTask -TaskName "PolarisBakeSeed" -Confirm:$false -ErrorAction SilentlyContinue
-Write-Host "=== polaris-dc bake complete; BAKE_DONE written; shutting down for the SATA->virtio switch ==="
+Write-Host "=== polaris-dc bake complete; BAKE_DONE written; shutting down for golden export ==="
 Stop-Transcript
 Stop-Computer -Force

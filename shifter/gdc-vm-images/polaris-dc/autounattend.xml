@@ -9,16 +9,21 @@
   net drivers by construction (no GCE-export firmware hacks).
 
   Media layout at install time (attached to the install VM):
-    - boot disk         : empty 100Gi VirtualMachineDisk (install target)
+    - boot disk         : empty 100Gi VirtualMachineDisk on the VIRTIO bus (install target)
     - windows-iso       : cdrom, Windows Server 2022 eval ISO
-    - virtio-driver     : cdrom, quay.io/kubevirt/virtio-container-disk
-    - polaris-answer    : cdrom, this autounattend.xml + the AD content scripts
+    - virtio-driver     : cdrom, quay.io/kubevirt/virtio-container-disk (NetKVM for the bake)
+    - polaris-answer    : cdrom, this autounattend.xml + a $WinPEDriver$ folder + the AD scripts
 
   Windows Setup auto-reads autounattend.xml from the root of any attached
-  removable drive. The virtio drivers are loaded in the windowsPE pass via
-  DriverPaths that list the candidate cdrom letters for the virtio disk (its
-  drive letter is assigned at runtime, so several are listed; non-existent paths
-  are ignored). FirstLogonCommands runs the AD promotion + a2_setup post-install.
+  removable drive. The virtio storage (viostor) + net (NetKVM) drivers are
+  auto-loaded during Setup from a $WinPEDriver$ folder at the root of the
+  polaris-answer cdrom. Setup scans every removable drive for $WinPEDriver$ and
+  installs the drivers it finds, with NO drive-letter or DriverPaths guessing.
+  The drivers are the W10\amd64 build (this virtio-win ships no 2k22 dir; WS2022
+  uses W10). viostor becomes boot-critical, so the boot disk is virtio the whole
+  time: build-hardware == range-hardware, so no bus switch and no hardware-change
+  OOBE re-run, and no sysprep (which would break the promoted DC).
+  FirstLogonCommands runs the AD promotion + a2_setup post-install (see bake.ps1).
 -->
 <unattend xmlns="urn:schemas-microsoft-com:unattend">
 
@@ -36,31 +41,6 @@
       <UILanguage>en-US</UILanguage>
       <UILanguageFallback>en-US</UILanguageFallback>
       <UserLocale>en-US</UserLocale>
-    </component>
-
-    <component name="Microsoft-Windows-PnpCustomizationsWinPE" processorArchitecture="amd64"
-               publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS"
-               xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
-      <!-- Load the virtio storage (viostor/vioscsi) + network (NetKVM) drivers
-           from the virtio-container-disk cdrom. Its drive letter is assigned at
-           runtime, so list the common candidates; Setup skips paths that do not
-           exist. 2k22 = Windows Server 2022 driver subdir. -->
-      <DriverPaths>
-        <PathAndCredentials wcm:action="add" wcm:keyValue="1"><Path>C:\viostor\2k22\amd64</Path></PathAndCredentials>
-        <PathAndCredentials wcm:action="add" wcm:keyValue="2"><Path>D:\viostor\2k22\amd64</Path></PathAndCredentials>
-        <PathAndCredentials wcm:action="add" wcm:keyValue="3"><Path>E:\viostor\2k22\amd64</Path></PathAndCredentials>
-        <PathAndCredentials wcm:action="add" wcm:keyValue="4"><Path>F:\viostor\2k22\amd64</Path></PathAndCredentials>
-        <PathAndCredentials wcm:action="add" wcm:keyValue="5"><Path>G:\viostor\2k22\amd64</Path></PathAndCredentials>
-        <PathAndCredentials wcm:action="add" wcm:keyValue="6"><Path>H:\viostor\2k22\amd64</Path></PathAndCredentials>
-        <PathAndCredentials wcm:action="add" wcm:keyValue="7"><Path>I:\viostor\2k22\amd64</Path></PathAndCredentials>
-        <PathAndCredentials wcm:action="add" wcm:keyValue="8"><Path>J:\viostor\2k22\amd64</Path></PathAndCredentials>
-        <PathAndCredentials wcm:action="add" wcm:keyValue="9"><Path>C:\NetKVM\2k22\amd64</Path></PathAndCredentials>
-        <PathAndCredentials wcm:action="add" wcm:keyValue="10"><Path>D:\NetKVM\2k22\amd64</Path></PathAndCredentials>
-        <PathAndCredentials wcm:action="add" wcm:keyValue="11"><Path>E:\NetKVM\2k22\amd64</Path></PathAndCredentials>
-        <PathAndCredentials wcm:action="add" wcm:keyValue="12"><Path>F:\NetKVM\2k22\amd64</Path></PathAndCredentials>
-        <PathAndCredentials wcm:action="add" wcm:keyValue="13"><Path>G:\NetKVM\2k22\amd64</Path></PathAndCredentials>
-        <PathAndCredentials wcm:action="add" wcm:keyValue="14"><Path>H:\NetKVM\2k22\amd64</Path></PathAndCredentials>
-      </DriverPaths>
     </component>
 
     <component name="Microsoft-Windows-Setup" processorArchitecture="amd64"
