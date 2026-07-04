@@ -21,6 +21,8 @@ from shared.log_sanitize import safe_log_value
 if TYPE_CHECKING:
     from django.contrib.auth.models import User
 
+    from cms.models import AcesPackageSource
+
 logger = logging.getLogger(__name__)
 
 
@@ -56,7 +58,7 @@ def _get_db_scenarios() -> list[AnyScenarioTemplate]:
     return scenarios
 
 
-def _get_aces_sources() -> list[Any]:
+def _get_aces_sources() -> list[AcesPackageSource]:
     """Load all ACES package-source rows for the catalog projection.
 
     Returns:
@@ -67,7 +69,7 @@ def _get_aces_sources() -> list[Any]:
     return list(AcesPackageSource.objects.all())
 
 
-def _aces_source_to_dict(source: Any, *, metadata: dict[str, Any] | None) -> dict[str, Any]:
+def _aces_source_to_dict(source: AcesPackageSource, *, metadata: dict[str, Any] | None) -> dict[str, Any]:
     """Build a catalog projection entry for an ACES package-source row.
 
     ACES rows are provenance-only, so display fields are derived (name from
@@ -176,43 +178,11 @@ def list_all_scenarios(user: User | None = None) -> list[dict[str, Any]]:
         List of scenario dicts sorted by name.
     """
     metadata_map = _get_metadata_map()
-    result = []
 
-    # YAML defaults
-    yaml_ids = set()
-    for template in get_yaml_scenarios():
-        yaml_ids.add(template.id)
-        meta = metadata_map.get(template.id)
-        entry = _scenario_to_dict(template, is_default=True, metadata=meta)
-        result.append(entry)
-
-    # DB customs (skip any whose scenario_id collides with a YAML default)
-    db_ids = set()
-    for template in _get_db_scenarios():
-        if template.id in yaml_ids:
-            logger.warning(
-                "DB scenario '%s' collides with YAML default, skipping",
-                template.id,
-            )
-            continue
-        db_ids.add(template.id)
-        meta = metadata_map.get(template.id)
-        entry = _scenario_to_dict(template, is_default=False, metadata=meta)
-        result.append(entry)
-
-    # ACES package-source entries (fail-closed: skip any whose scenario_id
-    # collides with an active legacy id — a YAML default or active DB custom —
-    # so an ACES row can never shadow a launchable legacy scenario).
-    known_ids = yaml_ids | db_ids
-    for source in _get_aces_sources():
-        if source.scenario_id in known_ids:
-            logger.warning(
-                "ACES package-source '%s' collides with an active legacy scenario_id, skipping",
-                safe_log_value(source.scenario_id),
-            )
-            continue
-        meta = metadata_map.get(source.scenario_id)
-        result.append(_aces_source_to_dict(source, metadata=meta))
+    yaml_entries, yaml_ids = _yaml_source_entries(metadata_map)
+    db_entries, db_ids = _db_source_entries(metadata_map, yaml_ids)
+    aces_entries = _aces_source_entries(metadata_map, yaml_ids | db_ids)
+    result = yaml_entries + db_entries + aces_entries
 
     # Access filtering
     if user is not None and not (user.is_staff or user.is_superuser):
@@ -221,6 +191,43 @@ def list_all_scenarios(user: User | None = None) -> list[dict[str, Any]]:
     # Sort by name
     result.sort(key=lambda s: s["name"])
     return result
+
+
+def _yaml_source_entries(metadata_map: dict[str, Any]) -> tuple[list[dict[str, Any]], set[str]]:
+    """Build projection entries for YAML defaults; return (entries, ids)."""
+    entries = []
+    yaml_ids = set()
+    for template in get_yaml_scenarios():
+        yaml_ids.add(template.id)
+        entries.append(_scenario_to_dict(template, is_default=True, metadata=metadata_map.get(template.id)))
+    return entries, yaml_ids
+
+
+def _db_source_entries(metadata_map: dict[str, Any], yaml_ids: set[str]) -> tuple[list[dict[str, Any]], set[str]]:
+    """Build entries for DB customs, skipping ids that collide with YAML defaults."""
+    entries = []
+    db_ids = set()
+    for template in _get_db_scenarios():
+        if template.id in yaml_ids:
+            logger.warning("DB scenario '%s' collides with YAML default, skipping", template.id)
+            continue
+        db_ids.add(template.id)
+        entries.append(_scenario_to_dict(template, is_default=False, metadata=metadata_map.get(template.id)))
+    return entries, db_ids
+
+
+def _aces_source_entries(metadata_map: dict[str, Any], known_ids: set[str]) -> list[dict[str, Any]]:
+    """Build ACES entries, fail-closed skipping any id that shadows an active legacy scenario."""
+    entries = []
+    for source in _get_aces_sources():
+        if source.scenario_id in known_ids:
+            logger.warning(
+                "ACES package-source '%s' collides with an active legacy scenario_id, skipping",
+                safe_log_value(source.scenario_id),
+            )
+            continue
+        entries.append(_aces_source_to_dict(source, metadata=metadata_map.get(source.scenario_id)))
+    return entries
 
 
 def get_scenario_detail(scenario_id: str) -> dict[str, Any]:

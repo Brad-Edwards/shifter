@@ -192,10 +192,14 @@ class AcesPackageSource(models.Model):
     """
 
     class SourceKind(models.TextChoices):
+        """How the package is resolved: repo-managed or object storage."""
+
         REPO = "repo", "Repository-managed"
         OBJECT = "object", "Object storage"
 
     class ConformanceStatus(models.TextChoices):
+        """Conformance readiness of the package for its claimed profile."""
+
         PENDING = "pending", "Pending"
         PASSED = "passed", "Passed"
         FAILED = "failed", "Failed"
@@ -270,34 +274,38 @@ class AcesPackageSource(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
+        """Model options: ordering and human-readable names."""
+
         ordering = ["scenario_id"]
         verbose_name = "ACES Package Source"
         verbose_name_plural = "ACES Package Sources"
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"{self.scenario_id} ({self.contract_kind}/{self.contract_profile})"
 
-    def save(self, *args, **kwargs):
+    def save(self, *args, **kwargs) -> None:
         """Persist after enforcing the provenance-only contract.
 
         Raises:
             shared.schemas.aces_package_source.AcesPackageSourceError: if any
                 field or the provenance JSON violates the provenance-only shape.
         """
-        from shared.schemas.aces_package_source import validate_package_source
+        from shared.schemas.aces_package_source import PackageSourceRecord, validate_package_source
 
         self.provenance = validate_package_source(
-            source_kind=self.source_kind,
-            contract_kind=self.contract_kind,
-            contract_profile=self.contract_profile,
-            package_ref=self.package_ref,
-            package_version=self.package_version,
-            package_digest=self.package_digest,
-            conformance_status=self.conformance_status,
-            lock_ref=self.lock_ref,
-            lock_digest=self.lock_digest,
-            conformance_report_ref=self.conformance_report_ref,
-            provenance=self.provenance,
+            PackageSourceRecord(
+                source_kind=self.source_kind,
+                contract_kind=self.contract_kind,
+                contract_profile=self.contract_profile,
+                package_ref=self.package_ref,
+                package_version=self.package_version,
+                package_digest=self.package_digest,
+                conformance_status=self.conformance_status,
+                lock_ref=self.lock_ref,
+                lock_digest=self.lock_digest,
+                conformance_report_ref=self.conformance_report_ref,
+                provenance=self.provenance,
+            )
         )
         super().save(*args, **kwargs)
 
