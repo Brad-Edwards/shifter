@@ -32,6 +32,7 @@ dependencies = [
     "pycurl>=7.45.7",
     "pydantic>=2.13.4",
     "python-dotenv>=1.2.2",
+    "regex>=2026.6.28",
     "requests",
     "uvicorn-worker",
     # uvicorn's WebSocket protocol backend. Not imported directly: the
