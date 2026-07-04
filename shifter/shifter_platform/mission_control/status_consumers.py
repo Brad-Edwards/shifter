@@ -16,6 +16,7 @@ from asgiref.sync import sync_to_async
 from channels.generic.websocket import AsyncWebsocketConsumer
 from django.contrib.auth.models import AnonymousUser
 
+from shared.channels.payloads import NGFWStatusChannelEvent, RangeStatusChannelEvent
 from shared.enums import WebSocketCloseCode
 from shared.schemas import RangeRef
 
@@ -97,7 +98,7 @@ class RangeStatusConsumer(AsyncWebsocketConsumer):
             close_code,
         )
 
-    async def range_status(self, event: dict[str, Any]) -> None:
+    async def range_status(self, event: RangeStatusChannelEvent) -> None:
         """Handle range status update from channel layer.
 
         Called when a status update is broadcast to the range group.
@@ -200,7 +201,7 @@ class NGFWStatusConsumer(AsyncWebsocketConsumer):
             close_code,
         )
 
-    async def ngfw_status(self, event: dict[str, Any]) -> None:
+    async def ngfw_status(self, event: NGFWStatusChannelEvent) -> None:
         """Handle NGFW status update from channel layer.
 
         Called when a status update is broadcast to the NGFW group.
