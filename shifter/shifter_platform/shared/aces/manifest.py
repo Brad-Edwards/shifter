@@ -34,6 +34,7 @@ from __future__ import annotations
 
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as distribution_version
+from typing import Any
 
 from aces_backend_protocols.capabilities import (
     BackendCapabilitySet,
@@ -124,7 +125,7 @@ def create_shifter_backend_manifest() -> BackendManifest:
     )
 
 
-def render_shifter_backend_manifest_payload() -> dict:
+def render_shifter_backend_manifest_payload() -> dict[str, Any]:
     """Return the JSON-serialisable ``backend-manifest-v2`` payload for Shifter.
 
     The ``version`` field is normalised to ``0.0.0`` so the published artifact is
