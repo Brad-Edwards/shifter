@@ -62,6 +62,13 @@ dev = [
     "types-requests>=2.33.0.20260513",
     "types-bleach>=6.3.0.20260508",
     "types-Markdown>=3.7.0",
+    # ACES contract/profile/conformance tooling (issue #1261). Dev/test-scoped
+    # for the publication-only backend-manifest slice: only the manifest
+    # publication test imports it, so it stays out of the production runtime
+    # import graph. Pinned to a commit SHA for reproducible builds (the repo has
+    # no release tags). Promote to a runtime dependency in #1262 when the
+    # RuntimeTarget adapter imports the manifest builder at runtime.
+    "aces-sdl @ git+https://github.com/Brad-Edwards/aces.git@d004bbcc8fa7a0a653183383f7c1dbdf06f5c21c#subdirectory=implementations/python",
 ]
 
 [tool.pytest.ini_options]
