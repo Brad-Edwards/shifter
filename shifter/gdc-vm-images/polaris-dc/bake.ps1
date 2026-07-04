@@ -38,31 +38,13 @@ $stage = if (Test-Path $phase) { Get-Content $phase -Raw } else { "promote" }
 if ($stage.Trim() -eq "promote") {
     Set-Content -Path $phase -Value "seed" -Encoding ascii
 
-    # Install ALL virtio drivers into the (SATA-installed) OS so the exported
-    # golden image boots on the virtio bus that real ranges use (viostor for the
-    # boot disk, NetKVM for the NIC, etc.). Setup ran off a SATA disk to avoid
-    # needing viostor in WinPE (GDC headless VMs give no console to load it
-    # interactively); here, with Windows fully up, we bake the drivers in. Find
-    # the virtio-container-disk cdrom by a signature file rather than a drive
-    # letter (GDC attaches several agent cdroms, so letters are not stable).
-    $virtio = $null
-    foreach ($v in (Get-Volume | Where-Object { $_.DriveLetter })) {
-        $probe = ($v.DriveLetter + ":\viostor")
-        if (Test-Path $probe) { $virtio = ($v.DriveLetter + ":"); break }
-    }
-    if ($virtio) {
-        Write-Host "Installing virtio drivers from $virtio ..."
-        # pnputil adds every matching .inf to the driver store so the OS can bind
-        # them at boot regardless of bus. 2k22 subdir = Windows Server 2022.
-        Get-ChildItem -Path "$virtio\" -Recurse -Filter *.inf |
-            Where-Object { $_.FullName -match '2k22' -and $_.FullName -match 'amd64' } |
-            ForEach-Object {
-                Write-Host "  pnputil add-driver $($_.FullName)"
-                & pnputil.exe /add-driver $_.FullName /install 2>&1 | Out-Null
-            }
-    } else {
-        Write-Host "WARNING: virtio cdrom not found; golden image may not boot on virtio"
-    }
+    # NOTE: virtio boot (viostor) + network (NetKVM) drivers are loaded during
+    # Windows Setup via the autounattend windowsPE <DriverPaths> (the documented
+    # path: install on the virtio disk with viostor loaded in Setup). We do NOT
+    # pnputil-install virtio drivers here: doing that post-install on a
+    # SATA-booted OS leaves Windows without viostor marked boot-critical and
+    # produces an INACCESSIBLE_BOOT_DEVICE boot loop on the next boot
+    # (KubeVirt #16703 / RH BZ 1908421). Boot disk is virtio throughout.
 
     # Install the GDC guest agent so the DC's NIC gets its range-assigned IP.
     # On GDC, Windows has no cloud-init; the provisioner sets interfaces[].
@@ -133,8 +115,29 @@ if (-not $ok) { throw "AD DS did not come up after promotion" }
 & powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\polaris\a2_setup.ps1" -DnsForwarder "8.8.8.8"
 if ($LASTEXITCODE -ne $null -and $LASTEXITCODE -ne 0) { throw "a2_setup failed: $LASTEXITCODE" }
 
+# Install viostor + NetKVM as the LAST step, after all SATA reboots (install +
+# promotion). The build installs on a SATA disk (WinPE sees SATA natively, so no
+# viostor is needed during Setup); the exported golden disk is then attached on
+# the virtio bus, and Windows boots on virtio with viostor as the boot driver
+# (KubeVirt #16703 SATA-first-then-switch). Installing viostor and then rebooting
+# ON SATA loops (INACCESSIBLE_BOOT_DEVICE), so this is the final action before a
+# clean shutdown -- the VM never reboots on SATA after viostor is present.
+$virtio = $null
+foreach ($v in (Get-Volume | Where-Object { $_.DriveLetter })) {
+    if (Test-Path ($v.DriveLetter + ":\viostor")) { $virtio = ($v.DriveLetter + ":"); break }
+}
+if ($virtio) {
+    Write-Host "installing viostor + NetKVM from $virtio (last step, then shut down)"
+    Get-ChildItem "$virtio\" -Recurse -Filter *.inf |
+        Where-Object { $_.FullName -match '2k22' -and $_.FullName -match 'amd64' -and $_.FullName -match 'viostor|NetKVM' } |
+        ForEach-Object { & pnputil.exe /add-driver $_.FullName /install 2>&1 | Out-Null }
+} else {
+    Write-Host "WARNING: virtio cdrom not found; the golden image will not boot on virtio"
+}
+
 Set-Content -Path "C:\polaris\BAKE_DONE" -Value (Get-Date -Format o) -Encoding ascii
 # Unregister the seed task so it does not re-run when ranges boot the golden image.
 Unregister-ScheduledTask -TaskName "PolarisBakeSeed" -Confirm:$false -ErrorAction SilentlyContinue
-Write-Host "=== polaris-dc bake complete; BAKE_DONE written ==="
+Write-Host "=== polaris-dc bake complete; BAKE_DONE written; shutting down for the SATA->virtio switch ==="
 Stop-Transcript
+Stop-Computer -Force
