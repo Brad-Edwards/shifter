@@ -117,6 +117,44 @@ iso.write("polaris-answer.iso"); iso.close()
 Windows Setup searches all removable media for `autounattend.xml`, so the
 separate answer disk is found automatically.
 
+## Boot bus: SATA-first-then-switch (the critical gotcha)
+
+The GDC doc installs Windows on a **virtio** boot disk with viostor loaded
+*during* Setup — but its method is **interactive** (`virtctl vnc` → "Load
+driver" → viostor). Automating that load via the autounattend `<DriverPaths>`
+does **not** work here (viostor never loads in WinPE regardless of the drive
+letter, so Setup aborts with *"could not apply the DiskConfiguration setting"* =
+no disk visible).
+
+The reliable, documented, headless approach is the KubeVirt
+[#16703](https://github.com/kubevirt/kubevirt/issues/16703) **SATA-first-then-switch**:
+
+1. Install on a **SATA** boot disk (`VirtualMachine.spec.disks[].driver: sata`).
+   WinPE has native SATA drivers, so no viostor is needed during Setup.
+2. Do the AD promotion + `a2_setup` seed on SATA (it reboots on SATA — fine).
+3. Install viostor + NetKVM (`pnputil`) as the **very last** step, then **shut
+   down** (`Stop-Computer`). **Never reboot on SATA after viostor is installed** —
+   that produces an `INACCESSIBLE_BOOT_DEVICE` boot loop (Windows expects the
+   virtio storage controller that isn't there yet). This was the multi-week
+   black-screen/boot-loop blocker.
+4. Export the powered-off boot disk, or (to validate) recreate the VM with the
+   boot disk on the **virtio** bus and media detached. Windows then boots on
+   virtio with viostor as the boot driver (a couple of hardware-redetect reboots,
+   then stable).
+
+> Verified: a SATA-installed disk switched to virtio boots cleanly. Note the
+> switch can re-trigger OOBE on a bare install; a fully-promoted DC is past OOBE.
+
+## Observability: use `virtctl`, not hand-rolled clients
+
+Install the official **`virtctl`** matching the cluster's KubeVirt version
+(`kubectl get kubevirt -n vm-system kubevirt -o
+jsonpath='{...observedKubeVirtVersion}'`; download the matching
+`virtctl-vX-linux-amd64`). `virtctl vnc --proxy-only` and `virtctl console` both
+work on GDC against the cluster1 kubeconfig. (A hand-rolled RFB websocket 404s —
+that was a client bug, not a platform limitation. The HTTP `vnc/screenshot`
+subresource is fine for read-only screenshots.)
+
 ## autounattend.xml — the non-obvious requirements
 
 GDC VMs are **headless** (no VNC input, no serial console for Setup), so the
