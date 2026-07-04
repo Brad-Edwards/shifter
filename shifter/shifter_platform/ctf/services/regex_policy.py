@@ -42,6 +42,7 @@ class UnsafeRegexError(ValueError):
 
 
 def _max_pattern_length() -> int:
+    """Configured creation-time cap on the stored regex pattern length."""
     return int(getattr(settings, "CTF_REGEX_FLAG_MAX_PATTERN_LENGTH", _DEFAULT_MAX_PATTERN_LENGTH))
 
 
@@ -70,6 +71,7 @@ def _max_submission_length() -> int:
 
 
 def _match_timeout_seconds() -> float:
+    """Configured per-match wall-clock budget, in seconds."""
     return float(getattr(settings, "CTF_REGEX_FLAG_MATCH_TIMEOUT_SECONDS", _DEFAULT_MATCH_TIMEOUT_SECONDS))
 
 
@@ -103,7 +105,6 @@ def safe_fullmatch(pattern: str, value: str, *, case_sensitive: bool) -> bool:
         return bool(regex.fullmatch(pattern, value, flags=flags, timeout=_match_timeout_seconds()))
     except TimeoutError:
         logger.warning("Regex flag verification exceeded its time budget; treating as an incorrect submission")
-        return False
     except regex.error:
         logger.warning("Regex flag pattern failed to evaluate; treating as an incorrect submission")
-        return False
+    return False
