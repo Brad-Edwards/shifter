@@ -14,11 +14,11 @@ WORKDIR /app
 #     --python-version 3.12 --generate-hashes -o requirements-gcp.lock
 COPY shifter_platform/pyproject.toml shifter_platform/uv.lock shifter_platform/requirements-gcp.lock ./
 
-# Export the platform's frozen lock to a hashed requirements.txt and install every
-# third-party dependency with hashes enforced and wheels only — no source builds, so no
-# setup scripts execute at install time (docker:S8541) and every version is locked and
-# integrity-checked (docker:S8544). requirements-gcp.lock is installed the same way and
-# is constrained to the frozen lock, so shared transitive deps stay at the locked
+# Export the platform's frozen runtime lock to a hashed requirements.txt and install
+# every third-party dependency with hashes enforced and wheels only — no source builds,
+# so no setup scripts execute at install time (docker:S8541) and every version is locked
+# and integrity-checked (docker:S8544). requirements-gcp.lock is installed the same way
+# and is constrained to the frozen lock, so shared transitive deps stay at the locked
 # versions rather than an unpinned rebuild-time resolution.
 # --no-config: requirements.txt / requirements-gcp.lock are already fully resolved
 # against the frozen lock (which incorporated [tool.uv].constraint-dependencies), so the
@@ -30,7 +30,7 @@ COPY shifter_platform/pyproject.toml shifter_platform/uv.lock shifter_platform/r
 # The first-party packages (cyberscript, installation) are NOT installed here: they are
 # first-party source with no external resolution to lock or hash, so they ride on
 # PYTHONPATH in the production stage instead of through a pip install.
-RUN uv export --no-emit-project --frozen > requirements.txt && \
+RUN uv export --no-dev --no-emit-project --frozen > requirements.txt && \
     uv pip install --system --no-cache --no-config \
         --require-hashes --only-binary :all: --no-binary py-ubjson \
         -r requirements.txt && \
