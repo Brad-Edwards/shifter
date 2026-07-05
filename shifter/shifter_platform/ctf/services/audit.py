@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 from risk_register.models import AuditLog
 from risk_register.services import AuditEvent, audit_log
+
+if TYPE_CHECKING:
+    from ctf.models import CTFParticipant, CTFRangeRecovery
 
 
 def _entity_id_from_uuid(entity_uuid: UUID) -> int:
@@ -44,30 +47,32 @@ def audit_live_flag_repair(
 def audit_range_recovery(
     *,
     actor_id: int | None,
-    event_id: UUID,
-    participant_id: UUID,
-    old_range_instance_id: int,
-    replacement_range_instance_id: int | None,
-    replacement_request_id: UUID | None,
-    strategy: str,
+    recovery: CTFRangeRecovery,
+    participant: CTFParticipant,
     previous_status: str,
-    resulting_status: str,
 ) -> None:
     """Record a completed participant range-recovery operation (#1018).
 
-    ``entity_id`` is the old (pre-recovery) ``RangeInstance.pk`` -- already a
-    positive int, so no UUID-to-int mapping is needed here (unlike
-    :func:`audit_live_flag_repair`). Participant/event identity and the
-    replacement reference are carried as sanitized strings in ``new_state``.
-    The old range is always destroyed (no disposition/forensics concept).
+    Takes the ``CTFRangeRecovery`` record and the participant rather than
+    their individual fields (keeps the parameter count within the project's
+    limit): ``entity_id``, the strategy, and the replacement reference are
+    all read off ``recovery``, and the resulting status is read off
+    ``participant`` (already updated by :func:`ctf.services.range.recovery._ensure_participant_repointed`
+    by the time this runs). ``entity_id`` is the old (pre-recovery)
+    ``RangeInstance.pk`` -- already a positive int, so no UUID-to-int mapping
+    is needed here (unlike :func:`audit_live_flag_repair`). Participant/event
+    identity and the replacement reference are carried as sanitized strings
+    in ``new_state``. The old range is always destroyed (no
+    disposition/forensics concept).
     """
+    old_range_instance_id = recovery.old_range_instance_id
     new_state: dict[str, Any] = {
-        "status": resulting_status,
-        "event_id": str(event_id),
-        "participant_id": str(participant_id),
-        "strategy": strategy,
-        "replacement_range_instance_id": replacement_range_instance_id,
-        "replacement_request_id": (str(replacement_request_id) if replacement_request_id else None),
+        "status": participant.range_status,
+        "event_id": str(recovery.event_id),
+        "participant_id": str(participant.pk),
+        "strategy": recovery.strategy,
+        "replacement_range_instance_id": recovery.replacement_range_instance_id,
+        "replacement_request_id": (str(recovery.replacement_request_id) if recovery.replacement_request_id else None),
     }
     audit_log(
         AuditEvent(

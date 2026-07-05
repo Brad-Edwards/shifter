@@ -177,18 +177,24 @@
                                         {% trans "Destroy" %}
                                     </button>
                                 {% endif %}
-                                {% if p.range_instance_id and p.range_status != "provisioning" and p.range_status != "resuming" %}
-                                    <div class="recovery-controls">
-                                        <select class="recovery-strategy" data-participant-id="{{ p.id }}">
-                                            {% for value, label in recovery_strategy_choices %}
-                                                <option value="{{ value }}">{{ label }}</option>
-                                            {% endfor %}
-                                        </select>
-                                        <button class="btn btn-danger btn-recover"
-                                                data-participant-id="{{ p.id }}">
-                                            {% trans "Recover" %}
-                                        </button>
-                                    </div>
+                                {% if p.range_instance_id %}
+                                    {% if p.range_status != "provisioning" and p.range_status != "resuming" %}
+                                        <div class="recovery-controls">
+                                            <label for="recovery-strategy-{{ p.id }}" class="visually-hidden">
+                                                {% trans "Recovery strategy" %}
+                                            </label>
+                                            <select id="recovery-strategy-{{ p.id }}" class="recovery-strategy"
+                                                    data-participant-id="{{ p.id }}">
+                                                {% for value, label in recovery_strategy_choices %}
+                                                    <option value="{{ value }}">{{ label }}</option>
+                                                {% endfor %}
+                                            </select>
+                                            <button class="btn btn-danger btn-recover"
+                                                    data-participant-id="{{ p.id }}">
+                                                {% trans "Recover" %}
+                                            </button>
+                                        </div>
+                                    {% endif %}
                                 {% endif %}
                             </div>
                         </td>

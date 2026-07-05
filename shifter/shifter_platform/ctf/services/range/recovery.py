@@ -58,6 +58,7 @@ def _range_error(message: str, *, category: RecoveryFailureCategory, **details: 
 
 
 def _validate_strategy(strategy: str) -> None:
+    """Raise `CTFValidationError` if `strategy` is not a recognized `RecoveryStrategy` value."""
     if strategy not in _VALID_STRATEGIES:
         raise CTFValidationError(
             f"Invalid recovery strategy: {strategy!r}",
@@ -245,7 +246,8 @@ def _reassign_spare_replacement(participant: CTFParticipant, spare_range_instanc
         )
 
     replacement_id = spare.range_instance_id
-    assert replacement_id is not None  # guaranteed by _find_available_spare
+    # guaranteed by _find_available_spare
+    assert replacement_id is not None
     cms_reassign_range_owner(replacement_id, _participant_user(participant))
 
     freed_owner = spare.owner_user
@@ -333,25 +335,24 @@ def _ensure_participant_repointed(participant: CTFParticipant, recovery: CTFRang
 def _complete_recovery(
     recovery: CTFRangeRecovery,
     participant: CTFParticipant,
-    old_range_instance_id: int,
     operator: User | None,
 ) -> None:
+    """Write the completion audit row and mark `recovery` as `COMPLETED`."""
     audit_range_recovery(
         actor_id=operator.id if operator is not None else None,
-        event_id=participant.event_id,
-        participant_id=participant.pk,
-        old_range_instance_id=old_range_instance_id,
-        replacement_range_instance_id=recovery.replacement_range_instance_id,
-        replacement_request_id=recovery.replacement_request_id,
-        strategy=recovery.strategy,
+        recovery=recovery,
+        participant=participant,
         previous_status=ResourceStatus.DESTROYING.value,
-        resulting_status=participant.range_status,
     )
     recovery.phase = RecoveryPhase.COMPLETED.value
     recovery.save(update_fields=["phase", "updated_at"])
 
 
 def _failure_category_from_exception(exc: Exception) -> RecoveryFailureCategory:
+    """Map a raised exception's authored `failure_category` detail to a `RecoveryFailureCategory`.
+
+    Falls back to `INTERNAL_ERROR` when the exception carries no such detail.
+    """
     details = getattr(exc, "details", None) or {}
     raw = details.get("failure_category")
     if raw:
@@ -363,6 +364,7 @@ def _failure_category_from_exception(exc: Exception) -> RecoveryFailureCategory:
 
 
 def _mark_recovery_failed(recovery: CTFRangeRecovery, exc: Exception) -> None:
+    """Classify `exc` and record `recovery` as `FAILED` with that failure category."""
     category = _failure_category_from_exception(exc)
     logger.error(
         "recover_participant_range: recovery=%s failed category=%s detail=%s",
@@ -376,6 +378,7 @@ def _mark_recovery_failed(recovery: CTFRangeRecovery, exc: Exception) -> None:
 
 
 def _recovery_result(recovery: CTFRangeRecovery) -> dict[str, Any]:
+    """Serialize `recovery` into the API/service-layer result dict (see `get_recovery_status`)."""
     return {
         "recovery_id": str(recovery.pk),
         "participant_id": str(recovery.participant_id),
@@ -449,7 +452,7 @@ def recover_participant_range(
             _ensure_replacement_ready(recovery, participant, strategy, spare_range_instance_id)
             _ensure_old_range_blocked(recovery, old_range_instance_id, _participant_user(participant))
         _ensure_participant_repointed(participant, recovery)
-        _complete_recovery(recovery, participant, old_range_instance_id, operator)
+        _complete_recovery(recovery, participant, operator)
     except Exception as exc:
         _mark_recovery_failed(recovery, exc)
         if isinstance(exc, CTFError):

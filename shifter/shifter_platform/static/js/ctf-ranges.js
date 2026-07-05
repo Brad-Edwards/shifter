@@ -265,7 +265,7 @@ class CTFRangeManager {
         let btn = document.getElementById('btn-set-spare-pool');
         if (!input) return;
 
-        let count = parseInt(input.value, 10);
+        let count = Number.parseInt(input.value, 10);
         if (Number.isNaN(count)) {
             alert('Error: pool size must be a number');
             return;

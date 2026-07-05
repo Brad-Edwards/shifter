@@ -83,6 +83,8 @@ def delete_managed_spare_user(user: User | None) -> bool:
             safe_log_value(user.pk),
         )
         return False
+
+    result = True
     try:
         user.delete()
     except Exception:
@@ -90,11 +92,12 @@ def delete_managed_spare_user(user: User | None) -> bool:
             "delete_managed_spare_user: failed to delete spare user id=%s",
             safe_log_value(user.pk),
         )
-        return False
-    return True
+        result = False
+    return result
 
 
 def _get_event(event_id: UUID) -> CTFEvent:
+    """Look up a `CTFEvent` by id, raising `CTFNotFoundError` if it does not exist."""
     try:
         return CTFEvent.objects.get(pk=event_id)
     except CTFEvent.DoesNotExist:

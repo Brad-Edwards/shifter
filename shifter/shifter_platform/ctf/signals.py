@@ -48,7 +48,7 @@ def sync_ctf_participant_range_status(
 
 @receiver(range_status_changed)
 def sync_ctf_spare_range_status(
-    sender,
+    sender: None,
     range_instance_id: int,
     new_status: str,
     previous_status: str,

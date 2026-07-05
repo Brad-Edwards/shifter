@@ -189,6 +189,34 @@ class TestProvisionEventSpares:
         with pytest.raises(CTFNotFoundError):
             provision_event_spares(uuid.uuid4(), 1)
 
+    @pytest.mark.django_db
+    def test_a_spares_provisioning_failure_is_recorded_failed_and_topup_continues(self, ctf_event, organizer_user):
+        """A real (unmocked) hydration failure -- a scenario_id CMS has never heard
+        of -- drives ``_provision_one_spare``'s ``except Exception`` branch for
+        every attempt in the top-up. Each failure is recorded as a ``failed``
+        ``CTFSpareRange`` rather than raised, so the loop still makes all
+        ``to_create`` attempts instead of aborting after the first one.
+        """
+        ctf_event.scenario_id = "no-such-scenario-1018"
+        ctf_event.range_config = {"agents_by_os": {}, "ngfw_enabled": False}
+        ctf_event.save(update_fields=["scenario_id", "range_config"])
+
+        result = provision_event_spares(ctf_event.pk, 3, operator=organizer_user)
+
+        # Failures are never counted as "created" ...
+        assert result["created"] == 0
+        # ... but the loop still ran all 3 attempts rather than stopping after
+        # the first failure.
+        spares = list(CTFSpareRange.objects.filter(event=ctf_event))
+        assert len(spares) == 3
+        for spare in spares:
+            assert spare.status == SpareRangeStatus.FAILED.value
+            assert spare.range_instance_id is None
+            # The managed spare user is still created before the provisioning
+            # attempt fails.
+            assert spare.owner_user is not None
+            assert spare.owner_user.email.endswith("@ctf-spare.invalid")
+
 
 class TestGetEventSpareSummary:
     @pytest.mark.django_db
@@ -247,6 +275,30 @@ class TestSpareStatusSignalSync:
         assert spare.status == SpareRangeStatus.READY.value
 
     @pytest.mark.django_db
+    def test_unmapped_status_change_is_a_no_op(self, event_with_scenario, organizer_user):
+        """A CMS status with no spare-pool projection (e.g. ``provisioning`` ->
+        ``provisioning``, or any status other than ``ready``/``failed``) hits the
+        early-return branch: the signal is a no-op rather than raising or
+        touching the spare row.
+        """
+        from cms.signals import range_status_changed
+        from shared.enums import ResourceStatus
+
+        provision_event_spares(event_with_scenario.pk, 1, operator=organizer_user)
+        spare = CTFSpareRange.objects.get(event=event_with_scenario)
+        assert spare.status == SpareRangeStatus.PROVISIONING.value
+
+        range_status_changed.send(
+            sender=None,
+            range_instance_id=spare.range_instance_id,
+            new_status=ResourceStatus.PAUSED.value,
+            previous_status=ResourceStatus.READY.value,
+        )
+
+        spare.refresh_from_db()
+        assert spare.status == SpareRangeStatus.PROVISIONING.value
+
+    @pytest.mark.django_db
     def test_status_change_never_touches_a_consumed_spare(self, event_with_scenario, organizer_user, participant_user):
         from cms.signals import range_status_changed
         from shared.enums import ResourceStatus
@@ -301,6 +353,35 @@ class TestCleanupEventSpares:
         for owner_id in owner_ids:
             assert not User.objects.filter(pk=owner_id).exists()
         for spare in CTFSpareRange.objects.filter(event=event_with_scenario):
+            assert spare.owner_user_id is None
+
+    @pytest.mark.django_db
+    def test_a_single_spares_destroy_failure_is_counted_without_aborting_the_others(
+        self, event_with_scenario, organizer_user
+    ):
+        """One spare's underlying ``RangeInstance`` is hard-deleted out from under it
+        (a real, unmocked way to make ``cms_destroy_range`` genuinely raise
+        ``CMSError`` -- "range not found" -- for that spare only), so the loop's
+        ``except Exception`` branch is exercised for real. The other spare must
+        still be destroyed and both managed users still cleaned up.
+        """
+        provision_event_spares(event_with_scenario.pk, 2, operator=organizer_user)
+        spares = list(CTFSpareRange.objects.filter(event=event_with_scenario))
+        owner_ids = [s.owner_user_id for s in spares]
+        doomed_range_id = spares[0].range_instance_id
+        RangeInstance.all_objects.filter(pk=doomed_range_id).delete()
+
+        result = cleanup_event_spares(event_with_scenario.pk)
+
+        assert result["destroyed"] == 1
+        assert result["failed"] == 1
+        # Both managed users are freed regardless of whether their range's
+        # destroy call succeeded.
+        assert result["users_deleted"] == 2
+        for owner_id in owner_ids:
+            assert not User.objects.filter(pk=owner_id).exists()
+        for spare in CTFSpareRange.objects.filter(event=event_with_scenario):
+            assert spare.status == SpareRangeStatus.FAILED.value
             assert spare.owner_user_id is None
 
     @pytest.mark.django_db
