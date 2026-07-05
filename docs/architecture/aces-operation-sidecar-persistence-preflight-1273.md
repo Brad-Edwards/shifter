@@ -1,7 +1,7 @@
 # ACES Operation Sidecar Persistence Preflight
 
 Issue: GitHub #1273, "14 - ACES migration: implement operation
-receipt/status/snapshot persistence sidecar".
+receipt/status/snapshot persistence sidecar."
 
 Status: pre-implementation architecture guidance. This note does not implement
 models, migrations, APIs, event handlers, jobs, or UI projections, and it is

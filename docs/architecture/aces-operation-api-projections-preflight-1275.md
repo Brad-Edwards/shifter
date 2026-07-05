@@ -1,7 +1,7 @@
 # ACES Operation API Projections Preflight
 
 Issue: GitHub #1275, "16 - ACES migration: expose read-only operation
-status and snapshot APIs".
+status and snapshot APIs."
 
 Status: pre-implementation architecture guidance. This note does not implement
 API routes, serializers, services, models, migrations, UI, or cleanup jobs, and
@@ -106,7 +106,7 @@ persistence/projection design:
   `shared.schemas.aces_operation` for record kind, contract kind/version,
   contract profile, digest, payload size, diagnostic key allowlists, and
   secret-pattern rejection. API code must still apply a response allowlist
-  because "safe to persist internally" is not the same as "safe to return".
+  because "safe to persist internally" is not the same as "safe to return."
 - Response redaction: responses exclude secrets, credential values, private
   keys, bearer tokens, token-bearing or presigned URLs, prompt bodies,
   generated scripts, command strings, terminal output, raw package bodies, CTF
@@ -115,7 +115,7 @@ persistence/projection design:
 - Error envelopes: canonical `/api/v1` errors use `shared.api.errors`.
   Legacy Mission Control compatibility, if touched, uses existing
   `MissionControlAPIView` legacy handling. Raw ACES/provider exceptions are
-  sanitized into fixed messages such as "Operation status unavailable".
+  sanitized into fixed messages such as "Operation status unavailable."
 - Observability: logs use `safe_log_value` for external-ish ids and include
   counts/statuses only. No payload dumps in application logs, request logs,
   test failure snapshots, OpenAPI examples, or audit records.

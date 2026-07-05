@@ -40,12 +40,12 @@ the plaintext flag is never persisted after creation.
 
 Additional controls:
 
-- **Release time** — schedule a challenge to appear partway through the event.
-- **Prerequisite** — lock a challenge until another is solved.
-- **Visibility** — hide a challenge from the participant list until you release it.
-- **Target instance / port** — point participants at the right host in their range.
-- **Files** — upload challenge attachments.
-- **Hints** — optional, point-reducing hints.
+- **Release time**: schedule a challenge to appear partway through the event.
+- **Prerequisite**: lock a challenge until another is solved.
+- **Visibility**: hide a challenge from the participant list until you release it.
+- **Target instance / port**: point participants at the right host in their range.
+- **Files**: upload challenge attachments.
+- **Hints**: optional, point-reducing hints.
 
 A challenge can carry multiple flags (for multi-stage solves), each validated
 independently.
@@ -114,6 +114,6 @@ hour offsets you configure.
 
 ## See Also
 
-- [CTF](ctf) — the participant experience.
-- [CTF technical documentation](../technical/shifter_platform/ctf) — models, services,
+- [CTF](ctf): the participant experience.
+- [CTF technical documentation](../technical/shifter_platform/ctf): models, services,
   scheduling, and range provisioning.
