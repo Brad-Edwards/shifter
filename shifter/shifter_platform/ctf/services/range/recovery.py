@@ -142,7 +142,7 @@ def _claim_recovery(
                 "recover_participant_range: opened recovery=%s participant=%s strategy=%s",
                 recovery.pk,
                 safe_log_value(participant_id),
-                strategy,
+                safe_log_value(strategy),
             )
         else:
             logger.info(
@@ -431,7 +431,7 @@ def recover_participant_range(
     logger.info(
         "recover_participant_range: participant=%s strategy=%s",
         safe_log_value(participant_id),
-        strategy,
+        safe_log_value(strategy),
     )
 
     participant, recovery, old_range_instance_id = _claim_recovery(participant_id, strategy, operator)
