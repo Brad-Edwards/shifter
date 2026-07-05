@@ -19,21 +19,21 @@ class RiskValidatorsMixin:
     """
 
     @staticmethod
-    def validate_likelihood_score(value):
+    def validate_likelihood_score(value: int | None) -> int | None:
         """Validate likelihood score is between 1 and 5."""
         if value is not None and (value < 1 or value > 5):
             raise serializers.ValidationError(LIKELIHOOD_RANGE_MSG)
         return value
 
     @staticmethod
-    def validate_impact_score(value):
+    def validate_impact_score(value: int | None) -> int | None:
         """Validate impact score is between 1 and 5."""
         if value is not None and (value < 1 or value > 5):
             raise serializers.ValidationError(IMPACT_RANGE_MSG)
         return value
 
     @staticmethod
-    def validate_stride_categories(value):
+    def validate_stride_categories(value: list[str]) -> list[str]:
         """Validate every STRIDE category is a known code."""
         valid_codes = [choice[0] for choice in StrideCategory.choices]
         for category in value:
