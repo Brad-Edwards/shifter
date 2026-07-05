@@ -227,7 +227,9 @@ The design identifies these concrete implementation scopes:
   `docs/architecture/aces-package-source-catalog-preflight-1252.md` for the
   issue-specific persistence/projection guardrails.
 - #1253: add ACES package/profile validation and registry integration behind
-  `cms.scenarios.registry`, with no legacy `scenario_id` shadowing.
+  `cms.scenarios.registry`, with no legacy `scenario_id` shadowing; see
+  `docs/architecture/aces-registry-validation-launchability-preflight-1253.md`
+  for the issue-specific launchability guardrails.
 - #1254: expose ACES catalog read-only fields in the scenario editor and CMS
   API, with no new editor and with existing authoring/API permissions.
 - #1233 owns the Shifter ACES RuntimeTarget/backend-manifest design that later

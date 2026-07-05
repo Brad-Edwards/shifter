@@ -6,7 +6,7 @@ These handlers process range and NGFW status updates from the Shifter Engine pro
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import cast
 
 from django.utils import timezone
 
@@ -19,6 +19,11 @@ from shared.messages.events import (
     EVENT_TYPE_NGFW,
     EVENT_TYPE_PROVISIONED,
     EVENT_TYPE_STATUS_UPDATED,
+)
+from shared.messages.payloads import (
+    NGFWEventPayload,
+    RangeProvisionedPayload,
+    RangeStatusUpdatedPayload,
 )
 
 logger = logging.getLogger(__name__)
@@ -77,14 +82,14 @@ def process_range_event(message: str | dict) -> None:
     event_type = event.get("event_type")
 
     if event_type == EVENT_TYPE_STATUS_UPDATED:
-        _handle_status_updated(event)
+        _handle_status_updated(cast(RangeStatusUpdatedPayload, event))
     elif event_type == EVENT_TYPE_PROVISIONED:
-        _handle_provisioned(event)
+        _handle_provisioned(cast(RangeProvisionedPayload, event))
     else:
         logger.debug("Ignoring event_type=%s", event_type)
 
 
-def _resolve_authorized_range(event: dict[str, Any]) -> Range | None:
+def _resolve_authorized_range(event: RangeStatusUpdatedPayload) -> Range | None:
     """Resolve and authorize the range targeted by a status-update event.
 
     Returns None (after logging) when the event is missing identifiers, the
@@ -113,7 +118,7 @@ def _resolve_authorized_range(event: dict[str, Any]) -> Range | None:
     return range_obj
 
 
-def _handle_status_updated(event: dict[str, Any]) -> None:
+def _handle_status_updated(event: RangeStatusUpdatedPayload) -> None:
     """Handle range.status.updated event - update status and timestamps.
 
     Args:
@@ -179,7 +184,7 @@ def _handle_status_updated(event: dict[str, Any]) -> None:
     )
 
 
-def _handle_provisioned(event: dict[str, Any]) -> None:
+def _handle_provisioned(event: RangeProvisionedPayload) -> None:
     """Handle range.provisioned event notification - log only, no DB updates.
 
     The provisioner writes all state directly to the database (instances,
@@ -228,10 +233,10 @@ def process_ngfw_event(message: str | dict) -> None:
         logger.debug("Ignoring NGFW event_type=%s", event_type)
         return
 
-    _handle_ngfw_event(event)
+    _handle_ngfw_event(cast(NGFWEventPayload, event))
 
 
-def _handle_ngfw_event(event: dict[str, Any]) -> None:
+def _handle_ngfw_event(event: NGFWEventPayload) -> None:
     """Handle NGFW event notification - log only, no DB updates.
 
     The provisioner writes all state directly to the database.
@@ -248,16 +253,22 @@ def _handle_ngfw_event(event: dict[str, Any]) -> None:
     app_id = event.get("app_id")
     status = event.get("status")
 
-    # Audit log the NGFW status change
+    # Audit log the NGFW status change. AuditLog.entity_id is a
+    # PositiveIntegerField, but an NGFW is identified by UUIDs (app_id /
+    # instance_id), not an integer PK. Use 0 as the "no integer entity id"
+    # sentinel and record the UUID identifiers in the audit state. (Passing the
+    # UUID app_id as entity_id makes the audit write raise ValueError, so the
+    # NGFW audit row is lost — see tests/engine/test_handlers.py.)
     audit_log_system_event(
         entity_type=AuditLog.EntityType.NGFW,
-        entity_id=app_id or 0,
+        entity_id=0,
         action=_status_to_action(status) if status else AuditLog.Action.UPDATE,
         source="engine.handlers",
         state=StateChange(
             new={
                 "status": status,
                 "instance_id": instance_id,
+                "app_id": app_id,
             }
         ),
         request_id=str(request_id) if request_id else event_id,
