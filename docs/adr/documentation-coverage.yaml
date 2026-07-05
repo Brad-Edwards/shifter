@@ -43,6 +43,13 @@
       "requirement": "GEN-001",
       "user_docs": ["features/ctf.md", "features/ctf-organizer-guide.md"],
       "technical_docs": ["technical/shifter_platform/ctf.md"]
+    },
+    {
+      "id": "risk-register",
+      "title": "Risk Register",
+      "requirement": "GEN-001",
+      "user_docs": ["features/risk-register.md"],
+      "technical_docs": ["technical/shifter_platform/risk_register.md"]
     }
   ]
 }

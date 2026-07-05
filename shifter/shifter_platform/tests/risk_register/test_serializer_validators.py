@@ -30,3 +30,19 @@ def test_impact_out_of_range_rejected(cls, bad):
 def test_valid_scores_pass_through(cls):
     assert cls().validate_likelihood_score(3) == 3
     assert cls().validate_impact_score(5) == 5
+
+
+# STRIDE validation parity (#1302): the create/update serializers previously
+# lacked STRIDE validation, so the API accepted invalid codes. All three
+# serializers now share the validator via RiskValidatorsMixin.
+@pytest.mark.parametrize("cls", SERIALIZERS)
+@pytest.mark.parametrize("bad", [["X"], ["S", "Z"], ["spoofing"]])
+def test_invalid_stride_category_rejected(cls, bad):
+    with pytest.raises(drf_serializers.ValidationError):
+        cls().validate_stride_categories(bad)
+
+
+@pytest.mark.parametrize("cls", SERIALIZERS)
+def test_valid_stride_categories_pass_through(cls):
+    assert cls().validate_stride_categories(["S", "T", "E"]) == ["S", "T", "E"]
+    assert cls().validate_stride_categories([]) == []

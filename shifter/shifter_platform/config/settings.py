@@ -199,6 +199,14 @@ CHANNEL_LAYERS = _build_channel_layers(os.environ)
 # exist. Non-secret boolean; absent env means disabled.
 WEBSOCKET_NOTIFICATIONS_ENABLED = _env_bool("WEBSOCKET_NOTIFICATIONS_ENABLED", False)
 
+# SPA cutover rollout flag (issue #1302, ADR-029). When enabled, the Risk
+# Register GET page paths under /risk-register/ are served by the React SPA
+# host view instead of the Django templates; the legacy POST action URLs stay
+# Django-handled for old tabs and rollback. When disabled (the default), the
+# portal renders the existing Django Risk Register templates unchanged.
+# Non-secret boolean; absent env means disabled. Flipping it is reversible.
+RISK_REGISTER_SPA_ENABLED = _env_bool("RISK_REGISTER_SPA_ENABLED", False)
+
 # Shared WebSocket notification replay bounds (issue #679).
 WEBSOCKET_NOTIFICATION_MAX_REPLAY = _env_int("WEBSOCKET_NOTIFICATION_MAX_REPLAY", 100)
 WEBSOCKET_NOTIFICATION_RETENTION_DAYS = _env_int("WEBSOCKET_NOTIFICATION_RETENTION_DAYS", 7)
