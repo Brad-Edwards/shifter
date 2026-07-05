@@ -389,9 +389,11 @@ module "redis" {
   # the portal CMK. is_active_channel_backend rejects a live channel layer on
   # the plaintext single-node path. redis_at_rest_kms_key_arn is the dedicated
   # data-at-rest CMK for the replication group (#1059).
-  secrets_kms_key_arn       = aws_kms_key.secrets_manager.arn
-  redis_at_rest_kms_key_arn = aws_kms_key.redis_at_rest.arn
-  is_active_channel_backend = var.enable_redis
+  secrets_kms_key_arn         = aws_kms_key.secrets_manager.arn
+  redis_at_rest_kms_key_arn   = aws_kms_key.redis_at_rest.arn
+  cloudwatch_logs_kms_key_arn = aws_kms_key.cloudwatch_logs.arn
+  permissions_boundary_arn    = local.ci_role_permissions_boundary_arn
+  is_active_channel_backend   = var.enable_redis
 
   # Automatic Redis AUTH rotation (#159): only where the portal runs on a
   # refreshable ASG, so the rotation Lambda can roll consumers to the new token.
