@@ -61,11 +61,9 @@ WORKDIR /app/shifter_platform/frontend
 COPY shifter_platform/frontend/package.json shifter_platform/frontend/package-lock.json ./
 RUN npm ci --ignore-scripts
 
-# Design-system CSS (published copy inside the build context; see the @ds Vite
-# alias) plus the SPA sources. Vite emits the content-hashed bundle + manifest to
+# SPA sources. Vite emits the content-hashed bundle + manifest to
 # /app/shifter_platform/static/spa (frontend/vite.config.ts); tsc typecheck runs
 # first via `npm run build`.
-COPY shifter_platform/static/design-system /app/shifter_platform/static/design-system
 COPY shifter_platform/frontend ./
 
 RUN npm run build

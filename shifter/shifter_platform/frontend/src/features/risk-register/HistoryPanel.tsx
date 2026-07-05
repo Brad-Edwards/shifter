@@ -1,6 +1,8 @@
 import { useAudit } from "@/api/risks";
 import { ApiError } from "@/api/errors";
-import { Alert, EmptyState, Spinner } from "@/ds";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 import { formatTimestamp, titleCase } from "./format";
 
@@ -8,50 +10,50 @@ export function HistoryPanel({ riskId, canViewAudit }: Readonly<{ riskId: number
   const audit = useAudit(riskId, canViewAudit);
 
   if (!canViewAudit) {
-    return <EmptyState title="History not available">Audit history requires administrator access.</EmptyState>;
+    return <p className="text-sm text-muted-foreground">Audit history requires administrator access.</p>;
   }
   if (audit.isLoading) {
-    return <Spinner label="Loading history" />;
+    return <Skeleton className="h-24 w-full" />;
   }
   if (audit.isError) {
     if (audit.error instanceof ApiError && audit.error.status === 403) {
-      return <EmptyState title="History not available">Audit history requires administrator access.</EmptyState>;
+      return <p className="text-sm text-muted-foreground">Audit history requires administrator access.</p>;
     }
     return (
-      <Alert intent="danger" role="alert">
-        Could not load history.
+      <Alert variant="destructive">
+        <AlertDescription>Could not load history.</AlertDescription>
       </Alert>
     );
   }
 
   const rows = audit.data?.results ?? [];
   if (rows.length === 0) {
-    return <EmptyState title="No history yet" />;
+    return <p className="text-sm text-muted-foreground">No history yet.</p>;
   }
 
   return (
-    <table className="ds-table ds-table--zebra">
-      <thead>
-        <tr>
-          <th scope="col">When</th>
-          <th scope="col">Action</th>
-          <th scope="col">Actor</th>
-          <th scope="col">Request</th>
-        </tr>
-      </thead>
-      <tbody>
+    <Table>
+      <TableHeader>
+        <TableRow className="hover:bg-transparent">
+          <TableHead className="w-[200px]">When</TableHead>
+          <TableHead>Action</TableHead>
+          <TableHead>Actor</TableHead>
+          <TableHead>Request</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
         {rows.map((row) => (
-          <tr key={row.id}>
-            <td>{formatTimestamp(row.timestamp)}</td>
-            <td>{titleCase(String(row.action ?? ""))}</td>
-            <td>
+          <TableRow key={row.id}>
+            <TableCell className="text-sm text-muted-foreground">{formatTimestamp(row.timestamp)}</TableCell>
+            <TableCell className="text-sm">{titleCase(String(row.action ?? ""))}</TableCell>
+            <TableCell className="text-sm text-muted-foreground">
               {row.actor_type ? `${row.actor_type}` : "—"}
               {row.actor_id == null ? "" : ` #${row.actor_id}`}
-            </td>
-            <td>{row.request_id ? <span className="ds-code">{row.request_id}</span> : "—"}</td>
-          </tr>
+            </TableCell>
+            <TableCell className="font-mono text-xs text-muted-foreground">{row.request_id ?? "—"}</TableCell>
+          </TableRow>
         ))}
-      </tbody>
-    </table>
+      </TableBody>
+    </Table>
   );
 }

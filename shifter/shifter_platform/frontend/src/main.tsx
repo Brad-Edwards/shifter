@@ -4,12 +4,13 @@ import { createRoot } from "react-dom/client";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider } from "react-router-dom";
 
-// Design-system tokens + components (single source of truth, #1299), bundled by Vite.
-import "@ds/tokens.css";
-import "@ds/components.css";
+import "./index.css";
 
 import { createQueryClient } from "@/api/queryClient";
+import { applyInitialTheme } from "@/lib/theme";
 import { router } from "@/router";
+
+applyInitialTheme();
 
 const queryClient = createQueryClient();
 const container = document.getElementById("root");

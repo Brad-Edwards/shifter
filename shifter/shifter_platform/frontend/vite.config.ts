@@ -1,5 +1,6 @@
 import { fileURLToPath, URL } from "node:url";
 
+import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vitest/config";
 
@@ -9,15 +10,10 @@ import { defineConfig } from "vitest/config";
 // WhiteNoise staticfiles manifest. See docs/architecture/spa-cutover-architecture-1300.md.
 export default defineConfig({
   base: "/static/spa/",
-  plugins: [react()],
+  plugins: [react(), tailwindcss()],
   resolve: {
     alias: {
       "@": fileURLToPath(new URL("./src", import.meta.url)),
-      // Design-system CSS published into the app static tree (inside the Docker
-      // build context). It is the consumed copy of the #1299 design system
-      // (source of record: docs/design/design-system/); a drift-guard test
-      // (tests/shared/test_design_system_parity.py) keeps the two byte-identical.
-      "@ds": fileURLToPath(new URL("../static/design-system", import.meta.url)),
     },
   },
   build: {
@@ -33,8 +29,6 @@ export default defineConfig({
     },
   },
   server: {
-    // Allow importing the design-system CSS from the repo docs tree.
-    fs: { allow: [fileURLToPath(new URL("../../../", import.meta.url))] },
     // Dev-only: proxy API + owned prefix to the Django/Daphne backend so
     // cookies and CSRF behave same-origin during `npm run dev`.
     proxy: {

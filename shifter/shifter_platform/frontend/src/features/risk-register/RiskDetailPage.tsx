@@ -1,36 +1,46 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
+
+import { Loader2 } from "lucide-react";
 
 import { useBootstrapContext } from "@/app/bootstrap-context";
 import { useDeleteRisk, useRestoreRisk, useRisk, useUpdateRisk } from "@/api/risks";
 import type { Risk } from "@/api/types";
-import { Alert, Badge, Breadcrumb, Button, Dialog, PageHeader, Spinner, Tabs, TextAreaField, type TabItem } from "@/ds";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
+import { cn } from "@/lib/utils";
 
+import { SeverityBadge, StatusBadge } from "./badges";
 import { CommentsPanel } from "./CommentsPanel";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { HistoryPanel } from "./HistoryPanel";
-import { formatTimestamp, severityIntent, statusIntent, titleCase } from "./format";
+import { formatTimestamp } from "./format";
 
 type ActionDialog = "delete" | "restore" | "close" | "reopen" | null;
 
-const TABS: TabItem[] = [
-  { id: "overview", label: "Overview" },
-  { id: "mitigation", label: "Mitigation" },
-  { id: "comments", label: "Comments" },
-  { id: "history", label: "History" },
-];
-
-function DetailRow({ label, value }: Readonly<{ label: string; value: React.ReactNode }>) {
+function KV({ label, children }: Readonly<{ label: string; children: ReactNode }>) {
   return (
-    <>
-      <dt className="ds-kv__key">{label}</dt>
-      <dd className="ds-kv__value">{value}</dd>
-    </>
+    <div className="grid grid-cols-[150px_1fr] gap-4 border-b border-border/60 py-3 last:border-0">
+      <dt className="text-sm text-muted-foreground">{label}</dt>
+      <dd className="text-sm">{children}</dd>
+    </div>
   );
 }
 
-function MultilineText({ value }: Readonly<{ value: string }>) {
-  return <p style={{ whiteSpace: "pre-wrap", margin: 0 }}>{value || "—"}</p>;
+function Multiline({ value }: Readonly<{ value: string }>) {
+  return <p className="whitespace-pre-wrap">{value || "—"}</p>;
 }
 
 function DetailActions({
@@ -40,75 +50,30 @@ function DetailActions({
 }: Readonly<{ risk: Risk; riskId: number; onAction: (dialog: ActionDialog) => void }>) {
   if (risk.is_deleted) {
     return (
-      <Button variant="secondary" small onClick={() => onAction("restore")}>
+      <Button variant="outline" size="sm" onClick={() => onAction("restore")}>
         Restore
       </Button>
     );
   }
   return (
     <>
-      <Link className="ds-btn ds-btn--secondary ds-btn--sm" to={`/risks/${riskId}/edit`}>
+      <Link className={cn(buttonVariants({ variant: "outline", size: "sm" }))} to={`/risks/${riskId}/edit`}>
         Edit
       </Link>
       {risk.status === "closed" ? (
-        <Button variant="secondary" small onClick={() => onAction("reopen")}>
+        <Button variant="outline" size="sm" onClick={() => onAction("reopen")}>
           Reopen
         </Button>
       ) : (
-        <Button variant="secondary" small onClick={() => onAction("close")}>
+        <Button variant="outline" size="sm" onClick={() => onAction("close")}>
           Close
         </Button>
       )}
-      <Button variant="destructive" small onClick={() => onAction("delete")}>
+      <Button variant="destructive" size="sm" onClick={() => onAction("delete")}>
         Delete
       </Button>
     </>
   );
-}
-
-function DetailPanel({
-  tab,
-  risk,
-  riskId,
-  canWrite,
-  canViewAudit,
-}: Readonly<{ tab: string; risk: Risk; riskId: number; canWrite: boolean; canViewAudit: boolean }>) {
-  if (tab === "overview") {
-    return (
-      <dl className="ds-kv">
-        <DetailRow label="Severity" value={titleCase(risk.severity ?? "low")} />
-        <DetailRow label="Status" value={titleCase(risk.status ?? "open")} />
-        <DetailRow label="Likelihood" value={risk.likelihood_score ?? "—"} />
-        <DetailRow label="Impact" value={risk.impact_score ?? "—"} />
-        <DetailRow label="Risk score" value={risk.risk_score ?? "—"} />
-        <DetailRow label="STRIDE" value={(risk.stride_categories as string[] | undefined)?.join(", ") || "—"} />
-        <DetailRow label="Description" value={<MultilineText value={risk.description ?? ""} />} />
-        <DetailRow label="Created" value={formatTimestamp(risk.created_at)} />
-        <DetailRow label="Updated" value={formatTimestamp(risk.updated_at)} />
-      </dl>
-    );
-  }
-  if (tab === "mitigation") {
-    return (
-      <dl className="ds-kv">
-        <DetailRow label="Mitigation status" value={<MultilineText value={risk.mitigation_status ?? ""} />} />
-        <DetailRow label="Attack vector" value={<MultilineText value={risk.attack_vector ?? ""} />} />
-        <DetailRow label="Affected assets" value={<MultilineText value={risk.affected_assets ?? ""} />} />
-        <DetailRow label="Resolution reason" value={<MultilineText value={risk.resolution_reason ?? ""} />} />
-      </dl>
-    );
-  }
-  if (tab === "comments") {
-    return (
-      <CommentsPanel
-        riskId={riskId}
-        canWrite={canWrite}
-        readOnly={Boolean(risk.is_deleted)}
-        includeDeleted={Boolean(risk.is_deleted)}
-      />
-    );
-  }
-  return <HistoryPanel riskId={riskId} canViewAudit={canViewAudit} />;
 }
 
 type RiskMutations = Readonly<{
@@ -135,78 +100,117 @@ function DetailDialogs({
   onDeleted: () => void;
 }>) {
   const { remove, restore, update } = mutations;
-  if (dialog === "delete") {
-    return (
+  return (
+    <>
       <ConfirmDialog
+        open={dialog === "delete"}
         title="Delete risk?"
         confirmLabel="Delete"
         destructive
         pending={remove.isPending}
         error={remove.error}
-        onCancel={onClose}
+        onOpenChange={(open) => !open && onClose()}
         onConfirm={() => remove.mutate(riskId, { onSuccess: onDeleted })}
       >
         This risk will be moved to the deleted state. It can be restored later.
       </ConfirmDialog>
-    );
-  }
-  if (dialog === "restore") {
-    return (
+
       <ConfirmDialog
+        open={dialog === "restore"}
         title="Restore risk?"
         confirmLabel="Restore"
         pending={restore.isPending}
         error={restore.error}
-        onCancel={onClose}
+        onOpenChange={(open) => !open && onClose()}
         onConfirm={() => restore.mutate(riskId, { onSuccess: onClose })}
       >
         This risk will be returned to the active register.
       </ConfirmDialog>
-    );
-  }
-  if (dialog === "reopen") {
-    return (
+
       <ConfirmDialog
+        open={dialog === "reopen"}
         title="Reopen risk?"
         confirmLabel="Reopen"
         pending={update.isPending}
         error={update.error}
-        onCancel={onClose}
+        onOpenChange={(open) => !open && onClose()}
         onConfirm={() => update.mutate({ status: "open" }, { onSuccess: onClose })}
       >
         This risk will be moved back to open.
       </ConfirmDialog>
-    );
-  }
-  if (dialog === "close") {
-    return (
-      <Dialog
-        title="Close risk?"
-        onClose={onClose}
-        footer={
-          <>
-            <Button variant="secondary" onClick={onClose} disabled={update.isPending}>
+
+      <Dialog open={dialog === "close"} onOpenChange={(open) => !open && onClose()}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Close risk?</DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="resolution">Resolution reason</Label>
+            <Textarea
+              id="resolution"
+              rows={3}
+              value={resolution}
+              onChange={(event) => onResolutionChange(event.target.value)}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={onClose} disabled={update.isPending}>
               Cancel
             </Button>
             <Button
               onClick={() => update.mutate({ status: "closed", resolution_reason: resolution }, { onSuccess: onClose })}
-              loading={update.isPending}
+              disabled={update.isPending}
             >
               Close risk
             </Button>
-          </>
-        }
-      >
-        <TextAreaField
-          label="Resolution reason"
-          rows={3}
-          value={resolution}
-          onChange={(event) => onResolutionChange(event.target.value)}
-        />
+          </DialogFooter>
+        </DialogContent>
       </Dialog>
-    );
-  }
-  return null;
+    </>
+  );
+}
+
+function OverviewTab({ risk }: Readonly<{ risk: Risk }>) {
+  return (
+    <dl>
+      <KV label="Severity">
+        <SeverityBadge severity={risk.severity ?? "low"} />
+      </KV>
+      <KV label="Status">
+        <StatusBadge status={risk.status ?? "open"} />
+      </KV>
+      <KV label="Likelihood">{risk.likelihood_score ?? "—"}</KV>
+      <KV label="Impact">{risk.impact_score ?? "—"}</KV>
+      <KV label="Risk score">
+        <span className="font-mono tabular-nums">{risk.risk_score ?? "—"}</span>
+      </KV>
+      <KV label="STRIDE">{(risk.stride_categories as string[] | undefined)?.join(", ") || "—"}</KV>
+      <KV label="Description">
+        <Multiline value={risk.description ?? ""} />
+      </KV>
+      <KV label="Created">{formatTimestamp(risk.created_at)}</KV>
+      <KV label="Updated">{formatTimestamp(risk.updated_at)}</KV>
+    </dl>
+  );
+}
+
+function MitigationTab({ risk }: Readonly<{ risk: Risk }>) {
+  return (
+    <dl>
+      <KV label="Mitigation status">
+        <Multiline value={risk.mitigation_status ?? ""} />
+      </KV>
+      <KV label="Attack vector">
+        <Multiline value={risk.attack_vector ?? ""} />
+      </KV>
+      <KV label="Affected assets">
+        <Multiline value={risk.affected_assets ?? ""} />
+      </KV>
+      <KV label="Resolution reason">
+        <Multiline value={risk.resolution_reason ?? ""} />
+      </KV>
+    </dl>
+  );
 }
 
 export function RiskDetailPage() {
@@ -236,19 +240,22 @@ export function RiskDetailPage() {
 
   if (query.isLoading) {
     return (
-      <div className="ds-empty">
-        <Spinner label="Loading risk" />
+      <div className="grid place-items-center py-24 text-muted-foreground">
+        <Loader2 className="size-6 animate-spin" aria-label="Loading risk" />
       </div>
     );
   }
   if (query.isError || !query.data) {
     return (
-      <Alert intent="warning" role="status" title="Risk unavailable">
-        This risk was not found or has been removed.{" "}
-        <Link className="ds-link" to="/">
-          Back to risks
-        </Link>
-        .
+      <Alert variant="destructive">
+        <AlertTitle>Risk unavailable</AlertTitle>
+        <AlertDescription>
+          This risk was not found or has been removed.{" "}
+          <Link className="underline" to="/">
+            Back to risks
+          </Link>
+          .
+        </AlertDescription>
       </Alert>
     );
   }
@@ -257,35 +264,76 @@ export function RiskDetailPage() {
 
   return (
     <>
-      <Breadcrumb items={[{ label: "Govern" }, { label: "Risks", to: "/" }, { label: risk.title ?? "Risk" }]} />
-      <PageHeader
-        title={risk.title ?? "Risk"}
-        subtitle={
-          <span style={{ display: "inline-flex", gap: "var(--ds-space-2)", alignItems: "center" }}>
-            <Badge intent={severityIntent(risk.severity ?? "low")} solid>
-              {titleCase(risk.severity ?? "low")}
-            </Badge>
-            <Badge intent={statusIntent(risk.status ?? "open")}>{titleCase(risk.status ?? "open")}</Badge>
-            {risk.is_deleted ? <Badge intent="neutral">Deleted</Badge> : null}
-          </span>
-        }
-        actions={canWrite ? <DetailActions risk={risk} riskId={riskId} onAction={setDialog} /> : null}
-      />
+      <nav className="mb-3 text-sm text-muted-foreground" aria-label="Breadcrumb">
+        <Link className="hover:text-foreground" to="/">
+          Risks
+        </Link>
+        <span className="px-1.5">/</span>
+        <span className="text-foreground">{risk.title ?? "Risk"}</span>
+      </nav>
 
-      <Tabs items={TABS} value={tab} onChange={setTab} label="Risk detail sections" />
-
-      <div
-        id={`panel-${tab}`}
-        role="tabpanel"
-        aria-labelledby={`tab-${tab}`}
-        tabIndex={0}
-        className="ds-card"
-        style={{ marginBlockStart: "var(--ds-space-3)" }}
-      >
-        <div className="ds-card__body">
-          <DetailPanel tab={tab} risk={risk} riskId={riskId} canWrite={canWrite} canViewAudit={canViewAudit} />
+      <div className="mb-6 flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <h1 className="text-2xl font-semibold tracking-tight">{risk.title ?? "Risk"}</h1>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <SeverityBadge severity={risk.severity ?? "low"} />
+            <StatusBadge status={risk.status ?? "open"} />
+            {risk.is_deleted ? (
+              <Badge variant="outline" className="border-zinc-700 text-zinc-400">
+                Deleted
+              </Badge>
+            ) : null}
+          </div>
         </div>
+        {canWrite ? (
+          <div className="flex shrink-0 items-center gap-2">
+            <DetailActions risk={risk} riskId={riskId} onAction={setDialog} />
+          </div>
+        ) : null}
       </div>
+
+      <Tabs value={tab} onValueChange={setTab}>
+        <TabsList>
+          <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="mitigation">Mitigation</TabsTrigger>
+          <TabsTrigger value="comments">Comments</TabsTrigger>
+          <TabsTrigger value="history">History</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="overview" className="mt-4">
+          <Card>
+            <CardContent>
+              <OverviewTab risk={risk} />
+            </CardContent>
+          </Card>
+        </TabsContent>
+        <TabsContent value="mitigation" className="mt-4">
+          <Card>
+            <CardContent>
+              <MitigationTab risk={risk} />
+            </CardContent>
+          </Card>
+        </TabsContent>
+        <TabsContent value="comments" className="mt-4">
+          <Card>
+            <CardContent>
+              <CommentsPanel
+                riskId={riskId}
+                canWrite={canWrite}
+                readOnly={Boolean(risk.is_deleted)}
+                includeDeleted={Boolean(risk.is_deleted)}
+              />
+            </CardContent>
+          </Card>
+        </TabsContent>
+        <TabsContent value="history" className="mt-4">
+          <Card>
+            <CardContent>
+              <HistoryPanel riskId={riskId} canViewAudit={canViewAudit} />
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
 
       <DetailDialogs
         dialog={dialog}

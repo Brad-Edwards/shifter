@@ -1,10 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
+
+import { Loader2 } from "lucide-react";
 
 import { useCreateRisk, useRisk, useUpdateRisk } from "@/api/risks";
 import { ApiError } from "@/api/errors";
 import { SEVERITIES, STATUSES, STRIDE_OPTIONS, strideList, type Risk } from "@/api/types";
-import { Alert, Breadcrumb, Button, CheckboxGroup, PageHeader, SelectField, Spinner, TextAreaField, TextField } from "@/ds";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardFooter } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 
 import { titleCase } from "./format";
 
@@ -21,8 +29,6 @@ interface FormState {
   mitigation_status: string;
   resolution_reason: string;
 }
-
-const FIELD_GAP = "var(--ds-space-4)";
 
 const EMPTY: FormState = {
   title: "",
@@ -77,6 +83,15 @@ function toPayload(state: FormState, includeResolution: boolean) {
   return includeResolution ? { ...base, resolution_reason: state.resolution_reason } : base;
 }
 
+function FieldError({ id, error }: Readonly<{ id: string; error?: string }>) {
+  if (!error) return null;
+  return (
+    <p id={id} className="text-sm text-destructive">
+      {error}
+    </p>
+  );
+}
+
 export function RiskFormPage({ mode }: Readonly<{ mode: "create" | "edit" }>) {
   const navigate = useNavigate();
   const params = useParams();
@@ -98,9 +113,10 @@ export function RiskFormPage({ mode }: Readonly<{ mode: "create" | "edit" }>) {
     }
   }, [mode, existing.data, initialized]);
 
-  const fieldErrors = useMemo(() => {
-    return mutation.error instanceof ApiError ? mutation.error.fieldErrors() : {};
-  }, [mutation.error]);
+  const fieldErrors = useMemo(
+    () => (mutation.error instanceof ApiError ? mutation.error.fieldErrors() : {}),
+    [mutation.error],
+  );
 
   useEffect(() => {
     if (Object.keys(fieldErrors).length > 0) {
@@ -119,6 +135,10 @@ export function RiskFormPage({ mode }: Readonly<{ mode: "create" | "edit" }>) {
     return fieldErrors[field]?.[0];
   }
 
+  function toggleStride(code: string, checked: boolean) {
+    set("stride_categories", checked ? [...state.stride_categories, code] : state.stride_categories.filter((c) => c !== code));
+  }
+
   function onSubmit(event: React.FormEvent) {
     event.preventDefault();
     const payload = toPayload(state, mode === "edit");
@@ -131,149 +151,186 @@ export function RiskFormPage({ mode }: Readonly<{ mode: "create" | "edit" }>) {
 
   if (mode === "edit" && existing.isLoading) {
     return (
-      <div className="ds-empty">
-        <Spinner label="Loading risk" />
+      <div className="grid place-items-center py-24 text-muted-foreground">
+        <Loader2 className="size-6 animate-spin" aria-label="Loading risk" />
       </div>
     );
   }
   if (mode === "edit" && existing.isError) {
     return (
-      <Alert intent="danger" role="alert" title="Risk not found">
-        This risk may have been deleted. Return to the risk list.
+      <Alert variant="destructive">
+        <AlertTitle>Risk not found</AlertTitle>
+        <AlertDescription>
+          This risk may have been deleted.{" "}
+          <Link className="underline" to="/">
+            Back to risks
+          </Link>
+          .
+        </AlertDescription>
       </Alert>
     );
   }
 
-  const heading = mode === "create" ? "New risk" : `Edit ${existing.data?.title ?? "risk"}`;
+  const cancelHref = mode === "edit" && riskId ? `/risks/${riskId}` : "/";
 
   return (
-    <>
-      <Breadcrumb
-        items={[
-          { label: "Govern" },
-          { label: "Risks", to: "/" },
-          ...(mode === "edit" && riskId ? [{ label: existing.data?.title ?? "Risk", to: `/risks/${riskId}` }] : []),
-          { label: mode === "create" ? "New" : "Edit" },
-        ]}
-      />
-      <PageHeader title={heading} />
+    <div className="mx-auto max-w-3xl">
+      <nav className="mb-3 text-sm text-muted-foreground" aria-label="Breadcrumb">
+        <Link className="hover:text-foreground" to="/">
+          Risks
+        </Link>
+        <span className="px-1.5">/</span>
+        <span className="text-foreground">{mode === "create" ? "New risk" : "Edit"}</span>
+      </nav>
+      <h1 className="mb-6 text-2xl font-semibold tracking-tight">
+        {mode === "create" ? "New risk" : `Edit ${existing.data?.title ?? "risk"}`}
+      </h1>
 
       {nonFieldError ? (
-        <Alert intent="danger" role="alert" title="Could not save">
-          {nonFieldError}
+        <Alert variant="destructive" className="mb-4">
+          <AlertTitle>Could not save</AlertTitle>
+          <AlertDescription>{nonFieldError}</AlertDescription>
         </Alert>
       ) : null}
 
-      <form ref={formRef} onSubmit={onSubmit} noValidate className="ds-card">
-        <div className="ds-card__body" style={{ display: "grid", gap: FIELD_GAP, maxInlineSize: "48rem" }}>
-          <TextField
-            label="Title"
-            required
-            value={state.title}
-            error={firstError("title")}
-            onChange={(event) => set("title", event.target.value)}
-          />
-          <TextAreaField
-            label="Description"
-            required
-            rows={4}
-            value={state.description}
-            error={firstError("description")}
-            onChange={(event) => set("description", event.target.value)}
-          />
-          <div style={{ display: "flex", gap: FIELD_GAP, flexWrap: "wrap" }}>
-            <SelectField
-              label="Severity"
-              value={state.severity}
-              error={firstError("severity")}
-              onChange={(event) => set("severity", event.target.value)}
-            >
-              {SEVERITIES.map((value) => (
-                <option key={value} value={value}>
-                  {titleCase(value)}
-                </option>
-              ))}
-            </SelectField>
-            <SelectField
-              label="Status"
-              value={state.status}
-              error={firstError("status")}
-              onChange={(event) => set("status", event.target.value)}
-            >
-              {STATUSES.map((value) => (
-                <option key={value} value={value}>
-                  {titleCase(value)}
-                </option>
-              ))}
-            </SelectField>
-          </div>
-          <div style={{ display: "flex", gap: FIELD_GAP, flexWrap: "wrap" }}>
-            <TextField
-              label="Likelihood (1–5)"
-              type="number"
-              min={1}
-              max={5}
-              value={state.likelihood_score}
-              error={firstError("likelihood_score")}
-              onChange={(event) => set("likelihood_score", event.target.value)}
-            />
-            <TextField
-              label="Impact (1–5)"
-              type="number"
-              min={1}
-              max={5}
-              value={state.impact_score}
-              error={firstError("impact_score")}
-              onChange={(event) => set("impact_score", event.target.value)}
-            />
-          </div>
-          <CheckboxGroup
-            legend="STRIDE categories"
-            options={STRIDE_OPTIONS.map((option) => ({ value: option.code, label: option.label }))}
-            selected={state.stride_categories}
-            onChange={(next) => set("stride_categories", next)}
-            error={firstError("stride_categories")}
-          />
-          <TextAreaField
-            label="Attack vector"
-            rows={2}
-            value={state.attack_vector}
-            error={firstError("attack_vector")}
-            onChange={(event) => set("attack_vector", event.target.value)}
-          />
-          <TextAreaField
-            label="Affected assets"
-            rows={2}
-            value={state.affected_assets}
-            error={firstError("affected_assets")}
-            onChange={(event) => set("affected_assets", event.target.value)}
-          />
-          <TextAreaField
-            label="Mitigation status"
-            rows={2}
-            value={state.mitigation_status}
-            error={firstError("mitigation_status")}
-            onChange={(event) => set("mitigation_status", event.target.value)}
-          />
-          {mode === "edit" ? (
-            <TextAreaField
-              label="Resolution reason"
-              rows={2}
-              value={state.resolution_reason}
-              error={firstError("resolution_reason")}
-              onChange={(event) => set("resolution_reason", event.target.value)}
-            />
-          ) : null}
-        </div>
-        <div className="ds-card__footer">
-          <Button variant="secondary" onClick={() => navigate(mode === "edit" && riskId ? `/risks/${riskId}` : "/")}>
-            Cancel
-          </Button>
-          <Button type="submit" loading={mutation.isPending}>
-            {mode === "create" ? "Create risk" : "Save changes"}
-          </Button>
-        </div>
+      <form ref={formRef} onSubmit={onSubmit} noValidate>
+        <Card>
+          <CardContent className="flex flex-col gap-5">
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="f-title">Title</Label>
+              <Input
+                id="f-title"
+                value={state.title}
+                aria-invalid={firstError("title") ? true : undefined}
+                aria-describedby={firstError("title") ? "e-title" : undefined}
+                onChange={(event) => set("title", event.target.value)}
+              />
+              <FieldError id="e-title" error={firstError("title")} />
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="f-desc">Description</Label>
+              <Textarea
+                id="f-desc"
+                rows={4}
+                value={state.description}
+                aria-invalid={firstError("description") ? true : undefined}
+                aria-describedby={firstError("description") ? "e-desc" : undefined}
+                onChange={(event) => set("description", event.target.value)}
+              />
+              <FieldError id="e-desc" error={firstError("description")} />
+            </div>
+
+            <div className="grid gap-5 sm:grid-cols-2">
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="f-sev">Severity</Label>
+                <Select value={state.severity} onValueChange={(value) => set("severity", value)}>
+                  <SelectTrigger id="f-sev" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {SEVERITIES.map((value) => (
+                      <SelectItem key={value} value={value}>
+                        {titleCase(value)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="f-status">Status</Label>
+                <Select value={state.status} onValueChange={(value) => set("status", value)}>
+                  <SelectTrigger id="f-status" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {STATUSES.map((value) => (
+                      <SelectItem key={value} value={value}>
+                        {titleCase(value)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="grid gap-5 sm:grid-cols-2">
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="f-like">Likelihood (1–5)</Label>
+                <Input
+                  id="f-like"
+                  type="number"
+                  min={1}
+                  max={5}
+                  value={state.likelihood_score}
+                  aria-invalid={firstError("likelihood_score") ? true : undefined}
+                  onChange={(event) => set("likelihood_score", event.target.value)}
+                />
+                <FieldError id="e-like" error={firstError("likelihood_score")} />
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="f-impact">Impact (1–5)</Label>
+                <Input
+                  id="f-impact"
+                  type="number"
+                  min={1}
+                  max={5}
+                  value={state.impact_score}
+                  aria-invalid={firstError("impact_score") ? true : undefined}
+                  onChange={(event) => set("impact_score", event.target.value)}
+                />
+                <FieldError id="e-impact" error={firstError("impact_score")} />
+              </div>
+            </div>
+
+            <fieldset className="flex flex-col gap-2">
+              <legend className="mb-1 text-sm font-medium">STRIDE categories</legend>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {STRIDE_OPTIONS.map((option) => (
+                  <label key={option.code} className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      className="size-4 rounded border-input bg-transparent accent-primary"
+                      checked={state.stride_categories.includes(option.code)}
+                      onChange={(event) => toggleStride(option.code, event.target.checked)}
+                    />
+                    {option.label}
+                  </label>
+                ))}
+              </div>
+              <FieldError id="e-stride" error={firstError("stride_categories")} />
+            </fieldset>
+
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="f-attack">Attack vector</Label>
+              <Textarea id="f-attack" rows={2} value={state.attack_vector} onChange={(event) => set("attack_vector", event.target.value)} />
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="f-assets">Affected assets</Label>
+              <Textarea id="f-assets" rows={2} value={state.affected_assets} onChange={(event) => set("affected_assets", event.target.value)} />
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="f-mit">Mitigation status</Label>
+              <Textarea id="f-mit" rows={2} value={state.mitigation_status} onChange={(event) => set("mitigation_status", event.target.value)} />
+            </div>
+            {mode === "edit" ? (
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="f-res">Resolution reason</Label>
+                <Textarea id="f-res" rows={2} value={state.resolution_reason} onChange={(event) => set("resolution_reason", event.target.value)} />
+              </div>
+            ) : null}
+          </CardContent>
+          <CardFooter className="justify-end gap-2">
+            <Button type="button" variant="ghost" onClick={() => navigate(cancelHref)}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={mutation.isPending}>
+              {mutation.isPending ? <Loader2 className="size-4 animate-spin" /> : null}
+              {mode === "create" ? "Create risk" : "Save changes"}
+            </Button>
+          </CardFooter>
+        </Card>
       </form>
-    </>
+    </div>
   );
 }

@@ -1,26 +1,31 @@
-import { Outlet, useLocation } from "react-router-dom";
+import { Outlet } from "react-router-dom";
 
-import { AppShell, EmptyState, type NavGroup } from "@/ds";
+import { ShieldOff } from "lucide-react";
+
+import { AppShell } from "@/components/app-shell";
 
 import { BootstrapProvider, useBootstrapContext } from "./bootstrap-context";
 
-const NAV_GROUPS: NavGroup[] = [{ label: "Govern", items: [{ label: "Risks", to: "/", end: false }] }];
-
 function AccessDenied() {
-  // Does not reveal whether any specific risk exists; advisory only. The API
+  // Advisory only; does not reveal whether any specific risk exists. The API
   // remains the authoritative boundary and returns 403 regardless.
   return (
-    <EmptyState title="Access denied">
-      You do not have access to the Risk Register. Contact an administrator if you believe this is an error.
-    </EmptyState>
+    <div className="grid place-items-center py-24 text-center">
+      <div className="max-w-sm">
+        <ShieldOff className="mx-auto mb-4 size-8 text-muted-foreground" />
+        <h1 className="text-lg font-semibold tracking-tight">Access denied</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          You do not have access to the Risk Register. Contact an administrator if you believe this is an error.
+        </p>
+      </div>
+    </div>
   );
 }
 
 function WorkspaceFrame() {
   const bootstrap = useBootstrapContext();
-  const location = useLocation();
   return (
-    <AppShell principalName={bootstrap.principal.display_name} groups={NAV_GROUPS} currentPath={location.pathname}>
+    <AppShell principalName={bootstrap.principal.display_name}>
       {bootstrap.permissions.can_access_risk_register ? <Outlet /> : <AccessDenied />}
     </AppShell>
   );

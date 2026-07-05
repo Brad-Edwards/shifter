@@ -1,29 +1,39 @@
 import type { ReactNode } from "react";
 
-import { Alert, Button, Dialog } from "@/ds";
 import { ApiError } from "@/api/errors";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { buttonVariants } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
-/**
- * Confirmation/destructive dialog built on the DS dialog contract. Used for
- * delete, restore, close, reopen, and comment-delete flows (no browser confirm).
- */
 export function ConfirmDialog({
+  open,
   title,
   confirmLabel,
   destructive,
   pending,
   error,
   onConfirm,
-  onCancel,
+  onOpenChange,
   children,
 }: Readonly<{
+  open: boolean;
   title: string;
   confirmLabel: string;
   destructive?: boolean;
   pending?: boolean;
   error?: unknown;
   onConfirm: () => void;
-  onCancel: () => void;
+  onOpenChange: (open: boolean) => void;
   children: ReactNode;
 }>) {
   let message: string | null = null;
@@ -32,29 +42,33 @@ export function ConfirmDialog({
   } else if (error) {
     message = "The action could not be completed.";
   }
+
   return (
-    <Dialog
-      title={title}
-      onClose={onCancel}
-      footer={
-        <>
-          <Button variant="secondary" onClick={onCancel} disabled={pending}>
-            Cancel
-          </Button>
-          <Button variant={destructive ? "destructive" : "primary"} onClick={onConfirm} loading={pending}>
-            {confirmLabel}
-          </Button>
-        </>
-      }
-    >
-      <div style={{ display: "grid", gap: "var(--ds-space-3)" }}>
-        <div>{children}</div>
+    <AlertDialog open={open} onOpenChange={onOpenChange}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>{title}</AlertDialogTitle>
+          <AlertDialogDescription>{children}</AlertDialogDescription>
+        </AlertDialogHeader>
         {message ? (
-          <Alert intent="danger" role="alert">
-            {message}
+          <Alert variant="destructive">
+            <AlertDescription>{message}</AlertDescription>
           </Alert>
         ) : null}
-      </div>
-    </Dialog>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            className={destructive ? cn(buttonVariants({ variant: "destructive" })) : undefined}
+            disabled={pending}
+            onClick={(event) => {
+              event.preventDefault();
+              onConfirm();
+            }}
+          >
+            {confirmLabel}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }
