@@ -22,7 +22,7 @@ them.
   mitigation status. Server-side validation is authoritative.
 - **Close and reopen.** Close a risk with a resolution reason; reopen returns it
   to open.
-- **Delete and restore.** Delete is a soft delete — a deleted risk can be
+- **Delete and restore.** Delete is a soft delete; a deleted risk can be
   restored from the list or its detail view.
 - **Comment.** Add and delete comments on a risk.
 - **History.** Administrators can review the audit trail for a risk.

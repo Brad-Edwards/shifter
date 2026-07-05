@@ -14,7 +14,7 @@ The `risk_register` Django app owns the Risk Register domain.
   `/audit/`). List filters: `status`, `severity`, `include_deleted`.
 - **Serializers**: `RiskSerializer` (read), `RiskCreateSerializer`,
   `RiskUpdateSerializer`, `CommentSerializer`, `AuditLogSerializer`. Field
-  validation — including STRIDE-category validation — is shared across the read,
+  validation (including STRIDE-category validation) is shared across the read,
   create, and update serializers via `RiskValidatorsMixin`.
 - **Authorization** (`risk_register/access.py`, `risk_register/api/permissions.py`):
   risk-register group membership plus a staff session or a scoped API token
