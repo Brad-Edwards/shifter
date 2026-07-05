@@ -30,7 +30,7 @@ import { formatTimestamp } from "./format";
 
 type ActionDialog = "delete" | "restore" | "close" | "reopen" | null;
 
-function KV({ label, children }: Readonly<{ label: string; children: ReactNode }>) {
+function Field({ label, children }: Readonly<{ label: string; children: ReactNode }>) {
   return (
     <div className="grid grid-cols-[150px_1fr] gap-4 border-b border-border/60 py-3 last:border-0">
       <dt className="text-sm text-muted-foreground">{label}</dt>
@@ -173,23 +173,23 @@ function DetailDialogs({
 function OverviewTab({ risk }: Readonly<{ risk: Risk }>) {
   return (
     <dl>
-      <KV label="Severity">
+      <Field label="Severity">
         <SeverityBadge severity={risk.severity ?? "low"} />
-      </KV>
-      <KV label="Status">
+      </Field>
+      <Field label="Status">
         <StatusBadge status={risk.status ?? "open"} />
-      </KV>
-      <KV label="Likelihood">{risk.likelihood_score ?? "—"}</KV>
-      <KV label="Impact">{risk.impact_score ?? "—"}</KV>
-      <KV label="Risk score">
+      </Field>
+      <Field label="Likelihood">{risk.likelihood_score ?? "—"}</Field>
+      <Field label="Impact">{risk.impact_score ?? "—"}</Field>
+      <Field label="Risk score">
         <span className="font-mono tabular-nums">{risk.risk_score ?? "—"}</span>
-      </KV>
-      <KV label="STRIDE">{(risk.stride_categories as string[] | undefined)?.join(", ") || "—"}</KV>
-      <KV label="Description">
+      </Field>
+      <Field label="STRIDE">{(risk.stride_categories as string[] | undefined)?.join(", ") || "—"}</Field>
+      <Field label="Description">
         <Multiline value={risk.description ?? ""} />
-      </KV>
-      <KV label="Created">{formatTimestamp(risk.created_at)}</KV>
-      <KV label="Updated">{formatTimestamp(risk.updated_at)}</KV>
+      </Field>
+      <Field label="Created">{formatTimestamp(risk.created_at)}</Field>
+      <Field label="Updated">{formatTimestamp(risk.updated_at)}</Field>
     </dl>
   );
 }
@@ -197,18 +197,18 @@ function OverviewTab({ risk }: Readonly<{ risk: Risk }>) {
 function MitigationTab({ risk }: Readonly<{ risk: Risk }>) {
   return (
     <dl>
-      <KV label="Mitigation status">
+      <Field label="Mitigation status">
         <Multiline value={risk.mitigation_status ?? ""} />
-      </KV>
-      <KV label="Attack vector">
+      </Field>
+      <Field label="Attack vector">
         <Multiline value={risk.attack_vector ?? ""} />
-      </KV>
-      <KV label="Affected assets">
+      </Field>
+      <Field label="Affected assets">
         <Multiline value={risk.affected_assets ?? ""} />
-      </KV>
-      <KV label="Resolution reason">
+      </Field>
+      <Field label="Resolution reason">
         <Multiline value={risk.resolution_reason ?? ""} />
-      </KV>
+      </Field>
     </dl>
   );
 }

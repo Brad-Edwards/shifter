@@ -67,12 +67,14 @@ export function RiskListPage() {
   }
 
   const count = query.data?.count ?? 0;
+  const countNoun = count === 1 ? "risk" : "risks";
+  const description = query.data ? `${count} ${countNoun} in the register` : "Risk register";
 
   return (
     <>
       <PageHeader
         title="Risks"
-        description={query.data ? `${count} ${count === 1 ? "risk" : "risks"} in the register` : "Risk register"}
+        description={description}
         actions={
           canWrite ? (
             <Link to="/risks/create" className={cn(buttonVariants({ size: "sm" }))}>
@@ -125,7 +127,7 @@ export function RiskListPage() {
             checked={filters.includeDeleted ?? false}
             onChange={(event) => updateParam("deleted", event.target.checked ? "1" : null)}
           />
-          Show deleted
+          <span>Show deleted</span>
         </label>
       </div>
 

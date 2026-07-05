@@ -92,6 +92,52 @@ function FieldError({ id, error }: Readonly<{ id: string; error?: string }>) {
   );
 }
 
+interface FieldProps {
+  id: string;
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  error?: string;
+}
+
+function TextField({ id, label, value, onChange, error, type, min, max }: Readonly<FieldProps & { type?: string; min?: number; max?: number }>) {
+  const errorId = `${id}-e`;
+  return (
+    <div className="flex flex-col gap-2">
+      <Label htmlFor={id}>{label}</Label>
+      <Input
+        id={id}
+        type={type}
+        min={min}
+        max={max}
+        value={value}
+        aria-invalid={error ? true : undefined}
+        aria-describedby={error ? errorId : undefined}
+        onChange={(event) => onChange(event.target.value)}
+      />
+      <FieldError id={errorId} error={error} />
+    </div>
+  );
+}
+
+function TextAreaField({ id, label, value, onChange, error, rows = 2 }: Readonly<FieldProps & { rows?: number }>) {
+  const errorId = `${id}-e`;
+  return (
+    <div className="flex flex-col gap-2">
+      <Label htmlFor={id}>{label}</Label>
+      <Textarea
+        id={id}
+        rows={rows}
+        value={value}
+        aria-invalid={error ? true : undefined}
+        aria-describedby={error ? errorId : undefined}
+        onChange={(event) => onChange(event.target.value)}
+      />
+      <FieldError id={errorId} error={error} />
+    </div>
+  );
+}
+
 export function RiskFormPage({ mode }: Readonly<{ mode: "create" | "edit" }>) {
   const navigate = useNavigate();
   const params = useParams();
@@ -149,14 +195,16 @@ export function RiskFormPage({ mode }: Readonly<{ mode: "create" | "edit" }>) {
     }
   }
 
-  if (mode === "edit" && existing.isLoading) {
+  // The existing-risk query is disabled in create mode, so these guards only
+  // ever fire in edit mode.
+  if (existing.isLoading) {
     return (
       <div className="grid place-items-center py-24 text-muted-foreground">
         <Loader2 className="size-6 animate-spin" aria-label="Loading risk" />
       </div>
     );
   }
-  if (mode === "edit" && existing.isError) {
+  if (existing.isError) {
     return (
       <Alert variant="destructive">
         <AlertTitle>Risk not found</AlertTitle>
@@ -196,30 +244,16 @@ export function RiskFormPage({ mode }: Readonly<{ mode: "create" | "edit" }>) {
       <form ref={formRef} onSubmit={onSubmit} noValidate>
         <Card>
           <CardContent className="flex flex-col gap-5">
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="f-title">Title</Label>
-              <Input
-                id="f-title"
-                value={state.title}
-                aria-invalid={firstError("title") ? true : undefined}
-                aria-describedby={firstError("title") ? "e-title" : undefined}
-                onChange={(event) => set("title", event.target.value)}
-              />
-              <FieldError id="e-title" error={firstError("title")} />
-            </div>
+            <TextField id="f-title" label="Title" value={state.title} error={firstError("title")} onChange={(value) => set("title", value)} />
 
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="f-desc">Description</Label>
-              <Textarea
-                id="f-desc"
-                rows={4}
-                value={state.description}
-                aria-invalid={firstError("description") ? true : undefined}
-                aria-describedby={firstError("description") ? "e-desc" : undefined}
-                onChange={(event) => set("description", event.target.value)}
-              />
-              <FieldError id="e-desc" error={firstError("description")} />
-            </div>
+            <TextAreaField
+              id="f-desc"
+              label="Description"
+              rows={4}
+              value={state.description}
+              error={firstError("description")}
+              onChange={(value) => set("description", value)}
+            />
 
             <div className="grid gap-5 sm:grid-cols-2">
               <div className="flex flex-col gap-2">
@@ -255,32 +289,26 @@ export function RiskFormPage({ mode }: Readonly<{ mode: "create" | "edit" }>) {
             </div>
 
             <div className="grid gap-5 sm:grid-cols-2">
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="f-like">Likelihood (1–5)</Label>
-                <Input
-                  id="f-like"
-                  type="number"
-                  min={1}
-                  max={5}
-                  value={state.likelihood_score}
-                  aria-invalid={firstError("likelihood_score") ? true : undefined}
-                  onChange={(event) => set("likelihood_score", event.target.value)}
-                />
-                <FieldError id="e-like" error={firstError("likelihood_score")} />
-              </div>
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="f-impact">Impact (1–5)</Label>
-                <Input
-                  id="f-impact"
-                  type="number"
-                  min={1}
-                  max={5}
-                  value={state.impact_score}
-                  aria-invalid={firstError("impact_score") ? true : undefined}
-                  onChange={(event) => set("impact_score", event.target.value)}
-                />
-                <FieldError id="e-impact" error={firstError("impact_score")} />
-              </div>
+              <TextField
+                id="f-like"
+                label="Likelihood (1–5)"
+                type="number"
+                min={1}
+                max={5}
+                value={state.likelihood_score}
+                error={firstError("likelihood_score")}
+                onChange={(value) => set("likelihood_score", value)}
+              />
+              <TextField
+                id="f-impact"
+                label="Impact (1–5)"
+                type="number"
+                min={1}
+                max={5}
+                value={state.impact_score}
+                error={firstError("impact_score")}
+                onChange={(value) => set("impact_score", value)}
+              />
             </div>
 
             <fieldset className="flex flex-col gap-2">
@@ -301,23 +329,16 @@ export function RiskFormPage({ mode }: Readonly<{ mode: "create" | "edit" }>) {
               <FieldError id="e-stride" error={firstError("stride_categories")} />
             </fieldset>
 
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="f-attack">Attack vector</Label>
-              <Textarea id="f-attack" rows={2} value={state.attack_vector} onChange={(event) => set("attack_vector", event.target.value)} />
-            </div>
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="f-assets">Affected assets</Label>
-              <Textarea id="f-assets" rows={2} value={state.affected_assets} onChange={(event) => set("affected_assets", event.target.value)} />
-            </div>
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="f-mit">Mitigation status</Label>
-              <Textarea id="f-mit" rows={2} value={state.mitigation_status} onChange={(event) => set("mitigation_status", event.target.value)} />
-            </div>
+            <TextAreaField id="f-attack" label="Attack vector" value={state.attack_vector} onChange={(value) => set("attack_vector", value)} />
+            <TextAreaField id="f-assets" label="Affected assets" value={state.affected_assets} onChange={(value) => set("affected_assets", value)} />
+            <TextAreaField id="f-mit" label="Mitigation status" value={state.mitigation_status} onChange={(value) => set("mitigation_status", value)} />
             {mode === "edit" ? (
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="f-res">Resolution reason</Label>
-                <Textarea id="f-res" rows={2} value={state.resolution_reason} onChange={(event) => set("resolution_reason", event.target.value)} />
-              </div>
+              <TextAreaField
+                id="f-res"
+                label="Resolution reason"
+                value={state.resolution_reason}
+                onChange={(value) => set("resolution_reason", value)}
+              />
             ) : null}
           </CardContent>
           <CardFooter className="justify-end gap-2">
