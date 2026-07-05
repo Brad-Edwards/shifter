@@ -308,6 +308,7 @@ jobs:
           if spec is None or spec.loader is None:
               raise RuntimeError(f"Unable to load bootstrap module from {module_path}")
           module = importlib.util.module_from_spec(spec)
+          sys.modules[spec.name] = module
           spec.loader.exec_module(module)
 
           outputs = json.loads(Path("/tmp/gcp-terraform-outputs.json").read_text())
