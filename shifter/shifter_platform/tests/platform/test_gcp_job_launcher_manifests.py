@@ -102,7 +102,11 @@ def _rbac_subjects(documents: list[dict[str, Any]]) -> set[tuple[str, str]]:
 PROVISIONER_POLICY_NAME = "restrict-provisioner-jobs"
 PROVISIONER_SERVICE_ACCOUNT = "provisioner"
 PROVISIONER_CONTAINER = "pulumi-provisioner"
-PROVISIONER_LAUNCHER_USERNAME = "system:serviceaccount:shifter-platform:workers"
+PROVISIONER_LAUNCHER_USERNAMES = {
+    "system:serviceaccount:shifter-platform:ctf-scheduler",
+    "system:serviceaccount:shifter-platform:portal",
+    "system:serviceaccount:shifter-platform:workers",
+}
 PROVISIONER_IMAGE_PARAM = "ENGINE_TASK_IMAGE"
 RUNTIME_PARAM_CONFIGMAP = "platform-runtime"
 PLATFORM_NAMESPACE = "shifter-platform"
@@ -189,14 +193,16 @@ def test_provisioner_job_admission_policy_invariants(source_name: str, loader: A
     # could keep the image and override the entrypoint, args, env, or volumes. We
     # assert on the literals so the policy cannot silently drop a constraint
     # without failing this test. Each needle maps to a denial case:
-    #   provisioner SA gate; canonical submitter; container name; image pin;
+    #   provisioner SA gate; canonical submitters; container name; image pin;
     #   no command/entrypoint override; range/ngfw command family; no envFrom;
     #   emptyDir-only volumes; read-only-root-fs + drop-ALL security context;
     #   restartPolicy Never.
     expressions = _policy_expressions(policy)
+    for username in PROVISIONER_LAUNCHER_USERNAMES:
+        assert username in expressions, f"{source_name} policy CEL must reference launcher {username!r}"
+
     for needle in (
         f"'{PROVISIONER_SERVICE_ACCOUNT}'",
-        PROVISIONER_LAUNCHER_USERNAME,
         f"'{PROVISIONER_CONTAINER}'",
         PROVISIONER_IMAGE_PARAM,
         "!has(c.command)",

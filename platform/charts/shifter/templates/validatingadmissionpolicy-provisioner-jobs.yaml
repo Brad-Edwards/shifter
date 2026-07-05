@@ -53,11 +53,11 @@ spec:
     - name: allowedImage
       expression: "(has(params.data) && 'ENGINE_TASK_IMAGE' in params.data) ? params.data['ENGINE_TASK_IMAGE'] : ''"
   validations:
-    # Only the canonical launcher (worker-engine, running as the workers KSA) may
-    # create provisioner Jobs. This blocks the portal and ctf-scheduler tokens
-    # outright, even though RBAC still lets them create their own non-provisioner Jobs.
-    - expression: "!variables.targetsProvisioner || request.userInfo.username == 'system:serviceaccount:shifter-platform:workers'"
-      message: "Jobs running as the provisioner service account may only be created by the workers service account."
+    # Only the platform workloads that are intentionally bound to job-launcher
+    # RBAC may create provisioner Jobs, and only when the rest of this policy's
+    # canonical Job contract also matches.
+    - expression: "!variables.targetsProvisioner || request.userInfo.username in ['system:serviceaccount:shifter-platform:portal', 'system:serviceaccount:shifter-platform:ctf-scheduler', 'system:serviceaccount:shifter-platform:workers']"
+      message: "Jobs running as the provisioner service account may only be created by platform job-launcher service accounts."
       reason: Forbidden
     - expression: "!variables.targetsProvisioner || size(variables.containers) == 1"
       message: "A provisioner Job must declare exactly one container."
