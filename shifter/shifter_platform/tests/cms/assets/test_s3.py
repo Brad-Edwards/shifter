@@ -8,6 +8,7 @@ call shape, and the ``ClientError`` -> ``CloudStorageError`` -> ``S3Error``
 bridging.
 """
 
+import hashlib
 import io
 from unittest.mock import MagicMock, patch
 
@@ -78,6 +79,15 @@ class TestUploadAgent:
     def test_calculates_correct_sha256(self, s3_client):
         _, sha256_hash, _ = upload_agent(io.BytesIO(b"hello"), 1, "test.msi")
         assert sha256_hash == "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+
+    def test_streams_multi_chunk_upload_without_chunk_buffer(self, s3_client):
+        """Hash and size over content larger than one read chunk (8192 bytes)."""
+        payload = b"x" * 20_000
+        _, sha256_hash, file_size = upload_agent(io.BytesIO(payload), 1, "big.msi")
+
+        assert file_size == len(payload)
+        assert sha256_hash == hashlib.sha256(payload).hexdigest()
+        s3_client.upload_fileobj.assert_called_once()
 
 
 class TestDeleteAgent:

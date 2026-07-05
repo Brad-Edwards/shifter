@@ -12,7 +12,7 @@ documented native ISO-install flow instead of the Linux GCE-packer-export path.
 | File | Purpose |
 |---|---|
 | `autounattend.xml` | Fully unattended WS2022 install answer file (tuned for GDC's headless VMs). |
-| `bake.ps1` | FirstLogon bake: virtio drivers → GDC guest agent → OpenSSH → AD DS/DNS → promote `BOREAS.LOCAL` → (RunOnce) `a2_setup` content seed → `BAKE_DONE`. |
+| `bake.ps1` | FirstLogon bake: full virtio driver store → GDC guest agent → OpenSSH → AD DS/DNS → promote `BOREAS.LOCAL` → (SYSTEM AtStartup task) `a2_setup` content seed → `BAKE_DONE`. |
 
 `a2_setup.ps1` (the BOREAS.LOCAL content: OUs/users/groups/SPNs/flags) is shared
 with the AWS build and lives in `scripts/polaris-aws-range/`.

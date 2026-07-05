@@ -78,6 +78,21 @@
       "source_file": "config/settings.py"
     },
     {
+      "default": "'0.1'",
+      "name": "CTF_REGEX_FLAG_MATCH_TIMEOUT_SECONDS",
+      "source_file": "config/_ctf_regex_settings.py"
+    },
+    {
+      "default": "'255'",
+      "name": "CTF_REGEX_FLAG_MAX_PATTERN_LENGTH",
+      "source_file": "config/_ctf_regex_settings.py"
+    },
+    {
+      "default": "'500'",
+      "name": "CTF_REGEX_FLAG_MAX_SUBMISSION_LENGTH",
+      "source_file": "config/_ctf_regex_settings.py"
+    },
+    {
       "default": null,
       "name": "DB_HOST",
       "source_file": "config/_database_settings.py"
@@ -236,16 +251,6 @@
       "default": null,
       "name": "ENVIRONMENT",
       "source_file": "config/settings.py"
-    },
-    {
-      "default": null,
-      "name": "EXPERIMENT_TASK_DEFINITION",
-      "source_file": "config/_cloud.py"
-    },
-    {
-      "default": "''",
-      "name": "EXPERIMENT_TASK_DEFINITION_ARN",
-      "source_file": "config/_cloud.py"
     },
     {
       "default": null,

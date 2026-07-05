@@ -5,6 +5,10 @@ scenario package boundary".
 
 Status: pre-implementation guidance.
 
+ADR-027 note: legacy `cms.experiments` references in this preflight describe the
+pre-removal state. Future experiment capability must use a new ACES-backed
+design and must not restore the deleted app as the compatibility surface.
+
 This note records the catalog and package-boundary decisions for the first
 ACES vertical slice. It is not an implementation plan and does not change
 runtime behavior.
@@ -219,7 +223,9 @@ The design identifies these concrete implementation scopes:
 
 - #1252: add ACES package-source catalog persistence/projection with
   provenance, digest, lock, and launchability fields while reusing
-  `ScenarioMetadata`.
+  `ScenarioMetadata`; see
+  `docs/architecture/aces-package-source-catalog-preflight-1252.md` for the
+  issue-specific persistence/projection guardrails.
 - #1253: add ACES package/profile validation and registry integration behind
   `cms.scenarios.registry`, with no legacy `scenario_id` shadowing.
 - #1254: expose ACES catalog read-only fields in the scenario editor and CMS

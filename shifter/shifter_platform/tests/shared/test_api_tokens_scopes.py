@@ -30,8 +30,6 @@ class TestKnownScopes:
             "mission_control:ngfw:read",
             "mission_control:ngfw:write",
             "mission_control:credentials:write",
-            "mission_control:script:read",
-            "mission_control:script:write",
             "ctf:event:read",
             "ctf:event:write",
             "ctf:play:read",

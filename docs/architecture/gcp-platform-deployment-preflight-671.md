@@ -5,6 +5,10 @@ Issue: GitHub #671, PLAT-002 "GCP Platform Deployment".
 This note records the repository-wide architecture guardrails for continuing
 GCP platform parity work. It is not an implementation plan.
 
+ADR-027 note: legacy `cms/experiments` task execution was removed by issue
+#1195. References below to experiment runner paths describe the pre-removal
+state and are not current implementation guidance.
+
 ## Decision Boundary
 
 PLAT-002 spans two related but separate concerns:

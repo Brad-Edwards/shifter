@@ -21,13 +21,7 @@ spec:
       securityContext:
         seccompProfile:
           type: RuntimeDefault
-      # The scheduler provisions ranges in-process (provision_event_ranges_
-      # throttled -> create_range -> creates the provisioner Job), so it must
-      # run as the `workers` KSA: the restrict-provisioner-jobs admission policy
-      # only allows `workers` to create provisioner Jobs, and `workers` carries
-      # the GCP SA (workload identity) + job-launcher RBAC the scheduler needs.
-      # Its own `ctf-scheduler` KSA has neither the policy allowance nor a GCP SA.
-      serviceAccountName: workers
+      serviceAccountName: ctf-scheduler
       automountServiceAccountToken: true
       containers:
         - name: ctf-scheduler

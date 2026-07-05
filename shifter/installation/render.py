@@ -11,10 +11,12 @@ This module closes that drift: it consumes the normalized :class:`RangeEgressPol
 the config's backend, so the deployed firewall rules are generated from the configured
 policy rather than transcribed by hand (ADR-017-R4).
 
-- AWS bridges into one variable, ``victim_allowed_cidrs`` (consumed by the AWS Network
-  Firewall rule groups in ``platform/terraform/modules/range/vpc/firewall.tf``). AWS has
-  no mode variable: ``status-quo`` and ``deny-all`` both render an empty list (the
-  existing posture / deny-all base), and ``allowlist`` renders the canonical CIDRs.
+- AWS bridges into ``range_egress_mode`` (runtime route-table posture: ``allowlist`` or
+  ``none``) and ``victim_allowed_cidrs`` (consumed by the AWS Network Firewall rule
+  groups in ``platform/terraform/modules/range/vpc/firewall.tf``). ``status-quo``,
+  ``allowlist``, and ``deny-all`` map to runtime ``allowlist``; ``none`` maps to
+  runtime ``none`` (no default route). ``allowlist`` renders the canonical CIDRs;
+  other modes render an empty list.
 - GCP bridges into ``range_egress_mode`` + ``range_egress_allowed_cidrs`` (consumed by
   the conditional VPC firewall egress rules in
   ``platform/terraform/gcp/modules/platform-core/main.tf``).
@@ -28,7 +30,7 @@ The renderer never reads or revalidates raw YAML and never maintains a second sc
 from __future__ import annotations
 
 from .errors import ConfigIssue, InstallationConfigError
-from .range_egress import SETTINGS_KEY, RangeEgressPolicy
+from .range_egress import SETTINGS_KEY, RangeEgressMode, RangeEgressPolicy, aws_runtime_egress_mode
 from .schema import RootConfig
 
 _HEADER = (
@@ -45,9 +47,20 @@ def render_tfvars(config: RootConfig) -> str:
     normalizes ``settings.range_egress`` to the canonical policy shape.
 
     Raises:
-        InstallationConfigError: if the backend has no range-egress renderer.
+        InstallationConfigError: if the backend has no range-egress renderer, or if
+            ``mode='none'`` is requested on an unsupported backend.
     """
     policy = _policy_from_config(config)
+    if policy.mode == RangeEgressMode.NONE and config.backend != "aws":
+        raise InstallationConfigError(
+            [
+                ConfigIssue(
+                    f"settings.{SETTINGS_KEY}.mode",
+                    "mode='none' (zero-egress route posture) is supported on AWS only; "
+                    f"backend {config.backend!r} does not implement it yet",
+                )
+            ]
+        )
     renderer = _RENDERERS.get(config.backend)
     if renderer is None:
         raise InstallationConfigError(
@@ -68,9 +81,10 @@ def _policy_from_config(config: RootConfig) -> RangeEgressPolicy:
 
 
 def _render_aws(policy: RangeEgressPolicy) -> str:
-    """Render the AWS bridge tfvars (``victim_allowed_cidrs``) for ``policy``."""
-    # AWS exposes only the CIDR allowlist; mode is encoded by presence/absence of CIDRs.
-    return _hcl_string_list("victim_allowed_cidrs", policy.allowed_cidrs)
+    """Render the AWS bridge tfvars for ``policy``."""
+    mode = f'range_egress_mode = "{aws_runtime_egress_mode(policy)}"\n'
+    cidrs = _hcl_string_list("victim_allowed_cidrs", policy.allowed_cidrs)
+    return mode + cidrs
 
 
 def _render_gcp(policy: RangeEgressPolicy) -> str:

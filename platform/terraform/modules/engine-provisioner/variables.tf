@@ -265,6 +265,17 @@ variable "firewall_endpoint_id" {
   default     = ""
 }
 
+variable "range_egress_mode" {
+  description = "Runtime route-table egress posture for participant subnets (bridge for shifter.yaml settings.range_egress.mode)"
+  type        = string
+  default     = "allowlist"
+
+  validation {
+    condition     = contains(["allowlist", "none"], var.range_egress_mode)
+    error_message = "range_egress_mode must be one of: allowlist, none."
+  }
+}
+
 variable "ssm_endpoints_subnet_cidr" {
   description = "CIDR block of the SSM/Bedrock endpoints subnet (for NGFW routing)"
   type        = string

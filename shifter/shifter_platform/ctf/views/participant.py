@@ -13,9 +13,12 @@ from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
 if TYPE_CHECKING:
+    from uuid import UUID
+
     from django.http import HttpRequest
 
     from ctf.models import (
+        CTFEvent,
         CTFParticipant,
         CTFTeam,
     )
@@ -23,11 +26,13 @@ if TYPE_CHECKING:
 from ctf.views import _access, _parsing
 from ctf.views._access import (
     ctf_participant_required,
+    ctf_role_required,
 )
 
 logger = logging.getLogger(__name__)
 
 _SCOREBOARD_TEMPLATE = "ctf/participant/scoreboard.html"
+_SOLVE_HISTORY_TEMPLATE = "ctf/participant/solve_history.html"
 
 
 # Upper bound for an accepted invite token. Real tokens are
@@ -230,6 +235,10 @@ def scoreboard(request: HttpRequest) -> HttpResponse:
 
     context = {
         "participant": participant,
+        # The scoreboard row partial and the auto-refresh JS both key the
+        # "You" highlight on ``participant_id``; without it in the context the
+        # highlight is dead on initial render and on refresh (issue #521).
+        "participant_id": str(participant.id),
         "event": event,
         "rankings": rankings,
         "bracket_rankings": bracket_rankings,
@@ -239,6 +248,86 @@ def scoreboard(request: HttpRequest) -> HttpResponse:
         "frozen": event.is_scoreboard_frozen,
     }
     return render(request, _SCOREBOARD_TEMPLATE, context)
+
+
+def _resolve_solve_history_access(
+    request: HttpRequest, participant_id: UUID
+) -> tuple[CTFParticipant | None, bool, HttpResponse | None]:
+    """Resolve the target participant and authorize solve-history access.
+
+    Returns ``(target, is_event_organizer, error_response)``. Access is
+    own-participant-or-event-organizer (issue #521 / CTF-401): a participant may
+    open only their own history; the organizer that owns the event may open any
+    participant's. Keeping the 404/403 returns here holds the view itself to a
+    single render path per outcome.
+    """
+    from ctf.exceptions import CTFNotFoundError
+    from ctf.services import get_participant
+
+    try:
+        target = get_participant(participant_id)
+    except CTFNotFoundError:
+        return None, False, HttpResponse("Not found", status=404)
+
+    user = _access._get_user(request)
+    role = _access.get_user_role(user)
+    is_event_organizer = role.is_ctf_organizer and target.event.created_by_id == user.pk
+    if target.user_id != user.pk and not is_event_organizer:
+        logger.warning(
+            "CTF solve-history access denied for user %s on participant %s",
+            user.email,
+            target.id,
+        )
+        return None, False, HttpResponse("Forbidden", status=403)
+
+    return target, is_event_organizer, None
+
+
+@login_required
+@ctf_role_required
+@require_GET
+def participant_solve_history(request: HttpRequest, participant_id: UUID) -> HttpResponse:
+    """Own-row solve-history drill-down from a scoreboard row.
+
+    Scope (issue #521 / CTF-401): a participant may open only their own solve
+    history; the event organizer may open any participant's history for events
+    they own. The projection is correct-solves-only and secret-safe (see
+    ``get_participant_solve_history``); ranking/tie-break semantics stay in
+    ``ctf.services.scoring`` and are not recomputed here.
+
+    Args:
+        participant_id: UUID of the participant whose history to render.
+    """
+    from ctf.services.submission import get_participant_solve_history
+
+    target, is_event_organizer, error = _resolve_solve_history_access(request, participant_id)
+    if error is not None:
+        return error
+    assert target is not None
+
+    event = target.event
+    # Non-organizers must not see history while the organizer has the
+    # scoreboard hidden, mirroring the scoreboard visibility gate.
+    if not is_event_organizer and not event.scoreboard_visible:
+        return render(
+            request,
+            _SOLVE_HISTORY_TEMPLATE,
+            {"participant": target, "event": event, "scoreboard_hidden": True},
+        )
+
+    # Apply the same frozen-scoreboard cutoff as the scoreboard itself: a
+    # non-organizer viewer must not see solves submitted after the freeze,
+    # since those rows are intentionally absent from the frozen scoreboard.
+    # Organizers always see the live history.
+    freeze_at = event.scoreboard_freeze_at if (event.is_scoreboard_frozen and not is_event_organizer) else None
+
+    context = {
+        "participant": target,
+        "event": event,
+        "frozen": event.is_scoreboard_frozen and not is_event_organizer,
+        "solves": get_participant_solve_history(target.id, freeze_at=freeze_at),
+    }
+    return render(request, _SOLVE_HISTORY_TEMPLATE, context)
 
 
 @login_required
@@ -288,6 +377,47 @@ def _join_team_and_recompute(participant: CTFParticipant, team: CTFTeam) -> None
         recompute_team_score(old_team_id)
 
 
+def _validate_team_join(
+    participant: CTFParticipant, event: CTFEvent, invite_code: str
+) -> tuple[CTFTeam | None, str | None]:
+    """Pre-lock validation for a team join. Returns ``(team, error)``.
+
+    ``team`` is the resolved joinable team when validation passes, else None
+    with a controlled error message.
+    """
+    from ctf.models import CTFTeam
+
+    team: CTFTeam | None = None
+    error: str | None = None
+    if not invite_code:
+        error = "Invite code is required."
+    else:
+        team = CTFTeam.objects.filter(event=event, invite_code=invite_code).first()
+        if not team:
+            error = "Invalid invite code."
+        elif participant.team_id == team.id:
+            error = "You are already on this team."
+            team = None
+    return team, error
+
+
+def _commit_team_join(participant: CTFParticipant, team: CTFTeam) -> str | None:
+    """Capacity-guarded join under a row lock. Returns an error message or None.
+
+    Serializes concurrent joins so the capacity check and the membership write
+    cannot race past ``team_size_limit`` (#1140): lock the team row, re-check
+    ``is_full`` under the lock, then write.
+    """
+    from ctf.models import CTFTeam
+
+    with transaction.atomic():
+        locked_team = CTFTeam.objects.select_for_update().get(pk=team.pk)
+        if locked_team.is_full:
+            return "This team is full."
+        _join_team_and_recompute(participant, locked_team)
+    return None
+
+
 @login_required
 @ctf_participant_required
 @require_http_methods(["GET", "POST"])
@@ -299,8 +429,6 @@ def team_join(request: HttpRequest) -> HttpResponse:
     """
     from django.shortcuts import redirect
 
-    from ctf.models import CTFTeam
-
     participant = _access._get_active_participant(request)
     if not participant:
         return render(request, "ctf/participant/team_join.html", {})
@@ -310,32 +438,12 @@ def team_join(request: HttpRequest) -> HttpResponse:
 
     if request.method == "POST":
         invite_code = request.POST.get("invite_code", "").strip()
-        if not invite_code:
-            error = "Invite code is required."
-        else:
-            team = CTFTeam.objects.filter(event=event, invite_code=invite_code).first()
-            if not team:
-                error = "Invalid invite code."
-            elif participant.team_id == team.id:
-                error = "You are already on this team."
-            else:
-                # Serialize concurrent joins on the team so the capacity check and
-                # the membership write cannot race past team_size_limit (#1140):
-                # lock the team row, then re-check is_full under the lock.
-                with transaction.atomic():
-                    locked_team = CTFTeam.objects.select_for_update().get(pk=team.pk)
-                    if locked_team.is_full:
-                        error = "This team is full."
-                    else:
-                        _join_team_and_recompute(participant, locked_team)
-                if error is None:
-                    logger.info(
-                        "Participant %s joined team %s in event %s",
-                        participant.id,
-                        team.id,
-                        event.id,
-                    )
-                    return redirect("ctf:participant_team")
+        team, error = _validate_team_join(participant, event, invite_code)
+        if team is not None:
+            error = _commit_team_join(participant, team)
+            if error is None:
+                logger.info("Participant %s joined team %s in event %s", participant.id, team.id, event.id)
+                return redirect("ctf:participant_team")
 
     context = {
         "participant": participant,

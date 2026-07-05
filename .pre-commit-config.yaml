@@ -2,6 +2,18 @@ fail_fast: true
 
 repos:
   # =============================================================================
+  # STAGE 0: Commit message policy (commit-msg hook)
+  # =============================================================================
+  - repo: local
+    hooks:
+      - id: block-agent-attribution-commit-msg
+        name: block agent attribution in commit messages
+        entry: python3 scripts/adr_guard/block_agent_attribution_commit_msg.py
+        language: system
+        stages: [commit-msg]
+        pass_filenames: true
+
+  # =============================================================================
   # STAGE 1: Fast checks (linting, formatting, syntax)
   # =============================================================================
 
@@ -469,7 +481,13 @@ repos:
         pass_filenames: false
 
   # =============================================================================
-  # STAGE 3: Type Checking
+  # STAGE 3: Type Checking (blocking, #564)
+  #
+  # These hooks run `mypy .` per package with no failure-swallowing, matching
+  # the enforced (blocking) CI type-check jobs in
+  # `.github/workflows/_quality.yml`. Keep the local and CI scope aligned; the
+  # enforced/transitional boundary lives in each package's pyproject.toml
+  # `[tool.mypy]` policy, not here.
   # =============================================================================
 
   - repo: local
@@ -481,7 +499,9 @@ repos:
           DJANGO_DEBUG=true DJANGO_SECRET_KEY=dummy-for-testing
           PYTHONPATH="..:$PYTHONPATH" mypy .'
         language: system
-        files: ^shifter/shifter_platform/
+        # cyberscript is in the platform mypy estate (mypy_path = ".."), so a
+        # cyberscript change must also re-run this hook - matching the CI job.
+        files: ^shifter/(shifter_platform|cyberscript)/
         pass_filenames: false
         types: [python]
 
@@ -573,7 +593,7 @@ repos:
       - id: pytest-packer
         name: pytest (packer)
         entry: >-
-          bash -c 'cd shifter/packer && uv run pytest tests/ -q --cov=.
+          bash -c 'cd shifter/packer && uv run python -m pytest tests/ -q --cov=.
           --cov-report=html:../../coverage/packer
           --cov-report=xml:coverage.xml
           --cov-report=term-missing:skip-covered'

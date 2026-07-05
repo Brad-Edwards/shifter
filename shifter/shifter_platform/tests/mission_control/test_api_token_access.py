@@ -20,7 +20,6 @@ RANGE_URL = "/api/v1/mission-control/range/"
 UPLOAD_INITIATE_URL = "/api/v1/mission-control/upload/initiate/"
 UPLOAD_CANCEL_URL = "/api/v1/mission-control/upload/cancel/"
 NGFW_LIST_URL = "/api/v1/mission-control/ngfw/list/"
-SCRIPTS_URL = "/api/v1/mission-control/scripts/"
 GUACAMOLE_RDP_URL = "/api/v1/mission-control/guacamole/rdp-url/"
 
 
@@ -125,23 +124,6 @@ class TestSubsurfaceTokenAccess:
         raw = _token(user, scopes.MISSION_CONTROL_RANGE_READ)
 
         response = _bearer(client, raw).get(NGFW_LIST_URL)
-
-        assert response.status_code == 403
-
-    def test_script_read_scope_can_list_scripts(self, client, user):
-        user.is_staff = True
-        user.save(update_fields=["is_staff"])
-        raw = _token(user, scopes.MISSION_CONTROL_SCRIPT_READ)
-
-        response = _bearer(client, raw).get(SCRIPTS_URL)
-
-        assert response.status_code == 200
-        assert response.json() == {"scripts": []}
-
-    def test_script_list_rejects_range_read_scope(self, client, user):
-        raw = _token(user, scopes.MISSION_CONTROL_RANGE_READ)
-
-        response = _bearer(client, raw).get(SCRIPTS_URL)
 
         assert response.status_code == 403
 

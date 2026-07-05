@@ -1,4 +1,4 @@
-# Messaging module - Pub/Sub topic/subscriptions for platform lifecycle and experiment events.
+# Messaging module - Pub/Sub topic/subscriptions for platform lifecycle events.
 #
 # Creates:
 # - Shared Pub/Sub topic for platform events (provisioner publishes here)

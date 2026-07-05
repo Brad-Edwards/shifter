@@ -19,6 +19,7 @@ if TYPE_CHECKING:
 
     from ctf.models import (
         CTFChallenge,
+        CTFEvent,
         CTFHint,
         CTFParticipant,
         CTFSubmission,
@@ -191,6 +192,7 @@ def challenge_detail(request: HttpRequest, challenge_id: UUID) -> HttpResponse:
     unlocked_hint_ids = {h.id for h in get_unlocked_hints(participant.id, challenge_id)}
     total_hint_penalty = get_total_hint_penalty(participant.id, challenge_id)
     hint_purchase = _compute_hint_purchase_info(
+        participant.event,
         challenge,
         all_hints,
         unlocked_hint_ids,
@@ -253,6 +255,7 @@ def challenge_detail(request: HttpRequest, challenge_id: UUID) -> HttpResponse:
 
 
 def _compute_hint_purchase_info(
+    event: CTFEvent,
     challenge: CTFChallenge,
     all_hints: Iterable[CTFHint],
     unlocked_hint_ids: set[UUID],
@@ -261,16 +264,19 @@ def _compute_hint_purchase_info(
     """Compute next-hint, cost, and warning state for the challenge detail page.
 
     Extracted to keep `challenge_detail`'s cognitive complexity below the
-    SonarCloud threshold (python:S3776).
+    SonarCloud threshold (python:S3776). Projected values dispatch through the
+    event's scoring mode so the displayed cost matches how a solve is scored.
     """
+    from ctf.services.scoring import calculate_solve_points
+
     next_hint = next((h for h in all_hints if h.id not in unlocked_hint_ids), None)
     next_hint_cost = 0
     points_after_next_hint = challenge.points
     penalty_warning = False
     if next_hint and next_hint.penalty > 0:
-        current_value = challenge.calculate_points_with_penalty(total_hint_penalty)
+        current_value = calculate_solve_points(event, challenge, total_hint_penalty)
         projected_penalty = total_hint_penalty + next_hint.penalty
-        points_after_next_hint = challenge.calculate_points_with_penalty(projected_penalty)
+        points_after_next_hint = calculate_solve_points(event, challenge, projected_penalty)
         next_hint_cost = current_value - points_after_next_hint
         penalty_warning = projected_penalty >= 100
     return {

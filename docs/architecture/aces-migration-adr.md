@@ -22,8 +22,9 @@ contract surfaces that predate ACES:
   walkthroughs, and smoke tests.
 - CTF event, challenge, scoring, participant, and range services under
   `shifter/shifter_platform/ctf/`.
-- Experiment execution planning under `cms.experiments`, with command
-  rendering guarded by `shared.script_context.ScriptExecutionContext`.
+- Legacy experiment execution planning under `cms.experiments`, which was
+  removed by ADR-027 / issue #1195 instead of serving as a current runtime
+  authority.
 - Mission Control views, range state, terminal access, Guacamole integration,
   uploaded artifacts, and status/event consumers.
 - Engine and provisioner service boundaries that materialize hydrated specs
@@ -32,7 +33,9 @@ contract surfaces that predate ACES:
 ACES is the target scenario and experiment contract family, but Shifter cannot
 switch by declaration alone. Current Shifter behavior remains authoritative
 until an ACES path proves parity against the existing stack and passes explicit
-cutover gates.
+cutover gates. The exception is legacy experiments: ADR-027 removes that
+half-built runtime path, so future experiment capability starts from a new
+ACES-backed design rather than parity against `cms.experiments`.
 
 APTL provides the migration precedent. Its ACES adoption used a parallel path,
 a parity inventory as the audit surface, manifest/conformance gates, and
@@ -83,8 +86,9 @@ and not Polaris-specific branches in Shifter core.
 
 - This ADR does not cut over Shifter to ACES.
 - This ADR does not remove CyberScript, current scenario templates, Polaris
-  runtime material, CTF behavior, experiment execution, Mission Control,
-  provisioner code, artifacts, status models, or validation gates.
+  runtime material, CTF behavior, Mission Control, provisioner code,
+  artifacts, status models, or validation gates. ADR-027 separately removes
+  the legacy experiment execution path.
 - This ADR does not add an ACES parser, ACES runtime target, ACES backend
   manifest, new API endpoint, data migration, or cloud workflow.
 - This ADR does not make Polaris the public type system for the ACES adapter.
@@ -109,9 +113,10 @@ and not Polaris-specific branches in Shifter core.
   behavior, event lifecycle, and organizer/admin authorization remain Shifter
   service responsibilities unless ACES publishes a matching contract and
   Shifter deliberately binds to it.
-- Experiment command rendering remains behind
-  `ScriptExecutionContext` until ACES participant/runtime contracts prove an
-  equal or stronger prompt, artifact, and command boundary.
+- Any future experiment command rendering must go through an accepted
+  ACES-backed runtime contract and an equal or stronger prompt, artifact, and
+  command boundary. The deleted `cms.experiments` rendering path is not current
+  authority.
 - Mission Control remains the operator/user runtime UI and status boundary.
   ACES may supply contract payloads, but it does not own Shifter UI behavior.
 - Provisioning remains behind Shifter's engine/provisioner service boundary.

@@ -51,20 +51,21 @@ $stage = if (Test-Path $phase) { Get-Content $phase -Raw } else { "promote" }
 if ($stage.Trim() -eq "promote") {
     Set-Content -Path $phase -Value "seed" -Encoding ascii
 
-    # Ensure NetKVM (virtio NIC) is installed into the OS from the virtio driver
-    # cdrom. viostor (boot) is already present from Setup's $WinPEDriver$ load.
-    # Use the W10 folder (this virtio-win has no 2k22). Safe to install/reboot:
-    # we are on virtio from install, so there is no INACCESSIBLE_BOOT_DEVICE risk.
+    # Install the FULL virtio-win driver set into the OS from the virtio driver
+    # cdrom -- not just NetKVM -- so every virtio device the GDC VM presents
+    # (net, serial, balloon, rng, scsi, ...) has a matching driver instead of
+    # sitting unconfigured in Device Manager. viostor (boot) is already present
+    # from Setup's $WinPEDriver$ load. W10\amd64 is the right build for WS2022
+    # (build 20348); this virtio-win ships no 2k22 dir.
     $vd = $null
     foreach ($v in (Get-Volume | Where-Object { $_.DriveLetter })) {
         if (Test-Path ($v.DriveLetter + ":\NetKVM")) { $vd = ($v.DriveLetter + ":"); break }
     }
     if ($vd) {
-        foreach ($fld in @("w10", "2k22", "2k19")) {
-            $inf = "$vd\NetKVM\$fld\amd64\netkvm.inf"
-            if (Test-Path $inf) { Write-Host "installing NetKVM from $inf"; & pnputil.exe /add-driver $inf /install 2>&1 | Out-Null; break }
-        }
-    } else { Write-Host "NetKVM cdrom not found (NIC driver may already be present from Setup)" }
+        Get-ChildItem "$vd\" -Recurse -Filter *.inf |
+            Where-Object { $_.FullName -match '\\w10\\amd64\\' } |
+            ForEach-Object { Write-Host "installing driver $($_.Name)"; & pnputil.exe /add-driver $_.FullName /install 2>&1 | Out-Null }
+    } else { Write-Host "virtio driver cdrom not found (drivers may already be present from Setup)" }
 
     # Install the GDC guest agent so each range boot applies that range's assigned
     # NIC IP (Windows has no cloud-init on GDC; the provisioner sets the IP and the

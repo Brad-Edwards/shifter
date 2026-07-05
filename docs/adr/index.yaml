@@ -35,6 +35,11 @@
         "id": "ADR-002-R1",
         "description": "Guardrail file changes must update docs/adr or the developer ADR enforcement docs in the same change.",
         "checks": ["guardrail-docs"]
+      },
+      {
+        "id": "ADR-002-R2",
+        "description": "Commit messages and tracked text must not contain AI/agent attribution markers (Co-authored-by agent lines, Cursor marketing footers, Claude Code branding, etc.).",
+        "checks": ["no-agent-attribution"]
       }
     ],
     "exceptions": [],
@@ -768,8 +773,7 @@
       "shifter/shifter_platform/entrypoint.sh",
       "shifter/shifter_platform/locale/en/LC_MESSAGES/django.po",
       "shifter/shifter_platform/tests/config/test_i18n_configuration.py",
-      "shifter/shifter_platform/templates",
-      "shifter/shifter_platform/cms/experiments/templates"
+      "shifter/shifter_platform/templates"
     ]
   },
   {
@@ -979,14 +983,14 @@
   },
   {
     "id": "ADR-025",
-    "title": "Range and experiment events use transactional outbox and authoritative reconciliation for durable delivery",
+    "title": "Range events use transactional outbox and authoritative reconciliation for durable delivery",
     "status": "accepted",
     "scope": "shifter_platform",
-    "decision": "PostgreSQL is the authoritative state store for range, request, instance, and experiment-run state. Range and experiment events are correctness-critical propagation signals, not best-effort notifications. Every such event is made recoverable through two complementary layers: (1) a transactional outbox — the provisioner enqueues each event into `engine_range_event_outbox` in the same DB transaction as the authoritative state write, and the `drain_range_event_outbox` portal management command publishes PENDING rows to the SNS topic / Pub/Sub with exponential-backoff retry and a DLQ terminal state after max_attempts; (2) a DB-authoritative reconciler — the `reconcile_range_events` portal management command re-reads authoritative `engine.Range` state and idempotently re-drives stale CMS `RangeInstance` and experiment `ExperimentRun` projections through the existing handler/orchestrator/bridge seams. Consumer handlers propagate transient failures rather than swallowing them, engaging the worker ack-after-handler SQS retry and DLQ. Mission Control websocket fanout remains advisory. AWS SNS/SQS and GCP Pub/Sub messaging surfaces maintain dead-letter, retry-policy, and Cloud Monitoring alert parity.",
+    "decision": "PostgreSQL is the authoritative state store for range, request, and instance state. Range events are correctness-critical propagation signals, not best-effort notifications. Every such event is made recoverable through two complementary layers: (1) a transactional outbox — the provisioner enqueues each event into `engine_range_event_outbox` in the same DB transaction as the authoritative state write, and the `drain_range_event_outbox` portal management command publishes PENDING rows to the SNS topic / Pub/Sub with exponential-backoff retry and a DLQ terminal state after max_attempts; (2) a DB-authoritative reconciler — the `reconcile_range_events` portal management command re-reads authoritative `engine.Range` state and idempotently re-drives stale CMS `RangeInstance` projections through the existing handler seam. Consumer handlers propagate transient failures rather than swallowing them, engaging the worker ack-after-handler SQS retry and DLQ. Mission Control websocket fanout remains advisory. AWS SNS/SQS and GCP Pub/Sub messaging surfaces maintain dead-letter, retry-policy, and Cloud Monitoring alert parity.",
     "rules": [
       {
         "id": "ADR-025-R1",
-        "description": "PostgreSQL is the authoritative state store for range, request, instance, and experiment-run state. Range and experiment events are correctness-critical propagation signals, not a replacement state store and not best-effort notifications. A lost or undelivered event must not leave CMS projections, experiment runs, or Engine state permanently stale without an operator-visible signal.",
+        "description": "PostgreSQL is the authoritative state store for range, request, and instance state. Range events are correctness-critical propagation signals, not a replacement state store and not best-effort notifications. A lost or undelivered event must not leave CMS range projections or Engine state permanently stale without an operator-visible signal.",
         "checks": []
       },
       {
@@ -1001,7 +1005,7 @@
       },
       {
         "id": "ADR-025-R4",
-        "description": "Mission Control websocket fanout is advisory only. It is a projection of authoritative state and is not a recovery path for lost events. Experiment continuation, CMS state convergence, and Engine status transitions must not depend on one-shot best-effort websocket delivery.",
+        "description": "Mission Control websocket fanout is advisory only. It is a projection of authoritative state and is not a recovery path for lost events. CMS state convergence and Engine status transitions must not depend on one-shot best-effort websocket delivery.",
         "checks": []
       },
       {
@@ -1024,7 +1028,6 @@
       "shifter/shifter_platform/cms/management/commands/reconcile_range_events.py",
       "shifter/shifter_platform/cms/handlers/__init__.py",
       "shifter/shifter_platform/cms/handlers/range_events.py",
-      "shifter/shifter_platform/cms/handlers/experiment_bridge.py",
       "shifter/shifter_platform/engine/handlers.py",
       "shifter/shifter_platform/mission_control/handlers.py",
       "platform/terraform/modules/portal/messaging/main.tf",
@@ -1075,11 +1078,11 @@
     "title": "ACES migration uses a parity-gated parallel cutover",
     "status": "accepted",
     "scope": "repository",
-    "decision": "Shifter migrates toward ACES through a parallel path, a row-based parity inventory, explicit ACES manifest/conformance gates, and archive-after-cutover cleanup. Current Shifter behavior remains authoritative until the ACES path proves parity through the normal portal, CMS, engine, provisioner, CTF, experiment, Mission Control, artifact, status, and validation surfaces.",
+    "decision": "Shifter migrates toward ACES through a parallel path, a row-based parity inventory, explicit ACES manifest/conformance gates, and archive-after-cutover cleanup. Current Shifter behavior remains authoritative until the ACES path proves parity through the normal portal, CMS, engine, provisioner, CTF, Mission Control, artifact, status, and validation surfaces. Legacy experiments are the explicit exception: ADR-027 removes the half-built `cms.experiments` path, so future experiment capability starts from a new ACES-backed design.",
     "rules": [
       {
         "id": "ADR-024-R1",
-        "description": "ACES adoption must not replace current Shifter runtime behavior until a parallel ACES path has passed parity, manifest/conformance, portal/engine/provisioner, Polaris, CTF, experiment, Mission Control, artifact, status, and ADR guard validation.",
+        "description": "ACES adoption must not replace current Shifter runtime behavior until a parallel ACES path has passed parity, manifest/conformance, portal/engine/provisioner, Polaris, CTF, Mission Control, artifact, status, and ADR guard validation. Legacy experiments are removed by ADR-027 and are not current runtime authority.",
         "checks": []
       },
       {
@@ -1089,7 +1092,7 @@
       },
       {
         "id": "ADR-024-R3",
-        "description": "Archive/delete is a post-cutover posture only. CyberScript, current CMS scenario templates, Polaris runtime material, CTF behavior, experiment execution, Mission Control, provisioner paths, artifact handling, status models, and validation gates remain current authority until replacement gates are implemented and green.",
+        "description": "Archive/delete is generally a post-cutover posture. CyberScript, current CMS scenario templates, Polaris runtime material, CTF behavior, Mission Control, provisioner paths, artifact handling, status models, and validation gates remain current authority until replacement gates are implemented and green. ADR-027 is the accepted exception for the removed legacy experiments path.",
         "checks": []
       }
     ],
@@ -1098,6 +1101,9 @@
     "evidence": [
       "docs/architecture/aces-migration-adr.md",
       "docs/architecture/aces-migration-parity-inventory.yaml",
+      "docs/architecture/aces-runtime-target-backend-manifest-preflight-1233.md",
+      "docs/architecture/aces-operation-status-snapshot-projection-preflight-1234.md",
+      "docs/architecture/aces-polaris-acceptance-parity-gate-preflight-1237.md",
       "scenario-dev/polaris/design/aces-sdl-validation-path.md",
       "scenario-dev/polaris/sdl/README.md",
       "shifter/shifter_platform/cms/scenarios/schema.py",
@@ -1106,11 +1112,164 @@
       "shifter/shifter_platform/shared/schemas",
       "shifter/cyberscript",
       "shifter/shifter_platform/ctf",
-      "shifter/shifter_platform/cms/experiments",
       "shifter/shifter_platform/mission_control",
       "shifter/shifter_platform/engine",
       "shifter/engine/provisioner",
       "scripts/adr_guard/adr_guard.py"
+    ]
+  },
+  {
+    "id": "ADR-026",
+    "title": "Commercial self-serve ranges may use a no-default-route zero-egress posture",
+    "status": "accepted",
+    "scope": "repository",
+    "decision": "Commercial self-serve training ranges with untrusted users may run in an explicit zero-egress posture where runtime participant subnet route tables have no `0.0.0.0/0` route and no NAT or Internet Gateway target. This extends ADR-020 by adding a second route-table posture alongside the existing AWS Network Firewall allowlist path, and extends ADR-017 by requiring any operator-facing egress-mode configuration to reuse the existing range-egress policy/renderer boundary rather than creating a second public schema. `allowlist` remains the default and preserves the trusted-event behavior: user subnet -> Network Firewall -> NAT -> IGW with STRICT_ORDER default-deny and documented allow lanes. `none` is not ADR-017 `deny-all`; `deny-all` is firewall enforcement with a default route, while `none` removes the default-route internet path. Runtime package/tool/agent/phone-home needs for `none` ranges must move to Packer bake time, in-range services, omitted integrations, or a dedicated proxy outside participant subnets.",
+    "rules": [
+      {
+        "id": "ADR-026-R1",
+        "description": "Zero-egress must be selected by an explicit validated mode. It must not be inferred from an empty or missing firewall endpoint, from `enable_network_firewall = false`, or from an empty allowlist. In `none` mode runtime range route tables must not create `aws_route.firewall`, any NAT target, or any `0.0.0.0/0` route.",
+        "checks": []
+      },
+      {
+        "id": "ADR-026-R2",
+        "description": "If zero-egress is operator-facing, it must extend the existing `settings.range_egress` / `RangeEgressPolicy` / `shifter-config render` path. Provider/runtime Terraform variables are bridge inputs only and must retain direct validation backstops. Operators must not maintain the egress mode in both root config and hand-authored tfvars or workflow inputs.",
+        "checks": []
+      },
+      {
+        "id": "ADR-026-R3",
+        "description": "Stable range VPC service endpoints reachable from participant subnets in the commercial shape (SSM, S3 gateway, STS, Bedrock, Route 53 Resolver, or future endpoints) must be deliberately classified as management-plane requirements, disabled for `none`, or replaced by in-range/proxy paths. Leaving an endpoint reachable by accident is not an acceptable zero-egress implementation.",
+        "checks": []
+      },
+      {
+        "id": "ADR-026-R4",
+        "description": "`none` ranges must boot without public internet dependencies. Runtime package installs, tooling fetches, XDR/XSIAM installer downloads, public DNS/NTP, and simulated phone-home must move to AMI bake time, in-range services, omitted integrations, or a proxy outside participant subnets. Existing allowlist-mode behavior must remain unchanged.",
+        "checks": []
+      },
+      {
+        "id": "ADR-026-R5",
+        "description": "Validation must include both infrastructure state and inside-range behavior: no NAT/IGW/default route on `none` subnet route tables, no reachability to external IPs or domains including previously allowlisted lanes, and focused regression coverage that allowlist mode still creates the Network Firewall route.",
+        "checks": []
+      }
+    ],
+    "exceptions": [],
+    "enforcement": ["agent-policy", "ci"],
+    "evidence": [
+      "docs/architecture/range-zero-egress-preflight-1171.md",
+      "docs/architecture/range-isolation-model.md",
+      "docs/architecture/range-egress-ip-allowlist.md",
+      "shifter/installation/range_egress.py",
+      "shifter/installation/render.py",
+      "platform/terraform/modules/range/vpc/firewall.tf",
+      "platform/terraform/modules/range/vpc/nat.tf",
+      "platform/terraform/modules/range/vpc/s3-endpoint.tf",
+      "platform/terraform/modules/range/vpc/ssm-endpoints.tf",
+      "shifter/engine/provisioner/terraform/modules/range/main.tf",
+      "shifter/engine/provisioner/terraform/modules/range/variables.tf",
+      "shifter/engine/provisioner/terraform_vars.py",
+      "shifter/packer/README.md",
+      "scenario-dev/polaris/tests/isolation-smoketest.sh"
+    ]
+  },
+  {
+    "id": "ADR-027",
+    "title": "Remove legacy experiments in favor of a future ACES-backed design",
+    "status": "accepted",
+    "scope": "shifter_platform",
+    "decision": "Shifter removes the half-built legacy `cms.experiments` feature instead of completing or redesigning it in place. The removal deletes the Django app, experiment/script UI and APIs, websocket/event/queue/runtime wiring, tests, specs, UAT artifacts, and legacy database tables. Future experiment capability must start from an accepted ACES-backed replacement design rather than reviving the deleted runtime path or feature flag.",
+    "rules": [
+      {
+        "id": "ADR-027-R1",
+        "description": "The legacy `cms.experiments` app and its Mission Control script/file surfaces must not be reintroduced without a new accepted ADR and replacement product/security review.",
+        "checks": []
+      },
+      {
+        "id": "ADR-027-R2",
+        "description": "Runtime, deployment, queue, websocket, API, navigation, and API-token scope surfaces must not advertise or route legacy experiments after removal.",
+        "checks": []
+      },
+      {
+        "id": "ADR-027-R3",
+        "description": "Future experiment capability starts from an ACES-backed contract and must not reuse `EXPERIMENTS_ENABLED`, `EXPERIMENT_PAYLOAD`, or the removed `cms.experiments` data model as the implementation shortcut.",
+        "checks": []
+      }
+    ],
+    "exceptions": [],
+    "enforcement": ["agent-policy", "ci"],
+    "evidence": [
+      "docs/architecture/experiments-removal-adr.md",
+      "docs/architecture/aces-migration-adr.md",
+      "shifter/shifter_platform/cms/migrations/0034_remove_legacy_experiments.py",
+      "shifter/shifter_platform/tests/cms/test_experiments_removed.py",
+      "shifter/shifter_platform/config/settings.py",
+      "shifter/shifter_platform/config/_cloud.py",
+      "shifter/shifter_platform/config/asgi.py",
+      "shifter/shifter_platform/config/urls.py",
+      "shifter/shifter_platform/mission_control/urls.py",
+      "shifter/shifter_platform/mission_control/api/urls.py",
+      "platform/terraform/gcp/modules/platform-core/main.tf",
+      "scripts/gcp/render_runtime_env.py",
+      ".github/workflows/deploy.yml"
+    ]
+  },
+  {
+    "id": "ADR-028",
+    "title": "CTF participant solve history is semi-private (participant and organizer only)",
+    "status": "accepted",
+    "scope": "shifter_platform",
+    "decision": "The individual scoreboard (CTF-401) exposes aggregate ranking data -- rank, display name, total score, solve count, and last-solve time -- publicly to all participants. A participant's per-challenge solve history is semi-private: it is visible only to that participant and to the event organizer, unless the participant explicitly chooses to share it. This clarifies and supersedes the literal reading of CTF-401's \"Participants shall be able to click a row to see that participant's solve history\" clause, which would expose every participant's per-challenge history to all participants. Rationale: aggregate standing is inherently public on a scoreboard, but which specific challenges a participant solved reveals skill areas and progress and enables targeting or collusion inference -- it is nobody's business except the participant and the organizer. Concretely, scoreboard rows link to the solve-history drill-down only for the viewer's own row; the ctf:participant_solve_history view authorizes own-participant-or-event-organizer. Solve-history projections are correct-solves-only and never expose submitted flag values, incorrect-attempt details, or attempt source IP addresses. Ranking and CTF-406 tie-breaking stay in ctf.services.scoring; presentation never re-ranks. Governing requirement: CTF-1404 (Solve History Visibility).",
+    "rules": [
+      {
+        "id": "ADR-028-R1",
+        "description": "Participant per-challenge solve history must be gated to the participant themselves or the event organizer. Scoreboard row drill-down links must render only for the viewer's own row; other rows stay display-only. Do not widen ctf:participant_solve_history to any-participant access to match CTF-401's literal wording -- CTF-1404 governs the semi-private posture.",
+        "checks": []
+      },
+      {
+        "id": "ADR-028-R2",
+        "description": "Any solve-history projection must be correct-solves-only and must never expose submitted flag values, incorrect-attempt details, or attempt source IP addresses to a participant-visible surface. Reuse ctf.services.submission.get_participant_solve_history rather than serialising raw CTFSubmission rows.",
+        "checks": []
+      }
+    ],
+    "exceptions": [],
+    "enforcement": ["agent-policy", "ci"],
+    "evidence": [
+      "docs/architecture/ctf-scoreboard-contract-preflight-521.md",
+      "shifter/shifter_platform/ctf/views/participant.py",
+      "shifter/shifter_platform/ctf/services/submission.py",
+      "shifter/shifter_platform/templates/ctf/includes/scoreboard_table.html",
+      "shifter/shifter_platform/templates/ctf/participant/scoreboard.html",
+      "shifter/shifter_platform/tests/ctf/test_scoreboard_views.py",
+      "shifter/shifter_platform/tests/ctf/test_submission_service.py"
+    ]
+  },
+  {
+    "id": "ADR-029",
+    "title": "SPA cutover frontend stack, deployment, and API boundary",
+    "status": "accepted",
+    "scope": "shifter_platform",
+    "decision": "The Shifter portal migrates from server-rendered Django templates to a single-page application. The SPA is React 18 with TypeScript, built by Vite, and shipped as content-hashed static assets through Django's existing staticfiles plus WhiteNoise manifest pipeline; the bundle is built at container-image build time before collectstatic and is never committed. No Node SSR meta-framework and no second server are introduced: the SPA is client-rendered and served from the single Django origin, so there is exactly one session and one CSRF posture. The SPA consumes the existing canonical DRF /api/v1/ surface (NamespaceVersioning, the shared error envelope in shared/api/errors.py, PageNumberPagination) and adds no parallel API. Browser auth stays session-cookie based with the CSRF token sent as the X-CSRFToken header; shf_ API tokens remain for programmatic clients only and are never placed in the browser. The cutover is phased per module in order: Risk Register, Mission Control, CTF, Scenario Editor, Docs. Legacy Django template routes remain until a module-specific issue explicitly retires them. Full design detail, backend API gaps, and no-go criteria are in docs/architecture/spa-cutover-architecture-1300.md. Governing issue: #1300.",
+    "rules": [
+      {
+        "id": "ADR-029-R1",
+        "description": "New SPA frontend code uses React plus TypeScript built by Vite, shipped as content-hashed static assets via Django staticfiles/WhiteNoise (built at image build, never committed to the repo). Do not introduce a Node SSR meta-framework, a second server or origin, or an alternate bundler; a different frontend stack requires a superseding ADR.",
+        "checks": []
+      },
+      {
+        "id": "ADR-029-R2",
+        "description": "SPA data access goes only through the canonical DRF /api/v1/ surface -- no ad hoc JSON routes and no legacy per-app /*/api/ endpoints in SPA code paths. Do not add csrf_exempt for session-authenticated browser calls: the browser sends the session cookie plus the X-CSRFToken header. Do not place shf_ API tokens in the browser. Backend validation and domain behavior stay server-side; the SPA must not duplicate backend validation rules.",
+        "checks": []
+      },
+      {
+        "id": "ADR-029-R3",
+        "description": "Migration is phased. A legacy Django template route is retired only by a module-specific issue that meets the retirement criteria in docs/architecture/spa-cutover-architecture-1300.md. Frontend guardrails (the SPA build, typecheck, lint, unit, and e2e CI jobs, and the SPA-to-/api/v1 boundary check) land with the first SPA implementation change, not deferred after it.",
+        "checks": []
+      }
+    ],
+    "exceptions": [],
+    "enforcement": ["agent-policy"],
+    "evidence": [
+      "docs/architecture/spa-cutover-architecture-1300.md",
+      "docs/design/spa-design-system-foundation-1299.md",
+      "docs/design/design-system/README.md"
     ]
   }
 ]

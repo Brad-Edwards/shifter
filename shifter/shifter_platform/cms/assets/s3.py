@@ -17,8 +17,8 @@ from shared.cloud.exceptions import CloudStorageError
 from shared.log_sanitize import safe_log_value
 
 # ``get_s3_client`` and ``sanitize_s3_filename`` are re-exported from this
-# module for backward compatibility: external callers (``cms/experiments/s3.py``
-# and several tests) import them via ``cms.assets.s3``. The ``noqa: F401`` is
+# module for backward compatibility: tests and older asset callers import them
+# via ``cms.assets.s3``. The ``noqa: F401`` is
 # required because flake8 cannot see those re-imports from outside the file.
 from shared.s3 import (  # noqa: F401  # NOSONAR — re-exports, rationale above
     get_s3_client,
@@ -62,16 +62,15 @@ def upload_agent(file_obj: BinaryIO, user_id: int, filename: str) -> tuple[str, 
     unique_id = uuid.uuid4().hex[:12]
     s3_key = f"agents/{user_id}/{unique_id}_{filename}"
 
-    # Calculate SHA256 while reading file
+    # Calculate SHA256 while reading file (single pass; do not retain chunks).
     sha256 = hashlib.sha256()
     file_obj.seek(0)
-    chunks = []
+    file_size = 0
     while chunk := file_obj.read(8192):
         sha256.update(chunk)
-        chunks.append(chunk)
+        file_size += len(chunk)
 
     sha256_hash = sha256.hexdigest()
-    file_size = sum(len(c) for c in chunks)
 
     # Reset for upload
     file_obj.seek(0)
