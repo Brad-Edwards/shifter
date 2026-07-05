@@ -278,6 +278,8 @@ class AuditLog(models.Model):
         PAUSE = "pause", "Pause"
         RESUME = "resume", "Resume"
         CANCEL = "cancel", "Cancel"
+        RECOVER = "recover", "Recover"
+        SPARE_PROVISION = "spare_provision", "Spare Provision"
 
     class EntityType(models.TextChoices):
         # Risk Register entities

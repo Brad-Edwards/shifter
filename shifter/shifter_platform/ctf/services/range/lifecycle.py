@@ -137,12 +137,31 @@ def cleanup_event_ranges(event_id: UUID) -> dict[str, Any]:
                 participant.pk,
             )
 
+    _cleanup_event_spares_best_effort(event_id)
+
     return {
         "event_id": str(event_id),
         "total": destroyed + failed,
         "destroyed": destroyed,
         "failed": failed,
     }
+
+
+def _cleanup_event_spares_best_effort(event_id: UUID) -> None:
+    """Tear down the event's spare pool alongside participant-range cleanup (#1018).
+
+    Best-effort: a spare-cleanup failure must never abort the participant-range
+    cleanup this runs after, so it is logged and swallowed here.
+    """
+    from ctf.services.range.spares import cleanup_event_spares
+
+    try:
+        cleanup_event_spares(event_id)
+    except Exception:
+        logger.exception(
+            "cleanup_event_ranges: spare-pool cleanup failed for event %s",
+            safe_log_value(event_id),
+        )
 
 
 def _destroy_single_range(participant: CTFParticipant, user: User | None) -> None:

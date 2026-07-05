@@ -218,7 +218,11 @@ resource "aws_iam_policy" "compute" {
           "lambda:GetPolicy",
           "lambda:TagResource",
           "lambda:UntagResource",
-          "lambda:ListTags"
+          "lambda:ListTags",
+          # Configuring Secrets Manager rotation (aws_secretsmanager_secret_rotation
+          # for the Redis AUTH secret, #159) requires the caller to hold
+          # lambda:InvokeFunction on the rotation function.
+          "lambda:InvokeFunction"
         ]
         Resource = "arn:aws:lambda:${var.aws_region}:${data.aws_caller_identity.current.account_id}:function:*"
       },
