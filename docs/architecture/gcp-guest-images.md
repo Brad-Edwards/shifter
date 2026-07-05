@@ -4,6 +4,13 @@ How Shifter range guest VMs (Kali, Ubuntu, Windows, DC) are built and made
 available on GCP, and how that differs from the AWS path. This is the GCP
 parallel to the AWS AMI flow.
 
+> **Windows and DC guests use a different build path.** The GCE-packer-export
+> flow described here works for the Linux guests (Kali, Ubuntu), whose images
+> are hypervisor-portable. A GCE-built **Windows** image does **not** boot on
+> GDC VM Runtime (firmware, drivers, and network differ). Windows/DC images are
+> instead installed natively on GDC from an ISO — see
+> [gdc-windows-dc-image-build.md](./gdc-windows-dc-image-build.md).
+
 ## The two platforms, side by side
 
 | Concern | AWS | GCP |
