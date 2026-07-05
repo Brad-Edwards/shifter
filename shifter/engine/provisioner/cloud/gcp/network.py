@@ -3,26 +3,65 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from typing import Any
 
 from cloud.exceptions import CloudNetworkInventoryError
-from config import load_gdc_network_access_config
+from cloud.gcp.base import get_project_id, get_region, import_google_module
+from config import is_gce_range_cell_backend, load_gdc_network_access_config
 
 logger = logging.getLogger(__name__)
 _SUBNET_CIDR_ANNOTATION = "shifter.dev/subnet-cidr"
+_MANAGED_BY_LABEL = "shifter-provisioner"
 
 
 class GCPNetworkInventory:
-    """GDC network inventory implementation of NetworkInventory."""
+    """GCP network inventory implementation of NetworkInventory."""
+
+    def __init__(self, *, gce_subnetworks_client_factory: Callable[[], Any] | None = None) -> None:
+        self._gce_subnetworks_client_factory = gce_subnetworks_client_factory
 
     def list_subnet_cidrs(self, network_id: str) -> list[str]:
         logger.debug("list_subnet_cidrs: network_id=%s", network_id)
+        if is_gce_range_cell_backend():
+            return self._list_gce_range_subnet_cidrs(network_id)
         gdc_access = load_gdc_network_access_config()
         if gdc_access is None:
             raise CloudNetworkInventoryError(
                 "GCP range provisioning requires GDC access configuration; GDC_ACCESS_SECRET_ID is missing"
             )
         return self._list_gdc_network_cidrs(network_id, gdc_access.kubeconfig)
+
+    def _list_gce_range_subnet_cidrs(self, network_id: str) -> list[str]:
+        project_id = get_project_id()
+        region = get_region()
+        if not project_id or not region:
+            raise CloudNetworkInventoryError("GCE network inventory requires GCP project and region")
+        try:
+            client = self._build_gce_subnetworks_client()
+            response = client.list(project=project_id, region=region)
+        except ImportError as e:
+            raise CloudNetworkInventoryError("GCE network inventory requires google-cloud-compute") from e
+        except Exception as e:
+            logger.exception("list_subnet_cidrs: failed to list GCE subnetworks for %s: %s", network_id, e)
+            raise CloudNetworkInventoryError(f"Failed to read GCE subnetwork inventory: {e}") from e
+
+        cidrs: list[str] = []
+        for item in response:
+            if not self._is_managed_gce_subnetwork(item):
+                continue
+            if not self._matches_requested_network(item, network_id):
+                continue
+            cidr = self._get_field(item, "ip_cidr_range", "ipCidrRange")
+            if cidr:
+                cidrs.append(str(cidr))
+        return cidrs
+
+    def _build_gce_subnetworks_client(self) -> Any:
+        if self._gce_subnetworks_client_factory:
+            return self._gce_subnetworks_client_factory()
+        compute = import_google_module("google.cloud.compute_v1")
+        return compute.SubnetworksClient()
 
     def _list_gdc_network_cidrs(self, network_id: str, kubeconfig_yaml: str) -> list[str]:
         try:
@@ -64,6 +103,28 @@ class GCPNetworkInventory:
         if labels.get("app.kubernetes.io/managed-by") == "shifter-provisioner":
             return True
         return labels.get("shifter.dev/range-plane") == "gdc-vmruntime"
+
+    @staticmethod
+    def _get_field(item: Any, *names: str) -> Any:
+        for name in names:
+            value = item.get(name) if isinstance(item, dict) else getattr(item, name, None)
+            if value not in (None, ""):
+                return value
+        return ""
+
+    @classmethod
+    def _is_managed_gce_subnetwork(cls, item: Any) -> bool:
+        labels = cls._get_field(item, "labels") or {}
+        if not isinstance(labels, dict):
+            labels = dict(labels)
+        return labels.get("managed-by") == _MANAGED_BY_LABEL
+
+    @classmethod
+    def _matches_requested_network(cls, item: Any, network_id: str) -> bool:
+        if not network_id or network_id.startswith("gcp-range-cells:"):
+            return True
+        network = str(cls._get_field(item, "network"))
+        return network.endswith(f"/{network_id}") or network == network_id
 
     @staticmethod
     def _managed_network_cidrs(item: dict[str, Any]) -> list[str]:

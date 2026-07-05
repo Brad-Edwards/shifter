@@ -328,6 +328,67 @@ class GDCScenarioPodConfig:
 
 
 @dataclass(frozen=True)
+class GCERangeImageProfile:
+    """Image and sizing contract for one Compute Engine range guest family."""
+
+    source_image: str = ""
+    machine_type: str = "e2-medium"
+    disk_size_gb: int = 30
+    disk_type: str = "pd-balanced"
+
+
+@dataclass(frozen=True)
+class GCERangeCellConfig:
+    """Configuration for the GCE-backed live-fire range-cell backend."""
+
+    project_id: str
+    region: str
+    zone: str
+    network_mode: str
+    service_account_email: str = ""
+    service_account_scopes: tuple[str, ...] = (
+        "https://www.googleapis.com/auth/logging.write",
+        "https://www.googleapis.com/auth/monitoring.write",
+    )
+    linux: GCERangeImageProfile = field(default_factory=GCERangeImageProfile)
+    kali: GCERangeImageProfile = field(default_factory=GCERangeImageProfile)
+    windows: GCERangeImageProfile = field(default_factory=GCERangeImageProfile)
+    dc: GCERangeImageProfile = field(default_factory=GCERangeImageProfile)
+    portal_network_cidrs: tuple[str, ...] = ()
+    egress_allow_cidrs: tuple[str, ...] = ()
+    metadata_items: tuple[tuple[str, str], ...] = (
+        ("block-project-ssh-keys", "true"),
+        ("enable-oslogin", "false"),
+        ("serial-port-enable", "false"),
+    )
+
+    def get_profile(self, *, role: str, os_type: str, requested_type: str = "") -> GCERangeImageProfile:
+        """Return the image profile for a range guest, applying instance-type overrides."""
+        if role == "dc":
+            profile = self.dc
+        elif os_type == "kali" or role == "attacker":
+            profile = self.kali if self.kali.source_image else self.linux
+        elif os_type == "windows":
+            profile = self.windows
+        else:
+            profile = self.linux
+
+        if not profile.source_image:
+            raise RuntimeError(
+                f"Missing GCE range image for role={role!r} os_type={os_type!r}. "
+                "Set the corresponding GCP_RANGE_*_IMAGE environment variable."
+            )
+        if requested_type:
+            return GCERangeImageProfile(
+                source_image=profile.source_image,
+                machine_type=requested_type,
+                disk_size_gb=profile.disk_size_gb,
+                disk_type=profile.disk_type,
+            )
+        return profile
+
+
+@dataclass(frozen=True)
 class NGFWAttachmentConfig:
     """Provider-neutral attachment and access contract for an NGFW instance."""
 
@@ -354,8 +415,28 @@ def _parse_csv_env(value: str) -> tuple[str, ...]:
     return tuple(item.strip() for item in value.split(",") if item.strip())
 
 
+def get_gcp_range_backend() -> str:
+    """Return the selected GCP range backend.
+
+    The historical GCP path is GDC VM Runtime, so ``gdc`` remains the default
+    whenever ``CLOUD_PROVIDER=gcp`` and no explicit backend is configured.
+    """
+    if os.environ.get("CLOUD_PROVIDER", "aws") != "gcp":
+        return ""
+    backend = os.environ.get("GCP_RANGE_BACKEND") or os.environ.get("GCP_RANGE_PLANE") or "gdc"
+    backend = backend.strip().lower()
+    if backend not in {"gdc", "gce"}:
+        raise RuntimeError(f"GCP_RANGE_BACKEND must be 'gdc' or 'gce', got {backend!r}")
+    return backend
+
+
 def _is_active_gdc_range_plane() -> bool:
-    return os.environ.get("CLOUD_PROVIDER", "aws") == "gcp"
+    return get_gcp_range_backend() == "gdc"
+
+
+def is_gce_range_cell_backend() -> bool:
+    """Return True when GCP ranges should be provisioned as GCE range cells."""
+    return get_gcp_range_backend() == "gce"
 
 
 def _first_non_empty_string(*values: Any) -> str:
@@ -511,6 +592,21 @@ def _load_gdc_scenario_pod_profile(prefix: str, *, default_image: str) -> GDCSce
     """Load a role-specific scenario Pod profile from env vars."""
     return GDCScenarioPodProfile(
         image=os.environ.get(f"{prefix}_IMAGE", default_image).strip() or default_image,
+    )
+
+
+def _load_gce_range_profile(
+    prefix: str,
+    *,
+    default_machine_type: str,
+    default_disk_size_gb: int,
+) -> GCERangeImageProfile:
+    """Load one GCE range guest image/sizing profile."""
+    return GCERangeImageProfile(
+        source_image=os.environ.get(f"{prefix}_IMAGE", "").strip(),
+        machine_type=os.environ.get(f"{prefix}_MACHINE_TYPE", default_machine_type).strip() or default_machine_type,
+        disk_size_gb=_get_int_env(f"{prefix}_DISK_SIZE_GB", default_disk_size_gb),
+        disk_type=os.environ.get(f"{prefix}_DISK_TYPE", "pd-balanced").strip() or "pd-balanced",
     )
 
 
@@ -705,6 +801,80 @@ def load_gdc_scenario_pod_config() -> GDCScenarioPodConfig:
     )
 
 
+def load_gce_range_cell_config() -> GCERangeCellConfig:
+    """Load the live-fire GCE range-cell backend configuration."""
+    if not is_gce_range_cell_backend():
+        raise RuntimeError("GCE range-cell config is only valid when CLOUD_PROVIDER=gcp and GCP_RANGE_BACKEND=gce")
+
+    project_id = (
+        os.environ.get("GCP_PROJECT_ID")
+        or os.environ.get("GOOGLE_CLOUD_PROJECT")
+        or os.environ.get("CLOUD_PROJECT_ID")
+        or ""
+    ).strip()
+    region = (
+        os.environ.get("RANGE_NETWORK_REGION") or os.environ.get("GCP_REGION") or os.environ.get("CLOUD_REGION") or ""
+    ).strip()
+    zone = get_range_availability_zone(default="").strip()
+    missing = [
+        name
+        for name, value in (
+            ("GCP_PROJECT_ID", project_id),
+            ("RANGE_NETWORK_REGION/GCP_REGION", region),
+            ("RANGE_NETWORK_ZONE", zone),
+            (
+                "GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL",
+                os.environ.get("GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL", "").strip(),
+            ),
+        )
+        if not value
+    ]
+    if missing:
+        raise RuntimeError("Missing required GCE range-cell configuration: " + ", ".join(missing))
+
+    network_mode = os.environ.get("GCP_RANGE_CELL_NETWORK_MODE", "vpc-per-range").strip().lower()
+    if network_mode != "vpc-per-range":
+        raise RuntimeError("GCE range cells currently require GCP_RANGE_CELL_NETWORK_MODE=vpc-per-range")
+
+    return GCERangeCellConfig(
+        project_id=project_id,
+        region=region,
+        zone=zone,
+        network_mode=network_mode,
+        service_account_email=os.environ.get("GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL", "").strip(),
+        service_account_scopes=_parse_csv_env(
+            os.environ.get(
+                "GCP_RANGE_HOST_SERVICE_ACCOUNT_SCOPES",
+                "https://www.googleapis.com/auth/logging.write,https://www.googleapis.com/auth/monitoring.write",
+            )
+        ),
+        linux=_load_gce_range_profile(
+            "GCP_RANGE_LINUX",
+            default_machine_type="e2-standard-2",
+            default_disk_size_gb=50,
+        ),
+        kali=_load_gce_range_profile(
+            "GCP_RANGE_KALI",
+            default_machine_type="e2-standard-4",
+            default_disk_size_gb=80,
+        ),
+        windows=_load_gce_range_profile(
+            "GCP_RANGE_WINDOWS",
+            default_machine_type="e2-standard-4",
+            default_disk_size_gb=80,
+        ),
+        dc=_load_gce_range_profile(
+            "GCP_RANGE_DC",
+            default_machine_type="e2-standard-4",
+            default_disk_size_gb=100,
+        ),
+        portal_network_cidrs=_parse_csv_env(
+            os.environ.get("PORTAL_NETWORK_CIDRS", "") or os.environ.get("PORTAL_VPC_CIDR", "")
+        ),
+        egress_allow_cidrs=_parse_csv_env(os.environ.get("GCP_RANGE_EGRESS_ALLOW_CIDRS", "")),
+    )
+
+
 def load_range_network_config() -> RangeNetworkConfig:
     """Load the active provider's range-network contract from environment variables."""
     portal_network_cidrs = _parse_csv_env(os.environ.get("PORTAL_NETWORK_CIDRS", ""))
@@ -721,8 +891,16 @@ def load_range_network_config() -> RangeNetworkConfig:
             portal_network_cidrs=portal_network_cidrs,
         )
 
+    project_id = (
+        os.environ.get("GCP_PROJECT_ID")
+        or os.environ.get("GOOGLE_CLOUD_PROJECT")
+        or os.environ.get("CLOUD_PROJECT_ID")
+        or ""
+    ).strip()
+    default_gce_pool_id = f"gcp-range-cells:{project_id}" if is_gce_range_cell_backend() else ""
+
     return RangeNetworkConfig(
-        network_id=os.environ.get("RANGE_NETWORK_ID") or os.environ.get("RANGE_VPC_ID", ""),
+        network_id=os.environ.get("RANGE_NETWORK_ID") or os.environ.get("RANGE_VPC_ID", "") or default_gce_pool_id,
         network_cidr=os.environ.get("RANGE_NETWORK_CIDR") or os.environ.get("RANGE_VPC_CIDR", ""),
         network_region=(
             os.environ.get("RANGE_NETWORK_REGION")

@@ -67,12 +67,12 @@ def build_guest_execution_context(
     os_type: str | None = None,
     role: str | None = None,
     kube_clients_builder: Callable[[], tuple[Any, Any, type]] | None = None,
+    secret_reader: Callable[[str], str] | None = None,
 ) -> GuestExecutionContext:
     """Resolve the transport, target, and shell family for guest setup.
 
-    ``kube_clients_builder`` injects the range-cluster Kubernetes client factory
-    for the GCP path (defaults to the live :func:`_build_range_kube_clients`);
-    tests pass a stub so transport selection is exercised without a cluster.
+    ``kube_clients_builder`` and ``secret_reader`` inject cloud boundaries for
+    tests while production uses the live Kubernetes and Secret Manager clients.
     """
     resolved_provider = provider or _get_provider()
     resolved_os_type = os_type or instance_data.get("os", "")
@@ -80,12 +80,21 @@ def build_guest_execution_context(
     document_name = get_setup_document_name(resolved_os_type)
 
     if resolved_provider == "gcp":
+        if _is_gce_instance_output(instance_data):
+            return _build_gce_execution_context(
+                instance_data,
+                resolved_os_type,
+                resolved_role,
+                document_name,
+                secret_reader=secret_reader,
+            )
         return _build_gcp_execution_context(
             instance_data,
             resolved_os_type,
             resolved_role,
             document_name,
             kube_clients_builder=kube_clients_builder or _build_range_kube_clients,
+            secret_reader=secret_reader,
         )
 
     target = instance_data.get("instance_id", "")
@@ -97,6 +106,48 @@ def build_guest_execution_context(
         target=target,
         document_name=document_name,
         transport_name="ssm",
+    )
+
+
+def _is_gce_instance_output(instance_data: dict[str, Any]) -> bool:
+    """Return True for Compute Engine range-cell guest output records."""
+    return (
+        instance_data.get("asset_type") == "gce_vm"
+        or bool(instance_data.get("gcp_instance_name"))
+        or bool(instance_data.get("gcp_zone"))
+    )
+
+
+def _build_gce_execution_context(
+    instance_data: dict[str, Any],
+    os_type: str,
+    role: str,
+    document_name: str,
+    *,
+    secret_reader: Callable[[str], str] | None,
+) -> GuestExecutionContext:
+    """Build direct private-SSH execution for a GCE range-cell guest."""
+    from executors.guest_ssh_executor import GuestSSHExecutor
+
+    target = instance_data.get("private_ip", "")
+    if not target:
+        raise ValueError("GCE guest execution requires private_ip in instance output")
+    secret_id = instance_data.get("ssh_key_secret_arn", "")
+    if not secret_id:
+        raise ValueError("GCE guest execution requires ssh_key_secret_arn in instance output")
+    private_key = (secret_reader or get_secrets_store().get_secret)(secret_id)
+    username = instance_data.get("ssh_username") or instance_data.get("ssh_user") or get_ssh_username(os_type, role)
+    executor = GuestSSHExecutor(
+        private_key=private_key,
+        username=username,
+        host_public_key=instance_data.get("gcp_host_public_key", ""),
+        known_hosts_host=target,
+    )
+    return GuestExecutionContext(
+        executor=executor,
+        target=target,
+        document_name=document_name,
+        transport_name="ssh",
     )
 
 
@@ -121,6 +172,7 @@ def _build_gcp_execution_context(
     document_name: str,
     *,
     kube_clients_builder: Callable[[], tuple[Any, Any, type]],
+    secret_reader: Callable[[str], str] | None,
 ) -> GuestExecutionContext:
     """Build the in-range-cluster guest setup transport for a GDC VM Runtime guest.
 
@@ -145,7 +197,7 @@ def _build_gcp_execution_context(
     if not runner_image:
         raise ValueError("GDC guest setup requires GDC_SETUP_RUNNER_IMAGE (or ENGINE_TASK_IMAGE) to be set")
 
-    private_key = get_secrets_store().get_secret(secret_id)
+    private_key = (secret_reader or get_secrets_store().get_secret)(secret_id)
     username = instance_data.get("ssh_username") or instance_data.get("ssh_user") or get_ssh_username(os_type, role)
     # Host key the provisioner installed on the guest via cloud-init (Linux
     # only); seeds the runner's known_hosts so StrictHostKeyChecking=yes
