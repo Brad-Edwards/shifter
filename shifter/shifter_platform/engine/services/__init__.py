@@ -29,6 +29,7 @@ from ._range import (
     destroy_range_by_request,
     get_instance_ips_by_uuid,
     get_range_status,
+    reassign_range_owner_by_request,
 )
 from ._terminal import (
     connect_ngfw_terminal,
@@ -60,6 +61,7 @@ __all__ = (
     "get_ssh_key",
     "get_user_ready_range_instances",
     "pause_range",
+    "reassign_range_owner_by_request",
     "resume_range",
     "start_ngfw",
     "stop_ngfw",

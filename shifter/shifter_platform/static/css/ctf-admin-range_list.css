@@ -21,3 +21,46 @@
     margin-bottom: 12px;
     display: none;
 }
+
+.recovery-controls {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.recovery-controls select {
+    font-size: 13px;
+    padding: 2px 4px;
+}
+
+.recovery-failure-category {
+    font-size: 12px;
+}
+
+.spare-pool-card {
+    margin-bottom: 16px;
+    padding: 12px 16px;
+}
+
+.spare-pool-title {
+    margin: 0 0 8px;
+    font-size: 15px;
+}
+
+.spare-pool-summary {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin-bottom: 10px;
+    font-size: 13px;
+}
+
+.spare-pool-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.spare-pool-controls input[type="number"] {
+    width: 80px;
+}

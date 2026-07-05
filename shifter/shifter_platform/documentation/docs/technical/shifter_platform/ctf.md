@@ -70,6 +70,25 @@ CMS range services — the same path Mission Control uses to launch a range.
   double-assign a range, with an exponential-backoff retry wrapper.
 - `batch.py` — throttled event-wide provisioning, pacing participant spin-ups.
 - `lifecycle.py`, `status.py`, `tasks.py` — teardown, status reads, and task wiring.
+- `recovery.py` — `recover_participant_range(participant_id, *, strategy,
+  operator, spare_range_instance_id=None)` recovers a destroyed participant range
+  (organizer-only). `rebuild` provisions a fresh range via the CMS bridge; `reassign_spare`
+  consumes an available `CTFSpareRange` from the participant's own event pool and
+  reassigns its ownership to the participant (terminal access is keyed on the range's
+  owning user, so both the CMS and engine ownership move together via
+  `cms.services.reassign_range_owner`). The intent is persisted as a `CTFRangeRecovery`
+  row keyed on participant + old range + strategy; resumption after a partial failure is
+  data-driven (recorded replacement id and the live old-range status), so retries never
+  duplicate the replacement or the audit row. The old range is always destroyed — there
+  is no disposition/forensics-retention choice. Recovery writes one `risk_register` audit
+  row.
+- `spares.py` — `provision_event_spares(event_id, target_count, *, operator=None)` tops up
+  an event's prewarmed spare-range pool (`CTFEvent.spare_range_count`), each spare owned by
+  a dedicated, auto-created managed system user (never a `CTFParticipant`) until consumed.
+  `get_event_spare_summary(event_id)` reports pool counts for the admin surface;
+  `cleanup_event_spares(event_id)` tears down unconsumed spares and their managed users at
+  event teardown. A spare's status reaches `ready`/`failed` via the existing
+  `cms.services.range_status_changed` projection (`ctf.signals.sync_ctf_spare_range_status`).
 
 Long waits are broken into heartbeat-touching chunks so the scheduler's liveness file
 does not go stale and provisioning stays responsive to shutdown.
