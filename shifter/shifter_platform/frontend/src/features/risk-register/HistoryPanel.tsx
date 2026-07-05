@@ -4,7 +4,7 @@ import { Alert, EmptyState, Spinner } from "@/ds";
 
 import { formatTimestamp, titleCase } from "./format";
 
-export function HistoryPanel({ riskId, canViewAudit }: { riskId: number; canViewAudit: boolean }) {
+export function HistoryPanel({ riskId, canViewAudit }: Readonly<{ riskId: number; canViewAudit: boolean }>) {
   const audit = useAudit(riskId, canViewAudit);
 
   if (!canViewAudit) {
@@ -46,7 +46,7 @@ export function HistoryPanel({ riskId, canViewAudit }: { riskId: number; canView
             <td>{titleCase(String(row.action ?? ""))}</td>
             <td>
               {row.actor_type ? `${row.actor_type}` : "—"}
-              {row.actor_id != null ? ` #${row.actor_id}` : ""}
+              {row.actor_id == null ? "" : ` #${row.actor_id}`}
             </td>
             <td>{row.request_id ? <span className="ds-code">{row.request_id}</span> : "—"}</td>
           </tr>

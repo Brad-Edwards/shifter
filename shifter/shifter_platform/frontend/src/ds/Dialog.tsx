@@ -16,9 +16,9 @@ interface DialogProps {
  * for the destructive/confirm flows (delete, restore, close/reopen, comment
  * delete). No browser `confirm()`.
  */
-export function Dialog({ title, onClose, footer, children }: DialogProps) {
+export function Dialog({ title, onClose, footer, children }: Readonly<DialogProps>) {
   const titleId = useId();
-  const dialogRef = useRef<HTMLDivElement>(null);
+  const dialogRef = useRef<HTMLDialogElement>(null);
   const returnFocusRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
@@ -37,7 +37,8 @@ export function Dialog({ title, onClose, footer, children }: DialogProps) {
       const focusable = items();
       if (focusable.length === 0) return;
       const first = focusable[0];
-      const last = focusable[focusable.length - 1];
+      const last = focusable.at(-1);
+      if (!last) return;
       if (event.shiftKey && document.activeElement === first) {
         event.preventDefault();
         last.focus();
@@ -56,7 +57,7 @@ export function Dialog({ title, onClose, footer, children }: DialogProps) {
 
   return (
     <div className="ds-overlay">
-      <div className="ds-dialog" role="dialog" aria-modal="true" aria-labelledby={titleId} ref={dialogRef}>
+      <dialog className="ds-dialog" aria-modal="true" aria-labelledby={titleId} ref={dialogRef} open>
         <div className="ds-dialog__header">
           <h3 className="ds-dialog__title" id={titleId}>
             {title}
@@ -64,7 +65,7 @@ export function Dialog({ title, onClose, footer, children }: DialogProps) {
         </div>
         <div className="ds-dialog__body">{children}</div>
         <div className="ds-dialog__footer">{footer}</div>
-      </div>
+      </dialog>
     </div>
   );
 }

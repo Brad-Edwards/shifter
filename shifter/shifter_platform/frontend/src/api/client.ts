@@ -25,14 +25,13 @@ export interface RequestOptions {
 }
 
 function newRequestId(): string {
-  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
-    return crypto.randomUUID();
-  }
-  return `req-${Date.now()}-${Math.floor(Math.random() * 1e9)}`;
+  // crypto.randomUUID is available in all supported browsers (secure context)
+  // and Node 20 / jsdom; no insecure Math.random fallback is needed.
+  return crypto.randomUUID();
 }
 
 function buildUrl(path: string, query?: Record<string, QueryValue>): string {
-  const url = new URL(`${API_BASE}${path}`, window.location.origin);
+  const url = new URL(`${API_BASE}${path}`, globalThis.location.origin);
   if (query) {
     for (const [key, value] of Object.entries(query)) {
       if (value !== undefined && value !== null) {

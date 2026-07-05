@@ -15,7 +15,7 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from django.conf import settings
-from django.http import Http404, HttpResponse
+from django.http import Http404, HttpRequest, HttpResponse
 from django.urls import path, re_path
 
 from risk_register import views
@@ -23,6 +23,7 @@ from risk_register.spa_views import risk_register_spa_host
 
 
 def _spa_enabled() -> bool:
+    """Return whether the Risk Register SPA rollout flag is enabled."""
     return bool(getattr(settings, "RISK_REGISTER_SPA_ENABLED", False))
 
 
@@ -34,7 +35,8 @@ def _page(django_view: Callable[..., HttpResponse] | None) -> Callable[..., Http
     default Django mode).
     """
 
-    def _dispatch(request, *args, **kwargs) -> HttpResponse:
+    def _dispatch(request: HttpRequest, *args, **kwargs) -> HttpResponse:
+        """Serve the SPA shell when enabled, else the Django page (or 404)."""
         if _spa_enabled():
             return risk_register_spa_host(request, *args, **kwargs)
         if django_view is None:

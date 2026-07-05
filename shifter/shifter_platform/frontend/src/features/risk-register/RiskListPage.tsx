@@ -134,7 +134,7 @@ export function RiskListPage() {
         </div>
       ) : null}
 
-      {restoreId !== null ? (
+      {restoreId !== null && (
         <ConfirmDialog
           title="Restore risk?"
           confirmLabel="Restore"
@@ -152,7 +152,7 @@ export function RiskListPage() {
         >
           This risk will be restored to the active register.
         </ConfirmDialog>
-      ) : null}
+      )}
     </>
   );
 }
@@ -162,12 +162,12 @@ function RiskListBody({
   filtersActive,
   canWrite,
   onRestore,
-}: {
+}: Readonly<{
   query: ReturnType<typeof useRisks>;
   filtersActive: boolean;
   canWrite: boolean;
   onRestore: (id: number) => void;
-}) {
+}>) {
   if (query.isLoading) {
     return (
       <div className="ds-card__body" style={{ display: "grid", gap: "var(--ds-space-2)" }}>

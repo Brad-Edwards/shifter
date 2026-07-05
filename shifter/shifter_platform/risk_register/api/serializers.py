@@ -18,19 +18,22 @@ class RiskValidatorsMixin:
     create/update serializers accepted invalid STRIDE categories (#1302).
     """
 
-    def validate_likelihood_score(self, value):
+    @staticmethod
+    def validate_likelihood_score(value):
         """Validate likelihood score is between 1 and 5."""
         if value is not None and (value < 1 or value > 5):
             raise serializers.ValidationError(LIKELIHOOD_RANGE_MSG)
         return value
 
-    def validate_impact_score(self, value):
+    @staticmethod
+    def validate_impact_score(value):
         """Validate impact score is between 1 and 5."""
         if value is not None and (value < 1 or value > 5):
             raise serializers.ValidationError(IMPACT_RANGE_MSG)
         return value
 
-    def validate_stride_categories(self, value):
+    @staticmethod
+    def validate_stride_categories(value):
         """Validate every STRIDE category is a known code."""
         valid_codes = [choice[0] for choice in StrideCategory.choices]
         for category in value:

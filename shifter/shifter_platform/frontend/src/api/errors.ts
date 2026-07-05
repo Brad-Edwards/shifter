@@ -31,9 +31,11 @@ export class ApiError extends Error {
     if (!this.details) return out;
     for (const [field, raw] of Object.entries(this.details)) {
       if (Array.isArray(raw)) {
-        out[field] = raw.map((item) => String(item));
+        out[field] = raw.map(String);
+      } else if (typeof raw === "string") {
+        out[field] = [raw];
       } else if (raw != null) {
-        out[field] = [String(raw)];
+        out[field] = [JSON.stringify(raw)];
       }
     }
     return out;

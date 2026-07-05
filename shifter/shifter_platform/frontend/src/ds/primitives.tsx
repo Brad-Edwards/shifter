@@ -24,7 +24,7 @@ export function Button({
   disabled,
   type,
   ...rest
-}: ButtonProps) {
+}: Readonly<ButtonProps>) {
   const classes = ["ds-btn", `ds-btn--${variant}`];
   if (small) classes.push("ds-btn--sm");
   if (block) classes.push("ds-btn--block");
@@ -45,13 +45,13 @@ export function Button({
   );
 }
 
-export function Badge({ intent, solid, children }: { intent: Intent; solid?: boolean; children: ReactNode }) {
+export function Badge({ intent, solid, children }: Readonly<{ intent: Intent; solid?: boolean; children: ReactNode }>) {
   const classes = ["ds-badge", `ds-badge--${intent}`];
   if (solid) classes.push("ds-badge--solid");
   return <span className={classes.join(" ")}>{children}</span>;
 }
 
-export function StatusPill({ intent, children }: { intent: StatusIntent; children: ReactNode }) {
+export function StatusPill({ intent, children }: Readonly<{ intent: StatusIntent; children: ReactNode }>) {
   return (
     <span className={`ds-status ds-status--${intent}`}>
       <span className="ds-status__dot" /> {children}
@@ -64,12 +64,12 @@ export function Alert({
   title,
   role = "status",
   children,
-}: {
+}: Readonly<{
   intent: Intent;
   title?: string;
   role?: "status" | "alert";
   children?: ReactNode;
-}) {
+}>) {
   return (
     <div className={`ds-alert ds-alert--${intent}`} role={role}>
       <div>
@@ -80,15 +80,20 @@ export function Alert({
   );
 }
 
-export function Spinner({ label = "Loading" }: { label?: string }) {
-  return <span className="ds-spinner" role="status" aria-label={label} />;
+export function Spinner({ label = "Loading" }: Readonly<{ label?: string }>) {
+  // <output> carries an implicit role="status" (a11y) without the explicit role attribute.
+  return <output className="ds-spinner" aria-label={label} />;
 }
 
-export function Skeleton({ width }: { width?: string }) {
+export function Skeleton({ width }: Readonly<{ width?: string }>) {
   return <div className="ds-skeleton" style={width ? { inlineSize: width } : undefined} aria-hidden="true" />;
 }
 
-export function EmptyState({ title, children, action }: { title: string; children?: ReactNode; action?: ReactNode }) {
+export function EmptyState({
+  title,
+  children,
+  action,
+}: Readonly<{ title: string; children?: ReactNode; action?: ReactNode }>) {
   return (
     <div className="ds-empty">
       <p className="ds-empty__title">{title}</p>

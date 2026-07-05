@@ -12,7 +12,7 @@ const BootstrapContext = createContext<Bootstrap | null>(null);
  * (expired session) it redirects to the shared Django login; other failures
  * render a non-leaking error state.
  */
-export function BootstrapProvider({ children }: { children: ReactNode }) {
+export function BootstrapProvider({ children }: Readonly<{ children: ReactNode }>) {
   const { data, isLoading, error } = useBootstrap();
 
   if (isLoading) {
@@ -25,8 +25,8 @@ export function BootstrapProvider({ children }: { children: ReactNode }) {
 
   if (error || !data) {
     if (error instanceof ApiError && error.status === 401) {
-      const next = encodeURIComponent(window.location.pathname + window.location.search);
-      window.location.assign(`/login/?next=${next}`);
+      const next = encodeURIComponent(globalThis.location.pathname + globalThis.location.search);
+      globalThis.location.assign(`/login/?next=${next}`);
       return null;
     }
     return (

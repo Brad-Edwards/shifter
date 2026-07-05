@@ -38,5 +38,5 @@ export const STRIDE_OPTIONS: ReadonlyArray<{ code: StrideCode; label: string }> 
 
 /** Normalize the JSONField `stride_categories` (typed `unknown`) into a string list. */
 export function strideList(value: unknown): string[] {
-  return Array.isArray(value) ? value.map((item) => String(item)) : [];
+  return Array.isArray(value) ? value.map(String) : [];
 }

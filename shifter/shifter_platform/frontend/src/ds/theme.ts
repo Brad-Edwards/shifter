@@ -11,7 +11,7 @@ export function getPinnedTheme(): Theme | null {
 }
 
 function prefersLight(): boolean {
-  return typeof window !== "undefined" && !!window.matchMedia?.("(prefers-color-scheme: light)").matches;
+  return typeof globalThis.matchMedia === "function" && globalThis.matchMedia("(prefers-color-scheme: light)").matches;
 }
 
 export function effectiveTheme(): Theme {

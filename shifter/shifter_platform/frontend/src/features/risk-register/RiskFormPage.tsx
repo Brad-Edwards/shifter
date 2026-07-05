@@ -22,6 +22,8 @@ interface FormState {
   resolution_reason: string;
 }
 
+const FIELD_GAP = "var(--ds-space-4)";
+
 const EMPTY: FormState = {
   title: "",
   description: "",
@@ -75,7 +77,7 @@ function toPayload(state: FormState, includeResolution: boolean) {
   return includeResolution ? { ...base, resolution_reason: state.resolution_reason } : base;
 }
 
-export function RiskFormPage({ mode }: { mode: "create" | "edit" }) {
+export function RiskFormPage({ mode }: Readonly<{ mode: "create" | "edit" }>) {
   const navigate = useNavigate();
   const params = useParams();
   const riskId = mode === "edit" ? Number(params.id) : undefined;
@@ -129,7 +131,7 @@ export function RiskFormPage({ mode }: { mode: "create" | "edit" }) {
 
   if (mode === "edit" && existing.isLoading) {
     return (
-      <div className="ds-empty" role="status">
+      <div className="ds-empty">
         <Spinner label="Loading risk" />
       </div>
     );
@@ -163,7 +165,7 @@ export function RiskFormPage({ mode }: { mode: "create" | "edit" }) {
       ) : null}
 
       <form ref={formRef} onSubmit={onSubmit} noValidate className="ds-card">
-        <div className="ds-card__body" style={{ display: "grid", gap: "var(--ds-space-4)", maxInlineSize: "48rem" }}>
+        <div className="ds-card__body" style={{ display: "grid", gap: FIELD_GAP, maxInlineSize: "48rem" }}>
           <TextField
             label="Title"
             required
@@ -179,7 +181,7 @@ export function RiskFormPage({ mode }: { mode: "create" | "edit" }) {
             error={firstError("description")}
             onChange={(event) => set("description", event.target.value)}
           />
-          <div style={{ display: "flex", gap: "var(--ds-space-4)", flexWrap: "wrap" }}>
+          <div style={{ display: "flex", gap: FIELD_GAP, flexWrap: "wrap" }}>
             <SelectField
               label="Severity"
               value={state.severity}
@@ -205,7 +207,7 @@ export function RiskFormPage({ mode }: { mode: "create" | "edit" }) {
               ))}
             </SelectField>
           </div>
-          <div style={{ display: "flex", gap: "var(--ds-space-4)", flexWrap: "wrap" }}>
+          <div style={{ display: "flex", gap: FIELD_GAP, flexWrap: "wrap" }}>
             <TextField
               label="Likelihood (1–5)"
               type="number"

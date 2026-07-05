@@ -7,7 +7,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { apiFetch } from "./client";
 import type {
-  AuditLog,
   Comment,
   PaginatedAuditLogList,
   PaginatedRiskList,
@@ -34,9 +33,9 @@ export const riskKeys = {
 };
 
 function invalidateRisk(queryClient: ReturnType<typeof useQueryClient>, riskId?: number) {
-  void queryClient.invalidateQueries({ queryKey: riskKeys.all });
+  queryClient.invalidateQueries({ queryKey: riskKeys.all });
   if (riskId !== undefined) {
-    void queryClient.invalidateQueries({ queryKey: ["risks", "audit", riskId] });
+    queryClient.invalidateQueries({ queryKey: ["risks", "audit", riskId] });
   }
 }
 
@@ -117,7 +116,7 @@ export function useAddComment(riskId: number) {
     mutationFn: (content: string) =>
       apiFetch<Comment>(`/risks/${riskId}/comments/`, { method: "POST", body: { content } }),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["risks", "comments", riskId] });
+      queryClient.invalidateQueries({ queryKey: ["risks", "comments", riskId] });
       invalidateRisk(queryClient, riskId);
     },
   });
@@ -129,7 +128,7 @@ export function useDeleteComment(riskId: number) {
     mutationFn: (commentId: number) =>
       apiFetch<void>(`/risks/${riskId}/comments/${commentId}/`, { method: "DELETE" }),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["risks", "comments", riskId] });
+      queryClient.invalidateQueries({ queryKey: ["risks", "comments", riskId] });
       invalidateRisk(queryClient, riskId);
     },
   });
@@ -147,4 +146,4 @@ export function useAudit(riskId: number, enabled = true) {
   });
 }
 
-export type { AuditLog };
+export type { AuditLog } from "./types";

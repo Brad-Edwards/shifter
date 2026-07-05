@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from django.conf import settings
 from django.contrib.auth.views import redirect_to_login
-from django.http import HttpResponse
+from django.http import HttpRequest, HttpResponse
 from django.shortcuts import render
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_safe
@@ -29,7 +29,7 @@ from shared.spa import vite_asset_urls
 
 @require_safe
 @ensure_csrf_cookie
-def risk_register_spa_host(request, *args, **kwargs) -> HttpResponse:
+def risk_register_spa_host(request: HttpRequest, *args, **kwargs) -> HttpResponse:
     """Serve the Risk Register SPA shell for any GET page path under the prefix."""
     if not request.user.is_authenticated:
         return redirect_to_login(request.get_full_path(), login_url=settings.LOGIN_URL)

@@ -13,6 +13,8 @@ no secrets, tokens, or cookies.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from django.conf import settings
 from drf_spectacular.utils import extend_schema
 from rest_framework import serializers
@@ -26,6 +28,9 @@ from shared.api.permissions import IsAuthenticatedSessionOrApiToken
 from shared.api_tokens.authentication import ApiTokenAuthentication
 from shared.api_tokens.models import ApiToken
 from shared.auth import can_edit_cms_authoring
+
+if TYPE_CHECKING:
+    from django.contrib.auth.models import User
 
 
 class BootstrapPrincipalSerializer(serializers.Serializer):
@@ -60,7 +65,7 @@ class BootstrapSerializer(serializers.Serializer):
     feature_flags = BootstrapFeatureFlagsSerializer()
 
 
-def _principal_from_token(token: ApiToken) -> tuple[dict, bool]:
+def _principal_from_token(token: ApiToken) -> tuple[dict[str, object], bool]:
     """Build the principal block and CMS-authoring flag for a token request."""
     owner = getattr(token, "created_by", None)
     if owner is None:
@@ -88,7 +93,7 @@ def _principal_from_token(token: ApiToken) -> tuple[dict, bool]:
     )
 
 
-def _principal_from_session(user) -> tuple[dict, bool]:
+def _principal_from_session(user: User) -> tuple[dict[str, object], bool]:
     """Build the principal block and CMS-authoring flag for a session request."""
     return (
         {

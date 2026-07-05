@@ -52,19 +52,23 @@ RUN uv export --no-emit-project --frozen --no-dev > requirements.txt && \
 # rebuilds (docker:S8431 forbids tag + digest together).
 FROM node:20-slim AS frontend
 
-WORKDIR /app/shifter_platform
+WORKDIR /app/shifter_platform/frontend
 
 # Install with the committed lockfile for a reproducible, offline-resolvable build.
-COPY shifter_platform/frontend/package.json shifter_platform/frontend/package-lock.json frontend/
-RUN cd frontend && npm ci
+# --ignore-scripts blocks package lifecycle scripts (docker:S6505); Vite's esbuild
+# resolves its prebuilt platform binary from its optional dependency without a
+# postinstall, so the build still works.
+COPY shifter_platform/frontend/package.json shifter_platform/frontend/package-lock.json ./
+RUN npm ci --ignore-scripts
 
-# Design-system CSS (published copy inside the build context) + SPA sources.
-COPY shifter_platform/static/design-system static/design-system
-COPY shifter_platform/frontend frontend
+# Design-system CSS (published copy inside the build context; see the @ds Vite
+# alias) plus the SPA sources. Vite emits the content-hashed bundle + manifest to
+# /app/shifter_platform/static/spa (frontend/vite.config.ts); tsc typecheck runs
+# first via `npm run build`.
+COPY shifter_platform/static/design-system /app/shifter_platform/static/design-system
+COPY shifter_platform/frontend ./
 
-# Vite emits the content-hashed bundle + manifest to /app/shifter_platform/static/spa
-# (see frontend/vite.config.ts). tsc typecheck runs first via `npm run build`.
-RUN cd frontend && npm run build
+RUN npm run build
 
 # Production stage. Tracked by the `docker` dependabot ecosystem; the floating
 # minor tag receives upstream security rebuilds (docker:S8431 forbids tag +

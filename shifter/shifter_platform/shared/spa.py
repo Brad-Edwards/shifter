@@ -43,7 +43,7 @@ def _manifest_path() -> Path | None:
     return Path(dirs[0]) / _MANIFEST_RELATIVE
 
 
-def _read_manifest() -> dict:
+def _read_manifest() -> dict[str, object]:
     """Load and parse the Vite manifest, or return an empty mapping if absent."""
     path = _manifest_path()
     if path is None or not path.is_file():
@@ -59,12 +59,12 @@ def _read_manifest() -> dict:
 
 
 @lru_cache(maxsize=1)
-def _cached_manifest() -> dict:
+def _cached_manifest() -> dict[str, object]:
     """Cache the parsed manifest for the process lifetime (production)."""
     return _read_manifest()
 
 
-def _load_manifest() -> dict:
+def _load_manifest() -> dict[str, object]:
     """Return the Vite manifest, re-reading each call under DEBUG for dev iteration."""
     if getattr(settings, "DEBUG", False):
         return _read_manifest()

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 
 import { useAddComment, useComments, useDeleteComment } from "@/api/risks";
 import { ApiError } from "@/api/errors";
@@ -18,12 +18,12 @@ export function CommentsPanel({
   canWrite,
   readOnly,
   includeDeleted = false,
-}: {
+}: Readonly<{
   riskId: number;
   canWrite: boolean;
   readOnly: boolean;
   includeDeleted?: boolean;
-}) {
+}>) {
   // A deleted risk is inspected with include_deleted=true; carry that through so
   // its comment history stays readable (the backend list is active-only by
   // default and 404s a deleted parent otherwise). Writes stay off via readOnly.
@@ -44,9 +44,51 @@ export function CommentsPanel({
     });
   }
 
+  const canModify = canWrite && !readOnly;
+
+  let commentsBody: ReactNode;
+  if (comments.isLoading) {
+    commentsBody = <Spinner label="Loading comments" />;
+  } else if (comments.isError) {
+    commentsBody = (
+      <Alert intent="danger" role="alert">
+        Could not load comments.
+      </Alert>
+    );
+  } else if ((comments.data?.length ?? 0) === 0) {
+    commentsBody = <EmptyState title="No comments yet" />;
+  } else {
+    commentsBody = (
+      <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gap: "var(--ds-space-3)" }}>
+        {comments.data?.map((comment) => (
+          <li key={comment.id} className="ds-card">
+            <div className="ds-card__body">
+              <div className="ds-text-muted" style={{ marginBlockEnd: "var(--ds-space-1)" }}>
+                {authorName(comment)} · {formatTimestamp(comment.created_at)}
+              </div>
+              <p style={{ whiteSpace: "pre-wrap", margin: 0 }}>{comment.content}</p>
+              {canModify ? (
+                <div style={{ marginBlockStart: "var(--ds-space-2)" }}>
+                  <Button
+                    variant="tertiary"
+                    small
+                    onClick={() => setDeleteId(comment.id ?? null)}
+                    aria-label={`Delete comment by ${authorName(comment)} from ${formatTimestamp(comment.created_at)}`}
+                  >
+                    Delete
+                  </Button>
+                </div>
+              ) : null}
+            </div>
+          </li>
+        ))}
+      </ul>
+    );
+  }
+
   return (
     <div style={{ display: "grid", gap: "var(--ds-space-4)" }}>
-      {canWrite && !readOnly ? (
+      {canModify ? (
         <form onSubmit={submit} style={{ display: "grid", gap: "var(--ds-space-2)" }}>
           <TextAreaField
             label="Add a comment"
@@ -63,42 +105,9 @@ export function CommentsPanel({
         </form>
       ) : null}
 
-      {comments.isLoading ? (
-        <Spinner label="Loading comments" />
-      ) : comments.isError ? (
-        <Alert intent="danger" role="alert">
-          Could not load comments.
-        </Alert>
-      ) : (comments.data?.length ?? 0) === 0 ? (
-        <EmptyState title="No comments yet" />
-      ) : (
-        <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gap: "var(--ds-space-3)" }}>
-          {comments.data?.map((comment) => (
-            <li key={comment.id} className="ds-card">
-              <div className="ds-card__body">
-                <div className="ds-text-muted" style={{ marginBlockEnd: "var(--ds-space-1)" }}>
-                  {authorName(comment)} · {formatTimestamp(comment.created_at)}
-                </div>
-                <p style={{ whiteSpace: "pre-wrap", margin: 0 }}>{comment.content}</p>
-                {canWrite && !readOnly ? (
-                  <div style={{ marginBlockStart: "var(--ds-space-2)" }}>
-                    <Button
-                      variant="tertiary"
-                      small
-                      onClick={() => setDeleteId(comment.id ?? null)}
-                      aria-label={`Delete comment by ${authorName(comment)} from ${formatTimestamp(comment.created_at)}`}
-                    >
-                      Delete
-                    </Button>
-                  </div>
-                ) : null}
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
+      {commentsBody}
 
-      {deleteId !== null ? (
+      {deleteId !== null && (
         <ConfirmDialog
           title="Delete comment?"
           confirmLabel="Delete"
@@ -117,7 +126,7 @@ export function CommentsPanel({
         >
           This comment will be removed. This cannot be undone.
         </ConfirmDialog>
-      ) : null}
+      )}
     </div>
   );
 }

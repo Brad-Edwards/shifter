@@ -20,12 +20,12 @@ export function AppShell({
   groups,
   currentPath,
   children,
-}: {
+}: Readonly<{
   principalName: string;
   groups: NavGroup[];
   currentPath: string;
   children: ReactNode;
-}) {
+}>) {
   return (
     <>
       <a className="ds-skip-link" href="#main-content">
@@ -68,7 +68,11 @@ export function AppShell({
   );
 }
 
-export function PageHeader({ title, subtitle, actions }: { title: string; subtitle?: ReactNode; actions?: ReactNode }) {
+export function PageHeader({
+  title,
+  subtitle,
+  actions,
+}: Readonly<{ title: string; subtitle?: ReactNode; actions?: ReactNode }>) {
   return (
     <div className="ds-page-header">
       <div>
@@ -89,7 +93,7 @@ export interface Crumb {
   to?: string;
 }
 
-export function Breadcrumb({ items }: { items: Crumb[] }) {
+export function Breadcrumb({ items }: Readonly<{ items: Crumb[] }>) {
   return (
     <nav aria-label="Breadcrumb">
       <ol className="ds-breadcrumb">
@@ -128,19 +132,19 @@ export function Tabs({
   value,
   onChange,
   label,
-}: {
+}: Readonly<{
   items: TabItem[];
   value: string;
   onChange: (id: string) => void;
   label: string;
-}) {
+}>) {
   const ref = useRef<HTMLDivElement>(null);
 
   // Roving-tabindex keyboard handling lives on the focusable tab buttons (APG
   // authoring practice); the tablist container itself is not focusable.
   function onKeyDown(event: KeyboardEvent<HTMLButtonElement>) {
     const index = items.findIndex((item) => item.id === value);
-    let next = index;
+    let next: number;
     switch (event.key) {
       case "ArrowRight":
         next = (index + 1) % items.length;

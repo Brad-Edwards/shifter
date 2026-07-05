@@ -16,7 +16,7 @@ export function ConfirmDialog({
   onConfirm,
   onCancel,
   children,
-}: {
+}: Readonly<{
   title: string;
   confirmLabel: string;
   destructive?: boolean;
@@ -25,8 +25,13 @@ export function ConfirmDialog({
   onConfirm: () => void;
   onCancel: () => void;
   children: ReactNode;
-}) {
-  const message = error instanceof ApiError ? error.message : error ? "The action could not be completed." : null;
+}>) {
+  let message: string | null = null;
+  if (error instanceof ApiError) {
+    message = error.message;
+  } else if (error) {
+    message = "The action could not be completed.";
+  }
   return (
     <Dialog
       title={title}

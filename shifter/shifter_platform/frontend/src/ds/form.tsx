@@ -15,7 +15,7 @@ function useFieldIds(help?: string, error?: string) {
   return { id, helpId, errorId, describedBy };
 }
 
-function FieldLabel({ id, label, required }: { id: string; label: string; required?: boolean }) {
+function FieldLabel({ id, label, required }: Readonly<{ id: string; label: string; required?: boolean }>) {
   return (
     <label className="ds-label" htmlFor={id}>
       {label}
@@ -28,7 +28,12 @@ function FieldLabel({ id, label, required }: { id: string; label: string; requir
   );
 }
 
-function FieldMessages({ help, helpId, error, errorId }: { help?: string; helpId: string; error?: string; errorId: string }) {
+function FieldMessages({
+  help,
+  helpId,
+  error,
+  errorId,
+}: Readonly<{ help?: string; helpId: string; error?: string; errorId: string }>) {
   return (
     <>
       {help ? (
@@ -130,13 +135,13 @@ export function CheckboxGroup({
   selected,
   onChange,
   error,
-}: {
+}: Readonly<{
   legend: string;
   options: ReadonlyArray<CheckboxOption>;
   selected: string[];
   onChange: (next: string[]) => void;
   error?: string;
-}) {
+}>) {
   const errorId = useId();
   function toggle(value: string, checked: boolean) {
     onChange(checked ? [...selected, value] : selected.filter((item) => item !== value));
