@@ -155,6 +155,7 @@ def render_gcp_platform_runtime_env(
         f"GCP_REGION={config.region}",
         f"GCP_PROJECT_ID={config.project_id}",
         f"GOOGLE_CLOUD_PROJECT={config.project_id}",
+        "GCP_RANGE_BACKEND=gdc",
         "ENGINE_TASK_NAMESPACE=shifter-jobs",
         "ENGINE_TASK_SERVICE_ACCOUNT_NAME=provisioner",
         "ENGINE_TASK_IMAGE_PULL_POLICY=Always",

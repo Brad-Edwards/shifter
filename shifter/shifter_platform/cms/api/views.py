@@ -11,8 +11,9 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from cms.api.permissions import CMS_READ_PERMISSIONS, CMS_WRITE_PERMISSIONS, cms_actor_user
-from cms.api.serializers import YAMLContentSerializer
+from cms.api.serializers import CatalogEntrySerializer, YAMLContentSerializer
 from cms.scenario_editor import services as scenario_services
+from cms.scenarios import catalog_presentation
 from shared.api.errors import api_error_response
 
 logger = logging.getLogger(__name__)
@@ -24,6 +25,42 @@ def _actor_user(request: Request) -> User:
     if user is None:
         raise AssertionError("CMS actor unavailable after permission check")
     return user
+
+
+class CatalogListView(APIView):
+    """List catalog entries as read-only metadata (staff-review projection).
+
+    Returns every catalog entry (YAML defaults, DB customs, and ACES
+    package-backed entries) with allowlisted read-only fields. This is the
+    unfiltered staff-review projection — like the scenario-editor list — so a
+    CMS authoring actor can inspect disabled / staff-only entries. User-facing
+    and launch surfaces apply access/launchability filtering in the registry.
+    """
+
+    permission_classes = CMS_READ_PERMISSIONS
+
+    def get(self, request: Request) -> Response:
+        """Return all catalog entries as read-only presentation DTOs."""
+        entries = catalog_presentation.list_catalog_presentations()
+        return Response(CatalogEntrySerializer(entries, many=True).data)
+
+
+class CatalogDetailView(APIView):
+    """Return a single catalog entry's read-only metadata, or 404."""
+
+    permission_classes = CMS_READ_PERMISSIONS
+
+    def get(self, request: Request, scenario_id: str) -> Response:
+        """Return one catalog entry's read-only presentation DTO."""
+        entry = catalog_presentation.get_catalog_presentation(scenario_id)
+        if entry is None:
+            return api_error_response(
+                code="not_found",
+                message="Catalog entry not found",
+                status_code=status.HTTP_404_NOT_FOUND,
+                request=request,
+            )
+        return Response(CatalogEntrySerializer(entry).data)
 
 
 class YAMLValidateView(APIView):
