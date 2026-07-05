@@ -65,7 +65,7 @@ stale validation ranges before provisioning another Polaris range.
 | File | Purpose |
 |---|---|
 | `autounattend.xml` | Fully unattended WS2022 install answer file (see gotchas below). |
-| `bake.ps1` | FirstLogon bake: virtio drivers → guest agent → OpenSSH → AD DS/DNS → promote → (RunOnce) `a2_setup` → `BAKE_DONE`. |
+| `bake.ps1` | FirstLogon bake: virtio drivers → guest agent → OpenSSH → AD DS/DNS → promote → (SYSTEM AtStartup task) `a2_setup` → `BAKE_DONE`. |
 | `a2_setup.ps1` | (Shared with the AWS build, `scripts/polaris-aws-range/`) creates the BOREAS.LOCAL OUs/users/groups/SPNs/flags. |
 
 ## Current GCP dev artifacts
@@ -220,7 +220,8 @@ forever. Each of these was required to get Setup to complete:
 
 ## bake.ps1 — the post-install bake
 
-Runs at FirstLogon (and re-runs once via a RunOnce for the post-promotion seed):
+Runs at FirstLogon (and re-runs once via a SYSTEM AtStartup scheduled task for
+the post-promotion seed):
 
 1. **Install all virtio drivers** (`pnputil /add-driver … /install`) from the
    attached virtio-container-disk — found by a `\viostor` probe because GDC
@@ -231,9 +232,10 @@ Runs at FirstLogon (and re-runs once via a RunOnce for the post-promotion seed):
    NIC to get its range-assigned IP.
 3. Enable OpenSSH (operator access), install AD DS + DNS, promote
    `BOREAS.LOCAL` (`Install-ADDSForest`, which reboots).
-4. After the reboot a RunOnce re-enters bake.ps1 in its `seed` phase, waits for
-   AD DS, runs `a2_setup.ps1` (the BOREAS.LOCAL content), and writes
-   `C:\polaris\BAKE_DONE`.
+4. After the reboot the `PolarisBakeSeed` SYSTEM AtStartup task re-enters
+   bake.ps1 in its `seed` phase, waits for AD DS, runs `a2_setup.ps1` (the
+   BOREAS.LOCAL content), writes `C:\polaris\BAKE_DONE`, and unregisters the
+   task so it does not run in cloned ranges.
 
 The domain is currently hard-coded (`BOREAS.LOCAL`). To stamp per-event DCs with
 different domains, parameterize the domain in `bake.ps1`
