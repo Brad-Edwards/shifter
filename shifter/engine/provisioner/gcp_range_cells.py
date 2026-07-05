@@ -7,7 +7,7 @@ import logging
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any
+from typing import Any as ExternalValue
 
 from cloud.gcp.base import import_google_module
 from config import GCERangeCellConfig, GCERangeImageProfile, load_gce_range_cell_config
@@ -26,34 +26,36 @@ _MANAGED_BY_LABEL = "shifter-provisioner"
 _COMPUTE_MODULE = "google.cloud.compute_v1"
 _GOOGLE_EXCEPTIONS_MODULE = "google.api_core.exceptions"
 _OPERATION_TIMEOUT_SECONDS = 600
+ResourceDict = dict[str, ExternalValue]
 
 
 @dataclass(frozen=True)
 class GCEClients:
     """Compute Engine clients used by the range-cell backend."""
 
-    networks: Any
-    subnetworks: Any
-    firewalls: Any
-    addresses: Any
-    instances: Any
-    global_operations: Any
-    region_operations: Any
-    zone_operations: Any
-    google_exceptions: Any
+    networks: ExternalValue
+    subnetworks: ExternalValue
+    firewalls: ExternalValue
+    addresses: ExternalValue
+    instances: ExternalValue
+    global_operations: ExternalValue
+    region_operations: ExternalValue
+    zone_operations: ExternalValue
+    google_exceptions: ExternalValue
 
 
 @dataclass(frozen=True)
 class GCEGuestSecretOps:
     """Guest credential operations used by the GCE range-cell backend."""
 
-    ensure_ssh: Callable[[int, dict[str, Any]], tuple[str, str]]
-    ensure_rdp_password: Callable[[int, dict[str, Any]], tuple[str, str]]
-    delete_ssh: Callable[[int, dict[str, Any]], None]
-    delete_rdp_password: Callable[[int, dict[str, Any]], None]
+    ensure_ssh: Callable[[int, ResourceDict], tuple[str, str]]
+    ensure_rdp_password: Callable[[int, ResourceDict], tuple[str, str]]
+    delete_ssh: Callable[[int, ResourceDict], None]
+    delete_rdp_password: Callable[[int, ResourceDict], None]
 
 
 def _default_secret_ops() -> GCEGuestSecretOps:
+    """Return the production guest-secret operation bindings."""
     return GCEGuestSecretOps(
         ensure_ssh=ensure_ssh_secret,
         ensure_rdp_password=ensure_rdp_password_secret,
@@ -63,6 +65,7 @@ def _default_secret_ops() -> GCEGuestSecretOps:
 
 
 def _build_clients() -> GCEClients:
+    """Build production Compute Engine clients lazily."""
     compute = import_google_module(_COMPUTE_MODULE)
     google_exceptions = import_google_module(_GOOGLE_EXCEPTIONS_MODULE)
     return GCEClients(
@@ -79,6 +82,7 @@ def _build_clients() -> GCEClients:
 
 
 def _sanitize_name(value: str, *, max_length: int = 63) -> str:
+    """Normalize a value into a Compute Engine resource name."""
     normalized = re.sub(r"[^a-z0-9-]+", "-", value.strip().lower())
     normalized = re.sub(r"-{2,}", "-", normalized).strip("-")
     normalized = normalized[:max_length].rstrip("-")
@@ -90,34 +94,41 @@ def _sanitize_name(value: str, *, max_length: int = 63) -> str:
 
 
 def _label_value(value: str, *, max_length: int = 63) -> str:
+    """Normalize a value into a Compute Engine label value."""
     normalized = re.sub(r"[^a-z0-9_-]+", "-", value.strip().lower())
     normalized = re.sub(r"-{2,}", "-", normalized).strip("-_")
     return normalized[:max_length].rstrip("-_") or "unknown"
 
 
 def _short_resource_name(prefix: str, *parts: object, max_length: int = 63) -> str:
+    """Build a bounded resource name from stable name parts."""
     return _sanitize_name(
         "-".join([prefix, *(str(part) for part in parts if part not in (None, ""))]), max_length=max_length
     )
 
 
 def _network_self_link(project_id: str, network_name: str) -> str:
+    """Return the relative self-link for a global Compute network."""
     return f"projects/{project_id}/global/networks/{network_name}"
 
 
 def _subnetwork_self_link(project_id: str, region: str, subnet_name: str) -> str:
+    """Return the relative self-link for a regional Compute subnet."""
     return f"projects/{project_id}/regions/{region}/subnetworks/{subnet_name}"
 
 
 def _machine_type_self_link(zone: str, machine_type: str) -> str:
+    """Return the relative self-link for a zonal machine type."""
     return f"zones/{zone}/machineTypes/{machine_type}"
 
 
 def _disk_type_self_link(zone: str, disk_type: str) -> str:
+    """Return the relative self-link for a zonal disk type."""
     return f"zones/{zone}/diskTypes/{disk_type}"
 
 
 def _range_labels(range_id: int, request_uuid: str) -> dict[str, str]:
+    """Return labels shared by resources in one range cell."""
     return {
         "managed-by": _MANAGED_BY_LABEL,
         "range-id": _label_value(str(range_id)),
@@ -126,14 +137,17 @@ def _range_labels(range_id: int, request_uuid: str) -> dict[str, str]:
 
 
 def _network_tag(range_id: int) -> str:
+    """Return the common network tag for a range cell."""
     return _short_resource_name("shifter-range", range_id)
 
 
 def _subnet_tag(range_id: int, subnet_name: str) -> str:
+    """Return the subnet-scoped network tag for range instances."""
     return _short_resource_name("shifter-range", range_id, subnet_name)
 
 
-def _assign_instance_ips(subnet_cidr: str, instances: list[dict[str, Any]]) -> dict[str, str]:
+def _assign_instance_ips(subnet_cidr: str, instances: list[ResourceDict]) -> dict[str, str]:
+    """Assign deterministic internal IPs while skipping GCP-reserved addresses."""
     network = ipaddress.ip_network(subnet_cidr)
     if not isinstance(network, ipaddress.IPv4Network):
         raise RuntimeError(f"GCE range cells require IPv4 subnets, got {subnet_cidr}")
@@ -153,11 +167,13 @@ def _assign_instance_ips(subnet_cidr: str, instances: list[dict[str, Any]]) -> d
     return assignments
 
 
-def _instance_assignment_key(instance: dict[str, Any], index: int) -> str:
+def _instance_assignment_key(instance: ResourceDict, index: int) -> str:
+    """Return the stable key used to map an instance to an assigned IP."""
     return str(instance.get("uuid") or instance.get("name") or f"asset-{index}")
 
 
-def _connected_source_ranges(subnet: dict[str, Any], subnet_by_name: dict[str, dict[str, Any]]) -> list[str]:
+def _connected_source_ranges(subnet: ResourceDict, subnet_by_name: dict[str, ResourceDict]) -> list[str]:
+    """Return CIDRs allowed to reach one subnet from declared peer links."""
     source_ranges = [str(subnet.get("cidr", "")).strip()]
     for peer_name in subnet.get("connected_to", []):
         peer = subnet_by_name.get(str(peer_name))
@@ -168,14 +184,15 @@ def _connected_source_ranges(subnet: dict[str, Any], subnet_by_name: dict[str, d
 
 def _build_subnet_plans(
     *,
-    variables: dict[str, Any],
+    variables: ResourceDict,
     config: GCERangeCellConfig,
     network_name: str,
     network_link: str,
-) -> list[dict[str, Any]]:
+) -> list[ResourceDict]:
+    """Render deterministic subnetwork plans from range variables."""
     range_id = int(variables["range_id"])
     subnet_by_name = {str(subnet.get("name", "")): subnet for subnet in variables.get("subnets", [])}
-    plans: list[dict[str, Any]] = []
+    plans: list[ResourceDict] = []
     for subnet in variables.get("subnets", []):
         subnet_name = str(subnet.get("name", "")).strip()
         subnet_uuid = str(subnet.get("uuid", "")).strip()
@@ -206,10 +223,11 @@ def _build_subnet_plans(
 
 def _profile_for_instance(
     config: GCERangeCellConfig,
-    instance: dict[str, Any],
+    instance: ResourceDict,
     *,
     require_images: bool,
 ) -> GCERangeImageProfile:
+    """Resolve the image profile for one range instance."""
     if not require_images:
         return GCERangeImageProfile()
     return config.get_profile(
@@ -221,13 +239,14 @@ def _profile_for_instance(
 
 def _build_instance_plans(
     *,
-    variables: dict[str, Any],
+    variables: ResourceDict,
     config: GCERangeCellConfig,
-    subnet_plans: list[dict[str, Any]],
+    subnet_plans: list[ResourceDict],
     require_images: bool,
-) -> list[dict[str, Any]]:
+) -> list[ResourceDict]:
+    """Render deterministic instance plans for every planned subnet."""
     range_id = int(variables["range_id"])
-    plans: list[dict[str, Any]] = []
+    plans: list[ResourceDict] = []
     for subnet_plan in subnet_plans:
         for index, instance in enumerate(subnet_plan["instances"]):
             key = _instance_assignment_key(instance, index)
@@ -263,11 +282,11 @@ def _build_instance_plans(
 
 def render_range_cell_plan(
     request_uuid: str,
-    variables: dict[str, Any],
+    variables: ResourceDict,
     config: GCERangeCellConfig | None = None,
     *,
     require_images: bool = True,
-) -> dict[str, Any]:
+) -> ResourceDict:
     """Render the deterministic GCE resources for one range cell."""
     resolved_config = config or load_gce_range_cell_config()
     range_id = int(variables["range_id"])
@@ -304,12 +323,13 @@ def render_range_cell_plan(
 
 def _firewall_plan(
     range_id: int,
-    subnet_plans: list[dict[str, Any]],
+    subnet_plans: list[ResourceDict],
     config: GCERangeCellConfig,
-) -> list[dict[str, Any]]:
+) -> list[ResourceDict]:
+    """Render the firewall plan for internal range traffic and management."""
     range_tag = _network_tag(range_id)
     subnet_cidrs = [subnet["cidr"] for subnet in subnet_plans]
-    firewalls: list[dict[str, Any]] = []
+    firewalls: list[ResourceDict] = []
     for subnet in subnet_plans:
         firewalls.append(
             {
@@ -366,7 +386,8 @@ def _firewall_plan(
     return firewalls
 
 
-def _network_resource(plan: dict[str, Any]) -> dict[str, Any]:
+def _network_resource(plan: ResourceDict) -> ResourceDict:
+    """Render a Compute Engine network insert body."""
     return {
         "name": plan["network"]["name"],
         "autoCreateSubnetworks": False,
@@ -375,7 +396,8 @@ def _network_resource(plan: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _subnetwork_resource(plan: dict[str, Any], subnet: dict[str, Any]) -> dict[str, Any]:
+def _subnetwork_resource(plan: ResourceDict, subnet: ResourceDict) -> ResourceDict:
+    """Render a Compute Engine subnetwork insert body."""
     return {
         "name": subnet["resource_name"],
         "network": subnet["network_link"],
@@ -386,7 +408,8 @@ def _subnetwork_resource(plan: dict[str, Any], subnet: dict[str, Any]) -> dict[s
     }
 
 
-def _firewall_resource(plan: dict[str, Any], firewall: dict[str, Any]) -> dict[str, Any]:
+def _firewall_resource(plan: ResourceDict, firewall: ResourceDict) -> ResourceDict:
+    """Render a Compute Engine firewall insert body."""
     body = {
         "name": firewall["name"],
         "network": plan["network"]["self_link"],
@@ -407,7 +430,8 @@ def _firewall_resource(plan: dict[str, Any], firewall: dict[str, Any]) -> dict[s
     return body
 
 
-def _address_resource(plan: dict[str, Any], instance: dict[str, Any]) -> dict[str, Any]:
+def _address_resource(plan: ResourceDict, instance: ResourceDict) -> ResourceDict:
+    """Render a Compute Engine internal address insert body."""
     return {
         "name": instance["address_name"],
         "addressType": "INTERNAL",
@@ -418,20 +442,22 @@ def _address_resource(plan: dict[str, Any], instance: dict[str, Any]) -> dict[st
 
 
 def _metadata_items(config: GCERangeCellConfig, username: str, public_key: str) -> list[dict[str, str]]:
+    """Render guest metadata items including the provisioned SSH public key."""
     items = [{"key": key, "value": value} for key, value in config.metadata_items]
     items.append({"key": "ssh-keys", "value": f"{username}:{public_key}"})
     return items
 
 
 def _instance_resource(
-    plan: dict[str, Any],
-    instance: dict[str, Any],
+    plan: ResourceDict,
+    instance: ResourceDict,
     config: GCERangeCellConfig,
     *,
     ssh_public_key: str,
-) -> dict[str, Any]:
+) -> ResourceDict:
+    """Render a Compute Engine instance insert body."""
     profile: GCERangeImageProfile = instance["profile"]
-    body: dict[str, Any] = {
+    body: ResourceDict = {
         "name": instance["resource_name"],
         "machineType": _machine_type_self_link(plan["zone"], profile.machine_type),
         "labels": {
@@ -475,19 +501,22 @@ def _instance_resource(
     return body
 
 
-def _operation_name(operation: Any) -> str:
+def _operation_name(operation: ExternalValue) -> str:
+    """Extract a Compute operation name from SDK or dict responses."""
     if isinstance(operation, dict):
         return str(operation.get("name", ""))
     return str(getattr(operation, "name", "") or "")
 
 
-def _get_operation_field(operation: Any, name: str) -> Any:
+def _get_operation_field(operation: ExternalValue, name: str) -> ExternalValue:
+    """Read an operation field from SDK or dict responses."""
     if isinstance(operation, dict):
         return operation.get(name)
     return getattr(operation, name, None)
 
 
-def _operation_error_messages(operation: Any) -> list[str]:
+def _operation_error_messages(operation: ExternalValue) -> list[str]:
+    """Extract provider error messages from a completed operation."""
     error = _get_operation_field(operation, "error")
     if not error:
         return []
@@ -507,14 +536,16 @@ def _operation_error_messages(operation: Any) -> list[str]:
     return messages
 
 
-def _raise_for_operation_errors(operation: Any, *, operation_name: str, scope: str) -> None:
+def _raise_for_operation_errors(operation: ExternalValue, *, operation_name: str, scope: str) -> None:
+    """Raise when Compute reports errors on a completed operation."""
     errors = _operation_error_messages(operation)
     if errors:
         detail = "; ".join(errors)
         raise RuntimeError(f"GCE {scope} operation {operation_name or '<unknown>'} failed: {detail}")
 
 
-def _wait_for_operation(plan: dict[str, Any], clients: GCEClients, operation: Any, scope: str) -> None:
+def _wait_for_operation(plan: ResourceDict, clients: GCEClients, operation: ExternalValue, scope: str) -> None:
+    """Wait for a Compute operation and surface asynchronous failures."""
     if operation is None:
         return
     if hasattr(operation, "result"):
@@ -537,14 +568,20 @@ def _wait_for_operation(plan: dict[str, Any], clients: GCEClients, operation: An
     _raise_for_operation_errors(result or operation, operation_name=operation_name, scope=scope)
 
 
-def _get_or_none(callable_obj, exceptions, **kwargs):
+def _get_or_none(
+    callable_obj: Callable[..., ExternalValue],
+    exceptions: ExternalValue,
+    **kwargs: ExternalValue,
+) -> ExternalValue | None:
+    """Return a Compute resource or None when the provider reports NotFound."""
     try:
         return callable_obj(**kwargs)
     except exceptions.NotFound:
         return None
 
 
-def _ensure_network(plan: dict[str, Any], clients: GCEClients) -> None:
+def _ensure_network(plan: ResourceDict, clients: GCEClients) -> None:
+    """Create the range VPC if it is missing."""
     name = plan["network"]["name"]
     existing = _get_or_none(clients.networks.get, clients.google_exceptions, project=plan["project_id"], network=name)
     if existing is not None:
@@ -554,7 +591,8 @@ def _ensure_network(plan: dict[str, Any], clients: GCEClients) -> None:
     _wait_for_operation(plan, clients, operation, "global")
 
 
-def _ensure_subnetwork(plan: dict[str, Any], clients: GCEClients, subnet: dict[str, Any]) -> None:
+def _ensure_subnetwork(plan: ResourceDict, clients: GCEClients, subnet: ResourceDict) -> None:
+    """Create a range subnetwork if it is missing."""
     name = subnet["resource_name"]
     existing = _get_or_none(
         clients.subnetworks.get,
@@ -574,7 +612,8 @@ def _ensure_subnetwork(plan: dict[str, Any], clients: GCEClients, subnet: dict[s
     _wait_for_operation(plan, clients, operation, "region")
 
 
-def _ensure_firewall(plan: dict[str, Any], clients: GCEClients, firewall: dict[str, Any]) -> None:
+def _ensure_firewall(plan: ResourceDict, clients: GCEClients, firewall: ResourceDict) -> None:
+    """Create one range firewall rule if it is missing."""
     name = firewall["name"]
     existing = _get_or_none(clients.firewalls.get, clients.google_exceptions, project=plan["project_id"], firewall=name)
     if existing is not None:
@@ -586,7 +625,8 @@ def _ensure_firewall(plan: dict[str, Any], clients: GCEClients, firewall: dict[s
     _wait_for_operation(plan, clients, operation, "global")
 
 
-def _ensure_address(plan: dict[str, Any], clients: GCEClients, instance: dict[str, Any]) -> None:
+def _ensure_address(plan: ResourceDict, clients: GCEClients, instance: ResourceDict) -> None:
+    """Reserve an internal address for one range instance."""
     name = instance["address_name"]
     existing = _get_or_none(
         clients.addresses.get,
@@ -607,12 +647,13 @@ def _ensure_address(plan: dict[str, Any], clients: GCEClients, instance: dict[st
 
 
 def _ensure_instance(
-    plan: dict[str, Any],
+    plan: ResourceDict,
     clients: GCEClients,
     config: GCERangeCellConfig,
-    instance: dict[str, Any],
+    instance: ResourceDict,
     secret_ops: GCEGuestSecretOps,
 ) -> tuple[str, str | None]:
+    """Create one range instance and its guest credential secrets."""
     name = instance["resource_name"]
     existing = _get_or_none(
         clients.instances.get,
@@ -639,13 +680,14 @@ def _ensure_instance(
 
 
 def _instance_output(
-    plan: dict[str, Any],
-    instance: dict[str, Any],
+    plan: ResourceDict,
+    instance: ResourceDict,
     *,
     ssh_secret_ref: str,
     rdp_password_secret_ref: str | None,
     config: GCERangeCellConfig,
-) -> dict[str, Any]:
+) -> ResourceDict:
+    """Render the provisioner output for one created instance."""
     output = {
         "uuid": instance["uuid"],
         "name": instance["name"],
@@ -675,7 +717,8 @@ def _instance_output(
     return output
 
 
-def _subnet_outputs(plan: dict[str, Any]) -> dict[str, dict[str, Any]]:
+def _subnet_outputs(plan: ResourceDict) -> dict[str, ResourceDict]:
+    """Render provisioner subnet outputs keyed by scenario subnet name."""
     return {
         subnet["name"]: {
             "uuid": subnet["uuid"],
@@ -695,19 +738,19 @@ def _subnet_outputs(plan: dict[str, Any]) -> dict[str, dict[str, Any]]:
 
 def apply_range_cell(
     request_uuid: str,
-    variables: dict[str, Any],
+    variables: ResourceDict,
     *,
     config: GCERangeCellConfig | None = None,
     clients: GCEClients | None = None,
     secret_ops: GCEGuestSecretOps | None = None,
-    cleanup_range_cell: Callable[[str, dict[str, Any] | None], None] | None = None,
-) -> dict[str, Any]:
+    cleanup_range_cell: Callable[[str, ResourceDict | None], None] | None = None,
+) -> ResourceDict:
     """Create or reconcile a live-fire GCE range cell and return provisioner outputs."""
     resolved_config = config or load_gce_range_cell_config()
     resolved_clients = clients or _build_clients()
     resolved_secret_ops = secret_ops or _default_secret_ops()
     plan = render_range_cell_plan(request_uuid, variables, resolved_config)
-    instance_outputs: list[dict[str, Any]] = []
+    instance_outputs: list[ResourceDict] = []
     try:
         _ensure_network(plan, resolved_clients)
         for subnet in plan["subnets"]:
@@ -748,7 +791,15 @@ def apply_range_cell(
     return {"subnets": _subnet_outputs(plan), "instances": instance_outputs}
 
 
-def _delete_resource(plan: dict[str, Any], clients: GCEClients, getter, deleter, scope: str, **kwargs) -> None:
+def _delete_resource(
+    plan: ResourceDict,
+    clients: GCEClients,
+    getter: Callable[..., ExternalValue],
+    deleter: Callable[..., ExternalValue],
+    scope: str,
+    **kwargs: ExternalValue,
+) -> None:
+    """Delete a Compute resource when it exists."""
     name = str(next(reversed(kwargs.values())))
     existing = _get_or_none(getter, clients.google_exceptions, **kwargs)
     if existing is None:
@@ -760,7 +811,7 @@ def _delete_resource(plan: dict[str, Any], clients: GCEClients, getter, deleter,
 
 def destroy_range_cell(
     request_uuid: str,
-    variables: dict[str, Any] | None,
+    variables: ResourceDict | None,
     *,
     config: GCERangeCellConfig | None = None,
     clients: GCEClients | None = None,

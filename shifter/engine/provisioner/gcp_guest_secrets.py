@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Callable
 from contextlib import suppress
-from typing import Any
+from typing import Any as ExternalValue
 
 from cloud.gcp.base import get_project_id, import_google_module
 from log_redact import safe_log_fingerprint
@@ -15,20 +16,24 @@ logger = logging.getLogger(__name__)
 
 _SECRETMANAGER_MODULE = "google.cloud.secretmanager"
 _GOOGLE_EXCEPTIONS_MODULE = "google.api_core.exceptions"
+GuestInstance = dict[str, ExternalValue]
 
 
 def _sanitize_secret_part(value: str, *, max_length: int = 48) -> str:
+    """Normalize part of a Secret Manager secret id."""
     normalized = re.sub(r"[^a-z0-9-]+", "-", value.strip().lower())
     normalized = re.sub(r"-{2,}", "-", normalized).strip("-")
     return normalized[:max_length].rstrip("-") or "guest"
 
 
-def _guest_secret_id(range_id: int, instance: dict[str, Any], kind: str) -> str:
+def _guest_secret_id(range_id: int, instance: GuestInstance, kind: str) -> str:
+    """Return the deterministic secret id for a range guest credential."""
     instance_part = str(instance.get("uuid") or instance.get("name") or instance.get("role") or "guest")
     return _sanitize_secret_part(f"shifter-range-{range_id}-{instance_part}-{kind}", max_length=255)
 
 
-def _secret_client() -> tuple[Any, Any, str]:
+def _secret_client() -> tuple[ExternalValue, ExternalValue, str]:
+    """Build the Secret Manager client and resolve the active project id."""
     project_id = get_project_id()
     if not project_id:
         raise RuntimeError("GCP project ID is required to manage range guest secrets")
@@ -37,7 +42,8 @@ def _secret_client() -> tuple[Any, Any, str]:
     return secretmanager.SecretManagerServiceClient(), google_exceptions, project_id
 
 
-def _read_or_create_secret(secret_id: str, payload_factory) -> tuple[str, str]:
+def _read_or_create_secret(secret_id: str, payload_factory: Callable[[], str]) -> tuple[str, str]:
+    """Read the latest secret value or create it from the supplied factory."""
     client, google_exceptions, project_id = _secret_client()
     secret_name = f"projects/{project_id}/secrets/{secret_id}"
     try:
@@ -62,7 +68,7 @@ def _read_or_create_secret(secret_id: str, payload_factory) -> tuple[str, str]:
     return secret_name, value
 
 
-def ensure_ssh_secret(range_id: int, instance: dict[str, Any]) -> tuple[str, str]:
+def ensure_ssh_secret(range_id: int, instance: GuestInstance) -> tuple[str, str]:
     """Create or read a per-instance SSH private key secret."""
     secret_name, private_key = _read_or_create_secret(
         _guest_secret_id(range_id, instance, "ssh"),
@@ -71,7 +77,7 @@ def ensure_ssh_secret(range_id: int, instance: dict[str, Any]) -> tuple[str, str
     return secret_name, derive_ssh_public_key(private_key)
 
 
-def ensure_rdp_password_secret(range_id: int, instance: dict[str, Any]) -> tuple[str, str]:
+def ensure_rdp_password_secret(range_id: int, instance: GuestInstance) -> tuple[str, str]:
     """Create or read a per-instance local password secret."""
     return _read_or_create_secret(
         _guest_secret_id(range_id, instance, "rdp-password"),
@@ -79,7 +85,7 @@ def ensure_rdp_password_secret(range_id: int, instance: dict[str, Any]) -> tuple
     )
 
 
-def delete_guest_secret(range_id: int, instance: dict[str, Any], kind: str) -> None:
+def delete_guest_secret(range_id: int, instance: GuestInstance, kind: str) -> None:
     """Delete a per-instance guest secret, ignoring missing secrets."""
     try:
         client, google_exceptions, project_id = _secret_client()
@@ -93,11 +99,11 @@ def delete_guest_secret(range_id: int, instance: dict[str, Any], kind: str) -> N
         return
 
 
-def delete_ssh_secret(range_id: int, instance: dict[str, Any]) -> None:
+def delete_ssh_secret(range_id: int, instance: GuestInstance) -> None:
     """Delete the per-instance SSH secret."""
     delete_guest_secret(range_id, instance, "ssh")
 
 
-def delete_rdp_password_secret(range_id: int, instance: dict[str, Any]) -> None:
+def delete_rdp_password_secret(range_id: int, instance: GuestInstance) -> None:
     """Delete the per-instance password secret."""
     delete_guest_secret(range_id, instance, "rdp-password")

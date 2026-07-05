@@ -41,6 +41,7 @@ def _uses_active_gdc_range_plane() -> bool:
 
 
 def _uses_gce_range_cells() -> bool:
+    """Return whether the active provider uses the GCE range-cell backend."""
     return _get_provider() == "gcp" and get_gcp_range_backend() == "gce"
 
 

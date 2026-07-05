@@ -801,11 +801,8 @@ def load_gdc_scenario_pod_config() -> GDCScenarioPodConfig:
     )
 
 
-def load_gce_range_cell_config() -> GCERangeCellConfig:
-    """Load the live-fire GCE range-cell backend configuration."""
-    if not is_gce_range_cell_backend():
-        raise RuntimeError("GCE range-cell config is only valid when CLOUD_PROVIDER=gcp and GCP_RANGE_BACKEND=gce")
-
+def _resolve_gce_range_required_env() -> tuple[str, str, str, str]:
+    """Resolve required environment for the GCE range-cell backend."""
     project_id = (
         os.environ.get("GCP_PROJECT_ID")
         or os.environ.get("GOOGLE_CLOUD_PROJECT")
@@ -816,19 +813,42 @@ def load_gce_range_cell_config() -> GCERangeCellConfig:
         os.environ.get("RANGE_NETWORK_REGION") or os.environ.get("GCP_REGION") or os.environ.get("CLOUD_REGION") or ""
     ).strip()
     zone = get_range_availability_zone(default="").strip()
-    missing = [
+    service_account_email = os.environ.get("GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL", "").strip()
+    return project_id, region, zone, service_account_email
+
+
+def _missing_gce_range_required_env(
+    *,
+    project_id: str,
+    region: str,
+    zone: str,
+    service_account_email: str,
+) -> list[str]:
+    """Return display names for missing GCE range-cell settings."""
+    return [
         name
         for name, value in (
             ("GCP_PROJECT_ID", project_id),
             ("RANGE_NETWORK_REGION/GCP_REGION", region),
             ("RANGE_NETWORK_ZONE", zone),
-            (
-                "GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL",
-                os.environ.get("GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL", "").strip(),
-            ),
+            ("GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL", service_account_email),
         )
         if not value
     ]
+
+
+def load_gce_range_cell_config() -> GCERangeCellConfig:
+    """Load the live-fire GCE range-cell backend configuration."""
+    if not is_gce_range_cell_backend():
+        raise RuntimeError("GCE range-cell config is only valid when CLOUD_PROVIDER=gcp and GCP_RANGE_BACKEND=gce")
+
+    project_id, region, zone, service_account_email = _resolve_gce_range_required_env()
+    missing = _missing_gce_range_required_env(
+        project_id=project_id,
+        region=region,
+        zone=zone,
+        service_account_email=service_account_email,
+    )
     if missing:
         raise RuntimeError("Missing required GCE range-cell configuration: " + ", ".join(missing))
 
@@ -841,7 +861,7 @@ def load_gce_range_cell_config() -> GCERangeCellConfig:
         region=region,
         zone=zone,
         network_mode=network_mode,
-        service_account_email=os.environ.get("GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL", "").strip(),
+        service_account_email=service_account_email,
         service_account_scopes=_parse_csv_env(
             os.environ.get(
                 "GCP_RANGE_HOST_SERVICE_ACCOUNT_SCOPES",
