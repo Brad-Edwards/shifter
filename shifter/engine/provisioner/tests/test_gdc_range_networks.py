@@ -9,6 +9,7 @@ from config import GDCNetworkAccessConfig
 from gdc_range_networks import (
     _compute_asset_ip_assignments,
     _compute_network_allocation,
+    _derive_vlan_id,
     apply_range_networks,
     destroy_range_networks,
 )
@@ -54,6 +55,11 @@ class TestAllocationHelpers:
             "10.200.0.110/32",
         ]
 
+    def test_derive_vlan_id_from_allocated_subnet_ordinal(self):
+        assert _derive_vlan_id("10.200.0.0/28") == 1
+        assert _derive_vlan_id("10.200.0.96/28") == 7
+        assert _derive_vlan_id("10.200.2.48/28") == 36
+
 
 class TestRangeNetworkProvisioning:
     @patch("gdc_range_networks._build_kube_api_client", return_value=object())
@@ -98,10 +104,15 @@ class TestRangeNetworkProvisioning:
         custom_api.create_namespaced_custom_object.assert_called_once()
         network_body = custom_api.create_cluster_custom_object.call_args.kwargs["body"]
         assert network_body["metadata"]["annotations"]["shifter.dev/subnet-cidr"] == "10.200.0.96/28"
+        assert network_body["metadata"]["annotations"]["shifter.dev/vlan-id"] == "7"
+        assert network_body["spec"]["IPAMMode"] == "External"
+        assert network_body["spec"]["l2NetworkConfig"] == {"vlanID": 7}
+        assert "networkLifecycle" not in network_body["spec"]
         assert network_body["spec"]["routes"] == []
         subnet = result["subnets"]["attack"]
         assert subnet["subnet_id"] == "range-42-attack"
         assert subnet["gdc_namespace"] == "range-42"
+        assert subnet["gdc_vlan_id"] == 7
         assert subnet["gdc_gateway_ip"] == "10.200.0.110"
         assert subnet["gdc_reserved_static_ips"] == [
             "10.200.0.104",

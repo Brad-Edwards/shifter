@@ -27,6 +27,7 @@ _NAD_VERSION = "v1"
 _NAD_PLURAL = "network-attachment-definitions"
 _MANAGED_BY_LABEL = "shifter-provisioner"
 _SUBNET_CIDR_ANNOTATION = "shifter.dev/subnet-cidr"
+_VLAN_ID_ANNOTATION = "shifter.dev/vlan-id"
 
 
 def _import_kubernetes_modules() -> tuple[Any, Any, Any, Any]:
@@ -108,6 +109,27 @@ def _compute_network_allocation(
     return gateway_ip, static_ips, exclude
 
 
+def _derive_vlan_id(cidr: str) -> int:
+    """Derive a stable GDC L2 VLAN ID from an allocated IPv4 subnet CIDR.
+
+    The allocator hands out /28s from the first-two-octet prefix of the range
+    network. Mapping each allocated subnet to its ordinal within that /16 gives
+    deterministic, collision-free VLANs for the active pool without introducing
+    a second mutable allocator.
+    """
+    network = ipaddress.ip_network(cidr)
+    if not isinstance(network, ipaddress.IPv4Network):
+        raise RuntimeError(f"GDC scenario VLANs require IPv4 subnets, got {cidr}")
+
+    octets = str(network.network_address).split(".")
+    pool = ipaddress.ip_network(f"{octets[0]}.{octets[1]}.0.0/16")
+    ordinal = (int(network.network_address) - int(pool.network_address)) // network.num_addresses
+    vlan_id = ordinal + 1
+    if not 1 <= vlan_id <= 4094:
+        raise RuntimeError(f"Allocated subnet {cidr} maps to unsupported GDC VLAN ID {vlan_id}")
+    return vlan_id
+
+
 def _asset_key(instance: dict[str, Any], index: int) -> str:
     """Build a stable lookup key for per-asset network assignments."""
     uuid_value = str(instance.get("uuid", "")).strip()
@@ -161,6 +183,7 @@ def _build_network_manifest(
     network_name: str,
     cidr: str,
     gateway_ip: str,
+    vlan_id: int,
     labels: dict[str, str],
     access: GDCNetworkAccessConfig,
 ) -> dict[str, Any]:
@@ -173,12 +196,17 @@ def _build_network_manifest(
             "labels": labels,
             "annotations": {
                 _SUBNET_CIDR_ANNOTATION: cidr,
+                _VLAN_ID_ANNOTATION: str(vlan_id),
             },
         },
         "spec": {
             "type": "L2",
+            "IPAMMode": "External",
             "nodeInterfaceMatcher": {
                 "interfaceName": access.network_interface,
+            },
+            "l2NetworkConfig": {
+                "vlanID": vlan_id,
             },
             "gateway4": gateway_ip,
             # Do not add the local subnet CIDR to spec.routes. GDC VM Runtime
@@ -388,11 +416,13 @@ def apply_range_networks(request_uuid: str, variables: dict[str, Any]) -> dict[s
             static_ip_reservation_count=access.static_ip_reservation_count,
             instances=instances,
         )
+        vlan_id = _derive_vlan_id(subnet_cidr)
 
         network_manifest = _build_network_manifest(
             network_name=network_name,
             cidr=subnet_cidr,
             gateway_ip=gateway_ip,
+            vlan_id=vlan_id,
             labels=labels,
             access=access,
         )
@@ -417,6 +447,7 @@ def apply_range_networks(request_uuid: str, variables: dict[str, Any]) -> dict[s
             "gdc_nad_name": network_name,
             "gdc_network_type": "L2",
             "gdc_node_interface": access.network_interface,
+            "gdc_vlan_id": vlan_id,
             "gdc_gateway_ip": gateway_ip,
             "gdc_ipam_range": subnet_cidr,
             "gdc_ipam_exclude": exclude,

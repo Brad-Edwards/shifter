@@ -57,8 +57,12 @@ The golden image is **not sysprepped**: every range gets an identical
 `BOREAS.LOCAL` DC. That is intentional for Polaris. The scenario expects a
 pre-built `BOREAS.LOCAL` domain, and sysprep would break the promoted DC
 identity while adding first-boot delay. In `gcp-dev`, only one live GDC Network
-can currently consume the configured `GDC_NETWORK_INTERFACE=vxlan0`; destroy
-stale validation ranges before provisioning another Polaris range.
+can consume a bare `GDC_NETWORK_INTERFACE=vxlan0` with no VLAN tag. The
+provisioner now derives a deterministic `l2NetworkConfig.vlanID` from each
+allocated range subnet, so many isolated range Networks can share the same
+underlay interface without hitting the duplicate-interface admission webhook.
+Destroy stale validation ranges through CMS so their VMs, disks, GDC Network,
+namespace, and subnet allocation are released.
 
 ## Artifacts (`shifter/gdc-vm-images/polaris-dc/`)
 
@@ -318,11 +322,12 @@ Use the deployed CTF path to prove the range works end to end:
 1. Confirm runtime config points at:
    - `GDC_POLARIS_VM_IMAGE_URL=gs://shifter-gcp-dev-gdc-vm-images/polaris-vm.qcow2`
    - `GDC_POLARIS_DC_IMAGE_URL=gs://shifter-gcp-dev-gdc-vm-images/polaris-dc.qcow2`
-2. Make sure no stale GDC Network is already using the configured
-   `GDC_NETWORK_INTERFACE`. In `gcp-dev`, a stale hand-built range can block CTF
-   provisioning with `Duplicate value: "vxlan0"`. Destroy the stale range through
-   CMS so the provisioner cleans up the VMs, disks, NetworkAttachmentDefinition,
-   GDC Network, namespace, secrets, and subnet allocation.
+2. Confirm managed GDC Networks have a `shifter.dev/vlan-id` annotation and
+   `spec.l2NetworkConfig.vlanID`. Historical no-VLAN validation ranges can block
+   CTF provisioning with `Duplicate value: "vxlan0"`. Destroy stale ranges
+   through CMS so the provisioner cleans up the VMs, disks,
+   NetworkAttachmentDefinition, GDC Network, namespace, secrets, and subnet
+   allocation.
 3. Create or select a registered participant on a Polaris CTF event.
 4. Call the CTF service path (`provision_participant_range`) or the equivalent
    API/UI action.
