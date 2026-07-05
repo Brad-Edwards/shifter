@@ -1120,7 +1120,7 @@ jobs:
           DB_PASSWORD: test
         run: |
           uv run python manage.py collectstatic --noinput
-          uv run pytest tests/ --ignore=tests/documentation -m "not redis" --cov=. --cov-report=term-missing --cov-report=xml:coverage.xml
+          uv run pytest tests/ --ignore=tests/documentation -m "not redis and not postgres" --cov=. --cov-report=term-missing --cov-report=xml:coverage.xml
 
       # Real-stack Redis channel-layer evidence (#924). Runs only the
       # redis-marked integration tests against the Redis service, with xdist
@@ -1143,6 +1143,31 @@ jobs:
           REDIS_PORT: "6379"
         run: |
           uv run pytest tests/integration/asgi -m redis -n0 -p no:cacheprovider
+
+      # Real PostgreSQL concurrency evidence (#1182). submit_flag()'s
+      # select_for_update() guard (#1135, #1137) needs real row-level locking
+      # to prove it serializes concurrent requests, which SQLite (the main
+      # suite's backend above) cannot provide. TEST_DB_BACKEND=postgres tells
+      # tests/ctf/test_services/conftest.py to redirect the ORM at this job's
+      # postgres service instead of SQLite; TESTING stays "1" so unrelated
+      # test-mode settings are unaffected. DB_NAME/DB_USER/DB_PASSWORD match
+      # the postgres service block above. Runs with -n0 (like the redis step
+      # above): these tests drive their own thread-level concurrency, so xdist
+      # distribution adds no value and races the per-worker DB setup.
+      - name: Run CTF submission concurrency tests (PostgreSQL)
+        working-directory: shifter/shifter_platform
+        env:
+          TESTING: "1"
+          TEST_DB_BACKEND: postgres
+          DJANGO_DEBUG: "true"
+          DJANGO_SECRET_KEY: ${{ github.run_id }}-${{ github.run_attempt }}
+          DB_HOST: localhost
+          DB_PORT: 5432
+          DB_NAME: shifter
+          DB_USER: test
+          DB_PASSWORD: test
+        run: |
+          uv run pytest tests/ctf/test_services/test_submission_concurrency.py -m postgres -n0 -p no:cacheprovider
 
       - name: Upload coverage
         uses: actions/upload-artifact@v4
