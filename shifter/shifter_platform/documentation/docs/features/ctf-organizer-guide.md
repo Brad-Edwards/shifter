@@ -71,6 +71,33 @@ cleanup is enabled, tears them down after the event. The CTF scheduler drives ba
 provisioning; see the technical
 [CTF documentation](../technical/shifter_platform/ctf) for how it runs.
 
+### Recovering a destroyed range
+
+Live-fire scenarios can leave a participant's range unrecoverable in place (the
+participant or their agent may encrypt, wipe, or corrupt it). From the **Ranges** page
+you can recover a single participant's range without editing any records by hand:
+
+- **Rebuild** provisions a fresh range for the same event and scenario.
+- **Reassign spare** hands the participant a prewarmed spare range from the event's spare
+  pool, when one is available.
+
+The old range is always destroyed so it can no longer receive the
+participant's traffic, and the participant keeps their scoreboard identity,
+submissions, awards, team and bracket membership, and registration. Recovery is safe
+to retry after a partial failure. The current recovery phase and any failure reason are
+shown on the Ranges page. A participant cannot recover their own range; recovery is
+organizer-only.
+
+### Setting the spare pool
+
+The **Spare pool** panel on the Ranges page controls how many prewarmed ranges are
+kept ready for **Reassign spare** recovery. Set the target pool size and update it;
+the platform provisions any shortfall under managed system accounts (never
+counted as participants) and shows the current target, available, provisioning,
+and failed counts. The pool only grows on request; it does not shrink automatically.
+Unconsumed spares are torn down along with the rest of the event's ranges during
+event cleanup.
+
 ## 5. Notifications
 
 Use **Notifications** to send announcements during the event and **Email Templates**

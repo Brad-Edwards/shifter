@@ -31,6 +31,7 @@ _GCP_RANGE_LIFECYCLE_NOT_IMPLEMENTED = (
 
 # (cloud_provider, asset_type) -> operation_mode for non-AWS lifecycle targets.
 _GCP_OPERATION_MODES = {
+    ("gcp", "gce_vm"): "gce_vm",
     ("gcp", "vm_runtime_vm"): "gdc_vm_runtime",
     ("gcp", "scenario_pod"): "gdc_scenario_pod",
 }
@@ -521,6 +522,9 @@ def _execute_instance_operation(
 
         if mode == "gdc_scenario_pod":
             raise NotImplementedError(_GCP_RANGE_LIFECYCLE_NOT_IMPLEMENTED)
+
+        if mode == "gce_vm":
+            raise NotImplementedError("GCE range pause/resume is not implemented yet.")
 
         if mode != "aws" or executor is None or orchestrator is None or plan is None:
             raise RuntimeError(f"Unsupported lifecycle execution mode {mode!r} for uuid={uuid}")
