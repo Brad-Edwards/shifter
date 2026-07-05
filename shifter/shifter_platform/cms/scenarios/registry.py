@@ -100,45 +100,14 @@ def _get_aces_sources() -> list[AcesPackageSource]:
     return list(AcesPackageSource.objects.all())
 
 
-def _aces_launchable(source: AcesPackageSource, *, known_legacy_ids: set[str]) -> bool:
-    """Data-driven launchability decision for an ACES package-source row.
-
-    Launchability is NOT merely ``conformance_status == "passed"``. An ACES
-    entry is launchable only when ALL hold (fail-closed):
-
-    - a runtime hydration adapter exists for its contract/profile;
-    - it does not shadow an active legacy ``scenario_id``;
-    - its source kind, contract kind, and contract profile are supported;
-    - its refs/digests/provenance re-validate against the shared contract;
-    - its conformance status is ``passed``.
-
-    Args:
-        source: AcesPackageSource instance.
-        known_legacy_ids: Active YAML-default + DB-custom ids (no-shadow set).
-
-    Returns:
-        True only if the entry is launchable.
-    """
-    from cms.models import AcesPackageSource as _AcesPackageSource
+def _aces_source_refs_valid(source: AcesPackageSource) -> bool:
+    """Re-validate an ACES row's refs/digests/provenance against the shared contract."""
     from shared.schemas.aces_package_source import (
         AcesPackageSourceError,
         PackageSourceRecord,
         validate_package_source,
     )
 
-    # Never launchable until a runtime adapter exists for this contract/profile.
-    if (source.contract_kind, source.contract_profile) not in _LAUNCH_ADAPTER_CONTRACT_PROFILES:
-        return False
-    if source.scenario_id in known_legacy_ids:
-        return False
-    if source.contract_kind not in LAUNCHABLE_CONTRACT_KINDS:
-        return False
-    if source.contract_profile not in LAUNCHABLE_CONTRACT_PROFILES:
-        return False
-    if source.source_kind not in LAUNCHABLE_SOURCE_KINDS:
-        return False
-    if source.conformance_status != _AcesPackageSource.ConformanceStatus.PASSED:
-        return False
     try:
         validate_package_source(
             PackageSourceRecord(
@@ -158,6 +127,39 @@ def _aces_launchable(source: AcesPackageSource, *, known_legacy_ids: set[str]) -
     except AcesPackageSourceError:
         return False
     return True
+
+
+def _aces_launchable(source: AcesPackageSource, *, known_legacy_ids: set[str]) -> bool:
+    """Data-driven launchability decision for an ACES package-source row.
+
+    Launchability is NOT merely ``conformance_status == "passed"``. An ACES
+    entry is launchable only when ALL hold (fail-closed):
+
+    - a runtime hydration adapter exists for its contract/profile;
+    - it does not shadow an active legacy ``scenario_id``;
+    - its source kind, contract kind, and contract profile are supported;
+    - its conformance status is ``passed``;
+    - its refs/digests/provenance re-validate against the shared contract.
+
+    Args:
+        source: AcesPackageSource instance.
+        known_legacy_ids: Active YAML-default + DB-custom ids (no-shadow set).
+
+    Returns:
+        True only if the entry is launchable.
+    """
+    from cms.models import AcesPackageSource as _AcesPackageSource
+
+    return (
+        # Never launchable until a runtime adapter exists for this contract/profile.
+        (source.contract_kind, source.contract_profile) in _LAUNCH_ADAPTER_CONTRACT_PROFILES
+        and source.scenario_id not in known_legacy_ids
+        and source.contract_kind in LAUNCHABLE_CONTRACT_KINDS
+        and source.contract_profile in LAUNCHABLE_CONTRACT_PROFILES
+        and source.source_kind in LAUNCHABLE_SOURCE_KINDS
+        and source.conformance_status == _AcesPackageSource.ConformanceStatus.PASSED
+        and _aces_source_refs_valid(source)
+    )
 
 
 def _aces_source_to_dict(
