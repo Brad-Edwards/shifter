@@ -121,6 +121,13 @@ def cms_get_range_spec(range_instance_id: int) -> dict | None:
     return cms_services.get_range_spec_by_id(range_instance_id)
 
 
+def cms_reassign_range_owner(range_instance_id: int, new_user: User) -> None:
+    """Reassign an existing range's ownership via CMS (#1018 spare recovery)."""
+    import cms.services as cms_services
+
+    cms_services.reassign_range_owner(range_instance_id, new_user)
+
+
 def cms_list_scenarios(user: User) -> list[tuple[str, str]]:
     """List available scenarios as (id, name) tuples for form choices.
 

@@ -6,6 +6,8 @@
  * - Individual participant range provisioning
  * - Individual participant range destruction
  * - Individual participant range stop/start/restart
+ * - Individual participant range recovery (rebuild/reassign-spare, issue #1018)
+ * - Event spare-range pool management (issue #1018)
  * - Status polling after provisioning
  */
 
@@ -17,6 +19,7 @@ class CTFRangeManager {
         this.csrfToken = options.csrfToken;
         this.provisionAllUrl = options.provisionAllUrl;
         this.rangeListUrl = options.rangeListUrl;
+        this.spareProvisionUrl = options.spareProvisionUrl;
         this.statusPollDelay = options.statusPollDelay || 10000;
         this.statusPollInterval = null;
     }
@@ -24,6 +27,7 @@ class CTFRangeManager {
     init() {
         this._bindProvisionAll();
         this._bindPerParticipantButtons();
+        this._bindSparePool();
     }
 
     _bindProvisionAll() {
@@ -46,6 +50,13 @@ class CTFRangeManager {
         bindAction('.btn-stop', (id, btn) => this.stopOne(id, btn));
         bindAction('.btn-start', (id, btn) => this.startOne(id, btn));
         bindAction('.btn-restart', (id, btn) => this.restartOne(id, btn));
+        bindAction('.btn-recover', (id, btn) => this.recoverOne(id, btn));
+    }
+
+    _bindSparePool() {
+        let btn = document.getElementById('btn-set-spare-pool');
+        if (!btn) return;
+        btn.addEventListener('click', () => this.setSparePool());
     }
 
     async provisionAll() {
@@ -213,6 +224,85 @@ class CTFRangeManager {
     async restartOne(participantId, btn) {
         if (!confirm('Restart this participant\'s range?')) return;
         await this._rangeAction(participantId, btn, 'restart', 'Restarting...', 'Restart');
+    }
+
+    async recoverOne(participantId, btn) {
+        let strategySelect = document.querySelector('.recovery-strategy[data-participant-id="' + participantId + '"]');
+        let strategy = strategySelect ? strategySelect.value : '';
+
+        if (!confirm('Recover this participant\'s range? This replaces it and tears down the old range. This cannot be undone.')) return;
+
+        this._setButtonLoading(btn, 'Recovering...');
+
+        try {
+            let url = API_PARTICIPANTS_BASE + participantId + '/range/recover/';
+            let response = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'X-CSRFToken': this.csrfToken,
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ strategy: strategy }),
+            });
+
+            let data = await response.json();
+
+            if (!response.ok) {
+                alert('Error: ' + (data.error || 'Recovery failed'));
+                this._clearButtonLoading(btn, 'Recover');
+                return;
+            }
+
+            this._reload();
+        } catch (err) {
+            alert('Error recovering range: ' + err.message);
+            this._clearButtonLoading(btn, 'Recover');
+        }
+    }
+
+    async setSparePool() {
+        let input = document.getElementById('spare-pool-count');
+        let btn = document.getElementById('btn-set-spare-pool');
+        if (!input) return;
+
+        let count = parseInt(input.value, 10);
+        if (Number.isNaN(count)) {
+            alert('Error: pool size must be a number');
+            return;
+        }
+
+        this._setButtonLoading(btn, 'Updating...');
+
+        try {
+            let response = await fetch(this.spareProvisionUrl, {
+                method: 'POST',
+                headers: {
+                    'X-CSRFToken': this.csrfToken,
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ count: count }),
+            });
+
+            let data = await response.json();
+
+            if (!response.ok) {
+                alert('Error: ' + (data.error || 'Could not update spare pool'));
+                return;
+            }
+
+            this._renderSparePoolSummary(data);
+        } catch (err) {
+            alert('Error updating spare pool: ' + err.message);
+        } finally {
+            this._clearButtonLoading(btn, 'Update');
+        }
+    }
+
+    _renderSparePoolSummary(summary) {
+        let el = document.getElementById('spare-pool-summary');
+        if (!el) return;
+        el.textContent = 'Target ' + summary.target_count +
+            ', provisioned ' + summary.created + ' new, ' + summary.existing + ' already in the pool.';
     }
 
     async _rangeAction(participantId, btn, action, loadingText, fallbackText) {

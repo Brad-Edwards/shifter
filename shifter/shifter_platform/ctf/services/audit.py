@@ -1,7 +1,8 @@
-"""CTF live-repair audit helpers."""
+"""CTF live-repair and range-recovery audit helpers."""
 
 from __future__ import annotations
 
+from typing import Any
 from uuid import UUID
 
 from risk_register.models import AuditLog
@@ -36,5 +37,79 @@ def audit_live_flag_repair(
                 "event_id": str(event_id),
             },
             context="ctf_live_flag_repair",
+        )
+    )
+
+
+def audit_range_recovery(
+    *,
+    actor_id: int | None,
+    event_id: UUID,
+    participant_id: UUID,
+    old_range_instance_id: int,
+    replacement_range_instance_id: int | None,
+    replacement_request_id: UUID | None,
+    strategy: str,
+    previous_status: str,
+    resulting_status: str,
+) -> None:
+    """Record a completed participant range-recovery operation (#1018).
+
+    ``entity_id`` is the old (pre-recovery) ``RangeInstance.pk`` -- already a
+    positive int, so no UUID-to-int mapping is needed here (unlike
+    :func:`audit_live_flag_repair`). Participant/event identity and the
+    replacement reference are carried as sanitized strings in ``new_state``.
+    The old range is always destroyed (no disposition/forensics concept).
+    """
+    new_state: dict[str, Any] = {
+        "status": resulting_status,
+        "event_id": str(event_id),
+        "participant_id": str(participant_id),
+        "strategy": strategy,
+        "replacement_range_instance_id": replacement_range_instance_id,
+        "replacement_request_id": (str(replacement_request_id) if replacement_request_id else None),
+    }
+    audit_log(
+        AuditEvent(
+            entity_type=AuditLog.EntityType.RANGE,
+            entity_id=old_range_instance_id,
+            action=AuditLog.Action.RECOVER,
+            actor_type=AuditLog.ActorType.USER if actor_id else AuditLog.ActorType.SYSTEM,
+            actor_id=actor_id,
+            previous_state={"status": previous_status, "range_instance_id": old_range_instance_id},
+            new_state=new_state,
+            context="ctf_range_recovery",
+        )
+    )
+
+
+def audit_spare_provisioning(
+    *,
+    actor_id: int | None,
+    event_id: UUID,
+    target_count: int,
+    existing: int,
+    created: int,
+) -> None:
+    """Record one event spare-pool top-up action (#1018).
+
+    One row per ``provision_event_spares`` call, not one per range -- each
+    individual CMS range creation is already audited by
+    ``cms.services.create_range`` (``AuditLog.Action.PROVISION``).
+    """
+    audit_log(
+        AuditEvent(
+            entity_type=AuditLog.EntityType.RANGE,
+            entity_id=_entity_id_from_uuid(event_id),
+            action=AuditLog.Action.SPARE_PROVISION,
+            actor_type=AuditLog.ActorType.USER if actor_id else AuditLog.ActorType.SYSTEM,
+            actor_id=actor_id,
+            new_state={
+                "event_id": str(event_id),
+                "target_count": target_count,
+                "existing": existing,
+                "created": created,
+            },
+            context="ctf_spare_provisioning",
         )
     )

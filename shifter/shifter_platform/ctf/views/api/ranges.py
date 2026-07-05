@@ -21,8 +21,14 @@ from ctf.views._access import (
     _check_invite_rate_limit,
     _get_user,
     _json_error,
+    _resolve_owned_participant,
     ctf_organizer_required,
     ctf_participant_required,
+)
+from ctf.views._parsing import (
+    _BodyParseError,
+    _get_body_str,
+    _parse_body_object,
 )
 from ctf.views.api._common import (
     _resolve_owned_event_json,
@@ -231,6 +237,122 @@ def api_restart_participant_range(request: HttpRequest, participant_id: UUID) ->
     from ctf.services import range as range_service
 
     return _participant_range_action(request, participant_id, range_service.restart_participant_range)
+
+
+def _parse_spare_range_instance_id(body: dict[str, Any]) -> int | None:
+    """Validate the optional spare-range field as a positive int, else raise `_BodyParseError`.
+
+    Boundary-only validation: the service still validates ``strategy``
+    against ``ctf.enums`` and resolves/validates the spare range itself.
+    """
+    if "spare_range_instance_id" not in body or body["spare_range_instance_id"] is None:
+        return None
+    value = body["spare_range_instance_id"]
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        raise _BodyParseError("spare_range_instance_id must be a positive integer")
+    return value
+
+
+@login_required
+@ctf_organizer_required
+@require_POST
+def api_recover_participant_range(request: HttpRequest, participant_id: UUID) -> JsonResponse:
+    """API: Recover a participant's range that is beyond in-place repair (issue #1018).
+
+    Organizer-only; a participant may not recover their own or anyone else's
+    range. POST body: ``{"strategy": "rebuild"|"reassign_spare",
+    "spare_range_instance_id": <int, optional>}``. Only these fields are
+    read -- scenario/user/status/score are not accepted here. The old range
+    is always destroyed; there is no disposition/forensics-retention choice.
+
+    Args:
+        participant_id: UUID of the participant whose range is being recovered.
+    """
+    from ctf.exceptions import CTFNotFoundError, CTFRangeError, CTFValidationError
+    from ctf.services.range import recover_participant_range
+
+    participant, error = _resolve_owned_participant(request, participant_id)
+    if error is not None:
+        return error
+    assert participant is not None
+
+    try:
+        body = _parse_body_object(request)
+        strategy = _get_body_str(body, "strategy", required=True)
+        spare_range_instance_id = _parse_spare_range_instance_id(body)
+    except _BodyParseError as e:
+        return _json_error(e, "Could not process range recovery request.", 400)
+
+    try:
+        result = recover_participant_range(
+            participant_id,
+            strategy=strategy,
+            operator=_get_user(request),
+            spare_range_instance_id=spare_range_instance_id,
+        )
+    except CTFNotFoundError as e:
+        return _json_error(e, "Participant not found", 404)
+    except CTFValidationError as e:
+        return _json_error(e, "Could not process range recovery request.", 400)
+    except CTFRangeError as e:
+        return _json_error(e, "Could not process range recovery request.", 400)
+
+    return JsonResponse(result)
+
+
+# Sane operator-facing upper bound on a single top-up request. Large enough for
+# any real event's recovery pool, small enough to block a fat-fingered or
+# malicious request from queuing an unbounded amount of CMS provisioning work.
+_MAX_SPARE_POOL_COUNT = 25
+
+
+def _parse_spare_pool_count(body: dict[str, Any]) -> int:
+    """Validate the required ``count`` field as a bounded non-negative int, else raise `_BodyParseError`."""
+    if "count" not in body:
+        raise _BodyParseError("count is required")
+    value = body["count"]
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise _BodyParseError("count must be an integer")
+    if value < 0:
+        raise _BodyParseError("count must be non-negative")
+    if value > _MAX_SPARE_POOL_COUNT:
+        raise _BodyParseError(f"count must not exceed {_MAX_SPARE_POOL_COUNT}")
+    return value
+
+
+@login_required
+@ctf_organizer_required
+@require_POST
+def api_provision_event_spares(request: HttpRequest, event_id: UUID) -> JsonResponse:
+    """API: Set/top-up an event's spare-range recovery pool (issue #1018).
+
+    Organizer-owned-event only. POST body: ``{"count": <non-negative int>}``.
+    Tops the pool up to ``count`` (never shrinks existing ranges -- see
+    ``provision_event_spares``). Returns the resulting pool summary.
+
+    Args:
+        event_id: UUID of the event.
+    """
+    from ctf.exceptions import CTFNotFoundError
+    from ctf.services.range import provision_event_spares
+
+    event, error = _resolve_owned_event_json(request, event_id)
+    if error is not None:
+        return error
+    assert event is not None
+
+    try:
+        body = _parse_body_object(request)
+        count = _parse_spare_pool_count(body)
+    except _BodyParseError as e:
+        return _json_error(e, "Could not process spare pool request.", 400)
+
+    try:
+        result = provision_event_spares(event_id, count, operator=_get_user(request))
+    except CTFNotFoundError as e:
+        return _json_error(e, "Event not found", 404)
+
+    return JsonResponse(result)
 
 
 @login_required

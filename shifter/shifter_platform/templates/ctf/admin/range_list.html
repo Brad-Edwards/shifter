@@ -18,6 +18,37 @@
         </button>
     </div>
     <div id="provision-progress" class="text-muted provision-progress"></div>
+    <div class="card spare-pool-card">
+        <h2 class="spare-pool-title">
+            {% trans "Spare pool" %}
+        </h2>
+        <div class="spare-pool-summary" id="spare-pool-summary">
+            <span>
+                {% trans "Target" %}: <strong>{{ spare_summary.target_count }}</strong>
+            </span>
+            <span>
+                {% trans "Available" %}: <strong>{{ spare_summary.available }}</strong>
+            </span>
+            <span>
+                {% trans "Provisioning" %}: <strong>{{ spare_summary.counts.provisioning }}</strong>
+            </span>
+            <span>
+                {% trans "Ready" %}: <strong>{{ spare_summary.counts.ready }}</strong>
+            </span>
+            <span>
+                {% trans "Failed" %}: <strong>{{ spare_summary.counts.failed }}</strong>
+            </span>
+        </div>
+        <div class="spare-pool-controls">
+            <label for="spare-pool-count">
+                {% trans "Set pool size" %}
+            </label>
+            <input type="number" id="spare-pool-count" min="0" value="{{ spare_summary.target_count }}">
+            <button class="btn btn-secondary" id="btn-set-spare-pool">
+                {% trans "Update" %}
+            </button>
+        </div>
+    </div>
     <div class="card p-0">
         <table class="table">
             <thead>
@@ -33,6 +64,9 @@
                     </th>
                     <th>
                         {% trans "Range ID" %}
+                    </th>
+                    <th>
+                        {% trans "Recovery" %}
                     </th>
                     <th>
                         {% trans "Actions" %}
@@ -75,6 +109,27 @@
                         </td>
                         <td>
                             <span class="range-id">{{ p.range_instance_id|default:"-" }}</span>
+                        </td>
+                        <td>
+                            {% if p.recovery_status %}
+                                {% if p.recovery_status.phase == "completed" %}
+                                    <span class="status status-active"><span class="status-dot"></span>
+                                    {% trans "Recovered" %}</span>
+                                {% elif p.recovery_status.phase == "failed" %}
+                                    <span class="status status-offline"><span class="status-dot"></span>
+                                    {% trans "Recovery failed" %}</span>
+                                {% else %}
+                                    <span class="status status-provisioning"><span class="status-dot"></span>
+                                    {{ p.recovery_status.phase }}</span>
+                                {% endif %}
+                                {% if p.recovery_status.failure_category %}
+                                    <div class="text-muted recovery-failure-category">
+                                        {{ p.recovery_status.failure_category }}
+                                    </div>
+                                {% endif %}
+                            {% else %}
+                                <span class="text-muted">-</span>
+                            {% endif %}
                         </td>
                         <td>
                             <div class="btn-group-actions">
@@ -122,12 +177,25 @@
                                         {% trans "Destroy" %}
                                     </button>
                                 {% endif %}
+                                {% if p.range_instance_id and p.range_status != "provisioning" and p.range_status != "resuming" %}
+                                    <div class="recovery-controls">
+                                        <select class="recovery-strategy" data-participant-id="{{ p.id }}">
+                                            {% for value, label in recovery_strategy_choices %}
+                                                <option value="{{ value }}">{{ label }}</option>
+                                            {% endfor %}
+                                        </select>
+                                        <button class="btn btn-danger btn-recover"
+                                                data-participant-id="{{ p.id }}">
+                                            {% trans "Recover" %}
+                                        </button>
+                                    </div>
+                                {% endif %}
                             </div>
                         </td>
                     </tr>
                 {% empty %}
                     <tr>
-                        <td colspan="5" class="text-muted text-center">
+                        <td colspan="6" class="text-muted text-center">
                             {% trans "No participants yet." %}
                         </td>
                     </tr>
@@ -144,6 +212,7 @@ document.addEventListener('DOMContentLoaded', function() {
         csrfToken: '{{ csrf_token }}',
         provisionAllUrl: '{% url "ctf:api_provision_ranges" event_id=event.pk %}',
         rangeListUrl: '{% url "ctf:api_range_list" event_id=event.pk %}',
+        spareProvisionUrl: '{% url "ctf:api_provision_event_spares" event_id=event.pk %}',
     });
     manager.init();
     {% if active_provisioning %}
