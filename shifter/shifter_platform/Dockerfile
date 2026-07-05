@@ -30,7 +30,14 @@ COPY shifter_platform/pyproject.toml shifter_platform/uv.lock shifter_platform/r
 # The first-party packages (cyberscript, installation) are NOT installed here: they are
 # first-party source with no external resolution to lock or hash, so they ride on
 # PYTHONPATH in the production stage instead of through a pip install.
-RUN uv export --no-emit-project --frozen > requirements.txt && \
+# --no-dev excludes the [dependency-groups].dev group from the export: dev/test
+# tooling (ruff, pytest, mypy, ...) has no place in the production image, and the
+# group also carries the dev/test-only `aces-sdl` git dependency (issue #1261),
+# which is a git source uv cannot emit a hash for — leaving it in would make the
+# --require-hashes install below fail. Runtime deps live in [project].dependencies
+# and are unaffected. (When #1262 promotes aces-sdl to a runtime dependency it must
+# first be available as a hashable wheel, not a git source.)
+RUN uv export --no-emit-project --frozen --no-dev > requirements.txt && \
     uv pip install --system --no-cache --no-config \
         --require-hashes --only-binary :all: --no-binary py-ubjson \
         -r requirements.txt && \
