@@ -17,6 +17,7 @@ from django.db import transaction
 from engine.secrets import SecretsError, get_rdp_password, get_ssh_key
 from engine.ssh import SSHConnection
 
+from ._aces_status import project_aces_operation_status
 from ._common import EngineError
 from ._lifecycle import pause_range, resume_range
 from ._ngfw import create_ngfw, destroy_ngfw, start_ngfw, stop_ngfw
@@ -61,6 +62,7 @@ __all__ = (
     "get_ssh_key",
     "get_user_ready_range_instances",
     "pause_range",
+    "project_aces_operation_status",
     "reassign_range_owner_by_request",
     "resume_range",
     "start_ngfw",

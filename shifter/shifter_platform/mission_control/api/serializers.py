@@ -6,7 +6,42 @@ from typing import Any
 
 from rest_framework import serializers
 
+from shared.aces.projections import DEFAULT_HISTORY_LIMIT, MAX_HISTORY_LIMIT
+
 AGENT_TYPE_CHOICES = ("xdr", "xdr_collector", "cloud_identity_engine")
+
+
+class AcesRecordQuerySerializer(serializers.Serializer):
+    """Validate query params for ACES operation-record read endpoints (#1275)."""
+
+    limit = serializers.IntegerField(
+        required=False,
+        min_value=1,
+        max_value=MAX_HISTORY_LIMIT,
+        default=DEFAULT_HISTORY_LIMIT,
+    )
+
+
+class AcesOperationRecordSerializer(serializers.Serializer):
+    """Read-only projection of one ACES operation sidecar record (#1275).
+
+    Serializes an ``AcesOperationRecordProjection`` (already redacted by the
+    shared read seam); it never touches the raw model ``payload``.
+    """
+
+    id = serializers.UUIDField(read_only=True)
+    request_id = serializers.UUIDField(read_only=True)
+    range_id = serializers.UUIDField(read_only=True, allow_null=True)
+    record_kind = serializers.CharField(read_only=True)
+    contract_kind = serializers.CharField(read_only=True)
+    contract_version = serializers.CharField(read_only=True)
+    contract_profile = serializers.CharField(read_only=True)
+    source_timestamp = serializers.DateTimeField(read_only=True)
+    created_at = serializers.DateTimeField(read_only=True)
+    updated_at = serializers.DateTimeField(read_only=True)
+    payload_digest = serializers.CharField(read_only=True)
+    payload = serializers.DictField(read_only=True)
+    diagnostic_refs = serializers.DictField(read_only=True)
 
 
 class LaunchRangeSerializer(serializers.Serializer):
