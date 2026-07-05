@@ -129,3 +129,10 @@ one range per participant through the CMS range services rather than a second
 provisioning path.
 
 - [CTF technical documentation](ctf) — models, services, scheduling, and per-participant range provisioning.
+
+## Risk Register
+
+The `risk_register` app owns the Risk Register domain and is the first SPA
+cutover module (ADR-029).
+
+- [Risk Register technical documentation](risk_register) — models, DRF API, authorization, audit, and the SPA integration.

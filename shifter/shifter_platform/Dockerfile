@@ -38,6 +38,27 @@ RUN uv export --no-emit-project --frozen > requirements.txt && \
         --require-hashes --only-binary :all: \
         -r requirements-gcp.lock
 
+# Frontend build stage (ADR-029 / #1302). Builds the SPA bundle into the static
+# tree so collectstatic folds it into STATIC_ROOT. Node is a build-time-only
+# dependency; the production image ships no Node runtime. Tracked by the `docker`
+# dependabot ecosystem; the floating minor tag receives upstream security
+# rebuilds (docker:S8431 forbids tag + digest together).
+FROM node:20-slim AS frontend
+
+WORKDIR /app/shifter_platform
+
+# Install with the committed lockfile for a reproducible, offline-resolvable build.
+COPY shifter_platform/frontend/package.json shifter_platform/frontend/package-lock.json frontend/
+RUN cd frontend && npm ci
+
+# Design-system CSS (published copy inside the build context) + SPA sources.
+COPY shifter_platform/static/design-system static/design-system
+COPY shifter_platform/frontend frontend
+
+# Vite emits the content-hashed bundle + manifest to /app/shifter_platform/static/spa
+# (see frontend/vite.config.ts). tsc typecheck runs first via `npm run build`.
+RUN cd frontend && npm run build
+
 # Production stage. Tracked by the `docker` dependabot ecosystem; the floating
 # minor tag receives upstream security rebuilds (docker:S8431 forbids tag +
 # digest together).
@@ -81,6 +102,11 @@ COPY installation /opt/shifter-libs/installation
 
 # Copy application code (context is now shifter/, so path is shifter_platform)
 COPY --chown=appuser:appgroup shifter_platform .
+
+# Bring in the built SPA bundle from the frontend stage. Kept out of the source
+# COPY above because it is generated (gitignored / dockerignored); collectstatic
+# below folds it into STATIC_ROOT and WhiteNoise fingerprints it (#1302).
+COPY --from=frontend --chown=appuser:appgroup /app/shifter_platform/static/spa ./static/spa
 
 # Create writable runtime directories for collectstatic, django-health-check's
 # default-storage probe, and tools that use HOME. The application source tree

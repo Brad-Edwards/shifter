@@ -1246,7 +1246,7 @@
     "title": "SPA cutover frontend stack, deployment, and API boundary",
     "status": "accepted",
     "scope": "shifter_platform",
-    "decision": "The Shifter portal migrates from server-rendered Django templates to a single-page application. The SPA is React 18 with TypeScript, built by Vite, and shipped as content-hashed static assets through Django's existing staticfiles plus WhiteNoise manifest pipeline; the bundle is built at container-image build time before collectstatic and is never committed. No Node SSR meta-framework and no second server are introduced: the SPA is client-rendered and served from the single Django origin, so there is exactly one session and one CSRF posture. The SPA consumes the existing canonical DRF /api/v1/ surface (NamespaceVersioning, the shared error envelope in shared/api/errors.py, PageNumberPagination) and adds no parallel API. Browser auth stays session-cookie based with the CSRF token sent as the X-CSRFToken header; shf_ API tokens remain for programmatic clients only and are never placed in the browser. The cutover is phased per module in order: Risk Register, Mission Control, CTF, Scenario Editor, Docs. Legacy Django template routes remain until a module-specific issue explicitly retires them. Full design detail, backend API gaps, and no-go criteria are in docs/architecture/spa-cutover-architecture-1300.md. Governing issue: #1300.",
+    "decision": "The Shifter portal migrates from server-rendered Django templates to a single-page application. The SPA is React 18 with TypeScript, built by Vite, and shipped as content-hashed static assets through Django's existing staticfiles plus WhiteNoise manifest pipeline; the bundle is built at container-image build time before collectstatic and is never committed. The client runtime uses React Router v7 in library/data-router mode for route and URL state, and TanStack Query v5 over a single typed fetch client for server state, caching, invalidation, idempotent GET retry, and mutation no-retry policy. No Node SSR meta-framework and no second server are introduced: the SPA is client-rendered and served from the single Django origin, so there is exactly one session and one CSRF posture. The SPA consumes the existing canonical DRF /api/v1/ surface (NamespaceVersioning, the shared error envelope in shared/api/errors.py, PageNumberPagination) and adds no parallel API. Browser auth stays session-cookie based with the CSRF token sent as the X-CSRFToken header; shf_ API tokens remain for programmatic clients only and are never placed in the browser. The cutover is phased per module in order: Risk Register, Mission Control, CTF, Scenario Editor, Docs. Legacy Django template routes remain until a module-specific issue explicitly retires them. Full design detail, backend API gaps, and no-go criteria are in docs/architecture/spa-cutover-architecture-1300.md; the first module's runtime-library defaults and Risk Register workspace boundary are in docs/design/spa-risk-register-workspace-1301.md. Governing issues: #1300, #1301, #1302.",
     "rules": [
       {
         "id": "ADR-029-R1",
@@ -1262,6 +1262,11 @@
         "id": "ADR-029-R3",
         "description": "Migration is phased. A legacy Django template route is retired only by a module-specific issue that meets the retirement criteria in docs/architecture/spa-cutover-architecture-1300.md. Frontend guardrails (the SPA build, typecheck, lint, unit, and e2e CI jobs, and the SPA-to-/api/v1 boundary check) land with the first SPA implementation change, not deferred after it.",
         "checks": []
+      },
+      {
+        "id": "ADR-029-R4",
+        "description": "SPA route state uses React Router v7 library/data-router mode, and server state uses TanStack Query v5 layered over the single typed fetch client. Do not introduce a parallel router, global server-state store, per-module fetch wrapper, or framework/SSR mode without a superseding ADR. Router loaders stay thin or omitted so cache invalidation remains owned by TanStack Query.",
+        "checks": []
       }
     ],
     "exceptions": [],
@@ -1269,6 +1274,8 @@
     "evidence": [
       "docs/architecture/spa-cutover-architecture-1300.md",
       "docs/design/spa-design-system-foundation-1299.md",
+      "docs/design/spa-risk-register-workspace-1301.md",
+      "docs/architecture/spa-risk-register-implementation-preflight-1302.md",
       "docs/design/design-system/README.md"
     ]
   }

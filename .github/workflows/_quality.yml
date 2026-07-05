@@ -443,6 +443,43 @@ jobs:
         working-directory: shifter/shifter_platform
         run: npx stylelint static/css/
 
+  shifter-platform-spa:
+    permissions:
+      contents: read
+    name: SPA (shifter_platform frontend)
+    needs: [paths]
+    if: ${{ (needs.paths.outputs.run_all == 'true' || needs.paths.outputs.shifter_platform == 'true') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.19'
+          cache: 'npm'
+          cache-dependency-path: shifter/shifter_platform/frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: shifter/shifter_platform/frontend
+        run: npm ci
+
+      - name: Lint (ESLint)
+        working-directory: shifter/shifter_platform/frontend
+        run: npm run lint
+
+      - name: Typecheck
+        working-directory: shifter/shifter_platform/frontend
+        run: npm run typecheck
+
+      - name: Unit tests (Vitest + axe)
+        working-directory: shifter/shifter_platform/frontend
+        run: npm run test:coverage
+
+      - name: Build (Vite)
+        working-directory: shifter/shifter_platform/frontend
+        run: npm run build
+
   provisioner-lint:
     permissions:
       contents: read
