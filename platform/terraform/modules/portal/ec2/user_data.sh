@@ -21,15 +21,17 @@ LIFECYCLE_HOOK_NAME="${lifecycle_hook_name}"
 TOKEN=$(curl -s -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
 INSTANCE_ID=$(curl -s -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/instance-id)
 
-# Get ASG name from instance tags (if in ASG)
+# ASG name is resolved lazily at lifecycle-completion time (see resolve_asg_name
+# below), NOT once here: early-boot / warm-pool launches return empty from
+# describe-auto-scaling-instances, and caching that empty value is what left
+# instances stuck in Pending:Wait until the launch hook ABANDONed them (#1032).
 ASG_NAME=""
-if [[ -n "$LIFECYCLE_HOOK_NAME" ]]; then
-  ASG_NAME=$(aws autoscaling describe-auto-scaling-instances \
-    --instance-ids "$INSTANCE_ID" \
-    --query 'AutoScalingInstances[0].AutoScalingGroupName' \
-    --output text \
-    --region "$AWS_REGION" 2>/dev/null || echo "")
-fi
+
+# ASG-name discovery tuning. Non-secret constants; no per-environment variation
+# is needed, so they stay in-script rather than becoming Terraform inputs.
+ASG_DISCOVERY_ATTEMPTS=5
+ASG_DISCOVERY_DELAY_SECONDS=6
+IMDS_CURL_MAX_TIME=5
 
 echo "=========================================="
 echo "Starting Shifter Platform bootstrap"
@@ -38,24 +40,95 @@ echo "Region: $AWS_REGION"
 echo "=========================================="
 
 # ------------------------------------------------------------------------------
-# Function: Complete lifecycle action
+# Function: Resolve the ASG name for this instance (bounded retry)
 # ------------------------------------------------------------------------------
-complete_lifecycle_action() {
-  local result=$1
-  if [[ -n "$LIFECYCLE_HOOK_NAME" ]] && [[ -n "$ASG_NAME" ]]; then
-    echo "Completing lifecycle action with result: $result"
-    aws autoscaling complete-lifecycle-action \
-      --lifecycle-hook-name "$LIFECYCLE_HOOK_NAME" \
-      --auto-scaling-group-name "$ASG_NAME" \
-      --instance-id "$INSTANCE_ID" \
-      --lifecycle-action-result "$result" \
-      --region "$AWS_REGION" || echo "Warning: Failed to complete lifecycle action"
-  fi
+# Primary source is the IMDS instance tag aws:autoscaling:groupName: the launch
+# template enables instance_metadata_tags, and the tag reflects ASG membership
+# immediately (including warm-pool launches, where describe-auto-scaling-instances
+# is briefly empty). The Auto Scaling API is the fallback. Discovery is retried
+# because early boot can lag both sources. Echoes the resolved name, or nothing
+# if it stays unresolved after all attempts.
+resolve_asg_name() {
+  local attempt=1
+  local name=""
+
+  while [[ "$attempt" -le "$ASG_DISCOVERY_ATTEMPTS" ]]; do
+    # Primary: IMDS instance tag. Reuses the IMDSv2 token, bounded by --max-time,
+    # no IMDSv1 fallback; -f makes a missing-tag 404 yield empty (not an error
+    # body). The token is not logged.
+    name=$(curl -f -s --max-time "$IMDS_CURL_MAX_TIME" \
+      -H "X-aws-ec2-metadata-token: $TOKEN" \
+      "http://169.254.169.254/latest/meta-data/tags/instance/aws:autoscaling:groupName" \
+      2>/dev/null || echo "")
+    if [[ -n "$name" ]]; then
+      printf '%s' "$name"
+      return 0
+    fi
+
+    # Fallback: Auto Scaling API. --output text prints "None" for an empty
+    # result, so treat that as unresolved.
+    name=$(aws autoscaling describe-auto-scaling-instances \
+      --instance-ids "$INSTANCE_ID" \
+      --query 'AutoScalingInstances[0].AutoScalingGroupName' \
+      --output text \
+      --region "$AWS_REGION" 2>/dev/null || echo "")
+    if [[ -n "$name" && "$name" != "None" ]]; then
+      printf '%s' "$name"
+      return 0
+    fi
+
+    if [[ "$attempt" -lt "$ASG_DISCOVERY_ATTEMPTS" ]]; then
+      sleep "$ASG_DISCOVERY_DELAY_SECONDS"
+    fi
+    attempt=$((attempt + 1))
+  done
+
   return 0
 }
 
-# Trap errors and abandon lifecycle on failure
-trap 'echo "Bootstrap failed!"; complete_lifecycle_action ABANDON; exit 1' ERR
+# ------------------------------------------------------------------------------
+# Function: Complete lifecycle action
+# ------------------------------------------------------------------------------
+# Returns non-zero when a configured launch hook cannot be completed, so callers
+# can fail bootstrap loudly instead of leaving the instance stuck in
+# Pending:Wait (#1032). A no-op (return 0) when no launch hook is configured
+# (single-instance mode).
+complete_lifecycle_action() {
+  local result=$1
+
+  if [[ -z "$LIFECYCLE_HOOK_NAME" ]]; then
+    return 0
+  fi
+
+  # Resolve/refresh the ASG name at completion time; never trust an empty cache.
+  if [[ -z "$ASG_NAME" ]]; then
+    ASG_NAME=$(resolve_asg_name)
+  fi
+
+  if [[ -z "$ASG_NAME" ]]; then
+    echo "ERROR: launch hook '$LIFECYCLE_HOOK_NAME' is configured but the ASG name could not be resolved for $INSTANCE_ID; cannot complete lifecycle action ($result)." >&2
+    return 1
+  fi
+
+  echo "Completing lifecycle action with result: $result (asg=$ASG_NAME)"
+  aws autoscaling complete-lifecycle-action \
+    --lifecycle-hook-name "$LIFECYCLE_HOOK_NAME" \
+    --auto-scaling-group-name "$ASG_NAME" \
+    --instance-id "$INSTANCE_ID" \
+    --lifecycle-action-result "$result" \
+    --region "$AWS_REGION"
+}
+
+# Trap errors and abandon lifecycle on failure. Disarm the trap first so a
+# best-effort ABANDON that itself fails cannot re-enter this handler, and never
+# let the abandon attempt mask the non-zero exit.
+on_error() {
+  trap - ERR
+  echo "Bootstrap failed!" >&2
+  complete_lifecycle_action ABANDON || true
+  exit 1
+}
+trap on_error ERR
 
 # ------------------------------------------------------------------------------
 # Install Docker
@@ -456,7 +529,18 @@ systemctl enable --now shifter-worker-health.timer
 # ------------------------------------------------------------------------------
 # Complete lifecycle action on success
 # ------------------------------------------------------------------------------
-complete_lifecycle_action CONTINUE
+# For a configured launch hook this is a required part of successful bootstrap:
+# if it cannot be completed the instance would sit in Pending:Wait until the ASG
+# ABANDONs it, so fail loudly here rather than printing a false success (#1032).
+if ! complete_lifecycle_action CONTINUE; then
+  echo "ERROR: failed to complete the launch lifecycle action; bootstrap did not succeed." >&2
+  # Best-effort ABANDON so a resolved-ASG-but-failed-CONTINUE instance is
+  # replaced immediately instead of sitting in Pending:Wait until the launch
+  # hook times out. Non-fatal: the launch hook's ABANDON default reclaims the
+  # instance on timeout regardless.
+  complete_lifecycle_action ABANDON || true
+  exit 1
+fi
 
 echo "=========================================="
 echo "Shifter Platform bootstrap complete!"
