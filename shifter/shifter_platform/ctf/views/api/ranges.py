@@ -270,22 +270,22 @@ def _run_recover_participant_range(request: HttpRequest, participant_id: UUID) -
         body = _parse_body_object(request)
         strategy = _get_body_str(body, "strategy", required=True)
         spare_range_instance_id = _parse_spare_range_instance_id(body)
-    except _BodyParseError as e:
-        return _json_error(e, _RECOVERY_REQUEST_FAILED_MSG, 400)
-
-    try:
         result = recover_participant_range(
             participant_id,
             strategy=strategy,
             operator=_get_user(request),
             spare_range_instance_id=spare_range_instance_id,
         )
+    except _BodyParseError as e:
+        response: JsonResponse = _json_error(e, _RECOVERY_REQUEST_FAILED_MSG, 400)
     except CTFNotFoundError as e:
-        return _json_error(e, _PARTICIPANT_NOT_FOUND_MSG, 404)
+        response = _json_error(e, _PARTICIPANT_NOT_FOUND_MSG, 404)
     except (CTFValidationError, CTFRangeError) as e:
-        return _json_error(e, _RECOVERY_REQUEST_FAILED_MSG, 400)
+        response = _json_error(e, _RECOVERY_REQUEST_FAILED_MSG, 400)
+    else:
+        response = JsonResponse(result)
 
-    return JsonResponse(result)
+    return response
 
 
 @login_required
