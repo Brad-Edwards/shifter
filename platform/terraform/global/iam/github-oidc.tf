@@ -407,6 +407,51 @@ resource "aws_iam_policy" "networking" {
           "network-firewall:UpdateLoggingConfiguration"
         ]
         Resource = "*"
+      },
+      {
+        # Route 53 Resolver DNS Firewall + query logging for the range VPC
+        # egress controls (#1171 zero-egress range, #1172 close DNS exfil,
+        # modules/range/vpc/dns_resolver.tf). None of these APIs support
+        # resource-level scoping, so the statement uses Resource "*".
+        Sid    = "Route53ResolverDNSFirewall"
+        Effect = "Allow"
+        Action = [
+          "route53resolver:CreateFirewallDomainList",
+          "route53resolver:DeleteFirewallDomainList",
+          "route53resolver:GetFirewallDomainList",
+          "route53resolver:ListFirewallDomainLists",
+          "route53resolver:UpdateFirewallDomains",
+          "route53resolver:ListFirewallDomains",
+          "route53resolver:ImportFirewallDomains",
+          "route53resolver:CreateFirewallRuleGroup",
+          "route53resolver:DeleteFirewallRuleGroup",
+          "route53resolver:GetFirewallRuleGroup",
+          "route53resolver:ListFirewallRuleGroups",
+          "route53resolver:CreateFirewallRule",
+          "route53resolver:DeleteFirewallRule",
+          "route53resolver:UpdateFirewallRule",
+          "route53resolver:ListFirewallRules",
+          "route53resolver:AssociateFirewallRuleGroup",
+          "route53resolver:DisassociateFirewallRuleGroup",
+          "route53resolver:GetFirewallRuleGroupAssociation",
+          "route53resolver:ListFirewallRuleGroupAssociations",
+          "route53resolver:UpdateFirewallRuleGroupAssociation",
+          "route53resolver:GetFirewallConfig",
+          "route53resolver:UpdateFirewallConfig",
+          "route53resolver:ListFirewallConfigs",
+          "route53resolver:CreateResolverQueryLogConfig",
+          "route53resolver:DeleteResolverQueryLogConfig",
+          "route53resolver:GetResolverQueryLogConfig",
+          "route53resolver:ListResolverQueryLogConfigs",
+          "route53resolver:AssociateResolverQueryLogConfig",
+          "route53resolver:DisassociateResolverQueryLogConfig",
+          "route53resolver:GetResolverQueryLogConfigAssociation",
+          "route53resolver:ListResolverQueryLogConfigAssociations",
+          "route53resolver:TagResource",
+          "route53resolver:UntagResource",
+          "route53resolver:ListTagsForResource"
+        ]
+        Resource = "*"
       }
     ]
   })
