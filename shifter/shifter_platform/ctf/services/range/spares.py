@@ -178,9 +178,9 @@ def provision_event_spares(event_id: UUID, target_count: int, *, operator: User 
     to_create = max(0, target_count - existing)
 
     logger.info(
-        "provision_event_spares: event=%s target=%d existing=%d creating=%d",
+        "provision_event_spares: event=%s target=%s existing=%d creating=%d",
         safe_log_value(event_id),
-        target_count,
+        safe_log_value(target_count),
         existing,
         to_create,
     )
