@@ -37,6 +37,20 @@ describe("apiFetch", () => {
     expect(init.headers["Content-Type"]).toBe("application/json");
   });
 
+  it("still sends X-Request-ID when crypto.randomUUID is unavailable (insecure HTTP context)", async () => {
+    const fetchMock = mockFetch(200, {});
+    vi.stubGlobal("fetch", fetchMock);
+    const original = crypto.randomUUID;
+    // Simulate a plain-HTTP (non-secure) origin where randomUUID is undefined.
+    Object.defineProperty(crypto, "randomUUID", { value: undefined, configurable: true });
+    try {
+      await apiFetch("/risks/");
+      expect(lastInit(fetchMock).headers["X-Request-ID"]).toBeTruthy();
+    } finally {
+      Object.defineProperty(crypto, "randomUUID", { value: original, configurable: true });
+    }
+  });
+
   it("does not send CSRF on GET", async () => {
     const fetchMock = mockFetch(200, { results: [] });
     vi.stubGlobal("fetch", fetchMock);

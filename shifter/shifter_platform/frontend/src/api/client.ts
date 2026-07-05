@@ -25,9 +25,16 @@ export interface RequestOptions {
 }
 
 function newRequestId(): string {
-  // crypto.randomUUID is available in all supported browsers (secure context)
-  // and Node 20 / jsdom; no insecure Math.random fallback is needed.
-  return crypto.randomUUID();
+  // crypto.randomUUID exists only in secure contexts (HTTPS / localhost). Over
+  // plain HTTP (a LAN/dev origin) it is undefined, so fall back to
+  // getRandomValues, which is available in insecure contexts and is a CSPRNG
+  // (not the Math.random PRNG SonarCloud S2245 flags).
+  if (typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  return `req-${Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
 }
 
 function buildUrl(path: string, query?: Record<string, QueryValue>): string {
