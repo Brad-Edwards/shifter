@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from typing import cast
 
 from django.db import transaction
 
@@ -11,6 +12,7 @@ from cms.models import RangeInstance
 from shared.enums import ResourceStatus
 from shared.messages.envelope import parse_sns_message
 from shared.messages.events import EVENT_TYPE_STATUS_UPDATED
+from shared.messages.payloads import RangeStatusUpdatedPayload
 
 logger = logging.getLogger(__name__)
 
@@ -122,11 +124,15 @@ def process_range_event(message: str | dict) -> None:
         logger.debug("Ignoring event_type=%s", event_type)
         return
 
-    request_id = event.get("request_id")
-    range_id = event.get("range_id")
-    user_id = event.get("user_id")
-    new_status = event.get("new_status")
-    event_id = event.get("event_id", "unknown")
+    # event_type confirmed; narrow to the typed payload. Runtime shape/ownership
+    # validation below is retained — the payload is still untrusted input.
+    payload = cast(RangeStatusUpdatedPayload, event)
+
+    request_id = payload.get("request_id")
+    range_id = payload.get("range_id")
+    user_id = payload.get("user_id")
+    new_status = payload.get("new_status")
+    event_id = payload.get("event_id", "unknown")
 
     if new_status is None:
         logger.warning("Missing new_status in event")

@@ -2,6 +2,18 @@ fail_fast: true
 
 repos:
   # =============================================================================
+  # STAGE 0: Commit message policy (commit-msg hook)
+  # =============================================================================
+  - repo: local
+    hooks:
+      - id: block-agent-attribution-commit-msg
+        name: block agent attribution in commit messages
+        entry: python3 scripts/adr_guard/block_agent_attribution_commit_msg.py
+        language: system
+        stages: [commit-msg]
+        pass_filenames: true
+
+  # =============================================================================
   # STAGE 1: Fast checks (linting, formatting, syntax)
   # =============================================================================
 

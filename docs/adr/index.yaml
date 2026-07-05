@@ -35,6 +35,11 @@
         "id": "ADR-002-R1",
         "description": "Guardrail file changes must update docs/adr or the developer ADR enforcement docs in the same change.",
         "checks": ["guardrail-docs"]
+      },
+      {
+        "id": "ADR-002-R2",
+        "description": "Commit messages and tracked text must not contain AI/agent attribution markers (Co-authored-by agent lines, Cursor marketing footers, Claude Code branding, etc.).",
+        "checks": ["no-agent-attribution"]
       }
     ],
     "exceptions": [],
@@ -1234,6 +1239,37 @@
       "shifter/shifter_platform/templates/ctf/participant/scoreboard.html",
       "shifter/shifter_platform/tests/ctf/test_scoreboard_views.py",
       "shifter/shifter_platform/tests/ctf/test_submission_service.py"
+    ]
+  },
+  {
+    "id": "ADR-029",
+    "title": "SPA cutover frontend stack, deployment, and API boundary",
+    "status": "accepted",
+    "scope": "shifter_platform",
+    "decision": "The Shifter portal migrates from server-rendered Django templates to a single-page application. The SPA is React 18 with TypeScript, built by Vite, and shipped as content-hashed static assets through Django's existing staticfiles plus WhiteNoise manifest pipeline; the bundle is built at container-image build time before collectstatic and is never committed. No Node SSR meta-framework and no second server are introduced: the SPA is client-rendered and served from the single Django origin, so there is exactly one session and one CSRF posture. The SPA consumes the existing canonical DRF /api/v1/ surface (NamespaceVersioning, the shared error envelope in shared/api/errors.py, PageNumberPagination) and adds no parallel API. Browser auth stays session-cookie based with the CSRF token sent as the X-CSRFToken header; shf_ API tokens remain for programmatic clients only and are never placed in the browser. The cutover is phased per module in order: Risk Register, Mission Control, CTF, Scenario Editor, Docs. Legacy Django template routes remain until a module-specific issue explicitly retires them. Full design detail, backend API gaps, and no-go criteria are in docs/architecture/spa-cutover-architecture-1300.md. Governing issue: #1300.",
+    "rules": [
+      {
+        "id": "ADR-029-R1",
+        "description": "New SPA frontend code uses React plus TypeScript built by Vite, shipped as content-hashed static assets via Django staticfiles/WhiteNoise (built at image build, never committed to the repo). Do not introduce a Node SSR meta-framework, a second server or origin, or an alternate bundler; a different frontend stack requires a superseding ADR.",
+        "checks": []
+      },
+      {
+        "id": "ADR-029-R2",
+        "description": "SPA data access goes only through the canonical DRF /api/v1/ surface -- no ad hoc JSON routes and no legacy per-app /*/api/ endpoints in SPA code paths. Do not add csrf_exempt for session-authenticated browser calls: the browser sends the session cookie plus the X-CSRFToken header. Do not place shf_ API tokens in the browser. Backend validation and domain behavior stay server-side; the SPA must not duplicate backend validation rules.",
+        "checks": []
+      },
+      {
+        "id": "ADR-029-R3",
+        "description": "Migration is phased. A legacy Django template route is retired only by a module-specific issue that meets the retirement criteria in docs/architecture/spa-cutover-architecture-1300.md. Frontend guardrails (the SPA build, typecheck, lint, unit, and e2e CI jobs, and the SPA-to-/api/v1 boundary check) land with the first SPA implementation change, not deferred after it.",
+        "checks": []
+      }
+    ],
+    "exceptions": [],
+    "enforcement": ["agent-policy"],
+    "evidence": [
+      "docs/architecture/spa-cutover-architecture-1300.md",
+      "docs/design/spa-design-system-foundation-1299.md",
+      "docs/design/design-system/README.md"
     ]
   }
 ]

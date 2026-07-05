@@ -6,28 +6,35 @@ These handlers process range and NGFW status updates and broadcast them to WebSo
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import cast
+from uuid import UUID
 
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
 
 from shared.channels.groups import ngfw_event_group, range_event_group
+from shared.channels.payloads import NGFWStatusChannelEvent, RangeStatusChannelEvent
 from shared.enums import ResourceStatus
 from shared.messages.envelope import parse_sns_message
 from shared.messages.events import EVENT_TYPE_NGFW
+from shared.messages.payloads import NGFWEventPayload, RangeStatusUpdatedPayload
 from shared.schemas import RangeRef
 
 logger = logging.getLogger(__name__)
 
 
-def _range_ref_from_status_event(event: dict[str, Any]) -> RangeRef | None:
+def _range_ref_from_status_event(event: RangeStatusUpdatedPayload) -> RangeRef | None:
     """Build RangeRef from a range.status.updated event payload, or None when invalid."""
     event_id = event.get("event_id", "unknown")
     request_id = event.get("request_id")
     new_status = event.get("new_status")
     user_id = event.get("user_id")
 
-    if not request_id or new_status is None or user_id is None:
+    # request_id is typed str, but the event is untrusted input: a non-string
+    # (numeric JSON, or a UUID object from a direct caller) must be dropped, not
+    # crash UUID() with an uncaught AttributeError. isinstance also narrows for
+    # the UUID() coercion below.
+    if not isinstance(request_id, str) or not request_id or new_status is None or user_id is None:
         logger.error(
             "Invalid range status event payload: event_id=%s request_id=%s new_status=%s user_id=%s",
             event_id,
@@ -39,7 +46,7 @@ def _range_ref_from_status_event(event: dict[str, Any]) -> RangeRef | None:
 
     try:
         return RangeRef(
-            request_id=request_id,
+            request_id=UUID(request_id),
             range_id=event.get("range_id"),
             user_id=user_id,
             status=ResourceStatus(new_status),
@@ -107,12 +114,13 @@ def process_range_event(message: str | dict) -> None:
         logger.debug("Ignoring event_type=%s", event_type)
         return
 
-    range_ref = _range_ref_from_status_event(event)
+    payload = cast(RangeStatusUpdatedPayload, event)
+    range_ref = _range_ref_from_status_event(payload)
     if range_ref is None:
         return
 
-    error_message = event.get("error_message")
-    event_id = event.get("event_id", "unknown")
+    error_message = payload.get("error_message")
+    event_id = payload.get("event_id", "unknown")
 
     channel_layer = get_channel_layer()
     if channel_layer is None:
@@ -124,16 +132,14 @@ def process_range_event(message: str | dict) -> None:
         return
     group_name = range_event_group(str(range_ref.request_id))
 
-    async_to_sync(channel_layer.group_send)(
-        group_name,
-        {
-            "type": "range.status",
-            "range_ref": range_ref.model_dump(mode="json"),
-            "request_id": str(range_ref.request_id),
-            "new_status": range_ref.status.value,
-            "error_message": error_message,
-        },
-    )
+    channel_event: RangeStatusChannelEvent = {
+        "type": "range.status",
+        "range_ref": range_ref.model_dump(mode="json"),
+        "request_id": str(range_ref.request_id),
+        "new_status": range_ref.status.value,
+        "error_message": error_message,
+    }
+    async_to_sync(channel_layer.group_send)(group_name, channel_event)
 
     logger.info(
         "MC broadcast to group %s: request_id=%s status=%s event_id=%s",
@@ -180,11 +186,12 @@ def process_ngfw_event(message: str | dict) -> None:
         logger.debug("Ignoring NGFW event_type=%s", event_type)
         return
 
-    app_id = event.get("app_id")
-    status = event.get("status")
-    state = event.get("state") or {}
-    serial_number = event.get("serial_number")
-    event_id = event.get("event_id", "unknown")
+    payload = cast(NGFWEventPayload, event)
+    app_id = payload.get("app_id")
+    status = payload.get("status")
+    state = payload.get("state") or {}
+    serial_number = payload.get("serial_number")
+    event_id = payload.get("event_id", "unknown")
 
     if not app_id or not isinstance(app_id, str):
         logger.warning("Invalid app_id: %s", app_id)
@@ -200,16 +207,14 @@ def process_ngfw_event(message: str | dict) -> None:
         return
     group_name = ngfw_event_group(app_id)
 
-    async_to_sync(channel_layer.group_send)(
-        group_name,
-        {
-            "type": "ngfw.status",
-            "app_id": app_id,
-            "status": status,
-            "state": state,
-            "serial_number": serial_number,
-        },
-    )
+    channel_event: NGFWStatusChannelEvent = {
+        "type": "ngfw.status",
+        "app_id": app_id,
+        "status": status,
+        "state": state,
+        "serial_number": serial_number,
+    }
+    async_to_sync(channel_layer.group_send)(group_name, channel_event)
 
     logger.info(
         "MC broadcast to group %s: app_id=%s status=%s event_id=%s",
