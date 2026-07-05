@@ -818,7 +818,11 @@ resource "aws_iam_policy" "security" {
           "secretsmanager:UntagResource",
           "secretsmanager:GetResourcePolicy",
           "secretsmanager:PutResourcePolicy",
-          "secretsmanager:DeleteResourcePolicy"
+          "secretsmanager:DeleteResourcePolicy",
+          # Enable/trigger managed rotation for the Redis AUTH secret
+          # (modules/portal/redis aws_secretsmanager_secret_rotation, #159).
+          "secretsmanager:RotateSecret",
+          "secretsmanager:CancelRotateSecret"
         ]
         Resource = "arn:aws:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:shifter-*"
       },
