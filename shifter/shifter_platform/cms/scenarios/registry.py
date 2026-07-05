@@ -9,6 +9,7 @@ Applies ScenarioMetadata overlays (enabled, staff_only) to all scenarios.
 
 from __future__ import annotations
 
+import enum
 import logging
 from typing import TYPE_CHECKING, Any
 
@@ -24,6 +25,36 @@ if TYPE_CHECKING:
     from cms.models import AcesPackageSource
 
 logger = logging.getLogger(__name__)
+
+
+class ScenarioWorkflow(enum.StrEnum):
+    """Workflow purpose a scenario listing / launchability check is scoped to.
+
+    ``STAFF_REVIEW`` is the unfiltered catalog view (staff may see
+    non-launchable ACES entries for review). Every other value is a launch
+    purpose whose selection must be restricted to launchable entries.
+    """
+
+    STAFF_REVIEW = "staff_review"
+    RANGE_LAUNCH = "range_launch"
+    CTF_EVENT = "ctf_event"
+    CTF_PARTICIPANT = "ctf_participant"
+    EXPERIMENT = "experiment"
+
+
+# Data-driven launchability allowlists. Widen these constants (not the call
+# sites) when a new supported ACES source / contract / profile lands.
+LAUNCHABLE_SOURCE_KINDS = frozenset({"repo", "object"})
+LAUNCHABLE_CONTRACT_KINDS = frozenset({"aces"})
+LAUNCHABLE_CONTRACT_PROFILES = frozenset({"shifter"})
+
+# (contract_kind, contract_profile) pairs that have a wired runtime hydration
+# adapter — i.e. a launchable entry of that kind/profile can actually be turned
+# into a Shifter range/CTF spec by the launch path. This is EMPTY until an ACES
+# hydrator/adapter lands (a later issue), so ACES entries stay review-only and
+# are never marked launchable, even when conformant. Marking an entry launchable
+# before the adapter exists would expose an id that fails late at hydration.
+_LAUNCH_ADAPTER_CONTRACT_PROFILES: frozenset[tuple[str, str]] = frozenset()
 
 
 def _get_metadata_map() -> dict[str, dict[str, Any]]:
@@ -69,21 +100,87 @@ def _get_aces_sources() -> list[AcesPackageSource]:
     return list(AcesPackageSource.objects.all())
 
 
-def _aces_source_to_dict(source: AcesPackageSource, *, metadata: dict[str, Any] | None) -> dict[str, Any]:
+def _aces_launchable(source: AcesPackageSource, *, known_legacy_ids: set[str]) -> bool:
+    """Data-driven launchability decision for an ACES package-source row.
+
+    Launchability is NOT merely ``conformance_status == "passed"``. An ACES
+    entry is launchable only when ALL hold (fail-closed):
+
+    - a runtime hydration adapter exists for its contract/profile;
+    - it does not shadow an active legacy ``scenario_id``;
+    - its source kind, contract kind, and contract profile are supported;
+    - its refs/digests/provenance re-validate against the shared contract;
+    - its conformance status is ``passed``.
+
+    Args:
+        source: AcesPackageSource instance.
+        known_legacy_ids: Active YAML-default + DB-custom ids (no-shadow set).
+
+    Returns:
+        True only if the entry is launchable.
+    """
+    from cms.models import AcesPackageSource as _AcesPackageSource
+    from shared.schemas.aces_package_source import (
+        AcesPackageSourceError,
+        PackageSourceRecord,
+        validate_package_source,
+    )
+
+    # Never launchable until a runtime adapter exists for this contract/profile.
+    if (source.contract_kind, source.contract_profile) not in _LAUNCH_ADAPTER_CONTRACT_PROFILES:
+        return False
+    if source.scenario_id in known_legacy_ids:
+        return False
+    if source.contract_kind not in LAUNCHABLE_CONTRACT_KINDS:
+        return False
+    if source.contract_profile not in LAUNCHABLE_CONTRACT_PROFILES:
+        return False
+    if source.source_kind not in LAUNCHABLE_SOURCE_KINDS:
+        return False
+    if source.conformance_status != _AcesPackageSource.ConformanceStatus.PASSED:
+        return False
+    try:
+        validate_package_source(
+            PackageSourceRecord(
+                source_kind=source.source_kind,
+                contract_kind=source.contract_kind,
+                contract_profile=source.contract_profile,
+                package_ref=source.package_ref,
+                package_version=source.package_version,
+                package_digest=source.package_digest,
+                conformance_status=source.conformance_status,
+                lock_ref=source.lock_ref,
+                lock_digest=source.lock_digest,
+                conformance_report_ref=source.conformance_report_ref,
+                provenance=source.provenance,
+            )
+        )
+    except AcesPackageSourceError:
+        return False
+    return True
+
+
+def _aces_source_to_dict(
+    source: AcesPackageSource,
+    *,
+    metadata: dict[str, Any] | None,
+    launchable: bool,
+) -> dict[str, Any]:
     """Build a catalog projection entry for an ACES package-source row.
 
     ACES rows are provenance-only, so display fields are derived (name from
     scenario_id, empty description). Access comes from the shared
-    ``ScenarioMetadata`` overlay; launchability is derived from conformance
-    readiness and is independent of access.
+    ``ScenarioMetadata`` overlay; ``launchable`` is the data-driven registry
+    decision (see :func:`_aces_launchable`), independent of access.
 
     Args:
         source: AcesPackageSource instance.
         metadata: Override dict with enabled/staff_only, or None for defaults.
+        launchable: The computed launchability decision for this entry.
 
     Returns:
         Projection dict shaped like other catalog entries (id/name/enabled/
-        staff_only/is_default/agent_requirements) plus ACES source fields.
+        staff_only/is_default/launchable/agent_requirements) plus ACES source fields.
     """
     if metadata is not None:
         enabled = metadata["enabled"]
@@ -103,7 +200,7 @@ def _aces_source_to_dict(source: AcesPackageSource, *, metadata: dict[str, Any] 
         "is_default": False,
         "enabled": enabled,
         "staff_only": staff_only,
-        "launchable": source.is_launchable,
+        "launchable": launchable,
         "agent_requirements": {
             "requires_windows": False,
             "requires_linux": False,
@@ -152,6 +249,9 @@ def _scenario_to_dict(
         data["staff_only"] = False
 
     data["is_default"] = is_default
+    # Legacy YAML defaults and DB custom scenarios have always been launchable;
+    # expose it as an explicit, uniform flag so launch consumers can filter on it.
+    data["launchable"] = True
     if isinstance(template, ScenarioTemplate):
         data["agent_requirements"] = template.get_agent_requirements()
     else:
@@ -226,8 +326,57 @@ def _aces_source_entries(metadata_map: dict[str, Any], known_ids: set[str]) -> l
                 safe_log_value(source.scenario_id),
             )
             continue
-        entries.append(_aces_source_to_dict(source, metadata=metadata_map.get(source.scenario_id)))
+        launchable = _aces_launchable(source, known_legacy_ids=known_ids)
+        entries.append(
+            _aces_source_to_dict(source, metadata=metadata_map.get(source.scenario_id), launchable=launchable)
+        )
     return entries
+
+
+def get_catalog_entry(scenario_id: str) -> dict[str, Any] | None:
+    """Return the unified projection entry for a scenario id, or None if absent.
+
+    Uses the unfiltered projection (no access filtering) so callers can inspect
+    launchability regardless of the requesting user.
+    """
+    for entry in list_all_scenarios(user=None):
+        if entry["id"] == scenario_id:
+            return entry
+    return None
+
+
+def list_launchable_scenarios(
+    user: User | None = None,
+    workflow: ScenarioWorkflow = ScenarioWorkflow.RANGE_LAUNCH,
+) -> list[dict[str, Any]]:
+    """List scenarios a given workflow may launch.
+
+    ``STAFF_REVIEW`` returns the full access-filtered projection (including
+    non-launchable ACES entries for review). Every launch workflow returns only
+    entries whose ``launchable`` flag is set. Legacy YAML/DB entries are always
+    launchable; ACES entries follow :func:`_aces_launchable`.
+    """
+    scenarios = list_all_scenarios(user=user)
+    if workflow == ScenarioWorkflow.STAFF_REVIEW:
+        return scenarios
+    return [s for s in scenarios if s.get("launchable", True)]
+
+
+def is_scenario_launchable(
+    scenario_id: str,
+    workflow: ScenarioWorkflow = ScenarioWorkflow.RANGE_LAUNCH,
+) -> bool:
+    """Whether a scenario id is launchable for the given workflow.
+
+    Unknown ids return False (callers that must distinguish "unknown" from
+    "known but not launchable" should use :func:`get_catalog_entry`).
+    """
+    entry = get_catalog_entry(scenario_id)
+    if entry is None:
+        return False
+    if workflow == ScenarioWorkflow.STAFF_REVIEW:
+        return True
+    return bool(entry.get("launchable", True))
 
 
 def get_scenario_detail(scenario_id: str) -> dict[str, Any]:
