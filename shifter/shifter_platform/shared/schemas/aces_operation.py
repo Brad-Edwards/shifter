@@ -162,17 +162,20 @@ def canonical_aces_payload_digest(payload: object) -> str:
 
 
 def _reject_secret_key(path: str, key: str) -> None:
+    """Reject field names that indicate embedded secrets or raw provider data."""
     lowered = key.lower()
     if any(fragment in lowered for fragment in _SECRET_KEY_FRAGMENTS):
         raise AcesOperationRecordError(f"secret-bearing payload field rejected at {path}.{key}")
 
 
 def _reject_secret_value(path: str, value: str) -> None:
+    """Reject string values that match high-confidence secret patterns."""
     if _SECRET_VALUE_RE.search(value):
         raise AcesOperationRecordError(f"secret-bearing payload value rejected at {path}")
 
 
 def _require_single_line_ref(name: str, value: object, *, required: bool) -> str:
+    """Normalize bounded reference strings and reject embedded content."""
     if value is None:
         value = ""
     if not isinstance(value, str):
@@ -190,12 +193,14 @@ def _require_single_line_ref(name: str, value: object, *, required: bool) -> str
 
 
 def _require_digest(name: str, value: object) -> str:
+    """Validate a canonical sha256 digest string."""
     if not isinstance(value, str) or not _DIGEST_RE.fullmatch(value):
         raise AcesOperationRecordError(f"{name} must be a 'sha256:<64 hex>' digest")
     return value
 
 
 def _require_uuid(name: str, value: object, *, required: bool) -> UUID | None:
+    """Validate or coerce UUID fields while preserving optional projections."""
     if value in (None, ""):
         if required:
             raise AcesOperationRecordError(f"{name} is required")
@@ -209,6 +214,7 @@ def _require_uuid(name: str, value: object, *, required: bool) -> UUID | None:
 
 
 def _require_aware_datetime(name: str, value: object) -> datetime:
+    """Require timezone-aware timestamps for replay comparison."""
     if not isinstance(value, datetime):
         raise AcesOperationRecordError(f"{name} must be a datetime")
     if value.tzinfo is None or value.utcoffset() is None:
@@ -217,6 +223,7 @@ def _require_aware_datetime(name: str, value: object) -> datetime:
 
 
 def _require_json_size(name: str, value: object, *, max_bytes: int) -> None:
+    """Enforce a canonical byte budget before recursive JSON validation."""
     try:
         encoded = json.dumps(value, sort_keys=True)
     except (TypeError, ValueError) as exc:
@@ -226,6 +233,19 @@ def _require_json_size(name: str, value: object, *, max_bytes: int) -> None:
 
 
 def _validate_json_value(path: str, value: object) -> JsonValue:
+    """Recursively validate JSON values against the sidecar safety rules."""
+    validated: JsonValue
+    if isinstance(value, dict):
+        validated = _validate_json_object(path, value)
+    elif isinstance(value, list):
+        validated = [_validate_json_value(f"{path}[{index}]", item) for index, item in enumerate(value)]
+    else:
+        validated = _validate_json_scalar(path, value)
+    return validated
+
+
+def _validate_json_scalar(path: str, value: object) -> Scalar:
+    """Validate one scalar JSON value."""
     if value is None or isinstance(value, (bool, int, float)):
         return value
     if isinstance(value, str):
@@ -235,20 +255,22 @@ def _validate_json_value(path: str, value: object) -> JsonValue:
             raise AcesOperationRecordError(f"{path} must be single-line, not embedded content")
         _reject_secret_value(path, value)
         return value
-    if isinstance(value, list):
-        return [_validate_json_value(f"{path}[{index}]", item) for index, item in enumerate(value)]
-    if isinstance(value, dict):
-        validated: JsonObject = {}
-        for key, item in value.items():
-            if not isinstance(key, str):
-                raise AcesOperationRecordError(f"{path} keys must be strings")
-            _reject_secret_key(path, key)
-            validated[key] = _validate_json_value(f"{path}.{key}", item)
-        return validated
     raise AcesOperationRecordError(f"{path} must contain JSON-compatible values")
 
 
+def _validate_json_object(path: str, value: dict[object, object]) -> JsonObject:
+    """Validate a JSON object and its recursively nested fields."""
+    validated: JsonObject = {}
+    for key, item in value.items():
+        if not isinstance(key, str):
+            raise AcesOperationRecordError(f"{path} keys must be strings")
+        _reject_secret_key(path, key)
+        validated[key] = _validate_json_value(f"{path}.{key}", item)
+    return validated
+
+
 def _validate_payload(record_kind: str, payload: object) -> JsonObject:
+    """Validate record-kind-specific sidecar payload shape and contents."""
     if not isinstance(payload, dict):
         raise AcesOperationRecordError("payload must be a JSON object")
     for key in payload:
@@ -280,6 +302,7 @@ def _validate_payload(record_kind: str, payload: object) -> JsonObject:
 
 
 def _validate_diagnostic_refs(diagnostic_refs: object) -> JsonObject:
+    """Validate bounded diagnostic references without accepting raw logs."""
     if diagnostic_refs is None:
         return {}
     if not isinstance(diagnostic_refs, dict):
@@ -303,6 +326,7 @@ def _validate_diagnostic_refs(diagnostic_refs: object) -> JsonObject:
 
 
 def _validate_record_kind_contract(record_kind: str, contract_version: str) -> None:
+    """Validate that a record kind and contract version are compatible."""
     versions = OPERATION_RECORD_KIND_TO_CONTRACT_VERSIONS.get(record_kind)
     if versions is None:
         raise AcesOperationRecordError(

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 from uuid import UUID
@@ -17,33 +18,47 @@ class AcesOperationRecordConflict(ValueError):
     """Raised when an idempotent replay carries conflicting operation content."""
 
 
-def _idempotency_lookup(
-    *,
-    request_id: UUID | str,
-    record_kind: str,
-    contract_version: str,
-    contract_profile: str,
-    idempotency_key: str,
-) -> dict[str, Any]:
+@dataclass(frozen=True)
+class AcesOperationRecordWrite:
+    """Input contract for writing one ACES operation sidecar record."""
+
+    request_id: UUID | str
+    operation_id: str
+    idempotency_key: str
+    record_kind: str
+    contract_version: str
+    source_timestamp: datetime
+    payload: dict[str, Any]
+    payload_digest: str | None = None
+    diagnostic_refs: dict[str, Any] | None = None
+    range_id: UUID | str | None = None
+    contract_kind: str = AcesOperationRecord.ContractKind.ACES
+    contract_profile: str = SHIFTER_BACKEND_PROFILE
+    owner: str = AcesOperationRecord.Owner.SHARED
+    retention_expires_at: datetime | None = None
+
+
+def _idempotency_lookup(write: AcesOperationRecordWrite) -> dict[str, Any]:
+    """Build the database lookup tuple that defines replay identity."""
     return {
-        "request_id": request_id,
-        "record_kind": record_kind,
-        "contract_version": contract_version,
-        "contract_profile": contract_profile,
-        "idempotency_key": idempotency_key,
+        "request_id": write.request_id,
+        "record_kind": write.record_kind,
+        "contract_version": write.contract_version,
+        "contract_profile": write.contract_profile,
+        "idempotency_key": write.idempotency_key,
     }
 
 
 def _assert_replay_matches(
     existing: AcesOperationRecord,
     *,
-    operation_id: str,
-    source_timestamp: datetime,
+    write: AcesOperationRecordWrite,
     payload_digest: str,
 ) -> None:
+    """Reject idempotency-key reuse with different canonical content."""
     if (
-        existing.operation_id != operation_id
-        or existing.source_timestamp != source_timestamp
+        existing.operation_id != write.operation_id
+        or existing.source_timestamp != write.source_timestamp
         or existing.payload_digest != payload_digest
     ):
         raise AcesOperationRecordConflict(
@@ -51,46 +66,24 @@ def _assert_replay_matches(
         )
 
 
-def persist_aces_operation_record(
-    *,
-    request_id: UUID | str,
-    operation_id: str,
-    idempotency_key: str,
-    record_kind: str,
-    contract_version: str,
-    source_timestamp: datetime,
-    payload: dict[str, Any],
-    payload_digest: str | None = None,
-    diagnostic_refs: dict[str, Any] | None = None,
-    range_id: UUID | str | None = None,
-    contract_kind: str = AcesOperationRecord.ContractKind.ACES,
-    contract_profile: str = SHIFTER_BACKEND_PROFILE,
-    owner: str = AcesOperationRecord.Owner.SHARED,
-    retention_expires_at: datetime | None = None,
-) -> AcesOperationRecord:
+def persist_aces_operation_record(write: AcesOperationRecordWrite) -> AcesOperationRecord:
     """Create or return an idempotent ACES operation sidecar record.
 
     The database enforces the replay key. The service enforces deterministic
     replay semantics by rejecting drift in the canonical content identity.
     """
-    normalized_payload_digest = payload_digest or canonical_aces_payload_digest(payload)
-    lookup = _idempotency_lookup(
-        request_id=request_id,
-        record_kind=record_kind,
-        contract_version=contract_version,
-        contract_profile=contract_profile,
-        idempotency_key=idempotency_key,
-    )
+    normalized_payload_digest = write.payload_digest or canonical_aces_payload_digest(write.payload)
+    lookup = _idempotency_lookup(write)
     defaults = {
-        "range_id": range_id,
-        "operation_id": operation_id,
-        "contract_kind": contract_kind,
-        "source_timestamp": source_timestamp,
+        "range_id": write.range_id,
+        "operation_id": write.operation_id,
+        "contract_kind": write.contract_kind,
+        "source_timestamp": write.source_timestamp,
         "payload_digest": normalized_payload_digest,
-        "payload": payload,
-        "diagnostic_refs": diagnostic_refs or {},
-        "owner": owner,
-        "retention_expires_at": retention_expires_at,
+        "payload": write.payload,
+        "diagnostic_refs": write.diagnostic_refs or {},
+        "owner": write.owner,
+        "retention_expires_at": write.retention_expires_at,
     }
 
     try:
@@ -103,8 +96,7 @@ def persist_aces_operation_record(
     if not created:
         _assert_replay_matches(
             record,
-            operation_id=operation_id,
-            source_timestamp=source_timestamp,
+            write=write,
             payload_digest=normalized_payload_digest,
         )
     return record

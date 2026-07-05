@@ -9,6 +9,7 @@ import pytest
 
 from shared.aces.operations import (
     AcesOperationRecordConflict,
+    AcesOperationRecordWrite,
     persist_aces_operation_record,
 )
 from shared.models import AcesOperationRecord
@@ -31,7 +32,7 @@ def _persist(**overrides):
     }
     fields.update(overrides)
     fields.setdefault("payload_digest", canonical_aces_payload_digest(fields["payload"]))
-    return persist_aces_operation_record(**fields)
+    return persist_aces_operation_record(AcesOperationRecordWrite(**fields))
 
 
 @pytest.mark.django_db
