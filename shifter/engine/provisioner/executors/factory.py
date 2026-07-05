@@ -165,6 +165,27 @@ def _build_range_kube_clients() -> tuple[Any, Any, type]:
     return core_api, client_module, api_exception
 
 
+def _require_instance_value(instance_data: dict[str, Any], key: str, message: str) -> str:
+    """Return a required string value from provisioner instance output."""
+    value = str(instance_data.get(key, "") or "")
+    if not value:
+        raise ValueError(message)
+    return value
+
+
+def _resolve_gdc_network_name(instance_data: dict[str, Any]) -> str:
+    """Return the GDC network attachment name from provisioner output."""
+    return str(instance_data.get("gdc_nad_name", "") or instance_data.get("gdc_network_name", "") or "")
+
+
+def _resolve_gdc_setup_runner_image() -> str:
+    """Return the runner image used for in-cluster guest setup."""
+    runner_image = os.environ.get("GDC_SETUP_RUNNER_IMAGE", "") or os.environ.get("ENGINE_TASK_IMAGE", "")
+    if not runner_image:
+        raise ValueError("GDC guest setup requires GDC_SETUP_RUNNER_IMAGE (or ENGINE_TASK_IMAGE) to be set")
+    return runner_image
+
+
 def _build_gcp_execution_context(
     instance_data: dict[str, Any],
     os_type: str,
@@ -182,21 +203,20 @@ def _build_gcp_execution_context(
     """
     from executors.range_pod_ssh_executor import RangePodSSHExecutor
 
-    target = instance_data.get("private_ip", "")
-    if not target:
-        raise ValueError("GCP guest execution requires private_ip in instance output")
-    secret_id = instance_data.get("ssh_key_secret_arn", "")
-    if not secret_id:
-        raise ValueError("GCP guest execution requires ssh_key_secret_arn in instance output")
-    namespace = instance_data.get("gdc_namespace", "")
-    network_name = instance_data.get("gdc_nad_name", "") or instance_data.get("gdc_network_name", "")
+    target = _require_instance_value(
+        instance_data, "private_ip", "GCP guest execution requires private_ip in instance output"
+    )
+    secret_id = _require_instance_value(
+        instance_data, "ssh_key_secret_arn", "GCP guest execution requires ssh_key_secret_arn in instance output"
+    )
+    namespace = _require_instance_value(
+        instance_data, "gdc_namespace", "GCP guest execution requires gdc_namespace in instance output"
+    )
+    network_name = _resolve_gdc_network_name(instance_data)
     if not namespace or not network_name:
         raise ValueError("GCP guest execution requires gdc_namespace and gdc_nad_name in instance output")
 
-    runner_image = os.environ.get("GDC_SETUP_RUNNER_IMAGE", "") or os.environ.get("ENGINE_TASK_IMAGE", "")
-    if not runner_image:
-        raise ValueError("GDC guest setup requires GDC_SETUP_RUNNER_IMAGE (or ENGINE_TASK_IMAGE) to be set")
-
+    runner_image = _resolve_gdc_setup_runner_image()
     private_key = (secret_reader or get_secrets_store().get_secret)(secret_id)
     username = instance_data.get("ssh_username") or instance_data.get("ssh_user") or get_ssh_username(os_type, role)
     # Host key the provisioner installed on the guest via cloud-init (Linux

@@ -895,13 +895,45 @@ def load_gce_range_cell_config() -> GCERangeCellConfig:
     )
 
 
-def load_range_network_config() -> RangeNetworkConfig:
-    """Load the active provider's range-network contract from environment variables."""
+def _load_portal_network_cidrs() -> tuple[str, ...]:
+    """Load portal CIDRs with the legacy single-CIDR fallback."""
     portal_network_cidrs = _parse_csv_env(os.environ.get("PORTAL_NETWORK_CIDRS", ""))
     legacy_portal_cidr = os.environ.get("PORTAL_VPC_CIDR", "")
     if not portal_network_cidrs and legacy_portal_cidr:
-        portal_network_cidrs = (legacy_portal_cidr,)
+        return (legacy_portal_cidr,)
+    return portal_network_cidrs
 
+
+def _resolve_range_project_id() -> str:
+    """Resolve the active cloud project id used by range networking."""
+    return (
+        os.environ.get("GCP_PROJECT_ID")
+        or os.environ.get("GOOGLE_CLOUD_PROJECT")
+        or os.environ.get("CLOUD_PROJECT_ID")
+        or ""
+    ).strip()
+
+
+def _resolve_range_network_region() -> str:
+    """Resolve the range network region from current provider env."""
+    return (
+        os.environ.get("RANGE_NETWORK_REGION")
+        or os.environ.get("GCP_REGION")
+        or os.environ.get("CLOUD_REGION")
+        or os.environ.get("AWS_REGION", "")
+    )
+
+
+def _default_range_network_id(project_id: str) -> str:
+    """Return the provider-specific default range network id."""
+    if is_gce_range_cell_backend():
+        return f"gcp-range-cells:{project_id}"
+    return ""
+
+
+def load_range_network_config() -> RangeNetworkConfig:
+    """Load the active provider's range-network contract from environment variables."""
+    portal_network_cidrs = _load_portal_network_cidrs()
     gdc_access = load_gdc_network_access_config() if _is_active_gdc_range_plane() else None
     if gdc_access is not None:
         return RangeNetworkConfig(
@@ -911,23 +943,13 @@ def load_range_network_config() -> RangeNetworkConfig:
             portal_network_cidrs=portal_network_cidrs,
         )
 
-    project_id = (
-        os.environ.get("GCP_PROJECT_ID")
-        or os.environ.get("GOOGLE_CLOUD_PROJECT")
-        or os.environ.get("CLOUD_PROJECT_ID")
-        or ""
-    ).strip()
-    default_gce_pool_id = f"gcp-range-cells:{project_id}" if is_gce_range_cell_backend() else ""
-
+    project_id = _resolve_range_project_id()
     return RangeNetworkConfig(
-        network_id=os.environ.get("RANGE_NETWORK_ID") or os.environ.get("RANGE_VPC_ID", "") or default_gce_pool_id,
+        network_id=os.environ.get("RANGE_NETWORK_ID")
+        or os.environ.get("RANGE_VPC_ID", "")
+        or _default_range_network_id(project_id),
         network_cidr=os.environ.get("RANGE_NETWORK_CIDR") or os.environ.get("RANGE_VPC_CIDR", ""),
-        network_region=(
-            os.environ.get("RANGE_NETWORK_REGION")
-            or os.environ.get("GCP_REGION")
-            or os.environ.get("CLOUD_REGION")
-            or os.environ.get("AWS_REGION", "")
-        ),
+        network_region=_resolve_range_network_region(),
         portal_network_cidrs=portal_network_cidrs,
     )
 

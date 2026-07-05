@@ -6,7 +6,7 @@ import logging
 import re
 from collections.abc import Callable
 from contextlib import suppress
-from typing import Any as ExternalValue
+from typing import Protocol
 
 from cloud.gcp.base import get_project_id, import_google_module
 from log_redact import safe_log_fingerprint
@@ -16,7 +16,42 @@ logger = logging.getLogger(__name__)
 
 _SECRETMANAGER_MODULE = "google.cloud.secretmanager"
 _GOOGLE_EXCEPTIONS_MODULE = "google.api_core.exceptions"
-GuestInstance = dict[str, ExternalValue]
+GuestInstance = dict[str, object]
+
+
+class _SecretPayload(Protocol):
+    """Secret Manager payload subset used by credential reads."""
+
+    data: bytes
+
+
+class _SecretVersionResponse(Protocol):
+    """Secret Manager version response subset used by credential reads."""
+
+    payload: _SecretPayload
+
+
+class _SecretManagerClient(Protocol):
+    """Secret Manager client subset used by guest credential helpers."""
+
+    def access_secret_version(self, *, request: dict[str, object]) -> _SecretVersionResponse:
+        """Return the latest secret version."""
+
+    def create_secret(self, *, request: dict[str, object]) -> object:
+        """Create a Secret Manager secret."""
+
+    def add_secret_version(self, *, request: dict[str, object]) -> object:
+        """Add a Secret Manager secret version."""
+
+    def delete_secret(self, *, request: dict[str, object]) -> object:
+        """Delete a Secret Manager secret."""
+
+
+class _GoogleExceptions(Protocol):
+    """Google exception module subset used by secret helpers."""
+
+    NotFound: type[Exception]
+    AlreadyExists: type[Exception]
 
 
 def _sanitize_secret_part(value: str, *, max_length: int = 48) -> str:
@@ -32,7 +67,7 @@ def _guest_secret_id(range_id: int, instance: GuestInstance, kind: str) -> str:
     return _sanitize_secret_part(f"shifter-range-{range_id}-{instance_part}-{kind}", max_length=255)
 
 
-def _secret_client() -> tuple[ExternalValue, ExternalValue, str]:
+def _secret_client() -> tuple[_SecretManagerClient, _GoogleExceptions, str]:
     """Build the Secret Manager client and resolve the active project id."""
     project_id = get_project_id()
     if not project_id:
