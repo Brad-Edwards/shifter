@@ -54,9 +54,11 @@ answer ISO (autounattend.xml + $WinPEDriver$/{viostor,NetKVM} + bake.ps1 + a2_se
 ```
 
 The golden image is **not sysprepped**: every range gets an identical
-`BOREAS.LOCAL` DC. That is correct here — each range is isolated on its own vxlan
-so identical DCs never collide, and the scenario expects `BOREAS.LOCAL`.
-Sysprep would only add first-boot delay.
+`BOREAS.LOCAL` DC. That is intentional for Polaris. The scenario expects a
+pre-built `BOREAS.LOCAL` domain, and sysprep would break the promoted DC
+identity while adding first-boot delay. In `gcp-dev`, only one live GDC Network
+can currently consume the configured `GDC_NETWORK_INTERFACE=vxlan0`; destroy
+stale validation ranges before provisioning another Polaris range.
 
 ## Artifacts (`shifter/gdc-vm-images/polaris-dc/`)
 
@@ -65,6 +67,19 @@ Sysprep would only add first-boot delay.
 | `autounattend.xml` | Fully unattended WS2022 install answer file (see gotchas below). |
 | `bake.ps1` | FirstLogon bake: virtio drivers → guest agent → OpenSSH → AD DS/DNS → promote → (RunOnce) `a2_setup` → `BAKE_DONE`. |
 | `a2_setup.ps1` | (Shared with the AWS build, `scripts/polaris-aws-range/`) creates the BOREAS.LOCAL OUs/users/groups/SPNs/flags. |
+
+## Current GCP dev artifacts
+
+Validated artifacts in `gcp-dev`:
+
+| Guest | GCS object | Size | Notes |
+|---|---:|---:|---|
+| Polaris attacker | `gs://shifter-gcp-dev-gdc-vm-images/polaris-vm.qcow2` | 29,903,814,656 bytes | Imported to an 80Gi GDC `VirtualMachineDisk`. |
+| Polaris DC | `gs://shifter-gcp-dev-gdc-vm-images/polaris-dc.qcow2` | 7,824,277,504 bytes | Non-sysprepped promoted `BOREAS.LOCAL` DC, uploaded 2026-07-04T15:35:28Z, imported to a 120Gi GDC `VirtualMachineDisk`. |
+
+Do not sysprep the DC artifact. Rebuild and re-export it when the baked domain
+content changes; otherwise reuse the object above so range spin-up pays only the
+GDC disk import and VM boot cost.
 
 ## Building the ISOs
 
@@ -198,7 +213,7 @@ forever. Each of these was required to get Setup to complete:
 | Requirement | Why |
 |---|---|
 | `Microsoft-Windows-International-Core-WinPE` in the `windowsPE` pass (`SetupUILanguage`/`InputLocale`/…) | Supplies the WinPE language the interactive language screen collects; without it Setup cannot resolve the language-specific license terms and aborts. |
-| Install onto a **SATA** boot disk (`VirtualMachine.spec.disks[].driver: sata`) | WinPE has no virtio-blk (viostor) driver, and there is no console to load it. SATA is native to WinPE. Virtio drivers are baked into the OS afterward (see bake.ps1) so the golden image still boots on the virtio bus ranges use. |
+| Install directly onto a **virtio** boot disk with viostor loaded from `$WinPEDriver$` | Build hardware must match range hardware. Installing on virtio avoids a later bus switch, avoids OOBE re-detection, and avoids sysprep. |
 | Select the image by **`/IMAGE/INDEX`** (`2` = Standard Desktop Eval), not `/IMAGE/NAME` | Robust against name/edition mismatches. |
 | **No `<ProductKey>` element** (keep `<AcceptEula>true`) | An empty `<ProductKey><Key></Key>` makes Setup fail edition/license resolution and abort at *"Setup is starting"* with *"cannot find the Microsoft Software License Terms"*. The edition is already chosen by `ImageInstall`. |
 | `<AutoLogon>` + skipped `<OOBE>` + `<FirstLogonCommands>` running `bake.ps1` | Drives the post-install bake unattended. |
@@ -209,8 +224,9 @@ Runs at FirstLogon (and re-runs once via a RunOnce for the post-promotion seed):
 
 1. **Install all virtio drivers** (`pnputil /add-driver … /install`) from the
    attached virtio-container-disk — found by a `\viostor` probe because GDC
-   attaches several `kubevm-agent-*` cdroms that shift drive letters. This lets
-   the SATA-installed golden image boot on the **virtio** bus that ranges use.
+   attaches several `kubevm-agent-*` cdroms that shift drive letters. The OS is
+   already installed on virtio; this step makes the full driver store available
+   after first boot, including NetKVM for the NIC.
 2. **Install the GDC guest agent** (see next section) — required for the DC's
    NIC to get its range-assigned IP.
 3. Enable OpenSSH (operator access), install AD DS + DNS, promote
@@ -276,6 +292,61 @@ shared/networked class. Two consequences when driving the build via the API:
 
 (`cluster1` nodes: 3 tainted control-plane + 2 workers `cluster1-abm-w{1,2}-001`.)
 
+## Exporting the golden disk
+
+After `C:\polaris\BAKE_DONE` exists and the build VM has shut down:
+
+1. Attach the build boot PVC to a one-shot export pod pinned to the same GDC
+   worker node.
+2. Run `qemu-img convert` from the raw PVC volume to qcow2.
+3. Upload the qcow2 to
+   `gs://shifter-gcp-dev-gdc-vm-images/polaris-dc.qcow2`.
+4. Smoke-import the object with a `VirtualMachineDisk` before wiring it into the
+   provisioner.
+5. Validate through the CTF flow, not only with a hand-built VM Runtime range.
+
+The export pod needs a qemu-img-capable image and the same node affinity as the
+bound PVC. Do not mutate the exported image with sysprep or first-boot
+specialization after the DC is promoted.
+
+## CTF validation runbook
+
+Use the deployed CTF path to prove the range works end to end:
+
+1. Confirm runtime config points at:
+   - `GDC_POLARIS_VM_IMAGE_URL=gs://shifter-gcp-dev-gdc-vm-images/polaris-vm.qcow2`
+   - `GDC_POLARIS_DC_IMAGE_URL=gs://shifter-gcp-dev-gdc-vm-images/polaris-dc.qcow2`
+2. Make sure no stale GDC Network is already using the configured
+   `GDC_NETWORK_INTERFACE`. In `gcp-dev`, a stale hand-built range can block CTF
+   provisioning with `Duplicate value: "vxlan0"`. Destroy the stale range through
+   CMS so the provisioner cleans up the VMs, disks, NetworkAttachmentDefinition,
+   GDC Network, namespace, secrets, and subnet allocation.
+3. Create or select a registered participant on a Polaris CTF event.
+4. Call the CTF service path (`provision_participant_range`) or the equivalent
+   API/UI action.
+5. Watch the `pulumi-provisioner-range-provision-*` job in `shifter-jobs`.
+6. Validate in GDC:
+   - attacker disk source is `polaris-vm.qcow2`; DC disk source is
+     `polaris-dc.qcow2`.
+   - both `VirtualMachineDisk` objects reach `Succeeded`.
+   - attacker and DC `VirtualMachine` objects reach `Running` with static IPs.
+   - the Windows VM has `autoInstallGuestAgent: true` and UEFI secure boot
+     disabled.
+7. Run range-side checks from a GDC pod in the range namespace. The GKE platform
+   pods do not route directly to the range network.
+
+Validated 2026-07-05 via the CTF flow:
+
+- CTF request `311efca8-d1e2-44bb-8016-ae67ab9fddc5`, engine range `55`, CMS
+  RangeInstance `52`.
+- Range subnet `10.200.2.48/28`; attacker `10.200.2.58`; DC `10.200.2.59`.
+- Attacker disk import reached `Succeeded` at 2026-07-05T04:11:36Z; DC disk
+  import reached `Succeeded` at 2026-07-05T04:16:27Z.
+- Polaris bootstrap completed: `dc01 -> 10.200.2.59`, Kali key installed, splice
+  watcher active.
+- From the range-side setup runner, DC ports were open on
+  `53, 88, 135, 389, 445, 464, 636, 3268`.
+
 ## Observability (headless Windows on GDC)
 
 These VMs have no graphics device you can VNC into interactively, and no network
@@ -313,8 +384,8 @@ Windows Server 2022 installs **directly on virtio**, autologons, promotes
 `BOREAS.LOCAL`, and `a2_setup` seeds the AD content — fully headless on GDC, no
 bus switch, no OOBE, no sysprep (verified 2026-07-04: `boreas.local`, 18 users,
 `admin_flag`/`badgelogs` shares confirmed live via the SAC serial console).
-Remaining work: export the golden boot disk → qcow2, wire
-`GDC_POLARIS_DC_IMAGE_URL`, and validate a live range. See `#1170`.
+The exported qcow2 is wired into `GDC_POLARIS_DC_IMAGE_URL` and was validated in
+a CTF-provisioned GDC Polaris range on 2026-07-05.
 
 To stamp a **different domain**, change `Install-ADDSForest -DomainName` in
 `bake.ps1` and the domain references in `a2_setup.ps1`, rebuild the answer ISO

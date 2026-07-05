@@ -4,6 +4,12 @@ Build assets for a Windows Server 2022 domain controller (`BOREAS.LOCAL`) that
 installs and runs natively on **GDC VM Runtime**, producing a not-sysprepped
 golden qcow2 that ranges boot directly for fast spin-ups.
 
+Current `gcp-dev` artifact:
+`gs://shifter-gcp-dev-gdc-vm-images/polaris-dc.qcow2` (7,824,277,504 bytes,
+uploaded 2026-07-04T15:35:28Z). Do not sysprep it; Polaris expects a
+pre-promoted `BOREAS.LOCAL` DC and the reusable image keeps range spin-up bounded
+to GDC disk import + VM boot.
+
 A GCE-built Windows image cannot boot on GDC's KubeVirt/QEMU, so this uses the
 documented native ISO-install flow instead of the Linux GCE-packer-export path.
 
