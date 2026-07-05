@@ -72,6 +72,7 @@ def list_catalog_presentations(user: User | None = None) -> list[dict[str, Any]]
 
 
 def _is_aces(entry: dict[str, Any]) -> bool:
+    """Return True when a catalog projection entry is an ACES package-backed row."""
     return entry.get("scenario_type") == ACES_SCENARIO_TYPE
 
 
@@ -85,6 +86,7 @@ def _aces_source_map(scenario_ids: list[str]) -> dict[str, AcesPackageSource]:
 
 
 def _to_presentation(entry: dict[str, Any], aces_sources: dict[str, AcesPackageSource]) -> dict[str, Any]:
+    """Build the presentation DTO for one catalog entry, attaching the ACES block when present."""
     presentation = _base_presentation(entry)
     if _is_aces(entry):
         source = aces_sources.get(entry["id"])
@@ -94,6 +96,7 @@ def _to_presentation(entry: dict[str, Any], aces_sources: dict[str, AcesPackageS
 
 
 def _base_presentation(entry: dict[str, Any]) -> dict[str, Any]:
+    """Build the source-agnostic base DTO (identity, access overlay, launchability, empty aces)."""
     return {
         "id": entry["id"],
         "name": entry["name"],
@@ -107,6 +110,7 @@ def _base_presentation(entry: dict[str, Any]) -> dict[str, Any]:
 
 
 def _aces_block(source: AcesPackageSource) -> dict[str, Any]:
+    """Build the allowlisted ACES evidence block from a package-source row."""
     return {
         "source_kind": source.source_kind,
         "contract_kind": source.contract_kind,

@@ -25,7 +25,11 @@
     </div>
     <div class="card">
         <p class="text-muted">
-            {% trans "This is a read-only ACES package-backed catalog entry. Authoring, YAML editing, cloning, deletion, and export are not available for ACES scenarios." %}
+            {% blocktrans %}
+                This is a read-only ACES package-backed catalog entry. Authoring, YAML
+                editing, cloning, deletion, and export are not available for ACES
+                scenarios.
+            {% endblocktrans %}
         </p>
     </div>
     <!-- Package Source + Access -->
