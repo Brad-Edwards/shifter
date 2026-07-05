@@ -80,8 +80,19 @@ class TestGCPNetworkInventory:
                             "app.kubernetes.io/managed-by": "shifter-provisioner",
                             "shifter.dev/range-plane": "gdc-vmruntime",
                         },
+                        "annotations": {"shifter.dev/subnet-cidr": "10.200.0.96/28"},
                     },
-                    "spec": {"routes": [{"to": "10.200.0.96/28"}]},
+                    "spec": {"routes": []},
+                },
+                {
+                    "metadata": {
+                        "name": "range-43-attack",
+                        "labels": {
+                            "app.kubernetes.io/managed-by": "shifter-provisioner",
+                            "shifter.dev/range-plane": "gdc-vmruntime",
+                        },
+                    },
+                    "spec": {"routes": [{"to": "10.200.0.112/28"}]},
                 },
                 {
                     "metadata": {"name": "pod-network"},
@@ -130,5 +141,5 @@ class TestGCPNetworkInventory:
         ):
             result = inventory.list_subnet_cidrs("cluster1")
 
-        assert result == ["10.200.0.96/28"]
+        assert result == ["10.200.0.96/28", "10.200.0.112/28"]
         mock_loader.load_and_set.assert_called_once()
