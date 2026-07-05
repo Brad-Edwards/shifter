@@ -2,7 +2,8 @@
 
 This package holds Shifter's ACES (Adversarial Cyber Exercise System) contract
 artifacts. The first artifact (issue #1261) is the ``provisioning-only`` backend
-manifest published in :mod:`shared.aces.manifest`.
+manifest published in :mod:`shared.aces.manifest`; runtime-safe profile and
+operation-sidecar constants live in :mod:`shared.aces.contracts`.
 
 Nothing is imported eagerly here on purpose. The manifest builder imports the
 ``aces-sdl`` tooling, which is a dev/test-scoped dependency for this
