@@ -199,6 +199,9 @@ The design is split into these implementation issues:
 - #1273: add ACES operation sidecar records for receipts,
   statuses, snapshots, and execution-plan references with version/profile
   discriminators, idempotency keys, redaction policy, and retention cleanup.
+  Use
+  `docs/architecture/aces-operation-sidecar-persistence-preflight-1273.md`
+  for the issue-specific sidecar persistence guardrails.
 - #1274: map ACES operation status into existing
   `RangeEventOutbox`, `ResourceStatus`, `RangeInstance`, CTF/experiment bridges,
   and reconciler behavior without adding a second lifecycle pipeline.
