@@ -1271,5 +1271,51 @@
       "docs/design/spa-design-system-foundation-1299.md",
       "docs/design/design-system/README.md"
     ]
+  },
+  {
+    "id": "ADR-030",
+    "title": "Live-fire range creation requires approved instantiation backends",
+    "status": "accepted",
+    "scope": "range_provisioning",
+    "decision": "Every normal Shifter scenario is live-fire: participants and agents may run arbitrary commands, exploit services, pivot, and attempt escape. CTF-driven participant range creation must therefore use an approved live-fire range instantiation backend whose containment boundary is outside the Kubernetes management plane. On GCP, the intended live-fire backend is a cloud-network-isolated range cell built from GCP VM, VPC/subnet, firewall, service-account, and tag controls. Kubernetes, GKE, and GDC may remain Shifter platform infrastructure, and Kubernetes systems may appear inside scenario content when they are isolated within the range cell. Existing Kubernetes/GDC VM Runtime plumbing, including deterministic VLAN-backed GDC networks, may remain available for explicitly declared non-user modes such as deterministic BAS, product demos, image validation, and operator-run validation. It must not be selected by default, fallback, or CTF participant flow for normal user ranges. Backend selection must be mediated by an explicit range instantiation policy control tracked by #1354.",
+    "rules": [
+      {
+        "id": "ADR-030-R1",
+        "description": "CTF-driven participant range creation must evaluate an explicit range instantiation policy before selecting a provider/backend. If no policy permits a backend for the current creation context, selection must fail closed with an operator-visible error instead of falling back to Kubernetes, GDC VM Runtime, pods, or any other unapproved backend.",
+        "checks": []
+      },
+      {
+        "id": "ADR-030-R2",
+        "description": "Kubernetes, GKE, GDC VM Runtime, Kubernetes pods, NetworkAttachmentDefinitions, and GDC L2 Networks are not approved as the containment boundary for normal live-fire user ranges. They may be used for the Shifter management plane, for infrastructure retained for explicitly allowed non-user modes, or as services inside a range cell, but not as the participant trust boundary for CTF-created ranges.",
+        "checks": []
+      },
+      {
+        "id": "ADR-030-R3",
+        "description": "Retained Kubernetes/GDC range plumbing must be selected only by an explicit non-user instantiation mode such as BAS, product demo, image build validation, or operator validation. Documentation and runtime errors must name that scope clearly so deterministic demo infrastructure is not mistaken for the approved CTF live-fire range backend.",
+        "checks": []
+      },
+      {
+        "id": "ADR-030-R4",
+        "description": "Normal GCP live-fire ranges must move toward cloud-network-isolated VM range cells. A range-cell backend must prevent participant access to Kubernetes and GDC APIs, must not place participant-executable workloads on the platform pod network, and must enforce isolation with provider network, firewall, identity, and metadata/API controls.",
+        "checks": []
+      },
+      {
+        "id": "ADR-030-R5",
+        "description": "A backend is not event-ready until range-side escape validation passes for cross-range private IP reachability, platform/pod/service/node network reachability, cloud metadata/API credential exposure, approved management ingress, and configured internet egress policy.",
+        "checks": []
+      }
+    ],
+    "exceptions": [],
+    "enforcement": ["agent-policy"],
+    "evidence": [
+      "https://github.com/Brad-Edwards/shifter/issues/1340",
+      "https://github.com/Brad-Edwards/shifter/issues/1354",
+      "docs/architecture/gdc-windows-dc-image-build.md",
+      "docs/architecture/range-isolation-model.md",
+      "scripts/polaris-aws-range/ranges.tf",
+      "shifter/engine/provisioner/range_terraform_runner.py",
+      "shifter/engine/provisioner/gdc_range_networks.py",
+      "shifter/engine/provisioner/gdc_vmruntime_assets.py"
+    ]
   }
 ]
