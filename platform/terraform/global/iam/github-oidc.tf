@@ -167,7 +167,19 @@ resource "aws_iam_policy" "compute" {
           "autoscaling:TerminateInstanceInAutoScalingGroup",
           "autoscaling:StartInstanceRefresh",
           "autoscaling:DescribeInstanceRefreshes",
-          "autoscaling:DescribeScalingActivities"
+          "autoscaling:DescribeScalingActivities",
+          # Lifecycle hooks (launch + termination-drain) managed by
+          # modules/portal/ec2. Describe is needed at plan/refresh time,
+          # Put/Delete at apply time (including destroying hooks left in
+          # state when enable_autoscaling is toggled off, as in dev).
+          "autoscaling:DescribeLifecycleHooks",
+          "autoscaling:PutLifecycleHook",
+          "autoscaling:DeleteLifecycleHook",
+          # Warm pool, managed by the same module's dynamic "warm_pool"
+          # block when asg_warm_pool_min_size > 0.
+          "autoscaling:DescribeWarmPool",
+          "autoscaling:PutWarmPool",
+          "autoscaling:DeleteWarmPool"
         ]
         Resource = "*"
       },
@@ -790,7 +802,16 @@ resource "aws_iam_policy" "security" {
           "kms:PutKeyPolicy",
           "kms:EnableKeyRotation",
           "kms:GetKeyRotationStatus",
-          "kms:ListResourceTags"
+          "kms:ListResourceTags",
+          # Grant management: ElastiCache (and other AWS services) create a
+          # grant on the customer CMK when a resource with at-rest encryption
+          # is created (e.g. the portal Redis replication group). CreateGrant
+          # is also needed by the apply that provisions those resources.
+          "kms:CreateGrant",
+          "kms:ListGrants",
+          "kms:RevokeGrant",
+          "kms:ReEncrypt*",
+          "kms:GenerateDataKeyWithoutPlaintext"
         ]
         Resource = "*"
       }
@@ -901,7 +922,14 @@ resource "aws_iam_policy" "management" {
           "cloudwatch:DeleteAlarms",
           "cloudwatch:ListTagsForResource",
           "cloudwatch:TagResource",
-          "cloudwatch:UntagResource"
+          "cloudwatch:UntagResource",
+          # CloudWatch dashboards (portal capacity dashboard, modules/portal/ec2
+          # observability.tf). Dashboard APIs do not support resource-level
+          # scoping, so they share the statement's Resource "*".
+          "cloudwatch:PutDashboard",
+          "cloudwatch:GetDashboard",
+          "cloudwatch:DeleteDashboards",
+          "cloudwatch:ListDashboards"
         ]
         Resource = "*"
       },
