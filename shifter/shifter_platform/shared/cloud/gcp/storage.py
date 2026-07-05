@@ -6,7 +6,7 @@ import logging
 from datetime import timedelta
 from typing import TYPE_CHECKING, Any, BinaryIO
 
-from shared.cloud.exceptions import CloudStorageError
+from shared.cloud.exceptions import CloudStorageError, ObjectPreconditionError
 from shared.cloud.gcp.base import import_google_module
 from shared.log_sanitize import safe_log_value
 
@@ -105,6 +105,55 @@ class GCPObjectStorage:
             raise CloudStorageError(f"Failed to copy GCS object: {e}") from e
         logger.info("copy_object: success bucket=%s src=%s dst=%s", bucket, safe_src, safe_dst)
 
+    def copy_object_conditional(
+        self,
+        bucket: str,
+        src_key: str,
+        dst_key: str,
+        *,
+        expected_identity: dict[str, Any],
+    ) -> None:
+        """Copy a blob gated on the source generation and destination absence.
+
+        ``if_source_generation_match`` binds the copy to the exact validated
+        object generation, so an overwrite after validation (which mints a new
+        generation) makes the copy fail. ``if_generation_match=0`` refuses the
+        copy if the destination already exists. Both surface as
+        ``ObjectPreconditionError`` (fail closed).
+        """
+        generation = expected_identity.get("generation")
+        if not generation:
+            raise CloudStorageError("conditional copy requires a source generation")
+        safe_src = safe_log_value(src_key)
+        safe_dst = safe_log_value(dst_key)
+        logger.debug("copy_object_conditional: bucket=%s src=%s dst=%s", bucket, safe_src, safe_dst)
+        api_exceptions = import_google_module("google.api_core.exceptions")
+        try:
+            client = self._get_client()
+            source_bucket = client.bucket(bucket)
+            source_blob = source_bucket.blob(src_key)
+            source_bucket.copy_blob(
+                source_blob,
+                source_bucket,
+                dst_key,
+                if_source_generation_match=int(generation),
+                if_generation_match=0,
+            )
+        except api_exceptions.PreconditionFailed as e:
+            logger.warning(
+                "copy_object_conditional: precondition failed bucket=%s src=%s dst=%s",
+                bucket,
+                safe_src,
+                safe_dst,
+            )
+            raise ObjectPreconditionError(
+                "GCS conditional copy precondition failed (source changed or destination exists)"
+            ) from e
+        except Exception as e:
+            logger.exception("copy_object_conditional: failed bucket=%s src=%s dst=%s", bucket, safe_src, safe_dst)
+            raise CloudStorageError(f"Failed to conditionally copy GCS object: {e}") from e
+        logger.info("copy_object_conditional: success bucket=%s src=%s dst=%s", bucket, safe_src, safe_dst)
+
     def object_exists(self, bucket: str, key: str) -> bool:
         """Return True iff the blob exists.
 
@@ -134,6 +183,10 @@ class GCPObjectStorage:
             return {
                 "content_length": int(blob.size or 0),
                 "etag": str(blob.etag or ""),
+                # Generation is GCS's strongest object identity — monotonic and
+                # never reused — so it is the precondition of choice for
+                # ``copy_object_conditional``.
+                "generation": int(blob.generation or 0),
             }
         except CloudStorageError:
             raise

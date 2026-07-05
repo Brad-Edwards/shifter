@@ -10,8 +10,9 @@ patched to return a fake client, instead of patching the first-party
 from unittest.mock import MagicMock, patch
 
 import pytest
+from google.api_core.exceptions import PreconditionFailed
 
-from shared.cloud.exceptions import CloudStorageError
+from shared.cloud.exceptions import CloudStorageError, ObjectPreconditionError
 from shared.cloud.gcp.storage import GCPObjectStorage
 
 
@@ -61,6 +62,70 @@ class TestReadObjectHeader:
 
         with patch("google.cloud.storage.Client", return_value=fake_client), pytest.raises(CloudStorageError):
             storage.read_object_header("b", "k", max_bytes=512)
+
+
+class TestHeadObjectIdentity:
+    def test_exposes_generation_alongside_size_and_etag(self):
+        storage = GCPObjectStorage()
+        fake_client = MagicMock()
+        fake_blob = MagicMock()
+        fake_blob.size = 42
+        fake_blob.etag = "etag-value"
+        fake_blob.generation = 1720000000000001
+        fake_client.bucket.return_value.get_blob.return_value = fake_blob
+
+        with patch("google.cloud.storage.Client", return_value=fake_client):
+            identity = storage.head_object("b", "k")
+
+        assert identity == {
+            "content_length": 42,
+            "etag": "etag-value",
+            "generation": 1720000000000001,
+        }
+
+
+class TestCopyObjectConditional:
+    def test_passes_source_and_destination_generation_preconditions(self):
+        storage = GCPObjectStorage()
+        fake_client = MagicMock()
+        source_bucket = fake_client.bucket.return_value
+
+        with patch("google.cloud.storage.Client", return_value=fake_client):
+            storage.copy_object_conditional("b", "src", "dst", expected_identity={"etag": "e", "generation": 777})
+
+        kwargs = source_bucket.copy_blob.call_args.kwargs
+        assert kwargs["if_source_generation_match"] == 777
+        assert kwargs["if_generation_match"] == 0
+        args = source_bucket.copy_blob.call_args.args
+        assert args[2] == "dst"
+
+    def test_precondition_failure_maps_to_object_precondition_error(self):
+        storage = GCPObjectStorage()
+        fake_client = MagicMock()
+        fake_client.bucket.return_value.copy_blob.side_effect = PreconditionFailed("generation mismatch")
+
+        with (
+            patch("google.cloud.storage.Client", return_value=fake_client),
+            pytest.raises(ObjectPreconditionError),
+        ):
+            storage.copy_object_conditional("b", "src", "dst", expected_identity={"generation": 777})
+
+    def test_other_failure_maps_to_cloud_storage_error(self):
+        storage = GCPObjectStorage()
+        fake_client = MagicMock()
+        fake_client.bucket.return_value.copy_blob.side_effect = RuntimeError("transport error")
+
+        with (
+            patch("google.cloud.storage.Client", return_value=fake_client),
+            pytest.raises(CloudStorageError) as exc,
+        ):
+            storage.copy_object_conditional("b", "src", "dst", expected_identity={"generation": 777})
+        assert not isinstance(exc.value, ObjectPreconditionError)
+
+    def test_missing_source_generation_fails_closed(self):
+        storage = GCPObjectStorage()
+        with pytest.raises(CloudStorageError):
+            storage.copy_object_conditional("b", "src", "dst", expected_identity={"etag": "e"})
 
 
 class TestPresignedUrlIamSigning:
