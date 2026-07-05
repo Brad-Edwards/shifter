@@ -1,4 +1,2 @@
-services:
-  db:
-    ports:
-      - "5433:5432"
+# Intentionally empty. PostgreSQL must not publish host ports from overrides.
+services: {}

@@ -12,6 +12,23 @@ TESTING=1 python manage.py runserver
 
 Portal runs at `http://localhost:8000`
 
+## Docker Compose Runtime
+
+The repository also keeps a Docker Compose stack under
+`shifter/shifter_platform/docker-compose.yml` for exercising the containerized
+portal, workers, Redis, LocalStack, and PostgreSQL together.
+
+By default, host-published services bind to `127.0.0.1` only:
+
+- portal: `http://127.0.0.1:8000`
+- Redis: `127.0.0.1:6379`
+- LocalStack: `127.0.0.1:4566`
+
+Set `SHIFTER_HOST_BIND_ADDR=0.0.0.0` only when you intentionally need another
+host on your network to reach those local services. PostgreSQL is not published
+to the host by default; use `docker compose exec db psql ...` or add a
+developer-local override if you need direct host access.
+
 ## Full Setup (First Time)
 
 ### 1. Create Python Virtual Environment
