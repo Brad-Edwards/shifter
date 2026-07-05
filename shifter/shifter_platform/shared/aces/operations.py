@@ -100,3 +100,57 @@ def persist_aces_operation_record(write: AcesOperationRecordWrite) -> AcesOperat
             payload_digest=normalized_payload_digest,
         )
     return record
+
+
+#: Contract version for ``operation-status-v1`` sidecar records.
+OPERATION_STATUS_CONTRACT_VERSION = "operation-status-v1"
+
+
+def latest_operation_status_source_timestamp(request_id: UUID | str) -> datetime | None:
+    """Return the source timestamp of the latest recorded operation status.
+
+    This is the staleness anchor for status projection (#1274): callers outside
+    the ``shared`` layer read it through this seam instead of importing the
+    ``AcesOperationRecord`` model directly.
+    """
+    return (
+        AcesOperationRecord.objects.filter(
+            request_id=request_id,
+            record_kind=AcesOperationRecord.RecordKind.OPERATION_STATUS,
+        )
+        .order_by("-source_timestamp", "-created_at")
+        .values_list("source_timestamp", flat=True)
+        .first()
+    )
+
+
+def persist_operation_status_record(
+    *,
+    request_id: UUID | str,
+    operation_id: str,
+    source_timestamp: datetime,
+    payload: dict[str, Any],
+    diagnostic_refs: dict[str, Any] | None = None,
+    contract_version: str = OPERATION_STATUS_CONTRACT_VERSION,
+    owner: str = AcesOperationRecord.Owner.ENGINE,
+) -> AcesOperationRecord:
+    """Persist one ``operation_status`` sidecar record idempotently.
+
+    Encapsulates the ``record_kind`` and idempotency-key convention for
+    operation-status observations so callers outside ``shared`` do not touch the
+    ``AcesOperationRecord`` model. The idempotency key is deterministic in the
+    operation id and observation timestamp, so re-delivery of the same
+    observation is a no-op (or a conflict when the content drifts).
+    """
+    write = AcesOperationRecordWrite(
+        request_id=request_id,
+        operation_id=operation_id,
+        idempotency_key=f"operation_status:{operation_id}:{source_timestamp.isoformat()}",
+        record_kind=AcesOperationRecord.RecordKind.OPERATION_STATUS,
+        contract_version=contract_version,
+        source_timestamp=source_timestamp,
+        payload=payload,
+        diagnostic_refs=diagnostic_refs or {},
+        owner=owner,
+    )
+    return persist_aces_operation_record(write)
