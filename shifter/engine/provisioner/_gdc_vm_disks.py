@@ -111,9 +111,9 @@ def _build_vm_manifest(
     }
     # GDC's VM webhook forbids cloudInit on Windows VMs ("CloudInit is only
     # supported for Linux VMs"). The NoCloud seed carries the Linux host-key /
-    # authorized_keys / first-boot script; Windows guests self-configure from
-    # the baked image (e.g. the polaris-dc first-boot promotion task) and take
-    # their static IP from the interface spec above, so no seed is attached.
+    # authorized_keys / first-boot script. Windows has no cloud-init, so the
+    # static IP from the interface spec is applied by the GDC guest agent (see
+    # autoInstallGuestAgent below), not by a seed.
     if compute.os_label == "Linux":
         spec["cloudInit"] = {
             "noCloud": {
@@ -129,6 +129,15 @@ def _build_vm_manifest(
         # enrolled, so with it on the firmware rejects the (MS-signed) Windows
         # bootloader with "Access Denied" -> "No bootable option or device".
         spec["firmware"] = {"bootloader": {"type": "uefi", "enableSecureBoot": False}}
+        # Windows has no cloud-init on GDC, so the assigned NIC IP (from the
+        # interface spec above) is applied by the GDC guest agent. Enabling
+        # autoInstallGuestAgent attaches the agent installer + config disks; the
+        # golden image's baked guest-agent-launcher task (registered by the
+        # agent install.ps1 during the image build) runs at each boot, copies
+        # the agent + range config off those disks, and applies the static IP.
+        # Without this the DC boots but is network-invisible (no IP on the vxlan),
+        # so LDAP/Kerberos/SMB are unreachable and AD attacks cannot run.
+        spec["autoInstallGuestAgent"] = True
     return {
         "apiVersion": f"{_VM_GROUP}/{_VM_VERSION}",
         "kind": "VirtualMachine",

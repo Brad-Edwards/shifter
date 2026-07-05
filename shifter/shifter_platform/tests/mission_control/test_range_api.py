@@ -124,6 +124,25 @@ class TestLaunchRange:
         response = self._launch(client, {"agent_id": 999999, "scenario": hydratable_scenario.scenario_id})
         assert response.status_code == 400
 
+    def test_rejects_non_launchable_aces_scenario(self, authenticated_client, make_agent):
+        from cms.models import AcesPackageSource
+
+        client, user = authenticated_client(email="acesnonlaunch@example.com")
+        agent = make_agent(user)
+        AcesPackageSource.objects.create(
+            scenario_id="polaris-pending",
+            contract_kind="aces",
+            contract_profile="shifter",
+            package_ref="scenario-dev/polaris/content-packages/polaris",
+            package_version="1.0.0",
+            package_digest="sha256:" + "a" * 64,
+            conformance_status="pending",
+            registered_by=user,
+        )
+        response = self._launch(client, {"agent_id": agent.id, "scenario": "polaris-pending"})
+        assert response.status_code == 400
+        assert "scenario" in _json(response)["error"].lower()
+
     def test_successful_launch_creates_range_and_audit(self, authenticated_client, make_agent, hydratable_scenario):
         client, user = authenticated_client(email="launch@example.com")
         agent = make_agent(user)

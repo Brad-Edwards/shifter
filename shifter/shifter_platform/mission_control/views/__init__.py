@@ -61,6 +61,9 @@ from cms.services import (
     list_credentials as cms_list_credentials,
 )
 from cms.services import (
+    list_launchable_scenarios as cms_list_launchable_scenarios,
+)
+from cms.services import (
     list_ngfws as cms_list_ngfws,
 )
 from cms.services import (
@@ -159,6 +162,7 @@ __all__ = (
     "cms_get_ngfw",
     "cms_list_agents",
     "cms_list_credentials",
+    "cms_list_launchable_scenarios",
     "cms_list_ngfws",
     "cms_list_scenarios",
     "complete_upload",

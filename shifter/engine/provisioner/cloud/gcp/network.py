@@ -9,6 +9,7 @@ from cloud.exceptions import CloudNetworkInventoryError
 from config import load_gdc_network_access_config
 
 logger = logging.getLogger(__name__)
+_SUBNET_CIDR_ANNOTATION = "shifter.dev/subnet-cidr"
 
 
 class GCPNetworkInventory:
@@ -54,10 +55,7 @@ class GCPNetworkInventory:
         for item in response.get("items", []):
             if not self._is_managed_gdc_network(item):
                 continue
-            for route in item.get("spec", {}).get("routes", []):
-                cidr = str(route.get("to", "")).strip()
-                if cidr:
-                    cidrs.append(cidr)
+            cidrs.extend(self._managed_network_cidrs(item))
         return cidrs
 
     @staticmethod
@@ -66,6 +64,21 @@ class GCPNetworkInventory:
         if labels.get("app.kubernetes.io/managed-by") == "shifter-provisioner":
             return True
         return labels.get("shifter.dev/range-plane") == "gdc-vmruntime"
+
+    @staticmethod
+    def _managed_network_cidrs(item: dict[str, Any]) -> list[str]:
+        metadata = item.get("metadata", {})
+        annotations = metadata.get("annotations", {}) or {}
+        annotated_cidr = str(annotations.get(_SUBNET_CIDR_ANNOTATION, "")).strip()
+        if annotated_cidr:
+            return [annotated_cidr]
+
+        legacy_cidrs: list[str] = []
+        for route in item.get("spec", {}).get("routes", []):
+            cidr = str(route.get("to", "")).strip()
+            if cidr:
+                legacy_cidrs.append(cidr)
+        return legacy_cidrs
 
     def publish_subnet_exhaustion_alarm(
         self,

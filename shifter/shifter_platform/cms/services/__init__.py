@@ -85,6 +85,7 @@ from ._range_reassign import reassign_range_owner
 from ._range_resume import resume_range, resume_range_by_request_id
 from ._scenarios import (
     get_scenario,
+    list_launchable_scenarios,
     list_scenarios,
     validate_scenario_requirements,
 )
@@ -145,6 +146,7 @@ __all__ = (
     "initiate_upload",
     "list_agents",
     "list_credentials",
+    "list_launchable_scenarios",
     "list_ngfws",
     "list_ranges",
     "list_scenarios",

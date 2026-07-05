@@ -129,7 +129,13 @@ def cms_reassign_range_owner(range_instance_id: int, new_user: User) -> None:
 
 
 def cms_list_scenarios(user: User) -> list[tuple[str, str]]:
-    """List available scenarios as (id, name) tuples for form choices.
+    """List CTF-event-selectable scenarios as (id, name) tuples for form choices.
+
+    CTF event creation is a launch workflow, so this returns only scenarios that
+    are launchable for the ``ctf_event`` workflow (legacy YAML/DB scenarios plus
+    any launchable ACES package entries); non-launchable ACES review entries are
+    excluded. Staff review of non-launchable entries lives in the CMS scenario
+    editor, not in CTF event selection.
 
     Args:
         user: Requesting user (used for access filtering).
@@ -139,5 +145,5 @@ def cms_list_scenarios(user: User) -> list[tuple[str, str]]:
     """
     import cms.services as cms_services
 
-    scenarios = cms_services.list_scenarios(user)
+    scenarios = cms_services.list_launchable_scenarios(user, "ctf_event")
     return [(s["id"], s["name"]) for s in scenarios]
