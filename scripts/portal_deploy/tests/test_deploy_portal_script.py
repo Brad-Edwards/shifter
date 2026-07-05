@@ -460,7 +460,6 @@ class DeployPortalScriptTests(unittest.TestCase):
                 "DC_DOMAIN_PASSWORD_SECRET_ARN",
                 "REDIS_HOST",
                 "CHANNEL_LAYER_BACKEND",
-                "EMAIL_BACKEND",
                 "CTF_FROM_EMAIL",
                 "PLATFORM_BOOTSTRAP_STAFF_EMAILS",
                 "PLATFORM_BOOTSTRAP_SUPERUSER_EMAILS",
@@ -472,6 +471,7 @@ class DeployPortalScriptTests(unittest.TestCase):
                 "TERMINAL_READ_POLL_SECONDS",
             ):
                 self.assertNotIn(f"{name}=", log)
+            self.assertIn("EMAIL_BACKEND=django.core.mail.backends.console.EmailBackend", log)
 
     def test_terminal_capacity_params_emitted_as_docker_env(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

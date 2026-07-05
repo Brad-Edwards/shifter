@@ -43,24 +43,22 @@ def get_challenge_statistics(challenge_id: UUID) -> dict[str, Any]:
 
     submissions = CTFSubmission.objects.filter(challenge=challenge)
     correct = submissions.filter(is_correct=True)
+    solve_count = correct.count()
+    participant_count = CTFParticipant.objects.filter(event_id=challenge.event_id).count()
 
     first_blood = correct.order_by("submitted_at").first()
 
     return {
         "challenge_id": str(challenge_id),
         "total_attempts": submissions.count(),
-        "solve_count": correct.count(),
+        "solve_count": solve_count,
         "first_blood": {
             "participant_name": first_blood.participant.name,
             "time": first_blood.submitted_at.isoformat(),
         }
         if first_blood
         else None,
-        "solve_rate": (
-            correct.count() / distinct_participants
-            if (distinct_participants := submissions.values("participant").distinct().count())
-            else 0
-        ),
+        "solve_rate": solve_count / participant_count if participant_count else 0,
     }
 
 

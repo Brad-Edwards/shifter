@@ -2,6 +2,18 @@ fail_fast: true
 
 repos:
   # =============================================================================
+  # STAGE 0: Commit message policy (commit-msg hook)
+  # =============================================================================
+  - repo: local
+    hooks:
+      - id: block-agent-attribution-commit-msg
+        name: block agent attribution in commit messages
+        entry: python3 scripts/adr_guard/block_agent_attribution_commit_msg.py
+        language: system
+        stages: [commit-msg]
+        pass_filenames: true
+
+  # =============================================================================
   # STAGE 1: Fast checks (linting, formatting, syntax)
   # =============================================================================
 
@@ -99,6 +111,13 @@ repos:
       - id: ruff-format
         name: ruff-format (assert_portal_inspection)
         files: ^scripts/assert_portal_inspection/
+      - id: ruff
+        name: ruff (handle_sd_replacement)
+        args: [--fix]
+        files: ^scripts/handle_sd_replacement/
+      - id: ruff-format
+        name: ruff-format (handle_sd_replacement)
+        files: ^scripts/handle_sd_replacement/
       - id: ruff
         name: ruff (installation)
         args: [--fix]
@@ -222,6 +241,17 @@ repos:
         language: system
         files: ^platform/terraform/(modules/.+|global/iam/github-oidc\.tf|environments/.+/main\.tf)$
 
+      # ADR-004-R20 / issue #1222: the self-hosted deploy runner must never be
+      # placed in the account default VPC, where a range's private-DNS interface
+      # VPC endpoints can hijack the runner's AWS API resolution. The runner
+      # stack fails closed via a lifecycle.precondition; this guard pins that the
+      # precondition is present so it cannot be silently removed.
+      - id: check-tf-runner-network
+        name: GitHub runner default-VPC isolation (ADR-004-R20)
+        entry: python3 scripts/check_tf_runner_network/check_tf_runner_network.py
+        language: system
+        files: ^platform/terraform/global/github-runner/main\.tf$
+
       # Issue #1178: the shared range *guest* instance role must not grant SSM
       # Parameter Store access on a Resource that wildcards the environment or
       # range segment (parameter/shifter/*/range/*), which would let any range
@@ -318,10 +348,11 @@ repos:
           python3 -m unittest scripts.check_tf_sg_cidrs.test_check_tf_sg_cidrs &&
           python3 -m unittest scripts.check_tf_kms_secrets_grant.test_check_tf_kms_secrets_grant &&
           python3 -m unittest scripts.check_tf_rds_security.test_check_tf_rds_security &&
-          python3 -m unittest scripts.check_portal_target_sg_sources.test_check_portal_target_sg_sources
+          python3 -m unittest scripts.check_portal_target_sg_sources.test_check_portal_target_sg_sources &&
+          python3 -m unittest scripts.check_tf_runner_network.test_check_tf_runner_network
           '
         language: system
-        files: ^scripts/(check_tf_(iam_ec2_scope|iam_elb_scope|iam_ssm_scope|iam_ssm_range_scope|sg_cidrs|kms_secrets_grant|rds_security)|check_portal_target_sg_sources)/
+        files: ^scripts/(check_tf_(iam_ec2_scope|iam_elb_scope|iam_ssm_scope|iam_ssm_range_scope|sg_cidrs|kms_secrets_grant|rds_security|runner_network)|check_portal_target_sg_sources)/
         pass_filenames: false
 
   # Kubernetes schema validation
@@ -450,7 +481,13 @@ repos:
         pass_filenames: false
 
   # =============================================================================
-  # STAGE 3: Type Checking
+  # STAGE 3: Type Checking (blocking, #564)
+  #
+  # These hooks run `mypy .` per package with no failure-swallowing, matching
+  # the enforced (blocking) CI type-check jobs in
+  # `.github/workflows/_quality.yml`. Keep the local and CI scope aligned; the
+  # enforced/transitional boundary lives in each package's pyproject.toml
+  # `[tool.mypy]` policy, not here.
   # =============================================================================
 
   - repo: local
@@ -462,7 +499,9 @@ repos:
           DJANGO_DEBUG=true DJANGO_SECRET_KEY=dummy-for-testing
           PYTHONPATH="..:$PYTHONPATH" mypy .'
         language: system
-        files: ^shifter/shifter_platform/
+        # cyberscript is in the platform mypy estate (mypy_path = ".."), so a
+        # cyberscript change must also re-run this hook - matching the CI job.
+        files: ^shifter/(shifter_platform|cyberscript)/
         pass_filenames: false
         types: [python]
 
@@ -554,7 +593,7 @@ repos:
       - id: pytest-packer
         name: pytest (packer)
         entry: >-
-          bash -c 'cd shifter/packer && uv run pytest tests/ -q --cov=.
+          bash -c 'cd shifter/packer && uv run python -m pytest tests/ -q --cov=.
           --cov-report=html:../../coverage/packer
           --cov-report=xml:coverage.xml
           --cov-report=term-missing:skip-covered'
@@ -629,6 +668,14 @@ repos:
           bash -c 'cd scripts/assert_portal_inspection && uv run pytest tests/ -q'
         language: system
         files: ^scripts/assert_portal_inspection/
+        pass_filenames: false
+
+      - id: pytest-handle-sd-replacement
+        name: pytest (handle_sd_replacement)
+        entry: >-
+          bash -c 'cd scripts/handle_sd_replacement && uv run pytest tests/ -q'
+        language: system
+        files: ^scripts/handle_sd_replacement/
         pass_filenames: false
 
       - id: pytest-event-load-harness

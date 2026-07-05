@@ -15,7 +15,13 @@ resource "google_compute_security_policy" "platform_edge" {
 
     match {
       expr {
-        expression = "evaluatePreconfiguredWaf('sqli-v33-stable', {'sensitivity': 4, 'opt_out_rule_ids': ['owasp-crs-v030301-id942421-sqli']})"
+        # Sensitivity 1 = OWASP CRS paranoia level 1, the recommended baseline.
+        # Higher levels (this was 4) false-positive on legitimate request bodies
+        # such as the base64url JWT the portal POSTs to /auth/identity/session/,
+        # which Cloud Armor denied as `body_denied_by_security_policy` and broke
+        # sign-in. PL1 keeps high-confidence SQLi coverage without that blast
+        # radius (the prior per-rule opt-out was a symptom of the PL4 over-block).
+        expression = "evaluatePreconfiguredWaf('sqli-v33-stable', {'sensitivity': 1})"
       }
     }
   }

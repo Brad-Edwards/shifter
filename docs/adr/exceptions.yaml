@@ -171,6 +171,15 @@
   {
     "rule_id": "ADR-004-R11",
     "owner": "@Brad-Edwards",
+    "reason": "CKV_GCP_46 / CKV_GCP_49 on google_project_iam_member.default_compute_cloud_build in gcp/modules/platform-core/main.tf: the gen1 Identity Platform beforeCreate blocking function is built by Cloud Build, which runs as the GCP project default compute service account. New projects no longer auto-grant Editor to default SAs, so the build fails reading its gcf-sources bucket unless granted roles/cloudbuild.builds.builder explicitly. CKV_GCP_46 (default SA at project level) and CKV_GCP_49 (a role with actAs) are both intrinsic to giving Cloud Build the minimal build-worker role; the binding is gated on enable_identity_blocking_function (off where org policy forbids the allUsers invoker the function needs) and confers no SA management beyond the Cloud Build agent. Inline checkov:skip comments on the resource point back to this entry (#615).",
+    "expires_on": "2026-11-26",
+    "paths": [
+      "platform/terraform/gcp/modules/platform-core/main.tf"
+    ]
+  },
+  {
+    "rule_id": "ADR-004-R11",
+    "owner": "@Brad-Edwards",
     "reason": "ElastiCache encryption deferral on portal Redis — single-node path only. The replication group (prod / active channel-layer path) is fully encrypted: #938 enabled in-transit encryption (CKV_AWS_30) and AUTH (CKV_AWS_31), and #1059 enabled at-rest encryption (CKV_AWS_29) under a dedicated customer-managed KMS CMK (CKV_AWS_191), so those replication-group skips are removed. Single-node path (dev-only / private-subnet, unused — dev sets enable_redis=false): retains plaintext, so CKV_AWS_30 (in transit) and CKV_AWS_31 (at rest) stay skipped with a documented threat-model acceptance block on the resource (#938). Carry the inline skips on the single-node resource itself.",
     "expires_on": "2026-11-26",
     "paths": [
@@ -260,6 +269,24 @@
     "expires_on": "2027-06-20",
     "paths": [
       "shifter/engine/provisioner/tests/test_main.py"
+    ]
+  },
+  {
+    "rule_id": "ADR-019-R1",
+    "owner": "@Brad-Edwards",
+    "reason": "SSH executor secret-masking test (#418): test_ssh_executor.py grows from 1 to 2 patches of paramiko.SSHClient. The second patch tests that command text and device output containing secrets are not logged (test_run_command_does_not_log_secret_text); the first tests host-key verification policy setup. Both test observable behavior (security properties) at the network boundary, not internal implementation. No change in internal seam count.",
+    "expires_on": "2027-06-28",
+    "paths": [
+      "scripts/adr_guard/boundary_mock_baseline.json"
+    ]
+  },
+  {
+    "rule_id": "ADR-019-R1",
+    "owner": "@Brad-Edwards",
+    "reason": "Bootstrap deploy test split (#687): scripts/bootstrap/tests/test_deploy.py was mechanically decomposed into behavior-focused test files. The baseline entries moved from the deleted monolithic file to the new split files so the ratchet still covers the same legacy seams; after porting the latest dev GCP/GDC tests, the aggregate bootstrap allowance shrank from 215 to 214 and no new internal patch target family was introduced.",
+    "expires_on": "2027-06-30",
+    "paths": [
+      "scripts/adr_guard/boundary_mock_baseline.json"
     ]
   }
 ]

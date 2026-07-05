@@ -56,8 +56,13 @@ build {
 
   provisioner "shell" {
     scripts = [
+      "../scripts/common/claude-autostart-install.sh",
       "../scripts/ubuntu/claude-code.sh",
       "../scripts/common/cleanup.sh",
+      # GCP-only: force cloud-init's NoCloud datasource so GDC VM Runtime
+      # guests consume the range userData. Runs last (after cleanup) so it is
+      # the final state captured into the image.
+      "scripts/gdc-cloudinit-datasource.sh",
     ]
     execute_command = "sudo -S bash -c '{{ .Vars }} {{ .Path }}'"
   }

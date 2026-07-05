@@ -24,10 +24,11 @@ The platform DRF defaults authenticate in this order:
 2. `rest_framework.authentication.SessionAuthentication`
 
 New endpoints should use platform bearer tokens and session auth. Do not accept
-new API key formats outside the shared token model. Legacy app-local
-authenticators are declared only on their owner views; the risk-register
-`X-API-Key` path is deprecated compatibility for current consumers and retires
-under #1124.
+new API key formats outside the shared token model. The legacy risk-register
+`X-API-Key` (`rr_live_`) credential was retired (PLAT-106 / #1124): it no longer
+authenticates, its management endpoints and UI are removed, and it is gone from
+the OpenAPI schema. The `risk_register` `/api/v1` surface authenticates only via
+platform `ApiToken` (`risk:read` / `risk:write`) and session.
 
 Token scopes come from `shared.api_tokens.scopes`. Compose
 `shared.api_tokens.permissions.require_scope(read_scope, write_scope)` with the
@@ -46,8 +47,32 @@ Active Mission Control scopes:
 | `mission_control:ngfw:read` | NGFW listing. |
 | `mission_control:ngfw:write` | NGFW create and destroy. |
 | `mission_control:credentials:write` | Mission Control credential create and delete. |
-| `mission_control:script:read` | Experiment script listing, subject to CMS authoring checks. |
-| `mission_control:script:write` | Experiment script upload, subject to CMS authoring checks. |
+
+Active CMS authoring scopes:
+
+| Scope | Grants |
+| --- | --- |
+| `cms:authoring:read` | CMS authoring reads such as scenario-editor YAML validation, subject to CMS authoring checks. |
+| `cms:authoring:write` | CMS authoring mutations such as YAML scenario creation, subject to CMS authoring checks. |
+
+## CMS Migration Guardrails
+
+CMS JSON endpoints that move under `/api/v1/cms/` should register through
+`config/api_urls.py`; server-rendered scenario-editor pages stay on their
+existing HTML routes. DRF views may translate request/response shape, status
+codes, and schema metadata, but must continue to call
+`cms.scenario_editor.services` for business behavior.
+
+Preserve the second-stage CMS authoring gate after scope admission. API-token
+requests act as `ApiToken.created_by`, and the resolved actor must still be an
+active staff user or active `Threat Research` group member through
+`shared.auth.can_edit_cms_authoring`. Services keep using
+`shared.auth.validate_cms_authoring_user`; do not recreate group checks in
+serializers or treat `cms:authoring:*` as a role.
+
+YAML parsing, scenario schema validation, audit, and persistence stay
+service-owned. Keep bearer tokens, CSRF tokens, YAML bodies, examples, docs
+snippets, and process arguments out of logs.
 
 ## Mission Control Migration Guardrails
 

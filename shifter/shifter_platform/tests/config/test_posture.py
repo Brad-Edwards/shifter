@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import logging
 
+import pytest
+
 from config._posture import (
     describe_auth_posture,
     describe_database_posture,
@@ -29,6 +31,11 @@ def test_describe_database_posture_uses_host_only_for_postgres():
     assert "password" not in posture
 
 
+def test_describe_database_posture_does_not_invent_missing_values():
+    posture = describe_database_posture({})
+    assert posture == {"engine": "postgresql", "host": None, "port": None, "name": None}
+
+
 def test_describe_database_posture_sqlite_in_tests():
     assert describe_database_posture({"TESTING": "1"})["engine"] == "sqlite"
 
@@ -39,6 +46,23 @@ def test_describe_deploy_posture_remote_by_default():
         "local_provisioner": None,
         "deploy_mode": "remote",
     }
+
+
+@pytest.mark.parametrize(
+    ("env", "expected"),
+    [
+        (
+            {"LOCAL_PROVISIONER": "vagrant"},
+            {"cloud_provider": "aws", "local_provisioner": "vagrant", "deploy_mode": "vagrant"},
+        ),
+        (
+            {"CLOUD_PROVIDER": "gcp", "LOCAL_PROVISIONER": ""},
+            {"cloud_provider": "gcp", "local_provisioner": None, "deploy_mode": "remote"},
+        ),
+    ],
+)
+def test_describe_deploy_posture_reports_non_default_branches(env, expected):
+    assert describe_deploy_posture(env) == expected
 
 
 def test_log_settings_posture_does_not_log_secrets(caplog):

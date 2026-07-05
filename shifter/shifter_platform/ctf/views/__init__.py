@@ -1,7 +1,7 @@
 """CTF views package.
 
 Public view callables are re-exported here so ``from ctf import views``
-+ ``views.<name>`` (the ``ctf/urls.py`` URLconf) keep resolving after the
+and ``views.<name>`` (the ``ctf/urls.py`` URLconf) keep resolving after the
 split of the former monolithic ``ctf/views.py`` (issue #885, python:S104).
 Only URLconf-referenced views are exported; private helpers and framework
 objects live in their defining submodules and are patched there.
@@ -113,6 +113,7 @@ from ctf.views.participant import (
     participant_dashboard,
     participant_event,
     participant_range,
+    participant_solve_history,
     participant_team,
     scoreboard,
     team_join,
@@ -196,6 +197,7 @@ __all__ = [
     "participant_dashboard",
     "participant_event",
     "participant_range",
+    "participant_solve_history",
     "participant_team",
     "scoreboard",
     "team_join",

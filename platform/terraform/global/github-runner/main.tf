@@ -40,6 +40,27 @@ provider "aws" {
 data "aws_caller_identity" "current" {}
 
 # ------------------------------------------------------------------------------
+# Network-isolation guard inputs (ADR-004-R20, issue #1222)
+# ------------------------------------------------------------------------------
+# The runner must never live in the account default VPC: a range's
+# private_dns_enabled interface VPC endpoints override service hostnames for the
+# entire VPC and black-hole the runner's AWS API calls (the ~107-minute CI
+# wedge). Resolve the default VPC at plan time (list form, so an account with no
+# default VPC - the desired end state - yields an empty list instead of an
+# error) and the runner subnet, so the aws_security_group.runner preconditions
+# below can fail closed on default-VPC placement instead of relying on a comment.
+data "aws_vpcs" "default" {
+  filter {
+    name   = "is-default"
+    values = ["true"]
+  }
+}
+
+data "aws_subnet" "runner" {
+  id = var.subnet_id
+}
+
+# ------------------------------------------------------------------------------
 # Latest Amazon Linux 2023 AMI
 # ------------------------------------------------------------------------------
 
@@ -77,6 +98,21 @@ resource "aws_security_group" "runner" {
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
     description = "All outbound"
+  }
+
+  # Fail closed on default-VPC placement (ADR-004-R20, issue #1222). A runner in
+  # the account default VPC can have its AWS API resolution hijacked by a range's
+  # private-DNS VPC endpoints. Place the runner in a dedicated runner VPC or the
+  # portal VPC private tier instead.
+  lifecycle {
+    precondition {
+      condition     = !contains(data.aws_vpcs.default.ids, var.vpc_id)
+      error_message = "github-runner: var.vpc_id must not be the account default VPC (ADR-004-R20). Use a dedicated runner VPC or the portal VPC private tier so a range's private-DNS VPC endpoints cannot hijack the runner's AWS API resolution."
+    }
+    precondition {
+      condition     = data.aws_subnet.runner.vpc_id == var.vpc_id
+      error_message = "github-runner: var.subnet_id must belong to var.vpc_id (ADR-004-R20); a subnet from another VPC (for example the default VPC) is rejected."
+    }
   }
 
   tags = {

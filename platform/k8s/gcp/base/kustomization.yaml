@@ -16,5 +16,7 @@ resources:
   - worker-cms-deployment.yaml
   - worker-engine-deployment.yaml
   - worker-mc-deployment.yaml
+  - worker-outbox-drainer-deployment.yaml
+  - worker-reconciler-deployment.yaml
   - ctf-scheduler-deployment.yaml
   - guacamole-bootstrap-prune-deployment.yaml

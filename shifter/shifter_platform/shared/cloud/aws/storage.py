@@ -1,8 +1,8 @@
 """AWS S3 adapter implementing ObjectStorage protocol.
 
 The actual S3 logic will be extracted from cms/assets/s3.py and
-cms/experiments/s3.py in Sub-Issue 2 (#812). This stub satisfies the
-protocol interface so the factory can return it.
+CTF storage helpers in Sub-Issue 2 (#812). This stub satisfies the protocol
+interface so the factory can return it.
 """
 
 from __future__ import annotations

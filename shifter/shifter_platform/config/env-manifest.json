@@ -78,7 +78,22 @@
       "source_file": "config/settings.py"
     },
     {
-      "default": "'localhost'",
+      "default": "'0.1'",
+      "name": "CTF_REGEX_FLAG_MATCH_TIMEOUT_SECONDS",
+      "source_file": "config/_ctf_regex_settings.py"
+    },
+    {
+      "default": "'255'",
+      "name": "CTF_REGEX_FLAG_MAX_PATTERN_LENGTH",
+      "source_file": "config/_ctf_regex_settings.py"
+    },
+    {
+      "default": "'500'",
+      "name": "CTF_REGEX_FLAG_MAX_SUBMISSION_LENGTH",
+      "source_file": "config/_ctf_regex_settings.py"
+    },
+    {
+      "default": null,
       "name": "DB_HOST",
       "source_file": "config/_database_settings.py"
     },
@@ -88,7 +103,7 @@
       "source_file": "config/_database_settings.py"
     },
     {
-      "default": "'shifter'",
+      "default": null,
       "name": "DB_NAME",
       "source_file": "config/_database_settings.py"
     },
@@ -98,7 +113,7 @@
       "source_file": "config/_database_settings.py"
     },
     {
-      "default": "'5432'",
+      "default": null,
       "name": "DB_PORT",
       "source_file": "config/_database_settings.py"
     },
@@ -123,7 +138,7 @@
       "source_file": "config/_email.py"
     },
     {
-      "default": "'localhost,127.0.0.1'",
+      "default": null,
       "name": "DJANGO_ALLOWED_HOSTS",
       "source_file": "config/settings.py"
     },
@@ -153,7 +168,7 @@
       "source_file": "config/_email.py"
     },
     {
-      "default": "_CONSOLE_BACKEND",
+      "default": null,
       "name": "EMAIL_BACKEND",
       "source_file": "config/_email.py"
     },
@@ -239,16 +254,6 @@
     },
     {
       "default": null,
-      "name": "EXPERIMENT_TASK_DEFINITION",
-      "source_file": "config/_cloud.py"
-    },
-    {
-      "default": "''",
-      "name": "EXPERIMENT_TASK_DEFINITION_ARN",
-      "source_file": "config/_cloud.py"
-    },
-    {
-      "default": "'VbMOEgh9VmS5lr0EsIS2sD9X1iy-Qd12i4kVZHdgPVE=' if ... else ''",
       "name": "FIELD_ENCRYPTION_KEY",
       "source_file": "config/settings.py"
     },
@@ -358,6 +363,11 @@
       "source_file": "config/_logging_config.py"
     },
     {
+      "default": null,
+      "name": "MAGIC_LINK_EVENT_MAX_EXPIRY_HOURS",
+      "source_file": "config/_oidc_settings.py"
+    },
+    {
       "default": "'24'",
       "name": "MAGIC_LINK_EXPIRY_HOURS",
       "source_file": "config/_oidc_settings.py"
@@ -373,22 +383,22 @@
       "source_file": "config/_email.py"
     },
     {
-      "default": "'https://auth.example.test' if ... else ''",
+      "default": null,
       "name": "OIDC_AUTH_DOMAIN",
       "source_file": "config/_oidc_settings.py"
     },
     {
-      "default": "'https://issuer.example.test' if ... else ''",
+      "default": null,
       "name": "OIDC_ISSUER_URL",
       "source_file": "config/_oidc_settings.py"
     },
     {
       "default": null,
       "name": "OIDC_RP_CLIENT_ID",
-      "source_file": "config/settings.py"
+      "source_file": "config/_oidc_settings.py"
     },
     {
-      "default": "'test-oidc-client-secret' if ... else ''",
+      "default": null,
       "name": "OIDC_RP_CLIENT_SECRET",
       "source_file": "config/_oidc_settings.py"
     },
@@ -431,6 +441,16 @@
       "default": null,
       "name": "RANGE_EVENTS_TOPIC_ID",
       "source_file": "config/_cloud.py"
+    },
+    {
+      "default": "'100'",
+      "name": "RANGE_RECONCILE_BATCH_SIZE",
+      "source_file": "config/settings.py"
+    },
+    {
+      "default": "'300'",
+      "name": "RANGE_RECONCILE_STALE_SECONDS",
+      "source_file": "config/settings.py"
     },
     {
       "default": "''",

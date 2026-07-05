@@ -69,6 +69,11 @@ The first slice intentionally stays small:
   This is a changeset-level check (needs to see multiple files) so it runs in
   pre-commit and `--level fast`, but NOT in the per-edit Claude hook.
 
+- `no-agent-attribution`
+  Rejects AI/agent attribution markers in tracked text (agent `Co-authored-by`
+  trailers, Cursor marketing footers, Claude Code branding strings, etc.).
+  A `commit-msg` pre-commit hook blocks the same markers in commit messages.
+
 - `cross-layer-model-imports`
   Fails on direct cross-layer model imports inside service layers. The current tree already satisfies this rule, so it is part of the default guard.
 
@@ -192,6 +197,13 @@ The first slice intentionally stays small:
   digests with `aws_ecr_image` data sources during plan. This ordering is
   required for fresh AWS accounts where the repositories exist but the tags have
   not been published yet.
+
+  The deploy workflow model tests in
+  `scripts/adr_guard/tests/test_deploy_workflow.py` also assert the engine
+  reusable workflow carries its own hosted provisioner pytest gate and that
+  `_shifter-engine.yml` image validation, image build, and deploy jobs all need
+  that gate. This keeps deploy-branch Quality skips from bypassing provisioner
+  tests on the image that is pushed and deployed.
 
 - `portal-deploy-mode-source-of-truth`
   Enforces ADR-003-R4 for the AWS portal deploy path. `_shifter-platform.yml`

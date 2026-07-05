@@ -204,7 +204,10 @@ class TestAdminParticipantImportView:
 
         # Should stay on page with errors
         assert response.status_code == 200
-        assert "errors" in response.context or "error" in response.content.decode().lower()
+        assert response.context["errors"] == [
+            "Line 1: Expected name,email format",
+            "Line 2: Expected name,email format",
+        ]
 
     def test_rejects_duplicate_emails_in_csv(self, authenticated_organizer_client, ctf_event):
         """POST with duplicate emails in CSV shows error."""
@@ -396,7 +399,9 @@ class TestAdminParticipantAddView:
         )
 
         assert response.status_code == 200
-        assert "error" in response.content.decode().lower() or response.context.get("form").errors
+        non_field_errors = response.context["form"].non_field_errors()
+        assert len(non_field_errors) == 1
+        assert "already exists in this event" in non_field_errors[0]
 
 
 class TestAPIParticipantList:
@@ -554,10 +559,12 @@ class TestAPIParticipantResendInvite:
 
         participant.refresh_from_db()
         assert participant.invite_token != old_token
+        assert participant.invite_token_expires == ctf_event.event_end
 
     def test_resend_works_for_registered_participant(self, authenticated_organizer_client, ctf_participant):
         """Resend works for registered participants (sends magic link)."""
         # ctf_participant fixture has user linked (registered)
+        old_token = ctf_participant.invite_token
         url = reverse(
             "ctf:api_participant_resend_invite",
             kwargs={"participant_id": ctf_participant.id},
@@ -567,6 +574,10 @@ class TestAPIParticipantResendInvite:
         assert response.status_code == 200
         data = response.json()
         assert data["success"] is True
+        # The registered/ACTIVE path must still rotate the invite token, not
+        # just return success — otherwise a broken ACTIVE branch would pass.
+        ctf_participant.refresh_from_db()
+        assert ctf_participant.invite_token != old_token
 
 
 class TestTeamJoinCapacityGuard:

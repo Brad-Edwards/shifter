@@ -23,8 +23,4 @@ urlpatterns = [
         views.comment_delete,
         name="comment_delete",
     ),
-    # API Key management
-    path("api-keys/", views.apikey_list, name="apikey_list"),
-    path("api-keys/create/", views.apikey_create, name="apikey_create"),
-    path("api-keys/<int:pk>/revoke/", views.apikey_revoke, name="apikey_revoke"),
 ]

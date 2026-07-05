@@ -24,7 +24,6 @@ locals {
     "cms",
     "engine",
     "mc",
-    "experiments",
   ])
 
   # Email is opt-in: the ESP API-key secret is created (unseeded, operator-
@@ -45,9 +44,13 @@ locals {
   required_services = toset([
     "artifactregistry.googleapis.com",
     "binaryauthorization.googleapis.com",
+    "cloudbuild.googleapis.com",
+    "cloudfunctions.googleapis.com",
+    "cloudkms.googleapis.com",
     "compute.googleapis.com",
     "container.googleapis.com",
     "identitytoolkit.googleapis.com",
+    "monitoring.googleapis.com",
     "pubsub.googleapis.com",
     "redis.googleapis.com",
     "run.googleapis.com",
@@ -162,21 +165,53 @@ module "portal_messaging" {
   common_labels                = local.common_labels
   platform_event_subscriptions = local.platform_event_subscriptions
 
+  enable_dlq            = var.messaging_enable_dlq
+  max_delivery_attempts = var.messaging_max_delivery_attempts
+  dlq_retention         = var.messaging_dlq_retention
+  retry_min_backoff     = var.messaging_retry_min_backoff
+  retry_max_backoff     = var.messaging_retry_max_backoff
+
+  enable_alarms               = var.messaging_enable_alarms
+  alarm_queue_depth_threshold = var.messaging_alarm_queue_depth_threshold
+  alarm_message_age_threshold = var.messaging_alarm_message_age_threshold
+  alarm_dlq_threshold         = var.messaging_alarm_dlq_threshold
+  notification_channels       = var.messaging_notification_channels
+
+  depends_on = [module.project_services]
+}
+
+# The gen1 Identity Platform `beforeCreate` function is built by Cloud Build
+# running as the project's default compute service account. New projects no
+# longer auto-grant Editor to default service accounts
+# (iam.automaticIamGrantsForDefaultServiceAccounts is off by default), so the
+# build fails reading its `gcf-sources-*` bucket unless the build-worker role is
+# granted explicitly. `roles/cloudbuild.builds.builder` bundles the source-read,
+# logging, and Artifact Registry permissions a build needs. Only required when
+# the blocking function is deployed.
+resource "google_project_iam_member" "default_compute_cloud_build" {
+  # checkov:skip=CKV_GCP_46:The gen1 Identity Platform beforeCreate function is built by Cloud Build, which runs as the project default compute SA on GCP; granting that SA the build-worker role is the minimal way to let the build read its gcf-sources bucket. Gated on enable_identity_blocking_function (off in projects that forbid it). See ADR-004-R11 exception (#615).
+  # checkov:skip=CKV_GCP_49:roles/cloudbuild.builds.builder is the predefined build-worker role Cloud Build itself requires; the binding does not let the SA manage or impersonate other SAs beyond the Cloud Build agent it already runs as. Single project, gated grant. See ADR-004-R11 exception (#615).
+  count   = var.enable_identity_blocking_function ? 1 : 0
+  project = var.project_id
+  role    = "roles/cloudbuild.builds.builder"
+  member  = "serviceAccount:${module.project_services.project_number}-compute@developer.gserviceaccount.com"
+
   depends_on = [module.project_services]
 }
 
 module "portal_identity_platform" {
   source = "../portal/identity-platform"
 
-  project_id                    = var.project_id
-  region                        = var.region
-  name_prefix                   = local.name_prefix
-  identity_authorized_domains   = local.identity_authorized_domains
-  identity_allowed_email_domain = var.identity_allowed_email_domain
-  identity_allowed_emails       = var.identity_allowed_emails
-  assets_bucket_name            = module.portal_gcs.assets_bucket_name
+  project_id                        = var.project_id
+  region                            = var.region
+  name_prefix                       = local.name_prefix
+  identity_authorized_domains       = local.identity_authorized_domains
+  identity_allowed_email_domain     = var.identity_allowed_email_domain
+  identity_allowed_emails           = var.identity_allowed_emails
+  assets_bucket_name                = module.portal_gcs.assets_bucket_name
+  enable_identity_blocking_function = var.enable_identity_blocking_function
 
-  depends_on = [module.project_services, module.portal_gcs]
+  depends_on = [module.project_services, module.portal_gcs, google_project_iam_member.default_compute_cloud_build]
 }
 
 module "portal_cloud_sql" {

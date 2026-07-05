@@ -9,9 +9,11 @@ the sub-handlers.
 
 import json
 import logging
+from datetime import timedelta
 
 import pytest
 from django.contrib.auth import get_user_model
+from django.utils import timezone
 
 from engine.handlers import process_event, process_range_event
 from engine.models import Range
@@ -114,6 +116,16 @@ class TestProcessRangeEventStatusUpdates:
         process_range_event(_status_event(range_obj, new_status=ResourceStatus.PROVISIONING.value))
         assert AuditLog.objects.count() > before
 
+    def test_advances_updated_at(self, user):
+        range_obj = Range.objects.create(user=user, status=Range.Status.PENDING)
+        # auto_now is bypassed by save(update_fields=...), so force a stale
+        # baseline that the handler must overwrite.
+        stale = timezone.now() - timedelta(hours=1)
+        Range.objects.filter(id=range_obj.id).update(updated_at=stale)
+        process_range_event(_status_event(range_obj, new_status=ResourceStatus.PROVISIONING.value))
+        range_obj.refresh_from_db()
+        assert range_obj.updated_at > stale
+
 
 class TestProcessRangeEventInvalidInputs:
     def test_ignores_unknown_event_type(self, user):
@@ -122,11 +134,22 @@ class TestProcessRangeEventInvalidInputs:
         range_obj.refresh_from_db()
         assert range_obj.status == Range.Status.PENDING
 
-    def test_handles_missing_range(self, user):
+    def test_handles_missing_range(self, user, caplog):
         # No row with this id: handler logs a warning and makes no change.
-        process_range_event(
-            _sns({"event_type": "range.status.updated", "range_id": 999999, "user_id": user.id, "new_status": "ready"})
-        )
+        before = AuditLog.objects.count()
+        with caplog.at_level(logging.WARNING, logger="engine"):
+            process_range_event(
+                _sns(
+                    {
+                        "event_type": "range.status.updated",
+                        "range_id": 999999,
+                        "user_id": user.id,
+                        "new_status": "ready",
+                    }
+                )
+            )
+        assert "999999" in caplog.text
+        assert AuditLog.objects.count() == before
 
     def test_ignores_user_id_mismatch(self, user, django_user_model):
         other = django_user_model.objects.create_user(username="eh-other@example.com", email="eh-other@example.com")
@@ -144,6 +167,47 @@ class TestProcessRangeEventInvalidInputs:
         )
         range_obj.refresh_from_db()
         assert range_obj.status == Range.Status.PENDING
+
+
+class TestProcessRangeEventTransientErrors:
+    def test_db_save_error_propagates(self, user):
+        """A transient DB save failure in _handle_status_updated raises.
+
+        The worker must not ack the message when the DB call fails; propagating
+        the exception causes the SQS visibility timeout to expire so the message
+        is redelivered (DLQ backstops poison).
+        """
+        from django.db.models.signals import pre_save
+
+        from engine.models import Range
+
+        range_obj = Range.objects.create(user=user, status=Range.Status.PENDING)
+        target_pk = range_obj.pk
+
+        def _fail_if_target(sender, instance, **kwargs):
+            if instance.pk == target_pk:
+                raise Exception("DB connection error")
+
+        pre_save.connect(_fail_if_target, sender=Range)
+        try:
+            with pytest.raises(Exception, match="DB connection error"):
+                process_range_event(_status_event(range_obj, new_status=ResourceStatus.READY.value))
+        finally:
+            pre_save.disconnect(_fail_if_target, sender=Range)
+
+    def test_permanent_early_returns_still_ack(self, user):
+        """Permanent validation failures (missing range, user mismatch) still ack (return)."""
+        # Missing range_id → returns, no exception
+        process_range_event(
+            _sns(
+                {
+                    "event_type": "range.status.updated",
+                    "range_id": 999999,
+                    "user_id": user.id,
+                    "new_status": ResourceStatus.READY.value,
+                }
+            )
+        )
 
 
 class TestProcessRangeEventLogging:
@@ -178,6 +242,57 @@ class TestHandleProvisioned:
         assert range_obj.status == Range.Status.PROVISIONING
         assert range_obj.provisioned_instances is None
 
-    def test_handles_event_without_range_in_db(self, user):
+    def test_handles_event_without_range_in_db(self, user, caplog):
         # No matching range_id: handler is a log-only no-op, no exception.
-        process_range_event(_sns({"event_type": "range.provisioned", "range_id": 999999, "user_id": user.id}))
+        before = AuditLog.objects.count()
+        with caplog.at_level(logging.INFO, logger="engine"):
+            process_range_event(_sns({"event_type": "range.provisioned", "range_id": 999999, "user_id": user.id}))
+        assert "999999" in caplog.text
+        assert AuditLog.objects.count() == before
+
+
+class TestProcessNgfwEvent:
+    """The engine NGFW handler is notification/audit-only: it records one
+    AuditLog row for the NGFW lifecycle event.
+
+    An NGFW is identified by UUIDs (app_id / instance_id), but AuditLog.entity_id
+    is a PositiveIntegerField. Feeding the UUID app_id as entity_id makes the
+    audit write fail (silently, since audit_log swallows and returns None), so
+    the row is lost. entity_id must stay an int; the UUID identifiers belong in
+    the audit state.
+    """
+
+    def _ngfw_event(self, **extra):
+        return _sns(
+            {
+                "event_type": "ngfw.event",
+                "event_id": "evt-ngfw-1",
+                "request_id": "req-ngfw-1",
+                "instance_id": "11111111-1111-1111-1111-111111111111",
+                "app_id": "22222222-2222-2222-2222-222222222222",
+                "status": ResourceStatus.READY.value,
+                **extra,
+            }
+        )
+
+    def test_records_audit_row_with_uuid_identifiers(self, user):
+        from engine.handlers import process_ngfw_event
+
+        before = AuditLog.objects.count()
+        process_ngfw_event(self._ngfw_event())
+        assert AuditLog.objects.count() == before + 1
+
+        row = AuditLog.objects.filter(entity_type=AuditLog.EntityType.NGFW).latest("timestamp")
+        # entity_id is an int column; the UUID app_id must NOT be jammed into it.
+        assert row.entity_id == 0
+        # The UUID identifiers are preserved in the audit state instead.
+        assert row.new_state["app_id"] == "22222222-2222-2222-2222-222222222222"
+        assert row.new_state["instance_id"] == "11111111-1111-1111-1111-111111111111"
+        assert row.new_state["status"] == ResourceStatus.READY.value
+
+    def test_ignores_non_ngfw_event_type(self, user):
+        from engine.handlers import process_ngfw_event
+
+        before = AuditLog.objects.count()
+        process_ngfw_event(_sns({"event_type": "range.status.updated", "range_id": 1, "user_id": user.id}))
+        assert AuditLog.objects.count() == before

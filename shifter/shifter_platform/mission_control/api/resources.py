@@ -1,17 +1,13 @@
-"""NGFW, credential, and script DRF views for Mission Control."""
+"""NGFW and credential DRF views for Mission Control."""
 
 from __future__ import annotations
 
 import logging
-import os
-from typing import Any
 
-from django.contrib.auth.models import User
 from django.http import Http404, JsonResponse
 from rest_framework.request import Request
 from rest_framework.response import Response
 
-from cms.services import ScriptUploadError, complete_script_upload, initiate_script_upload, list_scripts
 from cms.services import delete_credential as cms_delete_credential
 from cms.services import list_ngfws as cms_list_ngfws
 from mission_control.api._base import (
@@ -20,8 +16,6 @@ from mission_control.api._base import (
     _credentials_write_permission,
     _ngfw_read_permission,
     _ngfw_write_permission,
-    _script_read_permission,
-    _script_write_permission,
     _validated,
 )
 from mission_control.api.permissions import HasMissionControlActor
@@ -29,7 +23,6 @@ from mission_control.api.serializers import (
     CredentialCreateSerializer,
     NGFWCreateSerializer,
     NGFWDestroySerializer,
-    ScriptUploadSerializer,
 )
 from mission_control.views._common import _pkg
 from mission_control.views._credentials import _CredentialError, _persist_credential, _validate_credential_spec
@@ -169,65 +162,3 @@ class CredentialDeleteView(MissionControlAPIView):
             safe_log_value(credential_id),
         )
         return Response({"success": True})
-
-
-class ScriptListView(MissionControlReadAPIView):
-    """List experiment scripts for the authenticated user."""
-
-    permission_classes = [IsAuthenticatedSessionOrApiToken, HasMissionControlActor, _script_read_permission()]
-
-    def get(self, request: Request) -> Response:
-        """Return experiment scripts visible to the authenticated actor."""
-        scripts = list_scripts(self.actor_user())
-        return Response({"scripts": [{"id": s.pk, "name": s.name, "filename": s.original_filename} for s in scripts]})
-
-
-class ScriptUploadView(MissionControlAPIView):
-    """Initiate or complete an experiment-script upload."""
-
-    permission_classes = [IsAuthenticatedSessionOrApiToken, HasMissionControlActor, _script_write_permission()]
-
-    def post(self, request: Request) -> Response:
-        """Dispatch script upload initiation or completion by request shape."""
-        data, error = _validated(self, ScriptUploadSerializer, request.data)
-        if error is not None:
-            return error
-        assert data is not None
-
-        user = self.actor_user()
-        upload_token = data.get("upload_token")
-        if upload_token:
-            return self._complete_script(user, upload_token)
-        return self._initiate_script(user, data)
-
-    def _complete_script(self, user: User, upload_token: str) -> Response:
-        """Complete a pending script upload."""
-        try:
-            script = complete_script_upload(user, upload_token)
-        except ScriptUploadError as exc:
-            logger.exception("Script upload completion failed: user=%s", user.pk)
-            return self.bad_request(classify_user_message(str(exc), default="Upload could not be completed"))
-
-        logger.info("Script upload completed: user=%s script_id=%s", safe_log_value(user.email), script.pk)
-        return Response(
-            {"success": True, "script_id": script.pk, "message": f"Script '{script.name}' uploaded successfully."}
-        )
-
-    def _initiate_script(self, user: User, data: dict[str, Any]) -> Response:
-        """Create a presigned upload destination for an experiment script."""
-        filename = os.path.basename(data["filename"])
-        try:
-            result = initiate_script_upload(user, data["name"], filename, data["file_size"])
-        except ScriptUploadError as exc:
-            logger.exception("Script upload initiation failed: user=%s", user.pk)
-            return self.bad_request(classify_user_message(str(exc), default="Upload could not be initiated"))
-
-        safe_filename = filename.replace("\r", " ").replace("\n", " ").replace("\t", " ")[:200]
-        safe_email = user.email.replace("\r", " ").replace("\n", " ").replace("\t", " ")[:200]
-        logger.info(
-            "Script upload initiated: user=%s filename=%s size=%d",
-            safe_email,
-            safe_filename,
-            data["file_size"],
-        )
-        return Response(result)

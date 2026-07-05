@@ -139,19 +139,15 @@ def upload_challenge_file(
     unique_id = uuid4().hex[:12]
     s3_key = f"ctf-files/{event_id}/{challenge_id}/{unique_id}_{safe_filename}"
 
-    # Calculate SHA256 while reading
+    # Calculate SHA256 while reading (single pass; do not retain chunks).
     sha256 = hashlib.sha256()
     file_obj.seek(0)
-    chunks = []
-    while True:
-        chunk = file_obj.read(8192)
-        if not chunk:
-            break
+    file_size = 0
+    while chunk := file_obj.read(8192):
         sha256.update(chunk)
-        chunks.append(chunk)
+        file_size += len(chunk)
 
     sha256_hash = sha256.hexdigest()
-    file_size = sum(len(c) for c in chunks)
 
     file_obj.seek(0)
 

@@ -1,8 +1,8 @@
 """Mission Control view package.
 
 The implementation is split across private submodules (``_pages``,
-``_uploads``, ``_guacamole``, ``_ranges``, ``_ngfw``, ``_credentials``,
-``_files``) and re-exported here so existing
+``_uploads``, ``_guacamole``, ``_ranges``, ``_ngfw``, ``_credentials``)
+and re-exported here so existing
 ``from mission_control.views import X`` and ``from mission_control import views;
 views.X`` call sites continue to work.
 
@@ -61,6 +61,9 @@ from cms.services import (
     list_credentials as cms_list_credentials,
 )
 from cms.services import (
+    list_launchable_scenarios as cms_list_launchable_scenarios,
+)
+from cms.services import (
     list_ngfws as cms_list_ngfws,
 )
 from cms.services import (
@@ -73,10 +76,6 @@ from ._credentials import (
     credential_add,
     credential_detail,
     credentials_list,
-)
-from ._files import (
-    file_delete,
-    files,
 )
 from ._ngfw import (
     ngfw_deprovision,
@@ -115,7 +114,6 @@ def _api_view(name: str) -> Callable[..., HttpResponseBase]:
 
 api_credential_create = _api_view("api_credential_create")
 api_credential_delete = _api_view("api_credential_delete")
-api_list_scripts = _api_view("api_list_scripts")
 api_ngfw_create = _api_view("api_ngfw_create")
 api_ngfw_destroy = _api_view("api_ngfw_destroy")
 api_ngfw_list = _api_view("api_ngfw_list")
@@ -124,7 +122,6 @@ cancel_range = _api_view("cancel_range")
 cancel_upload = _api_view("cancel_upload")
 complete_upload = _api_view("complete_upload")
 destroy_range = _api_view("destroy_range")
-file_upload = _api_view("file_upload")
 get_range = _api_view("get_range")
 guacamole_bootstrap_open = _api_view("guacamole_bootstrap_open")
 guacamole_bootstrap_status = _api_view("guacamole_bootstrap_status")
@@ -147,7 +144,6 @@ __all__ = (
     "agents",
     "api_credential_create",
     "api_credential_delete",
-    "api_list_scripts",
     "api_ngfw_create",
     "api_ngfw_destroy",
     "api_ngfw_list",
@@ -166,6 +162,7 @@ __all__ = (
     "cms_get_ngfw",
     "cms_list_agents",
     "cms_list_credentials",
+    "cms_list_launchable_scenarios",
     "cms_list_ngfws",
     "cms_list_scenarios",
     "complete_upload",
@@ -175,9 +172,6 @@ __all__ = (
     "dashboard",
     "delete_agent",
     "destroy_range",
-    "file_delete",
-    "file_upload",
-    "files",
     "get_active_range",
     "get_allowed_extensions",
     "get_range",

@@ -1,0 +1,23 @@
+/* CTF admin: range list page.
+   Extracted from templates/ctf/admin/range_list.html (issue #414). */
+
+.range-id {
+    font-family: monospace;
+    font-size: 13px;
+    color: var(--theme-text-secondary);
+}
+
+.btn-group-actions {
+    display: flex;
+    gap: 4px;
+}
+
+.btn-group-actions .btn {
+    padding: 4px 10px;
+    font-size: 13px;
+}
+
+.provision-progress {
+    margin-bottom: 12px;
+    display: none;
+}

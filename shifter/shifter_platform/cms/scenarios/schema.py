@@ -167,10 +167,15 @@ class ScenarioTemplate(BaseModel):
             "has_from_agent": False,
         }
         for inst in self.instances:
-            if inst.xdr_agent:
-                if inst.os_type == "from_agent":
-                    result["has_from_agent"] = True
-                elif inst.os_type == "windows":
+            # `from_agent` derives the OS from the user-provided agent, so it
+            # always requires an agent regardless of `xdr_agent` (which gates
+            # fixed-OS agent installs). The dashboard relies on this to prompt
+            # for an agent on scenarios like `basic` whose victim is
+            # `from_agent` with `xdr_agent: false`.
+            if inst.os_type == "from_agent":
+                result["has_from_agent"] = True
+            elif inst.xdr_agent:
+                if inst.os_type == "windows":
                     result["requires_windows"] = True
                 elif inst.os_type in ("ubuntu", "kali"):
                     result["requires_linux"] = True

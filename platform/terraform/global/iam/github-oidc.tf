@@ -87,11 +87,34 @@ resource "aws_iam_role" "github_actions" {
 # Standalone policy referenced by the security policy's iam:CreateRole condition;
 # intentionally NOT attached to the github_actions role.
 resource "aws_iam_policy" "ci_role_permissions_boundary" {
+  # This is a permissions BOUNDARY, not a principal grant. A boundary caps the MAX permissions of
+  # the CI-created service roles it bounds; effective perms are the intersection of each role's own
+  # identity policy AND this boundary. The Allow*/* sets the ceiling to "anything", which the
+  # DenyIamEscalation below carves IAM out of, yielding "all except IAM escalation". Without the
+  # Allow* the boundary permits nothing and cripples every bounded role (e.g. firehose:PutRecord on
+  # the log-shipping role). The wildcard-policy checks below assume a grant policy and do not apply
+  # to boundary semantics. Risk accepted, see #44.
+  # checkov:skip=CKV_AWS_286:Boundary ceiling, not a principal grant; iam:* is denied so no escalation.
+  # checkov:skip=CKV_AWS_287:Boundary, not a grant; it only caps effective perms, never exposes creds.
+  # checkov:skip=CKV_AWS_288:Boundary, not a grant - no data-exfil risk; it only caps, never grants.
+  # checkov:skip=CKV_AWS_62:Boundary ceiling, not an administrative grant to any principal.
+  # checkov:skip=CKV_AWS_63:Action="*" is required for a boundary to permit non-IAM service actions.
+  # checkov:skip=CKV2_AWS_40:DenyIamEscalation removes IAM; the boundary does not allow full IAM.
   name = "shifter-${var.environment}-ci-role-boundary"
 
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
+      {
+        # A permissions boundary must explicitly ALLOW an action for a bounded role to use it
+        # (effective = identity policy ∩ boundary). This Allow* sets the ceiling to "anything",
+        # which the DenyIamEscalation below then carves IAM back out of, yielding the intended
+        # "all except IAM escalation" cap. It grants nothing on its own.
+        Sid      = "AllowAllExceptDenied"
+        Effect   = "Allow"
+        Action   = "*"
+        Resource = "*"
+      },
       {
         Sid      = "DenyIamEscalation"
         Effect   = "Deny"
@@ -144,7 +167,19 @@ resource "aws_iam_policy" "compute" {
           "autoscaling:TerminateInstanceInAutoScalingGroup",
           "autoscaling:StartInstanceRefresh",
           "autoscaling:DescribeInstanceRefreshes",
-          "autoscaling:DescribeScalingActivities"
+          "autoscaling:DescribeScalingActivities",
+          # Lifecycle hooks (launch + termination-drain) managed by
+          # modules/portal/ec2. Describe is needed at plan/refresh time,
+          # Put/Delete at apply time (including destroying hooks left in
+          # state when enable_autoscaling is toggled off, as in dev).
+          "autoscaling:DescribeLifecycleHooks",
+          "autoscaling:PutLifecycleHook",
+          "autoscaling:DeleteLifecycleHook",
+          # Warm pool, managed by the same module's dynamic "warm_pool"
+          # block when asg_warm_pool_min_size > 0.
+          "autoscaling:DescribeWarmPool",
+          "autoscaling:PutWarmPool",
+          "autoscaling:DeleteWarmPool"
         ]
         Resource = "*"
       },
@@ -240,6 +275,28 @@ resource "aws_iam_policy" "compute" {
           "bedrock:DeleteModelInvocationLoggingConfiguration"
         ]
         Resource = "*"
+      },
+      {
+        # EventBridge Scheduler backing the Cognito client-secret rotation
+        # reminder (portal cognito module, created when alarm_email is set so
+        # enable_rotation_reminder is true). Scoped to the project/env schedule
+        # name prefixes in the default schedule group.
+        Sid    = "Scheduler"
+        Effect = "Allow"
+        Action = [
+          "scheduler:CreateSchedule",
+          "scheduler:GetSchedule",
+          "scheduler:UpdateSchedule",
+          "scheduler:DeleteSchedule",
+          "scheduler:ListSchedules",
+          "scheduler:TagResource",
+          "scheduler:UntagResource",
+          "scheduler:ListTagsForResource"
+        ]
+        Resource = [
+          "arn:aws:scheduler:${var.aws_region}:${data.aws_caller_identity.current.account_id}:schedule/default/shifter-*",
+          "arn:aws:scheduler:${var.aws_region}:${data.aws_caller_identity.current.account_id}:schedule/default/${var.environment}-*"
+        ]
       }
     ]
   })
@@ -485,7 +542,13 @@ resource "aws_iam_policy" "data" {
           "rds:RemoveTagsFromResource",
           "rds:ListTagsForResource",
           "rds:DescribeDBEngineVersions",
-          "rds:DescribeOrderableDBInstanceOptions"
+          "rds:DescribeOrderableDBInstanceOptions",
+          "rds:CreateEventSubscription",
+          "rds:DeleteEventSubscription",
+          "rds:ModifyEventSubscription",
+          "rds:DescribeEventSubscriptions",
+          "rds:AddSourceIdentifierToSubscription",
+          "rds:RemoveSourceIdentifierFromSubscription"
         ]
         Resource = "*"
       },
@@ -590,6 +653,31 @@ resource "aws_iam_policy" "security" {
         }
       },
       {
+        # Attach/detach account-owned customer-managed policies (e.g. the
+        # ${env}-portal-pulumi-* managed policies the provisioner roles use).
+        # Scoped to roles and policies under the project/env name prefixes so
+        # this cannot attach arbitrary AWS-managed policies (that path stays
+        # gated by IAMAttachManagedPolicy's allow-list above).
+        Sid    = "IAMAttachCustomerManagedPolicy"
+        Effect = "Allow"
+        Action = [
+          "iam:AttachRolePolicy",
+          "iam:DetachRolePolicy"
+        ]
+        Resource = [
+          "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/shifter-*",
+          "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/${var.environment}-*"
+        ]
+        Condition = {
+          ArnLike = {
+            "iam:PolicyArn" = [
+              "arn:aws:iam::${data.aws_caller_identity.current.account_id}:policy/shifter-*",
+              "arn:aws:iam::${data.aws_caller_identity.current.account_id}:policy/${var.environment}-*"
+            ]
+          }
+        }
+      },
+      {
         Sid    = "IAMInstanceProfiles"
         Effect = "Allow"
         Action = [
@@ -624,10 +712,26 @@ resource "aws_iam_policy" "security" {
               "vpc-flow-logs.amazonaws.com",
               "firehose.amazonaws.com",
               "logs.amazonaws.com",
-              "bedrock.amazonaws.com"
+              "bedrock.amazonaws.com",
+              "scheduler.amazonaws.com"
             ]
           }
         }
+      },
+      {
+        # RDS enhanced-monitoring role pass. RDS ModifyDBInstance does NOT populate the
+        # iam:PassedToService context key, so the conditional IAMPassRole statement above
+        # never matches and enabling enhanced monitoring fails with PassRole AccessDenied.
+        # Allow passing the enhanced-monitoring roles without that condition, but scope the
+        # resource tightly to *-rds-enhanced-monitoring roles. Their trust policy only permits
+        # monitoring.rds.amazonaws.com, so an unconditional pass of just these roles is safe.
+        Sid    = "IAMPassRoleRdsMonitoring"
+        Effect = "Allow"
+        Action = ["iam:PassRole"]
+        Resource = [
+          "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/shifter-*-rds-enhanced-monitoring",
+          "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/${var.environment}-*-rds-enhanced-monitoring"
+        ]
       },
       {
         Sid      = "IAMServiceLinkedRoles"
@@ -698,7 +802,16 @@ resource "aws_iam_policy" "security" {
           "kms:PutKeyPolicy",
           "kms:EnableKeyRotation",
           "kms:GetKeyRotationStatus",
-          "kms:ListResourceTags"
+          "kms:ListResourceTags",
+          # Grant management: ElastiCache (and other AWS services) create a
+          # grant on the customer CMK when a resource with at-rest encryption
+          # is created (e.g. the portal Redis replication group). CreateGrant
+          # is also needed by the apply that provisions those resources.
+          "kms:CreateGrant",
+          "kms:ListGrants",
+          "kms:RevokeGrant",
+          "kms:ReEncrypt*",
+          "kms:GenerateDataKeyWithoutPlaintext"
         ]
         Resource = "*"
       }
@@ -809,7 +922,14 @@ resource "aws_iam_policy" "management" {
           "cloudwatch:DeleteAlarms",
           "cloudwatch:ListTagsForResource",
           "cloudwatch:TagResource",
-          "cloudwatch:UntagResource"
+          "cloudwatch:UntagResource",
+          # CloudWatch dashboards (portal capacity dashboard, modules/portal/ec2
+          # observability.tf). Dashboard APIs do not support resource-level
+          # scoping, so they share the statement's Resource "*".
+          "cloudwatch:PutDashboard",
+          "cloudwatch:GetDashboard",
+          "cloudwatch:DeleteDashboards",
+          "cloudwatch:ListDashboards"
         ]
         Resource = "*"
       },
@@ -826,7 +946,12 @@ resource "aws_iam_policy" "management" {
           "sns:UntagResource",
           "sns:Subscribe",
           "sns:Unsubscribe",
-          "sns:GetSubscriptionAttributes"
+          "sns:GetSubscriptionAttributes",
+          # RDS CreateEventSubscription runs a connectivity test-publish to the
+          # target topic authorized with the *caller's* identity, so the deploy
+          # role must hold sns:Publish on the managed topics or the backup-alerts
+          # event subscription create fails with SNSNoAuthorization.
+          "sns:Publish"
         ]
         Resource = [
           "arn:aws:sns:${var.aws_region}:${data.aws_caller_identity.current.account_id}:*-portal-*",

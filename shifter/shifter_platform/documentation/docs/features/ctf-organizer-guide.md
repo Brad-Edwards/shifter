@@ -57,6 +57,12 @@ import a roster. Each participant is tracked through registration, range assignm
 and scoring. Use **Brackets** to group participants into ranked cohorts, and (in team
 mode) manage team membership.
 
+Participant magic links remain reusable by default and expire at the event end, so
+participants can return through the same invitation link for the full active CTF
+window. Resending a magic link rotates the token while keeping the same event-end
+expiry. If an unusually long event needs a stricter bearer-token lifetime, operators
+can set `MAGIC_LINK_EVENT_MAX_EXPIRY_HOURS` to cap event-backed magic links.
+
 ## 4. Ranges
 
 The **Ranges** page shows the provisioning state of every participant's range. The

@@ -14,6 +14,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from django.core.exceptions import ImproperlyConfigured
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -32,7 +33,7 @@ from config._drf_settings import *  # NOSONAR  # noqa: E402
 from config._email import *  # NOSONAR  # noqa: E402
 from config._guacamole_settings import *  # NOSONAR  # noqa: E402
 from config._logging_config import *  # NOSONAR  # noqa: E402
-from config._runtime_env import AUTH_PROVIDER, IS_TEST_RUN, require_environment  # noqa: E402
+from config._runtime_env import AUTH_PROVIDER, IS_TEST_RUN, require_environment, required_runtime_env  # noqa: E402
 from config._terminal_assets import *  # NOSONAR  # noqa: E402
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -77,23 +78,21 @@ if not SECRET_KEY:
 # SECRET_KEY_FALLBACKS (zero-downtime rotation) lives in config._database_settings.
 
 DEBUG = _env_bool("DJANGO_DEBUG", False)
-ALLOWED_HOSTS = os.environ.get("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
+ENVIRONMENT = require_environment()
+_allowed_hosts_raw = required_runtime_env("DJANGO_ALLOWED_HOSTS", dev_default="localhost,127.0.0.1")
+ALLOWED_HOSTS = [host.strip() for host in _allowed_hosts_raw.split(",") if host.strip()]
+if not ALLOWED_HOSTS:
+    raise ImproperlyConfigured("DJANGO_ALLOWED_HOSTS must include at least one host")
 # Required for debug context processor
 INTERNAL_IPS = ["127.0.0.1"]
 
 # Field encryption key for sensitive model fields (e.g., SCMCredential.scm_pin_value)
 # Generate with: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
-# For testing, use a deterministic key; in production, use FIELD_ENCRYPTION_KEY env var
-FIELD_ENCRYPTION_KEY = os.environ.get(
+# Test/debug/build use a deterministic synthetic key; production must provide
+# FIELD_ENCRYPTION_KEY through the entrypoint secret-hydration path.
+FIELD_ENCRYPTION_KEY = required_runtime_env(
     "FIELD_ENCRYPTION_KEY",
-    # Test-only default - not used in production (FIELD_ENCRYPTION_KEY env var is required).
-    # Empty-string (not None) when neither env nor test mode applies so the
-    # type stays `str` for consumers like `cms.credential_encryption`. The
-    # production fail-closed check on the second FIELD_ENCRYPTION_KEY block
-    # below treats an empty string as "unset" and raises.
-    "VbMOEgh9VmS5lr0EsIS2sD9X1iy-Qd12i4kVZHdgPVE="  # NOSONAR - test-only key, not a production credential
-    if IS_TEST_RUN
-    else "",
+    dev_default="YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY=",  # NOSONAR - dev/test/build synthetic key
 )
 _csrf_origins = os.environ.get("DJANGO_CSRF_TRUSTED_ORIGINS", "")
 CSRF_TRUSTED_ORIGINS = [o.strip() for o in _csrf_origins.split(",") if o.strip()]
@@ -130,7 +129,6 @@ INSTALLED_APPS = [
     "cms.apps.CMSConfig",
     "management.apps.ManagementConfig",
     "shared.apps.SharedConfig",
-    "cms.experiments.apps.ExperimentsConfig",
     "ctf.apps.CtfConfig",
 ]
 
@@ -156,8 +154,6 @@ MIDDLEWARE = [
 
 # OIDC SessionRefresh middleware - only for the OIDC/Cognito auth path.
 if not DEBUG and AUTH_PROVIDER == "oidc":
-    if not (os.environ.get("OIDC_RP_CLIENT_ID") or IS_TEST_RUN):
-        raise ValueError("OIDC_RP_CLIENT_ID required in production (DEBUG=False)")
     MIDDLEWARE.append("mozilla_django_oidc.middleware.SessionRefresh")
 
 ROOT_URLCONF = "config.urls"
@@ -176,7 +172,6 @@ TEMPLATES = [
                 "mission_control.context_processors.active_range",
                 "mission_control.context_processors.terminal_cdn_assets",
                 "shared.context_processors.user_permissions",
-                "shared.context_processors.feature_flags",
                 "ctf.context_processors.ctf_navigation",
             ],
         },
@@ -203,13 +198,6 @@ CHANNEL_LAYERS = _build_channel_layers(os.environ)
 # "true" only once a real browser consumer, bounded fan-out, and scheduled pruning
 # exist. Non-secret boolean; absent env means disabled.
 WEBSOCKET_NOTIFICATIONS_ENABLED = _env_bool("WEBSOCKET_NOTIFICATIONS_ENABLED", False)
-
-# Experiments feature (cms/experiments) is half-built and not even alpha — its
-# command executor was never finished, so a run cannot complete on any cloud.
-# Off by default so the unfinished path can't launch a non-existent executor or
-# block deployment; URLs, nav, and the run-launch path are gated on this flag.
-# Revisit (build / redesign / remove) tracked in #1195.
-EXPERIMENTS_ENABLED = _env_bool("EXPERIMENTS_ENABLED", False)
 
 # Shared WebSocket notification replay bounds (issue #679).
 WEBSOCKET_NOTIFICATION_MAX_REPLAY = _env_int("WEBSOCKET_NOTIFICATION_MAX_REPLAY", 100)
@@ -267,6 +255,10 @@ TERMINAL_CONNECT_EXECUTOR_QUEUE_SLACK = _env_int("TERMINAL_CONNECT_EXECUTOR_QUEU
 CTF_SCHEDULER_STALE_TASK_MINUTES = _env_int("CTF_SCHEDULER_STALE_TASK_MINUTES", 120)
 
 from config._capacity_settings import *  # noqa: E402  # NOSONAR
+
+# CTF regex-flag safety tunables (issue #1183): pattern/submission length caps
+# and the per-match timeout that bound organizer-controlled regex evaluation.
+from config._ctf_regex_settings import *  # noqa: E402  # NOSONAR
 
 # Database and SECRET_KEY rotation settings (DATABASES, SECRET_KEY_FALLBACKS).
 # Split into config/_database_settings.py to keep this module under the S104
@@ -354,21 +346,6 @@ if not DEBUG:
 from config._oidc_settings import *  # noqa: E402  # NOSONAR
 
 # ------------------------------------------------------------------------------
-# Field Encryption (django-encrypted-model-fields)
-# ------------------------------------------------------------------------------
-# Used for encrypting sensitive credential fields (SCM PINs, authcodes)
-# Generate with: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
-# In production: stored in Secrets Manager alongside other platform secrets
-
-FIELD_ENCRYPTION_KEY = os.environ.get("FIELD_ENCRYPTION_KEY", "")
-if not FIELD_ENCRYPTION_KEY:
-    if DEBUG or IS_TEST_RUN:
-        # Dev/test default - not a production credential
-        FIELD_ENCRYPTION_KEY = "YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY="  # NOSONAR - dev/test-only key
-    else:
-        raise ValueError("FIELD_ENCRYPTION_KEY environment variable is required in production")
-
-# ------------------------------------------------------------------------------
 # Shifter Configuration
 # ------------------------------------------------------------------------------
 
@@ -443,6 +420,17 @@ GUACAMOLE_TOKEN_RETRY_ATTEMPTS = int(os.environ.get("GUACAMOLE_TOKEN_RETRY_ATTEM
 GUACAMOLE_TOKEN_RETRY_BASE_DELAY_MS = int(os.environ.get("GUACAMOLE_TOKEN_RETRY_BASE_DELAY_MS", "200"))
 
 # ------------------------------------------------------------------------------
+# Range event reconciliation (Phase 3, #476)
+# ------------------------------------------------------------------------------
+
+# Seconds a RangeInstance must remain in a non-terminal status without being
+# updated before the reconciler considers it stale and re-drives the projection.
+RANGE_RECONCILE_STALE_SECONDS: int = int(os.environ.get("RANGE_RECONCILE_STALE_SECONDS", "300"))
+
+# Maximum RangeInstance rows the reconciler processes per run (bounded batch).
+RANGE_RECONCILE_BATCH_SIZE: int = int(os.environ.get("RANGE_RECONCILE_BATCH_SIZE", "100"))
+
+# ------------------------------------------------------------------------------
 # CTF Configuration
 # ------------------------------------------------------------------------------
 
@@ -455,7 +443,6 @@ CTFD_PLATFORM_URL = os.environ.get("CTFD_PLATFORM_URL", "https://ctf.shifter.exa
 # Environment
 # ------------------------------------------------------------------------------
 
-ENVIRONMENT = require_environment()
 # Dev-auth admits the direct peer REMOTE_ADDR only (loopback + these CIDRs); Host is never trusted (SEC-3 #937).
 DEV_LOGIN_ALLOWED_CIDRS = _env_list("DEV_LOGIN_ALLOWED_CIDRS")
 # Trusted XFF proxy hops (single ALB -> 1); the audit source-IP resolver trusts that rightmost hop (SEC-4 #937).

@@ -239,6 +239,27 @@ class TestSSHConsumerDisconnect:
         assert consumer.ssh_conn is None
         assert consumer._session_acquired is False
 
+    @pytest.mark.asyncio
+    async def test_disconnect_audit_carries_close_reason_and_email(self, consumer):
+        """The disconnect audit event identifies the user and why the session ended.
+
+        The bounded ``_close_reason`` (set by the read loop on timeout/EOF)
+        appears in the audit context so a timeout is distinguishable from a plain
+        close, and the user email is attached to the session row.
+        """
+        consumer._user_id = 7
+        consumer._user_email = "operator@example.com"
+        consumer._close_reason = "idle_timeout"
+        consumer._audit_best_effort = AsyncMock()
+
+        await consumer.disconnect(close_code=1000)
+
+        consumer._audit_best_effort.assert_awaited_once()
+        kwargs = consumer._audit_best_effort.await_args.kwargs
+        assert kwargs["action"] == "disconnect"
+        assert kwargs["session"].email == "operator@example.com"
+        assert "idle_timeout" in kwargs["context"]
+
 
 class TestSSHConsumerReceive:
     """Tests for receive() input handling."""
@@ -344,3 +365,74 @@ class TestSSHConsumerReadOutput:
         await consumer._read_ssh_output()
 
         consumer.close.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_error_sets_error_close_reason(self, consumer):
+        """A read error records a bounded ``error`` close reason for audit."""
+        mock_ssh = AsyncMock()
+        mock_ssh.is_connected = True
+        mock_ssh.receive.side_effect = RuntimeError("Read failed")
+        consumer.ssh_conn = mock_ssh
+        consumer.instance_uuid = "test"
+
+        await consumer._read_ssh_output()
+
+        assert consumer._close_reason == "error"
+
+    @pytest.mark.asyncio
+    async def test_eof_sets_shell_eof_close_reason(self, consumer):
+        """Shell EOF records a bounded ``shell_eof`` close reason."""
+        mock_ssh = AsyncMock()
+        mock_ssh.receive = AsyncMock(return_value=None)
+        mock_ssh.at_eof = MagicMock(return_value=True)
+        type(mock_ssh).is_connected = property(lambda self: True)
+        consumer.ssh_conn = mock_ssh
+        consumer.instance_uuid = "test"
+
+        await consumer._read_ssh_output()
+
+        assert consumer._close_reason == "shell_eof"
+
+    @pytest.mark.asyncio
+    async def test_idle_timeout_sets_close_reason(self, consumer, settings):
+        """An idle session past the idle limit records ``idle_timeout``."""
+        settings.TERMINAL_IDLE_TIMEOUT_SECONDS = 0.01
+        settings.TERMINAL_MAX_SESSION_SECONDS = 0
+        settings.TERMINAL_READ_POLL_SECONDS = 0.05
+
+        async def slow_receive(*_args, **_kwargs):
+            await asyncio.sleep(0.05)
+            return None
+
+        mock_ssh = AsyncMock()
+        mock_ssh.receive = slow_receive
+        mock_ssh.at_eof = MagicMock(return_value=False)
+        type(mock_ssh).is_connected = property(lambda self: True)
+        consumer.ssh_conn = mock_ssh
+        consumer.instance_uuid = "test"
+
+        await consumer._read_ssh_output()
+
+        assert consumer._close_reason == "idle_timeout"
+
+    @pytest.mark.asyncio
+    async def test_max_duration_sets_close_reason(self, consumer, settings):
+        """A session past the max-duration limit records ``max_duration``."""
+        settings.TERMINAL_IDLE_TIMEOUT_SECONDS = 0
+        settings.TERMINAL_MAX_SESSION_SECONDS = 0.01
+        settings.TERMINAL_READ_POLL_SECONDS = 0.05
+
+        async def slow_receive(*_args, **_kwargs):
+            await asyncio.sleep(0.05)
+            return None
+
+        mock_ssh = AsyncMock()
+        mock_ssh.receive = slow_receive
+        mock_ssh.at_eof = MagicMock(return_value=False)
+        type(mock_ssh).is_connected = property(lambda self: True)
+        consumer.ssh_conn = mock_ssh
+        consumer.instance_uuid = "test"
+
+        await consumer._read_ssh_output()
+
+        assert consumer._close_reason == "max_duration"

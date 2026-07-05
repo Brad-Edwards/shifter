@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import logging
 import secrets
+from datetime import datetime, timedelta
+from typing import TYPE_CHECKING
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
@@ -21,6 +23,9 @@ from ctf.enums import (
 )
 
 from ._base import CTFBaseModel
+
+if TYPE_CHECKING:
+    from .event import CTFEvent
 
 logger = logging.getLogger(__name__)
 
@@ -378,18 +383,23 @@ class CTFParticipant(CTFBaseModel):
         if not self.invite_token:
             self.invite_token = secrets.token_urlsafe(32)
         if not self.invite_token_expires:
-            from datetime import timedelta
-
-            from django.conf import settings
-
-            hours = getattr(settings, "MAGIC_LINK_EXPIRY_HOURS", 24)
-            config_expiry = timezone.now() + timedelta(hours=hours)
-            if hasattr(self, "event") and self.event_id and self.event.event_end:
-                # Use the earlier of event end or configured expiry
-                self.invite_token_expires = min(self.event.event_end, config_expiry)
-            else:
-                self.invite_token_expires = config_expiry
+            event = self.event if hasattr(self, "event") and self.event_id else None
+            self.invite_token_expires = self.default_invite_token_expiry(event)
         super().save(*args, **kwargs)
+
+    @staticmethod
+    def default_invite_token_expiry(event: CTFEvent | None, *, now: datetime | None = None) -> datetime:
+        """Return the default expiry for a participant magic-link token."""
+        current_time = now or timezone.now()
+        if event and event.event_end:
+            event_max_hours = getattr(settings, "MAGIC_LINK_EVENT_MAX_EXPIRY_HOURS", None)
+            if event_max_hours is not None:
+                event_max_expiry = current_time + timedelta(hours=event_max_hours)
+                return min(event.event_end, event_max_expiry)
+            return event.event_end
+
+        hours = getattr(settings, "MAGIC_LINK_EXPIRY_HOURS", 24)
+        return current_time + timedelta(hours=hours)
 
     def clean(self) -> None:
         """Validate participant data."""

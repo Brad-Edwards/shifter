@@ -7,7 +7,6 @@ from django.shortcuts import get_object_or_404, redirect, render
 
 from risk_register.decorators import risk_register_access_required
 from risk_register.models import (
-    APIKey,
     AuditLog,
     Comment,
     Risk,
@@ -19,7 +18,6 @@ from risk_register.models import (
 # SonarCloud S1192: extracted duplicated string literals.
 RISK_FORM_TEMPLATE = "risk_register/risk_form.html"
 RISK_DETAIL_URL = "risk_register:risk_detail"
-APIKEY_LIST_URL = "risk_register:apikey_list"
 
 
 def _get_user_id(request: HttpRequest) -> int:
@@ -383,77 +381,6 @@ def comment_delete(request: HttpRequest, risk_pk: int, pk: int) -> HttpResponse:
         messages.success(request, "Comment deleted.")
 
     return redirect(RISK_DETAIL_URL, pk=risk_pk)
-
-
-@risk_register_access_required
-def apikey_list(request: HttpRequest) -> HttpResponse:
-    """List API keys for the current user."""
-    # Show all keys for staff, own keys for regular users
-    keys = APIKey.objects.all() if request.user.is_staff else APIKey.objects.filter(created_by=_get_user(request))
-
-    context = {
-        "keys": keys,
-        "is_admin": request.user.is_staff,
-        "active_nav": "risks",
-    }
-    return render(request, "risk_register/apikey_list.html", context)
-
-
-@risk_register_access_required
-def apikey_create(request: HttpRequest) -> HttpResponse:
-    """Create a new API key."""
-    if request.method == "POST":
-        name = request.POST.get("name", "").strip()
-
-        if not name:
-            messages.error(request, "Key name is required.")
-            return redirect(APIKEY_LIST_URL)
-
-        api_key, raw_key = APIKey.create_key(name=name, created_by=request.user)
-
-        AuditLog.log(
-            entity_type=AuditLog.EntityType.APIKEY,
-            entity_id=api_key.id,
-            action=AuditLog.Action.CREATE,
-            actor_type=AuditLog.ActorType.USER,
-            actor_id=_get_user_id(request),
-            new_state={"name": name, "prefix": api_key.prefix},
-        )
-
-        # Show the raw key once
-        context = {
-            "api_key": api_key,
-            "raw_key": raw_key,
-            "show_key": True,
-            "active_nav": "risks",
-        }
-        return render(request, "risk_register/apikey_list.html", context)
-
-    return redirect(APIKEY_LIST_URL)
-
-
-@risk_register_access_required
-def apikey_revoke(request: HttpRequest, pk: int) -> HttpResponse:
-    """Revoke an API key."""
-    if request.user.is_staff:
-        api_key = get_object_or_404(APIKey, pk=pk)
-    else:
-        api_key = get_object_or_404(APIKey, pk=pk, created_by=_get_user(request))
-
-    if request.method == "POST":
-        api_key.revoke()
-
-        AuditLog.log(
-            entity_type=AuditLog.EntityType.APIKEY,
-            entity_id=api_key.id,
-            action=AuditLog.Action.DELETE,
-            actor_type=AuditLog.ActorType.USER,
-            actor_id=_get_user_id(request),
-        )
-
-        messages.success(request, f"API key '{api_key.name}' revoked.")
-
-    return redirect(APIKEY_LIST_URL)
 
 
 def _risk_to_dict(risk: Risk) -> dict:

@@ -1,6 +1,6 @@
 """Behavior tests for CMS event handlers.
 
-The CMS handlers consume range/ngfw/experiment events published by the Engine
+The CMS handlers consume range/ngfw events published by the Engine
 and update real CMS rows: ``process_range_event`` updates ``RangeInstance`` and
 fires the ``range_status_changed`` signal (the CTF decoupling bridge);
 ``process_event`` routes by event-type prefix. These tests drive the handlers
@@ -10,7 +10,6 @@ the persisted effect (and the real signal firing), instead of patching
 """
 
 import json
-import logging
 from uuid import uuid4
 
 import pytest
@@ -98,18 +97,6 @@ class TestProcessEventRouting:
         app.refresh_from_db()
         assert instance.status == ResourceStatus.READY.value
         assert app.status == ResourceStatus.READY.value
-
-    def test_routes_experiment_events_to_experiments_handler(self, user, caplog):
-        """An experiment.* event reaches the experiments handler.
-
-        Driven without first-party mocks: an ``experiment.start`` event with no
-        ``experiment_id`` is rejected by the experiments handler's own
-        validation, which logs the rejection — proving the dispatcher routed the
-        message into ``cms.experiments.handlers`` rather than anywhere else.
-        """
-        with caplog.at_level(logging.WARNING, logger="cms.experiments.handlers"):
-            process_event(_sns({"event_type": "experiment.start"}))
-        assert "experiment.start" in caplog.text
 
     def test_ignores_unknown_event_types(self, user):
         ri = _range_instance(user, range_id=2)

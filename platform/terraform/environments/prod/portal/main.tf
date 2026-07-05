@@ -389,9 +389,11 @@ module "redis" {
   # the portal CMK. is_active_channel_backend rejects a live channel layer on
   # the plaintext single-node path. redis_at_rest_kms_key_arn is the dedicated
   # data-at-rest CMK for the replication group (#1059).
-  secrets_kms_key_arn       = aws_kms_key.secrets_manager.arn
-  redis_at_rest_kms_key_arn = aws_kms_key.redis_at_rest.arn
-  is_active_channel_backend = var.enable_redis
+  secrets_kms_key_arn         = aws_kms_key.secrets_manager.arn
+  redis_at_rest_kms_key_arn   = aws_kms_key.redis_at_rest.arn
+  cloudwatch_logs_kms_key_arn = aws_kms_key.cloudwatch_logs.arn
+  permissions_boundary_arn    = local.ci_role_permissions_boundary_arn
+  is_active_channel_backend   = var.enable_redis
 
   # Automatic Redis AUTH rotation (#159): only where the portal runs on a
   # refreshable ASG, so the rotation Lambda can roll consumers to the new token.
@@ -659,6 +661,7 @@ module "ec2" {
   sqs_queue_arns  = values(module.messaging.sqs_queue_arns)
   sqs_queue_urls  = module.messaging.sqs_queue_urls
   sqs_kms_key_arn = module.messaging.kms_key_arn
+  s3_kms_key_arn  = aws_kms_key.portal_s3.arn
 
   # Parameter Store prefix for user_data bootstrap
   ssm_parameter_store_prefix = module.ssm.parameter_store_prefix
@@ -861,6 +864,7 @@ module "engine_provisioner" {
   agent_s3_bucket_arn       = module.s3.bucket_arn
   s3_endpoint_id            = try(data.terraform_remote_state.range.outputs.s3_endpoint_id, "")
   firewall_endpoint_id      = data.terraform_remote_state.range.outputs.firewall_endpoint_id != null ? data.terraform_remote_state.range.outputs.firewall_endpoint_id : ""
+  range_egress_mode         = try(data.terraform_remote_state.range.outputs.range_egress_mode, "allowlist")
   ssm_endpoints_subnet_cidr = try(data.terraform_remote_state.range.outputs.ssm_endpoints_subnet_cidr, "")
 
   # Portal VPC configuration (for terminal SSH routing)

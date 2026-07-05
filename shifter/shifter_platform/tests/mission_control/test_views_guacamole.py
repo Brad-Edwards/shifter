@@ -15,7 +15,6 @@ first-party patching) and unchanged.
 from __future__ import annotations
 
 import json
-import time
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
@@ -432,6 +431,7 @@ class TestGuacamoleSSHURL:
         ``/health`` on the same worker are unaffected).
         """
         import threading
+        from concurrent.futures import ThreadPoolExecutor
 
         from mission_control.views import guacamole_ssh_url
 
@@ -444,34 +444,50 @@ class TestGuacamoleSSHURL:
 
         def stalled_fetch(**_kwargs):
             reached_secrets.set()
-            release.wait(timeout=5)
+            release.wait(timeout=10)
             return {"SecretString": "TEST-SSH-PRIVATE-KEY-MATERIAL"}
+
+        # Capture the worker Future the bootstrap pool returns so the test can
+        # block on its completion deterministically, rather than polling the DB
+        # against a fixed wall-clock deadline (the poll flaked when the pool
+        # thread was CPU-starved under parallel test load). Patching the stdlib
+        # executor's submit is a concurrency-boundary mock, not a first-party seam.
+        submitted_futures: list = []
+        real_submit = ThreadPoolExecutor.submit
+
+        def _capturing_submit(self, fn, /, *args, **kwargs):
+            future = real_submit(self, fn, *args, **kwargs)
+            submitted_futures.append(future)
+            return future
 
         client = MagicMock()
         client.get_secret_value.side_effect = stalled_fetch
 
         try:
-            with patch("boto3.client", return_value=client), guac_exchange():
+            with (
+                patch("boto3.client", return_value=client),
+                patch.object(ThreadPoolExecutor, "submit", _capturing_submit),
+                guac_exchange(),
+            ):
                 response = guacamole_ssh_url(request)
 
                 # Request returned promptly without waiting on the stalled fetch.
                 assert response.status_code == 202
                 # The worker independently reached the Secrets Manager boundary
                 # and is blocked there — i.e. the fetch is off the request path.
-                assert reached_secrets.wait(timeout=5)
+                assert reached_secrets.wait(timeout=10)
                 release.set()
 
                 from mission_control.models import GuacamoleBootstrapRequest
 
+                # Deterministic wait: block until the worker actually finishes,
+                # then assert the persisted outcome. The timeout is only a
+                # deadlock guard, never the success-path timing.
+                assert submitted_futures, "expected a bootstrap worker to be submitted"
+                for future in submitted_futures:
+                    future.result(timeout=30)
+
                 bootstrap = GuacamoleBootstrapRequest.objects.get(pk=_json(response)["request_id"])
-                deadline = time.time() + 5
-                active_statuses = (
-                    GuacamoleBootstrapRequest.Status.PENDING,
-                    GuacamoleBootstrapRequest.Status.RUNNING,
-                )
-                while bootstrap.status in active_statuses and time.time() < deadline:
-                    time.sleep(0.05)
-                    bootstrap.refresh_from_db()
                 assert bootstrap.status == GuacamoleBootstrapRequest.Status.SUCCEEDED
         finally:
             release.set()

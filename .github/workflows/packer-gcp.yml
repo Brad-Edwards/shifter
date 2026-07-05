@@ -101,7 +101,6 @@ jobs:
           GCP_PACKER_MACHINE_TYPE: ${{ vars.GCP_PACKER_MACHINE_TYPE || 'e2-standard-2' }}
           GCP_PACKER_USE_INTERNAL_IP: ${{ vars.GCP_PACKER_USE_INTERNAL_IP || 'false' }}
           GCP_SERVICE_ACCOUNT: ${{ secrets.GCP_SERVICE_ACCOUNT }}
-          GCP_KALI_SOURCE_IMAGE: ${{ secrets.GCP_KALI_SOURCE_IMAGE }}
         run: |
           if [ -z "${GCP_PROJECT_ID}" ]; then
             echo "::error::Required secret GCP_PROJECT_ID is not set. See docs/dev/deploy-secrets.md."
@@ -123,14 +122,9 @@ jobs:
             echo "PKR_VAR_machine_type=${GCP_PACKER_MACHINE_TYPE}"
             echo "PKR_VAR_use_internal_ip=${GCP_PACKER_USE_INTERNAL_IP}"
           } >> "$GITHUB_ENV"
-          # Kali has no public GCP image — it needs an operator-imported base.
-          if [ "${IMAGE_TYPE}" = "kali" ]; then
-            if [ -z "${GCP_KALI_SOURCE_IMAGE}" ]; then
-              echo "::error::Building kali needs secret GCP_KALI_SOURCE_IMAGE (an imported Kali GCE image). See shifter/packer/gcp/README.md."
-              exit 1
-            fi
-            echo "PKR_VAR_kali_source_image=${GCP_KALI_SOURCE_IMAGE}" >> "$GITHUB_ENV"
-          fi
+          # Kali has no public GCP image; the kali builder instead converts the
+          # debian-12 GCE base into Kali Rolling in its first provisioning script
+          # (no imported base image, so no source-image secret is required).
 
       - name: Generate WinRM bootstrap secret (Windows/DC only)
         if: inputs.image_type == 'windows' || inputs.image_type == 'dc'
@@ -163,6 +157,58 @@ jobs:
             echo "- **Family:** \`shifter-${IMAGE_TYPE}\` (consumers resolve newest in family)"
             echo ""
             echo "**Next step:** Verify in ${{ inputs.environment }} before promoting to prod."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # The packer build publishes a GCE image (the AWS-AMI analog). The GDC VM
+      # Runtime cannot consume a GCE image family directly - it imports a disk
+      # from a gs:// source - so export the built image to the GDC VM image
+      # bucket as a qcow2 the range provisioner references via GDC_*_IMAGE_URL.
+      - name: Export image to GCS for the GDC VM Runtime
+        working-directory: shifter/packer/gcp
+        env:
+          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          GCP_GDC_VM_IMAGE_BUCKET: ${{ vars.GCP_GDC_VM_IMAGE_BUCKET }}
+          GCP_REGION: ${{ vars.GCP_REGION || 'us-central1' }}
+          GCP_PACKER_ZONE: ${{ vars.GCP_PACKER_ZONE }}
+          GCP_PACKER_SUBNETWORK: ${{ vars.GCP_PACKER_SUBNETWORK }}
+          GCP_PACKER_SERVICE_ACCOUNT: ${{ vars.GCP_PACKER_SERVICE_ACCOUNT }}
+          GCP_SERVICE_ACCOUNT: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+        run: |
+          if [ -z "${GCP_GDC_VM_IMAGE_BUCKET}" ]; then
+            echo "::error::Required variable GCP_GDC_VM_IMAGE_BUCKET (the GDC VM Runtime image bucket) is not set. See docs/dev/deploy-secrets.md."
+            exit 1
+          fi
+          IMAGE_NAME=$(jq -r '.builds[-1].artifact_id' "${IMAGE_TYPE}-manifest.json")
+          ZONE="${GCP_PACKER_ZONE:-${GCP_REGION}-a}"
+          DEST="gs://${GCP_GDC_VM_IMAGE_BUCKET}/${IMAGE_TYPE}.qcow2"
+          # The export runs as a Cloud Build job that spins up a daisy worker VM.
+          # Pin BOTH identities to the build SA: --cloudbuild-service-account so
+          # the build itself runs as our least-priv SA (this project's builds
+          # otherwise default to the Compute Engine default SA, which the build
+          # SA has no actAs on), and --compute-service-account so the worker VM
+          # runs as the same SA. Pin the worker to the internal-IP builder subnet
+          # so it complies with the compute.vmExternalIpAccess org policy.
+          BUILD_SA="${GCP_PACKER_SERVICE_ACCOUNT:-${GCP_SERVICE_ACCOUNT}}"
+          # A user-managed Cloud Build SA can't write to the default
+          # gs://<projnum>.cloudbuild-logs bucket, so --log-location is required
+          # alongside --cloudbuild-service-account. Point it at the image bucket,
+          # where the build SA already holds storage.objectAdmin.
+          gcloud compute images export \
+            --image="${IMAGE_NAME}" \
+            --destination-uri="${DEST}" \
+            --export-format=qcow2 \
+            --project="${GCP_PROJECT_ID}" \
+            --zone="${ZONE}" \
+            ${GCP_PACKER_SUBNETWORK:+--subnet="${GCP_PACKER_SUBNETWORK}"} \
+            --cloudbuild-service-account="${BUILD_SA}" \
+            --compute-service-account="${BUILD_SA}" \
+            --log-location="gs://${GCP_GDC_VM_IMAGE_BUCKET}/export-logs"
+          GDC_VAR="GDC_$(echo "${IMAGE_TYPE}" | tr '[:lower:]' '[:upper:]')_IMAGE_URL"
+          {
+            echo "## GDC VM Runtime disk exported"
+            echo "- **Image:** \`${IMAGE_NAME}\`"
+            echo "- **Disk:** \`${DEST}\`"
+            echo "- **Wire as:** \`${GDC_VAR}=${DEST}\` (see docs/architecture/gcp-guest-images.md)"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload manifest

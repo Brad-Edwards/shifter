@@ -60,6 +60,7 @@ def _string_list(raw: object) -> list[str]:
     return [str(item).strip() for item in raw if str(item).strip()]
 
 
+_CONSOLE_EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
 _MAILGUN_EMAIL_BACKEND = "anymail.backends.mailgun.EmailBackend"
 
 
@@ -67,8 +68,8 @@ def _email_runtime_values(outputs: dict[str, object]) -> dict[str, str]:
     """Optional transactional-email runtime env for GCP (PLAT-002, #671).
 
     Email is **optional**: when no ``email_config`` Terraform output is present
-    the portal falls back to the console backend (``config/_email.py``). When
-    the output *is* present it must be complete — ``backend`` and
+    the runtime explicitly selects the console backend. When the output *is*
+    present it must be complete — ``backend`` and
     ``api_key_secret_id`` are both required — so a half-configured deployment
     fails at render time rather than silently dropping mail.
 
@@ -80,7 +81,7 @@ def _email_runtime_values(outputs: dict[str, object]) -> dict[str, str]:
     raw = outputs.get("email_config")
     config = raw.get("value") if isinstance(raw, dict) else None
     if not isinstance(config, dict) or not config:
-        return {}
+        return {"EMAIL_BACKEND": _CONSOLE_EMAIL_BACKEND}
 
     backend = str(config.get("backend", "")).strip()
     secret_id = str(config.get("api_key_secret_id", "")).strip()
@@ -192,8 +193,6 @@ def render_env(outputs: dict[str, object], *, image_tag: str) -> str:
         "QUEUE_ENGINE_PUBLISHER_ID": topic_id,
         "QUEUE_MC_CONSUMER_ID": subscriptions["mc"],
         "QUEUE_MC_PUBLISHER_ID": topic_id,
-        "QUEUE_EXPERIMENTS_CONSUMER_ID": subscriptions["experiments"],
-        "QUEUE_EXPERIMENTS_PUBLISHER_ID": topic_id,
         "DB_SECRET_ID": secret_ids["db"],
         "APP_SECRET_ID": secret_ids["app"],
         "GUACAMOLE_SECRET_ID": secret_ids["guacamole-json-auth"],

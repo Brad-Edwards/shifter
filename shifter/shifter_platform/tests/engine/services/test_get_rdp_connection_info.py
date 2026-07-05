@@ -201,3 +201,76 @@ def patch_env(env):
     from unittest.mock import patch
 
     return patch.dict(os.environ, env, clear=True)
+
+
+class TestGetRdpConnectionInfoMultiRange:
+    """get_rdp_connection_info resolves the correct range when a user holds two (#450)."""
+
+    def test_resolves_correct_range_with_two_active_ranges(self, settings, user):
+        """With MC and CTF ranges active, the UUID selects the right range."""
+        from engine.services import get_rdp_connection_info
+
+        settings.CLOUD_PROVIDER = "aws"
+        mc_instance = {
+            "uuid": "mc-rdp-uuid",
+            "role": "victim",
+            "os_type": "kali",
+            "cloud_provider": "aws",
+            "private_ip": "10.0.0.10",
+            "rdp_password_secret_arn": "arn:aws:secretsmanager:us-east-2:1:secret:mc-victim-rdp",
+        }
+        ctf_instance = {
+            "uuid": "ctf-rdp-uuid",
+            "role": "victim",
+            "os_type": "kali",
+            "cloud_provider": "aws",
+            "private_ip": "10.0.0.20",
+            "rdp_password_secret_arn": "arn:aws:secretsmanager:us-east-2:1:secret:ctf-victim-rdp",
+        }
+        # Two simultaneous active ranges for the same user.
+        Range.objects.create(user=user, status=Range.Status.READY, provisioned_instances=[mc_instance])
+        Range.objects.create(user=user, status=Range.Status.READY, provisioned_instances=[ctf_instance])
+
+        client = make_secrets_client(value="CorrectPass!")
+        with boto3_secrets(client):
+            result = get_rdp_connection_info(user, "ctf-rdp-uuid")
+
+        assert result["private_ip"] == "10.0.0.20"
+
+    def test_raises_not_found_when_uuid_not_in_any_active_range(self, settings, user):
+        """A UUID absent from the user's active range(s) raises 'not found in range' (#450).
+
+        The user has an active range but it does not contain the UUID, so the
+        authored message stays 'Instance ... not found in range' (distinct from
+        'No active range found', which means no active range exists at all).
+        """
+        from engine.services import get_rdp_connection_info
+
+        settings.CLOUD_PROVIDER = "aws"
+        instance = {
+            "uuid": "present-rdp-uuid",
+            "role": "victim",
+            "os_type": "kali",
+            "cloud_provider": "aws",
+            "private_ip": "10.0.0.10",
+            "rdp_password_secret_arn": "arn:aws:secretsmanager:us-east-2:1:secret:victim-rdp",
+        }
+        Range.objects.create(user=user, status=Range.Status.READY, provisioned_instances=[instance])
+        with pytest.raises(ValueError, match="not found in range"):
+            get_rdp_connection_info(user, "absent-rdp-uuid")
+
+    def test_raises_not_ready_for_non_ready_range_resolved_by_uuid(self, settings, user):
+        """If the range resolved by UUID is not READY, raises 'Range is not ready'."""
+        from engine.services import get_rdp_connection_info
+
+        settings.CLOUD_PROVIDER = "aws"
+        instance = {
+            "uuid": "provisioning-rdp-uuid",
+            "role": "victim",
+            "os_type": "kali",
+            "cloud_provider": "aws",
+            "private_ip": "10.0.0.10",
+        }
+        Range.objects.create(user=user, status=Range.Status.PROVISIONING, provisioned_instances=[instance])
+        with pytest.raises(ValueError, match="not ready"):
+            get_rdp_connection_info(user, "provisioning-rdp-uuid")

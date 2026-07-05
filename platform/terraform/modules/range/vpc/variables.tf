@@ -65,6 +65,14 @@ variable "victim_allowed_domains" {
   ]
 }
 
+variable "range_dns_allowed_domains" {
+  description = "Additional domain suffixes the in-VPC Route 53 Resolver DNS Firewall may answer beyond victim_allowed_domains (bootstrap/service names only)."
+  type        = list(string)
+  default = [
+    ".amazonaws.com",
+  ]
+}
+
 variable "victim_allowed_cidrs" {
   # Implementation detail for the platform-level PLAT-220 range egress allowlist.
   # The public surface is `settings.range_egress.allowed_cidrs` in shifter.yaml

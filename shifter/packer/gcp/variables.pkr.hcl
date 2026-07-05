@@ -50,18 +50,6 @@ variable "use_internal_ip" {
   DESC
 }
 
-variable "kali_source_image" {
-  type        = string
-  description = <<-DESC
-    Full self-link or name of an operator-imported Kali Linux GCE image. GCP has
-    no public Kali image project (unlike the AWS Marketplace path), so the Kali
-    builder consumes an image you import first (e.g. via `gcloud compute images
-    import`). Leave empty when not building Kali; the kali build fails loud if it
-    is empty. See shifter/packer/gcp/README.md.
-  DESC
-  default     = ""
-}
-
 variable "winrm_bootstrap_password" {
   type        = string
   sensitive   = true

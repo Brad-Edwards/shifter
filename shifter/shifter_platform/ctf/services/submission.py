@@ -6,8 +6,8 @@ Provides business logic for flag submission and scoring.
 from __future__ import annotations
 
 import logging
-from datetime import timedelta
-from typing import TYPE_CHECKING
+from datetime import datetime, timedelta
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 from django.db import IntegrityError, transaction
@@ -198,10 +198,11 @@ def submit_flag(
     # a programmable/http flag check can be slow or make an outbound call, and we
     # must not hold the lock across it. These reads do not mutate state.
     from ctf.services.hint import get_total_hint_penalty
+    from ctf.services.scoring import calculate_solve_points
 
     total_hint_penalty = get_total_hint_penalty(participant.id, challenge.id)
     is_correct = verify_flag(challenge, submitted_flag.strip())
-    points = challenge.calculate_points_with_penalty(total_hint_penalty) if is_correct else 0
+    points = calculate_solve_points(event, challenge, total_hint_penalty) if is_correct else 0
     if is_correct:
         logger.info(
             "Correct flag submitted: participant=%s, challenge=%s, points=%d",
@@ -290,6 +291,46 @@ def get_participant_submissions(
         qs = qs.filter(challenge_id=challenge_id)
 
     return qs.select_related("challenge").order_by("-submitted_at")
+
+
+def get_participant_solve_history(
+    participant_id: UUID,
+    freeze_at: datetime | None = None,
+) -> list[dict[str, Any]]:
+    """Participant-safe correct-solve history for scoreboard row drill-down.
+
+    Returns only *correct* submissions, newest first, projected to non-secret
+    fields: challenge name, category, points awarded, and solve time. The
+    submitted flag, attempt IP address, and incorrect-attempt details are
+    deliberately excluded so this projection is safe to render on a
+    participant-visible surface (issue #521 / CTF-401). Ranking and tie-break
+    semantics (CTF-406) stay in ``ctf.services.scoring``; this is a display
+    read only.
+
+    Args:
+        participant_id: UUID of the participant whose solves to return.
+        freeze_at: When set, solves submitted at or after this cutoff are
+            excluded so the drill-down matches the frozen scoreboard's
+            visibility. Pass ``None`` (organizer view, or an unfrozen board)
+            to return the full correct-solve history.
+
+    Returns:
+        List of dicts with ``challenge_name``, ``category``, ``points``, and
+        ``solved_at`` (ISO-8601), ordered newest solve first.
+    """
+    solves = CTFSubmission.objects.filter(participant_id=participant_id, is_correct=True)
+    if freeze_at is not None:
+        solves = solves.filter(submitted_at__lt=freeze_at)
+    solves = solves.select_related("challenge").order_by("-submitted_at")
+    return [
+        {
+            "challenge_name": solve.challenge.name,
+            "category": solve.challenge.category,
+            "points": solve.points_awarded,
+            "solved_at": solve.submitted_at.isoformat(),
+        }
+        for solve in solves
+    ]
 
 
 def get_challenge_submissions(challenge_id: UUID) -> QuerySet[CTFSubmission]:
