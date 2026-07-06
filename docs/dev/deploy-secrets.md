@@ -448,6 +448,26 @@ guacamole_autoscaling_max_capacity = 10
 guacamole_autoscaling_cpu_target   = 60
 ```
 
+> **Keep the dev overlay minimal unless an event needs it.**
+> `TF_VARS_DEV_PORTAL` is the *only* place the running dev fleet size is set:
+> the committed `terraform.tfvars` is a fail-loud baseline that this secret
+> always overrides, and no script derives or reconciles these values; edit the
+> secret by hand (`gh secret set TF_VARS_DEV_PORTAL < payload.tfvars`). The
+> overlay above is *event-sized*. Left in place between events it makes every
+> deploy run a full multi-instance ASG instance refresh (desired + warm pool ≈
+> a dozen instances, roughly an hour) and holds prod-class RDS/Redis/Guacamole
+> capacity. For ordinary dev, keep the ASG at a single instance with a minimal
+> warm pool and shrink the DB/Redis/Guacamole lines to match:
+>
+> ```hcl
+> asg_min_size           = 1
+> asg_max_size           = 2
+> asg_desired_capacity   = 1
+> asg_warm_pool_min_size = 1
+> ```
+>
+> Apply the event-sized overlay only for the duration of an event, then revert.
+
 ```sh
 # GCP gcp-dev
 cat > platform/terraform/gcp/environments/gcp-dev/local.auto.tfvars <<EOF
