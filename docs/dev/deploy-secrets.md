@@ -11,13 +11,42 @@ alongside the baseline (the `.local`/`.auto` overrides win).
 This file lists values that must be configured before a fresh deploy. Set values
 under **Settings → Secrets and variables → Actions**, separated by:
 
-- **Secrets** — sensitive (project IDs, public keys with identifying
+- **Secrets**: sensitive (project IDs, public keys with identifying
   comments, alarm email addresses, allow-list domains for self-signup,
   CIDR blocks for operator access).
-- **Variables** — non-sensitive deployment parameters (region selection,
+- **Variables**: non-sensitive deployment parameters (region selection,
   feature flags).
 
 Required values are enforced by the workflow preflight step.
+
+## Populating and syncing the secrets
+
+The `TF_VARS_<ENV>_PORTAL` / `_RANGE` / `_CORE` and `SHIFTER_CONFIG_<ENV>_RANGE`
+/ `SHIFTER_CONFIG_GCP_DEV` entries are whole-file payloads. Operators keep the
+same values as gitignored `local.auto.tfvars` overlays (also used for local
+`terraform` and symlinked into worktrees by `scripts/setup-worktree.sh`) and a
+deployment `shifter.yaml`. `scripts/sync-deploy-secrets.sh` pushes those local
+files into the matching GitHub secrets with `gh secret set`, so the secret and
+the local overlay stay in step instead of the secret being hand-edited in the
+GitHub UI:
+
+```sh
+# Preview what would be set (no writes):
+scripts/sync-deploy-secrets.sh --env dev --dry-run
+
+# Sync the dev tfvars overlays (portal, range, core):
+scripts/sync-deploy-secrets.sh --env dev
+
+# Include the SHIFTER_CONFIG_* payloads rendered from a shifter.yaml:
+scripts/sync-deploy-secrets.sh --env dev --stack config --shifter-config ./shifter.yaml
+```
+
+The script fails loud when a selected overlay file is missing and never prints
+secret contents. `scripts/bootstrap` still owns the one-time `AWS_ROLE_ARN_*`
+and `TF_INFRA_STATE_BUCKET` secrets; this script owns the recurring per-env
+tfvars/config payloads. Run it after editing an overlay (for example, after
+changing the ASG capacity in a portal overlay) so the next deploy picks up the
+new values rather than a stale secret.
 
 ## GCP (gcp-dev)
 
@@ -27,9 +56,9 @@ Consumed by `.github/workflows/_gcp-dev.yml`.
 |---|---|---|---|
 | `GCP_PROJECT_ID` | secret | yes | The Google Cloud project the platform deploys to. |
 | `GCP_REGION` | variable | no | Default `us-central1`. |
-| `GCP_PUBLIC_HOSTNAME` | secret | yes | DNS name the platform serves on (e.g., `shifter.your-domain.example`). |
+| `GCP_PUBLIC_HOSTNAME` | secret | yes | DNS name the platform serves on (for example, `shifter.your-domain.example`). |
 | `GCP_IDENTITY_ALLOWED_EMAIL_DOMAIN` | secret | yes | Identity Platform beforeCreate allow-list; the bootstrap operator must end with `@<this>` for sign-in to succeed. |
-| `GCP_MASTER_AUTHORIZED_CIDRS` | secret | no | HCL list literal — e.g. `["1.2.3.4/32"]`. Empty (`[]`) locks the GKE control-plane to private endpoints only. |
+| `GCP_MASTER_AUTHORIZED_CIDRS` | secret | no | HCL list literal, for example `["1.2.3.4/32"]`. Empty (`[]`) locks the GKE control-plane to private endpoints only. |
 | `GCP_SERVICE_ACCOUNT` | secret | yes | Workload-identity-federation service account for deploy. |
 | `GCP_WORKLOAD_IDENTITY_PROVIDER` | secret | yes | Workload identity provider resource id. |
 | `GCP_BOOTSTRAP_ADMIN_EMAIL` | secret | no | If set, bootstrap creates this user as the first Identity Platform operator and elevates them in Django. Must match `GCP_IDENTITY_ALLOWED_EMAIL_DOMAIN`. |
@@ -73,7 +102,7 @@ committed.
 Consumed by `.github/workflows/_shifter-platform.yml`. The committed
 `platform/terraform/environments/<env>/portal/terraform.tfvars` is an
 `example.com` baseline. The workflow's `Render local.auto.tfvars from
-deployment secret` step — present in both the `plan` and `apply` jobs —
+deployment secret` step, present in both the `plan` and `apply` jobs,
 writes the real per-deployment values into a gitignored
 `local.auto.tfvars` before Terraform runs, so deploys never plan or apply
 against the baseline. The step picks the secret by environment and fails
@@ -85,15 +114,15 @@ loud (`::error::`) when the active environment's secret is empty.
 | `TF_VARS_DEV_PORTAL` | secret | yes (dev) | Whole-file `local.auto.tfvars` payload for the dev portal root, rendered verbatim over the committed baseline before `terraform plan` / `apply`. |
 | `TF_VARS_PROD_PORTAL` | secret | yes (prod) | As above, for the prod portal root. |
 
-The `TF_VARS_<ENV>_PORTAL` secret holds plain Terraform HCL — the same
+The `TF_VARS_<ENV>_PORTAL` secret holds plain Terraform HCL, the same
 content you would put in a `local.auto.tfvars`. At minimum it must set the
 values the `example.com` baseline deliberately leaves non-operational:
 
 - `domain_name`, `ses_domain`, `ctfd_domain`, `ctf_from_email`
 - `alarm_email`
-- `allowed_email_domains` (deliberately empty in the baseline — fails
+- `allowed_email_domains` (deliberately empty in the baseline, fails
   closed)
-- `ctfd_ssh_public_key`, `ctfd_ssh_allowed_cidrs` (empty in baseline —
+- `ctfd_ssh_public_key`, `ctfd_ssh_allowed_cidrs` (empty in baseline,
   CTFd SSH ingress closed)
 - `user_storage_bucket` and any other AWS-account-suffixed bucket names
   that vary per environment
@@ -260,9 +289,9 @@ matching whole-file secret into `local.auto.tfvars`, and fails loud
 At minimum, each `TF_VARS_<ENV>_RANGE` payload must set the deployment-specific
 values stripped from the committed baseline:
 
-- `agent_s3_bucket` — the account-specific user-storage bucket read by range
+- `agent_s3_bucket`: the account-specific user-storage bucket read by range
   instance roles
-- `vm_series_ami_id` — the regional PAN-OS Marketplace AMI to use. This is
+- `vm_series_ami_id`: the regional PAN-OS Marketplace AMI to use. This is
   deployment configuration, not a credential; keep it in the overlay so the
   shared repo does not prescribe a marketplace version/region for every
   deployment.
