@@ -32,7 +32,7 @@ def subnetwork_resource(plan: RangeCellPlan, subnet: SubnetPlan) -> ComputeResou
         "network": subnet["network_link"],
         "ipCidrRange": subnet["cidr"],
         "region": plan["region"],
-        "privateIpGoogleAccess": False,
+        "privateIpGoogleAccess": plan["private_google_access"],
         "labels": plan["labels"],
     }
 
@@ -95,7 +95,13 @@ def instance_resource(
             "role": _label_value(instance["role"]),
         },
         "tags": {"items": instance["tags"]},
-        "metadata": {"items": _metadata_items(config, instance["ssh_username"], ssh_public_key)},
+        # Install the provisioned key for the host OS login user the provisioner
+        # drives (host_ssh_username), not the participant-facing user. For a
+        # Docker-host guest the participant user (e.g. "kali") belongs to the
+        # published container, whose authorized_keys the range bootstrap sets;
+        # the host OS user (e.g. "ubuntu") is what guest setup connects as. For
+        # native guests the two are identical.
+        "metadata": {"items": _metadata_items(config, instance["host_ssh_username"], ssh_public_key)},
         "networkInterfaces": [
             {
                 "subnetwork": instance["subnetwork_link"],

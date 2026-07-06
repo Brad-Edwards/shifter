@@ -63,3 +63,20 @@ variable "winrm_bootstrap_password" {
   DESC
   default     = ""
 }
+
+variable "polaris_stack_bucket" {
+  type        = string
+  description = <<-DESC
+    GCS bucket holding the Polaris docker-compose stack tarball for the
+    polaris-vm build. The compose stack lives outside this repo, so it is
+    fetched at bake time rather than staged from the source tree. Empty leaves
+    the host image range-ready without the stack baked (host-setup.sh warns).
+  DESC
+  default     = ""
+}
+
+variable "polaris_stack_key" {
+  type        = string
+  description = "GCS object key for the Polaris compose stack tarball (see polaris_stack_bucket)."
+  default     = "polaris/stack/polaris-stack.tar.gz"
+}
