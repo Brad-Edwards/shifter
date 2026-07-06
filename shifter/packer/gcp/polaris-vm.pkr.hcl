@@ -8,10 +8,11 @@
 // a host sshd moved to the management port so the Kali container can bind host
 // :22 / :3389 for participant access.
 //
-// The full compose stack (docker-compose.yml + build context) is supplied at
-// bake time the same way the AWS polaris-vm AMI is baked; the in-repo
-// scenario tree under scenario-dev/polaris/build is staged into the image and
-// host-setup.sh builds/pulls the stack when a compose file is present.
+// The full compose stack (docker-compose.yml + build context) lives outside
+// this repo (scenario-dev/polaris/build is gitignored, and the AWS polaris-vm
+// AMI is likewise baked from an external stack). host-setup.sh fetches the
+// stack tarball from GCS at bake time (POLARIS_STACK_BUCKET / POLARIS_STACK_KEY)
+// and builds it; when unset it warns and leaves the host otherwise range-ready.
 //
 // Consumed by the GCE range-cell backend: the deploy points
 // GCP_RANGE_KALI_IMAGE at this image family and the scenario's
@@ -53,23 +54,15 @@ source "googlecompute" "polaris-vm" {
 build {
   sources = ["source.googlecompute.polaris-vm"]
 
-  // Stage the in-repo polaris scenario build tree. The full compose stack is
-  // supplied at bake time (as the AWS AMI is baked); whatever is present in
-  // the repo is copied to a writable temp path first.
-  provisioner "file" {
-    source      = "../../../scenario-dev/polaris/build/"
-    destination = "/tmp/polaris-build/"
-  }
-
+  // host-setup.sh installs Docker + the Cloud SDK, moves the host sshd to the
+  // management port, and (when POLARIS_STACK_BUCKET is set) fetches and builds
+  // the compose stack from GCS. The compose stack is not in this repo, so it is
+  // supplied at bake time rather than staged from the source tree.
   provisioner "shell" {
-    inline = [
-      "sudo mkdir -p /opt/polaris/scenario-dev/polaris",
-      "sudo rm -rf /opt/polaris/scenario-dev/polaris/build",
-      "sudo mv /tmp/polaris-build /opt/polaris/scenario-dev/polaris/build",
+    environment_vars = [
+      "POLARIS_STACK_BUCKET=${var.polaris_stack_bucket}",
+      "POLARIS_STACK_KEY=${var.polaris_stack_key}",
     ]
-  }
-
-  provisioner "shell" {
     scripts = [
       "scripts/polaris/host-setup.sh",
       "../scripts/common/cleanup.sh",

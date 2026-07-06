@@ -21,7 +21,7 @@ from __future__ import annotations
 import json
 import logging
 from contextlib import suppress
-from typing import Any
+from typing import Protocol
 
 from cloud.gcp.base import get_project_id, import_google_module
 from log_redact import safe_log_fingerprint
@@ -33,27 +33,83 @@ _SECRETMANAGER_MODULE = "google.cloud.secretmanager"
 _GOOGLE_EXCEPTIONS_MODULE = "google.api_core.exceptions"
 
 
+class _ServiceAccountKey(Protocol):
+    """Service-account key response subset used by the Vertex credential path."""
+
+    name: str
+    private_key_data: bytes
+
+
+class _SecretPayload(Protocol):
+    """Secret Manager payload subset."""
+
+    data: bytes
+
+
+class _SecretVersion(Protocol):
+    """Secret Manager version response subset."""
+
+    payload: _SecretPayload
+
+
+class _IamClient(Protocol):
+    """IAM Admin client subset used to mint and revoke range Vertex keys."""
+
+    def create_service_account_key(self, *, request: dict[str, object]) -> _ServiceAccountKey:
+        """Create a service-account key."""
+
+    def delete_service_account_key(self, *, request: dict[str, object]) -> object:
+        """Delete a service-account key."""
+
+
+class _SecretClient(Protocol):
+    """Secret Manager client subset used to store the range Vertex key."""
+
+    def access_secret_version(self, *, request: dict[str, object]) -> _SecretVersion:
+        """Return the latest secret version."""
+
+    def create_secret(self, *, request: dict[str, object]) -> object:
+        """Create a Secret Manager secret."""
+
+    def add_secret_version(self, *, request: dict[str, object]) -> object:
+        """Add a Secret Manager secret version."""
+
+    def delete_secret(self, *, request: dict[str, object]) -> object:
+        """Delete a Secret Manager secret."""
+
+
+class _GoogleExceptions(Protocol):
+    """Google exception module subset used by the Vertex credential path."""
+
+    NotFound: type[Exception]
+    AlreadyExists: type[Exception]
+
+
 def _vertex_secret_id(range_id: int) -> str:
     """Return the deterministic Secret Manager id for a range's Vertex key."""
     return f"shifter-range-{int(range_id)}-vertex-key"
 
 
 def _resolve_project_id(project_id: str | None) -> str:
+    """Resolve the active GCP project id, requiring one to be available."""
     resolved = project_id or get_project_id()
     if not resolved:
         raise RuntimeError("GCP project ID is required to manage range Vertex credentials")
     return resolved
 
 
-def _build_iam_client() -> Any:
+def _build_iam_client() -> _IamClient:
+    """Build the IAM Admin client used to mint/revoke Vertex keys."""
     return import_google_module(_IAM_ADMIN_MODULE).IAMClient()
 
 
-def _build_secret_client() -> Any:
+def _build_secret_client() -> _SecretClient:
+    """Build the Secret Manager client used to store the Vertex key."""
     return import_google_module(_SECRETMANAGER_MODULE).SecretManagerServiceClient()
 
 
-def _google_exceptions() -> Any:
+def _google_exceptions() -> _GoogleExceptions:
+    """Return the Google API exception module (NotFound / AlreadyExists)."""
     return import_google_module(_GOOGLE_EXCEPTIONS_MODULE)
 
 
@@ -61,9 +117,9 @@ def ensure_range_vertex_key(
     range_id: int,
     service_account_email: str,
     *,
-    iam_client: Any = None,
-    secret_client: Any = None,
-    google_exceptions: Any = None,
+    iam_client: _IamClient | None = None,
+    secret_client: _SecretClient | None = None,
+    google_exceptions: _GoogleExceptions | None = None,
     project_id: str | None = None,
 ) -> str:
     """Mint (or reuse) a per-range Vertex SA key and return its secret name.
@@ -106,9 +162,9 @@ def ensure_range_vertex_key(
 def delete_range_vertex_key(
     range_id: int,
     *,
-    iam_client: Any = None,
-    secret_client: Any = None,
-    google_exceptions: Any = None,
+    iam_client: _IamClient | None = None,
+    secret_client: _SecretClient | None = None,
+    google_exceptions: _GoogleExceptions | None = None,
     project_id: str | None = None,
 ) -> None:
     """Delete a range's Vertex SA key and its secret, ignoring missing resources."""

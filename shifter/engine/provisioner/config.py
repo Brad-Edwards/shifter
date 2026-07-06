@@ -591,6 +591,7 @@ def _get_int_env(name: str, default: int) -> int:
 
 
 def _get_bool_env(name: str, default: bool) -> bool:
+    """Return a boolean env var, treating 1/true/yes/on as true."""
     value = os.environ.get(name, "").strip().lower()
     if not value:
         return default

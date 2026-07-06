@@ -34,12 +34,14 @@ from typing import Any
 
 from ._polaris_scripts import (
     FETCH_POLARIS_TESTS_SCRIPT,
-    FETCH_POLARIS_TESTS_SCRIPT_GCS,
     INSTALL_SPLICE_WATCHER_SCRIPT,
     KALI_BEDROCK_SHARD_SCRIPT,
-    KALI_VERTEX_SHARD_SCRIPT,
     POLARIS_RANGE_BOOTSTRAP_SCRIPT,
     VERIFY_POLARIS_BOOTSTRAP_SCRIPT,
+)
+from ._polaris_scripts_gcp import (
+    FETCH_POLARIS_TESTS_SCRIPT_GCS,
+    KALI_VERTEX_SHARD_SCRIPT,
 )
 from .base import SetupStep
 
@@ -145,6 +147,16 @@ class PolarisRangeBootstrapPlan:
         Raises:
             ValueError: If a required value is missing or empty.
         """
+        context = self._base_context(instance)
+        agent_context = (
+            self._gcp_agent_context(instance) if self.provider == "gcp" else self._aws_agent_context(instance)
+        )
+        context.update(agent_context)
+        return context
+
+    @staticmethod
+    def _base_context(instance: object) -> dict[str, Any]:
+        """Return the provider-neutral render variables (DC IP, key, tarball)."""
         dc_ip = getattr(instance, "dc_ip", None)
         if not dc_ip:
             raise ValueError(
@@ -171,19 +183,12 @@ class PolarisRangeBootstrapPlan:
                 "PolarisRangeBootstrapPlan requires POLARIS_TESTS_BUCKET (or "
                 "AGENT_S3_BUCKET) so the range host can fetch the smoketest tarball"
             )
-        polaris_tests_key = os.environ.get("POLARIS_TESTS_KEY", "polaris/tests/polaris-tests.tar.gz")
-
-        context: dict[str, Any] = {
+        return {
             "dc_ip": dc_ip,
             "public_key": public_key,
             "polaris_tests_bucket": polaris_tests_bucket,
-            "polaris_tests_key": polaris_tests_key,
+            "polaris_tests_key": os.environ.get("POLARIS_TESTS_KEY", "polaris/tests/polaris-tests.tar.gz"),
         }
-        if self.provider == "gcp":
-            context.update(self._gcp_agent_context(instance))
-        else:
-            context.update(self._aws_agent_context(instance))
-        return context
 
     @staticmethod
     def _aws_agent_context(instance: object) -> dict[str, Any]:

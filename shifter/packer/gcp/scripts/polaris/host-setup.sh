@@ -23,6 +23,8 @@
 set -euo pipefail
 
 HOST_MGMT_SSH_PORT="${HOST_MGMT_SSH_PORT:-2222}"
+POLARIS_STACK_BUCKET="${POLARIS_STACK_BUCKET:-}"
+POLARIS_STACK_KEY="${POLARIS_STACK_KEY:-polaris/stack/polaris-stack.tar.gz}"
 POLARIS_ROOT="/opt/polaris/scenario-dev/polaris"
 COMPOSE_DIR="${POLARIS_ROOT}/build"
 
@@ -32,7 +34,7 @@ apt-get update
 # --- Docker Engine + compose plugin -----------------------------------------
 apt-get install -y ca-certificates curl gnupg git
 install -m 0755 -d /etc/apt/keyrings
-curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+curl --proto '=https' --tlsv1.2 -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
 chmod a+r /etc/apt/keyrings/docker.gpg
 . /etc/os-release
 echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] \
@@ -44,7 +46,7 @@ systemctl enable docker
 # --- Google Cloud SDK (gcloud storage for the GCS tarball fetch) -------------
 echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main" \
   > /etc/apt/sources.list.d/google-cloud-sdk.list
-curl -fsSL https://packages.cloud.google.com/apt/doc/apt-key.gpg | gpg --dearmor -o /usr/share/keyrings/cloud.google.gpg
+curl --proto '=https' --tlsv1.2 -fsSL https://packages.cloud.google.com/apt/doc/apt-key.gpg | gpg --dearmor -o /usr/share/keyrings/cloud.google.gpg
 apt-get update
 apt-get install -y google-cloud-cli
 
@@ -60,14 +62,28 @@ Port ${HOST_MGMT_SSH_PORT}
 EOF
 
 # --- Compose stack ------------------------------------------------------------
+# The compose stack is not in the repo (scenario-dev/polaris/build is
+# gitignored). Fetch it from GCS at bake time when configured; the builder VM's
+# service account authenticates via ADC.
+if [[ -n "${POLARIS_STACK_BUCKET}" ]]; then
+  echo "polaris host-setup: fetching compose stack from gs://${POLARIS_STACK_BUCKET}/${POLARIS_STACK_KEY}"
+  mkdir -p "${POLARIS_ROOT}"
+  STACK_TARBALL="$(mktemp)"
+  gcloud storage cp "gs://${POLARIS_STACK_BUCKET}/${POLARIS_STACK_KEY}" "${STACK_TARBALL}"
+  rm -rf "${COMPOSE_DIR}"
+  mkdir -p "${COMPOSE_DIR}"
+  tar xzf "${STACK_TARBALL}" -C "${COMPOSE_DIR}"
+  rm -f "${STACK_TARBALL}"
+fi
+
 if [[ -f "${COMPOSE_DIR}/docker-compose.yml" ]]; then
   echo "polaris host-setup: building/pulling compose stack in ${COMPOSE_DIR}"
   cd "${COMPOSE_DIR}"
   docker compose build
   docker compose pull --ignore-buildable || true
 else
-  echo "polaris host-setup: WARNING no docker-compose.yml at ${COMPOSE_DIR}; the compose" >&2
-  echo "  stack source must be staged at bake time (as the AWS polaris-vm AMI is baked)." >&2
+  echo "polaris host-setup: WARNING no docker-compose.yml at ${COMPOSE_DIR}; set" >&2
+  echo "  POLARIS_STACK_BUCKET so the bake can fetch the compose stack from GCS." >&2
 fi
 
 echo "polaris host-setup: complete (mgmt sshd port ${HOST_MGMT_SSH_PORT})"
