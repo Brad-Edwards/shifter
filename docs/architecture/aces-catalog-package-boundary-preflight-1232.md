@@ -1,7 +1,7 @@
 # ACES Catalog And Scenario Package Boundary Preflight
 
 Issue: GitHub #1232, "03 - ACES migration: design legacy-safe catalog and
-scenario package boundary".
+scenario package boundary."
 
 Status: pre-implementation guidance.
 

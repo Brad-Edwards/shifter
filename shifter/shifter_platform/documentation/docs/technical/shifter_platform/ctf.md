@@ -2,7 +2,7 @@
 
 Capture-the-flag is a Django app (`ctf`) layered on the platform's range system. It
 owns event/challenge/scoring data and orchestrates a dedicated range per participant
-by calling the existing CMS range services — it does not introduce a second
+by calling the existing CMS range services; it does not introduce a second
 provisioning path.
 
 ## Responsibility
@@ -53,24 +53,24 @@ challenge creation, and submission checking compares against the hash.
 Business logic lives under `ctf.services` (views stay thin):
 
 - `event`, `challenge`, `flag`, `bracket`, `hint`, `award`, `attachment`,
-  `email_template`, `notification` — entity operations.
-- `participant/` — `lifecycle`, `bulk_import`, `queries`.
-- `scoring/` — materialized-leaderboard hot path with an authoritative recompute
+  `email_template`, `notification`: entity operations.
+- `participant/`: `lifecycle`, `bulk_import`, `queries`.
+- `scoring/`: materialized-leaderboard hot path with an authoritative recompute
   fallback (`get_scoreboard`, `calculate_score`, ranks, stats, timeline, and the
   `recompute_*` maintenance helpers).
-- `authorization`, `audit` — access checks and audit trail.
+- `authorization`, `audit`: access checks and audit trail.
 
 ### Range Provisioning
 
 `ctf.services.range` provisions a range per participant from `event.scenario_id` via
-CMS range services — the same path Mission Control uses to launch a range.
+CMS range services, the same path Mission Control uses to launch a range.
 
-- `provision.py` — `provision_participant_range(participant_id)` runs under a
+- `provision.py`: `provision_participant_range(participant_id)` runs under a
   per-participant row lock so concurrent manual and scheduled provisioning cannot
   double-assign a range, with an exponential-backoff retry wrapper.
-- `batch.py` — throttled event-wide provisioning, pacing participant spin-ups.
-- `lifecycle.py`, `status.py`, `tasks.py` — teardown, status reads, and task wiring.
-- `recovery.py` — `recover_participant_range(participant_id, *, strategy,
+- `batch.py`: throttled event-wide provisioning, pacing participant spin-ups.
+- `lifecycle.py`, `status.py`, `tasks.py`: teardown, status reads, and task wiring.
+- `recovery.py`: `recover_participant_range(participant_id, *, strategy,
   operator, spare_range_instance_id=None)` recovers a destroyed participant range
   (organizer-only). `rebuild` provisions a fresh range via the CMS bridge; `reassign_spare`
   consumes an available `CTFSpareRange` from the participant's own event pool and
@@ -79,10 +79,10 @@ CMS range services — the same path Mission Control uses to launch a range.
   `cms.services.reassign_range_owner`). The intent is persisted as a `CTFRangeRecovery`
   row keyed on participant + old range + strategy; resumption after a partial failure is
   data-driven (recorded replacement id and the live old-range status), so retries never
-  duplicate the replacement or the audit row. The old range is always destroyed — there
+  duplicate the replacement or the audit row. The old range is always destroyed; there
   is no disposition/forensics-retention choice. Recovery writes one `risk_register` audit
   row.
-- `spares.py` — `provision_event_spares(event_id, target_count, *, operator=None)` tops up
+- `spares.py`: `provision_event_spares(event_id, target_count, *, operator=None)` tops up
   an event's prewarmed spare-range pool (`CTFEvent.spare_range_count`), each spare owned by
   a dedicated, auto-created managed system user (never a `CTFParticipant`) until consumed.
   `get_event_spare_summary(event_id)` reports pool counts for the admin surface;
@@ -97,9 +97,9 @@ does not go stale and provisioning stays responsive to shutdown.
 
 Two management commands operate the event runtime:
 
-- `run_ctf_scheduler` — long-running scheduler that drives batch range provisioning,
+- `run_ctf_scheduler`: long-running scheduler that drives batch range provisioning,
   cleanup, reminders, and scheduled tasks, writing a liveness heartbeat.
-- `ctf_recompute_leaderboard` — recomputes materialized leaderboard columns
+- `ctf_recompute_leaderboard`: recomputes materialized leaderboard columns
   authoritatively when reconciliation is needed.
 
 ## Boundaries
@@ -112,5 +112,5 @@ Two management commands operate the event runtime:
 
 ## See Also
 
-- [CTF](../../features/ctf) — participant guide.
-- [CTF Organizer Guide](../../features/ctf-organizer-guide) — running an event.
+- [CTF](../../features/ctf): participant guide.
+- [CTF Organizer Guide](../../features/ctf-organizer-guide): running an event.

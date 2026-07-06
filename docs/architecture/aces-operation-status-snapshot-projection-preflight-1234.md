@@ -1,7 +1,7 @@
 # ACES Operation Persistence And Range Projection Preflight
 
 Issue: GitHub #1234, "05 - ACES migration: design operation, status,
-snapshot, and range projection persistence".
+snapshot, and range projection persistence."
 
 Status: pre-implementation architecture guidance. This note does not implement
 models, migrations, APIs, event handlers, or UI projections.
