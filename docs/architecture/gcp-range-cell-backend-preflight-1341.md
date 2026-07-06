@@ -1,6 +1,6 @@
 # GCP Range-Cell Backend Preflight
 
-Issue: GitHub #1341, "Implement GCP range-cell provisioning backend".
+Issue: GitHub #1341, "Implement GCP range-cell provisioning backend."
 
 This is requirement-free pre-implementation guidance. The GitHub issue title,
 body, and acceptance criteria are the shipping contract. This note is not an

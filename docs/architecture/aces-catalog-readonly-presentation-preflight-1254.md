@@ -1,7 +1,7 @@
 # ACES Catalog Read-Only Presentation Preflight
 
 Issue: GitHub #1254, "13 - ACES migration: expose read-only ACES catalog
-fields in CMS API and scenario editor".
+fields in CMS API and scenario editor."
 
 Status: pre-implementation architecture guidance. This note does not implement
 API endpoints, template changes, serializers, editor actions, ACES authoring,

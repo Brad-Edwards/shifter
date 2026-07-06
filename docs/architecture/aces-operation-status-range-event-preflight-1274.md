@@ -1,7 +1,7 @@
 # ACES Operation Status Range Event Projection Preflight
 
 Issue: GitHub #1274, "15 - ACES migration: project operation status through
-range event handling".
+range event handling."
 
 Status: pre-implementation architecture guidance. This note does not implement
 models, migrations, adapters, event handlers, workers, APIs, or UI behavior.
