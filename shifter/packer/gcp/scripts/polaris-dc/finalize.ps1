@@ -32,7 +32,7 @@ if (-not (Test-Path "C:\polaris\a2_setup.ps1")) {
 }
 Write-Host "Running a2_setup.ps1 (DNS forwarder $fwd)..."
 & powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\polaris\a2_setup.ps1" -DnsForwarder $fwd
-if ($LASTEXITCODE -ne $null -and $LASTEXITCODE -ne 0) {
+if ($null -ne $LASTEXITCODE -and $LASTEXITCODE -ne 0) {
     throw "a2_setup.ps1 failed with exit code $LASTEXITCODE"
 }
 
