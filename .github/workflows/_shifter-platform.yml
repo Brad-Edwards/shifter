@@ -1119,7 +1119,11 @@ jobs:
           # Wait for instance refresh to complete
           echo "Waiting for instance refresh to complete..."
           RETRIES=0
-          MAX_RETRIES=60  # 30 minutes max wait
+          # A full 8-instance refresh (MinHealthyPercentage 50, 300s warmup per
+          # batch, plus per-instance termination drain) runs ~34 min in dev, so
+          # a 30-minute cap timed the step out right at the finish line even
+          # after the ASG launch hook was fixed. 45 min gives real headroom.
+          MAX_RETRIES=90  # 45 minutes max wait
           while true; do
             STATUS=$(aws autoscaling describe-instance-refreshes \
               --auto-scaling-group-name "$ASG_NAME" \
