@@ -19,6 +19,35 @@ under **Settings → Secrets and variables → Actions**, separated by:
 
 Required values are enforced by the workflow preflight step.
 
+## Populating and syncing the secrets
+
+The `TF_VARS_<ENV>_PORTAL` / `_RANGE` / `_CORE` and `SHIFTER_CONFIG_<ENV>_RANGE`
+/ `SHIFTER_CONFIG_GCP_DEV` entries are whole-file payloads. Operators keep the
+same values as gitignored `local.auto.tfvars` overlays (also used for local
+`terraform` and symlinked into worktrees by `scripts/setup-worktree.sh`) and a
+deployment `shifter.yaml`. `scripts/sync-deploy-secrets.sh` pushes those local
+files into the matching GitHub secrets with `gh secret set`, so the secret and
+the local overlay stay in step instead of the secret being hand-edited in the
+GitHub UI:
+
+```sh
+# Preview what would be set (no writes):
+scripts/sync-deploy-secrets.sh --env dev --dry-run
+
+# Sync the dev tfvars overlays (portal, range, core):
+scripts/sync-deploy-secrets.sh --env dev
+
+# Include the SHIFTER_CONFIG_* payloads rendered from a shifter.yaml:
+scripts/sync-deploy-secrets.sh --env dev --stack config --shifter-config ./shifter.yaml
+```
+
+The script fails loud when a selected overlay file is missing and never prints
+secret contents. `scripts/bootstrap` still owns the one-time `AWS_ROLE_ARN_*`
+and `TF_INFRA_STATE_BUCKET` secrets; this script owns the recurring per-env
+tfvars/config payloads. Run it after editing an overlay (for example, after
+changing the ASG capacity in a portal overlay) so the next deploy picks up the
+new values rather than a stale secret.
+
 ## GCP (gcp-dev)
 
 Consumed by `.github/workflows/_gcp-dev.yml`.
