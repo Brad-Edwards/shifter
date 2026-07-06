@@ -124,8 +124,37 @@ class TestBuildGuestExecutionContext:
         assert context.document_name == "AWS-RunShellScript"
         assert context.transport_name == "ssh"
         assert context.executor._username == "kali"
+        assert context.executor._port == 22
         assert context.executor._known_hosts_path is None
         secret_reader.assert_called_once_with("projects/test/secrets/range-vm-1-key")
+        context.close()
+
+    def test_gce_output_threads_host_mgmt_ssh_port(self, mocker, monkeypatch):
+        """A Docker-host guest drives its host sshd on the management port."""
+        from executors.guest_ssh_executor import GuestSSHExecutor
+
+        monkeypatch.setenv("CLOUD_PROVIDER", "gcp")
+        secret_reader = mocker.Mock(return_value="PRIVATE KEY")
+
+        context = build_guest_execution_context(
+            {
+                "asset_type": "gce_vm",
+                "private_ip": "10.50.2.3",
+                "ssh_key_secret_arn": "projects/test/secrets/polaris-host-key",
+                # Participant user is "kali" (container); the provisioner drives
+                # the host sshd as "ubuntu" on the management port.
+                "ssh_username": "kali",
+                "gcp_host_ssh_username": "ubuntu",
+                "gcp_host_ssh_port": 2222,
+                "os": "kali",
+                "role": "attacker",
+            },
+            secret_reader=secret_reader,
+        )
+
+        assert isinstance(context.executor, GuestSSHExecutor)
+        assert context.executor._username == "ubuntu"
+        assert context.executor._port == 2222
         context.close()
 
     @pytest.mark.parametrize("metadata", [{"gcp_instance_name": "range-vm-1"}, {"gcp_zone": "us-central1-b"}])

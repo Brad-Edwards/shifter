@@ -483,6 +483,64 @@ class TestRangeNetworkEnv:
         with pytest.raises(RuntimeError, match="GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL"):
             load_gce_range_cell_config()
 
+    def test_load_gce_range_cell_config_reads_host_mgmt_ssh_port(self, mocker):
+        mocker.patch.dict(
+            os.environ,
+            {
+                "CLOUD_PROVIDER": "gcp",
+                "GCP_RANGE_BACKEND": "gce",
+                "GCP_PROJECT_ID": "test-project",
+                "GCP_REGION": "us-central1",
+                "RANGE_NETWORK_ZONE": "us-central1-b",
+                "GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL": "range-host@test-project.iam.gserviceaccount.com",
+                "GCP_RANGE_KALI_IMAGE": "projects/shifter/global/images/polaris-vm",
+                "GCP_RANGE_DC_IMAGE": "projects/shifter/global/images/polaris-dc",
+                "GCP_RANGE_HOST_MGMT_SSH_PORT": "2229",
+            },
+            clear=True,
+        )
+
+        config = load_gce_range_cell_config()
+
+        assert config.host_mgmt_ssh_port == 2229
+
+    def test_gce_range_cell_config_host_mgmt_ssh_port_defaults_to_2222(self, mocker):
+        mocker.patch.dict(
+            os.environ,
+            {
+                "CLOUD_PROVIDER": "gcp",
+                "GCP_RANGE_BACKEND": "gce",
+                "GCP_PROJECT_ID": "test-project",
+                "GCP_REGION": "us-central1",
+                "RANGE_NETWORK_ZONE": "us-central1-b",
+                "GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL": "range-host@test-project.iam.gserviceaccount.com",
+                "GCP_RANGE_KALI_IMAGE": "projects/shifter/global/images/polaris-vm",
+            },
+            clear=True,
+        )
+
+        assert load_gce_range_cell_config().host_mgmt_ssh_port == 2222
+
+    def test_load_gce_range_cell_config_reads_private_google_access(self, mocker):
+        mocker.patch.dict(
+            os.environ,
+            {
+                "CLOUD_PROVIDER": "gcp",
+                "GCP_RANGE_BACKEND": "gce",
+                "GCP_PROJECT_ID": "test-project",
+                "GCP_REGION": "us-central1",
+                "RANGE_NETWORK_ZONE": "us-central1-b",
+                "GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL": "range-host@test-project.iam.gserviceaccount.com",
+                "GCP_RANGE_KALI_IMAGE": "projects/shifter/global/images/polaris-vm",
+                "GCP_RANGE_PRIVATE_GOOGLE_ACCESS": "true",
+            },
+            clear=True,
+        )
+
+        config = load_gce_range_cell_config()
+
+        assert config.private_google_access is True
+
     def test_gce_range_cell_config_get_profile_selects_guest_family(self):
         linux = GCERangeImageProfile(
             source_image="projects/debian-cloud/global/images/family/debian-12",

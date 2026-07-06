@@ -35,7 +35,7 @@ from provisioner_db_ngfw import (
     get_user_ngfw_data,
 )
 from state_helpers import _get_cloud_provider, _validate_provisioned_outputs
-from terraform_vars import _build_range_terraform_variables
+from terraform_vars import build_range_variables
 
 logger = logging.getLogger(__name__)
 
@@ -118,8 +118,8 @@ def _attempt_terraform_auto_cleanup(request_id: str, range_id: int, user_id: int
         request_id,
     )
     try:
-        tf_variables = _build_range_terraform_variables(request_id, range_id, user_id, range_spec)
-        range_terraform_runner.destroy_range(request_id, variables=tf_variables)
+        cleanup_variables = build_range_variables(request_id, range_id, user_id, range_spec)
+        range_terraform_runner.destroy_range(request_id, variables=cleanup_variables)
         range_terraform_runner.cleanup_range_state(request_id)
         logger.info("Auto-cleanup succeeded for range_id=%s", range_id)
     except Exception:
@@ -191,11 +191,13 @@ def _run_terraform_provision(
 
     spec_subnets = _allocate_range_subnet_cidrs(request_id, range_id, range_spec)
 
-    # Build Terraform variables from range spec (now with CIDRs)
-    tf_variables = _build_range_terraform_variables(request_id, range_id, user_id, range_spec)
+    # Build backend-appropriate range variables from the range spec (now with
+    # CIDRs). GCE range cells receive provider-neutral scenario intent; AWS
+    # receives Terraform variables.
+    provision_variables = build_range_variables(request_id, range_id, user_id, range_spec)
 
-    # Run Terraform apply
-    output_data = range_terraform_runner.apply_range(request_id, tf_variables)
+    # Run the provider-routed apply
+    output_data = range_terraform_runner.apply_range(request_id, provision_variables)
     logger.info("Terraform outputs: %s", json.dumps(output_data, indent=2))
 
     subnets_output = output_data.get("subnets", {})
@@ -444,8 +446,8 @@ def _run_terraform_destroy(
     logger.info("Running terraform destroy for range...")
     terraform_succeeded = False
     try:
-        tf_variables = _build_range_terraform_variables(request_id, range_id, user_id, range_spec)
-        range_terraform_runner.destroy_range(request_id, variables=tf_variables)
+        destroy_variables = build_range_variables(request_id, range_id, user_id, range_spec)
+        range_terraform_runner.destroy_range(request_id, variables=destroy_variables)
         terraform_succeeded = True
         logger.info("Cleaning up Terraform state...")
         range_terraform_runner.cleanup_range_state(request_id)
