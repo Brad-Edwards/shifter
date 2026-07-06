@@ -24,6 +24,9 @@ class DashboardManager {
 
         // State
         this.currentRange = null;
+        // Secondary, read-only ACES operation projection (#1276). Absent/null for
+        // legacy non-ACES ranges; never drives lifecycle, websocket, or polling.
+        this.currentAcesProjection = null;
         this.statusSocket = null;
         this.reconnectAttempts = 0;
         this.maxReconnectAttempts = 5;
@@ -528,6 +531,7 @@ class DashboardManager {
         }
 
         this.currentRange = data.range;
+        this.currentAcesProjection = data.aces_projection || null;
         this._updateUI();
 
         // Connect WebSocket if in a transitional state
@@ -653,6 +657,8 @@ class DashboardManager {
         if (pauseBtn) {
             pauseBtn.addEventListener('click', () => this.pauseRange());
         }
+
+        this._renderAcesProjection(tile);
     }
 
     /**
@@ -687,6 +693,42 @@ class DashboardManager {
         if (resumeBtn) {
             resumeBtn.addEventListener('click', () => this.resumeRange());
         }
+
+        this._renderAcesProjection(tile);
+    }
+
+    /**
+     * Render the secondary, read-only ACES operation projection into a tile (#1276).
+     *
+     * ACES-derived values are inserted with textContent only (never innerHTML),
+     * and the section stays hidden for legacy / non-ACES ranges (null projection).
+     * This is display-only: it does not affect range status, websocket, or polling.
+     */
+    _renderAcesProjection(tile) {
+        const section = tile.querySelector('.aces-projection');
+        if (!section) return;
+
+        const projection = this.currentAcesProjection;
+        if (!projection) {
+            section.hidden = true;
+            return;
+        }
+
+        const labelEl = section.querySelector('.aces-status-label');
+        if (labelEl) labelEl.textContent = projection.status_label || '';
+
+        const observedEl = section.querySelector('.aces-observed-at');
+        if (observedEl) {
+            observedEl.textContent = projection.observed_at ? `Observed ${this._formatDate(projection.observed_at)}` : '';
+        }
+
+        const snapshotEl = section.querySelector('.aces-snapshot-summary');
+        if (snapshotEl) {
+            const snapshot = projection.snapshot;
+            snapshotEl.textContent = snapshot ? `Snapshot: ${snapshot.resource_count} resource(s)` : '';
+        }
+
+        section.hidden = false;
     }
 
     /**
@@ -778,6 +820,7 @@ class DashboardManager {
             }
 
             this.currentRange = data.range;
+            this.currentAcesProjection = data.aces_projection || null;
             this._updateUI();
             this._connectStatusSocket(data.range.request_id);
 
@@ -813,6 +856,7 @@ class DashboardManager {
 
             this._closeStatusSocket();
             this.currentRange = null;
+            this.currentAcesProjection = null;
             this._updateUI();
 
         } catch (error) {
@@ -844,6 +888,7 @@ class DashboardManager {
             // Range is destroyed immediately - show no-range state
             this._closeStatusSocket();
             this.currentRange = null;
+            this.currentAcesProjection = null;
             this._updateUI();
 
         } catch (error) {
@@ -941,6 +986,7 @@ class DashboardManager {
         // Clear the current range and show no-range state
         this._closeStatusSocket();
         this.currentRange = null;
+        this.currentAcesProjection = null;
         this._updateUI();
     }
 
@@ -1117,6 +1163,7 @@ class DashboardManager {
             if (!this._isTransitionalState(polledStatus)) {
                 console.log(`Poll detected stable state: ${polledStatus}`);
                 this.currentRange = data.range;
+                this.currentAcesProjection = data.aces_projection || null;
                 this._updateUI();
                 this._closeStatusSocket(); // This also stops polling
             }

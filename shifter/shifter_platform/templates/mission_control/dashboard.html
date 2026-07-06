@@ -228,6 +228,19 @@
                 {% trans "Destroy" %}
             </button>
         </div>
+        {# Secondary, read-only ACES operation projection (#1276); populated by dashboard.js, hidden for non-ACES ranges. #}
+        <div class="aces-projection mt-md" hidden>
+            <div class="aces-projection-title text-small">
+                {% trans "ACES Operation" %}
+            </div>
+            <div class="aces-projection-status">
+                <span class="aces-status-label"></span>
+            </div>
+            <div class="aces-projection-meta text-small text-muted">
+                <span class="aces-observed-at"></span>
+                <span class="aces-snapshot-summary"></span>
+            </div>
+        </div>
     </template>
     <template id="paused-template">
         <div class="flex-between">
@@ -256,6 +269,19 @@
             <button class="btn btn-danger destroy-btn flex-1">
                 {% trans "Destroy" %}
             </button>
+        </div>
+        {# Secondary, read-only ACES operation projection (#1276); populated by dashboard.js, hidden for non-ACES ranges. #}
+        <div class="aces-projection mt-md" hidden>
+            <div class="aces-projection-title text-small">
+                {% trans "ACES Operation" %}
+            </div>
+            <div class="aces-projection-status">
+                <span class="aces-status-label"></span>
+            </div>
+            <div class="aces-projection-meta text-small text-muted">
+                <span class="aces-observed-at"></span>
+                <span class="aces-snapshot-summary"></span>
+            </div>
         </div>
     </template>
     <template id="failed-template">
