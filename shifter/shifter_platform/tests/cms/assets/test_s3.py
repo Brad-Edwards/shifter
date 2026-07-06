@@ -18,8 +18,10 @@ from botocore.exceptions import ClientError
 from cms.assets.s3 import (
     S3Error,
     delete_agent,
+    generate_install_key,
     generate_presigned_upload_url,
     get_s3_client,
+    install_agent_object,
     tag_s3_object,
     upload_agent,
     verify_s3_object_exists,
@@ -135,10 +137,10 @@ class TestVerifyS3ObjectExists:
     def test_successful_verify(self, s3_client):
         s3_client.head_object.return_value = {"ContentLength": 1024, "ETag": '"abc123"'}
 
-        size, etag = verify_s3_object_exists("agents/123/test.msi")
+        identity = verify_s3_object_exists("agents/123/test.msi")
 
-        assert size == 1024
-        assert etag == "abc123"  # adapter strips surrounding quotes
+        assert identity["content_length"] == 1024
+        assert identity["etag"] == "abc123"  # adapter strips surrounding quotes
         kwargs = s3_client.head_object.call_args.kwargs
         assert kwargs["Bucket"] == "test-bucket"
         assert kwargs["Key"] == "agents/123/test.msi"
@@ -152,6 +154,49 @@ class TestVerifyS3ObjectExists:
         s3_client.head_object.side_effect = _client_error("500", "HeadObject", "Server error")
         with pytest.raises(S3Error, match="Server error"):
             verify_s3_object_exists("agents/123/test.msi")
+
+
+class TestGenerateInstallKey:
+    def test_distinct_from_staging_and_scoped_to_user(self):
+        key = generate_install_key(123, "agent.msi")
+        assert key.startswith("agents/123/installed/")
+        assert key.endswith("_agent.msi")
+
+    def test_two_calls_produce_distinct_keys(self):
+        assert generate_install_key(1, "a.msi") != generate_install_key(1, "a.msi")
+
+    def test_sanitizes_filename(self):
+        key = generate_install_key(7, "../../etc/passwd")
+        assert ".." not in key
+        assert key.startswith("agents/7/installed/")
+
+
+class TestInstallAgentObject:
+    def test_delegates_conditional_copy_with_identity(self, s3_client):
+        install_agent_object("agents/1/staging_a.msi", "agents/1/installed/x_a.msi", {"etag": "abc123"})
+
+        kwargs = s3_client.copy_object.call_args.kwargs
+        assert kwargs["CopySource"] == {"Bucket": "test-bucket", "Key": "agents/1/staging_a.msi"}
+        assert kwargs["Key"] == "agents/1/installed/x_a.msi"
+        assert kwargs["CopySourceIfMatch"] == "abc123"
+
+    def test_precondition_failure_raises_distinct_s3error(self, s3_client):
+        s3_client.copy_object.side_effect = ClientError(
+            {"Error": {"Code": "PreconditionFailed"}, "ResponseMetadata": {"HTTPStatusCode": 412}},
+            "CopyObject",
+        )
+        with pytest.raises(S3Error, match="changed during finalization"):
+            install_agent_object("src", "dst", {"etag": "abc123"})
+
+    def test_other_error_raises_s3error(self, s3_client):
+        s3_client.copy_object.side_effect = _client_error("500", "CopyObject")
+        with pytest.raises(S3Error):
+            install_agent_object("src", "dst", {"etag": "abc123"})
+
+    def test_raises_if_bucket_not_configured(self, settings):
+        settings.AWS_S3_BUCKET_NAME = ""
+        with pytest.raises(S3Error, match="not configured"):
+            install_agent_object("src", "dst", {"etag": "abc123"})
 
 
 class TestTagS3Object:

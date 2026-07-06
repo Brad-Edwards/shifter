@@ -180,6 +180,10 @@ class CTFEvent(CTFBaseModel):
         default="UTC",
         help_text="IANA timezone for displaying event times in emails (e.g. 'America/New_York')",
     )
+    spare_range_count = models.PositiveIntegerField(
+        default=0,
+        help_text="Desired size of the event's prewarmed spare-range recovery pool",
+    )
 
     class Meta:
         """Django model metadata."""

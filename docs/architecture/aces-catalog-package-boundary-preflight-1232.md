@@ -1,7 +1,7 @@
 # ACES Catalog And Scenario Package Boundary Preflight
 
 Issue: GitHub #1232, "03 - ACES migration: design legacy-safe catalog and
-scenario package boundary".
+scenario package boundary."
 
 Status: pre-implementation guidance.
 
@@ -231,7 +231,9 @@ The design identifies these concrete implementation scopes:
   `docs/architecture/aces-registry-validation-launchability-preflight-1253.md`
   for the issue-specific launchability guardrails.
 - #1254: expose ACES catalog read-only fields in the scenario editor and CMS
-  API, with no new editor and with existing authoring/API permissions.
+  API, with no new editor and with existing authoring/API permissions; see
+  `docs/architecture/aces-catalog-readonly-presentation-preflight-1254.md` for
+  the issue-specific presentation/API guardrails.
 - #1233 owns the Shifter ACES RuntimeTarget/backend-manifest design that later
   implementation work should use for the RuntimeModel-to-Shifter range adapter.
 - #1237 owns the Polaris acceptance and parity-gate design that later

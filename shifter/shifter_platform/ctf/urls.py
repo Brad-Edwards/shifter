@@ -250,6 +250,11 @@ api_patterns = [
         name="api_provision_ranges",
     ),
     path(
+        "api/events/<uuid:event_id>/spares/",
+        views.api_provision_event_spares,
+        name="api_provision_event_spares",
+    ),
+    path(
         "api/participants/<uuid:participant_id>/range/provision/",
         views.api_provision_participant_range,
         name="api_provision_participant_range",
@@ -273,6 +278,11 @@ api_patterns = [
         "api/participants/<uuid:participant_id>/range/restart/",
         views.api_restart_participant_range,
         name="api_restart_participant_range",
+    ),
+    path(
+        "api/participants/<uuid:participant_id>/range/recover/",
+        views.api_recover_participant_range,
+        name="api_recover_participant_range",
     ),
     # Bracket APIs
     path(

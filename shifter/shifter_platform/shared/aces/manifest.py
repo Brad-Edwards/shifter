@@ -45,26 +45,19 @@ from aces_backend_protocols.manifest import backend_manifest_payload
 from aces_contracts.apparatus import ConceptBinding, RealizationSupportDeclaration
 from aces_contracts.vocabulary import RealizationSupportMode
 
-#: Backend identity name published in the manifest.
-SHIFTER_BACKEND_NAME = "shifter"
-
-#: The backend profile/capability discriminator for this slice. This is the
-#: extensibility seam: future profiles (orchestration, evaluation, participant
-#: runtime) are added by declaring the corresponding ACES contracts and
-#: capabilities behind a new discriminator value, not by widening this one.
-SHIFTER_BACKEND_PROFILE = "provisioning-only"
-
-#: The ACES contracts required by the ``provisioning-only`` backend profile.
-#: Declared exactly -- no broader contract set until a later slice provides real
-#: protocol support and conformance evidence.
-SHIFTER_SUPPORTED_CONTRACT_VERSIONS = frozenset(
-    {
-        "backend-manifest-v2",
-        "operation-receipt-v1",
-        "operation-status-v1",
-        "runtime-snapshot-v1",
-    }
+from shared.aces.contracts import (
+    SHIFTER_BACKEND_NAME,
+    SHIFTER_BACKEND_PROFILE,
+    SHIFTER_SUPPORTED_CONTRACT_VERSIONS,
 )
+
+__all__ = [
+    "SHIFTER_BACKEND_NAME",
+    "SHIFTER_BACKEND_PROFILE",
+    "SHIFTER_SUPPORTED_CONTRACT_VERSIONS",
+    "create_shifter_backend_manifest",
+    "render_shifter_backend_manifest_payload",
+]
 
 #: Shifter's honest provisioning capability envelope. Shifter provisions virtual
 #: machine instances (EC2 / GDC) running Linux and Windows guests. Account,
