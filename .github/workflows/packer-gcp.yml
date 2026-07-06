@@ -24,6 +24,7 @@ on:
           - windows
           - dc
           - polaris-vm
+          - polaris-dc
       environment:
         description: 'GCP environment to build in'
         required: true
@@ -128,7 +129,7 @@ jobs:
           # (no imported base image, so no source-image secret is required).
 
       - name: Generate WinRM bootstrap secret (Windows/DC only)
-        if: inputs.image_type == 'windows' || inputs.image_type == 'dc'
+        if: inputs.image_type == 'windows' || inputs.image_type == 'dc' || inputs.image_type == 'polaris-dc'
         run: |
           # Throwaway local-admin password for the build VM only; the VM is
           # sysprepped and discarded so it never reaches the published image.
