@@ -1106,10 +1106,15 @@ jobs:
           else
             # Start instance refresh
             # New instances read the updated image digest from Parameter Store via user_data.
-            # Lifecycle hook ensures instance is ready before joining ALB
+            # Lifecycle hook ensures instance is ready before joining ALB.
+            # InstanceWarmup is 120s: bootstrap completes the launch hook in ~90s
+            # and the ALB target-group health check gates real traffic, so a
+            # shorter warmup keeps a full (in-service + warm-pool) refresh inside
+            # the poll window without cutting availability (MinHealthyPercentage
+            # still holds 50% in service).
             REFRESH_ID=$(aws autoscaling start-instance-refresh \
               --auto-scaling-group-name "$ASG_NAME" \
-              --preferences '{"MinHealthyPercentage": 50, "InstanceWarmup": 300}' \
+              --preferences '{"MinHealthyPercentage": 50, "InstanceWarmup": 120}' \
               --query "InstanceRefreshId" --output text)
 
             echo "Instance refresh started: $REFRESH_ID"
@@ -1119,11 +1124,11 @@ jobs:
           # Wait for instance refresh to complete
           echo "Waiting for instance refresh to complete..."
           RETRIES=0
-          # A full 8-instance refresh (MinHealthyPercentage 50, 300s warmup per
-          # batch, plus per-instance termination drain) runs ~34 min in dev, so
-          # a 30-minute cap timed the step out right at the finish line even
-          # after the ASG launch hook was fixed. 45 min gives real headroom.
-          MAX_RETRIES=90  # 45 minutes max wait
+          # A full refresh covers in-service + warm-pool instances (12 in dev),
+          # each with warmup plus per-instance termination drain, so it runs
+          # well beyond the original 30-minute cap. Combined with the reduced
+          # InstanceWarmup above, 60 minutes gives headroom for the full set.
+          MAX_RETRIES=120  # 60 minutes max wait
           while true; do
             STATUS=$(aws autoscaling describe-instance-refreshes \
               --auto-scaling-group-name "$ASG_NAME" \
