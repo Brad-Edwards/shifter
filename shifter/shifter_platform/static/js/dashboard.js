@@ -719,7 +719,9 @@ class DashboardManager {
 
         const observedEl = section.querySelector('.aces-observed-at');
         if (observedEl) {
-            observedEl.textContent = projection.observed_at ? `Observed ${this._formatDate(projection.observed_at)}` : '';
+            observedEl.textContent = projection.observed_at
+                ? `Observed ${this._formatDate(projection.observed_at)}`
+                : '';
         }
 
         const snapshotEl = section.querySelector('.aces-snapshot-summary');
