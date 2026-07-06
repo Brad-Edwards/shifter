@@ -23,6 +23,7 @@ on:
           - kali
           - windows
           - dc
+          - polaris-vm
       environment:
         description: 'GCP environment to build in'
         required: true

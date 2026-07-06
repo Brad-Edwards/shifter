@@ -79,6 +79,15 @@ def _seed_gce_range_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "GCP_RANGE_DC_DISK_SIZE_GB": "80",
         "GCP_RANGE_DC_DISK_TYPE": "pd-ssd",
         "GCP_RANGE_EGRESS_ALLOW_CIDRS": "10.60.0.0/16",
+        "GCP_RANGE_PRIVATE_GOOGLE_ACCESS": "true",
+        "GCP_RANGE_HOST_MGMT_SSH_PORT": "2222",
+        "GCP_RANGE_VERTEX_PROJECT_ID": "shifter-gcp-dev",
+        "GCP_RANGE_VERTEX_REGION": "us-east5",
+        "GCP_RANGE_VERTEX_SERVICE_ACCOUNT_EMAIL": "range-vertex@shifter-gcp-dev.iam.gserviceaccount.com",
+        "GCP_RANGE_KALI_ANTHROPIC_MODEL": "claude-sonnet-4-6",
+        "GCP_RANGE_KALI_ANTHROPIC_SMALL_FAST_MODEL": "claude-haiku-4-5",
+        "POLARIS_TESTS_BUCKET": "shifter-gcp-dev-polaris-tests",
+        "POLARIS_TESTS_KEY": "polaris/tests/polaris-tests.tar.gz",
     }
     for key, value in values.items():
         monkeypatch.setenv(key, value)

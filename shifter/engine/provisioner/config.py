@@ -356,6 +356,24 @@ class GCERangeCellConfig:
     dc: GCERangeImageProfile = field(default_factory=GCERangeImageProfile)
     portal_network_cidrs: tuple[str, ...] = ()
     egress_allow_cidrs: tuple[str, ...] = ()
+    # Pre-provisioned Vertex-only service account. When set, the range-cell
+    # backend mints a per-range key on this SA (created and destroyed with the
+    # range), stores it by reference in Secret Manager, and the range bootstrap
+    # injects it into the participant agent container. This keeps the agent's
+    # cloud credential scoped to Vertex and per-range revocable, and the
+    # container is blocked from the metadata server so it can never mint the
+    # broader range-host SA token. Empty disables per-range agent credentials.
+    vertex_service_account_email: str = ""
+    # Private Google Access on the range subnet lets no-external-IP guests reach
+    # Google APIs (Vertex AI for the Polaris agent, GCS for the smoketest
+    # tarball) over internal routing. Requires an egress-allow to the Google API
+    # VIP in ``egress_allow_cidrs``. Off by default for maximum isolation.
+    private_google_access: bool = False
+    # Management SSH port for Docker-host range guests (e.g. the Polaris range
+    # host) whose participant container publishes host :22, forcing the host
+    # sshd the provisioner drives to a dedicated port. Native single-service
+    # guests keep :22.
+    host_mgmt_ssh_port: int = 2222
     metadata_items: tuple[tuple[str, str], ...] = (
         ("block-project-ssh-keys", "true"),
         ("enable-oslogin", "false"),
@@ -570,6 +588,14 @@ def has_ngfw_attachment_state(state: dict[str, Any] | None) -> bool:
 def _get_int_env(name: str, default: int) -> int:
     value = os.environ.get(name, "").strip()
     return int(value) if value else default
+
+
+def _get_bool_env(name: str, default: bool) -> bool:
+    """Return a boolean env var, treating 1/true/yes/on as true."""
+    value = os.environ.get(name, "").strip().lower()
+    if not value:
+        return default
+    return value in ("1", "true", "yes", "on")
 
 
 def _load_gdc_vm_profile(
@@ -892,6 +918,9 @@ def load_gce_range_cell_config() -> GCERangeCellConfig:
             os.environ.get("PORTAL_NETWORK_CIDRS", "") or os.environ.get("PORTAL_VPC_CIDR", "")
         ),
         egress_allow_cidrs=_parse_csv_env(os.environ.get("GCP_RANGE_EGRESS_ALLOW_CIDRS", "")),
+        vertex_service_account_email=os.environ.get("GCP_RANGE_VERTEX_SERVICE_ACCOUNT_EMAIL", "").strip(),
+        private_google_access=_get_bool_env("GCP_RANGE_PRIVATE_GOOGLE_ACCESS", False),
+        host_mgmt_ssh_port=_get_int_env("GCP_RANGE_HOST_MGMT_SSH_PORT", 2222),
     )
 
 

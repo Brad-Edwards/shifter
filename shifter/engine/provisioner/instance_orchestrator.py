@@ -133,9 +133,11 @@ def _setup_one_other_instance(
         # Gate on ami_key so this only fires for polaris instances.
         if is_polaris_vm:
             _run_polaris_range_bootstrap(
+                instance_data=inst,
                 instance_id=inst_id,
                 dc_ip=actual_dc_ip or "",
                 public_key=inst.get("public_key", ""),
+                range_id=range_id,
             )
             _set_attacker_container_password_after_bootstrap(
                 instance_data=inst,

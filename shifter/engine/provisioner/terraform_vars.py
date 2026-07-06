@@ -22,6 +22,7 @@ from catalog.instances import (
 from config import (
     generate_presigned_url,
     get_range_availability_zone,
+    is_gce_range_cell_backend,
     load_range_network_config,
     resolve_ngfw_attachment_config,
 )
@@ -218,3 +219,65 @@ def _build_range_terraform_variables(
 
     variables.update(_build_aws_extra_tf_variables())
     return variables
+
+
+def _build_gce_range_cell_instance(inst: dict[str, Any]) -> dict[str, Any]:
+    """Map one spec instance into the provider-neutral GCE range-cell shape.
+
+    The GCE range-cell backend consumes scenario intent (role, os_type,
+    ami_key, dc_config) and resolves the Compute Engine image, machine size,
+    and host access at its own profile seam. The scenario's AWS ``instance_type``
+    is carried informationally only; GCE never uses it as a machine type.
+    """
+    return {
+        "uuid": inst.get("uuid", ""),
+        "name": inst.get("name", ""),
+        "role": inst.get("role", "victim"),
+        "os_type": inst.get("os_type", inst.get("os", "ubuntu")),
+        "ami_key": inst.get("ami_key", ""),
+        "instance_type": inst.get("instance_type", ""),
+        "join_domain": inst.get("join_domain", False),
+        "dc_config": inst.get("dc_config", {}),
+    }
+
+
+def _build_gce_range_cell_subnets(spec_subnets: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Translate spec subnets+instances into the GCE range-cell nested format."""
+    return [
+        {
+            "name": subnet.get("name", ""),
+            "uuid": subnet.get("uuid", ""),
+            "cidr": subnet.get("cidr", ""),
+            "connected_to": subnet.get("connected_to", []),
+            "instances": [_build_gce_range_cell_instance(inst) for inst in subnet.get("instances", [])],
+        }
+        for subnet in spec_subnets
+    ]
+
+
+def _build_gce_range_cell_variables(request_id: str, range_id: int, range_spec: dict[str, Any]) -> dict[str, Any]:
+    """Build provider-neutral variables for the GCE range-cell backend.
+
+    Unlike the AWS Terraform variables, this preserves scenario intent
+    (``ami_key``, ``os_type``, ``dc_config``) so the GCE plan can translate it
+    to Compute Engine profiles at its own seam instead of receiving
+    AWS-translated ``ami_id``/``instance_type`` shapes.
+    """
+    return {
+        "range_id": range_id,
+        "request_uuid": request_id,
+        "subnets": _build_gce_range_cell_subnets(range_spec.get("subnets", [])),
+    }
+
+
+def build_range_variables(request_id: str, range_id: int, user_id: int, range_spec: dict[str, Any]) -> dict[str, Any]:
+    """Return backend-appropriate range variables.
+
+    Routes to the provider-neutral GCE range-cell shape when the GCE backend is
+    active, otherwise the AWS Terraform variables. This is the single seam the
+    range provision/destroy paths call so the GCE backend never receives
+    AWS-translated instance shapes.
+    """
+    if is_gce_range_cell_backend():
+        return _build_gce_range_cell_variables(request_id, range_id, range_spec)
+    return _build_range_terraform_variables(request_id, range_id, user_id, range_spec)

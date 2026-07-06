@@ -136,10 +136,20 @@ def _build_gce_execution_context(
     if not secret_id:
         raise ValueError("GCE guest execution requires ssh_key_secret_arn in instance output")
     private_key = (secret_reader or get_secrets_store().get_secret)(secret_id)
-    username = instance_data.get("ssh_username") or instance_data.get("ssh_user") or get_ssh_username(os_type, role)
+    # Provisioner guest setup drives the host sshd, which for Docker-host guests
+    # (e.g. the Polaris range host) is a different user + port than the
+    # participant-facing service on :22. Prefer the host access fields, falling
+    # back to the participant username for native single-service guests.
+    username = (
+        instance_data.get("gcp_host_ssh_username")
+        or instance_data.get("ssh_username")
+        or instance_data.get("ssh_user")
+        or get_ssh_username(os_type, role)
+    )
     executor = GuestSSHExecutor(
         private_key=private_key,
         username=username,
+        port=int(instance_data.get("gcp_host_ssh_port") or GuestSSHExecutor.DEFAULT_SSH_PORT),
         host_public_key=instance_data.get("gcp_host_public_key", ""),
         known_hosts_host=target,
     )

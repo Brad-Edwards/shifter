@@ -11,6 +11,17 @@ from executors.factory import get_ssh_username
 
 _MANAGED_BY_LABEL = "shifter-provisioner"
 
+_DEFAULT_SSH_PORT = 22
+
+# Scenario image keys whose range host is an Ubuntu Docker host: the
+# participant-facing service (e.g. the Polaris Kali container) publishes the
+# host's :22/:3389, so the provisioner drives the host sshd on the management
+# port as the host login user, keeping :22/:3389 for participant access. The
+# scenario image key is translated to a validated GCE profile here rather than
+# passing the AWS ``ami_key``/``instance_type`` through to Compute Engine.
+_DOCKER_HOST_AMI_KEYS = frozenset({"polaris-vm"})
+_DOCKER_HOST_SSH_USERNAME = "ubuntu"
+
 ResourceDict = dict[str, object]
 ComputeResource = dict[str, object]
 ScenarioInstance = ResourceDict
@@ -78,6 +89,8 @@ class InstancePlan(TypedDict):
     profile: GCERangeImageProfile
     source: ScenarioInstance
     ssh_username: str
+    host_ssh_username: str
+    ssh_port: int
 
 
 class RangeCellPlan(TypedDict):
@@ -88,6 +101,7 @@ class RangeCellPlan(TypedDict):
     zone: str
     request_uuid: str
     range_id: int
+    private_google_access: bool
     labels: dict[str, str]
     network: NetworkPlan
     subnets: list[SubnetPlan]
@@ -255,14 +269,40 @@ def _profile_for_instance(
     *,
     require_images: bool,
 ) -> GCERangeImageProfile:
-    """Resolve the image profile for one range instance."""
+    """Resolve the image profile for one range instance.
+
+    Machine size comes from the GCE range profile (``GCP_RANGE_*_MACHINE_TYPE``),
+    never the scenario's AWS ``instance_type`` (e.g. ``m5.2xlarge``), which is an
+    EC2 shape and is not a valid Compute Engine machine type.
+    """
     if not require_images:
         return GCERangeImageProfile()
     return config.get_profile(
         role=str(instance.get("role", "victim")),
         os_type=str(instance.get("os_type", instance.get("os", "ubuntu"))),
-        requested_type=str(instance.get("instance_type", "")).strip(),
     )
+
+
+def _host_access(
+    config: GCERangeCellConfig, instance: ScenarioInstance, os_type: str, role: str
+) -> tuple[str, str, int]:
+    """Resolve ``(participant_ssh_username, host_ssh_username, host_ssh_port)``.
+
+    The participant SSH user is what the portal terminal / Guacamole connects
+    as on :22 (the participant-facing service). The host SSH user + port are
+    what the provisioner drives for guest setup.
+
+    Docker-host scenarios (whose participant container publishes host :22)
+    split the two: the participant reaches the container as its native user on
+    :22, while the provisioner reaches the host sshd on the management port as
+    the host login user. Native single-service guests use the same user on :22
+    for both.
+    """
+    participant_user = get_ssh_username(os_type, role)
+    ami_key = str(instance.get("ami_key", "")).strip().lower()
+    if ami_key in _DOCKER_HOST_AMI_KEYS:
+        return participant_user, _DOCKER_HOST_SSH_USERNAME, config.host_mgmt_ssh_port
+    return participant_user, participant_user, _DEFAULT_SSH_PORT
 
 
 def _build_instance_plans(
@@ -280,6 +320,7 @@ def _build_instance_plans(
             key = _instance_assignment_key(instance, index)
             role = str(instance.get("role", "victim"))
             os_type = str(instance.get("os_type", instance.get("os", "ubuntu")))
+            ssh_username, host_ssh_username, ssh_port = _host_access(config, instance, os_type, role)
             resource_name = _short_resource_name(
                 "shifter-r",
                 range_id,
@@ -302,7 +343,9 @@ def _build_instance_plans(
                     "tags": [_network_tag(range_id), subnet_plan["tag"], _short_resource_name("shifter-role", role)],
                     "profile": _profile_for_instance(config, instance, require_images=require_images),
                     "source": instance,
-                    "ssh_username": get_ssh_username(os_type, role),
+                    "ssh_username": ssh_username,
+                    "host_ssh_username": host_ssh_username,
+                    "ssh_port": ssh_port,
                 }
             )
     return plans
@@ -329,6 +372,11 @@ def _firewall_plan(
             }
         )
     if config.portal_network_cidrs:
+        # SSH (participant + native-guest host), RDP, and the Docker-host
+        # management sshd port (Polaris host, whose Kali container binds :22).
+        mgmt_ports = ["22", "3389"]
+        if str(config.host_mgmt_ssh_port) not in mgmt_ports:
+            mgmt_ports.append(str(config.host_mgmt_ssh_port))
         firewalls.append(
             {
                 "name": _short_resource_name("shifter-r", range_id, "mgmt"),
@@ -336,7 +384,7 @@ def _firewall_plan(
                 "priority": 900,
                 "target_tags": [range_tag],
                 "source_ranges": list(config.portal_network_cidrs),
-                "allowed": [{"IPProtocol": "tcp", "ports": ["22", "3389"]}],
+                "allowed": [{"IPProtocol": "tcp", "ports": mgmt_ports}],
             }
         )
     firewalls.extend(
@@ -403,6 +451,7 @@ def render_range_cell_plan(
         "zone": resolved_config.zone,
         "request_uuid": request_uuid,
         "range_id": range_id,
+        "private_google_access": resolved_config.private_google_access,
         "labels": _range_labels(range_id, request_uuid),
         "network": {
             "name": network_name,

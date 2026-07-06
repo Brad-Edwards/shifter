@@ -21,7 +21,7 @@ GCP_DIR = PACKER_DIR / "gcp"
 GCP_SCRIPTS_DIR = GCP_DIR / "scripts"
 
 # Image types that ship a GCE builder in this iteration.
-GCE_IMAGE_TYPES = ["ubuntu", "brokenbk", "kali", "windows", "dc"]
+GCE_IMAGE_TYPES = ["ubuntu", "brokenbk", "kali", "windows", "dc", "polaris-vm"]
 
 
 class TestGcpTemplateStructure:
