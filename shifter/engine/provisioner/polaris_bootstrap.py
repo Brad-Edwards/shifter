@@ -20,7 +20,6 @@ from typing import Any
 
 from executors.factory import build_guest_execution_context
 from orchestrators.setup_orchestrator import SetupError, SetupOrchestrator
-from plans.base import SetupPlan
 from plans.polaris_range_bootstrap import PolarisRangeBootstrapPlan
 
 logger = logging.getLogger(__name__)
@@ -98,7 +97,7 @@ def _run_polaris_range_bootstrap(
     )
     try:
         orchestrator = SetupOrchestrator(executor=execution.executor)
-        plan: SetupPlan = PolarisRangeBootstrapPlan(provider=resolved_provider)
+        plan = PolarisRangeBootstrapPlan(provider=resolved_provider)
 
         class _PolarisCtx:
             """Local context shim for PolarisRangeBootstrapPlan template variables."""

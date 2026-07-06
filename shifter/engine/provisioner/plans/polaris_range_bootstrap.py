@@ -105,7 +105,7 @@ class PolarisRangeBootstrapPlan:
                 timeout_seconds=180,
                 requires_reboot=False,
             )
-        self.steps: list[SetupStep] = [
+        self._steps: list[SetupStep] = [
             SetupStep(
                 name="polaris_range_bootstrap",
                 script=POLARIS_RANGE_BOOTSTRAP_SCRIPT,
@@ -126,12 +126,22 @@ class PolarisRangeBootstrapPlan:
             ),
             shard_step,
         ]
-        self.verify_step = SetupStep(
+        self._verify_step = SetupStep(
             name="verify_polaris_range",
             script=VERIFY_POLARIS_BOOTSTRAP_SCRIPT,
             timeout_seconds=60,
             is_verification=True,
         )
+
+    @property
+    def steps(self) -> list[SetupStep]:
+        """Ordered setup steps (satisfies the SetupPlan protocol)."""
+        return self._steps
+
+    @property
+    def verify_step(self) -> SetupStep | None:
+        """Final verification step (satisfies the SetupPlan protocol)."""
+        return self._verify_step
 
     def get_context(self, instance: object) -> dict[str, Any]:
         """Return template variables for the polaris range bootstrap scripts.
@@ -229,6 +239,13 @@ class PolarisRangeBootstrapPlan:
             "range_id": range_id,
             "vertex_project_id": project,
             "vertex_region": region,
+            **PolarisRangeBootstrapPlan._vertex_models(instance),
+        }
+
+    @staticmethod
+    def _vertex_models(instance: object) -> dict[str, Any]:
+        """Resolve the Vertex Claude model ids for the a14-kali agent."""
+        return {
             "anthropic_model": (
                 getattr(instance, "anthropic_model", None)
                 or os.environ.get("GCP_RANGE_KALI_ANTHROPIC_MODEL")
