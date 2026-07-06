@@ -5,7 +5,7 @@ Status: pre-implementation guidance
 Date: 2026-06-29
 
 Issue: GitHub #476, "Range and experiment state flow treats event delivery as
-best-effort despite correctness dependencies".
+best-effort despite correctness dependencies."
 
 Superseded note: ADR-027 / issue #1195 removed the legacy experiment event
 bridge and run reconciler. ADR-025 now applies this durable-delivery model to

@@ -13,6 +13,8 @@ from typing import Any
 
 from cryptography.fernet import Fernet
 
+from log_redact import safe_log_fingerprint
+
 logger = logging.getLogger(__name__)
 
 
@@ -1094,8 +1096,8 @@ def get_range_from_db(range_id: int) -> dict[str, Any]:
         }
 
         logger.debug(
-            "Loaded range %d: ngfw_enabled=%s, ngfw_attachment=%s",
-            range_id,
+            "Loaded range range_fp=%s: ngfw_enabled=%s, ngfw_attachment=%s",
+            safe_log_fingerprint(range_id),
             result["ngfw_enabled"],
             "present" if result["ngfw_attachment"] else "none",
         )

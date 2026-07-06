@@ -16,7 +16,12 @@ if (configScript) {
     } catch (error) {
         console.error("Identity Platform logout failed", error);
     } finally {
-        globalThis.location.assign(config.redirectUrl || "/");
+        // Only follow same-origin relative paths. Reject absolute or
+        // protocol-relative URLs to avoid an open-redirect / DOM-XSS sink
+        // (CodeQL js/xss-through-dom).
+        const rawRedirect = config.redirectUrl || "/";
+        const redirect = /^\/(?![/\\])/.test(rawRedirect) ? rawRedirect : "/";
+        globalThis.location.assign(redirect);
     }
 } else {
     globalThis.location.assign("/");
