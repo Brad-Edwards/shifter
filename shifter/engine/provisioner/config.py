@@ -250,26 +250,10 @@ class GDCVMRuntimeConfig:
     ubuntu: GDCVMRuntimeProfile = field(default_factory=GDCVMRuntimeProfile)
     windows: GDCVMRuntimeProfile = field(default_factory=GDCVMRuntimeProfile)
     dc: GDCVMRuntimeProfile = field(default_factory=GDCVMRuntimeProfile)
-    # Scenario-specific content-baked images selected by ami_key (not role/
-    # os_type): the polaris CTF range ships dedicated polaris-vm (docker stack)
-    # and polaris-dc (BOREAS.LOCAL forest) images.
-    polaris_vm: GDCVMRuntimeProfile = field(default_factory=GDCVMRuntimeProfile)
-    polaris_dc: GDCVMRuntimeProfile = field(default_factory=GDCVMRuntimeProfile)
 
-    def get_profile(self, *, role: str, os_type: str, ami_key: str = "") -> GDCVMRuntimeProfile:
-        """Return the matching VM Runtime profile for a scenario instance.
-
-        ``ami_key`` selects a scenario-specific content-baked image when set
-        (e.g. polaris-vm/polaris-dc); otherwise the generic role/os_type image
-        is used. On the AWS path ami_key resolves through SSM (/shifter/ami/*);
-        on GDC it selects a dedicated GDC_POLARIS_* image URL.
-        """
-        ami_key = (ami_key or "").strip()
-        if ami_key == "polaris-vm":
-            profile = self.polaris_vm
-        elif ami_key == "polaris-dc":
-            profile = self.polaris_dc
-        elif role == "dc":
+    def get_profile(self, *, role: str, os_type: str) -> GDCVMRuntimeProfile:
+        """Return the matching VM Runtime profile for a scenario instance."""
+        if role == "dc":
             profile = self.dc
         elif os_type == "kali":
             profile = self.kali
@@ -280,8 +264,8 @@ class GDCVMRuntimeConfig:
 
         if not profile.source_url:
             raise RuntimeError(
-                f"Missing GDC VM Runtime image URL for role={role!r} os_type={os_type!r} "
-                f"ami_key={ami_key!r}. Set the corresponding GDC_*_IMAGE_URL environment variable."
+                f"Missing GDC VM Runtime image URL for role={role!r} os_type={os_type!r}. "
+                "Set the corresponding GDC_*_IMAGE_URL environment variable."
             )
         return profile
 
@@ -344,6 +328,85 @@ class GDCScenarioPodConfig:
 
 
 @dataclass(frozen=True)
+class GCERangeImageProfile:
+    """Image and sizing contract for one Compute Engine range guest family."""
+
+    source_image: str = ""
+    machine_type: str = "e2-medium"
+    disk_size_gb: int = 30
+    disk_type: str = "pd-balanced"
+
+
+@dataclass(frozen=True)
+class GCERangeCellConfig:
+    """Configuration for the GCE-backed live-fire range-cell backend."""
+
+    project_id: str
+    region: str
+    zone: str
+    network_mode: str
+    service_account_email: str = ""
+    service_account_scopes: tuple[str, ...] = (
+        "https://www.googleapis.com/auth/logging.write",
+        "https://www.googleapis.com/auth/monitoring.write",
+    )
+    linux: GCERangeImageProfile = field(default_factory=GCERangeImageProfile)
+    kali: GCERangeImageProfile = field(default_factory=GCERangeImageProfile)
+    windows: GCERangeImageProfile = field(default_factory=GCERangeImageProfile)
+    dc: GCERangeImageProfile = field(default_factory=GCERangeImageProfile)
+    portal_network_cidrs: tuple[str, ...] = ()
+    egress_allow_cidrs: tuple[str, ...] = ()
+    # Pre-provisioned Vertex-only service account. When set, the range-cell
+    # backend mints a per-range key on this SA (created and destroyed with the
+    # range), stores it by reference in Secret Manager, and the range bootstrap
+    # injects it into the participant agent container. This keeps the agent's
+    # cloud credential scoped to Vertex and per-range revocable, and the
+    # container is blocked from the metadata server so it can never mint the
+    # broader range-host SA token. Empty disables per-range agent credentials.
+    vertex_service_account_email: str = ""
+    # Private Google Access on the range subnet lets no-external-IP guests reach
+    # Google APIs (Vertex AI for the Polaris agent, GCS for the smoketest
+    # tarball) over internal routing. Requires an egress-allow to the Google API
+    # VIP in ``egress_allow_cidrs``. Off by default for maximum isolation.
+    private_google_access: bool = False
+    # Management SSH port for Docker-host range guests (e.g. the Polaris range
+    # host) whose participant container publishes host :22, forcing the host
+    # sshd the provisioner drives to a dedicated port. Native single-service
+    # guests keep :22.
+    host_mgmt_ssh_port: int = 2222
+    metadata_items: tuple[tuple[str, str], ...] = (
+        ("block-project-ssh-keys", "true"),
+        ("enable-oslogin", "false"),
+        ("serial-port-enable", "false"),
+    )
+
+    def get_profile(self, *, role: str, os_type: str, requested_type: str = "") -> GCERangeImageProfile:
+        """Return the image profile for a range guest, applying instance-type overrides."""
+        if role == "dc":
+            profile = self.dc
+        elif os_type == "kali" or role == "attacker":
+            profile = self.kali if self.kali.source_image else self.linux
+        elif os_type == "windows":
+            profile = self.windows
+        else:
+            profile = self.linux
+
+        if not profile.source_image:
+            raise RuntimeError(
+                f"Missing GCE range image for role={role!r} os_type={os_type!r}. "
+                "Set the corresponding GCP_RANGE_*_IMAGE environment variable."
+            )
+        if requested_type:
+            return GCERangeImageProfile(
+                source_image=profile.source_image,
+                machine_type=requested_type,
+                disk_size_gb=profile.disk_size_gb,
+                disk_type=profile.disk_type,
+            )
+        return profile
+
+
+@dataclass(frozen=True)
 class NGFWAttachmentConfig:
     """Provider-neutral attachment and access contract for an NGFW instance."""
 
@@ -370,8 +433,28 @@ def _parse_csv_env(value: str) -> tuple[str, ...]:
     return tuple(item.strip() for item in value.split(",") if item.strip())
 
 
+def get_gcp_range_backend() -> str:
+    """Return the selected GCP range backend.
+
+    The historical GCP path is GDC VM Runtime, so ``gdc`` remains the default
+    whenever ``CLOUD_PROVIDER=gcp`` and no explicit backend is configured.
+    """
+    if os.environ.get("CLOUD_PROVIDER", "aws") != "gcp":
+        return ""
+    backend = os.environ.get("GCP_RANGE_BACKEND") or os.environ.get("GCP_RANGE_PLANE") or "gdc"
+    backend = backend.strip().lower()
+    if backend not in {"gdc", "gce"}:
+        raise RuntimeError(f"GCP_RANGE_BACKEND must be 'gdc' or 'gce', got {backend!r}")
+    return backend
+
+
 def _is_active_gdc_range_plane() -> bool:
-    return os.environ.get("CLOUD_PROVIDER", "aws") == "gcp"
+    return get_gcp_range_backend() == "gdc"
+
+
+def is_gce_range_cell_backend() -> bool:
+    """Return True when GCP ranges should be provisioned as GCE range cells."""
+    return get_gcp_range_backend() == "gce"
 
 
 def _first_non_empty_string(*values: Any) -> str:
@@ -507,6 +590,14 @@ def _get_int_env(name: str, default: int) -> int:
     return int(value) if value else default
 
 
+def _get_bool_env(name: str, default: bool) -> bool:
+    """Return a boolean env var, treating 1/true/yes/on as true."""
+    value = os.environ.get(name, "").strip().lower()
+    if not value:
+        return default
+    return value in ("1", "true", "yes", "on")
+
+
 def _load_gdc_vm_profile(
     prefix: str,
     *,
@@ -527,6 +618,21 @@ def _load_gdc_scenario_pod_profile(prefix: str, *, default_image: str) -> GDCSce
     """Load a role-specific scenario Pod profile from env vars."""
     return GDCScenarioPodProfile(
         image=os.environ.get(f"{prefix}_IMAGE", default_image).strip() or default_image,
+    )
+
+
+def _load_gce_range_profile(
+    prefix: str,
+    *,
+    default_machine_type: str,
+    default_disk_size_gb: int,
+) -> GCERangeImageProfile:
+    """Load one GCE range guest image/sizing profile."""
+    return GCERangeImageProfile(
+        source_image=os.environ.get(f"{prefix}_IMAGE", "").strip(),
+        machine_type=os.environ.get(f"{prefix}_MACHINE_TYPE", default_machine_type).strip() or default_machine_type,
+        disk_size_gb=_get_int_env(f"{prefix}_DISK_SIZE_GB", default_disk_size_gb),
+        disk_type=os.environ.get(f"{prefix}_DISK_TYPE", "pd-balanced").strip() or "pd-balanced",
     )
 
 
@@ -629,10 +735,6 @@ def load_gdc_vmruntime_config() -> GDCVMRuntimeConfig:
         ubuntu=_load_gdc_vm_profile("GDC_UBUNTU", default_vcpus=1, default_memory="2Gi", default_disk_size_gib=20),
         windows=_load_gdc_vm_profile("GDC_WINDOWS", default_vcpus=2, default_memory="8Gi", default_disk_size_gib=64),
         dc=_load_gdc_vm_profile("GDC_DC", default_vcpus=2, default_memory="8Gi", default_disk_size_gib=64),
-        # polaris-vm runs the 17-container stack (sized like the AWS m5.2xlarge);
-        # polaris-dc is a BOREAS.LOCAL forest DC.
-        polaris_vm=_load_gdc_vm_profile("GDC_POLARIS_VM", default_vcpus=8, default_memory="16Gi", default_disk_size_gib=80),
-        polaris_dc=_load_gdc_vm_profile("GDC_POLARIS_DC", default_vcpus=2, default_memory="8Gi", default_disk_size_gib=120),
     )
 
 
@@ -725,13 +827,142 @@ def load_gdc_scenario_pod_config() -> GDCScenarioPodConfig:
     )
 
 
-def load_range_network_config() -> RangeNetworkConfig:
-    """Load the active provider's range-network contract from environment variables."""
+def _resolve_gce_range_required_env() -> tuple[str, str, str, str]:
+    """Resolve required environment for the GCE range-cell backend."""
+    project_id = (
+        os.environ.get("GCP_PROJECT_ID")
+        or os.environ.get("GOOGLE_CLOUD_PROJECT")
+        or os.environ.get("CLOUD_PROJECT_ID")
+        or ""
+    ).strip()
+    region = (
+        os.environ.get("RANGE_NETWORK_REGION") or os.environ.get("GCP_REGION") or os.environ.get("CLOUD_REGION") or ""
+    ).strip()
+    zone = get_range_availability_zone(default="").strip()
+    service_account_email = os.environ.get("GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL", "").strip()
+    return project_id, region, zone, service_account_email
+
+
+def _missing_gce_range_required_env(
+    *,
+    project_id: str,
+    region: str,
+    zone: str,
+    service_account_email: str,
+) -> list[str]:
+    """Return display names for missing GCE range-cell settings."""
+    return [
+        name
+        for name, value in (
+            ("GCP_PROJECT_ID", project_id),
+            ("RANGE_NETWORK_REGION/GCP_REGION", region),
+            ("RANGE_NETWORK_ZONE", zone),
+            ("GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL", service_account_email),
+        )
+        if not value
+    ]
+
+
+def load_gce_range_cell_config() -> GCERangeCellConfig:
+    """Load the live-fire GCE range-cell backend configuration."""
+    if not is_gce_range_cell_backend():
+        raise RuntimeError("GCE range-cell config is only valid when CLOUD_PROVIDER=gcp and GCP_RANGE_BACKEND=gce")
+
+    project_id, region, zone, service_account_email = _resolve_gce_range_required_env()
+    missing = _missing_gce_range_required_env(
+        project_id=project_id,
+        region=region,
+        zone=zone,
+        service_account_email=service_account_email,
+    )
+    if missing:
+        raise RuntimeError("Missing required GCE range-cell configuration: " + ", ".join(missing))
+
+    network_mode = os.environ.get("GCP_RANGE_CELL_NETWORK_MODE", "vpc-per-range").strip().lower()
+    if network_mode != "vpc-per-range":
+        raise RuntimeError("GCE range cells currently require GCP_RANGE_CELL_NETWORK_MODE=vpc-per-range")
+
+    return GCERangeCellConfig(
+        project_id=project_id,
+        region=region,
+        zone=zone,
+        network_mode=network_mode,
+        service_account_email=service_account_email,
+        service_account_scopes=_parse_csv_env(
+            os.environ.get(
+                "GCP_RANGE_HOST_SERVICE_ACCOUNT_SCOPES",
+                "https://www.googleapis.com/auth/logging.write,https://www.googleapis.com/auth/monitoring.write",
+            )
+        ),
+        linux=_load_gce_range_profile(
+            "GCP_RANGE_LINUX",
+            default_machine_type="e2-standard-2",
+            default_disk_size_gb=50,
+        ),
+        kali=_load_gce_range_profile(
+            "GCP_RANGE_KALI",
+            default_machine_type="e2-standard-4",
+            default_disk_size_gb=80,
+        ),
+        windows=_load_gce_range_profile(
+            "GCP_RANGE_WINDOWS",
+            default_machine_type="e2-standard-4",
+            default_disk_size_gb=80,
+        ),
+        dc=_load_gce_range_profile(
+            "GCP_RANGE_DC",
+            default_machine_type="e2-standard-4",
+            default_disk_size_gb=100,
+        ),
+        portal_network_cidrs=_parse_csv_env(
+            os.environ.get("PORTAL_NETWORK_CIDRS", "") or os.environ.get("PORTAL_VPC_CIDR", "")
+        ),
+        egress_allow_cidrs=_parse_csv_env(os.environ.get("GCP_RANGE_EGRESS_ALLOW_CIDRS", "")),
+        vertex_service_account_email=os.environ.get("GCP_RANGE_VERTEX_SERVICE_ACCOUNT_EMAIL", "").strip(),
+        private_google_access=_get_bool_env("GCP_RANGE_PRIVATE_GOOGLE_ACCESS", False),
+        host_mgmt_ssh_port=_get_int_env("GCP_RANGE_HOST_MGMT_SSH_PORT", 2222),
+    )
+
+
+def _load_portal_network_cidrs() -> tuple[str, ...]:
+    """Load portal CIDRs with the legacy single-CIDR fallback."""
     portal_network_cidrs = _parse_csv_env(os.environ.get("PORTAL_NETWORK_CIDRS", ""))
     legacy_portal_cidr = os.environ.get("PORTAL_VPC_CIDR", "")
     if not portal_network_cidrs and legacy_portal_cidr:
-        portal_network_cidrs = (legacy_portal_cidr,)
+        return (legacy_portal_cidr,)
+    return portal_network_cidrs
 
+
+def _resolve_range_project_id() -> str:
+    """Resolve the active cloud project id used by range networking."""
+    return (
+        os.environ.get("GCP_PROJECT_ID")
+        or os.environ.get("GOOGLE_CLOUD_PROJECT")
+        or os.environ.get("CLOUD_PROJECT_ID")
+        or ""
+    ).strip()
+
+
+def _resolve_range_network_region() -> str:
+    """Resolve the range network region from current provider env."""
+    return (
+        os.environ.get("RANGE_NETWORK_REGION")
+        or os.environ.get("GCP_REGION")
+        or os.environ.get("CLOUD_REGION")
+        or os.environ.get("AWS_REGION", "")
+    )
+
+
+def _default_range_network_id(project_id: str) -> str:
+    """Return the provider-specific default range network id."""
+    if is_gce_range_cell_backend():
+        return f"gcp-range-cells:{project_id}"
+    return ""
+
+
+def load_range_network_config() -> RangeNetworkConfig:
+    """Load the active provider's range-network contract from environment variables."""
+    portal_network_cidrs = _load_portal_network_cidrs()
     gdc_access = load_gdc_network_access_config() if _is_active_gdc_range_plane() else None
     if gdc_access is not None:
         return RangeNetworkConfig(
@@ -741,15 +972,13 @@ def load_range_network_config() -> RangeNetworkConfig:
             portal_network_cidrs=portal_network_cidrs,
         )
 
+    project_id = _resolve_range_project_id()
     return RangeNetworkConfig(
-        network_id=os.environ.get("RANGE_NETWORK_ID") or os.environ.get("RANGE_VPC_ID", ""),
+        network_id=os.environ.get("RANGE_NETWORK_ID")
+        or os.environ.get("RANGE_VPC_ID", "")
+        or _default_range_network_id(project_id),
         network_cidr=os.environ.get("RANGE_NETWORK_CIDR") or os.environ.get("RANGE_VPC_CIDR", ""),
-        network_region=(
-            os.environ.get("RANGE_NETWORK_REGION")
-            or os.environ.get("GCP_REGION")
-            or os.environ.get("CLOUD_REGION")
-            or os.environ.get("AWS_REGION", "")
-        ),
+        network_region=_resolve_range_network_region(),
         portal_network_cidrs=portal_network_cidrs,
     )
 

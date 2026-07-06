@@ -53,8 +53,8 @@ cat > docker-compose.override.yml.new <<COMPOSE_EOF
 services:
   a14-kali:
     ports:
-      - "{{ kali_ssh_port_mapping }}"
-      - "{{ kali_rdp_port_mapping }}"
+      - "22:22"
+      - "3389:3389"
     environment:
       KALI_AUTHORIZED_KEY: "$KALI_PUBKEY"
       KALI_SPLICE_PRIVATE_KEY_B64: "$SPLICE_PRIVATE_KEY_B64"
@@ -67,17 +67,9 @@ services:
 COMPOSE_EOF
 mv docker-compose.override.yml.new docker-compose.override.yml
 
-# Bring up the full 17-service stack. On AWS the range host's user_data has
-# already done `docker compose up -d` before this per-range bootstrap runs, so
-# this is idempotent there (only ever creates anything missing). On GDC the
-# image is baked with `docker compose build` but NOT started, so this seam is
-# the first `up` — without it only the force-recreated services below would run
-# and the other 14 assets (a0-a8, a10-a13, a15, a16) would never start.
-docker compose up -d
-
-# Force-recreate the containers whose env vars changed so they pick up the
-# per-range override (DC IP, kali pubkey, splice keys). a9-splice was added in
-# #707 because the A9 entrypoint now consumes A9_AUTHORIZED_KEY.
+# Force-recreate only the containers whose env vars changed. The other
+# 14 stay running undisturbed. a9-splice was added in #707 because the
+# A9 entrypoint now consumes A9_AUTHORIZED_KEY.
 docker compose up -d --force-recreate dns a14-kali a9-splice
 
 # The baked compose attaches a14-kali to splice-link at container start
@@ -212,16 +204,6 @@ set -euo pipefail
 WATCHER="/usr/local/bin/polaris-splice-watcher.sh"
 UNIT="/etc/systemd/system/polaris-splice-watcher.service"
 
-# Escalate when not already root. The AWS SSM path runs as root; the GDC
-# in-range SSH path connects as an unprivileged `kali` holding passwordless
-# sudo (same assumption as set_hostname / set_local_password). Writing to
-# /usr/local/bin + /etc/systemd/system and driving systemctl all require root.
-if [ "$(id -u)" -eq 0 ]; then
-    SUDO=""
-else
-    SUDO="sudo -n"
-fi
-
 # Quoted heredoc delimiter prevents host-side shell expansion — the
 # watcher's shell vars and command substitutions are interpreted at
 # watcher runtime, not now. Uses Go template tokens (docker --format);
@@ -230,7 +212,7 @@ fi
 # leaves them untouched. No bare word-only tokens appear inside the
 # braces anywhere in this heredoc — those would be matched and
 # treated as missing template variables by the renderer.
-$SUDO tee "$WATCHER" >/dev/null <<'WATCHER_EOF'
+cat > "$WATCHER" <<'WATCHER_EOF'
 #!/bin/bash
 # polaris-splice-watcher: poll A5 HMI state; when the generator goes
 # into thermal runaway (flag 19 earned), attach a14-kali to the
@@ -288,9 +270,9 @@ while true; do
   sleep "$POLL_INTERVAL_S"
 done
 WATCHER_EOF
-$SUDO chmod +x "$WATCHER"
+chmod +x "$WATCHER"
 
-$SUDO tee "$UNIT" >/dev/null <<UNIT_EOF
+cat > "$UNIT" <<UNIT_EOF
 [Unit]
 Description=Polaris splice watcher (attaches a14-kali to splice-link on flag 19)
 After=docker.service
@@ -306,9 +288,9 @@ RestartSec=10
 WantedBy=multi-user.target
 UNIT_EOF
 
-$SUDO systemctl daemon-reload
-$SUDO systemctl enable polaris-splice-watcher.service
-$SUDO systemctl restart polaris-splice-watcher.service
+systemctl daemon-reload
+systemctl enable polaris-splice-watcher.service
+systemctl restart polaris-splice-watcher.service
 
 echo "polaris splice watcher: installed and started"
 exit 0

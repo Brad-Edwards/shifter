@@ -91,12 +91,7 @@ jobs:
 
   deploy:
     name: Deploy (${{ inputs.environment }})
-    # Pin to the `dev` self-hosted pool: those runners' egress IPs are in the
-    # GKE master-authorized-networks allowlist. The `proof` pool shares the
-    # `self-hosted`/`shifter` labels but its IPs are not authorized, so a bare
-    # `self-hosted` target round-robins onto proof runners and the kubectl
-    # apply times out dialing the control-plane endpoint.
-    runs-on: [self-hosted, dev]
+    runs-on: self-hosted
     environment: ${{ inputs.github_environment }}
     needs: validate
     if: inputs.deploy_changes && github.event_name != 'pull_request'
@@ -308,7 +303,6 @@ jobs:
           if spec is None or spec.loader is None:
               raise RuntimeError(f"Unable to load bootstrap module from {module_path}")
           module = importlib.util.module_from_spec(spec)
-          sys.modules[spec.name] = module
           spec.loader.exec_module(module)
 
           outputs = json.loads(Path("/tmp/gcp-terraform-outputs.json").read_text())
@@ -360,12 +354,9 @@ jobs:
           path = Path(os.environ["K8S_OVERLAY_DIR"]) / "kustomization.yaml"
           content = path.read_text(encoding="utf-8")
 
-          # Quote the tag: a short SHA can be all-digits (e.g. "2002027"), which
-          # YAML would parse as a number and kustomize rejects for the string
-          # newTag field ("cannot unmarshal number ... of type string").
           updated, replacements = re.subn(
             r"(?m)^(\s*newTag:\s*)\S+\s*$",
-            lambda match: f'{match.group(1)}"{short_sha}"',
+            lambda match: f"{match.group(1)}{short_sha}",
             content,
           )
           if replacements == 0:
@@ -396,20 +387,6 @@ jobs:
             )
             sa_patch.write_text(sa_updated, encoding="utf-8")
             print(f"Rewrote {sa_fixes} service-account GSA projects to {project}")
-
-          # The runtime env pins the same placeholder project; rewrite only the
-          # GCP project-ID vars (not the resource *names* that share the prefix)
-          # so default-project GCP calls (GCS image access, token minting, in
-          # both the portal and the provisioner job) hit the real project.
-          runtime_env = Path(os.environ["K8S_OVERLAY_DIR"]) / "platform-runtime.env"
-          if runtime_env.exists():
-            env_updated, env_fixes = re.subn(
-              r"(?m)^(GCP_PROJECT_ID=|GOOGLE_CLOUD_PROJECT=).*$",
-              lambda m: f"{m.group(1)}{project}",
-              runtime_env.read_text(encoding="utf-8"),
-            )
-            runtime_env.write_text(env_updated, encoding="utf-8")
-            print(f"Rewrote {env_fixes} runtime-env project vars to {project}")
           PY
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
       - name: Build and push portal image

@@ -69,7 +69,11 @@ resource "aws_cloudwatch_log_group" "rotation" {
 
   name              = "/aws/lambda/${var.name_prefix}-redis-rotation"
   retention_in_days = 365
-  kms_key_id        = var.secrets_kms_key_arn
+  # CloudWatch Logs cannot use the Secrets Manager CMK (its key policy is
+  # scoped via kms:ViaService to secretsmanager only, so the logs service is
+  # denied). Use the dedicated CloudWatch Logs CMK, whose key policy grants
+  # the logs.<region> service principal.
+  kms_key_id = var.cloudwatch_logs_kms_key_arn
 
   tags = merge(var.tags, {
     Name   = "${var.name_prefix}-redis-rotation-logs"
@@ -149,6 +153,10 @@ resource "aws_iam_role" "rotation" {
   count = local.rotation_enabled ? 1 : 0
 
   name = "${local.iam_name_prefix}-redis-rotation-role"
+
+  # The deploy role's iam:CreateRole is conditioned on this exact CI
+  # permissions boundary; without it, creating this role is denied.
+  permissions_boundary = var.permissions_boundary_arn != "" ? var.permissions_boundary_arn : null
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"

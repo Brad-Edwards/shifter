@@ -5,10 +5,15 @@ from django.contrib.auth import get_user_model
 
 from cms.models import AcesPackageSource, Scenario, ScenarioMetadata
 from cms.scenarios.registry import (
+    ScenarioWorkflow,
+    _aces_launchable,
     check_scenario_access,
+    get_catalog_entry,
     get_scenario_detail,
     is_default_scenario,
+    is_scenario_launchable,
     list_all_scenarios,
+    list_launchable_scenarios,
     load_demo_scenario_template,
     load_scenario_template,
 )
@@ -183,7 +188,8 @@ class TestAcesPackageSourceProjection:
         assert entry["scenario_type"] == "aces"
         assert entry["source_kind"] == "repo"
         assert entry["contract_kind"] == "aces"
-        assert entry["launchable"] is True
+        # Review-only by default: no runtime adapter is wired yet.
+        assert entry["launchable"] is False
         assert "agent_requirements" in entry
         assert entry["name"] == "polaris-aces"
 
@@ -231,7 +237,7 @@ class TestAcesPackageSourceProjection:
         ids = [s["id"] for s in list_all_scenarios(user=regular_user)]
         assert "polaris-aces" not in ids
 
-    def test_access_and_launchability_independent(self, staff_user):
+    def test_access_and_launchability_independent(self, staff_user, aces_launch_adapter):
         _make_aces_source(staff_user, "polaris-split", conformance_status="passed")
         ScenarioMetadata.objects.create(
             scenario_id="polaris-split",
@@ -239,7 +245,8 @@ class TestAcesPackageSourceProjection:
             updated_by=staff_user,
         )
         entry = next(s for s in list_all_scenarios(user=None) if s["id"] == "polaris-split")
-        # Access (metadata) and launchability (conformance) are separate axes.
+        # Access (metadata) and launchability are separate axes: disabled for
+        # access yet launchable once a runtime adapter exists.
         assert entry["enabled"] is False
         assert entry["launchable"] is True
 
@@ -269,6 +276,100 @@ class TestAcesPackageSourceNotLaunchable:
         _make_aces_source(staff_user, "polaris-pending", conformance_status="pending")
         with pytest.raises(ValueError, match="not found"):
             load_scenario_template("polaris-pending")
+
+
+@pytest.fixture
+def aces_launch_adapter(monkeypatch):
+    """Simulate a wired ACES runtime adapter for the ('aces','shifter') profile.
+
+    Launchability is gated on a runtime hydration adapter existing; none is wired
+    yet, so ACES entries are review-only by default. Tests that exercise the
+    positive launchability path use this fixture to simulate the future adapter.
+    """
+    monkeypatch.setattr(
+        "cms.scenarios.registry._LAUNCH_ADAPTER_CONTRACT_PROFILES",
+        frozenset({("aces", "shifter")}),
+    )
+
+
+class TestLaunchability:
+    def test_legacy_entries_are_launchable(self, db):
+        entry = next(s for s in list_all_scenarios() if s["id"] == "basic")
+        assert entry["launchable"] is True
+
+    def test_aces_review_only_without_adapter(self, staff_user):
+        # No runtime adapter is wired, so even a conformant ACES entry is
+        # review-only (not launchable) — it must not be exposed to launch flows.
+        _make_aces_source(staff_user, "polaris-aces", conformance_status="passed")
+        assert get_catalog_entry("polaris-aces")["launchable"] is False
+
+    def test_conformant_supported_aces_launchable_with_adapter(self, staff_user, aces_launch_adapter):
+        _make_aces_source(staff_user, "polaris-aces", conformance_status="passed")
+        assert get_catalog_entry("polaris-aces")["launchable"] is True
+
+    def test_pending_aces_not_launchable_with_adapter(self, staff_user, aces_launch_adapter):
+        _make_aces_source(staff_user, "polaris-pending", conformance_status="pending")
+        assert get_catalog_entry("polaris-pending")["launchable"] is False
+
+    def test_unsupported_profile_not_launchable_with_adapter(self, staff_user, aces_launch_adapter):
+        # profile is a free single-line string at persistence, but only supported
+        # profiles (with a wired adapter) are launchable.
+        _make_aces_source(staff_user, "polaris-badprofile", conformance_status="passed", contract_profile="polaris")
+        assert get_catalog_entry("polaris-badprofile")["launchable"] is False
+
+    def test_invalid_digest_fails_closed_with_adapter(self, staff_user, aces_launch_adapter):
+        # Build (unsaved) a row that bypasses the persistence validator to prove
+        # launchability re-validates refs/digests fail-closed.
+        from cms.models import AcesPackageSource
+
+        row = AcesPackageSource(
+            scenario_id="polaris-baddigest",
+            contract_kind="aces",
+            contract_profile="shifter",
+            source_kind="repo",
+            package_ref="pkg",
+            package_version="1.0.0",
+            package_digest="not-a-sha256",
+            conformance_status="passed",
+            registered_by=staff_user,
+        )
+        assert _aces_launchable(row, known_legacy_ids=set()) is False
+
+    def test_list_launchable_excludes_aces_without_adapter(self, staff_user):
+        _make_aces_source(staff_user, "polaris-ok", conformance_status="passed")
+        _make_aces_source(staff_user, "polaris-pending", conformance_status="pending")
+        ids = [s["id"] for s in list_launchable_scenarios(workflow=ScenarioWorkflow.RANGE_LAUNCH)]
+        assert "polaris-ok" not in ids  # review-only: no adapter wired
+        assert "polaris-pending" not in ids
+        assert "basic" in ids  # legacy stays launchable
+
+    def test_list_launchable_includes_conformant_aces_with_adapter(self, staff_user, aces_launch_adapter):
+        _make_aces_source(staff_user, "polaris-ok", conformance_status="passed")
+        _make_aces_source(staff_user, "polaris-pending", conformance_status="pending")
+        ids = [s["id"] for s in list_launchable_scenarios(workflow=ScenarioWorkflow.RANGE_LAUNCH)]
+        assert "polaris-ok" in ids
+        assert "polaris-pending" not in ids
+        assert "basic" in ids
+
+    def test_staff_review_includes_non_launchable_aces(self, staff_user):
+        _make_aces_source(staff_user, "polaris-pending", conformance_status="pending")
+        ids = [s["id"] for s in list_launchable_scenarios(user=None, workflow=ScenarioWorkflow.STAFF_REVIEW)]
+        assert "polaris-pending" in ids
+
+    def test_is_scenario_launchable_without_adapter(self, staff_user):
+        _make_aces_source(staff_user, "polaris-ok", conformance_status="passed")
+        assert is_scenario_launchable("polaris-ok") is False  # review-only
+        assert is_scenario_launchable("basic") is True  # legacy launchable
+        assert is_scenario_launchable("does-not-exist") is False
+
+    def test_is_scenario_launchable_with_adapter(self, staff_user, aces_launch_adapter):
+        _make_aces_source(staff_user, "polaris-ok", conformance_status="passed")
+        _make_aces_source(staff_user, "polaris-pending", conformance_status="pending")
+        assert is_scenario_launchable("polaris-ok") is True
+        assert is_scenario_launchable("polaris-pending") is False
+
+    def test_get_catalog_entry_unknown_is_none(self, db):
+        assert get_catalog_entry("does-not-exist") is None
 
 
 class TestGetScenarioDetail:
@@ -310,15 +411,27 @@ class TestLoadScenarioTemplate:
         assert template.id == "custom-test"
         assert len(template.instances) == 2
 
-    def test_db_takes_precedence(self, staff_user, db):
-        """If both DB and YAML exist with same id, DB wins.
+    def test_db_takes_precedence(self, staff_user, valid_definition):
+        """A DB Scenario sharing a YAML default's id wins in load_scenario_template.
 
-        This shouldn't happen in practice due to collision checks,
-        but the registry should handle it gracefully.
+        The projection (``_db_source_entries``) hides such collisions, but the
+        direct DB-first lookup in ``load_scenario_template`` still prefers the DB
+        row — proven here by a DB ``basic`` whose definition differs from the
+        shipped YAML ``basic`` (instance ``Target`` vs the YAML's ``Workstation``).
         """
-        # This test is more about the lookup order than a real scenario
+        from cms.models import Scenario
+
+        Scenario.objects.create(
+            scenario_id="basic",
+            name="DB Basic Override",
+            description="DB row colliding with the YAML 'basic' default",
+            definition=valid_definition,
+            created_by=staff_user,
+            updated_by=staff_user,
+        )
         template = load_scenario_template("basic")
-        assert template.id == "basic"
+        instance_names = {i.name for i in template.instances}
+        assert instance_names == {"Attacker", "Target"}  # DB definition, not YAML's Workstation
 
     def test_not_found_raises(self, db):
         with pytest.raises(ValueError, match="not found"):

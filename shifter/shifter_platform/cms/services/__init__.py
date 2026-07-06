@@ -36,6 +36,7 @@ from engine.services import create_range as engine_create_range
 from engine.services import destroy_range_by_request as engine_destroy_range_by_request
 from engine.services import get_instance_ips_by_uuid as engine_get_instance_ips_by_uuid
 from engine.services import pause_range as engine_pause_range
+from engine.services import reassign_range_owner_by_request as engine_reassign_range_owner
 from engine.services import resume_range as engine_resume_range
 from risk_register.services import AuditEvent, audit_log
 
@@ -80,9 +81,11 @@ from ._range_queries import (
     has_ready_active_range,
     list_ranges,
 )
+from ._range_reassign import reassign_range_owner
 from ._range_resume import resume_range, resume_range_by_request_id
 from ._scenarios import (
     get_scenario,
+    list_launchable_scenarios,
     list_scenarios,
     validate_scenario_requirements,
 )
@@ -124,6 +127,7 @@ __all__ = (
     "engine_destroy_range_by_request",
     "engine_get_instance_ips_by_uuid",
     "engine_pause_range",
+    "engine_reassign_range_owner",
     "engine_resume_range",
     "find_range_instance_id_by_request",
     "get_active_range",
@@ -142,12 +146,14 @@ __all__ = (
     "initiate_upload",
     "list_agents",
     "list_credentials",
+    "list_launchable_scenarios",
     "list_ngfws",
     "list_ranges",
     "list_scenarios",
     "pause_range",
     "pause_range_by_request_id",
     "range_status_changed",
+    "reassign_range_owner",
     "resume_range",
     "resume_range_by_request_id",
     "validate_scenario_requirements",

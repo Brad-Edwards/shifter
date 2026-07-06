@@ -14,11 +14,11 @@ WORKDIR /app
 #     --python-version 3.12 --generate-hashes -o requirements-gcp.lock
 COPY shifter_platform/pyproject.toml shifter_platform/uv.lock shifter_platform/requirements-gcp.lock ./
 
-# Export the platform's frozen runtime lock to a hashed requirements.txt and install
-# every third-party dependency with hashes enforced and wheels only — no source builds,
-# so no setup scripts execute at install time (docker:S8541) and every version is locked
-# and integrity-checked (docker:S8544). requirements-gcp.lock is installed the same way
-# and is constrained to the frozen lock, so shared transitive deps stay at the locked
+# Export the platform's frozen lock to a hashed requirements.txt and install every
+# third-party dependency with hashes enforced and wheels only — no source builds, so no
+# setup scripts execute at install time (docker:S8541) and every version is locked and
+# integrity-checked (docker:S8544). requirements-gcp.lock is installed the same way and
+# is constrained to the frozen lock, so shared transitive deps stay at the locked
 # versions rather than an unpinned rebuild-time resolution.
 # --no-config: requirements.txt / requirements-gcp.lock are already fully resolved
 # against the frozen lock (which incorporated [tool.uv].constraint-dependencies), so the
@@ -30,13 +30,43 @@ COPY shifter_platform/pyproject.toml shifter_platform/uv.lock shifter_platform/r
 # The first-party packages (cyberscript, installation) are NOT installed here: they are
 # first-party source with no external resolution to lock or hash, so they ride on
 # PYTHONPATH in the production stage instead of through a pip install.
-RUN uv export --no-dev --no-emit-project --frozen > requirements.txt && \
+# --no-dev excludes the [dependency-groups].dev group from the export: dev/test
+# tooling (ruff, pytest, mypy, ...) has no place in the production image, and the
+# group also carries the dev/test-only `aces-sdl` git dependency (issue #1261),
+# which is a git source uv cannot emit a hash for — leaving it in would make the
+# --require-hashes install below fail. Runtime deps live in [project].dependencies
+# and are unaffected. (When #1262 promotes aces-sdl to a runtime dependency it must
+# first be available as a hashable wheel, not a git source.)
+RUN uv export --no-emit-project --frozen --no-dev > requirements.txt && \
     uv pip install --system --no-cache --no-config \
         --require-hashes --only-binary :all: --no-binary py-ubjson \
         -r requirements.txt && \
     uv pip install --system --no-cache --no-config \
         --require-hashes --only-binary :all: \
         -r requirements-gcp.lock
+
+# Frontend build stage (ADR-029 / #1302). Builds the SPA bundle into the static
+# tree so collectstatic folds it into STATIC_ROOT. Node is a build-time-only
+# dependency; the production image ships no Node runtime. Tracked by the `docker`
+# dependabot ecosystem; the floating minor tag receives upstream security
+# rebuilds (docker:S8431 forbids tag + digest together).
+FROM node:20-slim AS frontend
+
+WORKDIR /app/shifter_platform/frontend
+
+# Install with the committed lockfile for a reproducible, offline-resolvable build.
+# --ignore-scripts blocks package lifecycle scripts (docker:S6505); Vite's esbuild
+# resolves its prebuilt platform binary from its optional dependency without a
+# postinstall, so the build still works.
+COPY shifter_platform/frontend/package.json shifter_platform/frontend/package-lock.json ./
+RUN npm ci --ignore-scripts
+
+# SPA sources. Vite emits the content-hashed bundle + manifest to
+# /app/shifter_platform/static/spa (frontend/vite.config.ts); tsc typecheck runs
+# first via `npm run build`.
+COPY shifter_platform/frontend ./
+
+RUN npm run build
 
 # Production stage. Tracked by the `docker` dependabot ecosystem; the floating
 # minor tag receives upstream security rebuilds (docker:S8431 forbids tag +
@@ -81,6 +111,11 @@ COPY installation /opt/shifter-libs/installation
 
 # Copy application code (context is now shifter/, so path is shifter_platform)
 COPY --chown=appuser:appgroup shifter_platform .
+
+# Bring in the built SPA bundle from the frontend stage. Kept out of the source
+# COPY above because it is generated (gitignored / dockerignored); collectstatic
+# below folds it into STATIC_ROOT and WhiteNoise fingerprints it (#1302).
+COPY --from=frontend --chown=appuser:appgroup /app/shifter_platform/static/spa ./static/spa
 
 # Create writable runtime directories for collectstatic, django-health-check's
 # default-storage probe, and tools that use HOME. The application source tree

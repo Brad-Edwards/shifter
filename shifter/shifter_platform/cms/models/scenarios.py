@@ -310,11 +310,13 @@ class AcesPackageSource(models.Model):
         super().save(*args, **kwargs)
 
     @property
-    def is_launchable(self) -> bool:
-        """Whether this package source is ready to launch (conformance passed).
+    def is_conformance_passed(self) -> bool:
+        """Whether this package source has passed conformance for its profile.
 
-        Launchability is separate from access: ``ScenarioMetadata`` governs
-        enabled / staff-only visibility, while launchability requires the
-        package to have passed conformance for its claimed profile.
+        This is only ONE input to launchability. The authoritative launchability
+        decision (supported source/contract/profile, valid refs/digests,
+        no-shadow, and conformance) lives in
+        :func:`cms.scenarios.registry._aces_launchable`; do not treat this
+        conformance signal as launchability on its own.
         """
         return self.conformance_status == self.ConformanceStatus.PASSED

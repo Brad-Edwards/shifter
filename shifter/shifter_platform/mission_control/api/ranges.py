@@ -71,7 +71,7 @@ class LaunchRangeView(MissionControlAPIView):
     def _launch_range(self, request: Request, user: User, data: dict[str, Any]) -> Response:
         """Launch a range once the request body has passed serializer checks."""
         scenario = str(data.get("scenario", "basic"))
-        valid_scenarios = {s["id"] for s in _pkg().cms_list_scenarios(user)}
+        valid_scenarios = {s["id"] for s in _pkg().cms_list_launchable_scenarios(user, "range_launch")}
         if scenario not in valid_scenarios:
             return self.bad_request("Invalid scenario")
 
@@ -250,5 +250,5 @@ class ScenarioListView(MissionControlReadAPIView):
 
     def get(self, request: Request) -> Response:
         """Return scenarios available to the authenticated actor."""
-        scenarios: list[dict[str, Any]] = _pkg().cms_list_scenarios(self.actor_user())
+        scenarios: list[dict[str, Any]] = _pkg().cms_list_launchable_scenarios(self.actor_user(), "range_launch")
         return Response({"scenarios": scenarios})

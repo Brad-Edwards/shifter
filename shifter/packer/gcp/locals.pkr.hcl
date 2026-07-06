@@ -31,22 +31,17 @@ locals {
     netsh advfirewall firewall delete rule name="WinRM-5985" protocol=TCP localport=5985
   EOT
 
-  # DC-specific bootstrap: the polaris-dc build promotes a BOREAS.LOCAL forest at
-  # bake time, which reboots and removes local accounts (only the built-in
-  # Administrator survives as the domain Administrator). So this bootstrap
-  # configures WinRM on the BUILT-IN Administrator (not a throwaway packer_user):
-  # its password is preserved across promotion, so packer's WinRM reconnect after
-  # the promotion reboot authenticates as the domain Administrator with the same
-  # password. The image is captured un-sysprepped (a promoted DC cannot be
-  # generalized), so the build password is overwritten by the CTF Administrator
-  # password (a2_setup.ps1) as the final provisioner before capture.
+  # Variant for the polaris-dc (BOREAS.LOCAL) GDC image bake. Uses the built-in
+  # Administrator so the identity survives the AD promotion reboot as the domain
+  # Administrator; the polaris-dc builder disables the GCE account manager so it
+  # does not reset the password out from under packer's WinRM connection. This
+  # image is captured un-sysprepped on purpose (a promoted DC cannot be
+  # generalized), so the bootstrap identity is retained by design.
   winrm_https_bootstrap_dc_ps1 = <<-EOT
     $ErrorActionPreference = 'Stop'
     # Use the built-in Administrator (net user is bulletproof vs Set-LocalUser on
     # a possibly-disabled account) so the identity survives the promotion reboot
-    # as the domain Administrator. The source builder is launched with
-    # disable-account-manager=true so the GCE guest agent does not reset this
-    # password out from under packer's WinRM connection.
+    # as the domain Administrator.
     net user Administrator '${var.winrm_bootstrap_password}' /active:yes
 
     winrm quickconfig -quiet

@@ -382,12 +382,21 @@ def admin_range_list(request: HttpRequest, event_id: UUID) -> HttpResponse:
     if event.created_by_id != request.user.pk:
         return HttpResponse(_FORBIDDEN_EVENT_MSG, status=403)
 
-    participants = CTFParticipant.objects.filter(event=event).order_by("name")
+    participants = list(CTFParticipant.objects.filter(event=event).order_by("name"))
 
+    from ctf.enums import RecoveryStrategy
     from ctf.services import range as range_service
 
     progress = range_service.get_provision_progress(event_id)
     active_provisioning = bool(progress["task"]) or progress["counts"]["provisioning"] > 0
+
+    # Bounded operator diagnostics only (phase + authored failure_category);
+    # attached per-participant so the template can display it without a
+    # dictionary-lookup-by-variable-key filter (issue #1018).
+    for p in participants:
+        p.recovery_status = range_service.get_recovery_status(p.pk)  # type: ignore[attr-defined]
+
+    spare_summary = range_service.get_event_spare_summary(event_id)
 
     return render(
         request,
@@ -396,5 +405,7 @@ def admin_range_list(request: HttpRequest, event_id: UUID) -> HttpResponse:
             "event": event,
             "participants": participants,
             "active_provisioning": active_provisioning,
+            "recovery_strategy_choices": RecoveryStrategy.choices(),
+            "spare_summary": spare_summary,
         },
     )

@@ -1777,11 +1777,23 @@ class TestGcpBootstrapIdentityPlatform:
                 "deploy.prompt_for_gcp_bootstrap_operator_credentials",
                 return_value=("analyst@paloaltonetworks.com", "correct-horse-battery-staple"),
             ) as mock_prompt,
-            patch("deploy._gcp_identity_admin_request", return_value={"localId": "user-123"}),
+            patch("deploy._gcp_identity_admin_request", return_value={"localId": "user-123"}) as mock_request,
         ):
-            deploy.ensure_gcp_identity_platform_operator(config, outputs)
+            email = deploy.ensure_gcp_identity_platform_operator(config, outputs)
 
         mock_prompt.assert_called_once_with()
+        assert email == "analyst@paloaltonetworks.com"
+        mock_request.assert_called_once_with(
+            config=config,
+            outputs=outputs,
+            path=f"/projects/{config.project_id}/accounts",
+            payload={
+                "email": "analyst@paloaltonetworks.com",
+                "password": "correct-horse-battery-staple",
+                "displayName": "Shifter Operator",
+                "emailVerified": True,
+            },
+        )
 
     def test_ensure_gcp_identity_platform_operator_rejects_non_corporate_email(self):
         """Bootstrap must reject an operator email outside the
@@ -1846,6 +1858,7 @@ class TestGcpBootstrapIdentityPlatform:
 
         assert "PLATFORM_BOOTSTRAP_STAFF_EMAILS=admin@example.com\n" in rendered
         assert "PLATFORM_BOOTSTRAP_SUPERUSER_EMAILS=admin@example.com\n" in rendered
+        assert "GCP_RANGE_BACKEND=gdc\n" in rendered
 
     def test_render_gcp_platform_runtime_env_uses_blank_guest_password_samples(self):
         """The generated env contract must not embed sample guest passwords in source-controlled output."""

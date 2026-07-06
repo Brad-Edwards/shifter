@@ -105,7 +105,7 @@ def launch_range(request: HttpRequest) -> JsonResponse:
     try:
         data = _parse_json_body(request)
         scenario = data.get("scenario", "basic")
-        valid_scenarios = {s["id"] for s in _pkg().cms_list_scenarios(user)}
+        valid_scenarios = {s["id"] for s in _pkg().cms_list_launchable_scenarios(user, "range_launch")}
         if scenario not in valid_scenarios:
             raise _RangeError(JsonResponse({"error": "Invalid scenario"}, status=400))
         agents_by_os = _resolve_launch_agents(user, data)
@@ -322,5 +322,5 @@ def list_scenarios(request: HttpRequest) -> JsonResponse:
     Response (JSON):
         - scenarios: List of scenario dicts with agent_requirements field
     """
-    scenarios: list[dict[str, Any]] = _pkg().cms_list_scenarios(_get_user(request))
+    scenarios: list[dict[str, Any]] = _pkg().cms_list_launchable_scenarios(_get_user(request), "range_launch")
     return JsonResponse({"scenarios": scenarios})

@@ -64,17 +64,25 @@
                                 {{ scenario.id }}
                             </td>
                             <td>
-                                {% if scenario.is_default %}
+                                {% if scenario.scenario_type == "aces" %}
+                                    <span class="badge badge-custom">{% trans "ACES" %}</span>
+                                {% elif scenario.is_default %}
                                     <span class="badge badge-default">{% trans "Default" %}</span>
                                 {% else %}
                                     <span class="badge badge-custom">{% trans "Custom" %}</span>
                                 {% endif %}
                             </td>
                             <td class="text-center">
-                                {{ scenario.instances|length }}
+                                {% if scenario.scenario_type == "aces" %}
+                                    <span class="text-muted">-</span>
+                                {% else %}
+                                    {{ scenario.instances|length }}
+                                {% endif %}
                             </td>
                             <td class="text-center">
-                                {% if scenario.ngfw %}
+                                {% if scenario.scenario_type == "aces" %}
+                                    <span class="text-muted">-</span>
+                                {% elif scenario.ngfw %}
                                     <span class="text-yes">{% trans "Yes" %}</span>
                                 {% else %}
                                     <span class="text-muted">{% trans "No" %}</span>
@@ -122,25 +130,30 @@
                             </td>
                             <td class="text-right">
                                 <div class="flex-row gap-sm flex-end">
-                                    <a href="{% url 'scenario_editor:clone' scenario_id=scenario.id %}"
-                                       class="btn btn-secondary btn-row-action">{% trans "Clone" %}</a>
-                                    {% if not scenario.is_default %}
-                                        <a href="{% url 'scenario_editor:edit' scenario_id=scenario.id %}"
-                                           class="btn btn-secondary btn-row-action">{% trans "Edit" %}</a>
-                                    {% endif %}
-                                    <a href="{% url 'scenario_editor:export' scenario_id=scenario.id %}"
-                                       class="btn btn-secondary btn-row-action">{% trans "YAML" %}</a>
-                                    {% if not scenario.is_default %}
-                                        <form method="post"
-                                              action="{% url 'scenario_editor:delete' scenario_id=scenario.id %}"
-                                              class="d-inline">
-                                            {% csrf_token %}
-                                            <button type="submit"
-                                                    class="btn btn-row-action btn-delete js-scenario-delete-btn"
-                                                    data-scenario-name="{{ scenario.name }}">
-                                                {% trans "Delete" %}
-                                            </button>
-                                        </form>
+                                    {% if scenario.scenario_type == "aces" %}
+                                        <a href="{% url 'scenario_editor:detail' scenario_id=scenario.id %}"
+                                           class="btn btn-secondary btn-row-action">{% trans "View" %}</a>
+                                    {% else %}
+                                        <a href="{% url 'scenario_editor:clone' scenario_id=scenario.id %}"
+                                           class="btn btn-secondary btn-row-action">{% trans "Clone" %}</a>
+                                        {% if not scenario.is_default %}
+                                            <a href="{% url 'scenario_editor:edit' scenario_id=scenario.id %}"
+                                               class="btn btn-secondary btn-row-action">{% trans "Edit" %}</a>
+                                        {% endif %}
+                                        <a href="{% url 'scenario_editor:export' scenario_id=scenario.id %}"
+                                           class="btn btn-secondary btn-row-action">{% trans "YAML" %}</a>
+                                        {% if not scenario.is_default %}
+                                            <form method="post"
+                                                  action="{% url 'scenario_editor:delete' scenario_id=scenario.id %}"
+                                                  class="d-inline">
+                                                {% csrf_token %}
+                                                <button type="submit"
+                                                        class="btn btn-row-action btn-delete js-scenario-delete-btn"
+                                                        data-scenario-name="{{ scenario.name }}">
+                                                    {% trans "Delete" %}
+                                                </button>
+                                            </form>
+                                        {% endif %}
                                     {% endif %}
                                 </div>
                             </td>

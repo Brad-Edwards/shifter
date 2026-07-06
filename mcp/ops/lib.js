@@ -48,8 +48,6 @@ export const GCE_IMAGE_TYPES = Object.freeze([
   "kali",
   "windows",
   "dc",
-  "polaris-vm",
-  "polaris-dc",
 ]);
 
 /**

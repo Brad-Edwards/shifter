@@ -117,6 +117,23 @@ def _assert_no_active_range(user: User, range_source: RangeSource | None = None)
         raise CMSError(msg)
 
 
+def _assert_scenario_launchable(scenario: str) -> None:
+    """Reject a known-but-non-launchable scenario before hydration.
+
+    Unknown ids are left to ``_load_scenario_template_or_raise`` (which raises
+    the not-found CMSError), preserving existing behavior. Legacy YAML/DB
+    entries are always launchable; a non-launchable ACES entry (pending
+    conformance, unsupported profile, invalid refs, or a shadowed legacy id)
+    is rejected here with a clear error instead of an opaque not-found.
+    """
+    from cms.scenarios.registry import get_catalog_entry
+
+    entry = get_catalog_entry(scenario)
+    if entry is not None and not entry.get("launchable", True):
+        logger.warning("create_range: scenario '%s' is not launchable", scenario)
+        raise CMSError(f"Scenario '{scenario}' is not available for launch")
+
+
 def _load_scenario_template_or_raise(scenario: str) -> ScenarioTemplate:
     """Return the demo scenario template or raise CMSError if not found."""
     from cms.scenarios.registry import load_demo_scenario_template
@@ -321,6 +338,7 @@ def create_range(
     try:
         _assert_no_active_range(user, range_source)
 
+        _assert_scenario_launchable(scenario)
         scenario_template = _load_scenario_template_or_raise(scenario)
         requirements = scenario_template.get_agent_requirements()
         _check_scenario_agent_requirements(scenario, requirements, agents_by_os)

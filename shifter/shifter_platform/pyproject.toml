@@ -85,6 +85,7 @@ pythonpath = [".."]  # Add shifter/ to path so cyberscript is importable
 addopts = "-n auto --maxprocesses=4 --dist loadscope --reuse-db"
 markers = [
     "redis: integration tests requiring a real Redis channel layer (run with -m redis -n0; needs a Redis service)",
+    "postgres: integration tests requiring a real PostgreSQL backend (run with -m postgres; needs TEST_DB_BACKEND=postgres and a Postgres service)",
 ]
 
 [tool.coverage.run]

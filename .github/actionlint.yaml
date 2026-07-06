@@ -1,5 +1,0 @@
-self-hosted-runner:
-  labels:
-    - dev
-
-config-variables: null

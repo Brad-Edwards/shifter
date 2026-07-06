@@ -62,7 +62,7 @@ The first slice intentionally stays small:
   pass since the regex scan only sees the facade module path. The rule is
   mirrored in `scripts/adr_guard/adr_guard.py` and the standalone
   `scripts/check_layer_imports/check_layer_imports.py` so local and CI
-  enforcement agree; `shared` remains the freely-importable contracts layer.
+  enforcement agree; `shared` remains the freely importable contracts layer.
 
 - `guardrail-docs`
   Requires guardrail changes to update ADR or developer docs in the same change.
@@ -135,8 +135,8 @@ The first slice intentionally stays small:
   run (it ignores the changed-file list, like `adr-registry`): each referenced
   doc must exist under the in-app docs tree (`docs_root`), must not live under a
   `_deprecated`/hidden path, and must be reachable from an `index.md`. This
-  keeps the GEN-001 contract from silently regressing — for example when a
-  feature's doc is removed but its index link is left dangling. Adding a major
+  keeps the GEN-001 contract from silently regressing (for example, when a
+  feature's doc is removed but its index link is left dangling). Adding a major
   feature means adding a manifest entry pointing at its user and technical docs.
 
 - `import-linter`
@@ -610,6 +610,25 @@ Run on staged or modified files:
 
 ```bash
 python3 scripts/adr_guard/adr_guard.py --changed --level fast
+```
+
+## Docs Prose (Vale)
+
+Markdown prose is linted with [Vale](https://vale.sh/) against the Google
+developer documentation style. The config lives in `.vale.ini`; the synced
+style package under `.vale/styles/` is gitignored and fetched with `vale sync`.
+
+The `.github/workflows/vale.yml` workflow runs on pull requests that touch
+Markdown. It lints only the Markdown files the PR changes, at the config's
+error level, so new and edited docs must be clean without forcing a one-shot
+cleanup of the pre-existing backlog across the repo's Markdown corpus.
+
+Run it locally the same way CI does:
+
+```bash
+vale sync                       # once, to fetch the Google style package
+vale path/to/changed-doc.md     # lint a specific file
+git diff --name-only origin/dev...HEAD -- '*.md' | xargs -r vale
 ```
 
 ## How To Add A Rule

@@ -475,11 +475,17 @@ rows:
     legacy_field: apply_range_status, RangeEventOutbox, ResourceStatus, and reconciler status recovery
     category: Shifter backend responsibility
     aces_target: ACES operation-status-v1 adapter view projected through existing Shifter range lifecycle seams
-    shifter_owner: engine.services, cms.handlers.range_events, shared.messages, mission_control.handlers
-    validation_evidence: shifter/shifter_platform/tests/cms/test_reconcile_range_events.py; shifter/shifter_platform/tests/mission_control/test_range_api.py
+    shifter_owner: shared.aces.status, shared.aces.operations, engine.services, cms.handlers.range_events, shared.messages, mission_control.handlers
+    validation_evidence: shifter/shifter_platform/tests/shared/aces/test_status_adapter.py; shifter/shifter_platform/tests/engine/services/test_aces_status_projection.py; shifter/shifter_platform/tests/cms/test_reconcile_range_events.py; shifter/shifter_platform/tests/mission_control/test_range_api.py
     next_issue_kind: implementation-candidate
     candidate_issue_title: "#1274: Project operation status through range event handling"
-    notes: Projection must remain recoverable through the outbox/reconciler path and must not add a second status enum, event bus, websocket topic, or lifecycle pipeline.
+    notes: >-
+      Implemented by #1274: shared.aces.status maps validated ACES operation
+      status plus the submitted range operation intent to ResourceStatus, and
+      engine.services.project_aces_operation_status enqueues the standard
+      range.status.updated event over the #1273 operation sidecar. Projection
+      must remain recoverable through the outbox/reconciler path and must not add
+      a second status enum, event bus, websocket topic, or lifecycle pipeline.
 
   - id: status.ctf-range
     surface: status

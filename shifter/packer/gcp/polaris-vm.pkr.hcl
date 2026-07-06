@@ -1,28 +1,36 @@
-// POLARIS polaris-vm GDC image: an Ubuntu 22.04 docker host carrying the baked
-// 17-service NORTHSTORM compose stack (a14-kali is a container, so the host OS
-// is Ubuntu, not Kali — matching the AWS polaris-vm golden AMI, which is built
-// on the shifter-ubuntu base). The compose stack + per-asset Dockerfiles + flag
-// content are fetched from a private GCS build tarball at bake time (they carry
-// CTF answers and are kept out of source control, mirroring the AWS S3 bake
-// tarball consumed by polaris-scenario-bake.yml / issue #618).
+// Polaris range-host (polaris-vm) GCE image.
 //
-// The generic kali/ubuntu/windows/dc builders in this directory are unaffected;
-// Packer evaluates every *.pkr.hcl here as one config but each `build` block is
-// selected by -only=googlecompute.<name>.
+// The Polaris participant endpoint is a Kali container inside this Ubuntu/
+// Debian Docker host running the polaris docker-compose stack (17 containers
+// incl. a14-kali, dns, a9-splice). Built on Google's GCE-native debian-12 base
+// (same rationale as kali.pkr.hcl: the base is GCE-bootable with the guest
+// agent), then layered with Docker Engine + compose, the Google Cloud SDK, and
+// a host sshd moved to the management port so the Kali container can bind host
+// :22 / :3389 for participant access.
+//
+// The full compose stack (docker-compose.yml + build context) lives outside
+// this repo (scenario-dev/polaris/build is gitignored, and the AWS polaris-vm
+// AMI is likewise baked from an external stack). host-setup.sh fetches the
+// stack tarball from GCS at bake time (POLARIS_STACK_BUCKET / POLARIS_STACK_KEY)
+// and builds it; when unset it warns and leaves the host otherwise range-ready.
+//
+// Consumed by the GCE range-cell backend: the deploy points
+// GCP_RANGE_KALI_IMAGE at this image family and the scenario's
+// `ami_key: polaris-vm` selects the Kali/attacker profile
+// (see gcp_range_cell_plan._host_access). The Windows DC uses the generic
+// `dc` GCE image family (dc.pkr.hcl); boreas.local is promoted per-range by
+// dc_setup, not baked.
 source "googlecompute" "polaris-vm" {
-  project_id   = var.project_id
-  zone         = var.zone
-  machine_type = var.machine_type
-
-  source_image_family     = "ubuntu-2204-lts"
-  source_image_project_id = ["ubuntu-os-cloud"]
+  project_id              = var.project_id
+  zone                    = var.zone
+  machine_type            = var.machine_type
+  source_image_family     = "debian-12"
+  source_image_project_id = ["debian-cloud"]
   ssh_username            = "packer"
 
-  // The baked stack ships 17 built images (some heavy: gitea, postgres, a
-  // Kali XFCE desktop container) plus the Ubuntu base, so size the boot disk
-  // well above the generic ubuntu builder. The exported qcow2 virtual size
-  // sets the floor for GDC_POLARIS_VM_DISK_SIZE_GIB.
-  disk_size = 60
+  // Docker Engine plus the multi-container polaris stack needs generous
+  // headroom over the debian-12 base (10 GB).
+  disk_size = 200
 
   network               = var.network
   subnetwork            = var.subnetwork
@@ -35,7 +43,7 @@ source "googlecompute" "polaris-vm" {
 
   image_name        = "${var.image_prefix}-polaris-vm-{{timestamp}}"
   image_family      = "${var.image_prefix}-polaris-vm"
-  image_description = "POLARIS polaris-vm: Ubuntu docker host with the baked NORTHSTORM 17-service compose stack (GCE)"
+  image_description = "Polaris range host: Debian Docker host running the polaris docker-compose stack (GCE)"
   image_labels = {
     project    = "shifter"
     managed-by = "packer"
@@ -46,16 +54,18 @@ source "googlecompute" "polaris-vm" {
 build {
   sources = ["source.googlecompute.polaris-vm"]
 
+  // host-setup.sh installs Docker + the Cloud SDK, moves the host sshd to the
+  // management port, and (when POLARIS_STACK_BUCKET is set) fetches and builds
+  // the compose stack from GCS. The compose stack is not in this repo, so it is
+  // supplied at bake time rather than staged from the source tree.
   provisioner "shell" {
-    scripts = [
-      "scripts/polaris-vm/build-stack.sh",
-      # GCP-only: force cloud-init's NoCloud datasource so GDC VM Runtime
-      # guests consume the range userData. Runs last so it is the final state
-      # captured into the image.
-      "scripts/gdc-cloudinit-datasource.sh",
-    ]
     environment_vars = [
-      "POLARIS_BUILD_TARBALL_URI=${var.polaris_build_tarball_uri}",
+      "POLARIS_STACK_BUCKET=${var.polaris_stack_bucket}",
+      "POLARIS_STACK_KEY=${var.polaris_stack_key}",
+    ]
+    scripts = [
+      "scripts/polaris/host-setup.sh",
+      "../scripts/common/cleanup.sh",
     ]
     execute_command = "sudo -S bash -c '{{ .Vars }} {{ .Path }}'"
   }

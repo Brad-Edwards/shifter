@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+from mission_control.api.aces import (
+    AcesOperationReceiptListView,
+    AcesOperationStatusListView,
+    AcesRuntimeSnapshotListView,
+)
 from mission_control.api.guacamole import (
     GuacamoleBootstrapOpenView,
     GuacamoleBootstrapStatusView,
@@ -55,6 +60,9 @@ api_credential_create = CredentialCreateView.as_view()
 api_credential_delete = CredentialDeleteView.as_view()
 
 __all__ = (
+    "AcesOperationReceiptListView",
+    "AcesOperationStatusListView",
+    "AcesRuntimeSnapshotListView",
     "AgentListView",
     "CancelRangeView",
     "CredentialCreateView",

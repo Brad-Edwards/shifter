@@ -119,6 +119,23 @@ class TestCreateRangeValidation:
         with pytest.raises(CMSError, match="already have an active range"):
             services.create_range(user, hydratable_scenario.scenario_id, {"windows": agent.id})
 
+    def test_raises_for_non_launchable_aces_scenario(self, user, make_agent):
+        from cms.models import AcesPackageSource
+
+        agent = make_agent(user)
+        AcesPackageSource.objects.create(
+            scenario_id="polaris-pending",
+            contract_kind="aces",
+            contract_profile="shifter",
+            package_ref="scenario-dev/polaris/content-packages/polaris",
+            package_version="1.0.0",
+            package_digest="sha256:" + "a" * 64,
+            conformance_status="pending",
+            registered_by=user,
+        )
+        with pytest.raises(CMSError, match="not available for launch"):
+            services.create_range(user, "polaris-pending", {"windows": agent.id})
+
 
 class TestCreateRangeBehavior:
     def test_creates_engine_range_in_provisioning(self, user, make_agent, hydratable_scenario):

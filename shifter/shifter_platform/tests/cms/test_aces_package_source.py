@@ -41,10 +41,10 @@ class TestAcesPackageSourcePersistence:
         assert row.conformance_status == "pending"
         assert row.source_kind == "repo"
 
-    def test_is_launchable_tracks_conformance(self, staff_user):
-        assert _create(staff_user, scenario_id="p-pending").is_launchable is False
-        assert _create(staff_user, scenario_id="p-passed", conformance_status="passed").is_launchable is True
-        assert _create(staff_user, scenario_id="p-failed", conformance_status="failed").is_launchable is False
+    def test_is_conformance_passed_tracks_conformance(self, staff_user):
+        assert _create(staff_user, scenario_id="p-pending").is_conformance_passed is False
+        assert _create(staff_user, scenario_id="p-passed", conformance_status="passed").is_conformance_passed is True
+        assert _create(staff_user, scenario_id="p-failed", conformance_status="failed").is_conformance_passed is False
 
     def test_unique_scenario_id(self, staff_user):
         _create(staff_user, scenario_id="dup")

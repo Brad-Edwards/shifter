@@ -50,18 +50,6 @@ variable "use_internal_ip" {
   DESC
 }
 
-variable "polaris_build_tarball_uri" {
-  type        = string
-  description = <<-DESC
-    GCS URI (gs://...) of the private POLARIS build tarball consumed by the
-    polaris-vm builder: the NORTHSTORM compose stack + per-asset Dockerfiles +
-    baked flag content, mirrored from the AWS S3 bake tarball. It carries CTF
-    answers and is never committed; the CI workflow passes it with -var. Unused
-    by the non-polaris builders.
-  DESC
-  default     = ""
-}
-
 variable "winrm_bootstrap_password" {
   type        = string
   sensitive   = true
@@ -74,4 +62,21 @@ variable "winrm_bootstrap_password" {
     and discarded, so the credential does not persist into the published image.
   DESC
   default     = ""
+}
+
+variable "polaris_stack_bucket" {
+  type        = string
+  description = <<-DESC
+    GCS bucket holding the Polaris docker-compose stack tarball for the
+    polaris-vm build. The compose stack lives outside this repo, so it is
+    fetched at bake time rather than staged from the source tree. Empty leaves
+    the host image range-ready without the stack baked (host-setup.sh warns).
+  DESC
+  default     = ""
+}
+
+variable "polaris_stack_key" {
+  type        = string
+  description = "GCS object key for the Polaris compose stack tarball (see polaris_stack_bucket)."
+  default     = "polaris/stack/polaris-stack.tar.gz"
 }
