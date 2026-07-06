@@ -1858,7 +1858,7 @@ class TestGcpBootstrapIdentityPlatform:
 
         assert "PLATFORM_BOOTSTRAP_STAFF_EMAILS=admin@example.com\n" in rendered
         assert "PLATFORM_BOOTSTRAP_SUPERUSER_EMAILS=admin@example.com\n" in rendered
-        assert "GCP_RANGE_BACKEND=gdc\n" in rendered
+        assert "GCP_RANGE_BACKEND=gce\n" in rendered
 
     def test_render_gcp_platform_runtime_env_uses_blank_guest_password_samples(self):
         """The generated env contract must not embed sample guest passwords in source-controlled output."""
