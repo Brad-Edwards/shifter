@@ -16,6 +16,13 @@ locals {
   ])
 
   interface_endpoint_services = toset([
+    # The ASG launch lifecycle hook (modules/portal/ec2 #1032/#1360) requires
+    # each booting instance to call autoscaling:CompleteLifecycleAction from
+    # user_data. Without a private endpoint that call egresses via NAT/network
+    # firewall and times out intermittently, stranding instances in Pending:Wait
+    # until the hook ABANDONs them and the deploy's instance refresh never
+    # converges. Keep it in-VPC alongside the other bootstrap-path services.
+    "autoscaling",
     "ec2",
     "ec2messages",
     "ecr.api",
