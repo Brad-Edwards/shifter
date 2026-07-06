@@ -11,10 +11,10 @@ alongside the baseline (the `.local`/`.auto` overrides win).
 This file lists values that must be configured before a fresh deploy. Set values
 under **Settings → Secrets and variables → Actions**, separated by:
 
-- **Secrets** — sensitive (project IDs, public keys with identifying
+- **Secrets**: sensitive (project IDs, public keys with identifying
   comments, alarm email addresses, allow-list domains for self-signup,
   CIDR blocks for operator access).
-- **Variables** — non-sensitive deployment parameters (region selection,
+- **Variables**: non-sensitive deployment parameters (region selection,
   feature flags).
 
 Required values are enforced by the workflow preflight step.
@@ -27,9 +27,9 @@ Consumed by `.github/workflows/_gcp-dev.yml`.
 |---|---|---|---|
 | `GCP_PROJECT_ID` | secret | yes | The Google Cloud project the platform deploys to. |
 | `GCP_REGION` | variable | no | Default `us-central1`. |
-| `GCP_PUBLIC_HOSTNAME` | secret | yes | DNS name the platform serves on (e.g., `shifter.your-domain.example`). |
+| `GCP_PUBLIC_HOSTNAME` | secret | yes | DNS name the platform serves on (for example, `shifter.your-domain.example`). |
 | `GCP_IDENTITY_ALLOWED_EMAIL_DOMAIN` | secret | yes | Identity Platform beforeCreate allow-list; the bootstrap operator must end with `@<this>` for sign-in to succeed. |
-| `GCP_MASTER_AUTHORIZED_CIDRS` | secret | no | HCL list literal — e.g. `["1.2.3.4/32"]`. Empty (`[]`) locks the GKE control-plane to private endpoints only. |
+| `GCP_MASTER_AUTHORIZED_CIDRS` | secret | no | HCL list literal, for example `["1.2.3.4/32"]`. Empty (`[]`) locks the GKE control-plane to private endpoints only. |
 | `GCP_SERVICE_ACCOUNT` | secret | yes | Workload-identity-federation service account for deploy. |
 | `GCP_WORKLOAD_IDENTITY_PROVIDER` | secret | yes | Workload identity provider resource id. |
 | `GCP_BOOTSTRAP_ADMIN_EMAIL` | secret | no | If set, bootstrap creates this user as the first Identity Platform operator and elevates them in Django. Must match `GCP_IDENTITY_ALLOWED_EMAIL_DOMAIN`. |
@@ -73,7 +73,7 @@ committed.
 Consumed by `.github/workflows/_shifter-platform.yml`. The committed
 `platform/terraform/environments/<env>/portal/terraform.tfvars` is an
 `example.com` baseline. The workflow's `Render local.auto.tfvars from
-deployment secret` step — present in both the `plan` and `apply` jobs —
+deployment secret` step, present in both the `plan` and `apply` jobs,
 writes the real per-deployment values into a gitignored
 `local.auto.tfvars` before Terraform runs, so deploys never plan or apply
 against the baseline. The step picks the secret by environment and fails
@@ -85,15 +85,15 @@ loud (`::error::`) when the active environment's secret is empty.
 | `TF_VARS_DEV_PORTAL` | secret | yes (dev) | Whole-file `local.auto.tfvars` payload for the dev portal root, rendered verbatim over the committed baseline before `terraform plan` / `apply`. |
 | `TF_VARS_PROD_PORTAL` | secret | yes (prod) | As above, for the prod portal root. |
 
-The `TF_VARS_<ENV>_PORTAL` secret holds plain Terraform HCL — the same
+The `TF_VARS_<ENV>_PORTAL` secret holds plain Terraform HCL, the same
 content you would put in a `local.auto.tfvars`. At minimum it must set the
 values the `example.com` baseline deliberately leaves non-operational:
 
 - `domain_name`, `ses_domain`, `ctfd_domain`, `ctf_from_email`
 - `alarm_email`
-- `allowed_email_domains` (deliberately empty in the baseline — fails
+- `allowed_email_domains` (deliberately empty in the baseline, fails
   closed)
-- `ctfd_ssh_public_key`, `ctfd_ssh_allowed_cidrs` (empty in baseline —
+- `ctfd_ssh_public_key`, `ctfd_ssh_allowed_cidrs` (empty in baseline,
   CTFd SSH ingress closed)
 - `user_storage_bucket` and any other AWS-account-suffixed bucket names
   that vary per environment
@@ -260,9 +260,9 @@ matching whole-file secret into `local.auto.tfvars`, and fails loud
 At minimum, each `TF_VARS_<ENV>_RANGE` payload must set the deployment-specific
 values stripped from the committed baseline:
 
-- `agent_s3_bucket` — the account-specific user-storage bucket read by range
+- `agent_s3_bucket`: the account-specific user-storage bucket read by range
   instance roles
-- `vm_series_ami_id` — the regional PAN-OS Marketplace AMI to use. This is
+- `vm_series_ami_id`: the regional PAN-OS Marketplace AMI to use. This is
   deployment configuration, not a credential; keep it in the overlay so the
   shared repo does not prescribe a marketplace version/region for every
   deployment.
@@ -418,6 +418,26 @@ guacamole_autoscaling_min_capacity = 4
 guacamole_autoscaling_max_capacity = 10
 guacamole_autoscaling_cpu_target   = 60
 ```
+
+> **Keep the dev overlay minimal unless an event needs it.**
+> `TF_VARS_DEV_PORTAL` is the *only* place the running dev fleet size is set:
+> the committed `terraform.tfvars` is a fail-loud baseline that this secret
+> always overrides, and no script derives or reconciles these values; edit the
+> secret by hand (`gh secret set TF_VARS_DEV_PORTAL < payload.tfvars`). The
+> overlay above is *event-sized*. Left in place between events it makes every
+> deploy run a full multi-instance ASG instance refresh (desired + warm pool ≈
+> a dozen instances, roughly an hour) and holds prod-class RDS/Redis/Guacamole
+> capacity. For ordinary dev, keep the ASG at a single instance with a minimal
+> warm pool and shrink the DB/Redis/Guacamole lines to match:
+>
+> ```hcl
+> asg_min_size           = 1
+> asg_max_size           = 2
+> asg_desired_capacity   = 1
+> asg_warm_pool_min_size = 1
+> ```
+>
+> Apply the event-sized overlay only for the duration of an event, then revert.
 
 ```sh
 # GCP gcp-dev
