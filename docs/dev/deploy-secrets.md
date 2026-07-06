@@ -370,6 +370,33 @@ read a second, drift-prone copy of the allowlist. Do **not** also set
 `range_egress_mode` / `range_egress_allowed_cidrs` in `local.auto.tfvars`;
 that re-introduces the drift this flow removes.
 
+### GCE range-cell backend variables
+
+The GCP range backend defaults to `gce` (GCE range cells). These non-secret
+inputs are GitHub Actions repository or environment **variables** (`vars.*`),
+exported by the `_gcp-dev.yml` `Render generated runtime env` step into the
+generated runtime config. Each account sets its own values; unset variables
+fall back to the code defaults in `config.py`. See
+`docs/dev/gcp-range-cell-deploy.md` for the operator runbook.
+
+| Variable | Required | Notes |
+|---|---|---|
+| `GCP_RANGE_BACKEND` | no | `gce` (default) or `gdc`. Set `gdc` to roll back to GDC VM Runtime. |
+| `GCP_RANGE_CELL_PROJECT_ID` | no | Project the range cells provision into. Defaults to the project parsed from the range VPC self-link (`range_network_id`), so it is correct even while the control-plane `GCP_PROJECT_ID` is a deploy-overlay placeholder. |
+| `RANGE_NETWORK_ZONE` | yes | Compute Engine zone for range guests, for example `us-central1-a`. |
+| `GCP_RANGE_LINUX_IMAGE` | yes | Full image or family URL for the Linux/host profile. For a Polaris deployment this is the `shifter-polaris-vm` family (the Docker host). |
+| `GCP_RANGE_DC_IMAGE` | yes | Windows domain-controller image. For Polaris this is the `shifter-polaris-dc` family. |
+| `GCP_RANGE_KALI_IMAGE` | scenario | Kali image for non-Polaris scenarios (Polaris runs Kali as a container inside the host). |
+| `GCP_RANGE_WINDOWS_IMAGE` | scenario | Generic Windows guest image for non-Polaris scenarios. |
+| `GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL` | yes | Service account attached to range guests. Minimal scope: logging and monitoring write. |
+| `GCP_RANGE_VERTEX_SERVICE_ACCOUNT_EMAIL` | Polaris | Service account whose per-range key the a14-kali agent uses for Vertex AI. Leave empty to disable per-range Vertex credentials. |
+| `GCP_RANGE_VERTEX_PROJECT_ID` | no | Vertex project. Defaults to `GCP_RANGE_CELL_PROJECT_ID`, then the control-plane project. |
+| `GCP_RANGE_PRIVATE_GOOGLE_ACCESS` | no | Set `true` so no-external-IP guests reach Vertex AI and Cloud Storage over Private Google Access. |
+
+The host and Vertex service accounts are **independent** inputs. Accounts that
+require it may point both at the same service account; the render and the
+provisioner never assume they differ.
+
 ## Local development
 
 For local `terraform plan` / `terraform apply` against your own cloud
