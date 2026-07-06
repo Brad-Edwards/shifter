@@ -47,7 +47,7 @@ class TestProviderRouting:
     ):
         from range_terraform_runner import apply_range
 
-        with patch.dict(os.environ, {"CLOUD_PROVIDER": "gcp"}, clear=True):
+        with patch.dict(os.environ, {"CLOUD_PROVIDER": "gcp", "GCP_RANGE_BACKEND": "gdc"}, clear=True):
             result = apply_range("req-123", {"range_id": 42, "subnets": []})
 
         assert result == {
@@ -85,7 +85,7 @@ class TestProviderRouting:
         order.attach_mock(mock_asset_destroy, "vm_destroy")
         order.attach_mock(mock_network_destroy, "network_destroy")
 
-        with patch.dict(os.environ, {"CLOUD_PROVIDER": "gcp"}, clear=True):
+        with patch.dict(os.environ, {"CLOUD_PROVIDER": "gcp", "GCP_RANGE_BACKEND": "gdc"}, clear=True):
             destroy_range("req-123", variables={"range_id": 42, "subnets": []})
 
         mock_pod_destroy.assert_called_once_with("req-123", {"range_id": 42, "subnets": []})
@@ -103,7 +103,7 @@ class TestProviderRouting:
         with patch.dict(os.environ, {}, clear=True):
             assert get_range_state_key_prefix() == "ranges"
 
-        with patch.dict(os.environ, {"CLOUD_PROVIDER": "gcp"}, clear=True):
+        with patch.dict(os.environ, {"CLOUD_PROVIDER": "gcp", "GCP_RANGE_BACKEND": "gdc"}, clear=True):
             assert get_range_state_key_prefix() == "gcp/gdc-ranges"
 
         with patch.dict(os.environ, {"CLOUD_PROVIDER": "gcp", "GCP_RANGE_BACKEND": "gce"}, clear=True):
