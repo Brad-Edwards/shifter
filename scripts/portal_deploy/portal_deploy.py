@@ -378,6 +378,136 @@ def verify_asg_image_digest(
     )
 
 
+_DEFAULT_WORKER_CONTAINERS = (
+    "worker-cms",
+    "worker-engine",
+    "worker-mc",
+    "worker-outbox-drainer",
+    "worker-reconciler",
+    "ctf-scheduler",
+    "guacamole-bootstrap-prune",
+)
+
+
+def _worker_health_check_script(containers: tuple[str, ...]) -> str:
+    names = " ".join(shlex.quote(c) for c in containers)
+    return "\n".join(
+        [
+            "set -euo pipefail",
+            f"CONTAINERS=({names})",
+            'bad=""',
+            'for c in "${CONTAINERS[@]}"; do',
+            # Mirror the worker-health supervisor's read (modules/portal/ec2/
+            # worker-health): missing container or unhealthy status counts as bad.
+            "  st=$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' \"$c\" 2>/dev/null || echo missing)",
+            '  [ "$st" = healthy ] || bad="$bad $c=$st"',
+            "done",
+            'if [ -n "$bad" ]; then echo "unhealthy workers:$bad" >&2; exit 1; fi',
+            'echo "all workers healthy"',
+        ]
+    )
+
+
+def verify_asg_worker_health(
+    *,
+    asg_name: str,
+    runner: Runner = subprocess.run,
+    containers: tuple[str, ...] = _DEFAULT_WORKER_CONTAINERS,
+    max_attempts: int = 10,
+    retry_delay: float = 30.0,
+    sleep: SleepFn = time.sleep,
+) -> list[str]:
+    """Fail the deploy when worker/scheduler containers do not reach healthy.
+
+    The post-deploy portal checks (image digest + ALB /health/) never inspect the
+    async worker/scheduler containers, so crash-looping workers ship green
+    (#1398). This SSM-checks each in-service instance's worker containers and, to
+    tolerate the health-start-period and a single transient restart, retries with
+    backoff; only a container that never reaches healthy across all attempts
+    (crash loop / missing) fails the deploy.
+    """
+    if not asg_name:
+        raise PortalDeployError("ASG worker health verification requires a non-empty ASG name")
+
+    instance_ids = _in_service_asg_instance_ids(asg_name, runner=runner)
+    if not instance_ids:
+        raise PortalDeployError(f"No in-service instances found in ASG {asg_name!r}")
+
+    parameters = "commands=" + json.dumps([_worker_health_check_script(containers)])
+    last_failure = ""
+    for attempt in range(1, max_attempts + 1):
+        send_command = _run(
+            [
+                "aws",
+                "ssm",
+                "send-command",
+                "--document-name",
+                "AWS-RunShellScript",
+                "--instance-ids",
+                *instance_ids,
+                "--parameters",
+                parameters,
+                "--timeout-seconds",
+                "60",
+                "--query",
+                "Command.CommandId",
+                "--output",
+                "text",
+            ],
+            runner=runner,
+        )
+        command_id = send_command.stdout.strip()
+        if not command_id or command_id == "None":
+            raise PortalDeployError("SSM did not return a command id for ASG worker health verification")
+
+        failure = ""
+        for instance_id in instance_ids:
+            with contextlib.suppress(subprocess.CalledProcessError):
+                _run(
+                    [
+                        "aws",
+                        "ssm",
+                        "wait",
+                        "command-executed",
+                        "--command-id",
+                        command_id,
+                        "--instance-id",
+                        instance_id,
+                    ],
+                    runner=runner,
+                )
+            status = _run(
+                [
+                    "aws",
+                    "ssm",
+                    "get-command-invocation",
+                    "--command-id",
+                    command_id,
+                    "--instance-id",
+                    instance_id,
+                    "--query",
+                    "Status",
+                    "--output",
+                    "text",
+                ],
+                runner=runner,
+            ).stdout.strip()
+            if status != "Success":
+                failure = f"{instance_id}: SSM status {status}"
+                break
+
+        if not failure:
+            return instance_ids
+
+        last_failure = failure
+        if attempt < max_attempts:
+            sleep(retry_delay)
+
+    raise PortalDeployError(
+        f"ASG worker health verification failed after {max_attempts} attempts ({last_failure})"
+    )
+
+
 @dataclass(frozen=True)
 class PostDeployVerification:
     domain_name: str
@@ -798,6 +928,9 @@ def _build_parser() -> argparse.ArgumentParser:
     verify_parser.add_argument("--asg-name", required=True)
     verify_parser.add_argument("--image-digest", required=True)
 
+    verify_workers_parser = subparsers.add_parser("verify-asg-workers")
+    verify_workers_parser.add_argument("--asg-name", required=True)
+
     verify_post_deploy_parser = subparsers.add_parser("verify-post-deploy")
     verify_post_deploy_parser.add_argument("--terraform-dir", required=True)
     verify_post_deploy_parser.add_argument("--backend-config", required=True)
@@ -831,6 +964,9 @@ def main(argv: list[str] | None = None) -> int:
                 image_digest=args.image_digest,
             )
             print(f"Verified portal image digest on {len(instance_ids)} ASG instance(s)")
+        elif args.command == "verify-asg-workers":
+            instance_ids = verify_asg_worker_health(asg_name=args.asg_name)
+            print(f"Verified worker container health on {len(instance_ids)} ASG instance(s)")
         elif args.command == "verify-post-deploy":
             verify_post_deploy_from_commands(
                 terraform_dir=args.terraform_dir,
