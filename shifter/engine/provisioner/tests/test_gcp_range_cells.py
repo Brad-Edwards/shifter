@@ -237,6 +237,15 @@ def test_render_plan_provision_requires_subnet_cidr():
         render_range_cell_plan("req-123", variables, _sample_config())
 
 
+def test_render_plan_requires_subnet_name_and_uuid():
+    # name/uuid identify the subnet for both provision and destroy, so they are
+    # required in either mode.
+    variables = _variables()
+    variables["subnets"][0]["uuid"] = ""
+    with pytest.raises(RuntimeError, match="requires name and uuid"):
+        render_range_cell_plan("req-123", variables, _sample_config(), require_images=False)
+
+
 def test_render_plan_translates_polaris_vm_to_docker_host_access():
     """A polaris-vm Docker host uses the host login user + management sshd port.
 
