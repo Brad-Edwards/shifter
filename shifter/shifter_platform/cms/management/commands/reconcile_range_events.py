@@ -24,12 +24,13 @@ import logging
 import tempfile
 import time
 from argparse import ArgumentParser
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from django.conf import settings
 from django.core.management.base import BaseCommand
 from django.db import transaction
+from django.db.models import QuerySet
 from django.utils import timezone
 
 from cms.handlers.range_events import apply_range_status
@@ -195,6 +196,25 @@ def _apply_locked_range_instance(
     return outcome
 
 
+def stale_range_instances_queryset(cutoff: datetime, batch_size: int) -> QuerySet[RangeInstance]:
+    """Locked queryset of stale, non-terminal, live RangeInstance rows.
+
+    ``of=("self",)`` scopes ``FOR UPDATE`` to the ``RangeInstance`` base table:
+    ``select_related("request")`` LEFT-joins a nullable FK, and Postgres rejects
+    ``FOR UPDATE`` on the nullable side of an outer join (#1395). SQLite drops
+    row locking entirely, which is why this only surfaced against Postgres.
+    """
+    return (
+        RangeInstance.all_objects.filter(
+            deleted_at__isnull=True,
+            status__in=[s.value for s in ResourceStatus if s.value not in _TERMINAL_STATUS_VALUES],
+            updated_at__lt=cutoff,
+        )
+        .select_related("request")
+        .select_for_update(skip_locked=True, of=("self",))[:batch_size]
+    )
+
+
 def reconcile_range_instances(
     stale_seconds: int,
     batch_size: int,
@@ -220,15 +240,7 @@ def reconcile_range_instances(
     }
 
     with transaction.atomic():
-        stale_instances = list(
-            RangeInstance.all_objects.filter(
-                deleted_at__isnull=True,
-                status__in=[s.value for s in ResourceStatus if s.value not in _TERMINAL_STATUS_VALUES],
-                updated_at__lt=cutoff,
-            )
-            .select_related("request")
-            .select_for_update(skip_locked=True)[:batch_size]
-        )
+        stale_instances = list(stale_range_instances_queryset(cutoff, batch_size))
 
     for instance in stale_instances:
         request_id = instance.request.request_id if instance.request else None
