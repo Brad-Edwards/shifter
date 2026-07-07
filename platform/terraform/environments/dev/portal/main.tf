@@ -384,6 +384,7 @@ module "redis" {
   node_type                  = var.redis_node_type
   engine_version             = var.redis_engine_version
   enable_replication         = var.redis_enable_replication
+  apply_immediately          = var.redis_apply_immediately
 
   # AUTH + in-transit encryption (#938): the AUTH token secret is encrypted by
   # the portal CMK. is_active_channel_backend rejects a live channel layer on
