@@ -88,12 +88,27 @@ def address_resource(instance: InstancePlan) -> ComputeResource:
 # Runs on every boot of a Windows range guest. The CTF domain controller serves
 # LDAP/Kerberos/SMB firewall-off by design, and a pre-promoted DC can re-enable
 # the Windows Firewall after promotion (dropping the provisioner's SSH on :22, so
-# guest setup times out). Forcing the firewall off and asserting sshd on each
-# boot makes the guest reachable regardless of the captured firewall state.
+# guest setup times out). A domain controller's firewall state can be GPO-managed,
+# which makes the local `Set-NetFirewallProfile -Enabled False` a no-op; an
+# explicit inbound allow *rule* for :22 is additive and survives a GPO-enabled
+# firewall. We do both (disable the profile and add the allow rule) and assert
+# sshd, then emit a single `SHIFTERDIAG` line to the serial console reporting the
+# firewall state, the sshd service status, and whether anything is actually
+# listening on :22 -- so a still-unreachable guest can be diagnosed from the
+# serial log without SSH access.
 _WINDOWS_BOOT_SCRIPT = (
+    "$ErrorActionPreference = 'SilentlyContinue'\n"
     "Set-NetFirewallProfile -Profile Domain,Public,Private -Enabled False\n"
-    "Set-Service -Name sshd -StartupType Automatic -ErrorAction SilentlyContinue\n"
-    "Start-Service -Name sshd -ErrorAction SilentlyContinue\n"
+    "New-NetFirewallRule -DisplayName 'shifter-ssh' -Direction Inbound -Action Allow "
+    "-Protocol TCP -LocalPort 22 -Profile Any\n"
+    "New-NetFirewallRule -DisplayName 'shifter-rdp' -Direction Inbound -Action Allow "
+    "-Protocol TCP -LocalPort 3389 -Profile Any\n"
+    "Set-Service -Name sshd -StartupType Automatic\n"
+    "Start-Service -Name sshd\n"
+    "$fw = (Get-NetFirewallProfile | ForEach-Object { $_.Name + '=' + $_.Enabled }) -join ','\n"
+    "$svc = (Get-Service sshd).Status\n"
+    "$listen = (Get-NetTCPConnection -LocalPort 22 -State Listen | Measure-Object).Count\n"
+    'Write-Output "SHIFTERDIAG fw[$fw] sshd[$svc] listen22[$listen]"\n'
 )
 
 

@@ -340,9 +340,14 @@ def test_windows_dc_instance_gets_boot_firewall_script():
 
     dc_body = instance_resource(plan, by_name["dc01"], _vertex_config(), ssh_public_key="ssh-ed25519 AAAA")
     dc_meta = {item["key"]: item["value"] for item in dc_body["metadata"]["items"]}
+    startup_script = dc_meta["windows-startup-script-ps1"]
     assert "windows-startup-script-ps1" in dc_meta
-    assert "Set-NetFirewallProfile" in dc_meta["windows-startup-script-ps1"]
-    assert "sshd" in dc_meta["windows-startup-script-ps1"]
+    assert "Set-NetFirewallProfile" in startup_script
+    assert "sshd" in startup_script
+    # An additive inbound :22 allow rule survives a GPO-managed DC firewall that
+    # the profile disable cannot override, so guest-setup SSH stays reachable.
+    assert "New-NetFirewallRule" in startup_script
+    assert "-LocalPort 22" in startup_script
 
     host_body = instance_resource(plan, by_name["kali"], _vertex_config(), ssh_public_key="ssh-ed25519 AAAA")
     host_meta = {item["key"]: item["value"] for item in host_body["metadata"]["items"]}
