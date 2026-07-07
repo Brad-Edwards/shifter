@@ -129,7 +129,6 @@ INSTALLED_APPS = [
     "cms.apps.CMSConfig",
     "management.apps.ManagementConfig",
     "shared.apps.SharedConfig",
-    "cms.experiments.apps.ExperimentsConfig",
     "ctf.apps.CtfConfig",
 ]
 
@@ -173,7 +172,6 @@ TEMPLATES = [
                 "mission_control.context_processors.active_range",
                 "mission_control.context_processors.terminal_cdn_assets",
                 "shared.context_processors.user_permissions",
-                "shared.context_processors.feature_flags",
                 "ctf.context_processors.ctf_navigation",
             ],
         },
@@ -201,12 +199,13 @@ CHANNEL_LAYERS = _build_channel_layers(os.environ)
 # exist. Non-secret boolean; absent env means disabled.
 WEBSOCKET_NOTIFICATIONS_ENABLED = _env_bool("WEBSOCKET_NOTIFICATIONS_ENABLED", False)
 
-# Experiments feature (cms/experiments) is half-built and not even alpha — its
-# command executor was never finished, so a run cannot complete on any cloud.
-# Off by default so the unfinished path can't launch a non-existent executor or
-# block deployment; URLs, nav, and the run-launch path are gated on this flag.
-# Revisit (build / redesign / remove) tracked in #1195.
-EXPERIMENTS_ENABLED = _env_bool("EXPERIMENTS_ENABLED", False)
+# SPA cutover rollout flag (issue #1302, ADR-029). When enabled, the Risk
+# Register GET page paths under /risk-register/ are served by the React SPA
+# host view instead of the Django templates; the legacy POST action URLs stay
+# Django-handled for old tabs and rollback. When disabled (the default), the
+# portal renders the existing Django Risk Register templates unchanged.
+# Non-secret boolean; absent env means disabled. Flipping it is reversible.
+RISK_REGISTER_SPA_ENABLED = _env_bool("RISK_REGISTER_SPA_ENABLED", False)
 
 # Shared WebSocket notification replay bounds (issue #679).
 WEBSOCKET_NOTIFICATION_MAX_REPLAY = _env_int("WEBSOCKET_NOTIFICATION_MAX_REPLAY", 100)
@@ -264,6 +263,10 @@ TERMINAL_CONNECT_EXECUTOR_QUEUE_SLACK = _env_int("TERMINAL_CONNECT_EXECUTOR_QUEU
 CTF_SCHEDULER_STALE_TASK_MINUTES = _env_int("CTF_SCHEDULER_STALE_TASK_MINUTES", 120)
 
 from config._capacity_settings import *  # noqa: E402  # NOSONAR
+
+# CTF regex-flag safety tunables (issue #1183): pattern/submission length caps
+# and the per-match timeout that bound organizer-controlled regex evaluation.
+from config._ctf_regex_settings import *  # noqa: E402  # NOSONAR
 
 # Database and SECRET_KEY rotation settings (DATABASES, SECRET_KEY_FALLBACKS).
 # Split into config/_database_settings.py to keep this module under the S104

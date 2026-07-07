@@ -159,6 +159,7 @@ enable_redis = false
 redis_node_type          = "cache.t3.micro"
 redis_engine_version     = "7.1"
 redis_enable_replication = false
+redis_apply_immediately  = true
 
 # ------------------------------------------------------------------------------
 # Logging

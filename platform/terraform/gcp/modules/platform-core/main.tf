@@ -24,7 +24,6 @@ locals {
     "cms",
     "engine",
     "mc",
-    "experiments",
   ])
 
   # Email is opt-in: the ESP API-key secret is created (unseeded, operator-

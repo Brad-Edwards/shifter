@@ -308,6 +308,15 @@ resource "aws_ssm_parameter" "ctf_from_email" {
   tags = local.common_tags
 }
 
+resource "aws_ssm_parameter" "range_events_topic_id" {
+  name        = "${local.ps_prefix}/range-events-topic-id"
+  description = "SNS topic ARN for range events (outbox drainer / reconciler publish target)"
+  type        = "String"
+  value       = var.range_events_topic_id
+
+  tags = local.common_tags
+}
+
 resource "aws_ssm_parameter" "ctfd_platform_url" {
   count = var.ctfd_platform_url != "" ? 1 : 0
 

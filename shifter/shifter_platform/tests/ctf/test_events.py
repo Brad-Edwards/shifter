@@ -234,6 +234,7 @@ class TestCTFEventForm:
             "attempt_limit_mode": "lockout",
             "attempt_limit_cooldown_seconds": 300,
             "rating_visibility": "public",
+            "scoring_mode": "standard",
         }
         form = CTFEventForm(data=data)
         assert form.is_valid(), form.errors
@@ -257,6 +258,7 @@ class TestCTFEventForm:
             "attempt_limit_mode": "lockout",
             "attempt_limit_cooldown_seconds": 300,
             "rating_visibility": "public",
+            "scoring_mode": "standard",
         }
         form = CTFEventForm(data=data)
         assert form.is_valid(), form.errors
@@ -345,6 +347,7 @@ class TestCTFEventForm:
             "attempt_limit_mode": "timeout",
             "attempt_limit_cooldown_seconds": 600,
             "rating_visibility": "organizer",
+            "scoring_mode": "standard",
         }
         form = CTFEventForm(data=data)
         assert form.is_valid(), form.errors
@@ -474,7 +477,8 @@ class TestEventDetailView:
         with p1, p2:
             response = organizer_client.get(reverse("ctf:admin_event_detail", kwargs={"event_id": mock_event.pk}))
         assert response.status_code == 200
-        assert "event" in response.context
+        assert "stats" in response.context
+        assert response.context["stats"]["participant_count"] == 1
 
     def test_detail_view_404_for_nonexistent(self, organizer_client: Client):
         """Detail view should 404 for nonexistent event."""

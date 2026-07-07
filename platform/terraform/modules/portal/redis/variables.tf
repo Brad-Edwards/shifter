@@ -65,6 +65,18 @@ variable "redis_at_rest_kms_key_arn" {
   default     = ""
 }
 
+variable "cloudwatch_logs_kms_key_arn" {
+  description = "ARN of the dedicated CloudWatch Logs CMK used to encrypt the AUTH rotation Lambda's log group. Distinct from secrets_kms_key_arn: the Secrets Manager CMK is scoped (kms:ViaService) to secretsmanager only and rejects use by the CloudWatch Logs service, so the log group must be encrypted with a key whose policy grants logs.<region>.amazonaws.com. Required when the rotation path is enabled; default empty for non-rotation callers."
+  type        = string
+  default     = ""
+}
+
+variable "permissions_boundary_arn" {
+  description = "ARN of the CI permissions boundary applied to IAM roles created by this module (the AUTH rotation Lambda role). The deploy role's iam:CreateRole is conditioned on this exact boundary, so it must be passed for the rotation role to be creatable. Default empty for callers/paths that create no roles."
+  type        = string
+  default     = ""
+}
+
 variable "redis_auth_rotation_days" {
   description = "Automatic rotation interval (days) for the Redis AUTH token secret (#159). Bounded to at most 90 days to stay within the security rotation window (CKV_AWS_304); applies only on the rotation-enabled path."
   type        = number
@@ -126,4 +138,9 @@ variable "alarm_connections_threshold" {
   description = "Current connections threshold for alarm"
   type        = number
   default     = 1000
+}
+
+variable "apply_immediately" {
+  description = "Apply ElastiCache modifications (node type, engine, params) during the deploy instead of queueing them for the maintenance window. Required input; environments choose explicitly."
+  type        = bool
 }

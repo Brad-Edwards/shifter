@@ -15,6 +15,21 @@ urlpatterns = [
     path("range/destroy/", views.DestroyRangeView.as_view(), name="range-destroy"),
     path("range/pause/", views.PauseRangeView.as_view(), name="range-pause"),
     path("range/resume/", views.ResumeRangeView.as_view(), name="range-resume"),
+    path(
+        "range/<uuid:request_id>/aces/operation-status/",
+        views.AcesOperationStatusListView.as_view(),
+        name="aces-operation-status",
+    ),
+    path(
+        "range/<uuid:request_id>/aces/operation-receipts/",
+        views.AcesOperationReceiptListView.as_view(),
+        name="aces-operation-receipts",
+    ),
+    path(
+        "range/<uuid:request_id>/aces/snapshots/",
+        views.AcesRuntimeSnapshotListView.as_view(),
+        name="aces-runtime-snapshots",
+    ),
     path("agents/", views.AgentListView.as_view(), name="agents-list"),
     path("scenarios/", views.ScenarioListView.as_view(), name="scenarios-list"),
     path("upload/initiate/", views.UploadInitiateView.as_view(), name="upload-initiate"),
@@ -38,6 +53,4 @@ urlpatterns = [
     path("ngfw/<uuid:app_id>/ssh-url/", views.GuacamoleNGFWSSHURLView.as_view(), name="ngfw-ssh-url"),
     path("credentials/", views.CredentialCreateView.as_view(), name="credential-create"),
     path("credentials/<int:credential_id>/delete/", views.CredentialDeleteView.as_view(), name="credential-delete"),
-    path("scripts/", views.ScriptListView.as_view(), name="scripts-list"),
-    path("scripts/upload/", views.ScriptUploadView.as_view(), name="scripts-upload"),
 ]

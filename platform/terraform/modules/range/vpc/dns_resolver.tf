@@ -8,10 +8,19 @@
 locals {
   vpc_dns_server = cidrhost(var.vpc_cidr, 2)
 
-  resolver_allowed_domains = distinct(concat(
-    var.victim_allowed_domains,
-    var.range_dns_allowed_domains,
-  ))
+  # victim_allowed_domains / range_dns_allowed_domains are leading-dot suffixes
+  # (e.g. ".amazonaws.com"), the format Network Firewall's TLS_SNI/HTTP_HOST
+  # matcher accepts. Route 53 Resolver DNS Firewall rejects leading dots and
+  # instead expects a bare apex plus an explicit "*." wildcard for subdomains,
+  # so normalize each suffix into both forms (".amazonaws.com" ->
+  # ["amazonaws.com", "*.amazonaws.com"]). Trailing dots are stripped so the
+  # apex form is well-formed.
+  resolver_allowed_domains = distinct(flatten([
+    for d in concat(var.victim_allowed_domains, var.range_dns_allowed_domains) : [
+      trimsuffix(trimprefix(d, "."), "."),
+      "*.${trimsuffix(trimprefix(d, "."), ".")}",
+    ]
+  ]))
 }
 
 # ------------------------------------------------------------------------------
@@ -100,8 +109,11 @@ resource "aws_route53_resolver_firewall_rule_group_association" "this" {
 
   name                   = "${var.name_prefix}-dns-firewall-assoc"
   firewall_rule_group_id = aws_route53_resolver_firewall_rule_group.range_dns[0].id
-  priority               = 100
-  vpc_id                 = aws_vpc.this.id
+  # Rule-group association priority must be within the non-reserved band
+  # 101-9899 (AWS reserves the 100 / 9900 boundaries); 1000 keeps room on both
+  # sides for future associations.
+  priority = 1000
+  vpc_id   = aws_vpc.this.id
 
   tags = merge(local.common_tags, {
     Name = "${var.name_prefix}-dns-firewall-assoc"

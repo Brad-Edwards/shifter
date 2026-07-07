@@ -66,6 +66,7 @@ GUARDRAIL_FILES = {
     # audit redaction, or prod-confirm policy without touching code, so
     # ADR enforcement watches the file.
     ".shifter.yaml",
+    ".cursor/cli.json",
 }
 DOC_PATHS = (
     "docs/adr/",
@@ -499,8 +500,51 @@ def check_guardrail_docs(repo_root: Path, files: list[str] | None) -> list[Viola
     ]
 
 
+def check_no_agent_attribution(repo_root: Path, files: list[str] | None) -> list[Violation]:
+    """Reject AI/agent marketing or co-author attribution in tracked text."""
+    from agent_attribution import find_agent_attribution_matches
+
+    candidates = files
+    if candidates is None:
+        candidates = [
+            rel
+            for rel in subprocess.check_output(["git", "ls-files"], cwd=repo_root, text=True).splitlines()
+            if rel
+        ]
+
+    violations: list[Violation] = []
+    for rel in candidates:
+        if rel in _AGENT_ATTRIBUTION_SCAN_SKIP:
+            continue
+        path = repo_root / rel
+        if not path.is_file():
+            continue
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        matches = find_agent_attribution_matches(text)
+        if not matches:
+            continue
+        first = matches[0]
+        violations.append(
+            Violation(
+                "no-agent-attribution",
+                "ADR-002-R2",
+                rel,
+                f"Prohibited AI/agent attribution ({first.rule}): {first.excerpt}",
+            )
+        )
+    return violations
+
+
 DOCS_COVERAGE_MANIFEST = "docs/adr/documentation-coverage.yaml"
 DOCS_COVERAGE_RULE_ID = "ADR-022-R1"
+_AGENT_ATTRIBUTION_SCAN_SKIP = {
+    "scripts/adr_guard/agent_attribution.py",
+    "scripts/adr_guard/block_agent_attribution_commit_msg.py",
+    "scripts/adr_guard/tests/test_agent_attribution.py",
+}
 _DOCS_EXCLUDED_PART = "_deprecated"
 _MARKDOWN_LINK_PATTERN = re.compile(r"\]\(([^)\s]+)")
 
@@ -5635,6 +5679,7 @@ CHECKS = {
     "no-terraform-operational-placeholders": check_no_terraform_operational_placeholders,
     "github-oidc-no-admin-access": check_github_oidc_no_admin_access,
     "documentation-coverage": check_documentation_coverage,
+    "no-agent-attribution": check_no_agent_attribution,
 }
 CHECK_LEVELS = {
     "fast": [
@@ -5660,6 +5705,7 @@ CHECK_LEVELS = {
         "no-terraform-operational-placeholders",
         "github-oidc-no-admin-access",
         "documentation-coverage",
+        "no-agent-attribution",
     ],
     "ci": [
         "adr-registry",
@@ -5685,6 +5731,7 @@ CHECK_LEVELS = {
         "no-terraform-operational-placeholders",
         "github-oidc-no-admin-access",
         "documentation-coverage",
+        "no-agent-attribution",
     ],
     "all": list(CHECKS),
 }

@@ -12,6 +12,7 @@ from django.views.decorators.http import require_GET, require_POST
 
 from mission_control.utils import build_connection_urls
 from risk_register.models import AuditLog
+from shared.aces.presentation import build_range_aces_projection
 from shared.auth import block_ctf_participant_only
 from shared.errors import classify_user_message
 from shared.exceptions import CMSError
@@ -50,13 +51,15 @@ def get_range(request: HttpRequest) -> JsonResponse:
     active_range = _pkg().get_active_range(_get_user(request))
 
     if not active_range:
-        return JsonResponse({"has_range": False, "range": None, "connection_urls": []})
+        return JsonResponse({"has_range": False, "range": None, "connection_urls": [], "aces_projection": None})
 
+    projection = build_range_aces_projection(active_range.request_id)
     return JsonResponse(
         {
             "has_range": True,
             "range": active_range.model_dump(mode="json"),
             "connection_urls": build_connection_urls(active_range.instances),
+            "aces_projection": projection.to_payload() if projection else None,
         }
     )
 
@@ -105,7 +108,7 @@ def launch_range(request: HttpRequest) -> JsonResponse:
     try:
         data = _parse_json_body(request)
         scenario = data.get("scenario", "basic")
-        valid_scenarios = {s["id"] for s in _pkg().cms_list_scenarios(user)}
+        valid_scenarios = {s["id"] for s in _pkg().cms_list_launchable_scenarios(user, "range_launch")}
         if scenario not in valid_scenarios:
             raise _RangeError(JsonResponse({"error": "Invalid scenario"}, status=400))
         agents_by_os = _resolve_launch_agents(user, data)
@@ -322,5 +325,5 @@ def list_scenarios(request: HttpRequest) -> JsonResponse:
     Response (JSON):
         - scenarios: List of scenario dicts with agent_requirements field
     """
-    scenarios: list[dict[str, Any]] = _pkg().cms_list_scenarios(_get_user(request))
+    scenarios: list[dict[str, Any]] = _pkg().cms_list_launchable_scenarios(_get_user(request), "range_launch")
     return JsonResponse({"scenarios": scenarios})

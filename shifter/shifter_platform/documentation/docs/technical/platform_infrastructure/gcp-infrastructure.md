@@ -26,7 +26,7 @@ Single module provisions the entire GCP control plane.
 | **Node Pools** (×3) | GKE | `web` (portal, Guacamole), `workers` (domain workers), `provisioner` (range provisioning jobs) |
 | **Cloud SQL** | Cloud SQL | PostgreSQL. Hosts platform DB and Guacamole DB. Private IP only. |
 | **Memorystore** | Memorystore | Redis. Channel layer and worker coordination. |
-| **Pub/Sub** | Pub/Sub | Event topic with per-domain subscriptions (cms, engine, mc, experiments). |
+| **Pub/Sub** | Pub/Sub | Event topic with per-domain subscriptions (cms, engine, mc). |
 | **Artifact Registry** | Artifact Registry | Container repositories (portal, guacd, guacamole-client, pulumi-provisioner). |
 | **Secret Manager** | Secret Manager | Runtime secret bundles (app, db, guacamole-db, oidc, guacamole-json-auth). |
 | **Cloud DNS** | Cloud DNS | Optional. Public hostname with Google-managed TLS certificate. |

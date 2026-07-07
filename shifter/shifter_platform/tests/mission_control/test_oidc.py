@@ -1,10 +1,12 @@
 """Tests for OIDC utilities."""
 
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 from django.contrib.auth import get_user_model
+from django.core.exceptions import SuspiciousOperation
 from django.test import override_settings
+from mozilla_django_oidc.auth import OIDCAuthenticationBackend
 
 from config.oidc import ShifterOIDCBackend, provider_logout_url
 from config.username import generate_username
@@ -368,3 +370,69 @@ class TestShifterOIDCBackendUpdateCognitoSub:
         backend._update_cognito_sub(user, claims)
 
         assert not get_user_profile(user).cognito_sub
+
+
+# =============================================================================
+# ShifterOIDCBackend.authenticate audit coverage (OIDC callback events)
+# =============================================================================
+
+
+def _audit_request():
+    """A minimal request with the fields the audit path reads."""
+    request = MagicMock()
+    request.META = {"REMOTE_ADDR": "10.0.0.5", "HTTP_USER_AGENT": "Browser/1.0"}
+    return request
+
+
+@pytest.mark.django_db
+class TestShifterOIDCBackendAuthenticateAudit:
+    """``authenticate`` writes durable audit rows for OIDC callback outcomes.
+
+    Drives the real ``authenticate`` wrapper and the real ``audit_auth_event``,
+    stubbing only the mozilla base ``authenticate`` (the provider/token exchange
+    boundary) to force success, ``None``, and raising outcomes.
+    """
+
+    def test_successful_auth_writes_login_row(self):
+        user = User.objects.create_user(username="oidc-ok@example.com", email="oidc-ok@example.com")
+        backend = ShifterOIDCBackend()
+
+        with patch.object(OIDCAuthenticationBackend, "authenticate", return_value=user):
+            result = backend.authenticate(_audit_request())
+
+        assert result == user
+        row = AuditLog.objects.get(action=AuditLog.Action.LOGIN, entity_type=AuditLog.EntityType.USER)
+        assert row.new_state["email"] == "oidc-ok@example.com"
+        assert row.source_ip == "10.0.0.5"
+
+    def test_none_result_writes_login_failed_row(self):
+        backend = ShifterOIDCBackend()
+
+        with patch.object(OIDCAuthenticationBackend, "authenticate", return_value=None):
+            result = backend.authenticate(_audit_request())
+
+        assert result is None
+        row = AuditLog.objects.get(action=AuditLog.Action.LOGIN_FAILED)
+        assert row.source_ip == "10.0.0.5"
+
+    def test_exception_writes_login_failed_with_bounded_reason_and_reraises(self):
+        """Token/validation errors raised before the ``None`` branch are audited.
+
+        The reason must be the bounded exception *type*, never ``str(exc)``,
+        which can carry token endpoint URLs, response bodies, codes, or client
+        ids. The original exception must propagate so mozilla's callback failure
+        handling is unchanged.
+        """
+        backend = ShifterOIDCBackend()
+        leaky = SuspiciousOperation("JWT signature invalid token=eyJraWQ-secret code=abc123")
+
+        with (
+            patch.object(OIDCAuthenticationBackend, "authenticate", side_effect=leaky),
+            pytest.raises(SuspiciousOperation),
+        ):
+            backend.authenticate(_audit_request())
+
+        row = AuditLog.objects.get(action=AuditLog.Action.LOGIN_FAILED)
+        assert "SuspiciousOperation" in row.context
+        assert "secret" not in row.context
+        assert "abc123" not in row.context

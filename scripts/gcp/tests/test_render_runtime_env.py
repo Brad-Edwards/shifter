@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import sys
 from pathlib import Path
 
@@ -53,6 +54,45 @@ _FULL_MAILGUN_EMAIL_CONFIG = {
 }
 
 
+def _seed_gce_range_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    values = {
+        "GCP_RANGE_BACKEND": "gce",
+        "GCP_RANGE_PLANE": "compute-engine",
+        "GCP_RANGE_CELL_NETWORK_MODE": "vpc-per-range",
+        "RANGE_NETWORK_ZONE": "us-central1-b",
+        "GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL": "range-host@example.iam.gserviceaccount.com",
+        "GCP_RANGE_HOST_SERVICE_ACCOUNT_SCOPES": "https://www.googleapis.com/auth/cloud-platform",
+        "GCP_RANGE_LINUX_IMAGE": "projects/debian-cloud/global/images/family/debian-12",
+        "GCP_RANGE_LINUX_MACHINE_TYPE": "e2-small",
+        "GCP_RANGE_LINUX_DISK_SIZE_GB": "20",
+        "GCP_RANGE_LINUX_DISK_TYPE": "pd-balanced",
+        "GCP_RANGE_KALI_IMAGE": "projects/kali/global/images/kali",
+        "GCP_RANGE_KALI_MACHINE_TYPE": "e2-standard-2",
+        "GCP_RANGE_KALI_DISK_SIZE_GB": "40",
+        "GCP_RANGE_KALI_DISK_TYPE": "pd-balanced",
+        "GCP_RANGE_WINDOWS_IMAGE": "projects/windows-cloud/global/images/family/windows-2022",
+        "GCP_RANGE_WINDOWS_MACHINE_TYPE": "e2-standard-4",
+        "GCP_RANGE_WINDOWS_DISK_SIZE_GB": "80",
+        "GCP_RANGE_WINDOWS_DISK_TYPE": "pd-ssd",
+        "GCP_RANGE_DC_IMAGE": "projects/windows-cloud/global/images/family/windows-2022",
+        "GCP_RANGE_DC_MACHINE_TYPE": "e2-standard-4",
+        "GCP_RANGE_DC_DISK_SIZE_GB": "80",
+        "GCP_RANGE_DC_DISK_TYPE": "pd-ssd",
+        "GCP_RANGE_EGRESS_ALLOW_CIDRS": "10.60.0.0/16",
+        "GCP_RANGE_PRIVATE_GOOGLE_ACCESS": "true",
+        "GCP_RANGE_HOST_MGMT_SSH_PORT": "2222",
+        "GCP_RANGE_VERTEX_PROJECT_ID": "shifter-gcp-dev",
+        "GCP_RANGE_VERTEX_REGION": "us-east5",
+        "GCP_RANGE_VERTEX_SERVICE_ACCOUNT_EMAIL": "range-vertex@shifter-gcp-dev.iam.gserviceaccount.com",
+        "GCP_RANGE_KALI_ANTHROPIC_MODEL": "claude-sonnet-4-6",
+        "GCP_RANGE_KALI_ANTHROPIC_SMALL_FAST_MODEL": "claude-haiku-4-5",
+        "POLARIS_TESTS_BUCKET": "shifter-gcp-dev-polaris-tests",
+        "POLARIS_TESTS_KEY": "polaris/tests/polaris-tests.tar.gz",
+    }
+    for key, value in values.items():
+        monkeypatch.setenv(key, value)
+
+
 def _outputs(
     *,
     public_hostname: str = "portal.example.test",
@@ -70,7 +110,6 @@ def _outputs(
                 "cms": "projects/shifter-gcp-dev/subscriptions/shifter-gcp-dev-cms",
                 "engine": "projects/shifter-gcp-dev/subscriptions/shifter-gcp-dev-engine",
                 "mc": "projects/shifter-gcp-dev/subscriptions/shifter-gcp-dev-mc",
-                "experiments": "projects/shifter-gcp-dev/subscriptions/shifter-gcp-dev-experiments",
             }
         },
         "runtime_secret_ids": {
@@ -152,6 +191,10 @@ def test_render_env_emits_production_security_profile():
     assert "RANGE_NETWORK_CIDR=10.50.0.0/16\n" in rendered
     assert "RANGE_NETWORK_REGION=us-central1\n" in rendered
     assert "PORTAL_NETWORK_CIDRS=10.40.0.0/20,10.44.0.0/16\n" in rendered
+    assert "GCP_RANGE_BACKEND=gce\n" in rendered
+    # Range project derived from the range VPC self-link (real range project),
+    # independent of the control-plane GCP_PROJECT_ID placeholder.
+    assert "GCP_RANGE_CELL_PROJECT_ID=shifter-gcp-dev\n" in rendered
     assert "GDC_RANGE_NAMESPACE_PREFIX=range\n" in rendered
     assert "GDC_STATIC_IP_RESERVATION_COUNT=4\n" in rendered
     assert "RANGE_VPC_ID=projects/shifter-gcp-dev/global/networks/shifter-gcp-dev-range\n" in rendered
@@ -171,6 +214,7 @@ def test_render_env_keys_match_runtime_inventory(monkeypatch):
 
     monkeypatch.setenv("PLATFORM_BOOTSTRAP_STAFF_EMAILS", "admin@example.com")
     monkeypatch.setenv("PLATFORM_BOOTSTRAP_SUPERUSER_EMAILS", "admin@example.com")
+    _seed_gce_range_env(monkeypatch)
     rendered = module.render_env(
         _outputs(
             identity_allowed_emails=["alice@example.com", "bob@example.com"],
@@ -180,6 +224,63 @@ def test_render_env_keys_match_runtime_inventory(monkeypatch):
     )
 
     assert _rendered_keys(rendered) == set(GCP_GENERATED_RUNTIME_ENV_KEYS | GCP_OPTIONAL_GENERATED_RUNTIME_ENV_KEYS)
+
+
+def test_render_env_forwards_gce_range_cell_contract(monkeypatch):
+    module = _load_module("render_runtime_env.py", "render_runtime_env")
+    _seed_gce_range_env(monkeypatch)
+
+    rendered = module.render_env(_outputs(), image_tag=PINNED_IMAGE_TAG)
+
+    assert "GCP_RANGE_BACKEND=gce\n" in rendered
+    assert "GCP_RANGE_CELL_NETWORK_MODE=vpc-per-range\n" in rendered
+    assert "RANGE_NETWORK_ZONE=us-central1-b\n" in rendered
+    assert "GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL=range-host@example.iam.gserviceaccount.com\n" in rendered
+    assert "GCP_RANGE_LINUX_IMAGE=projects/debian-cloud/global/images/family/debian-12\n" in rendered
+    assert "GCP_RANGE_EGRESS_ALLOW_CIDRS=10.60.0.0/16\n" in rendered
+
+
+def test_render_env_still_supports_gdc_backend_override(monkeypatch):
+    module = _load_module("render_runtime_env.py", "render_runtime_env")
+    monkeypatch.setenv("GCP_RANGE_BACKEND", "gdc")
+
+    rendered = module.render_env(_outputs(), image_tag=PINNED_IMAGE_TAG)
+
+    assert "GCP_RANGE_BACKEND=gdc\n" in rendered
+
+
+def test_render_env_cell_project_id_env_override_wins(monkeypatch):
+    module = _load_module("render_runtime_env.py", "render_runtime_env")
+    monkeypatch.setenv("GCP_RANGE_CELL_PROJECT_ID", "prod-real-project")
+
+    rendered = module.render_env(_outputs(), image_tag=PINNED_IMAGE_TAG)
+
+    assert "GCP_RANGE_CELL_PROJECT_ID=prod-real-project\n" in rendered
+
+
+def test_main_writes_rendered_runtime_env(tmp_path, monkeypatch):
+    module = _load_module("render_runtime_env.py", "render_runtime_env")
+    outputs_path = tmp_path / "terraform-output.json"
+    output_path = tmp_path / "platform-runtime.generated.env"
+    outputs = _outputs()
+    outputs_path.write_text(json.dumps(outputs))
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "render_runtime_env.py",
+            "--terraform-output-json",
+            str(outputs_path),
+            "--image-tag",
+            PINNED_IMAGE_TAG,
+            "--output",
+            str(output_path),
+        ],
+    )
+
+    assert module.main() == 0
+
+    assert output_path.read_text() == module.render_env(outputs, image_tag=PINNED_IMAGE_TAG)
 
 
 @pytest.mark.parametrize(

@@ -402,6 +402,52 @@ def get_instance_ips_by_uuid(range_id: int) -> dict[str, str]:
     return result
 
 
+def reassign_range_owner_by_request(request_id: UUID, new_user: User) -> bool:
+    """Reassign the ``Range``/``Request`` owner for ``request_id`` to ``new_user``.
+
+    Used by CMS's cross-owner range-recovery path (``cms.services.reassign_range_owner``,
+    called from ``ctf.services.range.recovery`` via ``ctf.bridges``) to transfer
+    terminal/Guacamole access -- which resolves strictly by ``Range.user``
+    (``Range.resolve_active_for_instance`` / ``Range.get_active_for_user``) -- to a
+    new participant. Idempotent: returns True without writing when the range is
+    already owned by ``new_user``.
+
+    Returns:
+        True if a range was found (and reassigned or already owned by
+        ``new_user``), False if no range exists for ``request_id``.
+    """
+    from engine.models import Range
+
+    range_obj = Range.objects.filter(request__request_id=request_id).select_related("request").first()
+    if not range_obj:
+        logger.warning("reassign_range_owner_by_request: no range for request_id=%s", request_id)
+        return False
+
+    if range_obj.user_id == new_user.id:
+        logger.info(
+            "reassign_range_owner_by_request: already owned by user_id=%s request_id=%s",
+            new_user.id,
+            request_id,
+        )
+        return True
+
+    range_obj.user = new_user
+    range_obj.cms_user_id = new_user.id
+    range_obj.save(update_fields=["user", "cms_user_id"])
+
+    if range_obj.request is not None:
+        range_obj.request.user = new_user
+        range_obj.request.save(update_fields=["user"])
+
+    logger.info(
+        "reassign_range_owner_by_request: reassigned range_id=%s request_id=%s to user_id=%s",
+        range_obj.id,
+        request_id,
+        new_user.id,
+    )
+    return True
+
+
 def get_range_status(range_id: int) -> dict[str, Any] | None:
     """Get current state and instance details.
 

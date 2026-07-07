@@ -128,7 +128,12 @@ Current mechanisms:
   `sonar.html.fileHeader` enforces the ADR-015 file-header convention
   on HTML templates by failing `Web:HeaderCheck` on any template that
   does not begin with the canonical two-line SPDX Django-comment
-  header.
+  header. Bootstrap-specific `sonar.issue.ignore.multicriteria`
+  entries are limited to `scripts/bootstrap/**` and cover
+  subprocess argv false positives, fixed infrastructure CIDR defaults,
+  generic module/control-flow size rules, and scanner-consumed inline
+  pragmas; bootstrap still runs Ruff, pytest+coverage, Bandit, and ADR
+  guard in local and CI quality gates.
 - `.kube-linter.yaml`: Kubernetes security and best-practice linting
   configuration (enforces ADR-006 checks)
 - `Checkov`: Terraform and Kubernetes IaC security scanning. ADR-004-R11
@@ -165,7 +170,7 @@ Current mechanisms:
   aliases. The check is a cheap pre-commit
   backstop; motivated bypasses such as `const run = cp.execSync;
   run(...)` are outside its reach by design and rely on code
-  review. Enforces ADR-010-R1 with no current exceptions —
+  review. Enforces ADR-010-R1 with no current exceptions—
   `mcp/ngfw/*` migrated to argv-array helpers via the shared
   `mcp/shared/aws-helpers.js` module in #759, alongside the
   original `mcp/ops/*` migration in #763.
@@ -192,6 +197,13 @@ to behavior tests (drive a public entry point; assert outputs / ORM state /
 responses) and shrinks `boundary_mock_baseline.json` accordingly. Each group
 of suites lands as its own commit that removes the corresponding baseline
 entries. Completed so far:
+
+- `scripts/bootstrap`: issue #687 mechanically split the legacy
+  `test_deploy.py` suite into behavior-focused files. The ADR-019 baseline
+  entries were redistributed to the new paths with a dated exception because
+  the ratchet keys on `(test file, target)`; after porting the latest dev
+  GCP/GDC tests, the aggregate bootstrap allowance shrank from 215 to 214 and
+  the deleted `walkthrough_git_commit` seam was not carried forward.
 
 - `mission_control`: core range API, agents, models, and page-view suites
   (`test_range_api*`, `test_agents`, `test_models`, `test_views`,
@@ -250,8 +262,8 @@ entries. Completed so far:
   status (and `App.data.serial_number`) updates; the range handler's CTF bridge
   is verified by connecting a real receiver to the `range_status_changed` signal,
   and dispatcher routing is verified through each sub-handler's real effect
-  (experiment routing via the experiments handler's own validation log, which
-  required adding `cms.experiments` to the `enable_log_propagation` fixture).
+  Legacy experiment routing was removed by ADR-027 / issue #1195, so dispatcher
+  routing no longer includes the deleted experiments handler.
   The asset-service and S3-helper suites (`test_assets`, `assets/test_s3`) drive
   the real `cms.assets.services` (create/delete/storage) against real
   `AgentConfig`/`OperatingSystem`/`AuditLog` rows and the real `cms.assets.s3`
@@ -286,67 +298,21 @@ entries. Completed so far:
   scenario-hydrator suites (`test_models`, `test_credentials`,
   `test_models_agent_config`, `test_models_asset`, `test_models_operating_system`,
   `test_models_range_instance`, `test_models_subnet`, `test_scenario_hydrator`)
-  drive real rows for the ORM-dependent cases — Credential/CredentialType
+  drive real rows for the ORM-dependent cases—Credential/CredentialType
   create/uniqueness/cascade/PROTECT, `active_for_user` soft-delete filtering,
   `RangeInstance` create/query/`select_related`, `OperatingSystem.get_for_extension`,
-  and the `Subnet` terminal soft-delete invariant — keeping the field-inspection
+  and the `Subnet` terminal soft-delete invariant—keeping the field-inspection
   and in-memory property tests as-is. `test_scenario_hydrator` drives the real
   `hydrate_scenario` against real DB `Scenario` rows (loaded through the real
   registry) and real `AgentConfig` rows, exercising `from_agent` OS resolution and
   agent embedding. With these the `cms` core area carries no remaining ADR-019
   baseline entries.
 
-- `cms/experiments` (non-orchestrator): the foundational data/event suites
-  (`test_models`, `test_events`, `test_notifications`, `test_s3_tokens`,
-  `test_range_bridge`) drive real `Experiment`/`ExperimentRun`/`ScriptAsset` rows
-  for model save/transition/`active_for_user`; the upload-token HMAC round-trip
-  against the real `SECRET_KEY` (only `SCRIPT_UPLOAD_URL_EXPIRES` tuned via the
-  `settings` fixture); event publishing through the real `shared.cloud` SQS
-  publisher mocked at the `boto3` boundary; notification authorization against a
-  real owned `Experiment` and notification publishing asserted on the persisted
-  `WebSocketNotification` row; and the range->experiment bridge end-to-end
-  (`notify_experiment_on_range_ready` / `process_range_event`) against real
-  linked `RangeInstance`/`Request`/`ExperimentRun` rows with the SQS publish at
-  the `boto3` boundary (a `boto3` `ClientError` drives the run-marked-FAILED path).
-  The experiment-service suites (`test_services`, `test_services_lifecycle`) drive
-  `create_experiment` / `start_experiment` / `cancel_experiment` / `list_scripts` /
-  `delete_script` / `get`/`list_experiments` / `get_scenario_instances` against
-  real `Experiment`/`ExperimentRun`/`ScriptAsset`/`AuditLog` rows, real
-  users/groups for the `shared.auth.can_edit_cms_authoring` policy (active staff
-  or `Threat Research` member), and the real scenario registry (the built-in
-  `basic` template, instances `Attacker`+`Workstation`); `start_experiment`'s
-  `experiment.start` publish runs through the real SQS publisher at the `boto3`
-  boundary. The `cms/experiments/test_orchestrator*` suites stay out of scope
-  (decomposition, below). The WebSocket consumer suite (`test_consumers`) drives
-  the real `ExperimentStatusConsumer` through the Channels `WebsocketCommunicator`
-  against real `Experiment`/`ExperimentRun` rows and real users (auth/ownership
-  rejection, hydrate-on-connect); the broadcast-handler tests assert the formatted
-  event on the consumer's `send` transport. The experiment SQS-handler suite
-  (`test_handlers`) is **partially** rewritten: its notification + channel-layer
-  broadcast helpers are driven against real rows (asserting the persisted
-  `WebSocketNotification` fallback, with the channel layer failed at the `channels`
-  boundary), while the event-dispatch tests that assert routing into the
-  decomposition-owned `ExperimentOrchestrator` (#885/#886/#889-891) keep their
-  orchestrator mock and remain in a (reduced) baseline — driving the real
-  orchestrator is that decomposition's surface, not #957's. The script-upload
-  inspection suite (`test_script_inspection`) drives the real
-  `complete_script_upload` with a real signed upload token and S3 exercised
-  through the real `cms.experiments.s3` helpers + `shared.cloud` AWS adapter,
-  mocked at the `boto3` boundary: it asserts the persisted `ScriptAsset`/`AuditLog`
-  on accept and the delete-and-reject behavior on binary / non-UTF-8 / oversize /
-  size-mismatch headers (incl. the full-body Range read and no-delete-on-transport-
-  failure), with rejection logs asserted not to leak header bytes or the token.
-  The view + integration suites (`test_views`, `test_view_flows`, `test_integration`)
-  drive the real experiment/script/download views through the Django test client
-  against real users/groups (the staff / Threat-Research access policy), real
-  rows, the real services, and the real templates; the script-upload and
-  artifact-download flows presign / inspect via the real `cms.experiments.s3`
-  helpers mocked only at the `boto3` boundary, and `test_integration` runs the real
-  create -> start -> cancel + script-assignment service flows end-to-end (the old
-  suite asserted on MagicMocks that never invoked real code). With these the
-  `cms/experiments` non-orchestrator area carries no remaining ADR-019 baseline
-  entries; only the decomposition-owned `test_orchestrator*` and the
-  orchestrator-dispatch tests retained in `test_handlers` remain (above).
+- `cms/experiments`: ADR-027 / issue #1195 removed the legacy experiments app,
+  its script-upload surface, websocket/event handlers, bridge tests, and
+  ADR-019 baseline allowances. New experiment capability must arrive through a
+  new accepted design rather than restoring these deleted suites or their
+  first-party patch baselines.
 
 - `management`: the service suite (`test_services`) drives `log_activity` /
   `get_user_profile` / `mark_user_deleted` / `create_user_profile` /
@@ -364,8 +330,8 @@ entries. Completed so far:
 - `shared` + `risk_register`: the cloud-storage adapter suites
   (`shared/cloud/test_aws_storage`, `test_gcp_storage`) drive the real
   `AWSObjectStorage` / `GCPObjectStorage` (including their real `_get_client`
-  region/endpoint/client resolution) and mock only the SDK boundary —
-  `boto3.client` and `google.cloud.storage.Client` respectively — rather than
+  region/endpoint/client resolution) and mock only the SDK boundary—
+  `boto3.client` and `google.cloud.storage.Client` respectively—rather than
   patching the first-party `_get_client`. `shared/test_email` drives the real
   `send_email` through the real thread pool and asserts the locmem outbox
   instead of patching `shared.email.send_email`. `shared/test_notifications`
@@ -412,7 +378,7 @@ entries. Completed so far:
   mocked-`render` test hid: `ngfw_detail` passed `int(cms NGFWAppContext
   .instance_id)` (a CMS Instance UUID coerced to a 128-bit int) to
   `get_ranges_for_ngfw`, which filters the engine `Range.ngfw_instance` (a
-  64-bit int FK to the engine NGFW Instance) — different id spaces, so the
+  64-bit int FK to the engine NGFW Instance)—different id spaces, so the
   detail page 500'd on SQLite / showed no linked ranges on Postgres. The view
   now correlates via the shared provisioning `request_id` (exposed on
   `NGFWAppContext`), and `get_ranges_for_ngfw` resolves the engine NGFW Instance
@@ -433,7 +399,7 @@ entries. Completed so far:
   asserting persisted flags / `UserProfile` / `AuditLog`. `test_health` drives
   the real channel-layer probe over the in-process `InMemoryChannelLayer` and
   the real missing-default-layer path (third-party `health_check` backends are
-  still patched for the DB/cache failure cases — those are real boundaries).
+  still patched for the DB/cache failure cases—those are real boundaries).
   The WebSocket consumers drive the real `connect_terminal` /
   `get_range_by_request_id` / `audit_session_event` against real READY `Range`
   rows (`@pytest.mark.django_db(transaction=True)` so `sync_to_async` sees the
@@ -470,16 +436,17 @@ that mock-coupled tests would not. To demonstrate this concretely, the
 module (`config/oidc.py`) into its own `config/username.py`, and the single
 topology reference (`OIDC_USERNAME_ALGO = "config.username.generate_username"`)
 was updated. The `tests/mission_control/test_oidc.py` `ShifterOIDCBackend`
-behavior tests — which exercise `generate_username` only through the real OIDC
+behavior tests—which exercise `generate_username` only through the real OIDC
 `create_user` / `update_user` login flow (via `OIDC_USERNAME_ALGO`), never naming
-the function's location — pass **unchanged** across the move. Only the function's
+the function's location—pass **unchanged** across the move. Only the function's
 own direct unit tests (`TestGenerateUsername`) updated their import to follow it.
 A mock-coupled test that had patched `config.oidc.generate_username` would have
 broken on the move; the behavior tests did not.
 
 Decomposition-owned suites are out of scope here and land with their own
-issues: provisioner (#946), `ctf/**` and `cms/experiments/test_orchestrator*`
-(#885, #886, #889-#891), and `cms/scenario_editor/**` (#887, #888).
+issues: provisioner (#946), `ctf/**` (#885, #886, #889-#891), and
+`cms/scenario_editor/**` (#887, #888). The legacy `cms/experiments`
+decomposition path was removed by ADR-027 / issue #1195.
 
 ### ADR-019 baseline reduction (#885)
 

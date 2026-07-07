@@ -363,6 +363,35 @@ class TestAuditSessionEvent:
         assert stored.new_state["session_type"] == "terminal"
         assert stored.new_state["target_ip"] == "172.16.0.5"
 
+    def test_records_user_email_when_provided(self, staff_user):
+        """Session rows carry the user email so lifecycle events are attributable."""
+        entry = audit_session_event(
+            action=AuditLog.Action.DISCONNECT,
+            user_id=staff_user.id,
+            session=SessionInfo(
+                session_id="sess-xyz",
+                session_type="terminal",
+                email="operator@example.com",
+            ),
+            context="close_code=1000 reason=idle_timeout",
+        )
+
+        assert entry is not None
+        stored = AuditLog.objects.get(pk=entry.pk)
+        assert stored.new_state["email"] == "operator@example.com"
+
+    def test_omits_email_key_when_absent(self, staff_user):
+        """No email is stored when the session has none, keeping rows minimal."""
+        entry = audit_session_event(
+            action=AuditLog.Action.CONNECT,
+            user_id=staff_user.id,
+            session=SessionInfo(session_id="sess-noemail", session_type="terminal"),
+        )
+
+        assert entry is not None
+        stored = AuditLog.objects.get(pk=entry.pk)
+        assert "email" not in stored.new_state
+
 
 # ---- get_client_ip() ----
 

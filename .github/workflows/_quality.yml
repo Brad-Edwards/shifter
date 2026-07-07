@@ -443,6 +443,43 @@ jobs:
         working-directory: shifter/shifter_platform
         run: npx stylelint static/css/
 
+  shifter-platform-spa:
+    permissions:
+      contents: read
+    name: SPA (shifter_platform frontend)
+    needs: [paths]
+    if: ${{ (needs.paths.outputs.run_all == 'true' || needs.paths.outputs.shifter_platform == 'true') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.19'
+          cache: 'npm'
+          cache-dependency-path: shifter/shifter_platform/frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: shifter/shifter_platform/frontend
+        run: npm ci
+
+      - name: Lint (ESLint)
+        working-directory: shifter/shifter_platform/frontend
+        run: npm run lint
+
+      - name: Typecheck
+        working-directory: shifter/shifter_platform/frontend
+        run: npm run typecheck
+
+      - name: Unit tests (Vitest + axe)
+        working-directory: shifter/shifter_platform/frontend
+        run: npm run test:coverage
+
+      - name: Build (Vite)
+        working-directory: shifter/shifter_platform/frontend
+        run: npm run build
+
   provisioner-lint:
     permissions:
       contents: read
@@ -745,7 +782,22 @@ jobs:
             "${RUNNER_TEMP}/rendered-k8s/"*.yaml
 
   # ===========================================================================
-  # Type Checking (non-blocking quality gate)
+  # Type Checking (blocking quality gate, #564)
+  #
+  # mypy is an enforced guardrail, not advisory telemetry. Each job runs the
+  # full package mypy estate (enforced scope = the package minus the
+  # transitional dirs declared in its pyproject.toml `[tool.mypy].exclude`)
+  # and fails the job - and thus the PR Gate - on any error. Like the
+  # architecture and SAST guardrails below, these jobs do NOT honor
+  # `skip_tests`. Do NOT reintroduce `continue-on-error: true` or `|| true`:
+  # exempt a module via an explicit `[[tool.mypy.overrides]]` in the package
+  # pyproject.toml instead, so the enforced/transitional boundary stays in
+  # one place.
+  #
+  # shifter-platform-typecheck also fires on `cyberscript` changes: the
+  # platform mypy run sets `mypy_path = ".."` and type-checks the imported
+  # `cyberscript` modules, so a cyberscript-only change can break the platform
+  # estate. Triggering on that path keeps the blocking gate from having a hole.
   # ===========================================================================
 
   shifter-platform-typecheck:
@@ -753,9 +805,8 @@ jobs:
       contents: read
     name: Type Check (shifter_platform)
     needs: [paths]
-    if: ${{ !inputs.skip_tests && ((needs.paths.outputs.run_all == 'true' || needs.paths.outputs.shifter_platform == 'true')) }}
+    if: ${{ (needs.paths.outputs.run_all == 'true' || needs.paths.outputs.shifter_platform == 'true' || needs.paths.outputs.cyberscript == 'true') }}
     runs-on: ubuntu-latest
-    continue-on-error: true  # Non-blocking - quality signal only
     steps:
       - uses: actions/checkout@v6
 
@@ -768,18 +819,24 @@ jobs:
 
       - name: Run mypy
         working-directory: shifter/shifter_platform
-        run: |
-          uv run mypy . --no-error-summary || true
-          echo "::notice::Type checking complete - see above for any type errors"
+        # The django-stubs mypy plugin imports `config.settings` to construct
+        # itself, so the run needs synthetic, non-production Django env
+        # (matching the `mypy-shifter-platform` pre-commit hook) or the plugin
+        # raises and mypy exits with an INTERNAL ERROR. PYTHONPATH=".." makes
+        # the imported `cyberscript` package resolvable at settings-import time.
+        env:
+          DJANGO_DEBUG: "true"
+          DJANGO_SECRET_KEY: dummy-for-testing
+          PYTHONPATH: ".."
+        run: uv run mypy .
 
   provisioner-typecheck:
     permissions:
       contents: read
     name: Type Check (provisioner)
     needs: [paths]
-    if: ${{ !inputs.skip_tests && ((needs.paths.outputs.run_all == 'true' || needs.paths.outputs.provisioner == 'true')) }}
+    if: ${{ (needs.paths.outputs.run_all == 'true' || needs.paths.outputs.provisioner == 'true') }}
     runs-on: ubuntu-latest
-    continue-on-error: true  # Non-blocking - quality signal only
     steps:
       - uses: actions/checkout@v6
 
@@ -792,9 +849,7 @@ jobs:
 
       - name: Run mypy
         working-directory: shifter/engine/provisioner
-        run: |
-          uv run mypy . --no-error-summary || true
-          echo "::notice::Type checking complete - see above for any type errors"
+        run: uv run mypy .
 
   # ===========================================================================
   # Architecture as Code (hard fail - zero tolerance)
@@ -1065,7 +1120,7 @@ jobs:
           DB_PASSWORD: test
         run: |
           uv run python manage.py collectstatic --noinput
-          uv run pytest tests/ --ignore=tests/documentation -m "not redis" --cov=. --cov-report=term-missing --cov-report=xml:coverage.xml
+          uv run pytest tests/ --ignore=tests/documentation -m "not redis and not postgres" --cov=. --cov-report=term-missing --cov-report=xml:coverage.xml
 
       # Real-stack Redis channel-layer evidence (#924). Runs only the
       # redis-marked integration tests against the Redis service, with xdist
@@ -1088,6 +1143,31 @@ jobs:
           REDIS_PORT: "6379"
         run: |
           uv run pytest tests/integration/asgi -m redis -n0 -p no:cacheprovider
+
+      # Real PostgreSQL concurrency evidence (#1182). submit_flag()'s
+      # select_for_update() guard (#1135, #1137) needs real row-level locking
+      # to prove it serializes concurrent requests, which SQLite (the main
+      # suite's backend above) cannot provide. TEST_DB_BACKEND=postgres tells
+      # tests/ctf/test_services/conftest.py to redirect the ORM at this job's
+      # postgres service instead of SQLite; TESTING stays "1" so unrelated
+      # test-mode settings are unaffected. DB_NAME/DB_USER/DB_PASSWORD match
+      # the postgres service block above. Runs with -n0 (like the redis step
+      # above): these tests drive their own thread-level concurrency, so xdist
+      # distribution adds no value and races the per-worker DB setup.
+      - name: Run CTF submission concurrency tests (PostgreSQL)
+        working-directory: shifter/shifter_platform
+        env:
+          TESTING: "1"
+          TEST_DB_BACKEND: postgres
+          DJANGO_DEBUG: "true"
+          DJANGO_SECRET_KEY: ${{ github.run_id }}-${{ github.run_attempt }}
+          DB_HOST: localhost
+          DB_PORT: 5432
+          DB_NAME: shifter
+          DB_USER: test
+          DB_PASSWORD: test
+        run: |
+          uv run pytest tests/ctf/test_services/test_submission_concurrency.py -m postgres -n0 -p no:cacheprovider
 
       - name: Upload coverage
         uses: actions/upload-artifact@v4

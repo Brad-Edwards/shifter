@@ -22,6 +22,7 @@ from mission_control.api.serializers import LaunchRangeSerializer, RangeLifecycl
 from mission_control.utils import build_connection_urls
 from mission_control.views._common import _audit_range_lifecycle, _logger, _pkg
 from risk_register.models import AuditLog
+from shared.aces.presentation import build_range_aces_projection
 from shared.api.permissions import IsAuthenticatedSessionOrApiToken
 from shared.errors import classify_user_message
 from shared.exceptions import CMSError
@@ -35,12 +36,14 @@ class CurrentRangeView(MissionControlReadAPIView):
         """Return the active range and connection URLs for the request user."""
         active_range = _pkg().get_active_range(self.actor_user())
         if not active_range:
-            return Response({"has_range": False, "range": None, "connection_urls": []})
+            return Response({"has_range": False, "range": None, "connection_urls": [], "aces_projection": None})
+        projection = build_range_aces_projection(active_range.request_id)
         return Response(
             {
                 "has_range": True,
                 "range": active_range.model_dump(mode="json"),
                 "connection_urls": build_connection_urls(active_range.instances),
+                "aces_projection": projection.to_payload() if projection else None,
             }
         )
 
@@ -71,7 +74,7 @@ class LaunchRangeView(MissionControlAPIView):
     def _launch_range(self, request: Request, user: User, data: dict[str, Any]) -> Response:
         """Launch a range once the request body has passed serializer checks."""
         scenario = str(data.get("scenario", "basic"))
-        valid_scenarios = {s["id"] for s in _pkg().cms_list_scenarios(user)}
+        valid_scenarios = {s["id"] for s in _pkg().cms_list_launchable_scenarios(user, "range_launch")}
         if scenario not in valid_scenarios:
             return self.bad_request("Invalid scenario")
 
@@ -250,5 +253,5 @@ class ScenarioListView(MissionControlReadAPIView):
 
     def get(self, request: Request) -> Response:
         """Return scenarios available to the authenticated actor."""
-        scenarios: list[dict[str, Any]] = _pkg().cms_list_scenarios(self.actor_user())
+        scenarios: list[dict[str, Any]] = _pkg().cms_list_launchable_scenarios(self.actor_user(), "range_launch")
         return Response({"scenarios": scenarios})

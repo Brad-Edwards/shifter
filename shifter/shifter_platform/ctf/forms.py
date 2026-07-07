@@ -70,6 +70,7 @@ class CTFEventForm(forms.ModelForm):
             "attempt_limit_mode",
             "attempt_limit_cooldown_seconds",
             "rating_visibility",
+            "scoring_mode",
             "scoreboard_visible",
             "scoreboard_freeze_at",
         ]

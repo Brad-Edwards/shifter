@@ -21,7 +21,7 @@ GCP_DIR = PACKER_DIR / "gcp"
 GCP_SCRIPTS_DIR = GCP_DIR / "scripts"
 
 # Image types that ship a GCE builder in this iteration.
-GCE_IMAGE_TYPES = ["ubuntu", "brokenbk", "kali", "windows", "dc"]
+GCE_IMAGE_TYPES = ["ubuntu", "brokenbk", "kali", "windows", "dc", "polaris-vm", "dc-prebaked"]
 
 
 class TestGcpTemplateStructure:
@@ -112,6 +112,42 @@ class TestGcpWindowsSysprep:
     def test_windows_template_references_gcp_sysprep(self, image_type):
         content = (GCP_DIR / f"{image_type}.pkr.hcl").read_text()
         assert "scripts/windows/sysprep.ps1" in content
+
+
+class TestGcpDcPrebaked:
+    """dc-prebaked bakes many pre-promoted DC images from one parameterized template."""
+
+    def test_template_is_parameterized_by_domain_and_content(self):
+        content = (GCP_DIR / "dc-prebaked.pkr.hcl").read_text()
+        # Domain / NetBIOS / content / purpose are variables, not hardcoded.
+        for var in ("var.dc_domain_name", "var.dc_netbios_name", "var.dc_content_script", "var.dc_image_purpose"):
+            assert var in content, f"dc-prebaked template must use {var}"
+        # The image family is purpose-driven, not a fixed polaris name.
+        assert 'image_family      = "${var.image_prefix}-${var.dc_image_purpose}-dc"' in content
+
+    def test_promote_bake_reads_domain_from_env(self):
+        content = (GCP_SCRIPTS_DIR / "dc-prebaked" / "promote-bake.ps1").read_text()
+        assert "DC_DOMAIN_NAME" in content and "DC_NETBIOS_NAME" in content
+        assert "-DomainName $DomainName" in content
+
+    def test_variables_declare_dc_prebaked_knobs(self):
+        content = (GCP_DIR / "variables.pkr.hcl").read_text()
+        for var in ("dc_image_purpose", "dc_domain_name", "dc_netbios_name", "dc_content_script"):
+            assert f'variable "{var}"' in content, f"variables.pkr.hcl must declare {var}"
+
+    @pytest.mark.parametrize("profile", ["polaris", "example"])
+    def test_profile_var_file_exists_and_sets_purpose(self, profile):
+        path = GCP_DIR / "dc-profiles" / f"{profile}.pkrvars.hcl"
+        assert path.exists(), f"Missing DC profile: dc-profiles/{profile}.pkrvars.hcl"
+        content = path.read_text()
+        for key in ("dc_image_purpose", "dc_domain_name", "dc_netbios_name", "dc_content_script"):
+            assert key in content, f"profile {profile} must set {key}"
+
+    def test_polaris_profile_reproduces_boreas_local(self):
+        content = (GCP_DIR / "dc-profiles" / "polaris.pkrvars.hcl").read_text()
+        assert '"boreas.local"' in content
+        assert '"polaris"' in content
+        assert "a2_setup.ps1" in content
 
 
 class TestGcpKaliSourceImage:

@@ -6,7 +6,42 @@ from typing import Any
 
 from rest_framework import serializers
 
+from shared.aces.projections import DEFAULT_HISTORY_LIMIT, MAX_HISTORY_LIMIT
+
 AGENT_TYPE_CHOICES = ("xdr", "xdr_collector", "cloud_identity_engine")
+
+
+class AcesRecordQuerySerializer(serializers.Serializer):
+    """Validate query params for ACES operation-record read endpoints (#1275)."""
+
+    limit = serializers.IntegerField(
+        required=False,
+        min_value=1,
+        max_value=MAX_HISTORY_LIMIT,
+        default=DEFAULT_HISTORY_LIMIT,
+    )
+
+
+class AcesOperationRecordSerializer(serializers.Serializer):
+    """Read-only projection of one ACES operation sidecar record (#1275).
+
+    Serializes an ``AcesOperationRecordProjection`` (already redacted by the
+    shared read seam); it never touches the raw model ``payload``.
+    """
+
+    id = serializers.UUIDField(read_only=True)
+    request_id = serializers.UUIDField(read_only=True)
+    range_id = serializers.UUIDField(read_only=True, allow_null=True)
+    record_kind = serializers.CharField(read_only=True)
+    contract_kind = serializers.CharField(read_only=True)
+    contract_version = serializers.CharField(read_only=True)
+    contract_profile = serializers.CharField(read_only=True)
+    source_timestamp = serializers.DateTimeField(read_only=True)
+    created_at = serializers.DateTimeField(read_only=True)
+    updated_at = serializers.DateTimeField(read_only=True)
+    payload_digest = serializers.CharField(read_only=True)
+    payload = serializers.DictField(read_only=True)
+    diagnostic_refs = serializers.DictField(read_only=True)
 
 
 class LaunchRangeSerializer(serializers.Serializer):
@@ -118,30 +153,3 @@ class CredentialCreateSerializer(serializers.Serializer):
         if value not in ("scm", "deployment_profile"):
             raise serializers.ValidationError(f"Invalid credential type: {value}")
         return value
-
-
-class ScriptUploadSerializer(serializers.Serializer):
-    """Validate script upload requests.
-
-    The endpoint is a two-step legacy-compatible flow: ``upload_token`` means
-    completion; otherwise ``name``/``filename``/``file_size`` initiate.
-    """
-
-    upload_token = serializers.CharField(required=False, allow_blank=True)
-    name = serializers.CharField(required=False, allow_blank=True, trim_whitespace=True)
-    filename = serializers.CharField(required=False, allow_blank=True, trim_whitespace=True)
-    file_size = serializers.JSONField(required=False)
-
-    def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
-        if attrs.get("upload_token"):
-            return attrs
-        name = attrs.get("name", "")
-        filename = attrs.get("filename", "")
-        file_size = attrs.get("file_size", 0)
-        if not name:
-            raise serializers.ValidationError("Script name is required")
-        if not filename:
-            raise serializers.ValidationError("Filename is required")
-        if not isinstance(file_size, int) or file_size <= 0:
-            raise serializers.ValidationError("Valid file size is required")
-        return attrs

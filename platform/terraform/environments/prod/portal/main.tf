@@ -384,14 +384,17 @@ module "redis" {
   node_type                  = var.redis_node_type
   engine_version             = var.redis_engine_version
   enable_replication         = var.redis_enable_replication
+  apply_immediately          = var.redis_apply_immediately
 
   # AUTH + in-transit encryption (#938): the AUTH token secret is encrypted by
   # the portal CMK. is_active_channel_backend rejects a live channel layer on
   # the plaintext single-node path. redis_at_rest_kms_key_arn is the dedicated
   # data-at-rest CMK for the replication group (#1059).
-  secrets_kms_key_arn       = aws_kms_key.secrets_manager.arn
-  redis_at_rest_kms_key_arn = aws_kms_key.redis_at_rest.arn
-  is_active_channel_backend = var.enable_redis
+  secrets_kms_key_arn         = aws_kms_key.secrets_manager.arn
+  redis_at_rest_kms_key_arn   = aws_kms_key.redis_at_rest.arn
+  cloudwatch_logs_kms_key_arn = aws_kms_key.cloudwatch_logs.arn
+  permissions_boundary_arn    = local.ci_role_permissions_boundary_arn
+  is_active_channel_backend   = var.enable_redis
 
   # Automatic Redis AUTH rotation (#159): only where the portal runs on a
   # refreshable ASG, so the rotation Lambda can roll consumers to the new token.
@@ -542,6 +545,8 @@ module "ssm" {
   sqs_cms_url    = module.messaging.sqs_queue_urls["cms"]
   sqs_engine_url = module.messaging.sqs_queue_urls["engine"]
   sqs_mc_url     = module.messaging.sqs_queue_urls["mc"]
+
+  range_events_topic_id = module.messaging.sns_topic_arn
   # Redis wiring is environment-owned and decoupled from autoscaling (ADR-018, #849).
   redis_endpoint = var.enable_redis ? module.redis.redis_endpoint : ""
   enable_redis   = var.enable_redis
@@ -862,6 +867,7 @@ module "engine_provisioner" {
   agent_s3_bucket_arn       = module.s3.bucket_arn
   s3_endpoint_id            = try(data.terraform_remote_state.range.outputs.s3_endpoint_id, "")
   firewall_endpoint_id      = data.terraform_remote_state.range.outputs.firewall_endpoint_id != null ? data.terraform_remote_state.range.outputs.firewall_endpoint_id : ""
+  range_egress_mode         = try(data.terraform_remote_state.range.outputs.range_egress_mode, "allowlist")
   ssm_endpoints_subnet_cidr = try(data.terraform_remote_state.range.outputs.ssm_endpoints_subnet_cidr, "")
 
   # Portal VPC configuration (for terminal SSH routing)

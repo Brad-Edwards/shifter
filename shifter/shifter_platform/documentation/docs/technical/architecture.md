@@ -105,7 +105,7 @@ not best-effort UI-only notifications. Range state diverges when an event is
 lost; the platform makes every correctness-critical event recoverable through
 two complementary layers.
 
-**Layer 1 — Transactional outbox.** The provisioner enqueues each event into
+**Layer 1—Transactional outbox.** The provisioner enqueues each event into
 `engine_range_event_outbox` (`RangeEventOutbox`) in the same DB transaction as
 the authoritative state write, so state and event-intent commit atomically. The
 `drain_range_event_outbox` portal management command reads PENDING outbox rows
@@ -114,11 +114,11 @@ exponential-backoff retry. After `max_attempts`, a row transitions to a DLQ
 terminal state and an operator-visible alert fires. Drained rows transition to
 PUBLISHED. PENDING rows can be replayed by re-running the drainer.
 
-**Layer 2 — DB-authoritative reconciler.** The `reconcile_range_events` portal
+**Layer 2—DB-authoritative reconciler.** The `reconcile_range_events` portal
 management command re-reads authoritative `engine.Range` state and
-idempotently re-drives stale CMS `RangeInstance` and experiment `ExperimentRun`
-projections through the existing handler, orchestrator, and bridge seams. It
-does not bypass domain invariants or write Engine models from CMS.
+idempotently re-drives stale CMS `RangeInstance` projections through the
+existing handler seam. It does not bypass domain invariants or write Engine
+models from CMS.
 
 **Consumer failure propagation.** Consumer handlers propagate transient DB or
 broker failures rather than swallowing them, so the worker ack-after-handler

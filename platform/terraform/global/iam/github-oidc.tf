@@ -167,7 +167,19 @@ resource "aws_iam_policy" "compute" {
           "autoscaling:TerminateInstanceInAutoScalingGroup",
           "autoscaling:StartInstanceRefresh",
           "autoscaling:DescribeInstanceRefreshes",
-          "autoscaling:DescribeScalingActivities"
+          "autoscaling:DescribeScalingActivities",
+          # Lifecycle hooks (launch + termination-drain) managed by
+          # modules/portal/ec2. Describe is needed at plan/refresh time,
+          # Put/Delete at apply time (including destroying hooks left in
+          # state when enable_autoscaling is toggled off, as in dev).
+          "autoscaling:DescribeLifecycleHooks",
+          "autoscaling:PutLifecycleHook",
+          "autoscaling:DeleteLifecycleHook",
+          # Warm pool, managed by the same module's dynamic "warm_pool"
+          # block when asg_warm_pool_min_size > 0.
+          "autoscaling:DescribeWarmPool",
+          "autoscaling:PutWarmPool",
+          "autoscaling:DeleteWarmPool"
         ]
         Resource = "*"
       },
@@ -206,7 +218,11 @@ resource "aws_iam_policy" "compute" {
           "lambda:GetPolicy",
           "lambda:TagResource",
           "lambda:UntagResource",
-          "lambda:ListTags"
+          "lambda:ListTags",
+          # Configuring Secrets Manager rotation (aws_secretsmanager_secret_rotation
+          # for the Redis AUTH secret, #159) requires the caller to hold
+          # lambda:InvokeFunction on the rotation function.
+          "lambda:InvokeFunction"
         ]
         Resource = "arn:aws:lambda:${var.aws_region}:${data.aws_caller_identity.current.account_id}:function:*"
       },
@@ -393,6 +409,51 @@ resource "aws_iam_policy" "networking" {
           "network-firewall:ListTagsForResource",
           "network-firewall:DescribeLoggingConfiguration",
           "network-firewall:UpdateLoggingConfiguration"
+        ]
+        Resource = "*"
+      },
+      {
+        # Route 53 Resolver DNS Firewall + query logging for the range VPC
+        # egress controls (#1171 zero-egress range, #1172 close DNS exfil,
+        # modules/range/vpc/dns_resolver.tf). None of these APIs support
+        # resource-level scoping, so the statement uses Resource "*".
+        Sid    = "Route53ResolverDNSFirewall"
+        Effect = "Allow"
+        Action = [
+          "route53resolver:CreateFirewallDomainList",
+          "route53resolver:DeleteFirewallDomainList",
+          "route53resolver:GetFirewallDomainList",
+          "route53resolver:ListFirewallDomainLists",
+          "route53resolver:UpdateFirewallDomains",
+          "route53resolver:ListFirewallDomains",
+          "route53resolver:ImportFirewallDomains",
+          "route53resolver:CreateFirewallRuleGroup",
+          "route53resolver:DeleteFirewallRuleGroup",
+          "route53resolver:GetFirewallRuleGroup",
+          "route53resolver:ListFirewallRuleGroups",
+          "route53resolver:CreateFirewallRule",
+          "route53resolver:DeleteFirewallRule",
+          "route53resolver:UpdateFirewallRule",
+          "route53resolver:ListFirewallRules",
+          "route53resolver:AssociateFirewallRuleGroup",
+          "route53resolver:DisassociateFirewallRuleGroup",
+          "route53resolver:GetFirewallRuleGroupAssociation",
+          "route53resolver:ListFirewallRuleGroupAssociations",
+          "route53resolver:UpdateFirewallRuleGroupAssociation",
+          "route53resolver:GetFirewallConfig",
+          "route53resolver:UpdateFirewallConfig",
+          "route53resolver:ListFirewallConfigs",
+          "route53resolver:CreateResolverQueryLogConfig",
+          "route53resolver:DeleteResolverQueryLogConfig",
+          "route53resolver:GetResolverQueryLogConfig",
+          "route53resolver:ListResolverQueryLogConfigs",
+          "route53resolver:AssociateResolverQueryLogConfig",
+          "route53resolver:DisassociateResolverQueryLogConfig",
+          "route53resolver:GetResolverQueryLogConfigAssociation",
+          "route53resolver:ListResolverQueryLogConfigAssociations",
+          "route53resolver:TagResource",
+          "route53resolver:UntagResource",
+          "route53resolver:ListTagsForResource"
         ]
         Resource = "*"
       }
@@ -761,7 +822,11 @@ resource "aws_iam_policy" "security" {
           "secretsmanager:UntagResource",
           "secretsmanager:GetResourcePolicy",
           "secretsmanager:PutResourcePolicy",
-          "secretsmanager:DeleteResourcePolicy"
+          "secretsmanager:DeleteResourcePolicy",
+          # Enable/trigger managed rotation for the Redis AUTH secret
+          # (modules/portal/redis aws_secretsmanager_secret_rotation, #159).
+          "secretsmanager:RotateSecret",
+          "secretsmanager:CancelRotateSecret"
         ]
         Resource = "arn:aws:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:shifter-*"
       },
@@ -790,7 +855,16 @@ resource "aws_iam_policy" "security" {
           "kms:PutKeyPolicy",
           "kms:EnableKeyRotation",
           "kms:GetKeyRotationStatus",
-          "kms:ListResourceTags"
+          "kms:ListResourceTags",
+          # Grant management: ElastiCache (and other AWS services) create a
+          # grant on the customer CMK when a resource with at-rest encryption
+          # is created (e.g. the portal Redis replication group). CreateGrant
+          # is also needed by the apply that provisions those resources.
+          "kms:CreateGrant",
+          "kms:ListGrants",
+          "kms:RevokeGrant",
+          "kms:ReEncrypt*",
+          "kms:GenerateDataKeyWithoutPlaintext"
         ]
         Resource = "*"
       }
@@ -901,7 +975,14 @@ resource "aws_iam_policy" "management" {
           "cloudwatch:DeleteAlarms",
           "cloudwatch:ListTagsForResource",
           "cloudwatch:TagResource",
-          "cloudwatch:UntagResource"
+          "cloudwatch:UntagResource",
+          # CloudWatch dashboards (portal capacity dashboard, modules/portal/ec2
+          # observability.tf). Dashboard APIs do not support resource-level
+          # scoping, so they share the statement's Resource "*".
+          "cloudwatch:PutDashboard",
+          "cloudwatch:GetDashboard",
+          "cloudwatch:DeleteDashboards",
+          "cloudwatch:ListDashboards"
         ]
         Resource = "*"
       },

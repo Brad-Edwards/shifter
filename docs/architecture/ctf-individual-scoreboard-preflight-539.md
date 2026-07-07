@@ -1,16 +1,17 @@
-# CTF Individual Scoreboard Preflight (#539 / CTF-401)
+# CTF Individual Scoreboard Preflight (#521 / #539 / CTF-401)
 
 Status: pre-implementation guidance
 
-Date: 2026-06-28
+Date: 2026-07-01
 
 Requirement: CTF-401, "Individual Scoreboard"
 
-Tracking issue: <https://github.com/Brad-Edwards/shifter/issues/539>
+Primary repair issue: <https://github.com/Brad-Edwards/shifter/issues/521>
 
-This note narrows the CTF-401 implementation and test-traceability work to the
-existing native CTF architecture. It is intentionally not an implementation
-plan.
+Test-traceability issue: <https://github.com/Brad-Edwards/shifter/issues/539>
+
+This note narrows the CTF-401 repair and test-traceability work to the existing
+native CTF architecture. It is intentionally not an implementation plan.
 
 ## Scope Boundary
 
@@ -35,8 +36,10 @@ event lifecycle, flag submission, or platform API authentication.
   `last_solve`. Views, JSON responses, templates, and JavaScript must consume
   that contract instead of introducing a second row schema such as `solves`,
   `displayName`, or name-derived identities.
-- Keep the existing response key `rankings` unless a deliberate compatibility
-  bridge is added for both legacy and `/api/v1` routes. Do not update only the
+- Keep the existing response key `rankings` as the canonical scoreboard list
+  unless a deliberate compatibility bridge is added for both legacy and
+  `/api/v1` routes. A temporary `scoreboard` alias may be acceptable only as a
+  compatibility bridge, not as a second row contract. Do not update only the
   server-rendered table, only the legacy `/ctf/api/...` route, or only the
   platform `/api/v1/ctf/...` route.
 - The 30-second freshness requirement is satisfied by the current shape only if
@@ -46,9 +49,10 @@ event lifecycle, flag submission, or platform API authentication.
   JavaScript, per-request aggregate SQL, `CTFScheduledTask`, or process-local
   cache.
 - Row click-through solve history is not the same concept as the existing score
-  timeline. Solve history should be a safe, event-scoped projection of correct
-  solves for the clicked participant. It must not expose raw submitted flags,
-  wrong attempts, IP addresses, invite tokens, attempt-limit internals, or
+  timeline, participant self-submission API, or organizer participant detail.
+  Solve history should be a safe, event-scoped projection of correct solves for
+  the clicked participant. It must not expose raw submitted flags, wrong
+  attempts, IP addresses, invite tokens, attempt-limit internals, or
   organizer-only submission history.
 - Do not conflate individual and team scoreboards. CTF-401 is individual-mode
   behavior. Team rows do not carry `participant_id`, so team-mode behavior must
@@ -80,11 +84,15 @@ event lifecycle, flag submission, or platform API authentication.
 - Public API exception: `ctf.api.views.PublicScoreboardView` is the narrow
   anonymous-read exception for visible scoreboard rows. Do not automatically
   extend anonymous access to score timelines, solve history, submissions,
-  challenge files, or organizer/admin views.
+  challenge files, or organizer/admin views. If the row drill-down is exposed
+  through `/api/v1`, it must use the authenticated CTF role/participant
+  permission posture rather than the public scoreboard view.
 - Request validation: scoreboard reads are GET-only. Route UUIDs should remain
   Django path-converter UUIDs, and bracket query parsing must stay in
   `_resolve_bracket_filter`. If a solve-history endpoint adds pagination or
-  filters, validate them at the HTTP boundary before service calls.
+  filters, validate them at the HTTP boundary before service calls; keep the
+  default projection unfiltered other than event id, participant id, correctness,
+  and optional pagination.
 - Error envelopes: legacy `/ctf/api/...` routes return the existing bounded flat
   JSON errors. Canonical `/api/v1/ctf/...` routes must flow through
   `ctf.api._base._canonical_error_response` or the shared
@@ -100,7 +108,7 @@ event lifecycle, flag submission, or platform API authentication.
   participant-submitted values. No new metrics stack is needed for CTF-401.
 - Config and runtime shape: no new environment binding is expected. If a future
   polling interval or history page size becomes configurable, use the
-  `config.settings` `_env_int` style and update `config/env-manifest.json`.
+  `config.settings` `_env_int` style and update `config/_env_manifest.py`.
   Do not pass flags, tokens, signed URLs, or bearer credentials through process
   argv in examples or tests.
 - Channels/cache posture: polling is sufficient for the 30-second requirement.
@@ -114,9 +122,11 @@ event lifecycle, flag submission, or platform API authentication.
 ## Extensibility Seam
 
 The durable seam is a single scoreboard-row history projection parameterized by
-event id, participant id, viewer role, freeze cutoff, and optional pagination.
-That projection can later support a modal, a detail page, a canonical `/api/v1`
-route, or a push-update payload without rewriting scoring semantics.
+event id, participant id, viewer role, freeze cutoff, optional pagination, and
+disclosure mode. For CTF-401 the disclosure mode is public-to-event correct
+solves only. A future participant self-history or organizer-history surface can
+reuse the same source rows with a stricter role mode without rewriting scoring
+semantics.
 
 The polling interval is a separate UI/runtime seam. Today the page can keep a
 static interval at or below 30 seconds. If it becomes configurable, define it

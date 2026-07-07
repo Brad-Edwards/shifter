@@ -1,18 +1,18 @@
-"""Range status event handler — updates RangeInstance and fires bridges."""
+"""Range status event handler — updates RangeInstance and fires CTF bridge."""
 
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import cast
 
 from django.db import transaction
 
 from cms.handlers.ctf_bridge import notify_ctf_range_status
-from cms.handlers.experiment_bridge import notify_experiment_on_range_ready
 from cms.models import RangeInstance
 from shared.enums import ResourceStatus
 from shared.messages.envelope import parse_sns_message
 from shared.messages.events import EVENT_TYPE_STATUS_UPDATED
+from shared.messages.payloads import RangeStatusUpdatedPayload
 
 logger = logging.getLogger(__name__)
 
@@ -45,16 +45,15 @@ def apply_range_status(
     new_status: str,
     *,
     extra_update_fields: list[str] | None = None,
-    provisioned_instances: dict[str, Any] | None = None,
 ) -> bool:
-    """Update a RangeInstance's status and fire downstream CTF + experiment bridges.
+    """Update a RangeInstance's status and fire downstream CTF bridge.
 
     Idempotent: if ``instance.status`` already equals ``new_status`` this
     function is a no-op and returns ``False``.  The caller is responsible for
     validating ``new_status`` and enforcing any forward-only ordering before
     calling this function.
 
-    The status write and the downstream CTF/experiment bridge effects are
+    The status write and the downstream CTF bridge effects are
     committed as a single atomic unit.  If any bridge raises (e.g. a transient
     publish failure), the status update rolls back together with it, so a
     redelivered event is not seen as an already-converged no-op with the bridge
@@ -66,8 +65,6 @@ def apply_range_status(
         extra_update_fields: Additional model fields whose values have been
             set on ``instance`` and should be persisted in the same save
             call (e.g. ``["range_id"]`` when the event backfills the id).
-        provisioned_instances: Passed to the experiment bridge when the
-            status transitions to READY.  Defaults to an empty dict.
 
     Returns:
         ``True`` if the status was changed and bridges were fired;
@@ -84,8 +81,6 @@ def apply_range_status(
         with transaction.atomic():
             instance.save(update_fields=save_fields)
             notify_ctf_range_status(instance.pk, new_status, previous_status)
-            if new_status == ResourceStatus.READY.value:
-                notify_experiment_on_range_ready(instance, provisioned_instances or {})
     except Exception:
         # Transient DB/broker failure on the save or a bridge effect. The
         # atomic block has rolled the status write back; restore the in-memory
@@ -129,11 +124,15 @@ def process_range_event(message: str | dict) -> None:
         logger.debug("Ignoring event_type=%s", event_type)
         return
 
-    request_id = event.get("request_id")
-    range_id = event.get("range_id")
-    user_id = event.get("user_id")
-    new_status = event.get("new_status")
-    event_id = event.get("event_id", "unknown")
+    # event_type confirmed; narrow to the typed payload. Runtime shape/ownership
+    # validation below is retained — the payload is still untrusted input.
+    payload = cast(RangeStatusUpdatedPayload, event)
+
+    request_id = payload.get("request_id")
+    range_id = payload.get("range_id")
+    user_id = payload.get("user_id")
+    new_status = payload.get("new_status")
+    event_id = payload.get("event_id", "unknown")
 
     if new_status is None:
         logger.warning("Missing new_status in event")
@@ -170,7 +169,6 @@ def process_range_event(message: str | dict) -> None:
         instance,
         new_status,
         extra_update_fields=extra_fields or None,
-        provisioned_instances=event.get("instances", {}),
     )
 
     if applied:

@@ -79,6 +79,7 @@ class SessionInfo:
     range_id: int | None = None
     session_type: str = ""
     target_ip: str = ""
+    email: str = ""
 
 
 def audit_log(event: AuditEvent, *, strict: bool = False) -> AuditLog | None:
@@ -475,6 +476,8 @@ def audit_session_event(
         new_state["session_type"] = session.session_type
     if session.target_ip:
         new_state["target_ip"] = session.target_ip
+    if session.email:
+        new_state["email"] = session.email
 
     # Sessions don't have persistent IDs
     return audit_log(

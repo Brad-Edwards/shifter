@@ -32,7 +32,6 @@ Primary source files:
 - `shifter/shifter_platform/ctf/urls.py`
 - `shifter/shifter_platform/mission_control/urls.py`
 - `shifter/shifter_platform/cms/scenario_editor/urls.py`
-- `shifter/shifter_platform/cms/experiments/urls.py`
 - `shifter/shifter_platform/risk_register/urls.py`
 - `shifter/shifter_platform/documentation/urls.py`
 - `shifter/shifter_platform/templates/partials/icon_sidebar.html`
@@ -153,10 +152,8 @@ sidebar, while organizer pages use the shared icon sidebar.
 ### Mission Control
 
 Mission Control is the operational surface for ranges, terminals, assets,
-credentials, scripts, and NGFW resources. It also currently mounts experiments
-under `/mission-control/experiments/`; this design treats experiments as an
-adjacent organizer workflow until a separate product decision promotes it to a
-top-level surface.
+credentials, and NGFW resources. Legacy experiments and their script/file
+surface were removed by ADR-027 / issue #1195.
 
 | Current page | Route | Primary user | Primary purpose |
 | --- | --- | --- | --- |
@@ -173,24 +170,6 @@ top-level surface.
 | Credentials | `/mission-control/credentials/` | Organizer | List reusable credentials. |
 | Add credential | `/mission-control/credentials/add/` | Organizer | Create a credential. |
 | Credential detail | `/mission-control/credentials/<credential_id>/` | Organizer | Inspect one credential. |
-| Files | `/mission-control/files/` | Organizer | List uploaded scripts or files. |
-| Upload file | `/mission-control/files/upload/` | Organizer | Upload a script or file. |
-| Delete file | `/mission-control/files/<script_id>/delete/` | Organizer | Remove an uploaded script or file. |
-
-#### Experiments Mounted Under Mission Control
-
-| Current page | Route | Primary user | Primary purpose |
-| --- | --- | --- | --- |
-| Experiments | `/mission-control/experiments/` | Organizer | List experiments. |
-| Create experiment | `/mission-control/experiments/create/` | Organizer | Create an experiment from a scenario and resources. |
-| Experiment detail | `/mission-control/experiments/<experiment_id>/` | Organizer | Inspect experiment configuration and runs. |
-| Start experiment | `/mission-control/experiments/<experiment_id>/start/` | Organizer | Start an experiment. |
-| Cancel experiment | `/mission-control/experiments/<experiment_id>/cancel/` | Organizer | Cancel a running experiment. |
-| Scripts | `/mission-control/experiments/scripts/` | Organizer | List experiment scripts. |
-| Upload script | `/mission-control/experiments/scripts/upload/` | Organizer | Upload an experiment script. |
-| Delete script | `/mission-control/experiments/scripts/<script_id>/delete/` | Organizer | Remove an experiment script. |
-| Experiment download | `/mission-control/experiments/<experiment_id>/download/` | Organizer | Download experiment outputs. |
-| Run artifact download | `/mission-control/experiments/<experiment_id>/runs/<run_number>/artifacts/<artifact_id>/download/` | Organizer | Download one run artifact. |
 
 ### Scenario Editor
 
@@ -263,10 +242,8 @@ Shifter
 |   |-- Assets
 |   |   |-- Agents
 |   |   |-- NGFW
-|   |   |-- Credentials
-|   |   `-- Files
+|   |   `-- Credentials
 |   |-- Terminal
-|   |-- Experiments
 |   `-- Settings
 |-- Author
 |   |-- Scenarios
@@ -344,7 +321,6 @@ Operate navigation:
 - Challenges
 - Assets
 - Terminal
-- Experiments
 - Settings
 
 Author navigation:
@@ -420,8 +396,8 @@ only organizer access should not be forced through CTF participant pages.
 Use side navigation for durable surfaces that users revisit frequently:
 
 - Participant: Event Home, Challenges, Range, Scoreboard, Team, Help.
-- Organizer: Overview, Ranges, CTF Events, Assets, Terminal, Experiments,
-  Scenarios, Risks, Docs.
+- Organizer: Overview, Ranges, CTF Events, Assets, Terminal, Scenarios, Risks,
+  Docs.
 
 Side navigation items must map to stable route names and permission policies.
 The minimum future contract for a side-nav item is:
@@ -514,14 +490,14 @@ Use one canonical name per concept.
 | Hint | Assistance attached to a challenge. | Walkthrough. |
 | Scoreboard | Event scoring display. | Leaderboard unless deliberately renamed everywhere. |
 | Range | Provisioned lab infrastructure for a user, team, event, or scenario. | Environment, lab when referring to the managed resource. |
-| Asset | Operational resource used by a range or workflow: agent, NGFW, credential, script, or file. | Scenario resource when it is managed outside the scenario definition. |
+| Asset | Operational resource used by a range or workflow: agent, NGFW, or credential. | Scenario resource when it is managed outside the scenario definition. |
 | Agent | Managed endpoint or automation participant available to Mission Control. | Instance unless the object is an infrastructure instance. |
 | NGFW | Next-generation firewall resource managed by Mission Control. | Firewall when the product object specifically means NGFW. |
 | Credential | Reusable secret or access material managed by Mission Control. | Password, key, secret in UI labels unless the subtype matters. |
-| File | Uploaded script or file managed by Mission Control. | Attachment unless attached to a CTF challenge. |
+| File | CTF challenge attachment. | Attachment when attached to a CTF challenge. |
 | Scenario | Reusable range or exercise definition authored in Scenario Editor. | Challenge, event, mission. |
 | Scenario YAML | Structured source representation for a scenario. | Config blob. |
-| Experiment | Organizer-run execution workflow mounted under Mission Control today, usually combining a scenario, scripts, and artifacts. | Scenario, range, event. |
+| Experiment | Future ACES-backed execution workflow concept; the legacy Mission Control implementation was removed by ADR-027. | Scenario, range, event. |
 | Risk | Tracked security, operational, or governance concern. | Issue unless referring to GitHub issues. |
 | Mitigation | Action or control that reduces a risk. | Fix unless a code fix is specifically meant. |
 | API key | Revocable credential for API access. | Token unless API docs require the protocol term. |

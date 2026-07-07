@@ -73,14 +73,17 @@ def _token(
 
 class TestCompleteUploadSuccess:
     def test_creates_and_returns_persisted_agent(self, user, windows_os, s3_complete):
-        s3_key = f"agents/{user.id}/abc_agent.msi"
-        agent = services.complete_upload(user, _token(user, s3_key=s3_key, name="My Agent", file_size=1000))
+        staging_key = f"agents/{user.id}/abc_agent.msi"
+        agent = services.complete_upload(user, _token(user, s3_key=staging_key, name="My Agent", file_size=1000))
 
         assert isinstance(agent, AgentConfig)
         persisted = AgentConfig.objects.get(pk=agent.pk)
         assert persisted.name == "My Agent"
         assert persisted.os == windows_os
-        assert persisted.s3_key == s3_key
+        # Persist the immutable install key, never the mutable staging key (#1181).
+        install_key = s3_complete.copy_object.call_args.kwargs["Key"]
+        assert persisted.s3_key == install_key
+        assert persisted.s3_key != staging_key
         assert persisted.file_size_bytes == 1000
         assert persisted.user_id == user.id
 
@@ -91,14 +94,64 @@ class TestCompleteUploadSuccess:
         )
         assert row.new_state["upload_method"] == "presigned"
 
-    def test_tags_object_completed_with_s3_key(self, user, windows_os, s3_complete):
-        s3_key = f"agents/{user.id}/abc_agent.msi"
-        services.complete_upload(user, _token(user, s3_key=s3_key))
+    def test_tags_install_key_completed_not_staging_key(self, user, windows_os, s3_complete):
+        staging_key = f"agents/{user.id}/abc_agent.msi"
+        services.complete_upload(user, _token(user, s3_key=staging_key))
 
-        assert s3_complete.head_object.call_args.kwargs["Key"] == s3_key
+        # HEAD/validation runs against the staging key; the completed tag lands on
+        # the immutable install key (the copy destination), not the staging key.
+        assert s3_complete.head_object.call_args.kwargs["Key"] == staging_key
+        install_key = s3_complete.copy_object.call_args.kwargs["Key"]
         tag_kwargs = s3_complete.put_object_tagging.call_args.kwargs
-        assert tag_kwargs["Key"] == s3_key
+        assert tag_kwargs["Key"] == install_key
+        assert tag_kwargs["Key"] != staging_key
         assert tag_kwargs["Tagging"] == {"TagSet": [{"Key": "status", "Value": "completed"}]}
+
+
+def _precondition_client_error() -> ClientError:
+    return ClientError(
+        {"Error": {"Code": "PreconditionFailed"}, "ResponseMetadata": {"HTTPStatusCode": 412}},
+        "CopyObject",
+    )
+
+
+class TestCompleteUploadImmutableFinalization:
+    """Issue #1181: the installed bytes must be the bytes CMS validated."""
+
+    def test_changed_object_between_validation_and_install_is_rejected(self, user, windows_os, s3_complete):
+        # Object passes size + header validation, but the conditional install copy
+        # fails its source precondition — the validated bytes changed (or the
+        # presigned PUT overwrote them) between check and use.
+        s3_complete.copy_object.side_effect = _precondition_client_error()
+
+        with pytest.raises(CMSError):
+            services.complete_upload(user, _token(user))
+
+        s3_complete.put_object_tagging.assert_not_called()
+        assert AgentConfig.objects.count() == 0
+
+    def test_conditional_copy_binds_to_validated_identity_and_fresh_destination(self, user, windows_os, s3_complete):
+        staging_key = f"agents/{user.id}/abc_agent.msi"
+        services.complete_upload(user, _token(user, s3_key=staging_key))
+
+        copy_kwargs = s3_complete.copy_object.call_args.kwargs
+        assert copy_kwargs["CopySource"] == {"Bucket": "test-bucket", "Key": staging_key}
+        assert copy_kwargs["CopySourceIfMatch"] == "etag"  # the ETag captured at HEAD
+        assert copy_kwargs["Key"].startswith(f"agents/{user.id}/installed/")
+
+    def test_staging_object_is_cleaned_up_after_successful_install(self, user, windows_os, s3_complete):
+        staging_key = f"agents/{user.id}/abc_agent.msi"
+        services.complete_upload(user, _token(user, s3_key=staging_key))
+
+        deleted_keys = [call.kwargs["Key"] for call in s3_complete.delete_object.call_args_list]
+        assert staging_key in deleted_keys
+
+    def test_staging_cleanup_failure_does_not_fail_completion(self, user, windows_os, s3_complete):
+        s3_complete.delete_object.side_effect = ClientError(
+            {"Error": {"Code": "500", "Message": "boom"}}, "DeleteObject"
+        )
+        agent = services.complete_upload(user, _token(user))
+        assert AgentConfig.objects.filter(pk=agent.pk).exists()
 
 
 class TestCompleteUploadUserAndTokenValidation:

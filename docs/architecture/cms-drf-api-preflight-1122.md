@@ -8,6 +8,10 @@ Requirement: PLAT-106, "Unified DRF API Surface"
 
 Tracking issue: <https://github.com/Brad-Edwards/shifter/issues/1122>
 
+Superseded note: ADR-027 / issue #1195 removed the legacy experiment API and
+script-upload surfaces. The scenario-editor DRF guidance remains active; the
+experiment portions are historical.
+
 This note narrows the repo-wide PLAT-106 DRF conventions to the CMS
 experiments and scenario-editor JSON API migration. It is intentionally not an
 implementation plan.

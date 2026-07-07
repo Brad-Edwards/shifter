@@ -45,14 +45,20 @@ from ._stats import (
     get_event_statistics,
     get_score_timeline,
 )
+from ._strategy import (
+    calculate_solve_points,
+    get_scoring_strategy,
+)
 
 __all__ = [
     "calculate_score",
+    "calculate_solve_points",
     "get_challenge_statistics",
     "get_event_statistics",
     "get_participant_rank",
     "get_score_timeline",
     "get_scoreboard",
+    "get_scoring_strategy",
     "get_team_scoreboard",
     "recompute_event_leaderboard",
     "recompute_participant_score",

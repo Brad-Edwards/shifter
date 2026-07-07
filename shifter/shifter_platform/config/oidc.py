@@ -101,14 +101,32 @@ class ShifterOIDCBackend(OIDCAuthenticationBackend):
         # fixed by mozilla-django-oidc and omit the request) can attribute the
         # user-type sync audit row to the request context (issue #937 SEC-5).
         self._request = request
-        user = super().authenticate(request, **kwargs)
 
-        # Get request context for audit logging
+        # Get request context for audit logging up front, so it is available on
+        # both the return-None and the raising failure paths below.
         source_ip = None
         user_agent = ""
         if request:
             source_ip = get_client_ip(request)
             user_agent = request.META.get("HTTP_USER_AGENT", "")[:500]
+
+        try:
+            user = super().authenticate(request, **kwargs)
+        except Exception as exc:
+            # Token exchange, JWKS lookup, JWT/nonce/state validation, and
+            # claims/user-creation errors raise here, before the ``user is None``
+            # branch below. Audit them as a failed login with a *bounded* reason
+            # — the exception type name only, never ``str(exc)``, which can carry
+            # token endpoint URLs, response bodies, auth codes, or client ids —
+            # then re-raise so mozilla-django-oidc's callback failure handling is
+            # unchanged.
+            audit_auth_event(
+                action=AuditLog.Action.LOGIN_FAILED,
+                source_ip=source_ip,
+                user_agent=user_agent,
+                context=f"OIDC authentication error: {type(exc).__name__}",
+            )
+            raise
 
         if user:
             # Successful authentication
@@ -122,15 +140,17 @@ class ShifterOIDCBackend(OIDCAuthenticationBackend):
                 ),
                 source_ip=source_ip,
                 user_agent=user_agent,
+                context="OIDC callback login",
             )
         else:
-            # Failed authentication - log without user details
-            # Note: We can't get email here as auth failed
+            # Failed authentication - log without user details.
+            # The backend returned None (no matching/valid user); we cannot get
+            # the email here as auth failed.
             audit_auth_event(
                 action=AuditLog.Action.LOGIN_FAILED,
                 source_ip=source_ip,
                 user_agent=user_agent,
-                context="OIDC authentication failed",
+                context="OIDC authentication failed: no_user",
             )
 
         return user

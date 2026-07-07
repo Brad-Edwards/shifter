@@ -8,6 +8,7 @@ boundary, so nothing first-party is patched.
 
 import asyncio
 import json
+from unittest.mock import patch
 from uuid import uuid4
 
 import pytest
@@ -121,13 +122,14 @@ class TestProcessRangeEvent:
         assert _receive(layer, channel) is None
 
     def test_does_not_broadcast_when_request_id_missing(self):
-        # Subscribe broadly is not possible without a request_id group; assert the
-        # handler returns without raising and emits nothing on a fresh channel.
+        # No request_id → dropped. Spy on the channel-layer group_send (the
+        # external transport) and assert it is never called: the group name would
+        # be derived from the missing field (range_status_None), so listening on
+        # a hand-picked group could never catch a leaked broadcast.
         layer = get_channel_layer()
-        channel = f"recv-{uuid4()}"
-        async_to_sync(layer.group_add)("range_status_unknown", channel)
-        process_range_event(_sns({"event_type": "range.status.updated", "new_status": "ready"}))
-        assert _receive(layer, channel) is None
+        with patch.object(layer, "group_send", wraps=layer.group_send) as spy:
+            process_range_event(_sns({"event_type": "range.status.updated", "new_status": "ready"}))
+        spy.assert_not_called()
 
     def test_does_not_broadcast_when_user_id_missing(self):
         request_id = uuid4()
@@ -142,6 +144,24 @@ class TestProcessRangeEvent:
             )
         )
         assert _receive(layer, channel) is None
+
+    def test_does_not_crash_on_non_string_request_id(self):
+        # A non-string request_id (numeric JSON, or a UUID object from a direct
+        # caller) must be dropped, not raise AttributeError from UUID(), and not
+        # broadcast (regression: codex review of #296, cycle 1).
+        layer = get_channel_layer()
+        with patch.object(layer, "group_send", wraps=layer.group_send) as spy:
+            process_range_event(
+                _sns(
+                    {
+                        "event_type": "range.status.updated",
+                        "request_id": 12345,
+                        "new_status": ResourceStatus.READY.value,
+                        "user_id": 42,
+                    }
+                )
+            )
+        spy.assert_not_called()
 
     def test_does_not_broadcast_when_status_invalid(self):
         request_id = uuid4()
@@ -228,9 +248,13 @@ class TestProcessNgfwEvent:
         assert msg["status"] == "ready"
 
     def test_ignores_invalid_app_id(self):
-        layer, channel = _subscribe(ngfw_event_group("x"))
-        process_ngfw_event(_sns({"event_type": EVENT_TYPE_NGFW, "app_id": None}))
-        assert _receive(layer, channel) is None
+        # None app_id → dropped. Spy on group_send: the group name would be
+        # derived from the invalid field (ngfw_status_None), so a hand-picked
+        # group could never catch a leaked broadcast.
+        layer = get_channel_layer()
+        with patch.object(layer, "group_send", wraps=layer.group_send) as spy:
+            process_ngfw_event(_sns({"event_type": EVENT_TYPE_NGFW, "app_id": None}))
+        spy.assert_not_called()
 
 
 class TestProcessEventRouting:

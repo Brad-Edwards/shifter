@@ -91,7 +91,7 @@ def enable_log_propagation():
     which prevents pytest's caplog from capturing log records. This fixture
     temporarily enables propagation for all tests.
     """
-    loggers = ["engine", "cms", "cms.experiments", "mission_control", "engine.handlers", "management"]
+    loggers = ["engine", "cms", "mission_control", "engine.handlers", "management"]
     original_propagate = {}
 
     for name in loggers:

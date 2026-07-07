@@ -13,6 +13,8 @@ The configurable egress allowlist layered on top of this base is ADR-017 /
 not duplicate that contract. The DNS egress hardening preflight for issue #1172
 is
 [range-dns-egress-resolver-preflight-1172.md](range-dns-egress-resolver-preflight-1172.md).
+The commercial self-serve zero-egress posture preflight for issue #1171 is
+[range-zero-egress-preflight-1171.md](range-zero-egress-preflight-1171.md).
 
 ## Topology in one paragraph
 
@@ -20,15 +22,32 @@ All concurrent per-user ranges share **one** stable range VPC
 (`platform/terraform/modules/range/vpc/`). Each range gets its own ephemeral
 subnets carved from the VPC CIDR by the runtime provisioner module
 (`shifter/engine/provisioner/terraform/modules/range/main.tf`). Internet-bound
-traffic flows **user subnet → AWS Network Firewall → NAT Gateway → IGW**. The
-firewall runs a STRICT_ORDER stateful policy whose last rule drops all unmatched
-egress (default-deny). Two layers therefore do two different jobs, and the
-split is the whole point of the design:
+traffic in the existing event posture flows **user subnet → AWS Network Firewall
+→ NAT Gateway → IGW**. The firewall runs a STRICT_ORDER stateful policy whose
+last rule drops all unmatched egress (default-deny). The optional commercial
+self-serve zero-egress posture is different: runtime range subnet route tables
+receive **no** `0.0.0.0/0` route, so there is no default-route path to Network
+Firewall, NAT, or the IGW. Two layers therefore do different jobs, and the split
+is the whole point of the design:
 
 | Layer | Owns | Where |
 | --- | --- | --- |
 | Per-subnet security group | Local L4 **reachability** (ingress) | `modules/range/main.tf` `aws_security_group.subnet` |
 | Route table + Network Firewall | Internet **egress** containment | `modules/range/vpc/firewall.tf`, runtime `aws_route.firewall` |
+
+## Egress postures
+
+| Posture | Route fact | Intended use |
+| --- | --- | --- |
+| `allowlist` | Runtime subnet route table has `0.0.0.0/0` to the Network Firewall endpoint; firewall forwards allowed traffic to NAT/IGW and drops unmatched egress. | Trusted event attendees and the existing range model. |
+| `none` | Runtime subnet route table has no `0.0.0.0/0` route and no NAT/IGW target. | Commercial self-serve ranges with untrusted users, after runtime dependencies have moved to bake time or in-range services. |
+
+The `none` posture is not the same as ADR-017 `deny-all`: `deny-all` is still a
+firewall-enforced policy with a default route and exception lanes, while `none`
+removes the default-route egress path. Existing private service endpoints (SSM,
+STS, S3 gateway association, Bedrock, Route 53 Resolver) must be classified
+explicitly for the commercial shape; leaving one reachable from participant
+subnets is a design decision, not an incidental implementation detail.
 
 ## Security groups gate ingress, not egress
 

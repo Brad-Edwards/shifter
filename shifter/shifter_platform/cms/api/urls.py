@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from django.conf import settings
 from django.urls import path
 
 from cms.api import views
@@ -10,6 +9,8 @@ from cms.api import views
 app_name = "cms"
 
 urlpatterns = [
+    path("catalog/", views.CatalogListView.as_view(), name="catalog-list"),
+    path("catalog/<slug:scenario_id>/", views.CatalogDetailView.as_view(), name="catalog-detail"),
     path("scenario-editor/validate-yaml/", views.YAMLValidateView.as_view(), name="scenario-editor-validate-yaml"),
     path(
         "scenario-editor/scenarios/from-yaml/",
@@ -17,22 +18,3 @@ urlpatterns = [
         name="scenario-editor-scenario-create-yaml",
     ),
 ]
-
-if settings.EXPERIMENTS_ENABLED:
-    urlpatterns += [
-        path(
-            "experiments/scenarios/<str:scenario_id>/instances/",
-            views.ScenarioInstancesView.as_view(),
-            name="scenario-instances",
-        ),
-        path(
-            "experiments/scripts/upload/initiate/",
-            views.ScriptUploadInitiateView.as_view(),
-            name="script-upload-initiate",
-        ),
-        path(
-            "experiments/scripts/upload/complete/",
-            views.ScriptUploadCompleteView.as_view(),
-            name="script-upload-complete",
-        ),
-    ]

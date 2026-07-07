@@ -52,6 +52,7 @@ build {
       "../scripts/kali/base.sh",
       "../scripts/kali/tools.sh",
       "../scripts/kali/caldera.sh",
+      "../scripts/common/claude-autostart-install.sh",
       "../scripts/kali/claude-code.sh",
       "../scripts/common/cleanup.sh",
       # GCP-only: force cloud-init's NoCloud datasource so GDC VM Runtime

@@ -4,26 +4,12 @@ from __future__ import annotations
 
 import logging
 
-from django.conf import settings
 from django.http import HttpRequest
 
 from risk_register.access import principal_has_risk_register_access
 from shared.auth import can_edit_cms_authoring
 
 logger = logging.getLogger(__name__)
-
-
-def feature_flags(_request: HttpRequest) -> dict[str, bool]:
-    """Expose non-secret feature flags to templates (e.g. nav gating).
-
-    ``_request`` is part of Django's context-processor contract but unused here —
-    the flags come from settings, not the request.
-    """
-    return {
-        # Experiments is half-built and off by default (#1195); the nav link must
-        # not render when its routes aren't registered (config/urls.py).
-        "experiments_enabled": bool(getattr(settings, "EXPERIMENTS_ENABLED", False)),
-    }
 
 
 def user_permissions(request: HttpRequest) -> dict[str, bool]:

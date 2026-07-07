@@ -6,13 +6,15 @@ import logging
 from django.conf import settings
 from django.contrib.auth import BACKEND_SESSION_KEY, login, logout
 from django.contrib.auth.decorators import login_required
-from django.http import HttpResponseForbidden, HttpResponseRedirect, JsonResponse
+from django.http import HttpRequest, HttpResponse, HttpResponseForbidden, HttpResponseRedirect, JsonResponse
 from django.shortcuts import render
 from django.urls import reverse
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_http_methods, require_POST
 
 from config import identity_platform as identity_platform_auth
+from risk_register.models import AuditLog
+from risk_register.services import AuthPrincipal, audit_auth_event, get_client_ip
 from shared.auth import is_ctf_organizer, is_ctf_participant
 from shared.errors import classify_user_message
 
@@ -25,6 +27,12 @@ logger = logging.getLogger(__name__)
 def home(request):
     """Landing page - coming soon."""
     return render(request, "coming_soon.html")
+
+
+@require_http_methods(["GET", "HEAD"])
+def privacy_notice(request: HttpRequest) -> HttpResponse:
+    """Public privacy notice shell for operator-supplied content."""
+    return render(request, "privacy/notice.html")
 
 
 def _render_identity_platform_login(request, *, status_code: int = 200):
@@ -162,6 +170,16 @@ def logout_view(request):
     backend = request.session.get(BACKEND_SESSION_KEY, "")
     email = request.user.email
     redirect_url = settings.LOGOUT_REDIRECT_URL
+
+    # Capture the audit identity and request context before Django ``logout``
+    # flushes the session below.
+    audit_auth_event(
+        action=AuditLog.Action.LOGOUT,
+        principal=AuthPrincipal(user_id=request.user.id, email=email),
+        source_ip=get_client_ip(request),
+        user_agent=request.META.get("HTTP_USER_AGENT", "")[:500],
+        context="Portal logout",
+    )
 
     if "OIDCAuthenticationBackend" in backend:
         # Build the Cognito logout URL before clearing the session,

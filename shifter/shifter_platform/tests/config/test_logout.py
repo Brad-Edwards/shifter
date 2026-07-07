@@ -9,6 +9,8 @@ import pytest
 from django.contrib.auth import get_user_model
 from django.test import Client
 
+from risk_register.models import AuditLog
+
 pytestmark = pytest.mark.django_db
 
 User = get_user_model()
@@ -62,3 +64,22 @@ class TestLogoutView:
         response = client.get(LOGOUT_URL)
 
         assert response.status_code == 405
+
+    def test_logout_writes_audit_row_with_email(self, user):
+        """A successful logout writes a LOGOUT audit row identifying the user.
+
+        The identity is captured before Django ``logout`` flushes the session.
+        """
+        client = Client()
+        client.force_login(user, backend="config.oidc.ShifterOIDCBackend")
+
+        client.post(LOGOUT_URL)
+
+        row = AuditLog.objects.get(action=AuditLog.Action.LOGOUT, entity_type=AuditLog.EntityType.USER)
+        assert row.new_state["email"] == user.email
+
+    def test_unauthenticated_logout_writes_no_audit_row(self):
+        """An unauthenticated POST has no principal to audit."""
+        Client().post(LOGOUT_URL)
+
+        assert not AuditLog.objects.filter(action=AuditLog.Action.LOGOUT).exists()

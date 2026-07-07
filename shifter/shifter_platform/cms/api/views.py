@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-from typing import cast
 
 from django.contrib.auth.models import User
 from rest_framework import status
@@ -12,13 +11,10 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from cms.api.permissions import CMS_READ_PERMISSIONS, CMS_WRITE_PERMISSIONS, cms_actor_user
-from cms.api.serializers import ScriptUploadCompleteSerializer, ScriptUploadInitiateSerializer, YAMLContentSerializer
-from cms.experiments import services as experiment_services
-from cms.experiments.exceptions import ExperimentValidationError, ScriptUploadError
+from cms.api.serializers import CatalogEntrySerializer, YAMLContentSerializer
 from cms.scenario_editor import services as scenario_services
+from cms.scenarios import catalog_presentation
 from shared.api.errors import api_error_response
-from shared.errors import classify_user_message
-from shared.log_sanitize import safe_log_value
 
 logger = logging.getLogger(__name__)
 
@@ -31,41 +27,40 @@ def _actor_user(request: Request) -> User:
     return user
 
 
-class ScenarioInstancesView(APIView):
-    """Return scenario instance metadata for experiment authoring."""
+class CatalogListView(APIView):
+    """List catalog entries as read-only metadata (staff-review projection).
+
+    Returns every catalog entry (YAML defaults, DB customs, and ACES
+    package-backed entries) with allowlisted read-only fields. This is the
+    unfiltered staff-review projection — like the scenario-editor list — so a
+    CMS authoring actor can inspect disabled / staff-only entries. User-facing
+    and launch surfaces apply access/launchability filtering in the registry.
+    """
+
+    permission_classes = CMS_READ_PERMISSIONS
+
+    def get(self, request: Request) -> Response:
+        """Return all catalog entries as read-only presentation DTOs."""
+        entries = catalog_presentation.list_catalog_presentations()
+        return Response(CatalogEntrySerializer(entries, many=True).data)
+
+
+class CatalogDetailView(APIView):
+    """Return a single catalog entry's read-only metadata, or 404."""
 
     permission_classes = CMS_READ_PERMISSIONS
 
     def get(self, request: Request, scenario_id: str) -> Response:
-        """Return the instance list for a scenario template."""
-        user = _actor_user(request)
-        logger.info(
-            "cms_api_scenario_instances: user_id=%s scenario_id=%s",
-            user.pk,
-            safe_log_value(scenario_id),
-        )
-        try:
-            instances = experiment_services.get_scenario_instances(scenario_id, user=user)
-        except ExperimentValidationError as exc:
-            logger.exception(
-                "cms_api_scenario_instances: validation error scenario_id=%s",
-                safe_log_value(scenario_id),
-            )
+        """Return one catalog entry's read-only presentation DTO."""
+        entry = catalog_presentation.get_catalog_presentation(scenario_id)
+        if entry is None:
             return api_error_response(
-                code="invalid",
-                message=classify_user_message(str(exc), default="Invalid scenario request"),
-                status_code=status.HTTP_400_BAD_REQUEST,
+                code="not_found",
+                message="Catalog entry not found",
+                status_code=status.HTTP_404_NOT_FOUND,
                 request=request,
             )
-        except Exception:
-            logger.exception("cms_api_scenario_instances: unexpected error")
-            return api_error_response(
-                code="server_error",
-                message="An unexpected error occurred.",
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                request=request,
-            )
-        return Response({"instances": instances})
+        return Response(CatalogEntrySerializer(entry).data)
 
 
 class YAMLValidateView(APIView):
@@ -105,69 +100,3 @@ class YAMLScenarioCreateView(APIView):
                 request=request,
             )
         return Response({"scenario_id": fields.scenario_id, "name": fields.name}, status=status.HTTP_201_CREATED)
-
-
-class ScriptUploadInitiateView(APIView):
-    """Initiate a presigned experiment-script upload."""
-
-    permission_classes = CMS_WRITE_PERMISSIONS
-
-    def post(self, request: Request) -> Response:
-        """Validate upload initiation input and delegate to CMS services."""
-        serializer = ScriptUploadInitiateSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        user = _actor_user(request)
-        data = serializer.validated_data
-        filename = cast(str, data["filename"])
-        try:
-            result = experiment_services.initiate_script_upload(
-                user,
-                cast(str, data["name"]),
-                filename,
-                cast(int, data["file_size"]),
-            )
-        except ScriptUploadError as exc:
-            logger.exception(
-                "cms_api_script_upload_initiate: failed user_id=%s filename=%s",
-                user.pk,
-                safe_log_value(filename),
-            )
-            return api_error_response(
-                code="invalid",
-                message=classify_user_message(str(exc), default="Upload could not be initiated"),
-                status_code=status.HTTP_400_BAD_REQUEST,
-                request=request,
-            )
-        return Response(result)
-
-
-class ScriptUploadCompleteView(APIView):
-    """Complete a presigned experiment-script upload."""
-
-    permission_classes = CMS_WRITE_PERMISSIONS
-
-    def post(self, request: Request) -> Response:
-        """Finalize a script upload through CMS services."""
-        serializer = ScriptUploadCompleteSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        user = _actor_user(request)
-        try:
-            script = experiment_services.complete_script_upload(user, serializer.validated_data["upload_token"])
-        except ScriptUploadError as exc:
-            logger.exception("cms_api_script_upload_complete: failed user_id=%s", user.pk)
-            return api_error_response(
-                code="invalid",
-                message=classify_user_message(str(exc), default="Upload could not be completed"),
-                status_code=status.HTTP_400_BAD_REQUEST,
-                request=request,
-            )
-        return Response(
-            {
-                "script": {
-                    "id": script.pk,
-                    "name": script.name,
-                    "original_filename": script.original_filename,
-                    "file_size_bytes": script.file_size_bytes,
-                }
-            }
-        )

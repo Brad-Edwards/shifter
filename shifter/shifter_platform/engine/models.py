@@ -10,12 +10,16 @@ Infrastructure lifecycle models for Shifter platform.
 """
 
 import uuid
+from typing import TYPE_CHECKING
 
 from django.conf import settings
 from django.db import models, transaction
 
 from shared.enums import RequestType
 from shared.schemas.persistence import unwrap_persisted_spec
+
+if TYPE_CHECKING:
+    from django.contrib.auth.models import User
 
 
 class Request(models.Model):
@@ -395,6 +399,42 @@ class Range(models.Model):
                 cls.Status.FAILED,
             ],
         ).first()
+
+    @classmethod
+    def resolve_active_for_instance(cls, user: "User", instance_uuid: str) -> "Range | None":
+        """Return the user's active range that contains instance_uuid, or None.
+
+        Iterates the user's active ranges (same status set as get_active_for_user)
+        and returns the first one whose get_instance_by_uuid(instance_uuid) is
+        non-None. Pure-Python iteration avoids provider-specific JSON DB lookups
+        (e.g. ``provisioned_instances__contains``) that are not portable across
+        SQLite and Postgres. Returns None if no active range contains the UUID.
+
+        Used by terminal helpers (get_rdp_connection_info, get_ssh_connection_info)
+        to resolve the correct range when a user holds multiple simultaneous
+        active ranges (e.g. one Mission Control + one CTF range, #450).
+
+        Args:
+            user: The user whose active ranges to search.
+            instance_uuid: The instance UUID to look up.
+
+        Returns:
+            Range if found, None otherwise.
+        """
+        active_ranges = cls.objects.filter(
+            user=user,
+            status__in=[
+                cls.Status.PENDING,
+                cls.Status.PROVISIONING,
+                cls.Status.READY,
+                cls.Status.PAUSED,
+                cls.Status.RESUMING,
+            ],
+        )
+        for range_obj in active_ranges:
+            if range_obj.get_instance_by_uuid(instance_uuid) is not None:
+                return range_obj
+        return None
 
     # Subnet index allocation constants
     # Range VPC uses 10.1.0.0/16 with /28 subnets (16 IPs each)

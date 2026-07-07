@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+from mission_control.api.aces import (
+    AcesOperationReceiptListView,
+    AcesOperationStatusListView,
+    AcesRuntimeSnapshotListView,
+)
 from mission_control.api.guacamole import (
     GuacamoleBootstrapOpenView,
     GuacamoleBootstrapStatusView,
@@ -25,8 +30,6 @@ from mission_control.api.resources import (
     NGFWCreateView,
     NGFWDestroyView,
     NGFWListView,
-    ScriptListView,
-    ScriptUploadView,
 )
 from mission_control.api.uploads import UploadCancelView, UploadCompleteView, UploadInitiateView
 from mission_control.views._guacamole import _get_guac_settings
@@ -55,10 +58,11 @@ api_ngfw_list = NGFWListView.as_view()
 api_ngfw_destroy = NGFWDestroyView.as_view()
 api_credential_create = CredentialCreateView.as_view()
 api_credential_delete = CredentialDeleteView.as_view()
-api_list_scripts = ScriptListView.as_view()
-file_upload = ScriptUploadView.as_view()
 
 __all__ = (
+    "AcesOperationReceiptListView",
+    "AcesOperationStatusListView",
+    "AcesRuntimeSnapshotListView",
     "AgentListView",
     "CancelRangeView",
     "CredentialCreateView",
@@ -77,15 +81,12 @@ __all__ = (
     "PauseRangeView",
     "ResumeRangeView",
     "ScenarioListView",
-    "ScriptListView",
-    "ScriptUploadView",
     "UploadCancelView",
     "UploadCompleteView",
     "UploadInitiateView",
     "_get_guac_settings",
     "api_credential_create",
     "api_credential_delete",
-    "api_list_scripts",
     "api_ngfw_create",
     "api_ngfw_destroy",
     "api_ngfw_list",
@@ -94,7 +95,6 @@ __all__ = (
     "cancel_upload",
     "complete_upload",
     "destroy_range",
-    "file_upload",
     "get_range",
     "guacamole_bootstrap_open",
     "guacamole_bootstrap_status",

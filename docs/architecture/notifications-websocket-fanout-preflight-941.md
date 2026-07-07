@@ -6,6 +6,11 @@ Date: 2026-06-20
 
 Tracking issue: <https://github.com/Brad-Edwards/shifter/issues/941>
 
+Superseded note: ADR-027 / issue #1195 removed the legacy experiments app and
+its direct experiment-status websocket. References below to experiment-specific
+websockets, publishers, and tests describe the pre-removal state and are not
+current implementation guidance.
+
 ## Scope Boundary
 
 Issue #941 is requirement-free maintenance work. The GitHub issue is the
@@ -13,7 +18,8 @@ contract: either justify the shared persisted notification websocket with a real
 browser consumer, bounded fan-out, and scheduled pruning, or park it behind a
 disabled-by-default flag so it has no event-load cost.
 
-The current repository already has two different websocket concepts:
+At the time this preflight was written, the repository had two different
+websocket concepts:
 
 1. Direct feature websockets, such as the experiment status socket at
    `/ws/experiment-status/<experiment_id>/`, which broadcasts live status through
@@ -37,9 +43,9 @@ the shared path should be disabled by default.
   `WEBSOCKET_NOTIFICATIONS_ENABLED`, defaulting to false. The disabled state must
   stop cost before persistence and fan-out: no `WebSocketNotification` rows and
   no notification `group_send` calls.
-- Keep the existing direct experiment websocket path working. Disabling the
-  shared notification path must not remove experiment status hydration, live run
-  updates, or existing experiment channel-group broadcasts.
+- ADR-027 later removed the direct experiment websocket path. Disabling or
+  enabling the shared notification path must no longer depend on that deleted
+  experiment surface.
 - If the enabled branch is chosen, it must reuse the existing shared registry,
   topic validation, authorizers, payload projection, group-name helper,
   close-code enum, model, and prune command. Do not add a second notification
@@ -66,8 +72,8 @@ the shared path should be disabled by default.
 | Notification persistence | `shared.models.WebSocketNotification` and migration `shared/migrations/0001_initial.py` | Do not add a duplicate queue table. Remember the model is per recipient and therefore the event-load risk. |
 | Shared notification socket | `shared.consumers.SharedNotificationConsumer`, `shared/routing.py` | Keep `AuthMiddlewareStack`, topic authorization, replay, and `WebSocketCloseCode`. Disabled mode should deny or omit this surface without weakening other websocket routes. |
 | Group naming | `shared.channels.groups.notification_user_topic_group` / `cyberscript.channels.groups` | Use the hashed topic group helper; do not place raw topic strings into transport group names. |
-| Experiment live updates | `cms/experiments/consumers.py`, `cms/experiments/handlers.py`, `cms/experiments/templates/experiments/experiment_detail.html` | Preserve the direct feature websocket. Do not count it as shared notification consumption, and do not duplicate its updates through shared notifications without a product reason. |
-| Notification registration | `cms/experiments/apps.py` and `cms/experiments/notifications.py` | If disabled mode gates registration, keep app startup deterministic. If registration stays loaded, publishing must still no-op before persistence. |
+| Deleted experiment live updates | Removed by ADR-027 | Historical direct feature websocket; do not reintroduce it as a shared-notification dependency. |
+| Notification registration | Shared notification registry | Keep app startup deterministic, and make disabled mode no-op before persistence. |
 | ASGI stack | `config/asgi.py` | All websocket paths go through `ProtocolTypeRouter`, `AllowedHostsOriginValidator`, and `AuthMiddlewareStack`; do not create a parallel ASGI app or test-only router. |
 | Channel-layer posture | `config/_channels.py`, `docs/architecture/portal-channel-layer-backend.md` | Preserve explicit `CHANNEL_LAYER_BACKEND`; do not infer Redis from ASG mode or silently fall back from invalid Redis posture. |
 | Runtime settings | `config/settings.py` `_env_bool`, `_env_int` | Add only one flag, parsed through existing helpers. Existing replay and retention settings are not an enablement flag. |
@@ -75,7 +81,7 @@ the shared path should be disabled by default.
 | Scheduled runtime | `shared/management/commands/run_worker.py`, `ctf/management/commands/run_ctf_scheduler.py`, worker/scheduler platform tests | If pruning is scheduled, follow the existing management-command and heartbeat conventions. Do not piggyback shared maintenance work onto CTF-specific task semantics. |
 | Logging hygiene | `config.logging.ECSFormatter`, `shared.log_sanitize.safe_log_value` | Logs may carry feature flag state, type, topic, counts, and user ids where already used. Do not log payload bodies, cookies, Redis URLs, DB details, or raw exceptions into browser messages. |
 | Error envelopes | `shared.enums.WebSocketCloseCode`, `shared.errors.classify_user_message` for HTTP views | Websocket failures use close codes; HTTP/API errors keep existing user-message classification. Do not add a notification-specific exception hierarchy. |
-| Real-stack tests | `tests/integration/asgi/test_notifications_ws.py`, `tests/shared/test_notifications.py`, `tests/cms/experiments/*` | Update tests around the real ASGI stack and existing publishers. Do not replace them with first-party mocks of notification internals. |
+| Real-stack tests | `tests/integration/asgi/test_notifications_ws.py`, `tests/shared/test_notifications.py` | Update tests around the real ASGI stack and existing publishers. Do not replace them with first-party mocks of notification internals. |
 
 ## Cross-Cutting Layers
 

@@ -11,6 +11,10 @@ Tracking issue: <https://github.com/Brad-Edwards/shifter/issues/1119>
 This note sets the architecture guardrails for the shared DRF conventions and
 OpenAPI schema. It is intentionally not an implementation plan.
 
+ADR-027 note: legacy experiment and script APIs were removed by issue #1195.
+References below to `cms.experiments` describe the pre-removal state and are not
+current implementation guidance.
+
 ## Scope Boundary
 
 Issue #1119 establishes the common API contract. It does not migrate Mission

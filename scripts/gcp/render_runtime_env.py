@@ -62,6 +62,39 @@ def _string_list(raw: object) -> list[str]:
 
 _CONSOLE_EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
 _MAILGUN_EMAIL_BACKEND = "anymail.backends.mailgun.EmailBackend"
+_GCE_RANGE_ENV_KEYS = (
+    "GCP_RANGE_PLANE",
+    "GCP_RANGE_CELL_NETWORK_MODE",
+    "RANGE_NETWORK_ZONE",
+    "GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL",
+    "GCP_RANGE_HOST_SERVICE_ACCOUNT_SCOPES",
+    "GCP_RANGE_LINUX_IMAGE",
+    "GCP_RANGE_LINUX_MACHINE_TYPE",
+    "GCP_RANGE_LINUX_DISK_SIZE_GB",
+    "GCP_RANGE_LINUX_DISK_TYPE",
+    "GCP_RANGE_KALI_IMAGE",
+    "GCP_RANGE_KALI_MACHINE_TYPE",
+    "GCP_RANGE_KALI_DISK_SIZE_GB",
+    "GCP_RANGE_KALI_DISK_TYPE",
+    "GCP_RANGE_WINDOWS_IMAGE",
+    "GCP_RANGE_WINDOWS_MACHINE_TYPE",
+    "GCP_RANGE_WINDOWS_DISK_SIZE_GB",
+    "GCP_RANGE_WINDOWS_DISK_TYPE",
+    "GCP_RANGE_DC_IMAGE",
+    "GCP_RANGE_DC_MACHINE_TYPE",
+    "GCP_RANGE_DC_DISK_SIZE_GB",
+    "GCP_RANGE_DC_DISK_TYPE",
+    "GCP_RANGE_EGRESS_ALLOW_CIDRS",
+    "GCP_RANGE_PRIVATE_GOOGLE_ACCESS",
+    "GCP_RANGE_HOST_MGMT_SSH_PORT",
+    "GCP_RANGE_VERTEX_PROJECT_ID",
+    "GCP_RANGE_VERTEX_REGION",
+    "GCP_RANGE_VERTEX_SERVICE_ACCOUNT_EMAIL",
+    "GCP_RANGE_KALI_ANTHROPIC_MODEL",
+    "GCP_RANGE_KALI_ANTHROPIC_SMALL_FAST_MODEL",
+    "POLARIS_TESTS_BUCKET",
+    "POLARIS_TESTS_KEY",
+)
 
 
 def _email_runtime_values(outputs: dict[str, object]) -> dict[str, str]:
@@ -117,6 +150,27 @@ def _email_runtime_values(outputs: dict[str, object]) -> dict[str, str]:
     if backend == _MAILGUN_EMAIL_BACKEND:
         email_values["MAILGUN_SENDER_DOMAIN"] = sender_domain
     return email_values
+
+
+def _optional_gce_range_values() -> dict[str, str]:
+    return {key: value for key in _GCE_RANGE_ENV_KEYS if (value := os.environ.get(key, "").strip())}
+
+
+def _project_from_self_link(self_link: object) -> str:
+    """Extract the GCP project id from a ``projects/<project>/...`` self-link.
+
+    The range VPC self-link (``range_network_id`` Terraform output) always
+    carries the real range project, which is what the GCE range-cell backend
+    must target for Compute API calls and image URLs — independent of the
+    control-plane ``GCP_PROJECT_ID`` (which may be a deploy-overlay placeholder).
+    """
+    text = str(self_link or "").strip()
+    parts = text.split("/")
+    if "projects" in parts:
+        index = parts.index("projects")
+        if index + 1 < len(parts) and parts[index + 1]:
+            return parts[index + 1]
+    return ""
 
 
 def _validated_image_tag(image_tag: str) -> str:
@@ -193,8 +247,6 @@ def render_env(outputs: dict[str, object], *, image_tag: str) -> str:
         "QUEUE_ENGINE_PUBLISHER_ID": topic_id,
         "QUEUE_MC_CONSUMER_ID": subscriptions["mc"],
         "QUEUE_MC_PUBLISHER_ID": topic_id,
-        "QUEUE_EXPERIMENTS_CONSUMER_ID": subscriptions["experiments"],
-        "QUEUE_EXPERIMENTS_PUBLISHER_ID": topic_id,
         "DB_SECRET_ID": secret_ids["db"],
         "APP_SECRET_ID": secret_ids["app"],
         "GUACAMOLE_SECRET_ID": secret_ids["guacamole-json-auth"],
@@ -235,6 +287,14 @@ def render_env(outputs: dict[str, object], *, image_tag: str) -> str:
         "RANGE_NETWORK_CIDR": range_network_cidr,
         "RANGE_NETWORK_REGION": range_network_region,
         "PORTAL_NETWORK_CIDRS": ",".join(_unique(portal_network_cidrs)),
+        "GCP_RANGE_BACKEND": os.environ.get("GCP_RANGE_BACKEND", "gce").strip() or "gce",
+        # Real range project (from the range VPC self-link), so the GCE
+        # range-cell backend targets it directly even when the control-plane
+        # GCP_PROJECT_ID is a deploy-overlay placeholder. An explicit
+        # GCP_RANGE_CELL_PROJECT_ID env override wins.
+        "GCP_RANGE_CELL_PROJECT_ID": (
+            os.environ.get("GCP_RANGE_CELL_PROJECT_ID", "").strip() or _project_from_self_link(range_network_id)
+        ),
         "GDC_RANGE_NAMESPACE_PREFIX": "range",
         "GDC_NETWORK_INTERFACE": "vxlan0",
         "GDC_NETWORK_DNS_NAMESERVERS": "8.8.8.8",
@@ -279,6 +339,7 @@ def render_env(outputs: dict[str, object], *, image_tag: str) -> str:
     # console backend; present -> SendGrid/Mailgun via anymail with the API key
     # hydrated from Secret Manager by the entrypoint.
     values.update(_email_runtime_values(outputs))
+    values.update(_optional_gce_range_values())
 
     return "".join(f"{key}={value}\n" for key, value in values.items())
 

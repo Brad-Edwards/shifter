@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import hashlib
 import logging
-import re
 import secrets
 from collections import deque
 from typing import TYPE_CHECKING, Any
@@ -238,14 +237,15 @@ def _verify_hash(submitted_flag: str, stored_hash: str, context_id: UUID) -> boo
 
 
 def _verify_regex_flag(flag_obj: CTFFlag, submitted_flag: str) -> bool:
-    """Verify a submitted flag against a regex CTFFlag."""
-    # Regex flags: pattern stored as plaintext in flag_hash
-    regex_flags = 0 if flag_obj.case_sensitive else re.IGNORECASE
-    try:
-        return bool(re.fullmatch(flag_obj.flag_hash, submitted_flag, flags=regex_flags))
-    except re.error as e:
-        logger.exception("Invalid regex pattern for flag %s: %s", flag_obj.id, e)
-        return False
+    """Verify a submitted flag against a regex CTFFlag.
+
+    The organizer-authored pattern (stored plaintext in ``flag_hash``) runs on a
+    request worker against participant input, so evaluation is bounded and fails
+    closed via ``ctf.services.regex_policy`` (issue #1183, ReDoS / CWE-1333).
+    """
+    from ctf.services.regex_policy import safe_fullmatch
+
+    return safe_fullmatch(flag_obj.flag_hash, submitted_flag, case_sensitive=flag_obj.case_sensitive)
 
 
 def _verify_programmable_flag(flag_obj: CTFFlag, submitted_flag: str, config: dict[str, Any]) -> bool:
@@ -438,12 +438,18 @@ def _flag_hash_for_payload(
                 details={"missing_fields": ["flag"]},
             )
         if flag_type == "regex":
+            # Reject unsafe patterns at creation time (over-long or
+            # uncompilable) so organizers get immediate feedback and the
+            # request-worker verifier never stores a ReDoS-prone pattern
+            # (issue #1183). The pattern is not echoed back to avoid leaking it.
+            from ctf.services.regex_policy import UnsafeRegexError, validate_pattern
+
             try:
-                re.compile(plaintext_flag)
-            except re.error as e:
+                validate_pattern(plaintext_flag)
+            except UnsafeRegexError as e:
                 raise CTFValidationError(
-                    f"Invalid regex pattern: {e}",
-                    details={"pattern": plaintext_flag},
+                    str(e),
+                    details={"pattern_length": len(plaintext_flag)},
                 ) from None
             return plaintext_flag
         return hash_flag(plaintext_flag, case_sensitive=case_sensitive)

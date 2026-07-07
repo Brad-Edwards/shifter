@@ -6,8 +6,10 @@ The renderer is the single authoritative source that turns the validated, normal
 the configured policy cannot drift from the deployed firewall rules:
 
 - AWS bridges into one variable, ``victim_allowed_cidrs`` (the AWS Network Firewall rule
-  groups consume it). AWS has no mode variable; ``status-quo`` / ``deny-all`` both render
-  an empty list and ``allowlist`` renders the canonical CIDRs.
+  groups consume it). AWS also bridges ``range_egress_mode`` (``allowlist`` or ``none``).
+  ``status-quo`` / ``deny-all`` / ``allowlist`` map to runtime ``allowlist``; ``none``
+  maps to runtime ``none``. ``allowlist`` renders the canonical CIDRs; other modes render
+  an empty list.
 - GCP bridges into ``range_egress_mode`` + ``range_egress_allowed_cidrs`` (the GCP VPC
   firewall egress rules are conditional on the mode).
 
@@ -49,23 +51,31 @@ class TestRenderAws:
         assert "victim_allowed_cidrs = [" in out
         assert '"203.0.113.0/24"' in out
         assert '"8.8.8.8/32"' in out
-        # AWS has no mode bridge variable; do not leak one.
-        assert "range_egress_mode" not in out
+        assert 'range_egress_mode = "allowlist"' in out
 
-    def test_status_quo_renders_empty_list(self, write_config, aws_config):
+    def test_status_quo_renders_allowlist_mode_and_empty_list(self, write_config, aws_config):
         path = write_config(_aws({"range_egress": {"mode": "status-quo"}}, aws_config))
         out = render_tfvars(load_root_config(path))
         assert "victim_allowed_cidrs = []" in out
+        assert 'range_egress_mode = "allowlist"' in out
 
-    def test_deny_all_renders_empty_list(self, write_config, aws_config):
+    def test_deny_all_renders_allowlist_mode_and_empty_list(self, write_config, aws_config):
         path = write_config(_aws({"range_egress": {"mode": "deny-all"}}, aws_config))
         out = render_tfvars(load_root_config(path))
         assert "victim_allowed_cidrs = []" in out
+        assert 'range_egress_mode = "allowlist"' in out
 
-    def test_omitted_block_defaults_to_empty_list(self, write_config, aws_config):
+    def test_none_renders_none_mode_and_empty_list(self, write_config, aws_config):
+        path = write_config(_aws({"range_egress": {"mode": "none"}}, aws_config))
+        out = render_tfvars(load_root_config(path))
+        assert "victim_allowed_cidrs = []" in out
+        assert 'range_egress_mode = "none"' in out
+
+    def test_omitted_block_defaults_to_allowlist_mode_and_empty_list(self, write_config, aws_config):
         path = write_config(_aws({"region": "us-east-2"}, aws_config))
         out = render_tfvars(load_root_config(path))
         assert "victim_allowed_cidrs = []" in out
+        assert 'range_egress_mode = "allowlist"' in out
 
     def test_ipv6_allowlist_preserved(self, write_config, aws_config):
         path = write_config(
@@ -111,6 +121,13 @@ class TestRenderGcp:
         out = render_tfvars(load_root_config(path))
         assert 'range_egress_mode = "status-quo"' in out
         assert "range_egress_allowed_cidrs = []" in out
+
+    def test_none_rejected_for_gcp(self, write_config, gcp_config):
+        from installation.errors import InstallationConfigError
+
+        path = write_config(_gcp({"range_egress": {"mode": "none"}}, gcp_config))
+        with pytest.raises(InstallationConfigError, match="AWS only"):
+            render_tfvars(load_root_config(path))
 
 
 class TestRenderShape:
