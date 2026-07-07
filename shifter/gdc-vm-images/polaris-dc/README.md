@@ -1,4 +1,4 @@
-# polaris-dc — GDC-native Windows DC image tooling
+# polaris-dc—GDC-native Windows DC image tooling
 
 Build assets for a Windows Server 2022 domain controller (`BOREAS.LOCAL`) that
 installs and runs natively on **GDC VM Runtime**, producing a not-sysprepped

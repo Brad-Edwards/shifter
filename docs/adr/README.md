@@ -170,7 +170,7 @@ Current mechanisms:
   aliases. The check is a cheap pre-commit
   backstop; motivated bypasses such as `const run = cp.execSync;
   run(...)` are outside its reach by design and rely on code
-  review. Enforces ADR-010-R1 with no current exceptions —
+  review. Enforces ADR-010-R1 with no current exceptions—
   `mcp/ngfw/*` migrated to argv-array helpers via the shared
   `mcp/shared/aws-helpers.js` module in #759, alongside the
   original `mcp/ops/*` migration in #763.
@@ -298,10 +298,10 @@ entries. Completed so far:
   scenario-hydrator suites (`test_models`, `test_credentials`,
   `test_models_agent_config`, `test_models_asset`, `test_models_operating_system`,
   `test_models_range_instance`, `test_models_subnet`, `test_scenario_hydrator`)
-  drive real rows for the ORM-dependent cases — Credential/CredentialType
+  drive real rows for the ORM-dependent cases—Credential/CredentialType
   create/uniqueness/cascade/PROTECT, `active_for_user` soft-delete filtering,
   `RangeInstance` create/query/`select_related`, `OperatingSystem.get_for_extension`,
-  and the `Subnet` terminal soft-delete invariant — keeping the field-inspection
+  and the `Subnet` terminal soft-delete invariant—keeping the field-inspection
   and in-memory property tests as-is. `test_scenario_hydrator` drives the real
   `hydrate_scenario` against real DB `Scenario` rows (loaded through the real
   registry) and real `AgentConfig` rows, exercising `from_agent` OS resolution and
@@ -330,8 +330,8 @@ entries. Completed so far:
 - `shared` + `risk_register`: the cloud-storage adapter suites
   (`shared/cloud/test_aws_storage`, `test_gcp_storage`) drive the real
   `AWSObjectStorage` / `GCPObjectStorage` (including their real `_get_client`
-  region/endpoint/client resolution) and mock only the SDK boundary —
-  `boto3.client` and `google.cloud.storage.Client` respectively — rather than
+  region/endpoint/client resolution) and mock only the SDK boundary—
+  `boto3.client` and `google.cloud.storage.Client` respectively—rather than
   patching the first-party `_get_client`. `shared/test_email` drives the real
   `send_email` through the real thread pool and asserts the locmem outbox
   instead of patching `shared.email.send_email`. `shared/test_notifications`
@@ -378,7 +378,7 @@ entries. Completed so far:
   mocked-`render` test hid: `ngfw_detail` passed `int(cms NGFWAppContext
   .instance_id)` (a CMS Instance UUID coerced to a 128-bit int) to
   `get_ranges_for_ngfw`, which filters the engine `Range.ngfw_instance` (a
-  64-bit int FK to the engine NGFW Instance) — different id spaces, so the
+  64-bit int FK to the engine NGFW Instance)—different id spaces, so the
   detail page 500'd on SQLite / showed no linked ranges on Postgres. The view
   now correlates via the shared provisioning `request_id` (exposed on
   `NGFWAppContext`), and `get_ranges_for_ngfw` resolves the engine NGFW Instance
@@ -399,7 +399,7 @@ entries. Completed so far:
   asserting persisted flags / `UserProfile` / `AuditLog`. `test_health` drives
   the real channel-layer probe over the in-process `InMemoryChannelLayer` and
   the real missing-default-layer path (third-party `health_check` backends are
-  still patched for the DB/cache failure cases — those are real boundaries).
+  still patched for the DB/cache failure cases—those are real boundaries).
   The WebSocket consumers drive the real `connect_terminal` /
   `get_range_by_request_id` / `audit_session_event` against real READY `Range`
   rows (`@pytest.mark.django_db(transaction=True)` so `sync_to_async` sees the
@@ -436,9 +436,9 @@ that mock-coupled tests would not. To demonstrate this concretely, the
 module (`config/oidc.py`) into its own `config/username.py`, and the single
 topology reference (`OIDC_USERNAME_ALGO = "config.username.generate_username"`)
 was updated. The `tests/mission_control/test_oidc.py` `ShifterOIDCBackend`
-behavior tests — which exercise `generate_username` only through the real OIDC
+behavior tests—which exercise `generate_username` only through the real OIDC
 `create_user` / `update_user` login flow (via `OIDC_USERNAME_ALGO`), never naming
-the function's location — pass **unchanged** across the move. Only the function's
+the function's location—pass **unchanged** across the move. Only the function's
 own direct unit tests (`TestGenerateUsername`) updated their import to follow it.
 A mock-coupled test that had patched `config.oidc.generate_username` would have
 broken on the move; the behavior tests did not.

@@ -47,8 +47,8 @@ class TestKaliTemplate:
     def kali_template(self):
         """Load the Kali template."""
         templates_dir = Path(__file__).parent.parent / "templates"
-        # NOSONAR: autoescape=False - these are shell/PowerShell templates, not HTML
-        env = Environment(loader=FileSystemLoader(str(templates_dir)), autoescape=False)
+        # select_autoescape() yields no escaping for these non-HTML (.sh/.ps1) templates
+        env = Environment(loader=FileSystemLoader(str(templates_dir)), autoescape=select_autoescape())
         return _HostKeyTemplate(env.get_template("kali.sh.j2"))
 
     def test_kali_template_hostname(self, kali_template):
@@ -138,10 +138,10 @@ class TestVictimLinuxTemplate:
     def linux_template(self):
         """Load the Linux victim template."""
         templates_dir = Path(__file__).parent.parent / "templates"
-        # NOSONAR: autoescape=False - shell templates, not HTML
+        # select_autoescape() yields no escaping for these non-HTML (.sh) templates
         env = Environment(
             loader=FileSystemLoader(str(templates_dir)),
-            autoescape=False,
+            autoescape=select_autoescape(),
         )
         return _HostKeyTemplate(env.get_template("victim_linux.sh.j2"))
 
@@ -214,8 +214,8 @@ class TestVictimWindowsTemplate:
     def windows_template(self):
         """Load the Windows victim template."""
         templates_dir = Path(__file__).parent.parent / "templates"
-        # NOSONAR: autoescape=False - these are shell/PowerShell templates, not HTML
-        env = Environment(loader=FileSystemLoader(str(templates_dir)), autoescape=False)
+        # select_autoescape() yields no escaping for these non-HTML (.sh/.ps1) templates
+        env = Environment(loader=FileSystemLoader(str(templates_dir)), autoescape=select_autoescape())
         return env.get_template("victim_windows.ps1.j2")
 
     def test_victim_windows_template_configures_access(self, windows_template):
@@ -262,8 +262,8 @@ class TestTemplateContentSafety:
     def all_templates(self):
         """Load all templates."""
         templates_dir = Path(__file__).parent.parent / "templates"
-        # NOSONAR: autoescape=False - these are shell/PowerShell templates, not HTML
-        env = Environment(loader=FileSystemLoader(str(templates_dir)), autoescape=False)
+        # select_autoescape() yields no escaping for these non-HTML (.sh/.ps1) templates
+        env = Environment(loader=FileSystemLoader(str(templates_dir)), autoescape=select_autoescape())
         return {
             "kali": _HostKeyTemplate(env.get_template("kali.sh.j2")),
             "linux": _HostKeyTemplate(env.get_template("victim_linux.sh.j2")),
