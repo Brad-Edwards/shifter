@@ -155,7 +155,9 @@ def render_gcp_platform_runtime_env(
         f"GCP_REGION={config.region}",
         f"GCP_PROJECT_ID={config.project_id}",
         f"GOOGLE_CLOUD_PROJECT={config.project_id}",
-        "GCP_RANGE_BACKEND=gdc",
+        # GCE range cells are the default GCP range backend; the GDC VM Runtime
+        # block below is retained and re-selected with GCP_RANGE_BACKEND=gdc.
+        "GCP_RANGE_BACKEND=gce",
         "ENGINE_TASK_NAMESPACE=shifter-jobs",
         "ENGINE_TASK_SERVICE_ACCOUNT_NAME=provisioner",
         "ENGINE_TASK_IMAGE_PULL_POLICY=Always",
