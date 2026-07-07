@@ -24,13 +24,14 @@ from gcp_range_cell_plan import (
 )
 
 
+# Compute network, subnetwork, firewall, and address resources are NOT labelable
+# (the proto has no `labels` field); only instances/disks carry range labels.
 def network_resource(plan: RangeCellPlan) -> ComputeResource:
     """Render a Compute Engine network insert body."""
     return {
         "name": plan["network"]["name"],
         "auto_create_subnetworks": False,
         "routing_config": {"routing_mode": "REGIONAL"},
-        "labels": plan["labels"],
     }
 
 
@@ -42,7 +43,6 @@ def subnetwork_resource(plan: RangeCellPlan, subnet: SubnetPlan) -> ComputeResou
         "ip_cidr_range": subnet["cidr"],
         "region": plan["region"],
         "private_ip_google_access": plan["private_google_access"],
-        "labels": plan["labels"],
     }
 
 
@@ -54,7 +54,6 @@ def firewall_resource(plan: RangeCellPlan, firewall: FirewallPlan) -> ComputeRes
         "direction": firewall["direction"],
         "priority": firewall["priority"],
         "target_tags": firewall["target_tags"],
-        "labels": plan["labels"],
     }
     for cidr_key in ("source_ranges", "destination_ranges"):
         value = firewall.get(cidr_key)
@@ -83,7 +82,6 @@ def address_resource(plan: RangeCellPlan, instance: InstancePlan) -> ComputeReso
         "address_type": "INTERNAL",
         "address": instance["private_ip"],
         "subnetwork": instance["subnetwork_link"],
-        "labels": plan["labels"],
     }
 
 
