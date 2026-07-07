@@ -633,7 +633,10 @@ class SubnetAllocation(models.Model):
     but not in this table, it's inserted (drift repair).
     """
 
-    vpc_id = models.CharField(max_length=30)
+    vpc_id = models.CharField(
+        max_length=255,
+        help_text="AWS vpc-id, GDC network name, or GCE network self-link (projects/<p>/global/networks/<n>)",
+    )
     cidr = models.CharField(max_length=20, help_text="e.g. 10.1.2.16/28")
     subnet_size = models.IntegerField(help_text="Prefix length: 24 or 28")
     range_id = models.IntegerField(default=0)
