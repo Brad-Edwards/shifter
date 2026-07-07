@@ -109,6 +109,17 @@ workers:
         cpu: 250m
         memory: 256Mi
         ephemeral-storage: 256Mi
+  acesOperationRecordPrune:
+    replicas: 1
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+        ephemeral-storage: 128Mi
+      limits:
+        cpu: 250m
+        memory: 256Mi
+        ephemeral-storage: 256Mi
   outboxDrainer:
     replicas: 1
     resources:

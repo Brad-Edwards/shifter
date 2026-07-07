@@ -22,6 +22,48 @@ class AcesRecordQuerySerializer(serializers.Serializer):
     )
 
 
+class AcesParticipantRecordQuerySerializer(serializers.Serializer):
+    """Validate query params for ACES participant-runtime record read endpoints (#1288)."""
+
+    limit = serializers.IntegerField(
+        required=False,
+        min_value=1,
+        max_value=MAX_HISTORY_LIMIT,
+        default=DEFAULT_HISTORY_LIMIT,
+    )
+    participant_ref = serializers.CharField(
+        required=False,
+        allow_blank=False,
+        trim_whitespace=True,
+        max_length=256,
+    )
+
+
+class AcesParticipantRuntimeRecordSerializer(serializers.Serializer):
+    """Read-only projection of one ACES participant-runtime sidecar record (#1288).
+
+    Serializes an ``AcesParticipantRuntimeRecordProjection`` (already redacted
+    by the shared read seam); it never touches the raw model ``payload``.
+    """
+
+    id = serializers.UUIDField(read_only=True)
+    request_id = serializers.UUIDField(read_only=True)
+    range_id = serializers.UUIDField(read_only=True, allow_null=True)
+    range_instance_id = serializers.UUIDField(read_only=True, allow_null=True)
+    participant_ref = serializers.CharField(read_only=True)
+    record_kind = serializers.CharField(read_only=True)
+    contract_kind = serializers.CharField(read_only=True)
+    contract_version = serializers.CharField(read_only=True)
+    contract_profile = serializers.CharField(read_only=True)
+    participant_runtime_profile = serializers.CharField(read_only=True)
+    source_timestamp = serializers.DateTimeField(read_only=True)
+    created_at = serializers.DateTimeField(read_only=True)
+    updated_at = serializers.DateTimeField(read_only=True)
+    payload_digest = serializers.CharField(read_only=True)
+    payload = serializers.DictField(read_only=True)
+    diagnostic_refs = serializers.DictField(read_only=True)
+
+
 class AcesOperationRecordSerializer(serializers.Serializer):
     """Read-only projection of one ACES operation sidecar record (#1275).
 
