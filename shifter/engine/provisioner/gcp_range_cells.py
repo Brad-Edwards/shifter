@@ -14,6 +14,7 @@ from gcp_guest_secrets import (
     ensure_ssh_secret,
 )
 from gcp_range_cell_clients import GCEClients, GoogleExceptions, _build_clients
+from gcp_range_cell_ops import _wait_for_operation
 from gcp_range_cell_plan import (
     FirewallPlan,
     InstancePlan,
@@ -34,8 +35,6 @@ from gcp_range_vertex_creds import delete_range_vertex_key, ensure_range_vertex_
 from log_redact import safe_log_fingerprint
 
 logger = logging.getLogger(__name__)
-
-_OPERATION_TIMEOUT_SECONDS = 600
 
 
 @dataclass(frozen=True)
@@ -79,76 +78,6 @@ def _default_vertex_ops() -> GCEVertexCredentialOps:
         ),
         delete=lambda range_id, project_id: delete_range_vertex_key(range_id, project_id=project_id),
     )
-
-
-def _operation_name(operation: object) -> str:
-    """Extract a Compute operation name from SDK or dict responses."""
-    if isinstance(operation, dict):
-        return str(operation.get("name", ""))
-    return str(getattr(operation, "name", "") or "")
-
-
-def _get_operation_field(operation: object, name: str) -> object | None:
-    """Read an operation field from SDK or dict responses."""
-    if isinstance(operation, dict):
-        return operation.get(name)
-    return getattr(operation, name, None)
-
-
-def _operation_error_messages(operation: object) -> list[str]:
-    """Extract provider error messages from a completed operation."""
-    error = _get_operation_field(operation, "error")
-    if not error:
-        return []
-    entries = error.get("errors") if isinstance(error, dict) else _get_operation_field(error, "errors")
-    if not isinstance(entries, list):
-        return [str(error)]
-    messages: list[str] = []
-    for entry in entries:
-        code = _get_operation_field(entry, "code")
-        message = _get_operation_field(entry, "message")
-        if code and message:
-            messages.append(f"{code}: {message}")
-        elif message:
-            messages.append(str(message))
-        else:
-            messages.append(str(entry))
-    return messages
-
-
-def _raise_for_operation_errors(operation: object, *, operation_name: str, scope: str) -> None:
-    """Raise when Compute reports errors on a completed operation."""
-    errors = _operation_error_messages(operation)
-    if errors:
-        detail = "; ".join(errors)
-        raise RuntimeError(f"GCE {scope} operation {operation_name or '<unknown>'} failed: {detail}")
-
-
-def _wait_for_operation(plan: RangeCellPlan, clients: GCEClients, operation: object, scope: str) -> None:
-    """Wait for a Compute operation and surface asynchronous failures."""
-    if operation is None:
-        return
-    result_method = getattr(operation, "result", None)
-    if callable(result_method):
-        result = result_method(timeout=_OPERATION_TIMEOUT_SECONDS)
-        _raise_for_operation_errors(result or operation, operation_name=_operation_name(operation), scope=scope)
-        return
-
-    operation_name = _operation_name(operation)
-    if not operation_name:
-        _raise_for_operation_errors(operation, operation_name="", scope=scope)
-        return
-
-    result = None
-    if scope == "global":
-        result = clients.global_operations.wait(project=plan["project_id"], operation=operation_name)
-    elif scope == "region":
-        result = clients.region_operations.wait(
-            project=plan["project_id"], region=plan["region"], operation=operation_name
-        )
-    elif scope == "zone":
-        result = clients.zone_operations.wait(project=plan["project_id"], zone=plan["zone"], operation=operation_name)
-    _raise_for_operation_errors(result or operation, operation_name=operation_name, scope=scope)
 
 
 def _get_or_none(
