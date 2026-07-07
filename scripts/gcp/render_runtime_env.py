@@ -211,6 +211,12 @@ def render_env(outputs: dict[str, object], *, image_tag: str) -> str:
     range_network_cidr = _value(outputs, "range_network_cidr")
     range_network_region = _value(outputs, "range_network_region")
     portal_network_cidrs = _value(outputs, "portal_network_cidrs")
+    # The real deploy GCP project. Google client libraries use GCP_PROJECT_ID /
+    # GOOGLE_CLOUD_PROJECT as the default quota/consumer project, so a placeholder
+    # here makes every API call bill an invalid project (CONSUMER_INVALID). Derive
+    # it from the Identity Platform project (the deploy project), falling back to
+    # the project in the range VPC self-link.
+    real_project = str(identity_platform_project_id).strip() or _project_from_self_link(range_network_id)
 
     if not public_hostname or not managed_tls_enabled:
         raise ValueError(
@@ -275,6 +281,10 @@ def render_env(outputs: dict[str, object], *, image_tag: str) -> str:
         "ENGINE_TASK_IMAGE": f"{image_roots['pulumi-provisioner']}:{pinned_image_tag}",
         # GCP deployments authenticate against Identity Platform in every case.
         "AUTH_PROVIDER": "identity_platform",
+        # Real deploy project (not the overlay placeholder), so Google client
+        # libraries bill the correct quota/consumer project.
+        "GCP_PROJECT_ID": real_project,
+        "GOOGLE_CLOUD_PROJECT": real_project,
         "IDENTITY_PLATFORM_API_KEY": identity_platform_api_key,
         "IDENTITY_PLATFORM_PROJECT_ID": identity_platform_project_id,
         "IDENTITY_PLATFORM_AUTH_DOMAIN": f"{identity_platform_project_id}.firebaseapp.com",
