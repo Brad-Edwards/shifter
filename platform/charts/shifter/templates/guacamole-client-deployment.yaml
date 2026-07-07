@@ -19,7 +19,6 @@ spec:
         app.kubernetes.io/component: guacamole-client
       annotations:
         checksum/runtime-config: {{ include "shifter.runtimeConfigChecksum" . }}
-        checksum/guacamole-secret: {{ include "shifter.guacamoleSecretChecksum" . }}
     spec:
       {{- include "shifter.podSecurityContext" . | nindent 6 }}
       automountServiceAccountToken: false

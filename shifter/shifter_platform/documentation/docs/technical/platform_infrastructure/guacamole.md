@@ -282,7 +282,11 @@ that issued it (issue #928); `guacd` scales independently. This is enforced by
   Deployments (Helm chart `platform/charts/shifter/templates/` and the kustomize
   base `platform/k8s/gcp/base/`). `guacamoleClient.replicas` is 1.
 - `JSON_SECRET_KEY` and DB credentials reach the client via the
-  `guacamole-runtime` Secret; `scripts/gcp/render_runtime_env.py` sets
+  `guacamole-runtime` Kubernetes Secret. That Secret is created **out of band**
+  by the deploy bootstrap (`kubectl apply` from GCP Secret Manager, before the
+  Helm release). The Helm chart never carries the secret values; it references
+  the Secret by name only (`envFrom.secretRef`), so credentials never enter
+  chart values or Helm release history. `scripts/gcp/render_runtime_env.py` sets
   `GUACAMOLE_SECRET_ID`, `GUACAMOLE_BASE_URL`, and the in-cluster
   `GUACAMOLE_API_BASE_URL`.
 - NetworkPolicies restrict `guacamole-client` to `guacd` on TCP 4822 and admit

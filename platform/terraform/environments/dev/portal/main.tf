@@ -550,6 +550,8 @@ module "ssm" {
   sqs_cms_url    = module.messaging.sqs_queue_urls["cms"]
   sqs_engine_url = module.messaging.sqs_queue_urls["engine"]
   sqs_mc_url     = module.messaging.sqs_queue_urls["mc"]
+
+  range_events_topic_id = module.messaging.sns_topic_arn
   # Redis wiring is environment-owned and decoupled from autoscaling (ADR-018, #849).
   redis_endpoint = var.enable_redis ? module.redis.redis_endpoint : ""
   enable_redis   = var.enable_redis
