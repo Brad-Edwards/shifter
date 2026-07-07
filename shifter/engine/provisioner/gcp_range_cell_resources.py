@@ -85,41 +85,71 @@ def address_resource(instance: InstancePlan) -> ComputeResource:
     }
 
 
-# Runs on every boot of a Windows range guest. The CTF domain controller serves
-# LDAP/Kerberos/SMB firewall-off by design, and a pre-promoted DC can re-enable
-# the Windows Firewall after promotion (dropping the provisioner's SSH on :22, so
-# guest setup times out). A domain controller's firewall state can be GPO-managed,
-# which makes the local `Set-NetFirewallProfile -Enabled False` a no-op; an
-# explicit inbound allow *rule* for :22 is additive and survives a GPO-enabled
-# firewall. We do both (disable the profile and add the allow rule) and assert
-# sshd, then emit a single `SHIFTERDIAG` line to the serial console reporting the
-# firewall state, the sshd service status, and whether anything is actually
-# listening on :22 -- so a still-unreachable guest can be diagnosed from the
-# serial log without SSH access.
-_WINDOWS_BOOT_SCRIPT = (
-    "$ErrorActionPreference = 'SilentlyContinue'\n"
-    "Set-NetFirewallProfile -Profile Domain,Public,Private -Enabled False\n"
-    "New-NetFirewallRule -DisplayName 'shifter-ssh' -Direction Inbound -Action Allow "
-    "-Protocol TCP -LocalPort 22 -Profile Any\n"
-    "New-NetFirewallRule -DisplayName 'shifter-rdp' -Direction Inbound -Action Allow "
-    "-Protocol TCP -LocalPort 3389 -Profile Any\n"
-    "Set-Service -Name sshd -StartupType Automatic\n"
-    "Start-Service -Name sshd\n"
-    "$fw = (Get-NetFirewallProfile | ForEach-Object { $_.Name + '=' + $_.Enabled }) -join ','\n"
-    "$svc = (Get-Service sshd).Status\n"
-    "$listen = (Get-NetTCPConnection -LocalPort 22 -State Listen | Measure-Object).Count\n"
-    'Write-Output "SHIFTERDIAG fw[$fw] sshd[$svc] listen22[$listen]"\n'
-)
+# Metadata key carrying the provisioner-issued SSH host public key, so a reconcile
+# (instance already exists) can recover the host key that was injected at create
+# time instead of minting a fresh one that would not match the running guest.
+HOST_PUBLIC_KEY_METADATA_KEY = "shifter-host-public-key"
+
+
+def _linux_host_key_script(host_private_key_b64: str) -> str:
+    """Startup script that installs the provisioner-issued SSH host key on Linux.
+
+    The provisioner generates the guest's host keypair and seeds its own
+    known_hosts with the public half, so StrictHostKeyChecking validates against
+    a trusted side-channel key rather than trust-on-first-use. Runs on every boot
+    (idempotent: the same key is reinstalled).
+    """
+    return (
+        "#!/bin/bash\n"
+        f"printf %s '{host_private_key_b64}' | base64 -d > /etc/ssh/ssh_host_ed25519_key\n"
+        "chmod 600 /etc/ssh/ssh_host_ed25519_key\n"
+        "chown root:root /etc/ssh/ssh_host_ed25519_key\n"
+        "ssh-keygen -y -f /etc/ssh/ssh_host_ed25519_key > /etc/ssh/ssh_host_ed25519_key.pub\n"
+        "chmod 644 /etc/ssh/ssh_host_ed25519_key.pub\n"
+        "systemctl restart ssh 2>/dev/null || systemctl restart sshd 2>/dev/null || true\n"
+    )
+
+
+def _windows_boot_script(host_private_key_b64: str) -> str:
+    """Startup script for a Windows range guest.
+
+    Installs the provisioner-issued SSH host key (with the strict ACLs Windows
+    OpenSSH requires, else sshd refuses to start), then forces the Windows
+    Firewall off and (re)starts sshd. The CTF domain controller serves
+    LDAP/Kerberos/SMB firewall-off by design, and a pre-promoted DC can re-enable
+    the firewall after promotion; forcing it off each boot keeps the guest
+    reachable regardless of the captured firewall state.
+    """
+    key_path = "C:\\ProgramData\\ssh\\ssh_host_ed25519_key"
+    keygen = "C:\\Windows\\System32\\OpenSSH\\ssh-keygen.exe"
+    return (
+        f"[IO.File]::WriteAllBytes('{key_path}', [Convert]::FromBase64String('{host_private_key_b64}'))\n"
+        f"icacls '{key_path}' /inheritance:r /grant 'SYSTEM:(F)' /grant 'BUILTIN\\Administrators:(F)' | Out-Null\n"
+        f"& '{keygen}' -y -f '{key_path}' | Out-File -Encoding ascii '{key_path}.pub'\n"
+        "Set-NetFirewallProfile -Profile Domain,Public,Private -Enabled False\n"
+        "Set-Service -Name sshd -StartupType Automatic -ErrorAction SilentlyContinue\n"
+        "Restart-Service -Name sshd -ErrorAction SilentlyContinue\n"
+    )
 
 
 def _metadata_items(
-    config: GCERangeCellConfig, username: str, public_key: str, *, os_type: str
+    config: GCERangeCellConfig,
+    username: str,
+    public_key: str,
+    *,
+    os_type: str,
+    host_private_key_b64: str,
+    host_public_key: str,
 ) -> list[dict[str, str]]:
-    """Render guest metadata items including the provisioned SSH public key."""
+    """Render guest metadata: provisioned user key, host key install, host pubkey."""
     items = [{"key": key, "value": value} for key, value in config.metadata_items]
     items.append({"key": "ssh-keys", "value": f"{username}:{public_key}"})
+    if host_public_key:
+        items.append({"key": HOST_PUBLIC_KEY_METADATA_KEY, "value": host_public_key})
     if os_type == "windows":
-        items.append({"key": "windows-startup-script-ps1", "value": _WINDOWS_BOOT_SCRIPT})
+        items.append({"key": "windows-startup-script-ps1", "value": _windows_boot_script(host_private_key_b64)})
+    elif host_private_key_b64:
+        items.append({"key": "startup-script", "value": _linux_host_key_script(host_private_key_b64)})
     return items
 
 
@@ -129,6 +159,8 @@ def instance_resource(
     config: GCERangeCellConfig,
     *,
     ssh_public_key: str,
+    host_private_key_b64: str = "",
+    host_public_key: str = "",
 ) -> ComputeResource:
     """Render a Compute Engine instance insert body."""
     profile = instance["profile"]
@@ -148,7 +180,14 @@ def instance_resource(
         # the host OS user (e.g. "ubuntu") is what guest setup connects as. For
         # native guests the two are identical.
         "metadata": {
-            "items": _metadata_items(config, instance["host_ssh_username"], ssh_public_key, os_type=instance["os_type"])
+            "items": _metadata_items(
+                config,
+                instance["host_ssh_username"],
+                ssh_public_key,
+                os_type=instance["os_type"],
+                host_private_key_b64=host_private_key_b64,
+                host_public_key=host_public_key,
+            )
         },
         "network_interfaces": [
             {

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -24,6 +25,7 @@ from gcp_range_cell_plan import (
     render_range_cell_plan,
 )
 from gcp_range_cell_resources import (
+    HOST_PUBLIC_KEY_METADATA_KEY,
     address_resource,
     firewall_resource,
     instance_resource,
@@ -32,6 +34,7 @@ from gcp_range_cell_resources import (
 )
 from gcp_range_vertex_creds import delete_range_vertex_key, ensure_range_vertex_key
 from log_redact import safe_log_fingerprint
+from utils.crypto import generate_ssh_host_keypair
 
 logger = logging.getLogger(__name__)
 
@@ -229,19 +232,33 @@ def _ensure_address(plan: RangeCellPlan, clients: GCEClients, instance: Instance
     _wait_for_operation(plan, clients, operation, "region")
 
 
+def _host_public_key_from_instance(existing: object) -> str:
+    """Read the provisioner-issued SSH host public key from an existing instance.
+
+    On a reconcile the guest already serves the host key injected at create time,
+    so recover it from instance metadata rather than minting a mismatched one.
+    """
+    metadata = getattr(existing, "metadata", None)
+    for item in getattr(metadata, "items", None) or []:
+        if getattr(item, "key", None) == HOST_PUBLIC_KEY_METADATA_KEY:
+            return str(getattr(item, "value", "") or "")
+    return ""
+
+
 def _ensure_instance(
     plan: RangeCellPlan,
     clients: GCEClients,
     config: GCERangeCellConfig,
     instance: InstancePlan,
     secret_ops: GCEGuestSecretOps,
-) -> tuple[str, str | None, str]:
+) -> tuple[str, str | None, str, str]:
     """Create one range instance and its guest credential secrets.
 
-    Returns ``(ssh_secret_ref, rdp_password_secret_ref, ssh_public_key)``. The
-    public key is not secret; it is surfaced in provisioner output so per-range
-    guest setup (e.g. the Polaris Kali container's authorized_keys) can install
-    it without re-reading the private secret.
+    Returns ``(ssh_secret_ref, rdp_password_secret_ref, ssh_public_key,
+    host_public_key)``. The provisioner mints the guest's SSH *host* keypair,
+    injects the private half via the guest startup script, and returns the public
+    half so the setup runner can seed known_hosts (StrictHostKeyChecking against a
+    trusted side-channel key). Neither public key is secret.
     """
     name = instance["resource_name"]
     existing = _get_or_none(
@@ -257,15 +274,24 @@ def _ensure_instance(
         rdp_password_secret_ref, _password = secret_ops.ensure_rdp_password(plan["range_id"], instance["source"])
     if existing is not None:
         logger.info("GCE range instance exists name_fp=%s", safe_log_fingerprint(name))
-        return secret_ref, rdp_password_secret_ref, public_key
+        return secret_ref, rdp_password_secret_ref, public_key, _host_public_key_from_instance(existing)
 
+    host_private_key, host_public_key = generate_ssh_host_keypair()
+    host_private_key_b64 = base64.b64encode(host_private_key.encode()).decode("ascii")
     operation = clients.instances.insert(
         project=plan["project_id"],
         zone=plan["zone"],
-        instance_resource=instance_resource(plan, instance, config, ssh_public_key=public_key),
+        instance_resource=instance_resource(
+            plan,
+            instance,
+            config,
+            ssh_public_key=public_key,
+            host_private_key_b64=host_private_key_b64,
+            host_public_key=host_public_key,
+        ),
     )
     _wait_for_operation(plan, clients, operation, "zone")
-    return secret_ref, rdp_password_secret_ref, public_key
+    return secret_ref, rdp_password_secret_ref, public_key, host_public_key
 
 
 def _instance_output(
@@ -275,6 +301,7 @@ def _instance_output(
     ssh_secret_ref: str,
     rdp_password_secret_ref: str | None,
     ssh_public_key: str,
+    host_public_key: str = "",
     config: GCERangeCellConfig,
 ) -> ResourceDict:
     """Render the provisioner output for one created instance."""
@@ -290,6 +317,9 @@ def _instance_output(
         "ssh_key_secret_arn": ssh_secret_ref,
         "ssh_username": instance["ssh_username"],
         "public_key": ssh_public_key,
+        # Seeds the setup runner's known_hosts (executors/factory reads
+        # gcp_host_public_key) for StrictHostKeyChecking against the injected key.
+        "gcp_host_public_key": host_public_key,
         "gcp_host_ssh_username": instance["host_ssh_username"],
         "gcp_host_ssh_port": instance["ssh_port"],
         "gcp_project_id": plan["project_id"],
@@ -359,7 +389,7 @@ def apply_range_cell(
             _ensure_firewall(plan, resolved_clients, firewall)
         for instance in plan["instances"]:
             _ensure_address(plan, resolved_clients, instance)
-            ssh_secret_ref, rdp_password_secret_ref, ssh_public_key = _ensure_instance(
+            ssh_secret_ref, rdp_password_secret_ref, ssh_public_key, host_public_key = _ensure_instance(
                 plan,
                 resolved_clients,
                 resolved_config,
@@ -373,6 +403,7 @@ def apply_range_cell(
                     ssh_secret_ref=ssh_secret_ref,
                     rdp_password_secret_ref=rdp_password_secret_ref,
                     ssh_public_key=ssh_public_key,
+                    host_public_key=host_public_key,
                     config=resolved_config,
                 )
             )
