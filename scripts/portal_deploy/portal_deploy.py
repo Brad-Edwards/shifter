@@ -773,14 +773,21 @@ def verify_post_deploy(
     )
 
 
-def _portal_manage_script(manage_args: list[str]) -> str:
+def _portal_manage_script(manage_args: list[str], env: dict[str, str] | None = None) -> str:
     if not manage_args:
         raise PortalDeployError("run-manage-on-portal requires at least one manage.py argument")
     quoted_args = " ".join(shlex.quote(arg) for arg in manage_args)
+    # Forward extra env into the container via `docker exec -e KEY=VALUE`. The
+    # in-container `/proc/1/environ` import below only carries the app runtime
+    # env, so deploy-time values (e.g. SMOKE_TEST_USER_EMAIL) must be passed
+    # explicitly (#1417). Keys here must not collide with the app runtime env.
+    exec_flags = "".join(
+        f" -e {shlex.quote(f'{key}={value}')}" for key, value in sorted((env or {}).items())
+    )
     return "\n".join(
         [
             "set -euo pipefail",
-            "sudo docker exec portal bash -c '",
+            f"sudo docker exec{exec_flags} portal bash -c '",
             "set -euo pipefail",
             "while IFS= read -r -d \"\" kv; do export \"$kv\"; done < /proc/1/environ",
             "cd /app",
@@ -834,6 +841,7 @@ def run_manage_on_portal(
     asg_name: str = "",
     manage_args: list[str],
     timeout_seconds: int = 7200,
+    env: dict[str, str] | None = None,
     runner: Runner = subprocess.run,
 ) -> str:
     """Run ``python manage.py …`` inside the portal container via SSM."""
@@ -847,7 +855,7 @@ def run_manage_on_portal(
     else:
         raise PortalDeployError("run-manage-on-portal requires instance_id or asg_name")
 
-    parameters = json.dumps({"commands": [_portal_manage_script(manage_args)]})
+    parameters = json.dumps({"commands": [_portal_manage_script(manage_args, env)]})
     send_command = _run(
         [
             "aws",
@@ -939,6 +947,13 @@ def _build_parser() -> argparse.ArgumentParser:
     run_manage_parser.add_argument("--instance-id", default="")
     run_manage_parser.add_argument("--asg-name", default="")
     run_manage_parser.add_argument(
+        "--env",
+        action="append",
+        default=[],
+        metavar="KEY=VALUE",
+        help="Extra environment variable to set in the container for the manage command (repeatable).",
+    )
+    run_manage_parser.add_argument(
         "manage_args",
         nargs=argparse.REMAINDER,
         help="Arguments passed to manage.py after the subcommand name",
@@ -974,11 +989,18 @@ def main(argv: list[str] | None = None) -> int:
             )
         elif args.command == "run-manage-on-portal":
             manage_args = [arg for arg in args.manage_args if arg != "--"]
+            env_overrides: dict[str, str] = {}
+            for item in args.env:
+                if "=" not in item:
+                    raise PortalDeployError(f"--env expects KEY=VALUE, got {item!r}")
+                key, value = item.split("=", 1)
+                env_overrides[key] = value
             output = run_manage_on_portal(
                 instance_id=args.instance_id,
                 asg_name=args.asg_name,
                 manage_args=manage_args,
                 timeout_seconds=args.timeout_seconds,
+                env=env_overrides,
             )
             if output.strip():
                 print(output.rstrip())

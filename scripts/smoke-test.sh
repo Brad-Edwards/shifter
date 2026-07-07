@@ -53,10 +53,12 @@ RUN_ARGS=(run_post_deploy_smoke --variant "${VARIANT}")
 if [[ -n "${instance_id:-}" ]]; then
   python3 "${REPO_ROOT}/scripts/portal_deploy/portal_deploy.py" run-manage-on-portal \
     --instance-id "${instance_id}" \
+    --env "SMOKE_TEST_USER_EMAIL=${SMOKE_TEST_USER_EMAIL}" \
     "${RUN_ARGS[@]}"
 elif [[ -n "${asg_name:-}" ]]; then
   python3 "${REPO_ROOT}/scripts/portal_deploy/portal_deploy.py" run-manage-on-portal \
     --asg-name "${asg_name}" \
+    --env "SMOKE_TEST_USER_EMAIL=${SMOKE_TEST_USER_EMAIL}" \
     "${RUN_ARGS[@]}"
 else
   echo "::error::resolve-topology did not emit instance_id or asg_name" >&2
