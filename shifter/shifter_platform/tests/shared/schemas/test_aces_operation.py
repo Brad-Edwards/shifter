@@ -99,3 +99,60 @@ def test_execution_plan_reference_rejects_embedded_plan_body():
                 payload={"execution_plan_ref": "aces/plans/op-1.json", "step_refs": ["aces/plans/op-1.step-1.json"]},
             )
         )
+
+
+def _snapshot(resource: dict) -> AcesOperationRecordData:
+    """Build a runtime_snapshot record whose single resource carries `resource`."""
+    payload = {"operation_id": "op-1", "resources": [resource]}
+    return _record(record_kind="runtime_snapshot", contract_version="runtime-snapshot-v1", payload=payload)
+
+
+@pytest.mark.parametrize(
+    "forbidden_key",
+    [
+        "transcript",
+        "prompt",
+        "command",
+        "generated_script",
+        "ctf_flag",
+        "package_body",
+        "provider_dump",
+        "raw_payload",
+        "ssm_output",
+        "ssh_output",
+        "terraform_output",
+        "bearer_token",
+    ],
+)
+def test_runtime_snapshot_rejects_secret_bearing_nested_field(forbidden_key):
+    # A snapshot must not become a store for transcripts/prompts/commands/
+    # scripts/flags/provider dumps/package bodies even nested inside `resources`.
+    with pytest.raises(AcesOperationRecordError, match="secret-bearing"):
+        validate_aces_operation_record(_snapshot({"kind": "vm", forbidden_key: "should-not-persist"}))
+
+
+def test_runtime_snapshot_rejects_multiline_embedded_content():
+    with pytest.raises(AcesOperationRecordError, match="single-line"):
+        validate_aces_operation_record(_snapshot({"kind": "vm", "detail": "line-1\nline-2"}))
+
+
+def test_runtime_snapshot_rejects_private_key_material():
+    # Assemble the PEM header at runtime so this test file does not itself trip
+    # secret scanners (detect-private-key/gitleaks); the resolved value still
+    # matches the write-boundary secret-value gate.
+    pem_header = "-----BEGIN " + "RSA PRIVATE KEY-----"
+    with pytest.raises(AcesOperationRecordError, match="secret-bearing"):
+        validate_aces_operation_record(_snapshot({"kind": "vm", "note": pem_header}))
+
+
+def test_runtime_snapshot_rejects_oversized_payload():
+    with pytest.raises(AcesOperationRecordError, match="exceeds"):
+        validate_aces_operation_record(_snapshot({"kind": "vm", "note": "x" * 70000}))
+
+
+def test_runtime_snapshot_rejects_unknown_top_level_payload_key():
+    payload = {"operation_id": "op-1", "resources": [{"kind": "vm"}], "captured_notes": "extra"}
+    with pytest.raises(AcesOperationRecordError, match="not allowed"):
+        validate_aces_operation_record(
+            _record(record_kind="runtime_snapshot", contract_version="runtime-snapshot-v1", payload=payload)
+        )

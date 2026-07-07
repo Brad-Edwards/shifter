@@ -191,7 +191,8 @@ engine models, and task payloads.
 
 - #1288: add ACES participant implementation sidecars and read-only runtime API
   projections with profile/version discriminators, ownership, idempotency,
-  retention, and redaction fields.
+  retention, and redaction fields. Implementation-slice guardrails live in
+  `docs/architecture/aces-participant-runtime-api-sidecars-preflight-1288.md`.
 - #1289: map scripts, prompts, command dispatch receipts, behavior-history
   events, transcripts, and artifacts to evidence records without copying
   rendered commands, raw prompts, raw scripts, token URLs, or terminal streams.

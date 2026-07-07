@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 from uuid import UUID
 
+from django.conf import settings
 from django.db import IntegrityError, transaction
+from django.utils import timezone
 
 from shared.aces.contracts import SHIFTER_BACKEND_PROFILE
 from shared.models import AcesOperationRecord
@@ -36,6 +38,22 @@ class AcesOperationRecordWrite:
     contract_profile: str = SHIFTER_BACKEND_PROFILE
     owner: str = AcesOperationRecord.Owner.SHARED
     retention_expires_at: datetime | None = None
+
+
+def _resolve_retention_expires_at(write: AcesOperationRecordWrite) -> datetime | None:
+    """Return the row's retention boundary, deriving it from settings when unset.
+
+    An explicit ``retention_expires_at`` is preserved. Otherwise the boundary is
+    ``source_timestamp + ACES_OPERATION_RECORD_RETENTION_DAYS`` -- measured from
+    the observation's logical time so idempotent replay is deterministic. A
+    non-positive retention window disables the stamp (the row is never pruned).
+    """
+    if write.retention_expires_at is not None:
+        return write.retention_expires_at
+    days = settings.ACES_OPERATION_RECORD_RETENTION_DAYS
+    if days <= 0:
+        return None
+    return write.source_timestamp + timedelta(days=days)
 
 
 def _idempotency_lookup(write: AcesOperationRecordWrite) -> dict[str, Any]:
@@ -83,7 +101,7 @@ def persist_aces_operation_record(write: AcesOperationRecordWrite) -> AcesOperat
         "payload": write.payload,
         "diagnostic_refs": write.diagnostic_refs or {},
         "owner": write.owner,
-        "retention_expires_at": write.retention_expires_at,
+        "retention_expires_at": _resolve_retention_expires_at(write),
     }
 
     try:
@@ -100,6 +118,30 @@ def persist_aces_operation_record(write: AcesOperationRecordWrite) -> AcesOperat
             payload_digest=normalized_payload_digest,
         )
     return record
+
+
+def prune_expired_aces_operation_records(*, batch_size: int) -> int:
+    """Delete operation-record rows past their retention boundary; return the count.
+
+    Runtime snapshots and adjacent operation records are bounded operational
+    observations, not an archive. Rows whose ``retention_expires_at`` has passed
+    are deleted oldest-boundary-first in a bounded batch; rows with no boundary
+    (``retention_expires_at IS NULL``) are never touched. The delete is bounded
+    by ``batch_size`` so a large backlog drains in fixed-size chunks rather than
+    one unbounded query. Callers outside ``shared`` reach this seam through the
+    ``run_aces_operation_record_prune`` management command instead of importing
+    the model.
+    """
+    limit = max(1, int(batch_size))
+    ids = list(
+        AcesOperationRecord.objects.filter(retention_expires_at__lte=timezone.now())
+        .order_by("retention_expires_at")
+        .values_list("pk", flat=True)[:limit]
+    )
+    if not ids:
+        return 0
+    deleted, _details = AcesOperationRecord.objects.filter(pk__in=ids).delete()
+    return deleted
 
 
 #: Contract version for ``operation-status-v1`` sidecar records.
