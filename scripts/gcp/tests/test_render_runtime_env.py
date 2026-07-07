@@ -184,6 +184,10 @@ def test_render_env_emits_production_security_profile():
     # Other rendered keys.
     assert "TF_STATE_BUCKET=shifter-gcp-dev-terraform-state\n" in rendered
     assert "IDENTITY_PLATFORM_API_KEY=identity-platform-api-key\n" in rendered
+    # Real deploy project (from the Identity Platform project) so google clients
+    # bill the correct quota/consumer project, not the overlay placeholder.
+    assert "GCP_PROJECT_ID=shifter-gcp-dev\n" in rendered
+    assert "GOOGLE_CLOUD_PROJECT=shifter-gcp-dev\n" in rendered
     assert "IDENTITY_PLATFORM_PROJECT_ID=shifter-gcp-dev\n" in rendered
     assert "IDENTITY_PLATFORM_AUTH_DOMAIN=shifter-gcp-dev.firebaseapp.com\n" in rendered
     assert "GDC_ACCESS_SECRET_ID=projects/shifter-gcp-dev/secrets/shifter-gcp-dev-gdc-access\n" in rendered
