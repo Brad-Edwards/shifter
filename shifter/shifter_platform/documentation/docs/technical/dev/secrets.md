@@ -87,7 +87,7 @@ already expects at startup:
 Current rollout behavior:
 
 - `shifter-gcp-dev-app` and `shifter-gcp-dev-db` are seeded by Terraform for the first deployable control-plane slice
-- `shifter-gcp-dev-guacamole-db` and `shifter-gcp-dev-guacamole-json-auth` are now seeded by Terraform and synced into the `guacamole-runtime` Kubernetes Secret during deploy
+- `shifter-gcp-dev-guacamole-db` and `shifter-gcp-dev-guacamole-json-auth` are seeded by Terraform and synced into the `guacamole-runtime` Kubernetes Secret **out of band** during deploy (`kubectl apply` from Secret Manager, before the Helm release). Secret Manager and the Kubernetes Secret are the only runtime copies: these values are never placed in Helm chart values or Helm release history. The chart references the `guacamole-runtime` Secret by name only (`envFrom.secretRef`).
 - Identity Platform is provisioned by Terraform for the secure GCP portal login path
 - The first GCP operator is seeded by bootstrap using `GCP_BOOTSTRAP_ADMIN_EMAIL` / `GCP_BOOTSTRAP_ADMIN_PASSWORD` (or an interactive prompt)
 - Bootstrap operator elevation is runtime-configured with `PLATFORM_BOOTSTRAP_STAFF_EMAILS` / `PLATFORM_BOOTSTRAP_SUPERUSER_EMAILS`; these values must stay out of committed source

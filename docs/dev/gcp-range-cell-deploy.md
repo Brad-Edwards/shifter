@@ -72,6 +72,36 @@ These are independent inputs. In an account that requires it, both variables may
 name the same service account; nothing in the render or provisioner assumes they
 differ.
 
+## Baking a new pre-promoted DC image
+
+Domain controllers are **pre-promoted at bake time** so a range boots an
+already-promoted DC with no per-range promotion (promotion takes ~15-20 minutes
+and would dominate time-to-serve). One parameterized Packer template,
+`shifter/packer/gcp/dc-prebaked.pkr.hcl`, bakes many DC images. A runtime
+promotion path also exists (`plans/dc_setup.py`, parameterized by the scenario
+`domain_name`, on by default for GCP, idempotent) and stays available, but it is
+not the path we use because of the launch-time cost.
+
+Each DC image is a **profile** var-file in `shifter/packer/gcp/dc-profiles/`. The
+profile sets the domain, NetBIOS name, AD-content seed, and purpose (which names
+the image family `shifter-<purpose>-dc`). To add a DC for a new domain:
+
+1. Copy `dc-profiles/example.pkrvars.hcl` to `dc-profiles/<name>.pkrvars.hcl` and
+   set `dc_image_purpose`, `dc_domain_name`, `dc_netbios_name`, and
+   `dc_content_script`.
+2. Add the AD-content seed script the profile points at (path relative to
+   `shifter/packer/gcp`). It creates the scenario's OUs/users/groups/SPNs and
+   accepts a `-DnsForwarder` parameter; the Polaris one is
+   `scripts/polaris-aws-range/a2_setup.ps1`.
+3. Run the **Packer GCE Image Build** workflow with `image_type=dc-prebaked` and
+   `dc_profile=<name>`. It publishes image family `shifter-<purpose>-dc`.
+4. Point the consuming scenario at that family. The scenario's `dc_config`
+   `domain_name` must match the baked domain (the runtime promotion step detects
+   the already-promoted DC and verifies rather than re-promoting).
+
+The `polaris` profile reproduces the Polaris `shifter-polaris-dc`
+(`BOREAS.LOCAL`) image and is the default.
+
 ## NGFW
 
 There is no GCE-native NGFW (Palo Alto VM-Series) path; that path exists only
