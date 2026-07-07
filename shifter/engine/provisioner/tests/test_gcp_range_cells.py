@@ -148,6 +148,69 @@ def _vertex_config() -> GCERangeCellConfig:
     )
 
 
+def _shared_vpc_config() -> GCERangeCellConfig:
+    base = _sample_config()
+    return GCERangeCellConfig(
+        project_id=base.project_id,
+        region=base.region,
+        zone=base.zone,
+        network_mode="shared-vpc",
+        network_id="projects/test-project/global/networks/shared-range",
+        service_account_email=base.service_account_email,
+        linux=base.linux,
+        kali=base.kali,
+        dc=base.dc,
+        portal_network_cidrs=base.portal_network_cidrs,
+    )
+
+
+def test_render_range_cell_plan_shared_vpc_uses_existing_network():
+    plan = render_range_cell_plan("req-123", _variables(), _shared_vpc_config())
+
+    assert plan["manage_network"] is False
+    assert plan["network"]["name"] == "shared-range"
+    assert plan["network"]["self_link"] == "projects/test-project/global/networks/shared-range"
+    # Per-range subnets are still created, but inside the shared VPC.
+    assert plan["subnets"][0]["resource_name"] == "shifter-r-42-polaris"
+    assert plan["subnets"][0]["network_link"] == "projects/test-project/global/networks/shared-range"
+
+
+def test_apply_shared_vpc_skips_network_create(mocker):
+    clients = _mock_clients(exists=False)
+    secret_ops, _ = _mock_secret_ops(mocker)
+    vertex_ops, _ = _mock_vertex_ops(mocker)
+
+    apply_range_cell(
+        "req-123",
+        _variables(),
+        config=_shared_vpc_config(),
+        clients=clients,
+        secret_ops=secret_ops,
+        vertex_ops=vertex_ops,
+    )
+
+    clients.networks.insert.assert_not_called()
+    clients.subnetworks.insert.assert_called()
+
+
+def test_destroy_shared_vpc_skips_network_delete(mocker):
+    clients = _mock_clients(exists=True)
+    secret_ops, _ = _mock_secret_ops(mocker)
+    vertex_ops, _ = _mock_vertex_ops(mocker)
+
+    destroy_range_cell(
+        "req-123",
+        _variables(),
+        config=_shared_vpc_config(),
+        clients=clients,
+        secret_ops=secret_ops,
+        vertex_ops=vertex_ops,
+    )
+
+    clients.networks.delete.assert_not_called()
+    clients.subnetworks.delete.assert_called()
+
+
 def test_apply_mints_per_range_vertex_key_when_configured(mocker):
     clients = _mock_clients(exists=True)
     secret_ops, _ = _mock_secret_ops(mocker)

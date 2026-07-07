@@ -33,6 +33,23 @@ needs `GCP_RANGE_VERTEX_SERVICE_ACCOUNT_EMAIL`.
 self-link, so the range backend targets the real range project even when the
 control-plane `GCP_PROJECT_ID` is a deploy-overlay placeholder.
 
+## Network mode
+
+`GCP_RANGE_CELL_NETWORK_MODE` selects how range guests are networked:
+
+- `shared-vpc` (default) — each range gets its own subnet in the pre-existing,
+  platform-peered range VPC (`RANGE_NETWORK_ID`/`RANGE_VPC_ID`). This mirrors the
+  AWS shared-VPC + per-range-subnet model, so the provisioner reaches guests over
+  the existing platform↔range peering. Isolation is by per-range subnet and
+  target-tag firewall rules (see `docs/architecture/range-isolation-model.md`).
+  Requires `RANGE_NETWORK_ID` (or `RANGE_VPC_ID`); both are rendered from the
+  `range_network_id` Terraform output.
+- `vpc-per-range` — each range mints its own isolated VPC. This gives VPC-hard
+  isolation but currently has **no provisioner reachability path** (no peering or
+  IAP is created), so guests are unreachable and ranges cannot reach READY. It is
+  retained as a selectable mode for a future peering/IAP implementation; do not
+  use it for live deployments yet.
+
 ## Image mapping
 
 A range instance resolves to one of four image profiles by role and OS
