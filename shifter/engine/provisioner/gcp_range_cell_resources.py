@@ -85,10 +85,26 @@ def address_resource(instance: InstancePlan) -> ComputeResource:
     }
 
 
-def _metadata_items(config: GCERangeCellConfig, username: str, public_key: str) -> list[dict[str, str]]:
+# Runs on every boot of a Windows range guest. The CTF domain controller serves
+# LDAP/Kerberos/SMB firewall-off by design, and a pre-promoted DC can re-enable
+# the Windows Firewall after promotion (dropping the provisioner's SSH on :22, so
+# guest setup times out). Forcing the firewall off and asserting sshd on each
+# boot makes the guest reachable regardless of the captured firewall state.
+_WINDOWS_BOOT_SCRIPT = (
+    "Set-NetFirewallProfile -Profile Domain,Public,Private -Enabled False\n"
+    "Set-Service -Name sshd -StartupType Automatic -ErrorAction SilentlyContinue\n"
+    "Start-Service -Name sshd -ErrorAction SilentlyContinue\n"
+)
+
+
+def _metadata_items(
+    config: GCERangeCellConfig, username: str, public_key: str, *, os_type: str
+) -> list[dict[str, str]]:
     """Render guest metadata items including the provisioned SSH public key."""
     items = [{"key": key, "value": value} for key, value in config.metadata_items]
     items.append({"key": "ssh-keys", "value": f"{username}:{public_key}"})
+    if os_type == "windows":
+        items.append({"key": "windows-startup-script-ps1", "value": _WINDOWS_BOOT_SCRIPT})
     return items
 
 
@@ -116,7 +132,9 @@ def instance_resource(
         # published container, whose authorized_keys the range bootstrap sets;
         # the host OS user (e.g. "ubuntu") is what guest setup connects as. For
         # native guests the two are identical.
-        "metadata": {"items": _metadata_items(config, instance["host_ssh_username"], ssh_public_key)},
+        "metadata": {
+            "items": _metadata_items(config, instance["host_ssh_username"], ssh_public_key, os_type=instance["os_type"])
+        },
         "network_interfaces": [
             {
                 "subnetwork": instance["subnetwork_link"],

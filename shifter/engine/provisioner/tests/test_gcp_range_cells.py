@@ -329,6 +329,26 @@ def test_instance_resource_installs_key_for_host_login_user():
     assert ssh_keys["value"] == "ubuntu:ssh-ed25519 AAAA"
 
 
+def test_windows_dc_instance_gets_boot_firewall_script():
+    """The Windows DC gets a per-boot startup script (firewall off + sshd) so the
+    provisioner's SSH reaches it even if promotion re-enables the firewall; the
+    Linux host does not."""
+    from gcp_range_cell_resources import instance_resource
+
+    plan = render_range_cell_plan("req-123", _variables(), _vertex_config())
+    by_name = {inst["name"]: inst for inst in plan["instances"]}
+
+    dc_body = instance_resource(plan, by_name["dc01"], _vertex_config(), ssh_public_key="ssh-ed25519 AAAA")
+    dc_meta = {item["key"]: item["value"] for item in dc_body["metadata"]["items"]}
+    assert "windows-startup-script-ps1" in dc_meta
+    assert "Set-NetFirewallProfile" in dc_meta["windows-startup-script-ps1"]
+    assert "sshd" in dc_meta["windows-startup-script-ps1"]
+
+    host_body = instance_resource(plan, by_name["kali"], _vertex_config(), ssh_public_key="ssh-ed25519 AAAA")
+    host_meta = {item["key"]: item["value"] for item in host_body["metadata"]["items"]}
+    assert "windows-startup-script-ps1" not in host_meta
+
+
 def test_render_plan_carries_private_google_access_flag():
     """Private Google Access flows from config into the subnet resource body."""
     from gcp_range_cell_resources import subnetwork_resource
