@@ -91,8 +91,8 @@ variable "dc_image_purpose" {
   type        = string
   description = <<-DESC
     Purpose slug for a pre-promoted DC image, used in the image name and family
-    (${var.image_prefix}-<purpose>-dc). Each purpose is a distinct, reusable
-    pre-baked DC (e.g. "polaris" -> shifter-polaris-dc).
+    (<image_prefix>-<purpose>-dc). Each purpose is a distinct, reusable pre-baked
+    DC (e.g. "polaris" -> shifter-polaris-dc).
   DESC
   default     = "polaris"
 }
