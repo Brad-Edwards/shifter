@@ -351,7 +351,8 @@ def apply_range_cell(
             resolved_vertex_ops.ensure(
                 plan["range_id"], resolved_config.vertex_service_account_email, plan["project_id"]
             )
-        _ensure_network(plan, resolved_clients)
+        if plan["manage_network"]:
+            _ensure_network(plan, resolved_clients)
         for subnet in plan["subnets"]:
             _ensure_subnetwork(plan, resolved_clients, subnet)
         for firewall in plan["firewalls"]:
@@ -480,12 +481,16 @@ def destroy_range_cell(
             subnetwork=subnet["resource_name"],
         )
 
-    _delete_resource(
-        plan,
-        resolved_clients,
-        resolved_clients.networks.get,
-        resolved_clients.networks.delete,
-        "global",
-        project=plan["project_id"],
-        network=plan["network"]["name"],
-    )
+    # In shared-vpc mode the range VPC is the pre-existing, platform-peered
+    # network and must never be deleted; only per-range subnets/firewalls are torn
+    # down above.
+    if plan["manage_network"]:
+        _delete_resource(
+            plan,
+            resolved_clients,
+            resolved_clients.networks.get,
+            resolved_clients.networks.delete,
+            "global",
+            project=plan["project_id"],
+            network=plan["network"]["name"],
+        )
