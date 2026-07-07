@@ -75,6 +75,17 @@ class GuestSSHExecutor:
             os.close(fd)
         return key_path
 
+    def _known_hosts_line(self, host: str, host_public_key: str) -> str:
+        """Render the known_hosts entry, formatting non-default ports as [host]:port.
+
+        OpenSSH keys known_hosts by ``host`` for :22 but by ``[host]:port`` for any
+        other port, so a Docker-host guest reached on the management port (e.g. the
+        Polaris range host on :2222) needs the bracketed form or strict checking
+        fails to match the seeded key.
+        """
+        host_entry = host if self._port == self.DEFAULT_SSH_PORT else f"[{host}]:{self._port}"
+        return f"{host_entry} {host_public_key.strip()}\n"
+
     def _provision_known_hosts(self, host: str, host_public_key: str) -> str:
         """Write a single-entry known_hosts file locally and return its path.
 
@@ -83,7 +94,7 @@ class GuestSSHExecutor:
         """
         fd, path = tempfile.mkstemp(prefix="guest_known_hosts_", suffix="")
         try:
-            os.write(fd, f"{host} {host_public_key.strip()}\n".encode())
+            os.write(fd, self._known_hosts_line(host, host_public_key).encode())
         finally:
             os.close(fd)
         return path
