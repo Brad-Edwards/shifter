@@ -209,6 +209,11 @@ variable "ctf_from_email" {
   default     = "ctf@example.com"
 }
 
+variable "range_events_topic_id" {
+  description = "SNS topic ARN for range events (RANGE_EVENTS_TOPIC_ID). The outbox drainer and reconciler fail closed without it."
+  type        = string
+}
+
 # ------------------------------------------------------------------------------
 # ASG Lifecycle Hook Configuration
 # ------------------------------------------------------------------------------
