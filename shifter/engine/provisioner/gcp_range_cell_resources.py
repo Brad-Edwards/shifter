@@ -75,7 +75,7 @@ def _firewall_rule(rule: dict[str, Any]) -> dict[str, Any]:
     return translated
 
 
-def address_resource(plan: RangeCellPlan, instance: InstancePlan) -> ComputeResource:
+def address_resource(instance: InstancePlan) -> ComputeResource:
     """Render a Compute Engine internal address insert body."""
     return {
         "name": instance["address_name"],
