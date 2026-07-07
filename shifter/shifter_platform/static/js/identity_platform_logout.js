@@ -1,11 +1,24 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-app.js";
 import { getAuth, signOut } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-auth.js";
 
-const configScript = document.getElementById("identity-platform-logout-config");
+// Only a root-relative path ("/path") that is NOT protocol-relative ("//host")
+// is allowed: this rejects absolute URLs, "javascript:" targets, and any
+// off-origin destination, so the value handed to location.assign can never
+// navigate (or script) off this origin. The injected config is trusted; this
+// keeps an open redirect / DOM-XSS impossible even if it is tampered with.
+// Mirrors identity_platform_auth.js's sameOriginPath (CodeQL js/xss-through-dom).
+const SAFE_REDIRECT_PATH = /^\/(?!\/)[\w\-./~!$&'()*+,;=:@%?#[\]]*$/;
+function sameOriginPath(candidate) {
+    if (typeof candidate === "string" && SAFE_REDIRECT_PATH.test(candidate)) {
+        return candidate;
+    }
+    return null;
+}
 
-if (configScript) {
-    const config = JSON.parse(configScript.textContent);
-
+// Sign the user out of Identity Platform, then navigate to a validated
+// same-origin path. Wrapped in a function (rather than top-level await) so the
+// module is importable under the jest/babel harness.
+async function runLogout(config) {
     try {
         const app = initializeApp({
             apiKey: config.apiKey,
@@ -16,13 +29,16 @@ if (configScript) {
     } catch (error) {
         console.error("Identity Platform logout failed", error);
     } finally {
-        // Only follow same-origin relative paths. Reject absolute or
-        // protocol-relative URLs to avoid an open-redirect / DOM-XSS sink
-        // (CodeQL js/xss-through-dom).
-        const rawRedirect = config.redirectUrl || "/";
-        const redirect = /^\/(?![/\\])/.test(rawRedirect) ? rawRedirect : "/";
-        globalThis.location.assign(redirect);
+        globalThis.location.assign(sameOriginPath(config.redirectUrl) || "/");
     }
+}
+
+const configScript = document.getElementById("identity-platform-logout-config");
+
+if (configScript) {
+    runLogout(JSON.parse(configScript.textContent));
 } else {
     globalThis.location.assign("/");
 }
+
+export { runLogout, sameOriginPath };
