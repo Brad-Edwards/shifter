@@ -568,3 +568,39 @@ class PortalDeploySsmParametersJsonTests(unittest.TestCase):
         parsed = json.loads(self._params_of(runner))
         self.assertIn("commands", parsed)
         self.assertIn("\n", parsed["commands"][0])
+
+
+class PortalDeployManageEnvForwardTests(unittest.TestCase):
+    """#1417: run-manage-on-portal must forward extra env into the container."""
+
+    def test_manage_script_renders_docker_exec_e_flags(self) -> None:
+        script = portal_deploy._portal_manage_script(
+            ["run_post_deploy_smoke", "--variant", "linux"],
+            env={"SMOKE_TEST_USER_EMAIL": "smoke@example.com"},
+        )
+        self.assertIn("docker exec -e SMOKE_TEST_USER_EMAIL=smoke@example.com portal", script)
+        self.assertIn("run_post_deploy_smoke", script)
+
+    def test_manage_script_without_env_has_no_e_flag(self) -> None:
+        script = portal_deploy._portal_manage_script(["migrate"])
+        self.assertIn("sudo docker exec portal bash -c", script)
+        self.assertNotIn(" -e ", script)
+
+    def test_run_manage_on_portal_forwards_env_in_ssm_parameters(self) -> None:
+        runner = FakeRunner()
+        runner.queue("cmd-1\n")  # send-command -> command id
+        runner.queue(  # get-command-invocation -> terminal Success
+            '{"Status": "Success", "StandardOutputContent": "done", "StandardErrorContent": ""}'
+        )
+        portal_deploy.run_manage_on_portal(
+            instance_id="i-1",
+            manage_args=["run_post_deploy_smoke", "--variant", "linux"],
+            env={"SMOKE_TEST_USER_EMAIL": "smoke@example.com"},
+            runner=runner,
+        )
+        send = next(c for c in runner.calls if "send-command" in c)
+        parsed = json.loads(send[send.index("--parameters") + 1])
+        self.assertIn(
+            "docker exec -e SMOKE_TEST_USER_EMAIL=smoke@example.com portal",
+            parsed["commands"][0],
+        )
