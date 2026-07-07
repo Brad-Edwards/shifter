@@ -1,7 +1,7 @@
 # ACES Experiment-Core Preflight
 
 Issue: GitHub #1235, "06 - ACES migration: redesign experiments around
-ACES experiment-core".
+ACES experiment-core."
 
 Status: pre-implementation architecture guidance. This note does not implement
 models, migrations, APIs, UI, event handlers, or a cutover.
@@ -192,29 +192,29 @@ state. Do not bake an S3-only or transcript-only assumption into ACES records.
   apparatus-context refs, run records, capture specs, evidence records, and
   derived measures with version/profile discriminators, idempotency keys,
   retention, redaction, and ownership. Candidate title: "ACES migration:
-  implement experiment-core storage sidecars".
+  implement experiment-core storage sidecars."
 - Evidence and capture mapping: map `ScriptAsset`, `ExperimentScript`,
   `RunArtifact`, `ExperimentArtifact`, and Claude transcript artifacts to ACES
   capture/evidence records without copying rendered commands, prompt bodies, or
   raw artifact contents. Candidate title: "ACES migration: map experiment
-  capture specs and evidence records".
+  capture specs and evidence records."
 - API projection: expose read-only experiment-core projections through the
   existing CMS API auth, exact scopes, serializers, feature flag, and shared
   error envelope. Do not create an ACES-only API surface. Candidate title:
-  "ACES migration: expose read-only experiment-core API projections".
+  "ACES migration: expose read-only experiment-core API projections."
 - UI projection: show ACES-backed experiment/run/evidence status in existing
   experiment or Mission Control surfaces as read-only migration evidence until
   a separate launch/cutover issue graduates it. Candidate title: "ACES
-  migration: surface experiment-core projections in the UI".
+  migration: surface experiment-core projections in the UI."
 - Migration and cutover gate: decide when current experiment creation,
   orchestration, and artifact flows become frozen, archived, removed, or
   replaced. That issue must include parity evidence and rollback posture.
   Candidate title: "ACES migration: define experiment cutover and legacy
-  archive gate".
+  archive gate."
 - Derived measures: define the first Shifter-supported measure profile and
   formulas over evidence records. Keep it separate from run status, CTF score,
   and UI display labels. Candidate title: "ACES migration: define first
-  experiment derived-measure profile".
+  experiment derived-measure profile."
 
 ## Whole-Repo Scope
 

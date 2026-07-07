@@ -1,7 +1,7 @@
 # ACES Package-Source Catalog Persistence Preflight
 
 Issue: GitHub #1252, "11 - ACES migration: implement package-source catalog
-persistence and projection".
+persistence and projection."
 
 Status: pre-implementation guidance.
 

@@ -13,6 +13,7 @@ from django.utils import timezone
 from risk_register.models import AuditLog
 from risk_register.services import AuditEvent, audit_log
 from shared.constants import USER_CANNOT_BE_NONE
+from shared.log_sanitize import safe_log_value
 
 from .models import ActivityLog, UserProfile
 
@@ -49,7 +50,7 @@ def log_activity(action: str, user: User | None, **metadata: Any) -> None:
     if user is not None and user.pk is None:
         raise ValueError(USER_PK_REQUIRED_MSG)
 
-    user_display = user.email if user else "anonymous"
+    user_display = safe_log_value(user.email) if user else "anonymous"
 
     try:
         ActivityLog.log(action, user=user, **metadata)
@@ -80,12 +81,12 @@ def get_user_profile(user: User) -> UserProfile:
     try:
         profile, created = UserProfile.objects.get_or_create(user=user)
         if created:
-            logger.debug("Created new profile for user %s", user.email)
+            logger.debug("Created new profile for user %s", safe_log_value(user.email))
         else:
-            logger.debug("Retrieved profile for user %s", user.email)
+            logger.debug("Retrieved profile for user %s", safe_log_value(user.email))
         return profile
     except Exception:
-        logger.exception("Failed to get/create profile for user %s", user.email)
+        logger.exception("Failed to get/create profile for user %s", safe_log_value(user.email))
         raise
 
 
@@ -105,7 +106,7 @@ def mark_user_deleted(user: User, admin_user: User | None = None) -> None:
     profile = get_user_profile(user)
 
     if profile.is_deleted:
-        logger.warning("User %s is already deleted, updating timestamp", user.email)
+        logger.warning("User %s is already deleted, updating timestamp", safe_log_value(user.email))
 
     try:
         profile.deleted_at = timezone.now()
@@ -123,9 +124,9 @@ def mark_user_deleted(user: User, admin_user: User | None = None) -> None:
             )
         )
 
-        logger.debug("Marked user %s as deleted", user.email)
+        logger.debug("Marked user %s as deleted", safe_log_value(user.email))
     except Exception:
-        logger.exception("Failed to mark user %s as deleted", user.email)
+        logger.exception("Failed to mark user %s as deleted", safe_log_value(user.email))
         raise
 
 
@@ -146,9 +147,9 @@ def create_user_profile(user: User) -> None:
 
     try:
         UserProfile.objects.create(user=user)
-        logger.debug("Created profile for user %s", user.email)
+        logger.debug("Created profile for user %s", safe_log_value(user.email))
     except Exception:
-        logger.exception("Failed to create profile for user %s", user.email)
+        logger.exception("Failed to create profile for user %s", safe_log_value(user.email))
         raise
 
 
@@ -169,9 +170,9 @@ def save_user_profile(user: User) -> None:
 
     try:
         UserProfile.objects.get_or_create(user=user)
-        logger.debug("Ensured profile for user %s", user.email)
+        logger.debug("Ensured profile for user %s", safe_log_value(user.email))
     except Exception:
-        logger.exception("Failed to ensure profile for user %s", user.email)
+        logger.exception("Failed to ensure profile for user %s", safe_log_value(user.email))
         raise
 
 
@@ -198,14 +199,14 @@ def update_cognito_sub(user: User, cognito_sub: str) -> None:
     try:
         profile = get_user_profile(user)
         if profile.cognito_sub == cognito_sub:
-            logger.debug("cognito_sub unchanged for user %s", user.email)
+            logger.debug("cognito_sub unchanged for user %s", safe_log_value(user.email))
             return
 
         profile.cognito_sub = cognito_sub
         profile.save(update_fields=["cognito_sub"])
-        logger.info("Updated cognito_sub for user %s: %s", user.email, cognito_sub)
+        logger.info("Updated cognito_sub for user %s: %s", safe_log_value(user.email), cognito_sub)
     except Exception:
-        logger.exception("Failed to update cognito_sub for user %s", user.email)
+        logger.exception("Failed to update cognito_sub for user %s", safe_log_value(user.email))
         raise
 
 

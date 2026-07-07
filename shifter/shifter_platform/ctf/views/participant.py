@@ -82,7 +82,7 @@ def ctf_register_exchange(request: HttpRequest) -> JsonResponse:
         body = _parsing._parse_body_object(request)
         token = _parsing._get_body_str(body, "token", required=True).strip()
     except _parsing._BodyParseError as e:
-        return JsonResponse({"error": str(e)}, status=400)
+        return _access._json_error(e, "Invalid request body.", 400)
 
     participant = (
         CTFParticipant.objects.filter(invite_token=token).select_related("user").first()

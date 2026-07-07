@@ -1,6 +1,6 @@
 # GCP Platform Deployment Preflight
 
-Issue: GitHub #671, PLAT-002 "GCP Platform Deployment".
+Issue: GitHub #671, PLAT-002 "GCP Platform Deployment."
 
 This note records the repository-wide architecture guardrails for continuing
 GCP platform parity work. It is not an implementation plan.

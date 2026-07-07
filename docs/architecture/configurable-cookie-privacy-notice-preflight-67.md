@@ -44,7 +44,7 @@ Keep these concepts separate:
   HTML shells that render portal pages rather than duplicating markup and
   storage logic in every app.
 - The notice copy must use disclosure language, not consent language. Use
-  actions such as "Dismiss", not "Accept", "Agree", "Consent", or preference
+  actions such as "Dismiss," not "Accept," "Agree," "Consent," or preference
   controls.
 - `/privacy/` should be a public, GET/HEAD-only route with no login requirement
   and no personalized sidebar/profile data. It should render a neutral
