@@ -40,6 +40,23 @@ class TestGuestSSHExecutorRunCommand:
         assert not any(a.startswith("HostKeyAlgorithms=") for a in ssh_args)
         assert mock_run.call_args.kwargs["input"].decode("utf-8").startswith("set -euo pipefail\necho ok")
 
+    def test_seeded_host_key_uses_bracketed_form_for_non_default_port(self, tmp_path):
+        # A Docker-host guest reached on the management port (e.g. the Polaris
+        # range host on :2222) must be seeded as [host]:port, else OpenSSH's
+        # known_hosts lookup misses the entry and strict checking fails.
+        executor = GuestSSHExecutor(
+            private_key="PRIVATE KEY",
+            username="ubuntu",
+            port=2222,
+            host_public_key="ssh-ed25519 AAAAHOSTKEY host",
+            known_hosts_host="10.200.2.10",
+        )
+        try:
+            with open(executor._known_hosts_path, encoding="utf-8") as fh:
+                assert fh.read() == "[10.200.2.10]:2222 ssh-ed25519 AAAAHOSTKEY host\n"
+        finally:
+            executor.close()
+
     def test_seeded_host_key_pins_known_hosts_and_keeps_strict_checking(self, mocker, tmp_path):
         # D31: when the provisioner supplies the guest's host key, the executor
         # validates strictly against a single-entry known_hosts (no TOFU) and
