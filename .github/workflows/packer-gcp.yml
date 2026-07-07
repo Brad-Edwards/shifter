@@ -24,7 +24,7 @@ on:
           - windows
           - dc
           - polaris-vm
-          - polaris-dc
+          - dc-prebaked
       environment:
         description: 'GCP environment to build in'
         required: true
@@ -33,6 +33,11 @@ on:
           - dev
           - proof
         default: dev
+      dc_profile:
+        description: 'Pre-promoted DC profile (dc-profiles/<name>.pkrvars.hcl); only used when image_type=dc-prebaked'
+        required: false
+        type: string
+        default: polaris
 
 permissions:
   contents: read
@@ -50,6 +55,7 @@ jobs:
         working-directory: shifter/packer
     env:
       IMAGE_TYPE: ${{ inputs.image_type }}
+      DC_PROFILE: ${{ inputs.dc_profile }}
     steps:
       # Build from the dispatched ref (github.sha), which GitHub already gates
       # by workflow_dispatch permission. No free-form `inputs.ref` is accepted:
@@ -129,7 +135,7 @@ jobs:
           # (no imported base image, so no source-image secret is required).
 
       - name: Generate WinRM bootstrap secret (Windows/DC only)
-        if: inputs.image_type == 'windows' || inputs.image_type == 'dc' || inputs.image_type == 'polaris-dc'
+        if: inputs.image_type == 'windows' || inputs.image_type == 'dc' || inputs.image_type == 'dc-prebaked'
         run: |
           # Throwaway local-admin password for the build VM only; the VM is
           # sysprepped and discarded so it never reaches the published image.
@@ -144,19 +150,33 @@ jobs:
 
       - name: Validate template
         working-directory: shifter/packer/gcp
-        run: packer validate -only="googlecompute.${IMAGE_TYPE}" .
+        run: |
+          # dc-prebaked bakes many DC images from one template; the profile
+          # var-file supplies the domain / NetBIOS / content / purpose.
+          VARFILE=""
+          if [ "${IMAGE_TYPE}" = "dc-prebaked" ]; then
+            VARFILE="-var-file=dc-profiles/${DC_PROFILE}.pkrvars.hcl"
+          fi
+          # shellcheck disable=SC2086
+          packer validate -only="googlecompute.${IMAGE_TYPE}" ${VARFILE} .
 
       - name: Build GCE image
         working-directory: shifter/packer/gcp
         run: |
-          packer build -color=false -only="googlecompute.${IMAGE_TYPE}" .
+          VARFILE=""
+          if [ "${IMAGE_TYPE}" = "dc-prebaked" ]; then
+            VARFILE="-var-file=dc-profiles/${DC_PROFILE}.pkrvars.hcl"
+          fi
+          # shellcheck disable=SC2086
+          packer build -color=false -only="googlecompute.${IMAGE_TYPE}" ${VARFILE} .
           IMAGE_NAME=$(jq -r '.builds[-1].artifact_id' "${IMAGE_TYPE}-manifest.json")
+          IMAGE_FAMILY="${IMAGE_NAME%-*}"
           {
             echo "## ${{ inputs.environment }} GCE Image Build Complete"
             echo "- **Type:** ${IMAGE_TYPE}"
             echo "- **Environment:** ${{ inputs.environment }}"
             echo "- **Image:** \`${IMAGE_NAME}\`"
-            echo "- **Family:** \`shifter-${IMAGE_TYPE}\` (consumers resolve newest in family)"
+            echo "- **Family:** \`${IMAGE_FAMILY}\` (consumers resolve newest in family)"
             echo ""
             echo "**Next step:** Verify in ${{ inputs.environment }} before promoting to prod."
           } >> "$GITHUB_STEP_SUMMARY"
@@ -165,7 +185,13 @@ jobs:
       # Runtime cannot consume a GCE image family directly - it imports a disk
       # from a gs:// source - so export the built image to the GDC VM image
       # bucket as a qcow2 the range provisioner references via GDC_*_IMAGE_URL.
+      # GDC VM Runtime consumes an imported qcow2 disk; this exports the built
+      # GCE image for the GDC path. Only Linux guests are hypervisor-portable
+      # (see docs/architecture/gcp-guest-images.md). GCE-built Windows/DC images
+      # do not boot on GDC (firmware/drivers), and their GDC images come from the
+      # native gdc-vm-images build, so skip the export for the Windows family.
       - name: Export image to GCS for the GDC VM Runtime
+        if: inputs.image_type != 'windows' && inputs.image_type != 'dc' && inputs.image_type != 'dc-prebaked'
         working-directory: shifter/packer/gcp
         env:
           GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}

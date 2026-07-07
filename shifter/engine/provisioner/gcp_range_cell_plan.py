@@ -230,8 +230,16 @@ def _build_subnet_plans(
     config: GCERangeCellConfig,
     network_name: str,
     network_link: str,
+    require_images: bool,
 ) -> list[SubnetPlan]:
-    """Render deterministic subnetwork plans from range variables."""
+    """Render deterministic subnetwork plans from range variables.
+
+    Provision (``require_images=True``) needs a CIDR to create the subnet and
+    assign instance IPs. Destroy (``require_images=False``) deletes subnets by
+    resource name, so a subnet whose CIDR was never allocated (e.g. auto-cleanup
+    after a provision that failed before CIDR allocation) is tolerated with an
+    empty CIDR rather than raising.
+    """
     range_id = int(str(variables["range_id"]))
     subnets = _resource_dicts(variables.get("subnets"))
     subnet_by_name = {str(subnet.get("name", "")): subnet for subnet in subnets}
@@ -240,8 +248,10 @@ def _build_subnet_plans(
         subnet_name = str(subnet.get("name", "")).strip()
         subnet_uuid = str(subnet.get("uuid", "")).strip()
         subnet_cidr = str(subnet.get("cidr", "")).strip()
-        if not subnet_name or not subnet_uuid or not subnet_cidr:
-            raise RuntimeError(f"GCE range subnet requires name, uuid, and cidr: {subnet!r}")
+        if not subnet_name or not subnet_uuid:
+            raise RuntimeError(f"GCE range subnet requires name and uuid: {subnet!r}")
+        if require_images and not subnet_cidr:
+            raise RuntimeError(f"GCE range subnet requires a cidr to provision: {subnet!r}")
         instances = _resource_dicts(subnet.get("instances"))
         resource_name = _short_resource_name("shifter-r", range_id, subnet_name)
         plans.append(
@@ -256,7 +266,7 @@ def _build_subnet_plans(
                 "region": config.region,
                 "tag": _subnet_tag(range_id, subnet_name),
                 "connected_source_ranges": _connected_source_ranges(subnet, subnet_by_name),
-                "ip_assignments": _assign_instance_ips(subnet_cidr, instances),
+                "ip_assignments": _assign_instance_ips(subnet_cidr, instances) if subnet_cidr else {},
                 "instances": instances,
             }
         )
@@ -336,7 +346,9 @@ def _build_instance_plans(
                     "subnet_name": subnet_plan["name"],
                     "subnet_resource_name": subnet_plan["resource_name"],
                     "subnetwork_link": subnet_plan["self_link"],
-                    "private_ip": subnet_plan["ip_assignments"][key],
+                    # Destroy (no CIDR, empty ip_assignments) deletes by resource
+                    # name and needs no private IP; provision always has the key.
+                    "private_ip": subnet_plan["ip_assignments"].get(key, ""),
                     "role": role,
                     "os_type": os_type,
                     "asset_type": "gce_vm",
@@ -438,6 +450,7 @@ def render_range_cell_plan(
         config=resolved_config,
         network_name=network_name,
         network_link=network_link,
+        require_images=require_images,
     )
     instance_plans = _build_instance_plans(
         variables=variables,

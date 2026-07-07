@@ -975,16 +975,25 @@ jobs:
           rm -f "$PARAMS_FILE"
 
           echo "Migration SSM Command ID: $COMMAND_ID"
-          aws ssm wait command-executed \
-            --command-id "$COMMAND_ID" \
-            --instance-id "$MIGRATION_INSTANCE_ID" \
-            --cli-read-timeout 30 \
-            --cli-connect-timeout 30
+          # `aws ssm wait command-executed` is a fixed ~100s waiter (20x5s);
+          # --cli-*-timeout are per-HTTP-call, not the total wait. The migrate
+          # command docker-pulls the new image first, which on a cold instance
+          # exceeds 100s, so the waiter times out even though the command has a
+          # 900s budget and succeeds. Poll to the command budget instead (#1410).
+          STATUS="Pending"
+          for _ in $(seq 1 60); do
+            STATUS=$(aws ssm get-command-invocation \
+              --command-id "$COMMAND_ID" --instance-id "$MIGRATION_INSTANCE_ID" \
+              --query "Status" --output text 2>/dev/null || echo "Pending")
+            case "$STATUS" in
+              Success|Failed|Cancelled|TimedOut|TimeoutExceeded) break ;;
+            esac
+            sleep 15
+          done
 
-          STATUS=$(aws ssm get-command-invocation --command-id "$COMMAND_ID" --instance-id "$MIGRATION_INSTANCE_ID" --query "Status" --output text)
           if [ "$STATUS" != "Success" ]; then
-            echo "Migration failed!"
-            aws ssm get-command-invocation --command-id "$COMMAND_ID" --instance-id "$MIGRATION_INSTANCE_ID" --query "StandardErrorContent" --output text
+            echo "Migration failed (status=$STATUS)!"
+            aws ssm get-command-invocation --command-id "$COMMAND_ID" --instance-id "$MIGRATION_INSTANCE_ID" --query "StandardErrorContent" --output text || true
             exit 1
           fi
           echo "Database migration completed successfully."
@@ -1169,6 +1178,18 @@ jobs:
           python3 "${GITHUB_WORKSPACE}/scripts/portal_deploy/portal_deploy.py" verify-asg-image \
             --asg-name "$ASG_NAME" \
             --image-digest "$IMAGE_DIGEST"
+
+      - name: Verify ASG worker health
+        if: steps.config.outputs.enable_autoscaling == 'true'
+        env:
+          ASG_NAME: ${{ steps.asg.outputs.asg_name }}
+        # Gate the deploy on worker/scheduler container health: the image-digest
+        # and ALB /health/ checks only cover the portal web tier, so crash-looping
+        # workers would otherwise ship green (#1398). Retries internally to
+        # tolerate the health-start-period and a single transient restart.
+        run: |
+          python3 "${GITHUB_WORKSPACE}/scripts/portal_deploy/portal_deploy.py" verify-asg-workers \
+            --asg-name "$ASG_NAME"
 
   verify:
     permissions:

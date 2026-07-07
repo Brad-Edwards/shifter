@@ -10,6 +10,7 @@ from __future__ import annotations
 import io
 from datetime import timedelta
 from unittest.mock import MagicMock, patch
+from urllib.parse import urlparse
 from uuid import uuid4
 
 import pytest
@@ -321,7 +322,7 @@ class TestGetDownloadUrl:
             actor_id=challenge.event.created_by_id,
         )
         url, filename = get_download_url(cf.id)
-        assert "amazonaws.com" in url
+        assert urlparse(url).netloc.endswith(".amazonaws.com")
         assert filename == "download_me.pcap"
 
     def test_nonexistent_file_raises(self, db, mock_s3):

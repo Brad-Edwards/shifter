@@ -5,7 +5,7 @@ Status: pre-implementation guidance
 Date: 2026-06-30
 
 Issue: GitHub #564, "Architecture review: promote Python type checking from
-advisory signal to enforceable quality gate".
+advisory signal to enforceable quality gate."
 
 This issue is requirement-free. The GitHub issue title, body, and acceptance
 criteria are the shipping contract. This note is intentionally not an

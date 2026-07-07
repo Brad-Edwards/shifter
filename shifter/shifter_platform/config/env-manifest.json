@@ -3,6 +3,21 @@
   "schema_version": 1,
   "variables": [
     {
+      "default": "'500'",
+      "name": "ACES_OPERATION_RECORD_PRUNE_BATCH_SIZE",
+      "source_file": "config/_aces_settings.py"
+    },
+    {
+      "default": "'3600'",
+      "name": "ACES_OPERATION_RECORD_PRUNE_INTERVAL_SECONDS",
+      "source_file": "config/_aces_settings.py"
+    },
+    {
+      "default": "'30'",
+      "name": "ACES_OPERATION_RECORD_RETENTION_DAYS",
+      "source_file": "config/_aces_settings.py"
+    },
+    {
       "default": "300",
       "name": "API_TOKEN_LAST_USED_COALESCE_SECONDS",
       "source_file": "config/_api_token_settings.py"

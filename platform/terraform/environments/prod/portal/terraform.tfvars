@@ -133,6 +133,7 @@ enable_redis = true
 redis_node_type          = "cache.t3.medium"
 redis_engine_version     = "7.1"
 redis_enable_replication = true
+redis_apply_immediately  = false
 
 # ------------------------------------------------------------------------------
 # Logging

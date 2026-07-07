@@ -80,3 +80,42 @@ variable "polaris_stack_key" {
   description = "GCS object key for the Polaris compose stack tarball (see polaris_stack_bucket)."
   default     = "polaris/stack/polaris-stack.tar.gz"
 }
+
+# --- Pre-promoted DC (dc-prebaked) --------------------------------------------
+# The dc-prebaked template bakes an already-promoted domain controller so ranges
+# boot without a per-range ~15-20 min promotion (time-to-serve). One template
+# bakes many DC images: pick a profile var-file in dc-profiles/ (or override
+# these). Defaults reproduce the Polaris BOREAS.LOCAL image.
+
+variable "dc_image_purpose" {
+  type        = string
+  description = <<-DESC
+    Purpose slug for a pre-promoted DC image, used in the image name and family
+    (<image_prefix>-<purpose>-dc). Each purpose is a distinct, reusable pre-baked
+    DC (e.g. "polaris" -> shifter-polaris-dc).
+  DESC
+  default     = "polaris"
+}
+
+variable "dc_domain_name" {
+  type        = string
+  description = "AD forest domain to promote at bake time (e.g. boreas.local)."
+  default     = "boreas.local"
+}
+
+variable "dc_netbios_name" {
+  type        = string
+  description = "AD forest NetBIOS name to promote at bake time (e.g. BOREAS)."
+  default     = "BOREAS"
+}
+
+variable "dc_content_script" {
+  type        = string
+  description = <<-DESC
+    Path (relative to shifter/packer/gcp) to the AD-content seed script staged
+    into the image and run post-promotion by finalize.ps1. It creates the
+    scenario's OUs/users/groups/SPNs and sets the CTF Administrator password.
+    Accepts a -DnsForwarder parameter. Defaults to the Polaris a2_setup.ps1.
+  DESC
+  default     = "../../../scripts/polaris-aws-range/a2_setup.ps1"
+}

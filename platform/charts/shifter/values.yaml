@@ -20,10 +20,12 @@ serviceAccounts:
 
 runtimeEnv: {}
 
+# The guacamole-runtime Kubernetes Secret is created out of band by the deploy
+# bootstrap (kubectl apply from the provider secret store), not by this chart.
+# The chart references it by name only; Guacamole DB and JSON-auth values must
+# never be placed in chart values or Helm release history. See issue #1180.
 guacamoleRuntimeSecret:
-  enabled: true
   name: guacamole-runtime
-  stringData: {}
 
 images:
   portal:
@@ -97,6 +99,17 @@ workers:
         memory: 512Mi
         ephemeral-storage: 256Mi
   guacamolePrune:
+    replicas: 1
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+        ephemeral-storage: 128Mi
+      limits:
+        cpu: 250m
+        memory: 256Mi
+        ephemeral-storage: 256Mi
+  acesOperationRecordPrune:
     replicas: 1
     resources:
       requests:

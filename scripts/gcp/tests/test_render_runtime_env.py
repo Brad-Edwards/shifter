@@ -184,6 +184,10 @@ def test_render_env_emits_production_security_profile():
     # Other rendered keys.
     assert "TF_STATE_BUCKET=shifter-gcp-dev-terraform-state\n" in rendered
     assert "IDENTITY_PLATFORM_API_KEY=identity-platform-api-key\n" in rendered
+    # Real deploy project (from the Identity Platform project) so google clients
+    # bill the correct quota/consumer project, not the overlay placeholder.
+    assert "GCP_PROJECT_ID=shifter-gcp-dev\n" in rendered
+    assert "GOOGLE_CLOUD_PROJECT=shifter-gcp-dev\n" in rendered
     assert "IDENTITY_PLATFORM_PROJECT_ID=shifter-gcp-dev\n" in rendered
     assert "IDENTITY_PLATFORM_AUTH_DOMAIN=shifter-gcp-dev.firebaseapp.com\n" in rendered
     assert "GDC_ACCESS_SECRET_ID=projects/shifter-gcp-dev/secrets/shifter-gcp-dev-gdc-access\n" in rendered
@@ -191,7 +195,10 @@ def test_render_env_emits_production_security_profile():
     assert "RANGE_NETWORK_CIDR=10.50.0.0/16\n" in rendered
     assert "RANGE_NETWORK_REGION=us-central1\n" in rendered
     assert "PORTAL_NETWORK_CIDRS=10.40.0.0/20,10.44.0.0/16\n" in rendered
-    assert "GCP_RANGE_BACKEND=gdc\n" in rendered
+    assert "GCP_RANGE_BACKEND=gce\n" in rendered
+    # Range project derived from the range VPC self-link (real range project),
+    # independent of the control-plane GCP_PROJECT_ID placeholder.
+    assert "GCP_RANGE_CELL_PROJECT_ID=shifter-gcp-dev\n" in rendered
     assert "GDC_RANGE_NAMESPACE_PREFIX=range\n" in rendered
     assert "GDC_STATIC_IP_RESERVATION_COUNT=4\n" in rendered
     assert "RANGE_VPC_ID=projects/shifter-gcp-dev/global/networks/shifter-gcp-dev-range\n" in rendered
@@ -235,6 +242,24 @@ def test_render_env_forwards_gce_range_cell_contract(monkeypatch):
     assert "GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL=range-host@example.iam.gserviceaccount.com\n" in rendered
     assert "GCP_RANGE_LINUX_IMAGE=projects/debian-cloud/global/images/family/debian-12\n" in rendered
     assert "GCP_RANGE_EGRESS_ALLOW_CIDRS=10.60.0.0/16\n" in rendered
+
+
+def test_render_env_still_supports_gdc_backend_override(monkeypatch):
+    module = _load_module("render_runtime_env.py", "render_runtime_env")
+    monkeypatch.setenv("GCP_RANGE_BACKEND", "gdc")
+
+    rendered = module.render_env(_outputs(), image_tag=PINNED_IMAGE_TAG)
+
+    assert "GCP_RANGE_BACKEND=gdc\n" in rendered
+
+
+def test_render_env_cell_project_id_env_override_wins(monkeypatch):
+    module = _load_module("render_runtime_env.py", "render_runtime_env")
+    monkeypatch.setenv("GCP_RANGE_CELL_PROJECT_ID", "prod-real-project")
+
+    rendered = module.render_env(_outputs(), image_tag=PINNED_IMAGE_TAG)
+
+    assert "GCP_RANGE_CELL_PROJECT_ID=prod-real-project\n" in rendered
 
 
 def test_main_writes_rendered_runtime_env(tmp_path, monkeypatch):
