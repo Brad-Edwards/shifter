@@ -8,7 +8,7 @@ parallel to the AWS AMI flow.
 > flow described here works for the Linux guests (Kali, Ubuntu), whose images
 > are hypervisor-portable. A GCE-built **Windows** image does **not** boot on
 > GDC VM Runtime (firmware, drivers, and network differ). Windows/DC images are
-> instead installed natively on GDC from an ISO — see
+> instead installed natively on GDC from an ISO—see
 > [gdc-windows-dc-image-build.md](./gdc-windows-dc-image-build.md).
 
 ## The two platforms, side by side
@@ -24,7 +24,7 @@ parallel to the AWS AMI flow.
 
 The key GCP-specific wrinkle: a GCE image family is **not** something the GDC VM
 Runtime can boot from directly. The VM Runtime imports a disk from a source URL
-(`gs://`, `https://`, or a container registry — see
+(`gs://`, `https://`, or a container registry—see
 `_resolve_image_source`), so each built GCE image is **exported to GCS as a
 qcow2** and the range provisioner references that `gs://` disk through
 `GDC_<TYPE>_IMAGE_URL`.
@@ -42,26 +42,26 @@ range provisioner → VirtualMachineDisk { source.gcs.url = GDC_<TYPE>_IMAGE_URL
 GDC VM Runtime imports the disk (auth: GDC_VM_IMAGE_GCS_SECRET_ID) and boots the guest
 ```
 
-1. **Build** — `packer-gcp.yml` builds one guest type on a GCE builder VM and
+1. **Build**—`packer-gcp.yml` builds one guest type on a GCE builder VM and
    publishes it into image family `shifter-<type>`. Builders run internal-IP
    only (reached over IAP) so they comply with the project's
    `compute.vmExternalIpAccess` org policy. See `shifter/packer/gcp/README.md`.
-2. **Export** — the same workflow exports the built image to the GDC VM image
+2. **Export**—the same workflow exports the built image to the GDC VM image
    bucket as `<type>.qcow2` (`gcloud compute images export`, a Cloud Build job
    pinned to the builder subnet). Both the Cloud Build identity
    (`--cloudbuild-service-account`) and the daisy worker VM
-   (`--compute-service-account`) are pinned to the `…-packer` build SA — this
+   (`--compute-service-account`) are pinned to the `…-packer` build SA—this
    project's builds otherwise default to the Compute Engine default SA, which
    the build SA cannot `actAs`. The build SA therefore holds `compute.admin`
    plus `serviceAccountTokenCreator`/`serviceAccountUser` on itself (the export
    mints an access token for, and runs the worker as, that same SA). The bucket
    is read-granted to the bare-metal GCR identity the VM Runtime authenticates
    as.
-3. **Wire** — set `GDC_<TYPE>_IMAGE_URL=gs://<bucket>/<type>.qcow2` in the
+3. **Wire**—set `GDC_<TYPE>_IMAGE_URL=gs://<bucket>/<type>.qcow2` in the
    bootstrap runtime contract (`scripts/bootstrap/deploy.py`) / the live
    `platform-runtime` ConfigMap. Sizing (`GDC_<TYPE>_VCPUS` / `MEMORY` /
    `DISK_SIZE_GIB`) is configured separately and already has defaults.
-4. **Boot** — the range provisioner builds a `VirtualMachineDisk` whose
+4. **Boot**—the range provisioner builds a `VirtualMachineDisk` whose
    `source.gcs.url` is the wired URL; the VM Runtime imports it using the
    `GDC_VM_IMAGE_GCS_SECRET_ID` secret and boots the guest.
 
@@ -88,8 +88,8 @@ Configure these once (`docs/dev/deploy-secrets.md`):
 
 GCP has no first-party Kali image (the only Marketplace listings are third-party
 repackages, not an Offensive-Security-published image; AWS keys off the official
-Kali Marketplace product, which has no GCP equivalent). The obvious workaround —
-importing Kali's official generic-cloud disk — does **not** work on GCE: that
+Kali Marketplace product, which has no GCP equivalent). The obvious workaround—
+importing Kali's official generic-cloud disk—does **not** work on GCE: that
 disk ships no Google guest environment, so it never gets metadata-based SSH-key
 injection or GCE network setup and packer can never connect to it.
 

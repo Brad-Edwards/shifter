@@ -14,6 +14,7 @@ from shared.cloud import PROVISIONER_CONTAINER_NAME
 from shared.cloud.exceptions import CloudTaskError
 from shared.cloud.gcp.base import build_job_generate_name, parse_job_task_id
 from shared.cloud.sensitive_env import split_env
+from shared.log_sanitize import safe_log_fingerprint
 
 __all__ = ("PROVISIONER_CONTAINER_NAME", "GCPTaskRunner")
 
@@ -480,8 +481,8 @@ class GCPTaskRunner:
             core_api.delete_namespaced_secret(name=secret_name, namespace=namespace)
         except Exception:
             logger.warning(
-                "run_task: failed to clean up orphan secret=%s namespace=%s",
-                secret_name,
+                "run_task: failed to clean up orphan secret_fp=%s namespace=%s",
+                safe_log_fingerprint(secret_name),
                 namespace,
                 exc_info=True,
             )
@@ -553,9 +554,9 @@ class GCPTaskRunner:
         caller's exception (raised after we return) carries the
         original cause."""
         logger.warning(
-            "run_task: unwinding run for job=%s secret=%s namespace=%s reason=%s",
+            "run_task: unwinding run for job=%s secret_fp=%s namespace=%s reason=%s",
             job_name,
-            secret_name,
+            safe_log_fingerprint(secret_name),
             namespace,
             detail,
         )
@@ -572,8 +573,8 @@ class GCPTaskRunner:
             core_api.delete_namespaced_secret(name=secret_name, namespace=namespace)
         except Exception:
             logger.warning(
-                "run_task: failed to delete Secret during unwind secret=%s namespace=%s",
-                secret_name,
+                "run_task: failed to delete Secret during unwind secret_fp=%s namespace=%s",
+                safe_log_fingerprint(secret_name),
                 namespace,
                 exc_info=True,
             )

@@ -1,7 +1,7 @@
 # ACES Backend Manifest Publication Preflight
 
 Issue: GitHub #1261, "ACES migration: publish Shifter provisioning-only
-backend manifest".
+backend manifest."
 
 Status: pre-implementation architecture guidance. This note does not implement
 the manifest, adapter, conformance runner, profile tooling, or live validation.

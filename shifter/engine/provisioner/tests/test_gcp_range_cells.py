@@ -162,7 +162,7 @@ def test_apply_mints_per_range_vertex_key_when_configured(mocker):
         vertex_ops=vertex_ops,
     )
 
-    vertex_mocks.ensure.assert_called_once_with(42, "range-vertex@test-project.iam.gserviceaccount.com")
+    vertex_mocks.ensure.assert_called_once_with(42, "range-vertex@test-project.iam.gserviceaccount.com", "test-project")
 
 
 def test_apply_skips_vertex_key_when_not_configured(mocker):
@@ -196,7 +196,7 @@ def test_destroy_deletes_per_range_vertex_key(mocker):
         vertex_ops=vertex_ops,
     )
 
-    vertex_mocks.delete.assert_called_once_with(42)
+    vertex_mocks.delete.assert_called_once_with(42, "test-project")
 
 
 def test_render_range_cell_plan_uses_vpc_per_range_and_deterministic_ips():
@@ -215,6 +215,35 @@ def test_render_range_cell_plan_uses_vpc_per_range_and_deterministic_ips():
         "shifter-r-42-egress-internal",
         "shifter-r-42-egress-deny",
     }
+
+
+def test_render_plan_destroy_tolerates_missing_subnet_cidr():
+    # Auto-cleanup after a provision that failed before CIDR allocation renders
+    # the destroy plan with require_images=False; the subnet is deleted by
+    # resource name, so an empty CIDR must not raise.
+    variables = _variables()
+    variables["subnets"][0]["cidr"] = ""
+    plan = render_range_cell_plan("req-123", variables, _sample_config(), require_images=False)
+    subnet = plan["subnets"][0]
+    assert subnet["cidr"] == ""
+    assert subnet["ip_assignments"] == {}
+    assert subnet["resource_name"]
+
+
+def test_render_plan_provision_requires_subnet_cidr():
+    variables = _variables()
+    variables["subnets"][0]["cidr"] = ""
+    with pytest.raises(RuntimeError, match="requires a cidr"):
+        render_range_cell_plan("req-123", variables, _sample_config())
+
+
+def test_render_plan_requires_subnet_name_and_uuid():
+    # name/uuid identify the subnet for both provision and destroy, so they are
+    # required in either mode.
+    variables = _variables()
+    variables["subnets"][0]["uuid"] = ""
+    with pytest.raises(RuntimeError, match="requires name and uuid"):
+        render_range_cell_plan("req-123", variables, _sample_config(), require_images=False)
 
 
 def test_render_plan_translates_polaris_vm_to_docker_host_access():

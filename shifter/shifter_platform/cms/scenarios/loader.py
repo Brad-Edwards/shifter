@@ -15,6 +15,7 @@ import yaml
 from pydantic import TypeAdapter
 
 from cms.scenarios.schema import AnyScenarioTemplate, ScenarioTemplate
+from shared.log_sanitize import safe_log_value
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +61,7 @@ def load_scenario(scenario_id: str) -> AnyScenarioTemplate:
         ValueError: If scenario not found or template is invalid
     """
     scenario_id = _validate_scenario_id(scenario_id)
-    logger.debug("load_scenario: scenario_id=%s", scenario_id)
+    logger.debug("load_scenario: scenario_id=%s", safe_log_value(scenario_id))
 
     # Resolve the candidate path and confirm it stays inside TEMPLATES_DIR.
     # The slug validation already rejects traversal; this containment check is
@@ -71,13 +72,13 @@ def load_scenario(scenario_id: str) -> AnyScenarioTemplate:
         raise ValueError("Invalid scenario id")
 
     if not template_path.exists():
-        logger.warning("load_scenario: not found scenario_id=%s", scenario_id)
+        logger.warning("load_scenario: not found scenario_id=%s", safe_log_value(scenario_id))
         raise ValueError(f"Scenario '{scenario_id}' not found")
 
     with open(template_path) as f:
         data = yaml.safe_load(f)
 
-    logger.debug("load_scenario: loaded scenario_id=%s", scenario_id)
+    logger.debug("load_scenario: loaded scenario_id=%s", safe_log_value(scenario_id))
     return _SCENARIO_ADAPTER.validate_python(_normalize_scenario_payload(data))
 
 

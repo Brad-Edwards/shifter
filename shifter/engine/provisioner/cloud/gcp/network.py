@@ -16,6 +16,22 @@ _MANAGED_BY_LABEL = "shifter-provisioner"
 InventoryItem = dict[str, object]
 
 
+def _project_from_network_id(network_id: str) -> str:
+    """Extract the project from a ``projects/<project>/global/networks/<name>`` self-link.
+
+    Range subnetworks live in the range VPC's project, which the network self-link
+    carries directly. Prefer it over the control-plane ``get_project_id()`` so the
+    inventory read targets the real range project even when the control-plane
+    ``GCP_PROJECT_ID`` is a deploy-overlay placeholder.
+    """
+    parts = str(network_id or "").split("/")
+    if "projects" in parts:
+        index = parts.index("projects")
+        if index + 1 < len(parts) and parts[index + 1]:
+            return parts[index + 1]
+    return ""
+
+
 class _SubnetworksClient(Protocol):
     """Subset of the Compute subnetworks client used by inventory."""
 
@@ -43,7 +59,9 @@ class GCPNetworkInventory:
 
     def _list_gce_range_subnet_cidrs(self, network_id: str) -> list[str]:
         """List managed Compute Engine subnet CIDRs for GCE range cells."""
-        project_id = get_project_id()
+        # Range subnetworks live in the range VPC's project (from the network
+        # self-link), not necessarily the control-plane project.
+        project_id = _project_from_network_id(network_id) or get_project_id()
         region = get_region()
         if not project_id or not region:
             raise CloudNetworkInventoryError("GCE network inventory requires GCP project and region")

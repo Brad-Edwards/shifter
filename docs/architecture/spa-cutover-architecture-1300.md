@@ -42,21 +42,21 @@ here so they can be confirmed or changed at review rather than discovered later.
 1. **Stack: React 18 + TypeScript + Vite.** Confirmed direction.
 2. **Deployment: build the bundle at container-image build time**, emit hashed
    assets into Django's static tree, serve via the existing WhiteNoise manifest
-   storage. No committed build output. (Section "Build and deploy integration".)
+   storage. No committed build output. (Section "Build and deploy integration.")
 3. **Route ownership: one SPA host, progressive path takeover.** A single
    Django view serves the SPA shell for SPA-owned path prefixes; unmigrated
    modules keep their existing Django template routes untouched. (Section
-   "App shell, routing, and legacy compatibility".)
+   "App shell, routing, and legacy compatibility.")
 4. **Browser auth stays session-cookie + CSRF header.** API tokens remain for
    programmatic clients only and are never put in the browser. (Section
-   "Auth, session, CSRF".)
+   "Auth, session, CSRF.")
 5. **Bootstrap endpoint is a new backend gap.** The SPA needs a JSON
    `/api/v1/` session/bootstrap endpoint to replace today's Django context
    processors. (Sections "Authenticated bootstrap state" and "Backend API
    gaps".)
 6. **Migration order: Risk Register, then Mission Control, then CTF, then
    Scenario Editor, then Docs.** Ordered by DRF maturity and blast radius.
-   (Section "Module migration order".)
+   (Section "Module migration order.")
 
 ## Frontend stack choice
 

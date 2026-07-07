@@ -5,7 +5,7 @@ Status: pre-implementation guidance
 Date: 2026-07-04
 
 Issue: GitHub #296, "Add TypedDict schemas for SQS/channel layer event
-contracts".
+contracts."
 
 This issue is requirement-free. The GitHub issue title, body, and acceptance
 criteria are the shipping contract. This note is intentionally not an
