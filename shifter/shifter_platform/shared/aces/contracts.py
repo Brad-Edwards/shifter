@@ -31,3 +31,15 @@ OPERATION_RECORD_KIND_TO_CONTRACT_VERSIONS = {
     "runtime_snapshot": frozenset({"runtime-snapshot-v1"}),
     "execution_plan_ref": frozenset({"execution-plan-ref-v1"}),
 }
+
+# Participant-runtime sidecar record kinds (#1288). See
+# ``shared.schemas.aces_participant_runtime`` for validation and
+# ``shared.aces.participant_runtime`` for persistence.
+PARTICIPANT_RECORD_KIND_TO_CONTRACT_VERSIONS = {
+    "participant_implementation": frozenset({"participant-implementation-v1"}),
+    "participant_runtime": frozenset({"participant-runtime-v1"}),
+}
+
+#: Participant-runtime profiles Shifter supports as a sidecar-writing backend.
+#: A single value today; the extensibility seam is a new frozenset member.
+SHIFTER_SUPPORTED_PARTICIPANT_RUNTIME_PROFILES = frozenset({"shifter-provisioning"})

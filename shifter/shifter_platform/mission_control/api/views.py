@@ -7,6 +7,10 @@ from mission_control.api.aces import (
     AcesOperationStatusListView,
     AcesRuntimeSnapshotListView,
 )
+from mission_control.api.aces_participant import (
+    AcesParticipantImplementationListView,
+    AcesParticipantRuntimeListView,
+)
 from mission_control.api.guacamole import (
     GuacamoleBootstrapOpenView,
     GuacamoleBootstrapStatusView,
@@ -62,6 +66,8 @@ api_credential_delete = CredentialDeleteView.as_view()
 __all__ = (
     "AcesOperationReceiptListView",
     "AcesOperationStatusListView",
+    "AcesParticipantImplementationListView",
+    "AcesParticipantRuntimeListView",
     "AcesRuntimeSnapshotListView",
     "AgentListView",
     "CancelRangeView",
