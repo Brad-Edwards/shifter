@@ -415,3 +415,71 @@ class PostDeployVerificationTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PortalDeployWorkerHealthTests(unittest.TestCase):
+    _DIGEST = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+    def test_passes_when_all_workers_healthy(self) -> None:
+        runner = FakeRunner()
+        runner.queue("i-1\n")  # in-service instances
+        runner.queue("cmd\n")  # send-command
+        runner.queue("")  # wait
+        runner.queue("Success\n")  # status
+
+        checked = portal_deploy.verify_asg_worker_health(
+            asg_name="dev-portal-asg-abc123",
+            runner=runner,
+            sleep=FakeSleep(),
+        )
+
+        self.assertEqual(checked, ["i-1"])
+        # The check script targets the worker/scheduler containers.
+        send = runner.calls[1]
+        self.assertIn("send-command", send)
+        joined = " ".join(send)
+        self.assertIn("worker-outbox-drainer", joined)
+        self.assertIn("worker-reconciler", joined)
+
+    def test_retries_transient_non_success(self) -> None:
+        runner = FakeRunner()
+        runner.queue("i-1\n")
+        runner.queue("cmd-1\n")
+        runner.queue("")
+        runner.queue("Failed\n")  # attempt 1 -> retry (e.g. still starting)
+        runner.queue("cmd-2\n")
+        runner.queue("")
+        runner.queue("Success\n")  # attempt 2 -> ok
+        sleep = FakeSleep()
+
+        checked = portal_deploy.verify_asg_worker_health(
+            asg_name="dev-portal-asg-abc123",
+            runner=runner,
+            sleep=sleep,
+        )
+
+        self.assertEqual(checked, ["i-1"])
+        self.assertEqual(len(sleep.calls), 1)
+
+    def test_fails_after_exhausting_retries_on_crash_loop(self) -> None:
+        runner = FakeRunner()
+        runner.queue("i-1\n")
+        for _ in range(2):
+            runner.queue("cmd\n")
+            runner.queue("")
+            runner.queue("Failed\n")
+        sleep = FakeSleep()
+
+        with self.assertRaisesRegex(portal_deploy.PortalDeployError, "after 2 attempts"):
+            portal_deploy.verify_asg_worker_health(
+                asg_name="dev-portal-asg-abc123",
+                runner=runner,
+                max_attempts=2,
+                sleep=sleep,
+            )
+
+        self.assertEqual(len(sleep.calls), 1)
+
+    def test_rejects_empty_asg(self) -> None:
+        with self.assertRaisesRegex(portal_deploy.PortalDeployError, "non-empty ASG name"):
+            portal_deploy.verify_asg_worker_health(asg_name="", runner=FakeRunner())

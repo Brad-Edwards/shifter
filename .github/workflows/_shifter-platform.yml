@@ -1170,6 +1170,18 @@ jobs:
             --asg-name "$ASG_NAME" \
             --image-digest "$IMAGE_DIGEST"
 
+      - name: Verify ASG worker health
+        if: steps.config.outputs.enable_autoscaling == 'true'
+        env:
+          ASG_NAME: ${{ steps.asg.outputs.asg_name }}
+        # Gate the deploy on worker/scheduler container health: the image-digest
+        # and ALB /health/ checks only cover the portal web tier, so crash-looping
+        # workers would otherwise ship green (#1398). Retries internally to
+        # tolerate the health-start-period and a single transient restart.
+        run: |
+          python3 "${GITHUB_WORKSPACE}/scripts/portal_deploy/portal_deploy.py" verify-asg-workers \
+            --asg-name "$ASG_NAME"
+
   verify:
     permissions:
       id-token: write
