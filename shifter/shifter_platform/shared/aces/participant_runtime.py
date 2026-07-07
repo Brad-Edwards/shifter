@@ -143,7 +143,6 @@ def persist_participant_implementation_record(
     source_timestamp: datetime,
     payload: dict[str, Any],
     diagnostic_refs: dict[str, Any] | None = None,
-    contract_version: str = PARTICIPANT_IMPLEMENTATION_CONTRACT_VERSION,
     owner: str = AcesParticipantRuntimeRecord.Owner.PROVISIONER,
 ) -> AcesParticipantRuntimeRecord:
     """Persist one ``participant_implementation`` sidecar record idempotently.
@@ -153,14 +152,16 @@ def persist_participant_implementation_record(
     not touch the ``AcesParticipantRuntimeRecord`` model. The idempotency key
     is deterministic in the participant and implementation refs, so
     re-delivery of the same declaration is a no-op (or a conflict when the
-    content drifts).
+    content drifts). The contract version is fixed for this record kind
+    (``PARTICIPANT_IMPLEMENTATION_CONTRACT_VERSION``); callers needing a
+    non-default version use ``persist_aces_participant_runtime_record`` directly.
     """
     write = AcesParticipantRuntimeRecordWrite(
         request_id=request_id,
         participant_ref=participant_ref,
         idempotency_key=_bounded_idempotency_key("participant_implementation", participant_ref, implementation_ref),
         record_kind=AcesParticipantRuntimeRecord.RecordKind.PARTICIPANT_IMPLEMENTATION,
-        contract_version=contract_version,
+        contract_version=PARTICIPANT_IMPLEMENTATION_CONTRACT_VERSION,
         source_timestamp=source_timestamp,
         payload=payload,
         diagnostic_refs=diagnostic_refs or {},
@@ -176,7 +177,6 @@ def persist_participant_runtime_record(
     source_timestamp: datetime,
     payload: dict[str, Any],
     diagnostic_refs: dict[str, Any] | None = None,
-    contract_version: str = PARTICIPANT_RUNTIME_CONTRACT_VERSION,
     owner: str = AcesParticipantRuntimeRecord.Owner.ENGINE,
 ) -> AcesParticipantRuntimeRecord:
     """Persist one ``participant_runtime`` sidecar record idempotently.
@@ -186,14 +186,16 @@ def persist_participant_runtime_record(
     not touch the ``AcesParticipantRuntimeRecord`` model. The idempotency key
     is deterministic in the participant ref and observation timestamp, so
     re-delivery of the same observation is a no-op (or a conflict when the
-    content drifts).
+    content drifts). The contract version is fixed for this record kind
+    (``PARTICIPANT_RUNTIME_CONTRACT_VERSION``); callers needing a non-default
+    version use ``persist_aces_participant_runtime_record`` directly.
     """
     write = AcesParticipantRuntimeRecordWrite(
         request_id=request_id,
         participant_ref=participant_ref,
         idempotency_key=_bounded_idempotency_key("participant_runtime", participant_ref, source_timestamp.isoformat()),
         record_kind=AcesParticipantRuntimeRecord.RecordKind.PARTICIPANT_RUNTIME,
-        contract_version=contract_version,
+        contract_version=PARTICIPANT_RUNTIME_CONTRACT_VERSION,
         source_timestamp=source_timestamp,
         payload=payload,
         diagnostic_refs=diagnostic_refs or {},
