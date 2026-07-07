@@ -224,7 +224,7 @@ def _ensure_address(plan: RangeCellPlan, clients: GCEClients, instance: Instance
     operation = clients.addresses.insert(
         project=plan["project_id"],
         region=plan["region"],
-        address_resource=address_resource(plan, instance),
+        address_resource=address_resource(instance),
     )
     _wait_for_operation(plan, clients, operation, "region")
 
