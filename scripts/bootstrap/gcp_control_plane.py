@@ -599,11 +599,10 @@ def render_gcp_helm_values(
         "releaseNamespace": "shifter-system",
         "serviceAccounts": _helm_service_account_values(service_accounts),
         "runtimeEnv": runtime_env,
-        "guacamoleRuntimeSecret": {
-            "enabled": False,
-            "name": _GUACAMOLE_RUNTIME_RESOURCE_NAME,
-            "stringData": {},
-        },
+        # Reference only: the guacamole-runtime Kubernetes Secret is synced out
+        # of band from Secret Manager (see sync_gcp_guacamole_runtime_secret).
+        # Secret values must never enter Helm values or release history (#1180).
+        "guacamoleRuntimeSecret": {"name": _GUACAMOLE_RUNTIME_RESOURCE_NAME},
         "images": _helm_image_values(image_roots, pinned_image_tag),
         "ingress": _helm_ingress_values(
             outputs,
