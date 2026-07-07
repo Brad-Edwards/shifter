@@ -329,6 +329,46 @@ def _subnet_outputs(plan: RangeCellPlan) -> dict[str, ResourceDict]:
     }
 
 
+def _provision_range_resources(
+    plan: RangeCellPlan,
+    clients: GCEClients,
+    config: GCERangeCellConfig,
+    secret_ops: GCEGuestSecretOps,
+    vertex_ops: GCEVertexCredentialOps,
+) -> list[ResourceDict]:
+    """Create the network, subnets, firewalls, instances, and per-range creds.
+
+    The range VPC is created only when the range owns it (vpc-per-range); in
+    shared-vpc mode the pre-existing platform-peered VPC is reused and only the
+    per-range subnets/firewalls/instances are created here.
+    """
+    if config.vertex_service_account_email:
+        vertex_ops.ensure(plan["range_id"], config.vertex_service_account_email, plan["project_id"])
+    if plan["manage_network"]:
+        _ensure_network(plan, clients)
+    for subnet in plan["subnets"]:
+        _ensure_subnetwork(plan, clients, subnet)
+    for firewall in plan["firewalls"]:
+        _ensure_firewall(plan, clients, firewall)
+    instance_outputs: list[ResourceDict] = []
+    for instance in plan["instances"]:
+        _ensure_address(plan, clients, instance)
+        ssh_secret_ref, rdp_password_secret_ref, ssh_public_key = _ensure_instance(
+            plan, clients, config, instance, secret_ops
+        )
+        instance_outputs.append(
+            _instance_output(
+                plan,
+                instance,
+                ssh_secret_ref=ssh_secret_ref,
+                rdp_password_secret_ref=rdp_password_secret_ref,
+                ssh_public_key=ssh_public_key,
+                config=config,
+            )
+        )
+    return instance_outputs
+
+
 def apply_range_cell(
     request_uuid: str,
     variables: ResourceDict,
@@ -345,37 +385,10 @@ def apply_range_cell(
     resolved_secret_ops = secret_ops or _default_secret_ops()
     resolved_vertex_ops = vertex_ops or _default_vertex_ops()
     plan = render_range_cell_plan(request_uuid, variables, resolved_config)
-    instance_outputs: list[ResourceDict] = []
     try:
-        if resolved_config.vertex_service_account_email:
-            resolved_vertex_ops.ensure(
-                plan["range_id"], resolved_config.vertex_service_account_email, plan["project_id"]
-            )
-        if plan["manage_network"]:
-            _ensure_network(plan, resolved_clients)
-        for subnet in plan["subnets"]:
-            _ensure_subnetwork(plan, resolved_clients, subnet)
-        for firewall in plan["firewalls"]:
-            _ensure_firewall(plan, resolved_clients, firewall)
-        for instance in plan["instances"]:
-            _ensure_address(plan, resolved_clients, instance)
-            ssh_secret_ref, rdp_password_secret_ref, ssh_public_key = _ensure_instance(
-                plan,
-                resolved_clients,
-                resolved_config,
-                instance,
-                resolved_secret_ops,
-            )
-            instance_outputs.append(
-                _instance_output(
-                    plan,
-                    instance,
-                    ssh_secret_ref=ssh_secret_ref,
-                    rdp_password_secret_ref=rdp_password_secret_ref,
-                    ssh_public_key=ssh_public_key,
-                    config=resolved_config,
-                )
-            )
+        instance_outputs = _provision_range_resources(
+            plan, resolved_clients, resolved_config, resolved_secret_ops, resolved_vertex_ops
+        )
     except Exception:
         logger.exception("GCE range-cell apply failed; attempting cleanup request_id=%s", request_uuid)
         cleanup = cleanup_range_cell or (
