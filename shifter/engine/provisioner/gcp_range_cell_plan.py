@@ -104,6 +104,10 @@ class RangeCellPlan(TypedDict):
     private_google_access: bool
     labels: dict[str, str]
     network: NetworkPlan
+    # True when the range owns its VPC (vpc-per-range) and apply/destroy must
+    # create/delete it. False in shared-vpc mode, where the VPC is the pre-existing
+    # platform-peered range network and only per-range subnets/firewalls are owned.
+    manage_network: bool
     subnets: list[SubnetPlan]
     instances: list[InstancePlan]
     firewalls: list[FirewallPlan]
@@ -152,6 +156,15 @@ def _short_resource_name(prefix: str, *parts: object, max_length: int = 63) -> s
 def _network_self_link(project_id: str, network_name: str) -> str:
     """Return the relative self-link for a global Compute network."""
     return f"projects/{project_id}/global/networks/{network_name}"
+
+
+def _network_name_from_id(network_id: str) -> str:
+    """Extract the network name from a self-link or partial URL.
+
+    Accepts a full self-link, a partial URL ``projects/<p>/global/networks/<name>``,
+    or a bare name; returns the trailing network name.
+    """
+    return network_id.rstrip("/").rsplit("/", 1)[-1]
 
 
 def _subnetwork_self_link(project_id: str, region: str, subnet_name: str) -> str:
@@ -443,8 +456,16 @@ def render_range_cell_plan(
     """Render the deterministic GCE resources for one range cell."""
     resolved_config = config or load_gce_range_cell_config()
     range_id = int(str(variables["range_id"]))
-    network_name = _short_resource_name("shifter-range", range_id)
-    network_link = _network_self_link(resolved_config.project_id, network_name)
+    if resolved_config.network_mode == "shared-vpc":
+        # Range subnets live in the pre-existing, platform-peered range VPC; the
+        # range never creates or deletes the VPC itself.
+        network_link = resolved_config.network_id
+        network_name = _network_name_from_id(resolved_config.network_id)
+        manage_network = False
+    else:
+        network_name = _short_resource_name("shifter-range", range_id)
+        network_link = _network_self_link(resolved_config.project_id, network_name)
+        manage_network = True
     subnet_plans = _build_subnet_plans(
         variables=variables,
         config=resolved_config,
@@ -470,6 +491,7 @@ def render_range_cell_plan(
             "name": network_name,
             "self_link": network_link,
         },
+        "manage_network": manage_network,
         "subnets": subnet_plans,
         "instances": instance_plans,
         "firewalls": _firewall_plan(range_id, subnet_plans, resolved_config),

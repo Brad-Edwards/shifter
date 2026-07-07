@@ -110,22 +110,28 @@ def _linux_host_key_script(host_private_key_b64: str) -> str:
     )
 
 
-def _windows_boot_script(host_private_key_b64: str) -> str:
+def _windows_boot_script(host_private_key_b64: str, authorized_key: str) -> str:
     """Startup script for a Windows range guest.
 
     Installs the provisioner-issued SSH host key (with the strict ACLs Windows
-    OpenSSH requires, else sshd refuses to start), then forces the Windows
-    Firewall off and (re)starts sshd. The CTF domain controller serves
-    LDAP/Kerberos/SMB firewall-off by design, and a pre-promoted DC can re-enable
-    the firewall after promotion; forcing it off each boot keeps the guest
-    reachable regardless of the captured firewall state.
+    OpenSSH requires, else sshd refuses to start), authorizes the provisioner's
+    public key for admin login (Windows OpenSSH ignores the GCE ``ssh-keys``
+    metadata for members of the Administrators group and reads
+    ``administrators_authorized_keys`` instead), then forces the Windows Firewall
+    off and (re)starts sshd. The CTF domain controller serves LDAP/Kerberos/SMB
+    firewall-off by design, and a pre-promoted DC can re-enable the firewall after
+    promotion; forcing it off each boot keeps the guest reachable regardless of
+    the captured firewall state.
     """
     key_path = "C:\\ProgramData\\ssh\\ssh_host_ed25519_key"
+    admin_keys = "C:\\ProgramData\\ssh\\administrators_authorized_keys"
     keygen = "C:\\Windows\\System32\\OpenSSH\\ssh-keygen.exe"
     return (
         f"[IO.File]::WriteAllBytes('{key_path}', [Convert]::FromBase64String('{host_private_key_b64}'))\n"
         f"icacls '{key_path}' /inheritance:r /grant 'SYSTEM:(F)' /grant 'BUILTIN\\Administrators:(F)' | Out-Null\n"
         f"& '{keygen}' -y -f '{key_path}' | Out-File -Encoding ascii '{key_path}.pub'\n"
+        f"Set-Content -Path '{admin_keys}' -Value '{authorized_key}' -Encoding ascii\n"
+        f"icacls '{admin_keys}' /inheritance:r /grant 'SYSTEM:(F)' /grant 'BUILTIN\\Administrators:(F)' | Out-Null\n"
         "Set-NetFirewallProfile -Profile Domain,Public,Private -Enabled False\n"
         "Set-Service -Name sshd -StartupType Automatic -ErrorAction SilentlyContinue\n"
         "Restart-Service -Name sshd -ErrorAction SilentlyContinue\n"
@@ -147,7 +153,9 @@ def _metadata_items(
     if host_public_key:
         items.append({"key": HOST_PUBLIC_KEY_METADATA_KEY, "value": host_public_key})
     if os_type == "windows":
-        items.append({"key": "windows-startup-script-ps1", "value": _windows_boot_script(host_private_key_b64)})
+        items.append(
+            {"key": "windows-startup-script-ps1", "value": _windows_boot_script(host_private_key_b64, public_key)}
+        )
     elif host_private_key_b64:
         items.append({"key": "startup-script", "value": _linux_host_key_script(host_private_key_b64)})
     return items
