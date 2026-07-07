@@ -295,7 +295,7 @@ def verify_asg_image_digest(
     if not instance_ids:
         raise PortalDeployError(f"No in-service instances found in ASG {asg_name!r}")
 
-    parameters = "commands=" + json.dumps([_image_check_script(image_digest)])
+    parameters = json.dumps({"commands": [_image_check_script(image_digest)]})
 
     # Retry the whole SSM check: right after a refresh a just-in-service host
     # can still be finishing container/SSM-agent startup, so a single attempt
@@ -433,7 +433,7 @@ def verify_asg_worker_health(
     if not instance_ids:
         raise PortalDeployError(f"No in-service instances found in ASG {asg_name!r}")
 
-    parameters = "commands=" + json.dumps([_worker_health_check_script(containers)])
+    parameters = json.dumps({"commands": [_worker_health_check_script(containers)]})
     last_failure = ""
     for attempt in range(1, max_attempts + 1):
         send_command = _run(
@@ -847,7 +847,7 @@ def run_manage_on_portal(
     else:
         raise PortalDeployError("run-manage-on-portal requires instance_id or asg_name")
 
-    parameters = "commands=" + json.dumps([_portal_manage_script(manage_args)])
+    parameters = json.dumps({"commands": [_portal_manage_script(manage_args)]})
     send_command = _run(
         [
             "aws",
