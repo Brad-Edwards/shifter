@@ -436,12 +436,14 @@ def _parse_csv_env(value: str) -> tuple[str, ...]:
 def get_gcp_range_backend() -> str:
     """Return the selected GCP range backend.
 
-    The historical GCP path is GDC VM Runtime, so ``gdc`` remains the default
-    whenever ``CLOUD_PROVIDER=gcp`` and no explicit backend is configured.
+    GCE range cells are the default GCP path, so ``gce`` is assumed whenever
+    ``CLOUD_PROVIDER=gcp`` and no explicit backend is configured. The historical
+    GDC VM Runtime path remains fully supported and is selected explicitly with
+    ``GCP_RANGE_BACKEND=gdc`` (a one-line rollback for any environment).
     """
     if os.environ.get("CLOUD_PROVIDER", "aws") != "gcp":
         return ""
-    backend = os.environ.get("GCP_RANGE_BACKEND") or os.environ.get("GCP_RANGE_PLANE") or "gdc"
+    backend = os.environ.get("GCP_RANGE_BACKEND") or os.environ.get("GCP_RANGE_PLANE") or "gce"
     backend = backend.strip().lower()
     if backend not in {"gdc", "gce"}:
         raise RuntimeError(f"GCP_RANGE_BACKEND must be 'gdc' or 'gce', got {backend!r}")
@@ -828,9 +830,17 @@ def load_gdc_scenario_pod_config() -> GDCScenarioPodConfig:
 
 
 def _resolve_gce_range_required_env() -> tuple[str, str, str, str]:
-    """Resolve required environment for the GCE range-cell backend."""
+    """Resolve required environment for the GCE range-cell backend.
+
+    ``GCP_RANGE_CELL_PROJECT_ID`` takes precedence so range cells can be
+    provisioned into a different project than the control plane's
+    ``GCP_PROJECT_ID`` (and so the range backend is unaffected when the
+    control-plane project is a deploy-overlay placeholder). It falls back to the
+    control-plane project keys, mirroring ``GCP_RANGE_VERTEX_PROJECT_ID``.
+    """
     project_id = (
-        os.environ.get("GCP_PROJECT_ID")
+        os.environ.get("GCP_RANGE_CELL_PROJECT_ID")
+        or os.environ.get("GCP_PROJECT_ID")
         or os.environ.get("GOOGLE_CLOUD_PROJECT")
         or os.environ.get("CLOUD_PROJECT_ID")
         or ""
@@ -854,7 +864,7 @@ def _missing_gce_range_required_env(
     return [
         name
         for name, value in (
-            ("GCP_PROJECT_ID", project_id),
+            ("GCP_RANGE_CELL_PROJECT_ID/GCP_PROJECT_ID", project_id),
             ("RANGE_NETWORK_REGION/GCP_REGION", region),
             ("RANGE_NETWORK_ZONE", zone),
             ("GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL", service_account_email),

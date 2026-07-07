@@ -262,8 +262,14 @@ class TestDataclassDefaults:
 class TestRangeNetworkEnv:
     """Tests for provider-neutral range network env parsing."""
 
-    def test_gcp_range_backend_defaults_to_gdc(self, mocker):
+    def test_gcp_range_backend_defaults_to_gce(self, mocker):
         mocker.patch.dict(os.environ, {"CLOUD_PROVIDER": "gcp"}, clear=True)
+
+        assert get_gcp_range_backend() == "gce"
+        assert is_gce_range_cell_backend() is True
+
+    def test_gcp_range_backend_still_selects_gdc_explicitly(self, mocker):
+        mocker.patch.dict(os.environ, {"CLOUD_PROVIDER": "gcp", "GCP_RANGE_BACKEND": "gdc"}, clear=True)
 
         assert get_gcp_range_backend() == "gdc"
         assert is_gce_range_cell_backend() is False
@@ -370,6 +376,7 @@ class TestRangeNetworkEnv:
             os.environ,
             {
                 "CLOUD_PROVIDER": "gcp",
+                "GCP_RANGE_BACKEND": "gdc",
                 "GDC_ACCESS_SECRET_ID": "projects/test/secrets/shifter-gcp-dev-gdc-access",
                 "PORTAL_NETWORK_CIDRS": "10.40.0.0/20,10.44.0.0/16",
                 "RANGE_NETWORK_ID": "projects/test/global/networks/legacy-range",
@@ -617,6 +624,7 @@ class TestRangeNetworkEnv:
             os.environ,
             {
                 "CLOUD_PROVIDER": "gcp",
+                "GCP_RANGE_BACKEND": "gdc",
                 "GDC_VM_STORAGE_CLASS": "local-shared",
                 "GDC_VM_IMAGE_GCS_SECRET_ID": "projects/test/secrets/shifter-gcp-dev-gdc-vm-image-gcs",
                 "GDC_KALI_IMAGE_URL": "gs://images/kali.qcow2",
@@ -661,6 +669,7 @@ class TestRangeNetworkEnv:
             os.environ,
             {
                 "CLOUD_PROVIDER": "gcp",
+                "GCP_RANGE_BACKEND": "gdc",
                 "GDC_UBUNTU_IMAGE_URL": "https://example.com/ubuntu.img",
             },
             clear=True,
@@ -677,6 +686,7 @@ class TestRangeNetworkEnv:
             os.environ,
             {
                 "CLOUD_PROVIDER": "gcp",
+                "GCP_RANGE_BACKEND": "gdc",
                 "GDC_VMSERIES_IMAGE_URL": "gs://images/panos-vmseries.qcow2",
                 "GDC_VMSERIES_BOOTSTRAP_BUCKET": "shifter-gcp-dev-vmseries-bootstrap",
                 "GDC_VMSERIES_STORAGE_CLASS": "local-shared",
@@ -721,6 +731,7 @@ class TestRangeNetworkEnv:
             os.environ,
             {
                 "CLOUD_PROVIDER": "gcp",
+                "GCP_RANGE_BACKEND": "gdc",
                 "GDC_VMSERIES_IMAGE_URL": "gs://images/panos-vmseries.qcow2",
             },
             clear=True,

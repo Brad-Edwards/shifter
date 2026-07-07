@@ -246,9 +246,13 @@ class TestGdcProjectResolution:
         repo_root.mkdir()
         (repo_root / ".env").write_text("PANW_GCP_DEV=from-dotenv\n")
 
+        # clear=True so an ambient GCP_PROJECT_ID / GOOGLE_CLOUD_PROJECT /
+        # GCLOUD_PROJECT (e.g. an authenticated gcloud config on a dev machine),
+        # which get_default_gdc_project_id() checks ahead of PANW_GCP_DEV, does
+        # not leak in and make this test non-hermetic.
         with (
             patch("deploy.get_repo_root", return_value=repo_root),
-            patch.dict("os.environ", {"PANW_GCP_DEV": "from-env"}, clear=False),
+            patch.dict("os.environ", {"PANW_GCP_DEV": "from-env"}, clear=True),
         ):
             assert deploy.get_default_gdc_project_id() == "from-env"
 

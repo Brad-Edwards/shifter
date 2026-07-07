@@ -217,3 +217,43 @@ class TestReceiptsAndSnapshotsRead:
         request_id = _owned_range(other_user)
         client.force_authenticate(user=user)
         assert client.get(_snapshots_url(request_id)).status_code == 404
+
+
+_CURRENT_RANGE_URL = "/api/v1/mission-control/range/"
+
+
+class TestCurrentRangeAcesProjection:
+    """The canonical current-range read carries an optional ACES projection (#1276)."""
+
+    def test_projection_present_when_records_exist(self, client, user):
+        request_id = _owned_range(user)
+        _seed_record(
+            request_id,
+            record_kind=AcesOperationRecord.RecordKind.OPERATION_STATUS,
+            payload={"operation_id": "op-1", "status": "running", "status_reason": "provisioning"},
+        )
+        client.force_authenticate(user=user)
+        body = client.get(_CURRENT_RANGE_URL).json()
+
+        assert body["has_range"] is True
+        projection = body["aces_projection"]
+        assert projection is not None
+        assert projection["status"] == "running"
+        assert projection["status_label"] == "Operation running"
+        # The Shifter lifecycle status is untouched by the ACES projection.
+        assert body["range"]["status"] == "ready"
+
+    def test_projection_null_for_legacy_range(self, client, user):
+        _owned_range(user)  # no ACES sidecar rows
+        client.force_authenticate(user=user)
+        body = client.get(_CURRENT_RANGE_URL).json()
+
+        assert body["has_range"] is True
+        assert body["aces_projection"] is None
+
+    def test_projection_absent_when_no_range(self, client, user):
+        client.force_authenticate(user=user)
+        body = client.get(_CURRENT_RANGE_URL).json()
+
+        assert body["has_range"] is False
+        assert body["aces_projection"] is None
