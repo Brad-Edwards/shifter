@@ -79,6 +79,15 @@ def _seed_gce_range_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "GCP_RANGE_DC_DISK_SIZE_GB": "80",
         "GCP_RANGE_DC_DISK_TYPE": "pd-ssd",
         "GCP_RANGE_EGRESS_ALLOW_CIDRS": "10.60.0.0/16",
+        "GCP_RANGE_PRIVATE_GOOGLE_ACCESS": "true",
+        "GCP_RANGE_HOST_MGMT_SSH_PORT": "2222",
+        "GCP_RANGE_VERTEX_PROJECT_ID": "shifter-gcp-dev",
+        "GCP_RANGE_VERTEX_REGION": "us-east5",
+        "GCP_RANGE_VERTEX_SERVICE_ACCOUNT_EMAIL": "range-vertex@shifter-gcp-dev.iam.gserviceaccount.com",
+        "GCP_RANGE_KALI_ANTHROPIC_MODEL": "claude-sonnet-4-6",
+        "GCP_RANGE_KALI_ANTHROPIC_SMALL_FAST_MODEL": "claude-haiku-4-5",
+        "POLARIS_TESTS_BUCKET": "shifter-gcp-dev-polaris-tests",
+        "POLARIS_TESTS_KEY": "polaris/tests/polaris-tests.tar.gz",
     }
     for key, value in values.items():
         monkeypatch.setenv(key, value)
@@ -182,7 +191,10 @@ def test_render_env_emits_production_security_profile():
     assert "RANGE_NETWORK_CIDR=10.50.0.0/16\n" in rendered
     assert "RANGE_NETWORK_REGION=us-central1\n" in rendered
     assert "PORTAL_NETWORK_CIDRS=10.40.0.0/20,10.44.0.0/16\n" in rendered
-    assert "GCP_RANGE_BACKEND=gdc\n" in rendered
+    assert "GCP_RANGE_BACKEND=gce\n" in rendered
+    # Range project derived from the range VPC self-link (real range project),
+    # independent of the control-plane GCP_PROJECT_ID placeholder.
+    assert "GCP_RANGE_CELL_PROJECT_ID=shifter-gcp-dev\n" in rendered
     assert "GDC_RANGE_NAMESPACE_PREFIX=range\n" in rendered
     assert "GDC_STATIC_IP_RESERVATION_COUNT=4\n" in rendered
     assert "RANGE_VPC_ID=projects/shifter-gcp-dev/global/networks/shifter-gcp-dev-range\n" in rendered
@@ -226,6 +238,24 @@ def test_render_env_forwards_gce_range_cell_contract(monkeypatch):
     assert "GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL=range-host@example.iam.gserviceaccount.com\n" in rendered
     assert "GCP_RANGE_LINUX_IMAGE=projects/debian-cloud/global/images/family/debian-12\n" in rendered
     assert "GCP_RANGE_EGRESS_ALLOW_CIDRS=10.60.0.0/16\n" in rendered
+
+
+def test_render_env_still_supports_gdc_backend_override(monkeypatch):
+    module = _load_module("render_runtime_env.py", "render_runtime_env")
+    monkeypatch.setenv("GCP_RANGE_BACKEND", "gdc")
+
+    rendered = module.render_env(_outputs(), image_tag=PINNED_IMAGE_TAG)
+
+    assert "GCP_RANGE_BACKEND=gdc\n" in rendered
+
+
+def test_render_env_cell_project_id_env_override_wins(monkeypatch):
+    module = _load_module("render_runtime_env.py", "render_runtime_env")
+    monkeypatch.setenv("GCP_RANGE_CELL_PROJECT_ID", "prod-real-project")
+
+    rendered = module.render_env(_outputs(), image_tag=PINNED_IMAGE_TAG)
+
+    assert "GCP_RANGE_CELL_PROJECT_ID=prod-real-project\n" in rendered
 
 
 def test_main_writes_rendered_runtime_env(tmp_path, monkeypatch):

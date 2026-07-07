@@ -303,6 +303,10 @@ jobs:
           if spec is None or spec.loader is None:
               raise RuntimeError(f"Unable to load bootstrap module from {module_path}")
           module = importlib.util.module_from_spec(spec)
+          # Register in sys.modules before exec_module (importlib docs recipe):
+          # deploy.py runs `_THIS_MODULE = sys.modules[__name__]` at import time,
+          # which KeyErrors when the module is exec'd without being registered.
+          sys.modules[spec.name] = module
           spec.loader.exec_module(module)
 
           outputs = json.loads(Path("/tmp/gcp-terraform-outputs.json").read_text())
@@ -429,6 +433,25 @@ jobs:
           location: ${{ env.GKE_CLUSTER_LOCATION }}
           project_id: ${{ env.PROJECT_ID }}
       - name: Render generated runtime env
+        env:
+          # GCE range-cell backend config (issue #1387). Non-secret; sourced from
+          # repository/environment variables so each account supplies its own
+          # image families, zone, and service accounts. Unset variables fall back
+          # to code defaults (config.py). The range backend defaults to gce; set
+          # variable GCP_RANGE_BACKEND=gdc to roll back to GDC VM Runtime.
+          GCP_RANGE_BACKEND: ${{ vars.GCP_RANGE_BACKEND }}
+          RANGE_NETWORK_ZONE: ${{ vars.RANGE_NETWORK_ZONE }}
+          GCP_RANGE_CELL_PROJECT_ID: ${{ vars.GCP_RANGE_CELL_PROJECT_ID }}
+          GCP_RANGE_LINUX_IMAGE: ${{ vars.GCP_RANGE_LINUX_IMAGE }}
+          GCP_RANGE_KALI_IMAGE: ${{ vars.GCP_RANGE_KALI_IMAGE }}
+          GCP_RANGE_WINDOWS_IMAGE: ${{ vars.GCP_RANGE_WINDOWS_IMAGE }}
+          GCP_RANGE_DC_IMAGE: ${{ vars.GCP_RANGE_DC_IMAGE }}
+          GCP_RANGE_PRIVATE_GOOGLE_ACCESS: ${{ vars.GCP_RANGE_PRIVATE_GOOGLE_ACCESS }}
+          # Host SA and Vertex SA are independent inputs and MAY be the same
+          # service account in accounts that require it.
+          GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL: ${{ vars.GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL }}
+          GCP_RANGE_VERTEX_SERVICE_ACCOUNT_EMAIL: ${{ vars.GCP_RANGE_VERTEX_SERVICE_ACCOUNT_EMAIL }}
+          GCP_RANGE_VERTEX_PROJECT_ID: ${{ vars.GCP_RANGE_VERTEX_PROJECT_ID }}
         run: |
           # The GCP portal runtime is always production-secure (DEBUG off,
           # secure cookies, Identity Platform auth, SITE_URL=https://<hostname>).

@@ -11,6 +11,7 @@ import pytest
 from config import GCERangeCellConfig, GCERangeImageProfile
 from gcp_range_cells import (
     GCEGuestSecretOps,
+    GCEVertexCredentialOps,
     _build_clients,
     apply_range_cell,
     destroy_range_cell,
@@ -126,6 +127,78 @@ def _mock_secret_ops(mocker) -> tuple[GCEGuestSecretOps, SimpleNamespace]:
     )
 
 
+def _mock_vertex_ops(mocker) -> tuple[GCEVertexCredentialOps, SimpleNamespace]:
+    mocks = SimpleNamespace(ensure=mocker.Mock(return_value="projects/test/secrets/vertex"), delete=mocker.Mock())
+    return GCEVertexCredentialOps(ensure=mocks.ensure, delete=mocks.delete), mocks
+
+
+def _vertex_config() -> GCERangeCellConfig:
+    base = _sample_config()
+    return GCERangeCellConfig(
+        project_id=base.project_id,
+        region=base.region,
+        zone=base.zone,
+        network_mode=base.network_mode,
+        service_account_email=base.service_account_email,
+        linux=base.linux,
+        kali=base.kali,
+        dc=base.dc,
+        portal_network_cidrs=base.portal_network_cidrs,
+        vertex_service_account_email="range-vertex@test-project.iam.gserviceaccount.com",
+    )
+
+
+def test_apply_mints_per_range_vertex_key_when_configured(mocker):
+    clients = _mock_clients(exists=True)
+    secret_ops, _ = _mock_secret_ops(mocker)
+    vertex_ops, vertex_mocks = _mock_vertex_ops(mocker)
+
+    apply_range_cell(
+        "req-123",
+        _variables(),
+        config=_vertex_config(),
+        clients=clients,
+        secret_ops=secret_ops,
+        vertex_ops=vertex_ops,
+    )
+
+    vertex_mocks.ensure.assert_called_once_with(42, "range-vertex@test-project.iam.gserviceaccount.com")
+
+
+def test_apply_skips_vertex_key_when_not_configured(mocker):
+    clients = _mock_clients(exists=True)
+    secret_ops, _ = _mock_secret_ops(mocker)
+    vertex_ops, vertex_mocks = _mock_vertex_ops(mocker)
+
+    apply_range_cell(
+        "req-123",
+        _variables(),
+        config=_sample_config(),
+        clients=clients,
+        secret_ops=secret_ops,
+        vertex_ops=vertex_ops,
+    )
+
+    vertex_mocks.ensure.assert_not_called()
+
+
+def test_destroy_deletes_per_range_vertex_key(mocker):
+    clients = _mock_clients(exists=True)
+    secret_ops, _ = _mock_secret_ops(mocker)
+    vertex_ops, vertex_mocks = _mock_vertex_ops(mocker)
+
+    destroy_range_cell(
+        "req-123",
+        _variables(),
+        config=_vertex_config(),
+        clients=clients,
+        secret_ops=secret_ops,
+        vertex_ops=vertex_ops,
+    )
+
+    vertex_mocks.delete.assert_called_once_with(42)
+
+
 def test_render_range_cell_plan_uses_vpc_per_range_and_deterministic_ips():
     plan = render_range_cell_plan("req-123", _variables(), _sample_config())
 
@@ -142,6 +215,123 @@ def test_render_range_cell_plan_uses_vpc_per_range_and_deterministic_ips():
         "shifter-r-42-egress-internal",
         "shifter-r-42-egress-deny",
     }
+
+
+def test_render_plan_translates_polaris_vm_to_docker_host_access():
+    """A polaris-vm Docker host uses the host login user + management sshd port.
+
+    The Kali participant container publishes the host's :22/:3389, so the
+    provisioner must drive the host sshd on the management port as the host
+    login user, not the participant "kali" user.
+    """
+    variables = _variables()
+    kali = variables["subnets"][0]["instances"][0]
+    kali["ami_key"] = "polaris-vm"
+    kali["instance_type"] = "m5.2xlarge"  # AWS shape; must NOT reach GCE.
+
+    config = GCERangeCellConfig(
+        project_id="test-project",
+        region="us-central1",
+        zone="us-central1-b",
+        network_mode="vpc-per-range",
+        service_account_email="range-host@test-project.iam.gserviceaccount.com",
+        kali=GCERangeImageProfile(
+            source_image="projects/shifter/global/images/polaris-vm",
+            machine_type="n2-standard-8",
+            disk_size_gb=200,
+        ),
+        dc=GCERangeImageProfile(
+            source_image="projects/shifter/global/images/polaris-dc",
+            machine_type="e2-standard-4",
+            disk_size_gb=100,
+        ),
+        host_mgmt_ssh_port=2222,
+    )
+
+    plan = render_range_cell_plan("req-123", variables, config)
+    host = plan["instances"][0]
+
+    # Participant reaches the Kali container as "kali" on :22; the provisioner
+    # drives the Ubuntu host sshd as "ubuntu" on the management port.
+    assert host["ssh_username"] == "kali"
+    assert host["host_ssh_username"] == "ubuntu"
+    assert host["ssh_port"] == 2222
+    # AWS instance_type is ignored; machine size comes from the GCE profile.
+    assert host["profile"].machine_type == "n2-standard-8"
+
+
+def test_mgmt_firewall_opens_host_management_ssh_port():
+    """The management ingress rule opens SSH, RDP, and the Docker-host mgmt port."""
+    config = GCERangeCellConfig(
+        project_id="test-project",
+        region="us-central1",
+        zone="us-central1-b",
+        network_mode="vpc-per-range",
+        service_account_email="range-host@test-project.iam.gserviceaccount.com",
+        kali=GCERangeImageProfile(source_image="projects/shifter/global/images/polaris-vm"),
+        dc=GCERangeImageProfile(source_image="projects/shifter/global/images/polaris-dc"),
+        portal_network_cidrs=("10.40.0.0/20",),
+        host_mgmt_ssh_port=2222,
+    )
+    plan = render_range_cell_plan("req-123", _variables(), config)
+    mgmt = next(fw for fw in plan["firewalls"] if fw["name"] == "shifter-r-42-mgmt")
+
+    assert mgmt["allowed"] == [{"IPProtocol": "tcp", "ports": ["22", "3389", "2222"]}]
+
+
+def test_instance_resource_installs_key_for_host_login_user():
+    """GCE ssh-keys metadata installs the key for the host user the provisioner drives.
+
+    Regression: for a Docker-host guest the provisioner connects as the host
+    user (ubuntu), not the participant user (kali) whose key the container's
+    authorized_keys carries; installing the key for kali would leave host setup
+    unable to SSH in.
+    """
+    from gcp_range_cell_resources import instance_resource
+
+    variables = _variables()
+    variables["subnets"][0]["instances"][0]["ami_key"] = "polaris-vm"
+    plan = render_range_cell_plan("req-123", variables, _vertex_config())
+    host = plan["instances"][0]
+
+    body = instance_resource(plan, host, _vertex_config(), ssh_public_key="ssh-ed25519 AAAA")
+    ssh_keys = next(item for item in body["metadata"]["items"] if item["key"] == "ssh-keys")
+
+    assert ssh_keys["value"] == "ubuntu:ssh-ed25519 AAAA"
+
+
+def test_render_plan_carries_private_google_access_flag():
+    """Private Google Access flows from config into the subnet resource body."""
+    from gcp_range_cell_resources import subnetwork_resource
+
+    config = GCERangeCellConfig(
+        project_id="test-project",
+        region="us-central1",
+        zone="us-central1-b",
+        network_mode="vpc-per-range",
+        service_account_email="range-host@test-project.iam.gserviceaccount.com",
+        kali=GCERangeImageProfile(source_image="projects/shifter/global/images/polaris-vm"),
+        dc=GCERangeImageProfile(source_image="projects/shifter/global/images/polaris-dc"),
+        private_google_access=True,
+    )
+    plan = render_range_cell_plan("req-123", _variables(), config)
+
+    assert plan["private_google_access"] is True
+    body = subnetwork_resource(plan, plan["subnets"][0])
+    assert body["privateIpGoogleAccess"] is True
+
+
+def test_render_plan_keeps_native_guest_on_default_ssh_port():
+    """Without a Docker-host ami_key, guests keep the participant user on :22."""
+    plan = render_range_cell_plan("req-123", _variables(), _sample_config())
+    host, dc = plan["instances"]
+
+    assert host["ssh_username"] == "kali"
+    assert host["host_ssh_username"] == "kali"
+    assert host["ssh_port"] == 22
+    assert dc["ssh_username"] == "Administrator"
+    assert dc["host_ssh_username"] == "Administrator"
+    assert dc["ssh_port"] == 22
 
 
 def test_apply_range_cell_is_idempotent_when_resources_exist(mocker):
@@ -186,6 +376,9 @@ def test_apply_range_cell_is_idempotent_when_resources_exist(mocker):
                 "private_ip": "10.50.2.3",
                 "ssh_key_secret_arn": "projects/test/secrets/ssh",
                 "ssh_username": "kali",
+                "public_key": "ssh-ed25519 AAAA",
+                "gcp_host_ssh_username": "kali",
+                "gcp_host_ssh_port": 22,
                 "gcp_project_id": "test-project",
                 "gcp_region": "us-central1",
                 "gcp_zone": "us-central1-b",
@@ -211,6 +404,9 @@ def test_apply_range_cell_is_idempotent_when_resources_exist(mocker):
                 "private_ip": "10.50.2.4",
                 "ssh_key_secret_arn": "projects/test/secrets/ssh",
                 "ssh_username": "Administrator",
+                "public_key": "ssh-ed25519 AAAA",
+                "gcp_host_ssh_username": "Administrator",
+                "gcp_host_ssh_port": 22,
                 "gcp_project_id": "test-project",
                 "gcp_region": "us-central1",
                 "gcp_zone": "us-central1-b",
@@ -314,6 +510,7 @@ def test_apply_range_cell_raises_on_completed_operation_error(mocker):
 def test_destroy_range_cell_deletes_every_resource(mocker):
     clients = _mock_clients(exists=True)
     secret_ops, mocks = _mock_secret_ops(mocker)
+    vertex_ops, _vertex_mocks = _mock_vertex_ops(mocker)
     order = MagicMock()
     order.attach_mock(clients.instances.delete, "delete_instance")
     order.attach_mock(clients.addresses.delete, "delete_address")
@@ -321,7 +518,14 @@ def test_destroy_range_cell_deletes_every_resource(mocker):
     order.attach_mock(clients.subnetworks.delete, "delete_subnetwork")
     order.attach_mock(clients.networks.delete, "delete_network")
 
-    destroy_range_cell("req-123", _variables(), config=_sample_config(), clients=clients, secret_ops=secret_ops)
+    destroy_range_cell(
+        "req-123",
+        _variables(),
+        config=_sample_config(),
+        clients=clients,
+        secret_ops=secret_ops,
+        vertex_ops=vertex_ops,
+    )
 
     assert clients.instances.delete.call_count == 2
     assert clients.addresses.delete.call_count == 2

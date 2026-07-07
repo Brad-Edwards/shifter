@@ -92,6 +92,7 @@ resource "aws_elasticache_cluster" "single_node" {
   engine               = "redis"
   engine_version       = var.engine_version
   node_type            = var.node_type
+  apply_immediately    = var.apply_immediately
   num_cache_nodes      = 1
   parameter_group_name = "default.redis7"
   port                 = 6379
@@ -189,6 +190,7 @@ resource "aws_elasticache_replication_group" "ha" {
   engine               = "redis"
   engine_version       = var.engine_version
   node_type            = var.node_type
+  apply_immediately    = var.apply_immediately
   port                 = 6379
   parameter_group_name = "default.redis7"
 

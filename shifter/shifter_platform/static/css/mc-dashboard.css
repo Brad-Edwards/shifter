@@ -82,3 +82,28 @@
 .range-tile.provisioning-tile .status {
     margin-bottom: 12px;
 }
+
+/* Secondary, read-only ACES operation projection (#1276). */
+.range-tile .aces-projection {
+    border-top: 1px solid var(--theme-border);
+    padding-top: 10px;
+}
+
+.range-tile .aces-projection-title {
+    font-weight: 600;
+    color: var(--theme-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 4px;
+}
+
+.range-tile .aces-projection-status {
+    font-size: 13px;
+    color: var(--theme-text);
+}
+
+.range-tile .aces-projection-meta {
+    display: flex;
+    gap: 12px;
+    margin-top: 2px;
+}

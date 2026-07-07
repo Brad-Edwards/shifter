@@ -30,6 +30,7 @@ from gcp_range_cell_resources import (
     network_resource,
     subnetwork_resource,
 )
+from gcp_range_vertex_creds import delete_range_vertex_key, ensure_range_vertex_key
 from log_redact import safe_log_fingerprint
 
 logger = logging.getLogger(__name__)
@@ -54,6 +55,22 @@ def _default_secret_ops() -> GCEGuestSecretOps:
         ensure_rdp_password=ensure_rdp_password_secret,
         delete_ssh=delete_ssh_secret,
         delete_rdp_password=delete_rdp_password_secret,
+    )
+
+
+@dataclass(frozen=True)
+class GCEVertexCredentialOps:
+    """Per-range Vertex agent-credential operations used by the GCE backend."""
+
+    ensure: Callable[[int, str], str]
+    delete: Callable[[int], None]
+
+
+def _default_vertex_ops() -> GCEVertexCredentialOps:
+    """Return the production per-range Vertex credential bindings."""
+    return GCEVertexCredentialOps(
+        ensure=lambda range_id, sa_email: ensure_range_vertex_key(range_id, sa_email),
+        delete=lambda range_id: delete_range_vertex_key(range_id),
     )
 
 
@@ -211,8 +228,14 @@ def _ensure_instance(
     config: GCERangeCellConfig,
     instance: InstancePlan,
     secret_ops: GCEGuestSecretOps,
-) -> tuple[str, str | None]:
-    """Create one range instance and its guest credential secrets."""
+) -> tuple[str, str | None, str]:
+    """Create one range instance and its guest credential secrets.
+
+    Returns ``(ssh_secret_ref, rdp_password_secret_ref, ssh_public_key)``. The
+    public key is not secret; it is surfaced in provisioner output so per-range
+    guest setup (e.g. the Polaris Kali container's authorized_keys) can install
+    it without re-reading the private secret.
+    """
     name = instance["resource_name"]
     existing = _get_or_none(
         clients.instances.get,
@@ -227,7 +250,7 @@ def _ensure_instance(
         rdp_password_secret_ref, _password = secret_ops.ensure_rdp_password(plan["range_id"], instance["source"])
     if existing is not None:
         logger.info("GCE range instance exists name_fp=%s", safe_log_fingerprint(name))
-        return secret_ref, rdp_password_secret_ref
+        return secret_ref, rdp_password_secret_ref, public_key
 
     operation = clients.instances.insert(
         project=plan["project_id"],
@@ -235,7 +258,7 @@ def _ensure_instance(
         instance_resource=instance_resource(plan, instance, config, ssh_public_key=public_key),
     )
     _wait_for_operation(plan, clients, operation, "zone")
-    return secret_ref, rdp_password_secret_ref
+    return secret_ref, rdp_password_secret_ref, public_key
 
 
 def _instance_output(
@@ -244,6 +267,7 @@ def _instance_output(
     *,
     ssh_secret_ref: str,
     rdp_password_secret_ref: str | None,
+    ssh_public_key: str,
     config: GCERangeCellConfig,
 ) -> ResourceDict:
     """Render the provisioner output for one created instance."""
@@ -258,6 +282,9 @@ def _instance_output(
         "private_ip": instance["private_ip"],
         "ssh_key_secret_arn": ssh_secret_ref,
         "ssh_username": instance["ssh_username"],
+        "public_key": ssh_public_key,
+        "gcp_host_ssh_username": instance["host_ssh_username"],
+        "gcp_host_ssh_port": instance["ssh_port"],
         "gcp_project_id": plan["project_id"],
         "gcp_region": plan["region"],
         "gcp_zone": plan["zone"],
@@ -302,15 +329,19 @@ def apply_range_cell(
     config: GCERangeCellConfig | None = None,
     clients: GCEClients | None = None,
     secret_ops: GCEGuestSecretOps | None = None,
+    vertex_ops: GCEVertexCredentialOps | None = None,
     cleanup_range_cell: Callable[[str, ResourceDict | None], None] | None = None,
 ) -> ResourceDict:
     """Create or reconcile a live-fire GCE range cell and return provisioner outputs."""
     resolved_config = config or load_gce_range_cell_config()
     resolved_clients = clients or _build_clients()
     resolved_secret_ops = secret_ops or _default_secret_ops()
+    resolved_vertex_ops = vertex_ops or _default_vertex_ops()
     plan = render_range_cell_plan(request_uuid, variables, resolved_config)
     instance_outputs: list[ResourceDict] = []
     try:
+        if resolved_config.vertex_service_account_email:
+            resolved_vertex_ops.ensure(plan["range_id"], resolved_config.vertex_service_account_email)
         _ensure_network(plan, resolved_clients)
         for subnet in plan["subnets"]:
             _ensure_subnetwork(plan, resolved_clients, subnet)
@@ -318,7 +349,7 @@ def apply_range_cell(
             _ensure_firewall(plan, resolved_clients, firewall)
         for instance in plan["instances"]:
             _ensure_address(plan, resolved_clients, instance)
-            ssh_secret_ref, rdp_password_secret_ref = _ensure_instance(
+            ssh_secret_ref, rdp_password_secret_ref, ssh_public_key = _ensure_instance(
                 plan,
                 resolved_clients,
                 resolved_config,
@@ -331,6 +362,7 @@ def apply_range_cell(
                     instance,
                     ssh_secret_ref=ssh_secret_ref,
                     rdp_password_secret_ref=rdp_password_secret_ref,
+                    ssh_public_key=ssh_public_key,
                     config=resolved_config,
                 )
             )
@@ -343,6 +375,7 @@ def apply_range_cell(
                 config=resolved_config,
                 clients=resolved_clients,
                 secret_ops=resolved_secret_ops,
+                vertex_ops=resolved_vertex_ops,
             )
         )
         cleanup(request_uuid, variables)
@@ -375,6 +408,7 @@ def destroy_range_cell(
     config: GCERangeCellConfig | None = None,
     clients: GCEClients | None = None,
     secret_ops: GCEGuestSecretOps | None = None,
+    vertex_ops: GCEVertexCredentialOps | None = None,
 ) -> None:
     """Destroy every GCE resource owned by one range cell."""
     if not variables:
@@ -383,7 +417,12 @@ def destroy_range_cell(
     resolved_config = config or load_gce_range_cell_config()
     resolved_clients = clients or _build_clients()
     resolved_secret_ops = secret_ops or _default_secret_ops()
+    resolved_vertex_ops = vertex_ops or _default_vertex_ops()
     plan = render_range_cell_plan(request_uuid, variables, resolved_config, require_images=False)
+
+    # Delete the per-range Vertex agent key first; it is independent of the
+    # Compute resources and idempotent, so it converges even on repeated destroy.
+    resolved_vertex_ops.delete(plan["range_id"])
 
     for instance in reversed(plan["instances"]):
         _delete_resource(

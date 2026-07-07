@@ -356,6 +356,24 @@ class GCERangeCellConfig:
     dc: GCERangeImageProfile = field(default_factory=GCERangeImageProfile)
     portal_network_cidrs: tuple[str, ...] = ()
     egress_allow_cidrs: tuple[str, ...] = ()
+    # Pre-provisioned Vertex-only service account. When set, the range-cell
+    # backend mints a per-range key on this SA (created and destroyed with the
+    # range), stores it by reference in Secret Manager, and the range bootstrap
+    # injects it into the participant agent container. This keeps the agent's
+    # cloud credential scoped to Vertex and per-range revocable, and the
+    # container is blocked from the metadata server so it can never mint the
+    # broader range-host SA token. Empty disables per-range agent credentials.
+    vertex_service_account_email: str = ""
+    # Private Google Access on the range subnet lets no-external-IP guests reach
+    # Google APIs (Vertex AI for the Polaris agent, GCS for the smoketest
+    # tarball) over internal routing. Requires an egress-allow to the Google API
+    # VIP in ``egress_allow_cidrs``. Off by default for maximum isolation.
+    private_google_access: bool = False
+    # Management SSH port for Docker-host range guests (e.g. the Polaris range
+    # host) whose participant container publishes host :22, forcing the host
+    # sshd the provisioner drives to a dedicated port. Native single-service
+    # guests keep :22.
+    host_mgmt_ssh_port: int = 2222
     metadata_items: tuple[tuple[str, str], ...] = (
         ("block-project-ssh-keys", "true"),
         ("enable-oslogin", "false"),
@@ -418,12 +436,14 @@ def _parse_csv_env(value: str) -> tuple[str, ...]:
 def get_gcp_range_backend() -> str:
     """Return the selected GCP range backend.
 
-    The historical GCP path is GDC VM Runtime, so ``gdc`` remains the default
-    whenever ``CLOUD_PROVIDER=gcp`` and no explicit backend is configured.
+    GCE range cells are the default GCP path, so ``gce`` is assumed whenever
+    ``CLOUD_PROVIDER=gcp`` and no explicit backend is configured. The historical
+    GDC VM Runtime path remains fully supported and is selected explicitly with
+    ``GCP_RANGE_BACKEND=gdc`` (a one-line rollback for any environment).
     """
     if os.environ.get("CLOUD_PROVIDER", "aws") != "gcp":
         return ""
-    backend = os.environ.get("GCP_RANGE_BACKEND") or os.environ.get("GCP_RANGE_PLANE") or "gdc"
+    backend = os.environ.get("GCP_RANGE_BACKEND") or os.environ.get("GCP_RANGE_PLANE") or "gce"
     backend = backend.strip().lower()
     if backend not in {"gdc", "gce"}:
         raise RuntimeError(f"GCP_RANGE_BACKEND must be 'gdc' or 'gce', got {backend!r}")
@@ -570,6 +590,14 @@ def has_ngfw_attachment_state(state: dict[str, Any] | None) -> bool:
 def _get_int_env(name: str, default: int) -> int:
     value = os.environ.get(name, "").strip()
     return int(value) if value else default
+
+
+def _get_bool_env(name: str, default: bool) -> bool:
+    """Return a boolean env var, treating 1/true/yes/on as true."""
+    value = os.environ.get(name, "").strip().lower()
+    if not value:
+        return default
+    return value in ("1", "true", "yes", "on")
 
 
 def _load_gdc_vm_profile(
@@ -802,9 +830,17 @@ def load_gdc_scenario_pod_config() -> GDCScenarioPodConfig:
 
 
 def _resolve_gce_range_required_env() -> tuple[str, str, str, str]:
-    """Resolve required environment for the GCE range-cell backend."""
+    """Resolve required environment for the GCE range-cell backend.
+
+    ``GCP_RANGE_CELL_PROJECT_ID`` takes precedence so range cells can be
+    provisioned into a different project than the control plane's
+    ``GCP_PROJECT_ID`` (and so the range backend is unaffected when the
+    control-plane project is a deploy-overlay placeholder). It falls back to the
+    control-plane project keys, mirroring ``GCP_RANGE_VERTEX_PROJECT_ID``.
+    """
     project_id = (
-        os.environ.get("GCP_PROJECT_ID")
+        os.environ.get("GCP_RANGE_CELL_PROJECT_ID")
+        or os.environ.get("GCP_PROJECT_ID")
         or os.environ.get("GOOGLE_CLOUD_PROJECT")
         or os.environ.get("CLOUD_PROJECT_ID")
         or ""
@@ -828,7 +864,7 @@ def _missing_gce_range_required_env(
     return [
         name
         for name, value in (
-            ("GCP_PROJECT_ID", project_id),
+            ("GCP_RANGE_CELL_PROJECT_ID/GCP_PROJECT_ID", project_id),
             ("RANGE_NETWORK_REGION/GCP_REGION", region),
             ("RANGE_NETWORK_ZONE", zone),
             ("GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL", service_account_email),
@@ -892,6 +928,9 @@ def load_gce_range_cell_config() -> GCERangeCellConfig:
             os.environ.get("PORTAL_NETWORK_CIDRS", "") or os.environ.get("PORTAL_VPC_CIDR", "")
         ),
         egress_allow_cidrs=_parse_csv_env(os.environ.get("GCP_RANGE_EGRESS_ALLOW_CIDRS", "")),
+        vertex_service_account_email=os.environ.get("GCP_RANGE_VERTEX_SERVICE_ACCOUNT_EMAIL", "").strip(),
+        private_google_access=_get_bool_env("GCP_RANGE_PRIVATE_GOOGLE_ACCESS", False),
+        host_mgmt_ssh_port=_get_int_env("GCP_RANGE_HOST_MGMT_SSH_PORT", 2222),
     )
 
 
