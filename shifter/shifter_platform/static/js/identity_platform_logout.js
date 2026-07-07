@@ -36,7 +36,10 @@ async function runLogout(config) {
 const configScript = document.getElementById("identity-platform-logout-config");
 
 if (configScript) {
-    runLogout(JSON.parse(configScript.textContent));
+    // This `<script type="module">` entry point is transpiled to CommonJS by the
+    // jsdom test harness, which cannot represent top-level await, so S7785
+    // (prefer top-level await) is unsatisfiable here without breaking the suite.
+    runLogout(JSON.parse(configScript.textContent)); // NOSONAR
 } else {
     globalThis.location.assign("/");
 }
