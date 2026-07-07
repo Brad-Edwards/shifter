@@ -212,7 +212,9 @@ The design is split into these implementation issues:
   surfaces while preserving existing range lifecycle UX and websocket behavior.
 - #1277: implement snapshot redaction, bounded retention, cleanup,
   and audit visibility rules without turning snapshots into archival experiment
-  records.
+  records. Use
+  `docs/architecture/aces-snapshot-retention-redaction-audit-preflight-1277.md`
+  for the issue-specific retention, redaction, cleanup, and audit guardrails.
 
 ## Gotchas And Anti-Patterns
 

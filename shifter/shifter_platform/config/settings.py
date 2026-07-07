@@ -262,6 +262,9 @@ TERMINAL_CONNECT_EXECUTOR_QUEUE_SLACK = _env_int("TERMINAL_CONNECT_EXECUTOR_QUEU
 # multi-node portal. See docs/architecture/ctf-scheduler-concurrency-preflight-942.md.
 CTF_SCHEDULER_STALE_TASK_MINUTES = _env_int("CTF_SCHEDULER_STALE_TASK_MINUTES", 120)
 
+# ACES operation-record retention/cleanup knobs (issue #1277): snapshot TTL days
+# plus the dedicated prune service cadence/batch size. Non-secret integers.
+from config._aces_settings import *  # noqa: E402  # NOSONAR
 from config._capacity_settings import *  # noqa: E402  # NOSONAR
 
 # CTF regex-flag safety tunables (issue #1183): pattern/submission length caps
