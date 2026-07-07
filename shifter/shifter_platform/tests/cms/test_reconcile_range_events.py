@@ -22,6 +22,7 @@ from django.utils import timezone
 from cms.handlers.range_events import apply_range_status, process_range_event
 from cms.management.commands.reconcile_range_events import (
     reconcile_range_instances,
+    stale_range_instances_queryset,
 )
 from cms.models import RangeInstance
 from cms.models import Request as CMSRequest
@@ -534,3 +535,18 @@ class TestReconcileHeartbeat:
 
         assert heartbeat_file.exists(), "heartbeat file must be written during loop iteration"
         assert call_count == 1
+
+
+class TestStaleRangeInstancesQueryset:
+    """#1395: the reconciler's locked query must scope FOR UPDATE to the base row."""
+
+    def test_locks_only_self_not_the_joined_nullable_request(self, db):
+        # select_related("request") LEFT-joins a nullable FK; a bare
+        # select_for_update raised NotSupportedError on Postgres ("FOR UPDATE
+        # cannot be applied to the nullable side of an outer join"). of=("self",)
+        # scopes the lock to cms_range so only the base row is locked.
+        qs = stale_range_instances_queryset(timezone.now(), 10)
+
+        assert qs.query.select_for_update is True
+        assert qs.query.select_for_update_skip_locked is True
+        assert qs.query.select_for_update_of == ("self",)

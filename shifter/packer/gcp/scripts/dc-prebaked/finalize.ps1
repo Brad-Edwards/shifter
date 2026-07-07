@@ -1,14 +1,15 @@
-# POLARIS polaris-dc bake-time finalize (runs after the promotion reboot).
+# dc-prebaked bake-time finalize (runs after the promotion reboot).
 #
-# The builder has rebooted as the BOREAS.LOCAL domain controller and packer has
+# The builder has rebooted as the profile's domain controller and packer has
 # reconnected over WinRM as the domain Administrator. Wait for AD DS to serve,
-# then run the AD content seed (a2_setup.ps1, staged at C:\polaris\a2_setup.ps1)
-# which creates the OUs/users/groups/SPNs/DCSync ACL/flags/shares and sets the
-# CTF Administrator password. This is the last provisioner before capture, so
-# a2_setup's Administrator-password change does not break any later WinRM step.
+# then run the AD content seed (staged at C:\polaris\a2_setup.ps1 from the
+# profile's dc_content_script) which creates the OUs/users/groups/SPNs/DCSync
+# ACL/flags/shares and sets the CTF Administrator password. This is the last
+# provisioner before capture, so the content seed's Administrator-password change
+# does not break any later WinRM step.
 $ErrorActionPreference = "Stop"
-Start-Transcript -Path "C:\polaris-finalize.log" -Append -Force
-Write-Host "=== polaris-dc finalize $(Get-Date -Format o) ==="
+Start-Transcript -Path "C:\dc-prebaked-finalize.log" -Append -Force
+Write-Host "=== dc-prebaked finalize $(Get-Date -Format o) ==="
 
 # Firewall stays off on the DC (assert again post-reboot).
 Set-NetFirewallProfile -Profile Domain,Public,Private -Enabled False
@@ -23,8 +24,8 @@ if (-not $ok) { throw "AD DS did not become available after promotion" }
 Write-Host "AD DS is serving."
 
 $fwd = "8.8.8.8"
-if (Test-Path "C:\polaris-dns-forwarder.txt") {
-    $fwd = (Get-Content "C:\polaris-dns-forwarder.txt" -Raw).Trim()
+if (Test-Path "C:\dc-prebaked-dns-forwarder.txt") {
+    $fwd = (Get-Content "C:\dc-prebaked-dns-forwarder.txt" -Raw).Trim()
 }
 
 if (-not (Test-Path "C:\polaris\a2_setup.ps1")) {

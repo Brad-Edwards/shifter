@@ -16,15 +16,36 @@ import json
 import pytest
 from django.test import Client
 from django.urls import reverse
+from django.utils import timezone
 
 from engine.models import Range
 from risk_register.models import AuditLog
+from shared.aces.contracts import SHIFTER_BACKEND_PROFILE
+from shared.models import AcesOperationRecord
+from shared.schemas.aces_operation import canonical_aces_payload_digest
 
 pytestmark = pytest.mark.django_db
 
 
 def _json(response):
     return json.loads(response.content)
+
+
+def _seed_aces_status(request_id, status="running"):
+    """Seed one operation-status sidecar row for a range's request_id."""
+    payload = {"operation_id": "op-1", "status": status}
+    return AcesOperationRecord.objects.create(
+        request_id=request_id,
+        operation_id=payload["operation_id"],
+        idempotency_key=f"operation_status:{request_id}",
+        contract_kind=AcesOperationRecord.ContractKind.ACES,
+        contract_version="operation-status-v1",
+        contract_profile=SHIFTER_BACKEND_PROFILE,
+        record_kind=AcesOperationRecord.RecordKind.OPERATION_STATUS,
+        source_timestamp=timezone.now(),
+        payload_digest=canonical_aces_payload_digest(payload),
+        payload=payload,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -73,6 +94,27 @@ class TestGetRange:
         response = other_client.get(reverse("mission_control:get_range"))
         assert response.status_code == 200
         assert _json(response)["has_range"] is False
+
+    def test_aces_projection_null_for_legacy_range(self, authenticated_client, launch_range_via_api):
+        client, user = authenticated_client(email="legacy-aces@example.com")
+        launch_range_via_api(client, user)
+
+        data = _json(client.get(reverse("mission_control:get_range")))
+        assert data["has_range"] is True
+        assert data["aces_projection"] is None
+
+    def test_aces_projection_present_when_records_exist(self, authenticated_client, launch_range_via_api):
+        client, user = authenticated_client(email="aces-backed@example.com")
+        launch_resp, _agent, _scenario_id = launch_range_via_api(client, user)
+        request_id = _json(launch_resp)["range"]["request_id"]
+        _seed_aces_status(request_id, status="succeeded")
+
+        data = _json(client.get(reverse("mission_control:get_range")))
+        assert data["has_range"] is True
+        projection = data["aces_projection"]
+        assert projection is not None
+        assert projection["status"] == "succeeded"
+        assert projection["status_label"] == "Operation succeeded"
 
 
 # ---------------------------------------------------------------------------

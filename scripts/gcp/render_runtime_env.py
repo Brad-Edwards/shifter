@@ -156,6 +156,23 @@ def _optional_gce_range_values() -> dict[str, str]:
     return {key: value for key in _GCE_RANGE_ENV_KEYS if (value := os.environ.get(key, "").strip())}
 
 
+def _project_from_self_link(self_link: object) -> str:
+    """Extract the GCP project id from a ``projects/<project>/...`` self-link.
+
+    The range VPC self-link (``range_network_id`` Terraform output) always
+    carries the real range project, which is what the GCE range-cell backend
+    must target for Compute API calls and image URLs — independent of the
+    control-plane ``GCP_PROJECT_ID`` (which may be a deploy-overlay placeholder).
+    """
+    text = str(self_link or "").strip()
+    parts = text.split("/")
+    if "projects" in parts:
+        index = parts.index("projects")
+        if index + 1 < len(parts) and parts[index + 1]:
+            return parts[index + 1]
+    return ""
+
+
 def _validated_image_tag(image_tag: str) -> str:
     tag = image_tag.strip()
     if not tag:
@@ -270,7 +287,14 @@ def render_env(outputs: dict[str, object], *, image_tag: str) -> str:
         "RANGE_NETWORK_CIDR": range_network_cidr,
         "RANGE_NETWORK_REGION": range_network_region,
         "PORTAL_NETWORK_CIDRS": ",".join(_unique(portal_network_cidrs)),
-        "GCP_RANGE_BACKEND": os.environ.get("GCP_RANGE_BACKEND", "gdc").strip() or "gdc",
+        "GCP_RANGE_BACKEND": os.environ.get("GCP_RANGE_BACKEND", "gce").strip() or "gce",
+        # Real range project (from the range VPC self-link), so the GCE
+        # range-cell backend targets it directly even when the control-plane
+        # GCP_PROJECT_ID is a deploy-overlay placeholder. An explicit
+        # GCP_RANGE_CELL_PROJECT_ID env override wins.
+        "GCP_RANGE_CELL_PROJECT_ID": (
+            os.environ.get("GCP_RANGE_CELL_PROJECT_ID", "").strip() or _project_from_self_link(range_network_id)
+        ),
         "GDC_RANGE_NAMESPACE_PREFIX": "range",
         "GDC_NETWORK_INTERFACE": "vxlan0",
         "GDC_NETWORK_DNS_NAMESERVERS": "8.8.8.8",

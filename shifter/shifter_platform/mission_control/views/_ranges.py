@@ -12,6 +12,7 @@ from django.views.decorators.http import require_GET, require_POST
 
 from mission_control.utils import build_connection_urls
 from risk_register.models import AuditLog
+from shared.aces.presentation import build_range_aces_projection
 from shared.auth import block_ctf_participant_only
 from shared.errors import classify_user_message
 from shared.exceptions import CMSError
@@ -50,13 +51,15 @@ def get_range(request: HttpRequest) -> JsonResponse:
     active_range = _pkg().get_active_range(_get_user(request))
 
     if not active_range:
-        return JsonResponse({"has_range": False, "range": None, "connection_urls": []})
+        return JsonResponse({"has_range": False, "range": None, "connection_urls": [], "aces_projection": None})
 
+    projection = build_range_aces_projection(active_range.request_id)
     return JsonResponse(
         {
             "has_range": True,
             "range": active_range.model_dump(mode="json"),
             "connection_urls": build_connection_urls(active_range.instances),
+            "aces_projection": projection.to_payload() if projection else None,
         }
     )
 

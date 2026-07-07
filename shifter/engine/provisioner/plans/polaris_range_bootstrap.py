@@ -222,13 +222,14 @@ class PolarisRangeBootstrapPlan:
         project = (
             getattr(instance, "vertex_project_id", None)
             or os.environ.get("GCP_RANGE_VERTEX_PROJECT_ID")
+            or os.environ.get("GCP_RANGE_CELL_PROJECT_ID")
             or os.environ.get("GCP_PROJECT_ID")
             or ""
         )
         if not project:
             raise ValueError(
                 "Polaris on GCP requires a Vertex project: set GCP_RANGE_VERTEX_PROJECT_ID "
-                "(or GCP_PROJECT_ID) so the a14-kali agent can reach Vertex AI"
+                "(or GCP_RANGE_CELL_PROJECT_ID / GCP_PROJECT_ID) so the a14-kali agent can reach Vertex AI"
             )
         region = (
             getattr(instance, "vertex_region", None)
