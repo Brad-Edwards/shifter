@@ -139,3 +139,8 @@ variable "alarm_connections_threshold" {
   type        = number
   default     = 1000
 }
+
+variable "apply_immediately" {
+  description = "Apply ElastiCache modifications (node type, engine, params) during the deploy instead of queueing them for the maintenance window. Required input; environments choose explicitly."
+  type        = bool
+}
