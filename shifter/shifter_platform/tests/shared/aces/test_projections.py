@@ -67,6 +67,27 @@ class TestListOperationRecords:
         assert set(proj.payload) == {"operation_id", "status", "status_reason"}
         assert "request_id" not in proj.payload
 
+    def test_runtime_snapshot_response_allowlist_strips_non_returned_keys(self):
+        request_id = uuid4()
+        # ``request_id`` is a valid persisted runtime_snapshot payload key but is
+        # NOT in the response allowlist, so the read seam must strip it.
+        payload = {
+            "operation_id": "op-1",
+            "status": "running",
+            "resources": [{"kind": "vm"}],
+            "snapshot_digest": "sha256:" + "a" * 64,
+            "request_id": str(request_id),
+        }
+        _record(
+            request_id,
+            record_kind=AcesOperationRecord.RecordKind.RUNTIME_SNAPSHOT,
+            source_timestamp=timezone.now(),
+            payload=payload,
+        )
+        [proj] = list_operation_records(request_id, AcesOperationRecord.RecordKind.RUNTIME_SNAPSHOT)
+        assert set(proj.payload) == {"operation_id", "status", "resources", "snapshot_digest"}
+        assert "request_id" not in proj.payload
+
     def test_orders_newest_first(self):
         request_id = uuid4()
         now = timezone.now()
