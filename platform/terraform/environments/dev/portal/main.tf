@@ -384,6 +384,7 @@ module "redis" {
   node_type                  = var.redis_node_type
   engine_version             = var.redis_engine_version
   enable_replication         = var.redis_enable_replication
+  apply_immediately          = var.redis_apply_immediately
 
   # AUTH + in-transit encryption (#938): the AUTH token secret is encrypted by
   # the portal CMK. is_active_channel_backend rejects a live channel layer on
@@ -549,6 +550,8 @@ module "ssm" {
   sqs_cms_url    = module.messaging.sqs_queue_urls["cms"]
   sqs_engine_url = module.messaging.sqs_queue_urls["engine"]
   sqs_mc_url     = module.messaging.sqs_queue_urls["mc"]
+
+  range_events_topic_id = module.messaging.sns_topic_arn
   # Redis wiring is environment-owned and decoupled from autoscaling (ADR-018, #849).
   redis_endpoint = var.enable_redis ? module.redis.redis_endpoint : ""
   enable_redis   = var.enable_redis
