@@ -162,7 +162,7 @@ def test_apply_mints_per_range_vertex_key_when_configured(mocker):
         vertex_ops=vertex_ops,
     )
 
-    vertex_mocks.ensure.assert_called_once_with(42, "range-vertex@test-project.iam.gserviceaccount.com")
+    vertex_mocks.ensure.assert_called_once_with(42, "range-vertex@test-project.iam.gserviceaccount.com", "test-project")
 
 
 def test_apply_skips_vertex_key_when_not_configured(mocker):
@@ -196,7 +196,7 @@ def test_destroy_deletes_per_range_vertex_key(mocker):
         vertex_ops=vertex_ops,
     )
 
-    vertex_mocks.delete.assert_called_once_with(42)
+    vertex_mocks.delete.assert_called_once_with(42, "test-project")
 
 
 def test_render_range_cell_plan_uses_vpc_per_range_and_deterministic_ips():
