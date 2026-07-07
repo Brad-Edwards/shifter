@@ -3,14 +3,17 @@
 from __future__ import annotations
 
 import logging
+import signal
+from argparse import ArgumentParser
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
+from django.test import override_settings
 from django.utils import timezone
 
 from shared.aces.operations import AcesOperationRecordWrite, persist_aces_operation_record
-from shared.management.commands.run_aces_operation_record_prune import Command
+from shared.management.commands.run_aces_operation_record_prune import HEARTBEAT_FILE, Command
 from shared.models import AcesOperationRecord
 from shared.schemas.aces_operation import canonical_aces_payload_digest
 
@@ -94,6 +97,64 @@ def test_prune_cycle_refreshes_heartbeat_between_batches(monkeypatch):
     cmd._prune_cycle(batch_size=1)
 
     assert len(touches) >= 3
+
+
+@override_settings(
+    ACES_OPERATION_RECORD_PRUNE_INTERVAL_SECONDS=1234,
+    ACES_OPERATION_RECORD_PRUNE_BATCH_SIZE=77,
+)
+def test_add_arguments_defaults_come_from_settings():
+    parser = ArgumentParser()
+    Command().add_arguments(parser)
+
+    ns = parser.parse_args([])
+    assert ns.poll_interval == 1234
+    assert ns.batch_size == 77
+
+
+def test_signal_handler_sets_shutdown():
+    cmd = Command()
+    assert cmd.shutdown is False
+
+    cmd._signal_handler(signal.SIGTERM, None)
+
+    assert cmd.shutdown is True
+
+
+def test_prune_cycle_stops_immediately_on_shutdown():
+    cmd = Command()
+    cmd.shutdown = True
+
+    # A shutdown requested before the cycle starts deletes nothing and returns.
+    assert cmd._prune_cycle(batch_size=10) == 0
+
+
+@pytest.mark.django_db
+def test_handle_runs_one_cycle_then_shuts_down(monkeypatch):
+    now = timezone.now()
+    expired = _seed(now - timedelta(days=1))
+
+    cmd = Command()
+    # Register no real OS signal handlers in the test process.
+    monkeypatch.setattr(
+        "shared.management.commands.run_aces_operation_record_prune.signal.signal",
+        lambda *args, **kwargs: None,
+    )
+    # One cycle, then request shutdown so the outer loop exits.
+    real_cycle = cmd._prune_cycle
+
+    def _one_shot(batch_size: int) -> int:
+        deleted = real_cycle(batch_size)
+        cmd.shutdown = True
+        return deleted
+
+    monkeypatch.setattr(cmd, "_prune_cycle", _one_shot)
+
+    cmd.handle(poll_interval=1, batch_size=5)
+
+    assert not AcesOperationRecord.objects.filter(pk=expired.pk).exists()
+    # The heartbeat file is cleaned up on graceful shutdown.
+    assert not HEARTBEAT_FILE.exists()
 
 
 @pytest.mark.django_db
