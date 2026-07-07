@@ -194,6 +194,13 @@ minimum HCL shape.
 
 ### Fresh AWS account bootstrap order
 
+Standup runbooks for the phases referenced below:
+
+- Runner provisioning: [`aws-runner-provisioning-runbook.md`](aws-runner-provisioning-runbook.md)
+- Range AMI seeding: [`aws-ami-seeding-runbook.md`](aws-ami-seeding-runbook.md)
+- Terraform apply order: [`aws-terraform-apply-order.md`](aws-terraform-apply-order.md)
+- Tearing an environment down: [`aws-teardown-runbook.md`](aws-teardown-runbook.md)
+
 For a new AWS account, bootstrap the backend and CI identity before trying
 to use the `aws-dev` deploy branch:
 
