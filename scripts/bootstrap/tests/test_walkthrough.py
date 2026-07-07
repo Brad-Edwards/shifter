@@ -242,6 +242,7 @@ class TestWalkthroughGithubSecrets:
         base = {
             "role_arn": "arn:aws:iam::123456789012:role/test-role",
             "secret_name": "AWS_ROLE_ARN_DEV",
+            "state_bucket_secret_name": "TF_INFRA_STATE_BUCKET_DEV",
             "github_org": "test-org",
             "github_repo": "test-repo",
             "bucket_name": "shifter-dev-infra-test-bucket",
@@ -380,7 +381,7 @@ class TestWalkthroughGithubSecrets:
             assert exc_info.value.code == 1
 
     def test_ensures_state_bucket_when_role_secret_kept(self, mock_stdin_tty):
-        """Keeping an existing role secret still provisions TF_INFRA_STATE_BUCKET."""
+        """Keeping an existing role secret still provisions the state-bucket secret."""
         bootstrap_result = self._bootstrap_result()
 
         with (
@@ -408,7 +409,7 @@ class TestWalkthroughGithubSecrets:
             deploy.walkthrough_github_secrets(bootstrap_result)
 
             bucket_calls = [
-                c for c in mock_run.call_args_list if c[0][0][0] == "gh" and "TF_INFRA_STATE_BUCKET" in c[0][0]
+                c for c in mock_run.call_args_list if c[0][0][0] == "gh" and "TF_INFRA_STATE_BUCKET_DEV" in c[0][0]
             ]
             assert len(bucket_calls) == 1
 
