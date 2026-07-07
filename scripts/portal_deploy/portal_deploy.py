@@ -260,6 +260,14 @@ def _image_check_script(image_digest: str) -> str:
         [
             "set -euo pipefail",
             f"EXPECTED_IMAGE_DIGEST={quoted_digest}",
+            # A just-in-service instance right after a refresh may still be
+            # starting containers; wait (bounded) for the portal container to
+            # exist before inspecting so verification does not race startup
+            # (#1397). A genuinely-missing container still fails after the wait.
+            "for _ in $(seq 1 45); do",
+            "  docker inspect --format '{{.Config.Image}}' portal >/dev/null 2>&1 && break",
+            "  sleep 2",
+            "done",
             "IMAGE=$(docker inspect --format '{{.Config.Image}}' portal)",
             'case "$IMAGE" in',
             '  *"@${EXPECTED_IMAGE_DIGEST}") echo "portal image digest verified: ${IMAGE}" ;;',
@@ -274,6 +282,9 @@ def verify_asg_image_digest(
     asg_name: str,
     image_digest: str,
     runner: Runner = subprocess.run,
+    max_attempts: int = 5,
+    retry_delay: float = 20.0,
+    sleep: SleepFn = time.sleep,
 ) -> list[str]:
     if not asg_name:
         raise PortalDeployError("ASG image verification requires a non-empty ASG name")
@@ -285,65 +296,86 @@ def verify_asg_image_digest(
         raise PortalDeployError(f"No in-service instances found in ASG {asg_name!r}")
 
     parameters = "commands=" + json.dumps([_image_check_script(image_digest)])
-    send_command = _run(
-        [
-            "aws",
-            "ssm",
-            "send-command",
-            "--document-name",
-            "AWS-RunShellScript",
-            "--instance-ids",
-            *instance_ids,
-            "--parameters",
-            parameters,
-            "--timeout-seconds",
-            "120",
-            "--query",
-            "Command.CommandId",
-            "--output",
-            "text",
-        ],
-        runner=runner,
-    )
-    command_id = send_command.stdout.strip()
-    if not command_id or command_id == "None":
-        raise PortalDeployError("SSM did not return a command id for ASG image verification")
 
-    for instance_id in instance_ids:
-        _run(
+    # Retry the whole SSM check: right after a refresh a just-in-service host
+    # can still be finishing container/SSM-agent startup, so a single attempt
+    # flakes with a non-Success status even though the digest is correct
+    # (#1397). Only a persistent failure across all attempts fails the deploy.
+    last_failure = ""
+    for attempt in range(1, max_attempts + 1):
+        send_command = _run(
             [
                 "aws",
                 "ssm",
-                "wait",
-                "command-executed",
-                "--command-id",
-                command_id,
-                "--instance-id",
-                instance_id,
-            ],
-            runner=runner,
-        )
-        status = _run(
-            [
-                "aws",
-                "ssm",
-                "get-command-invocation",
-                "--command-id",
-                command_id,
-                "--instance-id",
-                instance_id,
+                "send-command",
+                "--document-name",
+                "AWS-RunShellScript",
+                "--instance-ids",
+                *instance_ids,
+                "--parameters",
+                parameters,
+                "--timeout-seconds",
+                "120",
                 "--query",
-                "Status",
+                "Command.CommandId",
                 "--output",
                 "text",
             ],
             runner=runner,
-        ).stdout.strip()
-        if status != "Success":
-            raise PortalDeployError(
-                f"ASG image verification failed on {instance_id}: SSM status {status}"
-            )
-    return instance_ids
+        )
+        command_id = send_command.stdout.strip()
+        if not command_id or command_id == "None":
+            raise PortalDeployError("SSM did not return a command id for ASG image verification")
+
+        failure = ""
+        for instance_id in instance_ids:
+            # The waiter exits non-zero when the command reaches a terminal
+            # non-Success state; suppress that so we can read the real status
+            # (and retry) rather than aborting the deploy on it.
+            with contextlib.suppress(subprocess.CalledProcessError):
+                _run(
+                    [
+                        "aws",
+                        "ssm",
+                        "wait",
+                        "command-executed",
+                        "--command-id",
+                        command_id,
+                        "--instance-id",
+                        instance_id,
+                    ],
+                    runner=runner,
+                )
+            status = _run(
+                [
+                    "aws",
+                    "ssm",
+                    "get-command-invocation",
+                    "--command-id",
+                    command_id,
+                    "--instance-id",
+                    instance_id,
+                    "--query",
+                    "Status",
+                    "--output",
+                    "text",
+                ],
+                runner=runner,
+            ).stdout.strip()
+            if status != "Success":
+                failure = f"{instance_id}: SSM status {status}"
+                break
+
+        if not failure:
+            return instance_ids
+
+        last_failure = failure
+        if attempt < max_attempts:
+            sleep(retry_delay)
+
+    raise PortalDeployError(
+        f"ASG image verification failed after {max_attempts} attempts ({last_failure})"
+    )
 
 
 _DEFAULT_WORKER_CONTAINERS = (
