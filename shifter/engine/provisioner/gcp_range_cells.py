@@ -60,17 +60,24 @@ def _default_secret_ops() -> GCEGuestSecretOps:
 
 @dataclass(frozen=True)
 class GCEVertexCredentialOps:
-    """Per-range Vertex agent-credential operations used by the GCE backend."""
+    """Per-range Vertex agent-credential operations used by the GCE backend.
 
-    ensure: Callable[[int, str], str]
-    delete: Callable[[int], None]
+    ``ensure``/``delete`` take the range project id so the SA key and Secret
+    Manager secret are managed in the range project, not the control-plane
+    project (which may be a deploy-overlay placeholder).
+    """
+
+    ensure: Callable[[int, str, str], str]
+    delete: Callable[[int, str], None]
 
 
 def _default_vertex_ops() -> GCEVertexCredentialOps:
     """Return the production per-range Vertex credential bindings."""
     return GCEVertexCredentialOps(
-        ensure=lambda range_id, sa_email: ensure_range_vertex_key(range_id, sa_email),
-        delete=lambda range_id: delete_range_vertex_key(range_id),
+        ensure=lambda range_id, sa_email, project_id: ensure_range_vertex_key(
+            range_id, sa_email, project_id=project_id
+        ),
+        delete=lambda range_id, project_id: delete_range_vertex_key(range_id, project_id=project_id),
     )
 
 
@@ -341,7 +348,9 @@ def apply_range_cell(
     instance_outputs: list[ResourceDict] = []
     try:
         if resolved_config.vertex_service_account_email:
-            resolved_vertex_ops.ensure(plan["range_id"], resolved_config.vertex_service_account_email)
+            resolved_vertex_ops.ensure(
+                plan["range_id"], resolved_config.vertex_service_account_email, plan["project_id"]
+            )
         _ensure_network(plan, resolved_clients)
         for subnet in plan["subnets"]:
             _ensure_subnetwork(plan, resolved_clients, subnet)
@@ -422,7 +431,7 @@ def destroy_range_cell(
 
     # Delete the per-range Vertex agent key first; it is independent of the
     # Compute resources and idempotent, so it converges even on repeated destroy.
-    resolved_vertex_ops.delete(plan["range_id"])
+    resolved_vertex_ops.delete(plan["range_id"], plan["project_id"])
 
     for instance in reversed(plan["instances"]):
         _delete_resource(
