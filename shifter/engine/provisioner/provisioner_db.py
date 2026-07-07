@@ -22,6 +22,7 @@ import psycopg
 from psycopg import sql
 
 from config import has_ngfw_attachment_state
+from log_redact import safe_log_fingerprint
 from state_helpers import (
     _build_instance_state,
     _build_provisioned_instance_payload,
@@ -212,7 +213,10 @@ def write_provisioned_state(
             for subnet_name, subnet_data in subnets.items():
                 subnet_uuid = subnet_data.get("uuid")
                 if not subnet_uuid:
-                    logger.warning("Subnet %s missing UUID, skipping DB write", subnet_name)
+                    logger.warning(
+                        "Subnet subnet_fp=%s missing UUID, skipping DB write",
+                        safe_log_fingerprint(subnet_name),
+                    )
                     continue
 
                 state = _build_subnet_state(subnet_data, provider=provider)
@@ -227,15 +231,15 @@ def write_provisioned_state(
                 )
                 if cur.rowcount == 0:
                     raise ValueError(f"No engine_subnet record found for uuid={subnet_uuid}, range_id={range_id}")
-                logger.debug("Updated engine_subnet state: uuid=%s", subnet_uuid)
+                logger.debug("Updated engine_subnet state: subnet_fp=%s", safe_log_fingerprint(subnet_uuid))
 
             provisioned_instances = []
             for inst in instances:
                 instance_uuid = inst.get("uuid")
                 if not instance_uuid:
                     logger.warning(
-                        "Instance (role=%s) missing UUID, skipping DB write",
-                        inst.get("role", "unknown"),
+                        "Instance (role_fp=%s) missing UUID, skipping DB write",
+                        safe_log_fingerprint(inst.get("role", "unknown")),
                     )
                     continue
 
@@ -251,7 +255,7 @@ def write_provisioned_state(
                 )
                 if cur.rowcount == 0:
                     raise ValueError(f"No engine_instance record found for uuid={instance_uuid}")
-                logger.debug("Updated engine_instance state: uuid=%s", instance_uuid)
+                logger.debug("Updated engine_instance state: instance_fp=%s", safe_log_fingerprint(instance_uuid))
 
                 provisioned_instances.append(_build_provisioned_instance_payload(inst, provider=provider))
 

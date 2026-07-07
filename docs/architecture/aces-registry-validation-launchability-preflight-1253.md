@@ -1,7 +1,7 @@
 # ACES Registry Validation And Launchability Preflight
 
 Issue: GitHub #1253, "12 - ACES migration: implement registry validation and
-launchability for ACES packages".
+launchability for ACES packages."
 
 Status: pre-implementation architecture guidance. This note does not implement
 the registry changes, launch adapter, parser, conformance runner, UI, API, or

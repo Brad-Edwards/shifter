@@ -1,7 +1,7 @@
 # ACES Scenario And CyberScript Rescope Preflight
 
 Issue: GitHub #1231, "02 - ACES migration: re-scope scenario and
-CyberScript requirements".
+CyberScript requirements."
 
 This note records the architecture guardrails for the rescope. It is
 intentionally not an implementation plan and does not change current runtime
@@ -126,7 +126,7 @@ status taxonomies, or exception/logging policies around ACES instead of adding
 a deliberate adapter at the existing registry/hydrator/shared-contract seams.
 
 Extensibility seam: the one required parameter is an explicit scenario contract
-or profile discriminator at the registry/hydrator boundary, e.g. legacy demo,
+or profile discriminator at the registry/hydrator boundary, for example legacy demo,
 legacy CTF, and ACES Shifter profile. That discriminator must be explicit
 metadata, not implicit YAML shape detection and not a Polaris-specific branch
 inside Shifter core. Future variations should add profile/adapter entries
