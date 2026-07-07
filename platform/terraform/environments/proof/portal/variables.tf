@@ -103,6 +103,11 @@ variable "db_skip_final_snapshot" {
   type        = bool
 }
 
+variable "redis_apply_immediately" {
+  description = "Apply ElastiCache Redis modifications during the deploy instead of queueing them for the maintenance window."
+  type        = bool
+}
+
 variable "db_apply_immediately" {
   description = "Apply portal RDS modifications during the deploy instead of queueing them for the maintenance window."
   type        = bool

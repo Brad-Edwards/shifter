@@ -1,7 +1,7 @@
 # ACES Participant Runtime And Mission Control Alignment Preflight
 
 Issue: GitHub #1236, "07 - ACES migration: design participant runtime and
-Mission Control alignment".
+Mission Control alignment."
 
 Status: pre-implementation architecture guidance. This note does not implement
 models, migrations, APIs, UI, command execution, access flows, or a cutover.
@@ -66,7 +66,7 @@ CTF participant range status.
   keys, RDP passwords, command strings, prompt bodies, raw terminal streams,
   CTF flags, or raw provider diagnostics in ACES records.
 - Guacamole, SSH, and browser terminal access are access channels. They may be
-  referenced by an ACES-backed runtime projection as "available access", but
+  referenced by an ACES-backed runtime projection as "available access," but
   their authorization, token lifecycle, capacity, audit, and secret handling
   remain Mission Control/engine responsibilities.
 - CTF participants remain Shifter product actors with event/scoring/access

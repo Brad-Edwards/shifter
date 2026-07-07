@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 from cms.exceptions import CMSError
 from cms.models import RangeInstance
 from shared.constants import USER_CANNOT_BE_NONE
+from shared.log_sanitize import safe_log_value
 
 from ._common import (
     _instance_contexts_from_range_spec,
@@ -347,7 +348,7 @@ def get_range_by_request_id(user: User, request_id: str) -> RangeContext:
     logger.debug(
         "get_range_by_request_id called: user_id=%s request_id=%s",
         user.id,
-        request_id,
+        safe_log_value(request_id),
     )
 
     instance = RangeInstance.objects.filter(
@@ -358,7 +359,7 @@ def get_range_by_request_id(user: User, request_id: str) -> RangeContext:
     if not instance:
         logger.warning(
             "get_range_by_request_id: not found or not owned: request_id=%s user_id=%s",
-            request_id,
+            safe_log_value(request_id),
             user.id,
         )
         raise CMSError("Range not found")

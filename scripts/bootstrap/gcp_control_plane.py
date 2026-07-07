@@ -155,7 +155,9 @@ def render_gcp_platform_runtime_env(
         f"GCP_REGION={config.region}",
         f"GCP_PROJECT_ID={config.project_id}",
         f"GOOGLE_CLOUD_PROJECT={config.project_id}",
-        "GCP_RANGE_BACKEND=gdc",
+        # GCE range cells are the default GCP range backend; the GDC VM Runtime
+        # block below is retained and re-selected with GCP_RANGE_BACKEND=gdc.
+        "GCP_RANGE_BACKEND=gce",
         "ENGINE_TASK_NAMESPACE=shifter-jobs",
         "ENGINE_TASK_SERVICE_ACCOUNT_NAME=provisioner",
         "ENGINE_TASK_IMAGE_PULL_POLICY=Always",
@@ -597,11 +599,10 @@ def render_gcp_helm_values(
         "releaseNamespace": "shifter-system",
         "serviceAccounts": _helm_service_account_values(service_accounts),
         "runtimeEnv": runtime_env,
-        "guacamoleRuntimeSecret": {
-            "enabled": False,
-            "name": _GUACAMOLE_RUNTIME_RESOURCE_NAME,
-            "stringData": {},
-        },
+        # Reference only: the guacamole-runtime Kubernetes Secret is synced out
+        # of band from Secret Manager (see sync_gcp_guacamole_runtime_secret).
+        # Secret values must never enter Helm values or release history (#1180).
+        "guacamoleRuntimeSecret": {"name": _GUACAMOLE_RUNTIME_RESOURCE_NAME},
         "images": _helm_image_values(image_roots, pinned_image_tag),
         "ingress": _helm_ingress_values(
             outputs,

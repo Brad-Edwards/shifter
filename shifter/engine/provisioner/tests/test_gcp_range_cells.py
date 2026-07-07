@@ -162,7 +162,7 @@ def test_apply_mints_per_range_vertex_key_when_configured(mocker):
         vertex_ops=vertex_ops,
     )
 
-    vertex_mocks.ensure.assert_called_once_with(42, "range-vertex@test-project.iam.gserviceaccount.com")
+    vertex_mocks.ensure.assert_called_once_with(42, "range-vertex@test-project.iam.gserviceaccount.com", "test-project")
 
 
 def test_apply_skips_vertex_key_when_not_configured(mocker):
@@ -196,7 +196,7 @@ def test_destroy_deletes_per_range_vertex_key(mocker):
         vertex_ops=vertex_ops,
     )
 
-    vertex_mocks.delete.assert_called_once_with(42)
+    vertex_mocks.delete.assert_called_once_with(42, "test-project")
 
 
 def test_render_range_cell_plan_uses_vpc_per_range_and_deterministic_ips():
@@ -215,6 +215,35 @@ def test_render_range_cell_plan_uses_vpc_per_range_and_deterministic_ips():
         "shifter-r-42-egress-internal",
         "shifter-r-42-egress-deny",
     }
+
+
+def test_render_plan_destroy_tolerates_missing_subnet_cidr():
+    # Auto-cleanup after a provision that failed before CIDR allocation renders
+    # the destroy plan with require_images=False; the subnet is deleted by
+    # resource name, so an empty CIDR must not raise.
+    variables = _variables()
+    variables["subnets"][0]["cidr"] = ""
+    plan = render_range_cell_plan("req-123", variables, _sample_config(), require_images=False)
+    subnet = plan["subnets"][0]
+    assert subnet["cidr"] == ""
+    assert subnet["ip_assignments"] == {}
+    assert subnet["resource_name"]
+
+
+def test_render_plan_provision_requires_subnet_cidr():
+    variables = _variables()
+    variables["subnets"][0]["cidr"] = ""
+    with pytest.raises(RuntimeError, match="requires a cidr"):
+        render_range_cell_plan("req-123", variables, _sample_config())
+
+
+def test_render_plan_requires_subnet_name_and_uuid():
+    # name/uuid identify the subnet for both provision and destroy, so they are
+    # required in either mode.
+    variables = _variables()
+    variables["subnets"][0]["uuid"] = ""
+    with pytest.raises(RuntimeError, match="requires name and uuid"):
+        render_range_cell_plan("req-123", variables, _sample_config(), require_images=False)
 
 
 def test_render_plan_translates_polaris_vm_to_docker_host_access():
@@ -300,6 +329,26 @@ def test_instance_resource_installs_key_for_host_login_user():
     assert ssh_keys["value"] == "ubuntu:ssh-ed25519 AAAA"
 
 
+def test_windows_dc_instance_gets_boot_firewall_script():
+    """The Windows DC gets a per-boot startup script (firewall off + sshd) so the
+    provisioner's SSH reaches it even if promotion re-enables the firewall; the
+    Linux host does not."""
+    from gcp_range_cell_resources import instance_resource
+
+    plan = render_range_cell_plan("req-123", _variables(), _vertex_config())
+    by_name = {inst["name"]: inst for inst in plan["instances"]}
+
+    dc_body = instance_resource(plan, by_name["dc01"], _vertex_config(), ssh_public_key="ssh-ed25519 AAAA")
+    dc_meta = {item["key"]: item["value"] for item in dc_body["metadata"]["items"]}
+    assert "windows-startup-script-ps1" in dc_meta
+    assert "Set-NetFirewallProfile" in dc_meta["windows-startup-script-ps1"]
+    assert "sshd" in dc_meta["windows-startup-script-ps1"]
+
+    host_body = instance_resource(plan, by_name["kali"], _vertex_config(), ssh_public_key="ssh-ed25519 AAAA")
+    host_meta = {item["key"]: item["value"] for item in host_body["metadata"]["items"]}
+    assert "windows-startup-script-ps1" not in host_meta
+
+
 def test_render_plan_carries_private_google_access_flag():
     """Private Google Access flows from config into the subnet resource body."""
     from gcp_range_cell_resources import subnetwork_resource
@@ -318,7 +367,32 @@ def test_render_plan_carries_private_google_access_flag():
 
     assert plan["private_google_access"] is True
     body = subnetwork_resource(plan, plan["subnets"][0])
-    assert body["privateIpGoogleAccess"] is True
+    assert body["private_ip_google_access"] is True
+    assert body["ip_cidr_range"] == "10.50.2.0/28"
+
+
+def test_resource_bodies_use_proto_field_names():
+    """Compute resource bodies use google-cloud-compute proto (snake_case) field
+    names, including the proto-plus quirks I_p_protocol and network_i_p, so the
+    clients can construct the messages."""
+    from gcp_range_cell_resources import firewall_resource, instance_resource, network_resource
+
+    plan = render_range_cell_plan("req-123", _variables(), _vertex_config())
+
+    net = network_resource(plan)
+    assert "auto_create_subnetworks" in net
+    assert net["routing_config"] == {"routing_mode": "REGIONAL"}
+
+    mgmt = next(fw for fw in plan["firewalls"] if fw["name"].endswith("-mgmt"))
+    fw_body = firewall_resource(plan, mgmt)
+    assert fw_body["allowed"] == [{"I_p_protocol": "tcp", "ports": ["22", "3389", "2222"]}]
+    assert "target_tags" in fw_body
+
+    host = plan["instances"][0]
+    body = instance_resource(plan, host, _vertex_config(), ssh_public_key="ssh-ed25519 AAAA")
+    assert "machine_type" in body
+    assert body["network_interfaces"][0]["network_i_p"] == host["private_ip"]
+    assert isinstance(body["disks"][0]["initialize_params"]["disk_size_gb"], int)
 
 
 def test_render_plan_keeps_native_guest_on_default_ssh_port():

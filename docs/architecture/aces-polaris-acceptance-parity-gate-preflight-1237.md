@@ -1,6 +1,6 @@
 # ACES Polaris Acceptance And Parity Gate Preflight
 
-Issue: GitHub #1237, "08 - ACES migration: Polaris acceptance and parity gate".
+Issue: GitHub #1237, "08 - ACES migration: Polaris acceptance and parity gate."
 
 Status: pre-implementation architecture guidance. This note does not implement
 the ACES path, add schemas, add tests, launch ranges, or cut over runtime

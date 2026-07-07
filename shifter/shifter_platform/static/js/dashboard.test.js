@@ -203,3 +203,88 @@ describe('DashboardManager status polling', () => {
         expect(dashboard.statusPollInterval).toBeNull();
     });
 });
+
+describe('DashboardManager ACES projection', () => {
+    const buildTileMarkup = () => `
+        <div id="range-tile-1"></div>
+        <template id="active-template">
+            <div class="tile-title">Active Range</div>
+            <div class="aces-projection" hidden>
+                <div class="aces-projection-title">ACES Operation</div>
+                <span class="aces-status-label">--</span>
+                <span class="aces-observed-at"></span>
+                <span class="aces-snapshot-summary"></span>
+            </div>
+        </template>
+    `;
+
+    let dashboard;
+
+    beforeEach(() => {
+        document.body.innerHTML = buildTileMarkup();
+        dashboard = new globalThis.DashboardManager({ csrfToken: 'csrf' });
+        dashboard.currentRange = { request_id: 'abc', status: 'ready' };
+    });
+
+    test('renders projection fields into the active tile via textContent', () => {
+        dashboard.currentAcesProjection = {
+            status: 'running',
+            status_label: 'Operation running',
+            observed_at: '2026-07-06T12:00:00Z',
+            snapshot: { resource_count: 2, snapshot_ref: 'snap-1' },
+        };
+
+        const tile = document.getElementById('range-tile-1');
+        dashboard._renderActiveTile(tile);
+
+        const section = tile.querySelector('.aces-projection');
+        expect(section.hidden).toBe(false);
+        expect(tile.querySelector('.aces-status-label').textContent).toBe('Operation running');
+        expect(tile.querySelector('.aces-snapshot-summary').textContent).toContain('2');
+    });
+
+    test('hides the projection section when no projection is present', () => {
+        dashboard.currentAcesProjection = null;
+
+        const tile = document.getElementById('range-tile-1');
+        dashboard._renderActiveTile(tile);
+
+        expect(tile.querySelector('.aces-projection').hidden).toBe(true);
+    });
+
+    test('inserts ACES-derived values as text, never as HTML', () => {
+        dashboard.currentAcesProjection = {
+            status: 'running',
+            status_label: '<img src=x onerror=alert(1)>',
+            observed_at: null,
+            snapshot: null,
+        };
+
+        const tile = document.getElementById('range-tile-1');
+        dashboard._renderActiveTile(tile);
+
+        const labelEl = tile.querySelector('.aces-status-label');
+        // Rendered as literal text; no child <img> element is created.
+        expect(labelEl.querySelector('img')).toBeNull();
+        expect(labelEl.textContent).toBe('<img src=x onerror=alert(1)>');
+    });
+
+    test('loadRange stores the aces_projection from the response', async () => {
+        const projection = { status: 'succeeded', status_label: 'Operation succeeded', snapshot: null };
+        globalThis.fetch = jest.fn().mockResolvedValue({
+            ok: true,
+            json: () => Promise.resolve({ range: { request_id: 'abc', status: 'ready' }, aces_projection: projection }),
+        });
+        dashboard.rangeUrl = '/range';
+
+        await dashboard.loadRange();
+
+        expect(dashboard.currentAcesProjection).toEqual(projection);
+    });
+
+    test('ACES states are not part of the transitional-state set', () => {
+        for (const acesState of ['accepted', 'running', 'succeeded', 'failed', 'cancelled']) {
+            expect(dashboard._isTransitionalState(acesState)).toBe(false);
+        }
+    });
+});

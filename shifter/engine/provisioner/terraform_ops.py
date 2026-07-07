@@ -198,10 +198,16 @@ def _run_terraform_provision(
 
     # Run the provider-routed apply
     output_data = range_terraform_runner.apply_range(request_id, provision_variables)
-    logger.info("Terraform outputs: %s", json.dumps(output_data, indent=2))
 
     subnets_output = output_data.get("subnets", {})
     instances_output = output_data.get("instances", [])
+    # Log structure only. Terraform outputs can carry sensitive values
+    # (generated passwords, SSH keys, tokens) and must never be dumped raw.
+    logger.info(
+        "Terraform apply produced %d subnet(s) and %d instance(s)",
+        len(subnets_output),
+        len(instances_output),
+    )
 
     expected_subnet_names = {str(subnet_name) for subnet in spec_subnets if (subnet_name := subnet.get("name"))}
     _validate_provisioned_outputs(

@@ -61,7 +61,12 @@ class TestRangeTokenAccess:
         response = _bearer(client, raw).get(RANGE_URL)
 
         assert response.status_code == 200
-        assert response.json() == {"has_range": False, "range": None, "connection_urls": []}
+        assert response.json() == {
+            "has_range": False,
+            "range": None,
+            "connection_urls": [],
+            "aces_projection": None,
+        }
 
     def test_token_without_range_read_scope_is_forbidden(self, client, user):
         raw = _token(user, scopes.MISSION_CONTROL_UPLOAD_WRITE)

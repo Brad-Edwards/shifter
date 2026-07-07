@@ -922,11 +922,7 @@ class TestGdcControlPlaneHelmValues:
             values["runtimeEnv"]["ENGINE_TASK_IMAGE"] == "us-central1-docker.pkg.dev/prod-rwctxzl6shxk/"
             "shifter-gcp-dev-pulumi-provisioner/pulumi-provisioner:abc1234"
         )
-        assert values["guacamoleRuntimeSecret"] == {
-            "enabled": False,
-            "name": "guacamole-runtime",
-            "stringData": {},
-        }
+        assert values["guacamoleRuntimeSecret"] == {"name": "guacamole-runtime"}
         assert values["services"]["portal"]["backendConfig"]["securityPolicyName"] == "shifter-gcp-dev-edge"
         assert values["services"]["guacamoleClient"]["backendConfig"]["enabled"] is True
         assert values["services"]["guacamoleClient"]["backendConfig"]["name"] == "guacamole-client"
@@ -987,6 +983,24 @@ class TestGdcControlPlaneHelmValues:
                 outputs,
                 image_tag="latest",
             )
+
+    def test_generated_values_carry_no_guacamole_secret_payload(self):
+        """Generated Helm values reference the runtime Secret by name only (issue #1180).
+
+        Guacamole DB and JSON-auth secrets live in Secret Manager and the
+        out-of-band Kubernetes Secret; they must never be serialized into Helm
+        values (and thus Helm release history).
+        """
+        config = deploy.GDCBootstrapConfig(project_id="prod-rwctxzl6shxk", cluster_id="cluster1")
+        outputs = _sample_gcp_control_plane_outputs(config.project_id)
+
+        values = deploy.render_gcp_helm_values(config, outputs, image_tag=PINNED_IMAGE_TAG)
+
+        assert values["guacamoleRuntimeSecret"] == {"name": "guacamole-runtime"}
+        serialized = json.dumps(values)
+        assert "POSTGRESQL_PASSWORD" not in serialized
+        assert "JSON_SECRET_KEY" not in serialized
+        assert "stringData" not in serialized
 
 
 class TestGdcControlPlaneImages:
@@ -1102,6 +1116,59 @@ class TestGdcControlPlaneHelmChart:
         assert "name: shifter-gcp-dev-edge" in output
         assert 'cloud.google.com/backend-config: "{\\"default\\":\\"portal-web\\"}"' in output
         assert 'cloud.google.com/backend-config: "{\\"default\\":\\"guacamole-client\\"}"' in output
+        # The chart references the guacamole-runtime Secret; it must never create one (#1180).
+        assert "kind: Secret" not in output
+
+    def test_chart_never_renders_a_secret_even_when_values_carry_a_payload(self, tmp_path):
+        """Defense in depth (#1180): the chart owns no Secret payload.
+
+        Even if a caller injects secret material under guacamoleRuntimeSecret,
+        the chart must not render a Kubernetes Secret or leak the values into
+        rendered output / Helm release history. The runtime Secret is created
+        out of band by the deploy bootstrap and consumed by reference only.
+        """
+        helm = shutil.which("helm")
+        if helm is None:
+            pytest.skip("helm is required for chart render validation")
+
+        config = deploy.GDCBootstrapConfig(project_id="prod-rwctxzl6shxk", cluster_id="cluster1")
+        outputs = _sample_gcp_control_plane_outputs(config.project_id)
+        values = deploy.render_gcp_helm_values(config, outputs, image_tag=PINNED_IMAGE_TAG)
+        # Adversarial override: a caller tries to smuggle secrets through values.
+        values["guacamoleRuntimeSecret"] = {
+            "enabled": True,
+            "name": "guacamole-runtime",
+            "stringData": {
+                "POSTGRESQL_PASSWORD": "should-not-render",
+                "JSON_SECRET_KEY": "should-not-render",
+            },
+        }
+        values_path = tmp_path / "values.json"
+        values_path.write_text(json.dumps(values))
+        chart_dir = Path(__file__).resolve().parents[3] / "platform" / "charts" / "shifter"
+
+        rendered = subprocess.Popen(  # nosec B603 B607
+            [
+                helm,
+                "template",
+                "shifter",
+                str(chart_dir),
+                "--namespace",
+                "shifter-system",
+                "--values",
+                str(values_path),
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        stdout, stderr = rendered.communicate()
+
+        assert rendered.returncode == 0, stderr
+        assert "kind: Secret" not in stdout
+        assert "should-not-render" not in stdout
+        assert "POSTGRESQL_PASSWORD" not in stdout
+        assert "JSON_SECRET_KEY" not in stdout
 
 
 class TestGdcControlPlaneGuacamoleRuntimeSecret:
@@ -1858,7 +1925,7 @@ class TestGcpBootstrapIdentityPlatform:
 
         assert "PLATFORM_BOOTSTRAP_STAFF_EMAILS=admin@example.com\n" in rendered
         assert "PLATFORM_BOOTSTRAP_SUPERUSER_EMAILS=admin@example.com\n" in rendered
-        assert "GCP_RANGE_BACKEND=gdc\n" in rendered
+        assert "GCP_RANGE_BACKEND=gce\n" in rendered
 
     def test_render_gcp_platform_runtime_env_uses_blank_guest_password_samples(self):
         """The generated env contract must not embed sample guest passwords in source-controlled output."""
