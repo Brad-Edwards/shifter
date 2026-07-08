@@ -9,10 +9,12 @@ import pytest
 
 from shared.aces.participant_runtime import (
     AcesParticipantRuntimeRecordConflict,
+    ParticipantRecordWriteOptions,
     persist_participant_behavior_history_record,
     persist_participant_evidence_record,
 )
 from shared.models import AcesParticipantRuntimeRecord
+from shared.schemas.aces_participant_runtime import AcesParticipantRuntimeRecordError
 
 REQUEST_ID = UUID("12345678-1234-5678-1234-567812345678")
 SOURCE_TS = datetime(2026, 7, 5, 3, 0, tzinfo=UTC)
@@ -37,31 +39,24 @@ HISTORY_PAYLOAD = {
 }
 
 
-def _evidence(**overrides):
-    fields = {
-        "request_id": REQUEST_ID,
-        "participant_ref": "ctf-participant-1",
-        "evidence_kind": "artifact_ref",
-        "provenance_source": "object_storage",
-        "provenance_ref": "range-artifacts/p1/out.bin",
-        "source_timestamp": SOURCE_TS,
-        "payload": dict(EVIDENCE_PAYLOAD),
-    }
-    fields.update(overrides)
-    return persist_participant_evidence_record(**fields)
+def _evidence(*, participant_ref="ctf-participant-1", source_timestamp=SOURCE_TS, payload=None, options=None):
+    return persist_participant_evidence_record(
+        request_id=REQUEST_ID,
+        participant_ref=participant_ref,
+        source_timestamp=source_timestamp,
+        payload=dict(EVIDENCE_PAYLOAD) if payload is None else payload,
+        options=options,
+    )
 
 
-def _history(**overrides):
-    fields = {
-        "request_id": REQUEST_ID,
-        "participant_ref": "ctf-participant-1",
-        "event_kind": "command_dispatched",
-        "event_ref": "range-event-9f2c",
-        "source_timestamp": SOURCE_TS,
-        "payload": dict(HISTORY_PAYLOAD),
-    }
-    fields.update(overrides)
-    return persist_participant_behavior_history_record(**fields)
+def _history(*, participant_ref="ctf-participant-1", source_timestamp=SOURCE_TS, payload=None, options=None):
+    return persist_participant_behavior_history_record(
+        request_id=REQUEST_ID,
+        participant_ref=participant_ref,
+        source_timestamp=source_timestamp,
+        payload=dict(HISTORY_PAYLOAD) if payload is None else payload,
+        options=options,
+    )
 
 
 @pytest.mark.django_db
@@ -89,7 +84,7 @@ def test_persist_evidence_record_conflicts_on_payload_drift():
 
 @pytest.mark.django_db
 def test_persist_evidence_record_owner_override():
-    row = _evidence(owner=AcesParticipantRuntimeRecord.Owner.CTF)
+    row = _evidence(options=ParticipantRecordWriteOptions(owner=AcesParticipantRuntimeRecord.Owner.CTF))
     assert row.owner == AcesParticipantRuntimeRecord.Owner.CTF
 
 
@@ -97,8 +92,8 @@ def test_persist_evidence_record_owner_override():
 def test_persist_evidence_distinct_provenance_refs_do_not_collide():
     ref_a = "range-artifacts/p1/a.bin"
     ref_b = "range-artifacts/p1/b.bin"
-    _evidence(provenance_ref=ref_a, payload={**EVIDENCE_PAYLOAD, "provenance_ref": ref_a, "artifact_ref": ref_a})
-    _evidence(provenance_ref=ref_b, payload={**EVIDENCE_PAYLOAD, "provenance_ref": ref_b, "artifact_ref": ref_b})
+    _evidence(payload={**EVIDENCE_PAYLOAD, "provenance_ref": ref_a, "artifact_ref": ref_a})
+    _evidence(payload={**EVIDENCE_PAYLOAD, "provenance_ref": ref_b, "artifact_ref": ref_b})
     assert AcesParticipantRuntimeRecord.objects.count() == 2
 
 
@@ -109,44 +104,40 @@ def test_persist_evidence_same_ref_distinct_sources_do_not_collide():
     # distinct evidence and must not collapse onto one row.
     same_ref = "shared-local-ref"
     _evidence(
-        provenance_source="object_storage",
-        provenance_ref=same_ref,
         payload={
             **EVIDENCE_PAYLOAD,
             "provenance_source": "object_storage",
             "provenance_ref": same_ref,
             "artifact_ref": same_ref,
-        },
+        }
     )
     _evidence(
-        provenance_source="upload_inspection",
-        provenance_ref=same_ref,
         payload={
             **EVIDENCE_PAYLOAD,
             "provenance_source": "upload_inspection",
             "provenance_ref": same_ref,
             "artifact_ref": same_ref,
-        },
+        }
     )
     assert AcesParticipantRuntimeRecord.objects.count() == 2
 
 
 @pytest.mark.django_db
-def test_persist_evidence_rejects_identity_payload_mismatch():
-    # The idempotency key is built from the provenance_ref argument; a payload
-    # echoing a different provenance_ref would let content drift from the key.
+def test_persist_evidence_rejects_participant_ref_payload_mismatch():
+    # participant_ref is the correlation column; a payload echoing a different
+    # participant_ref would drift the row content from the key.
     with pytest.raises(AcesParticipantRuntimeRecordConflict, match="conflicts with identity"):
         _evidence(
-            provenance_ref="range-artifacts/p1/a.bin",
-            payload={**EVIDENCE_PAYLOAD, "provenance_ref": "range-artifacts/p1/other.bin"},
+            participant_ref="ctf-participant-1", payload={**EVIDENCE_PAYLOAD, "participant_ref": "ctf-participant-2"}
         )
     assert AcesParticipantRuntimeRecord.objects.count() == 0
 
 
 @pytest.mark.django_db
-def test_persist_behavior_history_rejects_identity_payload_mismatch():
-    with pytest.raises(AcesParticipantRuntimeRecordConflict, match="conflicts with identity"):
-        _history(event_ref="range-event-9f2c", payload={**HISTORY_PAYLOAD, "event_ref": "range-event-other"})
+def test_persist_evidence_missing_identity_field_raises():
+    payload = {k: v for k, v in EVIDENCE_PAYLOAD.items() if k != "provenance_source"}
+    with pytest.raises(AcesParticipantRuntimeRecordError, match="provenance_source"):
+        _evidence(payload=payload)
     assert AcesParticipantRuntimeRecord.objects.count() == 0
 
 
@@ -171,12 +162,27 @@ def test_persist_behavior_history_record_conflicts_on_payload_drift():
 
 
 @pytest.mark.django_db
+def test_persist_behavior_history_rejects_participant_ref_payload_mismatch():
+    with pytest.raises(AcesParticipantRuntimeRecordConflict, match="conflicts with identity"):
+        _history(
+            participant_ref="ctf-participant-1", payload={**HISTORY_PAYLOAD, "participant_ref": "ctf-participant-2"}
+        )
+    assert AcesParticipantRuntimeRecord.objects.count() == 0
+
+
+@pytest.mark.django_db
+def test_persist_behavior_history_distinct_events_do_not_collide():
+    _history(payload={**HISTORY_PAYLOAD, "event_ref": "range-event-1"})
+    _history(payload={**HISTORY_PAYLOAD, "event_ref": "range-event-2"})
+    assert AcesParticipantRuntimeRecord.objects.count() == 2
+
+
+@pytest.mark.django_db
 def test_typed_helper_key_stays_within_column_for_long_refs():
     long_participant = "p" * 256
     long_ref = "r" * 400
     row = _evidence(
         participant_ref=long_participant,
-        provenance_ref=long_ref,
         payload={
             **EVIDENCE_PAYLOAD,
             "participant_ref": long_participant,
