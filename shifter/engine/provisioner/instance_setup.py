@@ -55,6 +55,11 @@ class _InstanceSetupSpec:
     domain_join: _DomainJoinSpec
     set_local_password: bool = True
     local_password_target_container: str | None = None
+    # Override the guest username used for SSH-key injection + local password.
+    # Defaults (None) to get_ssh_username(os_type, role). TechVault sets this
+    # to "ubuntu": it uses os_type "kali" for the Guacamole RDP access path,
+    # but the host seat user (uid 1000, for aptl's wazuh certs) is "ubuntu".
+    ssh_user_override: str | None = None
 
 
 class _InstanceSetupCtx:
@@ -485,7 +490,7 @@ def _run_single_instance_setup(
         hostname=_resolve_setup_hostname(spec.instance_name, instance_id),
         public_key=spec.public_key,
         agent_presigned_url=spec.agent_presigned_url,
-        ssh_user=get_ssh_username(spec.os_type, spec.role),
+        ssh_user=spec.ssh_user_override or get_ssh_username(spec.os_type, spec.role),
     )
 
     try:
