@@ -548,6 +548,27 @@ rows:
       Cutover requires a published profile claim validated by ACES conformance,
       not prose.
 
+  - id: validation.aces-live-backend-path
+    surface: validation
+    legacy_source: docs/architecture/aces-runtime-target-backend-manifest-preflight-1233.md; docs/architecture/aces-live-backend-validation-preflight-1264.md
+    legacy_field: Shifter portal/CMS/engine/task-runner/provisioner launch path and ACES operation receipt/status/snapshot evidence
+    category: validation gate
+    aces_target: live or controlled Shifter ACES provisioning-only backend validation through the normal backend path
+    shifter_owner: cms.scenarios.registry, cms.services.create_range, engine.services.create_range, engine.ecs, shifter/engine/provisioner, shared.aces.operations, shared.aces.projections, mission_control.api.aces
+    validation_evidence: "future #1264 implementation evidence: launch receipt, operation-status projection, runtime-snapshot projection, cleanup result, and sanitized diagnostics captured through existing Shifter services and ACES sidecar read seams"
+    next_issue_kind: implementation-candidate
+    candidate_issue_title: "#1264: Add live validation for Shifter ACES backend path"
+    notes: >-
+      #1264 is the cutover evidence gate that proves the provisioning-only
+      RuntimeTarget path is not just a manifest/conformance claim: a launchable
+      ACES entry must enter through the normal registry, CMS range service,
+      engine interpreter/service, task-runner, and provisioner CLI request-id
+      path, then produce non-secret operation receipt/status/runtime-snapshot
+      evidence through the validated sidecar and redacted read projections.
+      Direct Terraform/cloud/provisioner calls, demo-only launchers, seeded
+      sidecar rows, raw logs, provider dumps, and ACES-authored backend
+      realization details do not satisfy this gate.
+
   - id: validation.participant-runtime-conformance
     surface: validation
     legacy_source: docs/architecture/aces-runtime-target-backend-manifest-preflight-1233.md; future Shifter backend manifest

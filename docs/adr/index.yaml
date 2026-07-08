@@ -1324,5 +1324,48 @@
       "shifter/engine/provisioner/gdc_range_networks.py",
       "shifter/engine/provisioner/gdc_vmruntime_assets.py"
     ]
+  },
+  {
+    "id": "ADR-031",
+    "title": "ACES-native provisioning core is a feature-flagged parallel path",
+    "status": "accepted",
+    "scope": "shifter_platform",
+    "decision": "Shifter builds an ACES-native provisioning path as a parallel, feature-flagged implementation rather than routing ACES through the cyberscript scenario kernel. A compiled ACES ProvisioningPlan is faithfully interpreted by a Shifter RuntimeTarget backend into a neutral, cyberscript-free ProvisioningSpec (compute nodes with os family, count, cpu/memory resources, image reference, services, network membership; networks with cidr, gateway, isolation, ACL rules). The engine and provisioner realize that ProvisioningSpec directly; the existing cyberscript scenario -> RangeSpec -> hydrate -> interpret -> provisioner path is left unchanged and authoritative. The whole ACES-native path is gated by SHIFTER_ACES_NATIVE_PROVISIONING (default off) and stays inert until an explicitly authorized cutover. This is the provisioning-surface instance of ADR-024 (parity-gated parallel cutover) and applies contract-locked development (ADR-087): the ProvisioningSpec is a locked contract and the ACES-owned conformance suite is the primary oracle. It supersedes the #1262 scenario_ref passthrough, which discarded compiled ACES topology and depended on cyberscript scenarios.",
+    "rules": [
+      {
+        "id": "ADR-031-R1",
+        "description": "ACES SDL packages (aces_sdl, aces_contracts, aces_runtime, aces_processor, aces_conformance, aces_backend_protocols) may be imported only within shared.aces. The cms, engine, mission_control, ctf, and management layers and the engine provisioner must consume ACES realization through the neutral ProvisioningSpec and shared seams, never by importing an aces_* package. Enforced by an import-linter forbidden contract in CI.",
+        "checks": []
+      },
+      {
+        "id": "ADR-031-R2",
+        "description": "The ACES-native provisioning path — ACES catalog launchability, ACES dispatch, ACES engine consumption, and ACES provisioner realization — must be gated by the SHIFTER_ACES_NATIVE_PROVISIONING feature flag (default off). With the flag off, ACES catalog entries are not launchable and the cyberscript scenario -> RangeSpec -> hydrate -> interpret -> provisioner path is unchanged and authoritative. The ACES-native path must not modify cyberscript hydration, RangeSpec/InstanceSpec, or the existing create_range body; it may only add parallel modules and additive flag-gated branches.",
+        "checks": []
+      },
+      {
+        "id": "ADR-031-R3",
+        "description": "The neutral ProvisioningSpec is a locked contract (versioned, validated, stable ACESPS-* invariant ids with an invariant-to-check inventory). The Shifter ACES RuntimeTarget backend must pass the ACES-owned conformance suite: the provisioning-only fixture gate (run_fixture_suite) and a live target probe (run_target_conformance) that requires a non-empty changed_addresses set and at least one PROVISIONING snapshot entry. Conformance verdict logic must not be reimplemented in Shifter.",
+        "checks": []
+      },
+      {
+        "id": "ADR-031-R4",
+        "description": "ACES backend diagnostics and operation evidence must be bounded, single-line, and free of backend realization detail (no terraform, ssm, ami-, cidr, subnet, secret, password, credential, or token substrings). Image ids, machine sizes, subnet allocation, provider configuration, and secrets are backend-owned realization and must not surface as authored ACES semantics or as evidence.",
+        "checks": []
+      }
+    ],
+    "exceptions": [],
+    "enforcement": ["ci", "agent-policy"],
+    "evidence": [
+      "https://github.com/Brad-Edwards/shifter/issues/1262",
+      "https://github.com/Brad-Edwards/shifter/issues/1264",
+      "docs/architecture/aces-runtime-target-backend-manifest-preflight-1233.md",
+      "docs/architecture/aces-migration-parity-inventory.yaml",
+      ".importlinter",
+      "shifter/shifter_platform/shared/aces/provisioning_spec.py",
+      "shifter/shifter_platform/shared/aces/runtime_target.py",
+      "shifter/shifter_platform/shared/aces/dispatch_port.py",
+      "shifter/shifter_platform/config/_aces_settings.py",
+      "shifter/shifter_platform/tests/shared/aces/test_backend_conformance_gate.py"
+    ]
   }
 ]
