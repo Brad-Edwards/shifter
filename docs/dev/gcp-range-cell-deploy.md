@@ -132,6 +132,44 @@ the image family `shifter-<purpose>-dc`). To add a DC for a new domain:
 The `polaris` profile reproduces the Polaris `shifter-polaris-dc`
 (`BOREAS.LOCAL`) image and is the default.
 
+## Baking the polaris-vm host image (compose stack)
+
+The Polaris range host (`shifter-polaris-vm`) is a Debian Docker host that boots
+the **prebaked** Polaris docker-compose stack (~17 containers including the
+participant `a14-kali`). Genuine dynamic realization is separate future work; for
+now the stack is baked into the image so time-to-serve is a range launch, not a
+full container build. `host-setup.sh` fetches the stack tarball from GCS at bake
+time and `docker compose build`s it in; the range bootstrap then only rewrites
+the DC IP into `docker-compose.override.yml` and `docker compose up`.
+
+The compose stack lives outside this repo (the AWS polaris-vm AMI is baked from
+the same external stack), so the GCE bake fetches it from GCS:
+
+1. **Get the stack tarball.** It is the assembled `scenario-dev/polaris/build/`
+   tree (a `docker-compose.yml` plus each service's local build context). It is
+   platform-neutral: every service is a local `docker build` (no registry/ECR or
+   cloud-specific references), so the GCS copy is the same content as the AWS S3
+   build tarball (`s3://shifter-polaris-bake-<env>-<acct>/polaris/build-*.tar.gz`).
+2. **Pack it for GCP's layout.** `host-setup.sh` extracts *into*
+   `.../scenario-dev/polaris/build` and expects `docker-compose.yml` at the
+   tarball root, so pack the *contents* of `build/` at the root
+   (`cd build && tar czf polaris-stack.tar.gz .`), not the `scenario-dev/...`
+   prefix the AWS tarball uses.
+3. **Upload** to `gs://<GCP_POLARIS_STACK_BUCKET>/polaris/stack/polaris-stack.tar.gz`
+   (the default `POLARIS_STACK_KEY`), and grant the packer builder SA
+   `roles/storage.objectViewer` on the bucket.
+4. **Set the `GCP_POLARIS_STACK_BUCKET` repository variable** to that bucket
+   (see `docs/dev/deploy-secrets.md`). The build exports it as
+   `PKR_VAR_polaris_stack_bucket`; empty leaves the host range-ready without the
+   stack baked.
+5. **Run the Packer GCE Image Build** workflow with `image_type=polaris-vm`. It
+   publishes image family `shifter-polaris-vm`, which `GCP_RANGE_LINUX_IMAGE`
+   points at.
+
+The DC's Administrator password baked by `a2_setup.ps1` must match
+`DC_DOMAIN_PASSWORD` in the deploy config (see `docs/dev/deploy-secrets.md`), so
+the provisioner's `set_admin_password` step succeeds against the prebaked DC.
+
 ## NGFW
 
 There is no GCE-native NGFW (Palo Alto VM-Series) path; that path exists only
