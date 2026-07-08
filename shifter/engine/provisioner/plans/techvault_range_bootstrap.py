@@ -44,6 +44,9 @@ class TechVaultRangeBootstrapPlan:
 
     def __init__(self) -> None:
         """Build the (single) Bedrock shard step + verification."""
+        self._default_model = _AWS_DEFAULT_MODEL
+        self._default_small_fast_model = _AWS_DEFAULT_SMALL_FAST_MODEL
+        self._default_region = _DEFAULT_AWS_REGION
         self._steps: list[SetupStep] = [
             SetupStep(
                 name="techvault_bedrock_shard",
@@ -86,15 +89,15 @@ class TechVaultRangeBootstrapPlan:
             getattr(instance, "anthropic_model", None)
             or os.environ.get("TECHVAULT_ANTHROPIC_MODEL")
             or os.environ.get("ANTHROPIC_MODEL")
-            or _AWS_DEFAULT_MODEL
+            or self._default_model
         )
         small_fast = (
             getattr(instance, "anthropic_small_fast_model", None)
             or os.environ.get("TECHVAULT_ANTHROPIC_SMALL_FAST_MODEL")
             or os.environ.get("ANTHROPIC_SMALL_FAST_MODEL")
-            or _AWS_DEFAULT_SMALL_FAST_MODEL
+            or self._default_small_fast_model
         )
-        region = os.environ.get("AWS_REGION") or _DEFAULT_AWS_REGION
+        region = os.environ.get("AWS_REGION") or self._default_region
         return {
             "anthropic_model": model,
             "anthropic_small_fast_model": small_fast,
