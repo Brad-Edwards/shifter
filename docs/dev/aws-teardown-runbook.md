@@ -132,6 +132,19 @@ These recur on a full portal destroy and are safe to resolve directly:
   did, push any throwaway image tagged with the expected tag (`1.5.5`) to
   `shifter-<env>-guacd` and `shifter-<env>-guacamole-client` so the data sources
   resolve, then destroy.
+- **CloudWatch log groups survive the range destroy and block a fresh apply.**
+  The range flow-log, Network Firewall, and Route53-resolver log groups
+  (`/vpc/<env>-range-flow-logs`, `/aws/network-firewall/<env>-range`,
+  `/aws/route53/resolver/<env>-range`) can be recreated by an in-flight log
+  delivery that races `terraform destroy`, so they persist after the range
+  destroy reports success. Nothing has `skip_destroy`; the fix is a post-destroy
+  sweep. A later fresh apply otherwise fails with
+  `ResourceAlreadyExistsException`. Delete any that remain:
+  ```bash
+  for lg in $(aws logs describe-log-groups \
+    --query 'logGroups[?contains(logGroupName,`<env>-range`)||contains(logGroupName,`<env>-portal`)||contains(logGroupName,`/vpc/`)].logGroupName' \
+    --output text); do aws logs delete-log-group --log-group-name "$lg"; done
+  ```
 
 ## 4. Destroy the runner root and deregister runners
 
@@ -146,25 +159,33 @@ These recur on a full portal destroy and are safe to resolve directly:
 
 See [`aws-runner-provisioning-runbook.md`](aws-runner-provisioning-runbook.md).
 
-## 5. Remove bootstrap-created identity and backend
+## 5. Destroy the global/iam stack, then the state backend
 
-These are created by bootstrap, not by the env stacks, so `terraform destroy`
-does not remove them:
-
-- **GitHub OIDC provider**
-  `arn:aws:iam::<account>:oidc-provider/token.actions.githubusercontent.com`.
-- **Deploy role** `github-actions-shifter-<env>` and any stray temporary
-  `github-actions-shifter-<env>-bootstrap` role.
-- **The `{uuid}` state bucket** (`shifter-<env>-infra-<uuid>` for dev/proof,
-  `shifter-infra-<uuid>` for prod). It is versioned; delete all versions, then
-  the bucket. Do this last, after all stacks are destroyed, because it holds
-  their state.
+The `global/iam` stack (applied by bootstrap, not by `deploy.yml`) owns the
+GitHub OIDC provider, the `github-actions-shifter-<env>` deploy role, its five
+permission policies, the `shifter-<env>-ci-role-boundary` policy, **and** the
+account-scoped `cursor-bedrock-agent` user (via `cursor-bedrock.tf`).
+`terraform destroy` of the env stacks does not touch any of it. **Destroy
+`global/iam` before deleting the state bucket** (the bucket holds its state).
+Skipping this is the #1431 failure: a later fresh bootstrap starts from empty
+state and collides with these surviving resources (`EntityAlreadyExists` on the
+cursor-bedrock user and the CI boundary policy).
 
 ```bash
-aws iam delete-open-id-connect-provider --open-id-connect-provider-arn "$OIDC_ARN"
-# Delete role inline policies / instance profiles as needed, then:
-aws iam delete-role --role-name "github-actions-shifter-<env>"
+cd platform/terraform/global/iam
+terraform init -reconfigure -backend-config=<env>.s3.tfbackend -backend-config="bucket=$STATE_BUCKET"
+terraform destroy -auto-approve -var-file=<env>.tfvars
 ```
+
+Destroying `global/iam` deletes the `cursor-bedrock-agent` user and rotates its
+access key; a fresh bootstrap recreates both. If you need that account-scoped
+tooling preserved across teardowns, keep it out of `global/iam` (tracked in
+#1437). Also delete any stray temporary `github-actions-shifter-<env>-bootstrap`
+role (bootstrap normally removes it).
+
+**Then** empty and delete the `{uuid}` state bucket
+(`shifter-<env>-infra-<uuid>` for dev/proof, `shifter-infra-<uuid>` for prod).
+It is versioned; delete all object versions and delete markers, then the bucket.
 
 ## 6. Clear local operator config
 
@@ -185,5 +206,8 @@ secrets (`AWS_ROLE_ARN`, `TF_INFRA_STATE_BUCKET`, `TF_VARS_PROD_PORTAL`,
 ## 8. Verify the account is empty
 
 Confirm no residual EC2, ASG, RDS, ALB, Network Firewall, ECR, IAM
-`github-actions-shifter-*` roles, OIDC provider, or `{uuid}` state bucket
-remain before a fresh bootstrap.
+`github-actions-shifter-*` roles, `shifter-<env>-*` policies,
+`cursor-bedrock-agent` user, OIDC provider, `<env>-range` / `/vpc/` CloudWatch
+log groups, or `{uuid}` state bucket remain before a fresh bootstrap. Preserve
+only what you intend to reuse (for example range AMIs and their `/shifter/ami/*`
+SSM parameters).
