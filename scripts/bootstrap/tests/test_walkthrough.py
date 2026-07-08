@@ -627,43 +627,53 @@ class TestWalkthroughCognitoUser:
 
 
 class TestEnsureStateBucketSettingSecret:
-    """Branch coverage for _ensure_tf_infra_state_bucket_secret."""
+    """Branch coverage for _ensure_tf_infra_state_bucket_secret.
+
+    Mocks only the process boundary (subprocess.run for `gh`, plus stdin), not
+    first-party seams, per ADR-019-R1.
+    """
+
+    NAME = "TF_INFRA_STATE_BUCKET_DEV"
+
+    @staticmethod
+    def _gh_list_run(stdout: str):
+        """subprocess.run side effect: `gh secret list` returns stdout; others succeed."""
+
+        def run(cmd, **kwargs):
+            joined = " ".join(cmd) if isinstance(cmd, list) else str(cmd)
+            if "secret" in joined and "list" in joined:
+                return subprocess.CompletedProcess(cmd, 0, stdout=stdout, stderr="")
+            return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+        return run
+
+    @staticmethod
+    def _set_calls(mock_run):
+        return [c for c in mock_run.call_args_list if "gh" in c[0][0] and "set" in c[0][0]]
 
     def test_returns_early_when_already_configured(self) -> None:
-        """When the state-bucket secret already exists, do nothing."""
-        with (
-            patch("deploy.github_secret_exists", return_value=True),
-            patch("deploy._gh_secret_set_or_exit") as mock_set,
-            patch("deploy.confirm_or_manual") as mock_confirm,
-        ):
-            deploy._ensure_tf_infra_state_bucket_secret(
-                "TF_INFRA_STATE_BUCKET_DEV", "shifter-dev-infra-x", "org", "repo"
-            )
-            mock_set.assert_not_called()
-            mock_confirm.assert_not_called()
+        """When `gh secret list` already shows the secret, do not set it."""
+        with patch("subprocess.run") as mock_run:
+            mock_run.side_effect = self._gh_list_run(f"{self.NAME}\tUpdated 2024\n")
+            deploy._ensure_tf_infra_state_bucket_secret(self.NAME, "shifter-dev-infra-x", "org", "repo")
+        assert self._set_calls(mock_run) == []
 
-    def test_manual_choice_waits_for_user(self) -> None:
-        """The manual path prints instructions and waits, without a gh call."""
-        with (
-            patch("deploy.github_secret_exists", return_value=False),
-            patch("deploy.confirm_or_manual", return_value="manual"),
-            patch("deploy._gh_secret_set_or_exit") as mock_set,
-            patch("deploy.wait_for_user") as mock_wait,
-        ):
-            deploy._ensure_tf_infra_state_bucket_secret(
-                "TF_INFRA_STATE_BUCKET_DEV", "shifter-dev-infra-x", "org", "repo"
-            )
-            mock_wait.assert_called_once()
-            mock_set.assert_not_called()
+    def test_manual_choice_does_not_set(self, monkeypatch) -> None:
+        """Non-interactive resolves to the manual path: instructions, no gh set.
 
-    def test_refusal_exits(self) -> None:
+        Non-interactive `confirm_or_manual` returns "manual" and `wait_for_user`
+        returns immediately, so no first-party seam needs mocking.
+        """
+        monkeypatch.setattr("sys.stdin.isatty", lambda: False)
+        with patch("subprocess.run") as mock_run:
+            mock_run.side_effect = self._gh_list_run("")  # secret absent
+            deploy._ensure_tf_infra_state_bucket_secret(self.NAME, "shifter-dev-infra-x", "org", "repo")
+        assert self._set_calls(mock_run) == []
+
+    def test_refusal_exits(self, mock_stdin_tty) -> None:
         """Choosing 'no' aborts, because the secret is required for deploys."""
-        with (
-            patch("deploy.github_secret_exists", return_value=False),
-            patch("deploy.confirm_or_manual", return_value="no"),
-            pytest.raises(SystemExit) as exc_info,
-        ):
-            deploy._ensure_tf_infra_state_bucket_secret(
-                "TF_INFRA_STATE_BUCKET_DEV", "shifter-dev-infra-x", "org", "repo"
-            )
+        with patch("subprocess.run") as mock_run, patch("builtins.input", return_value="n"):
+            mock_run.side_effect = self._gh_list_run("")  # secret absent
+            with pytest.raises(SystemExit) as exc_info:
+                deploy._ensure_tf_infra_state_bucket_secret(self.NAME, "shifter-dev-infra-x", "org", "repo")
         assert exc_info.value.code == 1
