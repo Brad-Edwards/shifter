@@ -548,8 +548,19 @@ rows:
     legacy_field: backend capability claim and participant-runtime conformance gate
     category: validation gate
     aces_target: ACES participant-runtime lifecycle/history/evidence contract conformance
-    shifter_owner: future Shifter ACES backend adapter, scripts/adr_guard, ACES conformance tooling
-    validation_evidence: future #1291 conformance run and ADR guard coverage
+    shifter_owner: shifter/shifter_platform/shared/aces/manifest.py (provisioning-only manifest source, #1261); shifter/shifter_platform/tests/shared/aces/test_participant_runtime_conformance_gate.py (#1291); ACES conformance tooling (aces_backend_protocols.capabilities, aces_conformance.conformance)
+    validation_evidence: "shifter/shifter_platform/tests/shared/aces/test_participant_runtime_conformance_gate.py (#1291); docs/architecture/aces-participant-runtime-manifest-cutover-rollback-1291.md"
     next_issue_kind: implementation-candidate
     candidate_issue_title: "#1291: Add participant runtime manifest and conformance gate"
-    notes: Shifter must not claim ACES participant_runtime capability until ACES publishes the lifecycle/history contracts and the Shifter path passes conformance without weakening current Mission Control, import, scope, terminal, Guacamole, or secret-scanning gates.
+    notes: >-
+      #1291 shipped the conformance gate (test_participant_runtime_conformance_gate.py)
+      that proves the participant_runtime claim legitimately stays null today --
+      Shifter has no ACES participant lifecycle/history/evidence protocol
+      implementation -- and that the gate itself is falsifiable: it catches a
+      premature claim missing required contracts and clears once those
+      contracts are genuinely present. Shifter must not claim ACES
+      participant_runtime capability for real until ACES-published contracts
+      plus live target conformance evidence exist (see
+      docs/architecture/aces-participant-runtime-manifest-cutover-rollback-1291.md),
+      without weakening current Mission Control, import, scope, terminal,
+      Guacamole, or secret-scanning gates.
