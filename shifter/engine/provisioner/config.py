@@ -347,6 +347,12 @@ class GCERangeCellConfig:
     region: str
     zone: str
     network_mode: str
+    # Self-link (or partial URL ``projects/<p>/global/networks/<name>``) of the
+    # shared range VPC used in ``shared-vpc`` mode. Range subnets are created in
+    # this pre-existing, platform-peered VPC (matching the AWS shared-VPC +
+    # per-range-subnet model) so the provisioner can reach guests. Empty in
+    # ``vpc-per-range`` mode, where each range mints its own VPC.
+    network_id: str = ""
     service_account_email: str = ""
     service_account_scopes: tuple[str, ...] = (
         "https://www.googleapis.com/auth/logging.write",
@@ -890,15 +896,25 @@ def load_gce_range_cell_config() -> GCERangeCellConfig:
     if missing:
         raise RuntimeError("Missing required GCE range-cell configuration: " + ", ".join(missing))
 
-    network_mode = os.environ.get("GCP_RANGE_CELL_NETWORK_MODE", "vpc-per-range").strip().lower()
-    if network_mode != "vpc-per-range":
-        raise RuntimeError("GCE range cells currently require GCP_RANGE_CELL_NETWORK_MODE=vpc-per-range")
+    # Default: shared-vpc. Range subnets live in the pre-existing, platform-peered
+    # range VPC (RANGE_NETWORK_ID/RANGE_VPC_ID) so the provisioner can reach guests,
+    # matching the AWS shared-VPC + per-range-subnet model. vpc-per-range mints an
+    # isolated VPC per range; it currently has no provisioner reachability path
+    # (no peering/IAP), so it is selectable but not the default.
+    network_mode = os.environ.get("GCP_RANGE_CELL_NETWORK_MODE", "shared-vpc").strip().lower()
+    if network_mode not in ("shared-vpc", "vpc-per-range"):
+        raise RuntimeError("GCP_RANGE_CELL_NETWORK_MODE must be 'shared-vpc' or 'vpc-per-range'")
+
+    network_id = (os.environ.get("RANGE_NETWORK_ID") or os.environ.get("RANGE_VPC_ID", "")).strip()
+    if network_mode == "shared-vpc" and not network_id:
+        raise RuntimeError("shared-vpc range networking requires RANGE_NETWORK_ID or RANGE_VPC_ID")
 
     return GCERangeCellConfig(
         project_id=project_id,
         region=region,
         zone=zone,
         network_mode=network_mode,
+        network_id=network_id,
         service_account_email=service_account_email,
         service_account_scopes=_parse_csv_env(
             os.environ.get(

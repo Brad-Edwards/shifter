@@ -435,6 +435,7 @@ class TestRangeNetworkEnv:
                 "GCP_RANGE_KALI_IMAGE": "projects/kali/global/images/kali",
                 "GCP_RANGE_KALI_MACHINE_TYPE": "e2-standard-4",
                 "GCP_RANGE_DC_IMAGE": "projects/windows-cloud/global/images/family/windows-2022",
+                "RANGE_NETWORK_ID": "projects/test-project/global/networks/range-net",
                 "PORTAL_NETWORK_CIDRS": "10.40.0.0/20",
                 "GCP_RANGE_EGRESS_ALLOW_CIDRS": "10.60.0.0/16",
             },
@@ -447,7 +448,8 @@ class TestRangeNetworkEnv:
             project_id="test-project",
             region="us-central1",
             zone="us-central1-b",
-            network_mode="vpc-per-range",
+            network_mode="shared-vpc",
+            network_id="projects/test-project/global/networks/range-net",
             service_account_email="range-host@test-project.iam.gserviceaccount.com",
             linux=GCERangeImageProfile(
                 source_image="projects/debian-cloud/global/images/family/debian-12",
@@ -472,6 +474,64 @@ class TestRangeNetworkEnv:
             portal_network_cidrs=("10.40.0.0/20",),
             egress_allow_cidrs=("10.60.0.0/16",),
         )
+
+    def test_load_gce_range_cell_config_shared_vpc_requires_range_network_id(self, mocker):
+        mocker.patch.dict(
+            os.environ,
+            {
+                "CLOUD_PROVIDER": "gcp",
+                "GCP_RANGE_BACKEND": "gce",
+                "GCP_PROJECT_ID": "test-project",
+                "GCP_REGION": "us-central1",
+                "RANGE_NETWORK_ZONE": "us-central1-b",
+                "GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL": "range-host@test-project.iam.gserviceaccount.com",
+                "GCP_RANGE_KALI_IMAGE": "projects/shifter/global/images/polaris-vm",
+            },
+            clear=True,
+        )
+
+        with pytest.raises(RuntimeError, match="RANGE_NETWORK_ID"):
+            load_gce_range_cell_config()
+
+    def test_load_gce_range_cell_config_supports_vpc_per_range_mode(self, mocker):
+        mocker.patch.dict(
+            os.environ,
+            {
+                "CLOUD_PROVIDER": "gcp",
+                "GCP_RANGE_BACKEND": "gce",
+                "GCP_PROJECT_ID": "test-project",
+                "GCP_REGION": "us-central1",
+                "RANGE_NETWORK_ZONE": "us-central1-b",
+                "GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL": "range-host@test-project.iam.gserviceaccount.com",
+                "GCP_RANGE_KALI_IMAGE": "projects/shifter/global/images/polaris-vm",
+                "GCP_RANGE_CELL_NETWORK_MODE": "vpc-per-range",
+            },
+            clear=True,
+        )
+
+        config = load_gce_range_cell_config()
+
+        assert config.network_mode == "vpc-per-range"
+        assert config.network_id == ""
+
+    def test_load_gce_range_cell_config_rejects_unknown_network_mode(self, mocker):
+        mocker.patch.dict(
+            os.environ,
+            {
+                "CLOUD_PROVIDER": "gcp",
+                "GCP_RANGE_BACKEND": "gce",
+                "GCP_PROJECT_ID": "test-project",
+                "GCP_REGION": "us-central1",
+                "RANGE_NETWORK_ZONE": "us-central1-b",
+                "GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL": "range-host@test-project.iam.gserviceaccount.com",
+                "GCP_RANGE_KALI_IMAGE": "projects/shifter/global/images/polaris-vm",
+                "GCP_RANGE_CELL_NETWORK_MODE": "bogus",
+            },
+            clear=True,
+        )
+
+        with pytest.raises(RuntimeError, match="GCP_RANGE_CELL_NETWORK_MODE"):
+            load_gce_range_cell_config()
 
     def test_load_gce_range_cell_config_requires_host_service_account(self, mocker):
         mocker.patch.dict(
@@ -502,6 +562,7 @@ class TestRangeNetworkEnv:
                 "GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL": "range-host@test-project.iam.gserviceaccount.com",
                 "GCP_RANGE_KALI_IMAGE": "projects/shifter/global/images/polaris-vm",
                 "GCP_RANGE_DC_IMAGE": "projects/shifter/global/images/polaris-dc",
+                "RANGE_NETWORK_ID": "projects/test-project/global/networks/range-net",
                 "GCP_RANGE_HOST_MGMT_SSH_PORT": "2229",
             },
             clear=True,
@@ -521,6 +582,7 @@ class TestRangeNetworkEnv:
                 "GCP_REGION": "us-central1",
                 "RANGE_NETWORK_ZONE": "us-central1-b",
                 "GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL": "range-host@test-project.iam.gserviceaccount.com",
+                "RANGE_NETWORK_ID": "projects/test-project/global/networks/range-net",
                 "GCP_RANGE_KALI_IMAGE": "projects/shifter/global/images/polaris-vm",
             },
             clear=True,
@@ -539,6 +601,7 @@ class TestRangeNetworkEnv:
                 "RANGE_NETWORK_ZONE": "us-central1-b",
                 "GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL": "range-host@test-project.iam.gserviceaccount.com",
                 "GCP_RANGE_KALI_IMAGE": "projects/shifter/global/images/polaris-vm",
+                "RANGE_NETWORK_ID": "projects/test-project/global/networks/range-net",
                 "GCP_RANGE_PRIVATE_GOOGLE_ACCESS": "true",
             },
             clear=True,
