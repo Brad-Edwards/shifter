@@ -109,6 +109,10 @@ jobs:
           GCP_PACKER_MACHINE_TYPE: ${{ vars.GCP_PACKER_MACHINE_TYPE || 'e2-standard-2' }}
           GCP_PACKER_USE_INTERNAL_IP: ${{ vars.GCP_PACKER_USE_INTERNAL_IP || 'false' }}
           GCP_SERVICE_ACCOUNT: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+          # GCS bucket holding the polaris compose-stack tarball (polaris-vm build
+          # only). host-setup.sh fetches gs://<bucket>/<POLARIS_STACK_KEY> and
+          # bakes the stack in; empty leaves the host range-ready without it.
+          GCP_POLARIS_STACK_BUCKET: ${{ vars.GCP_POLARIS_STACK_BUCKET }}
         run: |
           if [ -z "${GCP_PROJECT_ID}" ]; then
             echo "::error::Required secret GCP_PROJECT_ID is not set. See docs/dev/deploy-secrets.md."
@@ -129,6 +133,7 @@ jobs:
             echo "PKR_VAR_image_prefix=shifter"
             echo "PKR_VAR_machine_type=${GCP_PACKER_MACHINE_TYPE}"
             echo "PKR_VAR_use_internal_ip=${GCP_PACKER_USE_INTERNAL_IP}"
+            echo "PKR_VAR_polaris_stack_bucket=${GCP_POLARIS_STACK_BUCKET}"
           } >> "$GITHUB_ENV"
           # Kali has no public GCP image; the kali builder instead converts the
           # debian-12 GCE base into Kali Rolling in its first provisioning script
