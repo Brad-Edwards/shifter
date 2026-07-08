@@ -118,7 +118,7 @@ class RangePodSSHExecutor(GuestSSHExecutor):
         The content is captured here and planted on first use (the runner pod
         may not exist yet), mirroring the deferred key-planting flow.
         """
-        self._known_hosts_content = f"{host} {host_public_key.strip()}\n"
+        self._known_hosts_content = self._known_hosts_line(host, host_public_key)
         # Path is inside the range runner pod's ephemeral filesystem, not the local host.
         return f"/tmp/shifter-known-hosts-{uuid.uuid4().hex}"  # noqa: S108  # nosec  # NOSONAR
 

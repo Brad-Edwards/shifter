@@ -21,8 +21,11 @@ from django.utils import timezone
 from engine.models import Range
 from risk_register.models import AuditLog
 from shared.aces.contracts import SHIFTER_BACKEND_PROFILE
-from shared.models import AcesOperationRecord
+from shared.models import AcesOperationRecord, AcesParticipantRuntimeRecord
 from shared.schemas.aces_operation import canonical_aces_payload_digest
+from shared.schemas.aces_participant_runtime import (
+    canonical_aces_payload_digest as canonical_participant_payload_digest,
+)
 
 pytestmark = pytest.mark.django_db
 
@@ -44,6 +47,24 @@ def _seed_aces_status(request_id, status="running"):
         record_kind=AcesOperationRecord.RecordKind.OPERATION_STATUS,
         source_timestamp=timezone.now(),
         payload_digest=canonical_aces_payload_digest(payload),
+        payload=payload,
+    )
+
+
+def _seed_participant_runtime(request_id, participant_ref="ctf-participant-1", status="running"):
+    """Seed one participant-runtime sidecar row for a range's request_id."""
+    payload = {"participant_ref": participant_ref, "status": status}
+    return AcesParticipantRuntimeRecord.objects.create(
+        request_id=request_id,
+        participant_ref=participant_ref,
+        idempotency_key=f"participant_runtime:{participant_ref}:{request_id}",
+        contract_kind=AcesParticipantRuntimeRecord.ContractKind.ACES,
+        contract_version="participant-runtime-v1",
+        contract_profile=SHIFTER_BACKEND_PROFILE,
+        participant_runtime_profile="shifter-provisioning",
+        record_kind=AcesParticipantRuntimeRecord.RecordKind.PARTICIPANT_RUNTIME,
+        source_timestamp=timezone.now(),
+        payload_digest=canonical_participant_payload_digest(payload),
         payload=payload,
     )
 
@@ -115,6 +136,47 @@ class TestGetRange:
         assert projection is not None
         assert projection["status"] == "succeeded"
         assert projection["status_label"] == "Operation succeeded"
+
+    def test_aces_participant_runtime_null_when_no_range(self, authenticated_client):
+        client, _ = authenticated_client(email="no-range-participant-runtime@example.com")
+        data = _json(client.get(reverse("mission_control:get_range")))
+        assert data["has_range"] is False
+        assert data["aces_participant_runtime"] is None
+
+    def test_aces_participant_runtime_null_for_legacy_range(self, authenticated_client, launch_range_via_api):
+        client, user = authenticated_client(email="legacy-participant-runtime@example.com")
+        launch_range_via_api(client, user)
+
+        data = _json(client.get(reverse("mission_control:get_range")))
+        assert data["has_range"] is True
+        assert data["aces_participant_runtime"] is None
+        # The sibling aces_projection and existing keys are unaffected.
+        assert data["aces_projection"] is None
+
+    def test_aces_participant_runtime_present_when_records_exist(self, authenticated_client, launch_range_via_api):
+        client, user = authenticated_client(email="participant-runtime-backed@example.com")
+        launch_resp, _agent, _scenario_id = launch_range_via_api(client, user)
+        request_id = _json(launch_resp)["range"]["request_id"]
+        _seed_participant_runtime(request_id, status="running")
+
+        data = _json(client.get(reverse("mission_control:get_range")))
+        assert data["has_range"] is True
+        participant_runtime = data["aces_participant_runtime"]
+        assert participant_runtime is not None
+        assert participant_runtime["participants"][0]["participant_ref"] == "ctf-participant-1"
+        assert participant_runtime["participants"][0]["runtime"]["status"] == "running"
+        # Access channels are derived from the launched range's instances
+        # (attacker + Windows target from HYDRATABLE_DEFINITION) plus exactly
+        # one range-level backend_command channel.
+        channels = {c["channel"] for c in participant_runtime["access_channels"]}
+        assert "browser_terminal" in channels
+        assert "guacamole_rdp" in channels
+        assert "guacamole_range_ssh" in channels
+        backend_commands = [c for c in participant_runtime["access_channels"] if c["channel"] == "backend_command"]
+        assert len(backend_commands) == 1
+        assert backend_commands[0]["target_ref"] == request_id
+        # Shifter range status stays untouched by the ACES participant/runtime projection.
+        assert data["range"]["status"] == "provisioning"
 
 
 # ---------------------------------------------------------------------------
