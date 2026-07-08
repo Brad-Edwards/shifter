@@ -308,7 +308,7 @@ rows:
     category: ACES schema/profile gap
     aces_target: ACES behavior-history and evidence records carrying artifact refs, digests, provenance, capture profile, retention class, and redaction status
     shifter_owner: future ACES-backed experiment design, shared.script_context, shared.uploads, shared.cloud, risk_register.services.audit_log
-    validation_evidence: future #1289 implementation tests plus ADR-027 removal evidence
+    validation_evidence: docs/architecture/aces-participant-runtime-history-evidence-preflight-1289.md plus future #1289 implementation tests and ADR-027 removal evidence
     next_issue_kind: implementation-candidate
     candidate_issue_title: "#1289: Capture participant runtime history and evidence"
     notes: Evidence records are reference-oriented. Rendered commands, prompt bodies, script bodies, transcript bodies, terminal streams, token URLs, SSH keys, RDP passwords, CTF flags, provider payloads, and presigned URLs stay out of ACES records.

@@ -44,9 +44,34 @@ PARTICIPANT_IMPLEMENTATION_CONTRACT_VERSION = "participant-implementation-v1"
 #: Contract version for ``participant-runtime-v1`` sidecar records.
 PARTICIPANT_RUNTIME_CONTRACT_VERSION = "participant-runtime-v1"
 
+#: Contract version for ``participant-behavior-history-v1`` sidecar records (#1289).
+PARTICIPANT_BEHAVIOR_HISTORY_CONTRACT_VERSION = "participant-behavior-history-v1"
+
+#: Contract version for ``participant-evidence-v1`` sidecar records (#1289).
+PARTICIPANT_EVIDENCE_CONTRACT_VERSION = "participant-evidence-v1"
+
 
 class AcesParticipantRuntimeRecordConflict(ValueError):
     """Raised when an idempotent replay carries conflicting participant-runtime content."""
+
+
+def _reconcile_payload_identity(payload: dict[str, Any], **identity: object) -> None:
+    """Reject a payload whose echoed identity fields disagree with the key inputs.
+
+    The typed helpers build the deterministic idempotency key from scalar
+    arguments while persisting the caller-supplied ``payload`` verbatim. If the
+    payload echoes an identity field (for example ``participant_ref`` or
+    ``provenance_ref``) with a different value, the row content would drift from
+    the identity the key was built on -- letting two logically distinct records
+    collide, or a replay falsely conflict. Reconcile them before the write so the
+    key always reflects the persisted content.
+    """
+    for key, expected in identity.items():
+        actual = payload.get(key)
+        if actual is not None and actual != expected:
+            raise AcesParticipantRuntimeRecordConflict(
+                f"payload {key!r}={actual!r} conflicts with identity argument {expected!r}"
+            )
 
 
 @dataclass(frozen=True)
@@ -156,6 +181,7 @@ def persist_participant_implementation_record(
     (``PARTICIPANT_IMPLEMENTATION_CONTRACT_VERSION``); callers needing a
     non-default version use ``persist_aces_participant_runtime_record`` directly.
     """
+    _reconcile_payload_identity(payload, participant_ref=participant_ref, implementation_ref=implementation_ref)
     write = AcesParticipantRuntimeRecordWrite(
         request_id=request_id,
         participant_ref=participant_ref,
@@ -190,6 +216,7 @@ def persist_participant_runtime_record(
     (``PARTICIPANT_RUNTIME_CONTRACT_VERSION``); callers needing a non-default
     version use ``persist_aces_participant_runtime_record`` directly.
     """
+    _reconcile_payload_identity(payload, participant_ref=participant_ref)
     write = AcesParticipantRuntimeRecordWrite(
         request_id=request_id,
         participant_ref=participant_ref,
@@ -200,5 +227,100 @@ def persist_participant_runtime_record(
         payload=payload,
         diagnostic_refs=diagnostic_refs or {},
         owner=owner,
+    )
+    return persist_aces_participant_runtime_record(write)
+
+
+def persist_participant_behavior_history_record(
+    *,
+    request_id: UUID | str,
+    participant_ref: str,
+    event_kind: str,
+    event_ref: str,
+    source_timestamp: datetime,
+    payload: dict[str, Any],
+    diagnostic_refs: dict[str, Any] | None = None,
+    owner: str = AcesParticipantRuntimeRecord.Owner.SHARED,
+    range_id: UUID | str | None = None,
+    range_instance_id: UUID | str | None = None,
+) -> AcesParticipantRuntimeRecord:
+    """Persist one ``participant_behavior_history`` reference record idempotently (#1289).
+
+    Records a reference to one participant behavior event (event kind + bounded
+    ref + digest), never the event body. The idempotency key is deterministic in
+    the participant ref, event kind, and event ref, so re-delivery of the same
+    event reference is a no-op (or a conflict when the content drifts). Callers
+    outside ``shared`` use this helper instead of touching the model; those
+    needing a non-default contract version use
+    ``persist_aces_participant_runtime_record`` directly.
+    """
+    _reconcile_payload_identity(payload, participant_ref=participant_ref, event_kind=event_kind, event_ref=event_ref)
+    write = AcesParticipantRuntimeRecordWrite(
+        request_id=request_id,
+        participant_ref=participant_ref,
+        idempotency_key=_bounded_idempotency_key(
+            "participant_behavior_history", participant_ref, event_kind, event_ref
+        ),
+        record_kind=AcesParticipantRuntimeRecord.RecordKind.PARTICIPANT_BEHAVIOR_HISTORY,
+        contract_version=PARTICIPANT_BEHAVIOR_HISTORY_CONTRACT_VERSION,
+        source_timestamp=source_timestamp,
+        payload=payload,
+        diagnostic_refs=diagnostic_refs or {},
+        owner=owner,
+        range_id=range_id,
+        range_instance_id=range_instance_id,
+    )
+    return persist_aces_participant_runtime_record(write)
+
+
+def persist_participant_evidence_record(
+    *,
+    request_id: UUID | str,
+    participant_ref: str,
+    evidence_kind: str,
+    provenance_source: str,
+    provenance_ref: str,
+    source_timestamp: datetime,
+    payload: dict[str, Any],
+    diagnostic_refs: dict[str, Any] | None = None,
+    owner: str = AcesParticipantRuntimeRecord.Owner.SHARED,
+    range_id: UUID | str | None = None,
+    range_instance_id: UUID | str | None = None,
+) -> AcesParticipantRuntimeRecord:
+    """Persist one ``participant_evidence`` reference record idempotently (#1289).
+
+    Records a reference to one piece of participant evidence (evidence kind +
+    provenance source + ref + digest), never the raw material -- scripts,
+    prompts, dispatch receipts, transcripts, artifacts, and terminal sessions
+    stay behind their owning Shifter boundaries. A ``provenance_ref`` is only
+    meaningful inside its ``provenance_source`` namespace, so the idempotency key
+    spans participant ref, evidence kind, provenance source, and provenance ref:
+    two boundaries emitting the same local ref under different sources are
+    distinct evidence, and re-delivery of the same reference is a no-op (or a
+    conflict when the content drifts). Callers outside ``shared`` use this helper
+    instead of touching the model; those needing a non-default contract version
+    use ``persist_aces_participant_runtime_record`` directly.
+    """
+    _reconcile_payload_identity(
+        payload,
+        participant_ref=participant_ref,
+        evidence_kind=evidence_kind,
+        provenance_source=provenance_source,
+        provenance_ref=provenance_ref,
+    )
+    write = AcesParticipantRuntimeRecordWrite(
+        request_id=request_id,
+        participant_ref=participant_ref,
+        idempotency_key=_bounded_idempotency_key(
+            "participant_evidence", participant_ref, evidence_kind, provenance_source, provenance_ref
+        ),
+        record_kind=AcesParticipantRuntimeRecord.RecordKind.PARTICIPANT_EVIDENCE,
+        contract_version=PARTICIPANT_EVIDENCE_CONTRACT_VERSION,
+        source_timestamp=source_timestamp,
+        payload=payload,
+        diagnostic_refs=diagnostic_refs or {},
+        owner=owner,
+        range_id=range_id,
+        range_instance_id=range_instance_id,
     )
     return persist_aces_participant_runtime_record(write)
