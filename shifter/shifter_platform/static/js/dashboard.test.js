@@ -288,3 +288,101 @@ describe('DashboardManager ACES projection', () => {
         }
     });
 });
+
+describe('DashboardManager ACES participant/runtime projection', () => {
+    const buildTileMarkup = () => `
+        <div id="range-tile-1"></div>
+        <template id="active-template">
+            <div class="tile-title">Active Range</div>
+            <div class="aces-participant-runtime" hidden>
+                <div class="aces-participant-runtime-title">ACES Participants</div>
+                <div class="aces-participant-runtime-participants"></div>
+                <div class="aces-participant-runtime-channels"></div>
+            </div>
+        </template>
+    `;
+
+    let dashboard;
+
+    beforeEach(() => {
+        document.body.innerHTML = buildTileMarkup();
+        dashboard = new globalThis.DashboardManager({ csrfToken: 'csrf' });
+        dashboard.currentRange = { request_id: 'abc', status: 'ready' };
+    });
+
+    test('renders participant/runtime fields into the active tile via textContent', () => {
+        dashboard.currentAcesParticipantRuntime = {
+            participants: [
+                {
+                    participant_ref: 'ctf-participant-1',
+                    implementation: null,
+                    runtime: { status: 'running', status_reason: null, runtime_ref: 'runtime-1', observed_at: null },
+                },
+            ],
+            access_channels: [
+                { channel: 'browser_terminal', target_ref: 'instance-1' },
+                { channel: 'backend_command', target_ref: 'abc' },
+            ],
+        };
+
+        const tile = document.getElementById('range-tile-1');
+        dashboard._renderActiveTile(tile);
+
+        const section = tile.querySelector('.aces-participant-runtime');
+        expect(section.hidden).toBe(false);
+        expect(tile.querySelector('.aces-participant-runtime-participants').textContent).toContain(
+            'ctf-participant-1'
+        );
+        expect(tile.querySelector('.aces-participant-runtime-participants').textContent).toContain('running');
+        expect(tile.querySelector('.aces-participant-runtime-channels').textContent).toContain('browser_terminal');
+        expect(tile.querySelector('.aces-participant-runtime-channels').textContent).toContain('backend_command');
+    });
+
+    test('hides the participant/runtime section when no projection is present', () => {
+        dashboard.currentAcesParticipantRuntime = null;
+
+        const tile = document.getElementById('range-tile-1');
+        dashboard._renderActiveTile(tile);
+
+        expect(tile.querySelector('.aces-participant-runtime').hidden).toBe(true);
+    });
+
+    test('inserts ACES-derived participant refs as text, never as HTML', () => {
+        dashboard.currentAcesParticipantRuntime = {
+            participants: [
+                {
+                    participant_ref: '<img src=x onerror=alert(1)>',
+                    implementation: null,
+                    runtime: { status: 'running', status_reason: null, runtime_ref: null, observed_at: null },
+                },
+            ],
+            access_channels: [],
+        };
+
+        const tile = document.getElementById('range-tile-1');
+        dashboard._renderActiveTile(tile);
+
+        const participantsEl = tile.querySelector('.aces-participant-runtime-participants');
+        // Rendered as literal text; no child <img> element is created.
+        expect(participantsEl.querySelector('img')).toBeNull();
+        expect(participantsEl.textContent).toContain('<img src=x onerror=alert(1)>');
+    });
+
+    test('loadRange stores the aces_participant_runtime from the response', async () => {
+        const participantRuntime = { participants: [], access_channels: [] };
+        globalThis.fetch = jest.fn().mockResolvedValue({
+            ok: true,
+            json: () =>
+                Promise.resolve({
+                    range: { request_id: 'abc', status: 'ready' },
+                    aces_projection: null,
+                    aces_participant_runtime: participantRuntime,
+                }),
+        });
+        dashboard.rangeUrl = '/range';
+
+        await dashboard.loadRange();
+
+        expect(dashboard.currentAcesParticipantRuntime).toEqual(participantRuntime);
+    });
+});
