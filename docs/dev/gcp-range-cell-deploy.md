@@ -98,13 +98,19 @@ and would dominate time-to-serve). One parameterized Packer template,
 the DC is only **verified** (that it is already the expected promoted domain),
 never promoted.
 
-Runtime DC promotion is **disabled and unreachable**. The runtime-promotion code
-path (`DCSetupPlan(runtime_promotion=True)` and its templates) is retained for a
-future, explicitly-authorized decision, but nothing can select it:
-`_should_promote_dc_at_runtime` always returns `False` (no provider default, no
-`DC_RUNTIME_PROMOTION` env escape hatch). A DC image that is not actually
-pre-promoted therefore fails verification at setup rather than silently
-promoting at runtime.
+Runtime DC mutation is **disabled and unreachable**. Two paths are locked off,
+each retained as code for a future, explicitly-authorized decision but selectable
+by nothing:
+
+- **Runtime promotion**: `_should_promote_dc_at_runtime` always returns `False`
+  (no provider default, no `DC_RUNTIME_PROMOTION` env escape hatch). A DC image
+  that is not actually pre-promoted fails verification at setup rather than
+  silently promoting.
+- **Runtime bootstrap/rename**: `_should_run_dc_bootstrap_plan` always returns
+  `False` (no provider default, no `DC_BOOTSTRAP_VIA_SETUP_PLAN` env escape
+  hatch). The DC `BootstrapPlan` renames the guest, which would mutate a
+  pre-promoted DC's AD identity; the provisioner instead gets SSH to the DC from
+  the guest metadata startup script (host key + `administrators_authorized_keys`).
 
 Each DC image is a **profile** var-file in `shifter/packer/gcp/dc-profiles/`. The
 profile sets the domain, NetBIOS name, AD-content seed, and purpose (which names

@@ -1112,6 +1112,21 @@ class TestDcSetupRouting:
             assert _should_promote_dc_at_runtime("aws") is False
             assert _should_promote_dc_at_runtime("gcp") is False
 
+    def test_should_run_dc_bootstrap_plan_is_always_disabled(self):
+        # The DC bootstrap plan renames the guest (runtime DC mutation), so it is
+        # unreachable for every provider and has no env enable path; a pre-promoted
+        # DC gets SSH from the guest metadata startup script instead.
+        from state_helpers import _should_run_dc_bootstrap_plan
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.delenv("DC_BOOTSTRAP_VIA_SETUP_PLAN", raising=False)
+            assert _should_run_dc_bootstrap_plan("aws") is False
+            assert _should_run_dc_bootstrap_plan("gcp") is False
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setenv("DC_BOOTSTRAP_VIA_SETUP_PLAN", "true")
+            assert _should_run_dc_bootstrap_plan("gcp") is False
+
     def test_run_dc_setup_bootstraps_and_promotes_for_gcp(self, monkeypatch):
         from dc_setup import _run_dc_setup
 
