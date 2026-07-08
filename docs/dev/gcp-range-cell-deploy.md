@@ -82,7 +82,7 @@ the DC is only **verified** (that it is already the expected promoted domain),
 never promoted.
 
 Runtime DC mutation is **disabled and unreachable**. Two paths are locked off,
-each retained as code for a future, explicitly-authorized decision but selectable
+each retained as code for a future, explicitly authorized decision but selectable
 by nothing:
 
 - **Runtime promotion**: `_should_promote_dc_at_runtime` always returns `False`
