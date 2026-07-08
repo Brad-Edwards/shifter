@@ -213,9 +213,9 @@ The cohesive UX pass should evaluate these surfaces together:
 - Do not treat Risk Register's first module shell as the final all-platform IA.
 - Do not collapse participant mode and organizer mode into one role list, or use
   role names as user-facing modes.
-- Do not use "range", "event", "scenario", "challenge", "asset", "credential",
-  "risk", "mitigation", or "audit" interchangeably. UX copy should preserve
-  the taxonomy unless the maintained IA is updated.
+- Do not use the terms `range`, `event`, `scenario`, `challenge`, `asset`,
+  `credential`, `risk`, `mitigation`, or `audit` interchangeably. UX copy should
+  preserve the taxonomy unless the maintained IA is updated.
 - Do not make client-side route guards, hidden links, or disabled buttons the
   security boundary.
 - Do not call legacy Django form/action URLs or app-local JSON endpoints from
