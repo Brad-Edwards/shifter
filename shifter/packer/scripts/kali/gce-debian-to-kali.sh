@@ -46,9 +46,18 @@ echo "=== Pinning the Debian signed boot chain so GCE Secure Boot keeps working 
 # EFI shim/GRUB and a signed kernel stay Debian's -- the same reason polaris-vm
 # (also a debian-12 base that never rewrites its boot chain) boots clean.
 apt-get install -y --no-install-recommends shim-signed grub-efi-amd64-signed
-BOOT_HOLDS="shim-signed grub-efi-amd64-signed grub-efi-amd64-bin grub-common grub2-common linux-image-amd64"
-# Also hold the concrete signed kernel image(s) so the conversion cannot remove them.
-BOOT_HOLDS="$BOOT_HOLDS $(dpkg-query -W -f='${Package}\n' 'linux-image-*-amd64' 2>/dev/null | grep -E 'linux-image-[0-9]' || true)"
+# The GCE debian-12 base ships a *cloud* kernel (linux-image-cloud-amd64 plus a
+# concrete linux-image-<ver>-cloud-amd64), not linux-image-amd64, so hold only
+# packages that are actually installed -- apt-mark errors (and set -e aborts the
+# bake) on a package name that does not exist on this base.
+BOOT_CANDIDATES="shim-signed grub-efi-amd64-signed grub-efi-amd64-bin grub-common grub2-common"
+BOOT_CANDIDATES="$BOOT_CANDIDATES $(dpkg-query -W -f='${Package}\n' 'linux-image-*' 'linux-headers-*' 2>/dev/null | grep -E 'linux-(image|headers)-(cloud-amd64|[0-9])' || true)"
+BOOT_HOLDS=""
+for pkg in $BOOT_CANDIDATES; do
+  if dpkg-query -W -f='${Status}\n' "$pkg" 2>/dev/null | grep -q 'install ok installed'; then
+    BOOT_HOLDS="$BOOT_HOLDS $pkg"
+  fi
+done
 apt-mark hold $BOOT_HOLDS
 
 echo "=== Upgrading the base into Kali Rolling ==="
