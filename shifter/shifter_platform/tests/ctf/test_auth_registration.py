@@ -265,7 +265,7 @@ class TestCTFRegisterExchange:
     @patch("django.contrib.auth.login")
     @patch("ctf.models.CTFParticipant.objects")
     def test_valid_token_logs_in_and_returns_redirect(self, mock_objects, mock_login, request_factory):
-        """Valid token with linked user logs in and returns the dashboard redirect."""
+        """Valid token with linked user logs in and returns the CTF range redirect."""
         from ctf.views import ctf_register_exchange
 
         mock_participant = MagicMock()
@@ -276,7 +276,7 @@ class TestCTFRegisterExchange:
         response = ctf_register_exchange(self._post(request_factory, "valid-token"))
 
         assert response.status_code == 200
-        assert "/mission-control/" in json.loads(response.content)["redirect"]
+        assert "/ctf/range/" in json.loads(response.content)["redirect"]
         mock_login.assert_called_once()
 
     @patch("django.contrib.auth.login")
@@ -293,7 +293,7 @@ class TestCTFRegisterExchange:
         for _ in range(2):
             response = ctf_register_exchange(self._post(request_factory, "valid-token"))
             assert response.status_code == 200
-            assert "/mission-control/" in json.loads(response.content)["redirect"]
+            assert "/ctf/range/" in json.loads(response.content)["redirect"]
 
     def test_missing_token_returns_400(self, request_factory):
         """Empty token returns a 400 JSON envelope."""
