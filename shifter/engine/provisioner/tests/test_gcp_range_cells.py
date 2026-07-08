@@ -225,7 +225,12 @@ def test_apply_mints_per_range_vertex_key_when_configured(mocker):
         vertex_ops=vertex_ops,
     )
 
-    vertex_mocks.ensure.assert_called_once_with(42, "range-vertex@test-project.iam.gserviceaccount.com", "test-project")
+    vertex_mocks.ensure.assert_called_once_with(
+        42,
+        "range-vertex@test-project.iam.gserviceaccount.com",
+        "test-project",
+        "range-host@test-project.iam.gserviceaccount.com",
+    )
 
 
 def test_apply_skips_vertex_key_when_not_configured(mocker):
