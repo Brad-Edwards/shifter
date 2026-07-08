@@ -241,6 +241,14 @@
                 <span class="aces-snapshot-summary"></span>
             </div>
         </div>
+        {# Secondary read-only ACES participant/runtime + access-channel projection (#1290); filled by dashboard.js, hidden for non-ACES ranges. #}
+        <div class="aces-participant-runtime mt-md" hidden>
+            <div class="aces-participant-runtime-title text-small">
+                {% trans "ACES Participants" %}
+            </div>
+            <div class="aces-participant-runtime-participants text-small"></div>
+            <div class="aces-participant-runtime-channels text-small text-muted"></div>
+        </div>
     </template>
     <template id="paused-template">
         <div class="flex-between">
@@ -282,6 +290,14 @@
                 <span class="aces-observed-at"></span>
                 <span class="aces-snapshot-summary"></span>
             </div>
+        </div>
+        {# Secondary read-only ACES participant/runtime + access-channel projection (#1290); filled by dashboard.js, hidden for non-ACES ranges. #}
+        <div class="aces-participant-runtime mt-md" hidden>
+            <div class="aces-participant-runtime-title text-small">
+                {% trans "ACES Participants" %}
+            </div>
+            <div class="aces-participant-runtime-participants text-small"></div>
+            <div class="aces-participant-runtime-channels text-small text-muted"></div>
         </div>
     </template>
     <template id="failed-template">
