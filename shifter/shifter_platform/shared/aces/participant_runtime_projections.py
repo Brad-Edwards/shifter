@@ -55,6 +55,35 @@ RESPONSE_PAYLOAD_KEYS_BY_RECORD_KIND: dict[str, frozenset[str]] = {
             "updated_at",
         }
     ),
+    AcesParticipantRuntimeRecord.RecordKind.PARTICIPANT_BEHAVIOR_HISTORY: frozenset(
+        {
+            "participant_ref",
+            "source_timestamp",
+            "event_kind",
+            "event_ref",
+            "event_digest",
+            "sequence",
+            "status",
+            "status_reason",
+            "operation_id",
+        }
+    ),
+    AcesParticipantRuntimeRecord.RecordKind.PARTICIPANT_EVIDENCE: frozenset(
+        {
+            "participant_ref",
+            "source_timestamp",
+            "evidence_kind",
+            "capture_profile",
+            "provenance_source",
+            "provenance_ref",
+            "artifact_ref",
+            "artifact_digest",
+            "redaction_policy",
+            "operation_id",
+            "operation_record_id",
+            "receipt_ref",
+        }
+    ),
 }
 
 # Record-kind string constants re-exported here so product API layers
@@ -62,6 +91,8 @@ RESPONSE_PAYLOAD_KEYS_BY_RECORD_KIND: dict[str, frozenset[str]] = {
 # instead of importing ``shared.models`` directly (ADR-001-R2 cross-layer rule).
 RECORD_KIND_PARTICIPANT_IMPLEMENTATION: str = AcesParticipantRuntimeRecord.RecordKind.PARTICIPANT_IMPLEMENTATION
 RECORD_KIND_PARTICIPANT_RUNTIME: str = AcesParticipantRuntimeRecord.RecordKind.PARTICIPANT_RUNTIME
+RECORD_KIND_PARTICIPANT_BEHAVIOR_HISTORY: str = AcesParticipantRuntimeRecord.RecordKind.PARTICIPANT_BEHAVIOR_HISTORY
+RECORD_KIND_PARTICIPANT_EVIDENCE: str = AcesParticipantRuntimeRecord.RecordKind.PARTICIPANT_EVIDENCE
 
 #: Record kinds this read API exposes.
 PROJECTABLE_RECORD_KINDS: frozenset[str] = frozenset(RESPONSE_PAYLOAD_KEYS_BY_RECORD_KIND)
@@ -90,6 +121,8 @@ class AcesParticipantRuntimeRecordProjection:
     created_at: datetime
     updated_at: datetime
     payload_digest: str
+    retention_class: str
+    redaction_state: str
     payload: dict[str, Any]
     diagnostic_refs: dict[str, Any]
 
@@ -119,6 +152,8 @@ def _project(record: AcesParticipantRuntimeRecord) -> AcesParticipantRuntimeReco
         created_at=record.created_at,
         updated_at=record.updated_at,
         payload_digest=record.payload_digest,
+        retention_class=record.retention_class,
+        redaction_state=record.redaction_state,
         payload=_redacted_payload(record),
         diagnostic_refs=dict(refs),
     )

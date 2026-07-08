@@ -169,6 +169,8 @@ class AcesParticipantRuntimeRecord(models.Model):
 
         PARTICIPANT_IMPLEMENTATION = "participant_implementation", "Participant implementation"
         PARTICIPANT_RUNTIME = "participant_runtime", "Participant runtime"
+        PARTICIPANT_BEHAVIOR_HISTORY = "participant_behavior_history", "Participant behavior history"
+        PARTICIPANT_EVIDENCE = "participant_evidence", "Participant evidence"
 
     class Owner(models.TextChoices):
         """Component boundary that owns the write contract for a row."""
