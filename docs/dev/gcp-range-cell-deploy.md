@@ -78,7 +78,22 @@ there is no qcow2 export or CDI import.
 The GCE range-cell backend uses two service accounts:
 
 - **Host SA** (`GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL`): attached to every range
-  guest. Grant only logging and monitoring write.
+  guest. Grant logging write, monitoring write, and — for Polaris — the two
+  reads its range host performs during setup:
+  - `roles/storage.objectViewer` on the assets bucket (the smoketest tarball
+    fetch, `AGENT_STORAGE_BUCKET`).
+  - `roles/secretmanager.secretAccessor`, scoped by an IAM condition to the
+    per-range Vertex key secrets only, e.g.
+    `resource.name.startsWith("projects/<project-number>/secrets/shifter-range-")`.
+    This lets the host read its own range's Vertex key without exposing the
+    platform secrets (`app`, `db`, `guacamole-*`).
+
+  The guest VM is created with the `cloud-platform` OAuth scope
+  (`GCERangeCellConfig.service_account_scopes`); scope is a coarse legacy gate,
+  so these IAM roles are the real access control. `cloud-platform` is required,
+  not just convenient: Secret Manager has no narrower OAuth scope, so a
+  narrow logging/monitoring scope makes both the Storage and Secret Manager
+  reads fail with a generic 403 regardless of IAM.
 - **Vertex SA** (`GCP_RANGE_VERTEX_SERVICE_ACCOUNT_EMAIL`): the identity whose
   short-lived, per-range key the a14-kali agent uses for Vertex AI. Grant only
   `roles/aiplatform.user`. The participant container is blocked from the

@@ -13,6 +13,14 @@ _MANAGED_BY_LABEL = "shifter-provisioner"
 
 _DEFAULT_SSH_PORT = 22
 
+# private.googleapis.com VIP range. Private Google Access on the range subnet,
+# the range VPC's private-googleapis DNS zone, and a route for this /30 (all in
+# the range VPC Terraform) let no-external-IP guests reach Google APIs over
+# Google's internal fabric. This is the only egress hole the range opens when
+# private_google_access is set, so guests reach Vertex AI / Cloud Storage /
+# Secret Manager while staying off the general internet.
+_GOOGLE_PRIVATE_API_VIP_CIDR = "199.36.153.8/30"
+
 # Scenario image keys whose range host is an Ubuntu Docker host: the
 # participant-facing service (e.g. the Polaris Kali container) publishes the
 # host's :22/:3389, so the provisioner drives the host sshd on the management
@@ -441,6 +449,23 @@ def _firewall_plan(
                 "target_tags": [range_tag],
                 "destination_ranges": list(config.egress_allow_cidrs),
                 "allowed": [{"IPProtocol": "all"}],
+            }
+        )
+    if config.private_google_access:
+        # Couple Private Google Access with its egress hole automatically: with
+        # PGA the range VPC resolves *.googleapis.com to the private VIP and
+        # routes it internally, but the per-range egress-deny still blocks it
+        # without this allow. Guests reach Vertex AI (a14-kali agent), Cloud
+        # Storage (smoketest tarball), and Secret Manager (per-range Vertex key)
+        # over HTTPS to the VIP only, staying off the general internet.
+        firewalls.append(
+            {
+                "name": _short_resource_name("shifter-r", range_id, "egress-googleapis"),
+                "direction": "EGRESS",
+                "priority": 1100,
+                "target_tags": [range_tag],
+                "destination_ranges": [_GOOGLE_PRIVATE_API_VIP_CIDR],
+                "allowed": [{"IPProtocol": "tcp", "ports": ["443"]}],
             }
         )
     return firewalls
