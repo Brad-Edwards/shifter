@@ -99,7 +99,9 @@ echo "=== Verifying the signed boot chain survived the conversion ==="
 # Secure Boot. shim-signed + grub-efi-amd64-signed own the MS-signed EFI
 # binaries; a signed Debian kernel must remain installed for GRUB to load it.
 for pkg in shim-signed grub-efi-amd64-signed; do
-  dpkg-query -W -f='${Status}\n' "$pkg" 2>/dev/null | grep -q "install ok installed" \
+  # Held packages report "hold ok installed" (not "install ok installed"), so
+  # match the trailing "ok installed" to accept both states.
+  dpkg-query -W -f='${Status}\n' "$pkg" 2>/dev/null | grep -q "ok installed" \
     || { echo "FATAL: $pkg missing after conversion; image would fail Secure Boot" >&2; exit 1; }
 done
 dpkg-query -W -f='${Package}\n' 'linux-image-*-amd64' 2>/dev/null | grep -qE 'linux-image-[0-9].*-amd64' \
