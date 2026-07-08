@@ -37,6 +37,20 @@ curl -fsS --proto =https https://packages.cloud.google.com/apt/doc/apt-key.gpg \
 echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt google-compute-engine-bookworm-stable main" \
   > /etc/apt/sources.list.d/google-compute-engine.list
 
+echo "=== Pinning the Debian signed boot chain so GCE Secure Boot keeps working ==="
+# GCE range guests boot as Shielded VMs with Secure Boot ON. The debian-12 base
+# ships an MS-signed shim + signed GRUB + signed kernel; a naive full-upgrade to
+# kali-rolling swaps in Kali's unsigned boot chain and the guest then fails at
+# firmware ("BdsDxe: failed to load ... Security Violation"). Keep the signed
+# Debian boot packages held so Kali *userland* layers on top while the signed
+# EFI shim/GRUB and a signed kernel stay Debian's -- the same reason polaris-vm
+# (also a debian-12 base that never rewrites its boot chain) boots clean.
+apt-get install -y --no-install-recommends shim-signed grub-efi-amd64-signed
+BOOT_HOLDS="shim-signed grub-efi-amd64-signed grub-efi-amd64-bin grub-common grub2-common linux-image-amd64"
+# Also hold the concrete signed kernel image(s) so the conversion cannot remove them.
+BOOT_HOLDS="$BOOT_HOLDS $(dpkg-query -W -f='${Package}\n' 'linux-image-*-amd64' 2>/dev/null | grep -E 'linux-image-[0-9]' || true)"
+apt-mark hold $BOOT_HOLDS
+
 echo "=== Upgrading the base into Kali Rolling ==="
 # The debian-12 (pre-t64) -> kali-rolling (post-t64) jump crosses the 64-bit
 # time_t library transition, where the new tNN library packages ship files that
@@ -70,5 +84,16 @@ if ! id kali >/dev/null 2>&1; then
   echo 'kali:kali' | chpasswd
   usermod -aG sudo kali
 fi
+
+echo "=== Verifying the signed boot chain survived the conversion ==="
+# Fail the bake loudly rather than publish an image that cannot boot under
+# Secure Boot. shim-signed + grub-efi-amd64-signed own the MS-signed EFI
+# binaries; a signed Debian kernel must remain installed for GRUB to load it.
+for pkg in shim-signed grub-efi-amd64-signed; do
+  dpkg-query -W -f='${Status}\n' "$pkg" 2>/dev/null | grep -q "install ok installed" \
+    || { echo "FATAL: $pkg missing after conversion; image would fail Secure Boot" >&2; exit 1; }
+done
+dpkg-query -W -f='${Package}\n' 'linux-image-*-amd64' 2>/dev/null | grep -qE 'linux-image-[0-9].*-amd64' \
+  || { echo "FATAL: no concrete signed Debian kernel remains after conversion" >&2; exit 1; }
 
 echo "=== Debian -> Kali Rolling conversion complete ==="
