@@ -19,6 +19,39 @@ under **Settings → Secrets and variables → Actions**, separated by:
 
 Required values are enforced by the workflow preflight step.
 
+## Secrets required to stand up an AWS environment
+
+This is the single authoritative checklist of every secret a fresh AWS
+environment standup needs, and how each one is populated. `dev` names are shown;
+substitute `_PROOF` / `_PROD` (or the unsuffixed prod name) for the other AWS
+environments. `.github/workflows/deploy.yml` forwards all of these to the
+reusable deploy workflows. The GCP (`gcp-dev`) secrets are separate and listed
+under [GCP (gcp-dev)](#gcp-gcp-dev).
+
+| Secret | Populated by | Notes |
+|---|---|---|
+| `AWS_ROLE_ARN_DEV` | `scripts/bootstrap/deploy.py bootstrap --env dev` | OIDC role the deploy jobs assume. Prod is `AWS_ROLE_ARN`. |
+| `TF_INFRA_STATE_BUCKET_DEV` | `scripts/bootstrap/deploy.py bootstrap --env dev` | Terraform state bucket the backend render reads. Prod is the unsuffixed `TF_INFRA_STATE_BUCKET`. |
+| `TF_VARS_DEV_CORE` | `scripts/sync-deploy-secrets.sh --env dev` | Core stack `local.auto.tfvars` payload (`budget_alert_email`). |
+| `TF_VARS_DEV_RANGE` | `scripts/sync-deploy-secrets.sh --env dev` | Range stack `local.auto.tfvars` payload (`agent_s3_bucket`, `vm_series_ami_id`). |
+| `TF_VARS_DEV_PORTAL` | `scripts/sync-deploy-secrets.sh --env dev` | Portal stack `local.auto.tfvars` payload (domain, email, buckets, capacity). |
+| `SHIFTER_CONFIG_DEV_RANGE` | `scripts/sync-deploy-secrets.sh --env dev --stack config --shifter-config ./shifter.yaml` | Deployment `shifter.yaml`; its `settings.range_egress` renders the range egress allowlist. |
+| `SMOKE_TEST_USER_EMAIL` | manual | Post-deploy smoke user. See [Post-deploy smoke secrets](#post-deploy-smoke-secrets-dev). |
+| `SMOKE_LINUX_AGENT_ID` | manual | Uploaded-agent id. See [Post-deploy smoke secrets](#post-deploy-smoke-secrets-dev). |
+| `SMOKE_WINDOWS_AGENT_ID` | manual | Uploaded-agent id. See [Post-deploy smoke secrets](#post-deploy-smoke-secrets-dev). |
+| `PLATFORM_BOOTSTRAP_STAFF_EMAILS` | manual | Comma-separated emails elevated to Django `is_staff` on first sign-in. Shared across all environments including prod. |
+| `PLATFORM_BOOTSTRAP_SUPERUSER_EMAILS` | manual | Comma-separated emails elevated to `is_superuser`. Shared across all environments including prod. |
+| `SONAR_TOKEN` | manual | SonarCloud analysis token for the PR quality gate. Repository-wide, not per-environment. |
+
+"Populated by bootstrap" secrets are set once per account. "Populated by
+`sync-deploy-secrets.sh`" secrets are re-pushed whenever the matching local
+overlay changes. "Manual" secrets are set once under **Settings → Secrets and
+variables → Actions** and are not written by either script.
+
+Proof range standup needs `TF_VARS_PROOF_RANGE` and `SHIFTER_CONFIG_PROOF_RANGE`
+as well, but `sync-deploy-secrets.sh` has no proof-range record yet, so set those
+two by hand (see [AWS range](#aws-range-dev--prod)).
+
 ## Populating and syncing the secrets
 
 The `TF_VARS_<ENV>_PORTAL` / `_RANGE` / `_CORE` and `SHIFTER_CONFIG_<ENV>_RANGE`
@@ -42,11 +75,19 @@ scripts/sync-deploy-secrets.sh --env dev --stack config --shifter-config ./shift
 ```
 
 The script fails loud when a selected overlay file is missing and never prints
-secret contents. `scripts/bootstrap` still owns the one-time `AWS_ROLE_ARN_*`
-and `TF_INFRA_STATE_BUCKET` secrets; this script owns the recurring per-env
-tfvars/config payloads. Run it after editing an overlay (for example, after
-changing the ASG capacity in a portal overlay) so the next deploy picks up the
-new values rather than a stale secret.
+secret contents. `scripts/bootstrap` still owns the one-time IAM role secret
+(`AWS_ROLE_ARN_*`) and the state-bucket secret; this script owns the recurring
+per-env tfvars/config payloads. Run it after editing an overlay (for example,
+after changing the ASG capacity in a portal overlay) so the next deploy picks up
+the new values rather than a stale secret.
+
+Both bootstrap-owned secret names are env-suffixed for every non-prod
+environment and unsuffixed only for prod, matching what the deploy workflows
+read: prod uses `AWS_ROLE_ARN` / `TF_INFRA_STATE_BUCKET`, while dev uses
+`AWS_ROLE_ARN_DEV` / `TF_INFRA_STATE_BUCKET_DEV` and proof uses
+`AWS_ROLE_ARN_PROOF` / `TF_INFRA_STATE_BUCKET_PROOF`. A fresh non-prod bootstrap
+sets the suffixed names automatically; do not set the unsuffixed
+`TF_INFRA_STATE_BUCKET` for a dev or proof standup.
 
 ## GCP (gcp-dev)
 
@@ -90,6 +131,7 @@ above, plus the following:
 | `GCP_PACKER_MACHINE_TYPE` | variable | no | Builder machine type. Default `e2-standard-2`. |
 | `GCP_PACKER_USE_INTERNAL_IP` | variable | no | `true` builds without an external IP (requires IAP `35.235.240.0/20` to the builder). Default `false`. |
 | `GCP_GDC_VM_IMAGE_BUCKET` | variable | for export | GCS bucket the built image is exported into as a `gs://` qcow2 for the GDC VM Runtime (Terraform output `gdc_vm_image_bucket`). The export step fails loud if unset. See `docs/architecture/gcp-guest-images.md`. |
+| `GCP_POLARIS_STACK_BUCKET` | variable | polaris-vm | GCS bucket holding the Polaris compose-stack tarball (`<bucket>/polaris/stack/polaris-stack.tar.gz`). The `polaris-vm` build's `host-setup.sh` fetches it and `docker compose build`s the stack into the image; empty leaves the host range-ready without the stack baked. The packer builder SA needs `roles/storage.objectViewer` on the bucket. See "Baking the polaris-vm host image" in `docs/dev/gcp-range-cell-deploy.md`. |
 | `GCP_DEV_PROJECT_ID` | secret | for promote | Source (dev) project for `packer-gcp-promote.yml`; the prod project is the `prod` environment's `GCP_PROJECT_ID`. |
 
 Images are published to the image family `shifter-<type>` (the version pointer;
@@ -153,13 +195,21 @@ minimum HCL shape.
 
 ### Fresh AWS account bootstrap order
 
+Standup runbooks for the phases referenced below:
+
+- Runner provisioning: [`aws-runner-provisioning-runbook.md`](aws-runner-provisioning-runbook.md)
+- Range AMI seeding: [`aws-ami-seeding-runbook.md`](aws-ami-seeding-runbook.md)
+- Terraform apply order: [`aws-terraform-apply-order.md`](aws-terraform-apply-order.md)
+- Tearing an environment down: [`aws-teardown-runbook.md`](aws-teardown-runbook.md)
+
 For a new AWS account, bootstrap the backend and CI identity before trying
 to use the `aws-dev` deploy branch:
 
 1. Run `./scripts/bootstrap/deploy.py bootstrap --env dev --profile <profile>`.
    This creates the shared S3 state bucket, creates the GitHub OIDC role,
-   sets `AWS_ROLE_ARN_DEV` and `TF_INFRA_STATE_BUCKET`, and writes
-   per-instance Terraform backend configs under `~/.shifter/<env>-<bucket>/`.
+   sets `AWS_ROLE_ARN_DEV` and `TF_INFRA_STATE_BUCKET_DEV` (the env-suffixed
+   names the dev deploy workflows read), and writes per-instance Terraform
+   backend configs under `~/.shifter/<env>-<bucket>/`.
 2. Apply the runner root with non-default runner network IDs: either a
    dedicated runner VPC or the portal VPC private tier. Do not use the account
    default VPC, and do not commit live VPC/subnet IDs to tracked placeholder
@@ -269,6 +319,32 @@ default route, so the portal apply job runs
 healthy per-AZ Network Firewall endpoints, instead of silently blackholing
 egress. The assertion is a no-op when inspection is off.
 
+### Post-deploy smoke secrets (dev)
+
+The dev `post-deploy-smoke` job in `.github/workflows/_shifter-platform.yml`
+runs `scripts/smoke-test.sh`, which provisions a range as a smoke user and
+attaches Cortex agents. It runs only for dev applies and is
+`continue-on-error`, so a smoke failure does not fail the deploy; instead the
+job opens a `[smoke-test]` bug issue (labels `bug`, `smoke-test`). These three
+secrets are set manually and are not written by bootstrap or
+`sync-deploy-secrets.sh`.
+
+| Name | Kind | Required | Notes |
+|---|---|---|---|
+| `SMOKE_TEST_USER_EMAIL` | secret | yes (dev smoke) | Email of the portal user the smoke provisions as. If the user does not exist yet it is created on first run. When unset, the smoke step fails loud before doing any work. |
+| `SMOKE_LINUX_AGENT_ID` | secret | yes (dev smoke) | Numeric id of an uploaded Linux Cortex agent config owned by the smoke user. |
+| `SMOKE_WINDOWS_AGENT_ID` | secret | yes (dev smoke) | Numeric id of an uploaded Windows Cortex agent config owned by the smoke user. |
+
+The agent ids are database ids returned by the Mission Control agent-upload
+flow, not values you can invent. To obtain them, sign in to the portal as the
+smoke user, upload a Linux and a Windows Cortex agent installer through the
+agent-upload UI, and record the `agent_id` each upload returns. The installers
+come from Cortex XDR/XSIAM; the range provisioner consumes the uploaded configs
+when it installs the agent on a range guest. This upload step is currently
+manual; automating it as a reusable smoke fixture is tracked in issue #1422.
+Until those ids exist, the dev smoke opens a bug issue on every run rather than
+passing.
+
 ## AWS range (`dev` / `prod`)
 
 Consumed by `.github/workflows/_range.yml`. The committed
@@ -285,6 +361,13 @@ matching whole-file secret into `local.auto.tfvars`, and fails loud
 | `TF_VARS_PROD_RANGE` | secret | yes (prod) | As above, for the prod range root. |
 | `SHIFTER_CONFIG_DEV_RANGE` | secret | yes (dev) | Full deployment `shifter.yaml` (root installation config) for dev. The workflow renders its `settings.range_egress` into `victim_allowed_cidrs.auto.tfvars` before `terraform plan` / `apply`, so the egress allowlist is sourced once from `shifter.yaml` (#1015). |
 | `SHIFTER_CONFIG_PROD_RANGE` | secret | yes (prod) | As above, for the prod range. |
+
+`.github/workflows/deploy.yml` also forwards `TF_VARS_PROOF_RANGE` and
+`SHIFTER_CONFIG_PROOF_RANGE` for a proof range deploy, but
+`scripts/sync-deploy-secrets.sh` has no proof-range record in its
+`KNOWN_RECORDS`, so a proof range standup must set those two secrets by hand (or
+add the records to the script first). Dev and prod range secrets are covered by
+the sync script.
 
 At minimum, each `TF_VARS_<ENV>_RANGE` payload must set the deployment-specific
 values stripped from the committed baseline:
@@ -386,6 +469,7 @@ fall back to the code defaults in `config.py`. See
 | `RANGE_NETWORK_ZONE` | yes | Compute Engine zone for range guests, for example `us-central1-a`. |
 | `GCP_RANGE_LINUX_IMAGE` | yes | Full image or family URL for the Linux/host profile. For a Polaris deployment this is the `shifter-polaris-vm` family (the Docker host). |
 | `GCP_RANGE_DC_IMAGE` | yes | Windows domain-controller image, pre-promoted at bake time. Baked per-domain from `dc-prebaked.pkr.hcl` into family `shifter-<purpose>-dc` (see "Baking a new pre-promoted DC image" in `docs/dev/gcp-range-cell-deploy.md`). For Polaris this is `shifter-polaris-dc` (BOREAS.LOCAL). |
+| `DC_DOMAIN_PASSWORD` | DC scenarios | **Sensitive.** Domain Administrator password the provisioner sets on the pre-promoted DC (`set_admin_password`). Must match the password baked into the DC image by `a2_setup.ps1` at bake time (its `-AdminPassword` default). Provide via the GCP deploy config secret so it is rendered into the runtime env and forwarded to the provisioner job (`_GCP_PROVISIONER_ENV_KEYS`); if unset, DC setup fails setting the admin password. |
 | `GCP_RANGE_KALI_IMAGE` | scenario | Kali image for non-Polaris scenarios (Polaris runs Kali as a container inside the host). |
 | `GCP_RANGE_WINDOWS_IMAGE` | scenario | Generic Windows guest image for non-Polaris scenarios. |
 | `GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL` | yes | Service account attached to range guests. Minimal scope: logging and monitoring write. |

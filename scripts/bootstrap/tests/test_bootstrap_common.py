@@ -760,6 +760,21 @@ class TestBootstrapConfig:
         config = deploy.BootstrapConfig(env="dev")
         assert config.secret_name == "AWS_ROLE_ARN_DEV"
 
+    def test_state_bucket_secret_name_for_prod_env(self):
+        """Prod uses the unsuffixed state-bucket secret name the prod deploy reads."""
+        config = deploy.BootstrapConfig(env="prod")
+        assert config.state_bucket_secret_name == "TF_INFRA_STATE_BUCKET"
+
+    def test_state_bucket_secret_name_for_dev_env(self):
+        """Dev uses the suffixed state-bucket secret name the dev deploy reads."""
+        config = deploy.BootstrapConfig(env="dev")
+        assert config.state_bucket_secret_name == "TF_INFRA_STATE_BUCKET_DEV"
+
+    def test_state_bucket_secret_name_for_proof_env(self):
+        """Proof uses the suffixed state-bucket secret name the proof deploy reads."""
+        config = deploy.BootstrapConfig(env="proof")
+        assert config.state_bucket_secret_name == "TF_INFRA_STATE_BUCKET_PROOF"
+
     # ---------------------------------------------------------------------
     # Input validation
     # ---------------------------------------------------------------------

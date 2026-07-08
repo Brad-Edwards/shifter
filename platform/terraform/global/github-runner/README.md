@@ -8,10 +8,13 @@ let it deploy to both dev and prod.
 
 - `aws_instance.runner[count]`: Amazon Linux 2023, t3.large, no inbound
   rules (egress to GitHub/ECR/SSM). Access via SSM Session Manager.
-- Placement is controlled by `var.vpc_id` and `var.subnet_id`. The runner
-  network must be non-default and outside any VPC where range provisioning can
-  create private-DNS interface endpoints. Use a dedicated runner VPC or the
-  portal VPC private tier; do not place runners in the account default VPC.
+- Placement is controlled by `var.vpc_id` / `var.subnet_id` and the
+  `var.allow_default_vpc` opt-in (ADR-004-R20). By default the stack fails closed
+  on the account default VPC, where a range's private-DNS interface endpoints can
+  hijack the runner's AWS API resolution; the preferred placement is a dedicated
+  runner VPC or the portal VPC private tier. Setting `allow_default_vpc = true`
+  accepts that risk and auto-resolves the default VPC plus a subnet (no committed
+  IDs). aws-dev/aws-proof opt in today; the design is being reassessed in #1437.
 - IAM instance profile with inline SSM Session Manager and ECR push/pull
   policies. Inline policies avoid `iam:AttachRolePolicy`, which may be
   denied by AWS Organizations SCPs in fresh managed accounts.

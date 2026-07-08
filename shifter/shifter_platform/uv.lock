@@ -2589,6 +2589,7 @@ name = "shifter-platform"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
+    { name = "aces-sdl" },
     { name = "asyncssh" },
     { name = "bleach" },
     { name = "boto3" },
@@ -2622,7 +2623,6 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
-    { name = "aces-sdl" },
     { name = "bandit" },
     { name = "django-stubs" },
     { name = "freezegun" },
@@ -2642,6 +2642,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "aces-sdl", git = "https://github.com/Brad-Edwards/aces.git?subdirectory=implementations%2Fpython&rev=d004bbcc8fa7a0a653183383f7c1dbdf06f5c21c" },
     { name = "asyncssh", specifier = ">=2.23.0" },
     { name = "bleach", specifier = ">=6.3.0" },
     { name = "boto3" },
@@ -2675,7 +2676,6 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "aces-sdl", git = "https://github.com/Brad-Edwards/aces.git?subdirectory=implementations%2Fpython&rev=d004bbcc8fa7a0a653183383f7c1dbdf06f5c21c" },
     { name = "bandit", specifier = ">=1.9.2" },
     { name = "django-stubs", specifier = ">=6.0.4" },
     { name = "freezegun", specifier = ">=1.5.5" },

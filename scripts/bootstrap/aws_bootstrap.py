@@ -439,6 +439,7 @@ def bootstrap_account(config: BootstrapConfig, profile: str, dry_run: bool = Fal
         "region": config.region,
         "env": config.env,
         "secret_name": config.secret_name,
+        "state_bucket_secret_name": config.state_bucket_secret_name,
         "github_org": config.github_org,
         "github_repo": config.github_repo,
     }

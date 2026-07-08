@@ -456,6 +456,34 @@ resource "aws_iam_policy" "networking" {
           "route53resolver:ListTagsForResource"
         ]
         Resource = "*"
+      },
+      {
+        # Route53 hosted zones. Cloud Map / Service Discovery private DNS
+        # namespaces (module.guacamole.aws_service_discovery_private_dns_namespace)
+        # create a backing private hosted zone, so the CI role needs route53
+        # hosted-zone actions in addition to servicediscovery:*. Only surfaces on
+        # a from-zero standup: established accounts already have the namespace, so
+        # no CreateHostedZone call is made (#1425). CreateHostedZone has no
+        # resource-level scoping, so Resource = "*".
+        Sid    = "Route53HostedZones"
+        Effect = "Allow"
+        Action = [
+          "route53:CreateHostedZone",
+          "route53:GetHostedZone",
+          "route53:GetHostedZoneCount",
+          "route53:ListHostedZones",
+          "route53:ListHostedZonesByName",
+          "route53:DeleteHostedZone",
+          "route53:UpdateHostedZoneComment",
+          "route53:AssociateVPCWithHostedZone",
+          "route53:DisassociateVPCFromHostedZone",
+          "route53:ChangeResourceRecordSets",
+          "route53:ListResourceRecordSets",
+          "route53:GetChange",
+          "route53:ListTagsForResource",
+          "route53:ChangeTagsForResource"
+        ]
+        Resource = "*"
       }
     ]
   })
