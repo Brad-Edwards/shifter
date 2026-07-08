@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -14,6 +15,7 @@ from gcp_guest_secrets import (
     ensure_ssh_secret,
 )
 from gcp_range_cell_clients import GCEClients, GoogleExceptions, _build_clients
+from gcp_range_cell_ops import _wait_for_operation
 from gcp_range_cell_plan import (
     FirewallPlan,
     InstancePlan,
@@ -24,6 +26,7 @@ from gcp_range_cell_plan import (
     render_range_cell_plan,
 )
 from gcp_range_cell_resources import (
+    HOST_PUBLIC_KEY_METADATA_KEY,
     address_resource,
     firewall_resource,
     instance_resource,
@@ -32,10 +35,9 @@ from gcp_range_cell_resources import (
 )
 from gcp_range_vertex_creds import delete_range_vertex_key, ensure_range_vertex_key
 from log_redact import safe_log_fingerprint
+from utils.crypto import generate_ssh_host_keypair
 
 logger = logging.getLogger(__name__)
-
-_OPERATION_TIMEOUT_SECONDS = 600
 
 
 @dataclass(frozen=True)
@@ -79,76 +81,6 @@ def _default_vertex_ops() -> GCEVertexCredentialOps:
         ),
         delete=lambda range_id, project_id: delete_range_vertex_key(range_id, project_id=project_id),
     )
-
-
-def _operation_name(operation: object) -> str:
-    """Extract a Compute operation name from SDK or dict responses."""
-    if isinstance(operation, dict):
-        return str(operation.get("name", ""))
-    return str(getattr(operation, "name", "") or "")
-
-
-def _get_operation_field(operation: object, name: str) -> object | None:
-    """Read an operation field from SDK or dict responses."""
-    if isinstance(operation, dict):
-        return operation.get(name)
-    return getattr(operation, name, None)
-
-
-def _operation_error_messages(operation: object) -> list[str]:
-    """Extract provider error messages from a completed operation."""
-    error = _get_operation_field(operation, "error")
-    if not error:
-        return []
-    entries = error.get("errors") if isinstance(error, dict) else _get_operation_field(error, "errors")
-    if not isinstance(entries, list):
-        return [str(error)]
-    messages: list[str] = []
-    for entry in entries:
-        code = _get_operation_field(entry, "code")
-        message = _get_operation_field(entry, "message")
-        if code and message:
-            messages.append(f"{code}: {message}")
-        elif message:
-            messages.append(str(message))
-        else:
-            messages.append(str(entry))
-    return messages
-
-
-def _raise_for_operation_errors(operation: object, *, operation_name: str, scope: str) -> None:
-    """Raise when Compute reports errors on a completed operation."""
-    errors = _operation_error_messages(operation)
-    if errors:
-        detail = "; ".join(errors)
-        raise RuntimeError(f"GCE {scope} operation {operation_name or '<unknown>'} failed: {detail}")
-
-
-def _wait_for_operation(plan: RangeCellPlan, clients: GCEClients, operation: object, scope: str) -> None:
-    """Wait for a Compute operation and surface asynchronous failures."""
-    if operation is None:
-        return
-    result_method = getattr(operation, "result", None)
-    if callable(result_method):
-        result = result_method(timeout=_OPERATION_TIMEOUT_SECONDS)
-        _raise_for_operation_errors(result or operation, operation_name=_operation_name(operation), scope=scope)
-        return
-
-    operation_name = _operation_name(operation)
-    if not operation_name:
-        _raise_for_operation_errors(operation, operation_name="", scope=scope)
-        return
-
-    result = None
-    if scope == "global":
-        result = clients.global_operations.wait(project=plan["project_id"], operation=operation_name)
-    elif scope == "region":
-        result = clients.region_operations.wait(
-            project=plan["project_id"], region=plan["region"], operation=operation_name
-        )
-    elif scope == "zone":
-        result = clients.zone_operations.wait(project=plan["project_id"], zone=plan["zone"], operation=operation_name)
-    _raise_for_operation_errors(result or operation, operation_name=operation_name, scope=scope)
 
 
 def _get_or_none(
@@ -224,9 +156,22 @@ def _ensure_address(plan: RangeCellPlan, clients: GCEClients, instance: Instance
     operation = clients.addresses.insert(
         project=plan["project_id"],
         region=plan["region"],
-        address_resource=address_resource(plan, instance),
+        address_resource=address_resource(instance),
     )
     _wait_for_operation(plan, clients, operation, "region")
+
+
+def _host_public_key_from_instance(existing: object) -> str:
+    """Read the provisioner-issued SSH host public key from an existing instance.
+
+    On a reconcile the guest already serves the host key injected at create time,
+    so recover it from instance metadata rather than minting a mismatched one.
+    """
+    metadata = getattr(existing, "metadata", None)
+    for item in getattr(metadata, "items", None) or []:
+        if getattr(item, "key", None) == HOST_PUBLIC_KEY_METADATA_KEY:
+            return str(getattr(item, "value", "") or "")
+    return ""
 
 
 def _ensure_instance(
@@ -235,13 +180,14 @@ def _ensure_instance(
     config: GCERangeCellConfig,
     instance: InstancePlan,
     secret_ops: GCEGuestSecretOps,
-) -> tuple[str, str | None, str]:
+) -> tuple[str, str | None, str, str]:
     """Create one range instance and its guest credential secrets.
 
-    Returns ``(ssh_secret_ref, rdp_password_secret_ref, ssh_public_key)``. The
-    public key is not secret; it is surfaced in provisioner output so per-range
-    guest setup (e.g. the Polaris Kali container's authorized_keys) can install
-    it without re-reading the private secret.
+    Returns ``(ssh_secret_ref, rdp_password_secret_ref, ssh_public_key,
+    host_public_key)``. The provisioner mints the guest's SSH *host* keypair,
+    injects the private half via the guest startup script, and returns the public
+    half so the setup runner can seed known_hosts (StrictHostKeyChecking against a
+    trusted side-channel key). Neither public key is secret.
     """
     name = instance["resource_name"]
     existing = _get_or_none(
@@ -257,15 +203,24 @@ def _ensure_instance(
         rdp_password_secret_ref, _password = secret_ops.ensure_rdp_password(plan["range_id"], instance["source"])
     if existing is not None:
         logger.info("GCE range instance exists name_fp=%s", safe_log_fingerprint(name))
-        return secret_ref, rdp_password_secret_ref, public_key
+        return secret_ref, rdp_password_secret_ref, public_key, _host_public_key_from_instance(existing)
 
+    host_private_key, host_public_key = generate_ssh_host_keypair()
+    host_private_key_b64 = base64.b64encode(host_private_key.encode()).decode("ascii")
     operation = clients.instances.insert(
         project=plan["project_id"],
         zone=plan["zone"],
-        instance_resource=instance_resource(plan, instance, config, ssh_public_key=public_key),
+        instance_resource=instance_resource(
+            plan,
+            instance,
+            config,
+            ssh_public_key=public_key,
+            host_private_key_b64=host_private_key_b64,
+            host_public_key=host_public_key,
+        ),
     )
     _wait_for_operation(plan, clients, operation, "zone")
-    return secret_ref, rdp_password_secret_ref, public_key
+    return secret_ref, rdp_password_secret_ref, public_key, host_public_key
 
 
 def _instance_output(
@@ -275,6 +230,7 @@ def _instance_output(
     ssh_secret_ref: str,
     rdp_password_secret_ref: str | None,
     ssh_public_key: str,
+    host_public_key: str = "",
     config: GCERangeCellConfig,
 ) -> ResourceDict:
     """Render the provisioner output for one created instance."""
@@ -290,6 +246,9 @@ def _instance_output(
         "ssh_key_secret_arn": ssh_secret_ref,
         "ssh_username": instance["ssh_username"],
         "public_key": ssh_public_key,
+        # Seeds the setup runner's known_hosts (executors/factory reads
+        # gcp_host_public_key) for StrictHostKeyChecking against the injected key.
+        "gcp_host_public_key": host_public_key,
         "gcp_host_ssh_username": instance["host_ssh_username"],
         "gcp_host_ssh_port": instance["ssh_port"],
         "gcp_project_id": plan["project_id"],
@@ -329,6 +288,47 @@ def _subnet_outputs(plan: RangeCellPlan) -> dict[str, ResourceDict]:
     }
 
 
+def _provision_range_resources(
+    plan: RangeCellPlan,
+    clients: GCEClients,
+    config: GCERangeCellConfig,
+    secret_ops: GCEGuestSecretOps,
+    vertex_ops: GCEVertexCredentialOps,
+) -> list[ResourceDict]:
+    """Create the network, subnets, firewalls, instances, and per-range creds.
+
+    The range VPC is created only when the range owns it (vpc-per-range); in
+    shared-vpc mode the pre-existing platform-peered VPC is reused and only the
+    per-range subnets/firewalls/instances are created here.
+    """
+    if config.vertex_service_account_email:
+        vertex_ops.ensure(plan["range_id"], config.vertex_service_account_email, plan["project_id"])
+    if plan["manage_network"]:
+        _ensure_network(plan, clients)
+    for subnet in plan["subnets"]:
+        _ensure_subnetwork(plan, clients, subnet)
+    for firewall in plan["firewalls"]:
+        _ensure_firewall(plan, clients, firewall)
+    instance_outputs: list[ResourceDict] = []
+    for instance in plan["instances"]:
+        _ensure_address(plan, clients, instance)
+        ssh_secret_ref, rdp_password_secret_ref, ssh_public_key, host_public_key = _ensure_instance(
+            plan, clients, config, instance, secret_ops
+        )
+        instance_outputs.append(
+            _instance_output(
+                plan,
+                instance,
+                ssh_secret_ref=ssh_secret_ref,
+                rdp_password_secret_ref=rdp_password_secret_ref,
+                ssh_public_key=ssh_public_key,
+                host_public_key=host_public_key,
+                config=config,
+            )
+        )
+    return instance_outputs
+
+
 def apply_range_cell(
     request_uuid: str,
     variables: ResourceDict,
@@ -345,36 +345,10 @@ def apply_range_cell(
     resolved_secret_ops = secret_ops or _default_secret_ops()
     resolved_vertex_ops = vertex_ops or _default_vertex_ops()
     plan = render_range_cell_plan(request_uuid, variables, resolved_config)
-    instance_outputs: list[ResourceDict] = []
     try:
-        if resolved_config.vertex_service_account_email:
-            resolved_vertex_ops.ensure(
-                plan["range_id"], resolved_config.vertex_service_account_email, plan["project_id"]
-            )
-        _ensure_network(plan, resolved_clients)
-        for subnet in plan["subnets"]:
-            _ensure_subnetwork(plan, resolved_clients, subnet)
-        for firewall in plan["firewalls"]:
-            _ensure_firewall(plan, resolved_clients, firewall)
-        for instance in plan["instances"]:
-            _ensure_address(plan, resolved_clients, instance)
-            ssh_secret_ref, rdp_password_secret_ref, ssh_public_key = _ensure_instance(
-                plan,
-                resolved_clients,
-                resolved_config,
-                instance,
-                resolved_secret_ops,
-            )
-            instance_outputs.append(
-                _instance_output(
-                    plan,
-                    instance,
-                    ssh_secret_ref=ssh_secret_ref,
-                    rdp_password_secret_ref=rdp_password_secret_ref,
-                    ssh_public_key=ssh_public_key,
-                    config=resolved_config,
-                )
-            )
+        instance_outputs = _provision_range_resources(
+            plan, resolved_clients, resolved_config, resolved_secret_ops, resolved_vertex_ops
+        )
     except Exception:
         logger.exception("GCE range-cell apply failed; attempting cleanup request_id=%s", request_uuid)
         cleanup = cleanup_range_cell or (
@@ -480,12 +454,16 @@ def destroy_range_cell(
             subnetwork=subnet["resource_name"],
         )
 
-    _delete_resource(
-        plan,
-        resolved_clients,
-        resolved_clients.networks.get,
-        resolved_clients.networks.delete,
-        "global",
-        project=plan["project_id"],
-        network=plan["network"]["name"],
-    )
+    # In shared-vpc mode the range VPC is the pre-existing, platform-peered
+    # network and must never be deleted; only per-range subnets/firewalls are torn
+    # down above.
+    if plan["manage_network"]:
+        _delete_resource(
+            plan,
+            resolved_clients,
+            resolved_clients.networks.get,
+            resolved_clients.networks.delete,
+            "global",
+            project=plan["project_id"],
+            network=plan["network"]["name"],
+        )
