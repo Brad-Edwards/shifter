@@ -2,6 +2,9 @@
 
 Issue: #1233, "04 - ACES migration: design Shifter ACES RuntimeTarget and backend manifest"
 
+Implementation follow-up: #1262, "ACES migration: implement Shifter
+RuntimeTarget adapter over engine services"
+
 Status: pre-implementation architecture guidance. This note does not implement
 the adapter, manifest, conformance runner, or live validation gate.
 
@@ -78,6 +81,48 @@ boundaries rather than copying APTL's local Docker Compose backend shape.
 Do not introduce parallel schemas, validators, exception hierarchies, event
 pipelines, cloud dispatchers, Terraform workspace management, secret routing, or
 status stores for the ACES path.
+
+## #1262 RuntimeTarget Adapter Guardrails
+
+The #1262 adapter must be a translation boundary, not a second launch path. It
+may translate validated ACES RuntimeTarget/provisioning input into Shifter
+`RangeSpec` / `RequestSpec` objects, but it must then hand off through the
+existing catalog, hydrator, `cms.services.create_range`,
+`engine.interpreter`, `engine.services.create_range`, and request-id
+provisioner CLI path. CMS/API code facing ACES must not call `engine.ecs`,
+`shared.cloud`, Terraform, SSM, SSH, Docker, AWS, or GCP directly.
+
+That full hand-off chain is the eventual path across the #1262-#1264 arc, not a
+single-PR deliverable. The #1262 translation-boundary slice lands the adapter
+and proves it *emits a valid wrapped Shifter spec through the incumbent
+hydration path* (`hydrate_scenario` -> `wrap_persisted_spec`, the same spec
+`cms.services.create_range` builds before it persists and dispatches) while
+rejecting unsupported capability claims. Binding the live launch context (user,
+agents, launchable catalog scenario) and dispatching through
+`cms.services.create_range` / `engine.services.create_range` / the request-id
+provisioner CLI is the #1264 live-validation slice; catalog launchability
+(`_LAUNCH_ADAPTER_CONTRACT_PROFILES`) stays fail-closed until then. This keeps
+the guardrail intact (translation only; no direct infra calls) without folding
+#1264's live provisioning into the adapter PR.
+
+Unsupported ACES capabilities are a boundary error. The first adapter slice is
+`provisioning-only`; orchestrator, evaluator, participant-runtime, direct cloud
+realization, provider-variable authoring, runtime command execution, and raw
+snapshot/history requests must fail before Shifter spec hydration. Failures use
+existing CMS/service exceptions and DRF error envelopes, with sanitized
+diagnostics, not ACES-specific exception hierarchies or silent no-op behavior.
+
+The adapter output contract is Shifter's existing shared schema contract. Do
+not add duplicate `RangeSpec`, `RequestSpec`, status, lifecycle, credentials,
+or provider DTOs under an ACES package. If ACES persistence or projection
+metadata is needed, keep it in the ACES sidecar/profile surfaces from the
+operation-status preflight; runtime truth remains the wrapped Shifter specs and
+engine/provisioner models.
+
+Boundary tests for #1262 should prove the adapter emits a valid wrapped
+Shifter spec through the incumbent service path and rejects unsupported
+capability claims without touching Terraform, task runners, provisioner
+modules, cloud SDKs, or secret stores from the ACES-facing layer.
 
 ## Cross-Cutting Gates
 
