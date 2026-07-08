@@ -55,10 +55,8 @@ class _InstanceSetupSpec:
     domain_join: _DomainJoinSpec
     set_local_password: bool = True
     local_password_target_container: str | None = None
-    # Override the guest username used for SSH-key injection + local password.
-    # Defaults (None) to get_ssh_username(os_type, role). TechVault sets this
-    # to "ubuntu": it uses os_type "kali" for the Guacamole RDP access path,
-    # but the host seat user (uid 1000, for aptl's wazuh certs) is "ubuntu".
+    # TechVault uses os_type "kali" for RDP but its host seat user is "ubuntu"
+    # (uid 1000, for aptl's wazuh certs); override the SSH/password target user.
     ssh_user_override: str | None = None
 
 
