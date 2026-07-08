@@ -180,20 +180,8 @@ _UNSUPPORTED_RESOURCE_KINDS: tuple[tuple[frozenset[str], str, str], ...] = (
 )
 
 
-def _rejection_diagnostic(resource: PlannedResource) -> Diagnostic | None:
-    """Return an error diagnostic if ``resource`` is a categorically unsupported kind.
-
-    Covers non-provisioning domains, placement/account/ACL, runtime-command, raw
-    snapshot/history, and unknown resource types. Returns ``None`` when the type
-    is one Shifter's provisioning-only envelope can realize.
-    """
-    if resource.domain != RuntimeDomain.PROVISIONING:
-        return _diagnostic(
-            "shifter-provisioner.unsupported-domain",
-            resource.address,
-            f"Shifter's provisioning-only backend does not support domain "
-            f"'{resource.domain.value}' for '{resource.address}'.",
-        )
+def _unsupported_type_diagnostic(resource: PlannedResource) -> Diagnostic | None:
+    """Return a diagnostic for an unsupported resource type (placement/command/snapshot/unknown), else None."""
     for resource_types, code_suffix, phrase in _UNSUPPORTED_RESOURCE_KINDS:
         if resource.resource_type in resource_types:
             return _diagnostic(
@@ -211,6 +199,23 @@ def _rejection_diagnostic(resource: PlannedResource) -> Diagnostic | None:
             f"(supported: {sorted(SUPPORTED_RESOURCE_TYPES)}).",
         )
     return None
+
+
+def _rejection_diagnostic(resource: PlannedResource) -> Diagnostic | None:
+    """Return an error diagnostic if ``resource`` is a categorically unsupported kind.
+
+    Covers non-provisioning domains, placement/account/ACL, runtime-command, raw
+    snapshot/history, and unknown resource types. Returns ``None`` when the type
+    is one Shifter's provisioning-only envelope can realize.
+    """
+    if resource.domain != RuntimeDomain.PROVISIONING:
+        return _diagnostic(
+            "shifter-provisioner.unsupported-domain",
+            resource.address,
+            f"Shifter's provisioning-only backend does not support domain "
+            f"'{resource.domain.value}' for '{resource.address}'.",
+        )
+    return _unsupported_type_diagnostic(resource)
 
 
 def _payload_diagnostic(resource: PlannedResource, *, is_node: bool) -> Diagnostic | None:
@@ -240,17 +245,8 @@ def _payload_diagnostic(resource: PlannedResource, *, is_node: bool) -> Diagnost
     return None
 
 
-def _classify_resource(resource: PlannedResource) -> _ResourceOutcome:
-    """Validate one provisioning resource and return its diagnostic or contribution."""
-    rejection = _rejection_diagnostic(resource)
-    if rejection is not None:
-        return _ResourceOutcome(diagnostic=rejection)
-
-    is_node = resource.resource_type == NODE_RESOURCE_TYPE
-    payload_error = _payload_diagnostic(resource, is_node=is_node)
-    if payload_error is not None:
-        return _ResourceOutcome(diagnostic=payload_error)
-
+def _supported_resource_outcome(resource: PlannedResource, *, is_node: bool) -> _ResourceOutcome:
+    """Build the contribution for a resource that passed rejection + payload checks."""
     payload = resource.payload
     raw_scenario_ref = payload.get("scenario_ref")
     scenario_ref = raw_scenario_ref if isinstance(raw_scenario_ref, str) and raw_scenario_ref else None
@@ -270,6 +266,20 @@ def _classify_resource(resource: PlannedResource) -> _ResourceOutcome:
             )
         )
     return _ResourceOutcome(os_family=os_family, scenario_ref=scenario_ref)
+
+
+def _classify_resource(resource: PlannedResource) -> _ResourceOutcome:
+    """Validate one provisioning resource and return its diagnostic or contribution."""
+    rejection = _rejection_diagnostic(resource)
+    if rejection is not None:
+        return _ResourceOutcome(diagnostic=rejection)
+
+    is_node = resource.resource_type == NODE_RESOURCE_TYPE
+    payload_error = _payload_diagnostic(resource, is_node=is_node)
+    if payload_error is not None:
+        return _ResourceOutcome(diagnostic=payload_error)
+
+    return _supported_resource_outcome(resource, is_node=is_node)
 
 
 def _validate_and_translate(
