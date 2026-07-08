@@ -412,6 +412,66 @@ def test_windows_dc_instance_gets_boot_firewall_script():
     assert "windows-startup-script-ps1" not in host_meta
 
 
+def test_instance_resource_injects_ssh_host_key_per_os():
+    """The provisioner-issued SSH host key is installed via the guest startup
+    script (Windows: ProgramData\\ssh; Linux: /etc/ssh) and its public half is
+    surfaced in metadata so the setup runner can seed known_hosts."""
+    from gcp_range_cell_resources import HOST_PUBLIC_KEY_METADATA_KEY, instance_resource
+
+    plan = render_range_cell_plan("req-123", _variables(), _vertex_config())
+    by_name = {inst["name"]: inst for inst in plan["instances"]}
+
+    dc_body = instance_resource(
+        plan,
+        by_name["dc01"],
+        _vertex_config(),
+        ssh_public_key="ssh-ed25519 AAAA",
+        host_private_key_b64="UFJJVg==",
+        host_public_key="ssh-ed25519 HOSTKEY dc",
+    )
+    dc_meta = {item["key"]: item["value"] for item in dc_body["metadata"]["items"]}
+    assert dc_meta[HOST_PUBLIC_KEY_METADATA_KEY] == "ssh-ed25519 HOSTKEY dc"
+    assert "ssh_host_ed25519_key" in dc_meta["windows-startup-script-ps1"]
+    assert "UFJJVg==" in dc_meta["windows-startup-script-ps1"]
+    # Windows OpenSSH ignores ssh-keys metadata for admins, so the provisioner's
+    # public key must be authorized via administrators_authorized_keys.
+    assert "administrators_authorized_keys" in dc_meta["windows-startup-script-ps1"]
+    assert "ssh-ed25519 AAAA" in dc_meta["windows-startup-script-ps1"]
+
+    host_body = instance_resource(
+        plan,
+        by_name["kali"],
+        _vertex_config(),
+        ssh_public_key="ssh-ed25519 AAAA",
+        host_private_key_b64="TElOVVg=",
+        host_public_key="ssh-ed25519 HOSTKEY kali",
+    )
+    host_meta = {item["key"]: item["value"] for item in host_body["metadata"]["items"]}
+    assert host_meta[HOST_PUBLIC_KEY_METADATA_KEY] == "ssh-ed25519 HOSTKEY kali"
+    assert "/etc/ssh/ssh_host_ed25519_key" in host_meta["startup-script"]
+    assert "TElOVVg=" in host_meta["startup-script"]
+
+
+def test_apply_emits_gcp_host_public_key(mocker):
+    """A created instance surfaces gcp_host_public_key so the factory can seed
+    known_hosts for StrictHostKeyChecking."""
+    clients = _mock_clients(exists=False)
+    secret_ops, _ = _mock_secret_ops(mocker)
+    vertex_ops, _ = _mock_vertex_ops(mocker)
+
+    output = apply_range_cell(
+        "req-123",
+        _variables(),
+        config=_sample_config(),
+        clients=clients,
+        secret_ops=secret_ops,
+        vertex_ops=vertex_ops,
+    )
+
+    for instance in output["instances"]:
+        assert instance["gcp_host_public_key"].startswith("ssh-ed25519 ")
+
+
 def test_render_plan_carries_private_google_access_flag():
     """Private Google Access flows from config into the subnet resource body."""
     from gcp_range_cell_resources import subnetwork_resource
@@ -514,6 +574,7 @@ def test_apply_range_cell_is_idempotent_when_resources_exist(mocker):
                 "ssh_key_secret_arn": "projects/test/secrets/ssh",
                 "ssh_username": "kali",
                 "public_key": "ssh-ed25519 AAAA",
+                "gcp_host_public_key": "",
                 "gcp_host_ssh_username": "kali",
                 "gcp_host_ssh_port": 22,
                 "gcp_project_id": "test-project",
@@ -542,6 +603,7 @@ def test_apply_range_cell_is_idempotent_when_resources_exist(mocker):
                 "ssh_key_secret_arn": "projects/test/secrets/ssh",
                 "ssh_username": "Administrator",
                 "public_key": "ssh-ed25519 AAAA",
+                "gcp_host_public_key": "",
                 "gcp_host_ssh_username": "Administrator",
                 "gcp_host_ssh_port": 22,
                 "gcp_project_id": "test-project",
