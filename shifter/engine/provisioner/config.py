@@ -951,7 +951,11 @@ def load_gce_range_cell_config() -> GCERangeCellConfig:
         windows=_load_gce_range_profile(
             "GCP_RANGE_WINDOWS",
             default_machine_type="e2-standard-4",
-            default_disk_size_gb=80,
+            # The shifter-windows image is a 100 GB disk; a boot disk cannot be
+            # smaller than its source image, so the default must be >= 100 or
+            # every Windows guest fails at create. Override via
+            # GCP_RANGE_WINDOWS_DISK_SIZE_GB for a larger image.
+            default_disk_size_gb=100,
         ),
         dc=_load_gce_range_profile(
             "GCP_RANGE_DC",
