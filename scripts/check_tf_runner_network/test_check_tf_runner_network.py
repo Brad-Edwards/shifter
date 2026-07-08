@@ -37,6 +37,38 @@ resource "aws_security_group" "runner" {
 }
 """
 
+# The real shape after the ADR-004-R20 escape hatch: preconditions reference the
+# resolved local.runner_vpc_id and carry the explicit var.allow_default_vpc
+# opt-in prefix. The guard is still present and fail-closed by default, so this
+# must PASS.
+GUARDED_ESCAPE_HATCH = """
+data "aws_vpcs" "default" {
+  filter {
+    name   = "is-default"
+    values = ["true"]
+  }
+}
+
+data "aws_subnet" "runner" {
+  id = local.runner_subnet_id
+}
+
+resource "aws_security_group" "runner" {
+  vpc_id = local.runner_vpc_id
+
+  lifecycle {
+    precondition {
+      condition     = var.allow_default_vpc || !contains(data.aws_vpcs.default.ids, local.runner_vpc_id)
+      error_message = "no default vpc unless opted in"
+    }
+    precondition {
+      condition     = data.aws_subnet.runner.vpc_id == local.runner_vpc_id
+      error_message = "subnet must belong to vpc"
+    }
+  }
+}
+"""
+
 # Default-VPC guard present but the subnet-membership precondition removed.
 NO_SUBNET_GUARD = """
 data "aws_vpcs" "default" {
@@ -135,6 +167,14 @@ class CheckTfRunnerNetworkTest(unittest.TestCase):
     def test_guarded_runner_passes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             tf = _write(tmp, "main.tf", GUARDED)
+            self.assertEqual(check_file(tf), [])
+
+    def test_escape_hatch_form_passes(self) -> None:
+        # The ADR-004-R20 opt-in prefix + resolved local.runner_vpc_id form is a
+        # documented, non-silent way to accept default-VPC placement; the guard
+        # is still present, so the checker must accept it.
+        with tempfile.TemporaryDirectory() as tmp:
+            tf = _write(tmp, "main.tf", GUARDED_ESCAPE_HATCH)
             self.assertEqual(check_file(tf), [])
 
     def test_missing_guard_rejected(self) -> None:

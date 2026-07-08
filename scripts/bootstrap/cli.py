@@ -43,7 +43,7 @@ def full_deployment(env: str, profile: str, dry_run: bool = False) -> None:
     print("""
 This will guide you through a complete Shifter deployment:
 
-  1. Bootstrap AWS account (S3, DynamoDB, IAM)
+  1. Bootstrap AWS account (S3 state bucket with native locking, GitHub OIDC, IAM)
   2. Configure GitHub secrets (automated with gh CLI or manual)
   3. Write instance Terraform backend configuration (outside the repo)
   4. Set up GitHub Actions runners (optional - for self-hosted CI/CD)
@@ -194,7 +194,9 @@ Examples:
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     # Bootstrap command
-    bootstrap_parser = subparsers.add_parser("bootstrap", help="Bootstrap AWS account (S3, DynamoDB, IAM)")
+    bootstrap_parser = subparsers.add_parser(
+        "bootstrap", help="Bootstrap AWS account (S3 state bucket with native locking, GitHub OIDC, IAM)"
+    )
     bootstrap_parser.add_argument("--env", required=True, choices=AWS_ENVIRONMENTS, help="Environment")
     bootstrap_parser.add_argument("--profile", required=True, help=HELP_AWS_PROFILE)
     bootstrap_parser.add_argument("--dry-run", action="store_true", help=HELP_DRY_RUN)
