@@ -77,10 +77,17 @@ differ.
 Domain controllers are **pre-promoted at bake time** so a range boots an
 already-promoted DC with no per-range promotion (promotion takes ~15-20 minutes
 and would dominate time-to-serve). One parameterized Packer template,
-`shifter/packer/gcp/dc-prebaked.pkr.hcl`, bakes many DC images. A runtime
-promotion path also exists (`plans/dc_setup.py`, parameterized by the scenario
-`domain_name`, on by default for GCP, idempotent) and stays available, but it is
-not the path we use because of the launch-time cost.
+`shifter/packer/gcp/dc-prebaked.pkr.hcl`, bakes many DC images. At range setup
+the DC is only **verified** (that it is already the expected promoted domain),
+never promoted.
+
+Runtime DC promotion is **disabled and unreachable**. The runtime-promotion code
+path (`DCSetupPlan(runtime_promotion=True)` and its templates) is retained for a
+future, explicitly-authorized decision, but nothing can select it:
+`_should_promote_dc_at_runtime` always returns `False` (no provider default, no
+`DC_RUNTIME_PROMOTION` env escape hatch). A DC image that is not actually
+pre-promoted therefore fails verification at setup rather than silently
+promoting at runtime.
 
 Each DC image is a **profile** var-file in `shifter/packer/gcp/dc-profiles/`. The
 profile sets the domain, NetBIOS name, AD-content seed, and purpose (which names
@@ -96,8 +103,8 @@ the image family `shifter-<purpose>-dc`). To add a DC for a new domain:
 3. Run the **Packer GCE Image Build** workflow with `image_type=dc-prebaked` and
    `dc_profile=<name>`. It publishes image family `shifter-<purpose>-dc`.
 4. Point the consuming scenario at that family. The scenario's `dc_config`
-   `domain_name` must match the baked domain (the runtime promotion step detects
-   the already-promoted DC and verifies rather than re-promoting).
+   `domain_name` must match the baked domain, because setup verifies the
+   already-promoted DC against it (it never promotes).
 
 The `polaris` profile reproduces the Polaris `shifter-polaris-dc`
 (`BOREAS.LOCAL`) image and is the default.
