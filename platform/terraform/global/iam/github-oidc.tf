@@ -116,10 +116,36 @@ resource "aws_iam_policy" "ci_role_permissions_boundary" {
         Resource = "*"
       },
       {
+        # Deny every IAM action (the anti-escalation cap, #253) EXCEPT a scoped
+        # iam:PassRole to the AWS services the platform legitimately hands roles
+        # to at runtime. Without this carve-out a bounded, CI-created runtime role
+        # (e.g. the portal EC2 role) cannot pass the provisioner's ECS execution
+        # role on ecs:RunTask, so no range can launch (issue #1452). The condition
+        # only relaxes the deny for iam:PassRole calls whose iam:PassedToService is
+        # one of these services; every other iam:* call (CreateRole, AttachPolicy,
+        # PutRolePolicy, PassRole to any other service, and — because those calls
+        # do not populate iam:PassedToService, so StringNotEquals matches on the
+        # absent key — all non-PassRole IAM mutation) stays denied. The service
+        # list mirrors the deploy role's own IAMPassRole grant above.
         Sid      = "DenyIamEscalation"
         Effect   = "Deny"
         Action   = "iam:*"
         Resource = "*"
+        Condition = {
+          StringNotEquals = {
+            "iam:PassedToService" = [
+              "ec2.amazonaws.com",
+              "ecs-tasks.amazonaws.com",
+              "lambda.amazonaws.com",
+              "monitoring.rds.amazonaws.com",
+              "vpc-flow-logs.amazonaws.com",
+              "firehose.amazonaws.com",
+              "logs.amazonaws.com",
+              "bedrock.amazonaws.com",
+              "scheduler.amazonaws.com"
+            ]
+          }
+        }
       }
     ]
   })
