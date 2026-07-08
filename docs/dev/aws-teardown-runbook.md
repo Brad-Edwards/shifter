@@ -41,52 +41,97 @@ The prod portal ALB protection is a hardcoded `true` literal
 (`environments/prod/portal/main.tf`); flip it to `false` and apply before
 destroy.
 
-## 2. Empty S3 buckets and ECR repos
+## 2. Empty the Portal S3 buckets (before the Portal destroy)
 
-No S3 bucket sets `force_destroy` and no ECR repo sets `force_delete`, so a
-non-empty bucket or repo blocks destroy. Empty these first.
+No S3 bucket sets `force_destroy`, so a non-empty bucket blocks its stack
+destroy. Empty the Portal-owned buckets before the Portal destroy:
 
-S3 buckets (per stack):
+- Portal user-storage bucket.
+- Log-aggregation `logs` and `alb_access_logs` buckets.
+- Engine state bucket (`engine-state` module; `force_destroy = false`).
 
-- Portal user-storage bucket (Portal).
-- Log-aggregation `logs` and `alb_access_logs` buckets (Portal).
-- Engine state bucket (Portal, `engine-state` module; `force_destroy = false`).
-
-ECR repos (Core stack, four repos; prod drops the `<env>-`):
-`shifter-<env>-portal`, `shifter-<env>-pulumi-provisioner`,
-`shifter-<env>-guacd`, `shifter-<env>-guacamole-client`.
-
-Empty a versioned S3 bucket (delete all object versions and delete markers),
-then empty each ECR repo:
+Empty a versioned bucket by bulk-removing current objects, then sweeping old
+versions and delete markers:
 
 ```bash
-# S3: delete all versions + markers, then the bucket is destroyable by Terraform.
+aws s3 rm "s3://$BUCKET" --recursive           # fast bulk of current versions
+# then delete remaining versions + delete markers:
 aws s3api list-object-versions --bucket "$BUCKET" \
-  --query '{Objects: Versions[].{Key:Key,VersionId:VersionId}}' --output json \
-  > /tmp/versions.json
-aws s3api delete-objects --bucket "$BUCKET" --delete file:///tmp/versions.json
-# Repeat for DeleteMarkers.
-
-# ECR: delete all images in a repo.
-aws ecr batch-delete-image --repository-name "$REPO" \
-  --image-ids "$(aws ecr list-images --repository-name "$REPO" \
-    --query 'imageIds[*]' --output json)"
+  --query 'Versions[].{Key:Key,VersionId:VersionId}' --output json > /tmp/v.json
+aws s3api delete-objects --bucket "$BUCKET" --delete "{\"Objects\": $(cat /tmp/v.json)}"
+# repeat for DeleteMarkers[] until both are empty.
 ```
+
+**Do NOT empty the ECR repos yet.** The guacamole module resolves the `guacd`
+and `guacamole-client` image digests through `data "aws_ecr_image"` sources that
+are evaluated during the Portal destroy plan. If the repos are empty at that
+point, the Portal destroy fails with a data-source lookup error. Empty ECR only
+in step 3, after the Portal (and Range) destroys, right before the Core destroy.
 
 ## 3. Destroy the stacks
 
-For each stack, in order Portal, Range, Core:
+Destroy Portal first, then Range. The Portal stack requires the
+`terraform_state_bucket` variable (normally in the CI-rendered remote-state
+tfvars); pass it explicitly if you do not have that file locally. Init each
+stack against the real state bucket:
 
 ```bash
-cd platform/terraform/environments/<env>/<stack>
-terraform init -backend-config=<env>.s3.tfbackend
-terraform destroy
+STATE_BUCKET=<the shifter-<env>-infra-<uuid> bucket>
+cd platform/terraform/environments/<env>/portal
+terraform init -reconfigure -backend-config=<env>.s3.tfbackend -backend-config="bucket=$STATE_BUCKET"
+terraform destroy -auto-approve -var="terraform_state_bucket=$STATE_BUCKET"
+
+cd ../range
+terraform init -reconfigure -backend-config=<env>.s3.tfbackend -backend-config="bucket=$STATE_BUCKET"
+terraform destroy -auto-approve
+```
+
+Now empty the four ECR repos (Core stack owns them; prod drops the `<env>-`),
+then destroy Core:
+
+```bash
+for r in shifter-<env>-portal shifter-<env>-pulumi-provisioner \
+         shifter-<env>-guacd shifter-<env>-guacamole-client; do
+  aws ecr batch-delete-image --repository-name "$r" \
+    --image-ids "$(aws ecr list-images --repository-name "$r" --query 'imageIds[*]' --output json)"
+done
+
+cd ../          # environments/<env>/ (Core)
+terraform init -reconfigure -backend-config=<env>.s3.tfbackend -backend-config="bucket=$STATE_BUCKET"
+terraform destroy -auto-approve
 ```
 
 If a destroy fails on an unremovable resource (for example a KMS key with
 `prevent_destroy`), remove it from state with `terraform state rm` and let the
 account-level cleanup handle it, mirroring the KMS handling in
 `gcp-dev-destroy.yml`.
+
+### Known destroy stalls and fixes
+
+These recur on a full portal destroy and are safe to resolve directly:
+
+- **Redis rotation Lambda ENI blocks the SG and private subnet.** The portal
+  destroy can hang for 20+ minutes on `module.redis.aws_security_group.rotation`
+  and `module.vpc.aws_subnet.private[*]` because the redis auth-rotation Lambda's
+  VPC ENI is slow to release after the function is deleted. Once the ENI shows
+  `Status=available` it is safe to delete manually, which unblocks Terraform's
+  next retry:
+  ```bash
+  aws ec2 describe-network-interfaces \
+    --filters Name=description,Values="AWS Lambda VPC ENI-*redis-rotation*" \
+    --query 'NetworkInterfaces[?Status==`available`].NetworkInterfaceId' --output text
+  aws ec2 delete-network-interface --network-interface-id <eni-id>
+  ```
+- **Log buckets refill during the destroy.** The ALB access-log and
+  log-aggregation buckets keep receiving objects until their writers are
+  destroyed, so a bucket you emptied at the start can be non-empty by the time
+  Terraform deletes it (`BucketNotEmpty`, HTTP 409). Re-empty those two buckets
+  after the writers are gone and re-run the destroy; it then deletes them.
+- **`data "aws_ecr_image"` fails when ECR is already empty.** Covered in step 2:
+  do not empty the guacamole ECR repos before the Portal destroy. If you already
+  did, push any throwaway image tagged with the expected tag (`1.5.5`) to
+  `shifter-<env>-guacd` and `shifter-<env>-guacamole-client` so the data sources
+  resolve, then destroy.
 
 ## 4. Destroy the runner root and deregister runners
 
