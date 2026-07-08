@@ -2995,7 +2995,7 @@ registerTool(ctx, {
   },
   handler: async ({ env, command, instance_id }) => {
     try {
-      validateManageCommand(command);
+      const commandParts = validateManageCommand(command);
       const profile = getProfile(env);
 
       // Auto-detect portal instance if not provided
@@ -3019,11 +3019,13 @@ registerTool(ctx, {
 
       const result = aws(
         profile,
-        buildRunManageArgs({ targetId, command })
+        buildRunManageArgs({ targetId, commandParts })
       );
       const cmdId = result.Command.CommandId;
+      // Echo the normalized (validated) command, never the raw input.
+      const normalizedCommand = commandParts.join(" ");
       return ok(
-        `Command sent: manage.py ${command}\nInstance: ${targetId}\nCommand ID: ${cmdId}\nUse ssm_get_command_output to check results.`,
+        `Command sent: manage.py ${normalizedCommand}\nInstance: ${targetId}\nCommand ID: ${cmdId}\nUse ssm_get_command_output to check results.`,
       );
     } catch (e) {
       return err(e);
