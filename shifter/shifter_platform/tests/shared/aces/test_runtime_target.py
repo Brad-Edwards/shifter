@@ -158,6 +158,38 @@ class TestValidPlanTranslation:
         assert "spec" not in entry.payload
         assert "scenario_ref" not in entry.payload
 
+    def test_apply_ignores_operations_for_unsupported_resource_types(
+        self, provisioner: ShifterProvisioner, fake_port: FakeRealizationPort
+    ) -> None:
+        # A validatable plan (only supported resources) may still carry an
+        # operation for an unsupported type; apply must skip it rather than
+        # write a snapshot entry for something Shifter cannot realize.
+        node = _node("plan.node.attacker", os_family="linux")
+        plan = ProvisioningPlan(
+            resources={node.address: node},
+            operations=[
+                ProvisionOp(
+                    action=ChangeAction.CREATE,
+                    address=node.address,
+                    resource_type=NODE_RESOURCE_TYPE,
+                    payload=node.payload,
+                ),
+                ProvisionOp(
+                    action=ChangeAction.CREATE,
+                    address="plan.mystery.op",
+                    resource_type="mystery-resource",
+                    payload={},
+                ),
+            ],
+        )
+
+        result = provisioner.apply(plan, RuntimeSnapshot())
+
+        assert result.success is True
+        assert result.changed_addresses == ["plan.node.attacker"]
+        assert result.snapshot.get("plan.mystery.op") is None
+        assert len(fake_port.calls) == 1
+
 
 class TestUnsupportedClaimsAreRejected:
     """Each unsupported-capability class fails closed and never reaches the port."""
@@ -291,6 +323,24 @@ class TestUnsupportedClaimsAreRejected:
                 _node("plan.node.victim", scenario_ref="ad_attack_lab"),
             ]
         )
+
+        diagnostics = provisioner.validate(plan)
+        result = provisioner.apply(plan, RuntimeSnapshot())
+
+        assert any(d.is_error for d in diagnostics)
+        assert result.success is False
+        assert fake_port.calls == []
+
+    def test_non_mapping_payload_is_rejected(
+        self, provisioner: ShifterProvisioner, fake_port: FakeRealizationPort
+    ) -> None:
+        resource = PlannedResource(
+            address="plan.node.bad-payload",
+            domain=RuntimeDomain.PROVISIONING,
+            resource_type=NODE_RESOURCE_TYPE,
+            payload=["not", "a", "mapping"],  # type: ignore[arg-type]
+        )
+        plan = _plan([resource])
 
         diagnostics = provisioner.validate(plan)
         result = provisioner.apply(plan, RuntimeSnapshot())

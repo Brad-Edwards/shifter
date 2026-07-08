@@ -35,7 +35,7 @@ from typing import Any, Protocol
 
 from aces_backend_protocols.capabilities import BackendManifest
 from aces_contracts.diagnostics import Diagnostic, Severity
-from aces_contracts.planning import ProvisioningPlan, RuntimeDomain
+from aces_contracts.planning import PlannedResource, ProvisioningPlan, RuntimeDomain
 from aces_contracts.runtime_state import ApplyResult, RuntimeSnapshot, SnapshotEntry
 from aces_runtime.registry import BackendRegistry, RuntimeTarget, RuntimeTargetComponents
 
@@ -133,6 +133,7 @@ class ShifterRangeRealizationPort(Protocol):
 
 
 def _diagnostic(code: str, address: str, message: str) -> Diagnostic:
+    """Build an ERROR-severity provisioning diagnostic for ``address``."""
     return Diagnostic(code=code, domain=_DOMAIN, address=address, message=message, severity=Severity.ERROR)
 
 
@@ -159,6 +160,118 @@ def _resolve_scenario_ref(scenario_refs_by_address: dict[str, str]) -> tuple[str
     return distinct_values[0], []
 
 
+@dataclass(frozen=True)
+class _ResourceOutcome:
+    """Per-resource classification: either an error diagnostic or a contribution."""
+
+    diagnostic: Diagnostic | None = None
+    os_family: str | None = None
+    network_address: str | None = None
+    scenario_ref: str | None = None
+
+
+#: Categorically unsupported provisioning resource kinds, as
+#: (resource-type set, diagnostic-code suffix, human phrase). Data-driven so the
+#: rejection check stays a simple loop rather than one branch per kind.
+_UNSUPPORTED_RESOURCE_KINDS: tuple[tuple[frozenset[str], str, str], ...] = (
+    (_PLACEMENT_ACCOUNT_ACL_RESOURCE_TYPES, "placement-unsupported", "placement/account/ACL resource type"),
+    (_RUNTIME_COMMAND_RESOURCE_TYPES, "runtime-command-unsupported", "runtime command execution resource type"),
+    (_SNAPSHOT_HISTORY_RESOURCE_TYPES, "snapshot-history-unsupported", "raw snapshot/history request resource type"),
+)
+
+
+def _rejection_diagnostic(resource: PlannedResource) -> Diagnostic | None:
+    """Return an error diagnostic if ``resource`` is a categorically unsupported kind.
+
+    Covers non-provisioning domains, placement/account/ACL, runtime-command, raw
+    snapshot/history, and unknown resource types. Returns ``None`` when the type
+    is one Shifter's provisioning-only envelope can realize.
+    """
+    if resource.domain != RuntimeDomain.PROVISIONING:
+        return _diagnostic(
+            "shifter-provisioner.unsupported-domain",
+            resource.address,
+            f"Shifter's provisioning-only backend does not support domain "
+            f"'{resource.domain.value}' for '{resource.address}'.",
+        )
+    for resource_types, code_suffix, phrase in _UNSUPPORTED_RESOURCE_KINDS:
+        if resource.resource_type in resource_types:
+            return _diagnostic(
+                f"shifter-provisioner.{code_suffix}",
+                resource.address,
+                f"Shifter's provisioning-only backend does not support {phrase} "
+                f"'{resource.resource_type}' for '{resource.address}'.",
+            )
+    if resource.resource_type not in SUPPORTED_RESOURCE_TYPES:
+        return _diagnostic(
+            "shifter-provisioner.unsupported-resource-type",
+            resource.address,
+            f"Shifter's provisioning-only backend does not support resource type "
+            f"'{resource.resource_type}' for '{resource.address}' "
+            f"(supported: {sorted(SUPPORTED_RESOURCE_TYPES)}).",
+        )
+    return None
+
+
+def _payload_diagnostic(resource: PlannedResource, *, is_node: bool) -> Diagnostic | None:
+    """Return an error diagnostic if ``resource``'s payload is malformed or over-specified.
+
+    Rejects a non-mapping payload and any author-supplied key outside the
+    node/network allow-list (provider realization detail Shifter's backend, not
+    the ACES scenario author, owns). Returns ``None`` for an acceptable payload.
+    """
+    payload = resource.payload
+    if not isinstance(payload, Mapping):
+        return _diagnostic(
+            "shifter-provisioner.invalid-payload",
+            resource.address,
+            f"Expected a mapping payload for '{resource.address}'.",
+        )
+    allowed_keys = _NODE_ALLOWED_PAYLOAD_KEYS if is_node else _NETWORK_ALLOWED_PAYLOAD_KEYS
+    unexpected_keys = sorted(set(payload) - allowed_keys)
+    if unexpected_keys:
+        return _diagnostic(
+            "shifter-provisioner.provider-detail-not-allowed",
+            resource.address,
+            "Shifter's provisioning-only backend does not accept author-supplied "
+            f"provider realization detail keys {unexpected_keys} for '{resource.address}'; "
+            "the backend -- not the ACES scenario author -- owns realization detail.",
+        )
+    return None
+
+
+def _classify_resource(resource: PlannedResource) -> _ResourceOutcome:
+    """Validate one provisioning resource and return its diagnostic or contribution."""
+    rejection = _rejection_diagnostic(resource)
+    if rejection is not None:
+        return _ResourceOutcome(diagnostic=rejection)
+
+    is_node = resource.resource_type == NODE_RESOURCE_TYPE
+    payload_error = _payload_diagnostic(resource, is_node=is_node)
+    if payload_error is not None:
+        return _ResourceOutcome(diagnostic=payload_error)
+
+    payload = resource.payload
+    raw_scenario_ref = payload.get("scenario_ref")
+    scenario_ref = raw_scenario_ref if isinstance(raw_scenario_ref, str) and raw_scenario_ref else None
+
+    if not is_node:
+        return _ResourceOutcome(network_address=resource.address, scenario_ref=scenario_ref)
+
+    os_family = payload.get("os_family")
+    if os_family not in SUPPORTED_OS_FAMILIES:
+        return _ResourceOutcome(
+            diagnostic=_diagnostic(
+                "shifter-provisioner.unsupported-os-family",
+                resource.address,
+                f"Shifter's provisioning capability envelope does not support os_family "
+                f"'{safe_log_value(os_family)}' for '{resource.address}' "
+                f"(supported: {sorted(SUPPORTED_OS_FAMILIES)}).",
+            )
+        )
+    return _ResourceOutcome(os_family=os_family, scenario_ref=scenario_ref)
+
+
 def _validate_and_translate(
     plan: ProvisioningPlan,
 ) -> tuple[ShifterProvisioningIntent | None, list[Diagnostic]]:
@@ -166,8 +279,7 @@ def _validate_and_translate(
 
     Returns ``(None, diagnostics)`` with at least one error diagnostic when the
     plan claims anything Shifter's ``provisioning-only`` profile cannot honor.
-    Returns ``(intent, diagnostics)`` (``diagnostics`` may be a non-empty list
-    of warnings/info) for a fully supported plan.
+    Returns ``(intent, diagnostics)`` for a fully supported plan.
     """
     diagnostics: list[Diagnostic] = []
     node_counts: dict[str, int] = {}
@@ -175,109 +287,16 @@ def _validate_and_translate(
     scenario_refs_by_address: dict[str, str] = {}
 
     for resource in plan.resources.values():
-        if resource.domain != RuntimeDomain.PROVISIONING:
-            diagnostics.append(
-                _diagnostic(
-                    "shifter-provisioner.unsupported-domain",
-                    resource.address,
-                    f"Shifter's provisioning-only backend does not support domain "
-                    f"'{resource.domain.value}' for '{resource.address}'.",
-                )
-            )
+        outcome = _classify_resource(resource)
+        if outcome.diagnostic is not None:
+            diagnostics.append(outcome.diagnostic)
             continue
-
-        if resource.resource_type in _PLACEMENT_ACCOUNT_ACL_RESOURCE_TYPES:
-            diagnostics.append(
-                _diagnostic(
-                    "shifter-provisioner.placement-unsupported",
-                    resource.address,
-                    f"Shifter's provisioning capability envelope does not support "
-                    f"placement/account/ACL resource type '{resource.resource_type}' for "
-                    f"'{resource.address}' (supports_acls=False, supports_accounts=False).",
-                )
-            )
-            continue
-
-        if resource.resource_type in _RUNTIME_COMMAND_RESOURCE_TYPES:
-            diagnostics.append(
-                _diagnostic(
-                    "shifter-provisioner.runtime-command-unsupported",
-                    resource.address,
-                    f"Shifter's provisioning-only backend does not support runtime command "
-                    f"execution resource type '{resource.resource_type}' for '{resource.address}'.",
-                )
-            )
-            continue
-
-        if resource.resource_type in _SNAPSHOT_HISTORY_RESOURCE_TYPES:
-            diagnostics.append(
-                _diagnostic(
-                    "shifter-provisioner.snapshot-history-unsupported",
-                    resource.address,
-                    f"Shifter's provisioning-only backend does not expose raw snapshot/history "
-                    f"requests ('{resource.resource_type}') for '{resource.address}'.",
-                )
-            )
-            continue
-
-        if resource.resource_type not in SUPPORTED_RESOURCE_TYPES:
-            diagnostics.append(
-                _diagnostic(
-                    "shifter-provisioner.unsupported-resource-type",
-                    resource.address,
-                    f"Shifter's provisioning-only backend does not support resource type "
-                    f"'{resource.resource_type}' for '{resource.address}' "
-                    f"(supported: {sorted(SUPPORTED_RESOURCE_TYPES)}).",
-                )
-            )
-            continue
-
-        payload = resource.payload
-        if not isinstance(payload, Mapping):
-            diagnostics.append(
-                _diagnostic(
-                    "shifter-provisioner.invalid-payload",
-                    resource.address,
-                    f"Expected a mapping payload for '{resource.address}'.",
-                )
-            )
-            continue
-
-        is_node = resource.resource_type == NODE_RESOURCE_TYPE
-        allowed_keys = _NODE_ALLOWED_PAYLOAD_KEYS if is_node else _NETWORK_ALLOWED_PAYLOAD_KEYS
-        unexpected_keys = sorted(set(payload) - allowed_keys)
-        if unexpected_keys:
-            diagnostics.append(
-                _diagnostic(
-                    "shifter-provisioner.provider-detail-not-allowed",
-                    resource.address,
-                    "Shifter's provisioning-only backend does not accept author-supplied "
-                    f"provider realization detail keys {unexpected_keys} for '{resource.address}'; "
-                    "the backend -- not the ACES scenario author -- owns realization detail.",
-                )
-            )
-            continue
-
-        scenario_ref = payload.get("scenario_ref")
-        if isinstance(scenario_ref, str) and scenario_ref:
-            scenario_refs_by_address[resource.address] = scenario_ref
-
-        if is_node:
-            os_family = payload.get("os_family")
-            if os_family not in SUPPORTED_OS_FAMILIES:
-                diagnostics.append(
-                    _diagnostic(
-                        "shifter-provisioner.unsupported-os-family",
-                        resource.address,
-                        f"Shifter's provisioning capability envelope does not support os_family "
-                        f"'{safe_log_value(os_family)}' for '{resource.address}' "
-                        f"(supported: {sorted(SUPPORTED_OS_FAMILIES)}).",
-                    )
-                )
-                continue
-            node_counts[os_family] = node_counts.get(os_family, 0) + 1
-        else:
-            network_addresses.append(resource.address)
+        if outcome.scenario_ref is not None:
+            scenario_refs_by_address[resource.address] = outcome.scenario_ref
+        if outcome.os_family is not None:
+            node_counts[outcome.os_family] = node_counts.get(outcome.os_family, 0) + 1
+        elif outcome.network_address is not None:
+            network_addresses.append(outcome.network_address)
 
     scenario_ref_value, scenario_diagnostics = _resolve_scenario_ref(scenario_refs_by_address)
     diagnostics.extend(scenario_diagnostics)
@@ -305,7 +324,8 @@ class ShifterProvisioner:
     def __init__(self, port: ShifterRangeRealizationPort) -> None:
         self._port = port
 
-    def validate(self, plan: ProvisioningPlan) -> list[Diagnostic]:
+    @staticmethod
+    def validate(plan: ProvisioningPlan) -> list[Diagnostic]:
         """Return capability-envelope diagnostics for ``plan`` without realizing it."""
         _, diagnostics = _validate_and_translate(plan)
         return diagnostics
