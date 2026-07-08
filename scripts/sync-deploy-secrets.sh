@@ -73,12 +73,14 @@ KNOWN_RECORDS=(
   "proof portal TF_VARS_PROOF_PORTAL      tfvars"
   "dev   range  TF_VARS_DEV_RANGE         tfvars"
   "prod  range  TF_VARS_PROD_RANGE        tfvars"
+  "proof range  TF_VARS_PROOF_RANGE       tfvars"
   "dev   core   TF_VARS_DEV_CORE          tfvars"
   "prod  core   TF_VARS_PROD_CORE         tfvars"
   "proof core   TF_VARS_PROOF_CORE        tfvars"
-  "dev     config SHIFTER_CONFIG_DEV_RANGE  shifter"
-  "prod    config SHIFTER_CONFIG_PROD_RANGE shifter"
-  "gcp-dev config SHIFTER_CONFIG_GCP_DEV    shifter"
+  "dev     config SHIFTER_CONFIG_DEV_RANGE   shifter"
+  "prod    config SHIFTER_CONFIG_PROD_RANGE  shifter"
+  "proof   config SHIFTER_CONFIG_PROOF_RANGE shifter"
+  "gcp-dev config SHIFTER_CONFIG_GCP_DEV     shifter"
 )
 
 DEFAULT_STACKS=(portal range core)

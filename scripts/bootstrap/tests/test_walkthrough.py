@@ -242,6 +242,7 @@ class TestWalkthroughGithubSecrets:
         base = {
             "role_arn": "arn:aws:iam::123456789012:role/test-role",
             "secret_name": "AWS_ROLE_ARN_DEV",
+            "state_bucket_secret_name": "TF_INFRA_STATE_BUCKET_DEV",
             "github_org": "test-org",
             "github_repo": "test-repo",
             "bucket_name": "shifter-dev-infra-test-bucket",
@@ -380,7 +381,7 @@ class TestWalkthroughGithubSecrets:
             assert exc_info.value.code == 1
 
     def test_ensures_state_bucket_when_role_secret_kept(self, mock_stdin_tty):
-        """Keeping an existing role secret still provisions TF_INFRA_STATE_BUCKET."""
+        """Keeping an existing role secret still provisions the state-bucket secret."""
         bootstrap_result = self._bootstrap_result()
 
         with (
@@ -408,7 +409,7 @@ class TestWalkthroughGithubSecrets:
             deploy.walkthrough_github_secrets(bootstrap_result)
 
             bucket_calls = [
-                c for c in mock_run.call_args_list if c[0][0][0] == "gh" and "TF_INFRA_STATE_BUCKET" in c[0][0]
+                c for c in mock_run.call_args_list if c[0][0][0] == "gh" and "TF_INFRA_STATE_BUCKET_DEV" in c[0][0]
             ]
             assert len(bucket_calls) == 1
 
@@ -623,3 +624,56 @@ class TestWalkthroughCognitoUser:
             # In dry-run, the Cognito admin-create-user call is gated behind
             # `if not dry_run`, so run_cmd is never invoked at all.
             mock_run.assert_not_called()
+
+
+class TestEnsureStateBucketSettingSecret:
+    """Branch coverage for _ensure_tf_infra_state_bucket_secret.
+
+    Mocks only the process boundary (subprocess.run for `gh`, plus stdin), not
+    first-party seams, per ADR-019-R1.
+    """
+
+    NAME = "TF_INFRA_STATE_BUCKET_DEV"
+
+    @staticmethod
+    def _gh_list_run(stdout: str):
+        """subprocess.run side effect: `gh secret list` returns stdout; others succeed."""
+
+        def run(cmd, **kwargs):
+            joined = " ".join(cmd) if isinstance(cmd, list) else str(cmd)
+            if "secret" in joined and "list" in joined:
+                return subprocess.CompletedProcess(cmd, 0, stdout=stdout, stderr="")
+            return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+        return run
+
+    @staticmethod
+    def _set_calls(mock_run):
+        return [c for c in mock_run.call_args_list if "gh" in c[0][0] and "set" in c[0][0]]
+
+    def test_returns_early_when_already_configured(self) -> None:
+        """When `gh secret list` already shows the secret, do not set it."""
+        with patch("subprocess.run") as mock_run:
+            mock_run.side_effect = self._gh_list_run(f"{self.NAME}\tUpdated 2024\n")
+            deploy._ensure_tf_infra_state_bucket_secret(self.NAME, "shifter-dev-infra-x", "org", "repo")
+        assert self._set_calls(mock_run) == []
+
+    def test_manual_choice_does_not_set(self, monkeypatch) -> None:
+        """Non-interactive resolves to the manual path: instructions, no gh set.
+
+        Non-interactive `confirm_or_manual` returns "manual" and `wait_for_user`
+        returns immediately, so no first-party seam needs mocking.
+        """
+        monkeypatch.setattr("sys.stdin.isatty", lambda: False)
+        with patch("subprocess.run") as mock_run:
+            mock_run.side_effect = self._gh_list_run("")  # secret absent
+            deploy._ensure_tf_infra_state_bucket_secret(self.NAME, "shifter-dev-infra-x", "org", "repo")
+        assert self._set_calls(mock_run) == []
+
+    def test_refusal_exits(self, mock_stdin_tty) -> None:
+        """Choosing 'no' aborts, because the secret is required for deploys."""
+        with patch("subprocess.run") as mock_run, patch("builtins.input", return_value="n"):
+            mock_run.side_effect = self._gh_list_run("")  # secret absent
+            with pytest.raises(SystemExit) as exc_info:
+                deploy._ensure_tf_infra_state_bucket_secret(self.NAME, "shifter-dev-infra-x", "org", "repo")
+        assert exc_info.value.code == 1
