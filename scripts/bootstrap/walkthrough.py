@@ -103,42 +103,42 @@ def _gh_secret_set_or_exit(setting_name: str, setting_value: str, github_org: st
 
 
 def _ensure_tf_infra_state_bucket_secret(
-    state_bucket_secret_name: str, bucket_name: str, github_org: str, github_repo: str
+    state_bucket_setting_name: str, bucket_name: str, github_org: str, github_repo: str
 ) -> None:
     """Ensure the state-bucket secret exists when reusing an existing role secret.
 
-    ``state_bucket_secret_name`` is the env-suffixed name the deploy workflow reads
+    ``state_bucket_setting_name`` is the env-suffixed name the deploy workflow reads
     (``TF_INFRA_STATE_BUCKET`` for prod, ``TF_INFRA_STATE_BUCKET_DEV`` / ``_PROOF``
     otherwise).
     """
-    if github_secret_exists(state_bucket_secret_name, github_org, github_repo):
-        info(f"{state_bucket_secret_name} already configured")
+    if github_secret_exists(state_bucket_setting_name, github_org, github_repo):
+        info(f"{state_bucket_setting_name} already configured")
         return
 
-    warn(f"{state_bucket_secret_name} is not set (required for CI Terraform backend rendering)")
-    choice = confirm_or_manual(f"Set {state_bucket_secret_name} via gh CLI?")
+    warn(f"{state_bucket_setting_name} is not set (required for CI Terraform backend rendering)")
+    choice = confirm_or_manual(f"Set {state_bucket_setting_name} via gh CLI?")
     if choice == "yes":
-        _gh_secret_set_or_exit(state_bucket_secret_name, bucket_name, github_org, github_repo)
-        success(f"{state_bucket_secret_name} configured via gh CLI")
+        _gh_secret_set_or_exit(state_bucket_setting_name, bucket_name, github_org, github_repo)
+        success(f"{state_bucket_setting_name} configured via gh CLI")
         return
     if choice == "no":
-        error(f"{state_bucket_secret_name} is required for GitHub Actions deploy workflows")
+        error(f"{state_bucket_setting_name} is required for GitHub Actions deploy workflows")
         sys.exit(1)
 
     _terminal_line(f"\n{Colors.BOLD}Manual Steps:{Colors.END}")
     _terminal_line(f"  1. Go to: https://github.com/{github_org}/{github_repo}/settings/secrets/actions")
     _terminal_line("  2. Click 'New repository secret'")
-    _terminal_line(f"  3. Name: {state_bucket_secret_name}")
+    _terminal_line(f"  3. Name: {state_bucket_setting_name}")
     _terminal_line("  4. Value: (same S3 state bucket created during bootstrap)")
     _terminal_line("  5. Click 'Add secret'")
-    wait_for_user(f"Add {state_bucket_secret_name}, then press Enter to continue.")
-    success(f"{state_bucket_secret_name} configured")
+    wait_for_user(f"Add {state_bucket_setting_name}, then press Enter to continue.")
+    success(f"{state_bucket_setting_name} configured")
 
 
 def _configure_github_secrets_via_gh(
     role_setting_name: str,
     role_arn: str,
-    state_bucket_secret_name: str,
+    state_bucket_setting_name: str,
     bucket_name: str,
     github_org: str,
     github_repo: str,
@@ -161,13 +161,13 @@ def _configure_github_secrets_via_gh(
     if choice == "yes":
         info(f"Running: gh secret set {role_setting_name} --repo {github_org}/{github_repo}")
         _gh_secret_set_or_exit(role_setting_name, role_arn, github_org, github_repo)
-        _gh_secret_set_or_exit(state_bucket_secret_name, bucket_name, github_org, github_repo)
+        _gh_secret_set_or_exit(state_bucket_setting_name, bucket_name, github_org, github_repo)
         success("GitHub secrets configured via gh CLI")
         return True
     if choice == "no":
         if secret_exists:
             info("Keeping existing secret value")
-            _ensure_tf_infra_state_bucket_secret(state_bucket_secret_name, bucket_name, github_org, github_repo)
+            _ensure_tf_infra_state_bucket_secret(state_bucket_setting_name, bucket_name, github_org, github_repo)
             return True
         error("GitHub secret is required for CI/CD to authenticate with AWS")
         error("Without this, GitHub Actions cannot deploy infrastructure")
@@ -181,7 +181,7 @@ def walkthrough_github_secrets(bootstrap_result: dict[str, object], dry_run: boo
 
     role_arn = bootstrap_result["role_arn"]
     role_setting_name = bootstrap_result["secret_name"]
-    state_bucket_secret_name = bootstrap_result["state_bucket_secret_name"]
+    state_bucket_setting_name = bootstrap_result["state_bucket_secret_name"]
     github_org = bootstrap_result["github_org"]
     github_repo = bootstrap_result["github_repo"]
     bucket_name = bootstrap_result["bucket_name"]
@@ -197,7 +197,7 @@ def walkthrough_github_secrets(bootstrap_result: dict[str, object], dry_run: boo
     subheader("GitHub Secret to Add")
     _terminal_line(f"  {Colors.BOLD}Name:{Colors.END}  {role_setting_name}")
     _terminal_line(f"  {Colors.BOLD}Value:{Colors.END} ({role_arn_source})")
-    _terminal_line(f"\n  {Colors.BOLD}Name:{Colors.END}  {state_bucket_secret_name}")
+    _terminal_line(f"\n  {Colors.BOLD}Name:{Colors.END}  {state_bucket_setting_name}")
     _terminal_line(f"  {Colors.BOLD}Value:{Colors.END} (same S3 state bucket shown above)")
 
     if dry_run:
@@ -207,7 +207,7 @@ def walkthrough_github_secrets(bootstrap_result: dict[str, object], dry_run: boo
 
     if gh_available:
         if _configure_github_secrets_via_gh(
-            role_setting_name, role_arn, state_bucket_secret_name, bucket_name, github_org, github_repo
+            role_setting_name, role_arn, state_bucket_setting_name, bucket_name, github_org, github_repo
         ):
             return
     else:
@@ -219,7 +219,7 @@ def walkthrough_github_secrets(bootstrap_result: dict[str, object], dry_run: boo
     _terminal_line(f"  3. Name: {role_setting_name}")
     _terminal_line(f"  4. Value: {role_arn_source}")
     _terminal_line("  5. Click 'Add secret'")
-    _terminal_line(f"  6. Add another secret named {state_bucket_secret_name} with the state bucket value above")
+    _terminal_line(f"  6. Add another secret named {state_bucket_setting_name} with the state bucket value above")
     wait_for_user("Add the GitHub secrets, then press Enter to continue.")
     success("GitHub secrets configured")
 

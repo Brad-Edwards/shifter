@@ -624,3 +624,46 @@ class TestWalkthroughCognitoUser:
             # In dry-run, the Cognito admin-create-user call is gated behind
             # `if not dry_run`, so run_cmd is never invoked at all.
             mock_run.assert_not_called()
+
+
+class TestEnsureStateBucketSettingSecret:
+    """Branch coverage for _ensure_tf_infra_state_bucket_secret."""
+
+    def test_returns_early_when_already_configured(self) -> None:
+        """When the state-bucket secret already exists, do nothing."""
+        with (
+            patch("deploy.github_secret_exists", return_value=True),
+            patch("deploy._gh_secret_set_or_exit") as mock_set,
+            patch("deploy.confirm_or_manual") as mock_confirm,
+        ):
+            deploy._ensure_tf_infra_state_bucket_secret(
+                "TF_INFRA_STATE_BUCKET_DEV", "shifter-dev-infra-x", "org", "repo"
+            )
+            mock_set.assert_not_called()
+            mock_confirm.assert_not_called()
+
+    def test_manual_choice_waits_for_user(self) -> None:
+        """The manual path prints instructions and waits, without a gh call."""
+        with (
+            patch("deploy.github_secret_exists", return_value=False),
+            patch("deploy.confirm_or_manual", return_value="manual"),
+            patch("deploy._gh_secret_set_or_exit") as mock_set,
+            patch("deploy.wait_for_user") as mock_wait,
+        ):
+            deploy._ensure_tf_infra_state_bucket_secret(
+                "TF_INFRA_STATE_BUCKET_DEV", "shifter-dev-infra-x", "org", "repo"
+            )
+            mock_wait.assert_called_once()
+            mock_set.assert_not_called()
+
+    def test_refusal_exits(self) -> None:
+        """Choosing 'no' aborts, because the secret is required for deploys."""
+        with (
+            patch("deploy.github_secret_exists", return_value=False),
+            patch("deploy.confirm_or_manual", return_value="no"),
+            pytest.raises(SystemExit) as exc_info,
+        ):
+            deploy._ensure_tf_infra_state_bucket_secret(
+                "TF_INFRA_STATE_BUCKET_DEV", "shifter-dev-infra-x", "org", "repo"
+            )
+        assert exc_info.value.code == 1
