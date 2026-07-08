@@ -173,16 +173,30 @@ class ProvisioningService(BaseModel):
 
 
 class ProvisioningAclRule(BaseModel):
-    """A directional allow/deny rule between network endpoints (ACESPS-008/011)."""
+    """A directional allow/deny rule on a node between network endpoints.
+
+    ACES authors ACLs on node infrastructure (direction in/out/inout, from_net/
+    to_net network refs). This is the neutral, node-scoped projection:
+    ``source``/``destination`` reference a declared network address or a reserved
+    endpoint token (:data:`ACL_RESERVED_ENDPOINTS`) (ACESPS-008/011).
+    """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
+    name: str | None = None
     action: str
     direction: str
     protocol: str = "any"
     ports: tuple[_Port, ...] = ()
     source: str
     destination: str
+
+    @field_validator("name")
+    @classmethod
+    def _name(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return _clean_token(value, field="acl.name", invariant="ACESPS-009")
 
     @field_validator("action")
     @classmethod
@@ -196,8 +210,8 @@ class ProvisioningAclRule(BaseModel):
     @classmethod
     def _direction(cls, value: str) -> str:
         token = _clean_token(value, field="acl.direction", invariant="ACESPS-009").lower()
-        if token not in {"ingress", "egress"}:
-            raise ProvisioningSpecError("ACESPS-008: acl.direction must be 'ingress' or 'egress'")
+        if token not in {"ingress", "egress", "both"}:
+            raise ProvisioningSpecError("ACESPS-008: acl.direction must be 'ingress', 'egress', or 'both'")
         return token
 
     @field_validator("protocol", "source", "destination")
@@ -219,6 +233,7 @@ class ProvisioningNodeSpec(BaseModel):
     image: ProvisioningImage | None = None
     services: tuple[ProvisioningService, ...] = ()
     network_addresses: tuple[str, ...] = ()
+    acls: tuple[ProvisioningAclRule, ...] = ()
 
     @field_validator("address", "name")
     @classmethod
@@ -246,7 +261,6 @@ class ProvisioningNetworkSpec(BaseModel):
     cidr: str | None = None
     gateway: str | None = None
     internal: bool = False
-    acls: tuple[ProvisioningAclRule, ...] = ()
 
     @field_validator("address", "name")
     @classmethod
@@ -319,8 +333,8 @@ class ProvisioningSpec(BaseModel):
                     )
 
         acl_targets = declared_networks | ACL_RESERVED_ENDPOINTS
-        for network in self.networks:
-            for rule in network.acls:
+        for node in self.nodes:
+            for rule in node.acls:
                 for endpoint in (rule.source, rule.destination):
                     if endpoint not in acl_targets:
                         raise ProvisioningSpecError(

@@ -42,6 +42,17 @@ def _valid_payload() -> dict:
                 "image": {"name": "ubuntu-22.04", "version": "1.0.0"},
                 "services": [{"name": "ssh", "port": 22, "protocol": "tcp"}],
                 "network_addresses": ["provision.network.lan"],
+                "acls": [
+                    {
+                        "name": "allow-ssh-in",
+                        "action": "ALLOW",
+                        "direction": "ingress",
+                        "protocol": "tcp",
+                        "ports": [22, 3389],
+                        "source": "internet",
+                        "destination": "provision.network.lan",
+                    }
+                ],
             },
             {
                 "address": "provision.node.dc",
@@ -57,16 +68,6 @@ def _valid_payload() -> dict:
                 "cidr": "10.0.0.0/24",
                 "gateway": "10.0.0.1",
                 "internal": False,
-                "acls": [
-                    {
-                        "action": "ALLOW",
-                        "direction": "ingress",
-                        "protocol": "tcp",
-                        "ports": [22, 3389],
-                        "source": "internet",
-                        "destination": "provision.network.lan",
-                    }
-                ],
             }
         ],
     }
@@ -78,7 +79,7 @@ def test_valid_spec_constructs_and_normalizes() -> None:
     assert spec.contract_version == PROVISIONING_SPEC_CONTRACT_VERSION
     assert spec.request_id == REQUEST_ID
     assert [node.os_family for node in spec.nodes] == ["linux", "windows"]  # ACESPS-010 lowercased
-    assert spec.networks[0].acls[0].action == "allow"  # normalized
+    assert spec.nodes[0].acls[0].action == "allow"  # normalized (node-scoped ACL)
 
 
 def test_json_round_trip_is_lossless() -> None:
@@ -143,11 +144,12 @@ NEGATIVE_CASES: dict[str, dict] = {
         networks=[],
     ),
     "ACESPS-008": _with(
-        nodes=[],
-        networks=[
+        nodes=[
             {
-                "address": "provision.network.a",
-                "name": "a",
+                "address": "n",
+                "name": "n",
+                "os_family": "linux",
+                "network_addresses": ["provision.network.a"],
                 "acls": [
                     {
                         "action": "allow",
@@ -158,6 +160,7 @@ NEGATIVE_CASES: dict[str, dict] = {
                 ],
             }
         ],
+        networks=[{"address": "provision.network.a", "name": "a"}],
     ),
     "ACESPS-009": _with(
         nodes=[{"address": "n", "name": "n", "os_family": "linux", "image": {"name": "image-with-password-baked-in"}}],

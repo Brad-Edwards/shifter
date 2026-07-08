@@ -55,11 +55,14 @@ from aces_conformance.conformance import (
     profile_for_manifest,
     required_contracts,
     run_fixture_suite,
+    run_target_conformance,
 )
 from aces_contracts.contracts import BackendManifestV2Model
 
 from shared import log_sanitize
+from shared.aces.dispatch_port import ShifterDispatchResult
 from shared.aces.manifest import create_shifter_backend_manifest
+from shared.aces.runtime_target import create_shifter_backend_target
 
 PUBLISHED_MANIFEST_PATH = Path(__file__).resolve().parents[3] / "shared" / "aces" / "backend-manifest.json"
 
@@ -335,6 +338,40 @@ def test_conformance_gate_catches_added_unevidenced_contract():
     joined = " ".join(diagnostics)
     assert extra_contract in joined
     assert "beyond the" in joined
+
+
+class _ConformanceProbeDispatchPort:
+    """In-process dispatch port for the live conformance probe.
+
+    Accepts every spec without DB/cloud so the ACES live probe exercises the
+    real ShifterProvisioner.apply path (interpret -> dispatch -> snapshot)
+    against the reference scenario, proving the backend genuinely realizes a
+    plan (non-empty changed_addresses + a PROVISIONING snapshot entry) rather
+    than passing on schema validation alone.
+    """
+
+    request_id = "00000000-0000-0000-0000-0000000000ab"
+
+    def realize(self, spec) -> ShifterDispatchResult:
+        return ShifterDispatchResult(request_id=self.request_id, accepted=True, status="accepted")
+
+
+def test_live_target_conformance_provisioning_only_is_non_vacuous():
+    """The Shifter RuntimeTarget backend passes the ACES *live* target probe.
+
+    ``run_target_conformance`` drives the backend through the ACES
+    RuntimeManager/RuntimeControlPlane against the reference scenario and fails a
+    vacuous pass: it requires the apply to report a non-empty changed_addresses
+    set and a PROVISIONING snapshot entry. This is the primary oracle for the
+    ACES-native backend (PLAT-2009), complementing the fixture gate above.
+    """
+    target = create_shifter_backend_target(port=_ConformanceProbeDispatchPort())
+
+    report = run_target_conformance(target, profile=EXPECTED_PROFILE)
+
+    assert report.passed, f"live target conformance failed: {[(d.code, d.message) for d in report.diagnostics]}"
+    assert report.cases, "live conformance must exercise at least one case"
+    assert report.diagnostics == ()
 
 
 def test_conformance_gate_diagnostics_are_bounded_and_sanitized():
