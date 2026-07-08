@@ -83,9 +83,24 @@ apt-get -y \
   full-upgrade
 
 echo "=== Reinstalling the Google guest environment (Kali repos omit it) ==="
-apt-get install -y google-guest-agent google-osconfig-agent
+# google-compute-engine pulls google-guest-configs, which owns the GCE
+# systemd-networkd interface config + udev rules; without it the guest has no
+# working network manager once ifupdown is out of the way.
+apt-get install -y google-guest-agent google-osconfig-agent google-compute-engine \
+  || apt-get install -y google-guest-agent google-osconfig-agent
 systemctl enable google-guest-agent.service || true
 systemctl enable google-osconfig-agent.service || true
+
+echo "=== Restoring GCE-native networking (Kali's ifupdown unit hangs at boot) ==="
+# Kali pulls in ifupdown, whose networking.service blocks boot for its full
+# ~5-minute timeout trying to raise interfaces that systemd-networkd already
+# owns on GCE. That delays sshd past the provisioner's SSH-wait window, so the
+# range guest looks unreachable. GCE networking is systemd-networkd +
+# google-guest-configs, so mask the ifupdown unit and make sure the GCE stack
+# (systemd-networkd + sshd + the guest agent) is what comes up.
+systemctl mask networking.service || true
+systemctl enable systemd-networkd.service || true
+systemctl enable ssh.service || true
 
 echo "=== Creating the kali user (Kali scripts and xrdp expect it) ==="
 if ! id kali >/dev/null 2>&1; then
