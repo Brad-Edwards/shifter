@@ -18,14 +18,21 @@ so the runner root uses the same backend.
 
 ## 1. Choose the runner network
 
-The runner subnet must be non-default and outside any VPC where range
-provisioning can create private-DNS interface endpoints. Use a dedicated runner
-VPC or the portal VPC private tier; the account default VPC is not acceptable.
-The subnet needs outbound egress for GitHub, ECR, SSM, and AWS APIs. See the
+By default (ADR-004-R20) the runner stack fails closed on the account default
+VPC: a range's private-DNS interface endpoints can hijack the runner's AWS API
+resolution. The preferred placement is an isolated network (a dedicated runner
+VPC or the portal VPC private tier) supplied via `vpc_id`/`subnet_id`. See the
 network isolation preflight:
 [`docs/architecture/github-runner-network-isolation-preflight-1222.md`](../architecture/github-runner-network-isolation-preflight-1222.md).
 
-If you use the portal VPC, read the IDs from the portal Terraform outputs:
+**aws-dev / aws-proof use the default VPC via the documented opt-in.** These
+environments set `allow_default_vpc = true` in their tfvars, which accepts the
+range private-DNS collision risk and auto-resolves the account default VPC plus
+one of its subnets, so no live VPC/subnet IDs are committed (ADR-004-R14). The
+durable placement design is being reassessed in issue #1437.
+
+If instead you use an isolated network, leave `allow_default_vpc = false` and
+supply `vpc_id`/`subnet_id`. For the portal VPC, read the IDs from its outputs:
 
 ```bash
 cd platform/terraform/environments/<env>/portal
@@ -33,9 +40,9 @@ terraform output vpc_id
 terraform output private_subnet_ids
 ```
 
-Do not commit live VPC or subnet IDs to the placeholder `dev.tfvars` /
-`proof.tfvars`. Keep them in a gitignored operator override or another approved
-deploy-time binding.
+Do not commit live VPC or subnet IDs to `dev.tfvars` / `proof.tfvars` (ADR-004-R14).
+Keep them in a gitignored operator override or another approved deploy-time
+binding. The subnet needs outbound egress for GitHub, ECR, SSM, and AWS APIs.
 
 ## 2. Terraform inputs
 
@@ -43,8 +50,9 @@ Defined in `platform/terraform/global/github-runner/variables.tf`:
 
 | Variable | Required | Default | Notes |
 |---|---|---|---|
-| `vpc_id` | yes | none | Runner VPC (dedicated or portal private tier). |
-| `subnet_id` | yes | none | Non-default subnet with GitHub/ECR/SSM/AWS egress. |
+| `allow_default_vpc` | no | `false` | ADR-004-R20 opt-in. `true` accepts default-VPC placement and auto-resolves the default VPC + a subnet. aws-dev/aws-proof set `true`. |
+| `vpc_id` | conditional | `""` | Required for an isolated network (`allow_default_vpc = false`); leave empty to auto-resolve when opted in. Dedicated runner VPC or portal private tier. |
+| `subnet_id` | conditional | `""` | As above; a non-default subnet with GitHub/ECR/SSM/AWS egress, or empty to auto-resolve. |
 | `runner_count` | no | `2` | `dev.tfvars` / `proof.tfvars` set `3`. |
 | `instance_type` | no | `t3.large` | Amazon Linux 2023, SSM access, no inbound. |
 | `region` | no | `us-east-2` | |

@@ -7,6 +7,13 @@ endpoints can hijack the runner's AWS API resolution (the ~107-minute CI wedge
 behind #1220). The runner stack enforces this with a fail-closed Terraform
 ``lifecycle.precondition``; this guard asserts that enforcement is present so it
 cannot be silently removed.
+
+The precondition may carry an explicit ``var.allow_default_vpc`` opt-in escape
+hatch (ADR-004-R20): the guard stays fail-closed by default and only permits the
+account default VPC when an operator deliberately enables it. This checker
+asserts the default-VPC check and the subnet-membership check are still present
+(against the resolved ``local.runner_vpc_id``); it does not object to the opt-in
+prefix, which is the documented, non-silent way to accept default-VPC placement.
 """
 
 from __future__ import annotations
@@ -21,15 +28,19 @@ RUNNER_MAIN_TF = "platform/terraform/global/github-runner/main.tf"
 # The default-VPC data source the precondition reads.
 DEFAULT_VPCS_DATA_RE = re.compile(r'data\s+"aws_vpcs"\s+"default"\s*\{')
 # The two fail-closed preconditions, matched against whitespace-stripped text so
-# formatting changes do not defeat the guard:
-#   1. var.vpc_id must not be the account default VPC, and
-#   2. var.subnet_id must belong to var.vpc_id (so a default-VPC subnet cannot
-#      sneak in behind a non-default vpc_id).
+# formatting changes do not defeat the guard. The resolved runner VPC is
+# ``local.runner_vpc_id`` (explicit var.vpc_id, else the auto-resolved default VPC
+# when opted in); the historical form referenced ``var.vpc_id`` directly, so both
+# are accepted:
+#   1. the resolved runner VPC must not be the account default VPC, and
+#   2. the runner subnet must belong to the resolved runner VPC (so a default-VPC
+#      subnet cannot sneak in behind a non-default VPC).
+_RUNNER_VPC_REF = r"(?:local\.runner_vpc_id|var\.vpc_id)"
 DEFAULT_VPC_PRECONDITION_RE = re.compile(
-    r"!contains\(data\.aws_vpcs\.default\.ids,var\.vpc_id\)"
+    r"!contains\(data\.aws_vpcs\.default\.ids," + _RUNNER_VPC_REF + r"\)"
 )
 SUBNET_MEMBERSHIP_PRECONDITION_RE = re.compile(
-    r"data\.aws_subnet\.runner\.vpc_id==var\.vpc_id"
+    r"data\.aws_subnet\.runner\.vpc_id==" + _RUNNER_VPC_REF
 )
 
 
