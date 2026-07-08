@@ -60,11 +60,97 @@ PAYLOAD_KEYS_BY_RECORD_KIND = {
             "updated_at",
         }
     ),
+    "participant_behavior_history": frozenset(
+        {
+            "event_digest",
+            "event_kind",
+            "event_ref",
+            "operation_id",
+            "participant_ref",
+            "request_id",
+            "sequence",
+            "source_timestamp",
+            "status",
+            "status_reason",
+        }
+    ),
+    "participant_evidence": frozenset(
+        {
+            "artifact_digest",
+            "artifact_ref",
+            "capture_profile",
+            "evidence_kind",
+            "operation_id",
+            "operation_record_id",
+            "participant_ref",
+            "provenance_ref",
+            "provenance_source",
+            "receipt_ref",
+            "redaction_policy",
+            "request_id",
+            "source_timestamp",
+        }
+    ),
 }
 REQUIRED_PAYLOAD_KEYS_BY_RECORD_KIND = {
     "participant_implementation": frozenset({"participant_ref", "implementation_ref"}),
     "participant_runtime": frozenset({"participant_ref", "status"}),
+    "participant_behavior_history": frozenset({"participant_ref", "event_kind", "event_ref"}),
+    "participant_evidence": frozenset(
+        {
+            "participant_ref",
+            "evidence_kind",
+            "capture_profile",
+            "provenance_source",
+            "provenance_ref",
+            "redaction_policy",
+        }
+    ),
 }
+
+#: Reference-oriented evidence vocabularies (#1289). Small, validated frozensets;
+#: the extensibility seam for a new evidence class / capture profile / provenance
+#: boundary is a new frozenset member, mirroring the profile-version seam.
+EVIDENCE_KIND_VALUES = frozenset(
+    {
+        "script_input",
+        "prompt_input",
+        "dispatch_receipt",
+        "transcript_ref",
+        "artifact_ref",
+        "terminal_session_ref",
+        "manual_evidence",
+    }
+)
+CAPTURE_PROFILE_VALUES = frozenset({"reference_only", "digest_only"})
+PROVENANCE_SOURCE_VALUES = frozenset(
+    {
+        "script_execution_context",
+        "upload_inspection",
+        "object_storage",
+        "terminal_session",
+        "ctf_attachment",
+        "operation_sidecar",
+        "manual",
+    }
+)
+REDACTION_POLICY_VALUES = frozenset({"reference_only"})
+
+#: Behavior-history event classes (#1289). References to participant behavior
+#: events (dispatch, script/prompt use, transcript/artifact production, range
+#: events), never the event bodies.
+BEHAVIOR_EVENT_KIND_VALUES = frozenset(
+    {
+        "command_dispatched",
+        "script_executed",
+        "prompt_issued",
+        "transcript_recorded",
+        "artifact_produced",
+        "terminal_session",
+        "range_event",
+        "manual_note",
+    }
+)
 
 #: Component boundaries permitted to own a participant-runtime sidecar write.
 OWNER_VALUES = frozenset({"shared", "engine", "provisioner", "cms", "ctf"})
@@ -139,7 +225,88 @@ def _validate_payload(record_kind: str, payload: object) -> JsonObject:
     validated = _validate_json_value("payload", payload, error_cls=AcesParticipantRuntimeRecordError)
     if not isinstance(validated, dict):
         raise AcesParticipantRuntimeRecordError("payload must be a JSON object")
+    field_validator = _FIELD_VALIDATORS_BY_RECORD_KIND.get(record_kind)
+    if field_validator is not None:
+        field_validator(validated)
     return validated
+
+
+def _require_enum(name: str, value: object, allowed: frozenset[str]) -> None:
+    """Reject a payload field whose value is outside a small validated vocabulary."""
+    if value not in allowed:
+        raise AcesParticipantRuntimeRecordError(f"{name} must be one of {sorted(allowed)}")
+
+
+#: Optional evidence ref fields validated as bounded single-line refs when present
+#: (``provenance_ref`` is required and validated separately).
+_EVIDENCE_OPTIONAL_REF_FIELDS = ("artifact_ref", "receipt_ref", "operation_id", "operation_record_id")
+
+#: Evidence kinds that point at mutable external material (a script, prompt,
+#: transcript, artifact, or terminal session). These MUST pin the referenced
+#: material with an ``artifact_digest`` so a ref cannot be silently swapped;
+#: ``dispatch_receipt`` (an immutable operation-sidecar receipt) and
+#: ``manual_evidence`` do not.
+_EVIDENCE_KINDS_REQUIRING_DIGEST = frozenset(
+    {"script_input", "prompt_input", "transcript_ref", "artifact_ref", "terminal_session_ref"}
+)
+
+
+def _validate_evidence_fields(payload: JsonObject) -> None:
+    """Validate ``participant_evidence`` reference-profile fields (#1289).
+
+    Enum vocabularies are checked, and every ref-bearing field is validated as a
+    bounded single-line reference so raw prompt/script/transcript/provider bodies
+    (multi-line or secret-shaped values) cannot enter an allowed ref field even
+    though the key is allowlisted. Mutable-material evidence kinds must pin the
+    reference with a digest.
+    """
+    _require_enum("evidence_kind", payload.get("evidence_kind"), EVIDENCE_KIND_VALUES)
+    _require_enum("capture_profile", payload.get("capture_profile"), CAPTURE_PROFILE_VALUES)
+    _require_enum("provenance_source", payload.get("provenance_source"), PROVENANCE_SOURCE_VALUES)
+    _require_enum("redaction_policy", payload.get("redaction_policy"), REDACTION_POLICY_VALUES)
+    _require_single_line_ref(
+        "provenance_ref", payload.get("provenance_ref"), required=True, error_cls=AcesParticipantRuntimeRecordError
+    )
+    for field in _EVIDENCE_OPTIONAL_REF_FIELDS:
+        if field in payload:
+            _require_single_line_ref(field, payload[field], required=False, error_cls=AcesParticipantRuntimeRecordError)
+    if "artifact_digest" in payload:
+        _require_digest("artifact_digest", payload["artifact_digest"], error_cls=AcesParticipantRuntimeRecordError)
+    if payload.get("evidence_kind") in _EVIDENCE_KINDS_REQUIRING_DIGEST and "artifact_digest" not in payload:
+        raise AcesParticipantRuntimeRecordError(
+            f"artifact_digest is required for evidence_kind {payload.get('evidence_kind')!r}"
+        )
+
+
+def _validate_behavior_history_fields(payload: JsonObject) -> None:
+    """Validate ``participant_behavior_history`` reference fields (#1289).
+
+    ``event_ref`` and the optional ``operation_id`` are validated as bounded
+    single-line references so behavior events are cited by id, never by body.
+    """
+    _require_enum("event_kind", payload.get("event_kind"), BEHAVIOR_EVENT_KIND_VALUES)
+    _require_single_line_ref(
+        "event_ref", payload.get("event_ref"), required=True, error_cls=AcesParticipantRuntimeRecordError
+    )
+    if "operation_id" in payload:
+        _require_single_line_ref(
+            "operation_id", payload["operation_id"], required=False, error_cls=AcesParticipantRuntimeRecordError
+        )
+    if "event_digest" in payload:
+        _require_digest("event_digest", payload["event_digest"], error_cls=AcesParticipantRuntimeRecordError)
+    if "sequence" in payload:
+        sequence = payload["sequence"]
+        if not isinstance(sequence, int) or isinstance(sequence, bool) or sequence < 0:
+            raise AcesParticipantRuntimeRecordError("sequence must be a non-negative integer")
+
+
+#: Per-record-kind payload field validators layered on top of the generic
+#: allowlist/secret/size checks. Record kinds without an entry (the #1288 base
+#: kinds) keep their allowlist-only validation unchanged.
+_FIELD_VALIDATORS_BY_RECORD_KIND = {
+    "participant_evidence": _validate_evidence_fields,
+    "participant_behavior_history": _validate_behavior_history_fields,
+}
 
 
 def _validate_record_kind_contract(record_kind: str, contract_version: str) -> None:
