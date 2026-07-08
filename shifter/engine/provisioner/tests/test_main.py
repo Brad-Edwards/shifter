@@ -1092,24 +1092,25 @@ class TestPollForSerialAndCert:
 class TestDcSetupRouting:
     """Tests for provider-aware DC setup behavior."""
 
-    def test_should_promote_dc_at_runtime_defaults_by_provider(self):
+    def test_should_promote_dc_at_runtime_is_always_disabled(self):
+        # Runtime DC promotion is intentionally unreachable for every provider:
+        # DCs must be pre-promoted at bake time.
         from state_helpers import _should_promote_dc_at_runtime
 
         with pytest.MonkeyPatch.context() as mp:
             mp.delenv("DC_RUNTIME_PROMOTION", raising=False)
             assert _should_promote_dc_at_runtime("aws") is False
-            assert _should_promote_dc_at_runtime("gcp") is True
+            assert _should_promote_dc_at_runtime("gcp") is False
 
-    def test_should_promote_dc_at_runtime_honors_override(self):
+    def test_should_promote_dc_at_runtime_has_no_env_enable_path(self):
+        # The former DC_RUNTIME_PROMOTION escape hatch must not re-enable it;
+        # re-enabling runtime promotion requires an explicit future decision.
         from state_helpers import _should_promote_dc_at_runtime
 
         with pytest.MonkeyPatch.context() as mp:
-            mp.setenv("DC_RUNTIME_PROMOTION", "false")
-            assert _should_promote_dc_at_runtime("gcp") is False
-
-        with pytest.MonkeyPatch.context() as mp:
             mp.setenv("DC_RUNTIME_PROMOTION", "true")
-            assert _should_promote_dc_at_runtime("aws") is True
+            assert _should_promote_dc_at_runtime("aws") is False
+            assert _should_promote_dc_at_runtime("gcp") is False
 
     def test_run_dc_setup_bootstraps_and_promotes_for_gcp(self, monkeypatch):
         from dc_setup import _run_dc_setup
