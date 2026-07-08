@@ -337,8 +337,6 @@ jobs:
       - name: Golden verify (fresh instance auto-starts the stack)
         run: |
           set -euo pipefail
-          ROOT_DEV="$(aws ec2 describe-images --image-ids "$AMI_ID" \
-            --query 'Images[0].RootDeviceName' --output text)"
           VERIFY_INSTANCE_ID="$(aws ec2 run-instances \
             --image-id "$AMI_ID" \
             --instance-type "$INSTANCE_TYPE" \
