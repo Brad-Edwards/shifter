@@ -550,7 +550,7 @@ rows:
 
   - id: validation.aces-live-backend-path
     surface: validation
-    legacy_source: docs/architecture/aces-runtime-target-backend-manifest-preflight-1233.md; docs/architecture/aces-live-backend-validation-preflight-1264.md
+    legacy_source: docs/architecture/aces-runtime-target-backend-manifest-preflight-1233.md
     legacy_field: Shifter portal/CMS/engine/task-runner/provisioner launch path and ACES operation receipt/status/snapshot evidence
     category: validation gate
     aces_target: live or controlled Shifter ACES provisioning-only backend validation through the normal backend path
