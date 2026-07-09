@@ -265,7 +265,7 @@ class TestCTFRegisterExchange:
     @patch("django.contrib.auth.login")
     @patch("ctf.models.CTFParticipant.objects")
     def test_valid_token_logs_in_and_returns_redirect(self, mock_objects, mock_login, request_factory):
-        """Valid token with linked user logs in and returns the CTF range redirect."""
+        """Valid token with linked user logs in and returns the participant range redirect."""
         from ctf.views import ctf_register_exchange
 
         mock_participant = MagicMock()

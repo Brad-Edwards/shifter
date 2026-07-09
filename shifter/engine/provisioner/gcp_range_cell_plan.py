@@ -3,11 +3,19 @@
 from __future__ import annotations
 
 import ipaddress
-import re
 from typing import NotRequired, TypedDict, cast
 
 from config import GCERangeCellConfig, GCERangeImageProfile, load_gce_range_cell_config
 from executors.factory import get_ssh_username
+from gcp_range_cell_naming import (
+    _label_value,
+    _network_name_from_id,
+    _network_self_link,
+    _network_tag,
+    _short_resource_name,
+    _subnet_tag,
+    _subnetwork_self_link,
+)
 
 _MANAGED_BY_LABEL = "shifter-provisioner"
 
@@ -19,7 +27,7 @@ _DEFAULT_SSH_PORT = 22
 # Google's internal fabric. This is the only egress hole the range opens when
 # private_google_access is set, so guests reach Vertex AI / Cloud Storage /
 # Secret Manager while staying off the general internet.
-_GOOGLE_PRIVATE_API_VIP_CIDR = "199.36.153.8/30"
+_GOOGLE_PRIVATE_API_VIP_CIDR = "199.36.153.8/30"  # NOSONAR
 
 # Scenario image keys whose range host is an Ubuntu Docker host: the
 # participant-facing service (e.g. the Polaris Kali container) publishes the
@@ -135,61 +143,6 @@ def _string_list(value: object) -> list[str]:
     return [str(item) for item in value]
 
 
-def _sanitize_name(value: str, *, max_length: int = 63) -> str:
-    """Normalize a value into a Compute Engine resource name."""
-    normalized = re.sub(r"[^a-z0-9-]+", "-", value.strip().lower())
-    normalized = re.sub(r"-{2,}", "-", normalized).strip("-")
-    normalized = normalized[:max_length].rstrip("-")
-    if not normalized:
-        normalized = "range"
-    if not normalized[0].isalpha():
-        normalized = f"r-{normalized}"
-    return normalized[:max_length].rstrip("-")
-
-
-def _label_value(value: object, *, max_length: int = 63) -> str:
-    """Normalize a value into a Compute Engine label value."""
-    normalized = re.sub(r"[^a-z0-9_-]+", "-", str(value).strip().lower())
-    normalized = re.sub(r"-{2,}", "-", normalized).strip("-_")
-    return normalized[:max_length].rstrip("-_") or "unknown"
-
-
-def _short_resource_name(prefix: str, *parts: object, max_length: int = 63) -> str:
-    """Build a bounded resource name from stable name parts."""
-    return _sanitize_name(
-        "-".join([prefix, *(str(part) for part in parts if part not in (None, ""))]), max_length=max_length
-    )
-
-
-def _network_self_link(project_id: str, network_name: str) -> str:
-    """Return the relative self-link for a global Compute network."""
-    return f"projects/{project_id}/global/networks/{network_name}"
-
-
-def _network_name_from_id(network_id: str) -> str:
-    """Extract the network name from a self-link or partial URL.
-
-    Accepts a full self-link, a partial URL ``projects/<p>/global/networks/<name>``,
-    or a bare name; returns the trailing network name.
-    """
-    return network_id.rstrip("/").rsplit("/", 1)[-1]
-
-
-def _subnetwork_self_link(project_id: str, region: str, subnet_name: str) -> str:
-    """Return the relative self-link for a regional Compute subnet."""
-    return f"projects/{project_id}/regions/{region}/subnetworks/{subnet_name}"
-
-
-def _machine_type_self_link(zone: str, machine_type: str) -> str:
-    """Return the relative self-link for a zonal machine type."""
-    return f"zones/{zone}/machineTypes/{machine_type}"
-
-
-def _disk_type_self_link(zone: str, disk_type: str) -> str:
-    """Return the relative self-link for a zonal disk type."""
-    return f"zones/{zone}/diskTypes/{disk_type}"
-
-
 def _range_labels(range_id: int, request_uuid: str) -> dict[str, str]:
     """Return labels shared by resources in one range cell."""
     return {
@@ -197,16 +150,6 @@ def _range_labels(range_id: int, request_uuid: str) -> dict[str, str]:
         "range-id": _label_value(range_id),
         "request-id": _label_value(request_uuid),
     }
-
-
-def _network_tag(range_id: int) -> str:
-    """Return the common network tag for a range cell."""
-    return _short_resource_name("shifter-range", range_id)
-
-
-def _subnet_tag(range_id: int, subnet_name: str) -> str:
-    """Return the subnet-scoped network tag for range instances."""
-    return _short_resource_name("shifter-range", range_id, subnet_name)
 
 
 def _assign_instance_ips(subnet_cidr: str, instances: list[ScenarioInstance]) -> dict[str, str]:
