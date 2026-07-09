@@ -31,27 +31,19 @@ COPY shifter_platform/pyproject.toml shifter_platform/uv.lock shifter_platform/r
 # first-party source with no external resolution to lock or hash, so they ride on
 # PYTHONPATH in the production stage instead of through a pip install.
 # --no-dev excludes the [dependency-groups].dev group from the export: dev/test
-# tooling (ruff, pytest, mypy, ...) has no place in the production image.
-# aces-sdl is now a runtime dependency ([project].dependencies, #1262 ACES cutover):
-# shared.aces.runtime_target imports aces_runtime/aces_contracts/aces_backend_protocols
-# at import time. It is a git source uv cannot emit a hash for, so a --require-hashes
-# install rejects it. Rather than hash-pin a git source (not yet published as a wheel),
-# split it out of the hashed export and install it separately from its lock-pinned
-# immutable commit: the git SHA IS the integrity guarantee, and --no-deps because its
-# transitive deps are already hash-installed above. The split is driven off the lock
-# export (no SHA duplicated here); the non-empty guard fails the build loudly if the
-# export format ever stops emitting the git line so it can never silently vanish.
-RUN uv export --no-emit-project --frozen --no-dev > requirements.full.txt && \
-    grep -ivE '^aces[-_]sdl @ ' requirements.full.txt > requirements.txt && \
-    { grep -iE '^aces[-_]sdl @ ' requirements.full.txt > requirements-git.txt; test -s requirements-git.txt; } && \
+# tooling (ruff, pytest, mypy, ...) has no place in the production image. Runtime
+# deps live in [project].dependencies and are exported here. `aces-sdl` is a
+# runtime dependency (issue #1262: shared.aces.runtime_target imports it) and is
+# installed from its published PyPI wheel, so uv emits a hash for it and the
+# --require-hashes install succeeds; it was previously a git source, which uv
+# cannot hash, and that broke this build when it was promoted to runtime (#1445).
+RUN uv export --no-emit-project --frozen --no-dev > requirements.txt && \
     uv pip install --system --no-cache --no-config \
         --require-hashes --only-binary :all: --no-binary py-ubjson \
         -r requirements.txt && \
     uv pip install --system --no-cache --no-config \
         --require-hashes --only-binary :all: \
-        -r requirements-gcp.lock && \
-    uv pip install --system --no-cache --no-config --no-deps \
-        -r requirements-git.txt
+        -r requirements-gcp.lock
 
 # Frontend build stage (ADR-029 / #1302). Builds the SPA bundle into the static
 # tree so collectstatic folds it into STATIC_ROOT. Node is a build-time-only

@@ -50,7 +50,7 @@ def send_invitations(event_id: UUID) -> dict[str, Any]:
 
     participants = CTFParticipant.objects.filter(event=event)
 
-    sent = 0
+    queued = 0
     failed = 0
 
     for participant in participants:
@@ -68,41 +68,39 @@ def send_invitations(event_id: UUID) -> dict[str, Any]:
                 },
                 event=event,
             )
-            success = _send_email(
+            _send_email(
                 recipient=participant.email,
                 subject=custom_subject or f"You're invited to {event.name}",
                 html_content=html_content,
                 text_content=text_content,
             )
-            if success:
-                from django.utils import timezone
 
-                participant.invited_at = timezone.now()
-                participant.save(update_fields=["invited_at", "updated_at"])
-                sent += 1
-            else:
-                failed += 1
+            from django.utils import timezone
+
+            participant.invited_at = timezone.now()
+            participant.save(update_fields=["invited_at", "updated_at"])
+            queued += 1
         except Exception:
             logger.exception("Failed to send invitation to %s", safe_log(participant.email))
             failed += 1
 
     # Create notification record
-    if sent > 0:
+    if queued > 0:
         CTFNotification.objects.create(
             event=event,
             notification_type=NotificationType.INVITE.value,
             subject=f"Invitations for {event.name}",
-            body=f"Sent {sent} invitations",
+            body=f"Queued {queued} invitations",
             status=NotificationStatus.SENT.value,
             recipient_filter="participants",
-            sent_count=sent,
+            sent_count=queued,
             created_by=event.created_by,
         )
 
     return {
         "event_id": str(event_id),
-        "total": sent + failed,
-        "sent": sent,
+        "total": queued + failed,
+        "sent": queued,
         "failed": failed,
     }
 
@@ -134,7 +132,7 @@ def send_credentials(event_id: UUID) -> dict[str, Any]:
         range_status="ready",
     )
 
-    sent = 0
+    queued = 0
     failed = 0
 
     for participant in participants:
@@ -157,36 +155,33 @@ def send_credentials(event_id: UUID) -> dict[str, Any]:
                 },
                 event=event,
             )
-            success = _send_email(
+            _send_email(
                 recipient=participant.email,
                 subject=custom_subject or f"Your credentials for {event.name}",
                 html_content=html_content,
                 text_content=text_content,
             )
-            if success:
-                sent += 1
-            else:
-                failed += 1
+            queued += 1
         except Exception:
             logger.exception("Failed to send credentials to %s", safe_log(participant.email))
             failed += 1
 
-    if sent > 0:
+    if queued > 0:
         CTFNotification.objects.create(
             event=event,
             notification_type=NotificationType.CREDENTIALS.value,
             subject=f"Credentials for {event.name}",
-            body=f"Sent credentials to {sent} participants",
+            body=f"Queued credentials for {queued} participants",
             status=NotificationStatus.SENT.value,
             recipient_filter="participants",
-            sent_count=sent,
+            sent_count=queued,
             created_by=event.created_by,
         )
 
     return {
         "event_id": str(event_id),
-        "total": sent + failed,
-        "sent": sent,
+        "total": queued + failed,
+        "sent": queued,
         "failed": failed,
     }
 
@@ -219,7 +214,7 @@ def send_reminder(event_id: UUID, hours_before: int = 24) -> dict[str, Any]:
         registered_at__isnull=False,
     )
 
-    sent = 0
+    queued = 0
     failed = 0
 
     # Build access URL and timezone-aware start time for template context
@@ -254,37 +249,34 @@ def send_reminder(event_id: UUID, hours_before: int = 24) -> dict[str, Any]:
                 },
                 event=event,
             )
-            success = _send_email(
+            _send_email(
                 recipient=participant.email,
                 subject=custom_subject or f"Reminder: {event.name} starts soon",
                 html_content=html_content,
                 text_content=text_content,
             )
-            if success:
-                sent += 1
-            else:
-                failed += 1
+            queued += 1
         except Exception:
             logger.exception("Failed to send reminder to %s", safe_log(participant.email))
             failed += 1
 
-    if sent > 0:
+    if queued > 0:
         CTFNotification.objects.create(
             event=event,
             notification_type=NotificationType.REMINDER.value,
             subject=f"Reminder for {event.name}",
-            body=f"Sent {sent} reminders",
+            body=f"Queued {queued} reminders",
             status=NotificationStatus.SENT.value,
             recipient_filter="participants",
-            sent_count=sent,
+            sent_count=queued,
             created_by=event.created_by,
         )
 
     return {
         "event_id": str(event_id),
         "hours_before": hours_before,
-        "total": sent + failed,
-        "sent": sent,
+        "total": queued + failed,
+        "sent": queued,
         "failed": failed,
     }
 
@@ -332,7 +324,7 @@ def send_announcement(
     )
 
     participants = CTFParticipant.objects.filter(event=event)
-    sent = 0
+    queued = 0
 
     for participant in participants:
         try:
@@ -346,20 +338,19 @@ def send_announcement(
                 },
                 event=event,
             )
-            success = _send_email(
+            _send_email(
                 recipient=participant.email,
                 subject=custom_subject or subject,
                 html_content=html_content,
                 text_content=text_content,
             )
-            if success:
-                sent += 1
+            queued += 1
         except Exception:
             logger.exception("Failed to send announcement to %s", safe_log(participant.email))
 
     from django.utils import timezone
 
-    notification.sent_count = sent
+    notification.sent_count = queued
     notification.sent_at = timezone.now()
     notification.status = NotificationStatus.SENT.value
     notification.save(update_fields=["sent_count", "sent_at", "status", "updated_at"])
@@ -444,24 +435,25 @@ def notify_organizer_provision_failure(
         event=event,
     )
 
-    success = _send_email(
+    _send_email(
         recipient=organizer.email,
         subject=custom_subject or f"Range provisioning failures: {event.name}",
         html_content=html_content,
         text_content=text_content,
     )
 
-    if success:
-        CTFNotification.objects.create(
-            event=event,
-            notification_type=NotificationType.PROVISION_FAILURE.value,
-            subject=f"Provisioning failures for {event.name}",
-            body=f"{len(failures)} participant(s) failed provisioning",
-            status=NotificationStatus.SENT.value,
-            recipient_filter="organizers",
-            sent_count=1,
-            created_by=organizer,
-        )
+    # No synchronous delivery-success signal exists under async dispatch; the
+    # record means "dispatched", not "delivered" (PLAT-103 clause 3).
+    CTFNotification.objects.create(
+        event=event,
+        notification_type=NotificationType.PROVISION_FAILURE.value,
+        subject=f"Provisioning failures for {event.name}",
+        body=f"{len(failures)} participant(s) failed provisioning",
+        status=NotificationStatus.SENT.value,
+        recipient_filter="organizers",
+        sent_count=1,
+        created_by=organizer,
+    )
 
 
 def notify_organizer_event_start(event_id: UUID) -> None:
@@ -489,24 +481,25 @@ def notify_organizer_event_start(event_id: UUID) -> None:
         event=event,
     )
 
-    success = _send_email(
+    _send_email(
         recipient=organizer.email,
         subject=custom_subject or f"Event started: {event.name}",
         html_content=html_content,
         text_content=text_content,
     )
 
-    if success:
-        CTFNotification.objects.create(
-            event=event,
-            notification_type=NotificationType.EVENT_START.value,
-            subject=f"Event started: {event.name}",
-            body=f"Event {event.name} has automatically started",
-            status=NotificationStatus.SENT.value,
-            recipient_filter="organizers",
-            sent_count=1,
-            created_by=organizer,
-        )
+    # No synchronous delivery-success signal exists under async dispatch; the
+    # record means "dispatched", not "delivered" (PLAT-103 clause 3).
+    CTFNotification.objects.create(
+        event=event,
+        notification_type=NotificationType.EVENT_START.value,
+        subject=f"Event started: {event.name}",
+        body=f"Event {event.name} has automatically started",
+        status=NotificationStatus.SENT.value,
+        recipient_filter="organizers",
+        sent_count=1,
+        created_by=organizer,
+    )
 
 
 def notify_organizer_event_end(event_id: UUID) -> None:
@@ -534,24 +527,25 @@ def notify_organizer_event_end(event_id: UUID) -> None:
         event=event,
     )
 
-    success = _send_email(
+    _send_email(
         recipient=organizer.email,
         subject=custom_subject or f"Event ended: {event.name}",
         html_content=html_content,
         text_content=text_content,
     )
 
-    if success:
-        CTFNotification.objects.create(
-            event=event,
-            notification_type=NotificationType.EVENT_END.value,
-            subject=f"Event ended: {event.name}",
-            body=f"Event {event.name} has automatically ended",
-            status=NotificationStatus.SENT.value,
-            recipient_filter="organizers",
-            sent_count=1,
-            created_by=organizer,
-        )
+    # No synchronous delivery-success signal exists under async dispatch; the
+    # record means "dispatched", not "delivered" (PLAT-103 clause 3).
+    CTFNotification.objects.create(
+        event=event,
+        notification_type=NotificationType.EVENT_END.value,
+        subject=f"Event ended: {event.name}",
+        body=f"Event {event.name} has automatically ended",
+        status=NotificationStatus.SENT.value,
+        recipient_filter="organizers",
+        sent_count=1,
+        created_by=organizer,
+    )
 
 
 # -----------------------------------------------------------------------------
@@ -583,26 +577,28 @@ def _send_email(
     subject: str,
     html_content: str,
     text_content: str,
-) -> bool:
-    """Send an email using the shared platform email service.
+) -> None:
+    """Dispatch an email via the shared platform email service.
 
-    Delegates to ``shared.email.send_email`` which handles error logging
-    and never raises.  Uses ``CTF_FROM_EMAIL`` as the sender address.
+    Delegates to ``shared.email.send_email_async``, which submits the send
+    to a background thread and returns immediately (fire-and-forget). This
+    is the single CTF send choke point: callers never depend on a delivery
+    result, so the triggering action is never blocked on SMTP latency
+    (PLAT-103 clause 3). Delivery failures are logged inside the background
+    worker but never raised or surfaced to the caller (clause 4). Uses
+    ``CTF_FROM_EMAIL`` as the sender address.
 
     Args:
         recipient: Email address.
         subject: Email subject.
         html_content: HTML email body.
         text_content: Plain text email body.
-
-    Returns:
-        True if sent successfully.
     """
     from django.conf import settings
 
-    from shared.email import send_email
+    from shared.email import send_email_async
 
-    return send_email(recipient, subject, html_content, text_content, from_email=settings.CTF_FROM_EMAIL)
+    send_email_async(recipient, subject, html_content, text_content, from_email=settings.CTF_FROM_EMAIL)
 
 
 def _render_email(
