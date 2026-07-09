@@ -442,7 +442,7 @@ def start_teardown(range_id: int, user_id: int) -> str | None:
 # =============================================================================
 
 
-def _start_range_ecs_task(request_id: UUID, command: str) -> str | None:
+def _start_range_ecs_task(request_id: UUID, command: str, resource: str = "range") -> str | None:
     """Start an ECS Fargate task for Range operations using request_id.
 
     Matches NGFW pattern - provisioner fetches all data from DB using request_id.
@@ -450,6 +450,11 @@ def _start_range_ecs_task(request_id: UUID, command: str) -> str | None:
     Args:
         request_id: UUID of the Request to operate on
         command: Command to run ("provision" or "destroy")
+        resource: Provisioner subcommand/resource group. Defaults to ``"range"``
+            (the cyberscript path, unchanged). The ACES-native path passes
+            ``"aces-range"`` so the provisioner realizes a persisted
+            ProvisioningSpec instead of a wrapped RangeSpec (ADR-031); the
+            local/ECS dispatch mechanics are identical.
 
     Returns:
         ECS task ARN if successful, None if ECS is not configured
@@ -472,11 +477,12 @@ def _start_range_ecs_task(request_id: UUID, command: str) -> str | None:
     # Check for local provisioner mode first
     if _is_local_provisioner_enabled():
         logger.info(
-            "Using local provisioner for Range request_id=%s command=%s",
+            "Using local provisioner for %s request_id=%s command=%s",
+            resource,
             request_id,
             command,
         )
-        command_list = ["range", command, "--request-id", str(request_id)]
+        command_list = [resource, command, "--request-id", str(request_id)]
         return _run_local_provisioner(command_list)
 
     task_config = _get_engine_task_config()
@@ -485,8 +491,8 @@ def _start_range_ecs_task(request_id: UUID, command: str) -> str | None:
 
     cluster, task_definition, network_config = task_config
 
-    command_list = ["range", command, "--request-id", str(request_id)]
-    logger.info("Starting Range ECS task for request_id=%s command=%s", request_id, command)
+    command_list = [resource, command, "--request-id", str(request_id)]
+    logger.info("Starting %s ECS task for request_id=%s command=%s", resource, request_id, command)
 
     try:
         runner = get_task_runner()
@@ -498,10 +504,10 @@ def _start_range_ecs_task(request_id: UUID, command: str) -> str | None:
             env_overrides=_get_gcp_provisioner_env_overrides(),
             network_config=network_config,
         )
-        logger.info("Started Range ECS task: request_id=%s task_arn=%s", request_id, task_arn)
+        logger.info("Started %s ECS task: request_id=%s task_arn=%s", resource, request_id, task_arn)
         return task_arn
     except CloudTaskError as e:
-        logger.exception("Failed to start Range ECS task for request_id=%s: %s", request_id, e)
+        logger.exception("Failed to start %s ECS task for request_id=%s: %s", resource, request_id, e)
         raise
 
 
@@ -519,6 +525,20 @@ def start_range_provisioning(request_id: UUID) -> str | None:
         CloudTaskError: If ECS task fails to start
     """
     return _start_range_ecs_task(request_id, "provision")
+
+
+def start_aces_range_provisioning(request_id: UUID) -> str | None:
+    """Start provisioning an ACES-native range via the provisioner ``aces-range``
+    command using request_id (ADR-031, feature-flagged parallel path).
+
+    Identical dispatch mechanics to :func:`start_range_provisioning` (local
+    subprocess or ECS Fargate); only the provisioner subcommand differs, so the
+    provisioner realizes a persisted ProvisioningSpec rather than a RangeSpec.
+
+    Returns:
+        Task ARN / local handle if dispatched, None if ECS is not configured.
+    """
+    return _start_range_ecs_task(request_id, "provision", resource="aces-range")
 
 
 def start_range_teardown(request_id: UUID) -> str | None:
