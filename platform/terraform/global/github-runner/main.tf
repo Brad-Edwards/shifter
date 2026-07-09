@@ -56,8 +56,28 @@ data "aws_vpcs" "default" {
   }
 }
 
+# When allow_default_vpc opts in and no explicit subnet is supplied, resolve a
+# subnet of the account default VPC so no live subnet ID has to be committed
+# (ADR-004-R14).
+data "aws_subnets" "default" {
+  count = var.allow_default_vpc && var.subnet_id == "" ? 1 : 0
+  filter {
+    name   = "vpc-id"
+    values = [one(data.aws_vpcs.default.ids)]
+  }
+}
+
+locals {
+  # Resolve the runner network. Explicit vpc_id/subnet_id always win. Otherwise,
+  # when allow_default_vpc is set, fall back to the account default VPC and its
+  # first subnet. When neither is provided the values stay empty and the SG
+  # preconditions / resource creation fail closed.
+  runner_vpc_id    = var.vpc_id != "" ? var.vpc_id : (var.allow_default_vpc ? one(data.aws_vpcs.default.ids) : "")
+  runner_subnet_id = var.subnet_id != "" ? var.subnet_id : (var.allow_default_vpc ? data.aws_subnets.default[0].ids[0] : "")
+}
+
 data "aws_subnet" "runner" {
-  id = var.subnet_id
+  id = local.runner_subnet_id
 }
 
 # ------------------------------------------------------------------------------
@@ -86,7 +106,7 @@ data "aws_ami" "al2023" {
 resource "aws_security_group" "runner" {
   name        = "shifter-github-runner"
   description = "Security group for GitHub Actions runner"
-  vpc_id      = var.vpc_id
+  vpc_id      = local.runner_vpc_id
 
   # No inbound rules needed - runner uses outbound HTTPS to GitHub
   # Access via SSM Session Manager (no SSH required)
@@ -103,15 +123,18 @@ resource "aws_security_group" "runner" {
   # Fail closed on default-VPC placement (ADR-004-R20, issue #1222). A runner in
   # the account default VPC can have its AWS API resolution hijacked by a range's
   # private-DNS VPC endpoints. Place the runner in a dedicated runner VPC or the
-  # portal VPC private tier instead.
+  # portal VPC private tier instead. The account default VPC is permitted ONLY as
+  # an explicit, documented opt-in via var.allow_default_vpc (ADR-004-R20 escape
+  # hatch); when opted in, the range private-DNS collision risk is accepted for
+  # that environment.
   lifecycle {
     precondition {
-      condition     = !contains(data.aws_vpcs.default.ids, var.vpc_id)
-      error_message = "github-runner: var.vpc_id must not be the account default VPC (ADR-004-R20). Use a dedicated runner VPC or the portal VPC private tier so a range's private-DNS VPC endpoints cannot hijack the runner's AWS API resolution."
+      condition     = var.allow_default_vpc || !contains(data.aws_vpcs.default.ids, local.runner_vpc_id)
+      error_message = "github-runner: the runner VPC must not be the account default VPC unless var.allow_default_vpc = true (ADR-004-R20). Use a dedicated runner VPC or the portal VPC private tier, or set allow_default_vpc to accept default-VPC placement, so a range's private-DNS VPC endpoints cannot silently hijack the runner's AWS API resolution."
     }
     precondition {
-      condition     = data.aws_subnet.runner.vpc_id == var.vpc_id
-      error_message = "github-runner: var.subnet_id must belong to var.vpc_id (ADR-004-R20); a subnet from another VPC (for example the default VPC) is rejected."
+      condition     = data.aws_subnet.runner.vpc_id == local.runner_vpc_id
+      error_message = "github-runner: the runner subnet must belong to the runner VPC (ADR-004-R20); a subnet from another VPC is rejected."
     }
   }
 
@@ -269,7 +292,7 @@ resource "aws_instance" "runner" {
   instance_type = var.instance_type
 
   vpc_security_group_ids = [aws_security_group.runner.id]
-  subnet_id              = var.subnet_id
+  subnet_id              = local.runner_subnet_id
   iam_instance_profile   = aws_iam_instance_profile.runner.name
 
   root_block_device {

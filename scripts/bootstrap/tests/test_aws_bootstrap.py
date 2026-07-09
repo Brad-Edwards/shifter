@@ -350,6 +350,7 @@ class TestBootstrapAccount:
             assert isinstance(result, dict)
             assert "role_arn" in result
             assert "bucket_name" in result
+            assert result["state_bucket_secret_name"] == "TF_INFRA_STATE_BUCKET_DEV"
 
     def test_uses_correct_github_org_and_repo_in_trust_policy(self, bootstrap_config, mock_subprocess, mock_repo_root):
         """Function includes correct GitHub org/repo in IAM trust policy."""

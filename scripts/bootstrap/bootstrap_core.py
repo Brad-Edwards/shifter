@@ -347,6 +347,21 @@ class BootstrapConfig:
             return "AWS_ROLE_ARN"
         return f"AWS_ROLE_ARN_{self.env.upper().replace('-', '_')}"
 
+    @property
+    def state_bucket_secret_name(self) -> str:
+        """GitHub secret name for the Terraform state bucket.
+
+        Mirrors ``secret_name``: prod uses the unsuffixed ``TF_INFRA_STATE_BUCKET``
+        while every other environment uses an env-suffixed name. The deploy
+        workflows (``_core.yml``, ``_range.yml``, ``_shifter-platform.yml``) read
+        ``TF_INFRA_STATE_BUCKET_DEV`` / ``_PROOF`` for dev/proof and the
+        unsuffixed name only for prod, so a fresh non-prod bootstrap must set the
+        suffixed secret the workflow actually reads.
+        """
+        if self.env == "prod":
+            return "TF_INFRA_STATE_BUCKET"
+        return f"TF_INFRA_STATE_BUCKET_{self.env.upper().replace('-', '_')}"
+
 
 @dataclass(frozen=True)
 class GDCHost:

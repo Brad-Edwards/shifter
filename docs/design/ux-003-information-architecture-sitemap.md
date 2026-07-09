@@ -254,6 +254,10 @@ Shifter
 |   |-- Risk Register
 |   |-- Risk Detail
 |   `-- Audit / Review Queues
+|-- Administer
+|   |-- Users
+|   |-- Cost
+|   `-- Platform Settings
 `-- Learn
     |-- Role Start
     |   |-- Participant
@@ -310,7 +314,8 @@ Primary navigation:
 1. Operate
 2. Author
 3. Govern
-4. Learn
+4. Administer
+5. Learn
 
 Operate navigation:
 
@@ -336,6 +341,12 @@ Govern navigation:
 - Risks
 - Exceptions and Mitigations
 - Review Dates
+
+Administer navigation:
+
+- Users
+- Cost
+- Platform Settings
 
 Learn navigation:
 
@@ -411,6 +422,21 @@ owner_app
 purpose
 ```
 
+The SPA cohesive pass (#1368) extends this one contract with presentation
+fields so the shared shell can render navigation, breadcrumbs, contextual
+subnavigation, and mode switching from the same metadata. These additions
+parameterize the single contract; they do not create app-local schemas:
+
+```text
+mode              # participant or operator
+group             # Operate, Author, Govern, Administer, or Participate
+route_path        # SPA path
+icon_key          # lucide icon name
+active_context    # optional: range or event the surface reads or sets
+feature_flag      # optional rollout flag
+children          # optional nested or contextual entries
+```
+
 ### Top Navigation
 
 Use top navigation for platform-level context, not for every app:
@@ -484,6 +510,8 @@ Use one canonical name per concept.
 | Event | A time-bound CTF or training delivery with participants, teams, challenges, scoring, and communication. | Mission, course, campaign. |
 | Participant | A learner or competitor taking part in an event. | User when event membership matters. |
 | Organizer | A facilitator, trainer, operator, or staff user managing event or platform operations. | Admin except for Django admin. |
+| Administer | The operator surface for platform administration: users, cost, and platform settings. | Admin except when referring to Django admin. |
+| Cost | Platform spend and cost tracking surfaced under Administer. | Billing unless the billing system is specifically meant. |
 | Team | A participant grouping inside an event. | Bracket, cohort. |
 | Bracket | A scoring or grouping partition inside an event. | Team. |
 | Challenge | A CTF task solved by a participant or team for points. | Scenario, mission. |
@@ -505,6 +533,31 @@ Use one canonical name per concept.
 | Guide | Task-oriented documentation. | Reference. |
 | Reference | Stable factual documentation for APIs, architecture, or concepts. | Guide. |
 | Walkthrough | Step-by-step event or scenario assistance. | Hint, guide. |
+
+## SPA-Era Cohesive Update (#1368)
+
+The SPA cutover Phase 2 cohesive UX pass (#1368) re-derived the information
+architecture fresh from the personas and the current surfaces, then compared the
+result against this artifact. The companion design doc
+`docs/design/spa-cohesive-ux-1368.md` holds the use-case catalog, the layout and
+pattern system, the rationale, and the Risk Register alignment notes. This
+artifact remains the single maintained IA, sitemap, navigation model, and
+taxonomy source (ADR-013). The shared navigation contract is implemented
+centrally in #1369; the per-surface issues (#1370 through #1374) register their
+entries into it.
+
+The fresh derivation confirmed the participant and operator mode split and the
+Operate, Author, and Govern operator groupings. It departed from the prior
+Django-era model in these ways, which are now folded into the sections above:
+
+- Administer is a first-class operator surface for users, cost, and platform
+  settings, rather than only Django admin.
+- The first authenticated screen is a role-aware operational dashboard, not a
+  public placeholder.
+- The mode switch is explicit in the shell.
+- Learn and Docs are deferred from the SPA navigation for this cutover. The
+  documentation site remains a platform surface in this sitemap and stays out of
+  scope for the SPA work per the #1368 issue.
 
 ## Maintenance Rule
 
@@ -536,3 +589,5 @@ Minimum update checklist for future changes:
 | Issue #1093 | Navigation model covering top nav, side nav, breadcrumbs, and modal or overlay patterns. | Navigation Model. |
 | Issue #1093 | Taxonomy with one name per cross-surface concept. | Taxonomy. |
 | Issue #1093 | Decisions traced to personas and JTBD entries from research output. | Evidence And Inputs, Participant Surface, Organizer Surface. |
+| Issue #1368 | SPA-era cohesive IA re-derived fresh and folded into the maintained artifact. | SPA-Era Cohesive Update (#1368), Proposed Sitemap, Navigation Model, Taxonomy. |
+| Issue #1368 | Use cases, layout and pattern system, rationale, and Risk Register alignment notes. | Companion doc `docs/design/spa-cohesive-ux-1368.md`. |

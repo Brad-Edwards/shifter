@@ -11,13 +11,30 @@ variable "runner_count" {
 }
 
 variable "vpc_id" {
-  description = "VPC ID for the runner"
+  description = "VPC ID for the runner. Leave empty to auto-resolve the account default VPC when allow_default_vpc = true; otherwise a non-default, runner-isolated VPC is required (ADR-004-R20)."
   type        = string
+  default     = ""
 }
 
 variable "subnet_id" {
-  description = "Subnet ID for the runner. Must be in a non-default, runner-isolated network and have outbound egress for GitHub, ECR, SSM, and AWS APIs."
+  description = "Subnet ID for the runner. Leave empty to auto-resolve a subnet of the default VPC when allow_default_vpc = true. Otherwise supply a subnet in a non-default, runner-isolated network with outbound egress for GitHub, ECR, SSM, and AWS APIs."
   type        = string
+  default     = ""
+}
+
+variable "allow_default_vpc" {
+  description = <<-EOT
+    Opt-in escape hatch (ADR-004-R20). When false (default) the runner stack fails
+    closed on account-default-VPC placement, because a range's private_dns_enabled
+    interface VPC endpoints can hijack the runner's AWS API resolution. Set true
+    only where default-VPC placement is an accepted, documented tradeoff (the
+    aws-dev/aws-proof standup today; see the reassessment issue referenced in
+    ADR-004-R20). When true and vpc_id/subnet_id are empty, the account default VPC
+    and its first subnet are resolved automatically, so no live VPC/subnet IDs are
+    committed (ADR-004-R14).
+  EOT
+  type        = bool
+  default     = false
 }
 
 variable "instance_type" {
