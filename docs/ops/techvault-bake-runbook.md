@@ -148,10 +148,18 @@ The full stack idles at ~9 GB / 62 GB RAM and ~4% CPU on `r5.2xlarge`; an nmap
 sweep from Kali stays under load 0.3. The size is comfortable with headroom for
 participant work plus Claude Code (which is remote compute via Bedrock).
 
-## Reproducible pipeline (follow-up)
+## Automated pipeline
 
-This runbook is the manual operator path. The reproducible version (a
-`workflow_dispatch` `techvault-scenario-bake.yml` plus a
-`scripts/techvault-aws-range/` bake range that images and updates the SSM
-parameter) should mirror `.github/workflows/packer.yml` and the POLARIS bake
-range, per the #618 pattern.
+The reproducible path is the `workflow_dispatch` workflow
+`.github/workflows/techvault-scenario-bake.yml` ("TechVault Scenario Bake"),
+which automates the manual steps above: it stands up the stack, installs the
+VS Code seat, images the running stack, golden-verifies, and updates
+`/shifter/ami/techvault`. It follows the `workflow_dispatch`-only bake boundary
+from `docs/architecture/polaris-scenario-bake-preflight-618.md` (never wired to
+push, pull_request, or schedule).
+
+The workflow is self-contained: it drives the bake inline over SSM RunCommand
+and has no separate `scripts/` bake range. The operator supplies the isolated
+bake subnet, security group, and SSM instance profile (plus the pinned
+`aptl_version`) as inputs. Run this workflow for a normal rebake; the manual
+steps above are the reference for what it does and for debugging.
