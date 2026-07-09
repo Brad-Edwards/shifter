@@ -1,9 +1,11 @@
-"""Battery for the ACES-native RuntimeTarget provisioning backend (ADR-031).
+"""Battery for the ACES-native RuntimeTarget provisioning backend (ADR-031, ADR-032).
 
-Covers the interpret step (compiled ProvisioningPlan -> ProvisioningSpec) on both
-hand-built plans (precise golden field assertions) and a plan compiled by the real
-aces-sdl processor; the capability-envelope fail-closed negatives; apply/dispatch;
-diagnostics sanitization (ADR-031-R4); and the registration/target shape. The
+Covers the interpret step (validate a compiled ProvisioningPlan, then serialize it
+verbatim) on both hand-built plans and a plan compiled by the real aces-sdl
+processor; the capability-envelope fail-closed negatives; apply/dispatch;
+diagnostics sanitization (ADR-031-R4); and the registration/target shape.
+Realization-time extraction (source->image, resources->sizing, acls) is the
+provisioner's job and is covered in the provisioner's plan-accessor tests. The
 live conformance probe (run_target_conformance) lives in
 ``test_backend_conformance_gate.py``.
 """
@@ -24,6 +26,7 @@ from shared.aces.contracts import SHIFTER_BACKEND_NAME
 from shared.aces.dispatch_port import ShifterDispatchResult
 from shared.aces.manifest import create_shifter_backend_manifest
 from shared.aces.runtime_target import (
+    ACES_PROVISIONING_PLAN_KIND,
     NETWORK_RESOURCE_TYPE,
     NODE_RESOURCE_TYPE,
     ShifterProvisioner,
@@ -56,12 +59,12 @@ class FakeDispatchPort:
     request_id: str = REQUEST_ID
     accepted: bool = True
     raises: Exception | None = None
-    specs: list = field(default_factory=list)
+    plans: list = field(default_factory=list)
 
-    def realize(self, spec) -> ShifterDispatchResult:
+    def realize(self, compiled_plan) -> ShifterDispatchResult:
         if self.raises is not None:
             raise self.raises
-        self.specs.append(spec)
+        self.plans.append(compiled_plan)
         return ShifterDispatchResult(
             request_id=self.request_id, accepted=self.accepted, status="accepted", range_id="rng-1"
         )
@@ -132,13 +135,13 @@ def _plan(*resources: PlannedResource) -> ProvisioningPlan:
 
 
 def _interpret(plan: ProvisioningPlan, **kwargs):
-    return interpret_provisioning_plan(plan, request_id=REQUEST_ID, **kwargs)
+    return interpret_provisioning_plan(plan, **kwargs)
 
 
-# --- interpret: faithful topology (golden field assertions) --------------------
+# --- interpret: validate + serialize the plan verbatim (no re-modeling) --------
 
 
-def test_interpret_carries_full_node_and_network_topology() -> None:
+def test_interpret_serializes_full_plan_verbatim() -> None:
     plan = _plan(
         _node(
             "provision.node.web",
@@ -150,38 +153,40 @@ def test_interpret_carries_full_node_and_network_topology() -> None:
         ),
         _network("provision.network.lan", "lan", cidr="10.9.0.0/24", internal=True),
     )
-    spec, diagnostics = _interpret(plan)
+    serialized, diagnostics = _interpret(plan)
     assert [d for d in diagnostics if d.is_error] == []
-    assert spec is not None
-    assert spec.request_id == REQUEST_ID
-    node = spec.nodes[0]
-    assert node.os_family == "linux"
-    assert node.count == 3
-    assert node.resources.ram_mib == 2048  # 2 GiB -> MiB
-    assert node.resources.vcpus == 2
-    assert node.image is not None and node.image.name == "ubuntu-22.04" and node.image.version == "1.2"
-    assert [s.port for s in node.services] == [22]
-    assert node.network_addresses == ("provision.network.lan",)
-    network = spec.networks[0]
-    assert network.cidr == "10.9.0.0/24" and network.gateway == "10.0.0.1" and network.internal is True
+    assert serialized is not None
+    assert serialized["kind"] == ACES_PROVISIONING_PLAN_KIND
+    assert serialized["aces_sdl_version"]  # stamped from the installed aces-sdl
+    resources = serialized["resources"]
+    assert set(resources) == {"provision.node.web", "provision.network.lan"}
+    # Payloads are carried verbatim -- Shifter does not re-model the plan (ADR-032-R3).
+    node_spec = resources["provision.node.web"]["payload"]["spec"]["node"]
+    assert node_spec["source"] == {"name": "ubuntu-22.04", "version": "1.2"}
+    assert node_spec["resources"] == {"ram": 2 * 1024 * 1024 * 1024, "cpu": 2}
+    props = resources["provision.network.lan"]["payload"]["spec"]["infrastructure"]["properties"]
+    assert props["cidr"] == "10.9.0.0/24" and props["internal"] is True
 
 
-def test_interpret_image_source_as_bare_string() -> None:
-    spec, _ = _interpret(_plan(_node("provision.node.a", "a", source="win2022-template")))
-    assert spec is not None and spec.nodes[0].image is not None
-    assert spec.nodes[0].image.name == "win2022-template" and spec.nodes[0].image.version is None
+def test_interpret_serialized_plan_is_json_safe() -> None:
+    import json
+
+    serialized, _ = _interpret(_plan(_node("provision.node.a", "a", links=())))
+    # Round-trips through JSON unchanged (range_config persistence contract).
+    assert json.loads(json.dumps(serialized)) == serialized
 
 
-def test_interpret_absent_resources_and_image_are_none() -> None:
-    spec, _ = _interpret(_plan(_node("provision.node.a", "a", ram_bytes=None, cpu=None, source=None)))
-    assert spec is not None
-    node = spec.nodes[0]
-    assert node.resources.ram_mib is None and node.resources.vcpus is None and node.image is None
-
-
-def test_interpret_small_ram_value_treated_as_mib() -> None:
-    spec, _ = _interpret(_plan(_node("provision.node.a", "a", ram_bytes=512)))
-    assert spec is not None and spec.nodes[0].resources.ram_mib == 512
+def test_interpret_only_includes_provisioning_domain() -> None:
+    other = PlannedResource(
+        address="orchestration.step.a",
+        domain=RuntimeDomain.ORCHESTRATION,
+        resource_type="step",
+        payload={"name": "a"},
+    )
+    serialized, _ = _interpret(_plan(_node("provision.node.a", "a"), other))
+    assert serialized is not None
+    assert "orchestration.step.a" not in serialized["resources"]
+    assert "provision.node.a" in serialized["resources"]
 
 
 # --- interpret: real compiled plan --------------------------------------------
@@ -194,10 +199,11 @@ def test_interpret_consumes_real_compiled_plan() -> None:
     )
     target = create_shifter_backend_target(port=FakeDispatchPort())
     execution_plan = RuntimeManager(target).plan(scenario)
-    spec, diagnostics = _interpret(execution_plan.provisioning)
+    serialized, diagnostics = _interpret(execution_plan.provisioning)
     assert [d for d in diagnostics if d.is_error] == []
-    assert spec is not None
-    assert sorted(n.os_family for n in spec.nodes) == ["linux", "windows"]
+    assert serialized is not None
+    node_resources = [r for r in serialized["resources"].values() if r["resource_type"] == NODE_RESOURCE_TYPE]
+    assert len(node_resources) == 2
 
 
 # --- capability envelope: fail closed -----------------------------------------
@@ -233,8 +239,8 @@ def test_interpret_consumes_real_compiled_plan() -> None:
     ],
 )
 def test_out_of_envelope_terms_fail_closed(plan_factory, expected_code: str) -> None:
-    spec, diagnostics = _interpret(plan_factory())
-    assert spec is None
+    serialized, diagnostics = _interpret(plan_factory())
+    assert serialized is None
     assert any(d.is_error and d.code == expected_code for d in diagnostics)
 
 
@@ -245,8 +251,8 @@ def test_node_budget_enforced() -> None:
         supported_os_families=frozenset({"linux", "windows"}),
         max_total_nodes=1,
     )
-    spec, diagnostics = _interpret(_plan(_node("provision.node.a", "a", count=5)), capabilities=capped)
-    assert spec is None
+    serialized, diagnostics = _interpret(_plan(_node("provision.node.a", "a", count=5)), capabilities=capped)
+    assert serialized is None
     assert any(d.code == "shifter-provisioner.node-budget-exceeded" for d in diagnostics)
 
 
@@ -254,8 +260,8 @@ def test_non_mapping_payload_rejected() -> None:
     bad = PlannedResource(
         address="provision.node.a", domain=RuntimeDomain.PROVISIONING, resource_type=NODE_RESOURCE_TYPE, payload=[]
     )
-    spec, diagnostics = _interpret(_plan(bad))
-    assert spec is None
+    serialized, diagnostics = _interpret(_plan(bad))
+    assert serialized is None
     assert any(d.code == "shifter-provisioner.invalid-payload" for d in diagnostics)
 
 
@@ -277,7 +283,7 @@ def test_all_diagnostics_are_bounded_and_sanitized() -> None:
 # --- apply / dispatch ----------------------------------------------------------
 
 
-def test_apply_dispatches_and_reports_provisioning_snapshot() -> None:
+def test_apply_dispatches_serialized_plan_and_reports_snapshot() -> None:
     port = FakeDispatchPort()
     plan = _plan(_node("provision.node.web", "web", links=("lan",)), _network("provision.network.lan", "lan"))
     result = ShifterProvisioner(port).apply(plan, RuntimeSnapshot())
@@ -286,14 +292,15 @@ def test_apply_dispatches_and_reports_provisioning_snapshot() -> None:
     provisioning_entries = [e for e in result.snapshot.entries.values() if e.domain == RuntimeDomain.PROVISIONING]
     assert len(provisioning_entries) == 2
     assert all(entry.payload["request_id"] == REQUEST_ID for entry in provisioning_entries)
-    assert len(port.specs) == 1
+    assert len(port.plans) == 1
+    assert port.plans[0]["kind"] == ACES_PROVISIONING_PLAN_KIND
 
 
 def test_apply_does_not_dispatch_on_invalid_plan() -> None:
     port = FakeDispatchPort()
     result = ShifterProvisioner(port).apply(_plan(_node("provision.node.a", "a", os_family="macos")), RuntimeSnapshot())
     assert result.success is False
-    assert port.specs == []
+    assert port.plans == []
 
 
 def test_apply_wraps_dispatch_failure_as_diagnostic() -> None:

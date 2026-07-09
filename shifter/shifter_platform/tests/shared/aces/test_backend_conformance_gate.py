@@ -343,16 +343,16 @@ def test_conformance_gate_catches_added_unevidenced_contract():
 class _ConformanceProbeDispatchPort:
     """In-process dispatch port for the live conformance probe.
 
-    Accepts every spec without DB/cloud so the ACES live probe exercises the
-    real ShifterProvisioner.apply path (interpret -> dispatch -> snapshot)
-    against the reference scenario, proving the backend genuinely realizes a
-    plan (non-empty changed_addresses + a PROVISIONING snapshot entry) rather
-    than passing on schema validation alone.
+    Accepts every serialized plan without DB/cloud so the ACES live probe
+    exercises the real ShifterProvisioner.apply path (validate -> dispatch ->
+    snapshot) against the reference scenario, proving the backend genuinely
+    realizes a plan (non-empty changed_addresses + a PROVISIONING snapshot entry)
+    rather than passing on schema validation alone.
     """
 
     request_id = "00000000-0000-0000-0000-0000000000ab"
 
-    def realize(self, spec) -> ShifterDispatchResult:
+    def realize(self, compiled_plan) -> ShifterDispatchResult:
         return ShifterDispatchResult(request_id=self.request_id, accepted=True, status="accepted")
 
 

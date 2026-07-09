@@ -1,23 +1,23 @@
-"""Dispatch seam for the ACES-native provisioning backend (ADR-031, ADR-024).
+"""Dispatch seam for the ACES-native provisioning backend (ADR-031, ADR-032).
 
-The ACES RuntimeTarget backend (:mod:`shared.aces.runtime_target`) interprets a
-compiled ACES ``ProvisioningPlan`` into the neutral :class:`ProvisioningSpec` and
-then dispatches it through this injected port. The port is where the DB /
-engine / provisioner side effects live, so ``shared`` never imports ``cms`` or
-``engine`` (ADR-024): the concrete implementation is constructed on the
-realization side (``cms.aces``) with the per-launch context (the Shifter
-``request_id`` and any owner/agent context) and handed to the backend.
+The ACES RuntimeTarget backend (:mod:`shared.aces.runtime_target`) validates a
+compiled ACES ``ProvisioningPlan`` and dispatches its **serialized form** through
+this injected port. The port is where the DB / engine / provisioner side effects
+live, so ``shared`` never imports ``cms`` or ``engine`` (ADR-024): the concrete
+implementation is constructed on the realization side (``cms.aces``) with the
+per-launch context (the Shifter ``request_id`` and any owner/agent context) and
+handed to the backend.
 
-Keeping this module free of ``aces_*`` imports lets the realization side depend
-on the seam without pulling the SDL tooling (ADR-031-R1).
+The dispatched artifact is the serialized ACES plan (a plain JSON-safe dict), not
+a Shifter-owned spec (ADR-032-R3). Keeping this module free of ``aces_*`` imports
+lets the realization side depend on the seam without pulling the SDL tooling
+(ADR-031-R1).
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Protocol, runtime_checkable
-
-from shared.aces.provisioning_spec import ProvisioningSpec
+from typing import Any, Protocol, runtime_checkable
 
 __all__ = [
     "ShifterDispatchResult",
@@ -27,9 +27,9 @@ __all__ = [
 
 @dataclass(frozen=True)
 class ShifterDispatchResult:
-    """Outcome of dispatching a :class:`ProvisioningSpec` for realization.
+    """Outcome of dispatching a serialized ACES plan for realization.
 
-    Carries IDs and status only — never a raw spec, provider payload, or secret.
+    Carries IDs and status only -- never a raw plan, provider payload, or secret.
     ``accepted`` is whether the range was accepted for provisioning (the receipt
     boundary); the realized/ready state converges asynchronously and is reported
     later through the operation-status/runtime-snapshot sidecar path.
@@ -44,12 +44,12 @@ class ShifterDispatchResult:
 
 @runtime_checkable
 class ShifterProvisioningDispatchPort(Protocol):
-    """Injected seam that realizes a :class:`ProvisioningSpec` (ADR-024).
+    """Injected seam that realizes a serialized ACES plan (ADR-024).
 
     The concrete implementation (``cms.aces``) owns the per-launch Shifter
-    ``request_id`` and performs the request creation, spec persistence,
+    ``request_id`` and performs the request creation, plan persistence,
     operation-receipt sidecar write, and provisioning dispatch. The backend only
-    interprets and validates; it never imports ``cms``/``engine`` itself.
+    validates and serializes; it never imports ``cms``/``engine`` itself.
     """
 
     @property
@@ -57,6 +57,6 @@ class ShifterProvisioningDispatchPort(Protocol):
         """The Shifter request id this dispatch is keyed by (operation key)."""
         ...
 
-    def realize(self, spec: ProvisioningSpec) -> ShifterDispatchResult:
-        """Persist + dispatch ``spec`` for provisioning; return IDs/status only."""
+    def realize(self, compiled_plan: dict[str, Any]) -> ShifterDispatchResult:
+        """Persist + dispatch the serialized ``compiled_plan``; return IDs/status only."""
         ...

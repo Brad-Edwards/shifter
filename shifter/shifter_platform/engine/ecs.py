@@ -452,8 +452,8 @@ def _start_range_ecs_task(request_id: UUID, command: str, resource: str = "range
         command: Command to run ("provision" or "destroy")
         resource: Provisioner subcommand/resource group. Defaults to ``"range"``
             (the cyberscript path, unchanged). The ACES-native path passes
-            ``"aces-range"`` so the provisioner realizes a persisted
-            ProvisioningSpec instead of a wrapped RangeSpec (ADR-031); the
+            ``"aces-range"`` so the provisioner realizes a persisted serialized
+            ACES plan instead of a wrapped RangeSpec (ADR-031/ADR-032); the
             local/ECS dispatch mechanics are identical.
 
     Returns:
@@ -533,7 +533,7 @@ def start_aces_range_provisioning(request_id: UUID) -> str | None:
 
     Identical dispatch mechanics to :func:`start_range_provisioning` (local
     subprocess or ECS Fargate); only the provisioner subcommand differs, so the
-    provisioner realizes a persisted ProvisioningSpec rather than a RangeSpec.
+    provisioner realizes a persisted serialized ACES plan rather than a RangeSpec.
 
     Returns:
         Task ARN / local handle if dispatched, None if ECS is not configured.

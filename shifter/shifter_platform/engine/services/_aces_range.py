@@ -1,7 +1,7 @@
 """Engine-side creation + dispatch for the ACES-native provisioning path (ADR-031).
 
 Parallel to :func:`engine.services.create_range` (the cyberscript path), but the
-persisted truth is a wrapped ACES ``ProvisioningSpec`` envelope stored in
+persisted truth is the serialized ACES ``ProvisioningPlan`` stored in
 ``mission_control_range.range_config`` (reused, no new table), realized by the
 provisioner's ``aces-range`` command. The cyberscript ``create_range`` /
 ``interpret`` bodies are untouched (ADR-031-R2).
@@ -38,16 +38,17 @@ class AcesRangeRef:
     accepted: bool
 
 
-def create_aces_range(*, request_id: str | UUID, user_id: int, provisioning_spec: dict[str, Any]) -> AcesRangeRef:
-    """Create + dispatch an ACES-native range from a neutral ProvisioningSpec.
+def create_aces_range(*, request_id: str | UUID, user_id: int, compiled_plan: dict[str, Any]) -> AcesRangeRef:
+    """Create + dispatch an ACES-native range from a serialized ACES plan.
 
     Persists an ``engine.models.Request`` and ``engine.models.Range`` (with
-    ``range_config`` = the bare, self-describing ProvisioningSpec JSON -- no
-    cyberscript persisted envelope, ADR-031-R1) keyed by ``request_id``, writes
-    an ``operation_receipt`` sidecar, and dispatches the provisioner
-    ``aces-range provision`` task. Idempotent on ``request_id``. On a dispatch
-    failure the range is marked FAILED and the error re-raised, so a dispatch
-    failure is never silent (mirrors ``create_range``).
+    ``range_config`` = the serialized ACES ProvisioningPlan, a plain dict that is
+    self-describing via its ``kind``/``aces_sdl_version`` -- no cyberscript
+    envelope and no Shifter-owned spec, ADR-031-R1 / ADR-032) keyed by
+    ``request_id``, writes an ``operation_receipt`` sidecar, and dispatches the
+    provisioner ``aces-range provision`` task. Idempotent on ``request_id``. On a
+    dispatch failure the range is marked FAILED and the error re-raised, so a
+    dispatch failure is never silent (mirrors ``create_range``).
     """
     # Imported lazily (like the cyberscript ``create_range`` path) so importing
     # the ``engine`` app does not define models before the app registry is ready.
@@ -73,7 +74,7 @@ def create_aces_range(*, request_id: str | UUID, user_id: int, provisioning_spec
             cms_user_id=user_id,
             status=Range.Status.PROVISIONING,
             subnet_index=subnet_index,
-            range_config=provisioning_spec,
+            range_config=compiled_plan,
         )
         _write_operation_receipt(request_uuid, range_id=str(range_obj.uuid))
 
