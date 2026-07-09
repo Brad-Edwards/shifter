@@ -35,12 +35,12 @@ dependencies = [
     "regex>=2026.6.28",
     "requests",
     # ACES contract/profile/conformance tooling + RuntimeTarget runtime (issue
-    # #1262). Promoted from the dev group (#1261's publication-only slice) now
-    # that shared.aces.runtime_target imports the manifest builder and the
+    # #1262). shared.aces.runtime_target imports the manifest builder and the
     # aces_runtime/aces_backend_protocols/aces_contracts packages at runtime to
-    # construct a live RuntimeTarget. Pinned to a commit SHA for reproducible
-    # builds (the repo has no release tags).
-    "aces-sdl @ git+https://github.com/Brad-Edwards/aces.git@d004bbcc8fa7a0a653183383f7c1dbdf06f5c21c#subdirectory=implementations/python",
+    # construct a live RuntimeTarget. Installed from the published PyPI wheel so
+    # the hash-pinned (`--require-hashes`) image build resolves it (a git source
+    # is unhashable and breaks the build; #1445). Do NOT revert to a git dep.
+    "aces-sdl>=0.19.1",
     "uvicorn-worker",
     # uvicorn's WebSocket protocol backend. Not imported directly: the
     # Gunicorn/Uvicorn ASGI workers (entrypoint.sh) need websockets (or wsproto)
