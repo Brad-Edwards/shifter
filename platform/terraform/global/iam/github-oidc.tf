@@ -559,6 +559,23 @@ resource "aws_iam_policy" "data" {
         ]
       },
       {
+        Sid    = "S3BakeBucketsRead"
+        Effect = "Allow"
+        Action = [
+          "s3:ListBucket",
+          "s3:GetObject"
+        ]
+        # Scenario bake buckets (e.g. shifter-polaris-bake-<account>). The
+        # polaris bake verifies the operator-uploaded build tarball exists
+        # before standing up a golden range. Read-only: the operator uploads
+        # the tarball out of band and the range instance role (granted in
+        # scripts/polaris-aws-range) does the actual download.
+        Resource = [
+          "arn:aws:s3:::shifter-*-bake-*",
+          "arn:aws:s3:::shifter-*-bake-*/*"
+        ]
+      },
+      {
         Sid    = "S3UserStorage"
         Effect = "Allow"
         Action = ["s3:*"]
