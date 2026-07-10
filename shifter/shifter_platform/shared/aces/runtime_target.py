@@ -32,6 +32,7 @@ import json
 from collections.abc import Mapping
 from typing import Any
 
+from aces_backend_protocols.account_features import provisioner_account_features
 from aces_backend_protocols.capabilities import BackendManifest, ProvisionerCapabilities
 from aces_contracts.diagnostics import Diagnostic, Severity
 from aces_contracts.planning import PlannedResource, ProvisioningPlan, RuntimeDomain
@@ -59,7 +60,16 @@ __all__ = [
 _DOMAIN = "provisioning"
 NODE_RESOURCE_TYPE = "node"
 NETWORK_RESOURCE_TYPE = "network"
-SUPPORTED_RESOURCE_TYPES: frozenset[str] = frozenset({NODE_RESOURCE_TYPE, NETWORK_RESOURCE_TYPE})
+CONTENT_PLACEMENT_RESOURCE_TYPE = "content-placement"
+FEATURE_BINDING_RESOURCE_TYPE = "feature-binding"
+ACCOUNT_PLACEMENT_RESOURCE_TYPE = "account-placement"
+#: Composition placement resource types (content/features/accounts), all PROVISIONING.
+COMPOSITION_RESOURCE_TYPES: frozenset[str] = frozenset(
+    {CONTENT_PLACEMENT_RESOURCE_TYPE, FEATURE_BINDING_RESOURCE_TYPE, ACCOUNT_PLACEMENT_RESOURCE_TYPE}
+)
+SUPPORTED_RESOURCE_TYPES: frozenset[str] = (
+    frozenset({NODE_RESOURCE_TYPE, NETWORK_RESOURCE_TYPE}) | COMPOSITION_RESOURCE_TYPES
+)
 
 #: Discriminator for the serialized plan persisted in ``range_config`` so the
 #: provisioner ``aces-range`` path can tell it apart from a cyberscript envelope.
@@ -198,11 +208,107 @@ def _node_envelope_diagnostics(
     return diagnostics
 
 
+def _placement_target(payload: Mapping[str, object]) -> str:
+    """Return the resolved target node address of a composition placement, or ''."""
+    for key in ("target_address", "node_address"):
+        value = payload.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return ""
+
+
+def _unbound_placement_diagnostics(
+    resource: PlannedResource, target: str, node_addresses: set[str]
+) -> list[Diagnostic]:
+    """Fail closed when a placement's target node is not present in the plan."""
+    if target and target in node_addresses:
+        return []
+    return [
+        _diagnostic(
+            "shifter-provisioner.unbound-placement",
+            resource.address,
+            f"placement targets node '{safe_log_value(target)}' not present in this plan",
+        )
+    ]
+
+
+def _content_placement_diagnostics(
+    resource: PlannedResource,
+    payload: Mapping[str, object],
+    capabilities: ProvisionerCapabilities,
+    node_addresses: set[str],
+) -> list[Diagnostic]:
+    """Return capability-envelope diagnostics for a content-placement resource."""
+    diagnostics: list[Diagnostic] = []
+    spec = payload.get("spec")
+    content_type = spec.get("type") if isinstance(spec, Mapping) else None
+    if isinstance(content_type, str) and content_type.lower() not in capabilities.supported_content_types:
+        diagnostics.append(
+            _diagnostic(
+                "shifter-provisioner.unsupported-content-type",
+                resource.address,
+                f"unsupported content type '{safe_log_value(content_type)}' "
+                f"(supported: {sorted(capabilities.supported_content_types)})",
+            )
+        )
+    diagnostics.extend(_unbound_placement_diagnostics(resource, _placement_target(payload), node_addresses))
+    return diagnostics
+
+
+def _account_placement_diagnostics(
+    resource: PlannedResource,
+    payload: Mapping[str, object],
+    capabilities: ProvisionerCapabilities,
+    node_addresses: set[str],
+) -> list[Diagnostic]:
+    """Return capability-envelope diagnostics for an account-placement resource."""
+    diagnostics: list[Diagnostic] = []
+    spec = payload.get("spec")
+    spec = spec if isinstance(spec, Mapping) else {}
+    if not capabilities.supports_accounts:
+        diagnostics.append(
+            _diagnostic(
+                "shifter-provisioner.accounts-unsupported",
+                resource.address,
+                "this backend does not realize account placements",
+            )
+        )
+    else:
+        for feature in sorted(provisioner_account_features(spec)):
+            if feature not in capabilities.supported_account_features:
+                diagnostics.append(
+                    _diagnostic(
+                        "shifter-provisioner.unsupported-account-feature",
+                        resource.address,
+                        f"unsupported account feature '{feature}' "
+                        f"(supported: {sorted(capabilities.supported_account_features)})",
+                    )
+                )
+    diagnostics.extend(_unbound_placement_diagnostics(resource, _placement_target(payload), node_addresses))
+    return diagnostics
+
+
+def _composition_diagnostics(
+    resource: PlannedResource,
+    payload: Mapping[str, object],
+    capabilities: ProvisionerCapabilities,
+    node_addresses: set[str],
+) -> list[Diagnostic]:
+    """Dispatch envelope validation for one composition placement resource."""
+    if resource.resource_type == CONTENT_PLACEMENT_RESOURCE_TYPE:
+        return _content_placement_diagnostics(resource, payload, capabilities, node_addresses)
+    if resource.resource_type == ACCOUNT_PLACEMENT_RESOURCE_TYPE:
+        return _account_placement_diagnostics(resource, payload, capabilities, node_addresses)
+    # feature-binding: no per-feature capability gate; only the target must resolve.
+    return _unbound_placement_diagnostics(resource, _placement_target(payload), node_addresses)
+
+
 def _capability_envelope_diagnostics(
     resources: list[PlannedResource], capabilities: ProvisionerCapabilities
 ) -> list[Diagnostic]:
     """Return fail-closed diagnostics for every out-of-envelope term in the plan."""
     diagnostics: list[Diagnostic] = []
+    node_addresses = {r.address for r in resources if r.resource_type == NODE_RESOURCE_TYPE}
     total_nodes = 0
     for resource in resources:
         payload = resource.payload
@@ -222,11 +328,11 @@ def _capability_envelope_diagnostics(
                     f"(supported: {sorted(SUPPORTED_RESOURCE_TYPES)})",
                 )
             )
-            continue
-        if resource.resource_type == NETWORK_RESOURCE_TYPE:
-            continue
-        total_nodes += _node_count(payload)
-        diagnostics.extend(_node_envelope_diagnostics(resource, payload, capabilities))
+        elif resource.resource_type == NODE_RESOURCE_TYPE:
+            total_nodes += _node_count(payload)
+            diagnostics.extend(_node_envelope_diagnostics(resource, payload, capabilities))
+        elif resource.resource_type in COMPOSITION_RESOURCE_TYPES:
+            diagnostics.extend(_composition_diagnostics(resource, payload, capabilities, node_addresses))
     if capabilities.max_total_nodes is not None and total_nodes > capabilities.max_total_nodes:
         diagnostics.append(
             _diagnostic(

@@ -206,6 +206,43 @@ def test_interpret_consumes_real_compiled_plan() -> None:
     assert len(node_resources) == 2
 
 
+def _content_placement(address: str, *, target: str, content_type: str = "file") -> PlannedResource:
+    return PlannedResource(
+        address=address,
+        domain=RuntimeDomain.PROVISIONING,
+        resource_type="content-placement",
+        payload={
+            "name": address.rsplit(".", 1)[-1],
+            "target_address": target,
+            "spec": {"type": content_type, "path": "/srv/x.txt", "text": "hi"},
+        },
+    )
+
+
+def _account_placement(address: str, *, target: str, **spec: object) -> PlannedResource:
+    body = {"username": "alice", "node": "a", **spec}
+    return PlannedResource(
+        address=address,
+        domain=RuntimeDomain.PROVISIONING,
+        resource_type="account-placement",
+        payload={"name": address.rsplit(".", 1)[-1], "target_address": target, "spec": body},
+    )
+
+
+def _feature_binding(address: str, *, target: str, source: str = "nginx") -> PlannedResource:
+    return PlannedResource(
+        address=address,
+        domain=RuntimeDomain.PROVISIONING,
+        resource_type="feature-binding",
+        payload={
+            "name": address.rsplit(".", 1)[-1],
+            "feature_name": address.rsplit(".", 1)[-1],
+            "node_address": target,
+            "spec": {"template": {"type": "service", "source": {"name": source}}},
+        },
+    )
+
+
 # --- capability envelope: fail closed -----------------------------------------
 
 
@@ -221,13 +258,24 @@ def test_interpret_consumes_real_compiled_plan() -> None:
         (
             lambda: _plan(
                 PlannedResource(
-                    address="provision.account-placement.x",
+                    address="provision.blob.x",
                     domain=RuntimeDomain.PROVISIONING,
-                    resource_type="account-placement",
+                    resource_type="blob",
                     payload={"name": "x"},
                 )
             ),
             "shifter-provisioner.unsupported-resource-type",
+        ),
+        (
+            lambda: _plan(
+                _content_placement("provision.content.x", target="provision.node.a", content_type="raw"),
+                _node("provision.node.a", "a"),
+            ),
+            "shifter-provisioner.unsupported-content-type",
+        ),
+        (
+            lambda: _plan(_content_placement("provision.content.x", target="provision.node.ghost")),
+            "shifter-provisioner.unbound-placement",
         ),
     ],
 )
@@ -255,6 +303,47 @@ def test_acls_are_in_envelope_and_carried_verbatim() -> None:
     assert not any(d.code == "shifter-provisioner.acls-unsupported" for d in diagnostics)
     node_payload = serialized["resources"]["provision.node.a"]["payload"]
     assert node_payload["spec"]["infrastructure"]["acls"][0]["action"] == "allow"
+
+
+def test_composition_placements_accepted_and_serialized() -> None:
+    plan = _plan(
+        _node("provision.node.a", "a"),
+        _content_placement("provision.content.doc", target="provision.node.a"),
+        _account_placement("provision.account.alice", target="provision.node.a", groups=["ops"]),
+        _feature_binding("provision.feature.web", target="provision.node.a"),
+    )
+    serialized, diagnostics = _interpret(plan)
+    assert serialized is not None
+    assert not any(d.is_error for d in diagnostics)
+    types = {r["resource_type"] for r in serialized["resources"].values()}
+    assert {"content-placement", "account-placement", "feature-binding"} <= types
+
+
+def test_accounts_unsupported_fails_closed() -> None:
+    caps = ProvisionerCapabilities(
+        name="noacct", supported_node_types=frozenset({"vm"}), supported_os_families=frozenset({"linux"})
+    )
+    plan = _plan(_node("provision.node.a", "a"), _account_placement("provision.account.a", target="provision.node.a"))
+    serialized, diagnostics = _interpret(plan, capabilities=caps)
+    assert serialized is None
+    assert any(d.code == "shifter-provisioner.accounts-unsupported" for d in diagnostics)
+
+
+def test_account_feature_outside_envelope_fails_closed() -> None:
+    caps = ProvisionerCapabilities(
+        name="restricted",
+        supported_node_types=frozenset({"vm"}),
+        supported_os_families=frozenset({"linux"}),
+        supported_account_features=frozenset({"groups"}),
+        supports_accounts=True,
+    )
+    plan = _plan(
+        _node("provision.node.a", "a"),
+        _account_placement("provision.account.a", target="provision.node.a", mail="a@b.c"),
+    )
+    serialized, diagnostics = _interpret(plan, capabilities=caps)
+    assert serialized is None
+    assert any(d.code == "shifter-provisioner.unsupported-account-feature" for d in diagnostics)
 
 
 def test_node_budget_enforced() -> None:

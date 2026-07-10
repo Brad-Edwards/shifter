@@ -53,6 +53,17 @@ class TestLinux:
         account = AcesPlanAccount(username="bob", target_address="node.web", disabled=True)
         assert "usermod -L bob" in node_bootstrap_script(_node(), _plan(_node(), accounts=(account,)))
 
+    def test_account_mail_writes_alias(self):
+        account = AcesPlanAccount(username="carol", target_address="node.web", mail="carol@example.com")
+        script = node_bootstrap_script(_node(), _plan(_node(), accounts=(account,)))
+        assert "/etc/aliases.d/aces-carol" in script and "carol@example.com" in script
+        assert "newaliases" in script
+
+    def test_account_spn_writes_spn_file(self):
+        account = AcesPlanAccount(username="svc", target_address="node.web", spn="HTTP/host.example.com")
+        script = node_bootstrap_script(_node(), _plan(_node(), accounts=(account,)))
+        assert "/etc/aces/spn/svc" in script and "HTTP/host.example.com" in script
+
     def test_inline_file_written_with_base64_and_mode(self):
         content = _content(content_type="file", path="/srv/x.txt", text="hello world")
         script = node_bootstrap_script(_node(), _plan(_node(), content=(content,)))
@@ -106,6 +117,12 @@ class TestWindows:
         script = node_bootstrap_script(node, _plan(node, content=(content,)))
         assert base64.b64encode(b"hi").decode() in script
         assert "WriteAllBytes" in script
+
+    def test_account_mail_writes_marker(self):
+        node = _node(os_family="windows", address="node.dc")
+        account = AcesPlanAccount(username="dave", target_address="node.dc", mail="dave@corp.local")
+        script = node_bootstrap_script(node, _plan(node, accounts=(account,)))
+        assert "aces\\mail" in script and "dave@corp.local" in script
 
     def test_service_feature_uses_choco(self):
         node = _node(os_family="windows", address="node.dc")

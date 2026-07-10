@@ -84,6 +84,13 @@ def _linux_account(account: AcesPlanAccount) -> list[str]:
         lines.append(
             f"getent group {shlex.quote(group)} >/dev/null 2>&1 && usermod -aG {shlex.quote(group)} {user} || true"
         )
+    if account.mail:
+        lines.append("mkdir -p /etc/aliases.d")
+        lines.append(f"printf '%s: %s\\n' {user} {shlex.quote(account.mail)} > /etc/aliases.d/aces-{user}")
+        lines.append("newaliases >/dev/null 2>&1 || true")
+    if account.spn:
+        lines.append("mkdir -p /etc/aces/spn")
+        lines.append(f"printf '%s\\n' {shlex.quote(account.spn)} > /etc/aces/spn/{user}")
     if account.disabled:
         lines.append(f"usermod -L {user} || true")
     return lines
@@ -150,9 +157,23 @@ def _windows_account(account: AcesPlanAccount) -> list[str]:
     ]
     for group in account.groups:
         lines.append(f"Add-LocalGroupMember -Group {_ps_quote(group)} -Member {quoted} -ErrorAction SilentlyContinue")
+    lines.extend(_windows_account_attr_file("mail", user, account.mail))
+    lines.extend(_windows_account_attr_file("spn", user, account.spn))
     if account.disabled:
         lines.append(f"Disable-LocalUser -Name {quoted} -ErrorAction SilentlyContinue")
     return lines
+
+
+def _windows_account_attr_file(kind: str, user: str, value: str | None) -> list[str]:
+    """Place a Windows account attribute (mail/spn) as a marker file, or nothing."""
+    if not value:
+        return []
+    directory = f"C:\\ProgramData\\aces\\{kind}"
+    path = f"{directory}\\{user}.txt"
+    return [
+        f"New-Item -ItemType Directory -Force -Path {_ps_quote(directory)} | Out-Null",
+        f"Set-Content -Path {_ps_quote(path)} -Value {_ps_quote(value)}",
+    ]
 
 
 def _windows_content(content: AcesPlanContent) -> list[str]:
