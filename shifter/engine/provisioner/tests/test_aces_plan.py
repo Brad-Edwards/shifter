@@ -118,6 +118,56 @@ class TestParseValid:
         assert parsed.nodes[0].network_addresses == ()
 
 
+class TestAclExtraction:
+    def _node_with_acls(self, *acls: dict) -> dict:
+        payload = {"os_family": "linux", "spec": {"infrastructure": {"acls": list(acls)}}}
+        parsed = parse_plan(_serialized(_resource("node.a", "node", payload)))
+        return parsed.nodes[0]
+
+    def test_extracts_and_normalizes_acl(self):
+        node = self._node_with_acls(
+            {
+                "name": "ssh",
+                "action": "allow",
+                "direction": "in",
+                "protocol": "TCP",
+                "ports": [22],
+                "from_net": "net.dmz",
+            }
+        )
+        assert len(node.acls) == 1
+        acl = node.acls[0]
+        assert acl.name == "ssh"
+        assert acl.action == "accept"  # allow -> accept
+        assert acl.direction == "in"
+        assert acl.protocol == "tcp"  # lowercased
+        assert acl.ports == (22,)
+        assert acl.from_net == "net.dmz" and acl.to_net is None
+
+    def test_defaults_direction_inout_and_wildcard_protocol(self):
+        node = self._node_with_acls({"action": "deny"})
+        acl = node.acls[0]
+        assert acl.action == "drop" and acl.direction == "inout" and acl.protocol == "all"
+        assert acl.name == "acl-0"
+
+    def test_missing_action_fails_closed(self):
+        with pytest.raises(AcesPlanError, match="missing 'action'"):
+            self._node_with_acls({"direction": "in"})
+
+    def test_ports_with_wildcard_protocol_fails_closed(self):
+        with pytest.raises(AcesPlanError, match="ports require protocol"):
+            self._node_with_acls({"action": "allow", "protocol": "all", "ports": [22]})
+
+    def test_invalid_port_fails_closed(self):
+        with pytest.raises(AcesPlanError, match="invalid port"):
+            self._node_with_acls({"action": "allow", "protocol": "tcp", "ports": [70000]})
+
+    def test_no_acls_is_empty(self):
+        payload = {"os_family": "linux", "spec": {"node": {}}}
+        parsed = parse_plan(_serialized(_resource("node.a", "node", payload)))
+        assert parsed.nodes[0].acls == ()
+
+
 class TestSelfDiscrimination:
     def test_rejects_none(self):
         with pytest.raises(AcesPlanError):

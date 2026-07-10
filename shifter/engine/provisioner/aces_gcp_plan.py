@@ -20,9 +20,11 @@ from __future__ import annotations
 import ipaddress
 from collections.abc import Callable
 
+from aces_gcp_firewall import acl_cidr_lookup, build_acl_firewalls, node_tag
 from aces_plan import AcesPlan, AcesPlanNetwork, AcesPlanNode
 from config import GCERangeCellConfig, GCERangeImageProfile, load_gce_range_cell_config
 from gcp_range_cell_plan import (
+    FirewallPlan,
     InstancePlan,
     RangeCellPlan,
     SubnetPlan,
@@ -94,8 +96,23 @@ def build_aces_range_cell_plan(
         "manage_network": manage_network,
         "subnets": subnet_plans,
         "instances": instance_plans,
-        "firewalls": _firewall_plan(range_id, subnet_plans, resolved_config),
+        "firewalls": _all_firewalls(range_id, subnet_plans, aces_plan, resolved_config),
     }
+
+
+def _all_firewalls(
+    range_id: int,
+    subnet_plans: list[SubnetPlan],
+    aces_plan: AcesPlan,
+    config: GCERangeCellConfig,
+) -> list[FirewallPlan]:
+    """Base range firewalls (reused, neutral) plus authored node ACL firewalls."""
+    firewalls = _firewall_plan(range_id, subnet_plans, config)
+    cidr_lookup = acl_cidr_lookup(aces_plan.networks)
+    for node in aces_plan.nodes:
+        if node.acls:
+            firewalls.extend(build_acl_firewalls(range_id, node, node_tag(range_id, node.address), cidr_lookup))
+    return firewalls
 
 
 def _network_placement(config: GCERangeCellConfig, range_id: int) -> tuple[str, str, bool]:
@@ -213,7 +230,7 @@ def _instance_plans_for_node(
                 "role": "aces-node",
                 "os_type": os_type,
                 "asset_type": "gce_vm",
-                "tags": [_network_tag(range_id), subnet["tag"]],
+                "tags": [_network_tag(range_id), subnet["tag"], node_tag(range_id, node.address)],
                 "profile": profile,
                 "source": {},
                 "ssh_username": _DEFAULT_SSH_USERNAME,

@@ -14,8 +14,9 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from aces_gcp_firewall import node_tag
 from aces_gcp_plan import AcesGcePlanError, build_aces_range_cell_plan
-from aces_plan import AcesPlan, AcesPlanImage, AcesPlanNetwork, AcesPlanNode
+from aces_plan import AcesPlan, AcesPlanAcl, AcesPlanImage, AcesPlanNetwork, AcesPlanNode
 from config import GCERangeCellConfig, GCERangeImageProfile
 
 
@@ -41,6 +42,7 @@ def _node(
     count: int = 1,
     networks: tuple[str, ...] = ("net.a",),
     os_family: str = "linux",
+    acls: tuple[AcesPlanAcl, ...] = (),
 ) -> AcesPlanNode:
     return AcesPlanNode(
         address=address,
@@ -49,6 +51,7 @@ def _node(
         count=count,
         network_addresses=networks,
         image=AcesPlanImage(name="kali"),
+        acls=acls,
     )
 
 
@@ -142,3 +145,18 @@ class TestFirewalls:
         # Reused neutral base plan: per-subnet ingress + egress posture.
         assert any("ingress" in name for name in names)
         assert any("egress-deny" in name for name in names)
+
+    def test_authored_acls_realized_as_node_firewalls(self):
+        acl = AcesPlanAcl(
+            name="ssh", action="accept", direction="in", protocol="tcp", ports=(22,), from_net="net.a", to_net=None
+        )
+        node = _node(acls=(acl,))
+        plan = build_aces_range_cell_plan("req-1", 7, _plan((node,), (_network(),)), _resolver(), _config())
+        acl_firewalls = [fw for fw in plan["firewalls"] if fw.get("target_tags") == [node_tag(7, "node.a")]]
+        assert len(acl_firewalls) == 1
+        assert acl_firewalls[0]["direction"] == "INGRESS"
+        assert acl_firewalls[0]["allowed"] == [{"IPProtocol": "tcp", "ports": ["22"]}]
+
+    def test_instance_carries_node_tag_for_acl_targeting(self):
+        plan = build_aces_range_cell_plan("req-1", 7, _plan((_node(),), (_network(),)), _resolver(), _config())
+        assert node_tag(7, "node.a") in plan["instances"][0]["tags"]
