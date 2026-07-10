@@ -5,7 +5,7 @@ from django.db import migrations, models
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("engine", "0024_widen_subnetallocation_vpc_id"),
+        ("engine", "0026_outbox_provisioner_select_and_last_error_default"),
     ]
 
     operations = [
