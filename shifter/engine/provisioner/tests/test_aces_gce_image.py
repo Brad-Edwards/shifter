@@ -57,10 +57,17 @@ class TestRegistryResolution:
         assert profile.disk_size_gb == 50
         assert profile.disk_type == "pd-ssd"
 
-    def test_any_version_fallback(self):
-        node = _node(image=AcesPlanImage(name="kali", version="9.9"))
+    def test_unpinned_uses_any_version_default(self):
+        # No authored version -> the any-version (blank) registry row is the default.
+        node = _node(image=AcesPlanImage(name="kali"))
         profile = resolve_gce_image(node, [_candidate("", "projects/x/global/images/kali-latest")])
         assert profile.source_image == "projects/x/global/images/kali-latest"
+
+    def test_pinned_version_with_only_any_version_row_fails_loud(self):
+        # Author pinned 9.9; only an any-version row exists. Must NOT substitute it.
+        node = _node(image=AcesPlanImage(name="kali", version="9.9"))
+        with pytest.raises(AcesGceImageError):
+            resolve_gce_image(node, [_candidate("", "projects/x/global/images/kali-latest")])
 
     def test_registry_without_machine_type_derives_custom_from_resources(self):
         node = _node(image=AcesPlanImage(name="kali"), ram_mib=2048, vcpus=2)
