@@ -12,7 +12,7 @@ from uuid import UUID
 from ctf.enums import NotificationStatus, NotificationType, ScheduledTaskType
 from ctf.exceptions import CTFNotFoundError
 from ctf.models import CTFEvent, CTFNotification, CTFParticipant
-from shared.log_sanitize import safe_log
+from shared.log_sanitize import safe_log_value
 
 # SonarCloud S1192: extracted duplicated string literals.
 NO_ORGANIZER_EMAIL_LOG = "Cannot notify: event %s has no organizer email"
@@ -81,7 +81,7 @@ def send_invitations(event_id: UUID) -> dict[str, Any]:
             participant.save(update_fields=["invited_at", "updated_at"])
             queued += 1
         except Exception:
-            logger.exception("Failed to send invitation to %s", safe_log(participant.email))
+            logger.exception("Failed to send invitation to %s", safe_log_value(participant.email))
             failed += 1
 
     # Create notification record
@@ -163,7 +163,7 @@ def send_credentials(event_id: UUID) -> dict[str, Any]:
             )
             queued += 1
         except Exception:
-            logger.exception("Failed to send credentials to %s", safe_log(participant.email))
+            logger.exception("Failed to send credentials to %s", safe_log_value(participant.email))
             failed += 1
 
     if queued > 0:
@@ -257,7 +257,7 @@ def send_reminder(event_id: UUID, hours_before: int = 24) -> dict[str, Any]:
             )
             queued += 1
         except Exception:
-            logger.exception("Failed to send reminder to %s", safe_log(participant.email))
+            logger.exception("Failed to send reminder to %s", safe_log_value(participant.email))
             failed += 1
 
     if queued > 0:
@@ -346,7 +346,7 @@ def send_announcement(
             )
             queued += 1
         except Exception:
-            logger.exception("Failed to send announcement to %s", safe_log(participant.email))
+            logger.exception("Failed to send announcement to %s", safe_log_value(participant.email))
 
     from django.utils import timezone
 
