@@ -178,10 +178,10 @@ terraform destroy -auto-approve -var-file=<env>.tfvars
 ```
 
 Destroying `global/iam` deletes the `cursor-bedrock-agent` user and rotates its
-access key; a fresh bootstrap recreates both. If you need that account-scoped
-tooling preserved across teardowns, keep it out of `global/iam` (tracked in
-#1437). Also delete any stray temporary `github-actions-shifter-<env>-bootstrap`
-role (bootstrap normally removes it).
+access key; a fresh bootstrap recreates both. That user is unused tooling slated
+for removal (tracked in #1473); once it is gone this recreate churn goes away.
+Also delete any stray temporary `github-actions-shifter-<env>-bootstrap` role
+(bootstrap normally removes it).
 
 **Then** empty and delete the `{uuid}` state bucket
 (`shifter-<env>-infra-<uuid>` for dev/proof, `shifter-infra-<uuid>` for prod).
