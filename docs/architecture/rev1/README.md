@@ -39,7 +39,7 @@ stabilization sequence, not a broader feature program.
 | Architectural soundness | Caution | Good ADRs and service intent; unstable process/data and provider boundaries remain |
 | Implementation quality | Caution | Strong typing/linting and many focused tests; large orchestration and infrastructure surfaces remain |
 | Consistency/modularity/reuse | Caution | Enforced for classified layers, incomplete across all installed first-party apps |
-| Security | High risk until fixed | One authorization escalation plus broad GCP/Kubernetes and supply-chain privileges |
+| Security | High risk until fixed | One authorization escalation plus broad GCP/Kubernetes and supply chain privileges |
 | Test quality | Caution | Strong unit volume; production database, browser, async-delivery, Terraform, and live-boundary fidelity need work |
 
 ## Highest-priority findings
