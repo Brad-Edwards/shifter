@@ -288,9 +288,11 @@ jobs:
           run_phase "${RUNNER_TEMP}/phase-seat.sh" 'techvault bake: seat' 2400 2700
 
           # --- Phase 4: confirm the operational stack is fully up --------
-          # The public startup contract (techvault-operational) is 31 running
-          # aptl-* containers. Poll until they converge before imaging.
-          echo "waiting for the stack to reach 31 running aptl containers..."
+          # The techvault-operational contract settles at 30 long-running aptl-*
+          # containers. (aptl 4.1.2 also runs a one-shot `aptl-cortex-index-init`
+          # that exits 0 once Cortex is indexed, so it is not counted here.)
+          # Poll until they converge before imaging.
+          echo "waiting for the stack to reach 30 running aptl containers..."
           deadline=$(( $(date +%s) + 900 ))
           while true; do
             cid="$(aws ssm send-command --instance-ids "$INSTANCE_ID" \
@@ -303,12 +305,12 @@ jobs:
               --instance-id "$INSTANCE_ID" --query StandardOutputContent \
               --output text 2>/dev/null | tr -dc '0-9' || echo 0)"
             echo "running aptl containers: ${count:-0}"
-            if [ "${count:-0}" -ge 31 ]; then
+            if [ "${count:-0}" -ge 30 ]; then
               echo "stack is up (${count} containers)"
               break
             fi
             if [ "$(date +%s)" -ge "$deadline" ]; then
-              echo "::error::stack did not reach 31 running containers (last=${count:-0})"
+              echo "::error::stack did not reach 30 running containers (last=${count:-0})"
               exit 1
             fi
             sleep 20
@@ -370,7 +372,8 @@ jobs:
             sleep 15
           done
           # No `aptl lab start` here: docker must auto-start the baked stack on
-          # first boot. Poll until the 31 operational containers converge.
+          # first boot. Poll until the 30 operational containers converge (the
+          # one-shot aptl-cortex-index-init exits 0 and is not counted).
           echo "waiting for docker to auto-start the baked stack..."
           deadline=$(( $(date +%s) + 900 ))
           while true; do
@@ -384,7 +387,7 @@ jobs:
               --instance-id "$VERIFY_INSTANCE_ID" --query StandardOutputContent \
               --output text 2>/dev/null | tr -dc '0-9' || echo 0)"
             echo "auto-started aptl containers: ${count:-0}"
-            if [ "${count:-0}" -ge 31 ]; then
+            if [ "${count:-0}" -ge 30 ]; then
               echo "golden verify PASSED (${count} containers auto-started)"
               break
             fi
