@@ -1,401 +1,413 @@
-"""Shifter's ACES ``RuntimeTarget`` provisioning adapter (issue #1262).
+"""Shifter's ACES RuntimeTarget provisioning backend (ADR-031, ADR-032).
 
-This module is a **translation boundary**, not a second launch path. It:
+Supersedes the #1262 ``scenario_ref`` passthrough. This backend rides the ACES
+contract end to end (ADR-032): it validates a compiled ACES ``ProvisioningPlan``
+against the declared ``ProvisionerCapabilities`` envelope, then dispatches the
+**serialized plan itself** through an injected
+:class:`~shared.aces.dispatch_port.ShifterProvisioningDispatchPort`. Shifter
+introduces no parallel SDL and no re-modeled provisioning schema; the realization
+side (engine/provisioner) reads the ACES plan payloads directly via accessors
+that mirror the reference ACES backends.
 
-1. validates an ACES ``ProvisioningPlan`` against Shifter's ``provisioning-only``
-   capability envelope (:mod:`shared.aces.manifest`'s
-   ``SHIFTER_PROVISIONER_CAPABILITIES`` is the source of truth for what is
-   supported);
-2. translates a *supported* plan into :class:`ShifterProvisioningIntent`, a
-   Shifter-shaped range-creation input; and
-3. drives an injected :class:`ShifterRangeRealizationPort` to realize that
-   intent.
+It mirrors the ``aces_backend_libvirt`` / APTL reference backend pattern:
 
-It deliberately does **not** dispatch a live range itself. There is no
-``create_range``/ECS/provisioner call anywhere in this module -- that stays
-behind the injected port, whose only concrete implementation
-(:class:`cms.aces.range_realization.CmsRangeRealizationPort`) produces a valid
-wrapped Shifter spec through the incumbent hydration path and returns IDs and
-status only. Flipping catalog launchability and live dispatch are out of scope
-for this slice (see issues #1263 / #1264).
+* ``validate`` and ``apply`` funnel through one pure interpret step (no I/O);
+* every plan term is checked against the declared ``ProvisionerCapabilities``
+  envelope and any out-of-envelope term (unsupported node type, OS family, ACL
+  when ``supports_acls`` is false, or account/placement resource) yields a
+  bounded typed ERROR diagnostic;
+* ``apply`` refuses to dispatch on any error, and on a valid plan returns an
+  ``ApplyResult`` with non-empty ``changed_addresses`` and a PROVISIONING
+  ``RuntimeSnapshot`` reflecting the accepted realization.
 
-Per ADR-024, ``shared`` must never import ``cms`` or ``engine``: the concrete
-realization implementation lives in ``cms.aces.range_realization`` and is
-handed in here as a :class:`typing.Protocol`-typed port. This is the second
-(and, for the ``provisioning-only`` profile, last) module allowed to import
-the ``aces-sdl`` SDL packages -- see :mod:`shared.aces.manifest` and the
-invariant recorded in :mod:`shared.aces.status`.
+This module and :mod:`shared.aces.manifest` are the only modules allowed to
+import the ``aces-sdl`` tooling (ADR-031-R1 / ADR-024); the realization side
+consumes the serialized plan as plain data via the injected dispatch port.
 """
 
 from __future__ import annotations
 
+import importlib.metadata
+import json
 from collections.abc import Mapping
-from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Any
 
-from aces_backend_protocols.capabilities import BackendManifest
+from aces_backend_protocols.capabilities import BackendManifest, ProvisionerCapabilities
 from aces_contracts.diagnostics import Diagnostic, Severity
 from aces_contracts.planning import PlannedResource, ProvisioningPlan, RuntimeDomain
 from aces_contracts.runtime_state import ApplyResult, RuntimeSnapshot, SnapshotEntry
 from aces_runtime.registry import BackendRegistry, RuntimeTarget, RuntimeTargetComponents
 
 from shared.aces.contracts import SHIFTER_BACKEND_NAME
-from shared.aces.manifest import create_shifter_backend_manifest
+from shared.aces.dispatch_port import ShifterDispatchResult, ShifterProvisioningDispatchPort
+from shared.aces.manifest import SHIFTER_PROVISIONER_CAPABILITIES, create_shifter_backend_manifest
 from shared.log_sanitize import safe_log_value
 
 __all__ = [
+    "ACES_PROVISIONING_PLAN_KIND",
     "NETWORK_RESOURCE_TYPE",
     "NODE_RESOURCE_TYPE",
-    "SUPPORTED_OS_FAMILIES",
     "SUPPORTED_RESOURCE_TYPES",
     "ShifterProvisioner",
-    "ShifterProvisioningIntent",
-    "ShifterRangeRealizationPort",
-    "ShifterRealizationResult",
     "create_shifter_backend_components",
     "create_shifter_backend_target",
+    "interpret_provisioning_plan",
     "register_shifter_backend",
+    "serialize_provisioning_plan",
 ]
 
 _DOMAIN = "provisioning"
-
-#: The only two provisioning resource types Shifter's incumbent range-creation
-#: path can realize: a compute node (VM) and a network. Anything else is a
-#: capability claim Shifter cannot honor (ADR-024 fail-closed boundary).
 NODE_RESOURCE_TYPE = "node"
 NETWORK_RESOURCE_TYPE = "network"
 SUPPORTED_RESOURCE_TYPES: frozenset[str] = frozenset({NODE_RESOURCE_TYPE, NETWORK_RESOURCE_TYPE})
 
-#: Mirrors ``shared.aces.manifest.SHIFTER_PROVISIONER_CAPABILITIES.supported_os_families``.
-#: Kept as a plain module constant (rather than importing the capability object
-#: at validation time) so the hot validation path never touches the ACES SDL
-#: capability dataclass machinery.
-SUPPORTED_OS_FAMILIES: frozenset[str] = frozenset({"linux", "windows"})
+#: Discriminator for the serialized plan persisted in ``range_config`` so the
+#: provisioner ``aces-range`` path can tell it apart from a cyberscript envelope.
+ACES_PROVISIONING_PLAN_KIND = "aces_provisioning_plan"
 
-#: Resource types that claim account/ACL/content-placement realization.
-#: ``SHIFTER_PROVISIONER_CAPABILITIES`` declares ``supports_acls=False`` and
-#: ``supports_accounts=False``, so these are always rejected.
-_PLACEMENT_ACCOUNT_ACL_RESOURCE_TYPES: frozenset[str] = frozenset(
-    {"account", "acl", "placement", "content-placement", "account-placement", "feature-binding"}
-)
-
-#: Resource types that ask the backend to execute a runtime command. Shifter's
-#: provisioning-only profile has no orchestrator, so there is nothing to
-#: execute a command through.
-_RUNTIME_COMMAND_RESOURCE_TYPES: frozenset[str] = frozenset({"runtime-command", "command", "exec"})
-
-#: Resource types that ask for raw runtime snapshot/history access. Shifter's
-#: ``Provisioner`` never exposes ``RuntimeSnapshot`` internals beyond the
-#: bounded IDs/status entries this module writes itself.
-_SNAPSHOT_HISTORY_RESOURCE_TYPES: frozenset[str] = frozenset({"snapshot-request", "history-request", "state-query"})
-
-#: Payload keys a supported ``node``/``network`` resource may carry. Anything
-#: else is an author-supplied provider realization detail (Terraform
-#: variables, image ids, CIDRs, SSM/SSH material, ...) that Shifter's backend
-#: -- not the ACES scenario author -- owns.
-_NODE_ALLOWED_PAYLOAD_KEYS: frozenset[str] = frozenset({"os_family", "name", "scenario_ref"})
-_NETWORK_ALLOWED_PAYLOAD_KEYS: frozenset[str] = frozenset({"name", "scenario_ref"})
-
-
-@dataclass(frozen=True)
-class ShifterProvisioningIntent:
-    """Translation output: a supported plan reduced to range-creation inputs.
-
-    Carries only what :class:`ShifterRangeRealizationPort` implementations
-    need to hydrate a Shifter range -- never raw plan payloads, provider
-    details, or secrets.
-    """
-
-    scenario_ref: str
-    node_counts_by_os: Mapping[str, int]
-    network_addresses: tuple[str, ...]
-
-
-@dataclass(frozen=True)
-class ShifterRealizationResult:
-    """Realization outcome: IDs and status only -- never a raw spec or secret."""
-
-    range_uuid: str
-    status: str
-
-
-class ShifterRangeRealizationPort(Protocol):
-    """Injected seam so this module never imports ``cms`` or ``engine`` (ADR-024).
-
-    The concrete implementation (``cms.aces.range_realization.CmsRangeRealizationPort``)
-    is constructed with the CMS launch context (a Django user + an
-    ``agents_by_os`` mapping) and reuses the incumbent hydration path.
-    """
-
-    def realize(self, intent: ShifterProvisioningIntent) -> ShifterRealizationResult:
-        """Realize ``intent`` and return its IDs/status only."""
-        ...
+_MAX_DIAGNOSTIC = 480
 
 
 def _diagnostic(code: str, address: str, message: str) -> Diagnostic:
-    """Build an ERROR-severity provisioning diagnostic for ``address``."""
-    return Diagnostic(code=code, domain=_DOMAIN, address=address, message=message, severity=Severity.ERROR)
+    """Build a bounded, single-line ERROR provisioning diagnostic (ADR-031-R4)."""
+    flat = " ".join(str(message).split())
+    if len(flat) > _MAX_DIAGNOSTIC:
+        flat = flat[: _MAX_DIAGNOSTIC - 1] + "…"
+    return Diagnostic(code=code, domain=_DOMAIN, address=address, message=flat, severity=Severity.ERROR)
 
 
-def _resolve_scenario_ref(scenario_refs_by_address: dict[str, str]) -> tuple[str | None, list[Diagnostic]]:
-    """Reduce the per-resource ``scenario_ref`` claims to a single plan-wide value."""
-    distinct_values = sorted(set(scenario_refs_by_address.values()))
-    if not distinct_values:
-        return None, [
+# --- validation accessors (mirror aces_backend_libvirt so the envelope agrees) ---
+# Realization-time extraction (image/resources/services/network properties) lives
+# on the provisioner side, which reads the same payloads at realization (ADR-032):
+# Shifter never re-models the plan into an intermediate spec.
+
+
+def _spec(payload: Mapping[str, object]) -> Mapping[str, object]:
+    """Return the payload's ``spec`` mapping, or an empty mapping."""
+    spec = payload.get("spec")
+    return spec if isinstance(spec, Mapping) else {}
+
+
+def _node_spec(payload: Mapping[str, object]) -> Mapping[str, object]:
+    """Return the payload's ``spec.node`` mapping, or an empty mapping."""
+    node = _spec(payload).get("node")
+    return node if isinstance(node, Mapping) else {}
+
+
+def _infrastructure_spec(payload: Mapping[str, object]) -> Mapping[str, object]:
+    """Return the payload's ``spec.infrastructure`` mapping, or an empty mapping."""
+    infra = _spec(payload).get("infrastructure")
+    return infra if isinstance(infra, Mapping) else {}
+
+
+def _resource_name(resource: PlannedResource, payload: Mapping[str, object]) -> str:
+    """Return the authored resource name, falling back to the address leaf."""
+    name = payload.get("name") or payload.get("node_name")
+    if isinstance(name, str) and name.strip():
+        return name.strip()
+    return resource.address.rsplit(".", 1)[-1]
+
+
+def _os_family(payload: Mapping[str, object]) -> str:
+    """Return the node OS family (``os_family`` then ``spec.node.os``), or empty."""
+    family = payload.get("os_family")
+    if isinstance(family, str) and family.strip():
+        return family.strip()
+    node_os = _node_spec(payload).get("os")
+    return node_os.strip() if isinstance(node_os, str) and node_os.strip() else ""
+
+
+def _node_type(payload: Mapping[str, object]) -> str:
+    """Return the node type (``node_type`` then ``spec.node.type``), or empty."""
+    node_type = payload.get("node_type")
+    if isinstance(node_type, str) and node_type.strip():
+        return node_type.strip()
+    nested = _node_spec(payload).get("type")
+    return nested.strip() if isinstance(nested, str) and nested.strip() else ""
+
+
+def _node_count(payload: Mapping[str, object]) -> int:
+    """Return the node instance count (>= 1); default 1 for missing/invalid values."""
+    raw = payload.get("count")
+    if isinstance(raw, str):
+        try:
+            raw = int(raw)
+        except ValueError:
+            return 1
+    if isinstance(raw, int) and not isinstance(raw, bool) and raw >= 1:
+        return raw
+    return 1
+
+
+def _network_refs(payload: Mapping[str, object]) -> tuple[str, ...]:
+    """Return the network handles a node references (``networks`` then ``links``)."""
+    infra = _infrastructure_spec(payload)
+    for field_name in ("networks", "links"):
+        raw = infra.get(field_name)
+        if isinstance(raw, list | tuple):
+            return tuple(ref for ref in raw if isinstance(ref, str) and ref.strip())
+    return ()
+
+
+def _network_lookup(network_resources: list[tuple[PlannedResource, Mapping[str, object]]]) -> dict[str, str]:
+    """Map every handle a node might reference a network by to its canonical address."""
+    lookup: dict[str, str] = {}
+    for resource, payload in network_resources:
+        name = _resource_name(resource, payload)
+        for key in (resource.address, name, resource.address.rsplit(".", 1)[-1]):
+            if key:
+                lookup[key] = resource.address
+    return lookup
+
+
+# --- capability envelope (fail closed on out-of-envelope terms) ---
+
+
+def _node_envelope_diagnostics(
+    resource: PlannedResource, payload: Mapping[str, object], capabilities: ProvisionerCapabilities
+) -> list[Diagnostic]:
+    """Return capability-envelope diagnostics for a single node resource."""
+    diagnostics: list[Diagnostic] = []
+    node_type = _node_type(payload)
+    if node_type and node_type not in capabilities.supported_node_types:
+        diagnostics.append(
             _diagnostic(
-                "shifter-provisioner.missing-scenario-ref",
-                "plan",
-                "Supported plans must declare a 'scenario_ref' payload key on at least "
-                "one provisioning resource so Shifter knows which scenario template to hydrate.",
-            )
-        ]
-    if len(distinct_values) > 1:
-        return None, [
-            _diagnostic(
-                "shifter-provisioner.conflicting-scenario-ref",
-                "plan",
-                f"Plan resources declared conflicting 'scenario_ref' values: {distinct_values}.",
-            )
-        ]
-    return distinct_values[0], []
-
-
-@dataclass(frozen=True)
-class _ResourceOutcome:
-    """Per-resource classification: either an error diagnostic or a contribution."""
-
-    diagnostic: Diagnostic | None = None
-    os_family: str | None = None
-    network_address: str | None = None
-    scenario_ref: str | None = None
-
-
-#: Categorically unsupported provisioning resource kinds, as
-#: (resource-type set, diagnostic-code suffix, human phrase). Data-driven so the
-#: rejection check stays a simple loop rather than one branch per kind.
-_UNSUPPORTED_RESOURCE_KINDS: tuple[tuple[frozenset[str], str, str], ...] = (
-    (_PLACEMENT_ACCOUNT_ACL_RESOURCE_TYPES, "placement-unsupported", "placement/account/ACL resource type"),
-    (_RUNTIME_COMMAND_RESOURCE_TYPES, "runtime-command-unsupported", "runtime command execution resource type"),
-    (_SNAPSHOT_HISTORY_RESOURCE_TYPES, "snapshot-history-unsupported", "raw snapshot/history request resource type"),
-)
-
-
-def _unsupported_type_diagnostic(resource: PlannedResource) -> Diagnostic | None:
-    """Return a diagnostic for an unsupported resource type (placement/command/snapshot/unknown), else None."""
-    for resource_types, code_suffix, phrase in _UNSUPPORTED_RESOURCE_KINDS:
-        if resource.resource_type in resource_types:
-            return _diagnostic(
-                f"shifter-provisioner.{code_suffix}",
+                "shifter-provisioner.unsupported-node-type",
                 resource.address,
-                f"Shifter's provisioning-only backend does not support {phrase} "
-                f"'{resource.resource_type}' for '{resource.address}'.",
+                f"unsupported node type '{node_type}' (supported: {sorted(capabilities.supported_node_types)})",
             )
-    if resource.resource_type not in SUPPORTED_RESOURCE_TYPES:
-        return _diagnostic(
-            "shifter-provisioner.unsupported-resource-type",
-            resource.address,
-            f"Shifter's provisioning-only backend does not support resource type "
-            f"'{resource.resource_type}' for '{resource.address}' "
-            f"(supported: {sorted(SUPPORTED_RESOURCE_TYPES)}).",
         )
-    return None
-
-
-def _rejection_diagnostic(resource: PlannedResource) -> Diagnostic | None:
-    """Return an error diagnostic if ``resource`` is a categorically unsupported kind.
-
-    Covers non-provisioning domains, placement/account/ACL, runtime-command, raw
-    snapshot/history, and unknown resource types. Returns ``None`` when the type
-    is one Shifter's provisioning-only envelope can realize.
-    """
-    if resource.domain != RuntimeDomain.PROVISIONING:
-        return _diagnostic(
-            "shifter-provisioner.unsupported-domain",
-            resource.address,
-            f"Shifter's provisioning-only backend does not support domain "
-            f"'{resource.domain.value}' for '{resource.address}'.",
-        )
-    return _unsupported_type_diagnostic(resource)
-
-
-def _payload_diagnostic(resource: PlannedResource, *, is_node: bool) -> Diagnostic | None:
-    """Return an error diagnostic if ``resource``'s payload is malformed or over-specified.
-
-    Rejects a non-mapping payload and any author-supplied key outside the
-    node/network allow-list (provider realization detail Shifter's backend, not
-    the ACES scenario author, owns). Returns ``None`` for an acceptable payload.
-    """
-    payload = resource.payload
-    if not isinstance(payload, Mapping):
-        return _diagnostic(
-            "shifter-provisioner.invalid-payload",
-            resource.address,
-            f"Expected a mapping payload for '{resource.address}'.",
-        )
-    allowed_keys = _NODE_ALLOWED_PAYLOAD_KEYS if is_node else _NETWORK_ALLOWED_PAYLOAD_KEYS
-    unexpected_keys = sorted(set(payload) - allowed_keys)
-    if unexpected_keys:
-        return _diagnostic(
-            "shifter-provisioner.provider-detail-not-allowed",
-            resource.address,
-            "Shifter's provisioning-only backend does not accept author-supplied "
-            f"provider realization detail keys {unexpected_keys} for '{resource.address}'; "
-            "the backend -- not the ACES scenario author -- owns realization detail.",
-        )
-    return None
-
-
-def _supported_resource_outcome(resource: PlannedResource, *, is_node: bool) -> _ResourceOutcome:
-    """Build the contribution for a resource that passed rejection + payload checks."""
-    payload = resource.payload
-    raw_scenario_ref = payload.get("scenario_ref")
-    scenario_ref = raw_scenario_ref if isinstance(raw_scenario_ref, str) and raw_scenario_ref else None
-
-    if not is_node:
-        return _ResourceOutcome(network_address=resource.address, scenario_ref=scenario_ref)
-
-    os_family = payload.get("os_family")
-    if os_family not in SUPPORTED_OS_FAMILIES:
-        return _ResourceOutcome(
-            diagnostic=_diagnostic(
+    os_family = _os_family(payload)
+    if os_family and os_family not in capabilities.supported_os_families:
+        diagnostics.append(
+            _diagnostic(
                 "shifter-provisioner.unsupported-os-family",
                 resource.address,
-                f"Shifter's provisioning capability envelope does not support os_family "
-                f"'{safe_log_value(os_family)}' for '{resource.address}' "
-                f"(supported: {sorted(SUPPORTED_OS_FAMILIES)}).",
+                f"unsupported os_family '{safe_log_value(os_family)}' "
+                f"(supported: {sorted(capabilities.supported_os_families)})",
             )
         )
-    return _ResourceOutcome(os_family=os_family, scenario_ref=scenario_ref)
+    if not capabilities.supports_acls and _infrastructure_spec(payload).get("acls"):
+        diagnostics.append(
+            _diagnostic(
+                "shifter-provisioner.acls-unsupported",
+                resource.address,
+                "this provisioning-only backend does not yet realize network ACLs",
+            )
+        )
+    return diagnostics
 
 
-def _classify_resource(resource: PlannedResource) -> _ResourceOutcome:
-    """Validate one provisioning resource and return its diagnostic or contribution."""
-    rejection = _rejection_diagnostic(resource)
-    if rejection is not None:
-        return _ResourceOutcome(diagnostic=rejection)
-
-    is_node = resource.resource_type == NODE_RESOURCE_TYPE
-    payload_error = _payload_diagnostic(resource, is_node=is_node)
-    if payload_error is not None:
-        return _ResourceOutcome(diagnostic=payload_error)
-
-    return _supported_resource_outcome(resource, is_node=is_node)
-
-
-def _validate_and_translate(
-    plan: ProvisioningPlan,
-) -> tuple[ShifterProvisioningIntent | None, list[Diagnostic]]:
-    """Validate ``plan`` against Shifter's capability envelope and translate it.
-
-    Returns ``(None, diagnostics)`` with at least one error diagnostic when the
-    plan claims anything Shifter's ``provisioning-only`` profile cannot honor.
-    Returns ``(intent, diagnostics)`` for a fully supported plan.
-    """
+def _capability_envelope_diagnostics(
+    resources: list[PlannedResource], capabilities: ProvisionerCapabilities
+) -> list[Diagnostic]:
+    """Return fail-closed diagnostics for every out-of-envelope term in the plan."""
     diagnostics: list[Diagnostic] = []
-    node_counts: dict[str, int] = {}
-    network_addresses: list[str] = []
-    scenario_refs_by_address: dict[str, str] = {}
-
-    for resource in plan.resources.values():
-        outcome = _classify_resource(resource)
-        if outcome.diagnostic is not None:
-            diagnostics.append(outcome.diagnostic)
+    total_nodes = 0
+    for resource in resources:
+        payload = resource.payload
+        if not isinstance(payload, Mapping):
+            diagnostics.append(
+                _diagnostic(
+                    "shifter-provisioner.invalid-payload", resource.address, "resource payload must be a mapping"
+                )
+            )
             continue
-        if outcome.scenario_ref is not None:
-            scenario_refs_by_address[resource.address] = outcome.scenario_ref
-        if outcome.os_family is not None:
-            node_counts[outcome.os_family] = node_counts.get(outcome.os_family, 0) + 1
-        elif outcome.network_address is not None:
-            network_addresses.append(outcome.network_address)
+        if resource.resource_type not in SUPPORTED_RESOURCE_TYPES:
+            diagnostics.append(
+                _diagnostic(
+                    "shifter-provisioner.unsupported-resource-type",
+                    resource.address,
+                    f"provisioning-only backend does not support resource type '{resource.resource_type}' "
+                    f"(supported: {sorted(SUPPORTED_RESOURCE_TYPES)})",
+                )
+            )
+            continue
+        if resource.resource_type == NETWORK_RESOURCE_TYPE:
+            continue
+        total_nodes += _node_count(payload)
+        diagnostics.extend(_node_envelope_diagnostics(resource, payload, capabilities))
+    if capabilities.max_total_nodes is not None and total_nodes > capabilities.max_total_nodes:
+        diagnostics.append(
+            _diagnostic(
+                "shifter-provisioner.node-budget-exceeded",
+                "plan",
+                f"plan requests {total_nodes} nodes; backend allows at most {capabilities.max_total_nodes}",
+            )
+        )
+    return diagnostics
 
-    scenario_ref_value, scenario_diagnostics = _resolve_scenario_ref(scenario_refs_by_address)
-    diagnostics.extend(scenario_diagnostics)
 
-    if scenario_ref_value is None or any(diagnostic.is_error for diagnostic in diagnostics):
+# --- serialization (the artifact that crosses the platform -> provisioner boundary) ---
+
+
+def _aces_sdl_version() -> str:
+    """Return the installed aces-sdl version (recorded on the serialized plan).
+
+    aces-sdl is a runtime dependency imported at this module's top, so it is
+    always installed by the time this runs.
+    """
+    return importlib.metadata.version("aces-sdl")
+
+
+def serialize_provisioning_plan(plan: ProvisioningPlan) -> dict[str, Any]:
+    """Serialize the PROVISIONING resources of a compiled ACES plan to JSON-safe dict.
+
+    The payloads are the ACES plan's own payloads, verbatim -- this is
+    serialization for the cross-process boundary, not a re-modeled schema
+    (ADR-032-R3). A ``kind`` discriminator lets the provisioner distinguish the
+    serialized plan from a cyberscript envelope in ``range_config``, and the
+    ``aces_sdl_version`` records the contract the plan was compiled against.
+    """
+    resources: dict[str, Any] = {}
+    for address, resource in plan.resources.items():
+        if resource.domain != RuntimeDomain.PROVISIONING:
+            continue
+        resources[address] = {
+            "address": resource.address,
+            "domain": resource.domain.value,
+            "resource_type": resource.resource_type,
+            "payload": resource.payload,
+            "ordering_dependencies": list(resource.ordering_dependencies),
+            "refresh_dependencies": list(resource.refresh_dependencies),
+        }
+    envelope = {
+        "kind": ACES_PROVISIONING_PLAN_KIND,
+        "aces_sdl_version": _aces_sdl_version(),
+        "resources": resources,
+    }
+    # Guarantee the envelope is JSON-safe for range_config persistence (payload
+    # Any values are compiler-produced primitives; default=str is a backstop).
+    return json.loads(json.dumps(envelope, default=str))
+
+
+# --- interpret (validate the plan, then serialize it) ---
+
+
+def _unknown_network_diagnostics(
+    node_resources: list[tuple[PlannedResource, Mapping[str, object]]], lookup: dict[str, str]
+) -> list[Diagnostic]:
+    """Return diagnostics for node network refs that no declared network resolves."""
+    diagnostics: list[Diagnostic] = []
+    for resource, payload in node_resources:
+        for ref in _network_refs(payload):
+            if lookup.get(ref) is None:
+                diagnostics.append(
+                    _diagnostic(
+                        "shifter-provisioner.unknown-network",
+                        resource.address,
+                        f"node references network '{ref}' not declared in this plan",
+                    )
+                )
+    return diagnostics
+
+
+def interpret_provisioning_plan(
+    plan: ProvisioningPlan,
+    *,
+    capabilities: ProvisionerCapabilities | None = None,
+) -> tuple[dict[str, Any] | None, list[Diagnostic]]:
+    """Validate a compiled ACES provisioning plan and return its serialized form.
+
+    Pure (no I/O). Returns ``(serialized_plan, diagnostics)`` on a fully-supported
+    plan, or ``(None, diagnostics)`` with at least one ERROR diagnostic when any
+    plan term is outside the backend capability envelope or references a network
+    not declared in the plan.
+    """
+    capabilities = capabilities or SHIFTER_PROVISIONER_CAPABILITIES
+    provisioning = [
+        resource
+        for resource in sorted(plan.resources.values(), key=lambda item: item.address)
+        if resource.domain == RuntimeDomain.PROVISIONING
+    ]
+    diagnostics = _capability_envelope_diagnostics(provisioning, capabilities)
+
+    network_resources = [
+        (r, r.payload)
+        for r in provisioning
+        if r.resource_type == NETWORK_RESOURCE_TYPE and isinstance(r.payload, Mapping)
+    ]
+    node_resources = [
+        (r, r.payload) for r in provisioning if r.resource_type == NODE_RESOURCE_TYPE and isinstance(r.payload, Mapping)
+    ]
+    diagnostics.extend(_unknown_network_diagnostics(node_resources, _network_lookup(network_resources)))
+
+    if any(diagnostic.is_error for diagnostic in diagnostics):
         return None, diagnostics
+    return serialize_provisioning_plan(plan), diagnostics
 
-    intent = ShifterProvisioningIntent(
-        scenario_ref=scenario_ref_value,
-        node_counts_by_os=dict(node_counts),
-        network_addresses=tuple(sorted(network_addresses)),
-    )
-    return intent, diagnostics
+
+def _serialized_for_apply(plan: ProvisioningPlan) -> tuple[dict[str, Any] | None, list[Diagnostic]]:
+    """Validate + serialize ``plan`` for validate/apply; (None, diagnostics) if unusable."""
+    if not isinstance(plan, ProvisioningPlan):
+        return None, [_diagnostic("shifter-provisioner.invalid-plan", "plan", "expected an ACES ProvisioningPlan")]
+    return interpret_provisioning_plan(plan)
 
 
 class ShifterProvisioner:
-    """Provisioner implementation for Shifter's ``provisioning-only`` ACES backend.
+    """Provisioner protocol implementation for Shifter's provisioning-only backend."""
 
-    Implements the ``aces_backend_protocols.protocols.Provisioner`` structural
-    protocol. ``validate`` is pure (no port call); ``apply`` re-validates,
-    refuses to call the port on any error diagnostic, and otherwise drives the
-    injected port and records only IDs/status in the returned snapshot.
-    """
-
-    def __init__(self, port: ShifterRangeRealizationPort) -> None:
+    def __init__(self, port: ShifterProvisioningDispatchPort) -> None:
         self._port = port
 
     @staticmethod
     def validate(plan: ProvisioningPlan) -> list[Diagnostic]:
-        """Return capability-envelope diagnostics for ``plan`` without realizing it."""
-        _, diagnostics = _validate_and_translate(plan)
+        """Return capability-envelope + plan-consistency diagnostics without dispatching."""
+        _, diagnostics = _serialized_for_apply(plan)
         return diagnostics
 
     def apply(self, plan: ProvisioningPlan, snapshot: RuntimeSnapshot) -> ApplyResult:
-        """Validate, translate, and realize ``plan`` through the injected port.
-
-        Never calls the port when validation produced an error diagnostic. A
-        port failure (any raised exception) is caught at this boundary and
-        surfaced as an ``ApplyResult`` diagnostic -- it never propagates as a
-        raw exception past this adapter.
-        """
-        intent, diagnostics = _validate_and_translate(plan)
-        if intent is None:
+        """Validate + dispatch the serialized ``plan``; never dispatch on error."""
+        serialized, diagnostics = _serialized_for_apply(plan)
+        if serialized is None:
             return ApplyResult(success=False, snapshot=snapshot, diagnostics=diagnostics)
 
+        # Boundary: never leak a raw dispatch exception past apply.
         try:
-            result = self._port.realize(intent)
+            result = self._port.realize(serialized)
         except Exception as exc:
             failure = _diagnostic(
-                "shifter-provisioner.realization-failed",
-                "plan",
-                f"Range realization failed: {safe_log_value(exc)}",
+                "shifter-provisioner.dispatch-failed", "plan", f"provisioning dispatch failed: {safe_log_value(exc)}"
             )
             return ApplyResult(success=False, snapshot=snapshot, diagnostics=[*diagnostics, failure])
 
         entries = dict(snapshot.entries)
         changed_addresses: list[str] = []
-        for operation in plan.actionable_operations:
-            if operation.resource_type not in SUPPORTED_RESOURCE_TYPES:
+        for resource in sorted(plan.resources.values(), key=lambda item: item.address):
+            if resource.domain != RuntimeDomain.PROVISIONING or resource.resource_type not in SUPPORTED_RESOURCE_TYPES:
                 continue
-            entries[operation.address] = SnapshotEntry(
-                address=operation.address,
-                domain=RuntimeDomain.PROVISIONING,
-                resource_type=operation.resource_type,
-                payload={"range_uuid": result.range_uuid, "status": result.status},
-                status=result.status,
-            )
-            changed_addresses.append(operation.address)
+            entries[resource.address] = _snapshot_entry(resource.address, resource.resource_type, result)
+            changed_addresses.append(resource.address)
 
         return ApplyResult(
-            success=True,
+            success=result.accepted,
             snapshot=snapshot.with_entries(entries),
             diagnostics=diagnostics,
             changed_addresses=changed_addresses,
         )
 
 
+def _snapshot_entry(address: str, resource_type: str, result: ShifterDispatchResult) -> SnapshotEntry:
+    """Build a provisional PROVISIONING snapshot entry from the dispatch result."""
+    payload: dict[str, Any] = {"request_id": result.request_id, "status": result.status}
+    if result.range_id:
+        payload["range_id"] = result.range_id
+    return SnapshotEntry(
+        address=address,
+        domain=RuntimeDomain.PROVISIONING,
+        resource_type=resource_type,
+        payload=payload,
+        status=result.status,
+    )
+
+
 def create_shifter_backend_components(
     *,
     manifest: BackendManifest,
-    port: ShifterRangeRealizationPort,
+    port: ShifterProvisioningDispatchPort,
     **config: Any,
 ) -> RuntimeTargetComponents:
-    """Build the ``provisioning-only`` Shifter backend components for ``manifest``.
-
-    Only a provisioner is returned: ``manifest`` declares no orchestrator,
-    evaluator, or participant-runtime capability, so component presence
-    matches the manifest shape the registry validates against.
-    """
+    """Build the ``provisioning-only`` Shifter backend components for ``manifest``."""
     del manifest, config
     return RuntimeTargetComponents(provisioner=ShifterProvisioner(port=port))
 
@@ -405,12 +417,8 @@ def register_shifter_backend(registry: BackendRegistry) -> None:
     registry.register(SHIFTER_BACKEND_NAME, create_shifter_backend_manifest, create_shifter_backend_components)
 
 
-def create_shifter_backend_target(*, port: ShifterRangeRealizationPort, **config: Any) -> RuntimeTarget:
+def create_shifter_backend_target(*, port: ShifterProvisioningDispatchPort, **config: Any) -> RuntimeTarget:
     """Return a fully configured, provisioning-only Shifter ``RuntimeTarget``."""
     manifest = create_shifter_backend_manifest(**config)
     components = create_shifter_backend_components(manifest=manifest, port=port, **config)
-    return RuntimeTarget(
-        name=SHIFTER_BACKEND_NAME,
-        manifest=manifest,
-        provisioner=components.provisioner,
-    )
+    return RuntimeTarget(name=SHIFTER_BACKEND_NAME, manifest=manifest, provisioner=components.provisioner)

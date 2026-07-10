@@ -177,7 +177,7 @@
       },
       {
         "id": "ADR-004-R14",
-        "description": "Tracked files MUST NOT contain live AWS infrastructure identifiers: 12-digit AWS account IDs, VPC IDs (`vpc-<hex>`), subnet IDs (`subnet-<hex>`), or Shifter S3 bucket names that are account-ID-suffixed (`shifter-...-<12 digits>`) or UUID-suffixed infra/state buckets (`shifter-[dev-]infra-<uuid>`). These are low-entropy but reconnaissance-sensitive in a public repo and are not caught by gitleaks (which targets high-entropy secrets); this is the complementary backstop. Detection is by pattern in the centralized `no-live-cloud-identifiers` check in `scripts/adr_guard/adr_guard.py`, never by a denylist of real values. The allowlist is a small fixed set of 12-digit runs that are not Shifter accounts: AWS documentation example account IDs (123456789012, 111122223333), the all-zero placeholder, and public AMI-publisher account IDs (Canonical 099720109477, OffSec/Kali 679593333241). Placeholder and example forms (`vpc-xxxxxxxx`, `<your-account-id>`) are not matched because the patterns require hex / 12 literal digits, so there is no universal `<...>` wildcard a real value can hide behind. Real values that MUST stay committed are cleared via scoped `docs/adr/exceptions.yaml` entries with `rule_id: ADR-004-R14`, owner, reason, `expires_on`, and `paths`: vendor connector templates under `platform/cloudformation/` (Prisma Cloud account IDs must be exact), S3 backend/state buckets read directly by `terraform init` (`*.s3.tfbackend`, `platform/terraform/global/tssummit-ranges/*`, the remote-state data sources in `platform/terraform/environments/*/portal/main.tf`, and the operational state-bucket map in `mcp/ops/index.js`), and synthetic 12-digit PAN firewall serial-number fixtures in `shifter/engine/provisioner/tests/test_main.py`. `.lock` files and binary assets are skipped. Violation messages name the repo-relative path, line, and identifier kind only — never the value. Dependency lock files and binary assets are not scanned. The check runs at the `fast` and `ci` levels and is wired into `.pre-commit-config.yaml` and `.github/workflows/_quality.yml`. Closes the #911 SEC-2 / NET-10 / DP-7 identifier-strip gap and blocks reintroduction.",
+        "description": "Tracked files MUST NOT contain live AWS infrastructure identifiers: 12-digit AWS account IDs, VPC IDs (`vpc-<hex>`), subnet IDs (`subnet-<hex>`), or Shifter S3 bucket names that are account-ID-suffixed (`shifter-...-<12 digits>`) or UUID-suffixed infra/state buckets (`shifter-[dev-]infra-<uuid>`); and, in IaC files (`.tf`/`.tfvars`/`.hcl`) only, globally-routable public IPv4 addresses in code (comments excluded), which are almost always an operator/participant allow-CIDR — a home/office IP, i.e. PII. Public-IP detection uses `ipaddress.is_global`, so private (RFC1918), loopback, link-local, CGNAT, and documentation (RFC5737: 192.0.2/198.51.100/203.0.113) ranges pass; a small in-code allowlist covers well-known public infra constants (Google/Cloudflare public DNS; GCP load-balancer health-check, IAP, and googleapis VIP ranges). These are low-entropy but reconnaissance-sensitive in a public repo and are not caught by gitleaks (which targets high-entropy secrets); this is the complementary backstop. Detection is by pattern in the centralized `no-live-cloud-identifiers` check in `scripts/adr_guard/adr_guard.py`, never by a denylist of real values. The allowlist is a small fixed set of 12-digit runs that are not Shifter accounts: AWS documentation example account IDs (123456789012, 111122223333), the all-zero placeholder, and public AMI-publisher account IDs (Canonical 099720109477, OffSec/Kali 679593333241). Placeholder and example forms (`vpc-xxxxxxxx`, `<your-account-id>`) are not matched because the patterns require hex / 12 literal digits, so there is no universal `<...>` wildcard a real value can hide behind. Real values that MUST stay committed are cleared via scoped `docs/adr/exceptions.yaml` entries with `rule_id: ADR-004-R14`, owner, reason, `expires_on`, and `paths`: vendor connector templates under `platform/cloudformation/` (Prisma Cloud account IDs must be exact), S3 backend/state buckets read directly by `terraform init` (`*.s3.tfbackend`, the remote-state data sources in `platform/terraform/environments/*/portal/main.tf`, and the operational state-bucket map in `mcp/ops/index.js`), and synthetic 12-digit PAN firewall serial-number fixtures in `shifter/engine/provisioner/tests/test_main.py`. `.lock` files and binary assets are skipped. Violation messages name the repo-relative path, line, and identifier kind only — never the value. Dependency lock files and binary assets are not scanned. The check runs at the `fast` and `ci` levels and is wired into `.pre-commit-config.yaml` and `.github/workflows/_quality.yml`. Closes the #911 SEC-2 / NET-10 / DP-7 identifier-strip gap and blocks reintroduction.",
         "checks": ["no-live-cloud-identifiers"]
       },
       {
@@ -1323,6 +1323,86 @@
       "shifter/engine/provisioner/range_terraform_runner.py",
       "shifter/engine/provisioner/gdc_range_networks.py",
       "shifter/engine/provisioner/gdc_vmruntime_assets.py"
+    ]
+  },
+  {
+    "id": "ADR-031",
+    "title": "ACES-native provisioning core is a feature-flagged parallel path",
+    "status": "accepted",
+    "scope": "shifter_platform",
+    "decision": "Shifter builds an ACES-native provisioning path as a parallel, feature-flagged implementation rather than routing ACES through the cyberscript scenario kernel. A compiled ACES ProvisioningPlan (produced by the PyPI-pinned aces-sdl runtime inside shared.aces) is realized directly: the platform serializes the compiled plan and the engine/provisioner realize it by reading the ACES plan payloads via accessors that mirror the reference ACES backends. Shifter introduces no parallel SDL and no re-modeled provisioning schema; see ADR-032 for how realization works. The existing cyberscript scenario -> RangeSpec -> hydrate -> interpret -> provisioner path is left unchanged and authoritative. The whole ACES-native path is gated by SHIFTER_ACES_NATIVE_PROVISIONING (default off) and stays inert until an explicitly authorized cutover. This is the provisioning-surface instance of ADR-024 (parity-gated parallel cutover); the ACES-owned conformance suite is the primary oracle. It supersedes the #1262 scenario_ref passthrough, which discarded compiled ACES topology and depended on cyberscript scenarios.",
+    "rules": [
+      {
+        "id": "ADR-031-R1",
+        "description": "ACES SDL packages (aces_sdl, aces_contracts, aces_runtime, aces_processor, aces_conformance, aces_backend_protocols) may be imported only within shared.aces. The cms, engine, mission_control, ctf, and management layers and the engine provisioner must consume ACES realization through the serialized ACES ProvisioningPlan and shared seams, never by importing an aces_* package. Enforced by an import-linter forbidden contract in CI.",
+        "checks": []
+      },
+      {
+        "id": "ADR-031-R2",
+        "description": "The ACES-native provisioning path — ACES catalog launchability, ACES dispatch, ACES engine consumption, and ACES provisioner realization — must be gated by the SHIFTER_ACES_NATIVE_PROVISIONING feature flag (default off). With the flag off, ACES catalog entries are not launchable and the cyberscript scenario -> RangeSpec -> hydrate -> interpret -> provisioner path is unchanged and authoritative. The ACES-native path must not modify cyberscript hydration, RangeSpec/InstanceSpec, or the existing create_range body; it may only add parallel modules and additive flag-gated branches.",
+        "checks": []
+      },
+      {
+        "id": "ADR-031-R3",
+        "description": "ACES realization consumes the compiled ACES ProvisioningPlan directly; Shifter must not introduce a parallel SDL or a re-modeled provisioning schema (see ADR-032). The Shifter ACES RuntimeTarget backend must pass the ACES-owned conformance suite: the provisioning-only fixture gate (run_fixture_suite) and a live target probe (run_target_conformance) that requires a non-empty changed_addresses set and at least one PROVISIONING snapshot entry. Conformance verdict logic must not be reimplemented in Shifter.",
+        "checks": []
+      },
+      {
+        "id": "ADR-031-R4",
+        "description": "ACES backend diagnostics and operation evidence must be bounded, single-line, and free of backend realization detail (no terraform, ssm, ami-, cidr, subnet, secret, password, credential, or token substrings). Image ids, machine sizes, subnet allocation, provider configuration, and secrets are backend-owned realization and must not surface as authored ACES semantics or as evidence.",
+        "checks": []
+      }
+    ],
+    "exceptions": [],
+    "enforcement": ["ci", "agent-policy"],
+    "evidence": [
+      "https://github.com/Brad-Edwards/shifter/issues/1262",
+      "https://github.com/Brad-Edwards/shifter/issues/1264",
+      "docs/architecture/aces-runtime-target-backend-manifest-preflight-1233.md",
+      "docs/architecture/aces-migration-parity-inventory.yaml",
+      ".importlinter",
+      "shifter/shifter_platform/shared/aces/runtime_target.py",
+      "shifter/shifter_platform/shared/aces/dispatch_port.py",
+      "shifter/shifter_platform/config/_aces_settings.py",
+      "shifter/shifter_platform/tests/shared/aces/test_backend_conformance_gate.py"
+    ]
+  },
+  {
+    "id": "ADR-032",
+    "title": "How Shifter realizes ACES scenarios",
+    "status": "accepted",
+    "scope": "shifter_platform",
+    "decision": "Shifter realizes ACES by riding the ACES contract end to end, not by shadowing it. The pinned aces-sdl runtime (inside shared.aces) compiles a scenario into an ACES ProvisioningPlan; realization consumes that plan's authored intent and resolves concrete infrastructure at the backend. Authored intent is taken verbatim: the node image comes from the ACES source, sizing from resources, and os_family selects only the OS realization dialect. Concrete artifacts (image ids, machine sizes, subnet allocation, provider configuration, secrets) are resolved at realization time from the authored identity via backend-owned configuration, mirroring the reference ACES backends. A backend may fast-path a recognized authored identity or compiled-plan signature to a prebaked artifact for efficiency, but such recognition is a lookup keyed on authored/compiled content that must fail loud or fall through -- it must never sniff a scenario and reshape parsing or the model (the cyberscript/Polaris hardcoded-scenario anti-pattern is prohibited). Because Shifter realizes across a process boundary (the separate provisioner deployable), the artifact that crosses the boundary is the serialized ACES ProvisioningPlan itself, read via accessors that mirror the reference backends' payload conventions; Shifter introduces no parallel SDL or re-modeled provisioning schema. ACES is a deliberate stack commitment: Shifter depends on the aces-sdl PyPI package pinned to a released version.",
+    "rules": [
+      {
+        "id": "ADR-032-R1",
+        "description": "Authored ACES intent is consumed verbatim, never re-derived or guessed. The node image is taken from the ACES source (name/version), sizing from resources (ram/cpu), and os_family selects only the OS realization dialect and serves as a cross-check. Realization must not infer the image from os_family, invent sizing, or override authored intent with backend heuristics.",
+        "checks": []
+      },
+      {
+        "id": "ADR-032-R2",
+        "description": "Concrete artifacts (image ids, machine sizes, subnets, provider configuration, secrets) are resolved at realization time from the authored identity via backend-owned configuration (the registry/prebake seam), never carried as authored ACES semantics. A backend may fast-path a recognized authored identity or compiled-plan signature to a prebaked artifact, but recognition must be keyed on authored/compiled content, must fail loud or fall through, and must never reshape parsing or the model. Sniffing a field to hardcode a specific scenario into a backend is prohibited.",
+        "checks": []
+      },
+      {
+        "id": "ADR-032-R3",
+        "description": "The artifact crossing the platform -> provisioner boundary is the serialized ACES compiled ProvisioningPlan; the provisioner reads it via accessors that mirror the reference ACES backends' payload conventions (spec.node.source, spec.node.resources, spec.infrastructure). Shifter must not introduce a parallel SDL, a re-modeled provisioning schema, or a Shifter-owned intermediate spec for provisioning intent.",
+        "checks": []
+      },
+      {
+        "id": "ADR-032-R4",
+        "description": "Shifter depends on the aces-sdl PyPI package pinned to a released version (currently 0.19.1); it must not pin to a git ref or a non-released build. aces_* SDL packages are imported only within shared.aces (ADR-024, ADR-031-R1); the engine, provisioner, and other layers consume the serialized plan as plain data without importing aces_*.",
+        "checks": []
+      }
+    ],
+    "exceptions": [],
+    "enforcement": ["ci", "agent-policy"],
+    "evidence": [
+      "https://github.com/Brad-Edwards/shifter/issues/1264",
+      "docs/architecture/aces-runtime-target-backend-manifest-preflight-1233.md",
+      ".importlinter",
+      "shifter/shifter_platform/pyproject.toml",
+      "shifter/shifter_platform/shared/aces/runtime_target.py"
     ]
   }
 ]

@@ -17,6 +17,8 @@ from django.db import transaction
 from engine.secrets import SecretsError, get_rdp_password, get_ssh_key
 from engine.ssh import SSHConnection
 
+from ._aces_image import AcesImageMappingError, AcesImageMappingOptions, upsert_aces_image_mapping
+from ._aces_range import AcesRangeRef, create_aces_range
 from ._aces_status import project_aces_operation_status
 from ._common import EngineError
 from ._lifecycle import pause_range, resume_range
@@ -40,6 +42,9 @@ from ._terminal import (
 )
 
 __all__ = (
+    "AcesImageMappingError",
+    "AcesImageMappingOptions",
+    "AcesRangeRef",
     "EngineError",
     "SSHConnection",
     "SecretsError",
@@ -47,6 +52,7 @@ __all__ = (
     "cancel_range_by_request",
     "connect_ngfw_terminal",
     "connect_terminal",
+    "create_aces_range",
     "create_ngfw",
     "create_range",
     "destroy_ngfw",
@@ -68,4 +74,5 @@ __all__ = (
     "start_ngfw",
     "stop_ngfw",
     "transaction",
+    "upsert_aces_image_mapping",
 )

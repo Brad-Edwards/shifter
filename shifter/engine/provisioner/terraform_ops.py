@@ -231,6 +231,7 @@ def _run_terraform_provision(
     run_instance_setup(
         instances_output=instances_output,
         range_spec=range_spec,
+        range_id=range_id,
     )
 
     # Write provisioned state to DB

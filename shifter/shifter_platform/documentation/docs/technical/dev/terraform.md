@@ -124,7 +124,7 @@ The `gcp-dev` tfvars file carries the public edge and operator-access settings:
 ```hcl
 public_hostname             = "shifter.example.com"
 enable_managed_tls          = true
-gke_master_authorized_cidrs = ["173.181.31.170/32"]
+gke_master_authorized_cidrs = ["203.0.113.10/32"]
 create_dns_managed_zone = false
 dns_managed_zone_name   = ""
 dns_zone_dns_name       = ""
@@ -181,7 +181,7 @@ relies on the maintenance-window path.
 ### In terraform.tfvars (committed baseline)
 
 ```hcl
-# Non-deployment-specific environment config — committed.
+# Non-deployment-specific environment config - committed.
 aws_region         = "us-east-2"
 environment        = "dev"
 instance_type      = "t3.large"
@@ -192,7 +192,7 @@ enable_autoscaling = false
 ### In local.auto.tfvars (gitignored, per-deployment override)
 
 ```hcl
-# Deployment-specific identifiers — never committed.
+# Deployment-specific identifiers - never committed.
 domain_name           = "dev.shifter.your-domain.example"
 ses_domain            = "your-domain.example"
 alarm_email           = "your-team@your-domain.example"

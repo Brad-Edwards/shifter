@@ -48,7 +48,7 @@ db_apply_immediately     = true
 # ------------------------------------------------------------------------------
 
 # Standard AL2023 AMI (NOT ECS-optimized) - us-east-2
-ec2_ami_id           = "ami-00e428798e77d38d9"
+ec2_ami_id           = "ami-xxxxxxxxxxxxxxxxx"
 ec2_instance_type    = "t3.large"
 ec2_root_volume_size = 50
 
@@ -65,7 +65,7 @@ terminal_read_poll_seconds     = 30
 
 # Standalone CTFd host in the portal VPC
 enable_ctfd                 = true
-ctfd_ami_id                 = "ami-0b0b78dcacbab728f"
+ctfd_ami_id                 = "ami-xxxxxxxxxxxxxxxxx"
 ctfd_instance_type          = "t3.xlarge"
 ctfd_root_volume_size       = 50
 ctfd_root_volume_type       = "gp3"
