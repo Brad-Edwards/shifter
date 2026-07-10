@@ -1,10 +1,12 @@
 name: Polaris Scenario Bake
 
 # Operator-triggered bake of the Polaris polaris-vm AMI. Mirrors the
-# workflow_dispatch-only shape of packer.yml: it automates the deliberate
-# manual bake (build tarball -> stand up a golden range -> create-image ->
-# update SSM) and is never wired to push / pull_request / schedule
-# triggers. See docs/architecture/polaris-repo-to-ami-drift-audit.md and
+# workflow_dispatch-only shape of packer.yml: it consumes an operator-supplied
+# build tarball from S3 -> stands up a golden range -> create-image -> updates
+# SSM, and is never wired to push / pull_request / schedule triggers. The
+# build content (flags/solutions) lives in the private penumbra-scenarios repo,
+# not this public repo, so the operator uploads the tarball out of band before
+# dispatching. See docs/architecture/polaris-repo-to-ami-drift-audit.md and
 # docs/architecture/polaris-scenario-bake-preflight-618.md.
 #
 # Security posture: this is a privileged self-hosted workflow that assumes
@@ -36,11 +38,11 @@ on:
           - proof
         default: dev
       s3_bucket:
-        description: 'S3 bucket for the Polaris build tarball (e.g. shifter-polaris-bake-<account-id>)'
+        description: 'S3 bucket holding the operator-uploaded Polaris build tarball (e.g. shifter-polaris-bake-<account-id>)'
         required: true
         type: string
       s3_key:
-        description: 'S3 key for the Polaris build tarball'
+        description: 'S3 key of the operator-uploaded Polaris build tarball (from penumbra-scenarios scenarios/polaris/build, staged as scenario-dev/polaris/build)'
         required: false
         type: string
         default: 'polaris/build-v1.tar.gz'
@@ -62,7 +64,6 @@ jobs:
     env:
       AWS_REGION: us-east-2
       RANGE_DIR: scripts/polaris-aws-range
-      TARBALL: polaris-build.tar.gz
       # Free-form inputs are bound here as plain environment variables.
       # Env-var *values* are never re-parsed as shell code, so referencing
       # them as "$S3_BUCKET" etc. in run blocks is injection-safe — unlike
@@ -98,26 +99,20 @@ jobs:
       - name: Set up Python venv
         run: |
           set -euo pipefail
-          # This workflow runs on self-hosted runners, whose tool cache does not
-          # carry the actions/setup-python builds (setup-python fails with
-          # "version 3.12 was not found"). The other self-hosted workflows use
-          # the runner's system python3 directly; mirror that with a venv so the
-          # later `python`/`pip` steps resolve to an isolated, writable env
-          # (system pip is PEP 668 externally-managed on Ubuntu 24.04).
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq python3-venv
+          # Self-hosted runners are Amazon Linux 2023: system python3 ships venv +
+          # ensurepip, there is no actions/setup-python tool cache, and there is
+          # no apt. A venv from system python3 gives the health-check step an
+          # isolated, writable env (pip via ensurepip) without touching the
+          # PEP 668 externally-managed system pip.
           python3 -m venv "${RUNNER_TEMP}/venv"
           echo "${RUNNER_TEMP}/venv/bin" >> "$GITHUB_PATH"
 
-      - name: Verify generated artifacts carry their flags (pre-bake gate)
-        run: |
-          set -euo pipefail
-          python -m pip install --quiet reportlab
-          sudo apt-get update -qq && sudo apt-get install -y -qq poppler-utils
-          out="$(mktemp -d)"
-          python scenario-dev/polaris/build/A0-boreas-website/build_pdfs.py "$out"
-          python scenario-dev/polaris/build/verify_flags_baked.py \
-            scenario-dev/polaris/build/ctfd-challenges.json "$out"
+      # The Polaris build content (scenario-dev/polaris/build/ — flags, solutions,
+      # generated artifacts) is intentionally NOT in this public repo. It lives in
+      # the private penumbra-scenarios repo and reaches the bake as an operator-
+      # uploaded S3 tarball (see "Verify operator-supplied Polaris build tarball"
+      # below). Flag-baking verification is therefore owned by penumbra-scenarios'
+      # own CI (scenarios/polaris/build/test_verify_flags_baked.py), not here.
 
       - name: Resolve AWS deploy role
         id: aws-role
@@ -153,11 +148,18 @@ jobs:
           role-to-assume: ${{ steps.aws-role.outputs.role_arn }}
           aws-region: us-east-2
 
-      - name: Build and upload Polaris build tarball
+      - name: Verify operator-supplied Polaris build tarball
         run: |
           set -euo pipefail
-          tar czf "$TARBALL" scenario-dev/polaris/build
-          aws s3 cp "$TARBALL" "s3://${S3_BUCKET}/${S3_KEY}"
+          # The build tarball (scenario-dev/polaris/build/*) is produced from the
+          # private penumbra-scenarios repo (scenarios/polaris/build staged under
+          # scenario-dev/polaris/build) and uploaded to S3 out of band, because
+          # the content is intentionally not in this public repo. Fail loud if it
+          # is missing rather than standing up an empty range.
+          if ! aws s3api head-object --bucket "$S3_BUCKET" --key "$S3_KEY" >/dev/null 2>&1; then
+            echo "::error::build tarball s3://${S3_BUCKET}/${S3_KEY} not found - upload it from penumbra-scenarios before running this bake"
+            exit 1
+          fi
           echo "TARBALL_S3_URI=s3://${S3_BUCKET}/${S3_KEY}" >> "$GITHUB_ENV"
 
       - name: Setup Terraform
