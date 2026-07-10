@@ -34,7 +34,9 @@ def _registry_resolver() -> Callable[[AcesPlanNode], GCERangeImageProfile]:
     """Return an image resolver bound to the tenant registry + GCE policy."""
 
     def resolve(node: AcesPlanNode) -> GCERangeImageProfile:
-        name = node.image.name if node.image else ""
+        # Authored source keys the lookup; a source-less node falls back to its
+        # os_family so the backend can supply a base OS image (ADR-032 base-OS policy).
+        name = (node.image.name if node.image and node.image.name else node.os_family) or ""
         candidates = get_aces_image_candidates(_GCE_REGISTRY_PROVIDER, name) if name else []
         return resolve_gce_image(node, candidates)
 

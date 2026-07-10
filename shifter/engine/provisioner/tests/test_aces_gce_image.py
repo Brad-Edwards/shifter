@@ -101,8 +101,14 @@ class TestPassthroughAndFailLoud:
         with pytest.raises(AcesGceImageError):
             resolve_gce_image(node, [])
 
-    def test_no_image_fails_loud(self):
-        with pytest.raises(AcesGceImageError):
+    def test_source_less_node_uses_base_os_from_registry(self):
+        # A node with no source gets a base OS image resolved by os_family.
+        node = _node(image=None)  # os_family linux
+        profile = resolve_gce_image(node, [_candidate("", "projects/x/global/images/ubuntu-base")])
+        assert profile.source_image == "projects/x/global/images/ubuntu-base"
+
+    def test_source_less_node_without_base_os_fails_loud(self):
+        with pytest.raises(AcesGceImageError, match="base-OS"):
             resolve_gce_image(_node(image=None), [])
 
     def test_wrong_version_no_fallback_fails_loud(self):

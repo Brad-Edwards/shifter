@@ -1393,6 +1393,16 @@
         "id": "ADR-032-R4",
         "description": "Shifter depends on the aces-sdl PyPI package pinned to a released version (currently 0.19.1); it must not pin to a git ref or a non-released build. aces_* SDL packages are imported only within shared.aces (ADR-024, ADR-031-R1); the engine, provisioner, and other layers consume the serialized plan as plain data without importing aces_*.",
         "checks": []
+      },
+      {
+        "id": "ADR-032-R5",
+        "description": "A node that declares no ACES source still requires a boot OS; the backend supplies a base OS image resolved from backend-owned configuration keyed on os_family. This base-OS default for a source-LESS node is legitimate backend policy and is the only sanctioned use of os_family to select an image; it is distinct from and does not license inferring an image from os_family for an authored source (ADR-032-R1), and it must fail loud when no base image is registered for the os_family.",
+        "checks": []
+      },
+      {
+        "id": "ADR-032-R6",
+        "description": "ACES composition (content-placement, feature-binding, account-placement) is realized genuinely at the backend as guest bootstrap: inline content becomes real files, directories are created, accounts become real guest users, and service features run a real install+enable step. Non-inline content and feature artifacts are supplied by the baked image or guest repo (baked-image delivery); the backend does not fetch external artifacts and does not emit inert descriptor stubs. Realization is fail-closed (a placement targeting an absent node, or an unsafe identifier, aborts) and is driven only by authored/compiled content, never scenario-sniffed.",
+        "checks": []
       }
     ],
     "exceptions": [],

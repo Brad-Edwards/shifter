@@ -121,14 +121,16 @@ class TestRegistryResolver:
         resolve.assert_called_once_with(node, candidates)
         assert profile.source_image == "projects/x/global/images/ubuntu-1"
 
-    def test_resolver_skips_registry_when_image_absent(self, monkeypatch):
-        get_candidates = MagicMock()
+    def test_resolver_uses_os_family_for_source_less_node(self, monkeypatch):
+        # A source-less node looks up a base OS image by os_family (ADR-032).
+        candidates = [{"source_version": "", "image_ref": "projects/x/global/images/ubuntu-base"}]
+        get_candidates = MagicMock(return_value=candidates)
         resolve = MagicMock(return_value=GCERangeImageProfile())
         monkeypatch.setattr(aces_range_ops, "get_aces_image_candidates", get_candidates)
         monkeypatch.setattr(aces_range_ops, "resolve_gce_image", resolve)
 
-        node = _node(None)
+        node = _node(None)  # os_family linux, no image
         aces_range_ops._registry_resolver()(node)
 
-        assert not get_candidates.called
-        resolve.assert_called_once_with(node, [])
+        get_candidates.assert_called_once_with("gce", "linux")
+        resolve.assert_called_once_with(node, candidates)
