@@ -52,6 +52,12 @@ Run everything through SSM against the bake host.
 
 ```bash
 curl -fsSL https://get.docker.com | sh && systemctl enable --now docker
+# The stack is baked as the ubuntu user (uid 1000, see step 2), and aptl's
+# first docker operation (the Suricata named-volume seed) runs as ubuntu.
+# Installing docker as root does not add ubuntu to the docker group, so grant
+# it explicitly or `aptl lab start` fails at "Preparing Suricata runtime
+# volumes" with a docker.sock permission-denied (surfaced as BackendSeedError).
+usermod -aG docker ubuntu
 curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && apt-get install -y nodejs
 npm install -g @anthropic-ai/claude-code
 apt-get install -y pipx jq
