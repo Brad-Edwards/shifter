@@ -77,12 +77,10 @@ sudo -u ubuntu env HOME=/home/ubuntu bash -c '
 '
 ```
 
-Expect **30 running `aptl-*` containers** (`aptl lab status`). Note:
+Expect **31 running `aptl-*` containers** (`aptl lab status`). Note:
 `techvault-operational` is the public startup contract and deliberately
 **excludes** the `mail` and `reverse` containers even with those groups enabled.
-30 long-running containers is the full operational stack; aptl 4.1.2 also runs a
-one-shot `aptl-cortex-index-init` that exits 0 once Cortex is indexed, so
-`docker ps --filter status=running` settles at 30, not 31.
+31 containers is the full operational stack.
 
 ### 3. Seat: VS Code over RDP (the Shifter access pattern)
 
