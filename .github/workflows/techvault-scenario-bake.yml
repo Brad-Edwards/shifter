@@ -332,8 +332,26 @@ jobs:
             --tag-specifications "ResourceType=image,Tags=[{Key=Project,Value=techvault-bake},{Key=aptl_version,Value=${APTL_VERSION}}]" \
             --query 'ImageId' --output text)"
           echo "AMI_ID=${AMI_ID}" >> "$GITHUB_ENV"
-          echo "waiting for AMI ${AMI_ID} to become available..."
-          aws ec2 wait image-available --image-ids "$AMI_ID"
+          # The TechVault AMI is large (100 GB root + the full baked stack), so
+          # the snapshot routinely takes 30-60 min - well past `aws ec2 wait
+          # image-available`'s 10-min (40 x 15s) default. Poll with a 60-min
+          # deadline instead, and fail fast if the image errors.
+          echo "waiting for AMI ${AMI_ID} to become available (large image; up to 60 min)..."
+          deadline=$(( $(date +%s) + 3600 ))
+          while true; do
+            state="$(aws ec2 describe-images --image-ids "$AMI_ID" \
+              --query 'Images[0].State' --output text 2>/dev/null || echo pending)"
+            case "$state" in
+              available) echo "AMI ${AMI_ID} is available"; break;;
+              failed|error|invalid|deregistered)
+                echo "::error::AMI ${AMI_ID} entered terminal state '${state}'"; exit 1;;
+            esac
+            if [ "$(date +%s)" -ge "$deadline" ]; then
+              echo "::error::AMI ${AMI_ID} did not become available within 60 min (last state: ${state})"
+              exit 1
+            fi
+            sleep 30
+          done
           {
             echo "## TechVault AMI Bake Complete"
             echo "- **AMI name:** \`${AMI_NAME}\`"
