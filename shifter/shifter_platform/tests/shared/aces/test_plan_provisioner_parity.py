@@ -93,3 +93,47 @@ class TestProvisionerReaderParity:
 
         network = next(n for n in parsed.networks if n.address == "net.lan")
         assert network.cidr == "10.9.0.0/24"
+
+    def test_acl_extraction_matches_reference_backend(self, reader):
+        from aces_backend_libvirt.acls import realize_node_acls
+
+        raw_acls = [
+            {
+                "name": "ssh",
+                "action": "allow",
+                "direction": "in",
+                "protocol": "tcp",
+                "ports": [22],
+                "from_net": "net.lan",
+            }
+        ]
+        node = PlannedResource(
+            address="node.web",
+            domain=RuntimeDomain.PROVISIONING,
+            resource_type="node",
+            payload={"name": "web", "os_family": "linux", "spec": {"infrastructure": {"acls": raw_acls}}},
+        )
+        network = PlannedResource(
+            address="net.lan",
+            domain=RuntimeDomain.PROVISIONING,
+            resource_type="network",
+            payload={"name": "lan", "spec": {"infrastructure": {"properties": {"cidr": "10.9.0.0/24"}}}},
+        )
+        serialized = serialize_provisioning_plan(
+            ProvisioningPlan(resources={node.address: node, network.address: network})
+        )
+        parsed_acl = reader.parse_plan(serialized).nodes[0].acls[0]
+
+        cidr_lookup = {"net.lan": "10.9.0.0/24", "lan": "10.9.0.0/24"}
+        ref_acls, ref_diags = realize_node_acls(node, raw_acls, cidr_lookup)
+        assert not ref_diags
+        ref = ref_acls[0]
+        # Normalized fields match the reference; endpoints resolve to the same CIDR.
+        assert (parsed_acl.action, parsed_acl.direction, parsed_acl.protocol, parsed_acl.ports) == (
+            ref.action,
+            ref.direction,
+            ref.protocol,
+            ref.ports,
+        )
+        assert cidr_lookup.get(parsed_acl.from_net) == ref.src_cidr
+        assert (cidr_lookup.get(parsed_acl.to_net) if parsed_acl.to_net else None) == ref.dst_cidr

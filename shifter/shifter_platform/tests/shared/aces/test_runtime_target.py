@@ -217,13 +217,6 @@ def test_interpret_consumes_real_compiled_plan() -> None:
             lambda: _plan(_node("provision.node.a", "a", node_type="container")),
             "shifter-provisioner.unsupported-node-type",
         ),
-        (
-            lambda: _plan(
-                _node("provision.node.a", "a", links=("lan",), acls=[{"action": "allow", "direction": "in"}]),
-                _network("provision.network.lan", "lan"),
-            ),
-            "shifter-provisioner.acls-unsupported",
-        ),
         (lambda: _plan(_node("provision.node.a", "a", links=("ghost",))), "shifter-provisioner.unknown-network"),
         (
             lambda: _plan(
@@ -242,6 +235,26 @@ def test_out_of_envelope_terms_fail_closed(plan_factory, expected_code: str) -> 
     serialized, diagnostics = _interpret(plan_factory())
     assert serialized is None
     assert any(d.is_error and d.code == expected_code for d in diagnostics)
+
+
+def test_acls_are_in_envelope_and_carried_verbatim() -> None:
+    # supports_acls is now True: the backend realizes authored node ACLs as
+    # firewall rules, so an ACL-bearing plan is accepted (not rejected) and the
+    # authored acls survive verbatim for the provisioner to realize.
+    plan = _plan(
+        _node(
+            "provision.node.a",
+            "a",
+            links=("lan",),
+            acls=[{"action": "allow", "direction": "in", "protocol": "tcp", "ports": [22], "from_net": "lan"}],
+        ),
+        _network("provision.network.lan", "lan"),
+    )
+    serialized, diagnostics = _interpret(plan)
+    assert serialized is not None
+    assert not any(d.code == "shifter-provisioner.acls-unsupported" for d in diagnostics)
+    node_payload = serialized["resources"]["provision.node.a"]["payload"]
+    assert node_payload["spec"]["infrastructure"]["acls"][0]["action"] == "allow"
 
 
 def test_node_budget_enforced() -> None:

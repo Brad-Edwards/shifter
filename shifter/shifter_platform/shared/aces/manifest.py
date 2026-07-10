@@ -60,16 +60,18 @@ __all__ = [
 ]
 
 #: Shifter's honest provisioning capability envelope. Shifter provisions virtual
-#: machine instances (EC2 / GDC) running Linux and Windows guests. Account,
-#: ACL, and content-placement realization are not exposed as authored ACES
-#: scenario semantics in this slice, so they stay off -- every declared term is
-#: backed by real capability, so the manifest cannot over-claim.
+#: machine instances (EC2 / GDC / GCE) running Linux and Windows guests and
+#: realizes authored node ACLs as backend firewall rules (the GCE range-cell
+#: backend renders them as Compute Engine firewalls, fail-closed; ADR-032). Account
+#: and content-placement realization are not exposed as authored ACES scenario
+#: semantics yet, so they stay off -- every declared term is backed by real
+#: capability, so the manifest cannot over-claim.
 SHIFTER_PROVISIONER_CAPABILITIES = ProvisionerCapabilities(
     name="shifter-provisioner",
     supported_node_types=frozenset({"vm"}),
     supported_os_families=frozenset({"linux", "windows"}),
     max_total_nodes=None,
-    supports_acls=False,
+    supports_acls=True,
     supports_accounts=False,
 )
 

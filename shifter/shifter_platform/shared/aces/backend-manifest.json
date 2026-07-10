@@ -18,7 +18,7 @@
         "windows"
       ],
       "supports_accounts": false,
-      "supports_acls": false
+      "supports_acls": true
     }
   },
   "compatibility": {
