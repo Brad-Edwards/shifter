@@ -1,0 +1,85 @@
+# REV1 Milestones And Issue Map
+
+## Principles
+
+- Fix security and correctness boundaries before expanding features.
+- Reuse existing issues where they already describe the work.
+- Keep CyberScript authoritative until ACES parity and rollback gates pass.
+- Do not use Workspaces, SPA, or backend programs to expand product remit during
+  stabilization.
+- Close or rescope stale backlog items instead of preserving them indefinitely.
+
+## REV1.1 Security and Trust Boundaries
+
+**Exit criterion:** no user-controlled identity field grants organizer/admin
+authority; application and build identities have least privilege; privileged
+artifacts have verifiable provenance; browser and OIDC bootstrap policy is
+explicit and tested.
+
+New issues:
+
+- `REV1 Security: separate self-service participant identity from organizer authorization`
+- `REV1 Security: scope GCP workload identities to named resources`
+- `REV1 Security: isolate provisioner Job and Secret mutation privileges`
+- `REV1 Security: establish verifiable build and deployment provenance`
+- `REV1 Security: add a staged browser security policy baseline`
+- `REV1 Security: require verified OIDC email before administrator bootstrap`
+
+Existing blockers/dependencies: #1206, #322, #1171, #1377, #1295, #201, and
+#1498. These keep their existing milestones and titles; they are dependencies,
+not duplicate REV1 issues.
+
+## REV1.2 Contract and Runtime Architecture
+
+**Exit criterion:** the ACES process boundary is versioned and rejects partial
+plans; every first-party package is architecture-classified; provisioner and
+provider-selection boundaries have an accepted implementation sequence.
+
+New issues:
+
+- `REV1 ACES: make the provisioning plan transport versioned and fail closed`
+- `REV1 Architecture: classify every first-party Django package in boundary enforcement`
+
+Existing blockers/dependencies: #478, #994, #991, #721, #726, #728, #729,
+#1322, #1323, #1477, #1478, #1479, and #1264.
+
+Issue #530 should be closed or respecified because CTF is already in the current
+import boundary checks; its broader missing requirement is whole-platform
+classification.
+
+## REV1.3 Maintainability and Verification
+
+**Exit criterion:** contributors can understand the current system without
+reconstructing it from preflights; clean-checkout verification matches CI;
+coverage and live-boundary evidence have explicit policies; the roadmap has a
+small, ordered stabilization set.
+
+New issues:
+
+- `REV1 Documentation: publish a canonical current-state architecture handbook`
+- `REV1 Testing: make clean-checkout test entrypoints match CI`
+- `REV1 Testing: exercise production PostgreSQL semantics in CI`
+- `REV1 Reliability: replace fire-and-forget email with durable delivery`
+- `REV1 Frontend: enforce SPA coverage, E2E, and browser accessibility gates`
+- `REV1 Testing: restore documentation security tests to required CI`
+- `REV1 Infrastructure: validate every Terraform root on pull requests`
+- `REV1 Testing: report production-only coverage and fail on resource warnings`
+- `REV1 Testing: enforce production-path ownership in routed CI`
+- `REV1 Program: sequence stabilization gates and triage the open backlog`
+
+Existing blockers/dependencies: #561, #682, #683, #686, #688, #689, #692,
+#846, #987, #998, #1310, #1311, #1312, and #1313.
+
+## Program sequence
+
+1. Complete REV1.1 and the contract-integrity issues in REV1.2.
+2. Complete provider configuration and substrate contract blockers.
+3. Complete ACES realization, projection, conformance, live validation, and
+   rollback evidence.
+4. Perform controlled ACES cutover; archive CyberScript only after the rollback
+   window and parity evidence allow it.
+5. Resume additive Workspaces/API and SPA phase 2 work against the stabilized
+   boundaries.
+
+The sequence is intentionally independent of calendar estimates. Each milestone
+exits on evidence, not on elapsed time or issue count.
