@@ -11,6 +11,8 @@
 
 ## REV1.1 Security and Trust Boundaries
 
+Tracker: [#1513](https://github.com/Brad-Edwards/shifter/issues/1513)
+
 **Exit criterion:** no user-controlled identity field grants organizer/admin
 authority; application and build identities have least privilege; privileged
 artifacts have verifiable provenance; browser and OIDC bootstrap policy is
@@ -18,12 +20,12 @@ explicit and tested.
 
 New issues:
 
-- `REV1 Security: separate self-service participant identity from organizer authorization`
-- `REV1 Security: scope GCP workload identities to named resources`
-- `REV1 Security: isolate provisioner Job and Secret mutation privileges`
-- `REV1 Security: establish verifiable build and deployment provenance`
-- `REV1 Security: add a staged browser security policy baseline`
-- `REV1 Security: require verified OIDC email before administrator bootstrap`
+- [#1516 REV1 Security: separate self-service identity from organizer authorization](https://github.com/Brad-Edwards/shifter/issues/1516)
+- [#1517 REV1 Security: scope GCP workload identities to named resources](https://github.com/Brad-Edwards/shifter/issues/1517)
+- [#1518 REV1 Security: isolate provisioner Job and Secret mutation privileges](https://github.com/Brad-Edwards/shifter/issues/1518)
+- [#1519 REV1 Security: establish verifiable build and deployment provenance](https://github.com/Brad-Edwards/shifter/issues/1519)
+- [#1520 REV1 Security: add a staged browser security policy baseline](https://github.com/Brad-Edwards/shifter/issues/1520)
+- [#1521 REV1 Security: require verified OIDC email before administrator bootstrap](https://github.com/Brad-Edwards/shifter/issues/1521)
 
 Existing blockers/dependencies: #1206, #322, #1171, #1377, #1295, #201, and
 #1498. These keep their existing milestones and titles; they are dependencies,
@@ -31,14 +33,16 @@ not duplicate REV1 issues.
 
 ## REV1.2 Contract and Runtime Architecture
 
+Tracker: [#1514](https://github.com/Brad-Edwards/shifter/issues/1514)
+
 **Exit criterion:** the ACES process boundary is versioned and rejects partial
 plans; every first-party package is architecture-classified; provisioner and
 provider-selection boundaries have an accepted implementation sequence.
 
 New issues:
 
-- `REV1 ACES: make the provisioning plan transport versioned and fail closed`
-- `REV1 Architecture: classify every first-party Django package in boundary enforcement`
+- [#1522 REV1 ACES: make the provisioning plan transport versioned and fail closed](https://github.com/Brad-Edwards/shifter/issues/1522)
+- [#1523 REV1 Architecture: classify every first-party package and extract the audit port](https://github.com/Brad-Edwards/shifter/issues/1523)
 
 Existing blockers/dependencies: #478, #994, #991, #721, #726, #728, #729,
 #1322, #1323, #1477, #1478, #1479, and #1264.
@@ -49,6 +53,8 @@ classification.
 
 ## REV1.3 Maintainability and Verification
 
+Tracker: [#1515](https://github.com/Brad-Edwards/shifter/issues/1515)
+
 **Exit criterion:** contributors can understand the current system without
 reconstructing it from preflights; clean-checkout verification matches CI;
 coverage and live-boundary evidence have explicit policies; the roadmap has a
@@ -56,16 +62,15 @@ small, ordered stabilization set.
 
 New issues:
 
-- `REV1 Documentation: publish a canonical current-state architecture handbook`
-- `REV1 Testing: make clean-checkout test entrypoints match CI`
-- `REV1 Testing: exercise production PostgreSQL semantics in CI`
-- `REV1 Reliability: replace fire-and-forget email with durable delivery`
-- `REV1 Frontend: enforce SPA coverage, E2E, and browser accessibility gates`
-- `REV1 Testing: restore documentation security tests to required CI`
-- `REV1 Infrastructure: validate every Terraform root on pull requests`
-- `REV1 Testing: report production-only coverage and fail on resource warnings`
-- `REV1 Testing: enforce production-path ownership in routed CI`
-- `REV1 Program: sequence stabilization gates and triage the open backlog`
+- [#1524 REV1 Testing: exercise production PostgreSQL semantics in CI](https://github.com/Brad-Edwards/shifter/issues/1524)
+- [#1525 REV1 Reliability: replace fire-and-forget email with durable delivery](https://github.com/Brad-Edwards/shifter/issues/1525)
+- [#1526 REV1 Frontend: enforce SPA coverage, E2E, and browser accessibility gates](https://github.com/Brad-Edwards/shifter/issues/1526)
+- [#1527 REV1 Testing: restore documentation security tests to required CI](https://github.com/Brad-Edwards/shifter/issues/1527)
+- [#1528 REV1 Infrastructure: validate every Terraform root on pull requests](https://github.com/Brad-Edwards/shifter/issues/1528)
+- [#1529 REV1 Testing: make clean-checkout commands and quality metrics trustworthy](https://github.com/Brad-Edwards/shifter/issues/1529)
+- [#1530 REV1 Testing: enforce production-path ownership in routed CI](https://github.com/Brad-Edwards/shifter/issues/1530)
+- [#1531 REV1 Documentation: publish a canonical current-state architecture handbook](https://github.com/Brad-Edwards/shifter/issues/1531)
+- [#1532 REV1 Program: sequence stabilization gates and triage the open backlog](https://github.com/Brad-Edwards/shifter/issues/1532)
 
 Existing blockers/dependencies: #561, #682, #683, #686, #688, #689, #692,
 #846, #987, #998, #1310, #1311, #1312, and #1313.
