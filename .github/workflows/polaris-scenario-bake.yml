@@ -95,10 +95,19 @@ jobs:
         with:
           ref: ${{ inputs.ref }}
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
+      - name: Set up Python venv
+        run: |
+          set -euo pipefail
+          # This workflow runs on self-hosted runners, whose tool cache does not
+          # carry the actions/setup-python builds (setup-python fails with
+          # "version 3.12 was not found"). The other self-hosted workflows use
+          # the runner's system python3 directly; mirror that with a venv so the
+          # later `python`/`pip` steps resolve to an isolated, writable env
+          # (system pip is PEP 668 externally-managed on Ubuntu 24.04).
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq python3-venv
+          python3 -m venv "${RUNNER_TEMP}/venv"
+          echo "${RUNNER_TEMP}/venv/bin" >> "$GITHUB_PATH"
 
       - name: Verify generated artifacts carry their flags (pre-bake gate)
         run: |
