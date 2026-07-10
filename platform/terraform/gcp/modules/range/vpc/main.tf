@@ -4,6 +4,58 @@ resource "google_compute_network" "range" {
   auto_create_subnetworks = false
 }
 
+# Private Google Access egress path for range guests. The Polaris range needs to
+# reach Google APIs from VMs with no external IP and (per the per-range
+# firewall) no general internet egress: Vertex AI for the a14-kali agent, Cloud
+# Storage for the smoketest tarball, and Secret Manager for the per-range Vertex
+# key. This routes the private.googleapis.com VIP (199.36.153.8/30) over
+# Google's internal fabric and resolves *.googleapis.com to it, so the only
+# egress hole the range-cell provisioner has to open is that /30 (it emits the
+# matching egress-allow when private_google_access is set). See
+# GCERangeCellConfig.private_google_access and _firewall_plan.
+resource "google_compute_route" "range_private_googleapis" {
+  name             = "${var.name_prefix}-range-private-googleapis"
+  project          = var.project_id
+  network          = google_compute_network.range.name
+  description      = "Private Google Access: route the private.googleapis.com VIP over Google's internal fabric for range guests."
+  dest_range       = "199.36.153.8/30"
+  next_hop_gateway = "default-internet-gateway"
+  priority         = 1000
+}
+
+resource "google_dns_managed_zone" "range_private_googleapis" {
+  name        = "${var.name_prefix}-range-googleapis"
+  project     = var.project_id
+  dns_name    = "googleapis.com."
+  description = "Private Google Access: resolve *.googleapis.com to the private.googleapis.com VIP for range guests."
+
+  visibility = "private"
+
+  private_visibility_config {
+    networks {
+      network_url = google_compute_network.range.id
+    }
+  }
+}
+
+resource "google_dns_record_set" "range_private_googleapis_a" {
+  project      = var.project_id
+  managed_zone = google_dns_managed_zone.range_private_googleapis.name
+  name         = "private.googleapis.com."
+  type         = "A"
+  ttl          = 300
+  rrdatas      = ["199.36.153.8", "199.36.153.9", "199.36.153.10", "199.36.153.11"]
+}
+
+resource "google_dns_record_set" "range_private_googleapis_wildcard" {
+  project      = var.project_id
+  managed_zone = google_dns_managed_zone.range_private_googleapis.name
+  name         = "*.googleapis.com."
+  type         = "CNAME"
+  ttl          = 300
+  rrdatas      = ["private.googleapis.com."]
+}
+
 resource "google_compute_router" "range_nat" {
   name    = "${var.name_prefix}-range-nat"
   project = var.project_id

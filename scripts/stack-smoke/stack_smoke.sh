@@ -73,6 +73,7 @@ read -r -d '' SMOKE_WORKER_SPECS_DEFAULT <<'SPECS' || true
 worker-cms|/tmp/worker-cms-heartbeat|python manage.py run_worker --queue cms --wait-time 1
 ctf-scheduler|/tmp/ctf-scheduler-heartbeat|python manage.py run_ctf_scheduler --poll-interval 1
 guacamole-bootstrap-prune|/tmp/guacamole-bootstrap-prune-heartbeat|python manage.py run_guacamole_bootstrap_prune --poll-interval 1
+aces-operation-record-prune|/tmp/aces-operation-record-prune-heartbeat|python manage.py run_aces_operation_record_prune --poll-interval 1
 SPECS
 SMOKE_WORKER_SPECS="${SMOKE_WORKER_SPECS:-$SMOKE_WORKER_SPECS_DEFAULT}"
 

@@ -30,6 +30,16 @@ urlpatterns = [
         views.AcesRuntimeSnapshotListView.as_view(),
         name="aces-runtime-snapshots",
     ),
+    path(
+        "range/<uuid:request_id>/aces/participant-implementations/",
+        views.AcesParticipantImplementationListView.as_view(),
+        name="aces-participant-implementations",
+    ),
+    path(
+        "range/<uuid:request_id>/aces/participant-runtimes/",
+        views.AcesParticipantRuntimeListView.as_view(),
+        name="aces-participant-runtimes",
+    ),
     path("agents/", views.AgentListView.as_view(), name="agents-list"),
     path("scenarios/", views.ScenarioListView.as_view(), name="scenarios-list"),
     path("upload/initiate/", views.UploadInitiateView.as_view(), name="upload-initiate"),

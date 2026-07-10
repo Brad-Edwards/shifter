@@ -108,7 +108,12 @@ def ctf_register_exchange(request: HttpRequest) -> JsonResponse:
         participant.invite_token = ""  # nosec B105 — clearing token, not a password  # NOSONAR
         participant.save(update_fields=["invite_token", "updated_at"])
 
-    return JsonResponse({"redirect": reverse("mission_control:dashboard")})
+    # Land magic-link participants on their CTF range page, not the Mission
+    # Control dashboard: MC ranges are separate from CTF ranges, so a CTF
+    # participant redirected to the MC dashboard sees no active range (#1462).
+    # The range page shows provisioning status until the range is ready, then
+    # the RDP/VS Code access controls.
+    return JsonResponse({"redirect": reverse("ctf:participant_range")})
 
 
 @login_required

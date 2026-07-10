@@ -158,7 +158,15 @@ class GuestSSHExecutor:
                 "-Command",
                 "-",
             ]
-        return ["bash", "-se"]
+        # Run guest shell setup as root, matching the AWS SSM RunShellScript
+        # execution context (SSM runs as root; this SSH path logs in as an
+        # unprivileged host user). Range setup needs root: writing under
+        # /opt/polaris (root-owned from the image bake), installing systemd units
+        # (the splice watcher), and iptables rules (the Kali metadata block). The
+        # guest images ship passwordless sudo for the login user (the reboot path
+        # already relies on it); -n fails fast instead of hanging if that ever
+        # regresses.
+        return ["sudo", "-n", "bash", "-se"]
 
     def _build_command_input(self, script: str, stdin_input: str | None, document_name: str) -> str:
         parts: list[str] = []

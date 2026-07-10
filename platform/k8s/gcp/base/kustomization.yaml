@@ -20,3 +20,4 @@ resources:
   - worker-reconciler-deployment.yaml
   - ctf-scheduler-deployment.yaml
   - guacamole-bootstrap-prune-deployment.yaml
+  - aces-operation-record-prune-deployment.yaml

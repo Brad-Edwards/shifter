@@ -15,6 +15,7 @@ from gcp_guest_secrets import (
     ensure_ssh_secret,
 )
 from gcp_range_cell_clients import GCEClients, GoogleExceptions, _build_clients
+from gcp_range_cell_ops import _wait_for_operation
 from gcp_range_cell_plan import (
     FirewallPlan,
     InstancePlan,
@@ -37,8 +38,6 @@ from log_redact import safe_log_fingerprint
 from utils.crypto import generate_ssh_host_keypair
 
 logger = logging.getLogger(__name__)
-
-_OPERATION_TIMEOUT_SECONDS = 600
 
 
 @dataclass(frozen=True)
@@ -70,88 +69,18 @@ class GCEVertexCredentialOps:
     project (which may be a deploy-overlay placeholder).
     """
 
-    ensure: Callable[[int, str, str], str]
+    ensure: Callable[[int, str, str, str], str]
     delete: Callable[[int, str], None]
 
 
 def _default_vertex_ops() -> GCEVertexCredentialOps:
     """Return the production per-range Vertex credential bindings."""
     return GCEVertexCredentialOps(
-        ensure=lambda range_id, sa_email, project_id: ensure_range_vertex_key(
-            range_id, sa_email, project_id=project_id
+        ensure=lambda range_id, sa_email, project_id, host_sa_email: ensure_range_vertex_key(
+            range_id, sa_email, project_id=project_id, host_service_account_email=host_sa_email
         ),
         delete=lambda range_id, project_id: delete_range_vertex_key(range_id, project_id=project_id),
     )
-
-
-def _operation_name(operation: object) -> str:
-    """Extract a Compute operation name from SDK or dict responses."""
-    if isinstance(operation, dict):
-        return str(operation.get("name", ""))
-    return str(getattr(operation, "name", "") or "")
-
-
-def _get_operation_field(operation: object, name: str) -> object | None:
-    """Read an operation field from SDK or dict responses."""
-    if isinstance(operation, dict):
-        return operation.get(name)
-    return getattr(operation, name, None)
-
-
-def _operation_error_messages(operation: object) -> list[str]:
-    """Extract provider error messages from a completed operation."""
-    error = _get_operation_field(operation, "error")
-    if not error:
-        return []
-    entries = error.get("errors") if isinstance(error, dict) else _get_operation_field(error, "errors")
-    if not isinstance(entries, list):
-        return [str(error)]
-    messages: list[str] = []
-    for entry in entries:
-        code = _get_operation_field(entry, "code")
-        message = _get_operation_field(entry, "message")
-        if code and message:
-            messages.append(f"{code}: {message}")
-        elif message:
-            messages.append(str(message))
-        else:
-            messages.append(str(entry))
-    return messages
-
-
-def _raise_for_operation_errors(operation: object, *, operation_name: str, scope: str) -> None:
-    """Raise when Compute reports errors on a completed operation."""
-    errors = _operation_error_messages(operation)
-    if errors:
-        detail = "; ".join(errors)
-        raise RuntimeError(f"GCE {scope} operation {operation_name or '<unknown>'} failed: {detail}")
-
-
-def _wait_for_operation(plan: RangeCellPlan, clients: GCEClients, operation: object, scope: str) -> None:
-    """Wait for a Compute operation and surface asynchronous failures."""
-    if operation is None:
-        return
-    result_method = getattr(operation, "result", None)
-    if callable(result_method):
-        result = result_method(timeout=_OPERATION_TIMEOUT_SECONDS)
-        _raise_for_operation_errors(result or operation, operation_name=_operation_name(operation), scope=scope)
-        return
-
-    operation_name = _operation_name(operation)
-    if not operation_name:
-        _raise_for_operation_errors(operation, operation_name="", scope=scope)
-        return
-
-    result = None
-    if scope == "global":
-        result = clients.global_operations.wait(project=plan["project_id"], operation=operation_name)
-    elif scope == "region":
-        result = clients.region_operations.wait(
-            project=plan["project_id"], region=plan["region"], operation=operation_name
-        )
-    elif scope == "zone":
-        result = clients.zone_operations.wait(project=plan["project_id"], zone=plan["zone"], operation=operation_name)
-    _raise_for_operation_errors(result or operation, operation_name=operation_name, scope=scope)
 
 
 def _get_or_none(
@@ -359,6 +288,52 @@ def _subnet_outputs(plan: RangeCellPlan) -> dict[str, ResourceDict]:
     }
 
 
+def _provision_range_resources(
+    plan: RangeCellPlan,
+    clients: GCEClients,
+    config: GCERangeCellConfig,
+    secret_ops: GCEGuestSecretOps,
+    vertex_ops: GCEVertexCredentialOps,
+) -> list[ResourceDict]:
+    """Create the network, subnets, firewalls, instances, and per-range creds.
+
+    The range VPC is created only when the range owns it (vpc-per-range); in
+    shared-vpc mode the pre-existing platform-peered VPC is reused and only the
+    per-range subnets/firewalls/instances are created here.
+    """
+    if config.vertex_service_account_email:
+        vertex_ops.ensure(
+            plan["range_id"],
+            config.vertex_service_account_email,
+            plan["project_id"],
+            config.service_account_email,
+        )
+    if plan["manage_network"]:
+        _ensure_network(plan, clients)
+    for subnet in plan["subnets"]:
+        _ensure_subnetwork(plan, clients, subnet)
+    for firewall in plan["firewalls"]:
+        _ensure_firewall(plan, clients, firewall)
+    instance_outputs: list[ResourceDict] = []
+    for instance in plan["instances"]:
+        _ensure_address(plan, clients, instance)
+        ssh_secret_ref, rdp_password_secret_ref, ssh_public_key, host_public_key = _ensure_instance(
+            plan, clients, config, instance, secret_ops
+        )
+        instance_outputs.append(
+            _instance_output(
+                plan,
+                instance,
+                ssh_secret_ref=ssh_secret_ref,
+                rdp_password_secret_ref=rdp_password_secret_ref,
+                ssh_public_key=ssh_public_key,
+                host_public_key=host_public_key,
+                config=config,
+            )
+        )
+    return instance_outputs
+
+
 def apply_range_cell(
     request_uuid: str,
     variables: ResourceDict,
@@ -375,38 +350,10 @@ def apply_range_cell(
     resolved_secret_ops = secret_ops or _default_secret_ops()
     resolved_vertex_ops = vertex_ops or _default_vertex_ops()
     plan = render_range_cell_plan(request_uuid, variables, resolved_config)
-    instance_outputs: list[ResourceDict] = []
     try:
-        if resolved_config.vertex_service_account_email:
-            resolved_vertex_ops.ensure(
-                plan["range_id"], resolved_config.vertex_service_account_email, plan["project_id"]
-            )
-        if plan["manage_network"]:
-            _ensure_network(plan, resolved_clients)
-        for subnet in plan["subnets"]:
-            _ensure_subnetwork(plan, resolved_clients, subnet)
-        for firewall in plan["firewalls"]:
-            _ensure_firewall(plan, resolved_clients, firewall)
-        for instance in plan["instances"]:
-            _ensure_address(plan, resolved_clients, instance)
-            ssh_secret_ref, rdp_password_secret_ref, ssh_public_key, host_public_key = _ensure_instance(
-                plan,
-                resolved_clients,
-                resolved_config,
-                instance,
-                resolved_secret_ops,
-            )
-            instance_outputs.append(
-                _instance_output(
-                    plan,
-                    instance,
-                    ssh_secret_ref=ssh_secret_ref,
-                    rdp_password_secret_ref=rdp_password_secret_ref,
-                    ssh_public_key=ssh_public_key,
-                    host_public_key=host_public_key,
-                    config=resolved_config,
-                )
-            )
+        instance_outputs = _provision_range_resources(
+            plan, resolved_clients, resolved_config, resolved_secret_ops, resolved_vertex_ops
+        )
     except Exception:
         logger.exception("GCE range-cell apply failed; attempting cleanup request_id=%s", request_uuid)
         cleanup = cleanup_range_cell or (
