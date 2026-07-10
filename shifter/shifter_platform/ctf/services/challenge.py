@@ -828,7 +828,7 @@ def create_challenge(event_id: UUID, challenge_data: dict[str, Any], *, actor_id
             "Created challenge %s for event %s: %s",
             challenge.id,
             event_id,
-            challenge.name,
+            safe_log_value(challenge.name),
         )
 
     _sync_release_task(challenge)
