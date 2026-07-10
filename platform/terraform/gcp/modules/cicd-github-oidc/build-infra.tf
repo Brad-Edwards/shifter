@@ -47,8 +47,12 @@ resource "google_compute_firewall" "packer_iap_ingress" {
 }
 
 resource "google_storage_bucket" "gdc_vm_images" {
-  project                     = var.project_id
-  name                        = "${var.name_prefix}-gdc-vm-images"
+  project = var.project_id
+  # Project-prefixed for global uniqueness (GCS bucket names are global). The bare
+  # "${name_prefix}-gdc-vm-images" collides across projects and stays reserved in
+  # GCS's deletion cooldown after a project teardown, matching the project-prefixed
+  # naming the portal GCS buckets already use.
+  name                        = "${var.project_id}-${var.name_prefix}-gdc-vm-images"
   location                    = var.image_bucket_location
   uniform_bucket_level_access = true
   public_access_prevention    = "enforced"
