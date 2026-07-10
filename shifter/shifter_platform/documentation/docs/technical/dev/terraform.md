@@ -181,7 +181,7 @@ relies on the maintenance-window path.
 ### In terraform.tfvars (committed baseline)
 
 ```hcl
-# Non-deployment-specific environment config — committed.
+# Non-deployment-specific environment config - committed.
 aws_region         = "us-east-2"
 environment        = "dev"
 instance_type      = "t3.large"
@@ -192,7 +192,7 @@ enable_autoscaling = false
 ### In local.auto.tfvars (gitignored, per-deployment override)
 
 ```hcl
-# Deployment-specific identifiers — never committed.
+# Deployment-specific identifiers - never committed.
 domain_name           = "dev.shifter.your-domain.example"
 ses_domain            = "your-domain.example"
 alarm_email           = "your-team@your-domain.example"
