@@ -483,6 +483,11 @@
       "source_file": "config/settings.py"
     },
     {
+      "default": "'False'",
+      "name": "SHIFTER_ACES_NATIVE_PROVISIONING",
+      "source_file": "config/_aces_settings.py"
+    },
+    {
       "default": "'noreply@shifter.local'",
       "name": "SHIFTER_SUPPORT_EMAIL",
       "source_file": "config/settings.py"
