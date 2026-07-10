@@ -29,7 +29,8 @@ import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from aces_gcp_plan import build_aces_range_cell_plan
+from aces_gcp_composition import node_bootstrap_script
+from aces_gcp_plan import AcesGcePlanError, build_aces_range_cell_plan
 from aces_plan import AcesPlan, AcesPlanNode
 from config import GCERangeCellConfig, GCERangeImageProfile, load_gce_range_cell_config
 from gcp_guest_secrets import delete_aces_ssh_secret, ensure_aces_ssh_secret
@@ -76,20 +77,41 @@ def _default_destroy_profile(_node: AcesPlanNode) -> GCERangeImageProfile:
     return GCERangeImageProfile()
 
 
+def _assert_composition_targets_resolve(aces_plan: AcesPlan) -> None:
+    """Fail closed if any content/feature/account placement targets an unknown node."""
+    node_addresses = {node.address for node in aces_plan.nodes}
+    placements = (
+        [(c.target_address, "content", c.name) for c in aces_plan.content]
+        + [(a.target_address, "account", a.username) for a in aces_plan.accounts]
+        + [(f.target_address, "feature", f.name) for f in aces_plan.features]
+    )
+    for target, kind, name in placements:
+        if target not in node_addresses:
+            raise AcesGcePlanError(f"{kind} placement {name!r} targets node {target!r} not present in this plan")
+
+
+def _node_address_of(instance: InstancePlan) -> str:
+    """Return the ACES node address an instance belongs to (uuid = ``address#index``)."""
+    return str(instance["uuid"]).rsplit("#", 1)[0]
+
+
 def _ensure_aces_instance(
     plan: RangeCellPlan,
     clients: GCEClients,
     config: GCERangeCellConfig,
     instance: InstancePlan,
     secret_ops: AcesGceSecretOps,
+    bootstrap_by_node: dict[str, str],
 ) -> tuple[str, str, str]:
     """Create one ACES range instance with a provisioner-managed SSH + host key.
 
     Returns ``(ssh_secret_ref, ssh_public_key, host_public_key)``. The provisioner
     mints the guest's SSH host keypair, injects the private half via the startup
     script, and keeps the public half so the setup runner can seed known_hosts
-    (StrictHostKeyChecking against a trusted side-channel key). On reconcile the
-    guest already serves the injected host key, so it is recovered from metadata.
+    (StrictHostKeyChecking against a trusted side-channel key). The node's
+    composition bootstrap (content/features/accounts) is appended to that startup
+    script. On reconcile the guest already serves the injected host key, so it is
+    recovered from metadata.
     """
     name = instance["resource_name"]
     existing = _get_or_none(
@@ -115,6 +137,7 @@ def _ensure_aces_instance(
             ssh_public_key=public_key,
             host_private_key_b64=host_private_key_b64,
             host_public_key=host_public_key,
+            composition_script=bootstrap_by_node.get(_node_address_of(instance), ""),
         ),
     )
     _wait_for_operation(plan, clients, operation, "zone")
@@ -126,6 +149,7 @@ def _provision_aces_resources(
     clients: GCEClients,
     config: GCERangeCellConfig,
     secret_ops: AcesGceSecretOps,
+    bootstrap_by_node: dict[str, str],
 ) -> list[ResourceDict]:
     """Create the network, subnets, firewalls, and instances for an ACES range."""
     if plan["manage_network"]:
@@ -138,7 +162,7 @@ def _provision_aces_resources(
     for instance in plan["instances"]:
         _ensure_address(plan, clients, instance)
         ssh_secret_ref, ssh_public_key, host_public_key = _ensure_aces_instance(
-            plan, clients, config, instance, secret_ops
+            plan, clients, config, instance, secret_ops, bootstrap_by_node
         )
         instance_outputs.append(
             _instance_output(
@@ -167,9 +191,15 @@ def apply_aces_range_cell(
     resolved_config = config or load_gce_range_cell_config()
     resolved_clients = clients or _build_clients()
     resolved_secret_ops = secret_ops or _default_secret_ops()
+    _assert_composition_targets_resolve(aces_plan)
     plan = build_aces_range_cell_plan(request_uuid, range_id, aces_plan, resolve_image, resolved_config)
+    bootstrap_by_node = {
+        node.address: script for node in aces_plan.nodes if (script := node_bootstrap_script(node, aces_plan))
+    }
     try:
-        instance_outputs = _provision_aces_resources(plan, resolved_clients, resolved_config, resolved_secret_ops)
+        instance_outputs = _provision_aces_resources(
+            plan, resolved_clients, resolved_config, resolved_secret_ops, bootstrap_by_node
+        )
     except Exception:
         logger.exception("ACES GCE range-cell apply failed; attempting cleanup request_id=%s", request_uuid)
         destroy_aces_range_cell(

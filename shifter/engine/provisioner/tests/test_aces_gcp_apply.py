@@ -17,7 +17,8 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from aces_gcp_apply import AcesGceSecretOps, apply_aces_range_cell, destroy_aces_range_cell
-from aces_plan import AcesPlan, AcesPlanImage, AcesPlanNetwork, AcesPlanNode
+from aces_gcp_plan import AcesGcePlanError
+from aces_plan import AcesPlan, AcesPlanContent, AcesPlanImage, AcesPlanNetwork, AcesPlanNode
 from config import GCERangeCellConfig, GCERangeImageProfile
 
 
@@ -138,6 +139,46 @@ class TestApply:
         # insert failed, so instances.delete is legitimately not reached).
         assert secret_mocks.delete_ssh.called
         assert clients.instances.get.called
+
+
+def _plan_with_content(*content: AcesPlanContent) -> AcesPlan:
+    node = AcesPlanNode(
+        address="node.web",
+        name="web",
+        os_family="linux",
+        count=1,
+        network_addresses=("net.lan",),
+        image=AcesPlanImage(name="ubuntu"),
+    )
+    network = AcesPlanNetwork(address="net.lan", name="lan", cidr="10.9.0.0/24")
+    return AcesPlan(aces_sdl_version="0.19.1", nodes=(node,), networks=(network,), content=content)
+
+
+class TestCompositionIntegration:
+    def _startup_script(self, clients) -> str:
+        body = clients.instances.insert.call_args.kwargs["instance_resource"]
+        items = body["metadata"]["items"]
+        return next(item["value"] for item in items if item["key"] == "startup-script")
+
+    def test_composition_reaches_instance_startup_script(self):
+        content = AcesPlanContent(
+            name="doc", content_type="file", target_address="node.web", path="/srv/x.txt", text="hello"
+        )
+        clients = _clients()
+        secret_ops, _ = _secret_ops()
+        apply_aces_range_cell("req-1", 7, _plan_with_content(content), _resolver, _config(), clients, secret_ops)
+        startup = self._startup_script(clients)
+        import base64
+
+        assert base64.b64encode(b"hello").decode() in startup
+        assert "chmod 644 /srv/x.txt" in startup
+
+    def test_orphan_composition_target_fails_closed(self):
+        content = AcesPlanContent(name="doc", content_type="file", target_address="node.ghost", path="/srv/x", text="h")
+        clients = _clients()
+        secret_ops, _ = _secret_ops()
+        with pytest.raises(AcesGcePlanError, match="not present in this plan"):
+            apply_aces_range_cell("req-1", 7, _plan_with_content(content), _resolver, _config(), clients, secret_ops)
 
 
 class TestDestroy:
