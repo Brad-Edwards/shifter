@@ -64,6 +64,10 @@ class _Port:
 
 
 def _load_provisioner_module(name: str):
+    # Provisioner modules import their siblings (e.g. aces_plan -> aces_composition),
+    # so the provisioner dir must be importable when they are loaded standalone.
+    if str(_PROVISIONER_DIR) not in sys.path:
+        sys.path.insert(0, str(_PROVISIONER_DIR))
     spec = importlib.util.spec_from_file_location(name, _PROVISIONER_DIR / f"{name}.py")
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)

@@ -238,7 +238,7 @@ class TestCompositionExtraction:
         account = parse_plan(_serialized(account_resource)).accounts[0]
         assert account.username == "alice"
         assert account.groups == ("ops", "sudo")
-        assert account.shell == "/bin/bash"
+        assert account.login_shell == "/bin/bash"
         assert account.target_address == "provision.node.web"
         assert account.disabled is False
 

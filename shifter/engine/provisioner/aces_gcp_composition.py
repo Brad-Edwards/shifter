@@ -76,8 +76,8 @@ def _linux_account(account: AcesPlanAccount) -> list[str]:
     """Render bash lines creating one guest user (idempotent)."""
     user = _safe_identifier(account.username, kind="username")
     lines = [f"id -u {user} >/dev/null 2>&1 || useradd -m {user}"]
-    if account.shell:
-        lines.append(f"usermod -s {shlex.quote(account.shell)} {user}")
+    if account.login_shell:
+        lines.append(f"usermod -s {shlex.quote(account.login_shell)} {user}")
     if account.home:
         lines.append(f"usermod -d {shlex.quote(account.home)} {user}")
     for group in account.groups:

@@ -28,6 +28,11 @@ _PROVISIONER_READER = Path(__file__).resolve().parents[4] / "engine" / "provisio
 
 
 def _load_provisioner_reader():
+    # aces_plan imports its sibling aces_composition, so the provisioner dir must be
+    # importable when the reader is loaded standalone.
+    provisioner_dir = str(_PROVISIONER_READER.parent)
+    if provisioner_dir not in sys.path:
+        sys.path.insert(0, provisioner_dir)
     spec = importlib.util.spec_from_file_location("aces_plan_provisioner", _PROVISIONER_READER)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)

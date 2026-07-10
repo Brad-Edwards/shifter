@@ -40,8 +40,12 @@ def _content(**kw) -> AcesPlanContent:
 
 class TestLinux:
     def test_account_creates_user_with_groups_shell_home(self):
-        account = AcesPlanAccount(  # noqa: S604 -- 'shell' is the account's login shell field, not a subprocess shell
-            username="alice", target_address="node.web", groups=("ops", "sudo"), shell="/bin/bash", home="/home/alice"
+        account = AcesPlanAccount(
+            username="alice",
+            target_address="node.web",
+            groups=("ops", "sudo"),
+            login_shell="/bin/bash",
+            home="/home/alice",
         )
         script = node_bootstrap_script(_node(), _plan(_node(), accounts=(account,)))
         assert "id -u alice" in script and "useradd -m alice" in script
