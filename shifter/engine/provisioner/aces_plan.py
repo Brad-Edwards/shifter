@@ -32,6 +32,9 @@ from typing import Any
 ACES_PROVISIONING_PLAN_KIND = "aces_provisioning_plan"
 NODE_RESOURCE_TYPE = "node"
 NETWORK_RESOURCE_TYPE = "network"
+CONTENT_RESOURCE_TYPE = "content-placement"
+FEATURE_RESOURCE_TYPE = "feature-binding"
+ACCOUNT_RESOURCE_TYPE = "account-placement"
 
 _MIB = 1024 * 1024
 
@@ -100,12 +103,68 @@ class AcesPlanNetwork:
 
 
 @dataclass(frozen=True)
+class AcesPlanContent:
+    """A content placement (file/dataset/directory) targeting one node.
+
+    ``text`` is inline file content (realized as a real file). Non-inline content
+    (a ``source`` package, or dataset ``items``) is supplied by the baked image /
+    guest repo at ``path``/``destination`` (ADR-032 baked-image delivery), so the
+    realizer creates the structural target but does not fetch bytes.
+    """
+
+    name: str
+    content_type: str
+    target_address: str
+    path: str | None = None
+    destination: str | None = None
+    text: str | None = None
+    source_name: str | None = None
+    file_format: str | None = None
+    items: tuple[str, ...] = ()
+    sensitive: bool = False
+
+
+@dataclass(frozen=True)
+class AcesPlanAccount:
+    """A user account placement targeting one node."""
+
+    username: str
+    target_address: str
+    groups: tuple[str, ...] = ()
+    shell: str | None = None
+    home: str | None = None
+    mail: str | None = None
+    spn: str | None = None
+    auth_method: str | None = None
+    disabled: bool = False
+
+
+@dataclass(frozen=True)
+class AcesPlanFeature:
+    """A feature binding (service/artifact/configuration) targeting one node.
+
+    A ``service`` feature realizes as an install+enable step whose package/artifact
+    is provided by the baked image or the guest package repo (ADR-032); the backend
+    does not fetch it.
+    """
+
+    name: str
+    feature_type: str
+    target_address: str
+    source_name: str | None = None
+    destination: str | None = None
+
+
+@dataclass(frozen=True)
 class AcesPlan:
-    """The parsed serialized ACES plan: nodes + networks for realization."""
+    """The parsed serialized ACES plan: nodes + networks + composition for realization."""
 
     aces_sdl_version: str
     nodes: tuple[AcesPlanNode, ...]
     networks: tuple[AcesPlanNetwork, ...]
+    content: tuple[AcesPlanContent, ...] = ()
+    accounts: tuple[AcesPlanAccount, ...] = ()
+    features: tuple[AcesPlanFeature, ...] = ()
 
 
 def _mapping(value: object) -> Mapping[str, Any]:
@@ -224,6 +283,94 @@ def _network_lookup(networks: list[tuple[str, Mapping[str, Any]]]) -> dict[str, 
     return lookup
 
 
+def _opt_str(value: object) -> str | None:
+    """Return a stripped non-empty string, or None."""
+    return value.strip() if isinstance(value, str) and value.strip() else None
+
+
+def _str_tuple(value: object) -> tuple[str, ...]:
+    """Return the non-empty strings in a list/tuple value as a tuple."""
+    if not isinstance(value, list | tuple):
+        return ()
+    return tuple(item.strip() for item in value if isinstance(item, str) and item.strip())
+
+
+def _source_name(spec: Mapping[str, Any]) -> str | None:
+    """Return a ``source`` package name from a spec (string shorthand or {name})."""
+    source = spec.get("source")
+    if isinstance(source, str):
+        return _opt_str(source)
+    if isinstance(source, Mapping):
+        return _opt_str(source.get("name"))
+    return None
+
+
+def _content_item_names(raw: object) -> tuple[str, ...]:
+    """Return the ``name`` of each dataset item in a content ``items`` list."""
+    if not isinstance(raw, list | tuple):
+        return ()
+    return tuple(name for entry in raw if isinstance(entry, Mapping) and (name := _opt_str(entry.get("name"))))
+
+
+def _content(payload: Mapping[str, Any]) -> AcesPlanContent | None:
+    """Build an AcesPlanContent from a content-placement payload (None if malformed)."""
+    spec = _mapping(payload.get("spec"))
+    content_type = _opt_str(spec.get("type"))
+    target = _opt_str(payload.get("target_address")) or _opt_str(payload.get("target_node"))
+    if content_type is None or target is None:
+        return None
+    text = spec.get("text")
+    return AcesPlanContent(
+        name=_opt_str(payload.get("content_name")) or _opt_str(payload.get("name")) or content_type.lower(),
+        content_type=content_type.lower(),
+        target_address=target,
+        path=_opt_str(spec.get("path")),
+        destination=_opt_str(spec.get("destination")),
+        text=text if isinstance(text, str) else None,
+        source_name=_source_name(spec),
+        file_format=_opt_str(spec.get("format")),
+        items=_content_item_names(spec.get("items")),
+        sensitive=spec.get("sensitive") is True,
+    )
+
+
+def _account(payload: Mapping[str, Any]) -> AcesPlanAccount | None:
+    """Build an AcesPlanAccount from an account-placement payload (None if malformed)."""
+    spec = _mapping(payload.get("spec"))
+    username = _opt_str(spec.get("username")) or _opt_str(payload.get("account_name"))
+    target = _opt_str(payload.get("target_address")) or _opt_str(payload.get("node_name"))
+    if username is None or target is None:
+        return None
+    return AcesPlanAccount(
+        username=username,
+        target_address=target,
+        groups=_str_tuple(spec.get("groups")),
+        shell=_opt_str(spec.get("shell")),
+        home=_opt_str(spec.get("home")),
+        mail=_opt_str(spec.get("mail")),
+        spn=_opt_str(spec.get("spn")),
+        auth_method=_opt_str(spec.get("auth_method")),
+        disabled=spec.get("disabled") is True,
+    )
+
+
+def _feature(payload: Mapping[str, Any]) -> AcesPlanFeature | None:
+    """Build an AcesPlanFeature from a feature-binding payload (None if malformed)."""
+    template = _mapping(_mapping(payload.get("spec")).get("template"))
+    feature_type = _opt_str(template.get("type"))
+    target = _opt_str(payload.get("node_address")) or _opt_str(payload.get("node_name"))
+    name = _opt_str(payload.get("feature_name")) or _opt_str(template.get("name"))
+    if feature_type is None or target is None or name is None:
+        return None
+    return AcesPlanFeature(
+        name=name,
+        feature_type=feature_type.lower(),
+        target_address=target,
+        source_name=_source_name(template),
+        destination=_opt_str(template.get("destination")),
+    )
+
+
 def parse_plan(range_config: dict[str, Any] | None) -> AcesPlan:
     """Parse a serialized ACES plan from a range_config dict.
 
@@ -239,6 +386,11 @@ def parse_plan(range_config: dict[str, Any] | None) -> AcesPlan:
     resources = _require_mapping(envelope.get("resources"), where="resources")
     network_pairs: list[tuple[str, Mapping[str, Any]]] = []
     node_pairs: list[tuple[str, Mapping[str, Any]]] = []
+    composition: dict[str, list[Mapping[str, Any]]] = {
+        CONTENT_RESOURCE_TYPE: [],
+        FEATURE_RESOURCE_TYPE: [],
+        ACCOUNT_RESOURCE_TYPE: [],
+    }
     for entry in resources.values():
         entry_map = _require_mapping(entry, where="resource")
         address = _string(entry_map.get("address"), where="resource.address")
@@ -248,6 +400,8 @@ def parse_plan(range_config: dict[str, Any] | None) -> AcesPlan:
             network_pairs.append((address, payload))
         elif resource_type == NODE_RESOURCE_TYPE:
             node_pairs.append((address, payload))
+        elif resource_type in composition:
+            composition[resource_type].append(payload)
 
     lookup = _network_lookup(network_pairs)
     networks = tuple(_network(address, payload) for address, payload in sorted(network_pairs))
@@ -258,6 +412,9 @@ def parse_plan(range_config: dict[str, Any] | None) -> AcesPlan:
         aces_sdl_version=version if isinstance(version, str) else "",
         nodes=nodes,
         networks=networks,
+        content=tuple(c for p in composition[CONTENT_RESOURCE_TYPE] if (c := _content(p)) is not None),
+        accounts=tuple(a for p in composition[ACCOUNT_RESOURCE_TYPE] if (a := _account(p)) is not None),
+        features=tuple(f for p in composition[FEATURE_RESOURCE_TYPE] if (f := _feature(p)) is not None),
     )
 
 

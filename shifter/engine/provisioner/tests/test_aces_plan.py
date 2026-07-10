@@ -168,6 +168,112 @@ class TestAclExtraction:
         assert parsed.nodes[0].acls == ()
 
 
+class TestCompositionExtraction:
+    def _content_resource(self, **spec) -> dict:
+        return _resource(
+            "content.doc",
+            "content-placement",
+            {
+                "name": "doc",
+                "content_name": "doc",
+                "target_node": "web",
+                "target_address": "provision.node.web",
+                "spec": spec,
+            },
+        )
+
+    def test_extracts_inline_file_content(self):
+        plan = parse_plan(_serialized(self._content_resource(type="file", path="/srv/x.txt", text="hello")))
+        content = plan.content[0]
+        assert content.content_type == "file"
+        assert content.path == "/srv/x.txt"
+        assert content.text == "hello"
+        assert content.target_address == "provision.node.web"
+
+    def test_extracts_dataset_items_and_source(self):
+        plan = parse_plan(
+            _serialized(
+                self._content_resource(
+                    type="dataset",
+                    format="json",
+                    source={"name": "seed-pkg"},
+                    items=[{"name": "a.json"}, {"name": "b.json"}],
+                )
+            )
+        )
+        content = plan.content[0]
+        assert content.content_type == "dataset"
+        assert content.source_name == "seed-pkg"
+        assert content.items == ("a.json", "b.json")
+        assert content.file_format == "json"
+
+    def test_extracts_directory_content(self):
+        plan = parse_plan(self._serialized_directory())
+        content = plan.content[0]
+        assert content.content_type == "directory"
+        assert content.destination == "/srv/data"
+
+    def _serialized_directory(self) -> dict:
+        return _serialized(self._content_resource(type="directory", destination="/srv/data"))
+
+    def test_extracts_account(self):
+        account_resource = _resource(
+            "account.alice",
+            "account-placement",
+            {
+                "name": "alice",
+                "account_name": "alice",
+                "node_name": "web",
+                "target_address": "provision.node.web",
+                "spec": {
+                    "username": "alice",
+                    "node": "web",
+                    "groups": ["ops", "sudo"],
+                    "shell": "/bin/bash",
+                    "home": "/home/alice",
+                    "disabled": False,
+                },
+            },
+        )
+        account = parse_plan(_serialized(account_resource)).accounts[0]
+        assert account.username == "alice"
+        assert account.groups == ("ops", "sudo")
+        assert account.shell == "/bin/bash"
+        assert account.target_address == "provision.node.web"
+        assert account.disabled is False
+
+    def test_extracts_service_feature(self):
+        feature_resource = _resource(
+            "feature.web-app",
+            "feature-binding",
+            {
+                "name": "web-app",
+                "feature_name": "web-app",
+                "node_name": "web",
+                "node_address": "provision.node.web",
+                "role_name": "admin",
+                "spec": {
+                    "binding": {"node": "web", "role": "admin"},
+                    "template": {"type": "service", "source": {"name": "nginx"}, "destination": ""},
+                },
+            },
+        )
+        feature = parse_plan(_serialized(feature_resource)).features[0]
+        assert feature.name == "web-app"
+        assert feature.feature_type == "service"
+        assert feature.source_name == "nginx"
+        assert feature.target_address == "provision.node.web"
+
+    def test_malformed_composition_is_skipped_not_fatal(self):
+        # A content resource missing its type is dropped (not raised) -> empty.
+        plan = parse_plan(_serialized(self._content_resource(path="/srv/x")))
+        assert plan.content == ()
+
+    def test_no_composition_is_empty(self):
+        plan = parse_plan(_serialized(_resource("node.a", "node", {"os_family": "linux", "spec": {"node": {}}})))
+        assert plan.content == () and plan.accounts == () and plan.features == ()
+
+
 class TestSelfDiscrimination:
     def test_rejects_none(self):
         with pytest.raises(AcesPlanError):
