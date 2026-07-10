@@ -17,6 +17,10 @@
  * surface not yet migrated to the SPA is an `external` entry that links to its
  * existing Django route via full-page navigation; it moves to an in-SPA route
  * when its module issue lands.
+ *
+ * Entries are declared as compact per-entry specs and expanded by `makeGroup`,
+ * which folds each group's shared defaults (mode, group, owner app, audience,
+ * permission policy) into every entry so the registry data stays DRY.
  */
 import type { Bootstrap } from "@/api/types";
 
@@ -93,6 +97,63 @@ export interface NavGroup {
   readonly entries: readonly NavEntry[];
 }
 
+/** Fully-resolved per-entry declaration (after group defaults are folded in). */
+interface EntrySpec {
+  surface: string;
+  routeName: string;
+  ownerApp: string;
+  purpose: string;
+  routePath: string;
+  iconKey: NavIconKey;
+  permissionPolicy: PermissionPolicy;
+  audience: NavAudience;
+  activeContext?: "range" | "event";
+  featureFlag?: keyof Bootstrap["feature_flags"];
+  external?: boolean;
+  children?: EntrySpec[];
+}
+
+/** Per-entry input; group-level defaults supply the omitted fields. */
+type EntrySpecInput = Partial<Omit<EntrySpec, "children">> & { children?: EntrySpecInput[] };
+
+/** Defaults applied to every entry in a group (folded before per-entry fields). */
+type GroupDefaults = Partial<EntrySpec>;
+
+function toEntry(mode: UxMode, group: NavGroupName, spec: EntrySpec): NavEntry {
+  const entry: NavEntry = {
+    surface: spec.surface,
+    audience: spec.audience,
+    routeName: spec.routeName,
+    permissionPolicy: spec.permissionPolicy,
+    ownerApp: spec.ownerApp,
+    purpose: spec.purpose,
+    mode,
+    group,
+    routePath: spec.routePath,
+    iconKey: spec.iconKey,
+    ...(spec.activeContext ? { activeContext: spec.activeContext } : {}),
+    ...(spec.featureFlag ? { featureFlag: spec.featureFlag } : {}),
+    ...(spec.external ? { external: true } : {}),
+    ...(spec.children ? { children: spec.children.map((child) => toEntry(mode, group, child)) } : {}),
+  };
+  return entry;
+}
+
+function makeGroup(
+  group: NavGroupName,
+  mode: UxMode,
+  defaults: GroupDefaults,
+  specs: EntrySpecInput[],
+): NavGroup {
+  const expand = (spec: EntrySpecInput): EntrySpec =>
+    ({
+      ...defaults,
+      ...spec,
+      children: spec.children?.map(expand),
+    }) as EntrySpec;
+  return { group, mode, entries: specs.map((spec) => toEntry(mode, group, expand(spec))) };
+}
+
 /**
  * The seeded platform IA (UX-003 sitemap + #1368). Durable, revisited surfaces
  * only; event/entity-scoped surfaces (participants, per-event challenges) render
@@ -100,275 +161,67 @@ export interface NavGroup {
  * yet on the SPA link to their legacy Django route (`external`).
  */
 export const NAV_GROUPS: readonly NavGroup[] = [
-  {
-    group: "Participate",
-    mode: "participant",
-    entries: [
-      {
-        surface: "Event Home",
-        audience: "participant",
-        routeName: "ctf:dashboard",
-        permissionPolicy: "ctf_participant",
-        ownerApp: "ctf",
-        purpose: "Event entry point with current participant state.",
-        mode: "participant",
-        group: "Participate",
-        routePath: "/ctf/",
-        iconKey: "home",
-        activeContext: "event",
-        external: true,
-      },
-      {
-        surface: "Challenges",
-        audience: "participant",
-        routeName: "ctf:challenges",
-        permissionPolicy: "ctf_participant",
-        ownerApp: "ctf",
-        purpose: "Browse available challenges and progression.",
-        mode: "participant",
-        group: "Participate",
-        routePath: "/ctf/challenges/",
-        iconKey: "flag",
-        external: true,
-      },
-      {
-        surface: "Range",
-        audience: "participant",
-        routeName: "ctf:range",
-        permissionPolicy: "ctf_participant",
-        ownerApp: "ctf",
-        purpose: "Access range status and participant resources.",
-        mode: "participant",
-        group: "Participate",
-        routePath: "/ctf/range/",
-        iconKey: "server",
-        activeContext: "range",
-        external: true,
-      },
-      {
-        surface: "Scoreboard",
-        audience: "participant",
-        routeName: "ctf:scoreboard",
-        permissionPolicy: "ctf_participant",
-        ownerApp: "ctf",
-        purpose: "Compare event scoring and rank.",
-        mode: "participant",
-        group: "Participate",
-        routePath: "/ctf/scoreboard/",
-        iconKey: "trophy",
-        external: true,
-      },
-      {
-        surface: "Team",
-        audience: "participant",
-        routeName: "ctf:team",
-        permissionPolicy: "ctf_participant",
-        ownerApp: "ctf",
-        purpose: "Inspect team membership and status.",
-        mode: "participant",
-        group: "Participate",
-        routePath: "/ctf/team/",
-        iconKey: "users",
-        external: true,
-      },
-      {
-        surface: "Help",
-        audience: "participant",
-        routeName: "ctf:help",
-        permissionPolicy: "ctf_participant",
-        ownerApp: "ctf",
-        purpose: "Get CTF-specific help.",
-        mode: "participant",
-        group: "Participate",
-        routePath: "/ctf/help/",
-        iconKey: "help-circle",
-        external: true,
-      },
+  makeGroup(
+    "Participate",
+    "participant",
+    { audience: "participant", permissionPolicy: "ctf_participant", ownerApp: "ctf", external: true },
+    [
+      { surface: "Event Home", routeName: "ctf:dashboard", purpose: "Event entry point with current participant state.", routePath: "/ctf/", iconKey: "home", activeContext: "event" },
+      { surface: "Challenges", routeName: "ctf:challenges", purpose: "Browse available challenges and progression.", routePath: "/ctf/challenges/", iconKey: "flag" },
+      { surface: "Range", routeName: "ctf:range", purpose: "Access range status and participant resources.", routePath: "/ctf/range/", iconKey: "server", activeContext: "range" },
+      { surface: "Scoreboard", routeName: "ctf:scoreboard", purpose: "Compare event scoring and rank.", routePath: "/ctf/scoreboard/", iconKey: "trophy" },
+      { surface: "Team", routeName: "ctf:team", purpose: "Inspect team membership and status.", routePath: "/ctf/team/", iconKey: "users" },
+      { surface: "Help", routeName: "ctf:help", purpose: "Get CTF-specific help.", routePath: "/ctf/help/", iconKey: "help-circle" },
     ],
-  },
-  {
-    group: "Operate",
-    mode: "operator",
-    entries: [
-      {
-        surface: "Overview",
-        audience: "organizer",
-        routeName: "home",
-        permissionPolicy: "authenticated",
-        ownerApp: "config",
-        purpose: "Role-aware operational dashboard.",
-        mode: "operator",
-        group: "Operate",
-        routePath: "/",
-        iconKey: "layout-dashboard",
-      },
-      {
-        surface: "Ranges",
-        audience: "organizer",
-        routeName: "mission_control:dashboard",
-        permissionPolicy: "authenticated",
-        ownerApp: "mission_control",
-        purpose: "Launch and monitor ranges.",
-        mode: "operator",
-        group: "Operate",
-        routePath: "/mission-control/",
-        iconKey: "server",
-        activeContext: "range",
-        external: true,
-      },
-      {
-        surface: "CTF Events",
-        audience: "organizer",
-        routeName: "ctf:admin_dashboard",
-        permissionPolicy: "ctf_organizer",
-        ownerApp: "ctf",
-        purpose: "Monitor and manage CTF operations.",
-        mode: "operator",
-        group: "Operate",
-        routePath: "/ctf/admin/",
-        iconKey: "flag",
-        activeContext: "event",
-        external: true,
-      },
+  ),
+  makeGroup(
+    "Operate",
+    "operator",
+    { audience: "organizer", permissionPolicy: "authenticated", ownerApp: "mission_control", external: true },
+    [
+      { surface: "Overview", routeName: "home", ownerApp: "config", purpose: "Role-aware operational dashboard.", routePath: "/", iconKey: "layout-dashboard", external: false },
+      { surface: "Ranges", routeName: "mission_control:dashboard", purpose: "Launch and monitor ranges.", routePath: "/mission-control/", iconKey: "server", activeContext: "range" },
+      { surface: "CTF Events", routeName: "ctf:admin_dashboard", ownerApp: "ctf", permissionPolicy: "ctf_organizer", purpose: "Monitor and manage CTF operations.", routePath: "/ctf/admin/", iconKey: "flag", activeContext: "event" },
       {
         surface: "Assets",
-        audience: "organizer",
         routeName: "mission_control:agents",
-        permissionPolicy: "authenticated",
-        ownerApp: "mission_control",
         purpose: "Operational resources: agents, NGFW, credentials.",
-        mode: "operator",
-        group: "Operate",
         routePath: "/mission-control/agents/",
         iconKey: "boxes",
-        external: true,
         children: [
-          {
-            surface: "Agents",
-            audience: "organizer",
-            routeName: "mission_control:agents",
-            permissionPolicy: "authenticated",
-            ownerApp: "mission_control",
-            purpose: "Inspect or delete available agents.",
-            mode: "operator",
-            group: "Operate",
-            routePath: "/mission-control/agents/",
-            iconKey: "bot",
-            external: true,
-          },
-          {
-            surface: "NGFW",
-            audience: "organizer",
-            routeName: "mission_control:ngfw_list",
-            permissionPolicy: "authenticated",
-            ownerApp: "mission_control",
-            purpose: "List NGFW instances.",
-            mode: "operator",
-            group: "Operate",
-            routePath: "/mission-control/ngfw/",
-            iconKey: "shield",
-            external: true,
-          },
-          {
-            surface: "Credentials",
-            audience: "organizer",
-            routeName: "mission_control:credentials",
-            permissionPolicy: "authenticated",
-            ownerApp: "mission_control",
-            purpose: "List reusable credentials.",
-            mode: "operator",
-            group: "Operate",
-            routePath: "/mission-control/credentials/",
-            iconKey: "key-round",
-            external: true,
-          },
+          { surface: "Agents", routeName: "mission_control:agents", purpose: "Inspect or delete available agents.", routePath: "/mission-control/agents/", iconKey: "bot" },
+          { surface: "NGFW", routeName: "mission_control:ngfw_list", purpose: "List NGFW instances.", routePath: "/mission-control/ngfw/", iconKey: "shield" },
+          { surface: "Credentials", routeName: "mission_control:credentials", purpose: "List reusable credentials.", routePath: "/mission-control/credentials/", iconKey: "key-round" },
         ],
       },
-      {
-        surface: "Terminal",
-        audience: "both",
-        routeName: "mission_control:terminal",
-        permissionPolicy: "authenticated",
-        ownerApp: "mission_control",
-        purpose: "Access terminal sessions when a range is available.",
-        mode: "operator",
-        group: "Operate",
-        routePath: "/mission-control/terminal/",
-        iconKey: "terminal",
-        activeContext: "range",
-        external: true,
-      },
-      {
-        surface: "Settings",
-        audience: "organizer",
-        routeName: "mission_control:settings",
-        permissionPolicy: "authenticated",
-        ownerApp: "mission_control",
-        purpose: "Change user or platform settings.",
-        mode: "operator",
-        group: "Operate",
-        routePath: "/mission-control/settings/",
-        iconKey: "settings",
-        external: true,
-      },
+      { surface: "Terminal", routeName: "mission_control:terminal", audience: "both", purpose: "Access terminal sessions when a range is available.", routePath: "/mission-control/terminal/", iconKey: "terminal", activeContext: "range" },
+      { surface: "Settings", routeName: "mission_control:settings", purpose: "Change user or platform settings.", routePath: "/mission-control/settings/", iconKey: "settings" },
     ],
-  },
-  {
-    group: "Author",
-    mode: "operator",
-    entries: [
-      {
-        surface: "Scenarios",
-        audience: "organizer",
-        routeName: "scenario_editor:list",
-        permissionPolicy: "threat_research",
-        ownerApp: "cms",
-        purpose: "Browse scenarios and readiness metadata.",
-        mode: "operator",
-        group: "Author",
-        routePath: "/scenario-editor/",
-        iconKey: "file-code",
-        external: true,
-      },
+  ),
+  makeGroup(
+    "Author",
+    "operator",
+    { audience: "organizer", permissionPolicy: "threat_research", ownerApp: "cms", external: true },
+    [
+      { surface: "Scenarios", routeName: "scenario_editor:list", purpose: "Browse scenarios and readiness metadata.", routePath: "/scenario-editor/", iconKey: "file-code" },
     ],
-  },
-  {
-    group: "Govern",
-    mode: "operator",
-    entries: [
-      {
-        surface: "Risk Register",
-        audience: "organizer",
-        routeName: "risk_register:risk_list",
-        permissionPolicy: "risk_register_access",
-        ownerApp: "risk_register",
-        purpose: "List current and historical risks.",
-        mode: "operator",
-        group: "Govern",
-        routePath: "/risk-register",
-        iconKey: "shield-alert",
-      },
+  ),
+  makeGroup(
+    "Govern",
+    "operator",
+    { audience: "organizer", permissionPolicy: "risk_register_access", ownerApp: "risk_register" },
+    [
+      { surface: "Risk Register", routeName: "risk_register:risk_list", purpose: "List current and historical risks.", routePath: "/risk-register", iconKey: "shield-alert" },
     ],
-  },
-  {
-    group: "Administer",
-    mode: "operator",
-    entries: [
-      {
-        surface: "Users",
-        audience: "organizer",
-        routeName: "admin:index",
-        permissionPolicy: "staff",
-        ownerApp: "management",
-        purpose: "Manage users, groups, and access.",
-        mode: "operator",
-        group: "Administer",
-        routePath: "/admin/",
-        iconKey: "user-cog",
-        external: true,
-      },
+  ),
+  makeGroup(
+    "Administer",
+    "operator",
+    { audience: "organizer", permissionPolicy: "staff", ownerApp: "management", external: true },
+    [
+      { surface: "Users", routeName: "admin:index", purpose: "Manage users, groups, and access.", routePath: "/admin/", iconKey: "user-cog" },
     ],
-  },
+  ),
 ];
 
 /** Evaluate an advisory permission policy against the bootstrap payload. */
