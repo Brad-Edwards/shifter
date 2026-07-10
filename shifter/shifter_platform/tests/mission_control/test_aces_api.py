@@ -20,8 +20,11 @@ from shared.aces.contracts import SHIFTER_BACKEND_PROFILE
 from shared.api_tokens import scopes
 from shared.api_tokens.models import ApiToken
 from shared.enums import RequestType
-from shared.models import AcesOperationRecord
+from shared.models import AcesOperationRecord, AcesParticipantRuntimeRecord
 from shared.schemas.aces_operation import canonical_aces_payload_digest
+from shared.schemas.aces_participant_runtime import (
+    canonical_aces_payload_digest as canonical_participant_payload_digest,
+)
 
 pytestmark = pytest.mark.django_db
 
@@ -29,6 +32,11 @@ _CONTRACT_VERSION = {
     AcesOperationRecord.RecordKind.OPERATION_RECEIPT: "operation-receipt-v1",
     AcesOperationRecord.RecordKind.OPERATION_STATUS: "operation-status-v1",
     AcesOperationRecord.RecordKind.RUNTIME_SNAPSHOT: "runtime-snapshot-v1",
+}
+
+_PARTICIPANT_CONTRACT_VERSION = {
+    AcesParticipantRuntimeRecord.RecordKind.PARTICIPANT_IMPLEMENTATION: "participant-implementation-v1",
+    AcesParticipantRuntimeRecord.RecordKind.PARTICIPANT_RUNTIME: "participant-runtime-v1",
 }
 
 
@@ -77,6 +85,23 @@ def _seed_record(request_id, *, record_kind, payload, source_timestamp=None):
         record_kind=record_kind,
         source_timestamp=source_timestamp or timezone.now(),
         payload_digest=canonical_aces_payload_digest(payload),
+        payload=payload,
+    )
+
+
+def _seed_participant_record(request_id, *, participant_ref, record_kind, payload, source_timestamp=None):
+    ts = source_timestamp or timezone.now()
+    return AcesParticipantRuntimeRecord.objects.create(
+        request_id=request_id,
+        participant_ref=participant_ref,
+        idempotency_key=f"{record_kind}:{participant_ref}:{ts.isoformat()}",
+        contract_kind=AcesParticipantRuntimeRecord.ContractKind.ACES,
+        contract_version=_PARTICIPANT_CONTRACT_VERSION[record_kind],
+        contract_profile=SHIFTER_BACKEND_PROFILE,
+        participant_runtime_profile="shifter-provisioning",
+        record_kind=record_kind,
+        source_timestamp=ts,
+        payload_digest=canonical_participant_payload_digest(payload),
         payload=payload,
     )
 
@@ -257,3 +282,47 @@ class TestCurrentRangeAcesProjection:
 
         assert body["has_range"] is False
         assert body["aces_projection"] is None
+
+
+class TestCurrentRangeAcesParticipantRuntime:
+    """The canonical current-range read carries an optional participant/runtime
+    projection (#1290), sibling to ``aces_projection`` (#1276)."""
+
+    def test_participant_runtime_present_when_records_exist(self, client, user):
+        request_id = _owned_range(user)
+        _seed_participant_record(
+            request_id,
+            participant_ref="ctf-participant-1",
+            record_kind=AcesParticipantRuntimeRecord.RecordKind.PARTICIPANT_RUNTIME,
+            payload={"participant_ref": "ctf-participant-1", "status": "running"},
+        )
+        client.force_authenticate(user=user)
+        body = client.get(_CURRENT_RANGE_URL).json()
+
+        assert body["has_range"] is True
+        participant_runtime = body["aces_participant_runtime"]
+        assert participant_runtime is not None
+        assert participant_runtime["participants"][0]["participant_ref"] == "ctf-participant-1"
+        assert participant_runtime["participants"][0]["runtime"]["status"] == "running"
+        # Exactly one range-level backend_command channel, keyed by request_id.
+        backend_commands = [c for c in participant_runtime["access_channels"] if c["channel"] == "backend_command"]
+        assert len(backend_commands) == 1
+        assert backend_commands[0]["target_ref"] == str(request_id)
+        # Existing keys and the sibling aces_projection are unaffected.
+        assert body["aces_projection"] is None
+        assert body["range"]["status"] == "ready"
+
+    def test_participant_runtime_null_for_legacy_range(self, client, user):
+        _owned_range(user)  # no participant-runtime sidecar rows
+        client.force_authenticate(user=user)
+        body = client.get(_CURRENT_RANGE_URL).json()
+
+        assert body["has_range"] is True
+        assert body["aces_participant_runtime"] is None
+
+    def test_participant_runtime_absent_when_no_range(self, client, user):
+        client.force_authenticate(user=user)
+        body = client.get(_CURRENT_RANGE_URL).json()
+
+        assert body["has_range"] is False
+        assert body["aces_participant_runtime"] is None

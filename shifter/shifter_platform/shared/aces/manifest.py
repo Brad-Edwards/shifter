@@ -23,11 +23,11 @@ Scope (publication-only slice):
   stays backend-owned. The manifest discloses only coarse provisioning
   capabilities, never provider-specific realization detail.
 
-The ``aces-sdl`` dependency is dev/test-scoped for this publication-only slice
-(nothing at runtime imports this module), so importing it never pulls ACES into
-Shifter's production runtime import graph. The RuntimeTarget-adapter slice (#1262)
-promotes the dependency to runtime when it imports the builder to drive a live
-target.
+The ``aces-sdl`` dependency was dev/test-scoped through the publication-only
+slice (#1261), when nothing at runtime imported this module. The RuntimeTarget
+adapter (#1262, :mod:`shared.aces.runtime_target`) imports this module's
+builder to construct a live ``RuntimeTarget``, so ``aces-sdl`` is now a
+``[project]`` runtime dependency.
 """
 
 from __future__ import annotations
@@ -82,13 +82,20 @@ def _current_backend_version() -> str:
         return "0.0.0+unknown"
 
 
-def create_shifter_backend_manifest() -> BackendManifest:
+def create_shifter_backend_manifest(**_config: Any) -> BackendManifest:
     """Return Shifter's ``provisioning-only`` ACES backend manifest.
 
     The manifest declares exactly the ``provisioning-only`` profile's required
     contracts and Shifter's honest provisioning capability envelope. It claims no
     orchestrator, evaluator, participant-runtime, or observation capability, so
     it infers as ``BackendCapabilityProfile.PROVISIONING_ONLY``.
+
+    Accepts and ignores arbitrary keyword config so it satisfies
+    ``aces_runtime.registry.BackendRegistry``'s ``manifest_factory(**config)``
+    contract -- the registry always calls the manifest factory with whatever
+    config the caller passed to ``registry.create()``/``registry.manifest()``
+    (e.g. the ``port`` kwarg ``shared.aces.runtime_target`` passes for the
+    components factory), even though this manifest itself takes no config.
     """
     return BackendManifest(
         name=SHIFTER_BACKEND_NAME,

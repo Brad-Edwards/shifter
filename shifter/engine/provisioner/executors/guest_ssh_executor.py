@@ -75,6 +75,17 @@ class GuestSSHExecutor:
             os.close(fd)
         return key_path
 
+    def _known_hosts_line(self, host: str, host_public_key: str) -> str:
+        """Render the known_hosts entry, formatting non-default ports as [host]:port.
+
+        OpenSSH keys known_hosts by ``host`` for :22 but by ``[host]:port`` for any
+        other port, so a Docker-host guest reached on the management port (e.g. the
+        Polaris range host on :2222) needs the bracketed form or strict checking
+        fails to match the seeded key.
+        """
+        host_entry = host if self._port == self.DEFAULT_SSH_PORT else f"[{host}]:{self._port}"
+        return f"{host_entry} {host_public_key.strip()}\n"
+
     def _provision_known_hosts(self, host: str, host_public_key: str) -> str:
         """Write a single-entry known_hosts file locally and return its path.
 
@@ -83,7 +94,7 @@ class GuestSSHExecutor:
         """
         fd, path = tempfile.mkstemp(prefix="guest_known_hosts_", suffix="")
         try:
-            os.write(fd, f"{host} {host_public_key.strip()}\n".encode())
+            os.write(fd, self._known_hosts_line(host, host_public_key).encode())
         finally:
             os.close(fd)
         return path
@@ -147,7 +158,15 @@ class GuestSSHExecutor:
                 "-Command",
                 "-",
             ]
-        return ["bash", "-se"]
+        # Run guest shell setup as root, matching the AWS SSM RunShellScript
+        # execution context (SSM runs as root; this SSH path logs in as an
+        # unprivileged host user). Range setup needs root: writing under
+        # /opt/polaris (root-owned from the image bake), installing systemd units
+        # (the splice watcher), and iptables rules (the Kali metadata block). The
+        # guest images ship passwordless sudo for the login user (the reboot path
+        # already relies on it); -n fails fast instead of hanging if that ever
+        # regresses.
+        return ["sudo", "-n", "bash", "-se"]
 
     def _build_command_input(self, script: str, stdin_input: str | None, document_name: str) -> str:
         parts: list[str] = []

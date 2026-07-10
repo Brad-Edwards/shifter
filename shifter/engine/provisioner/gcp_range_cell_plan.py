@@ -3,15 +3,31 @@
 from __future__ import annotations
 
 import ipaddress
-import re
 from typing import NotRequired, TypedDict, cast
 
 from config import GCERangeCellConfig, GCERangeImageProfile, load_gce_range_cell_config
 from executors.factory import get_ssh_username
+from gcp_range_cell_naming import (
+    _label_value,
+    _network_name_from_id,
+    _network_self_link,
+    _network_tag,
+    _short_resource_name,
+    _subnet_tag,
+    _subnetwork_self_link,
+)
 
 _MANAGED_BY_LABEL = "shifter-provisioner"
 
 _DEFAULT_SSH_PORT = 22
+
+# private.googleapis.com VIP range. Private Google Access on the range subnet,
+# the range VPC's private-googleapis DNS zone, and a route for this /30 (all in
+# the range VPC Terraform) let no-external-IP guests reach Google APIs over
+# Google's internal fabric. This is the only egress hole the range opens when
+# private_google_access is set, so guests reach Vertex AI / Cloud Storage /
+# Secret Manager while staying off the general internet.
+_GOOGLE_PRIVATE_API_VIP_CIDR = "199.36.153.8/30"  # NOSONAR
 
 # Scenario image keys whose range host is an Ubuntu Docker host: the
 # participant-facing service (e.g. the Polaris Kali container) publishes the
@@ -104,6 +120,10 @@ class RangeCellPlan(TypedDict):
     private_google_access: bool
     labels: dict[str, str]
     network: NetworkPlan
+    # True when the range owns its VPC (vpc-per-range) and apply/destroy must
+    # create/delete it. False in shared-vpc mode, where the VPC is the pre-existing
+    # platform-peered range network and only per-range subnets/firewalls are owned.
+    manage_network: bool
     subnets: list[SubnetPlan]
     instances: list[InstancePlan]
     firewalls: list[FirewallPlan]
@@ -123,52 +143,6 @@ def _string_list(value: object) -> list[str]:
     return [str(item) for item in value]
 
 
-def _sanitize_name(value: str, *, max_length: int = 63) -> str:
-    """Normalize a value into a Compute Engine resource name."""
-    normalized = re.sub(r"[^a-z0-9-]+", "-", value.strip().lower())
-    normalized = re.sub(r"-{2,}", "-", normalized).strip("-")
-    normalized = normalized[:max_length].rstrip("-")
-    if not normalized:
-        normalized = "range"
-    if not normalized[0].isalpha():
-        normalized = f"r-{normalized}"
-    return normalized[:max_length].rstrip("-")
-
-
-def _label_value(value: object, *, max_length: int = 63) -> str:
-    """Normalize a value into a Compute Engine label value."""
-    normalized = re.sub(r"[^a-z0-9_-]+", "-", str(value).strip().lower())
-    normalized = re.sub(r"-{2,}", "-", normalized).strip("-_")
-    return normalized[:max_length].rstrip("-_") or "unknown"
-
-
-def _short_resource_name(prefix: str, *parts: object, max_length: int = 63) -> str:
-    """Build a bounded resource name from stable name parts."""
-    return _sanitize_name(
-        "-".join([prefix, *(str(part) for part in parts if part not in (None, ""))]), max_length=max_length
-    )
-
-
-def _network_self_link(project_id: str, network_name: str) -> str:
-    """Return the relative self-link for a global Compute network."""
-    return f"projects/{project_id}/global/networks/{network_name}"
-
-
-def _subnetwork_self_link(project_id: str, region: str, subnet_name: str) -> str:
-    """Return the relative self-link for a regional Compute subnet."""
-    return f"projects/{project_id}/regions/{region}/subnetworks/{subnet_name}"
-
-
-def _machine_type_self_link(zone: str, machine_type: str) -> str:
-    """Return the relative self-link for a zonal machine type."""
-    return f"zones/{zone}/machineTypes/{machine_type}"
-
-
-def _disk_type_self_link(zone: str, disk_type: str) -> str:
-    """Return the relative self-link for a zonal disk type."""
-    return f"zones/{zone}/diskTypes/{disk_type}"
-
-
 def _range_labels(range_id: int, request_uuid: str) -> dict[str, str]:
     """Return labels shared by resources in one range cell."""
     return {
@@ -176,16 +150,6 @@ def _range_labels(range_id: int, request_uuid: str) -> dict[str, str]:
         "range-id": _label_value(range_id),
         "request-id": _label_value(request_uuid),
     }
-
-
-def _network_tag(range_id: int) -> str:
-    """Return the common network tag for a range cell."""
-    return _short_resource_name("shifter-range", range_id)
-
-
-def _subnet_tag(range_id: int, subnet_name: str) -> str:
-    """Return the subnet-scoped network tag for range instances."""
-    return _short_resource_name("shifter-range", range_id, subnet_name)
 
 
 def _assign_instance_ips(subnet_cidr: str, instances: list[ScenarioInstance]) -> dict[str, str]:
@@ -230,8 +194,16 @@ def _build_subnet_plans(
     config: GCERangeCellConfig,
     network_name: str,
     network_link: str,
+    require_images: bool,
 ) -> list[SubnetPlan]:
-    """Render deterministic subnetwork plans from range variables."""
+    """Render deterministic subnetwork plans from range variables.
+
+    Provision (``require_images=True``) needs a CIDR to create the subnet and
+    assign instance IPs. Destroy (``require_images=False``) deletes subnets by
+    resource name, so a subnet whose CIDR was never allocated (e.g. auto-cleanup
+    after a provision that failed before CIDR allocation) is tolerated with an
+    empty CIDR rather than raising.
+    """
     range_id = int(str(variables["range_id"]))
     subnets = _resource_dicts(variables.get("subnets"))
     subnet_by_name = {str(subnet.get("name", "")): subnet for subnet in subnets}
@@ -240,8 +212,10 @@ def _build_subnet_plans(
         subnet_name = str(subnet.get("name", "")).strip()
         subnet_uuid = str(subnet.get("uuid", "")).strip()
         subnet_cidr = str(subnet.get("cidr", "")).strip()
-        if not subnet_name or not subnet_uuid or not subnet_cidr:
-            raise RuntimeError(f"GCE range subnet requires name, uuid, and cidr: {subnet!r}")
+        if not subnet_name or not subnet_uuid:
+            raise RuntimeError(f"GCE range subnet requires name and uuid: {subnet!r}")
+        if require_images and not subnet_cidr:
+            raise RuntimeError(f"GCE range subnet requires a cidr to provision: {subnet!r}")
         instances = _resource_dicts(subnet.get("instances"))
         resource_name = _short_resource_name("shifter-r", range_id, subnet_name)
         plans.append(
@@ -256,7 +230,7 @@ def _build_subnet_plans(
                 "region": config.region,
                 "tag": _subnet_tag(range_id, subnet_name),
                 "connected_source_ranges": _connected_source_ranges(subnet, subnet_by_name),
-                "ip_assignments": _assign_instance_ips(subnet_cidr, instances),
+                "ip_assignments": _assign_instance_ips(subnet_cidr, instances) if subnet_cidr else {},
                 "instances": instances,
             }
         )
@@ -336,7 +310,9 @@ def _build_instance_plans(
                     "subnet_name": subnet_plan["name"],
                     "subnet_resource_name": subnet_plan["resource_name"],
                     "subnetwork_link": subnet_plan["self_link"],
-                    "private_ip": subnet_plan["ip_assignments"][key],
+                    # Destroy (no CIDR, empty ip_assignments) deletes by resource
+                    # name and needs no private IP; provision always has the key.
+                    "private_ip": subnet_plan["ip_assignments"].get(key, ""),
                     "role": role,
                     "os_type": os_type,
                     "asset_type": "gce_vm",
@@ -418,6 +394,23 @@ def _firewall_plan(
                 "allowed": [{"IPProtocol": "all"}],
             }
         )
+    if config.private_google_access:
+        # Couple Private Google Access with its egress hole automatically: with
+        # PGA the range VPC resolves *.googleapis.com to the private VIP and
+        # routes it internally, but the per-range egress-deny still blocks it
+        # without this allow. Guests reach Vertex AI (a14-kali agent), Cloud
+        # Storage (smoketest tarball), and Secret Manager (per-range Vertex key)
+        # over HTTPS to the VIP only, staying off the general internet.
+        firewalls.append(
+            {
+                "name": _short_resource_name("shifter-r", range_id, "egress-googleapis"),
+                "direction": "EGRESS",
+                "priority": 1100,
+                "target_tags": [range_tag],
+                "destination_ranges": [_GOOGLE_PRIVATE_API_VIP_CIDR],
+                "allowed": [{"IPProtocol": "tcp", "ports": ["443"]}],
+            }
+        )
     return firewalls
 
 
@@ -431,13 +424,22 @@ def render_range_cell_plan(
     """Render the deterministic GCE resources for one range cell."""
     resolved_config = config or load_gce_range_cell_config()
     range_id = int(str(variables["range_id"]))
-    network_name = _short_resource_name("shifter-range", range_id)
-    network_link = _network_self_link(resolved_config.project_id, network_name)
+    if resolved_config.network_mode == "shared-vpc":
+        # Range subnets live in the pre-existing, platform-peered range VPC; the
+        # range never creates or deletes the VPC itself.
+        network_link = resolved_config.network_id
+        network_name = _network_name_from_id(resolved_config.network_id)
+        manage_network = False
+    else:
+        network_name = _short_resource_name("shifter-range", range_id)
+        network_link = _network_self_link(resolved_config.project_id, network_name)
+        manage_network = True
     subnet_plans = _build_subnet_plans(
         variables=variables,
         config=resolved_config,
         network_name=network_name,
         network_link=network_link,
+        require_images=require_images,
     )
     instance_plans = _build_instance_plans(
         variables=variables,
@@ -457,6 +459,7 @@ def render_range_cell_plan(
             "name": network_name,
             "self_link": network_link,
         },
+        "manage_network": manage_network,
         "subnets": subnet_plans,
         "instances": instance_plans,
         "firewalls": _firewall_plan(range_id, subnet_plans, resolved_config),

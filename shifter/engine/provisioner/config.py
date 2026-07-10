@@ -347,11 +347,25 @@ class GCERangeCellConfig:
     region: str
     zone: str
     network_mode: str
+    # Self-link (or partial URL ``projects/<p>/global/networks/<name>``) of the
+    # shared range VPC used in ``shared-vpc`` mode. Range subnets are created in
+    # this pre-existing, platform-peered VPC (matching the AWS shared-VPC +
+    # per-range-subnet model) so the provisioner can reach guests. Empty in
+    # ``vpc-per-range`` mode, where each range mints its own VPC.
+    network_id: str = ""
     service_account_email: str = ""
-    service_account_scopes: tuple[str, ...] = (
-        "https://www.googleapis.com/auth/logging.write",
-        "https://www.googleapis.com/auth/monitoring.write",
-    )
+    # OAuth scope for the range guest's attached service account. Use
+    # cloud-platform and let the host SA's IAM roles be the real access control
+    # (the modern GCP recommendation): scopes are a coarse legacy gate, IAM is
+    # fine-grained. cloud-platform is REQUIRED, not merely convenient — the
+    # Polaris range host must read Cloud Storage (the smoketest tarball) and
+    # Secret Manager (its per-range Vertex key), and Secret Manager has no
+    # narrower OAuth scope than cloud-platform, so narrow logging/monitoring
+    # scopes made both fail with a generic 403 regardless of IAM. The blast
+    # radius stays bounded by the host SA's minimal roles, and the
+    # participant-facing container is blocked from the metadata server so it can
+    # never read this token (see gcp_range_cell_resources + the Vertex shard).
+    service_account_scopes: tuple[str, ...] = ("https://www.googleapis.com/auth/cloud-platform",)
     linux: GCERangeImageProfile = field(default_factory=GCERangeImageProfile)
     kali: GCERangeImageProfile = field(default_factory=GCERangeImageProfile)
     windows: GCERangeImageProfile = field(default_factory=GCERangeImageProfile)
@@ -368,8 +382,11 @@ class GCERangeCellConfig:
     vertex_service_account_email: str = ""
     # Private Google Access on the range subnet lets no-external-IP guests reach
     # Google APIs (Vertex AI for the Polaris agent, GCS for the smoketest
-    # tarball) over internal routing. Requires an egress-allow to the Google API
-    # VIP in ``egress_allow_cidrs``. Off by default for maximum isolation.
+    # tarball, Secret Manager for the per-range Vertex key) over internal
+    # routing. When set, ``_firewall_plan`` automatically emits the matching
+    # egress-allow to the private.googleapis.com VIP (no need to hand-list it in
+    # ``egress_allow_cidrs``); the range VPC supplies the DNS zone + route. Off
+    # by default for maximum isolation.
     private_google_access: bool = False
     # Management SSH port for Docker-host range guests (e.g. the Polaris range
     # host) whose participant container publishes host :22, forcing the host
@@ -890,20 +907,35 @@ def load_gce_range_cell_config() -> GCERangeCellConfig:
     if missing:
         raise RuntimeError("Missing required GCE range-cell configuration: " + ", ".join(missing))
 
-    network_mode = os.environ.get("GCP_RANGE_CELL_NETWORK_MODE", "vpc-per-range").strip().lower()
-    if network_mode != "vpc-per-range":
-        raise RuntimeError("GCE range cells currently require GCP_RANGE_CELL_NETWORK_MODE=vpc-per-range")
+    # Default: shared-vpc. Range subnets live in the pre-existing, platform-peered
+    # range VPC (RANGE_NETWORK_ID/RANGE_VPC_ID) so the provisioner can reach guests,
+    # matching the AWS shared-VPC + per-range-subnet model. vpc-per-range mints an
+    # isolated VPC per range; it currently has no provisioner reachability path
+    # (no peering/IAP), so it is selectable but not the default.
+    network_mode = os.environ.get("GCP_RANGE_CELL_NETWORK_MODE", "shared-vpc").strip().lower()
+    if network_mode not in ("shared-vpc", "vpc-per-range"):
+        raise RuntimeError("GCP_RANGE_CELL_NETWORK_MODE must be 'shared-vpc' or 'vpc-per-range'")
+
+    network_id = (os.environ.get("RANGE_NETWORK_ID") or os.environ.get("RANGE_VPC_ID", "")).strip()
+    if network_mode == "shared-vpc" and not network_id:
+        raise RuntimeError("shared-vpc range networking requires RANGE_NETWORK_ID or RANGE_VPC_ID")
 
     return GCERangeCellConfig(
         project_id=project_id,
         region=region,
         zone=zone,
         network_mode=network_mode,
+        network_id=network_id,
         service_account_email=service_account_email,
+        # cloud-platform, not narrow logging/monitoring: the range host must read
+        # Cloud Storage (smoketest tarball) and Secret Manager (per-range Vertex
+        # key), and Secret Manager has no narrower OAuth scope. IAM on the host SA
+        # is the real access control; the participant container is metadata-blocked
+        # so it can never read this token. See the service_account_scopes field.
         service_account_scopes=_parse_csv_env(
             os.environ.get(
                 "GCP_RANGE_HOST_SERVICE_ACCOUNT_SCOPES",
-                "https://www.googleapis.com/auth/logging.write,https://www.googleapis.com/auth/monitoring.write",
+                "https://www.googleapis.com/auth/cloud-platform",
             )
         ),
         linux=_load_gce_range_profile(
@@ -919,7 +951,11 @@ def load_gce_range_cell_config() -> GCERangeCellConfig:
         windows=_load_gce_range_profile(
             "GCP_RANGE_WINDOWS",
             default_machine_type="e2-standard-4",
-            default_disk_size_gb=80,
+            # The shifter-windows image is a 100 GB disk; a boot disk cannot be
+            # smaller than its source image, so the default must be >= 100 or
+            # every Windows guest fails at create. Override via
+            # GCP_RANGE_WINDOWS_DISK_SIZE_GB for a larger image.
+            default_disk_size_gb=100,
         ),
         dc=_load_gce_range_profile(
             "GCP_RANGE_DC",

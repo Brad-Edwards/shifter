@@ -514,7 +514,9 @@ class TestGdcProvisioning:
         ):
             _run_terraform_provision("req-123", 42, 7, range_spec)
 
-        mock_setup.assert_called_once_with(instances_output=terraform_output["instances"], range_spec=range_spec)
+        mock_setup.assert_called_once_with(
+            instances_output=terraform_output["instances"], range_spec=range_spec, range_id=42
+        )
         mock_write_state.assert_called_once_with(
             range_id=42,
             subnets=terraform_output["subnets"],
@@ -1092,24 +1094,40 @@ class TestPollForSerialAndCert:
 class TestDcSetupRouting:
     """Tests for provider-aware DC setup behavior."""
 
-    def test_should_promote_dc_at_runtime_defaults_by_provider(self):
+    def test_should_promote_dc_at_runtime_is_always_disabled(self):
+        # Runtime DC promotion is intentionally unreachable for every provider:
+        # DCs must be pre-promoted at bake time.
         from state_helpers import _should_promote_dc_at_runtime
 
         with pytest.MonkeyPatch.context() as mp:
             mp.delenv("DC_RUNTIME_PROMOTION", raising=False)
             assert _should_promote_dc_at_runtime("aws") is False
-            assert _should_promote_dc_at_runtime("gcp") is True
+            assert _should_promote_dc_at_runtime("gcp") is False
 
-    def test_should_promote_dc_at_runtime_honors_override(self):
+    def test_should_promote_dc_at_runtime_has_no_env_enable_path(self):
+        # The former DC_RUNTIME_PROMOTION escape hatch must not re-enable it;
+        # re-enabling runtime promotion requires an explicit future decision.
         from state_helpers import _should_promote_dc_at_runtime
 
         with pytest.MonkeyPatch.context() as mp:
-            mp.setenv("DC_RUNTIME_PROMOTION", "false")
+            mp.setenv("DC_RUNTIME_PROMOTION", "true")
+            assert _should_promote_dc_at_runtime("aws") is False
             assert _should_promote_dc_at_runtime("gcp") is False
 
+    def test_should_run_dc_bootstrap_plan_is_always_disabled(self):
+        # The DC bootstrap plan renames the guest (runtime DC mutation), so it is
+        # unreachable for every provider and has no env enable path; a pre-promoted
+        # DC gets SSH from the guest metadata startup script instead.
+        from state_helpers import _should_run_dc_bootstrap_plan
+
         with pytest.MonkeyPatch.context() as mp:
-            mp.setenv("DC_RUNTIME_PROMOTION", "true")
-            assert _should_promote_dc_at_runtime("aws") is True
+            mp.delenv("DC_BOOTSTRAP_VIA_SETUP_PLAN", raising=False)
+            assert _should_run_dc_bootstrap_plan("aws") is False
+            assert _should_run_dc_bootstrap_plan("gcp") is False
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setenv("DC_BOOTSTRAP_VIA_SETUP_PLAN", "true")
+            assert _should_run_dc_bootstrap_plan("gcp") is False
 
     def test_run_dc_setup_bootstraps_and_promotes_for_gcp(self, monkeypatch):
         from dc_setup import _run_dc_setup

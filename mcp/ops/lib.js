@@ -340,8 +340,43 @@ const BLOCKED_MANAGE_COMMANDS = new Set([
   "test",
 ]);
 
+// A single validated management-command token: the base command or one
+// argument. Positive allowlist — any token containing shell-control syntax
+// (`;`, `|`, `&`, `$`, backtick, `<`, `>`, `(`, `)`, quotes, `*`, `#`,
+// whitespace, CR/LF, ...) fails to match and is rejected. Optional leading
+// dashes support flags (`--deploy`, `-v2`) and `=` supports `--flag=value`.
+// The supported language is "Django management command argv", not a shell
+// grammar — see docs/architecture/mcp-ops-manage-command-ssm-boundary-preflight-1176.md.
+const SAFE_MANAGE_TOKEN = /^-{0,2}[A-Za-z0-9][A-Za-z0-9._=-]*$/;
+
+// Thrown when a management command carries shell-control syntax. Deliberately
+// generic: the attacker-controlled payload is never echoed into the error
+// message, MCP response, audit record, or test diagnostics (issue #1176).
+const SHELL_SYNTAX_ERROR =
+  "Management command contains disallowed characters or shell syntax";
+
+// Validate that every token is a safe management-command token. The base
+// allowlist below only governs the first token; validating every token here
+// is what prevents user-controlled arguments from reaching the remote shell
+// verbatim (issue #1176 / CWE-78).
+function assertSafeManageTokens(parts) {
+  for (const part of parts) {
+    if (typeof part !== "string" || !SAFE_MANAGE_TOKEN.test(part)) {
+      throw new Error(SHELL_SYNTAX_ERROR);
+    }
+  }
+}
+
 export function validateManageCommand(command) {
-  const parts = command.trim().split(/\s+/);
+  const trimmed = typeof command === "string" ? command.trim() : "";
+  if (trimmed === "") {
+    throw new Error("Empty management command");
+  }
+  const parts = trimmed.split(/\s+/);
+  // Reject shell-control syntax in ANY token before trusting the base
+  // command, so a rejected payload never reaches the allowlist error (which
+  // echoes the base command) or the SSM argv builder.
+  assertSafeManageTokens(parts);
   const baseCmd = parts[0];
   if (BLOCKED_MANAGE_COMMANDS.has(baseCmd)) {
     throw new Error(`Blocked management command: ${baseCmd}`);
@@ -383,16 +418,28 @@ export function buildFilterLogEventsArgs({ logGroup, filterPattern, limit }) {
 }
 
 /**
- * SSM `send-command` argv for the Django manage.py wrapper. The user's
- * `command` is concatenated into the docker-exec invocation that runs
- * inside the remote shell on the EC2 host. That remote shell IS
- * intentional (the tool's contract is to forward a command for remote
- * execution); the security boundary protected here is the LOCAL host
- * shell, which never sees the payload because the wrapped string
- * lands inside the JSON parameters argv element.
+ * SSM `send-command` argv for the Django manage.py wrapper.
+ *
+ * `commandParts` MUST be the validated argv returned by
+ * `validateManageCommand` — a structured array of shell-metacharacter-free
+ * tokens, NOT a raw command string. The remote `AWS-RunShellScript` shell
+ * on the EC2 host executes the rendered command, so the security boundary
+ * protected here is the REMOTE shell: the fixed `docker exec portal python
+ * manage.py …` wrapper is joined only from validated tokens, leaving no
+ * user-controlled separators, substitutions, redirects, pipes, or newlines
+ * for that shell to interpret (issue #1176 / CWE-78). Local argv safety
+ * (buildSsmSendCommandArgs keeping the payload in one JSON element) is
+ * necessary but not sufficient once the payload reaches the remote shell.
+ *
+ * The per-token check is repeated here as defense in depth so the renderer
+ * is safe regardless of how a caller obtained `commandParts`.
  */
-export function buildRunManageArgs({ targetId, command }) {
-  const dockerCmd = `docker exec portal python manage.py ${command}`;
+export function buildRunManageArgs({ targetId, commandParts }) {
+  if (!Array.isArray(commandParts) || commandParts.length === 0) {
+    throw new Error("Empty management command");
+  }
+  assertSafeManageTokens(commandParts);
+  const dockerCmd = `docker exec portal python manage.py ${commandParts.join(" ")}`;
   return buildSsmSendCommandArgs({
     instanceId: targetId,
     docName: "AWS-RunShellScript",

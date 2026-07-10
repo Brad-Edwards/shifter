@@ -746,6 +746,16 @@ resource "aws_autoscaling_group" "this" {
   health_check_type         = "EC2"
   health_check_grace_period = 900
 
+  # Do not block `terraform apply` on the ASG reaching capacity. New instances
+  # sit in Pending:Wait until user_data finishes and calls
+  # CompleteLifecycleAction (docker install + portal container boot, minutes
+  # each), and warm-pool churn compounds it, so a multi-instance scale-up (e.g.
+  # 2 -> 6 on a larger instance type) blows past Terraform's default 10m
+  # capacity wait and fails the apply mid-roll (#1462). Readiness is gated
+  # downstream by the instance refresh below plus the deploy's verify-digest /
+  # verify-workers / health steps, so the in-apply wait is redundant.
+  wait_for_capacity_timeout = "0"
+
   min_size         = var.asg_min_size
   max_size         = var.asg_max_size
   desired_capacity = var.asg_desired_capacity

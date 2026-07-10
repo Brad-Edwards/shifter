@@ -123,7 +123,7 @@ def test_aws_workflow_runs_one_asg_migration_before_instance_refresh() -> None:
     assert migration_index < refresh_index
     assert "Instances[?LifecycleState=='InService' && HealthStatus=='Healthy'] | [0].InstanceId" in workflow_text
     assert "--migrate-only" in workflow_text
-    assert "Migration failed!" in workflow_text
+    assert "Migration failed (status=" in workflow_text
 
 
 @pytest.mark.parametrize(

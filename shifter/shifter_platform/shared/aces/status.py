@@ -4,10 +4,11 @@ This module is the single place that knows the ACES operation-status vocabulary
 and how it maps onto Shifter's range lifecycle. It is deliberately:
 
 - **Runtime-safe** -- it must not import the ACES SDL (``aces_contracts`` /
-  ``aces_backend_protocols``). Only ``shared/aces/manifest.py`` imports the SDL,
-  dev/test-scoped. The known operation-state values are mirrored here as plain
-  strings and a dev-scoped drift guard test (``tests/shared/aces/
-  test_status_adapter.py``) asserts they still match the SDL enum.
+  ``aces_backend_protocols``). Only ``shared/aces/manifest.py`` and
+  ``shared/aces/runtime_target.py`` import the SDL (a runtime dependency since
+  #1262). The known operation-state values are mirrored here as plain strings
+  and a drift guard test (``tests/shared/aces/test_status_adapter.py``)
+  asserts they still match the SDL enum.
 - **Pure** -- no database access, no engine/cms/provisioner imports. It maps a
   validated observation to a target status and a decision; the engine-side
   orchestration (``engine.services.project_aces_operation_status``) owns

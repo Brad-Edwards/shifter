@@ -25,8 +25,8 @@ constraints = [
 
 [[package]]
 name = "aces-sdl"
-version = "0.3.0"
-source = { git = "https://github.com/Brad-Edwards/aces.git?subdirectory=implementations%2Fpython&rev=d004bbcc8fa7a0a653183383f7c1dbdf06f5c21c#d004bbcc8fa7a0a653183383f7c1dbdf06f5c21c" }
+version = "0.19.1"
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "asyncssh" },
     { name = "cryptography" },
@@ -39,6 +39,10 @@ dependencies = [
     { name = "sse-starlette" },
     { name = "typer" },
     { name = "uvicorn", extra = ["standard"] },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/0c/22/d289c7667d271732af8783f4b7d24e47e6506d94e2581ae47804b686fb04/aces_sdl-0.19.1.tar.gz", hash = "sha256:8a8d1a3e0b0717cddf2d342fef70eeeb6d123cbddff592cfa72e421cb8011fa7", size = 1282207, upload-time = "2026-07-06T04:06:03.721Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/af/75/f94651cc43cf4696c7cd7bceb2f3c7042ab672a04fb209b29a3ccea0a6f3/aces_sdl-0.19.1-py3-none-any.whl", hash = "sha256:727e10a5eb83cfa3fe8b4bb9abcbabe2b24e6497427d5943decc1d2a4ec1e1cf", size = 1091838, upload-time = "2026-07-06T04:06:02.201Z" },
 ]
 
 [[package]]
@@ -2589,6 +2593,7 @@ name = "shifter-platform"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
+    { name = "aces-sdl" },
     { name = "asyncssh" },
     { name = "bleach" },
     { name = "boto3" },
@@ -2622,7 +2627,6 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
-    { name = "aces-sdl" },
     { name = "bandit" },
     { name = "django-stubs" },
     { name = "freezegun" },
@@ -2642,6 +2646,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "aces-sdl", specifier = ">=0.19.1" },
     { name = "asyncssh", specifier = ">=2.23.0" },
     { name = "bleach", specifier = ">=6.3.0" },
     { name = "boto3" },
@@ -2675,7 +2680,6 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "aces-sdl", git = "https://github.com/Brad-Edwards/aces.git?subdirectory=implementations%2Fpython&rev=d004bbcc8fa7a0a653183383f7c1dbdf06f5c21c" },
     { name = "bandit", specifier = ">=1.9.2" },
     { name = "django-stubs", specifier = ">=6.0.4" },
     { name = "freezegun", specifier = ">=1.5.5" },
