@@ -67,15 +67,15 @@ class DashboardSummarySerializer(serializers.Serializer):
 
 def _range_summary(user: User | None) -> dict[str, object]:
     """Return a bounded active-range summary, failing closed on any error."""
-    if user is None:
-        return {"present": False, "status": None}
-    try:
-        from cms.services import get_active_range
+    range_context = None
+    if user is not None:
+        try:
+            from cms.services import get_active_range
 
-        range_context = get_active_range(user)
-    except Exception:
-        logger.exception("dashboard summary: active-range lookup failed")
-        return {"present": False, "status": None}
+            range_context = get_active_range(user)
+        except Exception:
+            logger.exception("dashboard summary: active-range lookup failed")
+            range_context = None
     if range_context is None:
         return {"present": False, "status": None}
     status = getattr(range_context, "status", None)
@@ -84,15 +84,15 @@ def _range_summary(user: User | None) -> dict[str, object]:
 
 def _event_summary(user: User | None) -> dict[str, object]:
     """Return a bounded active-event summary, failing closed on any error."""
-    if user is None:
-        return {"present": False, "name": None}
-    try:
-        from ctf.bridges import get_user_role
+    event = None
+    if user is not None:
+        try:
+            from ctf.bridges import get_user_role
 
-        event = getattr(get_user_role(user), "active_ctf_event", None)
-    except Exception:
-        logger.exception("dashboard summary: active-event lookup failed")
-        return {"present": False, "name": None}
+            event = getattr(get_user_role(user), "active_ctf_event", None)
+        except Exception:
+            logger.exception("dashboard summary: active-event lookup failed")
+            event = None
     if event is None:
         return {"present": False, "name": None}
     name = getattr(event, "name", None)

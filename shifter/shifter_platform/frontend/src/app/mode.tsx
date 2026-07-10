@@ -32,21 +32,21 @@ export function ModeProvider({
   children,
 }: Readonly<{ bootstrap: Bootstrap; children: ReactNode }>) {
   const eligible = useMemo(() => eligibleModes(bootstrap), [bootstrap]);
-  const [mode, setModeState] = useState<UxMode>(() => {
+  const [activeMode, setActiveMode] = useState<UxMode>(() => {
     const preferred = bootstrap.modes.default;
     return eligible.includes(preferred) ? preferred : (eligible[0] ?? "operator");
   });
 
   const value = useMemo<ModeContextValue>(
     () => ({
-      mode,
+      mode: activeMode,
       canSwitch: eligible.length > 1,
       setMode: (next: UxMode) => {
         // Guard: only switch into a mode the principal is eligible for.
-        if (eligible.includes(next)) setModeState(next);
+        if (eligible.includes(next)) setActiveMode(next);
       },
     }),
-    [mode, eligible],
+    [activeMode, eligible],
   );
 
   return <ModeContext.Provider value={value}>{children}</ModeContext.Provider>;

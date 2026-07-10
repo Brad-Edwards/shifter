@@ -151,15 +151,15 @@ def dashboard_router(request):
     if getattr(settings, "PLATFORM_SPA_ENABLED", False):
         logger.debug("Routing %s to the platform SPA dashboard", request.user.email)
         return HttpResponseRedirect(reverse("home"))
+    # Legacy routing: every user type currently lands on Mission Control; the
+    # per-type log lines are kept for operational visibility.
     if is_ctf_organizer(request.user):
         logger.debug("Routing organizer %s to Mission Control dashboard", request.user.email)
-        return HttpResponseRedirect(reverse(DASHBOARD_URL))
     elif is_ctf_participant(request.user):
         logger.debug("Routing participant %s to Mission Control dashboard", request.user.email)
-        return HttpResponseRedirect(reverse(DASHBOARD_URL))
     else:
         logger.debug("Routing standard user %s to Mission Control", request.user.email)
-        return HttpResponseRedirect(reverse(DASHBOARD_URL))
+    return HttpResponseRedirect(reverse(DASHBOARD_URL))
 
 
 @require_POST

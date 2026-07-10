@@ -120,11 +120,8 @@ function ModeSwitch() {
   if (!canSwitch) return null;
   const modes: UxMode[] = ["operator", "participant"];
   return (
-    <div
-      className="inline-flex rounded-md border border-white/10 bg-white/[0.03] p-0.5"
-      role="group"
-      aria-label="Mode"
-    >
+    <fieldset className="inline-flex rounded-md border border-white/10 bg-white/[0.03] p-0.5">
+      <legend className="sr-only">Mode</legend>
       {modes.map((m) => (
         <button
           key={m}
@@ -139,7 +136,7 @@ function ModeSwitch() {
           {MODE_LABELS[m]}
         </button>
       ))}
-    </div>
+    </fieldset>
   );
 }
 
