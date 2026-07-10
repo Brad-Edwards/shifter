@@ -41,6 +41,22 @@ if __name__ == "__main__":
         help="UUID of the Request for this Range",
     )
 
+    aces_range_parser = subparsers.add_parser(
+        "aces-range", help="ACES-native range lifecycle operations (serialized ACES plan)"
+    )
+    aces_range_parser.add_argument(
+        "operation",
+        choices=["provision", "destroy"],
+        help="Operation to perform: provision (create) or destroy (teardown)",
+    )
+    aces_range_parser.add_argument(
+        "--request-id",
+        type=str,
+        required=True,
+        dest="request_id",
+        help="UUID of the Request for this ACES range",
+    )
+
     ngfw_parser = subparsers.add_parser("ngfw", help="NGFW runtime operations")
     ngfw_parser.add_argument(
         "operation",
@@ -62,7 +78,18 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    if args.resource == "ngfw":
+    if args.resource == "aces-range":
+        from aces_range_ops import run_aces_range_destroy, run_aces_range_provision
+
+        logger.info("Starting ACES range %s for request_id=%s", args.operation, args.request_id)
+        logger.info("Environment: %s", os.environ.get("ENVIRONMENT", "unknown"))
+        if args.operation == "provision":
+            run_aces_range_provision(args.request_id)
+        else:
+            run_aces_range_destroy(args.request_id)
+        logger.info("Completed ACES range %s for request_id=%s", args.operation, args.request_id)
+
+    elif args.resource == "ngfw":
         logger.info("Starting NGFW %s for request_id=%s", args.operation, args.request_id)
         logger.info("Environment: %s", os.environ.get("ENVIRONMENT", "unknown"))
 
