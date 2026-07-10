@@ -242,14 +242,15 @@ def resend_invite(participant_id: UUID) -> CTFParticipant:
         },
         event=participant.event,
     )
-    sent = _send_email(
+    # _send_email dispatches asynchronously (PLAT-103 clause 3) and returns
+    # immediately with no synchronous delivery-success signal; delivery
+    # failures are logged inside the background worker, not here.
+    _send_email(
         recipient=participant.email,
         subject=custom_subject or f"You're invited to {participant.event.name}",
         html_content=html_content,
         text_content=text_content,
     )
-    if not sent:
-        logger.warning("Failed to send resend invite email for participant %s", safe_log_value(participant_id))
 
     logger.info("Resent invite for participant %s", safe_log_value(participant_id))
 

@@ -12,15 +12,17 @@ from __future__ import annotations
 from typing import Any, cast
 
 from config import GCERangeCellConfig
+from gcp_range_cell_naming import (
+    _disk_type_self_link,
+    _label_value,
+    _machine_type_self_link,
+)
 from gcp_range_cell_plan import (
     ComputeResource,
     FirewallPlan,
     InstancePlan,
     RangeCellPlan,
     SubnetPlan,
-    _disk_type_self_link,
-    _label_value,
-    _machine_type_self_link,
 )
 
 

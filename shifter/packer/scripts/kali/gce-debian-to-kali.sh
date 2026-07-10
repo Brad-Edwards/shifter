@@ -37,6 +37,29 @@ curl -fsS --proto =https https://packages.cloud.google.com/apt/doc/apt-key.gpg \
 echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt google-compute-engine-bookworm-stable main" \
   > /etc/apt/sources.list.d/google-compute-engine.list
 
+echo "=== Pinning the Debian signed boot chain so GCE Secure Boot keeps working ==="
+# GCE range guests boot as Shielded VMs with Secure Boot ON. The debian-12 base
+# ships an MS-signed shim + signed GRUB + signed kernel; a naive full-upgrade to
+# kali-rolling swaps in Kali's unsigned boot chain and the guest then fails at
+# firmware ("BdsDxe: failed to load ... Security Violation"). Keep the signed
+# Debian boot packages held so Kali *userland* layers on top while the signed
+# EFI shim/GRUB and a signed kernel stay Debian's -- the same reason polaris-vm
+# (also a debian-12 base that never rewrites its boot chain) boots clean.
+apt-get install -y --no-install-recommends shim-signed grub-efi-amd64-signed
+# The GCE debian-12 base ships a *cloud* kernel (linux-image-cloud-amd64 plus a
+# concrete linux-image-<ver>-cloud-amd64), not linux-image-amd64, so hold only
+# packages that are actually installed -- apt-mark errors (and set -e aborts the
+# bake) on a package name that does not exist on this base.
+BOOT_CANDIDATES="shim-signed grub-efi-amd64-signed grub-efi-amd64-bin grub-common grub2-common"
+BOOT_CANDIDATES="$BOOT_CANDIDATES $(dpkg-query -W -f='${Package}\n' 'linux-image-*' 'linux-headers-*' 2>/dev/null | grep -E 'linux-(image|headers)-(cloud-amd64|[0-9])' || true)"
+BOOT_HOLDS=""
+for pkg in $BOOT_CANDIDATES; do
+  if dpkg-query -W -f='${Status}\n' "$pkg" 2>/dev/null | grep -q 'install ok installed'; then
+    BOOT_HOLDS="$BOOT_HOLDS $pkg"
+  fi
+done
+apt-mark hold $BOOT_HOLDS
+
 echo "=== Upgrading the base into Kali Rolling ==="
 # The debian-12 (pre-t64) -> kali-rolling (post-t64) jump crosses the 64-bit
 # time_t library transition, where the new tNN library packages ship files that
@@ -60,9 +83,24 @@ apt-get -y \
   full-upgrade
 
 echo "=== Reinstalling the Google guest environment (Kali repos omit it) ==="
-apt-get install -y google-guest-agent google-osconfig-agent
+# google-compute-engine pulls google-guest-configs, which owns the GCE
+# systemd-networkd interface config + udev rules; without it the guest has no
+# working network manager once ifupdown is out of the way.
+apt-get install -y google-guest-agent google-osconfig-agent google-compute-engine \
+  || apt-get install -y google-guest-agent google-osconfig-agent
 systemctl enable google-guest-agent.service || true
 systemctl enable google-osconfig-agent.service || true
+
+echo "=== Restoring GCE-native networking (Kali's ifupdown unit hangs at boot) ==="
+# Kali pulls in ifupdown, whose networking.service blocks boot for its full
+# ~5-minute timeout trying to raise interfaces that systemd-networkd already
+# owns on GCE. That delays sshd past the provisioner's SSH-wait window, so the
+# range guest looks unreachable. GCE networking is systemd-networkd +
+# google-guest-configs, so mask the ifupdown unit and make sure the GCE stack
+# (systemd-networkd + sshd + the guest agent) is what comes up.
+systemctl mask networking.service || true
+systemctl enable systemd-networkd.service || true
+systemctl enable ssh.service || true
 
 echo "=== Creating the kali user (Kali scripts and xrdp expect it) ==="
 if ! id kali >/dev/null 2>&1; then
@@ -70,5 +108,18 @@ if ! id kali >/dev/null 2>&1; then
   echo 'kali:kali' | chpasswd
   usermod -aG sudo kali
 fi
+
+echo "=== Verifying the signed boot chain survived the conversion ==="
+# Fail the bake loudly rather than publish an image that cannot boot under
+# Secure Boot. shim-signed + grub-efi-amd64-signed own the MS-signed EFI
+# binaries; a signed Debian kernel must remain installed for GRUB to load it.
+for pkg in shim-signed grub-efi-amd64-signed; do
+  # Held packages report "hold ok installed" (not "install ok installed"), so
+  # match the trailing "ok installed" to accept both states.
+  dpkg-query -W -f='${Status}\n' "$pkg" 2>/dev/null | grep -q "ok installed" \
+    || { echo "FATAL: $pkg missing after conversion; image would fail Secure Boot" >&2; exit 1; }
+done
+dpkg-query -W -f='${Package}\n' 'linux-image-*-amd64' 2>/dev/null | grep -qE 'linux-image-[0-9].*-amd64' \
+  || { echo "FATAL: no concrete signed Debian kernel remains after conversion" >&2; exit 1; }
 
 echo "=== Debian -> Kali Rolling conversion complete ==="
