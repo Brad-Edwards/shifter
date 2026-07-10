@@ -102,9 +102,9 @@ Evidence integration: [#1540](https://github.com/Brad-Edwards/shifter/issues/154
 The nine new remediation issues block #1540.
 
 Exit verification: [#1539](https://github.com/Brad-Edwards/shifter/issues/1539).
-The REV1.2 gate, 28 existing implementation issues, and #1540 fill GitHub's
-30-direct-dependency limit and block #1539. The nine new issues remain enforced
-transitively through #1540.
+The REV1.2 gate, all 37 implementation issues, and #1540 directly block #1539.
+The nine new issues also block #1540 so the integrated evidence cannot be
+declared complete before its component evidence exists.
 
 ## Program sequence
 
