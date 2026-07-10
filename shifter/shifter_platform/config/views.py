@@ -138,10 +138,19 @@ def legacy_oidc_authenticate(request):
 def dashboard_router(request):
     """Route authenticated users to the correct dashboard based on user type.
 
+    - platform SPA enabled -> the role-aware SPA home/dashboard at ``/``
     - standard users -> Mission Control dashboard
     - ctf_organizer -> CTF Admin dashboard
     - ctf_participant -> Mission Control dashboard (with restricted nav)
+
+    When ``PLATFORM_SPA_ENABLED`` is on, the first authenticated screen is the
+    platform shell's role-aware dashboard (#1369); the SPA decides the in-app
+    landing from the bootstrap payload. When off, the legacy per-role routing
+    below is unchanged, so rollback is a flag flip.
     """
+    if getattr(settings, "PLATFORM_SPA_ENABLED", False):
+        logger.debug("Routing %s to the platform SPA dashboard", request.user.email)
+        return HttpResponseRedirect(reverse("home"))
     if is_ctf_organizer(request.user):
         logger.debug("Routing organizer %s to Mission Control dashboard", request.user.email)
         return HttpResponseRedirect(reverse(DASHBOARD_URL))

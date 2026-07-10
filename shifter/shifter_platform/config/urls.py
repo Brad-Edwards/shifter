@@ -16,9 +16,24 @@ from config.views import (
     platform_login,
     privacy_notice,
 )
+from shared.spa_host import platform_spa_enabled, platform_spa_host
+
+
+def _root_page(request, *args, **kwargs):
+    """Serve the platform SPA shell at ``/`` when the rollout flag is on.
+
+    When ``PLATFORM_SPA_ENABLED`` is off (the default) the legacy public
+    ``home`` landing renders unchanged, so rollback is a flag flip. Only the
+    exact root path is SPA-owned here (no global catch-all), so ``/privacy/``,
+    ``/login/``, and the other Django routes stay Django-handled.
+    """
+    if platform_spa_enabled():
+        return platform_spa_host(request, *args, **kwargs)
+    return home(request, *args, **kwargs)
+
 
 urlpatterns = [
-    path("", home, name="home"),
+    path("", _root_page, name="home"),
     path("privacy/", privacy_notice, name="privacy_notice"),
     path("login/", platform_login, name="platform_login"),
     path("auth/identity/session/", identity_platform_session, name="identity_platform_session"),
