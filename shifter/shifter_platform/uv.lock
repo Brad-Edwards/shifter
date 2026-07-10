@@ -2646,7 +2646,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "aces-sdl", specifier = "==0.19.1" },
+    { name = "aces-sdl", specifier = ">=0.19.1" },
     { name = "asyncssh", specifier = ">=2.23.0" },
     { name = "bleach", specifier = ">=6.3.0" },
     { name = "boto3" },

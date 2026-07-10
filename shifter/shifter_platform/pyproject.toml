@@ -37,9 +37,12 @@ dependencies = [
     # ACES contract/profile/conformance tooling + RuntimeTarget runtime (issue
     # #1262). shared.aces.runtime_target imports the manifest builder and the
     # aces_runtime/aces_backend_protocols/aces_contracts packages at runtime to
-    # construct a live RuntimeTarget. Pinned to a released PyPI version, not a git
-    # ref: ACES is a deliberate stack commitment (ADR-032-R4).
-    "aces-sdl==0.19.1",
+    # construct a live RuntimeTarget. Installed from the published PyPI wheel so
+    # the hash-pinned portal image build (uv export --no-dev + --require-hashes)
+    # can integrity-verify it; a git source has no emittable hash and broke the
+    # build when this was promoted to a runtime dep (issue #1445). ACES is a
+    # deliberate, PyPI-pinned stack commitment (ADR-032-R4).
+    "aces-sdl>=0.19.1",
     "uvicorn-worker",
     # uvicorn's WebSocket protocol backend. Not imported directly: the
     # Gunicorn/Uvicorn ASGI workers (entrypoint.sh) need websockets (or wsproto)

@@ -74,6 +74,9 @@ class _SecretClient(Protocol):
     def add_secret_version(self, *, request: dict[str, object]) -> object:
         """Add a Secret Manager secret version."""
 
+    def set_iam_policy(self, *, request: dict[str, object]) -> object:
+        """Set the IAM policy on a secret (scoped per-range accessor grant)."""
+
     def delete_secret(self, *, request: dict[str, object]) -> object:
         """Delete a Secret Manager secret."""
 
@@ -121,11 +124,19 @@ def ensure_range_vertex_key(
     secret_client: _SecretClient | None = None,
     google_exceptions: _GoogleExceptions | None = None,
     project_id: str | None = None,
+    host_service_account_email: str = "",
 ) -> str:
     """Mint (or reuse) a per-range Vertex SA key and return its secret name.
 
     Idempotent: if the range's key secret already exists it is returned
     unchanged, so re-running provisioning does not accumulate keys.
+
+    When ``host_service_account_email`` is set, the range host SA is granted
+    ``secretmanager.secretAccessor`` on *this* secret only (the range host reads
+    its own Vertex key from Secret Manager during bootstrap). Scoping the grant
+    to the per-range secret keeps the host SA from reading platform secrets and
+    avoids a broad project-level grant; the binding is dropped with the secret at
+    teardown.
     """
     if not service_account_email:
         raise RuntimeError("A Vertex service account email is required to mint a range Vertex credential")
@@ -155,6 +166,22 @@ def ensure_range_vertex_key(
             }
         )
     secrets.add_secret_version(request={"parent": secret_name, "payload": {"data": key_json.encode("utf-8")}})
+    if host_service_account_email:
+        # The secret is freshly created here, so set (not merge) a policy that
+        # grants only the range host SA read access to this one secret.
+        secrets.set_iam_policy(
+            request={
+                "resource": secret_name,
+                "policy": {
+                    "bindings": [
+                        {
+                            "role": "roles/secretmanager.secretAccessor",
+                            "members": [f"serviceAccount:{host_service_account_email}"],
+                        }
+                    ]
+                },
+            }
+        )
     logger.info("Minted range Vertex key secret_fp=%s", safe_log_fingerprint(secret_name))
     return secret_name
 

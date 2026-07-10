@@ -225,7 +225,12 @@ def test_apply_mints_per_range_vertex_key_when_configured(mocker):
         vertex_ops=vertex_ops,
     )
 
-    vertex_mocks.ensure.assert_called_once_with(42, "range-vertex@test-project.iam.gserviceaccount.com", "test-project")
+    vertex_mocks.ensure.assert_called_once_with(
+        42,
+        "range-vertex@test-project.iam.gserviceaccount.com",
+        "test-project",
+        "range-host@test-project.iam.gserviceaccount.com",
+    )
 
 
 def test_apply_skips_vertex_key_when_not_configured(mocker):
@@ -492,6 +497,20 @@ def test_render_plan_carries_private_google_access_flag():
     body = subnetwork_resource(plan, plan["subnets"][0])
     assert body["private_ip_google_access"] is True
     assert body["ip_cidr_range"] == "10.50.2.0/28"
+
+    # PGA couples an egress-allow to the private.googleapis.com VIP so guests can
+    # reach Vertex / GCS / Secret Manager while the egress-deny blocks the
+    # general internet.
+    gapi = next(fw for fw in plan["firewalls"] if fw["name"].endswith("-egress-googleapis"))
+    assert gapi["direction"] == "EGRESS"
+    assert gapi["destination_ranges"] == ["199.36.153.8/30"]
+    assert gapi["allowed"] == [{"IPProtocol": "tcp", "ports": ["443"]}]
+
+
+def test_render_plan_omits_googleapis_egress_without_private_google_access():
+    """Without Private Google Access the range opens no Google-API egress hole."""
+    plan = render_range_cell_plan("req-123", _variables(), _vertex_config())
+    assert not any(fw["name"].endswith("-egress-googleapis") for fw in plan["firewalls"])
 
 
 def test_resource_bodies_use_proto_field_names():

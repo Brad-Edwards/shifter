@@ -464,7 +464,7 @@ class TestRangeNetworkEnv:
             windows=GCERangeImageProfile(
                 source_image="",
                 machine_type="e2-standard-4",
-                disk_size_gb=80,
+                disk_size_gb=100,
             ),
             dc=GCERangeImageProfile(
                 source_image="projects/windows-cloud/global/images/family/windows-2022",

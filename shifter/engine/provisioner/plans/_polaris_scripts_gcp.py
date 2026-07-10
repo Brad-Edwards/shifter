@@ -95,9 +95,19 @@ fi
 # argv/logs.
 KEY_FILE="$(mktemp)"
 chmod 600 "$KEY_FILE"
-if ! gcloud secrets versions access latest --secret="$SECRET_ID" > "$KEY_FILE" 2>/dev/null; then
-  rm -f "$KEY_FILE"
-  echo "polaris kali vertex shard: could not read Vertex key secret $SECRET_ID" >&2
+# The per-range secret lives in the VM's own (range-cell) project. Resolve it
+# explicitly from the metadata server and pass --project: this step runs as root
+# (via sudo) and gcloud in that context does not reliably pick up a default
+# project, and — unlike the tarball fetch, which carries a gs:// URL — this
+# command has nothing else to infer the project from, so an unset project made
+# the access fail with an error that looked like a permission problem.
+META_URL="http://metadata.google.internal/computeMetadata/v1/project/project-id"
+PROJ="$(curl -s -H 'Metadata-Flavor: Google' "$META_URL")"
+ERRF=/tmp/vertex-secret-err
+if ! gcloud secrets versions access latest --secret="$SECRET_ID" --project="$PROJ" >"$KEY_FILE" 2>"$ERRF"; then
+  echo "polaris kali vertex shard: could not read Vertex key secret $SECRET_ID in project $PROJ" >&2
+  cat "$ERRF" >&2 || true
+  rm -f "$KEY_FILE" "$ERRF"
   exit 2
 fi
 docker exec a14-kali mkdir -p /etc/vertex

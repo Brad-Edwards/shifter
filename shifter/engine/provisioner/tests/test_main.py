@@ -514,7 +514,9 @@ class TestGdcProvisioning:
         ):
             _run_terraform_provision("req-123", 42, 7, range_spec)
 
-        mock_setup.assert_called_once_with(instances_output=terraform_output["instances"], range_spec=range_spec)
+        mock_setup.assert_called_once_with(
+            instances_output=terraform_output["instances"], range_spec=range_spec, range_id=42
+        )
         mock_write_state.assert_called_once_with(
             range_id=42,
             subnets=terraform_output["subnets"],

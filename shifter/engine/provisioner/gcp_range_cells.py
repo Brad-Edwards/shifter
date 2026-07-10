@@ -69,15 +69,15 @@ class GCEVertexCredentialOps:
     project (which may be a deploy-overlay placeholder).
     """
 
-    ensure: Callable[[int, str, str], str]
+    ensure: Callable[[int, str, str, str], str]
     delete: Callable[[int, str], None]
 
 
 def _default_vertex_ops() -> GCEVertexCredentialOps:
     """Return the production per-range Vertex credential bindings."""
     return GCEVertexCredentialOps(
-        ensure=lambda range_id, sa_email, project_id: ensure_range_vertex_key(
-            range_id, sa_email, project_id=project_id
+        ensure=lambda range_id, sa_email, project_id, host_sa_email: ensure_range_vertex_key(
+            range_id, sa_email, project_id=project_id, host_service_account_email=host_sa_email
         ),
         delete=lambda range_id, project_id: delete_range_vertex_key(range_id, project_id=project_id),
     )
@@ -302,7 +302,12 @@ def _provision_range_resources(
     per-range subnets/firewalls/instances are created here.
     """
     if config.vertex_service_account_email:
-        vertex_ops.ensure(plan["range_id"], config.vertex_service_account_email, plan["project_id"])
+        vertex_ops.ensure(
+            plan["range_id"],
+            config.vertex_service_account_email,
+            plan["project_id"],
+            config.service_account_email,
+        )
     if plan["manage_network"]:
         _ensure_network(plan, clients)
     for subnet in plan["subnets"]:
