@@ -451,28 +451,17 @@ def _dispatch_instance_setup_role(
     )
 
 
+# GDC ("range-pod-ssh") and GCE ("ssh") in-range guests run a full first-boot
+# cloud-init before SSH is ready (the heavy Polaris host does not finish within
+# the EC2/SSM-tuned default), so both get a larger budget; SSM stays default.
 _GDC_RANGE_TRANSPORT = "range-pod-ssh"
-_GCE_RANGE_TRANSPORT = "ssh"
 _DEFAULT_SETUP_READY_TIMEOUT_SECONDS = 300
 _INRANGE_SSH_SETUP_READY_TIMEOUT_SECONDS = 900
-
-# In-range guests reached over SSH — GDC VM Runtime (bare metal) and GCE range
-# cell VMs — boot from a captured image and run a full first-boot cloud-init pass
-# (datasource detection + host-key regeneration + sshd restart) before SSH is
-# ready. On the heavy Polaris host image this does not finish until well past the
-# 300s the EC2/SSM path was tuned for, so both in-range SSH transports get a
-# larger budget. SSM (AWS) is the only fast path.
-_INRANGE_SSH_TRANSPORTS = frozenset({_GDC_RANGE_TRANSPORT, _GCE_RANGE_TRANSPORT})
+_INRANGE_SSH_TRANSPORTS = frozenset({_GDC_RANGE_TRANSPORT, "ssh"})
 
 
 def _setup_ready_timeout(transport_name: str) -> int:
-    """SSH-ready budget for guest setup, by transport.
-
-    In-range SSH guests (GDC VM Runtime and GCE range cell VMs) run a full
-    first-boot cloud-init pass before SSH is ready, which is materially slower
-    than the EC2/SSM path the 300s default was tuned for, so they get a larger
-    budget.
-    """
+    """SSH-ready budget for guest setup, by transport (in-range SSH vs SSM)."""
     if transport_name in _INRANGE_SSH_TRANSPORTS:
         return _INRANGE_SSH_SETUP_READY_TIMEOUT_SECONDS
     return _DEFAULT_SETUP_READY_TIMEOUT_SECONDS

@@ -92,7 +92,20 @@ there is no qcow2 export or CDI import.
 
 ## Service accounts
 
-The GCE range-cell backend uses two service accounts:
+For the default same-project range cell, Terraform (`modules/portal/iam`)
+creates both range service accounts, grants their roles, and grants the
+provisioner workload SA the access it needs to drive them: `roles/compute.admin`
+on the range-cell project (create the range VPC, subnets, firewall, Cloud NAT,
+and instances), `roles/iam.serviceAccountUser` on the host SA (attach it to
+guests) and the Vertex SA, and `roles/iam.serviceAccountKeyAdmin` on the Vertex
+SA (mint per-range keys). The two emails are exposed as the
+`range_host_service_account_email` / `range_vertex_service_account_email`
+Terraform outputs; set `GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL` /
+`GCP_RANGE_VERTEX_SERVICE_ACCOUNT_EMAIL` to those values (a cross-project range
+cell, `GCP_RANGE_CELL_PROJECT_ID`, provisions its own SAs in that project and
+grants the provisioner the equivalent roles there; follow-up tracked in #1509).
+
+The two service accounts:
 
 - **Host SA** (`GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL`): attached to every range
   guest. Grant logging write and monitoring write, plus (for Polaris)
