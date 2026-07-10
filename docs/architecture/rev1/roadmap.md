@@ -27,9 +27,15 @@ New issues:
 - [#1520 REV1 Security: add a staged browser security policy baseline](https://github.com/Brad-Edwards/shifter/issues/1520)
 - [#1521 REV1 Security: require verified OIDC email before administrator bootstrap](https://github.com/Brad-Edwards/shifter/issues/1521)
 
-Existing blockers/dependencies: #1206, #322, #1171, #1377, #1295, #201, and
-#1498. These keep their existing milestones and titles; they are dependencies,
-not duplicate REV1 issues.
+Required existing issues, all assigned to this milestone:
+
+- Identity and abuse controls: #1206 and #322.
+- Range and credential isolation: #1171, #1295, #1377, and #343.
+- Edge and CI security: #201, #247, and #1498.
+
+Exit verification: [#1537](https://github.com/Brad-Edwards/shifter/issues/1537).
+All 15 implementation issues block #1537 through native GitHub issue
+dependencies.
 
 ## REV1.2 Contract and Runtime Architecture
 
@@ -44,8 +50,16 @@ New issues:
 - [#1522 REV1 ACES: make the provisioning plan transport versioned and fail closed](https://github.com/Brad-Edwards/shifter/issues/1522)
 - [#1523 REV1 Architecture: classify every first-party package and extract the audit port](https://github.com/Brad-Edwards/shifter/issues/1523)
 
-Existing blockers/dependencies: #478, #994, #991, #721, #726, #728, #729,
-#1322, #1323, #1477, #1478, #1479, and #1264.
+Required existing issues, all assigned to this milestone:
+
+- Persistence and domain contracts: #478 and #524.
+- Presentation/service ownership: #994 and #991.
+- Backend bundle authority: #721, #726, #728, #729, #1322, and #1323.
+- ACES realization and evidence: #1477, #1478, #1479, and #1264.
+
+Exit verification: [#1538](https://github.com/Brad-Edwards/shifter/issues/1538).
+All 16 implementation issues and the REV1.1 gate block #1538 through native
+GitHub issue dependencies.
 
 Issue #530 should be closed or respecified because CTF is already in the current
 import boundary checks; its broader missing requirement is whole-platform
@@ -72,19 +86,36 @@ New issues:
 - [#1531 REV1 Documentation: publish a canonical current-state architecture handbook](https://github.com/Brad-Edwards/shifter/issues/1531)
 - [#1532 REV1 Program: sequence stabilization gates and triage the open backlog](https://github.com/Brad-Edwards/shifter/issues/1532)
 
-Existing blockers/dependencies: #561, #682, #683, #686, #688, #689, #692,
-#846, #987, #998, #1310, #1311, #1312, and #1313.
+Required existing issues, all assigned to this milestone:
+
+- Module and automation maintainability: #561, #682, #683, #686, #688, #689,
+  #692, and #998.
+- Runtime performance and functional evidence: #846, #983, #987, #988, and
+  #615.
+- Notification delivery prerequisites: #525 and #1460.
+- Accessibility governance: #713.
+- PostgreSQL/concurrency correctness: #997, #1135, #1137, #1138, #1140,
+  #1144, #1145, and #1147.
+- ACES cutover and cleanup: #1310, #1311, #1312, and #1313.
+
+Evidence integration: [#1540](https://github.com/Brad-Edwards/shifter/issues/1540).
+The nine new remediation issues block #1540.
+
+Exit verification: [#1539](https://github.com/Brad-Edwards/shifter/issues/1539).
+The REV1.2 gate, 28 existing implementation issues, and #1540 fill GitHub's
+30-direct-dependency limit and block #1539. The nine new issues remain enforced
+transitively through #1540.
 
 ## Program sequence
 
-1. Complete REV1.1 and the contract-integrity issues in REV1.2.
-2. Complete provider configuration and substrate contract blockers.
-3. Complete ACES realization, projection, conformance, live validation, and
-   rollback evidence.
-4. Perform controlled ACES cutover; archive CyberScript only after the rollback
-   window and parity evidence allow it.
-5. Resume additive Workspaces/API and SPA phase 2 work against the stabilized
-   boundaries.
+1. Close the REV1.1 implementation issues and #1537.
+2. Close the REV1.2 implementation issues; #1537 blocks #1538.
+3. Complete ACES realization, projection, conformance, and live validation.
+4. Complete the REV1.3 implementation and evidence-integration issues; #1538
+   blocks the controlled cutover and #1539.
+5. Perform controlled ACES cutover and cleanup in the enforced order #1310 ->
+   #1311 -> #1312.
+6. Resume additive Workspaces/API and SPA phase 2 work only after #1539 closes.
 
 The sequence is intentionally independent of calendar estimates. Each milestone
 exits on evidence, not on elapsed time or issue count.
