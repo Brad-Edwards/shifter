@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import ipaddress
 import json
 import os
 import re
@@ -5331,6 +5332,52 @@ _UUID_BUCKET_RE = re.compile(
     r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b"
 )
 
+# Public IPv4 addresses in IaC (`.tf`/`.tfvars`/`.hcl`) are almost always an
+# operator/participant allow-CIDR - i.e. someone's home/office IP, which is PII
+# in a public repo. Flag any globally-routable IPv4 in IaC. Private (RFC1918),
+# loopback, link-local, CGNAT, and documentation (RFC5737: 192.0.2 / 198.51.100
+# / 203.0.113) ranges are `is_global == False` and are never flagged, so
+# placeholders like `203.0.113.10/32` pass. A small allowlist covers well-known
+# PUBLIC infrastructure constants that legitimately appear in IaC (Google /
+# Cloudflare public DNS; GCP load-balancer health-check, IAP, and googleapis
+# VIP ranges) and are not env-specific or sensitive. A genuinely required
+# public IP is cleared with a scoped docs/adr/exceptions.yaml entry.
+_IAC_IP_SUFFIXES: tuple[str, ...] = (".tf", ".tfvars", ".hcl")
+_IPV4_RE = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
+_PUBLIC_IP_ALLOW_NETS: tuple[ipaddress.IPv4Network, ...] = tuple(
+    ipaddress.ip_network(cidr)
+    for cidr in (
+        "8.8.8.8/32", "8.8.4.4/32",             # Google Public DNS
+        "1.1.1.1/32", "1.0.0.1/32",             # Cloudflare DNS
+        "130.211.0.0/22", "35.191.0.0/16",      # GCP LB health-check ranges
+        "35.235.240.0/20",                      # GCP Identity-Aware Proxy
+        "199.36.153.4/30", "199.36.153.8/30",   # GCP private/restricted googleapis VIPs
+    )
+)
+
+
+def _is_flaggable_public_ip(token: str) -> bool:
+    """True for a globally-routable IPv4 that is not a well-known public infra
+    constant - i.e. an operator/participant IP that should not be committed."""
+    try:
+        addr = ipaddress.ip_address(token)
+    except ValueError:
+        return False
+    if not isinstance(addr, ipaddress.IPv4Address) or not addr.is_global:
+        return False
+    return not any(addr in net for net in _PUBLIC_IP_ALLOW_NETS)
+
+
+def _scan_iac_public_ips(line: str) -> list[str]:
+    """Return ["public IP address"] once when an IaC line carries a flaggable
+    public IPv4 in its code (not in a `#` / `//` comment, where IPs are prose /
+    policy examples), else []."""
+    code = line.split("#", 1)[0].split("//", 1)[0]
+    for token in _IPV4_RE.findall(code):
+        if _is_flaggable_public_ip(token):
+            return ["public IP address"]
+    return []
+
 
 def _identifier_skip(rel: str) -> bool:
     """True for paths that must not be scanned (binary / generated locks)."""
@@ -5392,10 +5439,14 @@ def _scan_identifier_file(path: Path, rel: str) -> list[Violation]:
     text = _read_text_safe(path)
     if text is None:
         return []
+    is_iac = rel.endswith(_IAC_IP_SUFFIXES)
     violations: list[Violation] = []
     for lineno, line in enumerate(text.splitlines(), start=1):
         for kind in _scan_identifier_line(line):
             violations.append(_identifier_violation(rel, lineno, kind))
+        if is_iac:
+            for kind in _scan_iac_public_ips(line):
+                violations.append(_identifier_violation(rel, lineno, kind))
     return violations
 
 

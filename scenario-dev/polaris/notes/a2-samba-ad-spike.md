@@ -307,7 +307,7 @@ When running `GetUserSPNs` authenticating as svc-backup, it returned the svc-sca
 ### Test Environment Resources (TO CLEAN UP)
 - VPC: `ctf-test-lab`
 - Subnet: `ctf-test-subnet` (us-east4, 10.100.0.0/24)
-- Firewall rules: all external access locked to 173.181.31.170/32 (2026-04-11)
+- Firewall rules: all external access locked to 203.0.113.10/32 (2026-04-11)
   - ctf-test-allow-ssh: TCP:22 from our IP only
   - ctf-test-allow-rdp: TCP:3389 from our IP only
   - ctf-test-allow-winrm: TCP:5985-5986 from our IP only

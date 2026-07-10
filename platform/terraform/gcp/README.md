@@ -114,7 +114,7 @@ contract consumed by the provisioner runtime:
 - `project_id = "prod-rwctxzl6shxk"`
 - `public_hostname = "shifter.example.com"`
 - `enable_managed_tls = true`
-- `gke_master_authorized_cidrs = ["173.181.31.170/32"]` as of 2026-04-11 from the current WSL operator egress
+- `gke_master_authorized_cidrs = ["203.0.113.10/32"]` as of 2026-04-11 from the current WSL operator egress
 
 Operational note:
 
