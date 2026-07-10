@@ -11,7 +11,7 @@
 
 ## REV1.1 Security and Trust Boundaries
 
-Tracker: [#1513](https://github.com/Brad-Edwards/shifter/issues/1513)
+Milestone: [REV1.1 Security and Trust Boundaries](https://github.com/Brad-Edwards/shifter/milestone/29)
 
 **Exit criterion:** no user-controlled identity field grants organizer/admin
 authority; application and build identities have least privilege; privileged
@@ -33,7 +33,7 @@ not duplicate REV1 issues.
 
 ## REV1.2 Contract and Runtime Architecture
 
-Tracker: [#1514](https://github.com/Brad-Edwards/shifter/issues/1514)
+Milestone: [REV1.2 Contract and Runtime Architecture](https://github.com/Brad-Edwards/shifter/milestone/30)
 
 **Exit criterion:** the ACES process boundary is versioned and rejects partial
 plans; every first-party package is architecture-classified; provisioner and
@@ -53,7 +53,7 @@ classification.
 
 ## REV1.3 Maintainability and Verification
 
-Tracker: [#1515](https://github.com/Brad-Edwards/shifter/issues/1515)
+Milestone: [REV1.3 Maintainability and Verification](https://github.com/Brad-Edwards/shifter/milestone/31)
 
 **Exit criterion:** contributors can understand the current system without
 reconstructing it from preflights; clean-checkout verification matches CI;
