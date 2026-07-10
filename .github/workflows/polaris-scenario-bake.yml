@@ -1,4 +1,4 @@
-name: Polaris Scenario Bake (Dev)
+name: Polaris Scenario Bake
 
 # Operator-triggered bake of the Polaris polaris-vm AMI. Mirrors the
 # workflow_dispatch-only shape of packer.yml: it automates the deliberate
@@ -8,7 +8,9 @@ name: Polaris Scenario Bake (Dev)
 # docs/architecture/polaris-scenario-bake-preflight-618.md.
 #
 # Security posture: this is a privileged self-hosted workflow that assumes
-# the dev AWS role. The bake source `ref` is constrained to protected
+# the selected environment's AWS role (dev or proof), resolved the same way
+# as packer.yml / techvault-scenario-bake.yml. The bake source `ref` is
+# constrained to protected
 # branches (choice input) so a dispatcher cannot run unreviewed code with
 # the bake credentials. Free-form inputs are bound to environment
 # variables and validated against strict allowlists before any AWS step,
@@ -25,6 +27,14 @@ on:
         options:
           - dev
           - main
+      environment:
+        description: 'AWS environment to bake in'
+        required: true
+        type: choice
+        options:
+          - dev
+          - proof
+        default: dev
       s3_bucket:
         description: 'S3 bucket for the Polaris build tarball (e.g. shifter-polaris-bake-<account-id>)'
         required: true
@@ -46,7 +56,7 @@ permissions:
 
 jobs:
   bake:
-    name: Bake polaris-vm AMI in dev
+    name: Bake polaris-vm AMI in ${{ inputs.environment }}
     runs-on: self-hosted
 
     env:
@@ -57,6 +67,7 @@ jobs:
       # Env-var *values* are never re-parsed as shell code, so referencing
       # them as "$S3_BUCKET" etc. in run blocks is injection-safe — unlike
       # ${{ inputs.* }} which expands into the script text before bash.
+      ENVIRONMENT: ${{ inputs.environment }}
       S3_BUCKET: ${{ inputs.s3_bucket }}
       S3_KEY: ${{ inputs.s3_key }}
       SSM_PARAMETER: ${{ inputs.ssm_parameter }}
@@ -84,10 +95,19 @@ jobs:
         with:
           ref: ${{ inputs.ref }}
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
+      - name: Set up Python venv
+        run: |
+          set -euo pipefail
+          # This workflow runs on self-hosted runners, whose tool cache does not
+          # carry the actions/setup-python builds (setup-python fails with
+          # "version 3.12 was not found"). The other self-hosted workflows use
+          # the runner's system python3 directly; mirror that with a venv so the
+          # later `python`/`pip` steps resolve to an isolated, writable env
+          # (system pip is PEP 668 externally-managed on Ubuntu 24.04).
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq python3-venv
+          python3 -m venv "${RUNNER_TEMP}/venv"
+          echo "${RUNNER_TEMP}/venv/bin" >> "$GITHUB_PATH"
 
       - name: Verify generated artifacts carry their flags (pre-bake gate)
         run: |
@@ -99,10 +119,38 @@ jobs:
           python scenario-dev/polaris/build/verify_flags_baked.py \
             scenario-dev/polaris/build/ctfd-challenges.json "$out"
 
-      - name: Configure AWS credentials (dev)
+      - name: Resolve AWS deploy role
+        id: aws-role
+        env:
+          ENVIRONMENT: ${{ inputs.environment }}
+          AWS_ROLE_ARN_DEV: ${{ secrets.AWS_ROLE_ARN_DEV }}
+          AWS_ROLE_ARN_PROOF: ${{ secrets.AWS_ROLE_ARN_PROOF }}
+        run: |
+          set -euo pipefail
+          case "$ENVIRONMENT" in
+            dev)
+              ROLE_SECRET_NAME="AWS_ROLE_ARN_DEV"
+              ROLE_ARN="$AWS_ROLE_ARN_DEV"
+              ;;
+            proof)
+              ROLE_SECRET_NAME="AWS_ROLE_ARN_PROOF"
+              ROLE_ARN="$AWS_ROLE_ARN_PROOF"
+              ;;
+            *)
+              echo "::error::Unsupported AWS environment: $ENVIRONMENT"
+              exit 1
+              ;;
+          esac
+          if [ -z "$ROLE_ARN" ]; then
+            echo "::error::Required secret ${ROLE_SECRET_NAME} is not set"
+            exit 1
+          fi
+          echo "role_arn=$ROLE_ARN" >> "$GITHUB_OUTPUT"
+
+      - name: Configure AWS credentials (${{ inputs.environment }})
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN_DEV }}
+          role-to-assume: ${{ steps.aws-role.outputs.role_arn }}
           aws-region: us-east-2
 
       - name: Build and upload Polaris build tarball
@@ -185,7 +233,7 @@ jobs:
             echo "- **Region:** us-east-2"
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Update dev SSM parameter
+      - name: Update SSM parameter
         run: |
           set -euo pipefail
           aws ssm put-parameter \
@@ -197,7 +245,7 @@ jobs:
           {
             echo "- **SSM parameter:** \`${SSM_PARAMETER}\` updated"
             echo ""
-            echo "**Next step:** test the new AMI in dev before promoting."
+            echo "**Next step:** test the new AMI in ${ENVIRONMENT} before promoting."
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Terraform destroy — tear down the bake range

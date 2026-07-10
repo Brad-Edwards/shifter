@@ -67,6 +67,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/cms/catalog/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Return all catalog entries as read-only presentation DTOs. */
+        get: operations["cms_catalog_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cms/catalog/{scenario_id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Return one catalog entry's read-only presentation DTO. */
+        get: operations["cms_catalog_retrieve_2"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/cms/scenario-editor/scenarios/from-yaml/": {
         parameters: {
             query?: never;
@@ -878,6 +912,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/dashboard/summary/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Return the bounded operational dashboard summary for the SPA home. */
+        get: operations["api_v1_dashboard_summary_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/mission-control/agents/": {
         parameters: {
             query?: never;
@@ -1074,6 +1125,91 @@ export interface paths {
         };
         /** @description Return the active range and connection URLs for the request user. */
         get: operations["mission_control_range_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/mission-control/range/{request_id}/aces/operation-receipts/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Return newest-first redacted records for the owned range's request_id. */
+        get: operations["mission_control_range_aces_operation_receipts_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/mission-control/range/{request_id}/aces/operation-status/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Return newest-first redacted records for the owned range's request_id. */
+        get: operations["mission_control_range_aces_operation_status_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/mission-control/range/{request_id}/aces/participant-implementations/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Return newest-first redacted records for the owned range's request_id. */
+        get: operations["mission_control_range_aces_participant_implementations_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/mission-control/range/{request_id}/aces/participant-runtimes/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Return newest-first redacted records for the owned range's request_id. */
+        get: operations["mission_control_range_aces_participant_runtimes_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/mission-control/range/{request_id}/aces/snapshots/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Return newest-first redacted records for the owned range's request_id. */
+        get: operations["mission_control_range_aces_snapshots_retrieve"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1381,9 +1517,11 @@ export interface components {
          *     * `pause` - Pause
          *     * `resume` - Resume
          *     * `cancel` - Cancel
+         *     * `recover` - Recover
+         *     * `spare_provision` - Spare Provision
          * @enum {string}
          */
-        ActionEnum: "create" | "update" | "delete" | "restore" | "close" | "reopen" | "login" | "logout" | "login_failed" | "access_denied" | "role_sync" | "connect" | "disconnect" | "provision" | "deprovision" | "ready" | "failed" | "pause" | "resume" | "cancel";
+        ActionEnum: "create" | "update" | "delete" | "restore" | "close" | "reopen" | "login" | "logout" | "login_failed" | "access_denied" | "role_sync" | "connect" | "disconnect" | "provision" | "deprovision" | "ready" | "failed" | "pause" | "resume" | "cancel" | "recover" | "spare_provision";
         /**
          * @description * `user` - User
          *     * `apikey` - API Key
@@ -1414,16 +1552,26 @@ export interface components {
         Bootstrap: {
             principal: components["schemas"]["BootstrapPrincipal"];
             permissions: components["schemas"]["BootstrapPermissions"];
+            modes: components["schemas"]["BootstrapModes"];
             feature_flags: components["schemas"]["BootstrapFeatureFlags"];
         };
         /** @description Server-owned feature flags surfaced to the SPA (no secret values). */
         BootstrapFeatureFlags: {
             risk_register_spa: boolean;
+            platform_spa: boolean;
         };
-        /** @description Advisory authorization flags mirroring the template context processor. */
+        /** @description UX mode eligibility (participant/operator). Not an authorization fact. */
+        BootstrapModes: {
+            participant: boolean;
+            operator: boolean;
+            default: components["schemas"]["DefaultEnum"];
+        };
+        /** @description Advisory authorization flags mirroring the template context processors. */
         BootstrapPermissions: {
             can_access_risk_register: boolean;
             can_access_threat_research: boolean;
+            is_ctf_organizer: boolean;
+            is_ctf_participant: boolean;
         };
         /** @description Authenticated principal summary for the SPA shell. */
         BootstrapPrincipal: {
@@ -1444,6 +1592,33 @@ export interface components {
             /** Format: date-time */
             readonly created_at: string;
         };
+        /** @description Bounded active-event summary. */
+        DashboardEvent: {
+            present: boolean;
+            name: string | null;
+        };
+        /** @description Bounded active-range summary. */
+        DashboardRange: {
+            present: boolean;
+            status: string | null;
+        };
+        /** @description Risk-register load summary, gated by advisory access. */
+        DashboardRiskRegister: {
+            accessible: boolean;
+            open_count: number | null;
+        };
+        /** @description Top-level dashboard summary payload. */
+        DashboardSummary: {
+            active_range: components["schemas"]["DashboardRange"];
+            active_event: components["schemas"]["DashboardEvent"];
+            risk_register: components["schemas"]["DashboardRiskRegister"];
+        };
+        /**
+         * @description * `participant` - participant
+         *     * `operator` - operator
+         * @enum {string}
+         */
+        DefaultEnum: "participant" | "operator";
         /**
          * @description * `risk` - Risk
          *     * `comment` - Comment
@@ -1680,6 +1855,44 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["Bootstrap"];
                 };
+            };
+        };
+    };
+    cms_catalog_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    cms_catalog_retrieve_2: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                scenario_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -4743,6 +4956,25 @@ export interface operations {
             };
         };
     };
+    api_v1_dashboard_summary_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DashboardSummary"];
+                };
+            };
+        };
+    };
     mission_control_agents_retrieve: {
         parameters: {
             query?: never;
@@ -4956,6 +5188,106 @@ export interface operations {
             query?: never;
             header?: never;
             path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    mission_control_range_aces_operation_receipts_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                request_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    mission_control_range_aces_operation_status_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                request_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    mission_control_range_aces_participant_implementations_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                request_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    mission_control_range_aces_participant_runtimes_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                request_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    mission_control_range_aces_snapshots_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                request_id: string;
+            };
             cookie?: never;
         };
         requestBody?: never;
