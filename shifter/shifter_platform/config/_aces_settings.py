@@ -24,10 +24,21 @@ from __future__ import annotations
 import os
 
 __all__ = [
+    "ACES_NATIVE_PROVISIONING_ENABLED",
     "ACES_OPERATION_RECORD_PRUNE_BATCH_SIZE",
     "ACES_OPERATION_RECORD_PRUNE_INTERVAL_SECONDS",
     "ACES_OPERATION_RECORD_RETENTION_DAYS",
 ]
+
+# Master feature flag for the ACES-native provisioning path (ADR-031). When
+# False (the default), the ACES-native RuntimeTarget backend, dispatch, engine
+# consumption, provisioner realization, and ACES catalog launchability are all
+# inert, and the existing cyberscript scenario -> RangeSpec -> hydrate ->
+# interpret -> provisioner path is unchanged and authoritative (PLAT-2008,
+# ADR-031-R2). Flipping this to True is a deliberate, separately-authorized
+# cutover step, not a routine deploy toggle. Read via the literal os.environ.get
+# form so the generated config/env-manifest.json picks it up automatically.
+ACES_NATIVE_PROVISIONING_ENABLED = os.environ.get("SHIFTER_ACES_NATIVE_PROVISIONING", "False").lower() == "true"
 
 # Days a runtime snapshot / operation-record row is retained before it becomes
 # eligible for pruning. Measured from the row's source_timestamp so idempotent
