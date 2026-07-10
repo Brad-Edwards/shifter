@@ -974,6 +974,21 @@ resource "aws_iam_policy" "management" {
         ]
       },
       {
+        Sid    = "SSMPublicServiceParametersRead"
+        Effect = "Allow"
+        Action = [
+          "ssm:GetParameter",
+          "ssm:GetParameters"
+        ]
+        # AWS-owned PUBLIC parameters (no account in the ARN) used to resolve
+        # current base AMIs at build time - e.g. the Canonical Ubuntu and
+        # Amazon Linux AMI-ID parameters the scenario bakes (techvault /
+        # polaris golden ranges) read. Read-only; scoped to /aws/service/*.
+        Resource = [
+          "arn:aws:ssm:${var.aws_region}::parameter/aws/service/*"
+        ]
+      },
+      {
         Sid      = "Cognito"
         Effect   = "Allow"
         Action   = ["cognito-idp:*"]
