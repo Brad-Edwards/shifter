@@ -19,7 +19,7 @@ keeps its management rule authoritative.
 from __future__ import annotations
 
 from aces_plan import AcesPlanAcl, AcesPlanNetwork, AcesPlanNode
-from gcp_range_cell_plan import FirewallPlan, _short_resource_name
+from gcp_range_cell_plan import FirewallEntry, FirewallPlan, _short_resource_name
 
 #: Authored-ACL firewalls sit at 1000+index: below the priority-900 management
 #: rule (so provisioner reachability is never blocked) but authoritative over the
@@ -63,11 +63,11 @@ def _resolve_endpoint(ref: str | None, cidr_lookup: dict[str, str]) -> str:
     return cidr
 
 
-def _acl_rule(acl: AcesPlanAcl) -> dict[str, object]:
+def _acl_rule(acl: AcesPlanAcl) -> FirewallEntry:
     """Render the protocol/ports clause for one ACL firewall rule."""
     if acl.protocol == "all":
         return {"IPProtocol": "all"}
-    rule: dict[str, object] = {"IPProtocol": acl.protocol}
+    rule: FirewallEntry = {"IPProtocol": acl.protocol}
     if acl.ports:
         rule["ports"] = [str(port) for port in acl.ports]
     return rule
@@ -75,15 +75,18 @@ def _acl_rule(acl: AcesPlanAcl) -> dict[str, object]:
 
 def _acl_firewall(range_id: int, node_name: str, tag: str, acl: AcesPlanAcl, index: int, ingress: bool) -> FirewallPlan:
     """Render one directional GCE firewall for an authored ACL targeting a node tag."""
-    rule_key = "allowed" if acl.action == "accept" else "denied"
     direction_label = "in" if ingress else "out"
     firewall: FirewallPlan = {
         "name": _short_resource_name("shifter-r", range_id, node_name, "acl", index, direction_label),
         "direction": "INGRESS" if ingress else "EGRESS",
         "priority": _ACL_FIREWALL_BASE_PRIORITY + index,
         "target_tags": [tag],
-        rule_key: [_acl_rule(acl)],
     }
+    # Literal keys (not a variable) so the FirewallPlan TypedDict stays well-typed.
+    if acl.action == "accept":
+        firewall["allowed"] = [_acl_rule(acl)]
+    else:
+        firewall["denied"] = [_acl_rule(acl)]
     return firewall
 
 
