@@ -1,14 +1,20 @@
-"""Session bootstrap endpoint for the SPA (#1300 / #1302).
+"""Session bootstrap endpoint for the SPA (#1300 / #1302 / #1369).
 
 A client-rendered SPA cannot read Django context processors, so it loads the
-authenticated principal, effective permission flags, and feature flags once
-from this endpoint after authentication (replacing
+authenticated principal, effective permission flags, feature flags, and UX mode
+eligibility once from this endpoint after authentication (replacing
 ``shared.context_processors.user_permissions`` for the browser client).
 
-The permission flags are **advisory UI state only**. Every mutation and read
-still passes the authoritative DRF permission classes on the resource
-endpoints; a wrong or stale flag here never widens access. The payload contains
-no secrets, tokens, or cookies.
+The permission flags and mode eligibility are **advisory UI state only**. Every
+mutation and read still passes the authoritative DRF permission classes on the
+resource endpoints; a wrong or stale flag here never widens access. Mode is a
+UX frame, not an authorization fact. The payload contains no secrets, tokens,
+cookies, or user-entered content.
+
+Active range/event summaries are cross-app composition and live in the
+composition-root dashboard summary read (``config.api_dashboard``) rather than
+here: ``shared`` is the contracts layer and may not import ``cms``/``ctf``
+services (ADR-001).
 """
 
 from __future__ import annotations
@@ -27,7 +33,12 @@ from risk_register.access import principal_has_risk_register_access
 from shared.api.permissions import IsAuthenticatedSessionOrApiToken
 from shared.api_tokens.authentication import ApiTokenAuthentication
 from shared.api_tokens.models import ApiToken
-from shared.auth import can_edit_cms_authoring
+from shared.auth import (
+    can_edit_cms_authoring,
+    is_ctf_organizer,
+    is_ctf_participant,
+    is_ctf_participant_only,
+)
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import User
@@ -45,16 +56,27 @@ class BootstrapPrincipalSerializer(serializers.Serializer):
 
 
 class BootstrapPermissionsSerializer(serializers.Serializer):
-    """Advisory authorization flags mirroring the template context processor."""
+    """Advisory authorization flags mirroring the template context processors."""
 
     can_access_risk_register = serializers.BooleanField()
     can_access_threat_research = serializers.BooleanField()
+    is_ctf_organizer = serializers.BooleanField()
+    is_ctf_participant = serializers.BooleanField()
+
+
+class BootstrapModesSerializer(serializers.Serializer):
+    """UX mode eligibility (participant/operator). Not an authorization fact."""
+
+    participant = serializers.BooleanField()
+    operator = serializers.BooleanField()
+    default = serializers.ChoiceField(choices=["participant", "operator"])
 
 
 class BootstrapFeatureFlagsSerializer(serializers.Serializer):
     """Server-owned feature flags surfaced to the SPA (no secret values)."""
 
     risk_register_spa = serializers.BooleanField()
+    platform_spa = serializers.BooleanField()
 
 
 class BootstrapSerializer(serializers.Serializer):
@@ -62,6 +84,7 @@ class BootstrapSerializer(serializers.Serializer):
 
     principal = BootstrapPrincipalSerializer()
     permissions = BootstrapPermissionsSerializer()
+    modes = BootstrapModesSerializer()
     feature_flags = BootstrapFeatureFlagsSerializer()
 
 
@@ -108,6 +131,26 @@ def _principal_from_session(user: User) -> tuple[dict[str, object], bool]:
     )
 
 
+def _modes_for_user(user: User | None) -> dict[str, object]:
+    """Compute UX mode eligibility for a session user (advisory, not authz).
+
+    Participant mode is available to CTF participants; operator mode to anyone
+    who is not a CTF-participant-only account (organizers, staff, threat
+    research, and risk-register operators). The default is operator unless the
+    principal is participant-only. Token principals are programmatic and default
+    to operator with no participant frame.
+    """
+    if user is None:
+        return {"participant": False, "operator": True, "default": "operator"}
+    participant = is_ctf_participant(user)
+    operator = not is_ctf_participant_only(user)
+    return {
+        "participant": participant,
+        "operator": operator,
+        "default": "operator" if operator else "participant",
+    }
+
+
 class BootstrapView(APIView):
     """Return the SPA session bootstrap payload for the current principal."""
 
@@ -119,17 +162,23 @@ class BootstrapView(APIView):
         auth = getattr(request, "auth", None)
         if isinstance(auth, ApiToken):
             principal, can_threat = _principal_from_token(auth)
+            session_user = None
         else:
-            principal, can_threat = _principal_from_session(request.user)
+            session_user = request.user
+            principal, can_threat = _principal_from_session(session_user)
 
         payload = {
             "principal": principal,
             "permissions": {
                 "can_access_risk_register": principal_has_risk_register_access(request),
                 "can_access_threat_research": can_threat,
+                "is_ctf_organizer": bool(session_user is not None and is_ctf_organizer(session_user)),
+                "is_ctf_participant": bool(session_user is not None and is_ctf_participant(session_user)),
             },
+            "modes": _modes_for_user(session_user),
             "feature_flags": {
                 "risk_register_spa": bool(getattr(settings, "RISK_REGISTER_SPA_ENABLED", False)),
+                "platform_spa": bool(getattr(settings, "PLATFORM_SPA_ENABLED", False)),
             },
         }
         return Response(BootstrapSerializer(payload).data)

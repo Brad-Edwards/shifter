@@ -82,3 +82,50 @@ def test_feature_flag_default_false(user, settings):
     client.force_authenticate(user=user)
     body = client.get(BOOTSTRAP_URL).json()
     assert body["feature_flags"]["risk_register_spa"] is False
+
+
+def test_platform_spa_feature_flag_reported(user, settings):
+    settings.PLATFORM_SPA_ENABLED = True
+    client = APIClient()
+    client.force_authenticate(user=user)
+    body = client.get(BOOTSTRAP_URL).json()
+    assert body["feature_flags"]["platform_spa"] is True
+
+
+def test_modes_default_operator_for_non_participant(user):
+    client = APIClient()
+    client.force_authenticate(user=user)
+    modes = client.get(BOOTSTRAP_URL).json()["modes"]
+    # A staff user who is not a CTF-participant-only account is operator-eligible
+    # and defaults to operator mode. Mode is advisory UX, not authorization.
+    assert modes["operator"] is True
+    assert modes["participant"] is False
+    assert modes["default"] == "operator"
+
+
+def test_permissions_include_advisory_ctf_flags(user):
+    client = APIClient()
+    client.force_authenticate(user=user)
+    permissions = client.get(BOOTSTRAP_URL).json()["permissions"]
+    assert permissions["is_ctf_organizer"] is False
+    assert permissions["is_ctf_participant"] is False
+
+
+def test_modes_participant_for_ctf_participant_only(user, monkeypatch):
+    # Exercise the participant/true side: a CTF-participant-only account is
+    # participant-eligible, not operator-eligible, and defaults to participant.
+    monkeypatch.setattr("shared.api.bootstrap.is_ctf_participant", lambda _u: True)
+    monkeypatch.setattr("shared.api.bootstrap.is_ctf_participant_only", lambda _u: True)
+    client = APIClient()
+    client.force_authenticate(user=user)
+    body = client.get(BOOTSTRAP_URL).json()
+    assert body["modes"] == {"participant": True, "operator": False, "default": "participant"}
+    assert body["permissions"]["is_ctf_participant"] is True
+
+
+def test_permissions_ctf_organizer_true(user, monkeypatch):
+    monkeypatch.setattr("shared.api.bootstrap.is_ctf_organizer", lambda _u: True)
+    client = APIClient()
+    client.force_authenticate(user=user)
+    body = client.get(BOOTSTRAP_URL).json()
+    assert body["permissions"]["is_ctf_organizer"] is True
