@@ -36,21 +36,23 @@ def resolve_from_candidates(candidates: Sequence[dict[str, Any]], *, version: st
     leaving passthrough / fail-loud to the caller.
     """
     wanted = (version or "").strip()
-    exact: dict[str, Any] | None = None
-    fallback: dict[str, Any] | None = None
-    for candidate in candidates:
-        candidate_version = (candidate.get("source_version") or "").strip()
-        if candidate_version == wanted and exact is None:
-            exact = candidate
-        elif candidate_version == "" and fallback is None:
-            fallback = candidate
+    chosen = _first_match(candidates, wanted) or _first_match(candidates, "")
+    return _to_resolved(chosen) if chosen is not None else None
 
-    chosen = exact or fallback
-    if chosen is None:
-        return None
+
+def _first_match(candidates: Sequence[dict[str, Any]], version: str) -> dict[str, Any] | None:
+    """Return the first candidate whose ``source_version`` equals ``version``, else None."""
+    for candidate in candidates:
+        if (candidate.get("source_version") or "").strip() == version:
+            return candidate
+    return None
+
+
+def _to_resolved(candidate: dict[str, Any]) -> ResolvedImage:
+    """Build a ResolvedImage from a registry candidate row (blank sizing -> None)."""
     return ResolvedImage(
-        image_ref=chosen["image_ref"],
-        machine_type=(chosen.get("machine_type") or "") or None,
-        disk_size_gb=chosen.get("disk_size_gb"),
-        disk_type=(chosen.get("disk_type") or "") or None,
+        image_ref=candidate["image_ref"],
+        machine_type=(candidate.get("machine_type") or "") or None,
+        disk_size_gb=candidate.get("disk_size_gb"),
+        disk_type=(candidate.get("disk_type") or "") or None,
     )

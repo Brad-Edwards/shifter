@@ -723,6 +723,8 @@ class AcesImageMapping(models.Model):
     """
 
     class Provider(models.TextChoices):
+        """Cloud provider a mapping targets (ACES-scoped; extensible)."""
+
         GCE = "gce", "Google Compute Engine"
         AWS = "aws", "AWS EC2"
 
@@ -759,6 +761,8 @@ class AcesImageMapping(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
+        """Table + uniqueness (one mapping per provider/source_name/source_version)."""
+
         db_table = "engine_aces_image_mapping"
         constraints = [
             models.UniqueConstraint(

@@ -208,7 +208,6 @@ def persist_operation_receipt_record(
     source_timestamp: datetime,
     payload: dict[str, Any],
     range_id: UUID | str | None = None,
-    diagnostic_refs: dict[str, Any] | None = None,
     contract_version: str = OPERATION_RECEIPT_CONTRACT_VERSION,
     owner: str = AcesOperationRecord.Owner.ENGINE,
 ) -> AcesOperationRecord:
@@ -228,7 +227,6 @@ def persist_operation_receipt_record(
         contract_version=contract_version,
         source_timestamp=source_timestamp,
         payload=payload,
-        diagnostic_refs=diagnostic_refs or {},
         range_id=range_id,
         owner=owner,
     )

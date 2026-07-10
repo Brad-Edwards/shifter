@@ -39,7 +39,7 @@ from aces_contracts.runtime_state import ApplyResult, RuntimeSnapshot, SnapshotE
 from aces_runtime.registry import BackendRegistry, RuntimeTarget, RuntimeTargetComponents
 
 from shared.aces.contracts import SHIFTER_BACKEND_NAME
-from shared.aces.dispatch_port import ShifterProvisioningDispatchPort
+from shared.aces.dispatch_port import ShifterDispatchResult, ShifterProvisioningDispatchPort
 from shared.aces.manifest import SHIFTER_PROVISIONER_CAPABILITIES, create_shifter_backend_manifest
 from shared.log_sanitize import safe_log_value
 
@@ -83,21 +83,25 @@ def _diagnostic(code: str, address: str, message: str) -> Diagnostic:
 
 
 def _spec(payload: Mapping[str, object]) -> Mapping[str, object]:
+    """Return the payload's ``spec`` mapping, or an empty mapping."""
     spec = payload.get("spec")
     return spec if isinstance(spec, Mapping) else {}
 
 
 def _node_spec(payload: Mapping[str, object]) -> Mapping[str, object]:
+    """Return the payload's ``spec.node`` mapping, or an empty mapping."""
     node = _spec(payload).get("node")
     return node if isinstance(node, Mapping) else {}
 
 
 def _infrastructure_spec(payload: Mapping[str, object]) -> Mapping[str, object]:
+    """Return the payload's ``spec.infrastructure`` mapping, or an empty mapping."""
     infra = _spec(payload).get("infrastructure")
     return infra if isinstance(infra, Mapping) else {}
 
 
 def _resource_name(resource: PlannedResource, payload: Mapping[str, object]) -> str:
+    """Return the authored resource name, falling back to the address leaf."""
     name = payload.get("name") or payload.get("node_name")
     if isinstance(name, str) and name.strip():
         return name.strip()
@@ -105,6 +109,7 @@ def _resource_name(resource: PlannedResource, payload: Mapping[str, object]) -> 
 
 
 def _os_family(payload: Mapping[str, object]) -> str:
+    """Return the node OS family (``os_family`` then ``spec.node.os``), or empty."""
     family = payload.get("os_family")
     if isinstance(family, str) and family.strip():
         return family.strip()
@@ -113,6 +118,7 @@ def _os_family(payload: Mapping[str, object]) -> str:
 
 
 def _node_type(payload: Mapping[str, object]) -> str:
+    """Return the node type (``node_type`` then ``spec.node.type``), or empty."""
     node_type = payload.get("node_type")
     if isinstance(node_type, str) and node_type.strip():
         return node_type.strip()
@@ -121,21 +127,20 @@ def _node_type(payload: Mapping[str, object]) -> str:
 
 
 def _node_count(payload: Mapping[str, object]) -> int:
+    """Return the node instance count (>= 1); default 1 for missing/invalid values."""
     raw = payload.get("count")
-    if isinstance(raw, bool):
-        return 1
-    if isinstance(raw, int) and raw >= 1:
-        return raw
     if isinstance(raw, str):
         try:
-            value = int(raw)
+            raw = int(raw)
         except ValueError:
             return 1
-        return value if value >= 1 else 1
+    if isinstance(raw, int) and not isinstance(raw, bool) and raw >= 1:
+        return raw
     return 1
 
 
 def _network_refs(payload: Mapping[str, object]) -> tuple[str, ...]:
+    """Return the network handles a node references (``networks`` then ``links``)."""
     infra = _infrastructure_spec(payload)
     for field_name in ("networks", "links"):
         raw = infra.get(field_name)
@@ -158,9 +163,45 @@ def _network_lookup(network_resources: list[tuple[PlannedResource, Mapping[str, 
 # --- capability envelope (fail closed on out-of-envelope terms) ---
 
 
+def _node_envelope_diagnostics(
+    resource: PlannedResource, payload: Mapping[str, object], capabilities: ProvisionerCapabilities
+) -> list[Diagnostic]:
+    """Return capability-envelope diagnostics for a single node resource."""
+    diagnostics: list[Diagnostic] = []
+    node_type = _node_type(payload)
+    if node_type and node_type not in capabilities.supported_node_types:
+        diagnostics.append(
+            _diagnostic(
+                "shifter-provisioner.unsupported-node-type",
+                resource.address,
+                f"unsupported node type '{node_type}' (supported: {sorted(capabilities.supported_node_types)})",
+            )
+        )
+    os_family = _os_family(payload)
+    if os_family and os_family not in capabilities.supported_os_families:
+        diagnostics.append(
+            _diagnostic(
+                "shifter-provisioner.unsupported-os-family",
+                resource.address,
+                f"unsupported os_family '{safe_log_value(os_family)}' "
+                f"(supported: {sorted(capabilities.supported_os_families)})",
+            )
+        )
+    if not capabilities.supports_acls and _infrastructure_spec(payload).get("acls"):
+        diagnostics.append(
+            _diagnostic(
+                "shifter-provisioner.acls-unsupported",
+                resource.address,
+                "this provisioning-only backend does not yet realize network ACLs",
+            )
+        )
+    return diagnostics
+
+
 def _capability_envelope_diagnostics(
     resources: list[PlannedResource], capabilities: ProvisionerCapabilities
 ) -> list[Diagnostic]:
+    """Return fail-closed diagnostics for every out-of-envelope term in the plan."""
     diagnostics: list[Diagnostic] = []
     total_nodes = 0
     for resource in resources:
@@ -184,35 +225,8 @@ def _capability_envelope_diagnostics(
             continue
         if resource.resource_type == NETWORK_RESOURCE_TYPE:
             continue
-        # node
         total_nodes += _node_count(payload)
-        node_type = _node_type(payload)
-        if node_type and node_type not in capabilities.supported_node_types:
-            diagnostics.append(
-                _diagnostic(
-                    "shifter-provisioner.unsupported-node-type",
-                    resource.address,
-                    f"unsupported node type '{node_type}' (supported: {sorted(capabilities.supported_node_types)})",
-                )
-            )
-        os_family = _os_family(payload)
-        if os_family and os_family not in capabilities.supported_os_families:
-            diagnostics.append(
-                _diagnostic(
-                    "shifter-provisioner.unsupported-os-family",
-                    resource.address,
-                    f"unsupported os_family '{safe_log_value(os_family)}' "
-                    f"(supported: {sorted(capabilities.supported_os_families)})",
-                )
-            )
-        if not capabilities.supports_acls and _infrastructure_spec(payload).get("acls"):
-            diagnostics.append(
-                _diagnostic(
-                    "shifter-provisioner.acls-unsupported",
-                    resource.address,
-                    "this provisioning-only backend does not yet realize network ACLs",
-                )
-            )
+        diagnostics.extend(_node_envelope_diagnostics(resource, payload, capabilities))
     if capabilities.max_total_nodes is not None and total_nodes > capabilities.max_total_nodes:
         diagnostics.append(
             _diagnostic(
@@ -228,10 +242,12 @@ def _capability_envelope_diagnostics(
 
 
 def _aces_sdl_version() -> str:
-    try:
-        return importlib.metadata.version("aces-sdl")
-    except importlib.metadata.PackageNotFoundError:  # pragma: no cover - always installed in-app
-        return ""
+    """Return the installed aces-sdl version (recorded on the serialized plan).
+
+    aces-sdl is a runtime dependency imported at this module's top, so it is
+    always installed by the time this runs.
+    """
+    return importlib.metadata.version("aces-sdl")
 
 
 def serialize_provisioning_plan(plan: ProvisioningPlan) -> dict[str, Any]:
@@ -268,6 +284,24 @@ def serialize_provisioning_plan(plan: ProvisioningPlan) -> dict[str, Any]:
 # --- interpret (validate the plan, then serialize it) ---
 
 
+def _unknown_network_diagnostics(
+    node_resources: list[tuple[PlannedResource, Mapping[str, object]]], lookup: dict[str, str]
+) -> list[Diagnostic]:
+    """Return diagnostics for node network refs that no declared network resolves."""
+    diagnostics: list[Diagnostic] = []
+    for resource, payload in node_resources:
+        for ref in _network_refs(payload):
+            if lookup.get(ref) is None:
+                diagnostics.append(
+                    _diagnostic(
+                        "shifter-provisioner.unknown-network",
+                        resource.address,
+                        f"node references network '{ref}' not declared in this plan",
+                    )
+                )
+    return diagnostics
+
+
 def interpret_provisioning_plan(
     plan: ProvisioningPlan,
     *,
@@ -296,21 +330,18 @@ def interpret_provisioning_plan(
     node_resources = [
         (r, r.payload) for r in provisioning if r.resource_type == NODE_RESOURCE_TYPE and isinstance(r.payload, Mapping)
     ]
-    lookup = _network_lookup(network_resources)
-    for resource, payload in node_resources:
-        for ref in _network_refs(payload):
-            if lookup.get(ref) is None:
-                diagnostics.append(
-                    _diagnostic(
-                        "shifter-provisioner.unknown-network",
-                        resource.address,
-                        f"node references network '{ref}' not declared in this plan",
-                    )
-                )
+    diagnostics.extend(_unknown_network_diagnostics(node_resources, _network_lookup(network_resources)))
 
     if any(diagnostic.is_error for diagnostic in diagnostics):
         return None, diagnostics
     return serialize_provisioning_plan(plan), diagnostics
+
+
+def _serialized_for_apply(plan: ProvisioningPlan) -> tuple[dict[str, Any] | None, list[Diagnostic]]:
+    """Validate + serialize ``plan`` for validate/apply; (None, diagnostics) if unusable."""
+    if not isinstance(plan, ProvisioningPlan):
+        return None, [_diagnostic("shifter-provisioner.invalid-plan", "plan", "expected an ACES ProvisioningPlan")]
+    return interpret_provisioning_plan(plan)
 
 
 class ShifterProvisioner:
@@ -319,34 +350,24 @@ class ShifterProvisioner:
     def __init__(self, port: ShifterProvisioningDispatchPort) -> None:
         self._port = port
 
-    def validate(self, plan: ProvisioningPlan) -> list[Diagnostic]:
+    @staticmethod
+    def validate(plan: ProvisioningPlan) -> list[Diagnostic]:
         """Return capability-envelope + plan-consistency diagnostics without dispatching."""
-        if not isinstance(plan, ProvisioningPlan):
-            return [_diagnostic("shifter-provisioner.invalid-plan", "plan", "expected an ACES ProvisioningPlan")]
-        _, diagnostics = interpret_provisioning_plan(plan)
+        _, diagnostics = _serialized_for_apply(plan)
         return diagnostics
 
     def apply(self, plan: ProvisioningPlan, snapshot: RuntimeSnapshot) -> ApplyResult:
         """Validate + dispatch the serialized ``plan``; never dispatch on error."""
-        if not isinstance(plan, ProvisioningPlan):
-            return ApplyResult(
-                success=False,
-                snapshot=snapshot,
-                diagnostics=[
-                    _diagnostic("shifter-provisioner.invalid-plan", "plan", "expected an ACES ProvisioningPlan")
-                ],
-            )
-        serialized, diagnostics = interpret_provisioning_plan(plan)
+        serialized, diagnostics = _serialized_for_apply(plan)
         if serialized is None:
             return ApplyResult(success=False, snapshot=snapshot, diagnostics=diagnostics)
 
+        # Boundary: never leak a raw dispatch exception past apply.
         try:
             result = self._port.realize(serialized)
-        except Exception as exc:  # boundary: never leak a raw exception past apply
+        except Exception as exc:
             failure = _diagnostic(
-                "shifter-provisioner.dispatch-failed",
-                "plan",
-                f"provisioning dispatch failed: {safe_log_value(exc)}",
+                "shifter-provisioner.dispatch-failed", "plan", f"provisioning dispatch failed: {safe_log_value(exc)}"
             )
             return ApplyResult(success=False, snapshot=snapshot, diagnostics=[*diagnostics, failure])
 
@@ -366,7 +387,8 @@ class ShifterProvisioner:
         )
 
 
-def _snapshot_entry(address: str, resource_type: str, result: Any) -> SnapshotEntry:
+def _snapshot_entry(address: str, resource_type: str, result: ShifterDispatchResult) -> SnapshotEntry:
+    """Build a provisional PROVISIONING snapshot entry from the dispatch result."""
     payload: dict[str, Any] = {"request_id": result.request_id, "status": result.status}
     if result.range_id:
         payload["range_id"] = result.range_id

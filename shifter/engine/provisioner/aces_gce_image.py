@@ -56,24 +56,30 @@ def resolve_gce_image(node: AcesPlanNode, candidates: Sequence[dict[str, Any]]) 
 
     resolved = resolve_from_candidates(candidates, version=image.version)
     if resolved is not None:
-        return GCERangeImageProfile(
-            source_image=resolved.image_ref,
-            machine_type=resolved.machine_type or _machine_type_from_resources(node) or _DEFAULT_MACHINE_TYPE,
-            disk_size_gb=resolved.disk_size_gb or _DEFAULT_DISK_SIZE_GB,
-            disk_type=resolved.disk_type or _DEFAULT_DISK_TYPE,
-        )
+        return _profile(node, resolved.image_ref, resolved.machine_type, resolved.disk_size_gb, resolved.disk_type)
 
     if _is_concrete_gce_ref(image.name):
-        return GCERangeImageProfile(
-            source_image=image.name,
-            machine_type=_machine_type_from_resources(node) or _DEFAULT_MACHINE_TYPE,
-            disk_size_gb=_DEFAULT_DISK_SIZE_GB,
-            disk_type=_DEFAULT_DISK_TYPE,
-        )
+        return _profile(node, image.name)
 
     version = image.version or "*"
     raise AcesGceImageError(
         f"no GCE image mapping for source {image.name!r} (version {version}); register an ACES image mapping"
+    )
+
+
+def _profile(
+    node: AcesPlanNode,
+    source_image: str,
+    machine_type: str | None = None,
+    disk_size_gb: int | None = None,
+    disk_type: str | None = None,
+) -> GCERangeImageProfile:
+    """Build a GCERangeImageProfile, filling gaps from authored resources then defaults."""
+    return GCERangeImageProfile(
+        source_image=source_image,
+        machine_type=machine_type or _machine_type_from_resources(node) or _DEFAULT_MACHINE_TYPE,
+        disk_size_gb=disk_size_gb or _DEFAULT_DISK_SIZE_GB,
+        disk_type=disk_type or _DEFAULT_DISK_TYPE,
     )
 
 
@@ -91,4 +97,5 @@ def _machine_type_from_resources(node: AcesPlanNode) -> str | None:
 
 
 def _is_concrete_gce_ref(name: str) -> bool:
+    """Return True when ``name`` is already a concrete GCE image ref (passthrough)."""
     return any(marker in name for marker in _CONCRETE_GCE_REF_MARKERS)

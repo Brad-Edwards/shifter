@@ -84,22 +84,27 @@ class AcesPlan:
 
 
 def _mapping(value: object) -> Mapping[str, Any]:
+    """Return ``value`` if it is a mapping, else an empty mapping."""
     return value if isinstance(value, Mapping) else {}
 
 
 def _spec(payload: Mapping[str, Any]) -> Mapping[str, Any]:
+    """Return the payload's ``spec`` mapping, or an empty mapping."""
     return _mapping(payload.get("spec"))
 
 
 def _node_spec(payload: Mapping[str, Any]) -> Mapping[str, Any]:
+    """Return the payload's ``spec.node`` mapping, or an empty mapping."""
     return _mapping(_spec(payload).get("node"))
 
 
 def _infrastructure_spec(payload: Mapping[str, Any]) -> Mapping[str, Any]:
+    """Return the payload's ``spec.infrastructure`` mapping, or an empty mapping."""
     return _mapping(_spec(payload).get("infrastructure"))
 
 
 def _resource_name(address: str, payload: Mapping[str, Any]) -> str:
+    """Return the authored resource name, falling back to the address leaf."""
     name = payload.get("name") or payload.get("node_name")
     if isinstance(name, str) and name.strip():
         return name.strip()
@@ -116,6 +121,7 @@ def _os_family(payload: Mapping[str, Any]) -> str:
 
 
 def _node_count(payload: Mapping[str, Any]) -> int:
+    """Return the node instance count (>= 1); default 1 for missing/invalid values."""
     raw = payload.get("count")
     if isinstance(raw, bool):
         return 1
@@ -159,6 +165,7 @@ def _image(payload: Mapping[str, Any]) -> AcesPlanImage | None:
 
 
 def _network_refs(payload: Mapping[str, Any]) -> tuple[str, ...]:
+    """Return the network handles a node references (``networks`` then ``links``)."""
     infra = _infrastructure_spec(payload)
     for field_name in ("networks", "links"):
         raw = infra.get(field_name)
@@ -168,6 +175,7 @@ def _network_refs(payload: Mapping[str, Any]) -> tuple[str, ...]:
 
 
 def _network(address: str, payload: Mapping[str, Any]) -> AcesPlanNetwork:
+    """Build an AcesPlanNetwork from a network resource payload (cidr/gateway/internal)."""
     props = _mapping(_infrastructure_spec(payload).get("properties"))
     cidr = props.get("cidr")
     gateway = props.get("gateway")
@@ -181,6 +189,7 @@ def _network(address: str, payload: Mapping[str, Any]) -> AcesPlanNetwork:
 
 
 def _network_lookup(networks: list[tuple[str, Mapping[str, Any]]]) -> dict[str, str]:
+    """Map every handle a node might reference a network by to its canonical address."""
     lookup: dict[str, str] = {}
     for address, payload in networks:
         name = _resource_name(address, payload)
@@ -228,6 +237,7 @@ def parse_plan(range_config: dict[str, Any] | None) -> AcesPlan:
 
 
 def _node(address: str, payload: Mapping[str, Any], lookup: dict[str, str]) -> AcesPlanNode:
+    """Build an AcesPlanNode, extracting authored intent and resolving network refs."""
     resolved = tuple(dict.fromkeys(lookup[ref] for ref in _network_refs(payload) if ref in lookup))
     return AcesPlanNode(
         address=address,
@@ -242,12 +252,14 @@ def _node(address: str, payload: Mapping[str, Any], lookup: dict[str, str]) -> A
 
 
 def _require_mapping(value: object, *, where: str) -> Mapping[str, Any]:
+    """Return ``value`` as a mapping or raise AcesPlanError naming ``where``."""
     if not isinstance(value, Mapping):
         raise AcesPlanError(f"{where} must be an object, got {type(value).__name__}")
     return value
 
 
 def _string(value: object, *, where: str) -> str:
+    """Return ``value`` as a non-empty string or raise AcesPlanError naming ``where``."""
     if not isinstance(value, str) or not value.strip():
         raise AcesPlanError(f"{where} must be a non-empty string")
     return value
