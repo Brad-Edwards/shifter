@@ -345,7 +345,7 @@ def _account(payload: Mapping[str, Any]) -> AcesPlanAccount | None:
         username=username,
         target_address=target,
         groups=_str_tuple(spec.get("groups")),
-        shell=_opt_str(spec.get("shell")),
+        shell=_opt_str(spec.get("shell")),  # nosec B604 -- account login shell field, not a subprocess shell
         home=_opt_str(spec.get("home")),
         mail=_opt_str(spec.get("mail")),
         spn=_opt_str(spec.get("spn")),
