@@ -41,7 +41,11 @@ dependencies = [
     # the hash-pinned portal image build (uv export --no-dev + --require-hashes)
     # can integrity-verify it; a git source has no emittable hash and broke the
     # build when this was promoted to a runtime dep (issue #1445). ACES is a
-    # deliberate, PyPI-pinned stack commitment (ADR-032-R4).
+    # deliberate, PyPI-pinned stack commitment (ADR-032-R4). Upgrade policy
+    # (ADR-032-R7): this floor is the supported-producer floor the provisioner
+    # consumer enforces (aces_plan.MINIMUM_ACES_SDL_VERSION, kept in agreement by
+    # tests/shared/aces/test_plan_provisioner_parity.py); raising it requires
+    # passing the ACES conformance gate (test_backend_conformance_gate.py).
     "aces-sdl>=0.19.1",
     "uvicorn-worker",
     # uvicorn's WebSocket protocol backend. Not imported directly: the

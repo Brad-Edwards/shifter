@@ -22,7 +22,7 @@ from aces_runtime.manager import RuntimeManager
 from aces_runtime.registry import BackendRegistry
 from aces_sdl.parser import parse_sdl
 
-from shared.aces.contracts import SHIFTER_BACKEND_NAME
+from shared.aces.contracts import ACES_PROVISIONING_PLAN_CONTRACT_VERSION, SHIFTER_BACKEND_NAME
 from shared.aces.dispatch_port import ShifterDispatchResult
 from shared.aces.manifest import create_shifter_backend_manifest
 from shared.aces.runtime_target import (
@@ -157,6 +157,7 @@ def test_interpret_serializes_full_plan_verbatim() -> None:
     assert [d for d in diagnostics if d.is_error] == []
     assert serialized is not None
     assert serialized["kind"] == ACES_PROVISIONING_PLAN_KIND
+    assert serialized["contract_version"] == ACES_PROVISIONING_PLAN_CONTRACT_VERSION  # ADR-032-R7 transport version
     assert serialized["aces_sdl_version"]  # stamped from the installed aces-sdl
     resources = serialized["resources"]
     assert set(resources) == {"provision.node.web", "provision.network.lan"}

@@ -17,13 +17,14 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import aces_range_ops
-from aces_plan import AcesPlanImage, AcesPlanNode
+from aces_plan import ACES_PROVISIONING_PLAN_CONTRACT_VERSION, AcesPlan, AcesPlanImage, AcesPlanNode
 from config import GCERangeImageProfile
 
 
 def _serialized_plan() -> dict:
     return {
         "kind": "aces_provisioning_plan",
+        "contract_version": ACES_PROVISIONING_PLAN_CONTRACT_VERSION,
         "aces_sdl_version": "0.19.1",
         "resources": {
             "net.lan": {
@@ -77,8 +78,12 @@ class TestProvision:
         aces_range_ops.run_aces_range_provision("req-1")
         patched.status.assert_called_once_with(request_id="req-1", range_id=7, user_id=3, new_status="provisioning")
         assert patched.apply.called
-        assert patched.apply.call_args.args[0] == "req-1"
-        assert patched.apply.call_args.args[1] == 7
+        request_id, range_id, aces_plan = patched.apply.call_args.args[:3]
+        assert (request_id, range_id) == ("req-1", 7)
+        # The *parsed* AcesPlan is forwarded to realization, not the raw range_config
+        # dict -- a refactor that skipped parse_plan before dispatch must fail here.
+        assert isinstance(aces_plan, AcesPlan)
+        assert [n.address for n in aces_plan.nodes] == ["node.web"]
         patched.ready.assert_called_once_with(request_id="req-1", range_id=7, user_id=3)
         assert not patched.failed.called
 
@@ -108,6 +113,11 @@ class TestDestroy:
     def test_destroys_and_publishes_destroyed(self, patched):
         aces_range_ops.run_aces_range_destroy("req-1")
         assert patched.destroy.called
+        request_id, range_id, aces_plan = patched.destroy.call_args.args[:3]
+        assert (request_id, range_id) == ("req-1", 7)
+        # Destroy receives the parsed AcesPlan too, not the raw range_config dict.
+        assert isinstance(aces_plan, AcesPlan)
+        assert [n.address for n in aces_plan.nodes] == ["node.web"]
         patched.destroyed.assert_called_once_with(request_id="req-1", range_id=7, user_id=3)
 
     def test_failure_publishes_failed_and_reraises(self, patched):
@@ -115,6 +125,7 @@ class TestDestroy:
         with pytest.raises(RuntimeError, match="kaboom"):
             aces_range_ops.run_aces_range_destroy("req-1")
         assert patched.failed.called
+        assert patched.failed.call_args.kwargs["error_message"].startswith("kaboom")
 
 
 def _node(image: AcesPlanImage | None) -> AcesPlanNode:
