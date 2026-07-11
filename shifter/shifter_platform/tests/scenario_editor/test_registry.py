@@ -280,16 +280,15 @@ class TestAcesPackageSourceNotLaunchable:
 
 @pytest.fixture
 def aces_launch_adapter(monkeypatch):
-    """Simulate a wired ACES runtime adapter for the ('aces','shifter') profile.
+    """Enable the ACES-native launch path for the ('aces','shifter') profile.
 
-    Launchability is gated on a runtime hydration adapter existing; none is wired
-    yet, so ACES entries are review-only by default. Tests that exercise the
-    positive launchability path use this fixture to simulate the future adapter.
+    The runtime launch adapter is wired (#1479), but ACES launchability is gated
+    on the SHIFTER_ACES_NATIVE_PROVISIONING flag, off by default. Tests that
+    exercise the positive launchability path use this fixture to turn it on.
     """
-    monkeypatch.setattr(
-        "cms.scenarios.registry._LAUNCH_ADAPTER_CONTRACT_PROFILES",
-        frozenset({("aces", "shifter")}),
-    )
+    from django.conf import settings
+
+    monkeypatch.setattr(settings, "ACES_NATIVE_PROVISIONING_ENABLED", True)
 
 
 class TestLaunchability:
@@ -298,13 +297,24 @@ class TestLaunchability:
         assert entry["launchable"] is True
 
     def test_aces_review_only_without_adapter(self, staff_user):
-        # No runtime adapter is wired, so even a conformant ACES entry is
-        # review-only (not launchable) — it must not be exposed to launch flows.
+        # SHIFTER_ACES_NATIVE_PROVISIONING is off by default, so even a conformant
+        # ACES entry is review-only (not launchable) and never enters launch flows.
         _make_aces_source(staff_user, "polaris-aces", conformance_status="passed")
         assert get_catalog_entry("polaris-aces")["launchable"] is False
 
     def test_conformant_supported_aces_launchable_with_adapter(self, staff_user, aces_launch_adapter):
         _make_aces_source(staff_user, "polaris-aces", conformance_status="passed")
+        assert get_catalog_entry("polaris-aces")["launchable"] is True
+
+    def test_native_provisioning_flag_toggles_launchability(self, staff_user, monkeypatch):
+        # The same conformant source is not launchable with the flag off and
+        # launchable with it on: the flag is the cutover gate.
+        from django.conf import settings
+
+        _make_aces_source(staff_user, "polaris-aces", conformance_status="passed")
+        monkeypatch.setattr(settings, "ACES_NATIVE_PROVISIONING_ENABLED", False)
+        assert get_catalog_entry("polaris-aces")["launchable"] is False
+        monkeypatch.setattr(settings, "ACES_NATIVE_PROVISIONING_ENABLED", True)
         assert get_catalog_entry("polaris-aces")["launchable"] is True
 
     def test_pending_aces_not_launchable_with_adapter(self, staff_user, aces_launch_adapter):
@@ -339,7 +349,7 @@ class TestLaunchability:
         _make_aces_source(staff_user, "polaris-ok", conformance_status="passed")
         _make_aces_source(staff_user, "polaris-pending", conformance_status="pending")
         ids = [s["id"] for s in list_launchable_scenarios(workflow=ScenarioWorkflow.RANGE_LAUNCH)]
-        assert "polaris-ok" not in ids  # review-only: no adapter wired
+        assert "polaris-ok" not in ids  # review-only: native provisioning flag off
         assert "polaris-pending" not in ids
         assert "basic" in ids  # legacy stays launchable
 
