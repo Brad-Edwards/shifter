@@ -428,3 +428,60 @@ class TestMainCLI:
             deploy.main()
 
             assert mock_gdc_bootstrap.call_args[1]["dry_run"] is True
+
+    # ---------------------------------------------------------------------
+    # runners subcommand (issue #1433)
+    #
+    # These assert observable behavior (argparse wiring + the dry-run command
+    # plan printed by the real handler) rather than patching first-party seams,
+    # per the ADR-019 boundary-mock policy.
+    # ---------------------------------------------------------------------
+
+    def test_runners_command_requires_env_and_profile(self):
+        """runners subcommand requires both --env and --profile."""
+        with (
+            patch("sys.argv", ["deploy.py", "runners"]),
+            pytest.raises(SystemExit),
+        ):
+            deploy.main()
+
+    def test_runners_subcommand_exposes_its_flags(self, capsys):
+        """The runners subparser is wired with its automation flags."""
+        with (
+            patch("sys.argv", ["deploy.py", "runners", "--help"]),
+            pytest.raises(SystemExit),
+        ):
+            deploy.main()
+
+        help_text = capsys.readouterr().out
+        assert "--use-existing-network" in help_text
+        assert "--runner-count" in help_text
+
+
+class TestRunnersDeployment:
+    """Observable behavior of the runners_deployment handler in dry-run."""
+
+    def test_provisions_dedicated_network_by_default(self, capsys):
+        """Dry-run plans the runner apply with create_runner_network=true and no token."""
+        deploy.runners_deployment("dev", "test", dry_run=True)
+
+        out = capsys.readouterr().out
+        assert "terraform" in out
+        assert "create_runner_network=true" in out
+        # Dry-run must not mint a token or send an SSM command.
+        assert "registration-token" not in out
+        assert "send-command" not in out
+
+    def test_use_existing_network_disables_created_vpc(self, capsys):
+        """--use-existing-network plans with create_runner_network=false."""
+        deploy.runners_deployment("dev", "test", dry_run=True, use_existing_network=True)
+
+        out = capsys.readouterr().out
+        assert "create_runner_network=false" in out
+
+    def test_runner_count_override_reaches_terraform(self, capsys):
+        """--runner-count is threaded into the terraform plan vars."""
+        deploy.runners_deployment("dev", "test", dry_run=True, runner_count=5)
+
+        out = capsys.readouterr().out
+        assert "runner_count=5" in out
