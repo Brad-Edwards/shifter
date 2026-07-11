@@ -203,43 +203,120 @@ class TestSaveUserProfile:
 
 
 # ---------------------------------------------------------------------------
-# update_cognito_sub
+# bind_provider_identity (issue #1521)
+#
+# Replaces the overwrite-style ``update_cognito_sub`` with bind-once/compare
+# semantics: an exact tuple is idempotent, a legacy subject-only row may
+# acquire the verified issuer, a fully unbound profile binds once, and any
+# other issuer/subject difference -- or a uniqueness collision with a
+# different user -- fails closed (``BindingConflictError``), never
+# overwrites/backfills/"heals" a stored identity.
 # ---------------------------------------------------------------------------
 
+ISSUER_A = "https://issuer-a.example.test"
+ISSUER_B = "https://issuer-b.example.test"
 
-class TestUpdateCognitoSub:
-    def test_sets_cognito_sub(self):
-        user = _user("cog1")
-        services.update_cognito_sub(user, "abc-123-sub")
-        assert UserProfile.objects.get(user=user).cognito_sub == "abc-123-sub"
 
-    def test_overwrites_existing(self):
-        user = _user("cog2")
-        services.update_cognito_sub(user, "old")
-        services.update_cognito_sub(user, "new")
-        assert UserProfile.objects.get(user=user).cognito_sub == "new"
+class TestBindProviderIdentity:
+    def test_binds_unbound_profile_once(self):
+        user = _user("bind-fresh")
+        outcome = services.bind_provider_identity(user, ISSUER_A, "sub-fresh")
 
-    def test_no_op_when_unchanged(self, caplog):
-        user = _user("cog3")
-        services.update_cognito_sub(user, "same")
+        assert outcome == services.BindOutcome.BOUND
+        profile = UserProfile.objects.get(user=user)
+        assert profile.issuer == ISSUER_A
+        assert profile.cognito_sub == "sub-fresh"
+
+    def test_exact_tuple_is_idempotent(self, caplog):
+        user = _user("bind-idem")
+        services.bind_provider_identity(user, ISSUER_A, "sub-idem")
+
         with caplog.at_level(logging.DEBUG, logger="management.services"):
-            services.update_cognito_sub(user, "same")
-        assert UserProfile.objects.get(user=user).cognito_sub == "same"
-        assert "unchanged" in caplog.text.lower()
+            outcome = services.bind_provider_identity(user, ISSUER_A, "sub-idem")
+
+        assert outcome == services.BindOutcome.UNCHANGED
+        profile = UserProfile.objects.get(user=user)
+        assert profile.issuer == ISSUER_A
+        assert profile.cognito_sub == "sub-idem"
+
+    def test_legacy_subject_only_row_acquires_issuer(self):
+        """A pre-#1521 row (subject bound, no issuer) acquires the verified
+        issuer only when the presented subject is identical (historical
+        unbound/subject-only migration state)."""
+        user = _user("bind-legacy")
+        profile = UserProfile.objects.get(user=user)
+        profile.cognito_sub = "sub-legacy"
+        profile.issuer = ""
+        profile.save(update_fields=["cognito_sub", "issuer"])
+
+        outcome = services.bind_provider_identity(user, ISSUER_A, "sub-legacy")
+
+        assert outcome == services.BindOutcome.ISSUER_ACQUIRED
+        profile.refresh_from_db()
+        assert profile.issuer == ISSUER_A
+        assert profile.cognito_sub == "sub-legacy"
+
+    def test_null_issuer_legacy_row_acquires_issuer(self):
+        """Same as above but with a NULL (not empty-string) legacy issuer."""
+        user = _user("bind-legacy-null")
+        profile = UserProfile.objects.get(user=user)
+        profile.cognito_sub = "sub-legacy-null"
+        profile.issuer = None
+        profile.save(update_fields=["cognito_sub", "issuer"])
+
+        outcome = services.bind_provider_identity(user, ISSUER_A, "sub-legacy-null")
+
+        assert outcome == services.BindOutcome.ISSUER_ACQUIRED
+        profile.refresh_from_db()
+        assert profile.issuer == ISSUER_A
+
+    def test_issuer_drift_raises_binding_conflict_and_never_rebinds(self):
+        user = _user("bind-issuer-drift")
+        services.bind_provider_identity(user, ISSUER_A, "sub-drift")
+
+        with pytest.raises(services.BindingConflictError):
+            services.bind_provider_identity(user, ISSUER_B, "sub-drift")
+
+        profile = UserProfile.objects.get(user=user)
+        assert profile.issuer == ISSUER_A
+        assert profile.cognito_sub == "sub-drift"
+
+    def test_subject_drift_raises_binding_conflict_and_never_rebinds(self):
+        user = _user("bind-subject-drift")
+        services.bind_provider_identity(user, ISSUER_A, "sub-orig")
+
+        with pytest.raises(services.BindingConflictError):
+            services.bind_provider_identity(user, ISSUER_A, "sub-new")
+
+        profile = UserProfile.objects.get(user=user)
+        assert profile.issuer == ISSUER_A
+        assert profile.cognito_sub == "sub-orig"
+
+    def test_collision_with_different_user_raises_binding_conflict(self):
+        user_a = _user("bind-collide-a")
+        user_b = _user("bind-collide-b")
+        services.bind_provider_identity(user_a, ISSUER_A, "sub-shared")
+
+        with pytest.raises(services.BindingConflictError), transaction.atomic():
+            services.bind_provider_identity(user_b, ISSUER_A, "sub-shared")
+
+        assert not UserProfile.objects.get(user=user_b).cognito_sub
+        assert UserProfile.objects.get(user=user_a).cognito_sub == "sub-shared"
 
     def test_raises_typeerror_for_none_user(self):
         with pytest.raises(TypeError, match=USER_CANNOT_BE_NONE):
-            services.update_cognito_sub(None, "abc")
+            services.bind_provider_identity(None, ISSUER_A, "sub")
 
     def test_raises_valueerror_for_unsaved_user(self):
         with pytest.raises(ValueError, match="user must have a primary key"):
-            services.update_cognito_sub(_unsaved_user(), "abc")
+            services.bind_provider_identity(_unsaved_user(), ISSUER_A, "sub")
 
-    def test_raises_typeerror_for_none_cognito_sub(self):
-        with pytest.raises(TypeError, match="cognito_sub cannot be None"):
-            services.update_cognito_sub(_user("cog-none"), None)
+    @pytest.mark.parametrize("value", ["", "   ", None])
+    def test_raises_valueerror_for_blank_issuer(self, value):
+        with pytest.raises(ValueError, match="issuer cannot be empty"):
+            services.bind_provider_identity(_user("bind-blank-iss"), value, "sub")
 
-    @pytest.mark.parametrize("value", ["", "   "])
-    def test_raises_valueerror_for_empty_cognito_sub(self, value):
-        with pytest.raises(ValueError, match="cognito_sub cannot be empty"):
-            services.update_cognito_sub(_user("cog-empty"), value)
+    @pytest.mark.parametrize("value", ["", "   ", None])
+    def test_raises_valueerror_for_blank_subject(self, value):
+        with pytest.raises(ValueError, match="subject cannot be empty"):
+            services.bind_provider_identity(_user("bind-blank-sub"), ISSUER_A, value)

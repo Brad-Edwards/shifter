@@ -22,12 +22,32 @@ class UserProfile(models.Model):
         related_name="profile",
     )
     cognito_sub = models.CharField(
-        max_length=36,
+        max_length=255,
         unique=True,
         null=True,
         blank=True,
         db_index=True,
-        help_text="Cognito user pool subject identifier (UUID)",
+        help_text=(
+            "Provider subject identifier (opaque, case-sensitive; issue #1521). "
+            "Historically a Cognito user pool UUID; also used for the GCP "
+            "Identity Platform Firebase UID and other provider subjects. "
+            "Paired with `issuer` for the bound (issuer, subject) identity key."
+        ),
+    )
+    issuer = models.CharField(  # noqa: DJ001
+        max_length=255,
+        null=True,  # NULL distinguishes a never-migrated legacy row from a
+        # deliberately blank issuer; not unique, so DJ001's usual advice
+        # (use "" instead of NULL) doesn't apply the same way it does for a
+        # unique field (see cognito_sub above and ctf.models.team.Participant).
+        blank=True,
+        help_text=(
+            "Provider issuer (opaque, case-sensitive; issue #1521) paired with "
+            "cognito_sub as the bound (issuer, subject) identity key. Null/blank "
+            "for a legacy row bound before this field existed; acquired once, on "
+            "the next login presenting the same subject "
+            "(see management.services.bind_provider_identity)."
+        ),
     )
     user_type = models.CharField(
         max_length=20,
