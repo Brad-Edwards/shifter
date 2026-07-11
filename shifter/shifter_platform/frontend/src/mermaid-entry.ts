@@ -38,14 +38,13 @@ const DIAGRAM_PREFIXES = [
 
 function replaceWithDiagram(block: Element, source: string): void {
   const pre = block.parentElement;
-  const parent = pre?.parentNode;
-  if (!pre || !parent) {
+  if (!pre?.parentNode) {
     return;
   }
   const div = document.createElement("div");
   div.className = "mermaid";
   div.textContent = source;
-  parent.replaceChild(div, pre);
+  pre.replaceWith(div);
 }
 
 function convertCodeBlocksToDiagrams(): void {
@@ -63,7 +62,9 @@ function convertCodeBlocksToDiagrams(): void {
 function render(): void {
   mermaid.initialize({ startOnLoad: false, theme: "dark", themeVariables: THEME_VARIABLES });
   convertCodeBlocksToDiagrams();
-  void mermaid.run();
+  mermaid.run().catch(() => {
+    // Diagram render failures are non-fatal for the surrounding documentation.
+  });
 }
 
 if (document.readyState === "loading") {

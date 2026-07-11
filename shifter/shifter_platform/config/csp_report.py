@@ -60,27 +60,31 @@ def _field(raw: object, max_len: int) -> str:
     return str(raw)[:max_len]
 
 
-def _extract_reports(payload: object, content_type: str) -> list[dict] | None:
+def _extract_report_batch(payload: object) -> list[dict[str, object]] | None:
+    """Extract violation bodies from a Reporting API ``reports+json`` batch."""
+    if not isinstance(payload, list):
+        return None
+    return [
+        item["body"]
+        for item in payload
+        if isinstance(item, dict) and item.get("type") == _CSP_REPORT_TYPE and isinstance(item.get("body"), dict)
+    ]
+
+
+def _extract_reports(payload: object, content_type: str | None) -> list[dict[str, object]] | None:
     """Normalize either report envelope to a list of violation bodies.
 
     Returns ``None`` when the payload shape is not a recognized report envelope.
     """
     if content_type == _REPORTS_MEDIA:
-        if not isinstance(payload, list):
-            return None
-        bodies = [
-            item["body"]
-            for item in payload
-            if isinstance(item, dict) and item.get("type") == _CSP_REPORT_TYPE and isinstance(item.get("body"), dict)
-        ]
-        return bodies
+        return _extract_report_batch(payload)
     # Legacy application/csp-report: {"csp-report": {...}}.
     if isinstance(payload, dict) and isinstance(payload.get("csp-report"), dict):
         return [payload["csp-report"]]
     return None
 
 
-def _log_violation(request: HttpRequest, body: dict) -> None:
+def _log_violation(request: HttpRequest, body: dict[str, object]) -> None:
     """Emit one bounded, sanitized ECS event for a single violation."""
     directive = _field(
         body.get("effective-directive") or body.get("effectiveDirective") or body.get("violated-directive"),
@@ -105,23 +109,40 @@ def _log_violation(request: HttpRequest, body: dict) -> None:
     )
 
 
-@csrf_exempt
+def _rejection_status(request: HttpRequest) -> int | None:
+    """Return an HTTP error status for an unacceptable request, else ``None``."""
+    if request.content_type not in _ACCEPTED_MEDIA:
+        return 415
+    if len(request.body) > _MAX_BODY_BYTES:
+        return 413
+    return None
+
+
+def _parse_reports(request: HttpRequest) -> list[dict[str, object]] | None:
+    """Parse and normalize the report payload; ``None`` when malformed.
+
+    ``UnicodeDecodeError`` is a subclass of ``ValueError``, so one clause covers
+    both a bad UTF-8 body and invalid JSON.
+    """
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+    except ValueError:
+        return None
+    return _extract_reports(payload, request.content_type)
+
+
+# Anonymous report sink: browsers post CSP reports without a CSRF token and the
+# view performs no authenticated or domain mutation (ADR-035-R3).
+@csrf_exempt  # NOSONAR
 @require_POST
 def csp_report(request: HttpRequest) -> HttpResponse:
     """Accept and log a browser CSP violation report; return a fixed empty body."""
-    if request.content_type not in _ACCEPTED_MEDIA:
-        return HttpResponse(status=415)
-    if len(request.body) > _MAX_BODY_BYTES:
-        return HttpResponse(status=413)
-    try:
-        payload = json.loads(request.body.decode("utf-8"))
-    except (ValueError, UnicodeDecodeError):
-        return HttpResponse(status=400)
-
-    reports = _extract_reports(payload, request.content_type)
+    rejection = _rejection_status(request)
+    if rejection is not None:
+        return HttpResponse(status=rejection)
+    reports = _parse_reports(request)
     if reports is None:
         return HttpResponse(status=400)
-
     for body in reports[:_MAX_REPORTS_PER_BATCH]:
         _log_violation(request, body)
     return HttpResponse(status=204)
