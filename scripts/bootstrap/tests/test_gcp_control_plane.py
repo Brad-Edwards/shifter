@@ -23,6 +23,7 @@ from unittest.mock import patch
 import pytest
 
 import deploy
+import gcp_control_plane
 
 PINNED_IMAGE_TAG = "abc1234"
 
@@ -1758,6 +1759,47 @@ class TestGcpBootstrapIdentityPlatform:
             "OIDC_ISSUER_URL": "https://issuer.example.test/",
             "OIDC_AUTH_DOMAIN": "https://auth.example.test",
         }
+
+    def _write_gcp_dev_overlay(self, repo_root: Path, body: str) -> Path:
+        overlay = repo_root / gcp_control_plane._GCP_DEV_TFVARS_OVERLAY
+        overlay.parent.mkdir(parents=True, exist_ok=True)
+        overlay.write_text(body)
+        return overlay
+
+    def test_gcp_bootstrap_creds_from_tfvars_maps_overlay_keys(self, tmp_path):
+        """The gcp-dev overlay's HCL creds map to the GCP_BOOTSTRAP_ADMIN_* env keys."""
+        self._write_gcp_dev_overlay(
+            tmp_path,
+            "\n".join(
+                [
+                    'project_id                   = "prod-ksqdkj"',
+                    'gcp_bootstrap_admin_email    = "operator@paloaltonetworks.com"',
+                    'gcp_bootstrap_admin_password = "Galvatron7!!!"',
+                    "",
+                ]
+            ),
+        )
+
+        assert gcp_control_plane._gcp_bootstrap_creds_from_tfvars(tmp_path) == {
+            "GCP_BOOTSTRAP_ADMIN_EMAIL": "operator@paloaltonetworks.com",
+            "GCP_BOOTSTRAP_ADMIN_PASSWORD": "Galvatron7!!!",
+        }
+
+    def test_gcp_bootstrap_creds_from_tfvars_absent_overlay_returns_empty(self, tmp_path):
+        """A missing (gitignored) overlay yields no creds so the bootstrap falls back."""
+        assert gcp_control_plane._gcp_bootstrap_creds_from_tfvars(tmp_path) == {}
+
+    def test_load_bootstrap_env_values_overlay_overrides_process_env(self, tmp_path, monkeypatch):
+        """The tfvars overlay is authoritative: it overrides a stale process-env password."""
+        self._write_gcp_dev_overlay(
+            tmp_path,
+            'gcp_bootstrap_admin_password = "from-overlay"\n',
+        )
+        monkeypatch.setenv("GCP_BOOTSTRAP_ADMIN_PASSWORD", "from-process-env")
+
+        values = gcp_control_plane.load_bootstrap_env_values(repo_root=tmp_path)
+
+        assert values["GCP_BOOTSTRAP_ADMIN_PASSWORD"] == "from-overlay"
 
     def test_resolve_gcp_bootstrap_operator_credentials_returns_none_when_missing(self):
         """Bootstrap should report no operator credentials when the env files do not provide them."""
