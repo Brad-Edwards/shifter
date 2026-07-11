@@ -149,14 +149,14 @@ class _LaunchRateThrottle(BaseThrottle):
         """Return the seconds a throttled caller should wait (drives Retry-After)."""
         return self._wait_seconds
 
-    def _active_policy(self, request: Request) -> dict | None:
+    def _active_policy(self, request: Request) -> dict[str, Any] | None:
         """Return this operation's budget policy, or ``None`` when limiting is off."""
         enabled = getattr(settings, "LAUNCH_RATE_LIMIT_ENABLED", False)
         if not enabled or request.method != "POST":
             return None
         return settings.LAUNCH_RATE_LIMITS.get(self.operation)
 
-    def _charge(self, policy: dict, actor_pk: object) -> list[int]:
+    def _charge(self, policy: dict[str, Any], actor_pk: object) -> list[int]:
         """Charge both budgets and return the windows of any exceeded budget.
 
         Returns an empty list when within budget. Raises
