@@ -18,6 +18,12 @@ from django.utils import timezone
 
 logger = logging.getLogger(__name__)
 
+# Shared event/payload keys, kept as constants so the same contract key is not
+# repeated as a bare string literal across both record functions.
+_KEY_OPERATION_ID = "operation_id"
+_KEY_REQUEST_ID = "request_id"
+_KEY_SOURCE_TIMESTAMP = "source_timestamp"
+
 
 def _parse_timestamp(value: object) -> datetime:
     """Parse an ISO-8601 source timestamp from an event, defaulting to now."""
@@ -31,18 +37,18 @@ def _parse_timestamp(value: object) -> datetime:
 
 def record_aces_operation_status(event: dict[str, Any]) -> None:
     """Persist an operation_status sidecar record from a range.aces.operation event."""
-    request_id = event.get("request_id")
-    operation_id = event.get("operation_id")
+    request_id = event.get(_KEY_REQUEST_ID)
+    operation_id = event.get(_KEY_OPERATION_ID)
     status = event.get("aces_status")
     if not (request_id and operation_id and status):
         logger.warning("Ignoring malformed ACES operation event event_id=%s", event.get("event_id", "unknown"))
         return
-    source_timestamp = _parse_timestamp(event.get("source_timestamp"))
+    source_timestamp = _parse_timestamp(event.get(_KEY_SOURCE_TIMESTAMP))
     payload: dict[str, Any] = {
-        "operation_id": operation_id,
-        "request_id": str(request_id),
+        _KEY_OPERATION_ID: operation_id,
+        _KEY_REQUEST_ID: str(request_id),
         "status": status,
-        "source_timestamp": source_timestamp.isoformat(),
+        _KEY_SOURCE_TIMESTAMP: source_timestamp.isoformat(),
     }
     reason = event.get("status_reason")
     if reason:
@@ -61,16 +67,16 @@ def record_aces_operation_status(event: dict[str, Any]) -> None:
 
 def record_aces_runtime_snapshot(event: dict[str, Any]) -> None:
     """Persist a runtime_snapshot sidecar record from a range.aces.snapshot event."""
-    request_id = event.get("request_id")
-    operation_id = event.get("operation_id")
+    request_id = event.get(_KEY_REQUEST_ID)
+    operation_id = event.get(_KEY_OPERATION_ID)
     resources = event.get("resources")
     if not (request_id and operation_id) or not isinstance(resources, list):
         logger.warning("Ignoring malformed ACES snapshot event event_id=%s", event.get("event_id", "unknown"))
         return
-    source_timestamp = _parse_timestamp(event.get("source_timestamp"))
+    source_timestamp = _parse_timestamp(event.get(_KEY_SOURCE_TIMESTAMP))
     payload: dict[str, Any] = {
-        "operation_id": operation_id,
-        "request_id": str(request_id),
+        _KEY_OPERATION_ID: operation_id,
+        _KEY_REQUEST_ID: str(request_id),
         "resources": resources,
         "captured_at": source_timestamp.isoformat(),
     }
