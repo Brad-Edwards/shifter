@@ -23,6 +23,14 @@ describe("rangeStatusMapping", () => {
   it("falls back to neutral for an unknown status", () => {
     expect(rangeStatusMapping("weird").intent).toBe("neutral");
   });
+
+  it("maps the cyberscript ResourceStatus lifecycle values (#1370)", () => {
+    expect(rangeStatusMapping("pending").intent).toBe("pending");
+    expect(rangeStatusMapping("pausing").intent).toBe("pending");
+    expect(rangeStatusMapping("paused").intent).toBe("warning");
+    expect(rangeStatusMapping("resuming").intent).toBe("pending");
+    expect(rangeStatusMapping("destroyed").intent).toBe("muted");
+  });
 });
 
 describe("eventStatusMapping", () => {

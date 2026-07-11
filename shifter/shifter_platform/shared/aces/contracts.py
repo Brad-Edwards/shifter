@@ -10,6 +10,13 @@ from __future__ import annotations
 SHIFTER_BACKEND_NAME = "shifter"
 SHIFTER_BACKEND_PROFILE = "provisioning-only"
 
+# Outbox event types the ACES-native provisioner emits for operational evidence
+# (#1478). MUST match the provisioner-side literals in
+# ``shifter/engine/provisioner/events.py``. The platform consumer persists the
+# corresponding operation_status / runtime_snapshot sidecar records.
+EVENT_TYPE_ACES_OPERATION = "range.aces.operation"
+EVENT_TYPE_ACES_SNAPSHOT = "range.aces.snapshot"
+
 SHIFTER_SUPPORTED_CONTRACT_VERSIONS = frozenset(
     {
         "backend-manifest-v2",

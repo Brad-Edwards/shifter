@@ -77,6 +77,7 @@ class BootstrapFeatureFlagsSerializer(serializers.Serializer):
 
     risk_register_spa = serializers.BooleanField()
     platform_spa = serializers.BooleanField()
+    mission_control_spa = serializers.BooleanField()
 
 
 class BootstrapSerializer(serializers.Serializer):
@@ -179,6 +180,7 @@ class BootstrapView(APIView):
             "feature_flags": {
                 "risk_register_spa": bool(getattr(settings, "RISK_REGISTER_SPA_ENABLED", False)),
                 "platform_spa": bool(getattr(settings, "PLATFORM_SPA_ENABLED", False)),
+                "mission_control_spa": bool(getattr(settings, "MISSION_CONTROL_SPA_ENABLED", False)),
             },
         }
         return Response(BootstrapSerializer(payload).data)
