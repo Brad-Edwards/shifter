@@ -668,10 +668,11 @@ module "ec2" {
   log_retention_days = var.log_retention_days
 
   # Messaging (SQS queues for message consumers)
-  sqs_queue_arns  = values(module.messaging.sqs_queue_arns)
-  sqs_queue_urls  = module.messaging.sqs_queue_urls
-  sqs_kms_key_arn = module.messaging.kms_key_arn
-  s3_kms_key_arn  = aws_kms_key.portal_s3.arn
+  sqs_queue_arns         = values(module.messaging.sqs_queue_arns)
+  sqs_queue_urls         = module.messaging.sqs_queue_urls
+  sqs_kms_key_arn        = module.messaging.kms_key_arn
+  range_events_topic_arn = module.messaging.sns_topic_arn
+  s3_kms_key_arn         = aws_kms_key.portal_s3.arn
 
   # Parameter Store prefix for user_data bootstrap
   ssm_parameter_store_prefix = module.ssm.parameter_store_prefix
