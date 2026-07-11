@@ -79,6 +79,7 @@ from ._range_queries import (
     get_range,
     get_range_by_request_id,
     has_ready_active_range,
+    list_mission_control_range_history,
     list_ranges,
 )
 from ._range_reassign import reassign_range_owner
@@ -147,6 +148,7 @@ __all__ = (
     "list_agents",
     "list_credentials",
     "list_launchable_scenarios",
+    "list_mission_control_range_history",
     "list_ngfws",
     "list_ranges",
     "list_scenarios",

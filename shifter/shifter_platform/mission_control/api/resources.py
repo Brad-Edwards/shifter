@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 
 from django.http import Http404, JsonResponse
+from drf_spectacular.utils import extend_schema
 from rest_framework.request import Request
 from rest_framework.response import Response
 
@@ -20,9 +21,14 @@ from mission_control.api._base import (
 )
 from mission_control.api.permissions import HasMissionControlActor
 from mission_control.api.serializers import (
+    CredentialCreateResponseSerializer,
     CredentialCreateSerializer,
+    NGFWCreateResponseSerializer,
     NGFWCreateSerializer,
+    NGFWDestroyResponseSerializer,
     NGFWDestroySerializer,
+    NGFWListResponseSerializer,
+    SuccessResponseSerializer,
 )
 from mission_control.views._common import _pkg
 from mission_control.views._credentials import _CredentialError, _persist_credential, _validate_credential_spec
@@ -40,6 +46,7 @@ class NGFWCreateView(MissionControlAPIView):
 
     permission_classes = [IsAuthenticatedSessionOrApiToken, HasMissionControlActor, _ngfw_write_permission()]
 
+    @extend_schema(responses=NGFWCreateResponseSerializer, operation_id="api_v1_mission_control_ngfw_create")
     def post(self, request: Request) -> Response | JsonResponse:
         """Start NGFW provisioning for the authenticated actor."""
         data, error = _validated(self, NGFWCreateSerializer, request.data)
@@ -63,6 +70,7 @@ class NGFWListView(MissionControlReadAPIView):
 
     permission_classes = [IsAuthenticatedSessionOrApiToken, HasMissionControlActor, _ngfw_read_permission()]
 
+    @extend_schema(responses=NGFWListResponseSerializer, operation_id="api_v1_mission_control_ngfw_list")
     def get(self, request: Request) -> Response:
         """Return NGFWs owned by the authenticated actor."""
         ngfws = cms_list_ngfws(self.actor_user())
@@ -87,6 +95,7 @@ class NGFWDestroyView(MissionControlAPIView):
 
     permission_classes = [IsAuthenticatedSessionOrApiToken, HasMissionControlActor, _ngfw_write_permission()]
 
+    @extend_schema(responses=NGFWDestroyResponseSerializer, operation_id="api_v1_mission_control_ngfw_destroy")
     def post(self, request: Request, app_id: str) -> Response | JsonResponse:
         """Start NGFW deprovisioning for the requested app id."""
         data, error = _validated(self, NGFWDestroySerializer, request.data)
@@ -114,6 +123,9 @@ class CredentialCreateView(MissionControlAPIView):
 
     permission_classes = [IsAuthenticatedSessionOrApiToken, HasMissionControlActor, _credentials_write_permission()]
 
+    @extend_schema(
+        responses=CredentialCreateResponseSerializer, operation_id="api_v1_mission_control_credentials_create"
+    )
     def post(self, request: Request) -> Response | JsonResponse:
         """Validate and persist a Mission Control credential."""
         data, error = _validated(self, CredentialCreateSerializer, request.data)
@@ -148,6 +160,7 @@ class CredentialDeleteView(MissionControlAPIView):
 
     permission_classes = [IsAuthenticatedSessionOrApiToken, HasMissionControlActor, _credentials_write_permission()]
 
+    @extend_schema(responses=SuccessResponseSerializer, operation_id="api_v1_mission_control_credentials_delete")
     def post(self, request: Request, credential_id: int) -> Response:
         """Delete a credential visible to the authenticated actor."""
         user = self.actor_user()

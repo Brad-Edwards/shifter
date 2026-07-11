@@ -59,7 +59,7 @@ describe("isNavEntryVisible", () => {
   it("hides an entry when its feature flag is off", () => {
     const gated: NavEntry = { ...RR_ENTRY, featureFlag: "risk_register_spa" };
     const bs = bootstrap({
-      feature_flags: { risk_register_spa: false, platform_spa: true },
+      feature_flags: { risk_register_spa: false, platform_spa: true, mission_control_spa: true },
     });
     expect(isNavEntryVisible(gated, bs)).toBe(false);
   });
