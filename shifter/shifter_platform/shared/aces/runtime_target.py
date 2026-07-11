@@ -38,6 +38,7 @@ from aces_contracts.planning import PlannedResource, ProvisioningPlan, RuntimeDo
 from aces_contracts.runtime_state import ApplyResult, RuntimeSnapshot, SnapshotEntry
 from aces_runtime.registry import BackendRegistry, RuntimeTarget, RuntimeTargetComponents
 
+from shared.aces.composition_envelope import COMPOSITION_RESOURCE_TYPES, composition_diagnostics
 from shared.aces.contracts import SHIFTER_BACKEND_NAME
 from shared.aces.dispatch_port import ShifterDispatchResult, ShifterProvisioningDispatchPort
 from shared.aces.manifest import SHIFTER_PROVISIONER_CAPABILITIES, create_shifter_backend_manifest
@@ -59,7 +60,10 @@ __all__ = [
 _DOMAIN = "provisioning"
 NODE_RESOURCE_TYPE = "node"
 NETWORK_RESOURCE_TYPE = "network"
-SUPPORTED_RESOURCE_TYPES: frozenset[str] = frozenset({NODE_RESOURCE_TYPE, NETWORK_RESOURCE_TYPE})
+#: Node/network plus the composition placement types (content/features/accounts).
+SUPPORTED_RESOURCE_TYPES: frozenset[str] = (
+    frozenset({NODE_RESOURCE_TYPE, NETWORK_RESOURCE_TYPE}) | COMPOSITION_RESOURCE_TYPES
+)
 
 #: Discriminator for the serialized plan persisted in ``range_config`` so the
 #: provisioner ``aces-range`` path can tell it apart from a cyberscript envelope.
@@ -203,6 +207,7 @@ def _capability_envelope_diagnostics(
 ) -> list[Diagnostic]:
     """Return fail-closed diagnostics for every out-of-envelope term in the plan."""
     diagnostics: list[Diagnostic] = []
+    node_addresses = {r.address for r in resources if r.resource_type == NODE_RESOURCE_TYPE}
     total_nodes = 0
     for resource in resources:
         payload = resource.payload
@@ -222,11 +227,11 @@ def _capability_envelope_diagnostics(
                     f"(supported: {sorted(SUPPORTED_RESOURCE_TYPES)})",
                 )
             )
-            continue
-        if resource.resource_type == NETWORK_RESOURCE_TYPE:
-            continue
-        total_nodes += _node_count(payload)
-        diagnostics.extend(_node_envelope_diagnostics(resource, payload, capabilities))
+        elif resource.resource_type == NODE_RESOURCE_TYPE:
+            total_nodes += _node_count(payload)
+            diagnostics.extend(_node_envelope_diagnostics(resource, payload, capabilities))
+        elif resource.resource_type in COMPOSITION_RESOURCE_TYPES:
+            diagnostics.extend(composition_diagnostics(resource, payload, capabilities, node_addresses))
     if capabilities.max_total_nodes is not None and total_nodes > capabilities.max_total_nodes:
         diagnostics.append(
             _diagnostic(

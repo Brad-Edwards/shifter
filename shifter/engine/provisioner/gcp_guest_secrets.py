@@ -120,6 +120,45 @@ def ensure_rdp_password_secret(range_id: int, instance: GuestInstance) -> tuple[
     )
 
 
+def _aces_secret_id(range_id: int, instance_key: str, kind: str) -> str:
+    """Return the deterministic secret id for an ACES-native range instance.
+
+    Keyed on the range id + the ACES instance key (node address + count index),
+    not a cyberscript ``ScenarioInstance``: the ACES provisioning path carries no
+    scenario role/os enums, so credentials are minted per authored node instance.
+    """
+    return _sanitize_secret_part(f"shifter-range-{range_id}-aces-{instance_key}-{kind}", max_length=255)
+
+
+def ensure_aces_ssh_secret(range_id: int, instance_key: str) -> tuple[str, str]:
+    """Create or read the provisioner-managed SSH key for one ACES range instance.
+
+    The provisioner owns this range-management credential (it is not a participant
+    account, which is a later participant-runtime concern): it mints the keypair,
+    stores the private half in Secret Manager, and returns ``(secret_ref,
+    public_key)`` so the public half can be injected as the guest login key.
+    """
+    secret_name, private_key = _read_or_create_secret(
+        _aces_secret_id(range_id, instance_key, "ssh"),
+        lambda: generate_ssh_keypair()[0],
+    )
+    return secret_name, derive_ssh_public_key(private_key)
+
+
+def delete_aces_ssh_secret(range_id: int, instance_key: str) -> None:
+    """Delete the provisioner-managed SSH secret for one ACES range instance."""
+    try:
+        client, google_exceptions, project_id = _secret_client()
+    except RuntimeError:
+        return
+    secret_name = f"projects/{project_id}/secrets/{_aces_secret_id(range_id, instance_key, 'ssh')}"
+    try:
+        client.delete_secret(request={"name": secret_name})
+        logger.info("Deleted ACES range guest secret secret_fp=%s", safe_log_fingerprint(secret_name))
+    except google_exceptions.NotFound:
+        return
+
+
 def delete_guest_secret(range_id: int, instance: GuestInstance, kind: str) -> None:
     """Delete a per-instance guest secret, ignoring missing secrets."""
     try:
