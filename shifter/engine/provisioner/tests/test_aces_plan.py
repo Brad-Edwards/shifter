@@ -14,7 +14,10 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from aces_plan import (
+    ACES_PROVISIONING_PLAN_CONTRACT_VERSION,
     ACES_PROVISIONING_PLAN_KIND,
+    MAXIMUM_ACES_SDL_VERSION_EXCLUSIVE,
+    MINIMUM_ACES_SDL_VERSION,
     AcesPlan,
     AcesPlanError,
     parse_plan,
@@ -32,12 +35,20 @@ def _resource(address: str, resource_type: str, payload: dict) -> dict:
     }
 
 
-def _serialized(*resources: dict, version: str = "0.19.1") -> dict:
-    return {
+def _serialized(
+    *resources: dict,
+    version: str | None = "0.19.1",
+    contract_version: str | None = ACES_PROVISIONING_PLAN_CONTRACT_VERSION,
+) -> dict:
+    envelope: dict = {
         "kind": ACES_PROVISIONING_PLAN_KIND,
-        "aces_sdl_version": version,
         "resources": {r["address"]: r for r in resources},
     }
+    if version is not None:
+        envelope["aces_sdl_version"] = version
+    if contract_version is not None:
+        envelope["contract_version"] = contract_version
+    return envelope
 
 
 def _node_payload(**node_spec) -> dict:
@@ -112,16 +123,20 @@ class TestParseValid:
         assert node.ram_mib is None and node.vcpus is None and node.image is None
         assert node.count == 1  # default
 
-    def test_unresolvable_network_ref_dropped(self):
+    def test_unresolvable_network_ref_fails_closed(self):
+        # ADR-032-R7: a node referencing an undeclared network aborts rather than
+        # silently dropping the ref (which would provision a wrong topology).
         payload = {"os_family": "linux", "spec": {"infrastructure": {"networks": ["ghost"]}}}
-        parsed = parse_plan(_serialized(_resource("node.a", "node", payload)))
-        assert parsed.nodes[0].network_addresses == ()
+        with pytest.raises(AcesPlanError, match="unknown network"):
+            parse_plan(_serialized(_resource("node.a", "node", payload)))
 
 
 class TestAclExtraction:
     def _node_with_acls(self, *acls: dict) -> dict:
         payload = {"os_family": "linux", "spec": {"infrastructure": {"acls": list(acls)}}}
-        parsed = parse_plan(_serialized(_resource("node.a", "node", payload)))
+        # Declare the network ACL endpoints reference so parse resolves them (ADR-032-R7).
+        network = _resource("net.dmz", "network", {"name": "dmz", "spec": {"infrastructure": {"properties": {}}}})
+        parsed = parse_plan(_serialized(_resource("node.a", "node", payload), network))
         return parsed.nodes[0]
 
     def test_extracts_and_normalizes_acl(self):
@@ -182,8 +197,15 @@ class TestCompositionExtraction:
             },
         )
 
+    def _target_node(self) -> dict:
+        # The node every composition placement below targets (provision.node.web);
+        # ADR-032-R7 requires composition targets resolve to a declared node.
+        return _resource("provision.node.web", "node", {"os_family": "linux", "spec": {"node": {}}})
+
     def test_extracts_inline_file_content(self):
-        plan = parse_plan(_serialized(self._content_resource(type="file", path="/srv/x.txt", text="hello")))
+        plan = parse_plan(
+            _serialized(self._content_resource(type="file", path="/srv/x.txt", text="hello"), self._target_node())
+        )
         content = plan.content[0]
         assert content.content_type == "file"
         assert content.path == "/srv/x.txt"
@@ -198,7 +220,8 @@ class TestCompositionExtraction:
                     format="json",
                     source={"name": "seed-pkg"},
                     items=[{"name": "a.json"}, {"name": "b.json"}],
-                )
+                ),
+                self._target_node(),
             )
         )
         content = plan.content[0]
@@ -214,7 +237,7 @@ class TestCompositionExtraction:
         assert content.destination == "/srv/data"
 
     def _serialized_directory(self) -> dict:
-        return _serialized(self._content_resource(type="directory", destination="/srv/data"))
+        return _serialized(self._content_resource(type="directory", destination="/srv/data"), self._target_node())
 
     def test_extracts_account(self):
         account_resource = _resource(
@@ -235,7 +258,7 @@ class TestCompositionExtraction:
                 },
             },
         )
-        account = parse_plan(_serialized(account_resource)).accounts[0]
+        account = parse_plan(_serialized(account_resource, self._target_node())).accounts[0]
         assert account.username == "alice"
         assert account.groups == ("ops", "sudo")
         assert account.login_shell == "/bin/bash"
@@ -258,16 +281,17 @@ class TestCompositionExtraction:
                 },
             },
         )
-        feature = parse_plan(_serialized(feature_resource)).features[0]
+        feature = parse_plan(_serialized(feature_resource, self._target_node())).features[0]
         assert feature.name == "web-app"
         assert feature.feature_type == "service"
         assert feature.source_name == "nginx"
         assert feature.target_address == "provision.node.web"
 
-    def test_malformed_composition_is_skipped_not_fatal(self):
-        # A content resource missing its type is dropped (not raised) -> empty.
-        plan = parse_plan(_serialized(self._content_resource(path="/srv/x")))
-        assert plan.content == ()
+    def test_malformed_composition_fails_closed(self):
+        # ADR-032-R7: a content resource missing its type is a malformed payload
+        # and aborts rather than being silently skipped.
+        with pytest.raises(AcesPlanError, match="malformed content-placement"):
+            parse_plan(_serialized(self._content_resource(path="/srv/x")))
 
     def test_no_composition_is_empty(self):
         plan = parse_plan(_serialized(_resource("node.a", "node", {"os_family": "linux", "spec": {"node": {}}})))
@@ -289,3 +313,127 @@ class TestSelfDiscrimination:
         envelope = {"spec_schema": "range_spec", "spec_version": "1", "payload": {"scenario_id": "basic-attack"}}
         with pytest.raises(AcesPlanError):
             parse_plan(envelope)
+
+
+class TestVersionValidation:
+    """ADR-032-R7: declare + validate supported contract and producer versions."""
+
+    def _node(self) -> dict:
+        return _resource("node.a", "node", {"os_family": "linux", "spec": {"node": {}}})
+
+    def test_supported_contract_version_accepted(self):
+        parsed = parse_plan(_serialized(self._node()))
+        assert isinstance(parsed, AcesPlan)
+
+    def test_missing_contract_version_fails_closed(self):
+        with pytest.raises(AcesPlanError, match="contract_version"):
+            parse_plan(_serialized(self._node(), contract_version=None))
+
+    def test_unknown_contract_version_fails_closed(self):
+        with pytest.raises(AcesPlanError, match="contract_version"):
+            parse_plan(_serialized(self._node(), contract_version="aces-provisioning-plan-v99"))
+
+    def test_missing_aces_sdl_version_fails_closed(self):
+        with pytest.raises(AcesPlanError, match="aces_sdl_version"):
+            parse_plan(_serialized(self._node(), version=None))
+
+    def test_empty_aces_sdl_version_fails_closed(self):
+        with pytest.raises(AcesPlanError, match="aces_sdl_version"):
+            parse_plan(_serialized(self._node(), version="   "))
+
+    def test_below_minimum_aces_sdl_version_fails_closed(self):
+        with pytest.raises(AcesPlanError, match="outside the supported range"):
+            parse_plan(_serialized(self._node(), version="0.18.9"))
+
+    def test_future_series_aces_sdl_version_fails_closed(self):
+        # A future major/minor outside the bounded series is rejected, not assumed
+        # compatible -- an independently upgraded producer cannot slip changed
+        # semantics past the older consumer.
+        with pytest.raises(AcesPlanError, match="outside the supported range"):
+            parse_plan(_serialized(self._node(), version="1.4.0"))
+
+    def test_exclusive_maximum_aces_sdl_version_fails_closed(self):
+        with pytest.raises(AcesPlanError, match="outside the supported range"):
+            parse_plan(_serialized(self._node(), version=MAXIMUM_ACES_SDL_VERSION_EXCLUSIVE))
+
+    def test_prerelease_aces_sdl_version_fails_closed(self):
+        with pytest.raises(AcesPlanError, match="not a valid release version"):
+            parse_plan(_serialized(self._node(), version="0.19.1rc1"))
+
+    def test_trailing_garbage_aces_sdl_version_fails_closed(self):
+        with pytest.raises(AcesPlanError, match="not a valid release version"):
+            parse_plan(_serialized(self._node(), version="0.19.1garbage"))
+
+    def test_unparseable_aces_sdl_version_fails_closed(self):
+        with pytest.raises(AcesPlanError, match="not a valid release version"):
+            parse_plan(_serialized(self._node(), version="not-a-version"))
+
+    def test_minimum_aces_sdl_version_accepted(self):
+        parsed = parse_plan(_serialized(self._node(), version=MINIMUM_ACES_SDL_VERSION))
+        assert parsed.aces_sdl_version == MINIMUM_ACES_SDL_VERSION
+
+    def test_patch_within_series_accepted(self):
+        parsed = parse_plan(_serialized(self._node(), version="0.19.9"))
+        assert parsed.aces_sdl_version == "0.19.9"
+
+
+class TestFailClosed:
+    """ADR-032-R7: reject unknown types, duplicate identities, dangling refs."""
+
+    def test_unknown_resource_type_fails_closed(self):
+        bad = _resource("lb.edge", "loadbalancer", {"spec": {}})
+        with pytest.raises(AcesPlanError, match="resource_type"):
+            parse_plan(_serialized(bad))
+
+    def test_duplicate_resource_address_fails_closed(self):
+        node = _resource("node.a", "node", {"os_family": "linux", "spec": {"node": {}}})
+        plan = _serialized(node)
+        # Two entries sharing the same authored address (distinct dict keys so the
+        # collision is not hidden by the resources map).
+        plan["resources"]["node.a#dup"] = _resource("node.a", "node", {"os_family": "linux", "spec": {"node": {}}})
+        with pytest.raises(AcesPlanError, match="duplicate resource address"):
+            parse_plan(plan)
+
+    def test_duplicate_network_alias_fails_closed(self):
+        net_a = _resource("net.a", "network", {"name": "shared", "spec": {"infrastructure": {"properties": {}}}})
+        net_b = _resource("net.b", "network", {"name": "shared", "spec": {"infrastructure": {"properties": {}}}})
+        with pytest.raises(AcesPlanError, match="duplicate network alias"):
+            parse_plan(_serialized(net_a, net_b))
+
+    def test_duplicate_node_alias_fails_closed(self):
+        node_a = _resource("node.a", "node", {"name": "web", "spec": {"node": {}}})
+        node_b = _resource("node.b", "node", {"name": "web", "spec": {"node": {}}})
+        with pytest.raises(AcesPlanError, match="duplicate node alias"):
+            parse_plan(_serialized(node_a, node_b))
+
+    def test_dangling_acl_endpoint_fails_closed(self):
+        node = _resource(
+            "node.a",
+            "node",
+            {
+                "os_family": "linux",
+                "spec": {"infrastructure": {"acls": [{"action": "allow", "from_net": "net.ghost"}]}},
+            },
+        )
+        with pytest.raises(AcesPlanError, match=r"ACL .* references unknown network"):
+            parse_plan(_serialized(node))
+
+    def test_dangling_composition_target_fails_closed(self):
+        content = _resource(
+            "content.doc",
+            "content-placement",
+            {"content_name": "doc", "target_address": "provision.node.ghost", "spec": {"type": "file"}},
+        )
+        with pytest.raises(AcesPlanError, match="targets unknown node"):
+            parse_plan(_serialized(content))
+
+    def test_unhashable_contract_version_fails_closed(self):
+        # A malformed envelope whose discriminator is unhashable must fail closed as
+        # AcesPlanError, not raise TypeError from set membership.
+        with pytest.raises(AcesPlanError, match="contract_version"):
+            parse_plan(_serialized(contract_version=[]))  # type: ignore[arg-type]
+
+    def test_unhashable_resource_type_fails_closed(self):
+        bad = _resource("x.a", {}, {"spec": {}})  # type: ignore[arg-type]
+        with pytest.raises(AcesPlanError, match="resource_type"):
+            parse_plan(_serialized(bad))

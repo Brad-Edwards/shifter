@@ -1,30 +1,41 @@
-"""Drift guard: the provisioner plan reader extracts what the reference backend does.
+"""Producer -> consumer contract test for the serialized ACES ProvisioningPlan.
 
 Per ADR-032 Shifter rides the ACES contract: the platform serializes the compiled
 ProvisioningPlan (``serialize_provisioning_plan``) and the provisioner reads it via
-accessors that mirror the reference ACES backend ``aces_backend_libvirt``. This
-test is the differential oracle: it serializes a real plan, parses it with the
-provisioner reader (``shifter/engine/provisioner/aces_plan.py``, loaded standalone
-since it is pure-stdlib), and asserts the extracted image / memory / vcpus /
-os_family match ``aces_backend_libvirt``'s own accessors for the same payloads.
-If the ACES payload convention shifts upstream, this fails until the provisioner
-reader is realigned.
+``shifter/engine/provisioner/aces_plan.py`` (loaded standalone, since it is
+pure-stdlib). This test drives that boundary end to end using **only public ACES
+contract types** (``aces_contracts``) and the Shifter producer, and asserts the
+consumer extracts the expected Shifter-owned values and enforces the ADR-032-R7
+transport version contract.
+
+Compatibility is asserted against public APIs and Shifter-owned fixtures only -- no
+private reference-backend helpers (ADR-032-R7 / issue #1522). This guards the
+*consumer's own* extraction against regression (editing ``aces_plan.py``'s accessors
+breaks these expectations). It is deliberately not a live differential oracle
+against the reference backend -- the private ``aces_backend_libvirt`` accessors are
+not a compatibility contract (ADR-032-R7). An upstream ACES payload-convention change
+is instead bounded by the supported ``aces-sdl`` window
+``[MINIMUM_ACES_SDL_VERSION, MAXIMUM_ACES_SDL_VERSION_EXCLUSIVE)`` the consumer
+enforces, and must be re-validated (this fixture + the ACES conformance gate) when
+that window is raised.
 """
 
 from __future__ import annotations
 
+import importlib.metadata
 import importlib.util
 import sys
+import tomllib
 from pathlib import Path
 
 import pytest
-from aces_backend_libvirt import realization as libvirt_realization
-from aces_backend_libvirt._payload import _os_family as libvirt_os_family
 from aces_contracts.planning import PlannedResource, ProvisioningPlan, RuntimeDomain
 
+from shared.aces.contracts import ACES_PROVISIONING_PLAN_CONTRACT_VERSION
 from shared.aces.runtime_target import serialize_provisioning_plan
 
 _PROVISIONER_READER = Path(__file__).resolve().parents[4] / "engine" / "provisioner" / "aces_plan.py"
+_SHIFTER_PLATFORM_PYPROJECT = Path(__file__).resolve().parents[3] / "pyproject.toml"
 
 
 def _load_provisioner_reader():
@@ -39,6 +50,19 @@ def _load_provisioner_reader():
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return module
+
+
+def _aces_sdl_pin_floor() -> str:
+    """Return the ``aces-sdl>=`` version floor declared in shifter_platform pyproject."""
+    data = tomllib.loads(_SHIFTER_PLATFORM_PYPROJECT.read_text())
+    for dep in data["project"]["dependencies"]:
+        normalized = dep.replace(" ", "")
+        if normalized.startswith("aces-sdl>="):
+            floor = normalized.split(">=", 1)[1]
+            for sep in (",", "<", "!", "~", ";"):
+                floor = floor.split(sep, 1)[0]
+            return floor.strip()
+    raise AssertionError("aces-sdl>= pin not found in shifter_platform/pyproject.toml")
 
 
 @pytest.fixture(scope="module")
@@ -71,43 +95,56 @@ def _plan() -> ProvisioningPlan:
     return ProvisioningPlan(resources={node.address: node, network.address: network})
 
 
-class TestProvisionerReaderParity:
+class TestProvisionerReaderContract:
     def test_kind_constant_matches_serializer(self, reader):
         from shared.aces.runtime_target import ACES_PROVISIONING_PLAN_KIND
 
         assert reader.ACES_PROVISIONING_PLAN_KIND == ACES_PROVISIONING_PLAN_KIND
 
-    def test_extraction_matches_reference_backend(self, reader):
-        serialized = serialize_provisioning_plan(_plan())
-        parsed = reader.parse_plan(serialized)
+    def test_contract_version_round_trips(self, reader):
+        # ADR-032-R7: the producer stamp is a version the consumer accepts; the two
+        # contract-version constants stay in lockstep (the consumer ships without
+        # ``shared`` so this parity test is the drift guard).
+        assert reader.ACES_PROVISIONING_PLAN_CONTRACT_VERSION == ACES_PROVISIONING_PLAN_CONTRACT_VERSION
+        assert ACES_PROVISIONING_PLAN_CONTRACT_VERSION in reader.SUPPORTED_CONTRACT_VERSIONS
+        # A plan serialized by the producer parses cleanly through the consumer.
+        parsed = reader.parse_plan(serialize_provisioning_plan(_plan()))
+        assert parsed.aces_sdl_version  # the installed aces-sdl version, validated
+
+    def test_supported_aces_sdl_range_agrees_with_pin_and_lock(self, reader):
+        # AC5 / ADR-032-R4+R7: the consumer's supported-producer floor agrees with the
+        # aces-sdl dependency pin, and the installed (uv.lock-resolved) version sits
+        # inside the consumer's bounded window -- so metadata, lock, and ADR wording
+        # stay in sync and a real serialized plan round-trips.
+        assert _aces_sdl_pin_floor() == reader.MINIMUM_ACES_SDL_VERSION
+        low = reader._release_tuple(reader.MINIMUM_ACES_SDL_VERSION)
+        high = reader._release_tuple(reader.MAXIMUM_ACES_SDL_VERSION_EXCLUSIVE)
+        installed = reader._release_tuple(importlib.metadata.version("aces-sdl"))
+        assert low <= installed < high
+
+    def test_extraction_matches_expected_shifter_fixture(self, reader):
+        parsed = reader.parse_plan(serialize_provisioning_plan(_plan()))
 
         node = next(n for n in parsed.nodes if n.address == "node.web")
-        payload = _node_payload()
-
-        # Image name matches aces_backend_libvirt._image_ref (source name verbatim).
+        # Authored intent extracted verbatim (Shifter-owned expected values).
         assert node.image is not None
-        assert node.image.name == libvirt_realization._image_ref(payload)
+        assert node.image.name == "ubuntu-22.04"
         assert node.image.version == "1.2"
-        # Sizing matches the reference conversions for present values.
-        assert node.ram_mib == libvirt_realization._memory_mib(payload["spec"]["node"]["resources"]["ram"])
-        assert node.vcpus == libvirt_realization._vcpus(payload["spec"]["node"]["resources"]["cpu"])
-        # os_family matches the reference accessor.
-        assert node.os_family == libvirt_os_family(payload)
-        # Network membership resolved to the declared network address.
+        assert node.ram_mib == 2048  # 2 GiB bytes -> MiB
+        assert node.vcpus == 4
+        assert node.os_family == "linux"
         assert node.network_addresses == ("net.lan",)
 
         network = next(n for n in parsed.networks if n.address == "net.lan")
         assert network.cidr == "10.9.0.0/24"
 
-    def test_acl_extraction_matches_reference_backend(self, reader):
-        from aces_backend_libvirt.acls import realize_node_acls
-
+    def test_acl_extraction_normalizes_to_expected(self, reader):
         raw_acls = [
             {
                 "name": "ssh",
                 "action": "allow",
                 "direction": "in",
-                "protocol": "tcp",
+                "protocol": "TCP",
                 "ports": [22],
                 "from_net": "net.lan",
             }
@@ -118,6 +155,7 @@ class TestProvisionerReaderParity:
             resource_type="node",
             payload={"name": "web", "os_family": "linux", "spec": {"infrastructure": {"acls": raw_acls}}},
         )
+        # Declare the network the ACL endpoint references so parse resolves it (ADR-032-R7).
         network = PlannedResource(
             address="net.lan",
             domain=RuntimeDomain.PROVISIONING,
@@ -127,18 +165,8 @@ class TestProvisionerReaderParity:
         serialized = serialize_provisioning_plan(
             ProvisioningPlan(resources={node.address: node, network.address: network})
         )
-        parsed_acl = reader.parse_plan(serialized).nodes[0].acls[0]
-
-        cidr_lookup = {"net.lan": "10.9.0.0/24", "lan": "10.9.0.0/24"}
-        ref_acls, ref_diags = realize_node_acls(node, raw_acls, cidr_lookup)
-        assert not ref_diags
-        ref = ref_acls[0]
-        # Normalized fields match the reference; endpoints resolve to the same CIDR.
-        assert (parsed_acl.action, parsed_acl.direction, parsed_acl.protocol, parsed_acl.ports) == (
-            ref.action,
-            ref.direction,
-            ref.protocol,
-            ref.ports,
-        )
-        assert cidr_lookup.get(parsed_acl.from_net) == ref.src_cidr
-        assert (cidr_lookup.get(parsed_acl.to_net) if parsed_acl.to_net else None) == ref.dst_cidr
+        acl = reader.parse_plan(serialized).nodes[0].acls[0]
+        # Shifter-owned normalization: allow->accept, TCP->tcp; endpoint kept as ref
+        # (resolved to a concrete CIDR at realization, fail-closed).
+        assert (acl.action, acl.direction, acl.protocol, acl.ports) == ("accept", "in", "tcp", (22,))
+        assert acl.from_net == "net.lan" and acl.to_net is None
