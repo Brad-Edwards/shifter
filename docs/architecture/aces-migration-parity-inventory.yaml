@@ -554,20 +554,23 @@ rows:
     legacy_field: Shifter portal/CMS/engine/task-runner/provisioner launch path and ACES operation receipt/status/snapshot evidence
     category: validation gate
     aces_target: live or controlled Shifter ACES provisioning-only backend validation through the normal backend path
-    shifter_owner: cms.scenarios.registry, cms.services.create_range, engine.services.create_range, engine.ecs, shifter/engine/provisioner, shared.aces.operations, shared.aces.projections, mission_control.api.aces
-    validation_evidence: "future #1264 implementation evidence: launch receipt, operation-status projection, runtime-snapshot projection, cleanup result, and sanitized diagnostics captured through existing Shifter services and ACES sidecar read seams"
-    next_issue_kind: implementation-candidate
+    shifter_owner: cms.scenarios.registry, cms.services.create_range_dispatch, cms.services.create_aces_native_range, shared.aces.package_loader, engine.services.create_aces_range, engine.ecs, shifter/engine/provisioner, shared.aces.operations, shared.aces.projections, cms.aces.validation, cms.management.commands.run_aces_backend_validation, mission_control.api.aces
+    validation_evidence: "shipped #1264: cms/management/commands/run_aces_backend_validation.py launches a registered ACES package through create_range_dispatch, polls to READY, reads redacted receipt/status/runtime-snapshot evidence via cms.aces.validation.collect_evidence + shared.aces.projections, asserts non-vacuous realization, tears down by request_id, and sanitizes failures; docs/architecture/aces-cutover-evidence-1264.md; tests/cms/aces/test_validation.py + tests/cms/test_run_aces_backend_validation.py"
+    next_issue_kind: implemented
     candidate_issue_title: "#1264: Add live validation for Shifter ACES backend path"
     notes: >-
       #1264 is the cutover evidence gate that proves the provisioning-only
       RuntimeTarget path is not just a manifest/conformance claim: a launchable
-      ACES entry must enter through the normal registry, CMS range service,
-      engine interpreter/service, task-runner, and provisioner CLI request-id
-      path, then produce non-secret operation receipt/status/runtime-snapshot
-      evidence through the validated sidecar and redacted read projections.
-      Direct Terraform/cloud/provisioner calls, demo-only launchers, seeded
-      sidecar rows, raw logs, provider dumps, and ACES-authored backend
-      realization details do not satisfy this gate.
+      ACES entry enters through the normal registry, CMS range dispatch
+      (create_range_dispatch -> create_aces_native_range), package loader,
+      engine ACES range service, task-runner, and provisioner request-id path,
+      then produces non-secret operation receipt/status/runtime-snapshot
+      evidence through the validated sidecar and redacted read projections. The
+      run_aces_backend_validation command is the evidence path (run in a
+      deployed environment with SHIFTER_ACES_NATIVE_PROVISIONING=true against a
+      registered ACES package). Direct Terraform/cloud/provisioner calls,
+      demo-only launchers, seeded sidecar rows, raw logs, provider dumps, and
+      ACES-authored backend realization details do not satisfy this gate.
 
   - id: validation.participant-runtime-conformance
     surface: validation
