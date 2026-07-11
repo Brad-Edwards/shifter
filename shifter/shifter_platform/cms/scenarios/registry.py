@@ -13,6 +13,8 @@ import enum
 import logging
 from typing import TYPE_CHECKING, Any
 
+from django.conf import settings
+
 from cms.scenarios.loader import get_all_scenarios as get_yaml_scenarios
 from cms.scenarios.loader import list_scenario_ids as list_yaml_ids
 from cms.scenarios.loader import load_scenario as load_yaml_scenario
@@ -48,13 +50,14 @@ LAUNCHABLE_SOURCE_KINDS = frozenset({"repo", "object"})
 LAUNCHABLE_CONTRACT_KINDS = frozenset({"aces"})
 LAUNCHABLE_CONTRACT_PROFILES = frozenset({"shifter"})
 
-# (contract_kind, contract_profile) pairs that have a wired runtime hydration
+# (contract_kind, contract_profile) pairs that have a wired runtime launch
 # adapter — i.e. a launchable entry of that kind/profile can actually be turned
-# into a Shifter range/CTF spec by the launch path. This is EMPTY until an ACES
-# hydrator/adapter lands (a later issue), so ACES entries stay review-only and
-# are never marked launchable, even when conformant. Marking an entry launchable
-# before the adapter exists would expose an id that fails late at hydration.
-_LAUNCH_ADAPTER_CONTRACT_PROFILES: frozenset[tuple[str, str]] = frozenset()
+# into a Shifter range by the ACES-native launch path (#1479:
+# cms.services.create_aces_native_range -> shared.aces package loader -> engine
+# dispatch). Gated at runtime by SHIFTER_ACES_NATIVE_PROVISIONING (see
+# ``_aces_launchable``): with the flag off, ACES entries are never launchable and
+# behaviour is byte-identical to the pre-flag empty-set state.
+_LAUNCH_ADAPTER_CONTRACT_PROFILES: frozenset[tuple[str, str]] = frozenset({("aces", "shifter")})
 
 
 def _get_metadata_map() -> dict[str, dict[str, Any]]:
@@ -149,6 +152,11 @@ def _aces_launchable(source: AcesPackageSource, *, known_legacy_ids: set[str]) -
         True only if the entry is launchable.
     """
     from cms.models import AcesPackageSource as _AcesPackageSource
+
+    # Fail-closed on the cutover flag: with SHIFTER_ACES_NATIVE_PROVISIONING off,
+    # no ACES entry is launchable and behaviour matches the pre-adapter state.
+    if not settings.ACES_NATIVE_PROVISIONING_ENABLED:
+        return False
 
     return (
         # Never launchable until a runtime adapter exists for this contract/profile.
