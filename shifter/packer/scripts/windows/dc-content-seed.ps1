@@ -13,7 +13,7 @@ Start-Transcript -Path "C:\polaris-dc-finalize.log" -Append -Force
 Write-Host "=== polaris-dc finalize $(Get-Date -Format o) ==="
 
 # Firewall stays off on the DC (assert again post-reboot).
-Set-NetFirewallProfile -Profile Domain,Public,Private -Enabled $false
+Set-NetFirewallProfile -Profile Domain,Public,Private -Enabled False
 
 # Wait until AD DS answers before seeding.
 $ok = $false
