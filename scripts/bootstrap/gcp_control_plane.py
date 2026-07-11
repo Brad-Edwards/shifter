@@ -277,13 +277,39 @@ def parse_simple_env_file(path: Path) -> dict[str, str]:
     return values
 
 
-def load_bootstrap_env_values() -> dict[str, str]:
-    """Load bootstrap values from repo-local env files, then overlay the process environment."""
-    repo_root = get_repo_root()
+# gcp-dev environment overlay that records the first Identity Platform operator
+# credentials as the source of truth (issue #1570). local.auto.tfvars is
+# gitignored; operators keep the value here, CI renders it from the matching
+# GitHub secret. parse_simple_env_file handles the HCL `key = "value"` form.
+_GCP_DEV_TFVARS_OVERLAY = "platform/terraform/gcp/environments/gcp-dev/local.auto.tfvars"
+# The overlay's HCL keys map to bootstrap env vars by uppercasing (e.g.
+# gcp_bootstrap_admin_email -> GCP_BOOTSTRAP_ADMIN_EMAIL), so derive the env key
+# rather than hardcoding a second literal for each.
+_TFVARS_BOOTSTRAP_KEYS = ("gcp_bootstrap_admin_email", "gcp_bootstrap_admin_password")
+
+
+def _gcp_bootstrap_creds_from_tfvars(repo_root: Path) -> dict[str, str]:
+    """Read the first-operator creds from the gcp-dev tfvars overlay (source of truth)."""
+    parsed = parse_simple_env_file(repo_root / _GCP_DEV_TFVARS_OVERLAY)
+    return {tf_key.upper(): parsed[tf_key] for tf_key in _TFVARS_BOOTSTRAP_KEYS if parsed.get(tf_key)}
+
+
+def load_bootstrap_env_values(repo_root: Path | None = None) -> dict[str, str]:
+    """Load bootstrap values from repo-local env files, then the process environment.
+
+    The gcp-dev tfvars overlay is applied last so the recorded operator credentials
+    (``gcp_bootstrap_admin_email`` / ``gcp_bootstrap_admin_password``) are the
+    authoritative source rather than an easily-lost interactive/secret value.
+
+    ``repo_root`` defaults to :func:`get_repo_root`; it is injectable so callers
+    (and tests) can point the lookup at a specific checkout.
+    """
+    repo_root = repo_root or get_repo_root()
     values: dict[str, str] = {}
     for env_path in [repo_root / ".env", repo_root.parent / "shifter" / ".env"]:
         values.update(parse_simple_env_file(env_path))
     values.update(os.environ)
+    values.update(_gcp_bootstrap_creds_from_tfvars(repo_root))
     return values
 
 
