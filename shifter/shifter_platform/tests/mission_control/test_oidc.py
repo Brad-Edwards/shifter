@@ -12,6 +12,7 @@ from config.oidc import ShifterOIDCBackend, provider_logout_url
 from config.username import generate_username
 from management.services import get_user_profile
 from risk_register.models import AuditLog
+from shared.auth import CTF_ORGANIZER_GROUP
 
 User = get_user_model()
 
@@ -338,6 +339,68 @@ class TestShifterOIDCBackendBootstrapAdmin:
         assert updated_user.is_staff is True
         assert updated_user.is_superuser is False
         assert get_user_profile(updated_user).cognito_sub == "cognito-sub-456"
+
+
+@pytest.mark.django_db
+class TestShifterOIDCBackendOrganizerAuthority:
+    """#1516 end-to-end through the real OIDC backend.
+
+    Self-service ``custom:user_type`` can never grant ``CTF Organizer``; only an
+    allowlisted, administrator-controlled provider group (``cognito:groups``)
+    does. Drives the real ``create_user`` pipeline (bootstrap flags, user-type
+    sync, cognito-group capture, and the provider-authority reconcile).
+    """
+
+    _ORG_PROVIDER_GROUP = "shifter-ctf-organizers"
+
+    def _organizer_groups(self, user):
+        return set(user.groups.values_list("name", flat=True))
+
+    def test_self_service_user_type_organizer_claim_grants_no_organizer(self):
+        backend = ShifterOIDCBackend()
+        # A participant self-asserts the organizer user_type; no provider group,
+        # allowlist unset -> the self-service path must not reach organizer.
+        claims = {"email": "attacker@example.com", "sub": "sub-attacker", "custom:user_type": "ctf_organizer"}
+        user = backend.create_user(claims)
+        user.refresh_from_db()
+        assert CTF_ORGANIZER_GROUP not in self._organizer_groups(user)
+        assert user.is_staff is False
+        assert user.is_superuser is False
+
+    @override_settings(CTF_ORGANIZER_PROVIDER_GROUPS=[_ORG_PROVIDER_GROUP])
+    def test_allowlisted_provider_group_grants_organizer(self):
+        backend = ShifterOIDCBackend()
+        claims = {"email": "lead@example.com", "sub": "sub-lead", "cognito:groups": [self._ORG_PROVIDER_GROUP]}
+        user = backend.create_user(claims)
+        assert CTF_ORGANIZER_GROUP in self._organizer_groups(user)
+
+    @override_settings(CTF_ORGANIZER_PROVIDER_GROUPS=[_ORG_PROVIDER_GROUP])
+    def test_self_service_claim_with_non_allowlisted_provider_group_grants_no_organizer(self):
+        backend = ShifterOIDCBackend()
+        # Combining a self-asserted organizer user_type with a non-allowlisted
+        # provider group still grants nothing — neither path admits organizer.
+        claims = {
+            "email": "attacker2@example.com",
+            "sub": "sub-attacker2",
+            "custom:user_type": "ctf_organizer",
+            "cognito:groups": ["random-group"],
+        }
+        user = backend.create_user(claims)
+        assert CTF_ORGANIZER_GROUP not in self._organizer_groups(user)
+
+    @override_settings(CTF_ORGANIZER_PROVIDER_GROUPS=[_ORG_PROVIDER_GROUP])
+    def test_provider_group_removal_revokes_previously_granted_organizer(self):
+        # Authoritative provider source: once the administrator removes the user
+        # from the allowlisted provider group, the next verified login revokes the
+        # provider-derived organizer membership (codex review #1516).
+        backend = ShifterOIDCBackend()
+        email, sub = "wasorg@example.com", "sub-wasorg"
+        user = backend.create_user({"email": email, "sub": sub, "cognito:groups": [self._ORG_PROVIDER_GROUP]})
+        assert CTF_ORGANIZER_GROUP in self._organizer_groups(user)
+
+        backend.update_user(user, {"email": email, "sub": sub, "cognito:groups": []})
+        user.refresh_from_db()
+        assert CTF_ORGANIZER_GROUP not in self._organizer_groups(user)
 
 
 # =============================================================================

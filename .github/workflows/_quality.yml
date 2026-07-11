@@ -1071,23 +1071,12 @@ jobs:
     if: ${{ !inputs.skip_tests && ((needs.paths.outputs.run_all == 'true' || needs.paths.outputs.shifter_platform == 'true')) }}
     runs-on: ubuntu-latest
     services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_DB: shifter
-          POSTGRES_USER: test
-          POSTGRES_PASSWORD: test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
       # Redis backs the real-stack ASGI/Channels integration evidence (#924).
       # It is consumed only by the dedicated redis-posture step below; the main
       # test step stays on the in-memory channel layer (no REDIS_HOST), so the
-      # default test ergonomics are unchanged.
+      # default test ergonomics are unchanged. The production-semantics
+      # PostgreSQL backend now lives in the dedicated shifter-platform-tests-postgres
+      # job (#1524); this SQLite job carries no PostgreSQL service or DB_* bundle.
       redis:
         image: redis:7
         ports:
@@ -1111,13 +1100,12 @@ jobs:
         working-directory: shifter/shifter_platform
         env:
           TESTING: "1"
+          # Explicit SQLite selection (#1524): the fast lane and the sole
+          # coverage publisher. PostgreSQL semantics are proven by the dedicated
+          # shifter-platform-tests-postgres job, so no DB_* bundle here.
+          TEST_DB_BACKEND: sqlite
           DJANGO_DEBUG: "true"
           DJANGO_SECRET_KEY: ${{ github.run_id }}-${{ github.run_attempt }}
-          DB_HOST: localhost
-          DB_PORT: 5432
-          DB_NAME: shifter
-          DB_USER: test
-          DB_PASSWORD: test
         run: |
           uv run python manage.py collectstatic --noinput
           uv run pytest tests/ --ignore=tests/documentation -m "not redis and not postgres" --cov=. --cov-report=term-missing --cov-report=xml:coverage.xml
@@ -1131,30 +1119,81 @@ jobs:
         working-directory: shifter/shifter_platform
         env:
           TESTING: "1"
+          # Redis posture is a channel-layer service, not a database backend:
+          # these tests run against SQLite explicitly (#1524), no DB_* bundle.
+          TEST_DB_BACKEND: sqlite
           DJANGO_DEBUG: "true"
           DJANGO_SECRET_KEY: ${{ github.run_id }}-${{ github.run_attempt }}
-          DB_HOST: localhost
-          DB_PORT: 5432
-          DB_NAME: shifter
-          DB_USER: test
-          DB_PASSWORD: test
           CHANNEL_LAYER_BACKEND: redis
           REDIS_HOST: localhost
           REDIS_PORT: "6379"
         run: |
           uv run pytest tests/integration/asgi -m redis -n0 -p no:cacheprovider
 
-      # Real PostgreSQL concurrency evidence (#1182). submit_flag()'s
-      # select_for_update() guard (#1135, #1137) needs real row-level locking
-      # to prove it serializes concurrent requests, which SQLite (the main
-      # suite's backend above) cannot provide. TEST_DB_BACKEND=postgres tells
-      # tests/ctf/test_services/conftest.py to redirect the ORM at this job's
-      # postgres service instead of SQLite; TESTING stays "1" so unrelated
-      # test-mode settings are unaffected. DB_NAME/DB_USER/DB_PASSWORD match
-      # the postgres service block above. Runs with -n0 (like the redis step
-      # above): these tests drive their own thread-level concurrency, so xdist
-      # distribution adds no value and races the per-worker DB setup.
-      - name: Run CTF submission concurrency tests (PostgreSQL)
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-shifter-platform
+          path: shifter/shifter_platform/coverage.xml
+          if-no-files-found: error
+          retention-days: 1
+
+  # ===========================================================================
+  # PostgreSQL semantics lane (#1524)
+  #
+  # Runs the broad shifter_platform application suite against a real PostgreSQL
+  # backend so production persistence semantics (transactions, model/DB
+  # constraints, select_for_update / skip_locked, and the Range subnet-index
+  # LOCK TABLE ... IN EXCLUSIVE MODE branch) are exercised for real — the
+  # SQLite lane above cannot prove them. TEST_DB_BACKEND=postgres selects the
+  # stock PostgreSQL backend via config._database_settings; pytest-django owns
+  # the per-worker test-database lifecycle (no manual CREATE DATABASE / migrate).
+  # This runs in parallel with the SQLite job (its own service, its own cost)
+  # and is NOT a second coverage publisher — the SQLite job remains the sole
+  # coverage source. It is required through the reusable-workflow -> PR Gate
+  # chain: a failure here fails `quality`, which fails the PR Gate.
+  # ===========================================================================
+  shifter-platform-tests-postgres:
+    permissions:
+      contents: read
+    name: Tests (shifter_platform, PostgreSQL)
+    needs: [paths, shifter-platform-lint, shifter-platform-sast]
+    if: ${{ !inputs.skip_tests && ((needs.paths.outputs.run_all == 'true' || needs.paths.outputs.shifter_platform == 'true')) }}
+    runs-on: ubuntu-latest
+    # Generous first-run headroom; tune from the STEP_SUMMARY runtime once the
+    # lane has representative history (#1524).
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: shifter
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+
+      - name: Install dependencies
+        working-directory: shifter/shifter_platform
+        run: uv sync --group dev
+
+      # Broad application scope against real PostgreSQL, excluding tests owned by
+      # another real service posture (redis) and the separately-tracked
+      # documentation suite. No --cov: the SQLite job publishes coverage. The
+      # root-conftest fail-closed marker guard asserts >=1 postgres-marked test
+      # is collected and fails on any skipped postgres-marked test; the vendor
+      # test asserts Django resolved to PostgreSQL from inside the process.
+      - name: Run application suite against PostgreSQL
         working-directory: shifter/shifter_platform
         env:
           TESTING: "1"
@@ -1167,14 +1206,49 @@ jobs:
           DB_USER: test
           DB_PASSWORD: test
         run: |
-          uv run pytest tests/ctf/test_services/test_submission_concurrency.py -m postgres -n0 -p no:cacheprovider
+          uv run python manage.py collectstatic --noinput
+          start=$(date +%s)
+          set +e
+          uv run pytest tests/ --ignore=tests/documentation -m "not redis" \
+            --junit-xml=postgres-junit.xml -p no:cacheprovider
+          status=$?
+          set -e
+          elapsed=$(( $(date +%s) - start ))
+          # Structured runtime/cost + counts from JUnit (not a grep of pytest
+          # prose), appended to the job summary. Never prints secrets.
+          python3 - "$elapsed" postgres-junit.xml <<'PY'
+          import os
+          import sys
+          import xml.etree.ElementTree as ET
 
-      - name: Upload coverage
+          elapsed = int(sys.argv[1])
+          suites = ET.parse(sys.argv[2]).getroot().findall("testsuite") or [ET.parse(sys.argv[2]).getroot()]
+          tests = sum(int(s.get("tests", 0)) for s in suites)
+          failures = sum(int(s.get("failures", 0)) for s in suites)
+          errors = sum(int(s.get("errors", 0)) for s in suites)
+          skipped = sum(int(s.get("skipped", 0)) for s in suites)
+          passed = tests - failures - errors - skipped
+          lines = [
+              "## PostgreSQL semantics lane (#1524)",
+              "- backend: postgresql (image pin: postgres:16)",
+              f"- collected: {tests}  passed: {passed}  failed: {failures}  errors: {errors}  skipped: {skipped}",
+              f"- elapsed: {elapsed // 60}m{elapsed % 60:02d}s (~{elapsed / 60:.1f} hosted-runner minutes)",
+          ]
+          summary = os.environ.get("GITHUB_STEP_SUMMARY")
+          if summary:
+              with open(summary, "a", encoding="utf-8") as handle:
+                  handle.write("\n".join(lines) + "\n")
+          print("\n".join(lines))
+          PY
+          exit "$status"
+
+      - name: Upload PostgreSQL lane JUnit (failure evidence)
+        if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
-          name: coverage-shifter-platform
-          path: shifter/shifter_platform/coverage.xml
-          if-no-files-found: error
+          name: postgres-lane-junit
+          path: shifter/shifter_platform/postgres-junit.xml
+          if-no-files-found: warn
           retention-days: 1
 
   shifter-engine-tests:
@@ -1832,20 +1906,6 @@ jobs:
     needs: [paths]
     if: ${{ (needs.paths.outputs.run_all == 'true' || needs.paths.outputs.shifter_platform == 'true') }}
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_DB: shifter
-          POSTGRES_USER: test
-          POSTGRES_PASSWORD: test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
     steps:
       - uses: actions/checkout@v6
 
@@ -1856,17 +1916,16 @@ jobs:
         working-directory: shifter/shifter_platform
         run: uv sync --group dev
 
+      # check_model_fks introspects Django model metadata only — it never opens a
+      # database connection. Explicit SQLite selection (#1524), no PostgreSQL
+      # service or DB_* bundle (the previous postgres:16 service sat idle).
       - name: Check model FKs
         working-directory: shifter/shifter_platform
         env:
           TESTING: "1"
+          TEST_DB_BACKEND: sqlite
           DJANGO_DEBUG: "true"
           DJANGO_SECRET_KEY: ${{ github.run_id }}-${{ github.run_attempt }}
-          DB_HOST: localhost
-          DB_PORT: 5432
-          DB_NAME: shifter
-          DB_USER: test
-          DB_PASSWORD: test
         run: uv run python manage.py check_model_fks
 
   # ===========================================================================

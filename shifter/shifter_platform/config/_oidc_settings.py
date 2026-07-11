@@ -15,6 +15,7 @@ from config._runtime_env import AUTH_PROVIDER, IS_TEST_RUN, required_runtime_env
 
 __all__ = [
     "AUTHENTICATION_BACKENDS",
+    "CTF_ORGANIZER_PROVIDER_GROUPS",
     "IDENTITY_ALLOWED_EMAILS",
     "IDENTITY_ALLOWED_EMAIL_DOMAIN",
     "IDENTITY_PLATFORM_API_KEY",
@@ -99,6 +100,15 @@ IDENTITY_PLATFORM_TOTP_DISPLAY_NAME = os.environ.get(
 )
 PLATFORM_BOOTSTRAP_STAFF_EMAILS = _env_csv("PLATFORM_BOOTSTRAP_STAFF_EMAILS")
 PLATFORM_BOOTSTRAP_SUPERUSER_EMAILS = _env_csv("PLATFORM_BOOTSTRAP_SUPERUSER_EMAILS")
+
+# Verified, administrator-controlled provider group names that grant the local
+# ``CTF Organizer`` group at login (issue #1516). Organizer authority is never
+# derivable from self-service identity/profile data; it comes only from these
+# admin-managed provider groups (mapped in ``config.organizer_authority``) or
+# explicit local assignment. Provider group names are case-sensitive, so this
+# uses the case-preserving parser. Fail-closed: unset grants no organizer via the
+# provider path (local Django-admin assignment still works).
+CTF_ORGANIZER_PROVIDER_GROUPS = _env_list("CTF_ORGANIZER_PROVIDER_GROUPS")
 
 # Always define OIDC_OP_* variables to avoid runtime errors.
 # ``_oidc_placeholder`` indirection sidesteps bandit's B105 false-positive
