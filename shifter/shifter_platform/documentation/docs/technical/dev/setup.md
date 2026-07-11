@@ -73,6 +73,35 @@ uv run --project shifter/installation shifter-config validate shifter.yaml
 Use `shifter/installation/examples/gcp.yaml` for GCP. See
 [Installation Config](installation-config) for the field reference.
 
+## Preflight
+
+The deploy preflight is the shared, fail-safe check that every prerequisite is in
+place before any change is made. It runs the same checks locally and in CI, so a
+missing secret, tool, or config fails up front with a consolidated report instead
+of partway through a Terraform apply.
+
+Run it on demand before deploying:
+
+```bash
+# Validate an AWS environment (add --component core|range|portal to scope overlays)
+./scripts/bootstrap/deploy.py preflight --cloud aws --env dev
+
+# Validate the GCP environment
+./scripts/bootstrap/deploy.py preflight --cloud gcp --env gcp-dev
+```
+
+The `bootstrap`, `terraform`, and `full` commands run the preflight automatically
+at the start. It is interactive by default: it prints the results and asks you to
+confirm the manual prerequisites it cannot verify (cloud authentication, DNS
+access). Pass `--headless` (or run without a TTY, as CI does) to skip the prompts
+and fail on any missing required prerequisite instead.
+
+The first Identity Platform operator credentials
+(`GCP_BOOTSTRAP_ADMIN_EMAIL` / `GCP_BOOTSTRAP_ADMIN_PASSWORD`) are required. To
+deliberately skip operator creation, set `SHIFTER_SKIP_OPERATOR_BOOTSTRAP=true`
+(locally) or the matching repository variable (CI); the skip is logged, never
+silent.
+
 ## Environments and Terraform Layout
 
 Shifter currently uses one Terraform directory set and one deploy branch per
