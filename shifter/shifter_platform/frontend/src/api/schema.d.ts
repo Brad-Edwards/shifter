@@ -937,7 +937,7 @@ export interface paths {
             cookie?: never;
         };
         /** @description Return agents available to the authenticated actor. */
-        get: operations["mission_control_agents_retrieve"];
+        get: operations["api_v1_mission_control_agents_list"];
         put?: never;
         post?: never;
         delete?: never;
@@ -956,7 +956,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** @description Validate and persist a Mission Control credential. */
-        post: operations["mission_control_credentials_create"];
+        post: operations["api_v1_mission_control_credentials_create"];
         delete?: never;
         options?: never;
         head?: never;
@@ -973,7 +973,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** @description Delete a credential visible to the authenticated actor. */
-        post: operations["mission_control_credentials_delete_create"];
+        post: operations["api_v1_mission_control_credentials_delete"];
         delete?: never;
         options?: never;
         head?: never;
@@ -988,7 +988,7 @@ export interface paths {
             cookie?: never;
         };
         /** @description Return current status for a queued Guacamole bootstrap request. */
-        get: operations["mission_control_guacamole_bootstrap_retrieve"];
+        get: operations["api_v1_mission_control_guacamole_bootstrap_status_retrieve"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1024,7 +1024,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** @description Queue an RDP bootstrap request for a range instance. */
-        post: operations["mission_control_guacamole_rdp_url_create"];
+        post: operations["api_v1_mission_control_guacamole_rdp_url"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1041,7 +1041,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** @description Queue an SSH bootstrap request for a range instance. */
-        post: operations["mission_control_guacamole_ssh_url_create"];
+        post: operations["api_v1_mission_control_guacamole_ssh_url"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1058,7 +1058,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** @description Start NGFW provisioning for the authenticated actor. */
-        post: operations["mission_control_ngfw_create"];
+        post: operations["api_v1_mission_control_ngfw_create"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1075,7 +1075,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** @description Start NGFW deprovisioning for the requested app id. */
-        post: operations["mission_control_ngfw_destroy_create"];
+        post: operations["api_v1_mission_control_ngfw_destroy"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1092,7 +1092,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** @description Queue an SSH bootstrap request for an NGFW instance. */
-        post: operations["mission_control_ngfw_ssh_url_create"];
+        post: operations["api_v1_mission_control_ngfw_ssh_url"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1107,7 +1107,7 @@ export interface paths {
             cookie?: never;
         };
         /** @description Return NGFWs owned by the authenticated actor. */
-        get: operations["mission_control_ngfw_list_retrieve"];
+        get: operations["api_v1_mission_control_ngfw_list"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1124,7 +1124,7 @@ export interface paths {
             cookie?: never;
         };
         /** @description Return the active range and connection URLs for the request user. */
-        get: operations["mission_control_range_retrieve"];
+        get: operations["api_v1_mission_control_range_retrieve"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1141,7 +1141,7 @@ export interface paths {
             cookie?: never;
         };
         /** @description Return newest-first redacted records for the owned range's request_id. */
-        get: operations["mission_control_range_aces_operation_receipts_retrieve"];
+        get: operations["api_v1_mission_control_aces_operation_receipts_list"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1158,7 +1158,7 @@ export interface paths {
             cookie?: never;
         };
         /** @description Return newest-first redacted records for the owned range's request_id. */
-        get: operations["mission_control_range_aces_operation_status_retrieve"];
+        get: operations["api_v1_mission_control_aces_operation_status_list"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1175,7 +1175,7 @@ export interface paths {
             cookie?: never;
         };
         /** @description Return newest-first redacted records for the owned range's request_id. */
-        get: operations["mission_control_range_aces_participant_implementations_retrieve"];
+        get: operations["api_v1_mission_control_aces_participant_implementations_list"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1192,7 +1192,7 @@ export interface paths {
             cookie?: never;
         };
         /** @description Return newest-first redacted records for the owned range's request_id. */
-        get: operations["mission_control_range_aces_participant_runtimes_retrieve"];
+        get: operations["api_v1_mission_control_aces_participant_runtimes_list"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1209,7 +1209,7 @@ export interface paths {
             cookie?: never;
         };
         /** @description Return newest-first redacted records for the owned range's request_id. */
-        get: operations["mission_control_range_aces_snapshots_retrieve"];
+        get: operations["api_v1_mission_control_aces_runtime_snapshots_list"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1228,7 +1228,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** @description Run the configured range lifecycle service method. */
-        post: operations["mission_control_range_cancel_create"];
+        post: operations["api_v1_mission_control_range_cancel"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1245,7 +1245,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** @description Run the configured range lifecycle service method. */
-        post: operations["mission_control_range_destroy_create"];
+        post: operations["api_v1_mission_control_range_destroy"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1262,7 +1262,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** @description Validate input and create a range for the authenticated actor. */
-        post: operations["mission_control_range_launch_create"];
+        post: operations["api_v1_mission_control_range_launch"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1279,7 +1279,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** @description Run the configured range lifecycle service method. */
-        post: operations["mission_control_range_pause_create"];
+        post: operations["api_v1_mission_control_range_pause"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1296,7 +1296,24 @@ export interface paths {
         get?: never;
         put?: never;
         /** @description Run the configured range lifecycle service method. */
-        post: operations["mission_control_range_resume_create"];
+        post: operations["api_v1_mission_control_range_resume"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/mission-control/ranges/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Return the authenticated actor's range history, newest first. */
+        get: operations["api_v1_mission_control_ranges_list"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1311,7 +1328,7 @@ export interface paths {
             cookie?: never;
         };
         /** @description Return scenarios available to the authenticated actor. */
-        get: operations["mission_control_scenarios_retrieve"];
+        get: operations["api_v1_mission_control_scenarios_list"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1330,7 +1347,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** @description Cancel a validated current upload and clear the session marker. */
-        post: operations["mission_control_upload_cancel_create"];
+        post: operations["api_v1_mission_control_upload_cancel"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1347,7 +1364,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** @description Finalize a completed upload and clear the session upload marker. */
-        post: operations["mission_control_upload_complete_create"];
+        post: operations["api_v1_mission_control_upload_complete"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1364,7 +1381,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** @description Create an upload session and presigned destination for an agent. */
-        post: operations["mission_control_upload_initiate_create"];
+        post: operations["api_v1_mission_control_upload_initiate"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1497,6 +1514,86 @@ export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         /**
+         * @description Read-only projection of one ACES operation sidecar record (#1275).
+         *
+         *     Serializes an ``AcesOperationRecordProjection`` (already redacted by the
+         *     shared read seam); it never touches the raw model ``payload``.
+         */
+        AcesOperationRecord: {
+            /** Format: uuid */
+            readonly id: string;
+            /** Format: uuid */
+            readonly request_id: string;
+            /** Format: uuid */
+            readonly range_id: string | null;
+            readonly record_kind: string;
+            readonly contract_kind: string;
+            readonly contract_version: string;
+            readonly contract_profile: string;
+            /** Format: date-time */
+            readonly source_timestamp: string;
+            /** Format: date-time */
+            readonly created_at: string;
+            /** Format: date-time */
+            readonly updated_at: string;
+            readonly payload_digest: string;
+            readonly payload: {
+                [key: string]: unknown;
+            };
+            readonly diagnostic_refs: {
+                [key: string]: unknown;
+            };
+        };
+        /** @description Response body shared by ``mission_control.api.aces`` list endpoints. */
+        AcesOperationRecordListResponse: {
+            /** Format: uuid */
+            request_id: string;
+            record_kind: string;
+            results: components["schemas"]["AcesOperationRecord"][];
+        };
+        /**
+         * @description Read-only projection of one ACES participant-runtime sidecar record (#1288).
+         *
+         *     Serializes an ``AcesParticipantRuntimeRecordProjection`` (already redacted
+         *     by the shared read seam); it never touches the raw model ``payload``.
+         */
+        AcesParticipantRuntimeRecord: {
+            /** Format: uuid */
+            readonly id: string;
+            /** Format: uuid */
+            readonly request_id: string;
+            /** Format: uuid */
+            readonly range_id: string | null;
+            /** Format: uuid */
+            readonly range_instance_id: string | null;
+            readonly participant_ref: string;
+            readonly record_kind: string;
+            readonly contract_kind: string;
+            readonly contract_version: string;
+            readonly contract_profile: string;
+            readonly participant_runtime_profile: string;
+            /** Format: date-time */
+            readonly source_timestamp: string;
+            /** Format: date-time */
+            readonly created_at: string;
+            /** Format: date-time */
+            readonly updated_at: string;
+            readonly payload_digest: string;
+            readonly payload: {
+                [key: string]: unknown;
+            };
+            readonly diagnostic_refs: {
+                [key: string]: unknown;
+            };
+        };
+        /** @description Response body shared by ``mission_control.api.aces_participant`` list endpoints. */
+        AcesParticipantRuntimeRecordListResponse: {
+            /** Format: uuid */
+            request_id: string;
+            record_kind: string;
+            results: components["schemas"]["AcesParticipantRuntimeRecord"][];
+        };
+        /**
          * @description * `create` - Create
          *     * `update` - Update
          *     * `delete` - Delete
@@ -1530,6 +1627,31 @@ export interface components {
          * @enum {string}
          */
         ActorTypeEnum: "user" | "apikey" | "system" | "cognito";
+        /** @description One entry from ``cms.services.list_agents`` (``_agent_projection_dict``). */
+        AgentListItem: {
+            id: number;
+            name: string;
+            os_name: string;
+            os_slug: string;
+            /** Format: double */
+            file_size_mb: number;
+            original_filename: string;
+            /** Format: date-time */
+            created_at: string;
+            agent_type: components["schemas"]["AgentTypeEnum"];
+            agent_type_display: string;
+        };
+        /** @description Response body for ``AgentListView.get``. */
+        AgentListResponse: {
+            agents: components["schemas"]["AgentListItem"][];
+        };
+        /**
+         * @description * `xdr` - xdr
+         *     * `xdr_collector` - xdr_collector
+         *     * `cloud_identity_engine` - cloud_identity_engine
+         * @enum {string}
+         */
+        AgentTypeEnum: "xdr" | "xdr_collector" | "cloud_identity_engine";
         /** @description Serializer for AuditLog model (read-only). */
         AuditLog: {
             readonly id: number;
@@ -1559,6 +1681,7 @@ export interface components {
         BootstrapFeatureFlags: {
             risk_register_spa: boolean;
             platform_spa: boolean;
+            mission_control_spa: boolean;
         };
         /** @description UX mode eligibility (participant/operator). Not an authorization fact. */
         BootstrapModes: {
@@ -1591,6 +1714,29 @@ export interface components {
             readonly parent_comment_id: number | null;
             /** Format: date-time */
             readonly created_at: string;
+        };
+        /** @description One entry from ``mission_control.utils.build_connection_urls``. */
+        ConnectionUrl: {
+            uuid: string | null;
+            terminal_url: string;
+        };
+        /** @description Response body for ``CredentialCreateView.post`` (HTTP 201). */
+        CredentialCreateResponse: {
+            id: number;
+            name: string;
+            credential_type: string;
+        };
+        /** @description Response body for ``CurrentRangeView.get``. */
+        CurrentRangeResponse: {
+            has_range: boolean;
+            range: components["schemas"]["RangePresentation"] | null;
+            connection_urls: components["schemas"]["ConnectionUrl"][];
+            aces_projection: {
+                [key: string]: unknown;
+            } | null;
+            aces_participant_runtime: {
+                [key: string]: unknown;
+            } | null;
         };
         /** @description Bounded active-event summary. */
         DashboardEvent: {
@@ -1636,6 +1782,81 @@ export interface components {
          * @enum {string}
          */
         EntityTypeEnum: "risk" | "comment" | "apikey" | "range" | "credential" | "agent" | "user" | "session" | "ngfw" | "config" | "experiment" | "scenario" | "script";
+        /**
+         * @description Response body for a queued Guacamole bootstrap (RDP/SSH/NGFW-SSH POST, HTTP 202).
+         *
+         *     ``url`` here is the compatibility opener route, not a signed session URL
+         *     (that one-time URL is delivered only by the status poll, see
+         *     ``GuacamoleBootstrapStatusSerializer``).
+         */
+        GuacamoleBootstrapQueued: {
+            /** Format: uuid */
+            request_id: string;
+            status: string;
+            status_url: string;
+            url: string;
+        };
+        /**
+         * @description Response body for ``GuacamoleBootstrapStatusView.get``.
+         *
+         *     ``url`` is the one-time signed Guacamole session URL, delivered exactly
+         *     once on a ``succeeded`` poll; never given a real example. ``duration_ms``
+         *     and ``error`` are present only once the bootstrap has finished or failed.
+         */
+        GuacamoleBootstrapStatus: {
+            /** Format: uuid */
+            request_id: string;
+            status: string;
+            duration_ms?: number;
+            error?: string;
+            url?: string;
+        };
+        /** @description Response-only projection of ``shared.schemas.InstanceContext``. */
+        InstancePresentation: {
+            uuid: string | null;
+            name: string;
+            role: components["schemas"]["RoleEnum"];
+            os_type: components["schemas"]["OsTypeEnum"];
+            join_domain: boolean;
+            ami_key: string | null;
+            private_ip: string | null;
+        };
+        /** @description Response body for ``LaunchRangeView.post``. */
+        LaunchRangeResponse: {
+            success: boolean;
+            range: components["schemas"]["RangePresentation"];
+        };
+        /** @description Response body for ``NGFWCreateView.post`` (HTTP 201). */
+        NGFWCreateResponse: {
+            id: string;
+            name: string;
+            status: string;
+        };
+        /** @description Response body for ``NGFWDestroyView.post``. */
+        NGFWDestroyResponse: {
+            status: string;
+        };
+        /** @description One entry from ``NGFWListView.get``. */
+        NGFWListItem: {
+            id: string;
+            name: string;
+            status: string;
+            /** Format: date-time */
+            created_at: string;
+            serial_number: string | null;
+        };
+        /** @description Response body for ``NGFWListView.get``. */
+        NGFWListResponse: {
+            ngfws: components["schemas"]["NGFWListItem"][];
+        };
+        /**
+         * @description * `kali` - kali
+         *     * `ubuntu` - ubuntu
+         *     * `windows` - windows
+         *     * `panos` - panos
+         * @enum {string}
+         */
+        OsTypeEnum: "kali" | "ubuntu" | "windows" | "panos";
         PaginatedAuditLogList: {
             /** @example 123 */
             count: number;
@@ -1689,6 +1910,70 @@ export interface components {
             mitigation_status?: string;
             resolution_reason?: string;
         };
+        /**
+         * @description One entry in the range-history list (``GET .../ranges/``, #1370).
+         *
+         *     Projects the durable identifiers off ``cms.models.RangeInstance`` without
+         *     conflating them: ``request_id`` is the durable UUID correlation key
+         *     (``None`` for pre-Request-pattern legacy rows with no linked
+         *     ``cms.models.Request``); ``range_id`` is the legacy nullable integer id.
+         */
+        RangeHistory: {
+            /** Format: uuid */
+            request_id: string | null;
+            range_id: number | null;
+            scenario_id: string;
+            status: components["schemas"]["ResourceStatusEnum"];
+            range_source: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+            /** Format: date-time */
+            deleted_at: string | null;
+        };
+        /** @description Response body for the range-history list endpoint. */
+        RangeHistoryResponse: {
+            ranges: components["schemas"]["RangeHistory"][];
+        };
+        /**
+         * @description Response-only projection of ``shared.schemas.RangeContext``.
+         *
+         *     Field set mirrors ``RangeContext.model_fields`` plus its computed
+         *     properties (``is_ready``, ``is_terminal``, ``is_active``).
+         */
+        RangePresentation: {
+            /** Format: uuid */
+            request_id: string;
+            range_id: number | null;
+            scenario_id: string;
+            user_id: number;
+            status: components["schemas"]["ResourceStatusEnum"];
+            instances: components["schemas"]["InstancePresentation"][];
+            agent_name: string | null;
+            range_type: components["schemas"]["RangeTypeEnum"];
+            is_ready: boolean;
+            is_terminal: boolean;
+            is_active: boolean;
+        };
+        /**
+         * @description * `demo` - demo
+         * @enum {string}
+         */
+        RangeTypeEnum: "demo";
+        /**
+         * @description * `pending` - pending
+         *     * `provisioning` - provisioning
+         *     * `ready` - ready
+         *     * `pausing` - pausing
+         *     * `paused` - paused
+         *     * `resuming` - resuming
+         *     * `destroying` - destroying
+         *     * `destroyed` - destroyed
+         *     * `failed` - failed
+         * @enum {string}
+         */
+        ResourceStatusEnum: "pending" | "provisioning" | "ready" | "pausing" | "paused" | "resuming" | "destroying" | "destroyed" | "failed";
         /** @description Serializer for Risk model. */
         Risk: {
             readonly id: number;
@@ -1766,6 +2051,45 @@ export interface components {
             resolution_reason?: string;
         };
         /**
+         * @description * `attacker` - attacker
+         *     * `victim` - victim
+         *     * `dc` - dc
+         *     * `ngfw` - ngfw
+         * @enum {string}
+         */
+        RoleEnum: "attacker" | "victim" | "dc" | "ngfw";
+        /**
+         * @description One entry from ``cms.services.list_launchable_scenarios``.
+         *
+         *     Legacy YAML/DB scenarios and ACES-derived catalog entries share this
+         *     projection but are not fully homogeneous; fields the SPA does not render
+         *     stay loosely typed (``DictField``/``ListField(DictField)``) rather than
+         *     modeling the full ``ScenarioTemplate``/ACES catalog schema here.
+         */
+        ScenarioListItem: {
+            id: string;
+            name: string;
+            description: string;
+            enabled: boolean;
+            is_default: boolean;
+            staff_only: boolean;
+            launchable: boolean;
+            ngfw?: boolean;
+            instances?: {
+                [key: string]: unknown;
+            }[];
+            subnets?: {
+                [key: string]: unknown;
+            }[];
+            agent_requirements?: {
+                [key: string]: unknown;
+            };
+        };
+        /** @description Response body for ``ScenarioListView.get``. */
+        ScenarioListResponse: {
+            scenarios: components["schemas"]["ScenarioListItem"][];
+        };
+        /**
          * @description * `critical` - Critical
          *     * `high` - High
          *     * `medium` - Medium
@@ -1782,6 +2106,34 @@ export interface components {
          * @enum {string}
          */
         StatusEnum: "open" | "acknowledged" | "mitigating" | "resolved" | "closed";
+        /**
+         * @description Generic ``{"success": true}`` response body.
+         *
+         *     Shared by the range lifecycle mutations (cancel/destroy/pause/resume),
+         *     upload cancel, and credential delete — every Mission Control mutation
+         *     endpoint that has no payload beyond a boolean acknowledgement.
+         */
+        SuccessResponse: {
+            success: boolean;
+        };
+        /** @description Response body for ``UploadCompleteView.post``. */
+        UploadCompleteResponse: {
+            success: boolean;
+            agent_id: number;
+            message: string;
+        };
+        /**
+         * @description Response body for ``UploadInitiateView.post`` (``cms.services.initiate_upload``).
+         *
+         *     ``presigned_url`` is a short-lived, single-use S3 PUT URL — an existing
+         *     response field, typed here for the schema but never given a real example.
+         */
+        UploadInitiateResponse: {
+            presigned_url: string;
+            s3_key: string;
+            upload_token: string;
+            expected_os: string | null;
+        };
     };
     responses: never;
     parameters: never;
@@ -4975,7 +5327,7 @@ export interface operations {
             };
         };
     };
-    mission_control_agents_retrieve: {
+    api_v1_mission_control_agents_list: {
         parameters: {
             query?: never;
             header?: never;
@@ -4984,16 +5336,17 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["AgentListResponse"];
+                };
             };
         };
     };
-    mission_control_credentials_create: {
+    api_v1_mission_control_credentials_create: {
         parameters: {
             query?: never;
             header?: never;
@@ -5002,16 +5355,17 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["CredentialCreateResponse"];
+                };
             };
         };
     };
-    mission_control_credentials_delete_create: {
+    api_v1_mission_control_credentials_delete: {
         parameters: {
             query?: never;
             header?: never;
@@ -5022,16 +5376,17 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["SuccessResponse"];
+                };
             };
         };
     };
-    mission_control_guacamole_bootstrap_retrieve: {
+    api_v1_mission_control_guacamole_bootstrap_status_retrieve: {
         parameters: {
             query?: never;
             header?: never;
@@ -5042,12 +5397,13 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["GuacamoleBootstrapStatus"];
+                };
             };
         };
     };
@@ -5071,7 +5427,7 @@ export interface operations {
             };
         };
     };
-    mission_control_guacamole_rdp_url_create: {
+    api_v1_mission_control_guacamole_rdp_url: {
         parameters: {
             query?: never;
             header?: never;
@@ -5080,16 +5436,17 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["GuacamoleBootstrapQueued"];
+                };
             };
         };
     };
-    mission_control_guacamole_ssh_url_create: {
+    api_v1_mission_control_guacamole_ssh_url: {
         parameters: {
             query?: never;
             header?: never;
@@ -5098,16 +5455,17 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["GuacamoleBootstrapQueued"];
+                };
             };
         };
     };
-    mission_control_ngfw_create: {
+    api_v1_mission_control_ngfw_create: {
         parameters: {
             query?: never;
             header?: never;
@@ -5116,16 +5474,17 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["NGFWCreateResponse"];
+                };
             };
         };
     };
-    mission_control_ngfw_destroy_create: {
+    api_v1_mission_control_ngfw_destroy: {
         parameters: {
             query?: never;
             header?: never;
@@ -5136,16 +5495,17 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["NGFWDestroyResponse"];
+                };
             };
         };
     };
-    mission_control_ngfw_ssh_url_create: {
+    api_v1_mission_control_ngfw_ssh_url: {
         parameters: {
             query?: never;
             header?: never;
@@ -5156,16 +5516,17 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["GuacamoleBootstrapQueued"];
+                };
             };
         };
     };
-    mission_control_ngfw_list_retrieve: {
+    api_v1_mission_control_ngfw_list: {
         parameters: {
             query?: never;
             header?: never;
@@ -5174,16 +5535,17 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["NGFWListResponse"];
+                };
             };
         };
     };
-    mission_control_range_retrieve: {
+    api_v1_mission_control_range_retrieve: {
         parameters: {
             query?: never;
             header?: never;
@@ -5192,16 +5554,17 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["CurrentRangeResponse"];
+                };
             };
         };
     };
-    mission_control_range_aces_operation_receipts_retrieve: {
+    api_v1_mission_control_aces_operation_receipts_list: {
         parameters: {
             query?: never;
             header?: never;
@@ -5212,16 +5575,17 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["AcesOperationRecordListResponse"];
+                };
             };
         };
     };
-    mission_control_range_aces_operation_status_retrieve: {
+    api_v1_mission_control_aces_operation_status_list: {
         parameters: {
             query?: never;
             header?: never;
@@ -5232,16 +5596,17 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["AcesOperationRecordListResponse"];
+                };
             };
         };
     };
-    mission_control_range_aces_participant_implementations_retrieve: {
+    api_v1_mission_control_aces_participant_implementations_list: {
         parameters: {
             query?: never;
             header?: never;
@@ -5252,16 +5617,17 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["AcesParticipantRuntimeRecordListResponse"];
+                };
             };
         };
     };
-    mission_control_range_aces_participant_runtimes_retrieve: {
+    api_v1_mission_control_aces_participant_runtimes_list: {
         parameters: {
             query?: never;
             header?: never;
@@ -5272,16 +5638,17 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["AcesParticipantRuntimeRecordListResponse"];
+                };
             };
         };
     };
-    mission_control_range_aces_snapshots_retrieve: {
+    api_v1_mission_control_aces_runtime_snapshots_list: {
         parameters: {
             query?: never;
             header?: never;
@@ -5292,16 +5659,17 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["AcesOperationRecordListResponse"];
+                };
             };
         };
     };
-    mission_control_range_cancel_create: {
+    api_v1_mission_control_range_cancel: {
         parameters: {
             query?: never;
             header?: never;
@@ -5310,16 +5678,17 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["SuccessResponse"];
+                };
             };
         };
     };
-    mission_control_range_destroy_create: {
+    api_v1_mission_control_range_destroy: {
         parameters: {
             query?: never;
             header?: never;
@@ -5328,16 +5697,17 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["SuccessResponse"];
+                };
             };
         };
     };
-    mission_control_range_launch_create: {
+    api_v1_mission_control_range_launch: {
         parameters: {
             query?: never;
             header?: never;
@@ -5346,16 +5716,17 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["LaunchRangeResponse"];
+                };
             };
         };
     };
-    mission_control_range_pause_create: {
+    api_v1_mission_control_range_pause: {
         parameters: {
             query?: never;
             header?: never;
@@ -5364,16 +5735,17 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["SuccessResponse"];
+                };
             };
         };
     };
-    mission_control_range_resume_create: {
+    api_v1_mission_control_range_resume: {
         parameters: {
             query?: never;
             header?: never;
@@ -5382,16 +5754,17 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["SuccessResponse"];
+                };
             };
         };
     };
-    mission_control_scenarios_retrieve: {
+    api_v1_mission_control_ranges_list: {
         parameters: {
             query?: never;
             header?: never;
@@ -5400,16 +5773,17 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["RangeHistoryResponse"];
+                };
             };
         };
     };
-    mission_control_upload_cancel_create: {
+    api_v1_mission_control_scenarios_list: {
         parameters: {
             query?: never;
             header?: never;
@@ -5418,16 +5792,17 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ScenarioListResponse"];
+                };
             };
         };
     };
-    mission_control_upload_complete_create: {
+    api_v1_mission_control_upload_cancel: {
         parameters: {
             query?: never;
             header?: never;
@@ -5436,16 +5811,17 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["SuccessResponse"];
+                };
             };
         };
     };
-    mission_control_upload_initiate_create: {
+    api_v1_mission_control_upload_complete: {
         parameters: {
             query?: never;
             header?: never;
@@ -5454,12 +5830,32 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["UploadCompleteResponse"];
+                };
+            };
+        };
+    };
+    api_v1_mission_control_upload_initiate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UploadInitiateResponse"];
+                };
             };
         };
     };

@@ -35,6 +35,16 @@ SPECTACULAR_SETTINGS = {
     "SWAGGER_UI_DIST": "SIDECAR",
     "SWAGGER_UI_FAVICON_HREF": "SIDECAR",
     "REDOC_DIST": "SIDECAR",
+    # Stable component names for enums that would otherwise collide. Both the
+    # Risk Register ``status`` (risk_register.models.Status) and the Mission
+    # Control range ``status`` (shared.enums.ResourceStatus) auto-name to
+    # "StatusEnum"; without overrides drf-spectacular hash-suffixes BOTH
+    # (StatusE68Enum / StatusD12Enum), churning the Risk Register type name and
+    # producing unstable, hash-dependent TS types. Pin each to a stable name.
+    "ENUM_NAME_OVERRIDES": {
+        "StatusEnum": "risk_register.models.Status",
+        "ResourceStatusEnum": "mission_control.api.serializers.RESOURCE_STATUS_VALUES",
+    },
 }
 
 __all__ = ["REST_FRAMEWORK", "SPECTACULAR_SETTINGS"]

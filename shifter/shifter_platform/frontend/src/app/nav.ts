@@ -180,7 +180,7 @@ export const NAV_GROUPS: readonly NavGroup[] = [
     { audience: "organizer", permissionPolicy: "authenticated", ownerApp: "mission_control", external: true },
     [
       { surface: "Overview", routeName: "home", ownerApp: "config", purpose: "Role-aware operational dashboard.", routePath: "/", iconKey: "layout-dashboard", external: false },
-      { surface: "Ranges", routeName: "mission_control:dashboard", purpose: "Launch and monitor ranges.", routePath: "/mission-control/", iconKey: "server", activeContext: "range" },
+      { surface: "Ranges", routeName: "mission_control:dashboard", purpose: "Launch and monitor ranges.", routePath: "/mission-control/", iconKey: "server", activeContext: "range", external: false },
       { surface: "CTF Events", routeName: "ctf:admin_dashboard", ownerApp: "ctf", permissionPolicy: "ctf_organizer", purpose: "Monitor and manage CTF operations.", routePath: "/ctf/admin/", iconKey: "flag", activeContext: "event" },
       {
         surface: "Assets",
@@ -189,12 +189,12 @@ export const NAV_GROUPS: readonly NavGroup[] = [
         routePath: "/mission-control/agents/",
         iconKey: "boxes",
         children: [
-          { surface: "Agents", routeName: "mission_control:agents", purpose: "Inspect or delete available agents.", routePath: "/mission-control/agents/", iconKey: "bot" },
-          { surface: "NGFW", routeName: "mission_control:ngfw_list", purpose: "List NGFW instances.", routePath: "/mission-control/ngfw/", iconKey: "shield" },
-          { surface: "Credentials", routeName: "mission_control:credentials", purpose: "List reusable credentials.", routePath: "/mission-control/credentials/", iconKey: "key-round" },
+          { surface: "Agents", routeName: "mission_control:agents", purpose: "Inspect or delete available agents.", routePath: "/mission-control/agents/", iconKey: "bot", external: false },
+          { surface: "NGFW", routeName: "mission_control:ngfw_list", purpose: "List NGFW instances.", routePath: "/mission-control/ngfw/", iconKey: "shield", external: false },
+          { surface: "Credentials", routeName: "mission_control:credentials", purpose: "List reusable credentials.", routePath: "/mission-control/credentials/", iconKey: "key-round", external: false },
         ],
       },
-      { surface: "Terminal", routeName: "mission_control:terminal", audience: "both", purpose: "Access terminal sessions when a range is available.", routePath: "/mission-control/terminal/", iconKey: "terminal", activeContext: "range" },
+      { surface: "Terminal", routeName: "mission_control:terminal", audience: "both", purpose: "Access terminal sessions when a range is available.", routePath: "/mission-control/terminal/", iconKey: "terminal", activeContext: "range", external: false },
       { surface: "Settings", routeName: "mission_control:settings", purpose: "Change user or platform settings.", routePath: "/mission-control/settings/", iconKey: "settings" },
     ],
   ),
