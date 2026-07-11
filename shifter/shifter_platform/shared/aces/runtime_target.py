@@ -40,7 +40,7 @@ from aces_processor.semantics.realization import CONCERN_PAYLOAD_PATH
 from aces_runtime.registry import BackendRegistry, RuntimeTarget, RuntimeTargetComponents
 
 from shared.aces.composition_envelope import COMPOSITION_RESOURCE_TYPES, composition_diagnostics
-from shared.aces.contracts import SHIFTER_BACKEND_NAME
+from shared.aces.contracts import ACES_PROVISIONING_PLAN_CONTRACT_VERSION, SHIFTER_BACKEND_NAME
 from shared.aces.dispatch_port import ShifterDispatchResult, ShifterProvisioningDispatchPort
 from shared.aces.manifest import SHIFTER_PROVISIONER_CAPABILITIES, create_shifter_backend_manifest
 from shared.log_sanitize import safe_log_value
@@ -262,8 +262,10 @@ def serialize_provisioning_plan(plan: ProvisioningPlan) -> dict[str, Any]:
     The payloads are the ACES plan's own payloads, verbatim -- this is
     serialization for the cross-process boundary, not a re-modeled schema
     (ADR-032-R3). A ``kind`` discriminator lets the provisioner distinguish the
-    serialized plan from a cyberscript envelope in ``range_config``, and the
-    ``aces_sdl_version`` records the contract the plan was compiled against.
+    serialized plan from a cyberscript envelope in ``range_config``; the
+    ``contract_version`` declares the transport envelope shape the consumer must
+    support (ADR-032-R7); and the ``aces_sdl_version`` records the producer
+    (aces-sdl) version the plan was compiled against.
     """
     resources: dict[str, Any] = {}
     for address, resource in plan.resources.items():
@@ -279,6 +281,7 @@ def serialize_provisioning_plan(plan: ProvisioningPlan) -> dict[str, Any]:
         }
     envelope = {
         "kind": ACES_PROVISIONING_PLAN_KIND,
+        "contract_version": ACES_PROVISIONING_PLAN_CONTRACT_VERSION,
         "aces_sdl_version": _aces_sdl_version(),
         "resources": resources,
     }

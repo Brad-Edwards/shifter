@@ -17,6 +17,14 @@ SHIFTER_BACKEND_PROFILE = "provisioning-only"
 EVENT_TYPE_ACES_OPERATION = "range.aces.operation"
 EVENT_TYPE_ACES_SNAPSHOT = "range.aces.snapshot"
 
+#: Contract version stamped on the serialized ACES ProvisioningPlan transport that
+#: crosses the platform -> provisioner boundary (ADR-032-R7). The producer
+#: (``shared.aces.runtime_target.serialize_provisioning_plan``) stamps it; the
+#: provisioner consumer validates it against its own supported set (kept in lockstep
+#: by a parity test, since the provisioner ships without ``shared``). A new transport
+#: envelope shape is a new ``-vN`` value.
+ACES_PROVISIONING_PLAN_CONTRACT_VERSION = "aces-provisioning-plan-v1"
+
 SHIFTER_SUPPORTED_CONTRACT_VERSIONS = frozenset(
     {
         "backend-manifest-v2",

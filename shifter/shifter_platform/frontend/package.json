@@ -16,7 +16,7 @@
     "test:coverage": "vitest run --coverage",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
-    "gen:api": "cd .. && TESTING=1 uv run python manage.py spectacular --file frontend/openapi.json --validate && cd frontend && openapi-typescript openapi.json -o src/api/schema.d.ts"
+    "gen:api": "cd .. && TESTING=1 TEST_DB_BACKEND=sqlite uv run python manage.py spectacular --file frontend/openapi.json --validate && cd frontend && openapi-typescript openapi.json -o src/api/schema.d.ts"
   },
   "dependencies": {
     "@fontsource-variable/geist": "^5.2.9",

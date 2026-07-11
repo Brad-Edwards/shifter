@@ -49,6 +49,23 @@ class UserProfile(models.Model):
         blank=True,
         help_text="Cognito group names captured from verified OIDC claims at login",
     )
+    ORGANIZER_GRANT_SOURCE_CHOICES = [
+        ("", "None"),
+        ("provider", "Provider group"),
+        ("local", "Local assignment"),
+    ]
+    organizer_grant_source = models.CharField(
+        max_length=16,
+        choices=ORGANIZER_GRANT_SOURCE_CHOICES,
+        blank=True,
+        default="",
+        help_text=(
+            "Provenance of CTF Organizer membership (issue #1516): 'provider' is "
+            "auto-revoked when admin-controlled provider evidence disappears at "
+            "login; 'local' is an explicit local assignment and is never "
+            "auto-revoked. Empty when the user is not a tracked organizer."
+        ),
+    )
     deleted_at = models.DateTimeField(null=True, blank=True)
     anonymized_at = models.DateTimeField(null=True, blank=True)
 
