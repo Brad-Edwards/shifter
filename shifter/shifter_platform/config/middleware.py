@@ -6,6 +6,7 @@ import uuid
 from typing import TYPE_CHECKING, cast
 
 from asgiref.sync import iscoroutinefunction, markcoroutinefunction
+from django.conf import settings
 
 from config.capacity_metrics import inflight_requests
 
@@ -135,3 +136,42 @@ class RequestInFlightMiddleware:
             return await cast("Awaitable[HttpResponse]", self.get_response(request))
         finally:
             inflight_requests.decrement()
+
+
+class BrowserPolicyHeadersMiddleware:
+    """Set the browser-policy headers Django's own middleware does not own.
+
+    Adds ``Permissions-Policy`` and ``Reporting-Endpoints`` (the W3C reporting
+    group backing the CSP ``report-to`` directive) globally, beside the native
+    ``ContentSecurityPolicyMiddleware`` and ``SecurityMiddleware``. Values come
+    from :mod:`config._browser_security` (ADR-033). ``setdefault`` is used so a
+    deliberately stricter per-view header (e.g. the CTF invite ``no-referrer``)
+    is never clobbered.
+
+    Async-aware so it measures no request through Django's sync threadpool under
+    the ASGI worker (matching :class:`RequestInFlightMiddleware`).
+    """
+
+    async_capable = True
+    sync_capable = True
+
+    def __init__(self, get_response: Callable[[HttpRequest], HttpResponse]) -> None:
+        self.get_response = get_response
+        self._is_async = iscoroutinefunction(get_response)
+        if self._is_async:
+            markcoroutinefunction(self)
+
+    def __call__(self, request: HttpRequest) -> HttpResponse | Awaitable[HttpResponse]:
+        if self._is_async:
+            return self._acall(request)
+        return self._apply(self.get_response(request))
+
+    async def _acall(self, request: HttpRequest) -> HttpResponse:
+        response = await cast("Awaitable[HttpResponse]", self.get_response(request))
+        return self._apply(response)
+
+    @staticmethod
+    def _apply(response: HttpResponse) -> HttpResponse:
+        response.setdefault("Permissions-Policy", settings.PERMISSIONS_POLICY)
+        response.setdefault("Reporting-Endpoints", settings.REPORTING_ENDPOINTS_HEADER)
+        return response

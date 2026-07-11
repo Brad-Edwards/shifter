@@ -1428,5 +1428,42 @@
       "shifter/shifter_platform/pyproject.toml",
       "shifter/shifter_platform/shared/aces/runtime_target.py"
     ]
+  },
+  {
+    "id": "ADR-033",
+    "title": "Browser document security policy is global, staged, and deny-by-default",
+    "status": "accepted",
+    "scope": "shifter_platform",
+    "decision": "Legacy Django pages and the platform SPA share one application-owned browser security policy. Django's native CSP middleware deploys a single reviewed candidate in report-only mode before enforcement; Referrer-Policy and Permissions-Policy are global response headers; browser violations flow to a bounded same-origin collector and the existing monitored log pipeline. Route-local weakening and policy-source expansion are governed exceptions, not alternate policy systems.",
+    "rules": [
+      {
+        "id": "ADR-033-R1",
+        "description": "The portal MUST use Django's native ContentSecurityPolicyMiddleware and SECURE_CSP / SECURE_CSP_REPORT_ONLY settings as the single CSP authority for legacy templates, SPA hosts, redirects, errors, APIs, and static responses. The candidate is deployed report-only before the same policy is promoted to enforcement; ingress, templates, third-party middleware, and per-view decorators must not create parallel CSP authorities.",
+        "checks": []
+      },
+      {
+        "id": "ADR-033-R2",
+        "description": "An enforced policy MUST remain deny-by-default and MUST NOT contain unsafe-inline, unsafe-eval, unsafe-hashes, wildcard sources, or broad scheme sources. Inline handlers and styles are removed; executable inline elements use Django's per-response nonce only when extraction is materially worse, or a reviewed byte-stable hash. External origins are exact, justified by the browser dependency inventory, version-pinned, and SRI-protected where supported.",
+        "checks": []
+      },
+      {
+        "id": "ADR-033-R3",
+        "description": "CSP reporting MUST use a bounded same-origin, POST-only collector that accepts standard browser report envelopes, performs no authenticated/domain mutation, minimizes and sanitizes attacker-controlled fields, and emits through the existing structured application log pipeline. Raw payload persistence, report samples, secret-bearing endpoint URLs, and global WAF/Cloud Armor weakening are prohibited.",
+        "checks": []
+      },
+      {
+        "id": "ADR-033-R4",
+        "description": "Referrer-Policy same-origin and the reviewed Permissions-Policy capability denylist apply globally, while explicitly more restrictive responses such as CTF invite registration may retain no-referrer. Any temporary or route-specific CSP disable/override, source or browser-capability expansion, or other weaker policy requires a docs/adr/exceptions.yaml entry for ADR-033 with owner, reason, expiry, affected paths, and regression coverage; permanent global policy changes amend the reviewed policy evidence instead. Overrides replace the complete base policy and therefore are exceptional.",
+        "checks": []
+      }
+    ],
+    "exceptions": [],
+    "enforcement": ["agent-policy"],
+    "evidence": [
+      "https://github.com/Brad-Edwards/shifter/issues/1520",
+      "docs/architecture/rev1/security.md",
+      "docs/architecture/browser-security-policy-preflight-1520.md",
+      "https://docs.djangoproject.com/en/6.0/ref/csp/"
+    ]
   }
 ]

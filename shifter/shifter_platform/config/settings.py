@@ -26,6 +26,7 @@ load_dotenv()
 # the wildcard *is* the contract (Django's official split-settings
 # pattern uses ``from .base import *``).
 from config._api_token_settings import *  # NOSONAR  # noqa: E402
+from config._browser_security import *  # NOSONAR  # noqa: E402
 from config._channels import *  # NOSONAR  # noqa: E402
 from config._channels import _build_channel_layers  # noqa: E402
 from config._cloud import *  # NOSONAR  # noqa: E402
@@ -142,6 +143,12 @@ MIDDLEWARE = [
     "config.middleware.RequestIDMiddleware",
     "config.middleware.RequestInFlightMiddleware",
     "django.middleware.security.SecurityMiddleware",
+    # Browser security policy (ADR-033): native CSP beside SecurityMiddleware and
+    # outside WhiteNoise so legacy HTML, the SPA host, redirects, errors, APIs,
+    # and static responses pass through one policy boundary. The custom
+    # middleware sets only the headers Django does not own.
+    "django.middleware.csp.ContentSecurityPolicyMiddleware",
+    "config.middleware.BrowserPolicyHeadersMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.locale.LocaleMiddleware",

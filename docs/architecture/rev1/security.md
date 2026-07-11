@@ -87,6 +87,50 @@ Report-Only with reporting; remove or nonce/hash unsafe inline behavior before
 enforcement; set a global referrer and permissions policy; and add response
 tests. This is defense in depth and does not replace XSS remediation.
 
+**Status (report-only baseline shipped, #1520, ADR-033).** The global,
+staged, deny-by-default policy is enabled through Django's native CSP
+middleware. The enabled values, all defined in
+[`config/_browser_security.py`](../../../shifter/shifter_platform/config/_browser_security.py):
+
+- `Referrer-Policy: same-origin` globally; the invite/registration flow keeps
+  its stricter `no-referrer` override.
+- `Permissions-Policy` denies `accelerometer`, `autoplay`, `camera`,
+  `display-capture`, `encrypted-media`, `fullscreen`, `geolocation`,
+  `gyroscope`, `magnetometer`, `microphone`, `payment`, `picture-in-picture`,
+  `publickey-credentials-create`, `publickey-credentials-get`,
+  `screen-wake-lock`, `usb`, `web-share`, and `xr-spatial-tracking`. Clipboard
+  is intentionally not disabled because terminal and walkthrough copy rely on
+  it.
+- The deny-by-default CSP candidate ships in `Content-Security-Policy-Report-Only`
+  first. Violations flow to a bounded, same-origin, anonymous collector at
+  `/security/csp-report/` (also advertised via `Reporting-Endpoints`) and are
+  logged through the existing ECS pipeline.
+
+Enforcement (promoting the same candidate to `Content-Security-Policy` by
+flipping `BROWSER_CSP_MODE=enforce`) and remediating the inventoried inline
+scripts, event handlers, and styles are the tracked follow-up. Any route-local
+weakening or source/capability expansion requires an ADR-033 entry in
+[`docs/adr/exceptions.yaml`](../../adr/exceptions.yaml) with an owner and
+expiry.
+
+Public package CDNs (jsDelivr, unpkg) raised by the pre-push review are already
+removed from the policy in this change: the terminal (xterm, Split.js),
+scoreboard (Chart.js), and documentation (Mermaid, bundled through Vite)
+dependencies are vendored and served same-origin, so the only external
+`script-src` origin is Google-owned `www.gstatic.com` (the Firebase SDK).
+
+**Before enforcement (blocking).** The report-only candidate must not be
+promoted to `enforce` until these remaining gaps are closed:
+
+- Remove or nonce/hash the inventoried inline scripts, event handlers, and
+  inline styles that report-only surfaces, including Mermaid's runtime `<style>`
+  injection under `style-src`.
+- Confirm same-origin `wss` (terminal and channels WebSockets) is authorized by
+  `connect-src 'self'` across supported browsers and pin it with a
+  browser-response test.
+- Re-confirm the `www.gstatic.com` Firebase SDK origin is still required at
+  enforcement time.
+
 ## S6: OIDC administrator bootstrap does not require verified email
 
 **Severity: medium**
