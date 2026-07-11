@@ -395,19 +395,18 @@ def preflight_gate(
     *,
     component: str | None = None,
     headless: bool | None = None,
-    env: Mapping[str, str] | None = None,
-    repo_root: Path | None = None,
-    tool_exists: Callable[[str], str | None] | None = None,
 ) -> PreflightReport:
     """Run preflight, print the report, confirm manual prereqs, and fail-fast.
 
     Raises ``SystemExit(1)`` if any required check fails, before any deploy side
     effect. In interactive mode it also asks the operator to affirm the manual
     prerequisites the tooling cannot verify; in headless mode it never prompts.
+
+    This is the production entrypoint; it reads the real process environment,
+    repository, and ``PATH``. Unit tests drive the pure :func:`run_preflight`
+    directly (which takes injectable ``env`` / ``repo_root`` / ``tool_exists``).
     """
-    report = run_preflight(
-        cloud, mode, environment, component=component, env=env, repo_root=repo_root, tool_exists=tool_exists
-    )
+    report = run_preflight(cloud, mode, environment, component=component)
     header(f"Deploy preflight ({cloud.value} / {environment})")
     for result in report.results:
         _emit_result(result)

@@ -213,54 +213,43 @@ class TestReport:
 
 
 class TestPreflightGate:
-    def test_headless_pass_returns_report(self, mock_stdin_non_tty):
-        report = preflight.preflight_gate(Cloud.GCP, Mode.CI, "gcp-dev", env=dict(GCP_CI_ENV))
+    def _set_gcp_env(self, monkeypatch, omit=()):
+        """Put a healthy GCP secret set on the real process env (the gate reads os.environ)."""
+        monkeypatch.delenv(preflight.SKIP_OPERATOR_ENV, raising=False)
+        for key, value in GCP_CI_ENV.items():
+            if key in omit:
+                monkeypatch.delenv(key, raising=False)
+            else:
+                monkeypatch.setenv(key, value)
+
+    def test_headless_pass_returns_report(self, mock_stdin_non_tty, monkeypatch):
+        self._set_gcp_env(monkeypatch)
+        report = preflight.preflight_gate(Cloud.GCP, Mode.CI, "gcp-dev")
         assert report.ok
 
-    def test_headless_failure_exits(self, mock_stdin_non_tty):
-        env = dict(GCP_CI_ENV)
-        del env["GCP_PROJECT_ID"]
+    def test_headless_failure_exits(self, mock_stdin_non_tty, monkeypatch):
+        self._set_gcp_env(monkeypatch, omit=("GCP_PROJECT_ID",))
         with pytest.raises(SystemExit) as exc:
-            preflight.preflight_gate(Cloud.GCP, Mode.CI, "gcp-dev", env=env, headless=True)
+            preflight.preflight_gate(Cloud.GCP, Mode.CI, "gcp-dev", headless=True)
         assert exc.value.code == 1
 
-    def test_interactive_confirms_manual_prereqs(self, mock_stdin_tty, tmp_path):
-        _write_valid_gcp_inputs(tmp_path)
-        with patch("builtins.input", return_value="y"):
-            report = preflight.preflight_gate(
-                Cloud.GCP,
-                Mode.LOCAL,
-                "gcp-dev",
-                env=dict(GCP_CI_ENV),
-                headless=False,
-                tool_exists=lambda n: "/bin/x",
-                repo_root=tmp_path,
-            )
+    def test_interactive_confirms_manual_prereqs(self, mock_stdin_tty):
+        # AWS local + component=None runs only the tool checks; a present PATH plus a
+        # "yes" to the manual-prerequisite prompt passes the gate.
+        with (
+            patch("shutil.which", return_value="/usr/bin/tool"),
+            patch("builtins.input", return_value="y"),
+        ):
+            report = preflight.preflight_gate(Cloud.AWS, Mode.LOCAL, "dev", headless=False)
         assert report.ok
 
-    def test_interactive_abort_when_manual_prereqs_declined(self, mock_stdin_tty, tmp_path):
-        _write_valid_gcp_inputs(tmp_path)
-        with patch("builtins.input", return_value="n"), pytest.raises(SystemExit):
-            preflight.preflight_gate(
-                Cloud.GCP,
-                Mode.LOCAL,
-                "gcp-dev",
-                env=dict(GCP_CI_ENV),
-                headless=False,
-                tool_exists=lambda n: "/bin/x",
-                repo_root=tmp_path,
-            )
-
-
-def _write_valid_gcp_inputs(root: Path) -> None:
-    """Write a valid GCP control-plane tfvars tree under a tmp repo root."""
-    tf_dir = root / "platform" / "terraform" / "gcp" / "environments" / "gcp-dev"
-    tf_dir.mkdir(parents=True)
-    (tf_dir / "terraform.tfvars").write_text(
-        'public_hostname = "gcp.example.test"\n'
-        "enable_managed_tls = true\n"
-        'gke_master_authorized_cidrs = ["203.0.113.10/32"]\n'
-    )
+    def test_interactive_abort_when_manual_prereqs_declined(self, mock_stdin_tty):
+        with (
+            patch("shutil.which", return_value="/usr/bin/tool"),
+            patch("builtins.input", return_value="n"),
+            pytest.raises(SystemExit),
+        ):
+            preflight.preflight_gate(Cloud.AWS, Mode.LOCAL, "dev", headless=False)
 
 
 # --- Facade wiring ------------------------------------------------------------
