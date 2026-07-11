@@ -1,6 +1,44 @@
 """Tests for runner.py module."""
 
+import json
 from unittest.mock import MagicMock, patch
+
+import pytest
+
+
+def _fake_run_cmd(status: str = "Success", runner_statuses: dict | None = None):
+    """Build a run_cmd side_effect that answers each bootstrap subprocess by shape.
+
+    status: the SSM get-command-invocation Status returned for every runner.
+    runner_statuses: name -> GitHub API status (defaults to both runners online).
+    """
+    statuses = runner_statuses or {
+        "shifter-github-runner-1": "online",
+        "shifter-github-runner-2": "online",
+    }
+
+    def _side_effect(cmd, **kwargs):
+        joined = " ".join(cmd)
+        if "registration-token" in joined:
+            return MagicMock(stdout="regtok\n")
+        if "send-command" in joined:
+            return MagicMock(stdout="cmd-xyz\n")
+        if "get-command-invocation" in joined:
+            return MagicMock(stdout=f"{status}\n")
+        if "output" in cmd and "-json" in cmd:
+            return MagicMock(
+                stdout=json.dumps(
+                    {
+                        "runner_instance_ids": {"value": ["i-1", "i-2"]},
+                        "runner_names": {"value": list(statuses.keys())},
+                    }
+                )
+            )
+        if "actions/runners" in joined:
+            return MagicMock(stdout=json.dumps([{"name": n, "status": s} for n, s in statuses.items()]))
+        return MagicMock(stdout="")
+
+    return _side_effect
 
 
 class TestRunnerConfig:
@@ -499,3 +537,130 @@ class TestRegistrationFailures:
 
         problems = _registration_failures({"r1": "Success"}, {}, ["r1"])
         assert len(problems) == 1
+
+
+class TestWaitForSsmCommand:
+    """wait_for_ssm_command returns the terminal SSM status."""
+
+    def test_success_status(self, mock_deploy):
+        from runner import wait_for_ssm_command
+
+        mock_deploy.run_cmd.return_value = MagicMock(stdout="Success\n")
+        status = wait_for_ssm_command("cmd-1", _target(), _cfg())
+        assert status == "Success"
+        mock_deploy.success.assert_called()
+
+    def test_non_success_status_warns(self, mock_deploy):
+        from runner import wait_for_ssm_command
+
+        mock_deploy.run_cmd.return_value = MagicMock(stdout="Failed\n")
+        status = wait_for_ssm_command("cmd-1", _target(), _cfg())
+        assert status == "Failed"
+        mock_deploy.warn.assert_called()
+
+
+class TestMintErrors:
+    """mint fails closed when the API returns no token."""
+
+    def test_empty_token_exits(self, mock_deploy):
+        from runner import mint_registration_token
+
+        mock_deploy.run_cmd.return_value = MagicMock(stdout="\n")
+        with pytest.raises(SystemExit):
+            mint_registration_token(_cfg())
+
+
+class TestApplyRunnerTerraformErrors:
+    """apply_runner_terraform fails closed on missing bucket / missing root."""
+
+    def test_missing_bucket_exits(self, mock_deploy, monkeypatch):
+        from runner import apply_runner_terraform
+
+        monkeypatch.delenv("TF_INFRA_STATE_BUCKET", raising=False)
+        with pytest.raises(SystemExit):
+            apply_runner_terraform(_cfg(), dry_run=False, bucket_name=None)
+
+    def test_missing_tf_root_exits(self, mock_deploy, tmp_path):
+        from runner import apply_runner_terraform
+
+        mock_deploy.get_repo_root.return_value = tmp_path  # no platform/... tree created
+        with pytest.raises(SystemExit):
+            apply_runner_terraform(_cfg(), dry_run=False, bucket_name="b")
+
+
+class TestProvisionIntegration:
+    """End-to-end (mocked-subprocess) apply -> register -> verify orchestration."""
+
+    def _tf_root(self, tmp_path):
+        tf_dir = tmp_path / "platform" / "terraform" / "global" / "github-runner"
+        tf_dir.mkdir(parents=True)
+        return tf_dir
+
+    def test_success_path_returns_online_fleet(self, mock_deploy, tmp_path):
+        from runner import provision_and_register_runners
+
+        self._tf_root(tmp_path)
+        mock_deploy.get_repo_root.return_value = tmp_path
+        mock_deploy.run_cmd.side_effect = _fake_run_cmd(status="Success")
+
+        result = provision_and_register_runners(_cfg(), dry_run=False, create_network=True, bucket_name="b")
+
+        assert result["targets"] == ["shifter-github-runner-1", "shifter-github-runner-2"]
+        assert result["verified"] == {
+            "shifter-github-runner-1": "online",
+            "shifter-github-runner-2": "online",
+        }
+        # The terraform plan carried the created-network var.
+        all_args = [a for call in mock_deploy.run_cmd.call_args_list for a in call[0][0]]
+        assert any("create_runner_network=true" in a for a in all_args)
+
+    def test_fails_closed_on_ssm_failure(self, mock_deploy, tmp_path):
+        from runner import provision_and_register_runners
+
+        self._tf_root(tmp_path)
+        mock_deploy.get_repo_root.return_value = tmp_path
+        mock_deploy.run_cmd.side_effect = _fake_run_cmd(status="Failed")
+
+        with pytest.raises(SystemExit):
+            provision_and_register_runners(_cfg(), dry_run=False, bucket_name="b")
+
+    def test_fails_closed_on_offline_runner(self, mock_deploy, tmp_path):
+        from runner import provision_and_register_runners
+
+        self._tf_root(tmp_path)
+        mock_deploy.get_repo_root.return_value = tmp_path
+        mock_deploy.run_cmd.side_effect = _fake_run_cmd(
+            status="Success",
+            runner_statuses={"shifter-github-runner-1": "offline", "shifter-github-runner-2": "online"},
+        )
+
+        with pytest.raises(SystemExit):
+            provision_and_register_runners(_cfg(), dry_run=False, bucket_name="b")
+
+    def test_use_existing_network_sets_create_false(self, mock_deploy, tmp_path):
+        from runner import provision_and_register_runners
+
+        self._tf_root(tmp_path)
+        mock_deploy.get_repo_root.return_value = tmp_path
+        mock_deploy.run_cmd.side_effect = _fake_run_cmd(status="Success")
+
+        provision_and_register_runners(_cfg(), dry_run=False, use_existing_network=True, bucket_name="b")
+
+        all_args = [a for call in mock_deploy.run_cmd.call_args_list for a in call[0][0]]
+        assert any("create_runner_network=false" in a for a in all_args)
+
+    def test_no_targets_exits(self, mock_deploy, tmp_path):
+        from runner import provision_and_register_runners
+
+        self._tf_root(tmp_path)
+        mock_deploy.get_repo_root.return_value = tmp_path
+
+        def _no_targets(cmd, **kwargs):
+            if "output" in cmd and "-json" in cmd:
+                empty = {"runner_instance_ids": {"value": []}, "runner_names": {"value": []}}
+                return MagicMock(stdout=json.dumps(empty))
+            return MagicMock(stdout="")
+
+        mock_deploy.run_cmd.side_effect = _no_targets
+        with pytest.raises(SystemExit):
+            provision_and_register_runners(_cfg(), dry_run=False, bucket_name="b")
