@@ -43,6 +43,7 @@ from shared.enums import ResourceStatus
 if TYPE_CHECKING:
     from django.contrib.auth.models import User
 
+    from cms.models import AcesPackageSource
     from shared.enums import RangeSource
     from shared.schemas.range import RangeContext
 
@@ -58,7 +59,7 @@ def _is_aces_scenario(scenario: str) -> bool:
     return AcesPackageSource.objects.filter(scenario_id=scenario).exists()
 
 
-def _load_aces_source_or_raise(scenario: str):
+def _load_aces_source_or_raise(scenario: str) -> AcesPackageSource:
     """Return the AcesPackageSource for ``scenario`` or raise a clear CMSError."""
     from cms.models import AcesPackageSource
 
