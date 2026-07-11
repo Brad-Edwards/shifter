@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 
 import pytest
 from aces_backend_protocols.capabilities import ProvisionerCapabilities
-from aces_contracts.planning import PlannedResource, ProvisioningPlan, RuntimeDomain
+from aces_contracts.planning import ChangeAction, PlannedResource, ProvisioningPlan, ProvisionOp, RuntimeDomain
 from aces_contracts.runtime_state import RuntimeSnapshot
 from aces_runtime.manager import RuntimeManager
 from aces_runtime.registry import BackendRegistry
@@ -207,7 +207,7 @@ def test_interpret_consumes_real_compiled_plan() -> None:
     assert len(node_resources) == 2
 
 
-def _content_placement(address: str, *, target: str, content_type: str = "file") -> PlannedResource:
+def _content_placement(address: str, *, target: str, content_type: str = "directory") -> PlannedResource:
     return PlannedResource(
         address=address,
         domain=RuntimeDomain.PROVISIONING,
@@ -345,6 +345,187 @@ def test_account_feature_outside_envelope_fails_closed() -> None:
     serialized, diagnostics = _interpret(plan, capabilities=caps)
     assert serialized is None
     assert any(d.code == "shifter-provisioner.unsupported-account-feature" for d in diagnostics)
+
+
+# --- honest realizability ledger (#1563): narrowed envelope + independent evidence gate ---
+
+
+@pytest.mark.parametrize(
+    ("spec", "feature", "authored_value"),
+    [
+        ({"spn": "host/dc1.example.com"}, "spn", "host/dc1.example.com"),
+        ({"auth_method": "kerberos"}, "auth_method", "kerberos"),
+    ],
+)
+def test_dropped_account_features_fail_closed(spec: dict, feature: str, authored_value: str) -> None:
+    # spn / auth_method were removed from the manifest (#1560/#1561 re-add once realized):
+    # a plan requesting either fails closed against the real narrowed capability envelope.
+    plan = _plan(
+        _node("provision.node.a", "a"),
+        _account_placement("provision.account.a", target="provision.node.a", **spec),
+    )
+    serialized, diagnostics = _interpret(plan)
+    assert serialized is None
+    assert any(
+        d.is_error and d.code == "shifter-provisioner.unsupported-account-feature" and feature in d.message
+        for d in diagnostics
+    )
+    # the authored value never leaks into a diagnostic (governed feature term only)
+    assert all(authored_value not in d.message for d in diagnostics)
+
+
+@pytest.mark.parametrize(
+    "spec",
+    [
+        {"groups": ["ops"]},
+        {"shell": "/bin/bash"},
+        {"home": "/home/alice"},
+        {"disabled": True},
+        {"mail": "alice@example.com"},
+    ],
+)
+def test_retained_account_features_pass_declaration_and_evidence(spec: dict) -> None:
+    # Every retained feature must clear BOTH the manifest declaration and the independent
+    # evidence ledger (#1563) -- the two hand-maintained frozensets must agree for every
+    # declared term, not just "groups". If a future edit drifts one from the other, a real
+    # range authoring that feature would fail closed; this positive path is the guard.
+    plan = _plan(
+        _node("provision.node.a", "a"),
+        _account_placement("provision.account.a", target="provision.node.a", **spec),
+    )
+    serialized, diagnostics = _interpret(plan)
+    assert serialized is not None
+    assert not any(
+        d.code
+        in {"shifter-provisioner.unsupported-account-feature", "shifter-provisioner.account-feature-not-realized"}
+        for d in diagnostics
+    )
+
+
+@pytest.mark.parametrize("content_type", ["file", "dataset"])
+def test_dropped_content_types_fail_closed(content_type: str) -> None:
+    # supported_content_types narrowed to {directory}; file/dataset fail closed (#1564 re-adds source-backed content).
+    plan = _plan(
+        _node("provision.node.a", "a"),
+        _content_placement("provision.content.x", target="provision.node.a", content_type=content_type),
+    )
+    serialized, diagnostics = _interpret(plan)
+    assert serialized is None
+    assert any(d.is_error and d.code == "shifter-provisioner.unsupported-content-type" for d in diagnostics)
+
+
+def _spn_overclaimed_capabilities() -> ProvisionerCapabilities:
+    # Manifest over-claim: spn re-declared without genuine realization evidence.
+    return ProvisionerCapabilities(
+        name="overclaimed",
+        supported_node_types=frozenset({"vm", "switch"}),
+        supported_os_families=frozenset({"linux", "windows"}),
+        supported_account_features=frozenset({"groups", "spn"}),
+        supports_accounts=True,
+    )
+
+
+def test_evidence_policy_is_independent_of_manifest_declaration() -> None:
+    # Widening the manifest (spn re-declared) must NOT widen realization: the
+    # independent evidence gate rejects spn even though the declaration now allows it.
+    plan = _plan(
+        _node("provision.node.a", "a"),
+        _account_placement("provision.account.a", target="provision.node.a", spn="host/dc1.example.com"),
+    )
+    serialized, diagnostics = _interpret(plan, capabilities=_spn_overclaimed_capabilities())
+    assert serialized is None
+    # the declaration check passes (spn IS in the over-claimed envelope) ...
+    assert not any(d.code == "shifter-provisioner.unsupported-account-feature" for d in diagnostics)
+    # ... but the independent evidence gate fails closed.
+    assert any(
+        d.is_error and d.code == "shifter-provisioner.account-feature-not-realized" and "spn" in d.message
+        for d in diagnostics
+    )
+
+
+def test_declared_but_unrealized_account_feature_fails_validate_and_apply(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The same evidence gate serves validate() and apply() on the one pure path,
+    # and apply() never dispatches an unrealized-feature plan.
+    monkeypatch.setattr("shared.aces.runtime_target.SHIFTER_PROVISIONER_CAPABILITIES", _spn_overclaimed_capabilities())
+    port = FakeDispatchPort()
+    plan = _plan(
+        _node("provision.node.a", "a"),
+        _account_placement("provision.account.a", target="provision.node.a", spn="host/dc1.example.com"),
+    )
+    provisioner = ShifterProvisioner(port)
+    assert any(d.code == "shifter-provisioner.account-feature-not-realized" for d in provisioner.validate(plan))
+    result = provisioner.apply(plan, RuntimeSnapshot())
+    assert result.success is False
+    assert port.plans == []  # fail closed: no dispatch
+    assert any(d.code == "shifter-provisioner.account-feature-not-realized" for d in result.diagnostics)
+    assert all("host/dc1.example.com" not in d.message for d in result.diagnostics)
+
+
+def _account_op(address: str, *, action: ChangeAction, target: str = "provision.node.a", **spec: object) -> ProvisionOp:
+    body = {"username": "alice", "node": "a", **spec}
+    return ProvisionOp(
+        action=action,
+        address=address,
+        resource_type="account-placement",
+        payload={"name": address.rsplit(".", 1)[-1], "target_address": target, "spec": body},
+    )
+
+
+def _plan_ops(resources: list[PlannedResource], operations: list[ProvisionOp]) -> ProvisioningPlan:
+    return ProvisioningPlan(resources={r.address: r for r in resources}, operations=list(operations))
+
+
+def test_operation_only_account_overclaim_fails_and_does_not_dispatch(monkeypatch: pytest.MonkeyPatch) -> None:
+    # An over-claimed feature carried ONLY by a materializing operation (no matching
+    # resource) must still fail closed before dispatch -- an operation-only payload
+    # cannot bypass the realization ledger.
+    monkeypatch.setattr("shared.aces.runtime_target.SHIFTER_PROVISIONER_CAPABILITIES", _spn_overclaimed_capabilities())
+    port = FakeDispatchPort()
+    plan = _plan_ops(
+        [_node("provision.node.a", "a")],
+        [_account_op("provision.account.op", action=ChangeAction.CREATE, spn="host/dc1.example.com")],
+    )
+    provisioner = ShifterProvisioner(port)
+    assert any(
+        d.code == "shifter-provisioner.account-feature-not-realized" and d.address == "provision.account.op"
+        for d in provisioner.validate(plan)
+    )
+    result = provisioner.apply(plan, RuntimeSnapshot())
+    assert result.success is False
+    assert port.plans == []  # fail closed: no dispatch
+
+
+def test_delete_account_operation_is_exempt() -> None:
+    # A DELETE operation removes an account and does not materialize its historical
+    # features, so an over-claimed feature on a DELETE op is not rejected.
+    plan = _plan_ops(
+        [_node("provision.node.a", "a")],
+        [_account_op("provision.account.gone", action=ChangeAction.DELETE, spn="host/dc1.example.com")],
+    )
+    serialized, diagnostics = _interpret(plan)
+    assert serialized is not None
+    assert not any(
+        d.code
+        in {"shifter-provisioner.account-feature-not-realized", "shifter-provisioner.unsupported-account-feature"}
+        for d in diagnostics
+    )
+
+
+def test_account_resource_and_create_operation_do_not_double_report(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A resource and its own CREATE operation for the same over-claimed feature yield
+    # a single diagnostic, not two.
+    monkeypatch.setattr("shared.aces.runtime_target.SHIFTER_PROVISIONER_CAPABILITIES", _spn_overclaimed_capabilities())
+    plan = _plan_ops(
+        [
+            _node("provision.node.a", "a"),
+            _account_placement("provision.account.a", target="provision.node.a", spn="host/dc1.example.com"),
+        ],
+        [_account_op("provision.account.a", action=ChangeAction.CREATE, spn="host/dc1.example.com")],
+    )
+    serialized, diagnostics = _interpret(plan)
+    assert serialized is None
+    not_realized = [d for d in diagnostics if d.code == "shifter-provisioner.account-feature-not-realized"]
+    assert len(not_realized) == 1  # deduplicated across the resource and operation views
 
 
 def test_node_budget_enforced() -> None:
