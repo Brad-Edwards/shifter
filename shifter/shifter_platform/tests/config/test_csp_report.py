@@ -1,4 +1,4 @@
-"""Tests for the bounded CSP violation report collector (#1520, ADR-033-R3).
+"""Tests for the bounded CSP violation report collector (#1520, ADR-035-R3).
 
 The collector is transport/observability plumbing: a same-origin, POST-only,
 anonymous, CSRF-exempt endpoint that accepts standard browser report envelopes,

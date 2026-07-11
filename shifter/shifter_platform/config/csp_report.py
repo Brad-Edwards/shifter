@@ -1,4 +1,4 @@
-"""Bounded same-origin CSP violation report collector (ADR-033-R3).
+"""Bounded same-origin CSP violation report collector (ADR-035-R3).
 
 Transport and observability plumbing, not a business API. A POST-only,
 anonymous, narrowly CSRF-exempt endpoint (browsers post reports without an

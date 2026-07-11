@@ -40,7 +40,7 @@ def _root_page(request: HttpRequest, *args: object, **kwargs: object) -> HttpRes
 urlpatterns = [
     path("", _root_page, name="home"),
     path("privacy/", privacy_notice, name="privacy_notice"),
-    # Same-origin CSP violation report collector (ADR-033-R3). POST-only,
+    # Same-origin CSP violation report collector (ADR-035-R3). POST-only,
     # anonymous, CSRF-exempt transport plumbing; not a public business API.
     path("security/csp-report/", csp_report, name="csp_report"),
     path("login/", platform_login, name="platform_login"),

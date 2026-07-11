@@ -31,7 +31,7 @@
             </main>
         </div>
         <script src="{% static 'js/sidebar.js' %}"></script>
-        {# Mermaid diagram rendering. Bundled same-origin by Vite (ADR-033: no #}
+        {# Mermaid diagram rendering. Bundled same-origin by Vite (ADR-035: no #}
         {# public CDN script authority); owns its own theme + code-block #}
         {# conversion in frontend/src/mermaid-entry.ts. #}
         {% mermaid_bundle_url as mermaid_js %}

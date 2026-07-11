@@ -260,7 +260,7 @@
 {% endblock %}
 {% block extra_js %}
     {% if has_active_range %}
-        <!-- xterm.js vendored + served same-origin with SRI (ADR-033). Paths
+        <!-- xterm.js vendored + served same-origin with SRI (ADR-035). Paths
              centralised in TERMINAL_CDN_ASSETS (see config/_terminal_assets.py). -->
         <link rel="stylesheet"
               href="{% static terminal_cdn_assets.xterm_css.url %}"

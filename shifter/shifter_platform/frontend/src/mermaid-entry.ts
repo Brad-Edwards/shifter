@@ -1,4 +1,4 @@
-// Standalone documentation Mermaid renderer (#1520, ADR-033).
+// Standalone documentation Mermaid renderer (#1520, ADR-035).
 //
 // Bundled by frontend/vite.mermaid.config.ts into a single self-contained,
 // content-hashed asset served same-origin by WhiteNoise, so the documentation

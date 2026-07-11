@@ -346,7 +346,7 @@ function rebuildScoreboardTable(rankings, teamMode) {
 }
     </script>
     {% if participant and not team_mode and not selected_bracket %}
-        {# Chart.js vendored + served same-origin with SRI (ADR-033: no public #}
+        {# Chart.js vendored + served same-origin with SRI (ADR-035: no public #}
         {# CDN script authority). Same v4.5.1 bundle already used by the admin #}
         {# participant detail page. #}
         <script src="{% static 'js/vendor/chart.umd.min.js' %}"

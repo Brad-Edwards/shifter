@@ -1,4 +1,4 @@
-"""Documentation template tags (#1520, ADR-033).
+"""Documentation template tags (#1520, ADR-035).
 
 Exposes the same-origin, Vite-built Mermaid bundle URL to the documentation
 templates so they no longer import Mermaid from a public package CDN.

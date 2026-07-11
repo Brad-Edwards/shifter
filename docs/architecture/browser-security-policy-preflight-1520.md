@@ -150,7 +150,7 @@ create styles or use code-generation paths only at runtime.
 - Do not use per-view CSP overrides as the normal extension mechanism. Django's
   override decorators replace the whole base policy rather than merging it.
   A truly unavoidable override requires a complete policy, narrow path,
-  regression coverage, and a `docs/adr/exceptions.yaml` entry for ADR-033 with
+  regression coverage, and a `docs/adr/exceptions.yaml` entry for ADR-035 with
   owner, reason, expiry, and affected paths.
 
 ## Browser Report Boundary
@@ -205,7 +205,7 @@ business API:
 | GCP telemetry | container stdout/stderr in GKE/Cloud Logging; Helm `platform-runtime` ConfigMap | Keep the application event provider-neutral; use the incumbent GCP log query/alert surface. |
 | Edge abuse controls | `platform/terraform/modules/portal/alb` WAF; `platform/terraform/gcp/modules/portal/ingress` Cloud Armor | Exact-path report handling only; preserve all other managed rules and ingress boundaries. |
 | Config inventory | `config/_env_manifest.py`, `config/env-manifest.json`, `scripts/gcp/render_runtime_env.py`, `shifter/installation/runtime_inventory.py` | Register the mode wherever it is environment-bound; do not hide a dynamic lookup from manifest checks. |
-| Exception governance | `docs/adr/index.yaml`, `docs/adr/exceptions.yaml`, `adr_guard` expiry/schema validation | Policy waivers reference ADR-033 and carry owner, reason, expiry, and paths. |
+| Exception governance | `docs/adr/index.yaml`, `docs/adr/exceptions.yaml`, `adr_guard` expiry/schema validation | Policy waivers reference ADR-035 and carry owner, reason, expiry, and paths. |
 | Regression tests | existing `tests/config/test_settings.py`, SPA host suites, legacy view suites, inline-style scans, and `scripts/stack-smoke/page_smoke.py` | Assert real middleware responses and built-image headers; extend existing scans rather than add per-app policy logic. |
 
 ## Cross-Cutting Layers

@@ -27,8 +27,10 @@ manifest source, contract coverage, and profile inference only.
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 
+from aces_backend_protocols.capabilities import BackendCapabilitySet
 from aces_conformance.conformance import (
     BackendCapabilityProfile,
     profile_for_manifest,
@@ -143,3 +145,34 @@ def test_builder_matches_checked_in_published_artifact():
     assert render_shifter_backend_manifest_payload() == checked_in, (
         "checked-in backend-manifest.json is stale; regenerate it from create_shifter_backend_manifest()"
     )
+
+
+def test_provisioner_capabilities_are_the_narrowed_ledger():
+    """#1563: the manifest declares only genuinely-realized provisioning terms."""
+    provisioner = create_shifter_backend_manifest().provisioner
+
+    assert provisioner.supported_account_features == frozenset({"groups", "shell", "home", "disabled", "mail"})
+    assert provisioner.supported_content_types == frozenset({"directory"})
+    # Removed over-claims stay out until their sibling issue lands genuine realization
+    # (auth_method -> #1560, spn -> #1561, source-backed file/dataset -> #1564).
+    for dropped in ("spn", "auth_method"):
+        assert dropped not in provisioner.supported_account_features
+    for dropped in ("file", "dataset"):
+        assert dropped not in provisioner.supported_content_types
+
+
+def test_profile_inference_does_not_catch_a_term_level_overclaim():
+    """#1563: profile inference is blind to a term-level over-claim, so realizability is
+    guarded by exact-set assertions (above) and the apply-time evidence gate, not profile shape."""
+    honest = create_shifter_backend_manifest()
+    overclaimed_provisioner = replace(
+        honest.provisioner,
+        supported_account_features=honest.provisioner.supported_account_features | {"spn"},
+    )
+    overclaimed = replace(honest, capabilities=BackendCapabilitySet(provisioner=overclaimed_provisioner))
+
+    # Re-declaring spn does not change the inferred profile ...
+    assert profile_for_manifest(overclaimed) == BackendCapabilityProfile.PROVISIONING_ONLY
+    assert profile_for_manifest(overclaimed) == profile_for_manifest(honest)
+    # ... so a generic provisioning-only conformance pass is not realizability evidence.
+    assert "spn" not in honest.provisioner.supported_account_features

@@ -1,4 +1,4 @@
-"""Browser document security policy (ADR-033).
+"""Browser document security policy (ADR-035).
 
 Single code-owned artifact for the staged, deny-by-default browser security
 policy shared by the legacy Django templates and the platform SPA. It defines
@@ -53,13 +53,13 @@ __all__ = [
 ]
 
 # ---------------------------------------------------------------------------
-# Rollout seam (ADR-033-R1). Only the mode is environment-bound.
+# Rollout seam (ADR-035-R1). Only the mode is environment-bound.
 # ---------------------------------------------------------------------------
 _MODE_REPORT_ONLY = "report-only"
 _MODE_ENFORCE = "enforce"
 _VALID_MODES = (_MODE_REPORT_ONLY, _MODE_ENFORCE)
 
-# Same-origin collector (ADR-033-R3). Report-only and enforce both report here.
+# Same-origin collector (ADR-035-R3). Report-only and enforce both report here.
 CSP_REPORT_PATH = "/security/csp-report/"
 _REPORTING_GROUP = "csp"
 
@@ -101,7 +101,7 @@ def _storage_connect_origins() -> list[str]:
 
 
 def build_browser_csp() -> dict[str, list[str]]:
-    """Return the reviewed deny-by-default CSP candidate (ADR-033-R2).
+    """Return the reviewed deny-by-default CSP candidate (ADR-035-R2).
 
     No ``unsafe-inline``/``unsafe-eval``/``unsafe-hashes``, wildcards, or broad
     schemes. Inline handlers and styles are denied outright
@@ -122,7 +122,7 @@ def build_browser_csp() -> dict[str, list[str]]:
         "font-src": [CSP.SELF],
         "img-src": [CSP.SELF, "data:"],
         # Terminal (xterm/split), scoreboard (Chart.js), and docs (Mermaid) assets
-        # are vendored + served same-origin (ADR-033), so no public package CDN is
+        # are vendored + served same-origin (ADR-035), so no public package CDN is
         # a script authority. ``gstatic`` is the Google-owned Firebase SDK origin.
         "script-src": [CSP.SELF, _FIREBASE_SDK_ORIGIN],
         "script-src-attr": [CSP.NONE],
@@ -154,12 +154,12 @@ def csp_settings_for_mode(
 # ---------------------------------------------------------------------------
 # Global header values.
 # ---------------------------------------------------------------------------
-# Referrer-Policy (ADR-033-R4). Django's framework default is same-origin; make
+# Referrer-Policy (ADR-035-R4). Django's framework default is same-origin; make
 # it the explicit repository contract. Stricter per-response overrides (the CTF
 # invite ``no-referrer``) are preserved by their own views.
 SECURE_REFERRER_POLICY = "same-origin"
 
-# Permissions-Policy capability denylist (ADR-033-R4). Clipboard is deliberately
+# Permissions-Policy capability denylist (ADR-035-R4). Clipboard is deliberately
 # NOT disabled: terminal copy/paste and participant walkthrough copying use
 # ``navigator.clipboard``.
 _PERMISSIONS_POLICY_FEATURES = (
