@@ -62,12 +62,29 @@ A range instance resolves to one of four image profiles by role and OS
 | Windows guest | windows | `GCP_RANGE_WINDOWS_IMAGE` |
 | Everything else (Linux host) | linux | `GCP_RANGE_LINUX_IMAGE` |
 
-For a Polaris deployment the Docker host maps to the linux profile and the
-`BOREAS.LOCAL` DC to the dc profile, so set `GCP_RANGE_LINUX_IMAGE` to the
-`shifter-polaris-vm` family and `GCP_RANGE_DC_IMAGE` to `shifter-polaris-dc`.
-Because there is one image per profile per deployment, a single environment
-serves either Polaris hosts or generic Linux guests, not both; run generic
-scenarios in a separate deployment or environment.
+The Polaris Docker host is provisioned as the attacker (`os_type=kali` /
+`role=attacker`), so it resolves to the **kali** profile, falling back to the
+linux profile only when `GCP_RANGE_KALI_IMAGE` is unset. Set
+`GCP_RANGE_KALI_IMAGE` to the `shifter-polaris-vm` family and
+`GCP_RANGE_DC_IMAGE` to `shifter-polaris-dc`. Do **not** leave
+`GCP_RANGE_KALI_IMAGE` pointing at a plain Kali desktop image in a Polaris
+deployment: it wins over the linux fallback and the Polaris host will boot the
+wrong image (host sshd never appears on the `2222` management port and setup
+times out). Because there is one image per profile per deployment, a single
+environment serves either Polaris hosts or generic Kali attackers, not both;
+run generic scenarios in a separate deployment or environment.
+
+The `shifter-polaris-vm` image is a 200 GB disk, and a boot disk cannot be
+smaller than its source image, so set `GCP_RANGE_KALI_DISK_SIZE_GB` to at least
+the image size (the kali-profile default is 80 GB); otherwise instance creation
+fails with `disk size cannot be smaller than the image size`.
+
+The Polaris host's `polaris_range_bootstrap` step fetches a smoketests tarball
+from `gs://$POLARIS_TESTS_BUCKET/$POLARIS_TESTS_KEY` (default
+`polaris/tests/polaris-tests.tar.gz`). Build it from the in-repo tests tree and
+upload it before launching a range:
+`tar czf polaris-tests.tar.gz -C scenario-dev/polaris tests` then
+`gcloud storage cp polaris-tests.tar.gz gs://<assets-bucket>/polaris/tests/polaris-tests.tar.gz`.
 
 Images are native GCE images referenced by family:
 `projects/<project>/global/images/family/shifter-<type>`. Unlike the GDC path
@@ -75,7 +92,20 @@ there is no qcow2 export or CDI import.
 
 ## Service accounts
 
-The GCE range-cell backend uses two service accounts:
+For the default same-project range cell, Terraform (`modules/portal/iam`)
+creates both range service accounts, grants their roles, and grants the
+provisioner workload SA the access it needs to drive them: `roles/compute.admin`
+on the range-cell project (create the range VPC, subnets, firewall, Cloud NAT,
+and instances), `roles/iam.serviceAccountUser` on the host SA (attach it to
+guests) and the Vertex SA, and `roles/iam.serviceAccountKeyAdmin` on the Vertex
+SA (mint per-range keys). The two emails are exposed as the
+`range_host_service_account_email` / `range_vertex_service_account_email`
+Terraform outputs; set `GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL` /
+`GCP_RANGE_VERTEX_SERVICE_ACCOUNT_EMAIL` to those values (a cross-project range
+cell, `GCP_RANGE_CELL_PROJECT_ID`, provisions its own SAs in that project and
+grants the provisioner the equivalent roles there; follow-up tracked in #1509).
+
+The two service accounts:
 
 - **Host SA** (`GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL`): attached to every range
   guest. Grant logging write and monitoring write, plus (for Polaris)
@@ -177,12 +207,16 @@ the same external stack), so the GCE bake fetches it from GCS:
    `PKR_VAR_polaris_stack_bucket`; empty leaves the host range-ready without the
    stack baked.
 5. **Run the Packer GCE Image Build** workflow with `image_type=polaris-vm`. It
-   publishes image family `shifter-polaris-vm`, which `GCP_RANGE_LINUX_IMAGE`
-   points at.
+   publishes image family `shifter-polaris-vm`, which `GCP_RANGE_KALI_IMAGE`
+   points at (the Polaris host uses the kali/attacker profile).
 
-The DC's Administrator password baked by `a2_setup.ps1` must match
-`DC_DOMAIN_PASSWORD` in the deploy config (see `docs/dev/deploy-secrets.md`), so
-the provisioner's `set_admin_password` step succeeds against the prebaked DC.
+`DC_DOMAIN_PASSWORD` is provisioned automatically: Terraform seeds a
+`dc-domain-password` Secret Manager secret and `render_runtime_env` emits
+`DC_DOMAIN_PASSWORD_SECRET_ID`, which the entrypoint resolves and `ecs.py`
+passes into the provisioner Job. The provisioner authenticates to the prebaked
+DC over SSH (injected key, not a password) and its `set_admin_password` step
+resets the domain Administrator password to `DC_DOMAIN_PASSWORD` per range, so
+the value baked by `a2_setup.ps1` does not need to match.
 
 ## NGFW
 

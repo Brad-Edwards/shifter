@@ -28,12 +28,42 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
+from aces_composition import (
+    AcesPlanAccount,
+    AcesPlanContent,
+    AcesPlanFeature,
+    build_account,
+    build_content,
+    build_feature,
+)
+
+__all__ = [
+    "AcesPlan",
+    "AcesPlanAccount",
+    "AcesPlanAcl",
+    "AcesPlanContent",
+    "AcesPlanError",
+    "AcesPlanFeature",
+    "AcesPlanImage",
+    "AcesPlanNetwork",
+    "AcesPlanNode",
+    "parse_plan",
+]
+
 #: Must equal ``shared.aces.runtime_target.ACES_PROVISIONING_PLAN_KIND``.
 ACES_PROVISIONING_PLAN_KIND = "aces_provisioning_plan"
 NODE_RESOURCE_TYPE = "node"
 NETWORK_RESOURCE_TYPE = "network"
+CONTENT_RESOURCE_TYPE = "content-placement"
+FEATURE_RESOURCE_TYPE = "feature-binding"
+ACCOUNT_RESOURCE_TYPE = "account-placement"
 
 _MIB = 1024 * 1024
+
+#: ACL vocabulary, mirrored from aces_backend_libvirt.acls (the reference backend).
+_ACL_ACTIONS = {"allow": "accept", "accept": "accept", "deny": "drop", "drop": "drop"}
+_ACL_WILDCARD_PROTOCOLS = frozenset({"", "all", "any"})
+_ACL_DIRECTIONS = frozenset({"in", "out", "inout"})
 
 
 class AcesPlanError(ValueError):
@@ -50,6 +80,25 @@ class AcesPlanImage:
 
 
 @dataclass(frozen=True)
+class AcesPlanAcl:
+    """A node's authored network ACL (mirror aces_backend_libvirt.acls fields).
+
+    ``action`` is normalized to ``accept``/``drop`` and ``protocol`` to
+    ``tcp``/``udp``/``all``; ``from_net``/``to_net`` are kept as the authored
+    network refs (resolved to concrete CIDRs at realization, fail-closed, so an
+    unresolvable *specified* endpoint is never widened into a broad allow).
+    """
+
+    name: str
+    action: str
+    direction: str
+    protocol: str
+    ports: tuple[int, ...]
+    from_net: str | None = None
+    to_net: str | None = None
+
+
+@dataclass(frozen=True)
 class AcesPlanNode:
     """A compute node to provision, with authored intent extracted verbatim."""
 
@@ -61,6 +110,7 @@ class AcesPlanNode:
     ram_mib: int | None = None
     vcpus: int | None = None
     image: AcesPlanImage | None = None
+    acls: tuple[AcesPlanAcl, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -76,11 +126,14 @@ class AcesPlanNetwork:
 
 @dataclass(frozen=True)
 class AcesPlan:
-    """The parsed serialized ACES plan: nodes + networks for realization."""
+    """The parsed serialized ACES plan: nodes + networks + composition for realization."""
 
     aces_sdl_version: str
     nodes: tuple[AcesPlanNode, ...]
     networks: tuple[AcesPlanNetwork, ...]
+    content: tuple[AcesPlanContent, ...] = ()
+    accounts: tuple[AcesPlanAccount, ...] = ()
+    features: tuple[AcesPlanFeature, ...] = ()
 
 
 def _mapping(value: object) -> Mapping[str, Any]:
@@ -214,6 +267,11 @@ def parse_plan(range_config: dict[str, Any] | None) -> AcesPlan:
     resources = _require_mapping(envelope.get("resources"), where="resources")
     network_pairs: list[tuple[str, Mapping[str, Any]]] = []
     node_pairs: list[tuple[str, Mapping[str, Any]]] = []
+    composition: dict[str, list[Mapping[str, Any]]] = {
+        CONTENT_RESOURCE_TYPE: [],
+        FEATURE_RESOURCE_TYPE: [],
+        ACCOUNT_RESOURCE_TYPE: [],
+    }
     for entry in resources.values():
         entry_map = _require_mapping(entry, where="resource")
         address = _string(entry_map.get("address"), where="resource.address")
@@ -223,17 +281,106 @@ def parse_plan(range_config: dict[str, Any] | None) -> AcesPlan:
             network_pairs.append((address, payload))
         elif resource_type == NODE_RESOURCE_TYPE:
             node_pairs.append((address, payload))
+        elif resource_type in composition:
+            composition[resource_type].append(payload)
 
     lookup = _network_lookup(network_pairs)
     networks = tuple(_network(address, payload) for address, payload in sorted(network_pairs))
     nodes = tuple(_node(address, payload, lookup) for address, payload in sorted(node_pairs))
+    content = tuple(filter(None, (build_content(p) for p in composition[CONTENT_RESOURCE_TYPE])))
+    accounts = tuple(filter(None, (build_account(p) for p in composition[ACCOUNT_RESOURCE_TYPE])))
+    features = tuple(filter(None, (build_feature(p) for p in composition[FEATURE_RESOURCE_TYPE])))
 
     version = envelope.get("aces_sdl_version")
     return AcesPlan(
         aces_sdl_version=version if isinstance(version, str) else "",
         nodes=nodes,
         networks=networks,
+        content=content,
+        accounts=accounts,
+        features=features,
     )
+
+
+def _acl_str(value: object) -> str:
+    """Return ``value`` if it is a string, else an empty string."""
+    return value if isinstance(value, str) else ""
+
+
+def _acl_action(raw: Mapping[str, Any]) -> str:
+    """Normalize an ACL action to ``accept``/``drop`` (mirror the reference)."""
+    token = _acl_str(raw.get("action")).lower()
+    if not token:
+        raise AcesPlanError("ACL missing 'action'")
+    if token not in _ACL_ACTIONS:
+        raise AcesPlanError(f"ACL unknown action {token!r}")
+    return _ACL_ACTIONS[token]
+
+
+def _acl_protocol(raw: Mapping[str, Any]) -> str:
+    """Normalize an ACL protocol to ``tcp``/``udp``/``all`` (mirror the reference)."""
+    token = _acl_str(raw.get("protocol")).lower()
+    if token in {"tcp", "udp"}:
+        return token
+    if token in _ACL_WILDCARD_PROTOCOLS:
+        return "all"
+    raise AcesPlanError(f"ACL unknown protocol {token!r}")
+
+
+def _acl_direction(raw: Mapping[str, Any]) -> str:
+    """Return the ACL direction (``in``/``out``/``inout``); default ``inout``."""
+    token = _acl_str(raw.get("direction")).lower()
+    if not token:
+        return "inout"
+    if token not in _ACL_DIRECTIONS:
+        raise AcesPlanError(f"ACL unknown direction {token!r}")
+    return token
+
+
+def _acl_ports(raw: Mapping[str, Any]) -> tuple[int, ...]:
+    """Return the ACL's validated integer ports (1-65535), rejecting bools/invalid."""
+    raw_ports = raw.get("ports", ())
+    if not isinstance(raw_ports, list | tuple):
+        raise AcesPlanError("ACL 'ports' is not a list")
+    ports: list[int] = []
+    for port in raw_ports:
+        if not isinstance(port, int) or isinstance(port, bool) or not 0 < port <= 65535:
+            raise AcesPlanError(f"ACL invalid port {port!r}")
+        ports.append(port)
+    return tuple(ports)
+
+
+def _acl_ref(raw: Mapping[str, Any], key: str) -> str | None:
+    """Return the raw endpoint network ref (``from_net``/``to_net``); None if omitted."""
+    ref = _acl_str(raw.get(key)).strip()
+    return ref or None
+
+
+def _acl(raw: object, index: int) -> AcesPlanAcl:
+    """Build one AcesPlanAcl, failing loud (fail-closed) on any invalid field."""
+    if not isinstance(raw, Mapping):
+        raise AcesPlanError(f"ACL #{index} is not an object")
+    protocol = _acl_protocol(raw)
+    ports = _acl_ports(raw)
+    if ports and protocol == "all":
+        raise AcesPlanError(f"ACL #{index} ports require protocol 'tcp' or 'udp'")
+    return AcesPlanAcl(
+        name=_acl_str(raw.get("name")).strip() or f"acl-{index}",
+        action=_acl_action(raw),
+        direction=_acl_direction(raw),
+        protocol=protocol,
+        ports=ports,
+        from_net=_acl_ref(raw, "from_net"),
+        to_net=_acl_ref(raw, "to_net"),
+    )
+
+
+def _node_acls(payload: Mapping[str, Any]) -> tuple[AcesPlanAcl, ...]:
+    """Extract a node's authored ACLs from ``spec.infrastructure.acls``."""
+    raw_acls = _infrastructure_spec(payload).get("acls")
+    if not isinstance(raw_acls, list | tuple):
+        return ()
+    return tuple(_acl(raw, index) for index, raw in enumerate(raw_acls))
 
 
 def _node(address: str, payload: Mapping[str, Any], lookup: dict[str, str]) -> AcesPlanNode:
@@ -248,6 +395,7 @@ def _node(address: str, payload: Mapping[str, Any], lookup: dict[str, str]) -> A
         ram_mib=_memory_mib(payload),
         vcpus=_vcpus(payload),
         image=_image(payload),
+        acls=_node_acls(payload),
     )
 
 

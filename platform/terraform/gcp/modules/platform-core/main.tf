@@ -39,6 +39,7 @@ locals {
     "guacamole-db"        = "Database connection secret bundle for the Guacamole client."
     "guacamole-json-auth" = "Guacamole JSON auth signing key."
     "redis"               = "Redis AUTH token for the platform control-plane cache (ADR-008-R6)."
+    "dc-domain-password"  = "Prebaked Windows DC domain Administrator password applied per range (DC_DOMAIN_PASSWORD)."
   }, local.email_runtime_secrets)
 
   required_services = toset([

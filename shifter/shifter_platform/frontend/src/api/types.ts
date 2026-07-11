@@ -14,6 +14,10 @@ export type AuditLog = components["schemas"]["AuditLog"];
 export type PaginatedRiskList = components["schemas"]["PaginatedRiskList"];
 export type PaginatedAuditLogList = components["schemas"]["PaginatedAuditLogList"];
 export type Bootstrap = components["schemas"]["Bootstrap"];
+export type BootstrapModes = components["schemas"]["BootstrapModes"];
+export type BootstrapPermissions = components["schemas"]["BootstrapPermissions"];
+export type UxMode = BootstrapModes["default"];
+export type DashboardSummary = components["schemas"]["DashboardSummary"];
 
 export type Severity = components["schemas"]["SeverityEnum"];
 export type Status = components["schemas"]["StatusEnum"];

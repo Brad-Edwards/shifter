@@ -4923,6 +4923,9 @@ class NoLiveCloudIdentifiersTests(unittest.TestCase):
     REAL_ACCOUNT = "9" * 12  # twelve nines - not in the synthetic allowlist
     REAL_VPC = "vpc-" + "a" * 17
     REAL_SUBNET = "subnet-" + "b" * 17
+    # A globally-routable public IPv4 not in the well-known-infra allowlist,
+    # assembled so the literal never appears in this tracked source.
+    REAL_PUBLIC_IP = "45.77." + "12.9"
     ACCT_BUCKET = "shifter-polaris-bake-dev-" + "9" * 12
     UUID_BUCKET = "shifter-dev-infra-" + "-".join(
         ["a" * 8, "b" * 4, "c" * 4, "d" * 4, "e" * 12]
@@ -4964,6 +4967,52 @@ class NoLiveCloudIdentifiersTests(unittest.TestCase):
             for v in violations:
                 self.assertEqual(v.rule_id, "ADR-004-R14")
                 self.assertNotIn(self.REAL_SUBNET, v.message)
+
+    def test_flags_public_ip_in_iac_value(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            self._write(
+                repo_root,
+                "platform/terraform/x/main.tf",
+                f'  cidr_ipv4 = "{self.REAL_PUBLIC_IP}/32"\n',
+            )
+            violations = ADR_GUARD.check_no_live_cloud_identifiers(repo_root, None)
+            self.assertEqual({v.path for v in violations}, {"platform/terraform/x/main.tf"})
+            for v in violations:
+                self.assertEqual(v.rule_id, "ADR-004-R14")
+                self.assertIn("public IP", v.message)
+                self.assertNotIn(self.REAL_PUBLIC_IP, v.message)
+
+    def test_allows_public_ip_in_iac_comment(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            self._write(
+                repo_root,
+                "platform/terraform/x/main.tf",
+                f"  # policy example: a broad range like {self.REAL_PUBLIC_IP}/1 is rejected\n",
+            )
+            self.assertEqual(ADR_GUARD.check_no_live_cloud_identifiers(repo_root, None), [])
+
+    def test_ignores_public_ip_outside_iac_files(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            self._write(repo_root, "docs/notes.md", f"admin egress was {self.REAL_PUBLIC_IP}\n")
+            self.assertEqual(ADR_GUARD.check_no_live_cloud_identifiers(repo_root, None), [])
+
+    def test_allows_wellknown_and_documentation_ips_in_iac(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            self._write(
+                repo_root,
+                "platform/terraform/x/net.tf",
+                'dns        = ["8.8.8.8", "8.8.4.4", "1.1.1.1"]\n'
+                'gcp_health = ["130.211.0.0/22", "35.191.0.0/16"]\n'
+                'gcp_iap    = "35.235.240.0/20"\n'
+                'googleapis = "199.36.153.8/30"\n'
+                'doc        = "203.0.113.10/32"\n'
+                'private    = "10.0.0.0/8"\n',
+            )
+            self.assertEqual(ADR_GUARD.check_no_live_cloud_identifiers(repo_root, None), [])
 
     def test_flags_account_suffixed_bucket(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
