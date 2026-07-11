@@ -26,6 +26,7 @@ load_dotenv()
 # the wildcard *is* the contract (Django's official split-settings
 # pattern uses ``from .base import *``).
 from config._api_token_settings import *  # NOSONAR  # noqa: E402
+from config._cache_settings import *  # NOSONAR  # noqa: E402
 from config._channels import *  # NOSONAR  # noqa: E402
 from config._channels import _build_channel_layers  # noqa: E402
 from config._cloud import *  # NOSONAR  # noqa: E402
@@ -274,6 +275,55 @@ TERMINAL_CONNECT_EXECUTOR_WORKERS = _env_int("TERMINAL_CONNECT_EXECUTOR_WORKERS"
 # TerminalExecutorSaturated and the connect is closed with SERVICE_UNAVAILABLE
 # (4503, retryable) instead of being queued without limit (#929).
 TERMINAL_CONNECT_EXECUTOR_QUEUE_SLACK = _env_int("TERMINAL_CONNECT_EXECUTOR_QUEUE_SLACK", 16)
+
+# ------------------------------------------------------------------------------
+# Launch endpoint rate limiting (issue #322)
+# ------------------------------------------------------------------------------
+# Backpressure on the two expensive Mission Control launch mutations
+# (LaunchRangeView, NGFWCreateView) to prevent cascade failures under load. Two
+# independent fixed-window budgets per operation: a per-actor budget (abuse cap)
+# and a fleet budget (system-wide cap; the actual cascade guard). Enforced at the
+# DRF boundary before CMS (mission_control.api.rate_limit) against the shared,
+# atomic ``launch_rate_limit`` cache (Redis in production — see
+# config/_cache_settings.py). Budget exhaustion returns 429 + Retry-After; a
+# limiter-backend outage fails closed for these two mutations with a bounded 503.
+#
+# Disabled by default under test runs so the process-global fleet counter cannot
+# accumulate across unrelated launch tests; enabled by default everywhere else.
+# When enabled, every budget max/window MUST be a positive integer — a
+# non-positive value is a configuration error, not a silent disable (use the
+# master flag to disable). Defaults are conservative starting points for
+# interactive use and are tunable via the RANGE_/NGFW_LAUNCH_* env vars.
+LAUNCH_RATE_LIMIT_ENABLED = _env_bool("LAUNCH_RATE_LIMIT_ENABLED", not IS_TEST_RUN)
+LAUNCH_RATE_LIMITS = {
+    "range": {
+        "actor": {
+            "max": _env_int("RANGE_LAUNCH_ACTOR_MAX", 5),
+            "window": _env_int("RANGE_LAUNCH_ACTOR_WINDOW_SECONDS", 60),
+        },
+        "fleet": {
+            "max": _env_int("RANGE_LAUNCH_FLEET_MAX", 20),
+            "window": _env_int("RANGE_LAUNCH_FLEET_WINDOW_SECONDS", 60),
+        },
+    },
+    "ngfw": {
+        "actor": {
+            "max": _env_int("NGFW_LAUNCH_ACTOR_MAX", 5),
+            "window": _env_int("NGFW_LAUNCH_ACTOR_WINDOW_SECONDS", 60),
+        },
+        "fleet": {
+            "max": _env_int("NGFW_LAUNCH_FLEET_MAX", 20),
+            "window": _env_int("NGFW_LAUNCH_FLEET_WINDOW_SECONDS", 60),
+        },
+    },
+}
+if LAUNCH_RATE_LIMIT_ENABLED:
+    for _rl_op, _rl_budgets in LAUNCH_RATE_LIMITS.items():
+        for _rl_kind, _rl_cfg in _rl_budgets.items():
+            if _rl_cfg["max"] <= 0 or _rl_cfg["window"] <= 0:
+                raise ImproperlyConfigured(
+                    f"LAUNCH_RATE_LIMITS[{_rl_op!r}][{_rl_kind!r}] max and window must be positive integers"
+                )
 
 # CTF scheduler (run_ctf_scheduler) stale-task recovery window. A long
 # SPIN_UP_RANGES run heartbeats its task's updated_at, so this only needs to
