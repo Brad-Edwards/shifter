@@ -63,7 +63,7 @@ runners are provisioned and registered.
    **and** register it automatically (issue #1433). By default it provisions a
    dedicated, ADR-004-R20-compliant runner VPC (`create_runner_network`), applies
    `platform/terraform/global/github-runner`, mints a single-use token per runner,
-   registers each over SSM, and verifies it online — no manual `config.sh`. Pass
+   registers each over SSM, and verifies it online, with no manual `config.sh`. Pass
    `--use-existing-network` to reuse an operator-supplied `vpc_id`/`subnet_id` or
    the `allow_default_vpc` opt-in instead of creating a VPC. Registration tokens
    are never written to Terraform state, user data, a secret store, or logs.

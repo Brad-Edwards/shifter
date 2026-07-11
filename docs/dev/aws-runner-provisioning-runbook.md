@@ -32,10 +32,10 @@ body so the operator-log redactor masks it; never written to Terraform state,
 user data, a secret store, or logs), and verifies each runner online via the
 GitHub API. Flags:
 
-- `--use-existing-network` — reuse a configured `vpc_id`/`subnet_id` or the
+- `--use-existing-network`: reuse a configured `vpc_id`/`subnet_id` or the
   `allow_default_vpc` opt-in instead of creating a VPC (see step 1 below).
-- `--runner-count N` — override `runner_count` for this apply.
-- `--dry-run` — show the plan without minting a token or sending SSM commands.
+- `--runner-count N`: override `runner_count` for this apply.
+- `--dry-run`: show the plan without minting a token or sending SSM commands.
 
 Once every runner shows `status: online`, the AWS Deploy workflow can run. The
 manual steps below remain available for one-off or debugging use.
@@ -44,7 +44,7 @@ manual steps below remain available for one-off or debugging use.
 
 The automated `runners` path provisions a dedicated runner VPC for you
 (`create_runner_network = true`), which is the simplest ADR-004-R20-compliant
-option — skip the rest of this section unless you want to reuse an existing
+option. Skip the rest of this section unless you want to reuse an existing
 network with `--use-existing-network`.
 
 By default in the Terraform tfvars (ADR-004-R20) the runner stack fails closed on
