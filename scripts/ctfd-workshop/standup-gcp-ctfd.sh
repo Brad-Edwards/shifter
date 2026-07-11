@@ -47,9 +47,12 @@ gc compute firewall-rules describe "${TAG}-web" >/dev/null 2>&1 ||
   gc compute firewall-rules create "${TAG}-web" \
     --network "$NETWORK" --direction INGRESS --action ALLOW \
     --rules tcp:80,tcp:443 --source-ranges 0.0.0.0/0 --target-tags "$TAG"
+# Priority 850 so it beats the platform VPC's priority-900 external-SSH deny
+# (shifter-gcp-dev-platform-deny-external-ssh-rdp); a default 1000 allow would
+# lose to that deny and IAP SSH (needed for certbot) would fail.
 gc compute firewall-rules describe "${TAG}-iap-ssh" >/dev/null 2>&1 ||
   gc compute firewall-rules create "${TAG}-iap-ssh" \
-    --network "$NETWORK" --direction INGRESS --action ALLOW \
+    --network "$NETWORK" --direction INGRESS --action ALLOW --priority 850 \
     --rules tcp:22 --source-ranges 35.235.240.0/20 --target-tags "$TAG"
 
 # Static startup-script: reads its config from instance metadata so this file
