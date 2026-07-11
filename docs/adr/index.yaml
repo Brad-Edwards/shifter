@@ -1354,7 +1354,7 @@
       },
       {
         "id": "ADR-031-R5",
-        "description": "ACES catalog launchability and the ACES-native launch service (cms.services.create_aces_native_range, routed via create_range_dispatch) are gated by SHIFTER_ACES_NATIVE_PROVISIONING (default off); with the flag off no ACES entry is launchable and create_range_dispatch is byte-identical to create_range. The launch service reuses create_range's ownership/active-range/audit helpers and persists the same CMS Request + RangeInstance bookkeeping (range_spec=None -- no cyberscript RangeSpec) so Mission Control visibility, active-range admission, and the range.status.updated -> apply_range_status flow work uniformly keyed by request_id. To be genuinely launch-conformant the Shifter backend manifest must declare every node type it realizes -- including 'switch' for networks, since the aces-sdl planner rejects any network resource otherwise -- and its provisional PROVISIONING snapshot must echo the authored exact realization concerns (CONCERN_PAYLOAD_PATH: os_family, node_type, content spec.type) so the RuntimeManager.apply SEM-218 non-approximation gate confirms realized == authored.",
+        "description": "ACES catalog launchability and the ACES-native launch service (cms.services.create_aces_native_range, routed via create_range_dispatch) are gated by SHIFTER_ACES_NATIVE_PROVISIONING (default off); with the flag off no ACES entry is launchable and create_range_dispatch is byte-identical to create_range. The launch service reuses create_range's ownership/active-range/audit helpers and persists the same CMS Request + RangeInstance bookkeeping (range_spec=None -- no cyberscript RangeSpec) so Mission Control visibility, active-range admission, and the range.status.updated -> apply_range_status flow work uniformly keyed by request_id. To be genuinely launch-conformant the Shifter backend manifest must declare all and only terms the backend genuinely realizes -- including 'switch' for networks, since the aces-sdl planner rejects any network resource otherwise. Its provisional PROVISIONING snapshot must echo the authored exact concerns covered by the public CONCERN_PAYLOAD_PATH (os_family, node_type, content spec.type) for the RuntimeManager.apply SEM-218 non-approximation gate. Account features not covered by that public path require an equivalent Shifter validate/apply assertion, using the canonical ACES account-feature extractor and an evidence-backed realization envelope independent of the manifest declaration, before dispatch; account values must not enter diagnostics or snapshot evidence.",
         "checks": []
       }
     ],
@@ -1363,7 +1363,9 @@
     "evidence": [
       "https://github.com/Brad-Edwards/shifter/issues/1262",
       "https://github.com/Brad-Edwards/shifter/issues/1264",
+      "https://github.com/Brad-Edwards/shifter/issues/1563",
       "docs/architecture/aces-runtime-target-backend-manifest-preflight-1233.md",
+      "docs/architecture/aces-backend-manifest-realizability-preflight-1563.md",
       "docs/architecture/aces-migration-parity-inventory.yaml",
       ".importlinter",
       "shifter/shifter_platform/shared/aces/runtime_target.py",
@@ -1409,7 +1411,7 @@
       },
       {
         "id": "ADR-032-R6",
-        "description": "ACES composition (content-placement, feature-binding, account-placement) is realized genuinely at the backend as guest bootstrap: inline content becomes real files, directories are created, accounts become real guest users, and service features run a real install+enable step. Non-inline content and feature artifacts are supplied by the baked image or guest repo (baked-image delivery); the backend does not fetch external artifacts and does not emit inert descriptor stubs. Realization is fail-closed (a placement targeting an absent node, or an unsafe identifier, aborts) and is driven only by authored/compiled content, never scenario-sniffed.",
+        "description": "ACES composition capability claims form an honest, fail-closed realizability ledger, not an inventory of fields the backend parses or preserves. A content or account term may be declared only when every plan shape admitted by that public capability has a genuine guest effect backed by cross-boundary evidence; creating only a parent/destination, writing a marker or descriptor, retaining a projection field, or echoing authored intent is not realization. Coarse capabilities stay narrowed when the public contract cannot distinguish a genuinely realized variant from an unsupported one. Materialized account features must also be revalidated through the canonical ACES extractor against an evidence-backed realization envelope independent of the manifest declaration before dispatch. A removed term is re-declared only with its genuine realization and conformance evidence; realization remains driven only by authored/compiled content, never scenario-sniffed.",
         "checks": []
       },
       {
@@ -1422,8 +1424,10 @@
     "enforcement": ["ci", "agent-policy"],
     "evidence": [
       "https://github.com/Brad-Edwards/shifter/issues/1264",
+      "https://github.com/Brad-Edwards/shifter/issues/1563",
       "docs/architecture/aces-runtime-target-backend-manifest-preflight-1233.md",
       "docs/architecture/aces-provisioning-plan-transport-preflight-1522.md",
+      "docs/architecture/aces-backend-manifest-realizability-preflight-1563.md",
       ".importlinter",
       "shifter/shifter_platform/pyproject.toml",
       "shifter/shifter_platform/shared/aces/runtime_target.py"
