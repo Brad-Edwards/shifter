@@ -139,7 +139,7 @@ Future implementation must evaluate changes against:
 
 - Do not silently skip unknown resources or malformed composition terms.
 - Do not drop dangling network, ACL, account, content, or feature target refs.
-- Do not default unsupported or malformed versions to "current".
+- Do not default unsupported or malformed versions to "current."
 - Do not treat private reference-backend helpers as Shifter's compatibility
   oracle; use public ACES APIs/fixtures or Shifter-owned fixtures.
 - Do not make `AcesPlan*` dataclasses a public schema, persisted model, API DTO,
