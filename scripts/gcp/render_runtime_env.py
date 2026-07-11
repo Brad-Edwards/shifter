@@ -257,6 +257,12 @@ def render_env(outputs: dict[str, object], *, image_tag: str) -> str:
         "APP_SECRET_ID": secret_ids["app"],
         "GUACAMOLE_SECRET_ID": secret_ids["guacamole-json-auth"],
         "GDC_ACCESS_SECRET_ID": _derive_sibling_secret_id(secret_ids["app"], "app", "gdc-access"),
+        # Prebaked Windows DC domain Administrator password (GCE + GDC range
+        # backends). The entrypoint resolves DC_DOMAIN_PASSWORD from this
+        # reference and ecs.py passes it into the provisioner Job; without it the
+        # DC's set_admin_password step gets an empty password. Only the secret
+        # reference rides the ConfigMap; the value never does.
+        "DC_DOMAIN_PASSWORD_SECRET_ID": _derive_sibling_secret_id(secret_ids["app"], "app", "dc-domain-password"),
         # Production runtime security profile — unconditional (ADR-008-R1, R3).
         "DJANGO_DEBUG": "false",
         "SESSION_COOKIE_SECURE": "true",
