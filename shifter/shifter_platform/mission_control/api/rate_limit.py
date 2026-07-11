@@ -91,7 +91,8 @@ def _redis_client(cache: BaseCache, made_key: str) -> Any | None:
         return None
     try:
         return get_client(made_key, write=True)
-    except Exception:  # a misbehaving backend must not crash the admission path wiring
+    except Exception:
+        # A misbehaving backend must not crash the admission-path wiring.
         return None
 
 
@@ -131,56 +132,66 @@ class _LaunchRateThrottle(BaseThrottle):
 
     def allow_request(self, request: Request, view: APIView) -> bool:
         """Charge the actor + fleet budgets; return False when either is exhausted."""
-        if not getattr(settings, "LAUNCH_RATE_LIMIT_ENABLED", False):
+        policy = self._active_policy(request)
+        if policy is None:
             return True
-        if request.method != "POST":
-            return True
-        policy = settings.LAUNCH_RATE_LIMITS.get(self.operation)
-        if not policy:
-            return True
-
         actor = mission_control_actor_user(request)
         if actor is None or actor.pk is None:
             # Authentication and permission gates run before throttling and
             # already reject an unauthenticated request; with no actor to key on
             # there is nothing to charge.
             return True
-
-        actor_max, actor_window = policy["actor"]["max"], policy["actor"]["window"]
-        fleet_max, fleet_window = policy["fleet"]["max"], policy["fleet"]["window"]
-        cache = self._cache()
-        try:
-            actor_count = _consume(cache, self._actor_key(actor.pk), actor_window)
-            fleet_count = _consume(cache, self._fleet_key(), fleet_window)
-        except Exception as exc:  # any admission-backend error must fail closed for launch
-            logger.warning(
-                "launch admission backend unavailable: operation=%s actor=%s; failing closed",
-                self.operation,
-                actor.pk,
-            )
-            raise LaunchAdmissionUnavailable(wait=float(max(actor_window, fleet_window))) from exc
-
-        waits: list[int] = []
-        if actor_count > actor_max:
-            waits.append(actor_window)
-        if fleet_count > fleet_max:
-            waits.append(fleet_window)
-        if not waits:
-            return True
-
-        self._wait_seconds = float(max(waits))
-        logger.info(
-            "launch admission throttled: operation=%s scope=%s actor=%s wait=%s",
-            self.operation,
-            "actor" if actor_count > actor_max else "fleet",
-            actor.pk,
-            self._wait_seconds,
-        )
-        return False
+        exceeded = self._charge(policy, actor.pk)
+        self._wait_seconds = float(max(exceeded)) if exceeded else None
+        return not exceeded
 
     def wait(self) -> float | None:
         """Return the seconds a throttled caller should wait (drives Retry-After)."""
         return self._wait_seconds
+
+    def _active_policy(self, request: Request) -> dict | None:
+        """Return this operation's budget policy, or ``None`` when limiting is off."""
+        enabled = getattr(settings, "LAUNCH_RATE_LIMIT_ENABLED", False)
+        if not enabled or request.method != "POST":
+            return None
+        return settings.LAUNCH_RATE_LIMITS.get(self.operation)
+
+    def _charge(self, policy: dict, actor_pk: object) -> list[int]:
+        """Charge both budgets and return the windows of any exceeded budget.
+
+        Returns an empty list when within budget. Raises
+        :class:`LaunchAdmissionUnavailable` (503) on an admission-backend outage
+        so launch fails closed rather than silently admitting.
+        """
+        actor_max, actor_window = policy["actor"]["max"], policy["actor"]["window"]
+        fleet_max, fleet_window = policy["fleet"]["max"], policy["fleet"]["window"]
+        cache = self._cache()
+        try:
+            actor_count = _consume(cache, self._actor_key(actor_pk), actor_window)
+            fleet_count = _consume(cache, self._fleet_key(), fleet_window)
+        except Exception as exc:
+            # Any admission-backend error must fail closed for these launch mutations.
+            logger.warning(
+                "launch admission backend unavailable: operation=%s actor=%s; failing closed",
+                self.operation,
+                actor_pk,
+            )
+            raise LaunchAdmissionUnavailable(wait=float(max(actor_window, fleet_window))) from exc
+
+        exceeded: list[int] = []
+        if actor_count > actor_max:
+            exceeded.append(actor_window)
+        if fleet_count > fleet_max:
+            exceeded.append(fleet_window)
+        if exceeded:
+            logger.info(
+                "launch admission throttled: operation=%s scope=%s actor=%s wait=%s",
+                self.operation,
+                "actor" if actor_count > actor_max else "fleet",
+                actor_pk,
+                max(exceeded),
+            )
+        return exceeded
 
     @staticmethod
     def _cache() -> BaseCache:
