@@ -274,7 +274,7 @@ describe("authenticated-user handling (onAuthStateChanged)", () => {
             getSession: jest.fn(async () => ({ session: "s" })),
             enroll: jest.fn(async () => {}),
         });
-        window.qrcode = jest.fn(() => ({
+        globalThis.qrcode = jest.fn(() => ({
             addData: jest.fn(),
             make: jest.fn(),
             createDataURL: jest.fn(() => "data:image/gif;base64,QRDATA"),
@@ -286,7 +286,7 @@ describe("authenticated-user handling (onAuthStateChanged)", () => {
             expect(img.getAttribute("src")).toBe("data:image/gif;base64,QRDATA");
             expect(el("identity-totp-secret").textContent).toBe("SECRETKEY234567");
         } finally {
-            delete window.qrcode;
+            delete globalThis.qrcode;
         }
     });
 

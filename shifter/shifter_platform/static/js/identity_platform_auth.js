@@ -228,7 +228,7 @@ if (configScript) {
         // secret never leaves the browser). Falls back to the raw URL if the
         // vendored QR library failed to load.
         try {
-            const qr = window.qrcode(0, "M");
+            const qr = globalThis.qrcode(0, "M");
             qr.addData(otpauthUrl);
             qr.make();
             const img = document.createElement("img");
