@@ -488,7 +488,7 @@
       "source_file": "config/_aces_settings.py"
     },
     {
-      "default": "str(Path(__file__).resolve().parents[3])",
+      "default": "str(_aces_default_package_root)",
       "name": "SHIFTER_ACES_PACKAGE_ROOT",
       "source_file": "config/_aces_settings.py"
     },

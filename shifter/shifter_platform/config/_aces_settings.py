@@ -48,7 +48,15 @@ ACES_NATIVE_PROVISIONING_ENABLED = os.environ.get("SHIFTER_ACES_NATIVE_PROVISION
 # the repo root so in-repo scenario packages (e.g. scenario-dev/...) resolve out
 # of the box; override per environment when packages live elsewhere. Read via the
 # literal os.environ.get form so config/env-manifest.json picks it up.
-ACES_PACKAGE_ROOT = os.environ.get("SHIFTER_ACES_PACKAGE_ROOT", str(Path(__file__).resolve().parents[3]))
+# In the source tree config/ sits at shifter/shifter_platform/config, so
+# parents[3] is the repo root (where in-repo scenario packages like scenario-dev/
+# live). In the deployed container the tree is flattened to /app, so parents[3]
+# does not exist; fall back to the app root instead of raising IndexError at
+# import (which would break every image build / settings load). The default is
+# only a starting point anyway — override SHIFTER_ACES_PACKAGE_ROOT per env.
+_aces_settings_parents = Path(__file__).resolve().parents
+_aces_default_package_root = _aces_settings_parents[3] if len(_aces_settings_parents) > 3 else _aces_settings_parents[1]
+ACES_PACKAGE_ROOT = os.environ.get("SHIFTER_ACES_PACKAGE_ROOT", str(_aces_default_package_root))
 
 # Days a runtime snapshot / operation-record row is retained before it becomes
 # eligible for pruning. Measured from the row's source_timestamp so idempotent
