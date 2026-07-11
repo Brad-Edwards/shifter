@@ -29,7 +29,7 @@ from walkthrough import (
 )
 
 try:
-    from runner import get_runner_config, walkthrough_runner_setup
+    from runner import get_runner_config, provision_and_register_runners
 
     RUNNER_AVAILABLE = True
 except ImportError:
@@ -76,8 +76,7 @@ Estimated time: 30-45 minutes (mostly waiting for RDS and ACM)
     # Phase 3: Backend Configuration
     walkthrough_backend_config(bootstrap_result, dry_run=dry_run)
 
-    # Phase 4: GitHub Actions Runner Setup (optional)
-    runner_result = None
+    # Phase 4: GitHub Actions Runner Setup (automated - issue #1433)
     if RUNNER_AVAILABLE:
         runner_config = get_runner_config(
             env=env,
@@ -86,10 +85,11 @@ Estimated time: 30-45 minutes (mostly waiting for RDS and ACM)
             github_repo=config.github_repo,
             aws_profile=profile,
         )
-        runner_result = walkthrough_runner_setup(runner_config, dry_run=dry_run)
-        if runner_result:
-            # Store app_id for terraform vars if needed
-            info(f"Runner App ID: {runner_result.get('app_id', 'N/A')}")
+        provision_and_register_runners(
+            runner_config,
+            dry_run=dry_run,
+            bucket_name=bootstrap_result.get("bucket_name"),
+        )
     else:
         warn("Runner module not available - skipping GitHub runner setup")
 
@@ -120,6 +120,40 @@ Estimated time: 30-45 minutes (mostly waiting for RDS and ACM)
     walkthrough_final_steps(env)
 
 
+def runners_deployment(
+    env: str,
+    profile: str,
+    dry_run: bool = False,
+    use_existing_network: bool = False,
+    runner_count: int | None = None,
+) -> None:
+    """Provision + register self-hosted GitHub runners (issue #1433).
+
+    First-class automatable path: Terraform provisions the runner fleet and (by
+    default) a dedicated ADR-004-R20-compliant runner VPC, then each runner is
+    registered over SSM and verified via the GitHub runners API. Registration
+    tokens are minted per runner and never persisted (see runner.py).
+    """
+    if not RUNNER_AVAILABLE:
+        error("Runner module not available - cannot provision runners")
+        sys.exit(1)
+
+    config = BootstrapConfig(env=env)
+    runner_config = get_runner_config(
+        env=env,
+        region=config.region,
+        github_org=config.github_org,
+        github_repo=config.github_repo,
+        aws_profile=profile,
+    )
+    provision_and_register_runners(
+        runner_config,
+        dry_run=dry_run,
+        use_existing_network=use_existing_network,
+        runner_count=runner_count,
+    )
+
+
 def _missing_dependency_lines(commands: dict[str, str]) -> list[str]:
     """Return formatted '  - cmd: desc' lines for each command not found on PATH."""
     return [f"  - {cmd}: {desc}" for cmd, desc in commands.items() if not shutil.which(cmd)]
@@ -129,13 +163,17 @@ def check_dependencies(command: str | None = None) -> None:
     """Check command-specific dependencies before starting."""
     required = {"git": "Git - https://git-scm.com/downloads"}
 
-    if command in {None, "bootstrap", "terraform", "full"}:
+    if command in {None, "bootstrap", "terraform", "full", "runners"}:
         required.update(
             {
                 "aws": "AWS CLI - https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html",
                 "terraform": "Terraform - https://developer.hashicorp.com/terraform/downloads",
             }
         )
+
+    # The runners path mints registration tokens via the GitHub CLI.
+    if command == "runners":
+        required["gh"] = "GitHub CLI - https://cli.github.com/"
 
     if command == "gdc-bootstrap":
         required.update(
@@ -213,6 +251,29 @@ Examples:
     full_parser.add_argument("--profile", required=True, help=HELP_AWS_PROFILE)
     full_parser.add_argument("--dry-run", action="store_true", help=HELP_DRY_RUN)
 
+    # Runners command (issue #1433): provision + auto-register self-hosted runners.
+    runners_parser = subparsers.add_parser(
+        "runners",
+        help="Provision and auto-register self-hosted GitHub Actions runners (dedicated runner VPC by default)",
+    )
+    runners_parser.add_argument("--env", required=True, choices=AWS_ENVIRONMENTS, help="Environment")
+    runners_parser.add_argument("--profile", required=True, help=HELP_AWS_PROFILE)
+    runners_parser.add_argument("--dry-run", action="store_true", help=HELP_DRY_RUN)
+    runners_parser.add_argument(
+        "--use-existing-network",
+        action="store_true",
+        help=(
+            "Do not provision a dedicated runner VPC; use the vpc_id/subnet_id or "
+            "allow_default_vpc opt-in already configured in the runner tfvars."
+        ),
+    )
+    runners_parser.add_argument(
+        "--runner-count",
+        type=int,
+        default=None,
+        help="Override runner_count for this apply (defaults to the runner tfvars value).",
+    )
+
     gdc_parser = subparsers.add_parser(
         "gdc-bootstrap",
         help="Bootstrap a repeatable Google Distributed Cloud VM Runtime evaluation cluster",
@@ -256,6 +317,15 @@ Examples:
 
     elif args.command == "full":
         full_deployment(args.env, args.profile, dry_run=args.dry_run)
+
+    elif args.command == "runners":
+        runners_deployment(
+            args.env,
+            args.profile,
+            dry_run=args.dry_run,
+            use_existing_network=args.use_existing_network,
+            runner_count=args.runner_count,
+        )
 
     elif args.command == "gdc-bootstrap":
         gdc_bootstrap_cluster(

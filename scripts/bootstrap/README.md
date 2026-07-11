@@ -59,14 +59,16 @@ runners are provisioned and registered.
    env-suffixed names the dev deploy workflows read; prod uses the unsuffixed
    `AWS_ROLE_ARN` / `TF_INFRA_STATE_BUCKET`) and update the dev `.s3.tfbackend`
    files.
-2. Apply the runner root with non-default runner network IDs. Use a dedicated
-   runner VPC or the portal VPC private tier; do not use the account default
-   VPC. Keep live VPC/subnet IDs in a gitignored override or another approved
-   deploy-time binding, not in tracked placeholder tfvars.
-3. Apply `platform/terraform/global/github-runner` and register each EC2
-   runner with GitHub. Bootstrap does not create or register the self-hosted
-   runners; their Terraform root is applied separately after the shared
-   backend exists.
+2. Run `runners --env dev --profile <profile>` to provision the runner fleet
+   **and** register it automatically (issue #1433). By default it provisions a
+   dedicated, ADR-004-R20-compliant runner VPC (`create_runner_network`), applies
+   `platform/terraform/global/github-runner`, mints a single-use token per runner,
+   registers each over SSM, and verifies it online — no manual `config.sh`. Pass
+   `--use-existing-network` to reuse an operator-supplied `vpc_id`/`subnet_id` or
+   the `allow_default_vpc` opt-in instead of creating a VPC. Registration tokens
+   are never written to Terraform state, user data, a secret store, or logs.
+3. Confirm the fleet is online (the `runners` path already verifies this):
+   `gh api repos/Brad-Edwards/shifter/actions/runners --jq '.runners[] | {name, status}'`.
 4. Seed or build the `/shifter/ami/{kali,ubuntu,windows,dc}` SSM
    parameters required by portal Terraform. The Kali build requires the target
    account to accept the free AWS Marketplace terms for product code
@@ -112,6 +114,17 @@ awslogs setup are all first-boot or task-initialization work.
 ./scripts/bootstrap/deploy.py terraform --env prod --profile <your-prod-profile>
 ```
 
+### Runners (provision + auto-register self-hosted runners)
+```bash
+./scripts/bootstrap/deploy.py runners --env dev --profile <your-dev-profile>
+# --use-existing-network : reuse a configured vpc_id/subnet_id or allow_default_vpc opt-in
+# --runner-count N       : override runner_count for this apply
+# --dry-run              : show the plan without minting a token or sending SSM commands
+```
+Provisions the runner fleet (dedicated runner VPC by default) and registers each
+runner end-to-end. Registration tokens are minted per runner and never persisted
+to Terraform state, user data, a secret store, or logs (issue #1433).
+
 ### Full Deployment (bootstrap + terraform)
 ```bash
 ./scripts/bootstrap/deploy.py full --env prod --profile <your-prod-profile>
@@ -139,6 +152,8 @@ repo-specific fixes from the live spike:
 - `--env` (required): `dev`, `proof`, or `prod`
 - `--profile` (required): AWS CLI profile name
 - `--dry-run` (optional): Show what would happen without making changes
+- `--use-existing-network` (runners only): Reuse a configured `vpc_id`/`subnet_id` or the `allow_default_vpc` opt-in instead of provisioning a dedicated runner VPC
+- `--runner-count` (runners only): Override `runner_count` for this apply
 - `--project-id` (GDC only): GCP project ID, defaults to `PANW_GCP_DEV` or repo-root `.env`
 - `--cluster-id` (GDC only): Cluster name / asset prefix, defaults to `cluster1`
 - `--google-account-email` (GDC only): Optional Google identity to grant cluster-admin in cluster YAML
@@ -149,6 +164,7 @@ repo-specific fixes from the live spike:
 ./scripts/bootstrap/deploy.py --help
 ./scripts/bootstrap/deploy.py bootstrap --help
 ./scripts/bootstrap/deploy.py terraform --help
+./scripts/bootstrap/deploy.py runners --help
 ./scripts/bootstrap/deploy.py full --help
 ./scripts/bootstrap/deploy.py gdc-bootstrap --help
 ```

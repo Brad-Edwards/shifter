@@ -260,3 +260,242 @@ class TestWalkthroughRunnerSetup:
         assert result is not None
         assert "instance_ids" in result
         assert len(result["instance_ids"]) == 2
+
+
+def _cfg():
+    from runner import RunnerConfig
+
+    return RunnerConfig(
+        env="dev",
+        region="us-east-2",
+        github_org="my-org",
+        github_repo="my-repo",
+        aws_profile="my-profile",
+    )
+
+
+def _target():
+    from runner import RunnerTarget
+
+    return RunnerTarget(
+        instance_id="i-abc123",
+        runner_name="shifter-github-runner-1",
+        repo_url="https://github.com/my-org/my-repo",
+        region="us-east-2",
+    )
+
+
+class TestMintRegistrationToken:
+    """A per-runner registration token is minted via gh api, never logged."""
+
+    def test_dry_run_mints_nothing(self, mock_deploy):
+        from runner import mint_registration_token
+
+        token = mint_registration_token(_cfg(), dry_run=True)
+
+        assert token is None
+        mock_deploy.run_cmd.assert_not_called()
+
+    def test_calls_repo_registration_token_endpoint(self, mock_deploy):
+        from runner import mint_registration_token
+
+        mock_deploy.run_cmd.return_value = MagicMock(stdout="AAAAREGTOKEN1234\n")
+
+        token = mint_registration_token(_cfg())
+
+        assert token == "AAAAREGTOKEN1234"
+        argv = mock_deploy.run_cmd.call_args[0][0]
+        assert argv[0] == "gh"
+        assert "api" in argv
+        assert any("repos/my-org/my-repo/actions/runners/registration-token" in a for a in argv)
+        # Token comes back on stdout; the tool must capture (not stream) it.
+        assert mock_deploy.run_cmd.call_args.kwargs.get("capture") is True
+
+
+class TestRegisterRunner:
+    """Registration delivers the token via one JSON --parameters element only."""
+
+    def test_dry_run_sends_no_command_and_mints_no_token(self, mock_deploy):
+        from runner import register_runner
+
+        register_runner(_cfg(), _target(), dry_run=True)
+
+        mock_deploy.run_cmd.assert_not_called()
+
+    def test_parameters_is_a_single_json_argv_element(self, mock_deploy):
+        import json
+
+        from runner import register_runner
+
+        mock_deploy.run_cmd.side_effect = [
+            MagicMock(stdout="REGTOKEN9999\n"),  # mint
+            MagicMock(stdout="cmd-1234\n"),  # send-command CommandId
+        ]
+
+        command_id = register_runner(_cfg(), _target())
+
+        assert command_id == "cmd-1234"
+        send_calls = [c for c in mock_deploy.run_cmd.call_args_list if "send-command" in c[0][0]]
+        assert len(send_calls) == 1
+        argv = send_calls[0][0][0]
+        params_idx = argv.index("--parameters")
+        params = argv[params_idx + 1]
+        # One argv element, valid JSON, with a commands list (no shorthand commands=[...]).
+        payload = json.loads(params)
+        assert list(payload.keys()) == ["commands"]
+        assert isinstance(payload["commands"], list)
+        script = "\n".join(payload["commands"])
+        assert "config.sh" in script
+        assert "svc.sh" in script
+        assert "set +x" in script  # shell tracing off around the token
+        assert "set -x" not in script
+        assert "REGTOKEN9999" in script  # token rides inside the JSON body only
+        # Token must NOT be a config.sh command-line arg (no /proc/<pid>/cmdline
+        # exposure): it is written to a root-owned temp file and fed via stdin.
+        assert "--token" not in script
+        assert "rm -f" in script  # temp token file deleted before svc.sh
+        # Document + region wiring, and profile threaded through run_cmd.
+        assert "AWS-RunShellScript" in argv
+        assert send_calls[0].kwargs.get("profile") == "my-profile"
+
+    def test_config_sh_never_receives_token_in_argv(self, mock_deploy):
+        from runner import _registration_script
+
+        lines = _registration_script(_target(), "TOKINSCRIPT")
+        config_line = next(line for line in lines if "config.sh" in line)
+        # The token is delivered via stdin redirection, not as a config.sh arg.
+        assert "TOKINSCRIPT" not in config_line
+        assert "--token" not in config_line
+
+    def test_token_only_appears_inside_the_parameters_element(self, mock_deploy):
+        from runner import register_runner
+
+        mock_deploy.run_cmd.side_effect = [
+            MagicMock(stdout="SECRETTOK\n"),
+            MagicMock(stdout="cmd-1\n"),
+        ]
+
+        register_runner(_cfg(), _target())
+
+        send_call = next(c for c in mock_deploy.run_cmd.call_args_list if "send-command" in c[0][0])
+        send_argv = send_call[0][0]
+        params_idx = send_argv.index("--parameters")
+        for i, element in enumerate(send_argv):
+            if i == params_idx + 1:
+                continue
+            assert "SECRETTOK" not in element
+
+    def test_send_command_parameters_are_redacted_in_logs(self):
+        """The JSON --parameters blob is masked whole by the operator-log redactor."""
+        # Uses the REAL bootstrap_core redactor (no mock_deploy), proving the token
+        # never reaches operator logs even though it rides inside the SSM body.
+        from bootstrap_core import _redact_argv_for_log
+        from runner import _registration_parameters
+
+        params = _registration_parameters(_target(), "SUPERSECRETTOKEN")
+        assert "SUPERSECRETTOKEN" in params  # token is really in the payload
+        argv = ["aws", "ssm", "send-command", "--parameters", params]
+        redacted = _redact_argv_for_log(argv)
+        assert "SUPERSECRETTOKEN" not in redacted
+        assert "***" in redacted
+
+
+class TestVerifyRunners:
+    """Verification uses the GitHub runners API, never web-console steps."""
+
+    def test_dry_run_skips_api(self, mock_deploy):
+        from runner import verify_runners
+
+        result = verify_runners(_cfg(), ["shifter-github-runner-1"], dry_run=True)
+
+        assert result == {}
+        mock_deploy.run_cmd.assert_not_called()
+
+    def test_reads_runners_endpoint_and_reports_status(self, mock_deploy):
+        from runner import verify_runners
+
+        mock_deploy.run_cmd.return_value = MagicMock(stdout='[{"name": "shifter-github-runner-1", "status": "online"}]')
+
+        result = verify_runners(_cfg(), ["shifter-github-runner-1"])
+
+        assert result == {"shifter-github-runner-1": "online"}
+        argv = mock_deploy.run_cmd.call_args[0][0]
+        assert argv[0] == "gh"
+        assert any("repos/my-org/my-repo/actions/runners" in a for a in argv)
+
+
+class TestApplyRunnerTerraform:
+    """Terraform apply of the runner root never carries a registration token."""
+
+    def test_dry_run_never_passes_a_token_and_wires_created_network(self, mock_deploy, monkeypatch):
+        from runner import apply_runner_terraform
+
+        apply_runner_terraform(_cfg(), dry_run=True, create_network=True, bucket_name="shifter-dev-infra-x")
+
+        # No terraform command may carry a token as a -var/env or argument.
+        for call in mock_deploy.run_cmd.call_args_list:
+            for element in call[0][0]:
+                assert "token" not in element.lower()
+        # create_network=True must set the create_runner_network var.
+        all_args = [a for call in mock_deploy.run_cmd.call_args_list for a in call[0][0]]
+        assert any("create_runner_network=true" in a for a in all_args)
+
+
+class TestProvisionAndRegisterRunners:
+    """Full orchestration is a no-op-on-secrets dry run."""
+
+    def test_dry_run_mints_no_token_and_sends_no_ssm(self, mock_deploy):
+        from runner import provision_and_register_runners
+
+        result = provision_and_register_runners(_cfg(), dry_run=True, create_network=True, bucket_name="b")
+
+        # Dry-run mints/registers nothing and reports an empty fleet.
+        assert result == {"targets": [], "verified": {}}
+        # Positive assertion: the terraform init/plan/apply dry-run calls DID run,
+        # so the no-token/no-SSM checks below are not vacuously true.
+        all_args = [a for call in mock_deploy.run_cmd.call_args_list for a in call[0][0]]
+        assert any("terraform" in a for a in all_args)
+        assert not any("registration-token" in a for a in all_args)
+        assert "send-command" not in all_args
+
+
+class TestRegistrationFailures:
+    """The automated path fails closed on failed registration / offline runners."""
+
+    def test_all_success_and_online_is_clean(self, mock_deploy):
+        from runner import _registration_failures
+
+        problems = _registration_failures(
+            {"r1": "Success", "r2": "Success"},
+            {"r1": "online", "r2": "online"},
+            ["r1", "r2"],
+        )
+        assert problems == []
+
+    def test_non_success_ssm_status_is_a_problem(self, mock_deploy):
+        from runner import _registration_failures
+
+        problems = _registration_failures(
+            {"r1": "Failed"},
+            {"r1": "online"},
+            ["r1"],
+        )
+        assert len(problems) == 1
+        assert "r1" in problems[0]
+
+    def test_offline_runner_is_a_problem(self, mock_deploy):
+        from runner import _registration_failures
+
+        problems = _registration_failures(
+            {"r1": "Success"},
+            {"r1": "offline"},
+            ["r1"],
+        )
+        assert len(problems) == 1
+        assert "r1" in problems[0]
+
+    def test_missing_runner_is_a_problem(self, mock_deploy):
+        from runner import _registration_failures
+
+        problems = _registration_failures({"r1": "Success"}, {}, ["r1"])
+        assert len(problems) == 1
