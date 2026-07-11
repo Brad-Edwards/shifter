@@ -1432,5 +1432,76 @@
       "shifter/shifter_platform/pyproject.toml",
       "shifter/shifter_platform/shared/aces/runtime_target.py"
     ]
+  },
+  {
+    "id": "ADR-033",
+    "title": "Product, distribution, and development surfaces",
+    "status": "accepted",
+    "scope": "repository",
+    "decision": "Shifter separates product (tenant), distribution, and development surfaces. A capability is product-plane if a bare operator tenant needs it to run or extend Shifter; such dual-use capabilities (content ingestion, image baking) are built once as product capabilities and produced by maintainers through that same path (dogfood), not as maintainer-bespoke implementations. The CI/build/deploy runner fleet is development-plane and must not live in a deploy-target account. Operator content acquisition and entitlement are resolved outside the platform.",
+    "rules": [
+      {
+        "id": "ADR-033-R1",
+        "description": "Capabilities a bare operator tenant needs to run or extend Shifter (including content ingestion and image baking) are product-plane; maintainers produce shipped/blessed artifacts through the same product capability rather than a maintainer-bespoke implementation.",
+        "checks": []
+      },
+      {
+        "id": "ADR-033-R2",
+        "description": "The CI/build/deploy runner fleet is development-plane and must not reside in a deploy-target account; environment deploy/bake uses ephemeral compute in the target tenant or maintainer-isolated infrastructure, so environment teardown never removes the deploy mechanism.",
+        "checks": []
+      },
+      {
+        "id": "ADR-033-R3",
+        "description": "Operator content acquisition and entitlement are resolved outside the platform; the platform contains no entitlement system (see ADR-034).",
+        "checks": []
+      }
+    ],
+    "exceptions": [],
+    "enforcement": [
+      "agent-policy"
+    ],
+    "evidence": [
+      "docs/architecture/product-development-surfaces.md",
+      "docs/architecture/uniform-content-ingestion-contract.md",
+      "docs/adr/index.yaml"
+    ]
+  },
+  {
+    "id": "ADR-034",
+    "title": "Uniform content-ingestion contract",
+    "status": "accepted",
+    "scope": "repository",
+    "decision": "Content ingestion is one uniform, source-agnostic, entitlement-blind contract. The pack is the universal unit and the in-box catalog is not a privileged path. Image materialization is per-pack pull-or-bake (reference and/or recipe); packs may carry no images or parameterized experiment runs. Ingestion validates realizability against the backend manifest and surfaces non-realizability to the author without creating loopholes. Content is the source of truth and a published image is a cache.",
+    "rules": [
+      {
+        "id": "ADR-034-R1",
+        "description": "Registering a pack is a single source-agnostic, entitlement-blind operation; shipped, public, private, and self-authored packs use the identical import path and the in-box catalog is not a privileged path.",
+        "checks": []
+      },
+      {
+        "id": "ADR-034-R2",
+        "description": "Image materialization is per-pack pull-or-bake (reference and/or recipe); packs may carry zero images and may define parameterized experiment runs.",
+        "checks": []
+      },
+      {
+        "id": "ADR-034-R3",
+        "description": "Ingestion validates realizability against the backend manifest and does not create loopholes; non-realizable packs are flagged and surfaced to the author.",
+        "checks": []
+      },
+      {
+        "id": "ADR-034-R4",
+        "description": "Content is the source of truth and published images are a cache; private-distribution entitlement is handled at acquisition, not by a platform entitlement system.",
+        "checks": []
+      }
+    ],
+    "exceptions": [],
+    "enforcement": [
+      "agent-policy"
+    ],
+    "evidence": [
+      "docs/architecture/uniform-content-ingestion-contract.md",
+      "docs/architecture/product-development-surfaces.md",
+      "docs/adr/index.yaml"
+    ]
   }
 ]
