@@ -12,6 +12,7 @@ on:
           - ubuntu
           - windows
           - dc
+          - polaris-dc
           - brokenbk
           - ctf-webshell
           - ctf-mailroom
