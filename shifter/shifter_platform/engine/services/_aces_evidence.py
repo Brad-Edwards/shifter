@@ -80,7 +80,8 @@ def record_aces_runtime_snapshot(event: dict[str, Any]) -> None:
         "resources": resources,
         "captured_at": source_timestamp.isoformat(),
     }
-    from shared.aces.operations import persist_runtime_snapshot_record  # lazy: see record_aces_operation_status
+    # Lazy import (see record_aces_operation_status for why).
+    from shared.aces.operations import persist_runtime_snapshot_record
 
     # range_id on the record is an optional UUID projection key; the provisioner
     # event carries the integer range PK (not a UUID), and the MC ACES reads key on
