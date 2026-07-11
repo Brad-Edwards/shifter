@@ -18,6 +18,7 @@ from bootstrap_core import (
     warn,
 )
 from gcp_control_plane import gdc_bootstrap_cluster
+from preflight import Cloud, Mode, preflight_gate
 from terraform_deploy import terraform_deploy
 from walkthrough import (
     walkthrough_acm_validation,
@@ -34,6 +35,9 @@ try:
     RUNNER_AVAILABLE = True
 except ImportError:
     RUNNER_AVAILABLE = False
+
+HELP_HEADLESS = "Non-interactive preflight: fail on missing prerequisites without prompting (auto-detected off a TTY)"
+_AWS_COMPONENTS = ("core", "range", "portal")
 
 
 def full_deployment(env: str, profile: str, dry_run: bool = False) -> None:
@@ -238,18 +242,32 @@ Examples:
     bootstrap_parser.add_argument("--env", required=True, choices=AWS_ENVIRONMENTS, help="Environment")
     bootstrap_parser.add_argument("--profile", required=True, help=HELP_AWS_PROFILE)
     bootstrap_parser.add_argument("--dry-run", action="store_true", help=HELP_DRY_RUN)
+    bootstrap_parser.add_argument("--headless", action="store_const", const=True, default=None, help=HELP_HEADLESS)
 
     # Terraform command
     tf_parser = subparsers.add_parser("terraform", help="Deploy Terraform infrastructure")
     tf_parser.add_argument("--env", required=True, choices=AWS_ENVIRONMENTS, help="Environment")
     tf_parser.add_argument("--profile", required=True, help=HELP_AWS_PROFILE)
     tf_parser.add_argument("--dry-run", action="store_true", help=HELP_DRY_RUN)
+    tf_parser.add_argument("--headless", action="store_const", const=True, default=None, help=HELP_HEADLESS)
 
     # Full command
     full_parser = subparsers.add_parser("full", help="Full interactive deployment (bootstrap + config + terraform)")
     full_parser.add_argument("--env", required=True, choices=AWS_ENVIRONMENTS, help="Environment")
     full_parser.add_argument("--profile", required=True, help=HELP_AWS_PROFILE)
     full_parser.add_argument("--dry-run", action="store_true", help=HELP_DRY_RUN)
+    full_parser.add_argument("--headless", action="store_const", const=True, default=None, help=HELP_HEADLESS)
+
+    # Preflight command: validate deploy prerequisites without making any change.
+    preflight_parser = subparsers.add_parser(
+        "preflight", help="Validate deploy prerequisites (tools, secrets, config) without making changes"
+    )
+    preflight_parser.add_argument("--cloud", required=True, choices=[c.value for c in Cloud], help="Target cloud")
+    preflight_parser.add_argument("--env", required=True, help="Environment (e.g. dev, proof, prod, gcp-dev)")
+    preflight_parser.add_argument(
+        "--component", choices=sorted(_AWS_COMPONENTS), default=None, help="AWS component to scope overlay checks"
+    )
+    preflight_parser.add_argument("--headless", action="store_const", const=True, default=None, help=HELP_HEADLESS)
 
     # Runners command (issue #1433): provision + auto-register self-hosted runners.
     runners_parser = subparsers.add_parser(
@@ -305,6 +323,16 @@ def main() -> None:
     parser = _build_parser()
     args = parser.parse_args()
     check_dependencies(args.command)
+
+    if args.command == "preflight":
+        preflight_gate(Cloud(args.cloud), Mode.LOCAL, args.env, component=args.component, headless=args.headless)
+        return
+
+    # Fail-safe gate: verify prerequisites and confirm the manual ones before any
+    # deploy command touches the account. Raises SystemExit(1) if a required
+    # prerequisite is missing. Run `preflight --component <c>` for overlay/secret depth.
+    if args.command in {"bootstrap", "terraform", "full"}:
+        preflight_gate(Cloud.AWS, Mode.LOCAL, args.env, headless=args.headless)
 
     if args.command == "bootstrap":
         config = BootstrapConfig(env=args.env)
