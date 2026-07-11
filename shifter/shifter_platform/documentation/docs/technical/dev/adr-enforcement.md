@@ -45,7 +45,7 @@ Review controls:
 - `.github/copilot-instructions.md` now points GitHub Copilot toward the same ADR enforcement model.
 - `.github/workflows/_gcp-dev.yml` now pins `platform/k8s/gcp/overlays/gcp-dev/kustomization.yaml` image `newTag` values to `${SHORT_SHA}` before `kubectl apply -k`, preventing mutable `:latest` restarts from drifting to a different image than the commit being deployed.
 
-Deploy-time enforcement (ADR-033):
+Deploy-time enforcement (ADR-035):
 
 - `scripts/bootstrap/preflight.py` is a shared, fail-safe deploy preflight. It is
   the single source of truth for deployment prerequisites (tools, secrets, config)
