@@ -572,6 +572,11 @@ def apply_runner_terraform(
     Never passes a registration token to Terraform (tokens are minted per-runner
     at registration time, not at apply time). When create_network is set, provisions
     the dedicated ADR-004-R20-compliant runner VPC via the runner root.
+
+    The runner lands in the account the deployment targets: AWS_PROFILE is pinned
+    to config.aws_profile for the Terraform run (mirroring terraform_deploy), so
+    the fleet is created in the same account `--profile` authenticates to, not
+    whatever ambient credentials happen to be set.
     """
     bucket = _resolve_runner_state_bucket(bucket_name)
     if not bucket and not dry_run:
@@ -591,6 +596,9 @@ def apply_runner_terraform(
         for cmd in (init_cmd, plan_cmd, apply_cmd):
             run_cmd(cmd, dry_run=True)
         return []
+
+    # Pin the target account for Terraform (only affects this process + children).
+    os.environ["AWS_PROFILE"] = config.aws_profile
 
     tf_dir = _runner_tf_dir()
     if not tf_dir.exists():

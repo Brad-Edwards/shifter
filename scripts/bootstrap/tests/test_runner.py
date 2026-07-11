@@ -1,6 +1,7 @@
 """Tests for runner.py module."""
 
 import json
+import os
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -596,12 +597,14 @@ class TestProvisionIntegration:
         tf_dir.mkdir(parents=True)
         return tf_dir
 
-    def test_success_path_returns_online_fleet(self, mock_deploy, tmp_path):
+    def test_success_path_returns_online_fleet(self, mock_deploy, tmp_path, monkeypatch):
         from runner import provision_and_register_runners
 
         self._tf_root(tmp_path)
         mock_deploy.get_repo_root.return_value = tmp_path
         mock_deploy.run_cmd.side_effect = _fake_run_cmd(status="Success")
+        # Isolate AWS_PROFILE so the apply's account pin does not leak across tests.
+        monkeypatch.setenv("AWS_PROFILE", "sentinel")
 
         result = provision_and_register_runners(_cfg(), dry_run=False, create_network=True, bucket_name="b")
 
@@ -613,6 +616,8 @@ class TestProvisionIntegration:
         # The terraform plan carried the created-network var.
         all_args = [a for call in mock_deploy.run_cmd.call_args_list for a in call[0][0]]
         assert any("create_runner_network=true" in a for a in all_args)
+        # The runner is provisioned into the account --profile targets.
+        assert os.environ["AWS_PROFILE"] == "my-profile"
 
     def test_fails_closed_on_ssm_failure(self, mock_deploy, tmp_path):
         from runner import provision_and_register_runners
