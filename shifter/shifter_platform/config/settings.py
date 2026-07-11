@@ -218,6 +218,16 @@ RISK_REGISTER_SPA_ENABLED = _env_bool("RISK_REGISTER_SPA_ENABLED", False)
 # so an in-flight deploy toggled on it keeps working during the transition.
 PLATFORM_SPA_ENABLED = _env_bool("PLATFORM_SPA_ENABLED", False)
 
+# Mission Control SPA cutover rollout flag (issue #1370, ADR-013 / ADR-029).
+# When enabled (together with PLATFORM_SPA_ENABLED), the Mission Control GET
+# page paths under /mission-control/ (dashboard, agents, terminal, settings,
+# help, walkthrough, NGFW, credentials) are served by the React SPA host view
+# instead of the legacy Django templates; the legacy POST action URLs and JSON
+# API endpoints under /mission-control/api/ stay Django-handled unchanged, and
+# the canonical /api/v1/mission-control/ DRF routes are unaffected either way.
+# Non-secret boolean; absent env means disabled. Flipping it is reversible.
+MISSION_CONTROL_SPA_ENABLED = _env_bool("MISSION_CONTROL_SPA_ENABLED", False)
+
 # Shared WebSocket notification replay bounds (issue #679).
 WEBSOCKET_NOTIFICATION_MAX_REPLAY = _env_int("WEBSOCKET_NOTIFICATION_MAX_REPLAY", 100)
 WEBSOCKET_NOTIFICATION_RETENTION_DAYS = _env_int("WEBSOCKET_NOTIFICATION_RETENTION_DAYS", 7)

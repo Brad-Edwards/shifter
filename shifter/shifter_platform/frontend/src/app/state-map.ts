@@ -34,16 +34,25 @@ function titleize(value: string): string {
 }
 
 // #1368 range/provisioning mapping. Keys are normalized backend status names.
+// `pending`/`pausing`/`paused`/`resuming`/`destroyed` are the real cyberscript
+// `ResourceStatus` values (#1370, `cyberscript/enums.py`); the others predate
+// that enum's adoption and are kept for compatibility with any caller still
+// passing the older friendly names.
 const RANGE_INTENT: Record<string, Intent> = {
+  pending: "pending",
   provisioning: "pending",
   available: "success",
   running: "success",
   ready: "success",
+  pausing: "pending",
+  paused: "warning",
+  resuming: "pending",
   unhealthy: "danger",
   failed: "danger",
   error: "danger",
   deprovisioning: "warning",
   destroying: "warning",
+  destroyed: "muted",
 };
 
 // #1368 event mapping.

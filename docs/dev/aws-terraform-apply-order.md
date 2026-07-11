@@ -20,7 +20,9 @@ Before any stack applies, these must already exist:
    creating the S3 state bucket, the GitHub OIDC provider, the deploy IAM role,
    and the per-instance backend config files under `~/.shifter/<env>-<bucket>/`.
 2. **Self-hosted runners are provisioned and registered** if you deploy through
-   CI (all AWS deploy jobs use `runs-on: self-hosted`). See
+   CI (all AWS deploy jobs use `runs-on: self-hosted`). Run
+   `scripts/bootstrap/deploy.py runners --env <env> --profile <profile>` to
+   provision + auto-register them (issue #1433). See
    [`aws-runner-provisioning-runbook.md`](aws-runner-provisioning-runbook.md).
 3. **Range AMIs are built and the `/shifter/ami/{kali,ubuntu,windows,dc}` SSM
    parameters are seeded.** The Portal stack reads these as data sources and its

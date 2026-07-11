@@ -22,12 +22,14 @@ The design contract lives in
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 __all__ = [
     "ACES_NATIVE_PROVISIONING_ENABLED",
     "ACES_OPERATION_RECORD_PRUNE_BATCH_SIZE",
     "ACES_OPERATION_RECORD_PRUNE_INTERVAL_SECONDS",
     "ACES_OPERATION_RECORD_RETENTION_DAYS",
+    "ACES_PACKAGE_ROOT",
 ]
 
 # Master feature flag for the ACES-native provisioning path (ADR-031). When
@@ -39,6 +41,14 @@ __all__ = [
 # cutover step, not a routine deploy toggle. Read via the literal os.environ.get
 # form so the generated config/env-manifest.json picks it up automatically.
 ACES_NATIVE_PROVISIONING_ENABLED = os.environ.get("SHIFTER_ACES_NATIVE_PROVISIONING", "False").lower() == "true"
+
+# Filesystem root under which an ACES package_ref is resolved to its SDL entry
+# file by the native launch loader (#1479). Repo-relative package refs are joined
+# to this root with containment enforcement (no traversal escape). Defaults to
+# the repo root so in-repo scenario packages (e.g. scenario-dev/...) resolve out
+# of the box; override per environment when packages live elsewhere. Read via the
+# literal os.environ.get form so config/env-manifest.json picks it up.
+ACES_PACKAGE_ROOT = os.environ.get("SHIFTER_ACES_PACKAGE_ROOT", str(Path(__file__).resolve().parents[3]))
 
 # Days a runtime snapshot / operation-record row is retained before it becomes
 # eligible for pruning. Measured from the row's source_timestamp so idempotent

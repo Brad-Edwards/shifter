@@ -5,10 +5,12 @@ from __future__ import annotations
 from typing import Any, cast
 
 from django.contrib.auth.models import User
+from drf_spectacular.utils import extend_schema, extend_schema_view
 from rest_framework import status
 from rest_framework.request import Request
 from rest_framework.response import Response
 
+from cms.services import list_mission_control_range_history
 from mission_control.api._base import (
     MissionControlAPIView,
     MissionControlReadAPIView,
@@ -18,12 +20,23 @@ from mission_control.api._base import (
     _validated,
 )
 from mission_control.api.permissions import HasMissionControlActor, block_participant_lifecycle_permission
-from mission_control.api.serializers import LaunchRangeSerializer, RangeLifecycleSerializer
+from mission_control.api.serializers import (
+    AgentListResponseSerializer,
+    CurrentRangeResponseSerializer,
+    LaunchRangeResponseSerializer,
+    LaunchRangeSerializer,
+    RangeHistoryResponseSerializer,
+    RangeHistorySerializer,
+    RangeLifecycleSerializer,
+    ScenarioListResponseSerializer,
+    SuccessResponseSerializer,
+)
 from mission_control.utils import build_connection_urls
 from mission_control.views._common import _audit_range_lifecycle, _logger, _pkg
 from risk_register.models import AuditLog
 from shared.aces.presentation import build_range_aces_projection, build_range_participant_runtime_projection
 from shared.api.permissions import IsAuthenticatedSessionOrApiToken
+from shared.auth import is_ctf_participant_only
 from shared.errors import classify_user_message
 from shared.exceptions import CMSError
 from shared.log_sanitize import safe_log_value
@@ -32,9 +45,11 @@ from shared.log_sanitize import safe_log_value
 class CurrentRangeView(MissionControlReadAPIView):
     """Return the current user's active range."""
 
+    @extend_schema(responses=CurrentRangeResponseSerializer, operation_id="api_v1_mission_control_range_retrieve")
     def get(self, request: Request) -> Response:
         """Return the active range and connection URLs for the request user."""
-        active_range = _pkg().get_active_range(self.actor_user())
+        actor = self.actor_user()
+        active_range = _pkg().get_active_range(actor)
         if not active_range:
             return Response(
                 {
@@ -45,6 +60,11 @@ class CurrentRangeView(MissionControlReadAPIView):
                     "aces_participant_runtime": None,
                 }
             )
+        # CTF participants only see Kali (attacker) instances — mirrors the
+        # ``mission_control.context_processors.active_range`` filter so this
+        # canonical DRF read matches the legacy template-rendered behavior.
+        if is_ctf_participant_only(actor):
+            active_range.instances = [inst for inst in active_range.instances if inst.os_type == "kali"]
         projection = build_range_aces_projection(active_range.request_id)
         participant_runtime = build_range_participant_runtime_projection(
             active_range.request_id, active_range.instances
@@ -70,6 +90,7 @@ class LaunchRangeView(MissionControlAPIView):
         block_participant_lifecycle_permission("launch"),
     ]
 
+    @extend_schema(responses=LaunchRangeResponseSerializer, operation_id="api_v1_mission_control_range_launch")
     def post(self, request: Request) -> Response:
         """Validate input and create a range for the authenticated actor."""
         if _is_empty_legacy_body(request):
@@ -212,6 +233,9 @@ class RangeLifecycleView(MissionControlAPIView):
         return Response({"success": True})
 
 
+@extend_schema_view(
+    post=extend_schema(responses=SuccessResponseSerializer, operation_id="api_v1_mission_control_range_cancel")
+)
 class CancelRangeView(RangeLifecycleView):
     """Cancel a pending or active range."""
 
@@ -222,6 +246,9 @@ class CancelRangeView(RangeLifecycleView):
     lifecycle_verb = "cancel"
 
 
+@extend_schema_view(
+    post=extend_schema(responses=SuccessResponseSerializer, operation_id="api_v1_mission_control_range_destroy")
+)
 class DestroyRangeView(RangeLifecycleView):
     """Destroy a range."""
 
@@ -232,6 +259,9 @@ class DestroyRangeView(RangeLifecycleView):
     lifecycle_verb = "destroy"
 
 
+@extend_schema_view(
+    post=extend_schema(responses=SuccessResponseSerializer, operation_id="api_v1_mission_control_range_pause")
+)
 class PauseRangeView(RangeLifecycleView):
     """Pause a range."""
 
@@ -242,6 +272,9 @@ class PauseRangeView(RangeLifecycleView):
     lifecycle_verb = "pause"
 
 
+@extend_schema_view(
+    post=extend_schema(responses=SuccessResponseSerializer, operation_id="api_v1_mission_control_range_resume")
+)
 class ResumeRangeView(RangeLifecycleView):
     """Resume a paused range."""
 
@@ -255,6 +288,7 @@ class ResumeRangeView(RangeLifecycleView):
 class AgentListView(MissionControlReadAPIView):
     """Return the authenticated user's agent list."""
 
+    @extend_schema(responses=AgentListResponseSerializer, operation_id="api_v1_mission_control_agents_list")
     def get(self, request: Request) -> Response:
         """Return agents available to the authenticated actor."""
         return Response({"agents": _pkg().cms_list_agents(self.actor_user())})
@@ -263,7 +297,50 @@ class AgentListView(MissionControlReadAPIView):
 class ScenarioListView(MissionControlReadAPIView):
     """Return available range scenarios."""
 
+    @extend_schema(responses=ScenarioListResponseSerializer, operation_id="api_v1_mission_control_scenarios_list")
     def get(self, request: Request) -> Response:
         """Return scenarios available to the authenticated actor."""
         scenarios: list[dict[str, Any]] = _pkg().cms_list_launchable_scenarios(self.actor_user(), "range_launch")
         return Response({"scenarios": scenarios})
+
+
+class RangeHistoryView(MissionControlReadAPIView):
+    """Return the authenticated user's range history (#1370).
+
+    Backed by ``cms.services.list_mission_control_range_history``, the
+    product-scoped history query: it reads through ``all_objects`` so
+    soft-deleted terminal ranges (DESTROYED/FAILED, the rows a history view
+    exists to show) are INCLUDED, and scopes to
+    ``range_source == MISSION_CONTROL`` so CTF-sourced ranges never leak into
+    this Mission Control surface. It returns raw ``RangeInstance`` rows
+    (newest first), which are projected into ``RangeHistorySerializer``
+    explicitly here rather than reusing ``RangePresentationSerializer`` — a
+    history row has no hydrated ``instances``/``agent_name``/computed-status
+    fields, only the durable identifiers, status, provenance, and timestamps.
+    """
+
+    @extend_schema(responses=RangeHistoryResponseSerializer, operation_id="api_v1_mission_control_ranges_list")
+    def get(self, request: Request) -> Response:
+        """Return the authenticated actor's Mission Control range history, newest first."""
+        ranges = list_mission_control_range_history(self.actor_user())
+        serializer = RangeHistorySerializer(
+            [
+                {
+                    # ``range_instance.request_id`` is the Django FK shadow
+                    # attribute (the related ``Request`` row's integer pk) —
+                    # NOT the durable UUID correlation key. That key lives on
+                    # the related row as ``Request.request_id``.
+                    "request_id": range_instance.request.request_id if range_instance.request else None,
+                    "range_id": range_instance.range_id,
+                    "scenario_id": range_instance.scenario_id,
+                    "status": range_instance.status,
+                    "range_source": range_instance.range_source,
+                    "created_at": range_instance.created_at,
+                    "updated_at": range_instance.updated_at,
+                    "deleted_at": range_instance.deleted_at,
+                }
+                for range_instance in ranges
+            ],
+            many=True,
+        )
+        return Response({"ranges": serializer.data})

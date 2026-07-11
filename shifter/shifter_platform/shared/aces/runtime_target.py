@@ -36,6 +36,7 @@ from aces_backend_protocols.capabilities import BackendManifest, ProvisionerCapa
 from aces_contracts.diagnostics import Diagnostic, Severity
 from aces_contracts.planning import PlannedResource, ProvisioningPlan, RuntimeDomain
 from aces_contracts.runtime_state import ApplyResult, RuntimeSnapshot, SnapshotEntry
+from aces_processor.semantics.realization import CONCERN_PAYLOAD_PATH
 from aces_runtime.registry import BackendRegistry, RuntimeTarget, RuntimeTargetComponents
 
 from shared.aces.composition_envelope import COMPOSITION_RESOURCE_TYPES, composition_diagnostics
@@ -381,7 +382,7 @@ class ShifterProvisioner:
         for resource in sorted(plan.resources.values(), key=lambda item: item.address):
             if resource.domain != RuntimeDomain.PROVISIONING or resource.resource_type not in SUPPORTED_RESOURCE_TYPES:
                 continue
-            entries[resource.address] = _snapshot_entry(resource.address, resource.resource_type, result)
+            entries[resource.address] = _snapshot_entry(resource, result)
             changed_addresses.append(resource.address)
 
         return ApplyResult(
@@ -392,15 +393,47 @@ class ShifterProvisioner:
         )
 
 
-def _snapshot_entry(address: str, resource_type: str, result: ShifterDispatchResult) -> SnapshotEntry:
-    """Build a provisional PROVISIONING snapshot entry from the dispatch result."""
+def _echo_concern_values(source: Mapping[str, object], payload: dict[str, Any]) -> None:
+    """Echo authored realization-concern values into the snapshot entry payload.
+
+    The aces-sdl runtime non-approximation gate (SEM-218) compares each exact
+    authored requirement (``os_family``, ``node_type``, content ``spec.type``)
+    against the value the backend recorded at ``CONCERN_PAYLOAD_PATH`` in its
+    returned snapshot; an omitted value is a forbidden silent approximation.
+    Shifter dispatches asynchronously, so its provisional entry echoes the exact
+    values it commits to realize, and the gate sees realized == authored.
+    """
+    for path in CONCERN_PAYLOAD_PATH.values():
+        value: object = source
+        for key in path:
+            if isinstance(value, Mapping) and key in value:
+                value = value[key]
+            else:
+                value = None
+                break
+        if value is None:
+            continue
+        target = payload
+        for key in path[:-1]:
+            target = target.setdefault(key, {})
+        target[path[-1]] = value
+
+
+def _snapshot_entry(resource: PlannedResource, result: ShifterDispatchResult) -> SnapshotEntry:
+    """Build a provisional PROVISIONING snapshot entry from the dispatch result.
+
+    Echoes the authored realization-concern values (see ``_echo_concern_values``)
+    so the runtime non-approximation gate confirms Shifter committed to realize
+    exactly what the author declared.
+    """
     payload: dict[str, Any] = {"request_id": result.request_id, "status": result.status}
     if result.range_id:
         payload["range_id"] = result.range_id
+    _echo_concern_values(resource.payload, payload)
     return SnapshotEntry(
-        address=address,
+        address=resource.address,
         domain=RuntimeDomain.PROVISIONING,
-        resource_type=resource_type,
+        resource_type=resource.resource_type,
         payload=payload,
         status=result.status,
     )
