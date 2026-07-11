@@ -69,7 +69,7 @@ def cms_create_range(user, scenario, agents_by_os, ngfw_enabled) -> RangeProvisi
     import cms.services as cms_services
     from shared.enums import RangeSource
 
-    result = cms_services.create_range(
+    result = cms_services.create_range_dispatch(
         user=user,
         scenario=scenario,
         agents_by_os=agents_by_os,

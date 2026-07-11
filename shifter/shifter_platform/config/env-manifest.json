@@ -488,6 +488,11 @@
       "source_file": "config/_aces_settings.py"
     },
     {
+      "default": "str(Path(__file__).resolve().parents[3])",
+      "name": "SHIFTER_ACES_PACKAGE_ROOT",
+      "source_file": "config/_aces_settings.py"
+    },
+    {
       "default": "'noreply@shifter.local'",
       "name": "SHIFTER_SUPPORT_EMAIL",
       "source_file": "config/settings.py"

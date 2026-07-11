@@ -30,7 +30,7 @@ from cms.services import (
     create_ngfw as cms_create_ngfw,
 )
 from cms.services import (
-    create_range as cms_create_range,
+    create_range_dispatch as cms_create_range,
 )
 from cms.services import (
     delete_agent as cms_delete_agent,

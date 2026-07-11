@@ -40,6 +40,8 @@ from engine.services import reassign_range_owner_by_request as engine_reassign_r
 from engine.services import resume_range as engine_resume_range
 from risk_register.services import AuditEvent, audit_log
 
+from ._aces_range_create import create_aces_native_range, create_range_dispatch
+
 # --- Public service functions ------------------------------------------------
 from ._agents import (
     create_agent,
@@ -113,10 +115,12 @@ __all__ = (
     "cancel_range_by_request_id",
     "cancel_upload",
     "complete_upload",
+    "create_aces_native_range",
     "create_agent",
     "create_credential",
     "create_ngfw",
     "create_range",
+    "create_range_dispatch",
     "delete_agent",
     "delete_credential",
     "destroy_ngfw",
