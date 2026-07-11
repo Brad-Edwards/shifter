@@ -4,7 +4,7 @@ Bootstrap automation for Shifter infrastructure.
 
 ## Features
 
-The `deploy.py` CLI provides an interactive walkthrough for bootstrapping a bare AWS account and deploying infrastructure with intelligent automation:
+The `deploy.py` CLI provides an interactive walkthrough for bootstrapping a bare AWS or GCP account and deploying infrastructure with intelligent automation:
 
 **Automated Steps (with confirmation):**
 - GitHub secrets configuration (via `gh` CLI)
@@ -103,6 +103,35 @@ These endpoints are expected in fresh accounts, especially when portal
 inspection is enabled, because the private default route traverses the
 firewall/NAT path while Docker install, image pulls, ECS secret resolution, and
 awslogs setup are all first-boot or task-initialization work.
+
+## Fresh GCP Account Order
+
+GCP standup mirrors the AWS order: prepare identity and images first, bootstrap
+the substrate, then deploy. The maintained end-to-end walkthrough is the GCP
+Deployment section of
+`shifter/shifter_platform/documentation/docs/technical/dev/setup.md`.
+
+1. Create the GCP project and enable the required APIs.
+2. Configure Workload Identity Federation for GitHub Actions (pool, provider,
+   service account) and set the `GCP_SERVICE_ACCOUNT` and
+   `GCP_WORKLOAD_IDENTITY_PROVIDER` GitHub secrets.
+3. Configure the GCP deployment secrets and variables in
+   `docs/dev/deploy-secrets.md` (the `gcp-dev` section), including
+   `SHIFTER_CONFIG_GCP_DEV` and the GCE range-cell variables.
+4. Build the range guest images and set the image variables before deploy. The
+   GCP range backend defaults to the GCE range-cell path, and a range launch
+   needs the guest images to exist. See `docs/dev/gcp-range-cell-deploy.md` and
+   `docs/architecture/gcp-guest-images.md`.
+5. Bootstrap the GDC/GKE substrate and control plane with `gdc-bootstrap` (see
+   the command below). It applies the GCP Terraform (GKE, Cloud SQL,
+   Memorystore, Pub/Sub), builds and pushes the control-plane images, renders
+   Helm values from Terraform outputs and Secret Manager, and installs the
+   Shifter Helm release.
+6. Subsequent deploys run through CI: push to the `gcp-dev` branch, the only
+   branch that deploys the GCP dev environment (see the CI/CD trigger matrix in
+   `shifter/shifter_platform/documentation/docs/technical/dev/ci-cd.md`).
+7. Point the configured hostname at the reserved global ingress IP so the
+   Google-managed TLS certificate can activate.
 
 ### Bootstrap Only
 ```bash

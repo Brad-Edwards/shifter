@@ -2,7 +2,12 @@
 
 Deploy Shifter from a cloud account to a running environment.
 
-## Prerequisites
+## Before You Start
+
+Work through this checklist before running any command below. A fresh tenant
+standup fails partway if an item is missing, so confirm all of them first.
+
+### Local tooling
 
 - Python 3.12+
 - `uv`
@@ -11,6 +16,50 @@ Deploy Shifter from a cloud account to a running environment.
 - Docker
 - **AWS**: AWS CLI v2 configured with SSO or IAM credentials
 - **GCP**: `gcloud` CLI authenticated with appropriate project
+
+### Accounts and access
+
+- A cloud account (AWS or GCP) with billing enabled and permissions to create
+  IAM, networking, compute, database, and storage resources.
+- Admin access to the GitHub repository to set Actions secrets and variables
+  (Settings, then Secrets and variables, then Actions).
+- A domain you control, plus access to its DNS provider. It is required for
+  certificate validation (ACM on AWS, managed TLS on GCP) and to point the
+  hostname at the load balancer.
+
+### Must already exist before the first Terraform apply (AWS)
+
+These are hard preconditions; the Portal stack plan fails without them. See
+[`aws-terraform-apply-order.md`](../../../../../../docs/dev/aws-terraform-apply-order.md)
+for the authoritative order.
+
+- **Bootstrap has run** for the environment (`scripts/bootstrap/deploy.py
+  bootstrap`), creating the S3 state bucket, GitHub OIDC provider, and deploy
+  IAM role. This doc walks through it under [AWS Deployment](#aws-deployment).
+- **Self-hosted runners provisioned and registered**, if deploying through CI
+  (all AWS deploy jobs use `runs-on: self-hosted`). See
+  [`aws-runner-provisioning-runbook.md`](../../../../../../docs/dev/aws-runner-provisioning-runbook.md).
+- **Range AMIs built and the `/shifter/ami/{kali,ubuntu,windows,dc}` SSM
+  parameters seeded.** The Portal stack reads these as data sources. See
+  [`aws-ami-seeding-runbook.md`](../../../../../../docs/dev/aws-ami-seeding-runbook.md).
+- **Engine provisioner image built** (CI `_shifter-engine.yml`) so the Portal
+  stack can resolve its image digest.
+
+### Must already exist before deploy (GCP)
+
+- A GCP project with the required APIs enabled.
+- Workload Identity Federation configured for GitHub Actions (pool, provider,
+  service account), with `GCP_SERVICE_ACCOUNT` and
+  `GCP_WORKLOAD_IDENTITY_PROVIDER` set as GitHub secrets.
+- Range guest images available for range provisioning. See
+  [`gcp-range-cell-deploy.md`](../../../../../../docs/dev/gcp-range-cell-deploy.md).
+
+### Configuration values
+
+- The single authoritative checklist of every secret and repository variable a
+  fresh environment needs, and how each is populated, is in
+  [`deploy-secrets.md`](../../../../../../docs/dev/deploy-secrets.md). The deploy
+  preflight enforces these.
 
 ## Root Installation Config
 
@@ -23,6 +72,60 @@ uv run --project shifter/installation shifter-config validate shifter.yaml
 
 Use `shifter/installation/examples/gcp.yaml` for GCP. See
 [Installation Config](installation-config) for the field reference.
+
+## Environments and Terraform Layout
+
+Shifter currently uses one Terraform directory set and one deploy branch per
+environment. Standing up a new tenant means adding both. This is the current
+model, not a target architecture; it duplicates stack wiring across
+environments, so treat an existing environment's directory set as the unit you
+copy.
+
+### Terraform directories
+
+```
+platform/terraform/
+  environments/<env>/        AWS environment; the root is the Core (ECR) stack
+    range/                   Range VPC stack (its own backend state)
+    portal/                  Portal / application stack (its own backend state)
+  gcp/environments/<env>/    GCP environment (core stack plus Helm control plane)
+  global/                    Shared account-wide stacks (IAM, GitHub runners, ...)
+  modules/                   Reusable AWS modules
+  gcp/modules/               Reusable GCP modules
+```
+
+Existing environments: `dev`, `prod`, and `proof` under `environments/` (AWS),
+and `gcp-dev` under `gcp/environments/` (GCP). Each AWS environment is three
+stacks applied in order (Core, then Range, then Portal), each with its own
+backend state key. See
+[`aws-terraform-apply-order.md`](../../../../../../docs/dev/aws-terraform-apply-order.md)
+for the authoritative order and state keys.
+
+### Deploy branches
+
+Each environment deploys from its own long-lived branch, not from `dev`. The
+branch name does not always match the environment directory name.
+
+| Environment | Terraform directory | Deploy branch | Trigger |
+|-------------|---------------------|---------------|---------|
+| AWS dev | `environments/dev` | `aws-dev` | push deploys |
+| AWS proof | `environments/proof` | `aws-proof` | `workflow_dispatch` |
+| AWS prod | `environments/prod` | `main` | `workflow_dispatch` |
+| GCP dev | `gcp/environments/gcp-dev` | `gcp-dev` | push deploys |
+
+`dev` is the integration branch: it runs Quality only and never deploys. See
+[CI/CD](ci-cd) for the full trigger matrix.
+
+### Adding a new environment
+
+1. Copy an existing environment's Terraform directory set (for example
+   `environments/proof/` for AWS or `gcp/environments/gcp-dev/` for GCP), then
+   update its backend state keys and `local.auto.tfvars` values for the new
+   account and hostnames.
+2. Create the environment's deploy branch and wire its per-environment secrets
+   and repository variables. See
+   [`deploy-secrets.md`](../../../../../../docs/dev/deploy-secrets.md).
+3. Bootstrap the account and follow the standup steps below.
 
 ## AWS Deployment
 
