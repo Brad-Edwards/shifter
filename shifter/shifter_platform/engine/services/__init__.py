@@ -17,6 +17,7 @@ from django.db import transaction
 from engine.secrets import SecretsError, get_rdp_password, get_ssh_key
 from engine.ssh import SSHConnection
 
+from ._aces_evidence import record_aces_operation_status, record_aces_runtime_snapshot
 from ._aces_image import AcesImageMappingError, AcesImageMappingOptions, upsert_aces_image_mapping
 from ._aces_range import AcesRangeRef, create_aces_range
 from ._aces_status import project_aces_operation_status
@@ -70,6 +71,8 @@ __all__ = (
     "pause_range",
     "project_aces_operation_status",
     "reassign_range_owner_by_request",
+    "record_aces_operation_status",
+    "record_aces_runtime_snapshot",
     "resume_range",
     "start_ngfw",
     "stop_ngfw",

@@ -61,14 +61,17 @@ __all__ = [
 
 #: Shifter's honest provisioning capability envelope. Shifter provisions virtual
 #: machine instances (EC2 / GDC / GCE) running Linux and Windows guests, realizes
+#: authored networks (``switch`` nodes) as backend networks/subnets, realizes
 #: authored node ACLs as backend firewall rules, and realizes authored composition
 #: as guest bootstrap: content placements (file/dataset/directory), feature
 #: bindings, and account placements (groups/shell/home/disabled/mail/spn/
 #: auth_method). Every declared term is backed by real GCE realization (ADR-032),
-#: so the manifest cannot over-claim.
+#: so the manifest cannot over-claim. ``switch`` is required for any networked
+#: scenario: the aces-sdl planner rejects every network resource unless the
+#: backend declares switch support (matches the libvirt/reference backends).
 SHIFTER_PROVISIONER_CAPABILITIES = ProvisionerCapabilities(
     name="shifter-provisioner",
-    supported_node_types=frozenset({"vm"}),
+    supported_node_types=frozenset({"vm", "switch"}),
     supported_os_families=frozenset({"linux", "windows"}),
     supported_content_types=frozenset({"file", "dataset", "directory"}),
     supported_account_features=frozenset({"groups", "shell", "home", "disabled", "mail", "spn", "auth_method"}),

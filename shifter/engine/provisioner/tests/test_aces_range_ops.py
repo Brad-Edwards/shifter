@@ -53,6 +53,8 @@ def patched(monkeypatch):
         ready=MagicMock(),
         failed=MagicMock(),
         destroyed=MagicMock(),
+        aces_operation=MagicMock(),
+        aces_snapshot=MagicMock(),
     )
     monkeypatch.setattr(
         aces_range_ops,
@@ -65,6 +67,8 @@ def patched(monkeypatch):
     monkeypatch.setattr(aces_range_ops, "publish_ready", calls.ready)
     monkeypatch.setattr(aces_range_ops, "publish_failed", calls.failed)
     monkeypatch.setattr(aces_range_ops, "publish_destroyed", calls.destroyed)
+    monkeypatch.setattr(aces_range_ops, "publish_aces_operation", calls.aces_operation)
+    monkeypatch.setattr(aces_range_ops, "publish_aces_snapshot", calls.aces_snapshot)
     return calls
 
 
@@ -78,6 +82,16 @@ class TestProvision:
         patched.ready.assert_called_once_with(request_id="req-1", range_id=7, user_id=3)
         assert not patched.failed.called
 
+    def test_emits_aces_operation_and_snapshot_on_success(self, patched):
+        aces_range_ops.run_aces_range_provision("req-1")
+        statuses = [c.kwargs["status"] for c in patched.aces_operation.call_args_list]
+        assert statuses == ["running", "succeeded"]
+        assert patched.aces_operation.call_args_list[0].kwargs["operation_id"] == "req-1"
+        # snapshot emitted with the bounded resources for the plan (1 network + 1 node).
+        assert patched.aces_snapshot.called
+        resources = patched.aces_snapshot.call_args.kwargs["resources"]
+        assert {r["resource_type"] for r in resources} == {"network", "node"}
+
     def test_failure_publishes_failed_and_reraises(self, patched):
         patched.apply.side_effect = RuntimeError("boom")
         with pytest.raises(RuntimeError, match="boom"):
@@ -85,6 +99,9 @@ class TestProvision:
         assert patched.failed.called
         assert patched.failed.call_args.kwargs["error_message"].startswith("boom")
         assert not patched.ready.called
+        # ACES operation ends 'failed'; no snapshot on failure.
+        assert patched.aces_operation.call_args_list[-1].kwargs["status"] == "failed"
+        assert not patched.aces_snapshot.called
 
 
 class TestDestroy:
