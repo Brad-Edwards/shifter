@@ -205,8 +205,8 @@ def check_dependencies(command: str | None = None) -> None:
         print()
 
 
-def main() -> None:
-    """Parse CLI arguments and dispatch the requested bootstrap operation."""
+def _build_parser() -> argparse.ArgumentParser:
+    """Build the bootstrap CLI argument parser and its subcommands."""
     parser = argparse.ArgumentParser(
         description="Shifter deployment CLI - interactive deployment guide",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -297,6 +297,12 @@ Examples:
     )
     gdc_parser.add_argument("--dry-run", action="store_true", help=HELP_DRY_RUN)
 
+    return parser
+
+
+def main() -> None:
+    """Parse CLI arguments and dispatch the requested bootstrap operation."""
+    parser = _build_parser()
     args = parser.parse_args()
     check_dependencies(args.command)
 

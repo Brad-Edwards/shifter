@@ -616,7 +616,7 @@ def provision_and_register_runners(
     use_existing_network: bool = False,
     bucket_name: str | None = None,
     runner_count: int | None = None,
-) -> dict:
+) -> dict[str, object]:
     """Apply the runner root, register each runner over SSM, and verify via the API.
 
     This is the automated path for `deploy.py runners` and `full` (issue #1433):
