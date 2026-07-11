@@ -15,6 +15,8 @@ class PortalConfig(AppConfig):
             register_audit_log_degraded_health_check,
             register_channel_layer_redis_health_check,
         )
+        from config.organizer_authority import register_organizer_authority_signals
 
         register_audit_log_degraded_health_check()
         register_channel_layer_redis_health_check()
+        register_organizer_authority_signals()

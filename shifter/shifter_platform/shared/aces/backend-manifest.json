@@ -23,6 +23,7 @@
         "file"
       ],
       "supported_node_types": [
+        "switch",
         "vm"
       ],
       "supported_os_families": [
