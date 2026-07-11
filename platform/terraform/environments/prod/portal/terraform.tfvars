@@ -48,7 +48,7 @@ db_apply_immediately     = false
 # ------------------------------------------------------------------------------
 
 # Standard AL2023 AMI (NOT ECS-optimized) - us-east-2
-ec2_ami_id           = "ami-00e428798e77d38d9"
+ec2_ami_id           = "ami-xxxxxxxxxxxxxxxxx"
 ec2_instance_type    = "t3.xlarge"
 ec2_root_volume_size = 50
 

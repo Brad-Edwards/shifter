@@ -559,6 +559,23 @@ resource "aws_iam_policy" "data" {
         ]
       },
       {
+        Sid    = "S3BakeBucketsRead"
+        Effect = "Allow"
+        Action = [
+          "s3:ListBucket",
+          "s3:GetObject"
+        ]
+        # Scenario bake buckets (e.g. shifter-polaris-bake-<account>). The
+        # polaris bake verifies the operator-uploaded build tarball exists
+        # before standing up a golden range. Read-only: the operator uploads
+        # the tarball out of band and the range instance role (granted in
+        # scripts/polaris-aws-range) does the actual download.
+        Resource = [
+          "arn:aws:s3:::shifter-*-bake-*",
+          "arn:aws:s3:::shifter-*-bake-*/*"
+        ]
+      },
+      {
         Sid    = "S3UserStorage"
         Effect = "Allow"
         Action = ["s3:*"]
@@ -971,6 +988,21 @@ resource "aws_iam_policy" "management" {
           # All shifter-namespaced parameters: range DC config, AMI IDs, and
           # per-environment portal parameters (/shifter/<env>/portal/*).
           "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter/shifter/*"
+        ]
+      },
+      {
+        Sid    = "SSMPublicServiceParametersRead"
+        Effect = "Allow"
+        Action = [
+          "ssm:GetParameter",
+          "ssm:GetParameters"
+        ]
+        # AWS-owned PUBLIC parameters (no account in the ARN) used to resolve
+        # current base AMIs at build time - e.g. the Canonical Ubuntu and
+        # Amazon Linux AMI-ID parameters the scenario bakes (techvault /
+        # polaris golden ranges) read. Read-only; scoped to /aws/service/*.
+        Resource = [
+          "arn:aws:ssm:${var.aws_region}::parameter/aws/service/*"
         ]
       },
       {

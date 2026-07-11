@@ -235,6 +235,12 @@ jobs:
           cloud-init status --wait || true
           curl -fsSL https://get.docker.com | sh
           systemctl enable --now docker
+          # The stack is baked as the ubuntu user (uid 1000, see Phase 2), and
+          # aptl's very first docker op (the Suricata named-volume seed) runs as
+          # ubuntu. get.docker.com does not add ubuntu to the docker group when
+          # installed as root, so grant it explicitly or the seed fails with a
+          # docker.sock permission denied.
+          usermod -aG docker ubuntu
           curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
           apt-get install -y nodejs
           npm install -g @anthropic-ai/claude-code
@@ -282,9 +288,11 @@ jobs:
           run_phase "${RUNNER_TEMP}/phase-seat.sh" 'techvault bake: seat' 2400 2700
 
           # --- Phase 4: confirm the operational stack is fully up --------
-          # The public startup contract (techvault-operational) is 31 running
-          # aptl-* containers. Poll until they converge before imaging.
-          echo "waiting for the stack to reach 31 running aptl containers..."
+          # The techvault-operational contract settles at 30 long-running aptl-*
+          # containers. (aptl 4.1.2 also runs a one-shot `aptl-cortex-index-init`
+          # that exits 0 once Cortex is indexed, so it is not counted here.)
+          # Poll until they converge before imaging.
+          echo "waiting for the stack to reach 30 running aptl containers..."
           deadline=$(( $(date +%s) + 900 ))
           while true; do
             cid="$(aws ssm send-command --instance-ids "$INSTANCE_ID" \
@@ -297,12 +305,12 @@ jobs:
               --instance-id "$INSTANCE_ID" --query StandardOutputContent \
               --output text 2>/dev/null | tr -dc '0-9' || echo 0)"
             echo "running aptl containers: ${count:-0}"
-            if [ "${count:-0}" -ge 31 ]; then
+            if [ "${count:-0}" -ge 30 ]; then
               echo "stack is up (${count} containers)"
               break
             fi
             if [ "$(date +%s)" -ge "$deadline" ]; then
-              echo "::error::stack did not reach 31 running containers (last=${count:-0})"
+              echo "::error::stack did not reach 30 running containers (last=${count:-0})"
               exit 1
             fi
             sleep 20
@@ -324,8 +332,26 @@ jobs:
             --tag-specifications "ResourceType=image,Tags=[{Key=Project,Value=techvault-bake},{Key=aptl_version,Value=${APTL_VERSION}}]" \
             --query 'ImageId' --output text)"
           echo "AMI_ID=${AMI_ID}" >> "$GITHUB_ENV"
-          echo "waiting for AMI ${AMI_ID} to become available..."
-          aws ec2 wait image-available --image-ids "$AMI_ID"
+          # The TechVault AMI is large (100 GB root + the full baked stack), so
+          # the snapshot routinely takes 30-60 min - well past `aws ec2 wait
+          # image-available`'s 10-min (40 x 15s) default. Poll with a 60-min
+          # deadline instead, and fail fast if the image errors.
+          echo "waiting for AMI ${AMI_ID} to become available (large image; up to 60 min)..."
+          deadline=$(( $(date +%s) + 3600 ))
+          while true; do
+            state="$(aws ec2 describe-images --image-ids "$AMI_ID" \
+              --query 'Images[0].State' --output text 2>/dev/null || echo pending)"
+            case "$state" in
+              available) echo "AMI ${AMI_ID} is available"; break;;
+              failed|error|invalid|deregistered)
+                echo "::error::AMI ${AMI_ID} entered terminal state '${state}'"; exit 1;;
+            esac
+            if [ "$(date +%s)" -ge "$deadline" ]; then
+              echo "::error::AMI ${AMI_ID} did not become available within 60 min (last state: ${state})"
+              exit 1
+            fi
+            sleep 30
+          done
           {
             echo "## TechVault AMI Bake Complete"
             echo "- **AMI name:** \`${AMI_NAME}\`"
@@ -364,7 +390,8 @@ jobs:
             sleep 15
           done
           # No `aptl lab start` here: docker must auto-start the baked stack on
-          # first boot. Poll until the 31 operational containers converge.
+          # first boot. Poll until the 30 operational containers converge (the
+          # one-shot aptl-cortex-index-init exits 0 and is not counted).
           echo "waiting for docker to auto-start the baked stack..."
           deadline=$(( $(date +%s) + 900 ))
           while true; do
@@ -378,7 +405,7 @@ jobs:
               --instance-id "$VERIFY_INSTANCE_ID" --query StandardOutputContent \
               --output text 2>/dev/null | tr -dc '0-9' || echo 0)"
             echo "auto-started aptl containers: ${count:-0}"
-            if [ "${count:-0}" -ge 31 ]; then
+            if [ "${count:-0}" -ge 30 ]; then
               echo "golden verify PASSED (${count} containers auto-started)"
               break
             fi

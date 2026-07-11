@@ -157,7 +157,7 @@ If `email_backend` is set without `email_from_address` (or without `email_sender
 - Project: `prod-rwctxzl6shxk`
 - Hostname: `shifter.example.com`
 - Managed TLS: enabled
-- Current authorized admin CIDR: `173.181.31.170/32` from the WSL bootstrap host as of 2026-04-11
+- Current authorized admin CIDR: `203.0.113.10/32` from the WSL bootstrap host as of 2026-04-11
 
 If the operator egress IP changes, `gke_master_authorized_cidrs` must be updated before the next CI/CD-driven apply or controlled bootstrap run.
 

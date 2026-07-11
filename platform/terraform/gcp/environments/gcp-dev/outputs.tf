@@ -163,3 +163,13 @@ output "packer_build_service_account_email" {
   description = "Packer build service account email; set as the GCP_SERVICE_ACCOUNT GitHub secret."
   value       = module.cicd_github_oidc.packer_build_service_account_email
 }
+
+output "range_host_service_account_email" {
+  description = "GCE range host SA email; set GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL to this for a same-project range cell."
+  value       = module.platform_core.range_host_service_account_email
+}
+
+output "range_vertex_service_account_email" {
+  description = "GCE range Vertex SA email; set GCP_RANGE_VERTEX_SERVICE_ACCOUNT_EMAIL to this for a same-project range cell."
+  value       = module.platform_core.range_vertex_service_account_email
+}

@@ -32,6 +32,7 @@ GCP_GENERATED_RUNTIME_ENV_KEYS: frozenset[str] = frozenset(
         "DJANGO_ALLOWED_HOSTS",
         "DJANGO_CSRF_TRUSTED_ORIGINS",
         "DJANGO_DEBUG",
+        "DC_DOMAIN_PASSWORD_SECRET_ID",
         "EMAIL_BACKEND",
         "ENGINE_TASK_IMAGE",
         "GDC_ACCESS_SECRET_ID",
