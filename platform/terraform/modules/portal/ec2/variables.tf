@@ -268,6 +268,11 @@ variable "sqs_kms_key_arn" {
   type        = string
 }
 
+variable "range_events_topic_arn" {
+  description = "ARN of the range-events SNS topic. The outbox drainer and range-event reconciler run under the portal EC2 role and publish range status events here (needs sns:Publish + kms on sqs_kms_key_arn since the topic is CMK-encrypted)."
+  type        = string
+}
+
 variable "s3_kms_key_arn" {
   description = "ARN of the CMK encrypting the portal user-storage S3 bucket (SSE-KMS). The instance role needs kms:GenerateDataKey/Decrypt on it (via the s3 service) to read and write challenge file attachments."
   type        = string
