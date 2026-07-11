@@ -55,8 +55,8 @@ export interface TerminalCloseInfo {
 }
 
 function terminalSocketUrl(instanceUuid: string): string {
-  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-  return `${protocol}//${window.location.host}/ws/terminal/${instanceUuid}/`;
+  const protocol = globalThis.location.protocol === "https:" ? "wss:" : "ws:";
+  return `${protocol}//${globalThis.location.host}/ws/terminal/${instanceUuid}/`;
 }
 
 export interface TerminalProps {
@@ -66,7 +66,7 @@ export interface TerminalProps {
 
 /** Owns one xterm instance + one terminal websocket for its lifetime; remount (via `key`) to reconnect. */
 export function Terminal({ instanceUuid, onConnectionStateChange }: Readonly<TerminalProps>) {
-  const containerRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLElement>(null);
   const onStateChangeRef = useRef(onConnectionStateChange);
   onStateChangeRef.current = onConnectionStateChange;
 
@@ -157,9 +157,8 @@ export function Terminal({ instanceUuid, onConnectionStateChange }: Readonly<Ter
   }, [instanceUuid]);
 
   return (
-    <div
+    <section
       ref={containerRef}
-      role="group"
       aria-label="Terminal session"
       className="h-[32rem] overflow-hidden rounded-md border border-white/10 bg-[#0d0d0d] p-2"
     />

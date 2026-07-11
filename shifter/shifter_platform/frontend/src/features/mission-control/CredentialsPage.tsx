@@ -2,7 +2,7 @@ import { useId, useState, type FormEvent } from "react";
 
 import { Loader2 } from "lucide-react";
 
-import { ApiError } from "@/api/errors";
+import { describeMutationError } from "@/api/errors";
 import { useCreateCredential, useDeleteCredential, type CredentialCreateRequest } from "@/api/mission-control";
 import type { CredentialCreateResponse } from "@/api/types";
 import { PageHeader } from "@/components/page-header";
@@ -32,12 +32,172 @@ interface FormErrors {
   authcode?: string;
 }
 
+/** Current value of every type-conditional (and shared) form field. */
+interface CredentialFormFields {
+  name: string;
+  expiresAt: string;
+  scmFolderName: string;
+  scmPinId: string;
+  scmPinValue: string;
+  slsRegion: string;
+  authcode: string;
+}
+
+/** Validate the fields required by `credentialType`, matching `CredentialCreateSerializer`. */
+function validateCredentialForm(credentialType: CredentialType, fields: CredentialFormFields): FormErrors {
+  const errors: FormErrors = {};
+  if (!fields.name.trim()) errors.name = "Enter a display name.";
+  if (credentialType === "scm") {
+    if (!fields.scmPinId.trim()) errors.scmPinId = "Enter the PIN id.";
+    if (!fields.scmPinValue) errors.scmPinValue = "Enter the PIN value.";
+    if (!fields.slsRegion) errors.slsRegion = "Select a licensing region.";
+  } else if (!fields.authcode.trim()) {
+    errors.authcode = "Enter the VM-Series authcode.";
+  }
+  return errors;
+}
+
+/** Build the `CredentialCreateSerializer` request body for `credentialType` from the form fields. */
+function buildCredentialRequestBody(credentialType: CredentialType, fields: CredentialFormFields): CredentialCreateRequest {
+  const shared = { name: fields.name.trim(), expires_at: fields.expiresAt || null };
+  if (credentialType === "scm") {
+    return {
+      ...shared,
+      credential_type: "scm",
+      scm_folder_name: fields.scmFolderName.trim(),
+      scm_pin_id: fields.scmPinId.trim(),
+      scm_pin_value: fields.scmPinValue,
+      sls_region: fields.slsRegion,
+    };
+  }
+  return { ...shared, credential_type: "deployment_profile", authcode: fields.authcode };
+}
+
 function FieldError({ id, message }: Readonly<{ id: string; message?: string }>) {
   if (!message) return null;
   return (
     <p id={id} role="alert" className="text-sm text-destructive">
       {message}
     </p>
+  );
+}
+
+interface ScmFieldIds {
+  folder: string;
+  pinId: string;
+  pinValue: string;
+  region: string;
+}
+
+interface ScmCredentialFieldsProps {
+  ids: ScmFieldIds;
+  scmFolderName: string;
+  onScmFolderNameChange: (value: string) => void;
+  scmPinId: string;
+  onScmPinIdChange: (value: string) => void;
+  scmPinValue: string;
+  onScmPinValueChange: (value: string) => void;
+  slsRegion: string;
+  onSlsRegionChange: (value: string) => void;
+  errors: Readonly<Pick<FormErrors, "scmPinId" | "scmPinValue" | "slsRegion">>;
+}
+
+/** SCM registration fields: folder, PIN id/value, licensing region. */
+function ScmCredentialFields({
+  ids,
+  scmFolderName,
+  onScmFolderNameChange,
+  scmPinId,
+  onScmPinIdChange,
+  scmPinValue,
+  onScmPinValueChange,
+  slsRegion,
+  onSlsRegionChange,
+  errors,
+}: Readonly<ScmCredentialFieldsProps>) {
+  return (
+    <>
+      <div className="flex flex-col gap-2">
+        <Label htmlFor={ids.folder}>Folder name</Label>
+        <Input
+          id={ids.folder}
+          placeholder='e.g., Shared/Firewall (defaults to "All Firewalls")'
+          value={scmFolderName}
+          onChange={(event) => onScmFolderNameChange(event.target.value)}
+        />
+      </div>
+      <div className="flex flex-col gap-2">
+        <Label htmlFor={ids.pinId}>PIN id</Label>
+        <Input
+          id={ids.pinId}
+          placeholder="e.g., pin-12345"
+          value={scmPinId}
+          aria-invalid={errors.scmPinId ? true : undefined}
+          aria-describedby={errors.scmPinId ? `${ids.pinId}-e` : undefined}
+          onChange={(event) => onScmPinIdChange(event.target.value)}
+        />
+        <FieldError id={`${ids.pinId}-e`} message={errors.scmPinId} />
+      </div>
+      <div className="flex flex-col gap-2">
+        <Label htmlFor={ids.pinValue}>PIN value</Label>
+        <Input
+          id={ids.pinValue}
+          type="password"
+          value={scmPinValue}
+          aria-invalid={errors.scmPinValue ? true : undefined}
+          aria-describedby={errors.scmPinValue ? `${ids.pinValue}-e` : undefined}
+          onChange={(event) => onScmPinValueChange(event.target.value)}
+        />
+        <FieldError id={`${ids.pinValue}-e`} message={errors.scmPinValue} />
+      </div>
+      <div className="flex flex-col gap-2">
+        <Label htmlFor={ids.region}>Licensing region</Label>
+        <Select value={slsRegion} onValueChange={onSlsRegionChange}>
+          <SelectTrigger
+            id={ids.region}
+            className="w-full"
+            aria-invalid={errors.slsRegion ? true : undefined}
+            aria-describedby={errors.slsRegion ? `${ids.region}-e` : undefined}
+          >
+            <SelectValue placeholder="Select region…" />
+          </SelectTrigger>
+          <SelectContent>
+            {SLS_REGIONS.map((region) => (
+              <SelectItem key={region.value} value={region.value}>
+                {region.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <FieldError id={`${ids.region}-e`} message={errors.slsRegion} />
+      </div>
+    </>
+  );
+}
+
+interface DeploymentProfileFieldsProps {
+  authcodeId: string;
+  authcode: string;
+  onAuthcodeChange: (value: string) => void;
+  error?: string;
+}
+
+/** Deployment-profile fields: just the VM-Series authcode. */
+function DeploymentProfileFields({ authcodeId, authcode, onAuthcodeChange, error }: Readonly<DeploymentProfileFieldsProps>) {
+  return (
+    <div className="flex flex-col gap-2">
+      <Label htmlFor={authcodeId}>VM-Series authcode</Label>
+      <Input
+        id={authcodeId}
+        type="password"
+        placeholder="Enter your authcode"
+        value={authcode}
+        aria-invalid={error ? true : undefined}
+        aria-describedby={error ? `${authcodeId}-e` : undefined}
+        onChange={(event) => onAuthcodeChange(event.target.value)}
+      />
+      <FieldError id={`${authcodeId}-e`} message={error} />
+    </div>
   );
 }
 
@@ -80,12 +240,7 @@ export function CredentialsPage() {
   const regionId = useId();
   const authcodeId = useId();
 
-  const serverError =
-    createCredential.error instanceof ApiError
-      ? createCredential.error.message
-      : createCredential.error
-        ? "The credential could not be created."
-        : null;
+  const serverError = describeMutationError(createCredential.error, "The credential could not be created.");
 
   function resetTypeFields() {
     setScmFolderName("");
@@ -100,37 +255,12 @@ export function CredentialsPage() {
     event.preventDefault();
     if (!credentialType) return;
 
-    const nextErrors: FormErrors = {};
-    if (!name.trim()) nextErrors.name = "Enter a display name.";
-    if (credentialType === "scm") {
-      if (!scmPinId.trim()) nextErrors.scmPinId = "Enter the PIN id.";
-      if (!scmPinValue) nextErrors.scmPinValue = "Enter the PIN value.";
-      if (!slsRegion) nextErrors.slsRegion = "Select a licensing region.";
-    } else {
-      if (!authcode.trim()) nextErrors.authcode = "Enter the VM-Series authcode.";
-    }
+    const fields: CredentialFormFields = { name, expiresAt, scmFolderName, scmPinId, scmPinValue, slsRegion, authcode };
+    const nextErrors = validateCredentialForm(credentialType, fields);
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) return;
 
-    const body: CredentialCreateRequest =
-      credentialType === "scm"
-        ? {
-            credential_type: "scm",
-            name: name.trim(),
-            expires_at: expiresAt || null,
-            scm_folder_name: scmFolderName.trim(),
-            scm_pin_id: scmPinId.trim(),
-            scm_pin_value: scmPinValue,
-            sls_region: slsRegion,
-          }
-        : {
-            credential_type: "deployment_profile",
-            name: name.trim(),
-            expires_at: expiresAt || null,
-            authcode,
-          };
-
-    createCredential.mutate(body, {
+    createCredential.mutate(buildCredentialRequestBody(credentialType, fields), {
       onSuccess: (result) => {
         setCreated(result);
         setName("");
@@ -220,76 +350,25 @@ export function CredentialsPage() {
                 </div>
 
                 {credentialType === "scm" ? (
-                  <>
-                    <div className="flex flex-col gap-2">
-                      <Label htmlFor={folderId}>Folder name</Label>
-                      <Input
-                        id={folderId}
-                        placeholder='e.g., Shared/Firewall (defaults to "All Firewalls")'
-                        value={scmFolderName}
-                        onChange={(event) => setScmFolderName(event.target.value)}
-                      />
-                    </div>
-                    <div className="flex flex-col gap-2">
-                      <Label htmlFor={pinIdId}>PIN id</Label>
-                      <Input
-                        id={pinIdId}
-                        placeholder="e.g., pin-12345"
-                        value={scmPinId}
-                        aria-invalid={errors.scmPinId ? true : undefined}
-                        aria-describedby={errors.scmPinId ? `${pinIdId}-e` : undefined}
-                        onChange={(event) => setScmPinId(event.target.value)}
-                      />
-                      <FieldError id={`${pinIdId}-e`} message={errors.scmPinId} />
-                    </div>
-                    <div className="flex flex-col gap-2">
-                      <Label htmlFor={pinValueId}>PIN value</Label>
-                      <Input
-                        id={pinValueId}
-                        type="password"
-                        value={scmPinValue}
-                        aria-invalid={errors.scmPinValue ? true : undefined}
-                        aria-describedby={errors.scmPinValue ? `${pinValueId}-e` : undefined}
-                        onChange={(event) => setScmPinValue(event.target.value)}
-                      />
-                      <FieldError id={`${pinValueId}-e`} message={errors.scmPinValue} />
-                    </div>
-                    <div className="flex flex-col gap-2">
-                      <Label htmlFor={regionId}>Licensing region</Label>
-                      <Select value={slsRegion} onValueChange={setSlsRegion}>
-                        <SelectTrigger
-                          id={regionId}
-                          className="w-full"
-                          aria-invalid={errors.slsRegion ? true : undefined}
-                          aria-describedby={errors.slsRegion ? `${regionId}-e` : undefined}
-                        >
-                          <SelectValue placeholder="Select region…" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {SLS_REGIONS.map((region) => (
-                            <SelectItem key={region.value} value={region.value}>
-                              {region.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <FieldError id={`${regionId}-e`} message={errors.slsRegion} />
-                    </div>
-                  </>
+                  <ScmCredentialFields
+                    ids={{ folder: folderId, pinId: pinIdId, pinValue: pinValueId, region: regionId }}
+                    scmFolderName={scmFolderName}
+                    onScmFolderNameChange={setScmFolderName}
+                    scmPinId={scmPinId}
+                    onScmPinIdChange={setScmPinId}
+                    scmPinValue={scmPinValue}
+                    onScmPinValueChange={setScmPinValue}
+                    slsRegion={slsRegion}
+                    onSlsRegionChange={setSlsRegion}
+                    errors={errors}
+                  />
                 ) : (
-                  <div className="flex flex-col gap-2">
-                    <Label htmlFor={authcodeId}>VM-Series authcode</Label>
-                    <Input
-                      id={authcodeId}
-                      type="password"
-                      placeholder="Enter your authcode"
-                      value={authcode}
-                      aria-invalid={errors.authcode ? true : undefined}
-                      aria-describedby={errors.authcode ? `${authcodeId}-e` : undefined}
-                      onChange={(event) => setAuthcode(event.target.value)}
-                    />
-                    <FieldError id={`${authcodeId}-e`} message={errors.authcode} />
-                  </div>
+                  <DeploymentProfileFields
+                    authcodeId={authcodeId}
+                    authcode={authcode}
+                    onAuthcodeChange={setAuthcode}
+                    error={errors.authcode}
+                  />
                 )}
 
                 <div className="flex flex-col gap-2">

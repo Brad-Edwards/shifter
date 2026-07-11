@@ -49,8 +49,8 @@ function retryDelayMs(attempt: number): number {
 }
 
 function rangeStatusSocketUrl(requestId: string): string {
-  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-  return `${protocol}//${window.location.host}/ws/range-status/${requestId}/`;
+  const protocol = globalThis.location.protocol === "https:" ? "wss:" : "ws:";
+  return `${protocol}//${globalThis.location.host}/ws/range-status/${requestId}/`;
 }
 
 export interface RangeStatusSocket {

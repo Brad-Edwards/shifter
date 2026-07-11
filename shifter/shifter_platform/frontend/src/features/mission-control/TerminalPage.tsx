@@ -35,12 +35,16 @@ function connectionBadgeCopy(state: TerminalConnectionState): string {
   return "Disconnected";
 }
 
+function connectionDotClass(state: TerminalConnectionState): string {
+  if (state === "open") return "bg-emerald-500";
+  if (state === "connecting") return "bg-amber-500 animate-pulse";
+  return "bg-destructive";
+}
+
 function ConnectionBadge({ state }: Readonly<{ state: TerminalConnectionState }>) {
-  const dotClass =
-    state === "open" ? "bg-emerald-500" : state === "connecting" ? "bg-amber-500 animate-pulse" : "bg-destructive";
   return (
     <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-      <span className={cn("size-1.5 rounded-full", dotClass)} aria-hidden="true" />
+      <span className={cn("size-1.5 rounded-full", connectionDotClass(state))} aria-hidden="true" />
       {connectionBadgeCopy(state)}
     </span>
   );

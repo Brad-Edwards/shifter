@@ -64,7 +64,7 @@ function HistoricalRangeView({ entry }: Readonly<{ entry: RangeHistory }>) {
       <Card className="overflow-hidden py-0">
         <dl>
           {entry.request_id ? <MetadataRow label="Request ID" value={entry.request_id} /> : null}
-          {entry.range_id != null ? <MetadataRow label="Range ID" value={String(entry.range_id)} /> : null}
+          {entry.range_id == null ? null : <MetadataRow label="Range ID" value={String(entry.range_id)} />}
           <MetadataRow label="Created" value={formatTimestamp(entry.created_at)} />
           <MetadataRow label="Updated" value={formatTimestamp(entry.updated_at)} />
         </dl>

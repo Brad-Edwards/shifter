@@ -30,13 +30,15 @@ import type {
   UploadInitiateResponse,
 } from "./types";
 
+const MC_NS = "mission-control";
+
 export const missionControlKeys = {
-  all: ["mission-control"] as const,
-  currentRange: ["mission-control", "range", "current"] as const,
-  history: ["mission-control", "range", "history"] as const,
-  agents: ["mission-control", "agents"] as const,
-  scenarios: ["mission-control", "scenarios"] as const,
-  ngfwList: ["mission-control", "ngfw", "list"] as const,
+  all: [MC_NS] as const,
+  currentRange: [MC_NS, "range", "current"] as const,
+  history: [MC_NS, "range", "history"] as const,
+  agents: [MC_NS, "agents"] as const,
+  scenarios: [MC_NS, "scenarios"] as const,
+  ngfwList: [MC_NS, "ngfw", "list"] as const,
 };
 
 function invalidateRange(queryClient: ReturnType<typeof useQueryClient>) {

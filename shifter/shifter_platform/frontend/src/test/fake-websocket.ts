@@ -20,7 +20,7 @@ export class FakeWebSocket {
   static readonly CLOSED = 3;
 
   /** Every socket constructed while installed, in creation order. */
-  static instances: FakeWebSocket[] = [];
+  static readonly instances: FakeWebSocket[] = [];
 
   readonly url: string;
   readyState: number = FakeWebSocket.CONNECTING;
@@ -69,7 +69,7 @@ export class FakeWebSocket {
 /** Install the double; returns a restore function for `afterEach`. */
 export function installFakeWebSocket(): () => void {
   const original = globalThis.WebSocket;
-  FakeWebSocket.instances = [];
+  FakeWebSocket.instances.length = 0;
   // @ts-expect-error -- test double is intentionally narrower than lib.dom's WebSocket.
   globalThis.WebSocket = FakeWebSocket;
   return () => {

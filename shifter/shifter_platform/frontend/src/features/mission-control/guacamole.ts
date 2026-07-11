@@ -77,6 +77,13 @@ async function pollForSignedUrl(requestId: string, label: string): Promise<strin
 
 export type GuacamoleSessionState = "idle" | "preparing" | "error";
 
+/** Derive the session state from whether a bootstrap is pending and the last error, if any. */
+function sessionState(isPending: boolean, error: string | null): GuacamoleSessionState {
+  if (isPending) return "preparing";
+  if (error) return "error";
+  return "idle";
+}
+
 interface BootstrapRunArgs {
   /** Queue the bootstrap (the target-specific POST); resolves to the queued envelope. */
   queue: () => Promise<GuacamoleBootstrapQueued>;
@@ -158,7 +165,7 @@ export function useGuacamoleSession(): GuacamoleSession {
 
   return {
     pendingProtocol,
-    state: pendingProtocol ? "preparing" : opener.error ? "error" : "idle",
+    state: sessionState(pendingProtocol !== null, opener.error),
     error: opener.error,
     open,
   };
@@ -193,7 +200,7 @@ export function useNgfwSshSession(): NgfwSshSession {
   );
 
   return {
-    state: opener.busy ? "preparing" : opener.error ? "error" : "idle",
+    state: sessionState(opener.busy, opener.error),
     error: opener.error,
     open,
   };

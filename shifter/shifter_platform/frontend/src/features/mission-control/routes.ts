@@ -17,9 +17,7 @@ export const missionControlHistoryPath = (): string => `${MISSION_CONTROL_BASE}/
 export const missionControlLaunchPath = (): string => `${MISSION_CONTROL_BASE}/launch/`;
 export const missionControlRangeDetailPath = (requestId: string): string =>
   `${MISSION_CONTROL_BASE}/ranges/${requestId}/`;
-// TODO(#1370 terminal/live-access chunk): instanceUuid identifies which
-// instance's terminal to open; the terminal page and its websocket wiring
-// land in that chunk, not this one.
+/** `instanceUuid` identifies which instance's terminal to open (see `TerminalPage`). */
 export const missionControlTerminalPath = (instanceUuid: string): string =>
   `${MISSION_CONTROL_BASE}/terminal/${instanceUuid}/`;
 export const missionControlAgentsPath = (): string => `${MISSION_CONTROL_BASE}/agents/`;

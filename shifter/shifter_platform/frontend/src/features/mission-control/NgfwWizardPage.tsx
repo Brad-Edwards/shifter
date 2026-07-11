@@ -3,7 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 
 import { Loader2 } from "lucide-react";
 
-import { ApiError } from "@/api/errors";
+import { describeMutationError } from "@/api/errors";
 import { useCreateNgfw } from "@/api/mission-control";
 import { PageHeader } from "@/components/page-header";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -64,12 +64,7 @@ export function NgfwWizardPage() {
   const profileId = useId();
   const credentialId = useId();
 
-  const serverError =
-    createNgfw.error instanceof ApiError
-      ? createNgfw.error.message
-      : createNgfw.error
-        ? "The NGFW could not be created."
-        : null;
+  const serverError = describeMutationError(createNgfw.error, "The NGFW could not be created.");
 
   function onSubmit(event: FormEvent) {
     event.preventDefault();
