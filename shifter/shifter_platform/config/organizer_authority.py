@@ -211,7 +211,7 @@ def grant_local_organizer(user: User, *, source: str, request: HttpRequest | Non
     _grant_organizer(user, provenance=ORGANIZER_SOURCE_LOCAL, audit_source=source, request=request)
 
 
-def _record_local_membership_change(user: User, profile, *, added: bool) -> None:
+def _record_local_membership_change(user: User, *, added: bool) -> None:
     """Persist local provenance and a strict audit row for an out-of-band change."""
     current = sorted(user.groups.values_list("name", flat=True))
     if added:
@@ -224,6 +224,7 @@ def _record_local_membership_change(user: User, profile, *, added: bool) -> None
         new = current
         provenance = ""
         audit_source = "local_admin_removal"
+    profile = get_user_profile(user)
     with transaction.atomic():
         profile.organizer_grant_source = provenance
         profile.save(update_fields=["organizer_grant_source"])
@@ -247,15 +248,14 @@ def _reconcile_membership_provenance(user: User) -> None:
     has the same durable trail as the provider and self-service paths.
     """
     has_organizer = user.groups.filter(name=CTF_ORGANIZER_GROUP).exists()
-    profile = get_user_profile(user)
-    source = profile.organizer_grant_source
+    source = get_user_profile(user).organizer_grant_source
     if has_organizer and not source:
-        _record_local_membership_change(user, profile, added=True)
+        _record_local_membership_change(user, added=True)
     elif not has_organizer and source:
-        _record_local_membership_change(user, profile, added=False)
+        _record_local_membership_change(user, added=False)
 
 
-def _signal_affected_users(instance: object, reverse: bool, pk_set: set | None) -> list:
+def _signal_affected_users(instance: object, reverse: bool, pk_set: set[int] | None) -> list[User]:
     """Return the users whose organizer provenance may need reconciling.
 
     Forward changes (``user.groups`` edited, e.g. the admin User form) carry the
@@ -271,7 +271,14 @@ def _signal_affected_users(instance: object, reverse: bool, pk_set: set | None) 
     return list(user_model.objects.filter(pk__in=pk_set))
 
 
-def on_user_groups_changed(sender, instance, action, reverse, pk_set=None, **kwargs) -> None:
+def on_user_groups_changed(
+    sender: object,
+    instance: object,
+    action: str,
+    reverse: bool,
+    pk_set: set[int] | None = None,
+    **kwargs: object,
+) -> None:
     """``m2m_changed`` receiver keeping organizer provenance and audit consistent
     with out-of-band ``CTF Organizer`` membership changes (issue #1516)."""
     if action not in {"post_add", "post_remove", "post_clear"}:
