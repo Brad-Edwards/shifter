@@ -35,15 +35,15 @@ class Migration(migrations.Migration):
             name="issuer",
             field=models.CharField(
                 blank=True,
+                default="",
                 help_text=(
                     "Provider issuer (opaque, case-sensitive; issue #1521) paired with "
-                    "cognito_sub as the bound (issuer, subject) identity key. Null/blank "
-                    "for a legacy row bound before this field existed; acquired once, on "
-                    "the next login presenting the same subject "
+                    "cognito_sub as the bound (issuer, subject) identity key. Empty for a "
+                    "legacy row bound before this field existed; acquired once, on the "
+                    "next login presenting the same subject "
                     "(see management.services.bind_provider_identity)."
                 ),
                 max_length=255,
-                null=True,
             ),
         ),
         migrations.AlterField(

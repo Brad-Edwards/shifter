@@ -1,15 +1,15 @@
 """Tests for the #1521 ``UserProfile.issuer`` migration.
 
-The migration is a purely additive schema change (nullable ``AddField`` plus
-a widening ``AlterField``, no ``RunPython`` data function), so unlike the
-``importlib``-driven data-migration test in
+The migration is a purely additive schema change (a non-null ``AddField``
+with an empty-string default plus a widening ``AlterField``, no ``RunPython``
+data function), so unlike the ``importlib``-driven data-migration test in
 ``test_revoke_organizers_migration.py`` there is no forward function to
-execute -- Django never rewrites existing row data for a nullable column
-with no default backfill. This module still follows the same
-``importlib``-driven pattern (import the migration module directly) to prove
-the migration declares exactly that additive, non-destructive shape:
-``issuer`` is nullable/blank with no default, and ``cognito_sub`` only
-widens (never narrows, never drops its uniqueness constraint).
+execute -- existing rows backfill to ``issuer=""`` via the column default,
+not a data operation. This module still follows the same ``importlib``-driven
+pattern (import the migration module directly) to prove the migration
+declares exactly that additive, non-destructive shape: ``issuer`` is
+non-null/blank with an empty-string default, and ``cognito_sub`` only widens
+(never narrows, never drops its uniqueness constraint).
 
 The behavioral half of "historical unbound + subject-only states" --
 proving a legacy subject-only row acquires the verified issuer, and a fully
@@ -31,17 +31,19 @@ def test_migration_depends_on_previous_management_migration():
     assert ("management", "0008_revoke_self_service_organizers") in _MIGRATION.Migration.dependencies
 
 
-def test_migration_adds_nullable_blank_issuer_field_with_no_default():
+def test_migration_adds_blank_issuer_field_defaulting_to_empty():
     add_issuer = next(
         op for op in _MIGRATION.Migration.operations if isinstance(op, migrations.AddField) and op.name == "issuer"
     )
     assert add_issuer.model_name == "userprofile"
     assert isinstance(add_issuer.field, models.CharField)
-    assert add_issuer.field.null is True
+    # Non-null with an empty-string default (Django-idiomatic for an optional
+    # string field): existing rows (legacy subject-only or fully unbound)
+    # backfill to issuer="" -- never NULL -- matching the non-null model field.
+    assert add_issuer.field.null is False
     assert add_issuer.field.blank is True
-    # No default / backfill: existing rows (legacy subject-only or fully
-    # unbound) simply read back as issuer=None, untouched.
-    assert not add_issuer.field.has_default()
+    assert add_issuer.field.has_default()
+    assert add_issuer.field.get_default() == ""
 
 
 def test_migration_widens_cognito_sub_without_narrowing_or_dropping_uniqueness():

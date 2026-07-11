@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING
 
 from django.conf import settings
 
 from shared.verified_identity import VerifiedIdentity
 
+if TYPE_CHECKING:
+    from django.contrib.auth.models import User
 
-def apply_bootstrap_admin_flags(user: Any, identity: VerifiedIdentity) -> list[str]:
+
+def apply_bootstrap_admin_flags(user: User, identity: VerifiedIdentity) -> list[str]:
     """Apply env-configured staff/superuser flags to ``user`` from verified identity evidence.
 
     Requires a :class:`~shared.verified_identity.VerifiedIdentity` so a caller

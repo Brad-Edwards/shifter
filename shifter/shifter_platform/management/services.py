@@ -192,8 +192,8 @@ def resolve_user_by_provider_identity(issuer: str, subject: str) -> QuerySet[Use
 
     Because ``UserProfile.cognito_sub`` is unique, at most one profile matches a
     given ``subject``; it resolves that user when the stored issuer is either the
-    verified issuer (an exact bind) or empty/null (a legacy row not yet bound to
-    an issuer). A drifted issuer or an unknown subject yields an empty queryset,
+    verified issuer (an exact bind) or empty (a legacy row not yet bound to an
+    issuer). A drifted issuer or an unknown subject yields an empty queryset,
     leaving the caller's provider-native email fallback (the unbound/first-
     bootstrap seam) and :func:`bind_provider_identity`'s fail-closed compare to
     run. Resolution never creates, mutates, or binds; the caller performs
@@ -207,7 +207,7 @@ def resolve_user_by_provider_identity(issuer: str, subject: str) -> QuerySet[Use
     if not subject or not subject.strip():
         return user_model.objects.none()
     return user_model.objects.filter(
-        Q(profile__issuer=issuer) | Q(profile__issuer="") | Q(profile__issuer__isnull=True),
+        Q(profile__issuer=issuer) | Q(profile__issuer=""),
         profile__cognito_sub=subject,
     )
 
@@ -229,6 +229,18 @@ class BindOutcome(StrEnum):
     BOUND = "bound"
 
 
+def _require_bind_inputs(user: User, issuer: str, subject: str) -> None:
+    """Validate :func:`bind_provider_identity` inputs, raising on any bad value."""
+    if user is None:
+        raise TypeError(USER_CANNOT_BE_NONE)
+    if user.pk is None:
+        raise ValueError(USER_PK_REQUIRED_MSG)
+    if not issuer or not issuer.strip():
+        raise ValueError("issuer cannot be empty")
+    if not subject or not subject.strip():
+        raise ValueError("subject cannot be empty")
+
+
 def bind_provider_identity(user: User, issuer: str, subject: str) -> BindOutcome:
     """Bind-once/compare a verified provider ``(issuer, subject)`` tuple (issue #1521).
 
@@ -240,10 +252,10 @@ def bind_provider_identity(user: User, issuer: str, subject: str) -> BindOutcome
 
     - exact ``(issuer, subject)`` already bound to this profile -> idempotent
       no-op (:attr:`BindOutcome.UNCHANGED`).
-    - legacy row (empty/null issuer, matching subject) -> acquires the
-      verified issuer (:attr:`BindOutcome.ISSUER_ACQUIRED`).
-    - fully unbound profile (empty/null issuer, empty/null subject) -> binds
-      once (:attr:`BindOutcome.BOUND`).
+    - legacy row (empty issuer, matching subject) -> acquires the verified
+      issuer (:attr:`BindOutcome.ISSUER_ACQUIRED`).
+    - fully unbound profile (empty issuer, empty/null subject) -> binds once
+      (:attr:`BindOutcome.BOUND`).
     - any other stored issuer/subject difference, or a uniqueness collision
       with a different user's profile, -> raises :class:`BindingConflictError`.
       Never overwrites, backfills, or "heals" a stored identity.
@@ -259,20 +271,13 @@ def bind_provider_identity(user: User, issuer: str, subject: str) -> BindOutcome
         BindingConflictError: If the presented tuple conflicts with stored
             state, or collides with a different user's bound subject.
     """
-    if user is None:
-        raise TypeError(USER_CANNOT_BE_NONE)
-    if user.pk is None:
-        raise ValueError(USER_PK_REQUIRED_MSG)
-    if not issuer or not issuer.strip():
-        raise ValueError("issuer cannot be empty")
-    if not subject or not subject.strip():
-        raise ValueError("subject cannot be empty")
+    _require_bind_inputs(user, issuer, subject)
 
     profile = get_user_profile(user)
     try:
         with transaction.atomic():
             locked_profile = UserProfile.objects.select_for_update().get(pk=profile.pk)
-            stored_issuer = locked_profile.issuer or ""
+            stored_issuer = locked_profile.issuer  # non-null (default ""); "" means unbound/legacy
             stored_subject = locked_profile.cognito_sub or ""
 
             if stored_issuer == issuer and stored_subject == subject:

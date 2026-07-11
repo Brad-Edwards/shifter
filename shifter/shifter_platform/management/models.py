@@ -34,18 +34,15 @@ class UserProfile(models.Model):
             "Paired with `issuer` for the bound (issuer, subject) identity key."
         ),
     )
-    issuer = models.CharField(  # noqa: DJ001
+    issuer = models.CharField(
         max_length=255,
-        null=True,  # NULL distinguishes a never-migrated legacy row from a
-        # deliberately blank issuer; not unique, so DJ001's usual advice
-        # (use "" instead of NULL) doesn't apply the same way it does for a
-        # unique field (see cognito_sub above and ctf.models.team.Participant).
         blank=True,
+        default="",
         help_text=(
             "Provider issuer (opaque, case-sensitive; issue #1521) paired with "
-            "cognito_sub as the bound (issuer, subject) identity key. Null/blank "
-            "for a legacy row bound before this field existed; acquired once, on "
-            "the next login presenting the same subject "
+            "cognito_sub as the bound (issuer, subject) identity key. Empty for a "
+            "legacy row bound before this field existed; acquired once, on the "
+            "next login presenting the same subject "
             "(see management.services.bind_provider_identity)."
         ),
     )

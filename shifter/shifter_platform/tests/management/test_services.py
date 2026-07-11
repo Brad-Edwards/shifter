@@ -256,20 +256,6 @@ class TestBindProviderIdentity:
         assert profile.issuer == ISSUER_A
         assert profile.cognito_sub == "sub-legacy"
 
-    def test_null_issuer_legacy_row_acquires_issuer(self):
-        """Same as above but with a NULL (not empty-string) legacy issuer."""
-        user = _user("bind-legacy-null")
-        profile = UserProfile.objects.get(user=user)
-        profile.cognito_sub = "sub-legacy-null"
-        profile.issuer = None
-        profile.save(update_fields=["cognito_sub", "issuer"])
-
-        outcome = services.bind_provider_identity(user, ISSUER_A, "sub-legacy-null")
-
-        assert outcome == services.BindOutcome.ISSUER_ACQUIRED
-        profile.refresh_from_db()
-        assert profile.issuer == ISSUER_A
-
     def test_issuer_drift_raises_binding_conflict_and_never_rebinds(self):
         user = _user("bind-issuer-drift")
         services.bind_provider_identity(user, ISSUER_A, "sub-drift")

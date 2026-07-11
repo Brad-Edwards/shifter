@@ -26,7 +26,7 @@ from django.contrib.auth import get_user_model
 from django.core.exceptions import SuspiciousOperation
 from django.test import override_settings
 
-from config.identity_platform import IdentityPlatformBackend
+from config.identity_platform import IdentityPlatformAuthError, IdentityPlatformBackend
 from config.oidc import ShifterOIDCBackend
 from management.services import get_user_profile
 
@@ -34,6 +34,12 @@ User = get_user_model()
 
 ISSUER_A = "https://issuer-a.example.test"
 ISSUER_B = "https://issuer-b.example.test"
+
+# The two fail-closed rejection types both providers raise for malformed,
+# drifted, or colliding identity evidence (OIDC translates conflicts to
+# SuspiciousOperation; Identity Platform to IdentityPlatformAuthError, whose
+# email-verification subclass is also covered).
+AUTH_REJECTIONS = (SuspiciousOperation, IdentityPlatformAuthError)
 
 
 def _oidc_login(claims: dict) -> object:
@@ -99,7 +105,7 @@ class TestVerifiedIdentityInvariantNegative:
         if email_verified is None:
             del claims["email_verified"]
 
-        with pytest.raises(Exception):  # noqa: B017 - SuspiciousOperation / IdentityPlatformAuthError
+        with pytest.raises(AUTH_REJECTIONS):
             login(claims)
 
         assert not User.objects.filter(email="new-user@example.com").exists()
@@ -115,7 +121,7 @@ class TestVerifiedIdentityInvariantNegative:
 
         with (
             override_settings(PLATFORM_BOOTSTRAP_SUPERUSER_EMAILS=[email]),
-            pytest.raises(Exception),  # noqa: B017
+            pytest.raises(AUTH_REJECTIONS),
         ):
             login(_claims(iss=ISSUER_B, sub="sub-drift", email=email))
 
@@ -132,7 +138,7 @@ class TestVerifiedIdentityInvariantNegative:
         email = "subjectdrift@example.com"
         first = login(_claims(iss=ISSUER_A, sub="sub-orig", email=email))
 
-        with pytest.raises(Exception):  # noqa: B017
+        with pytest.raises(AUTH_REJECTIONS):
             login(_claims(iss=ISSUER_A, sub="sub-new", email=email))
 
         assert User.objects.filter(email=email).count() == 1
@@ -146,7 +152,7 @@ class TestVerifiedIdentityInvariantNegative:
         email = "federated@example.com"
         login(_claims(iss=ISSUER_A, sub="sub-primary", email=email))
 
-        with pytest.raises(Exception):  # noqa: B017
+        with pytest.raises(AUTH_REJECTIONS):
             login(_claims(iss=ISSUER_A, sub="sub-federated", email=email))
 
         assert User.objects.filter(email=email).count() == 1
@@ -242,7 +248,7 @@ class TestVerifiedIdentityInvariantAtomicity:
         # (issuer, subject) match, so a new user is created and the bind then hits
         # the unique-subject collision (IntegrityError -> BindingConflictError).
         # The freshly created user must roll back with the failed bind.
-        with pytest.raises(Exception):  # noqa: B017 - SuspiciousOperation / IdentityPlatformAuthError
+        with pytest.raises(AUTH_REJECTIONS):
             login(_claims(iss=ISSUER_B, sub="sub-shared", email="intruder@example.com"))
 
         assert not User.objects.filter(email="intruder@example.com").exists()
