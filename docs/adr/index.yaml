@@ -1503,5 +1503,41 @@
       "docs/architecture/product-development-surfaces.md",
       "docs/adr/index.yaml"
     ]
+  },
+  {
+    "id": "ADR-035",
+    "title": "Deployment prerequisites are validated by a shared fail-safe preflight",
+    "status": "accepted",
+    "scope": "repository",
+    "decision": "A single shared preflight (scripts/bootstrap/preflight.py) is the authoritative check that deployment prerequisites -- tools, secrets/variables, and config -- are present, and it is the same code path locally and in CI. It reports every missing prerequisite up front, before any Terraform apply or account side effect, rather than failing lazily mid-run. The local CLI runs it interactively by default (confirming the manual prerequisites it cannot machine-verify, such as cloud authentication and DNS access) and headlessly off a TTY or with --headless; the CI reusable deploy workflows run it headlessly as an early step before render/plan/apply. Prerequisite skips are always explicit and logged, never silent: the first Identity Platform operator credentials are required unless SHIFTER_SKIP_OPERATOR_BOOTSTRAP is set. The declarative prerequisite spec is kept in step with docs/dev/deploy-secrets.md by a parity test.",
+    "rules": [
+      {
+        "id": "ADR-035-R1",
+        "description": "Deployment prerequisites are declared once in the shared preflight spec (scripts/bootstrap/preflight.py) and enforced by the same code locally (the deploy CLI runs preflight_gate at the start of bootstrap/terraform/full) and in CI (each reusable deploy workflow runs `python -m preflight` before any Terraform apply). A deploy path must not reintroduce a parallel, divergent prerequisite check.",
+        "checks": []
+      },
+      {
+        "id": "ADR-035-R2",
+        "description": "A missing required prerequisite fails the deploy up front (non-zero exit / failed job); optional prerequisites warn. A prerequisite may be skipped only through an explicit, logged opt-out (e.g. SHIFTER_SKIP_OPERATOR_BOOTSTRAP=true), never through a silent conditional step skip on an empty secret.",
+        "checks": []
+      },
+      {
+        "id": "ADR-035-R3",
+        "description": "The preflight spec and docs/dev/deploy-secrets.md must not drift: every secret marked required in the docs has a required check in the spec and vice versa. The parity test in scripts/bootstrap/tests/test_preflight.py enforces this in CI.",
+        "checks": []
+      }
+    ],
+    "exceptions": [],
+    "enforcement": ["ci"],
+    "evidence": [
+      "https://github.com/Brad-Edwards/shifter/issues/1575",
+      "scripts/bootstrap/preflight.py",
+      "scripts/bootstrap/tests/test_preflight.py",
+      "docs/dev/deploy-secrets.md",
+      ".github/workflows/_gcp-dev.yml",
+      ".github/workflows/_core.yml",
+      ".github/workflows/_range.yml",
+      ".github/workflows/_shifter-platform.yml"
+    ]
   }
 ]
