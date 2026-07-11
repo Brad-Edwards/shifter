@@ -277,7 +277,8 @@ def bind_provider_identity(user: User, issuer: str, subject: str) -> BindOutcome
     try:
         with transaction.atomic():
             locked_profile = UserProfile.objects.select_for_update().get(pk=profile.pk)
-            stored_issuer = locked_profile.issuer  # non-null (default ""); "" means unbound/legacy
+            # issuer is non-null (default ""); "" marks an unbound/legacy row.
+            stored_issuer = locked_profile.issuer
             stored_subject = locked_profile.cognito_sub or ""
 
             if stored_issuer == issuer and stored_subject == subject:
