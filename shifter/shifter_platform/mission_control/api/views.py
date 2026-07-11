@@ -25,6 +25,7 @@ from mission_control.api.ranges import (
     DestroyRangeView,
     LaunchRangeView,
     PauseRangeView,
+    RangeHistoryView,
     ResumeRangeView,
     ScenarioListView,
 )
@@ -85,6 +86,7 @@ __all__ = (
     "NGFWDestroyView",
     "NGFWListView",
     "PauseRangeView",
+    "RangeHistoryView",
     "ResumeRangeView",
     "ScenarioListView",
     "UploadCancelView",

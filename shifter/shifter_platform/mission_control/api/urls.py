@@ -10,6 +10,7 @@ app_name = "mission_control"
 
 urlpatterns = [
     path("range/", views.CurrentRangeView.as_view(), name="range-current"),
+    path("ranges/", views.RangeHistoryView.as_view(), name="ranges-list"),
     path("range/launch/", views.LaunchRangeView.as_view(), name="range-launch"),
     path("range/cancel/", views.CancelRangeView.as_view(), name="range-cancel"),
     path("range/destroy/", views.DestroyRangeView.as_view(), name="range-destroy"),
