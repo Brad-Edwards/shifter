@@ -556,7 +556,7 @@ rows:
     aces_target: live or controlled Shifter ACES provisioning-only backend validation through the normal backend path
     shifter_owner: cms.scenarios.registry, cms.services.create_range_dispatch, cms.services.create_aces_native_range, shared.aces.package_loader, engine.services.create_aces_range, engine.ecs, shifter/engine/provisioner, shared.aces.operations, shared.aces.projections, cms.aces.validation, cms.management.commands.run_aces_backend_validation, mission_control.api.aces
     validation_evidence: "shipped #1264: cms/management/commands/run_aces_backend_validation.py launches a registered ACES package through create_range_dispatch, polls to READY, reads redacted receipt/status/runtime-snapshot evidence via cms.aces.validation.collect_evidence + shared.aces.projections, asserts non-vacuous realization, tears down by request_id, and sanitizes failures; docs/architecture/aces-cutover-evidence-1264.md; tests/cms/aces/test_validation.py + tests/cms/test_run_aces_backend_validation.py"
-    next_issue_kind: implemented
+    next_issue_kind: none
     candidate_issue_title: "#1264: Add live validation for Shifter ACES backend path"
     notes: >-
       #1264 is the cutover evidence gate that proves the provisioning-only
