@@ -143,6 +143,8 @@ jobs:
           GCP_PUBLIC_HOSTNAME: ${{ secrets.GCP_PUBLIC_HOSTNAME }}
           GCP_IDENTITY_ALLOWED_EMAIL_DOMAIN: ${{ secrets.GCP_IDENTITY_ALLOWED_EMAIL_DOMAIN }}
           GCP_MASTER_AUTHORIZED_CIDRS: ${{ secrets.GCP_MASTER_AUTHORIZED_CIDRS }}
+          GCP_BOOTSTRAP_ADMIN_EMAIL: ${{ secrets.GCP_BOOTSTRAP_ADMIN_EMAIL }}
+          GCP_BOOTSTRAP_ADMIN_PASSWORD: ${{ secrets.GCP_BOOTSTRAP_ADMIN_PASSWORD }}
         # The committed `terraform.tfvars` ships an example.com baseline that
         # fails-loud on apply. Each deployment provides its real values via
         # the GitHub secrets/variables listed above; this step renders them
@@ -191,6 +193,18 @@ jobs:
           identity_allowed_email_domain = "${GCP_IDENTITY_ALLOWED_EMAIL_DOMAIN}"
           gke_master_authorized_cidrs   = ${AUTHORIZED_CIDRS}
           EOF
+          # First Identity Platform operator credentials (issue #1570). The
+          # bootstrap script (scripts/bootstrap/gcp_control_plane.py) reads these
+          # from this overlay as the authoritative source, so a rotated password
+          # persists across redeploys instead of being lost. Appended only when
+          # the secrets are set; unset leaves the create-if-absent bootstrap on
+          # its existing fallback. Written by redirection, never echoed (#1015).
+          if [ -n "${GCP_BOOTSTRAP_ADMIN_EMAIL}" ]; then
+            printf 'gcp_bootstrap_admin_email    = "%s"\n' "${GCP_BOOTSTRAP_ADMIN_EMAIL}" >> "${TF_DIR}/local.auto.tfvars"
+          fi
+          if [ -n "${GCP_BOOTSTRAP_ADMIN_PASSWORD}" ]; then
+            printf 'gcp_bootstrap_admin_password = "%s"\n' "${GCP_BOOTSTRAP_ADMIN_PASSWORD}" >> "${TF_DIR}/local.auto.tfvars"
+          fi
       - name: Render range egress allowlist from shifter.yaml
         env:
           SHIFTER_CONFIG_GCP_DEV: ${{ secrets.SHIFTER_CONFIG_GCP_DEV }}

@@ -333,3 +333,22 @@ variable "messaging_notification_channels" {
   type        = list(string)
   default     = []
 }
+
+# First Identity Platform operator credentials (issue #1570). These are NOT
+# consumed by any Terraform resource -- the operator is created by the bootstrap
+# script (scripts/bootstrap/gcp_control_plane.py), which reads these keys from
+# the gitignored local.auto.tfvars overlay as the authoritative source. They are
+# declared here only so Terraform does not warn about undeclared variables when
+# it auto-loads the overlay. Rendered from GitHub secrets by _gcp-dev.yml.
+variable "gcp_bootstrap_admin_email" {
+  description = "Email of the first Identity Platform operator; consumed by the bootstrap script, not Terraform."
+  type        = string
+  default     = ""
+}
+
+variable "gcp_bootstrap_admin_password" {
+  description = "Password of the first Identity Platform operator; consumed by the bootstrap script, not Terraform."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
