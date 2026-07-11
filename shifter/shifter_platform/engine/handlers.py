@@ -11,8 +11,10 @@ from typing import cast
 from django.utils import timezone
 
 from engine.models import Range
+from engine.services import record_aces_operation_status, record_aces_runtime_snapshot
 from risk_register.models import AuditLog
 from risk_register.services import StateChange, audit_log_system_event
+from shared.aces.contracts import EVENT_TYPE_ACES_OPERATION, EVENT_TYPE_ACES_SNAPSHOT
 from shared.enums import ResourceStatus
 from shared.messages.envelope import parse_sns_message
 from shared.messages.events import (
@@ -85,6 +87,10 @@ def process_range_event(message: str | dict) -> None:
         _handle_status_updated(cast(RangeStatusUpdatedPayload, event))
     elif event_type == EVENT_TYPE_PROVISIONED:
         _handle_provisioned(cast(RangeProvisionedPayload, event))
+    elif event_type == EVENT_TYPE_ACES_OPERATION:
+        record_aces_operation_status(cast("dict", event))
+    elif event_type == EVENT_TYPE_ACES_SNAPSHOT:
+        record_aces_runtime_snapshot(cast("dict", event))
     else:
         logger.debug("Ignoring event_type=%s", event_type)
 
