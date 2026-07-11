@@ -11,6 +11,7 @@ from shared.aces.operations import (
     AcesOperationRecordConflict,
     AcesOperationRecordWrite,
     persist_aces_operation_record,
+    persist_runtime_snapshot_record,
 )
 from shared.models import AcesOperationRecord
 from shared.schemas.aces_operation import AcesOperationRecordError, canonical_aces_payload_digest
@@ -33,6 +34,32 @@ def _persist(**overrides):
     fields.update(overrides)
     fields.setdefault("payload_digest", canonical_aces_payload_digest(fields["payload"]))
     return persist_aces_operation_record(AcesOperationRecordWrite(**fields))
+
+
+@pytest.mark.django_db
+def test_persist_runtime_snapshot_record_writes_and_is_idempotent():
+    payload = {
+        "operation_id": "op-1",
+        "resources": [{"address": "provision.node.web", "resource_type": "node", "status": "provisioned"}],
+    }
+    first = persist_runtime_snapshot_record(
+        request_id=REQUEST_ID, operation_id="op-1", source_timestamp=SOURCE_TS, payload=payload, range_id=REQUEST_ID
+    )
+    assert first.record_kind == AcesOperationRecord.RecordKind.RUNTIME_SNAPSHOT
+    assert first.contract_version == "runtime-snapshot-v1"
+    again = persist_runtime_snapshot_record(
+        request_id=REQUEST_ID, operation_id="op-1", source_timestamp=SOURCE_TS, payload=payload, range_id=REQUEST_ID
+    )
+    assert again.pk == first.pk  # idempotent on (operation_id, source_timestamp)
+
+
+@pytest.mark.django_db
+def test_persist_runtime_snapshot_record_rejects_secret_bearing_resources():
+    payload = {"operation_id": "op-1", "resources": [{"address": "n", "ssh_key_secret_arn": "arn:...:secret"}]}
+    with pytest.raises(AcesOperationRecordError):
+        persist_runtime_snapshot_record(
+            request_id=REQUEST_ID, operation_id="op-1", source_timestamp=SOURCE_TS, payload=payload
+        )
 
 
 @pytest.mark.django_db
