@@ -518,6 +518,11 @@
       "source_file": "config/settings.py"
     },
     {
+      "default": "sqlite",
+      "name": "TEST_DB_BACKEND",
+      "source_file": "config/_database_settings.py"
+    },
+    {
       "default": "str(_UPLOAD_INSPECTION_FLOOR)",
       "name": "UPLOAD_INSPECTION_MAX_HEADER_BYTES",
       "source_file": "config/settings.py"
