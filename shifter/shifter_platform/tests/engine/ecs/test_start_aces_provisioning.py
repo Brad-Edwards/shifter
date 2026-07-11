@@ -60,3 +60,18 @@ class TestStartAcesRangeProvisioning:
         )
         with pytest.raises(CloudTaskError), _boto3_client(client):
             start_aces_range_provisioning(uuid4())
+
+
+class TestStartAcesRangeTeardown:
+    def test_dispatches_aces_range_destroy_command(self, aws_ecs_configured, ecs_client):
+        from engine.ecs import start_aces_range_teardown
+
+        request_id = uuid4()
+        start_aces_range_teardown(request_id)
+        assert run_task_command(ecs_client) == ["aces-range", "destroy", "--request-id", str(request_id)]
+
+    def test_returns_none_when_ecs_not_configured(self, aws_ecs_unconfigured, ecs_client):
+        from engine.ecs import start_aces_range_teardown
+
+        assert start_aces_range_teardown(uuid4()) is None
+        ecs_client.run_task.assert_not_called()

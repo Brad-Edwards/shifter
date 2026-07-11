@@ -49,6 +49,13 @@ locals {
       # image (RangePodSSHExecutor). AR read is the minimal grant that makes that
       # token authorize; the range cluster has no native AR pull identity.
       "roles/artifactregistry.reader",
+      # The GCE range-cell backend (default per #1387) has the provisioner
+      # create the range VPC, subnets, firewall rules, Cloud NAT, and guest
+      # instances directly, so it needs full Compute admin on the range-cell
+      # project. For the default same-project range cell this is the platform
+      # project; a cross-project range cell (GCP_RANGE_CELL_PROJECT_ID) must
+      # grant the equivalent role in that project (follow-up, see #1509).
+      "roles/compute.admin",
       "roles/pubsub.publisher",
       # Per-instance RDP password secrets (#762) require the provisioner
       # to create, write versions to, and delete per-range secrets at
@@ -128,5 +135,61 @@ resource "google_service_account_iam_member" "portal_sign_blob" {
 resource "google_service_account_iam_member" "provisioner_sign_blob" {
   service_account_id = google_service_account.workload["provisioner"].name
   role               = "roles/iam.serviceAccountTokenCreator"
+  member             = "serviceAccount:${google_service_account.workload["provisioner"].email}"
+}
+
+# GCE range-cell service accounts (#1509). Distinct from the workload SAs: these
+# are NOT Workload-Identity-bound to a KSA. The host SA is attached to every
+# range guest VM; the vertex SA backs the short-lived per-range key the a14-kali
+# agent uses for Vertex AI. Created in the platform project for the default
+# same-project range cell; a cross-project range cell overrides the emails and
+# provisions the SAs in that project.
+resource "google_service_account" "range_host" {
+  project      = var.project_id
+  account_id   = "${replace(var.name_prefix, "-", "")}-range-host"
+  display_name = "Shifter ${var.environment} range host"
+}
+
+resource "google_service_account" "range_vertex" {
+  project      = var.project_id
+  account_id   = "${replace(var.name_prefix, "-", "")}-range-vertex"
+  display_name = "Shifter ${var.environment} range Vertex"
+}
+
+resource "google_project_iam_member" "range_host_roles" {
+  for_each = toset([
+    "roles/logging.logWriter",
+    "roles/monitoring.metricWriter",
+    "roles/storage.objectViewer",
+  ])
+
+  project = var.project_id
+  role    = each.value
+  member  = "serviceAccount:${google_service_account.range_host.email}"
+}
+
+resource "google_project_iam_member" "range_vertex_aiplatform" {
+  project = var.project_id
+  role    = "roles/aiplatform.user"
+  member  = "serviceAccount:${google_service_account.range_vertex.email}"
+}
+
+# The provisioner attaches the host SA to range guests (actAs -> serviceAccountUser)
+# and mints per-range Vertex keys on the vertex SA (serviceAccountKeyAdmin).
+resource "google_service_account_iam_member" "provisioner_range_host_user" {
+  service_account_id = google_service_account.range_host.name
+  role               = "roles/iam.serviceAccountUser"
+  member             = "serviceAccount:${google_service_account.workload["provisioner"].email}"
+}
+
+resource "google_service_account_iam_member" "provisioner_range_vertex_user" {
+  service_account_id = google_service_account.range_vertex.name
+  role               = "roles/iam.serviceAccountUser"
+  member             = "serviceAccount:${google_service_account.workload["provisioner"].email}"
+}
+
+resource "google_service_account_iam_member" "provisioner_range_vertex_key_admin" {
+  service_account_id = google_service_account.range_vertex.name
+  role               = "roles/iam.serviceAccountKeyAdmin"
   member             = "serviceAccount:${google_service_account.workload["provisioner"].email}"
 }
