@@ -1,12 +1,12 @@
 """End-to-end: an authored ACES scenario with composition realizes real bootstrap.
 
 This is the cross-boundary proof that composition realization is genuine (ADR-032,
-issue #1477). It compiles a real ACES SDL (a directory content placement and an
-account) through the upstream compiler, serializes the plan exactly as the platform
+issues #1477 and #1560). It compiles a real ACES SDL (a directory content placement
+and password/public-key accounts) through the upstream compiler, serializes the plan exactly as the platform
 persists it, then parses and realizes it with the **provisioner-side** modules
 loaded standalone (in production the provisioner ships no aces_* and reads the
-serialized plan as plain data) -- asserting the scenario's directory content and
-account genuinely appear in the guest bootstrap. If the compiler's payload
+serialized plan as plain data) -- asserting the scenario's directory content,
+accounts, and credential intent survive into the realizer. If the compiler's payload
 convention shifts, or the provisioner reader/realizer drifts, this fails.
 
 It exercises only terms the manifest genuinely declares (#1563): ``directory``
@@ -54,6 +54,11 @@ accounts:
     username: alice
     node: web
     groups: [ops]
+  bob:
+    username: bob
+    node: web
+    auth_method: publickey
+    password_strength: strong
 """
 
 
@@ -104,3 +109,9 @@ def test_authored_scenario_realizes_genuine_bootstrap(provisioner):
     assert "mkdir -p /srv/data" in script  # directory content (a retained, declared term)
     assert "useradd -m alice" in script  # account
     assert "usermod -aG ops alice" in script  # group membership
+    assert "useradd -m bob" in script
+    accounts = {account.username: account for account in parsed.accounts}
+    assert accounts["alice"].auth_method == "password"  # upstream default still gets a credential
+    assert accounts["alice"].password_strength == "medium"
+    assert accounts["bob"].auth_method == "publickey"
+    assert accounts["bob"].password_strength == "strong"

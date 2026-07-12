@@ -111,6 +111,11 @@ class TestProvisionerReaderContract:
         parsed = reader.parse_plan(serialize_provisioning_plan(_plan()))
         assert parsed.aces_sdl_version  # the installed aces-sdl version, validated
 
+    def test_account_auth_policy_matches_separate_provisioner_consumer(self, reader):
+        from shared.aces.composition_envelope import SUPPORTED_ACCOUNT_AUTH_METHODS
+
+        assert reader.SUPPORTED_ACCOUNT_AUTH_METHODS == SUPPORTED_ACCOUNT_AUTH_METHODS
+
     def test_supported_aces_sdl_range_agrees_with_pin_and_lock(self, reader):
         # AC5 / ADR-032-R4+R7: the consumer's supported-producer floor agrees with the
         # aces-sdl dependency pin, and the installed (uv.lock-resolved) version sits
