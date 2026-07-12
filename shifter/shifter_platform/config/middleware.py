@@ -144,7 +144,7 @@ class BrowserPolicyHeadersMiddleware:
     Adds ``Permissions-Policy`` and ``Reporting-Endpoints`` (the W3C reporting
     group backing the CSP ``report-to`` directive) globally, beside the native
     ``ContentSecurityPolicyMiddleware`` and ``SecurityMiddleware``. Values come
-    from :mod:`config._browser_security` (ADR-035). ``setdefault`` is used so a
+    from :mod:`config._browser_security` (ADR-036). ``setdefault`` is used so a
     deliberately stricter per-view header (e.g. the CTF invite ``no-referrer``)
     is never clobbered.
 

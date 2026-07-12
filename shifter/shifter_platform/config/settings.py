@@ -143,7 +143,7 @@ MIDDLEWARE = [
     "config.middleware.RequestIDMiddleware",
     "config.middleware.RequestInFlightMiddleware",
     "django.middleware.security.SecurityMiddleware",
-    # Browser security policy (ADR-035): native CSP beside SecurityMiddleware and
+    # Browser security policy (ADR-036): native CSP beside SecurityMiddleware and
     # outside WhiteNoise so legacy HTML, the SPA host, redirects, errors, APIs,
     # and static responses pass through one policy boundary. The custom
     # middleware sets only the headers Django does not own.

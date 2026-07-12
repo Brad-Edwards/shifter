@@ -1,4 +1,4 @@
-"""Tests for the staged browser security policy baseline (#1520, ADR-035).
+"""Tests for the staged browser security policy baseline (#1520, ADR-036).
 
 Covers the code-owned CSP candidate shape, the validated report-only|enforce
 mode seam, the global Referrer-Policy / Permissions-Policy / Reporting-Endpoints
@@ -104,7 +104,7 @@ def test_candidate_includes_each_required_dependency_origin():
 
 
 def test_candidate_trusts_no_public_package_cdn():
-    # ADR-035: jsDelivr/unpkg are self-hosted, so they must not be script/style
+    # ADR-036: jsDelivr/unpkg are self-hosted, so they must not be script/style
     # authorities. This is the codex-review guard against a promoted policy that
     # remains bypassable via attacker-published CDN packages.
     candidate = bs.build_browser_csp()

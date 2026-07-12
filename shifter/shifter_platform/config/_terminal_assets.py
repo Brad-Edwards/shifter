@@ -5,7 +5,7 @@ Extracted from ``config/settings.py`` to keep that module under the
 references symbolic names instead of inline literals (Sonar Web:S1829
 hardens this surface).
 
-These were previously loaded from public package CDNs. Per ADR-035 they are now
+These were previously loaded from public package CDNs. Per ADR-036 they are now
 vendored under ``static/`` and served same-origin by WhiteNoise (the browser
 security policy must not trust jsDelivr/unpkg as script authorities). ``url`` is
 a ``STATICFILES_DIRS``-relative path resolved through ``{% static %}``;

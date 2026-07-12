@@ -87,7 +87,7 @@ Report-Only with reporting; remove or nonce/hash unsafe inline behavior before
 enforcement; set a global referrer and permissions policy; and add response
 tests. This is defense in depth and does not replace XSS remediation.
 
-**Status (report-only baseline shipped, #1520, ADR-035).** The global,
+**Status (report-only baseline shipped, #1520, ADR-036).** The global,
 staged, deny-by-default policy is enabled through Django's native CSP
 middleware. The enabled values, all defined in
 [`config/_browser_security.py`](../../../shifter/shifter_platform/config/_browser_security.py):
@@ -109,7 +109,7 @@ middleware. The enabled values, all defined in
 Enforcement (promoting the same candidate to `Content-Security-Policy` by
 flipping `BROWSER_CSP_MODE=enforce`) and remediating the inventoried inline
 scripts, event handlers, and styles are the tracked follow-up. Any route-local
-weakening or source/capability expansion requires an ADR-035 entry in
+weakening or source/capability expansion requires an ADR-036 entry in
 [`docs/adr/exceptions.yaml`](../../adr/exceptions.yaml) with an owner and
 expiry.
 

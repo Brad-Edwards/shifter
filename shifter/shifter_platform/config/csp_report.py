@@ -1,4 +1,4 @@
-"""Bounded same-origin CSP violation report collector (ADR-035-R3).
+"""Bounded same-origin CSP violation report collector (ADR-036-R3).
 
 Transport and observability plumbing, not a business API. A POST-only,
 anonymous, narrowly CSRF-exempt endpoint (browsers post reports without an
@@ -132,7 +132,7 @@ def _parse_reports(request: HttpRequest) -> list[dict[str, object]] | None:
 
 
 # Anonymous report sink: browsers post CSP reports without a CSRF token and the
-# view performs no authenticated or domain mutation (ADR-035-R3).
+# view performs no authenticated or domain mutation (ADR-036-R3).
 @csrf_exempt  # NOSONAR
 @require_POST
 def csp_report(request: HttpRequest) -> HttpResponse:
