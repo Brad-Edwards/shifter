@@ -382,8 +382,11 @@ class EffectivePermissionMatrixTest(unittest.TestCase):
         )
         self.assertNotIn("ctf-scheduler", self.bucket_roles)
 
-    def test_named_secret_readers_are_portal_workers_scheduler(self) -> None:
-        self.assertEqual(self.secret_readers, {"portal", "workers", "ctf-scheduler"})
+    def test_named_secret_readers_include_the_launch_worker(self) -> None:
+        self.assertEqual(
+            self.secret_readers,
+            {"portal", "workers", "ctf-scheduler", "provisioner-launcher"},
+        )
         self.assertNotIn("provisioner", self.secret_readers)
 
     def test_named_secret_reader_binding_uses_accessor_not_admin(self) -> None:

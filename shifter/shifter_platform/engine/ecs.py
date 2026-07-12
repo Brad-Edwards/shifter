@@ -344,6 +344,44 @@ def _validate_start_ecs_task_args(range_id: int, user_id: int, command: str) -> 
         raise ValueError("command must be a non-empty string")
 
 
+def _enqueue_gcp_launch(command: list[str]) -> tuple[bool, str | None]:
+    """Return whether GCP queueing handled the command and its reserved task ref."""
+    if getattr(settings, "CLOUD_PROVIDER", "").lower() != "gcp":
+        return False, None
+    if _get_engine_task_config() is None:
+        # Preserve the public callers' configured-provider failure signal while
+        # avoiding fallthrough to synchronous dispatch. Do not persist work
+        # that the launcher cannot execute;
+        # configuration may later recover after the domain service has already
+        # reverted or reported failure, producing a ghost launch.
+        return True, None
+    from engine.launch_intents import enqueue_provisioner_launch, task_ref_for_intent
+
+    intent_id = enqueue_provisioner_launch(command)
+    return True, task_ref_for_intent(intent_id)
+
+
+def dispatch_provisioner_command(command: list[str], *, task_identity: str | None = None) -> str | None:
+    """Launch one validated command directly; callable only by the launcher worker on GCP."""
+    from engine.launch_intents import validate_provisioner_command
+
+    validate_provisioner_command(command)
+    task_config = _get_engine_task_config()
+    if task_config is None:
+        return None
+    cluster, task_definition, network_config = task_config
+    runner = get_task_runner()
+    return runner.run_task(
+        task_definition=task_definition,
+        cluster=cluster,
+        command=command,
+        container_name=PROVISIONER_CONTAINER_NAME,
+        env_overrides=_get_gcp_provisioner_env_overrides(),
+        network_config=network_config,
+        task_identity=task_identity,
+    )
+
+
 def _start_ecs_task(range_id: int, user_id: int, command: str) -> str | None:
     """Start an ECS Fargate task for provisioning operations.
 
@@ -362,14 +400,6 @@ def _start_ecs_task(range_id: int, user_id: int, command: str) -> str | None:
     """
     _validate_start_ecs_task_args(range_id, user_id, command)
 
-    task_config = _get_engine_task_config()
-    if task_config is None:
-        return None
-
-    cluster, task_definition, network_config = task_config
-
-    logger.info("Starting ECS task for range_id=%s command=%s", range_id, command)
-
     command_list = [
         ResourceType.RANGE.value,
         command,
@@ -378,6 +408,17 @@ def _start_ecs_task(range_id: int, user_id: int, command: str) -> str | None:
         "--user-id",
         str(user_id),
     ]
+    queued, queued_ref = _enqueue_gcp_launch(command_list)
+    if queued:
+        return queued_ref
+
+    task_config = _get_engine_task_config()
+    if task_config is None:
+        return None
+
+    cluster, task_definition, network_config = task_config
+
+    logger.info("Starting ECS task for range_id=%s command=%s", range_id, command)
 
     try:
         runner = get_task_runner()
@@ -485,13 +526,17 @@ def _start_range_ecs_task(request_id: UUID, command: str, resource: str = "range
         command_list = [resource, command, "--request-id", str(request_id)]
         return _run_local_provisioner(command_list)
 
+    command_list = [resource, command, "--request-id", str(request_id)]
+    queued, queued_ref = _enqueue_gcp_launch(command_list)
+    if queued:
+        return queued_ref
+
     task_config = _get_engine_task_config()
     if task_config is None:
         return None
 
     cluster, task_definition, network_config = task_config
 
-    command_list = [resource, command, "--request-id", str(request_id)]
     logger.info("Starting %s ECS task for request_id=%s command=%s", resource, request_id, command)
 
     try:
@@ -632,6 +677,10 @@ def _start_ngfw_ecs_task(request_id: UUID, command: list[str]) -> str | None:
             command,
         )
         return _run_local_provisioner(command)
+
+    queued, queued_ref = _enqueue_gcp_launch(command)
+    if queued:
+        return queued_ref
 
     task_config = _get_engine_task_config()
     if task_config is None:

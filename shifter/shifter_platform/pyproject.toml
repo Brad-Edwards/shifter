@@ -80,6 +80,7 @@ dev = [
     "types-requests>=2.33.0.20260513",
     "types-bleach>=6.3.0.20260508",
     "types-Markdown>=3.7.0",
+    "cel-python>=0.5.0",
 ]
 
 [tool.pytest.ini_options]
