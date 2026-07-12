@@ -20,6 +20,7 @@ from mission_control.api._base import (
     _validated,
 )
 from mission_control.api.permissions import HasMissionControlActor, block_participant_lifecycle_permission
+from mission_control.api.rate_limit import RangeLaunchRateThrottle
 from mission_control.api.serializers import (
     AgentListResponseSerializer,
     CurrentRangeResponseSerializer,
@@ -89,6 +90,8 @@ class LaunchRangeView(MissionControlAPIView):
         _range_write_permission(),
         block_participant_lifecycle_permission("launch"),
     ]
+    # Backpressure (#322): per-actor + fleet admission budget, before CMS.
+    throttle_classes = [RangeLaunchRateThrottle]
 
     @extend_schema(responses=LaunchRangeResponseSerializer, operation_id="api_v1_mission_control_range_launch")
     def post(self, request: Request) -> Response:

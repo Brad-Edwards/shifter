@@ -30,6 +30,7 @@ __all__ = [
     "MAGIC_LINK_SINGLE_USE",
     "OIDC_CREATE_USER",
     "OIDC_EXEMPT_URLS",
+    "OIDC_ISSUER_URL",
     "OIDC_OP_AUTHORIZATION_ENDPOINT",
     "OIDC_OP_JWKS_ENDPOINT",
     "OIDC_OP_LOGOUT_URL_METHOD",
@@ -120,6 +121,12 @@ OIDC_OP_AUTHORIZATION_ENDPOINT = _oidc_placeholder
 OIDC_OP_TOKEN_ENDPOINT = _oidc_placeholder
 OIDC_OP_USER_ENDPOINT = _oidc_placeholder
 OIDC_OP_JWKS_ENDPOINT = _oidc_placeholder
+# Expected ID-token issuer for config.oidc.ShifterOIDCBackend.verify_token's
+# exact-match check (issue #1521). Placeholder outside AUTH_PROVIDER="oidc" so
+# the setting always exists; mozilla-django-oidc's base verify_token does not
+# check this itself (it decodes with verify_aud=False and is not given an
+# expected issuer), so the adapter validates it explicitly against this value.
+OIDC_ISSUER_URL = _oidc_placeholder
 
 if AUTH_PROVIDER == "oidc":
     # Cognito has two different base URLs:
@@ -127,6 +134,7 @@ if AUTH_PROVIDER == "oidc":
     # - Issuer URL: for JWKS (token verification)
     _oidc_auth_domain = required_runtime_env("OIDC_AUTH_DOMAIN", dev_default="https://auth.example.test")
     _oidc_issuer = required_runtime_env("OIDC_ISSUER_URL", dev_default="https://issuer.example.test")
+    OIDC_ISSUER_URL = _oidc_issuer
     # OAuth endpoints use the auth domain
     OIDC_OP_AUTHORIZATION_ENDPOINT = f"{_oidc_auth_domain}/oauth2/authorize"
     OIDC_OP_TOKEN_ENDPOINT = f"{_oidc_auth_domain}/oauth2/token"

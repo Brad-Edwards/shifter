@@ -276,6 +276,15 @@ module "portal_iam" {
   project_id  = var.project_id
   environment = var.environment
   name_prefix = local.name_prefix
+
+  # ADR-008-R7: resource IDs from the owning modules so workload Secret Manager /
+  # Cloud Storage access is bound per named resource instead of at project scope.
+  runtime_secret_ids             = module.portal_secrets.runtime_secret_ids
+  assets_bucket_name             = module.portal_gcs.assets_bucket_name
+  terraform_state_bucket_name    = "${var.project_id}-terraform-state"
+  vmseries_bootstrap_bucket_name = var.vmseries_bootstrap_bucket_name
+
+  depends_on = [module.portal_secrets, module.portal_gcs]
 }
 
 module "portal_gke" {
