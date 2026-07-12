@@ -222,18 +222,20 @@ resource "aws_iam_role_policy" "ec2_provisioning" {
         # - StopInstances, StartInstances for power management
         # - ModifyInstanceAttribute for runtime changes
         # - DeleteTags for cleanup
+        #
+        # ModifyInstanceMetadataOptions was removed (#1377): it backed the
+        # HttpPutResponseHopLimit=2 IMDS hop-limit raise, which exposed the
+        # shared range-host role's SSM/S3/Bedrock credentials to any
+        # container that could reach IMDS. The Polaris agent no longer
+        # needs IMDS access; it receives short-lived STS credentials for
+        # the per-range Bedrock agent role instead (see
+        # docs/architecture/polaris-aws-agent-credentials-preflight-1377.md).
         Effect = "Allow"
         Action = [
           "ec2:TerminateInstances",
           "ec2:StopInstances",
           "ec2:StartInstances",
           "ec2:ModifyInstanceAttribute",
-          # ModifyInstanceMetadataOptions is required so the polaris
-          # range bootstrap can set HttpPutResponseHopLimit=2 on the
-          # polaris-vm — without that the a14-kali docker container
-          # can't reach IMDS for instance-profile credentials and the
-          # claude/Bedrock smoke test fails.
-          "ec2:ModifyInstanceMetadataOptions",
           "ec2:DeleteTags"
         ]
         Resource = "arn:aws:ec2:${local.region}:${local.account_id}:instance/*"
@@ -962,6 +964,66 @@ resource "aws_iam_role_policy" "kms" {
             "kms:ViaService" = "secretsmanager.${local.region}.amazonaws.com"
           }
         }
+      }
+    ]
+  })
+}
+
+# ------------------------------------------------------------------------------
+# Task Role Policy - Polaris Agent Role Management (#1377)
+# ------------------------------------------------------------------------------
+# The engine provisioner owns the per-range Polaris Bedrock agent role
+# (shifter/engine/provisioner/terraform/modules/range/iam.tf) through the
+# same ECS task role that applies the rest of the per-range Terraform.
+# Scoped to the shifter-${environment}-*-polaris-agent namespace only; the
+# target role is never attached to EC2 (no instance profile), so
+# iam:PassRole is intentionally not granted here.
+
+resource "aws_iam_role_policy" "polaris_agent_role_management" {
+  name = "polaris-agent-role-management"
+  role = aws_iam_role.ecs_task.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        # iam:PermissionsBoundary is only present in the request context
+        # for IAM calls that set a boundary (CreateRole,
+        # PutRolePermissionsBoundary, ...); it does not exist for
+        # PutRolePolicy. Bundling a StringEquals condition on this key
+        # into a statement that also grants PutRolePolicy would deny
+        # every PutRolePolicy call outright, because a StringEquals
+        # condition on an absent context key evaluates to false. Scoping
+        # the condition to CreateRole alone still forces every role
+        # created in this namespace to carry the boundary: the task role
+        # below has no iam:PutRolePermissionsBoundary /
+        # iam:DeleteRolePermissionsBoundary grant, so the boundary set at
+        # creation can never be changed or removed through this role.
+        Sid      = "CreatePolarisAgentRoleWithBoundary"
+        Effect   = "Allow"
+        Action   = "iam:CreateRole"
+        Resource = "arn:aws:iam::${local.account_id}:role/shifter-${var.environment}-*-polaris-agent"
+        Condition = {
+          StringEquals = {
+            "iam:PermissionsBoundary" = var.permissions_boundary_arn
+          }
+        }
+      },
+      {
+        Sid    = "ManagePolarisAgentRole"
+        Effect = "Allow"
+        Action = [
+          "iam:DeleteRole",
+          "iam:PutRolePolicy",
+          "iam:DeleteRolePolicy",
+          "iam:TagRole",
+          "iam:UntagRole",
+          "iam:GetRole",
+          "iam:GetRolePolicy",
+          "iam:ListRolePolicies",
+          "iam:ListRoleTags"
+        ]
+        Resource = "arn:aws:iam::${local.account_id}:role/shifter-${var.environment}-*-polaris-agent"
       }
     ]
   })

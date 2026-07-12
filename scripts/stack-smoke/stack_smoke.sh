@@ -246,6 +246,7 @@ log "Proving authenticated websocket handshake through the real ASGI stack"
 # container (no app change, no /dev-login). The key is captured from stdout only.
 session_key="$(
   docker exec "$WEB" python manage.py shell -c '
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.sessions.backends.db import SessionStore
 User = get_user_model()
@@ -255,7 +256,15 @@ if created:
     user.save()
 store = SessionStore()
 store["_auth_user_id"] = str(user.pk)
-store["_auth_user_backend"] = "django.contrib.auth.backends.ModelBackend"
+# Name a backend that is actually configured. The platform replaced
+# django.contrib.auth.backends.ModelBackend with config.auth.PlatformModelBackend
+# (#1206); a session naming an unconfigured backend resolves to AnonymousUser and
+# the authenticated WS handshake is rejected 403. Derive it from settings so a
+# future backend change does not silently break this probe again.
+store["_auth_user_backend"] = next(
+    (b for b in settings.AUTHENTICATION_BACKENDS if b.endswith("PlatformModelBackend")),
+    settings.AUTHENTICATION_BACKENDS[0],
+)
 store["_auth_user_hash"] = user.get_session_auth_hash()
 store.create()
 print(store.session_key)
