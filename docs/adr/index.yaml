@@ -1449,16 +1449,23 @@
         "id": "ADR-032-R7",
         "description": "The serialized ProvisioningPlan transport must declare and validate supported contract and producer versions before realization. The consumer must reject unknown resource types, malformed payloads, duplicate identities, duplicate aliases, dangling node/network/composition references, and unsupported topology terms before any cloud, Terraform, SSH, SSM, or guest mutation. Compatibility tests must use public ACES APIs, public fixtures, or Shifter-owned serialized fixtures; private reference-backend helpers are not a compatibility contract.",
         "checks": []
+      },
+      {
+        "id": "ADR-032-R8",
+        "description": "ACES Node.services entries are authored layer-4 transport exposure intent, not informational labels, guest service installation, participant authorization, or an override of authored ACLs. The GCE realization must validate the compiled spec.node.services payload again at the separate provisioner trust boundary and realize supported TCP/UDP ports as deterministic per-node-tag ingress policy sourced only from concrete CIDRs declared by networks in that same compiled range. It must never widen a service to 0.0.0.0/0, platform/portal/operator CIDRs, or another range by default. The existing management-plane allow remains higher precedence than authored ACLs; authored ACLs remain higher precedence than service-derived allows. Unsupported or malformed service shapes and any priority/source scope that cannot be represented without widening must fail before cloud mutation. The projection is process-local realization data only; it must not become a second SDL, persisted schema, API DTO, setting, or participant-access contract.",
+        "checks": []
       }
     ],
     "exceptions": [],
     "enforcement": ["ci", "agent-policy"],
     "evidence": [
       "https://github.com/Brad-Edwards/shifter/issues/1264",
+      "https://github.com/Brad-Edwards/shifter/issues/1562",
       "https://github.com/Brad-Edwards/shifter/issues/1563",
       "docs/architecture/aces-runtime-target-backend-manifest-preflight-1233.md",
       "docs/architecture/aces-provisioning-plan-transport-preflight-1522.md",
       "docs/architecture/aces-backend-manifest-realizability-preflight-1563.md",
+      "docs/architecture/aces-service-reachability-preflight-1562.md",
       "docs/architecture/aces-account-credentials-preflight-1560.md",
       ".importlinter",
       "shifter/shifter_platform/pyproject.toml",
