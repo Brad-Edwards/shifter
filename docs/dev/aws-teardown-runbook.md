@@ -1,5 +1,7 @@
 # AWS environment teardown
 
+Part of the Shifter deploy and operations docs; start at the [documentation home](../index.md).
+
 This is the runbook for tearing an AWS environment down to zero: the Terraform
 stacks, the resources that block `terraform destroy`, the bootstrap-created
 identity and state backend, and the local operator config. It is the reverse of

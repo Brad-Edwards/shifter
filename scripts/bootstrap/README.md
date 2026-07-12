@@ -109,7 +109,7 @@ awslogs setup are all first-boot or task-initialization work.
 GCP standup mirrors the AWS order: prepare identity and images first, bootstrap
 the substrate, then deploy. The maintained end-to-end walkthrough is the GCP
 Deployment section of
-`shifter/shifter_platform/documentation/docs/technical/dev/setup.md`.
+`docs/technical/dev/setup.md`.
 
 1. Create the GCP project and enable the required APIs.
 2. Configure Workload Identity Federation for GitHub Actions (pool, provider,
@@ -129,7 +129,7 @@ Deployment section of
    Shifter Helm release.
 6. Subsequent deploys run through CI: push to the `gcp-dev` branch, the only
    branch that deploys the GCP dev environment (see the CI/CD trigger matrix in
-   `shifter/shifter_platform/documentation/docs/technical/dev/ci-cd.md`).
+   `docs/technical/dev/ci-cd.md`).
 7. Point the configured hostname at the reserved global ingress IP so the
    Google-managed TLS certificate can activate.
 

@@ -203,6 +203,11 @@
       "source_file": "config/_database_settings.py"
     },
     {
+      "default": "'https://brad-edwards.github.io/shifter/'",
+      "name": "DOCS_SITE_URL",
+      "source_file": "config/settings.py"
+    },
+    {
       "default": "''",
       "name": "EMAIL_API_KEY",
       "source_file": "config/_email.py"
