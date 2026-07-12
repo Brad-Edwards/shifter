@@ -195,8 +195,8 @@ dc_domain_name = "internal.shifter"
 # Guacamole
 # ------------------------------------------------------------------------------
 
-guacd_image_tag            = "1.5.5"
-guacamole_client_image_tag = "1.5.5"
+guacd_image_tag            = "1.5.5-r1"
+guacamole_client_image_tag = "1.5.5-r1"
 guacd_cpu                  = 2048
 guacd_memory               = 4096
 guacamole_client_cpu       = 4096

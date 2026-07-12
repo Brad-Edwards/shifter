@@ -108,7 +108,7 @@ class AdrGuardTests(unittest.TestCase):
             },
         }
 
-        self.assertEqual(ADR_GUARD.validate_interface_contract(contract, "ADR-037"), [])
+        self.assertEqual(ADR_GUARD.validate_interface_contract(contract, "ADR-038"), [])
 
         mutations = {
             "missing operation": lambda value: value["operations"].remove("pause"),
@@ -144,12 +144,12 @@ class AdrGuardTests(unittest.TestCase):
             with self.subTest(label=label):
                 changed = json.loads(json.dumps(contract))
                 mutate(changed)
-                self.assertTrue(ADR_GUARD.validate_interface_contract(changed, "ADR-037"))
+                self.assertTrue(ADR_GUARD.validate_interface_contract(changed, "ADR-038"))
 
         invalid_contract = json.loads(json.dumps(contract))
         invalid_contract["operations"].remove("pause")
         entry_with_invalid_contract = {
-            "id": "ADR-037",
+            "id": "ADR-038",
             "title": "Provider-neutral range substrate",
             "status": "accepted",
             "scope": "range_provisioning",
@@ -176,7 +176,7 @@ class AdrGuardTests(unittest.TestCase):
         )
 
         entry_without_contract = {
-            "id": "ADR-037",
+            "id": "ADR-038",
             "title": "Provider-neutral range substrate",
             "status": "accepted",
             "scope": "range_provisioning",
