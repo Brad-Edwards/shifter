@@ -71,9 +71,9 @@ GUARDRAIL_FILES = {
 }
 DOC_PATHS = (
     "docs/adr/",
-    "shifter/shifter_platform/documentation/docs/technical/dev/adr-enforcement.md",
-    "shifter/shifter_platform/documentation/docs/technical/dev/index.md",
-    "shifter/shifter_platform/documentation/docs/technical/index.md",
+    "docs/technical/dev/adr-enforcement.md",
+    "docs/technical/dev/index.md",
+    "docs/technical/index.md",
 )
 
 
@@ -2603,13 +2603,12 @@ _QUALITY_NON_DOCS_REQUIRED_GLOBS = (
     "**",
     "!docs/**",
     "!**/*.md",
-    "!shifter/shifter_platform/documentation/**",
 )
 _QUALITY_GUARDRAIL_DOCS_REQUIRED_GLOBS = (
     ".github/pull_request_template.md",
     ".github/copilot-instructions.md",
     "docs/adr/**",
-    "shifter/shifter_platform/documentation/docs/technical/dev/adr-enforcement.md",
+    "docs/technical/dev/adr-enforcement.md",
 )
 _PR_GATE_SKIPPED_QUALITY_GUARD = (
     '[ "$quality_result" = "skipped" ] && [ "$quality_relevant" != "false" ]'
