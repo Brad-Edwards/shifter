@@ -21,6 +21,7 @@ from django.utils import timezone
 from engine.models import Range
 from risk_register.models import AuditLog
 from shared.aces.contracts import SHIFTER_BACKEND_PROFILE
+from shared.audit import AuditAction
 from shared.models import AcesOperationRecord, AcesParticipantRuntimeRecord
 from shared.schemas.aces_operation import canonical_aces_payload_digest
 from shared.schemas.aces_participant_runtime import (
@@ -262,7 +263,7 @@ class TestLaunchRange:
         # A real range row was persisted.
         assert Range.objects.count() == 1
         # The provision was audited.
-        assert AuditLog.objects.filter(action=AuditLog.Action.PROVISION).exists()
+        assert AuditLog.objects.filter(action=AuditAction.PROVISION).exists()
 
     def test_rejects_second_concurrent_range(self, authenticated_client, make_agent, hydratable_scenario):
         client, user = authenticated_client(email="double@example.com")
@@ -323,7 +324,7 @@ class TestCancelRange:
         assert response.status_code == 200
         assert _json(response)["success"] is True
         # The cancel was audited.
-        assert AuditLog.objects.filter(action=AuditLog.Action.CANCEL).exists()
+        assert AuditLog.objects.filter(action=AuditAction.CANCEL).exists()
 
 
 class TestParticipantOnlyLifecycleGuard:
@@ -381,7 +382,7 @@ class TestParticipantOnlyLifecycleGuard:
             content_type="application/json",
         )
         assert response.status_code == 403
-        assert not AuditLog.objects.filter(action=AuditLog.Action.DEPROVISION).exists()
+        assert not AuditLog.objects.filter(action=AuditAction.DEPROVISION).exists()
 
     def test_participant_only_may_still_read_range(self, authenticated_client):
         client, _ = self._participant_only(authenticated_client, email="p-read@example.com")
@@ -431,4 +432,4 @@ class TestDestroyRange:
         )
         assert response.status_code == 200
         assert _json(response)["success"] is True
-        assert AuditLog.objects.filter(action=AuditLog.Action.DEPROVISION).exists()
+        assert AuditLog.objects.filter(action=AuditAction.DEPROVISION).exists()

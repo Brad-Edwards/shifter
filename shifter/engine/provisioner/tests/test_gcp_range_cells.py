@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import sys
 from types import ModuleType, SimpleNamespace
 from unittest.mock import MagicMock, call
@@ -175,6 +176,38 @@ def test_render_range_cell_plan_shared_vpc_uses_existing_network():
     assert plan["subnets"][0]["network_link"] == "projects/test-project/global/networks/shared-range"
 
 
+def test_render_range_cell_plan_vpc_per_range_mints_own_network():
+    plan = render_range_cell_plan("req-123", _variables(), _sample_config())
+
+    # vpc-per-range mode: the range owns (creates/deletes) its own VPC.
+    assert plan["manage_network"] is True
+    assert plan["network"]["name"] == "shifter-range-42"
+    assert plan["network"]["self_link"] == "projects/test-project/global/networks/shifter-range-42"
+
+
+def test_render_range_cell_plan_private_google_access_adds_egress_hole():
+    config = dataclasses.replace(_sample_config(), private_google_access=True)
+
+    plan = render_range_cell_plan("req-123", _variables(), config)
+
+    firewall_names = {fw["name"] for fw in plan["firewalls"]}
+    assert "shifter-r-42-egress-googleapis" in firewall_names
+
+
+def test_render_range_cell_plan_rejects_subnet_without_uuid():
+    variables = {"range_id": 42, "subnets": [{"name": "polaris", "cidr": "10.50.2.0/28"}]}
+
+    with pytest.raises(RuntimeError, match="requires name and uuid"):
+        render_range_cell_plan("req-123", variables, _sample_config())
+
+
+def test_render_range_cell_plan_rejects_subnet_without_cidr_when_images_required():
+    variables = {"range_id": 42, "subnets": [{"name": "polaris", "uuid": "subnet-uuid"}]}
+
+    with pytest.raises(RuntimeError, match="requires a cidr"):
+        render_range_cell_plan("req-123", variables, _sample_config())
+
+
 def test_apply_shared_vpc_skips_network_create(mocker):
     clients = _mock_clients(exists=False)
     secret_ops, _ = _mock_secret_ops(mocker)
@@ -225,7 +258,12 @@ def test_apply_mints_per_range_vertex_key_when_configured(mocker):
         vertex_ops=vertex_ops,
     )
 
-    vertex_mocks.ensure.assert_called_once_with(42, "range-vertex@test-project.iam.gserviceaccount.com", "test-project")
+    vertex_mocks.ensure.assert_called_once_with(
+        42,
+        "range-vertex@test-project.iam.gserviceaccount.com",
+        "test-project",
+        "range-host@test-project.iam.gserviceaccount.com",
+    )
 
 
 def test_apply_skips_vertex_key_when_not_configured(mocker):
@@ -492,6 +530,20 @@ def test_render_plan_carries_private_google_access_flag():
     body = subnetwork_resource(plan, plan["subnets"][0])
     assert body["private_ip_google_access"] is True
     assert body["ip_cidr_range"] == "10.50.2.0/28"
+
+    # PGA couples an egress-allow to the private.googleapis.com VIP so guests can
+    # reach Vertex / GCS / Secret Manager while the egress-deny blocks the
+    # general internet.
+    gapi = next(fw for fw in plan["firewalls"] if fw["name"].endswith("-egress-googleapis"))
+    assert gapi["direction"] == "EGRESS"
+    assert gapi["destination_ranges"] == ["199.36.153.8/30"]
+    assert gapi["allowed"] == [{"IPProtocol": "tcp", "ports": ["443"]}]
+
+
+def test_render_plan_omits_googleapis_egress_without_private_google_access():
+    """Without Private Google Access the range opens no Google-API egress hole."""
+    plan = render_range_cell_plan("req-123", _variables(), _vertex_config())
+    assert not any(fw["name"].endswith("-egress-googleapis") for fw in plan["firewalls"])
 
 
 def test_resource_bodies_use_proto_field_names():

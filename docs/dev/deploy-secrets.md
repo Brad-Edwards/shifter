@@ -1,5 +1,7 @@
 # Deploy secrets and repository variables
 
+Part of the Shifter deploy and operations docs; start at the [documentation home](../index.md).
+
 The committed `terraform.tfvars` files in `platform/terraform/environments/...`
 and `platform/terraform/gcp/environments/...` ship account-neutral baselines
 that are intentionally broken-on-deploy where real account values are
@@ -17,7 +19,21 @@ under **Settings → Secrets and variables → Actions**, separated by:
 - **Variables**: non-sensitive deployment parameters (region selection,
   feature flags).
 
-Required values are enforced by the workflow preflight step.
+Required values are enforced by the shared deploy preflight
+(`scripts/bootstrap/preflight.py`), which runs the same checks locally and in the
+CI deploy workflows. It reports every missing prerequisite up front before any
+Terraform apply, so a gap fails in seconds rather than mid-run. Validate an
+environment at any time without making changes:
+
+```bash
+./scripts/bootstrap/deploy.py preflight --cloud aws --env dev
+./scripts/bootstrap/deploy.py preflight --cloud gcp --env gcp-dev
+```
+
+The **Required** column in the tables below marks the secrets the preflight
+enforces. The first Identity Platform operator credentials are required unless
+`SHIFTER_SKIP_OPERATOR_BOOTSTRAP=true` is set (locally) or the matching
+repository variable is set (CI); the skip is logged, never silent.
 
 ## Secrets required to stand up an AWS environment
 
@@ -28,20 +44,24 @@ environments. `.github/workflows/deploy.yml` forwards all of these to the
 reusable deploy workflows. The GCP (`gcp-dev`) secrets are separate and listed
 under [GCP (gcp-dev)](#gcp-gcp-dev).
 
-| Secret | Populated by | Notes |
-|---|---|---|
-| `AWS_ROLE_ARN_DEV` | `scripts/bootstrap/deploy.py bootstrap --env dev` | OIDC role the deploy jobs assume. Prod is `AWS_ROLE_ARN`. |
-| `TF_INFRA_STATE_BUCKET_DEV` | `scripts/bootstrap/deploy.py bootstrap --env dev` | Terraform state bucket the backend render reads. Prod is the unsuffixed `TF_INFRA_STATE_BUCKET`. |
-| `TF_VARS_DEV_CORE` | `scripts/sync-deploy-secrets.sh --env dev` | Core stack `local.auto.tfvars` payload (`budget_alert_email`). |
-| `TF_VARS_DEV_RANGE` | `scripts/sync-deploy-secrets.sh --env dev` | Range stack `local.auto.tfvars` payload (`agent_s3_bucket`, `vm_series_ami_id`). |
-| `TF_VARS_DEV_PORTAL` | `scripts/sync-deploy-secrets.sh --env dev` | Portal stack `local.auto.tfvars` payload (domain, email, buckets, capacity). |
-| `SHIFTER_CONFIG_DEV_RANGE` | `scripts/sync-deploy-secrets.sh --env dev --stack config --shifter-config ./shifter.yaml` | Deployment `shifter.yaml`; its `settings.range_egress` renders the range egress allowlist. |
-| `SMOKE_TEST_USER_EMAIL` | manual | Post-deploy smoke user. See [Post-deploy smoke secrets](#post-deploy-smoke-secrets-dev). |
-| `SMOKE_LINUX_AGENT_ID` | manual | Uploaded-agent id. See [Post-deploy smoke secrets](#post-deploy-smoke-secrets-dev). |
-| `SMOKE_WINDOWS_AGENT_ID` | manual | Uploaded-agent id. See [Post-deploy smoke secrets](#post-deploy-smoke-secrets-dev). |
-| `PLATFORM_BOOTSTRAP_STAFF_EMAILS` | manual | Comma-separated emails elevated to Django `is_staff` on first sign-in. Shared across all environments including prod. |
-| `PLATFORM_BOOTSTRAP_SUPERUSER_EMAILS` | manual | Comma-separated emails elevated to `is_superuser`. Shared across all environments including prod. |
-| `SONAR_TOKEN` | manual | SonarCloud analysis token for the PR quality gate. Repository-wide, not per-environment. |
+The **Required** column marks the secrets the deploy preflight
+(`scripts/bootstrap/preflight.py`) enforces before any Terraform apply; a
+missing required secret fails the deploy up front rather than mid-run.
+
+| Secret | Populated by | Required | Notes |
+|---|---|---|---|
+| `AWS_ROLE_ARN_DEV` | `scripts/bootstrap/deploy.py bootstrap --env dev` | yes | OIDC role the deploy jobs assume. Prod is `AWS_ROLE_ARN`. |
+| `TF_INFRA_STATE_BUCKET_DEV` | `scripts/bootstrap/deploy.py bootstrap --env dev` | yes | Terraform state bucket the backend render reads. Prod is the unsuffixed `TF_INFRA_STATE_BUCKET`. |
+| `TF_VARS_DEV_CORE` | `scripts/sync-deploy-secrets.sh --env dev` | yes | Core stack `local.auto.tfvars` payload (`budget_alert_email`). |
+| `TF_VARS_DEV_RANGE` | `scripts/sync-deploy-secrets.sh --env dev` | yes | Range stack `local.auto.tfvars` payload (`agent_s3_bucket`, `vm_series_ami_id`). |
+| `TF_VARS_DEV_PORTAL` | `scripts/sync-deploy-secrets.sh --env dev` | yes | Portal stack `local.auto.tfvars` payload (domain, email, buckets, capacity). |
+| `SHIFTER_CONFIG_DEV_RANGE` | `scripts/sync-deploy-secrets.sh --env dev --stack config --shifter-config ./shifter.yaml` | yes | Deployment `shifter.yaml`; its `settings.range_egress` renders the range egress allowlist. |
+| `SMOKE_TEST_USER_EMAIL` | manual | no | Post-deploy smoke user. See [Post-deploy smoke secrets](#post-deploy-smoke-secrets-dev). |
+| `SMOKE_LINUX_AGENT_ID` | manual | no | Uploaded-agent id. See [Post-deploy smoke secrets](#post-deploy-smoke-secrets-dev). |
+| `SMOKE_WINDOWS_AGENT_ID` | manual | no | Uploaded-agent id. See [Post-deploy smoke secrets](#post-deploy-smoke-secrets-dev). |
+| `PLATFORM_BOOTSTRAP_STAFF_EMAILS` | manual | no | Comma-separated emails elevated to Django `is_staff` on first sign-in. Shared across all environments including prod. |
+| `PLATFORM_BOOTSTRAP_SUPERUSER_EMAILS` | manual | no | Comma-separated emails elevated to `is_superuser`. Shared across all environments including prod. |
+| `SONAR_TOKEN` | manual | no | SonarCloud analysis token for the PR quality gate. Repository-wide, not per-environment. |
 
 "Populated by bootstrap" secrets are set once per account. "Populated by
 `sync-deploy-secrets.sh`" secrets are re-pushed whenever the matching local
@@ -102,8 +122,8 @@ Consumed by `.github/workflows/_gcp-dev.yml`.
 | `GCP_MASTER_AUTHORIZED_CIDRS` | secret | no | HCL list literal, for example `["1.2.3.4/32"]`. Empty (`[]`) locks the GKE control-plane to private endpoints only. |
 | `GCP_SERVICE_ACCOUNT` | secret | yes | Workload-identity-federation service account for deploy. |
 | `GCP_WORKLOAD_IDENTITY_PROVIDER` | secret | yes | Workload identity provider resource id. |
-| `GCP_BOOTSTRAP_ADMIN_EMAIL` | secret | no | If set, bootstrap creates this user as the first Identity Platform operator and elevates them in Django. Must match `GCP_IDENTITY_ALLOWED_EMAIL_DOMAIN`. |
-| `GCP_BOOTSTRAP_ADMIN_PASSWORD` | secret | no | Initial password for the bootstrap operator (rotated by TOTP enrollment on first sign-in). |
+| `GCP_BOOTSTRAP_ADMIN_EMAIL` | secret | yes | First Identity Platform operator, elevated in Django. Must match `GCP_IDENTITY_ALLOWED_EMAIL_DOMAIN`. Required unless `SHIFTER_SKIP_OPERATOR_BOOTSTRAP=true` is set to deliberately skip operator creation (the skip is logged). |
+| `GCP_BOOTSTRAP_ADMIN_PASSWORD` | secret | yes | Initial password for the bootstrap operator (rotated by TOTP enrollment on first sign-in). Required unless `SHIFTER_SKIP_OPERATOR_BOOTSTRAP=true`. |
 | `PLATFORM_BOOTSTRAP_STAFF_EMAILS` | secret | no | Comma-separated list of emails elevated to Django `is_staff` on first sign-in. |
 | `PLATFORM_BOOTSTRAP_SUPERUSER_EMAILS` | secret | no | Comma-separated list of emails elevated to `is_superuser`. |
 
@@ -210,13 +230,15 @@ to use the `aws-dev` deploy branch:
    sets `AWS_ROLE_ARN_DEV` and `TF_INFRA_STATE_BUCKET_DEV` (the env-suffixed
    names the dev deploy workflows read), and writes per-instance Terraform
    backend configs under `~/.shifter/<env>-<bucket>/`.
-2. Apply the runner root with non-default runner network IDs: either a
-   dedicated runner VPC or the portal VPC private tier. Do not use the account
-   default VPC, and do not commit live VPC/subnet IDs to tracked placeholder
-   tfvars; keep them in a gitignored operator override or another approved
-   deploy-time binding. Then register each runner with GitHub. AWS deploy
-   workflows use `runs-on: self-hosted`, and bootstrap does not create the
-   runners.
+2. Run `./scripts/bootstrap/deploy.py runners --env dev --profile <profile>` to
+   provision **and** auto-register the self-hosted runners (issue #1433). It
+   provisions a dedicated, ADR-004-R20-compliant runner VPC by default, applies
+   the runner root, and registers each runner over SSM (per-runner single-use
+   token, never persisted). Pass `--use-existing-network` to reuse a
+   non-default `vpc_id`/`subnet_id` (a dedicated runner VPC or the portal VPC
+   private tier) or the `allow_default_vpc` opt-in instead; do not use the
+   account default VPC without that opt-in, and do not commit live VPC/subnet IDs
+   to tracked placeholder tfvars. AWS deploy workflows use `runs-on: self-hosted`.
 3. Ensure `/shifter/ami/{kali,ubuntu,windows,dc}` exists in SSM Parameter
    Store before portal Terraform plans/applies. The Packer workflow updates
    these parameters after AMI builds; in a moved account, verify the Packer

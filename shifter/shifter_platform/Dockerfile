@@ -1,9 +1,13 @@
 # syntax=docker/dockerfile:1
 
-# Build stage - use uv's official image for faster builds. Tracked by the
-# `docker` dependabot ecosystem; the floating minor tag receives upstream
-# security rebuilds (SonarCloud docker:S8431 forbids tag + digest together).
-FROM ghcr.io/astral-sh/uv:python3.12-trixie-slim AS builder
+# Build stage - use uv's official image for faster builds. Digest-pinned for
+# build provenance (ADR-037-R2): the resolved input is an immutable @sha256,
+# and the "# base image:" comment above the FROM records the human-readable
+# tag. Digest-only (no tag) satisfies SonarCloud docker:S8431 ("specify tag OR
+# digest, not both"). Refresh the digest via the reviewed process in
+# docs/architecture/rev1-build-deployment-provenance.md.
+# base image: python3.12-trixie-slim
+FROM ghcr.io/astral-sh/uv@sha256:3137a0b606f65a74ee0245f43dae219b09e8af98fc37fef20841cbceef35a646 AS builder
 
 WORKDIR /app
 
@@ -31,12 +35,12 @@ COPY shifter_platform/pyproject.toml shifter_platform/uv.lock shifter_platform/r
 # first-party source with no external resolution to lock or hash, so they ride on
 # PYTHONPATH in the production stage instead of through a pip install.
 # --no-dev excludes the [dependency-groups].dev group from the export: dev/test
-# tooling (ruff, pytest, mypy, ...) has no place in the production image, and the
-# group also carries the dev/test-only `aces-sdl` git dependency (issue #1261),
-# which is a git source uv cannot emit a hash for — leaving it in would make the
-# --require-hashes install below fail. Runtime deps live in [project].dependencies
-# and are unaffected. (When #1262 promotes aces-sdl to a runtime dependency it must
-# first be available as a hashable wheel, not a git source.)
+# tooling (ruff, pytest, mypy, ...) has no place in the production image. Runtime
+# deps live in [project].dependencies and are exported here. `aces-sdl` is a
+# runtime dependency (issue #1262: shared.aces.runtime_target imports it) and is
+# installed from its published PyPI wheel, so uv emits a hash for it and the
+# --require-hashes install succeeds; it was previously a git source, which uv
+# cannot hash, and that broke this build when it was promoted to runtime (#1445).
 RUN uv export --no-emit-project --frozen --no-dev > requirements.txt && \
     uv pip install --system --no-cache --no-config \
         --require-hashes --only-binary :all: --no-binary py-ubjson \
@@ -47,10 +51,11 @@ RUN uv export --no-emit-project --frozen --no-dev > requirements.txt && \
 
 # Frontend build stage (ADR-029 / #1302). Builds the SPA bundle into the static
 # tree so collectstatic folds it into STATIC_ROOT. Node is a build-time-only
-# dependency; the production image ships no Node runtime. Tracked by the `docker`
-# dependabot ecosystem; the floating minor tag receives upstream security
-# rebuilds (docker:S8431 forbids tag + digest together).
-FROM node:20-slim AS frontend
+# dependency; the production image ships no Node runtime. Digest-pinned for
+# build provenance (ADR-037-R2); digest-only satisfies docker:S8431. Refresh
+# per docs/architecture/rev1-build-deployment-provenance.md.
+# base image: node:20-slim
+FROM node@sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0 AS frontend
 
 WORKDIR /app/shifter_platform/frontend
 
@@ -68,10 +73,11 @@ COPY shifter_platform/frontend ./
 
 RUN npm run build
 
-# Production stage. Tracked by the `docker` dependabot ecosystem; the floating
-# minor tag receives upstream security rebuilds (docker:S8431 forbids tag +
-# digest together).
-FROM python:3.12-slim-trixie AS production
+# Production stage. Digest-pinned for build provenance (ADR-037-R2);
+# digest-only satisfies docker:S8431. Refresh per
+# docs/architecture/rev1-build-deployment-provenance.md.
+# base image: python:3.12-slim-trixie
+FROM python@sha256:423ed6ab25b1921a477529254bfeeabf5855151dc2c3141699a1bfc852199fbf AS production
 
 # Image metadata. `maintainer` is the label SonarCloud docker:S7028 requires;
 # the org.opencontainers.image.* labels are the modern OCI equivalents.

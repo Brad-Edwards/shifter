@@ -95,6 +95,28 @@ class TestRunnerExposure(unittest.TestCase):
         )
 
 
+class TestSelfHostedClassLabels(unittest.TestCase):
+    """ADR-003-R5 exposure recognizes custom self-hosted-class labels (#1546).
+
+    A GCP-native runner registers with ``--no-default-labels`` + a custom label,
+    so a job selecting it never carries the literal ``self-hosted`` label. The
+    exposure check must still treat such a job as self-hosted-class, or the
+    pull_request-reachability gate develops a blind spot when GCP-dev CI is cut
+    over to its own runner.
+    """
+
+    def test_literal_self_hosted_is_recognized(self):
+        self.assertTrue(ADR_GUARD._dw_is_self_hosted({"runs-on": "self-hosted"}))
+
+    def test_custom_gcp_label_is_recognized_as_self_hosted_class(self):
+        self.assertTrue(ADR_GUARD._dw_is_self_hosted({"runs-on": "gcp-dev"}))
+        self.assertTrue(ADR_GUARD._dw_is_self_hosted({"runs-on": ["gcp-dev"]}))
+
+    def test_github_hosted_label_is_not_self_hosted(self):
+        self.assertFalse(ADR_GUARD._dw_is_self_hosted({"runs-on": "ubuntu-latest"}))
+        self.assertFalse(ADR_GUARD._dw_is_self_hosted({"runs-on": ["ubuntu-latest"]}))
+
+
 class TestUpstreamGating(unittest.TestCase):
     """#781: a failed/cancelled upstream must block every deploy job."""
 
@@ -387,6 +409,72 @@ class TestProvisionerDeployTestGate(unittest.TestCase):
             )
 
 
+class TestEngineValidateRunnerPlacement(unittest.TestCase):
+    """#1474: the engine `validate` image-shape gate runs on the trusted
+    self-hosted runner class so a GitHub-hosted runner-acquisition stall cannot
+    cancel it before steps start (which skipped the whole Platform stage). It is
+    hardened as defense in depth. Runner placement is pinned here as parsed
+    workflow structure - runner class, PR reachability, permissions, needs, and
+    timeout backstop - so the next placement change has one test surface to
+    update. ``TestRunnerExposure`` already proves the generic PR-denial /
+    push-reachability invariant for every self-hosted job.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.engine = _load("_shifter-engine.yml")
+        cls.jobs = ADR_GUARD._dw_jobs(cls.engine, "_shifter-engine.yml")
+        cls.validate = cls.jobs["validate"]
+
+    def test_validate_runs_on_self_hosted(self):
+        self.assertTrue(
+            ADR_GUARD._dw_is_self_hosted(self.validate),
+            "_shifter-engine.yml `validate` must run on the self-hosted runner "
+            "class (#1474); GitHub-hosted acquisition stalls cancelled the job "
+            "and skipped Platform.",
+        )
+
+    def test_validate_denied_on_pull_request_but_runs_on_push(self):
+        expr = ADR_GUARD._dw_job_if(self.validate)
+        self.assertTrue(
+            ADR_GUARD._dw_job_denied_on_pull_request(expr),
+            f"`validate` is self-hosted and must fail closed on pull_request "
+            f"(ADR-003-R5). if: {expr}",
+        )
+        self.assertTrue(
+            ADR_GUARD._dw_evaluate_if(expr, event_name="push"),
+            f"`validate` must still run on push or its PR-denial is vacuous. "
+            f"if: {expr}",
+        )
+
+    def test_validate_depends_on_provisioner_test_gate(self):
+        needs = self.validate.get("needs", [])
+        needs = {needs} if isinstance(needs, str) else set(needs)
+        self.assertIn(
+            "test",
+            needs,
+            "`validate` must depend on the #555 provisioner test gate",
+        )
+
+    def test_validate_keeps_minimal_permissions(self):
+        # Validate does a local image build only and takes no cloud credentials;
+        # it must not request id-token / attestations or any write scope.
+        self.assertEqual(
+            self.validate.get("permissions"),
+            {"contents": "read"},
+            "`validate` must keep contents:read only (no OIDC / attestations)",
+        )
+
+    def test_validate_has_timeout_backstop(self):
+        timeout = self.validate.get("timeout-minutes")
+        self.assertIsInstance(
+            timeout,
+            int,
+            "`validate` must set a timeout-minutes backstop (#1220 convention)",
+        )
+        self.assertGreater(timeout, 0)
+
+
 class TestEngineImageDigest(unittest.TestCase):
     """#935: the engine deploy pins an immutable ECR digest, not a tag lookup."""
 
@@ -449,6 +537,180 @@ class TestWorkflowShapeContract(unittest.TestCase):
             ADR_GUARD._dw_parse_paths_filter(
                 {"jobs": {"changes": {"steps": []}}}, "changes", "filter"
             )
+
+
+class TestWorkflowActionShaPinning(unittest.TestCase):
+    """ADR-037-R1: every non-local ``uses:`` in a cloud-credentialed workflow
+    must pin a full 40-hex commit SHA (``workflow-action-sha-pinning`` check).
+
+    A cloud-credentialed workflow is one that requests ``id-token: write``, runs
+    on a self-hosted runner, invokes a cloud-auth action
+    (``aws-actions/configure-aws-credentials`` / ``google-github-actions/auth``),
+    or passes a ``workload_identity_provider``. In such a workflow an unpinned
+    action is an executable dependency that can move under a maintained tag and
+    run with cloud credentials, so a mutable ref is a supply-chain exposure.
+    """
+
+    RULE = "ADR-037-R1"
+    SHA = "df4cb1c069e1874edd31b4311f1884172cec0e10"  # a real 40-hex commit sha
+
+    @staticmethod
+    def _write_wf(root: Path, name: str, content: str) -> None:
+        wf_dir = root / ".github" / "workflows"
+        wf_dir.mkdir(parents=True, exist_ok=True)
+        (wf_dir / name).write_text(content, encoding="utf-8")
+
+    def test_check_passes_on_real_workflows(self):
+        self.assertEqual(
+            ADR_GUARD.check_workflow_action_sha_pinning(REPO_ROOT, None), []
+        )
+
+    def test_mutable_ref_in_credentialed_workflow_is_flagged(self):
+        wf = (
+            "name: cred\n"
+            "on: [push]\n"
+            "jobs:\n"
+            "  build:\n"
+            "    runs-on: ubuntu-latest\n"
+            "    permissions:\n"
+            "      id-token: write\n"
+            "    steps:\n"
+            "      - uses: actions/checkout@v4\n"
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._write_wf(root, "cred.yml", wf)
+            violations = ADR_GUARD.check_workflow_action_sha_pinning(root, None)
+            self.assertTrue(violations)
+            self.assertTrue(all(v.rule_id == self.RULE for v in violations))
+            self.assertTrue(
+                any("actions/checkout" in v.message for v in violations)
+            )
+
+    def test_sha_pinned_ref_in_credentialed_workflow_passes(self):
+        wf = (
+            "name: cred\n"
+            "on: [push]\n"
+            "jobs:\n"
+            "  build:\n"
+            "    runs-on: [self-hosted]\n"
+            "    steps:\n"
+            f"      - uses: actions/checkout@{self.SHA} # v6.0.3\n"
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._write_wf(root, "cred.yml", wf)
+            self.assertEqual(
+                ADR_GUARD.check_workflow_action_sha_pinning(root, None), []
+            )
+
+    def test_cloud_auth_action_marks_workflow_credentialed(self):
+        wf = (
+            "name: aws\n"
+            "on: [push]\n"
+            "jobs:\n"
+            "  deploy:\n"
+            "    runs-on: ubuntu-latest\n"
+            "    steps:\n"
+            "      - uses: aws-actions/configure-aws-credentials@v4\n"
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._write_wf(root, "aws.yml", wf)
+            violations = ADR_GUARD.check_workflow_action_sha_pinning(root, None)
+            self.assertTrue(violations)
+            self.assertTrue(all(v.rule_id == self.RULE for v in violations))
+
+    def test_noncredentialed_workflow_is_out_of_scope(self):
+        wf = (
+            "name: lint\n"
+            "on: [push]\n"
+            "jobs:\n"
+            "  lint:\n"
+            "    runs-on: ubuntu-latest\n"
+            "    steps:\n"
+            "      - uses: actions/checkout@v4\n"
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._write_wf(root, "lint.yml", wf)
+            self.assertEqual(
+                ADR_GUARD.check_workflow_action_sha_pinning(root, None), []
+            )
+
+    def test_local_reusable_workflow_ref_is_allowed(self):
+        wf = (
+            "name: orch\n"
+            "on: [push]\n"
+            "permissions:\n"
+            "  id-token: write\n"
+            "jobs:\n"
+            "  call:\n"
+            "    uses: ./.github/workflows/_core.yml\n"
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._write_wf(root, "orch.yml", wf)
+            self.assertEqual(
+                ADR_GUARD.check_workflow_action_sha_pinning(root, None), []
+            )
+
+    def test_mutable_docker_action_in_credentialed_workflow_is_flagged(self):
+        wf = (
+            "name: cred\n"
+            "on: [push]\n"
+            "jobs:\n"
+            "  build:\n"
+            "    runs-on: ubuntu-latest\n"
+            "    permissions:\n"
+            "      id-token: write\n"
+            "    steps:\n"
+            "      - uses: docker://registry.example/action:v1\n"
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._write_wf(root, "cred.yml", wf)
+            violations = ADR_GUARD.check_workflow_action_sha_pinning(root, None)
+            self.assertTrue(violations)
+            self.assertTrue(all(v.rule_id == self.RULE for v in violations))
+            self.assertTrue(any("docker://" in v.message for v in violations))
+
+    def test_digest_pinned_docker_action_passes(self):
+        wf = (
+            "name: cred\n"
+            "on: [push]\n"
+            "jobs:\n"
+            "  build:\n"
+            "    runs-on: ubuntu-latest\n"
+            "    permissions:\n"
+            "      id-token: write\n"
+            f"    steps:\n"
+            f"      - uses: docker://registry.example/action@sha256:{'a' * 64}\n"
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._write_wf(root, "cred.yml", wf)
+            self.assertEqual(
+                ADR_GUARD.check_workflow_action_sha_pinning(root, None), []
+            )
+
+    def test_unparseable_workflow_fails_closed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._write_wf(root, "broken.yml", "this: [is: not: valid: yaml\n")
+            violations = ADR_GUARD.check_workflow_action_sha_pinning(root, None)
+            self.assertTrue(violations)
+            self.assertTrue(all(v.rule_id == self.RULE for v in violations))
+
+    def test_changed_scope_ignores_unrelated_files(self):
+        # With an explicit changed-file set that touches no workflow and not the
+        # adr_guard script, the check is a no-op (path-gated like its siblings).
+        self.assertEqual(
+            ADR_GUARD.check_workflow_action_sha_pinning(
+                REPO_ROOT, ["shifter/shifter_platform/README.md"]
+            ),
+            [],
+        )
 
 
 if __name__ == "__main__":

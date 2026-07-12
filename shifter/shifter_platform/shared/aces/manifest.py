@@ -59,18 +59,34 @@ __all__ = [
     "render_shifter_backend_manifest_payload",
 ]
 
-#: Shifter's honest provisioning capability envelope. Shifter provisions virtual
-#: machine instances (EC2 / GDC) running Linux and Windows guests. Account,
-#: ACL, and content-placement realization are not exposed as authored ACES
-#: scenario semantics in this slice, so they stay off -- every declared term is
-#: backed by real capability, so the manifest cannot over-claim.
+#: Shifter's honest provisioning capability envelope (issue #1563: a realizability
+#: ledger, not an aspiration). Shifter provisions virtual machine instances
+#: (EC2 / GDC / GCE) running Linux and Windows guests, realizes authored networks
+#: (``switch`` nodes) as backend networks/subnets, realizes authored node ACLs as
+#: backend firewall rules, and realizes authored composition as guest bootstrap:
+#: ``directory`` content placements, feature bindings, and account placements
+#: (groups/shell/home/disabled/auth_method). Every declared term must be backed by a real
+#: guest effect (ADR-031 / ADR-032); a term realized only structurally or as a
+#: marker file is dropped until its sibling issue lands genuine realization plus
+#: cross-boundary evidence -- ``mail`` (no common provider), ``spn`` (#1561), and
+#: source-backed content ``file`` / ``dataset`` (#1564). ``file`` is one coarse
+#: type-level capability that cannot distinguish an inline file (realized) from a
+#: source-backed file (only a parent directory is created), so it stays out
+#: entirely rather than admit the unrealized shape. ``switch`` is required for any
+#: networked scenario: the aces-sdl planner rejects every network resource unless
+#: the backend declares switch support (matches the libvirt/reference backends).
+#: The apply-time account-feature realization gate (``shared.aces.realization_ledger``
+#: consumed by ``shared.aces.composition_envelope``) is an INDEPENDENT evidence
+#: envelope: re-declaring a term here does not by itself make a plan admissible.
 SHIFTER_PROVISIONER_CAPABILITIES = ProvisionerCapabilities(
     name="shifter-provisioner",
-    supported_node_types=frozenset({"vm"}),
+    supported_node_types=frozenset({"vm", "switch"}),
     supported_os_families=frozenset({"linux", "windows"}),
+    supported_content_types=frozenset({"directory"}),
+    supported_account_features=frozenset({"groups", "shell", "home", "disabled", "auth_method"}),
     max_total_nodes=None,
-    supports_acls=False,
-    supports_accounts=False,
+    supports_acls=True,
+    supports_accounts=True,
 )
 
 

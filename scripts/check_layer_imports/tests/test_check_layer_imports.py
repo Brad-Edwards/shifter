@@ -14,6 +14,7 @@ from check_layer_imports import (
     analyze_cyberscript_imports,
     analyze_imports,
     analyze_private_facade_imports,
+    classified_packages,
     compute_cyberscript_violations,
     compute_private_facade_violations,
     compute_stats,
@@ -26,6 +27,7 @@ from check_layer_imports import (
 )
 
 SCRIPT_PATH = Path(__file__).resolve().parent.parent / "check_layer_imports.py"
+LAYER_IMPORTS_YAML = Path(__file__).resolve().parent.parent / "layer_imports.yaml"
 
 
 class TestLayerConfiguration:
@@ -38,6 +40,17 @@ class TestLayerConfiguration:
         assert "cms" in ALL_LAYERS
         assert "management" in ALL_LAYERS
         assert "mission_control" in ALL_LAYERS
+        assert "ctf" in ALL_LAYERS
+        assert "config" in ALL_LAYERS
+        assert "risk_register" in ALL_LAYERS
+
+    def test_all_layers_set_equality_with_canonical_classification(self):
+        """ALL_LAYERS must exactly equal the canonical classification (#1523).
+
+        The hard-coded list is a static mirror of layer_imports.yaml's
+        classification; drift in either direction is a bug.
+        """
+        assert set(ALL_LAYERS) == classified_packages(LAYER_IMPORTS_YAML)
 
 
 class TestImportPattern:

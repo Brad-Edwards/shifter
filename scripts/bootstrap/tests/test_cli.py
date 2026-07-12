@@ -298,6 +298,7 @@ class TestMainCLI:
         with (
             patch("sys.argv", ["deploy.py", "bootstrap", "--env", "dev", "--profile", "test"]),
             patch("deploy.check_dependencies") as mock_check,
+            patch("shutil.which", return_value="/usr/bin/tool"),
             patch("deploy.bootstrap_account"),
             patch("deploy.walkthrough_github_secrets"),
             patch("deploy.walkthrough_backend_config"),
@@ -306,7 +307,7 @@ class TestMainCLI:
 
             deploy.main()
 
-            mock_check.assert_called_once_with("bootstrap")
+            mock_check.assert_called_once_with("bootstrap", cloud=None)
 
     # ---------------------------------------------------------------------
     # Command execution
@@ -317,6 +318,7 @@ class TestMainCLI:
         with (
             patch("sys.argv", ["deploy.py", "bootstrap", "--env", "dev", "--profile", "test"]),
             patch("deploy.check_dependencies"),
+            patch("shutil.which", return_value="/usr/bin/tool"),
             patch("deploy.bootstrap_account") as mock_bootstrap,
             patch("deploy.walkthrough_github_secrets"),
             patch("deploy.walkthrough_backend_config"),
@@ -332,6 +334,7 @@ class TestMainCLI:
         with (
             patch("sys.argv", ["deploy.py", "terraform", "--env", "dev", "--profile", "test"]),
             patch("deploy.check_dependencies"),
+            patch("shutil.which", return_value="/usr/bin/tool"),
             patch("deploy.get_repo_root", return_value=mock_repo_root),
             patch("deploy.terraform_deploy") as mock_terraform,
             patch("deploy.walkthrough_acm_validation"),
@@ -350,6 +353,7 @@ class TestMainCLI:
         with (
             patch("sys.argv", ["deploy.py", "full", "--env", "dev", "--profile", "test"]),
             patch("deploy.check_dependencies"),
+            patch("shutil.which", return_value="/usr/bin/tool"),
             patch("deploy.full_deployment") as mock_full,
         ):
             deploy.main()
@@ -382,6 +386,7 @@ class TestMainCLI:
         with (
             patch("sys.argv", ["deploy.py", "bootstrap", "--env", "dev", "--profile", "test", "--dry-run"]),
             patch("deploy.check_dependencies"),
+            patch("shutil.which", return_value="/usr/bin/tool"),
             patch("deploy.bootstrap_account") as mock_bootstrap,
             patch("deploy.walkthrough_github_secrets"),
             patch("deploy.walkthrough_backend_config"),
@@ -398,6 +403,7 @@ class TestMainCLI:
         with (
             patch("sys.argv", ["deploy.py", "terraform", "--env", "dev", "--profile", "test", "--dry-run"]),
             patch("deploy.check_dependencies"),
+            patch("shutil.which", return_value="/usr/bin/tool"),
             patch("deploy.get_repo_root", return_value=mock_repo_root),
             patch("deploy.terraform_deploy") as mock_terraform,
         ):
@@ -428,3 +434,121 @@ class TestMainCLI:
             deploy.main()
 
             assert mock_gdc_bootstrap.call_args[1]["dry_run"] is True
+
+    # ---------------------------------------------------------------------
+    # preflight subcommand (shared deploy prerequisite gate)
+    #
+    # Observable behavior only: the real gate runs against a patched shutil.which
+    # boundary (ADR-019), so a present toolchain passes and a missing one exits 1.
+    # ---------------------------------------------------------------------
+
+    def test_preflight_command_passes_when_tools_present(self, mock_stdin_non_tty):
+        """preflight --cloud aws exits cleanly when the required tools are on PATH."""
+        with (
+            patch("sys.argv", ["deploy.py", "preflight", "--cloud", "aws", "--env", "dev"]),
+            patch("shutil.which", return_value="/usr/bin/tool"),
+        ):
+            deploy.main()
+
+    def test_preflight_command_fails_on_missing_tool(self, mock_stdin_non_tty):
+        """preflight fails fast (exit 1) when a required deploy tool is missing.
+
+        git is present so check_dependencies passes; terraform/aws are absent so the
+        preflight gate itself is what fails.
+        """
+        with (
+            patch("sys.argv", ["deploy.py", "preflight", "--cloud", "aws", "--env", "dev"]),
+            patch("shutil.which", side_effect=lambda name: "/usr/bin/git" if name == "git" else None),
+            pytest.raises(SystemExit) as exc,
+        ):
+            deploy.main()
+        assert exc.value.code == 1
+
+    # ---------------------------------------------------------------------
+    # runners subcommand (issue #1433)
+    #
+    # These assert observable behavior (argparse wiring + the dry-run command
+    # plan printed by the real handler) rather than patching first-party seams,
+    # per the ADR-019 boundary-mock policy.
+    # ---------------------------------------------------------------------
+
+    def test_runners_command_requires_env_and_profile(self):
+        """runners subcommand requires both --env and --profile."""
+        with (
+            patch("sys.argv", ["deploy.py", "runners"]),
+            pytest.raises(SystemExit),
+        ):
+            deploy.main()
+
+    def test_runners_subcommand_exposes_its_flags(self, capsys):
+        """The runners subparser is wired with its automation flags."""
+        with (
+            patch("sys.argv", ["deploy.py", "runners", "--help"]),
+            pytest.raises(SystemExit),
+        ):
+            deploy.main()
+
+        help_text = capsys.readouterr().out
+        assert "--use-existing-network" in help_text
+        assert "--runner-count" in help_text
+        # GCP runner path (issue #1546) is wired on the same subcommand.
+        assert "--cloud" in help_text
+        assert "--project-id" in help_text
+
+    def test_runners_cloud_gcp_dispatches_to_gcp_path(self, capsys):
+        """--cloud gcp dry-run plans the GCP runner root, never the AWS SSM path.
+
+        Asserts observable behavior (ADR-019) rather than patching first-party
+        dispatch seams: the GCP path is the only one that threads project_id into
+        the Terraform plan and it never emits an SSM send-command.
+        """
+        with (
+            patch(
+                "sys.argv",
+                ["deploy.py", "runners", "--cloud", "gcp", "--env", "gcp-dev", "--project-id", "my-proj", "--dry-run"],
+            ),
+            patch("shutil.which", return_value="/usr/bin/tool"),
+        ):
+            deploy.main()
+
+        out = capsys.readouterr().out
+        assert "project_id=my-proj" in out
+        assert "send-command" not in out  # never the AWS SSM registration path
+
+    def test_runners_cloud_aws_requires_profile(self):
+        """--cloud aws (default) without --profile fails closed before any work."""
+        with (
+            patch("sys.argv", ["deploy.py", "runners", "--env", "dev"]),
+            patch("shutil.which", return_value="/usr/bin/tool"),
+            pytest.raises(SystemExit),
+        ):
+            deploy.main()
+
+
+class TestRunnersDeployment:
+    """Observable behavior of the runners_deployment handler in dry-run."""
+
+    def test_provisions_dedicated_network_by_default(self, capsys):
+        """Dry-run plans the runner apply with create_runner_network=true and no token."""
+        deploy.runners_deployment("dev", "test", dry_run=True)
+
+        out = capsys.readouterr().out
+        assert "terraform" in out
+        assert "create_runner_network=true" in out
+        # Dry-run must not mint a token or send an SSM command.
+        assert "registration-token" not in out
+        assert "send-command" not in out
+
+    def test_use_existing_network_disables_created_vpc(self, capsys):
+        """--use-existing-network plans with create_runner_network=false."""
+        deploy.runners_deployment("dev", "test", dry_run=True, use_existing_network=True)
+
+        out = capsys.readouterr().out
+        assert "create_runner_network=false" in out
+
+    def test_runner_count_override_reaches_terraform(self, capsys):
+        """--runner-count is threaded into the terraform plan vars."""
+        deploy.runners_deployment("dev", "test", dry_run=True, runner_count=5)
+
+        out = capsys.readouterr().out
+        assert "runner_count=5" in out

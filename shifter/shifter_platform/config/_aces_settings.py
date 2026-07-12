@@ -22,12 +22,41 @@ The design contract lives in
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 __all__ = [
+    "ACES_NATIVE_PROVISIONING_ENABLED",
     "ACES_OPERATION_RECORD_PRUNE_BATCH_SIZE",
     "ACES_OPERATION_RECORD_PRUNE_INTERVAL_SECONDS",
     "ACES_OPERATION_RECORD_RETENTION_DAYS",
+    "ACES_PACKAGE_ROOT",
 ]
+
+# Master feature flag for the ACES-native provisioning path (ADR-031). When
+# False (the default), the ACES-native RuntimeTarget backend, dispatch, engine
+# consumption, provisioner realization, and ACES catalog launchability are all
+# inert, and the existing cyberscript scenario -> RangeSpec -> hydrate ->
+# interpret -> provisioner path is unchanged and authoritative (PLAT-2008,
+# ADR-031-R2). Flipping this to True is a deliberate, separately-authorized
+# cutover step, not a routine deploy toggle. Read via the literal os.environ.get
+# form so the generated config/env-manifest.json picks it up automatically.
+ACES_NATIVE_PROVISIONING_ENABLED = os.environ.get("SHIFTER_ACES_NATIVE_PROVISIONING", "False").lower() == "true"
+
+# Filesystem root under which an ACES package_ref is resolved to its SDL entry
+# file by the native launch loader (#1479). Repo-relative package refs are joined
+# to this root with containment enforcement (no traversal escape). Defaults to
+# the repo root so in-repo scenario packages (e.g. scenario-dev/...) resolve out
+# of the box; override per environment when packages live elsewhere. Read via the
+# literal os.environ.get form so config/env-manifest.json picks it up.
+# In the source tree config/ sits at shifter/shifter_platform/config, so
+# parents[3] is the repo root (where in-repo scenario packages like scenario-dev/
+# live). In the deployed container the tree is flattened to /app, so parents[3]
+# does not exist; fall back to the app root instead of raising IndexError at
+# import (which would break every image build / settings load). The default is
+# only a starting point anyway — override SHIFTER_ACES_PACKAGE_ROOT per env.
+_aces_settings_parents = Path(__file__).resolve().parents
+_aces_default_package_root = _aces_settings_parents[3] if len(_aces_settings_parents) > 3 else _aces_settings_parents[1]
+ACES_PACKAGE_ROOT = os.environ.get("SHIFTER_ACES_PACKAGE_ROOT", str(_aces_default_package_root))
 
 # Days a runtime snapshot / operation-record row is retained before it becomes
 # eligible for pruning. Measured from the row's source_timestamp so idempotent

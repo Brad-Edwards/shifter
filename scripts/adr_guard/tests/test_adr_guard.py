@@ -87,6 +87,109 @@ class AdrGuardTests(unittest.TestCase):
             self.assertEqual(len(violations), 1)
             self.assertIn("unknown rule id", violations[0].message)
 
+    def test_range_substrate_interface_contract_is_structurally_enforced(self) -> None:
+        contract = {
+            "kind": "range-substrate/v1",
+            "operations": ["provision", "destroy", "pause", "resume"],
+            "resources": ["network", "instance", "ngfw", "remote-access"],
+            "conformance": {
+                "shared_black_box_suite": True,
+                "real_provider_promotion_evidence": True,
+            },
+            "adapters": {
+                "initial": ["aws-terraform", "gcp-gdc"],
+                "deferred": ["azure"],
+            },
+            "issue_references": {
+                "283": {"disposition": "out-of-scope"},
+                "478": {"operations": ["provision", "destroy", "pause", "resume"]},
+                "265": {"disposition": "out-of-scope"},
+                "277": {"disposition": "out-of-scope"},
+            },
+        }
+
+        self.assertEqual(ADR_GUARD.validate_interface_contract(contract, "ADR-039"), [])
+
+        mutations = {
+            "missing operation": lambda value: value["operations"].remove("pause"),
+            "missing resource": lambda value: value["resources"].remove("remote-access"),
+            "missing conformance evidence": lambda value: value["conformance"].update(
+                {"real_provider_promotion_evidence": False}
+            ),
+            "azure not deferred": lambda value: value["adapters"].update(
+                {"initial": ["aws-terraform", "gcp-gdc", "azure"], "deferred": []}
+            ),
+            "missing program reference": lambda value: value["issue_references"].pop("478"),
+            "unmapped program reference": lambda value: value["issue_references"].update(
+                {"478": {}}
+            ),
+            "contradictory program reference": lambda value: value[
+                "issue_references"
+            ].update(
+                {
+                    "478": {
+                        "operations": ["provision"],
+                        "disposition": "out-of-scope",
+                    }
+                }
+            ),
+            "unknown program disposition": lambda value: value[
+                "issue_references"
+            ].update({"478": {"disposition": "covered-elsewhere"}}),
+            "duplicate program operation": lambda value: value[
+                "issue_references"
+            ].update({"478": {"operations": ["provision", "provision"]}}),
+        }
+        for label, mutate in mutations.items():
+            with self.subTest(label=label):
+                changed = json.loads(json.dumps(contract))
+                mutate(changed)
+                self.assertTrue(ADR_GUARD.validate_interface_contract(changed, "ADR-039"))
+
+        invalid_contract = json.loads(json.dumps(contract))
+        invalid_contract["operations"].remove("pause")
+        entry_with_invalid_contract = {
+            "id": "ADR-039",
+            "title": "Provider-neutral range substrate",
+            "status": "accepted",
+            "scope": "range_provisioning",
+            "decision": "d",
+            "interface_contract": invalid_contract,
+            "rules": [],
+            "exceptions": [],
+            "enforcement": ["ci"],
+            "evidence": ["x"],
+        }
+        invalid_contract_violations: list[ADR_GUARD.Violation] = []
+        ADR_GUARD._check_adr_entry(
+            entry_with_invalid_contract,
+            set(),
+            set(),
+            invalid_contract_violations,
+        )
+        self.assertTrue(
+            any(
+                item.path == "docs/adr/index.yaml"
+                and "interface_contract.operations must contain exactly" in item.message
+                for item in invalid_contract_violations
+            )
+        )
+
+        entry_without_contract = {
+            "id": "ADR-039",
+            "title": "Provider-neutral range substrate",
+            "status": "accepted",
+            "scope": "range_provisioning",
+            "decision": "d",
+            "rules": [],
+            "exceptions": [],
+            "enforcement": ["ci"],
+            "evidence": ["x"],
+        }
+        violations: list[ADR_GUARD.Violation] = []
+        ADR_GUARD._check_adr_entry(entry_without_contract, set(), set(), violations)
+        self.assertTrue(any("interface_contract" in item.message for item in violations))
+
     def test_validate_adr_exceptions_rejects_expired_entries(self) -> None:
         errors = ADR_GUARD.validate_adr_exceptions(
             [
@@ -266,13 +369,12 @@ class DeployWorkflowPlanScopeTests(unittest.TestCase):
             "**",
             "!docs/**",
             "!**/*.md",
-            "!shifter/shifter_platform/documentation/**",
         ]
         guardrail_doc_globs = guardrail_doc_globs or [
             ".github/pull_request_template.md",
             ".github/copilot-instructions.md",
             "docs/adr/**",
-            "shifter/shifter_platform/documentation/docs/technical/dev/adr-enforcement.md",
+            "docs/technical/dev/adr-enforcement.md",
         ]
         portal_image_globs = portal_image_globs or ["shifter/shifter_platform/**"]
         quality_only_globs = quality_only_globs or [
@@ -642,7 +744,7 @@ class DeployWorkflowPlanScopeTests(unittest.TestCase):
                 self._deploy_text(
                     guardrail_doc_globs=[
                         "docs/adr/**",
-                        "shifter/shifter_platform/documentation/docs/technical/dev/adr-enforcement.md",
+                        "docs/technical/dev/adr-enforcement.md",
                     ]
                 ),
                 self._platform_text(),
@@ -852,7 +954,6 @@ class DeployWorkflowPlanScopeTests(unittest.TestCase):
                 "              - '**'\n"
                 "              - '!docs/**'\n"
                 "              - '!**/*.md'\n"
-                "              - '!shifter/shifter_platform/documentation/**'\n"
                 "      - id: quality_guardrails\n"
                 "        with:\n"
                 "          filters: |\n"
@@ -860,7 +961,7 @@ class DeployWorkflowPlanScopeTests(unittest.TestCase):
                 "              - '.github/pull_request_template.md'\n"
                 "              - '.github/copilot-instructions.md'\n"
                 "              - 'docs/adr/**'\n"
-                "              - 'shifter/shifter_platform/documentation/docs/technical/dev/adr-enforcement.md'\n"
+                "              - 'docs/technical/dev/adr-enforcement.md'\n"
                 "  quality:\n"
                 "    if: |\n"
                 "      # needs.changes.outputs.quality_relevant == 'true'\n"
@@ -4923,6 +5024,9 @@ class NoLiveCloudIdentifiersTests(unittest.TestCase):
     REAL_ACCOUNT = "9" * 12  # twelve nines - not in the synthetic allowlist
     REAL_VPC = "vpc-" + "a" * 17
     REAL_SUBNET = "subnet-" + "b" * 17
+    # A globally-routable public IPv4 not in the well-known-infra allowlist,
+    # assembled so the literal never appears in this tracked source.
+    REAL_PUBLIC_IP = "45.77." + "12.9"
     ACCT_BUCKET = "shifter-polaris-bake-dev-" + "9" * 12
     UUID_BUCKET = "shifter-dev-infra-" + "-".join(
         ["a" * 8, "b" * 4, "c" * 4, "d" * 4, "e" * 12]
@@ -4964,6 +5068,52 @@ class NoLiveCloudIdentifiersTests(unittest.TestCase):
             for v in violations:
                 self.assertEqual(v.rule_id, "ADR-004-R14")
                 self.assertNotIn(self.REAL_SUBNET, v.message)
+
+    def test_flags_public_ip_in_iac_value(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            self._write(
+                repo_root,
+                "platform/terraform/x/main.tf",
+                f'  cidr_ipv4 = "{self.REAL_PUBLIC_IP}/32"\n',
+            )
+            violations = ADR_GUARD.check_no_live_cloud_identifiers(repo_root, None)
+            self.assertEqual({v.path for v in violations}, {"platform/terraform/x/main.tf"})
+            for v in violations:
+                self.assertEqual(v.rule_id, "ADR-004-R14")
+                self.assertIn("public IP", v.message)
+                self.assertNotIn(self.REAL_PUBLIC_IP, v.message)
+
+    def test_allows_public_ip_in_iac_comment(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            self._write(
+                repo_root,
+                "platform/terraform/x/main.tf",
+                f"  # policy example: a broad range like {self.REAL_PUBLIC_IP}/1 is rejected\n",
+            )
+            self.assertEqual(ADR_GUARD.check_no_live_cloud_identifiers(repo_root, None), [])
+
+    def test_ignores_public_ip_outside_iac_files(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            self._write(repo_root, "docs/notes.md", f"admin egress was {self.REAL_PUBLIC_IP}\n")
+            self.assertEqual(ADR_GUARD.check_no_live_cloud_identifiers(repo_root, None), [])
+
+    def test_allows_wellknown_and_documentation_ips_in_iac(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            self._write(
+                repo_root,
+                "platform/terraform/x/net.tf",
+                'dns        = ["8.8.8.8", "8.8.4.4", "1.1.1.1"]\n'
+                'gcp_health = ["130.211.0.0/22", "35.191.0.0/16"]\n'
+                'gcp_iap    = "35.235.240.0/20"\n'
+                'googleapis = "199.36.153.8/30"\n'
+                'doc        = "203.0.113.10/32"\n'
+                'private    = "10.0.0.0/8"\n',
+            )
+            self.assertEqual(ADR_GUARD.check_no_live_cloud_identifiers(repo_root, None), [])
 
     def test_flags_account_suffixed_bucket(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -5126,7 +5276,7 @@ class NoLiveCloudIdentifiersTests(unittest.TestCase):
 class DocumentationCoverageTests(unittest.TestCase):
     """ADR-022-R1: major features carry user and technical documentation."""
 
-    DOCS_ROOT = "shifter/shifter_platform/documentation/docs"
+    DOCS_ROOT = "docs"
 
     def _write_repo(self, repo_root: Path, manifest: object, docs: dict[str, str]) -> None:
         adr_dir = repo_root / "docs" / "adr"

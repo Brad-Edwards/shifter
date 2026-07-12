@@ -9,8 +9,6 @@ Tests cover:
 
 from __future__ import annotations
 
-from datetime import timedelta
-
 from django.test import override_settings
 from django.urls import reverse
 from django.utils import timezone
@@ -209,8 +207,8 @@ class TestAdminParticipantImportView:
             "Line 2: Expected name,email format",
         ]
 
-    def test_rejects_duplicate_emails_in_csv(self, authenticated_organizer_client, ctf_event):
-        """POST with duplicate emails in CSV shows error."""
+    def test_allows_duplicate_delivery_emails_in_csv(self, authenticated_organizer_client, ctf_event):
+        """Delivery email is optional metadata, not an identity key."""
         url = reverse("ctf:admin_participant_import", kwargs={"event_id": ctf_event.id})
 
         csv_content = "Alice,alice@example.com\nAlice Copy,alice@example.com"
@@ -225,12 +223,11 @@ class TestAdminParticipantImportView:
 
         response = authenticated_organizer_client.post(url, {"csv_file": csv_file})
 
-        assert response.status_code == 200
-        # No participants should be created
-        assert not CTFParticipant.objects.filter(event=ctf_event, email="alice@example.com").exists()
+        assert response.status_code == 302
+        assert CTFParticipant.objects.filter(event=ctf_event, email="alice@example.com").count() == 2
 
-    def test_rejects_existing_participant_email(self, authenticated_organizer_client, ctf_event):
-        """POST with email of existing participant shows error."""
+    def test_allows_existing_delivery_email(self, authenticated_organizer_client, ctf_event):
+        """A delivery address may serve multiple isolated accounts."""
         # Create existing participant
         CTFParticipant.objects.create(
             event=ctf_event,
@@ -254,9 +251,9 @@ class TestAdminParticipantImportView:
 
         response = authenticated_organizer_client.post(url, {"csv_file": csv_file})
 
-        assert response.status_code == 200
-        # New user should not be created either (atomic failure)
-        assert not CTFParticipant.objects.filter(event=ctf_event, email="new@example.com").exists()
+        assert response.status_code == 302
+        assert CTFParticipant.objects.filter(event=ctf_event, email="existing@example.com").count() == 2
+        assert CTFParticipant.objects.filter(event=ctf_event, email="new@example.com").exists()
 
     def test_denies_access_to_other_organizer_event(self, client, ctf_event, second_organizer_user):
         """View denies access to events owned by other organizers."""
@@ -377,8 +374,8 @@ class TestAdminParticipantAddView:
         assert participant.status == ParticipantStatus.REGISTERED.value
         assert participant.user is not None
 
-    def test_rejects_duplicate_email(self, authenticated_organizer_client, ctf_event):
-        """POST with duplicate email shows error."""
+    def test_allows_duplicate_delivery_email(self, authenticated_organizer_client, ctf_event):
+        """Single-add also treats email as delivery-only metadata."""
         # Create existing participant
         CTFParticipant.objects.create(
             event=ctf_event,
@@ -398,10 +395,8 @@ class TestAdminParticipantAddView:
             },
         )
 
-        assert response.status_code == 200
-        non_field_errors = response.context["form"].non_field_errors()
-        assert len(non_field_errors) == 1
-        assert "already exists in this event" in non_field_errors[0]
+        assert response.status_code == 302
+        assert CTFParticipant.objects.filter(event=ctf_event, email="existing@example.com").count() == 2
 
 
 class TestAPIParticipantList:
@@ -536,18 +531,21 @@ class TestAPIParticipantImport:
 
 
 class TestAPIParticipantResendInvite:
-    """Tests for resending participant invites."""
+    """Tests for resetting and delivering participant credentials."""
 
-    def test_resend_regenerates_token(self, authenticated_organizer_client, ctf_event):
-        """Resend invite generates new token and updates expiry."""
-        participant = CTFParticipant.objects.create(
-            event=ctf_event,
+    def test_resend_resets_password(self, authenticated_organizer_client, ctf_event, monkeypatch):
+        """The compatibility endpoint performs an explicit credential reset."""
+        from ctf.services.participant.accounts import create_participant_accounts
+
+        monkeypatch.setattr("ctf.services.participant.accounts.request_event_provisioning", lambda *_a, **_kw: None)
+        monkeypatch.setattr("ctf.services.notification._send_email", lambda **_kw: None)
+        participant = create_participant_accounts(
+            ctf_event.id,
+            count=1,
             email="resend@example.com",
-            name="Resend User",
-            status=ParticipantStatus.INVITED.value,
-            invited_at=timezone.now() - timedelta(days=5),
-        )
-        old_token = participant.invite_token
+        )[0]
+        participant.user.set_password("ChangedPassword-42")
+        participant.user.save(update_fields=["password"])
 
         url = reverse(
             "ctf:api_participant_resend_invite",
@@ -556,28 +554,30 @@ class TestAPIParticipantResendInvite:
         response = authenticated_organizer_client.post(url)
 
         assert response.status_code == 200
+        participant.user.refresh_from_db()
+        assert participant.user.check_password("ShifterAcesRanges")
 
-        participant.refresh_from_db()
-        assert participant.invite_token != old_token
-        assert participant.invite_token_expires == ctf_event.event_end
+    def test_resend_works_for_registered_participant(self, authenticated_organizer_client, ctf_event, monkeypatch):
+        """Reset works for an already registered isolated account."""
+        from ctf.services.participant.accounts import create_participant_accounts
 
-    def test_resend_works_for_registered_participant(self, authenticated_organizer_client, ctf_participant):
-        """Resend works for registered participants (sends magic link)."""
-        # ctf_participant fixture has user linked (registered)
-        old_token = ctf_participant.invite_token
+        monkeypatch.setattr("ctf.services.participant.accounts.request_event_provisioning", lambda *_a, **_kw: None)
+        monkeypatch.setattr("ctf.services.notification._send_email", lambda **_kw: None)
+        participant = create_participant_accounts(ctf_event.id, count=1)[0]
+        participant.user.set_password("PreviouslyChangedPassword-42")
+        participant.user.save(update_fields=["password"])
         url = reverse(
             "ctf:api_participant_resend_invite",
-            kwargs={"participant_id": ctf_participant.id},
+            kwargs={"participant_id": participant.id},
         )
         response = authenticated_organizer_client.post(url)
 
         assert response.status_code == 200
         data = response.json()
         assert data["success"] is True
-        # The registered/ACTIVE path must still rotate the invite token, not
-        # just return success — otherwise a broken ACTIVE branch would pass.
-        ctf_participant.refresh_from_db()
-        assert ctf_participant.invite_token != old_token
+        participant.user.refresh_from_db()
+        assert participant.user.check_password("ShifterAcesRanges")
+        assert participant.user.profile.must_change_password is True
 
 
 class TestTeamJoinCapacityGuard:

@@ -26,12 +26,25 @@ from pathlib import Path
 
 import yaml
 
-ALL_LAYERS = ["shared", "engine", "cms", "management", "mission_control", "ctf"]
+# Every first-party Django app is classified (ADR-001, #1523). Held to
+# set-equality with the canonical classification in layer_imports.yaml by
+# tests/test_check_layer_imports.py.
+ALL_LAYERS = [
+    "shared",
+    "engine",
+    "cms",
+    "management",
+    "mission_control",
+    "ctf",
+    "config",
+    "risk_register",
+]
 
 # Regex to match imports from our layers (including indented imports in functions)
 # Captures the full module path (e.g., "shared.exceptions" from "from shared.exceptions import X")
 IMPORT_PATTERN = re.compile(
-    r"^\s*(?:from|import)\s+((?:shared|engine|cms|management|mission_control|ctf)(?:\.\w+)*)",
+    r"^\s*(?:from|import)\s+"
+    r"((?:shared|engine|cms|management|mission_control|ctf|config|risk_register)(?:\.\w+)*)",
     re.MULTILINE,
 )
 
@@ -55,6 +68,23 @@ def load_allowed_imports(config_path: Path) -> dict[str, list[str]]:
     with open(Path(config_path).resolve()) as f:
         config = yaml.safe_load(f)
     return config.get("allowed", {})
+
+
+def load_classification(config_path: Path) -> dict[str, list[str]]:
+    """Load the canonical package classification map from the YAML config.
+
+    Returns dict mapping classification name (domain / presentation /
+    support_contracts / support_composition) -> list of package names.
+    """
+    with open(Path(config_path).resolve()) as f:
+        config = yaml.safe_load(f)
+    return config.get("classification", {})
+
+
+def classified_packages(config_path: Path) -> set[str]:
+    """Return the set of every classified first-party package (canonical)."""
+    classification = load_classification(config_path)
+    return {pkg for packages in classification.values() for pkg in packages}
 
 
 def is_import_allowed(from_layer: str, module_path: str, allowed: dict[str, list[str]]) -> bool:

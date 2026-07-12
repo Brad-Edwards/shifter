@@ -198,13 +198,11 @@ class TestGcpProvisionerEnvOverrides:
 
 
 class TestGcpTaskDispatch:
-    def test_public_start_functions_dispatch_with_gcp_env_overrides(self, settings, monkeypatch):
+    def test_launcher_worker_dispatches_with_gcp_env_overrides(self, settings, monkeypatch):
         from engine.ecs import (
             PROVISIONER_CONTAINER_NAME,
             _get_gcp_provisioner_env_overrides,
-            start_ngfw_provisioning,
-            start_provisioning,
-            start_range_provisioning,
+            dispatch_provisioner_command,
         )
 
         _configure_gcp_task_settings(settings)
@@ -214,9 +212,18 @@ class TestGcpTaskDispatch:
 
         with patch.dict(os.environ, GCP_ENV, clear=True):
             expected_env = _get_gcp_provisioner_env_overrides()
-            assert start_provisioning(range_id=42, user_id=7) == "shifter-jobs/job-range-legacy"
-            assert start_range_provisioning(range_request_id) == "shifter-jobs/job-range-request"
-            assert start_ngfw_provisioning(ngfw_request_id) == "shifter-jobs/job-ngfw"
+            assert (
+                dispatch_provisioner_command(["range", "provision", "--range-id", "42", "--user-id", "7"])
+                == "shifter-jobs/job-range-legacy"
+            )
+            assert (
+                dispatch_provisioner_command(["range", "provision", "--request-id", str(range_request_id)])
+                == "shifter-jobs/job-range-request"
+            )
+            assert (
+                dispatch_provisioner_command(["ngfw", "provision", "--request-id", str(ngfw_request_id)])
+                == "shifter-jobs/job-ngfw"
+            )
 
         assert expected_env is not None
         assert "GDC_WINDOWS_ADMIN_PASSWORD" not in expected_env

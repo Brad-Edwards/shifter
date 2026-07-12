@@ -23,6 +23,7 @@ from unittest.mock import patch
 import pytest
 
 import deploy
+import gcp_control_plane
 
 PINNED_IMAGE_TAG = "abc1234"
 
@@ -109,6 +110,7 @@ def _sample_gcp_control_plane_outputs(project_id: str = "prod-rwctxzl6shxk") -> 
                 "portal": f"shiftergcpdev-portal@{project_id}.iam.gserviceaccount.com",
                 "workers": f"shiftergcpdev-workers@{project_id}.iam.gserviceaccount.com",
                 "ctf-scheduler": f"shiftergcpdev-ctf-scheduler@{project_id}.iam.gserviceaccount.com",
+                "provisioner-launcher": (f"shiftergcpdev-provisioner-launcher@{project_id}.iam.gserviceaccount.com"),
                 "provisioner": f"shiftergcpdev-provisioner@{project_id}.iam.gserviceaccount.com",
             }
         },
@@ -937,7 +939,8 @@ class TestGdcControlPlaneHelmValues:
                 "199.36.153.4/30",  # NOSONAR - restricted.googleapis.com VIP.
                 "199.36.153.8/30",  # NOSONAR - private.googleapis.com VIP.
             ],
-            "privateServiceCidrs": ["10.40.0.10/32", "10.40.0.20/32", "10.48.0.0/20"],
+            "privateServiceCidrs": ["10.40.0.10/32", "10.40.0.20/32"],
+            "kubernetesApiCidrs": ["10.48.0.0/20"],
             "rangeClusterApiCidrs": [],
             "rangeClusterApiPort": 6444,
         }
@@ -1759,6 +1762,47 @@ class TestGcpBootstrapIdentityPlatform:
             "OIDC_AUTH_DOMAIN": "https://auth.example.test",
         }
 
+    def _write_gcp_dev_overlay(self, repo_root: Path, body: str) -> Path:
+        overlay = repo_root / gcp_control_plane._GCP_DEV_TFVARS_OVERLAY
+        overlay.parent.mkdir(parents=True, exist_ok=True)
+        overlay.write_text(body)
+        return overlay
+
+    def test_gcp_bootstrap_creds_from_tfvars_maps_overlay_keys(self, tmp_path):
+        """The gcp-dev overlay's HCL creds map to the GCP_BOOTSTRAP_ADMIN_* env keys."""
+        self._write_gcp_dev_overlay(
+            tmp_path,
+            "\n".join(
+                [
+                    'project_id                   = "prod-ksqdkj"',
+                    'gcp_bootstrap_admin_email    = "operator@paloaltonetworks.com"',
+                    'gcp_bootstrap_admin_password = "Galvatron7!!!"',
+                    "",
+                ]
+            ),
+        )
+
+        assert gcp_control_plane._gcp_bootstrap_creds_from_tfvars(tmp_path) == {
+            "GCP_BOOTSTRAP_ADMIN_EMAIL": "operator@paloaltonetworks.com",
+            "GCP_BOOTSTRAP_ADMIN_PASSWORD": "Galvatron7!!!",
+        }
+
+    def test_gcp_bootstrap_creds_from_tfvars_absent_overlay_returns_empty(self, tmp_path):
+        """A missing (gitignored) overlay yields no creds so the bootstrap falls back."""
+        assert gcp_control_plane._gcp_bootstrap_creds_from_tfvars(tmp_path) == {}
+
+    def test_load_bootstrap_env_values_overlay_overrides_process_env(self, tmp_path, monkeypatch):
+        """The tfvars overlay is authoritative: it overrides a stale process-env password."""
+        self._write_gcp_dev_overlay(
+            tmp_path,
+            'gcp_bootstrap_admin_password = "from-overlay"\n',
+        )
+        monkeypatch.setenv("GCP_BOOTSTRAP_ADMIN_PASSWORD", "from-process-env")
+
+        values = gcp_control_plane.load_bootstrap_env_values(repo_root=tmp_path)
+
+        assert values["GCP_BOOTSTRAP_ADMIN_PASSWORD"] == "from-overlay"
+
     def test_resolve_gcp_bootstrap_operator_credentials_returns_none_when_missing(self):
         """Bootstrap should report no operator credentials when the env files do not provide them."""
         assert deploy.resolve_gcp_bootstrap_operator_credentials(env_values={}) is None
@@ -1926,6 +1970,7 @@ class TestGcpBootstrapIdentityPlatform:
         assert "PLATFORM_BOOTSTRAP_STAFF_EMAILS=admin@example.com\n" in rendered
         assert "PLATFORM_BOOTSTRAP_SUPERUSER_EMAILS=admin@example.com\n" in rendered
         assert "GCP_RANGE_BACKEND=gce\n" in rendered
+        assert "ENGINE_TASK_SERVICE_ACCOUNT_NAME=provisioner\n" in rendered
 
     def test_render_gcp_platform_runtime_env_uses_blank_guest_password_samples(self):
         """The generated env contract must not embed sample guest passwords in source-controlled output."""
@@ -1974,6 +2019,43 @@ class TestArtifactRegistryServiceIdentity:
 
         mock_run.assert_not_called()
         mock_urlopen.assert_not_called()
+
+
+class TestProvisionerLauncherDeploymentParity:
+    """Launcher identity must stay consistent across Terraform, bootstrap, Helm, and runtime config."""
+
+    def test_bootstrap_renders_dedicated_launcher_without_provisioner_cloud_identity(self):
+        service_accounts = _sample_gcp_control_plane_outputs()["workload_service_accounts"]["value"]
+
+        values = gcp_control_plane._helm_service_account_values(service_accounts)
+
+        assert values["provisionerLauncher"] == {
+            "name": "provisioner-launcher",
+            "annotations": {
+                "iam.gke.io/gcp-service-account": service_accounts["provisioner-launcher"],
+            },
+        }
+        assert values["provisioner"]["annotations"]["iam.gke.io/gcp-service-account"] == service_accounts["provisioner"]
+        assert service_accounts["provisioner-launcher"] != service_accounts["provisioner"]
+
+    def test_runtime_and_terraform_keep_launcher_and_privileged_runtime_distinct(self):
+        terraform_iam = (
+            gcp_control_plane.get_repo_root()
+            / "platform"
+            / "terraform"
+            / "gcp"
+            / "modules"
+            / "portal"
+            / "iam"
+            / "main.tf"
+        ).read_text(encoding="utf-8")
+        assert '"provisioner-launcher"' in terraform_iam
+        assert "shifter-platform/provisioner-launcher" in terraform_iam
+        assert "provisioner-launcher = toset([])" in terraform_iam
+        assert (
+            'secret_reader_workloads    = toset(["portal", "workers", "ctf-scheduler", "provisioner-launcher"])'
+            in terraform_iam
+        )
 
 
 class TestGcpIdentityAdminApi:

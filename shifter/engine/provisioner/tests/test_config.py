@@ -13,6 +13,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from config import (
+    AWSPolarisAgentConfig,
     GCERangeCellConfig,
     GCERangeImageProfile,
     GDCNetworkAccessConfig,
@@ -29,6 +30,7 @@ from config import (
     get_range_availability_zone,
     get_range_from_db,
     is_gce_range_cell_backend,
+    load_aws_polaris_agent_config,
     load_gce_range_cell_config,
     load_gdc_network_access_config,
     load_gdc_palo_alto_vmseries_config,
@@ -464,7 +466,7 @@ class TestRangeNetworkEnv:
             windows=GCERangeImageProfile(
                 source_image="",
                 machine_type="e2-standard-4",
-                disk_size_gb=80,
+                disk_size_gb=100,
             ),
             dc=GCERangeImageProfile(
                 source_image="projects/windows-cloud/global/images/family/windows-2022",
@@ -802,6 +804,255 @@ class TestRangeNetworkEnv:
 
         with pytest.raises(RuntimeError, match="GDC_VMSERIES_BOOTSTRAP_BUCKET"):
             load_gdc_palo_alto_vmseries_config()
+
+
+def _full_aws_polaris_agent_env() -> dict[str, str]:
+    """Return a complete, valid AWS Polaris agent config env (#1377)."""
+    return {
+        "AWS_POLARIS_AGENT_REGION": "us-east-2",
+        "AWS_POLARIS_AGENT_MAIN_MODEL_ID": "us.anthropic.claude-sonnet-4-6",
+        "AWS_POLARIS_AGENT_SMALL_MODEL_ID": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "AWS_POLARIS_AGENT_MAIN_INFERENCE_PROFILE_ARN": (
+            "arn:aws:bedrock:us-east-2:123456789012:inference-profile/us.anthropic.claude-sonnet-4-6-v1:0"
+        ),
+        "AWS_POLARIS_AGENT_SMALL_INFERENCE_PROFILE_ARN": (
+            "arn:aws:bedrock:us-east-2:123456789012:inference-profile/us.anthropic.claude-haiku-4-5-v1:0"
+        ),
+        "AWS_POLARIS_AGENT_MAIN_BACKING_MODEL_ARNS": (
+            "arn:aws:bedrock:us-east-2::foundation-model/anthropic.claude-sonnet-4-6-v1:0,"
+            "arn:aws:bedrock:us-west-2::foundation-model/anthropic.claude-sonnet-4-6-v1:0"
+        ),
+        "AWS_POLARIS_AGENT_SMALL_BACKING_MODEL_ARNS": (
+            "arn:aws:bedrock:us-east-2::foundation-model/anthropic.claude-haiku-4-5-v1:0"
+        ),
+        "AWS_POLARIS_AGENT_STS_SESSION_DURATION_SECONDS": "900",
+        "AWS_POLARIS_AGENT_REFRESH_WINDOW_SECONDS": "300",
+        "AWS_POLARIS_AGENT_PERMISSIONS_BOUNDARY_ARN": "arn:aws:iam::123456789012:policy/ShifterPermissionsBoundary",
+    }
+
+
+class TestLoadAwsPolarisAgentConfig:
+    """Tests for the AWS Polaris per-range Bedrock agent config seam (#1377).
+
+    One validated seam for AWS region, approved main/small Bedrock model
+    ids, their inference-profile/backing-model ARNs, and STS session
+    lifecycle -- consumed by both Terraform agent-role rendering and
+    PolarisRangeBootstrapPlan so model/ARN defaults live in exactly one
+    place.
+    """
+
+    def test_returns_none_when_not_configured(self, mocker):
+        """No AWS_POLARIS_AGENT_MAIN_INFERENCE_PROFILE_ARN -> feature not enabled here."""
+        mocker.patch.dict(os.environ, {}, clear=True)
+
+        assert load_aws_polaris_agent_config() is None
+
+    def test_reads_full_contract_from_env(self, mocker):
+        mocker.patch.dict(os.environ, _full_aws_polaris_agent_env(), clear=True)
+
+        config = load_aws_polaris_agent_config()
+
+        assert config == AWSPolarisAgentConfig(
+            region="us-east-2",
+            main_model_id="us.anthropic.claude-sonnet-4-6",
+            small_model_id="us.anthropic.claude-haiku-4-5-20251001-v1:0",
+            main_inference_profile_arn=(
+                "arn:aws:bedrock:us-east-2:123456789012:inference-profile/us.anthropic.claude-sonnet-4-6-v1:0"
+            ),
+            small_inference_profile_arn=(
+                "arn:aws:bedrock:us-east-2:123456789012:inference-profile/us.anthropic.claude-haiku-4-5-v1:0"
+            ),
+            main_backing_model_arns=(
+                "arn:aws:bedrock:us-east-2::foundation-model/anthropic.claude-sonnet-4-6-v1:0",
+                "arn:aws:bedrock:us-west-2::foundation-model/anthropic.claude-sonnet-4-6-v1:0",
+            ),
+            small_backing_model_arns=("arn:aws:bedrock:us-east-2::foundation-model/anthropic.claude-haiku-4-5-v1:0",),
+            sts_session_duration_seconds=900,
+            refresh_window_seconds=300,
+            permissions_boundary_arn="arn:aws:iam::123456789012:policy/ShifterPermissionsBoundary",
+        )
+
+    def test_defaults_model_ids_and_sts_timing_when_unset(self, mocker):
+        """Absent optional env -> reuse the existing hardcoded defaults, not new ones.
+
+        Same Bedrock model ids PolarisRangeBootstrapPlan previously carried as
+        its own independent module constants (_AWS_DEFAULT_MODEL /
+        _AWS_DEFAULT_SMALL_FAST_MODEL) -- now the one config seam owns them.
+        """
+        env = _full_aws_polaris_agent_env()
+        del env["AWS_POLARIS_AGENT_MAIN_MODEL_ID"]
+        del env["AWS_POLARIS_AGENT_SMALL_MODEL_ID"]
+        del env["AWS_POLARIS_AGENT_STS_SESSION_DURATION_SECONDS"]
+        del env["AWS_POLARIS_AGENT_REFRESH_WINDOW_SECONDS"]
+        mocker.patch.dict(os.environ, env, clear=True)
+
+        config = load_aws_polaris_agent_config()
+
+        assert config.main_model_id == "us.anthropic.claude-sonnet-4-6"
+        assert config.small_model_id == "us.anthropic.claude-haiku-4-5-20251001-v1:0"
+        assert config.sts_session_duration_seconds == 900
+        assert config.refresh_window_seconds == 300
+
+    @pytest.mark.parametrize(
+        "missing_key",
+        [
+            "AWS_POLARIS_AGENT_REGION",
+            "AWS_POLARIS_AGENT_SMALL_INFERENCE_PROFILE_ARN",
+            "AWS_POLARIS_AGENT_MAIN_BACKING_MODEL_ARNS",
+            "AWS_POLARIS_AGENT_SMALL_BACKING_MODEL_ARNS",
+            "AWS_POLARIS_AGENT_PERMISSIONS_BOUNDARY_ARN",
+        ],
+    )
+    def test_rejects_missing_required_field(self, mocker, missing_key):
+        """The permissions boundary is part of the enabled-role contract (ADR-004-R21):
+        an enabled agent role (main_inference_profile_arn set) with no boundary
+        configured must fail closed here, not silently apply with
+        permissions_boundary = null downstream (#1377 codex pre-push finding)."""
+        env = _full_aws_polaris_agent_env()
+        del env[missing_key]
+        mocker.patch.dict(os.environ, env, clear=True)
+
+        with pytest.raises(RuntimeError, match=missing_key):
+            load_aws_polaris_agent_config()
+
+    @pytest.mark.parametrize(
+        "model_key",
+        ["AWS_POLARIS_AGENT_MAIN_MODEL_ID", "AWS_POLARIS_AGENT_SMALL_MODEL_ID"],
+    )
+    def test_rejects_blank_model_id(self, mocker, model_key):
+        env = _full_aws_polaris_agent_env()
+        env[model_key] = ""
+        mocker.patch.dict(os.environ, env, clear=True)
+
+        with pytest.raises(RuntimeError, match=f"{model_key} must not be blank"):
+            load_aws_polaris_agent_config()
+
+    @pytest.mark.parametrize(
+        "arn_key",
+        [
+            "AWS_POLARIS_AGENT_MAIN_INFERENCE_PROFILE_ARN",
+            "AWS_POLARIS_AGENT_SMALL_INFERENCE_PROFILE_ARN",
+            "AWS_POLARIS_AGENT_MAIN_BACKING_MODEL_ARNS",
+            "AWS_POLARIS_AGENT_SMALL_BACKING_MODEL_ARNS",
+            "AWS_POLARIS_AGENT_PERMISSIONS_BOUNDARY_ARN",
+        ],
+    )
+    def test_rejects_malformed_arn(self, mocker, arn_key):
+        env = _full_aws_polaris_agent_env()
+        env[arn_key] = "not-an-arn"
+        mocker.patch.dict(os.environ, env, clear=True)
+
+        with pytest.raises(RuntimeError, match=arn_key):
+            load_aws_polaris_agent_config()
+
+    def test_rejects_permissions_boundary_arn_that_is_not_a_policy_arn(self, mocker):
+        """Boundary must be an IAM *policy* ARN specifically (arn:...:policy/...),
+        not merely any IAM ARN -- a role/user/group ARN is not a valid permissions
+        boundary target and the old generic IAM ARN pattern let it through."""
+        env = _full_aws_polaris_agent_env()
+        env["AWS_POLARIS_AGENT_PERMISSIONS_BOUNDARY_ARN"] = "arn:aws:iam::123456789012:role/SomeRole"
+        mocker.patch.dict(os.environ, env, clear=True)
+
+        with pytest.raises(RuntimeError, match="AWS_POLARIS_AGENT_PERMISSIONS_BOUNDARY_ARN"):
+            load_aws_polaris_agent_config()
+
+    @pytest.mark.parametrize(
+        "bad_region",
+        [
+            'us-east-2"; rm -rf /',
+            "us-east-2$(whoami)",
+            "us-east-2`whoami`",
+            "US-EAST-2",
+            "not-a-region",
+            "us east 2",
+            "us-east-2;whoami",
+        ],
+    )
+    def test_rejects_shell_unsafe_or_malformed_region(self, mocker, bad_region):
+        """region is substituted verbatim into a double-quoted shell variable
+        assignment in the root-executed SSM range bootstrap scripts. A value
+        carrying a quote, command substitution, backtick, or shell metacharacter
+        must be rejected outright rather than merely checked for presence
+        (#1377 codex pre-push finding: command injection into root-executed shell)."""
+        env = _full_aws_polaris_agent_env()
+        env["AWS_POLARIS_AGENT_REGION"] = bad_region
+        mocker.patch.dict(os.environ, env, clear=True)
+
+        with pytest.raises(RuntimeError, match="AWS_POLARIS_AGENT_REGION"):
+            load_aws_polaris_agent_config()
+
+    def test_accepts_valid_region_shape(self, mocker):
+        env = _full_aws_polaris_agent_env()
+        env["AWS_POLARIS_AGENT_REGION"] = "us-west-2"
+        mocker.patch.dict(os.environ, env, clear=True)
+
+        config = load_aws_polaris_agent_config()
+
+        assert config.region == "us-west-2"
+
+    @pytest.mark.parametrize(
+        "model_key",
+        ["AWS_POLARIS_AGENT_MAIN_MODEL_ID", "AWS_POLARIS_AGENT_SMALL_MODEL_ID"],
+    )
+    @pytest.mark.parametrize(
+        "bad_model_id",
+        [
+            'us.anthropic.claude-sonnet-4-6"; rm -rf /',
+            "us.anthropic.claude-sonnet-4-6$(whoami)",
+            "us.anthropic.claude-sonnet-4-6`whoami`",
+            "us.anthropic claude-sonnet-4-6",
+            "us.anthropic.claude-sonnet-4-6;whoami",
+            "us.anthropic.claude-sonnet-4-6|whoami",
+            "us.anthropic.claude-sonnet-4-6&whoami",
+            "us.anthropic.claude-sonnet-4-6\nwhoami",
+        ],
+    )
+    def test_rejects_shell_unsafe_model_id(self, mocker, model_key, bad_model_id):
+        """main_model_id/small_model_id are substituted verbatim into
+        double-quoted shell assignments in the root-executed SSM bootstrap
+        scripts; only blankness was previously checked. A value carrying a
+        quote, command substitution, backtick, or shell metacharacter must be
+        rejected (#1377 codex pre-push finding: command injection)."""
+        env = _full_aws_polaris_agent_env()
+        env[model_key] = bad_model_id
+        mocker.patch.dict(os.environ, env, clear=True)
+
+        with pytest.raises(RuntimeError, match=model_key):
+            load_aws_polaris_agent_config()
+
+    @pytest.mark.parametrize(
+        "good_model_id",
+        [
+            "us.anthropic.claude-sonnet-4-6",
+            "anthropic.claude-haiku-4-5-20251001-v1:0",
+            "us.anthropic.claude-haiku-4-5-v1:0",
+        ],
+    )
+    def test_accepts_valid_model_id_shapes(self, mocker, good_model_id):
+        env = _full_aws_polaris_agent_env()
+        env["AWS_POLARIS_AGENT_MAIN_MODEL_ID"] = good_model_id
+        mocker.patch.dict(os.environ, env, clear=True)
+
+        config = load_aws_polaris_agent_config()
+
+        assert config.main_model_id == good_model_id
+
+    def test_rejects_sts_session_duration_below_aws_minimum(self, mocker):
+        env = _full_aws_polaris_agent_env()
+        env["AWS_POLARIS_AGENT_STS_SESSION_DURATION_SECONDS"] = "300"
+        mocker.patch.dict(os.environ, env, clear=True)
+
+        with pytest.raises(RuntimeError, match="AWS_POLARIS_AGENT_STS_SESSION_DURATION_SECONDS"):
+            load_aws_polaris_agent_config()
+
+    def test_rejects_refresh_window_not_less_than_session_duration(self, mocker):
+        env = _full_aws_polaris_agent_env()
+        env["AWS_POLARIS_AGENT_STS_SESSION_DURATION_SECONDS"] = "900"
+        env["AWS_POLARIS_AGENT_REFRESH_WINDOW_SECONDS"] = "900"
+        mocker.patch.dict(os.environ, env, clear=True)
+
+        with pytest.raises(RuntimeError, match="AWS_POLARIS_AGENT_REFRESH_WINDOW_SECONDS"):
+            load_aws_polaris_agent_config()
 
 
 class TestDecryptField:

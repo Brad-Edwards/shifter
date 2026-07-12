@@ -201,6 +201,10 @@ def _run_terraform_provision(
 
     subnets_output = output_data.get("subnets", {})
     instances_output = output_data.get("instances", [])
+    # Non-secret per-range Polaris Bedrock agent role ARN (#1377); empty
+    # string when polaris_agent_enabled was false or the backend has no
+    # such output (e.g. GCP/GDC ranges).
+    polaris_agent_role_arn = output_data.get("polaris_agent_role_arn") or ""
     # Log structure only. Terraform outputs can carry sensitive values
     # (generated passwords, SSH keys, tokens) and must never be dumped raw.
     logger.info(
@@ -231,6 +235,8 @@ def _run_terraform_provision(
     run_instance_setup(
         instances_output=instances_output,
         range_spec=range_spec,
+        range_id=range_id,
+        polaris_agent_role_arn=polaris_agent_role_arn,
     )
 
     # Write provisioned state to DB

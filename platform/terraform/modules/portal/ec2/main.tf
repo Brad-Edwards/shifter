@@ -316,6 +316,36 @@ resource "aws_iam_role_policy" "range_ssh_keys" {
   })
 }
 
+# Range-events publish (#476 outbox drainer + reconciler). These workers run
+# under this EC2 role and publish range status events to the range-events SNS
+# topic; without sns:Publish (+ kms on the CMK-encrypted topic) the outbox never
+# drains and ranges stay stuck "provisioning" in the portal forever.
+resource "aws_iam_role_policy" "range_events_publish" {
+  name = "range-events-publish"
+  role = aws_iam_role.this.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid      = "RangeEventsSnsPublish"
+        Effect   = "Allow"
+        Action   = "sns:Publish"
+        Resource = var.range_events_topic_arn
+      },
+      {
+        Sid    = "RangeEventsKms"
+        Effect = "Allow"
+        Action = [
+          "kms:GenerateDataKey*",
+          "kms:Decrypt"
+        ]
+        Resource = var.sqs_kms_key_arn
+      }
+    ]
+  })
+}
+
 # IAM policy for RDS IAM database authentication (#159).
 # The long-running portal (web + workers) connects to the database as the
 # dedicated rds_iam runtime user with a short-lived token instead of a stored

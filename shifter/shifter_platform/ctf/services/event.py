@@ -15,6 +15,7 @@ from django.db.models import QuerySet
 from ctf.enums import VALID_TRANSITIONS, EventStatus, validate_transition
 from ctf.exceptions import CTFNotFoundError, CTFStateError, CTFValidationError
 from ctf.models import CTFEvent
+from shared.log_sanitize import safe_log_value
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import User
@@ -322,8 +323,8 @@ def force_delete_event(
     logger.warning(
         "FORCE DELETE: Event %s (%s) permanently deleted by %s (pk=%s). Ranges destroyed: %d, ranges failed: %d.",
         event_id,
-        event_name,
-        actor.email,
+        safe_log_value(event_name),
+        safe_log_value(actor.email),
         actor.pk,
         ranges_destroyed,
         ranges_failed,
@@ -356,6 +357,17 @@ def get_event(event_id: UUID) -> CTFEvent:
             f"Event {event_id} not found",
             details={"event_id": str(event_id)},
         ) from None
+
+
+def event_pk_if_exists(event_id: UUID) -> UUID | None:
+    """Return the event's primary key if it exists, else ``None``.
+
+    Bounded existence check for cross-domain composition (``config``) that must
+    validate a CTF event id without importing the ``ctf`` domain model. Returns a
+    primitive, never an ORM object (ADR-001, #1523).
+    """
+    pk = CTFEvent.objects.filter(pk=event_id).values_list("pk", flat=True).first()
+    return pk
 
 
 def list_events_for_organizer(user: User) -> QuerySet[CTFEvent]:

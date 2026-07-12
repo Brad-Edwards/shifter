@@ -43,6 +43,7 @@ def _secret_client(*, exists: bool):
         client.access_secret_version = _raise
     client.create_secret = lambda *, request: None
     client.add_secret_version = lambda *, request: None
+    client.set_iam_policy = lambda *, request: None
     client.delete_secret = lambda *, request: None
     return client
 
@@ -70,6 +71,58 @@ def test_ensure_mints_key_and_stores_secret_when_absent(mocker):
     assert ref == "projects/proj/secrets/shifter-range-42-vertex-key"
     iam.create_service_account_key.assert_called_once()
     add_version.assert_called_once()
+
+
+def test_ensure_grants_host_sa_scoped_secret_access(mocker):
+    iam = SimpleNamespace(
+        create_service_account_key=mocker.Mock(
+            return_value=SimpleNamespace(
+                name="projects/-/serviceAccounts/x/keys/abc123", private_key_data=_KEY_JSON.encode()
+            )
+        )
+    )
+    secrets = _secret_client(exists=False)
+    set_policy = mocker.spy(secrets, "set_iam_policy")
+
+    ensure_range_vertex_key(
+        42,
+        "range-vertex@proj.iam.gserviceaccount.com",
+        iam_client=iam,
+        secret_client=secrets,
+        google_exceptions=_EXCEPTIONS,
+        project_id="proj",
+        host_service_account_email="range-host@proj.iam.gserviceaccount.com",
+    )
+
+    set_policy.assert_called_once()
+    request = set_policy.call_args.kwargs["request"]
+    assert request["resource"] == "projects/proj/secrets/shifter-range-42-vertex-key"
+    binding = request["policy"]["bindings"][0]
+    assert binding["role"] == "roles/secretmanager.secretAccessor"
+    assert binding["members"] == ["serviceAccount:range-host@proj.iam.gserviceaccount.com"]
+
+
+def test_ensure_skips_host_grant_when_no_host_sa(mocker):
+    iam = SimpleNamespace(
+        create_service_account_key=mocker.Mock(
+            return_value=SimpleNamespace(
+                name="projects/-/serviceAccounts/x/keys/abc123", private_key_data=_KEY_JSON.encode()
+            )
+        )
+    )
+    secrets = _secret_client(exists=False)
+    set_policy = mocker.spy(secrets, "set_iam_policy")
+
+    ensure_range_vertex_key(
+        42,
+        "range-vertex@proj.iam.gserviceaccount.com",
+        iam_client=iam,
+        secret_client=secrets,
+        google_exceptions=_EXCEPTIONS,
+        project_id="proj",
+    )
+
+    set_policy.assert_not_called()
 
 
 def test_ensure_is_idempotent_when_secret_exists(mocker):

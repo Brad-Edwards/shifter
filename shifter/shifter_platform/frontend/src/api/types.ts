@@ -14,6 +14,10 @@ export type AuditLog = components["schemas"]["AuditLog"];
 export type PaginatedRiskList = components["schemas"]["PaginatedRiskList"];
 export type PaginatedAuditLogList = components["schemas"]["PaginatedAuditLogList"];
 export type Bootstrap = components["schemas"]["Bootstrap"];
+export type BootstrapModes = components["schemas"]["BootstrapModes"];
+export type BootstrapPermissions = components["schemas"]["BootstrapPermissions"];
+export type UxMode = BootstrapModes["default"];
+export type DashboardSummary = components["schemas"]["DashboardSummary"];
 
 export type Severity = components["schemas"]["SeverityEnum"];
 export type Status = components["schemas"]["StatusEnum"];
@@ -40,3 +44,31 @@ export const STRIDE_OPTIONS: ReadonlyArray<{ code: StrideCode; label: string }> 
 export function strideList(value: unknown): string[] {
   return Array.isArray(value) ? value.map(String) : [];
 }
+
+/**
+ * Mission Control domain types (#1370), re-exported from the generated OpenAPI
+ * schema. Only the shapes this foundation chunk (and the pages/live-access
+ * chunks that follow it) need are re-exported here; do not hand-copy field
+ * shapes — regenerate `schema.d.ts` instead.
+ */
+export type RangeStatus = components["schemas"]["ResourceStatusEnum"];
+export type RangePresentation = components["schemas"]["RangePresentation"];
+export type InstancePresentation = components["schemas"]["InstancePresentation"];
+export type CurrentRangeResponse = components["schemas"]["CurrentRangeResponse"];
+export type LaunchRangeResponse = components["schemas"]["LaunchRangeResponse"];
+export type SuccessResponse = components["schemas"]["SuccessResponse"];
+export type AgentListResponse = components["schemas"]["AgentListResponse"];
+export type AgentListItem = components["schemas"]["AgentListItem"];
+export type ScenarioListResponse = components["schemas"]["ScenarioListResponse"];
+export type ScenarioListItem = components["schemas"]["ScenarioListItem"];
+export type RangeHistory = components["schemas"]["RangeHistory"];
+export type RangeHistoryResponse = components["schemas"]["RangeHistoryResponse"];
+export type GuacamoleBootstrapQueued = components["schemas"]["GuacamoleBootstrapQueued"];
+export type GuacamoleBootstrapStatus = components["schemas"]["GuacamoleBootstrapStatus"];
+export type NGFWListResponse = components["schemas"]["NGFWListResponse"];
+export type NGFWListItem = components["schemas"]["NGFWListItem"];
+export type NGFWCreateResponse = components["schemas"]["NGFWCreateResponse"];
+export type NGFWDestroyResponse = components["schemas"]["NGFWDestroyResponse"];
+export type CredentialCreateResponse = components["schemas"]["CredentialCreateResponse"];
+export type UploadInitiateResponse = components["schemas"]["UploadInitiateResponse"];
+export type UploadCompleteResponse = components["schemas"]["UploadCompleteResponse"];

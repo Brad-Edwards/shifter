@@ -8,17 +8,26 @@
       "constraints": {},
       "max_total_nodes": null,
       "name": "shifter-provisioner",
-      "supported_account_features": [],
-      "supported_content_types": [],
+      "supported_account_features": [
+        "auth_method",
+        "disabled",
+        "groups",
+        "home",
+        "shell"
+      ],
+      "supported_content_types": [
+        "directory"
+      ],
       "supported_node_types": [
+        "switch",
         "vm"
       ],
       "supported_os_families": [
         "linux",
         "windows"
       ],
-      "supports_accounts": false,
-      "supports_acls": false
+      "supports_accounts": true,
+      "supports_acls": true
     }
   },
   "compatibility": {

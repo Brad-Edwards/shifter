@@ -26,10 +26,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Configure AWS credentials (prod)
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4.3.1
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: us-east-2
@@ -67,7 +67,7 @@ jobs:
 
     steps:
       - name: Configure AWS credentials (dev)
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4.3.1
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN_DEV }}
           aws-region: us-east-2
@@ -87,7 +87,7 @@ jobs:
           echo "DEV_ACCOUNT_ID=$DEV_ACCOUNT_ID" >> "$GITHUB_ENV"
 
       - name: Configure AWS credentials (prod)
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4.3.1
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: us-east-2
@@ -98,7 +98,7 @@ jobs:
           echo "PROD_ACCOUNT_ID=$PROD_ACCOUNT_ID" >> "$GITHUB_ENV"
 
       - name: Switch back to dev to share AMI
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4.3.1
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN_DEV }}
           aws-region: us-east-2
@@ -127,7 +127,7 @@ jobs:
           echo "- **Shared AMI with prod account:** $PROD_ACCOUNT_ID" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Configure AWS credentials (prod) for copy
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4.3.1
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: us-east-2

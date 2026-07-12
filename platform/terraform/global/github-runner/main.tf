@@ -67,13 +67,39 @@ data "aws_subnets" "default" {
   }
 }
 
+# Dedicated runner VPC (issue #1433). When var.create_runner_network is set the
+# bootstrap automation path provisions a self-contained, non-default runner VPC
+# (NAT-only egress, no private-DNS interface endpoints) instead of relying on an
+# operator-supplied network or the account default VPC. The created VPC is
+# non-default by construction, so the ADR-004-R20 fail-closed precondition below
+# still passes.
+module "runner_network" {
+  count  = var.create_runner_network ? 1 : 0
+  source = "../../modules/github-runner-network"
+
+  name_prefix = "shifter-github-runner"
+  vpc_cidr    = var.runner_network_cidr
+}
+
 locals {
-  # Resolve the runner network. Explicit vpc_id/subnet_id always win. Otherwise,
-  # when allow_default_vpc is set, fall back to the account default VPC and its
-  # first subnet. When neither is provided the values stay empty and the SG
-  # preconditions / resource creation fail closed.
-  runner_vpc_id    = var.vpc_id != "" ? var.vpc_id : (var.allow_default_vpc ? one(data.aws_vpcs.default.ids) : "")
-  runner_subnet_id = var.subnet_id != "" ? var.subnet_id : (var.allow_default_vpc ? data.aws_subnets.default[0].ids[0] : "")
+  # A created runner network wins over everything: it is the ADR-004-R20-compliant
+  # automated path. Otherwise explicit vpc_id/subnet_id win, then the
+  # allow_default_vpc fallback to the account default VPC and its first subnet.
+  # When none is provided the values stay empty and the SG preconditions /
+  # resource creation fail closed.
+  created_vpc_id    = var.create_runner_network ? module.runner_network[0].vpc_id : ""
+  created_subnet_id = var.create_runner_network ? module.runner_network[0].runner_subnet_id : ""
+
+  runner_vpc_id = (
+    local.created_vpc_id != "" ? local.created_vpc_id :
+    var.vpc_id != "" ? var.vpc_id :
+    var.allow_default_vpc ? one(data.aws_vpcs.default.ids) : ""
+  )
+  runner_subnet_id = (
+    local.created_subnet_id != "" ? local.created_subnet_id :
+    var.subnet_id != "" ? var.subnet_id :
+    var.allow_default_vpc ? data.aws_subnets.default[0].ids[0] : ""
+  )
 }
 
 data "aws_subnet" "runner" {

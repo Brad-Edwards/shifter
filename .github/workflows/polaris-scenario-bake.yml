@@ -1,14 +1,18 @@
-name: Polaris Scenario Bake (Dev)
+name: Polaris Scenario Bake
 
 # Operator-triggered bake of the Polaris polaris-vm AMI. Mirrors the
-# workflow_dispatch-only shape of packer.yml: it automates the deliberate
-# manual bake (build tarball -> stand up a golden range -> create-image ->
-# update SSM) and is never wired to push / pull_request / schedule
-# triggers. See docs/architecture/polaris-repo-to-ami-drift-audit.md and
+# workflow_dispatch-only shape of packer.yml: it consumes an operator-supplied
+# build tarball from S3 -> stands up a golden range -> create-image -> updates
+# SSM, and is never wired to push / pull_request / schedule triggers. The
+# build content (flags/solutions) lives in the private penumbra-scenarios repo,
+# not this public repo, so the operator uploads the tarball out of band before
+# dispatching. See docs/architecture/polaris-repo-to-ami-drift-audit.md and
 # docs/architecture/polaris-scenario-bake-preflight-618.md.
 #
 # Security posture: this is a privileged self-hosted workflow that assumes
-# the dev AWS role. The bake source `ref` is constrained to protected
+# the selected environment's AWS role (dev or proof), resolved the same way
+# as packer.yml / techvault-scenario-bake.yml. The bake source `ref` is
+# constrained to protected
 # branches (choice input) so a dispatcher cannot run unreviewed code with
 # the bake credentials. Free-form inputs are bound to environment
 # variables and validated against strict allowlists before any AWS step,
@@ -25,12 +29,20 @@ on:
         options:
           - dev
           - main
+      environment:
+        description: 'AWS environment to bake in'
+        required: true
+        type: choice
+        options:
+          - dev
+          - proof
+        default: dev
       s3_bucket:
-        description: 'S3 bucket for the Polaris build tarball (e.g. shifter-polaris-bake-<account-id>)'
+        description: 'S3 bucket holding the operator-uploaded Polaris build tarball (e.g. shifter-polaris-bake-<account-id>)'
         required: true
         type: string
       s3_key:
-        description: 'S3 key for the Polaris build tarball'
+        description: 'S3 key of the operator-uploaded Polaris build tarball (from penumbra-scenarios scenarios/polaris/build, staged as scenario-dev/polaris/build)'
         required: false
         type: string
         default: 'polaris/build-v1.tar.gz'
@@ -46,17 +58,17 @@ permissions:
 
 jobs:
   bake:
-    name: Bake polaris-vm AMI in dev
+    name: Bake polaris-vm AMI in ${{ inputs.environment }}
     runs-on: self-hosted
 
     env:
       AWS_REGION: us-east-2
       RANGE_DIR: scripts/polaris-aws-range
-      TARBALL: polaris-build.tar.gz
       # Free-form inputs are bound here as plain environment variables.
       # Env-var *values* are never re-parsed as shell code, so referencing
       # them as "$S3_BUCKET" etc. in run blocks is injection-safe — unlike
       # ${{ inputs.* }} which expands into the script text before bash.
+      ENVIRONMENT: ${{ inputs.environment }}
       S3_BUCKET: ${{ inputs.s3_bucket }}
       S3_KEY: ${{ inputs.s3_key }}
       SSM_PARAMETER: ${{ inputs.ssm_parameter }}
@@ -80,40 +92,78 @@ jobs:
           fi
 
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           ref: ${{ inputs.ref }}
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
-      - name: Verify generated artifacts carry their flags (pre-bake gate)
+      - name: Set up Python venv
         run: |
           set -euo pipefail
-          python -m pip install --quiet reportlab
-          sudo apt-get update -qq && sudo apt-get install -y -qq poppler-utils
-          out="$(mktemp -d)"
-          python scenario-dev/polaris/build/A0-boreas-website/build_pdfs.py "$out"
-          python scenario-dev/polaris/build/verify_flags_baked.py \
-            scenario-dev/polaris/build/ctfd-challenges.json "$out"
+          # Self-hosted runners are Amazon Linux 2023: system python3 ships venv +
+          # ensurepip, there is no actions/setup-python tool cache, and there is
+          # no apt. A venv from system python3 gives the health-check step an
+          # isolated, writable env (pip via ensurepip) without touching the
+          # PEP 668 externally-managed system pip.
+          python3 -m venv "${RUNNER_TEMP}/venv"
+          echo "${RUNNER_TEMP}/venv/bin" >> "$GITHUB_PATH"
 
-      - name: Configure AWS credentials (dev)
-        uses: aws-actions/configure-aws-credentials@v4
+      # The Polaris build content (scenario-dev/polaris/build/ — flags, solutions,
+      # generated artifacts) is intentionally NOT in this public repo. It lives in
+      # the private penumbra-scenarios repo and reaches the bake as an operator-
+      # uploaded S3 tarball (see "Verify operator-supplied Polaris build tarball"
+      # below). Flag-baking verification is therefore owned by penumbra-scenarios'
+      # own CI (scenarios/polaris/build/test_verify_flags_baked.py), not here.
+
+      - name: Resolve AWS deploy role
+        id: aws-role
+        env:
+          ENVIRONMENT: ${{ inputs.environment }}
+          AWS_ROLE_ARN_DEV: ${{ secrets.AWS_ROLE_ARN_DEV }}
+          AWS_ROLE_ARN_PROOF: ${{ secrets.AWS_ROLE_ARN_PROOF }}
+        run: |
+          set -euo pipefail
+          case "$ENVIRONMENT" in
+            dev)
+              ROLE_SECRET_NAME="AWS_ROLE_ARN_DEV"
+              ROLE_ARN="$AWS_ROLE_ARN_DEV"
+              ;;
+            proof)
+              ROLE_SECRET_NAME="AWS_ROLE_ARN_PROOF"
+              ROLE_ARN="$AWS_ROLE_ARN_PROOF"
+              ;;
+            *)
+              echo "::error::Unsupported AWS environment: $ENVIRONMENT"
+              exit 1
+              ;;
+          esac
+          if [ -z "$ROLE_ARN" ]; then
+            echo "::error::Required secret ${ROLE_SECRET_NAME} is not set"
+            exit 1
+          fi
+          echo "role_arn=$ROLE_ARN" >> "$GITHUB_OUTPUT"
+
+      - name: Configure AWS credentials (${{ inputs.environment }})
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4.3.1
         with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN_DEV }}
+          role-to-assume: ${{ steps.aws-role.outputs.role_arn }}
           aws-region: us-east-2
 
-      - name: Build and upload Polaris build tarball
+      - name: Verify operator-supplied Polaris build tarball
         run: |
           set -euo pipefail
-          tar czf "$TARBALL" scenario-dev/polaris/build
-          aws s3 cp "$TARBALL" "s3://${S3_BUCKET}/${S3_KEY}"
+          # The build tarball (scenario-dev/polaris/build/*) is produced from the
+          # private penumbra-scenarios repo (scenarios/polaris/build staged under
+          # scenario-dev/polaris/build) and uploaded to S3 out of band, because
+          # the content is intentionally not in this public repo. Fail loud if it
+          # is missing rather than standing up an empty range.
+          if ! aws s3api head-object --bucket "$S3_BUCKET" --key "$S3_KEY" >/dev/null 2>&1; then
+            echo "::error::build tarball s3://${S3_BUCKET}/${S3_KEY} not found - upload it from penumbra-scenarios before running this bake"
+            exit 1
+          fi
           echo "TARBALL_S3_URI=s3://${S3_BUCKET}/${S3_KEY}" >> "$GITHUB_ENV"
 
       - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
         with:
           terraform_wrapper: false
 
@@ -185,7 +235,7 @@ jobs:
             echo "- **Region:** us-east-2"
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Update dev SSM parameter
+      - name: Update SSM parameter
         run: |
           set -euo pipefail
           aws ssm put-parameter \
@@ -197,7 +247,7 @@ jobs:
           {
             echo "- **SSM parameter:** \`${SSM_PARAMETER}\` updated"
             echo ""
-            echo "**Next step:** test the new AMI in dev before promoting."
+            echo "**Next step:** test the new AMI in ${ENVIRONMENT} before promoting."
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Terraform destroy — tear down the bake range

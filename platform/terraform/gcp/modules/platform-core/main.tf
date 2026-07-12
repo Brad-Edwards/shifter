@@ -39,6 +39,7 @@ locals {
     "guacamole-db"        = "Database connection secret bundle for the Guacamole client."
     "guacamole-json-auth" = "Guacamole JSON auth signing key."
     "redis"               = "Redis AUTH token for the platform control-plane cache (ADR-008-R6)."
+    "dc-domain-password"  = "Prebaked Windows DC domain Administrator password applied per range (DC_DOMAIN_PASSWORD)."
   }, local.email_runtime_secrets)
 
   required_services = toset([
@@ -119,10 +120,11 @@ resource "google_compute_network_peering" "range_to_platform" {
 module "portal_gcs" {
   source = "../portal/gcs"
 
-  project_id    = var.project_id
-  region        = var.region
-  environment   = var.environment
-  common_labels = local.common_labels
+  project_id      = var.project_id
+  region          = var.region
+  environment     = var.environment
+  common_labels   = local.common_labels
+  public_hostname = local.normalized_public_hostname
 
   depends_on = [module.project_services]
 }
@@ -274,6 +276,15 @@ module "portal_iam" {
   project_id  = var.project_id
   environment = var.environment
   name_prefix = local.name_prefix
+
+  # ADR-008-R7: resource IDs from the owning modules so workload Secret Manager /
+  # Cloud Storage access is bound per named resource instead of at project scope.
+  runtime_secret_ids             = module.portal_secrets.runtime_secret_ids
+  assets_bucket_name             = module.portal_gcs.assets_bucket_name
+  terraform_state_bucket_name    = "${var.project_id}-terraform-state"
+  vmseries_bootstrap_bucket_name = var.vmseries_bootstrap_bucket_name
+
+  depends_on = [module.portal_secrets, module.portal_gcs]
 }
 
 module "portal_gke" {

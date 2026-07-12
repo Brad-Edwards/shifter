@@ -252,6 +252,16 @@ repos:
         language: system
         files: ^platform/terraform/global/github-runner/main\.tf$
 
+      # ADR-008 / issue #1546: the GCP-native self-hosted runner must live in a
+      # dedicated custom-mode VPC (never the project default network) and admit
+      # SSH only from Google's IAP range, mirroring the AWS ADR-004-R20 guard for
+      # GCP so the isolation cannot be silently weakened.
+      - id: check-tf-gcp-runner-network
+        name: GCP runner network isolation (ADR-008)
+        entry: python3 scripts/check_tf_gcp_runner_network/check_tf_gcp_runner_network.py
+        language: system
+        files: ^platform/terraform/gcp/modules/github-runner-network/main\.tf$
+
       # Issue #1178: the shared range *guest* instance role must not grant SSM
       # Parameter Store access on a Resource that wildcards the environment or
       # range segment (parameter/shifter/*/range/*), which would let any range
@@ -264,6 +274,20 @@ repos:
         entry: python3 scripts/check_tf_iam_ssm_range_scope/check_tf_iam_ssm_range_scope.py
         language: system
         files: ^platform/terraform/modules/range/vpc/iam\.tf$
+
+      # Issue #1377: the per-range Polaris Bedrock agent role must keep its
+      # inline policy scoped to exactly bedrock:InvokeModel /
+      # bedrock:InvokeModelWithResponseStream on the two approved inference
+      # profiles and their backing models (conditioned on
+      # bedrock:InferenceProfileArn), and its trust policy scoped to the
+      # shared range-instance role AND the exact Polaris EC2 source instance
+      # (ec2:SourceInstanceARN). Scoped to the engine provisioner range
+      # module IAM file where the role is defined.
+      - id: check-tf-iam-bedrock-agent-scope
+        name: AWS Polaris Bedrock agent IAM scoping (#1377)
+        entry: python3 scripts/check_tf_iam_bedrock_agent_scope/check_tf_iam_bedrock_agent_scope.py
+        language: system
+        files: ^shifter/engine/provisioner/terraform/modules/range/iam\.tf$
 
       # Custom: Secrets Manager kms:Decrypt grant check (issue #52).
       # Ensures every aws_iam_role defined in scoped files that reads
@@ -298,6 +322,27 @@ repos:
         files: ^(platform/terraform/modules/engine-provisioner/iam\.tf|platform/terraform/modules/portal/ec2/main\.tf|platform/terraform/modules/guacamole/iam\.tf)$
         pass_filenames: false
 
+      # ADR-008-R7 / issue #1517: GCP application workload identities (portal,
+      # workers, ctf-scheduler, provisioner) must not receive project-level
+      # Secret Manager payload/admin or Cloud Storage object-admin roles; static
+      # access is bound per named secret / bucket. Only the two dynamic-secret
+      # residuals tracked in #1586 are allowlisted. Scoped to the portal/iam
+      # module where the workload identities and their grants are defined.
+      - id: check-tf-gcp-iam-resource-scope
+        name: GCP workload IAM resource scoping (ADR-008-R7)
+        # Scan every .tf in the module (glob, pass_filenames=false) so a forbidden
+        # grant or custom role added in a sibling file — not just main.tf — is
+        # still caught. The hook's files: regex gates when it runs; the glob is
+        # what gets scanned.
+        entry: >-
+          bash -c '
+          python3 scripts/check_tf_gcp_iam_resource_scope/check_tf_gcp_iam_resource_scope.py
+          platform/terraform/gcp/modules/portal/iam/*.tf
+          '
+        language: system
+        files: ^platform/terraform/gcp/modules/portal/iam/.*\.tf$
+        pass_filenames: false
+
       # Custom: RDS instance IAM auth and explicit CA certificate check.
       # Checkov enforces IAM DB auth, but its current modern-CA rule
       # passes when ca_cert_identifier is absent; this checker closes
@@ -322,6 +367,20 @@ repos:
         files: ^(\.pre-commit-config\.yaml|\.github/workflows/_quality\.yml|platform/terraform/\.checkov\.yaml)$
         pass_filenames: false
 
+      # Terraform validation inventory (#1528): fail closed when a tracked
+      # Terraform directory is not classified as a root or module, when a root
+      # lacks a committed lockfile, or when a root's declared providers drift
+      # from its lockfile. Non-authoritative local mirror of the CI
+      # terraform-matrix gate — it calls the same helper with the same flags.
+      # The helper scans the whole tracked estate via git, so the file list is
+      # a trigger only (pass_filenames=false).
+      - id: check-tf-roots
+        name: Terraform validation inventory (roots + modules classified)
+        entry: python3 scripts/check_tf_roots/check_tf_roots.py --check
+        language: system
+        files: ^(platform/terraform/validation-inventory\.yaml|scripts/check_tf_roots/.*|.*\.tf|.*/\.terraform\.lock\.hcl)$
+        pass_filenames: false
+
       # Pin the behavior of the custom check_tf_* IAM/security
       # checkers themselves. Their test suites (synthetic HCL fixtures
       # covering wildcards, list resources, scoped conditions, missing
@@ -344,15 +403,19 @@ repos:
           python3 -m unittest scripts.check_tf_iam_elb_scope.test_check_tf_iam_elb_scope &&
           python3 -m unittest scripts.check_tf_iam_ssm_scope.test_check_tf_iam_ssm_scope &&
           python3 -m unittest scripts.check_tf_iam_ssm_range_scope.test_check_tf_iam_ssm_range_scope &&
+          python3 -m unittest scripts.check_tf_iam_bedrock_agent_scope.test_check_tf_iam_bedrock_agent_scope &&
           python3 -m unittest scripts.check_tf_iam_role_naming.test_check_tf_iam_role_naming &&
           python3 -m unittest scripts.check_tf_sg_cidrs.test_check_tf_sg_cidrs &&
           python3 -m unittest scripts.check_tf_kms_secrets_grant.test_check_tf_kms_secrets_grant &&
           python3 -m unittest scripts.check_tf_rds_security.test_check_tf_rds_security &&
           python3 -m unittest scripts.check_portal_target_sg_sources.test_check_portal_target_sg_sources &&
-          python3 -m unittest scripts.check_tf_runner_network.test_check_tf_runner_network
+          python3 -m unittest scripts.check_tf_runner_network.test_check_tf_runner_network &&
+          python3 -m unittest scripts.check_tf_gcp_runner_network.test_check_tf_gcp_runner_network &&
+          python3 -m unittest scripts.check_tf_gcp_iam_resource_scope.test_check_tf_gcp_iam_resource_scope &&
+          python3 -m unittest scripts.check_tf_roots.test_check_tf_roots
           '
         language: system
-        files: ^scripts/(check_tf_(iam_ec2_scope|iam_elb_scope|iam_ssm_scope|iam_ssm_range_scope|sg_cidrs|kms_secrets_grant|rds_security|runner_network)|check_portal_target_sg_sources)/
+        files: ^scripts/(check_tf_(iam_ec2_scope|iam_elb_scope|iam_ssm_scope|iam_ssm_range_scope|iam_bedrock_agent_scope|sg_cidrs|kms_secrets_grant|rds_security|runner_network|gcp_runner_network|gcp_iam_resource_scope|roots)|check_portal_target_sg_sources)/
         pass_filenames: false
 
   # Kubernetes schema validation
@@ -552,7 +615,7 @@ repos:
         name: architecture (import linter)
         entry: bash -c 'cd shifter/shifter_platform && uv run lint-imports --config ../../.importlinter'
         language: system
-        files: ^(shifter/shifter_platform/(cms|engine|management|mission_control|shared|ctf)/.*\.py$|\.importlinter$)
+        files: ^(shifter/shifter_platform/(cms|engine|management|mission_control|shared|ctf|config|risk_register)/.*\.py$|\.importlinter$)
         pass_filenames: false
         verbose: true
 
@@ -577,7 +640,7 @@ repos:
 
       - id: check-model-fks
         name: architecture (model FKs)
-        entry: bash -c 'cd shifter/shifter_platform && source .venv/bin/activate && TESTING=1 DJANGO_DEBUG=true DJANGO_SECRET_KEY=dummy-for-testing python manage.py check_model_fks -q'
+        entry: bash -c 'cd shifter/shifter_platform && source .venv/bin/activate && TESTING=1 TEST_DB_BACKEND=sqlite DJANGO_DEBUG=true DJANGO_SECRET_KEY=dummy-for-testing python manage.py check_model_fks -q'
         language: system
         files: ^shifter/shifter_platform/
         pass_filenames: false
@@ -748,9 +811,9 @@ repos:
         name: pytest (shifter_platform)
         entry: >-
           bash -c 'cd shifter/shifter_platform && source .venv/bin/activate &&
-          TESTING=1 DJANGO_DEBUG=true DJANGO_SECRET_KEY=dummy-for-testing python
-          -m pytest tests/ --ignore=tests/documentation
-          --ignore=tests/risk_register -q --cov=.
+          TESTING=1 TEST_DB_BACKEND=sqlite DJANGO_DEBUG=true DJANGO_SECRET_KEY=dummy-for-testing python
+          -m pytest tests/
+          --ignore=tests/risk_register -m "not redis and not postgres" -q --cov=.
           --cov-report=html:../../coverage/shifter_platform
           --cov-report=xml:coverage.xml
           --cov-report=term-missing:skip-covered'

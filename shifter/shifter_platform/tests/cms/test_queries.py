@@ -3,11 +3,18 @@
 Covers get_range_target_instances, which selects the instances shown on the
 CTF participant range page. See #1465: a single-seat purple-team lab (TechVault)
 provisions only an attacker-tagged seat host, and the page must still show it.
+
+The selector reads the user's ready range from the engine, so these exercise
+the real database rather than mocking the first-party query seam (ADR-019-R1):
+each case seeds an engine ``Range`` and asserts what the selector returns.
 """
 
-from unittest.mock import patch
+import pytest
+from django.contrib.auth import get_user_model
 
 from cms.services import get_range_target_instances
+
+User = get_user_model()
 
 _ATTACKER = {
     "name": "techvault",
@@ -25,26 +32,35 @@ _DC = {
 }
 
 
-def _ready_instances(instances):
-    # get_range_target_instances imports get_user_ready_range_instances from
-    # engine.services at call time, so patch it there.
-    return patch("engine.services.get_user_ready_range_instances", return_value=instances)
+@pytest.fixture
+def user(db):
+    return User.objects.create_user(username="queries@example.com", email="queries@example.com")
+
+
+def _ready_range(user, provisioned_instances):
+    """Seed the user's ready engine Range with the given provisioned instances."""
+    from engine.models import Range as EngineRange
+
+    return EngineRange.objects.create(
+        user=user,
+        status=EngineRange.Status.READY,
+        provisioned_instances=provisioned_instances,
+    )
 
 
 class TestGetRangeTargetInstances:
     """Behavior of the CTF range-page instance selector."""
 
-    def test_multi_node_hides_attacker_and_shows_targets(self):
+    def test_multi_node_hides_attacker_and_shows_targets(self, user):
         """POLARIS-style range: attacker workstation hidden, targets shown."""
-        with _ready_instances([_ATTACKER, _DC]):
-            assert get_range_target_instances(2) == [_DC]
+        _ready_range(user, [_ATTACKER, _DC])
+        assert get_range_target_instances(user.id) == [_DC]
 
-    def test_single_seat_lab_returns_attacker_seat(self):
+    def test_single_seat_lab_returns_attacker_seat(self, user):
         """TechVault-style range: the sole attacker-tagged seat is returned (#1465)."""
-        with _ready_instances([_ATTACKER]):
-            assert get_range_target_instances(2) == [_ATTACKER]
+        _ready_range(user, [_ATTACKER])
+        assert get_range_target_instances(user.id) == [_ATTACKER]
 
-    def test_no_ready_range_returns_empty(self):
+    def test_no_ready_range_returns_empty(self, user):
         """No ready range / no instances yields an empty list."""
-        with _ready_instances([]):
-            assert get_range_target_instances(2) == []
+        assert get_range_target_instances(user.id) == []

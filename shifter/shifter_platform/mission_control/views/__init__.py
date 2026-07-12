@@ -30,7 +30,7 @@ from cms.services import (
     create_ngfw as cms_create_ngfw,
 )
 from cms.services import (
-    create_range as cms_create_range,
+    create_range_dispatch as cms_create_range,
 )
 from cms.services import (
     delete_agent as cms_delete_agent,
@@ -69,8 +69,7 @@ from cms.services import (
 from cms.services import (
     list_scenarios as cms_list_scenarios,
 )
-from risk_register.models import AuditLog
-from risk_register.services import audit_log_from_request
+from shared.audit import audit_log_from_request
 
 from ._credentials import (
     credential_add,
@@ -140,7 +139,6 @@ resume_range = _api_view("resume_range")
 logger = logging.getLogger(__name__)
 
 __all__ = (
-    "AuditLog",
     "agents",
     "api_credential_create",
     "api_credential_delete",

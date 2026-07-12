@@ -2,6 +2,15 @@
   {
     "rule_id": "ADR-004-R11",
     "owner": "@Brad-Edwards",
+    "reason": "CKV_GCP_38 (boot disk CSEK): the GCP-native dev-tenant runner (#1546) boot disk relies on Google-managed at-rest encryption (AES-256) rather than a customer-supplied/managed key. CSEK/CMEK would require provisioning and managing a KMS key + IAM in the dedicated runner root for marginal defense-in-depth over Google's default encryption, on a private, re-creatable dev-tenant runner. Inline `# checkov:skip=CKV_GCP_38` on google_compute_instance.runner points back to this entry; a CMEK upgrade is tracked with the runner hardening follow-up (#1613 area).",
+    "expires_on": "2027-07-13",
+    "paths": [
+      "platform/terraform/gcp/global/github-runner/"
+    ]
+  },
+  {
+    "rule_id": "ADR-004-R11",
+    "owner": "@Brad-Edwards",
     "reason": "CKV2_AWS_34 (SSM Parameter encrypted): repo policy is 'secrets live in Secrets Manager, not SSM Parameter Store.' Every aws_ssm_parameter in platform/terraform/ holds non-sensitive references (ARNs, URLs, ECR identifiers, feature flags) by convention. Promoting them to SecureString would add KMS API calls and destroy/create churn for zero defense-in-depth gain.",
     "expires_on": "2027-05-26",
     "paths": [
@@ -30,9 +39,7 @@
       "platform/terraform/modules/portal/rds/",
       "platform/terraform/environments/dev/portal/",
       "platform/terraform/environments/prod/portal/",
-      "platform/terraform/global/dev-box/",
-      "platform/terraform/global/tssummit/",
-      "platform/terraform/global/tssummit-ranges/"
+      "platform/terraform/global/dev-box/"
     ]
   },
   {
@@ -47,11 +54,9 @@
   {
     "rule_id": "ADR-004-R11",
     "owner": "@Brad-Edwards",
-    "reason": "CKV_AWS_88 / CKV_AWS_130 (EC2 / subnet public IP) and CKV_AWS_25 / CKV_AWS_260 / CKV_AWS_24 (open RDP/HTTP/SSH ingress): these fire on workshop demo ranges (tssummit, tssummit-ranges, ctfd-workshop, dev-box) and on the CTFd-platform module that backs customer CTF events. Demo participants need direct console access to those instances (public IP + RDP/SSH/HTTP from controlled CIDRs) or the workshop scenario does not run. The ingress rules are scoped to specific source CIDRs where possible; '0.0.0.0/0' appears only on the public CTFd web port where the platform is by design publicly reachable.",
+    "reason": "CKV_AWS_88 / CKV_AWS_130 (EC2 / subnet public IP) and CKV_AWS_25 / CKV_AWS_260 / CKV_AWS_24 (open RDP/HTTP/SSH ingress): these fire on workshop demo ranges (ctfd-workshop, dev-box) and on the CTFd-platform module that backs customer CTF events. Demo participants need direct console access to those instances (public IP + RDP/SSH/HTTP from controlled CIDRs) or the workshop scenario does not run. The ingress rules are scoped to specific source CIDRs where possible; '0.0.0.0/0' appears only on the public CTFd web port where the platform is by design publicly reachable.",
     "expires_on": "2026-11-26",
     "paths": [
-      "platform/terraform/global/tssummit/",
-      "platform/terraform/global/tssummit-ranges/",
       "platform/terraform/global/ctfd-workshop/",
       "platform/terraform/global/dev-box/",
       "platform/terraform/modules/portal/ctfd/"
@@ -66,10 +71,9 @@
   {
     "rule_id": "ADR-004-R11",
     "owner": "@Brad-Edwards",
-    "reason": "CKV_AWS_273 / CKV_AWS_274 / CKV_AWS_40 / CKV2_AWS_22 (IAM users without SSO / with AdministratorAccess / direct policy attachment / console access): apply to programmatic-only service accounts (cursor-bedrock and similar) where there is no human and SSO does not apply. Each affected user is access-key-only (no console password) and scoped via inline policy.",
+    "reason": "CKV_AWS_273 / CKV_AWS_274 / CKV_AWS_40 / CKV2_AWS_22 (IAM users without SSO / with AdministratorAccess / direct policy attachment / console access): apply to the se-admins IAM users, PANW SEs who need admin access to the dev AWS account where AWS SSO is not configured. Console access with a first-login password reset is required; AdministratorAccess is attached by design.",
     "expires_on": "2027-05-26",
     "paths": [
-      "platform/terraform/global/iam/",
       "platform/terraform/global/se-admins/"
     ]
   },
@@ -107,9 +111,16 @@
     "reason": "CKV2_AWS_19 (EIP unattached): NGFW management and untrust EIPs are associated to the NGFW interfaces (network_interface_id) via aws_eip_association at apply time, but Terraform sees them as 'unattached' because the aws_eip resource itself does not declare instance_id at declaration time (it cannot, since the ENI is created separately and the association is a third resource).",
     "expires_on": "2027-05-26",
     "paths": [
-      "platform/terraform/modules/range/vpc/",
-      "platform/terraform/global/tssummit/",
-      "platform/terraform/global/tssummit-ranges/"
+      "platform/terraform/modules/range/vpc/"
+    ]
+  },
+  {
+    "rule_id": "ADR-004-R11",
+    "owner": "@Brad-Edwards",
+    "reason": "CKV2_AWS_19 (EIP unattached): the dedicated runner-network NAT gateway EIP is attached to the aws_nat_gateway via allocation_id, not to an EC2 instance, so Checkov reports it as 'unattached'. Same NAT-EIP pattern as the range VPC (issue #1433 / #222).",
+    "expires_on": "2027-05-26",
+    "paths": [
+      "platform/terraform/modules/github-runner-network/"
     ]
   },
   {

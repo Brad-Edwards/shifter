@@ -12,15 +12,17 @@ from __future__ import annotations
 from typing import Any, cast
 
 from config import GCERangeCellConfig
+from gcp_range_cell_naming import (
+    _disk_type_self_link,
+    _label_value,
+    _machine_type_self_link,
+)
 from gcp_range_cell_plan import (
     ComputeResource,
     FirewallPlan,
     InstancePlan,
     RangeCellPlan,
     SubnetPlan,
-    _disk_type_self_link,
-    _label_value,
-    _machine_type_self_link,
 )
 
 
@@ -146,18 +148,25 @@ def _metadata_items(
     os_type: str,
     host_private_key_b64: str,
     host_public_key: str,
+    composition_script: str = "",
 ) -> list[dict[str, str]]:
-    """Render guest metadata: provisioned user key, host key install, host pubkey."""
+    """Render guest metadata: provisioned user key, host key install, host pubkey.
+
+    ``composition_script`` (empty on the cyberscript path) is appended to the guest
+    startup script after the host-key install, so the ACES-native path realizes
+    node content/features/accounts as part of the same idempotent bootstrap.
+    """
     items = [{"key": key, "value": value} for key, value in config.metadata_items]
     items.append({"key": "ssh-keys", "value": f"{username}:{public_key}"})
     if host_public_key:
         items.append({"key": HOST_PUBLIC_KEY_METADATA_KEY, "value": host_public_key})
     if os_type == "windows":
-        items.append(
-            {"key": "windows-startup-script-ps1", "value": _windows_boot_script(host_private_key_b64, public_key)}
-        )
+        boot = _windows_boot_script(host_private_key_b64, public_key) + composition_script
+        items.append({"key": "windows-startup-script-ps1", "value": boot})
     elif host_private_key_b64:
-        items.append({"key": "startup-script", "value": _linux_host_key_script(host_private_key_b64)})
+        items.append(
+            {"key": "startup-script", "value": _linux_host_key_script(host_private_key_b64) + composition_script}
+        )
     return items
 
 
@@ -169,6 +178,7 @@ def instance_resource(
     ssh_public_key: str,
     host_private_key_b64: str = "",
     host_public_key: str = "",
+    composition_script: str = "",
 ) -> ComputeResource:
     """Render a Compute Engine instance insert body."""
     profile = instance["profile"]
@@ -195,6 +205,7 @@ def instance_resource(
                 os_type=instance["os_type"],
                 host_private_key_b64=host_private_key_b64,
                 host_public_key=host_public_key,
+                composition_script=composition_script,
             )
         },
         "network_interfaces": [

@@ -28,6 +28,11 @@
       "source_file": "config/_api_token_settings.py"
     },
     {
+      "default": "1",
+      "name": "AUDIT_TRUSTED_PROXY_HOPS",
+      "source_file": "config/settings.py"
+    },
+    {
       "default": "'oidc'",
       "name": "AUTH_PROVIDER",
       "source_file": "config/_runtime_env.py"
@@ -63,6 +68,11 @@
       "source_file": "config/_email.py"
     },
     {
+      "default": "'report-only'",
+      "name": "BROWSER_CSP_MODE",
+      "source_file": "config/_browser_security.py"
+    },
+    {
       "default": "'aws'",
       "name": "CLOUD_PROVIDER",
       "source_file": "config/_cloud.py"
@@ -83,6 +93,11 @@
       "source_file": "config/settings.py"
     },
     {
+      "default": "_DEFAULT_CTF_BOOTSTRAP_VALUE",
+      "name": "CTF_DEFAULT_PARTICIPANT_PASSWORD",
+      "source_file": "config/_oidc_settings.py"
+    },
+    {
       "default": "'30'",
       "name": "CTF_DEFAULT_RANGE_SPINUP_MINUTES",
       "source_file": "config/settings.py"
@@ -91,6 +106,21 @@
       "default": "'ctf@example.com'",
       "name": "CTF_FROM_EMAIL",
       "source_file": "config/settings.py"
+    },
+    {
+      "default": "'5'",
+      "name": "CTF_LOGIN_RATE_LIMIT_MAX",
+      "source_file": "config/_oidc_settings.py"
+    },
+    {
+      "default": "'300'",
+      "name": "CTF_LOGIN_RATE_LIMIT_WINDOW_SECONDS",
+      "source_file": "config/_oidc_settings.py"
+    },
+    {
+      "default": "'24'",
+      "name": "CTF_PARTICIPANT_ACCOUNT_RETENTION_HOURS",
+      "source_file": "config/_oidc_settings.py"
     },
     {
       "default": "'0.1'",
@@ -176,6 +206,11 @@
       "default": "''",
       "name": "DJANGO_SECRET_KEY_FALLBACKS",
       "source_file": "config/_database_settings.py"
+    },
+    {
+      "default": "'https://brad-edwards.github.io/shifter/'",
+      "name": "DOCS_SITE_URL",
+      "source_file": "config/settings.py"
     },
     {
       "default": "''",
@@ -378,21 +413,6 @@
       "source_file": "config/_logging_config.py"
     },
     {
-      "default": null,
-      "name": "MAGIC_LINK_EVENT_MAX_EXPIRY_HOURS",
-      "source_file": "config/_oidc_settings.py"
-    },
-    {
-      "default": "'24'",
-      "name": "MAGIC_LINK_EXPIRY_HOURS",
-      "source_file": "config/_oidc_settings.py"
-    },
-    {
-      "default": "'False'",
-      "name": "MAGIC_LINK_SINGLE_USE",
-      "source_file": "config/_oidc_settings.py"
-    },
-    {
       "default": "''",
       "name": "MAILGUN_SENDER_DOMAIN",
       "source_file": "config/_email.py"
@@ -483,6 +503,16 @@
       "source_file": "config/settings.py"
     },
     {
+      "default": "'False'",
+      "name": "SHIFTER_ACES_NATIVE_PROVISIONING",
+      "source_file": "config/_aces_settings.py"
+    },
+    {
+      "default": "str(_aces_default_package_root)",
+      "name": "SHIFTER_ACES_PACKAGE_ROOT",
+      "source_file": "config/_aces_settings.py"
+    },
+    {
       "default": "'noreply@shifter.local'",
       "name": "SHIFTER_SUPPORT_EMAIL",
       "source_file": "config/settings.py"
@@ -506,6 +536,11 @@
       "default": null,
       "name": "TESTING",
       "source_file": "config/settings.py"
+    },
+    {
+      "default": "sqlite",
+      "name": "TEST_DB_BACKEND",
+      "source_file": "config/_database_settings.py"
     },
     {
       "default": "str(_UPLOAD_INSPECTION_FLOOR)",

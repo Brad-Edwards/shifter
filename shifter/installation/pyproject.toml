@@ -36,10 +36,21 @@ markers = [
 ]
 
 [tool.coverage.run]
+# Production-only coverage (#1529 / REV1 Q6): omit the whole test tree, not just
+# conftest, so tests do not cover themselves and inflate the metric. CI measures
+# this package via ``pytest --cov`` from the package root.
+source = ["."]
 omit = [
-    "tests/conftest.py",
-    "tests/*/conftest.py",
+    "tests/*",
+    "*/tests/*",
+    "conftest.py",
+    "*/conftest.py",
 ]
+
+[tool.coverage.report]
+# Non-regression floor (#1529 / REV1 Q6). Measured production-only baseline is
+# 97%; the floor sits one point under it and ratchets up. See docs/dev/testing.md.
+fail_under = 96
 
 [tool.ruff]
 target-version = "py312"

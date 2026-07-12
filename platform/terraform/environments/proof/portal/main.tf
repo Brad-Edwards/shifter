@@ -668,10 +668,11 @@ module "ec2" {
   log_retention_days = var.log_retention_days
 
   # Messaging (SQS queues for message consumers)
-  sqs_queue_arns  = values(module.messaging.sqs_queue_arns)
-  sqs_queue_urls  = module.messaging.sqs_queue_urls
-  sqs_kms_key_arn = module.messaging.kms_key_arn
-  s3_kms_key_arn  = aws_kms_key.portal_s3.arn
+  sqs_queue_arns         = values(module.messaging.sqs_queue_arns)
+  sqs_queue_urls         = module.messaging.sqs_queue_urls
+  sqs_kms_key_arn        = module.messaging.kms_key_arn
+  range_events_topic_arn = module.messaging.sns_topic_arn
+  s3_kms_key_arn         = aws_kms_key.portal_s3.arn
 
   # Parameter Store prefix for user_data bootstrap
   ssm_parameter_store_prefix = module.ssm.parameter_store_prefix
@@ -889,6 +890,20 @@ module "engine_provisioner" {
   range_instance_profile_arn  = data.terraform_remote_state.range.outputs.range_instance_profile_arn
   range_instance_profile_name = data.terraform_remote_state.range.outputs.range_instance_profile_name
   range_instance_role_arn     = data.terraform_remote_state.range.outputs.range_instance_role_arn
+
+  # AWS Polaris Bedrock agent credential profile (#1377); off unless populated
+  # via the deploy-secrets tfvars for an environment that runs AWS Polaris. The
+  # engine-provisioner module turns these into the AWS_POLARIS_AGENT_* task env
+  # vars that config.load_aws_polaris_agent_config() consumes.
+  aws_polaris_agent_region                       = var.aws_polaris_agent_region
+  aws_polaris_agent_main_model_id                = var.aws_polaris_agent_main_model_id
+  aws_polaris_agent_small_model_id               = var.aws_polaris_agent_small_model_id
+  aws_polaris_agent_main_inference_profile_arn   = var.aws_polaris_agent_main_inference_profile_arn
+  aws_polaris_agent_small_inference_profile_arn  = var.aws_polaris_agent_small_inference_profile_arn
+  aws_polaris_agent_main_backing_model_arns      = var.aws_polaris_agent_main_backing_model_arns
+  aws_polaris_agent_small_backing_model_arns     = var.aws_polaris_agent_small_backing_model_arns
+  aws_polaris_agent_sts_session_duration_seconds = var.aws_polaris_agent_sts_session_duration_seconds
+  aws_polaris_agent_refresh_window_seconds       = var.aws_polaris_agent_refresh_window_seconds
 
   # AMIs (from SSM Parameter Store)
   kali_ami_id    = data.aws_ssm_parameter.kali_ami.value
