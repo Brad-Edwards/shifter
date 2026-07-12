@@ -8,13 +8,16 @@ recover. Correct submissions earn points and move you up the scoreboard.
 
 ## Joining an Event
 
-1. Open the registration link for the event (or the **CTF** area of the portal).
-2. Complete registration before the event's registration deadline.
+1. Open the dedicated CTF login page from the URL your organizer provides.
+2. Sign in with the temporary username and bootstrap password. On first login, choose
+   a new password before opening any other CTF page.
 3. When the event opens, your dashboard shows the event status, your score, and the
    time remaining.
 
-Registration closes at the deadline the organizer set. If the event is full
-(`max_participants`), registration is refused.
+Temporary CTF credentials work only on participant CTF pages, never on the normal
+platform login or staff/operator surfaces. Platform credentials cannot use the CTF
+login. Access stops at event end and the temporary account is anonymized after the
+configured retention window.
 
 ## Your Range
 

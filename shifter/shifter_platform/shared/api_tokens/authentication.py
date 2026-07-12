@@ -58,6 +58,10 @@ class ApiTokenAuthentication(authentication.BaseAuthentication):
             )
             raise exceptions.AuthenticationFailed("Invalid or expired API token")
 
+        if token.created_by_id and getattr(getattr(token.created_by, "profile", None), "is_ctf_account", False):
+            token.revoke()
+            raise exceptions.AuthenticationFailed("Invalid or expired API token")
+
         coalesce_seconds = getattr(settings, "API_TOKEN_LAST_USED_COALESCE_SECONDS", _DEFAULT_COALESCE_SECONDS)
         token.touch_last_used(coalesce_seconds=coalesce_seconds)
 

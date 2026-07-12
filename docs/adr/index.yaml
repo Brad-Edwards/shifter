@@ -490,6 +490,11 @@
         "id": "ADR-009-R6",
         "description": "Provider-authenticated accounts that hold or may acquire platform privilege must bind immutably to the validated provider issuer and subject. Returning login resolves that tuple before email; a different issuer or subject for the same email fails closed and must never overwrite the stored binding. Cognito/OIDC and Identity Platform must consume one provider-neutral verified-identity and persistence policy seam rather than duplicate binding or bootstrap workflows.",
         "checks": []
+      },
+      {
+        "id": "ADR-009-R7",
+        "description": "Temporary local CTF participant accounts are a distinct, durably marked account origin, never a provider role variant: creation always uses a fresh Django user and never links by email, provider subject, or another platform-user attribute; CTF password login admits only the immutable marker plus a live event participation; and every provider/platform login and non-participant HTTP, API-token, admin, dev-auth, and WebSocket surface must treat the marker as a deny-authoritative signal before binding, elevation, role synchronization, or session/surface admission. Delivery email remains participant metadata, never an identity key. Role/group state, username shape, missing provider fields, and negative staff flags are not substitutes for the marker.",
+        "checks": []
       }
     ],
     "exceptions": [],
@@ -512,6 +517,7 @@
       ".github/workflows/_gcp-dev.yml",
       "docs/architecture/root-configured-backend-bundles.md",
       "docs/architecture/verified-oidc-admin-bootstrap-preflight-1521.md",
+      "docs/architecture/ctf-isolated-participant-accounts-preflight-1206.md",
       "shifter/shifter_platform/documentation/docs/technical/architecture.md",
       "shifter/shifter_platform/documentation/docs/technical/dev/secrets.md"
     ]

@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
 from typing import TYPE_CHECKING
 
 from django.contrib.auth.decorators import login_required
 from django.db import transaction
-from django.http import HttpResponse, JsonResponse
-from django.shortcuts import render
-from django.views.decorators.csrf import ensure_csrf_cookie
-from django.views.decorators.http import require_GET, require_http_methods, require_POST
+from django.http import HttpResponse
+from django.shortcuts import redirect, render
+from django.views.decorators.cache import never_cache
+from django.views.decorators.debug import sensitive_post_parameters
+from django.views.decorators.http import require_GET, require_http_methods
 
 if TYPE_CHECKING:
     from uuid import UUID
@@ -35,85 +37,104 @@ _SCOREBOARD_TEMPLATE = "ctf/participant/scoreboard.html"
 _SOLVE_HISTORY_TEMPLATE = "ctf/participant/solve_history.html"
 
 
-# Upper bound for an accepted invite token. Real tokens are
-# ``secrets.token_urlsafe(32)`` (~43 chars) stored in a 64-char column; anything
-# materially larger is rejected before any database lookup.
-_MAX_INVITE_TOKEN_LEN = 256
-
-
-@require_GET
-@ensure_csrf_cookie
-def ctf_register(request: HttpRequest) -> HttpResponse:
-    """Render the magic-link exchange page (no token read, no login).
-
-    The invite token is carried in the URL *fragment* (``#token=...``), which
-    browsers never send to the server, so it stays out of the request target,
-    proxy/ALB access logs, the ECS request formatter, and the ``Referer`` header
-    (SonarCloud ``pythonenterprise:S8435``). This view only renders the exchange
-    page and sets the CSRF cookie; page JavaScript reads the fragment, scrubs it
-    from history, and POSTs the token to ``ctf_register_exchange`` for validation
-    and login. A ``Referrer-Policy: no-referrer`` header is set as defense in
-    depth so the address-bar fragment cannot leak via outbound navigations.
-    """
-    response = render(request, "ctf/participant/register.html", {})
-    response["Referrer-Policy"] = "no-referrer"
-    return response
-
-
-@require_POST
-@ensure_csrf_cookie
-def ctf_register_exchange(request: HttpRequest) -> JsonResponse:
-    """Consume an invite token from the JSON body and create a session.
-
-    The invite token IS the authentication. Participants are auto-registered at
-    add-time via ``_auto_register_participant()``, so every valid token maps to a
-    participant with a linked Django user. Token expiration is enforced via
-    ``is_invite_valid``. When ``MAGIC_LINK_SINGLE_USE`` is True, the token is
-    cleared after the first successful login. CSRF-protected via the cookie set
-    on the GET page; the credential is never echoed back in any response.
-    """
+def _ctf_login_rate_limited(request: HttpRequest, username: str) -> tuple[bool, int]:
+    """Charge account/source login budgets without retaining raw identifiers."""
     from django.conf import settings
+    from django.core.cache import caches
+
+    from risk_register.services import get_client_ip
+    from shared.rate_limit import consume_fixed_window
+
+    window = int(getattr(settings, "CTF_LOGIN_RATE_LIMIT_WINDOW_SECONDS", 300))
+    maximum = int(getattr(settings, "CTF_LOGIN_RATE_LIMIT_MAX", 5))
+    account_key = hashlib.sha256(username.strip().lower().encode()).hexdigest()[:24]
+    source = str(get_client_ip(request) or "unknown")
+    source_key = hashlib.sha256(source.encode()).hexdigest()[:24]
+    cache = caches["launch_rate_limit"]
+    counts = (
+        consume_fixed_window(cache, f"ctf-login:account:{account_key}", window),
+        consume_fixed_window(cache, f"ctf-login:source:{source_key}", window),
+    )
+    return max(counts) > maximum, window
+
+
+@never_cache
+@sensitive_post_parameters("password")
+@require_http_methods(["GET", "POST"])
+def ctf_login(request: HttpRequest) -> HttpResponse:
+    """Authenticate only durably marked accounts with live participation."""
     from django.contrib.auth import login
     from django.urls import reverse
 
-    from ctf.models import CTFParticipant
+    from config.auth import CTFParticipantBackend
 
-    try:
-        body = _parsing._parse_body_object(request)
-        token = _parsing._get_body_str(body, "token", required=True).strip()
-    except _parsing._BodyParseError as e:
-        return _access._json_error(e, "Invalid request body.", 400)
+    error = None
+    if request.method == "POST":
+        username = request.POST.get("username", "")[:150]
+        password = request.POST.get("password", "")
+        try:
+            limited, window = _ctf_login_rate_limited(request, username)
+        except Exception:
+            response = render(
+                request,
+                "ctf/participant/login.html",
+                {"error": "Login is temporarily unavailable. Please retry shortly."},
+                status=503,
+            )
+            response["Retry-After"] = "60"
+            return response
+        if limited:
+            response = render(
+                request,
+                "ctf/participant/login.html",
+                {"error": "Invalid username or password."},
+                status=429,
+            )
+            response["Retry-After"] = str(window)
+            return response
+        user = CTFParticipantBackend().authenticate(
+            request,
+            username=username,
+            password=password,
+            ctf_participant=True,
+        )
+        if user is not None:
+            login(request, user, backend="config.auth.CTFParticipantBackend")
+            if user.profile.must_change_password:
+                return redirect(reverse("ctf:ctf_change_password"))
+            return redirect(reverse("ctf:participant_range"))
+        error = "Invalid username or password."
+    return render(request, "ctf/participant/login.html", {"error": error})
 
-    participant = (
-        CTFParticipant.objects.filter(invite_token=token).select_related("user").first()
-        if token and len(token) <= _MAX_INVITE_TOKEN_LEN
-        else None
-    )
 
-    error_message = None
-    if not token:
-        error_message = "Missing invite token."
-    elif not participant or not participant.user:
-        error_message = "Invalid invite token."
-    elif not participant.is_invite_valid:
-        error_message = "Invite token has expired."
-    if error_message:
-        return JsonResponse({"error": error_message}, status=400)
+@never_cache
+@sensitive_post_parameters("old_password", "new_password1", "new_password2")
+@login_required
+@require_http_methods(["GET", "POST"])
+def ctf_change_password(request: HttpRequest) -> HttpResponse:
+    """Change a temporary account password and clear the first-login gate."""
+    from django.contrib.auth import update_session_auth_hash
+    from django.contrib.auth.forms import PasswordChangeForm
 
-    # error_message is None implies a valid participant with a linked user.
-    assert participant is not None and participant.user is not None
-    login(request, participant.user, backend="django.contrib.auth.backends.ModelBackend")
+    from management.services import is_temporary_ctf_account, set_ctf_password_change_required
 
-    if getattr(settings, "MAGIC_LINK_SINGLE_USE", False):
-        participant.invite_token = ""  # nosec B105 — clearing token, not a password  # NOSONAR
-        participant.save(update_fields=["invite_token", "updated_at"])
+    if not is_temporary_ctf_account(request.user):
+        return HttpResponse("Forbidden", status=403)
+    form = PasswordChangeForm(request.user, request.POST or None)
+    if request.method == "POST" and form.is_valid():
+        from ctf.services.participant.accounts import effective_bootstrap_password, live_participant_for_user
 
-    # Land magic-link participants on their CTF range page, not the Mission
-    # Control dashboard: MC ranges are separate from CTF ranges, so a CTF
-    # participant redirected to the MC dashboard sees no active range (#1462).
-    # The range page shows provisioning status until the range is ready, then
-    # the RDP/VS Code access controls.
-    return JsonResponse({"redirect": reverse("ctf:participant_range")})
+        participant = live_participant_for_user(request.user)
+        if participant is not None and form.cleaned_data["new_password1"] == effective_bootstrap_password(
+            participant.event
+        ):
+            form.add_error("new_password1", "Choose a password different from the event bootstrap password.")
+            return render(request, "ctf/participant/change_password.html", {"form": form})
+        user = form.save()
+        set_ctf_password_change_required(user, False)
+        update_session_auth_hash(request, user)
+        return redirect("ctf:participant_range")
+    return render(request, "ctf/participant/change_password.html", {"form": form})
 
 
 @login_required

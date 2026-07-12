@@ -27,6 +27,13 @@ _HEALTH_PATHS = frozenset({"/health", "/health/"})
 # the probe without weakening ``ALLOWED_HOSTS`` for non-health paths.
 _HEALTH_ADMISSION_HOST = "localhost"
 
+_CTF_ACCOUNT_ALWAYS_ALLOWED = frozenset(
+    {
+        "/ctf/change-password/",
+        "/logout/",
+    }
+)
+
 
 class RequestIDMiddleware:
     """Add request ID to all requests for trace correlation.
@@ -56,6 +63,37 @@ class RequestIDMiddleware:
         response["X-Request-ID"] = request_id
 
         return response
+
+
+class CTFAccountBoundaryMiddleware:
+    """Deny marked temporary accounts outside participant-owned surfaces."""
+
+    def __init__(self, get_response: Callable[[HttpRequest], HttpResponse]) -> None:
+        self.get_response = get_response
+
+    def __call__(self, request: HttpRequest) -> HttpResponse:
+        from django.http import HttpResponse
+        from django.shortcuts import redirect
+
+        from management.services import is_ctf_password_change_required, is_temporary_ctf_account
+
+        user = request.user
+        if not is_temporary_ctf_account(user):
+            return self.get_response(request)
+
+        path = request.path
+        from ctf.services.participant.accounts import live_participant_for_user
+
+        if path != "/logout/" and live_participant_for_user(user) is None:
+            return HttpResponse("Forbidden", status=403, content_type="text/plain")
+        participant_surface = (path.startswith("/ctf/") and not path.startswith("/ctf/admin/")) or path.startswith(
+            "/api/v1/ctf/"
+        )
+        if path not in _CTF_ACCOUNT_ALWAYS_ALLOWED and not participant_surface:
+            return HttpResponse("Forbidden", status=403, content_type="text/plain")
+        if is_ctf_password_change_required(user) and path not in _CTF_ACCOUNT_ALWAYS_ALLOWED:
+            return redirect("ctf:ctf_change_password")
+        return self.get_response(request)
 
 
 class HealthCheckMiddleware:

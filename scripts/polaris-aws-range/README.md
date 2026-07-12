@@ -268,9 +268,9 @@ through the public web UI.
 
 2. Create an active `CTFEvent` with `scenario_id="polaris"` and an organizer
    owner. Add fake participants with `ctf.services.participant.invite_participant`;
-   this creates the participant Django users. If you are not testing email or
-   magic-link delivery, do not call `resend_invite`, and do not print or store
-   invite tokens in evidence.
+   this creates isolated temporary participant users. If you are not testing
+   credential email delivery, do not call the reset/delivery action, and never
+   print or store bootstrap passwords in evidence.
 
 3. Trigger deployment through the same view the organizer UI calls:
    `ctf.views.api_provision_ranges`. A `RequestFactory` POST with the event

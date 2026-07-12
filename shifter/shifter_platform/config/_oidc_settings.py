@@ -15,7 +15,11 @@ from config._runtime_env import AUTH_PROVIDER, IS_TEST_RUN, required_runtime_env
 
 __all__ = [
     "AUTHENTICATION_BACKENDS",
+    "CTF_DEFAULT_PARTICIPANT_PASSWORD",
+    "CTF_LOGIN_RATE_LIMIT_MAX",
+    "CTF_LOGIN_RATE_LIMIT_WINDOW_SECONDS",
     "CTF_ORGANIZER_PROVIDER_GROUPS",
+    "CTF_PARTICIPANT_ACCOUNT_RETENTION_HOURS",
     "IDENTITY_ALLOWED_EMAILS",
     "IDENTITY_ALLOWED_EMAIL_DOMAIN",
     "IDENTITY_PLATFORM_API_KEY",
@@ -26,8 +30,6 @@ __all__ = [
     "LOGIN_REDIRECT_URL",
     "LOGIN_URL",
     "LOGOUT_REDIRECT_URL",
-    "MAGIC_LINK_EXPIRY_HOURS",
-    "MAGIC_LINK_SINGLE_USE",
     "OIDC_CREATE_USER",
     "OIDC_EXEMPT_URLS",
     "OIDC_ISSUER_URL",
@@ -63,24 +65,23 @@ def _env_csv(name: str) -> list[str]:
 if AUTH_PROVIDER == "identity_platform":
     AUTHENTICATION_BACKENDS = [
         "config.identity_platform.IdentityPlatformBackend",
-        "django.contrib.auth.backends.ModelBackend",
+        "config.auth.PlatformModelBackend",
+        "config.auth.CTFParticipantBackend",
     ]
 else:
     AUTHENTICATION_BACKENDS = [
         "config.oidc.ShifterOIDCBackend",
-        "django.contrib.auth.backends.ModelBackend",
+        "config.auth.PlatformModelBackend",
+        "config.auth.CTFParticipantBackend",
     ]
 
-# Magic link authentication (PLAT-101). Event-backed CTF participant links use
-# the event end as their expiry by default; MAGIC_LINK_EXPIRY_HOURS is the
-# fallback when no event end is available. Operators that need a stricter
-# event-link ceiling can set MAGIC_LINK_EVENT_MAX_EXPIRY_HOURS.
-MAGIC_LINK_EXPIRY_HOURS = int(os.environ.get("MAGIC_LINK_EXPIRY_HOURS", "24"))
-_MAGIC_LINK_EVENT_MAX_EXPIRY_HOURS = os.environ.get("MAGIC_LINK_EVENT_MAX_EXPIRY_HOURS")
-MAGIC_LINK_EVENT_MAX_EXPIRY_HOURS = (
-    int(_MAGIC_LINK_EVENT_MAX_EXPIRY_HOURS) if _MAGIC_LINK_EVENT_MAX_EXPIRY_HOURS else None
+CTF_DEFAULT_PARTICIPANT_PASSWORD = os.environ.get(
+    "CTF_DEFAULT_PARTICIPANT_PASSWORD",
+    "ShifterAcesRanges",
 )
-MAGIC_LINK_SINGLE_USE = os.environ.get("MAGIC_LINK_SINGLE_USE", "False").lower() == "true"
+CTF_PARTICIPANT_ACCOUNT_RETENTION_HOURS = int(os.environ.get("CTF_PARTICIPANT_ACCOUNT_RETENTION_HOURS", "24"))
+CTF_LOGIN_RATE_LIMIT_MAX = int(os.environ.get("CTF_LOGIN_RATE_LIMIT_MAX", "5"))
+CTF_LOGIN_RATE_LIMIT_WINDOW_SECONDS = int(os.environ.get("CTF_LOGIN_RATE_LIMIT_WINDOW_SECONDS", "300"))
 
 # OIDC settings - loaded from environment for AWS/Cognito deployments.
 if AUTH_PROVIDER == "oidc":
@@ -178,17 +179,15 @@ OIDC_EXEMPT_URLS = [
     "/dev-login/",
     # View enforces production blocking directly
     "/dev-logout/",
-    # CTF magic link registration (token is the auth)
-    "/ctf/register/",
-    # CTF magic link token exchange (token is the auth; CSRF-protected POST)
-    "/ctf/register/exchange/",
+    # Dedicated local CTF participant authentication (still CSRF protected)
+    "/ctf/login/",
+    "/ctf/change-password/",
     # CTF help page
     "/ctf/help/",
 ]
 
-# Session cookie lifetime — makes Django's 14-day default explicit.
-# CTF participants auth via magic link (ModelBackend), so OIDC SessionRefresh
-# won't expire their sessions. This ensures no surprises from Django defaults.
+# Session cookie lifetime — makes Django's 14-day default explicit. Temporary
+# CTF sessions are additionally bounded by the live-event account policy.
 # 14 days
 SESSION_COOKIE_AGE = 60 * 60 * 24 * 14
 

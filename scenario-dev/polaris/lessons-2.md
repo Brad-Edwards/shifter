@@ -117,7 +117,7 @@ Users copy-pasting magic-link URLs out of printouts/emails produced "invalid tok
 
 ### Pre-event block via ALB fixed-response
 
-Keeping the magic links distributed early but gated until event start: add an ALB listener rule with a `path-pattern: /ctf/register*` condition and a `fixed-response` action returning 503 with a "opens at X" message. Takes seconds to add via CLI, same to remove. Clean, zero app-layer code.
+Temporary participant accounts may be distributed early; the application rejects login until the event's active window, so no ALB path gate is required.
 
 ### Magic-link expiry follows `event_end`
 

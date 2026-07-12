@@ -27,7 +27,7 @@ class TestLogoutView:
     def test_non_oidc_user_gets_session_logout(self, user):
         """A ModelBackend (non-OIDC) user is logged out and sent to the landing page."""
         client = Client()
-        client.force_login(user, backend="django.contrib.auth.backends.ModelBackend")
+        client.force_login(user, backend="config.auth.PlatformModelBackend")
         assert "_auth_user_id" in client.session  # logged in
 
         response = client.post(LOGOUT_URL)
