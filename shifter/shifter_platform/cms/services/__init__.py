@@ -50,6 +50,7 @@ from ._agents import (
     get_allowed_extensions,
     list_agents,
 )
+from ._content_ingestion import PackRegistrationRequest, RegisteredPack, register_pack
 from ._credentials import (
     create_credential,
     delete_credential,
@@ -108,7 +109,9 @@ __all__ = (
     "AgentUploadSpec",
     "AuditEvent",
     "CMSError",
+    "PackRegistrationRequest",
     "RangeInstance",
+    "RegisteredPack",
     "assets_create_agent",
     "assets_delete_agent",
     "audit_log",
@@ -160,6 +163,7 @@ __all__ = (
     "pause_range_by_request_id",
     "range_status_changed",
     "reassign_range_owner",
+    "register_pack",
     "resume_range",
     "resume_range_by_request_id",
     "validate_scenario_requirements",

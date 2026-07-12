@@ -11,6 +11,31 @@ class YAMLContentSerializer(serializers.Serializer):
     yaml_content = serializers.CharField(allow_blank=True, trim_whitespace=False)
 
 
+class PackRegistrationSerializer(serializers.Serializer):
+    """Validate the shape of a uniform pack-registration request body (#1578).
+
+    This is a thin boundary check: it rejects missing/oversized/wrong-typed
+    fields so the service and the reference-record validator receive a
+    well-formed request. Domain validation (source-kind allowlist, digest shape,
+    bounded provenance, pack conformance, no-shadow) remains authoritative in the
+    service and model — this serializer does not restate it.
+    """
+
+    scenario_id = serializers.SlugField(max_length=100)
+    source_kind = serializers.CharField(max_length=16)
+    contract_kind = serializers.CharField(max_length=32)
+    contract_profile = serializers.CharField(max_length=128)
+    package_ref = serializers.CharField(max_length=512)
+    package_version = serializers.CharField(max_length=128)
+    package_digest = serializers.CharField(max_length=71)
+    lock_ref = serializers.CharField(max_length=512, required=False, allow_blank=True, default="")
+    lock_digest = serializers.CharField(max_length=71, required=False, allow_blank=True, default="")
+    provenance = serializers.DictField(required=False, default=dict)
+    # conformance_status is intentionally NOT accepted: a caller cannot assert a
+    # pack has passed conformance. Registration always lands non-passed and a
+    # trusted conformance process promotes it (see cms.services.register_pack).
+
+
 class AcesCatalogFieldsSerializer(serializers.Serializer):
     """Read-only, allowlisted ACES package-source presentation fields.
 

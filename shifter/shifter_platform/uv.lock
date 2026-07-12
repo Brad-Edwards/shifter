@@ -24,6 +24,18 @@ constraints = [
 ]
 
 [[package]]
+name = "aces-scenario-packs"
+version = "0.1.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pyyaml" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/a7/0d/1238c57a35316b7e0bc1897df24c08006972e6acacccc3df9931bf4b06fa/aces_scenario_packs-0.1.0.tar.gz", hash = "sha256:4ba70745bae79094fce0dc289202049121652c4a14d6c3c96bb709b077576a2e", size = 100024, upload-time = "2026-07-06T00:01:02.992Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/87/2b/4183a7217d4fe11c505858156d0dda7c7603af68ee3251538b4e5a7aae93/aces_scenario_packs-0.1.0-py3-none-any.whl", hash = "sha256:daae7112749fe924d6e5201673bfeb246d39842564e19a26f099073adbf19d19", size = 83033, upload-time = "2026-07-06T00:01:01.628Z" },
+]
+
+[[package]]
 name = "aces-sdl"
 version = "0.19.1"
 source = { registry = "https://pypi.org/simple" }
@@ -2598,6 +2610,7 @@ name = "shifter-platform"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
+    { name = "aces-scenario-packs" },
     { name = "aces-sdl" },
     { name = "asyncssh" },
     { name = "bleach" },
@@ -2651,6 +2664,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "aces-scenario-packs", specifier = ">=0.1.0" },
     { name = "aces-sdl", specifier = ">=0.19.1" },
     { name = "asyncssh", specifier = ">=2.23.0" },
     { name = "bleach", specifier = ">=6.4.0" },

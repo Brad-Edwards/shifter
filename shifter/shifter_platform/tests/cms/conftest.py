@@ -4,6 +4,7 @@ Provides shared model builders and fixtures used across CMS test modules.
 """
 
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -173,3 +174,114 @@ def make_credential(credential_type_obj, pk=1, **overrides):
     cred.pk = pk
     cred.id = pk
     return cred
+
+
+# -----------------------------------------------------------------------------
+# Uniform content-ingestion fixtures (#1578): build conformant / malformed ACES
+# scenario packs on disk for pack-validation and registration tests.
+# -----------------------------------------------------------------------------
+
+# A minimal ACES SDL start state that parses through aces-sdl (mirrors
+# scenario-dev/aces-validation/shifter-aces-validation.sdl.yaml).
+CONFORMANT_PACK_SDL = """\
+name: ingestion-fixture
+description: Minimal provisioning-only ACES start state for ingestion tests.
+nodes:
+  lan:
+    type: Switch
+  web:
+    type: VM
+    os: linux
+    os_version: Alpine 3.19
+    source: {name: "alpine", version: "3.19"}
+    resources: {ram: 512 mib, cpu: 1}
+    services:
+      - {port: 80, name: http}
+infrastructure:
+  lan:
+    count: 1
+    properties: {cidr: 10.60.0.0/24, gateway: 10.60.0.1}
+  web:
+    count: 1
+    links: [lan]
+    properties:
+      - lan: 10.60.0.10
+"""
+
+
+def conformant_pack_yaml(name: str) -> dict[str, Any]:
+    return {
+        "name": name,
+        "title": name.replace("-", " ").title(),
+        "version": "0.1.0",
+        "status": "draft",
+        "description": "Minimal conformant pack for ingestion tests.",
+        "authors": ["Test Author <test@example.com>"],
+        "provenance_ledger": "docs/provenance-ledger.yaml",
+    }
+
+
+def conformant_provenance(name: str) -> dict[str, Any]:
+    return {
+        "schema_version": 1,
+        "pack": {"name": name},
+        "sources": [
+            {
+                "source_id": "original-design",
+                "kind": "original",
+                "name": "Original ACES design",
+                "license": "proprietary",
+                "usage": "reused",
+                "attribution_required": False,
+            }
+        ],
+        "artifacts": [{"artifact_id": "briefing", "path": "docs/concepts.md", "classification": "open"}],
+        "content_safety": {
+            "no_real_malware": True,
+            "no_real_third_party_targets": True,
+            "no_real_credentials": True,
+            "no_sensitive_data": True,
+            "offensive_tooling_boundary": True,
+        },
+        "review": {
+            "status": "approved",
+            "gates": [
+                {"gate_id": "licensing", "status": "approved"},
+                {"gate_id": "attribution", "status": "approved"},
+                {"gate_id": "sensitive-data", "status": "approved"},
+                {"gate_id": "offensive-tooling", "status": "approved"},
+            ],
+        },
+    }
+
+
+@pytest.fixture
+def make_pack():
+    """Factory: write an ACES scenario pack to disk and return its root Path.
+
+    Defaults produce a conformant pack (valid pack.yaml, provenance ledger,
+    concepts doc, and an SDL start state that parses through aces-sdl). Override
+    ``pack_yaml`` / ``provenance`` / ``sdl`` (pass ``sdl=None`` to omit SDL) to
+    build malformed packs for negative tests.
+    """
+    import yaml
+
+    def _make(root, *, name="ingestion-fixture", pack_yaml=..., provenance=..., sdl=CONFORMANT_PACK_SDL):
+        root = Path(root)
+        root.mkdir(parents=True, exist_ok=True)
+        pack_yaml = conformant_pack_yaml(name) if pack_yaml is ... else pack_yaml
+        provenance = conformant_provenance(name) if provenance is ... else provenance
+        if pack_yaml is not None:
+            (root / "pack.yaml").write_text(yaml.safe_dump(pack_yaml), encoding="utf-8")
+        docs = root / "docs"
+        docs.mkdir(parents=True, exist_ok=True)
+        (docs / "concepts.md").write_text("# Concepts\n", encoding="utf-8")
+        if provenance is not None:
+            (docs / "provenance-ledger.yaml").write_text(yaml.safe_dump(provenance), encoding="utf-8")
+        if sdl is not None:
+            sdl_dir = root / "sdl"
+            sdl_dir.mkdir(parents=True, exist_ok=True)
+            (sdl_dir / "scenario.sdl.yaml").write_text(sdl, encoding="utf-8")
+        return root
+
+    return _make

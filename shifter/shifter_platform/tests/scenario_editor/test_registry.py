@@ -7,6 +7,7 @@ from cms.models import AcesPackageSource, Scenario, ScenarioMetadata
 from cms.scenarios.registry import (
     ScenarioWorkflow,
     _aces_launchable,
+    active_legacy_scenario_ids,
     check_scenario_access,
     get_catalog_entry,
     get_scenario_detail,
@@ -494,3 +495,51 @@ class TestCheckScenarioAccess:
     def test_nonexistent_scenario_raises(self, regular_user):
         with pytest.raises(ValueError, match="not found"):
             check_scenario_access("nonexistent", regular_user)
+
+
+class TestActiveLegacyScenarioIds:
+    """The no-shadow set reused by the uniform ingestion path (#1578)."""
+
+    def test_includes_yaml_defaults(self, db):
+        assert "basic" in active_legacy_scenario_ids()
+
+    def test_includes_active_db_customs(self, custom_scenario):
+        assert "custom-test" in active_legacy_scenario_ids()
+
+    def test_excludes_soft_deleted_customs(self, custom_scenario):
+        from django.utils import timezone
+
+        Scenario.objects.filter(pk=custom_scenario.pk).update(deleted_at=timezone.now())
+        assert "custom-test" not in active_legacy_scenario_ids()
+
+    def test_matches_projection_ids(self, custom_scenario):
+        projection_legacy = {s["id"] for s in list_all_scenarios() if s.get("source_kind") != "aces"}
+        assert active_legacy_scenario_ids() == projection_legacy
+
+
+class TestObjectSourceNotLaunchable:
+    """Object-backed packs are never launchable until #1567 supplies a resolver.
+
+    The native launch loader resolves refs only under ACES_PACKAGE_ROOT, so an
+    object-storage-backed pack has no containment-checked, immutable-identity
+    resolution yet. It is fail-closed at the launchability axis even when the
+    adapter is wired, the flag is on, and conformance has passed.
+    """
+
+    def test_object_source_not_launchable_with_adapter(self, staff_user, aces_launch_adapter):
+        _make_aces_source(
+            staff_user,
+            "polaris-object",
+            source_kind="object",
+            conformance_status="passed",
+        )
+        assert get_catalog_entry("polaris-object")["launchable"] is False
+
+    def test_repo_source_launchable_with_adapter(self, staff_user, aces_launch_adapter):
+        _make_aces_source(
+            staff_user,
+            "polaris-repo",
+            source_kind="repo",
+            conformance_status="passed",
+        )
+        assert get_catalog_entry("polaris-repo")["launchable"] is True
