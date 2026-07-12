@@ -1,5 +1,7 @@
 # Deploy secrets and repository variables
 
+Part of the Shifter deploy and operations docs; start at the [documentation home](../index.md).
+
 The committed `terraform.tfvars` files in `platform/terraform/environments/...`
 and `platform/terraform/gcp/environments/...` ship account-neutral baselines
 that are intentionally broken-on-deploy where real account values are

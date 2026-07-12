@@ -1282,8 +1282,9 @@ jobs:
           # ``--cov`` (no path) measures the production roots declared in
           # pyproject ``[tool.coverage.run] source`` and honours its ``omit`` +
           # ``fail_under`` (#1529 / REV1 Q6): config, not the command line, owns
-          # the coverage universe and the non-regression floor.
-          uv run pytest tests/ --ignore=tests/documentation -m "not redis and not postgres" --cov --cov-report=term-missing --cov-report=xml:coverage.xml
+          # the coverage universe and the non-regression floor. The documentation
+          # suite runs here too (Q4, no ``--ignore=tests/documentation``).
+          uv run pytest tests/ -m "not redis and not postgres" --cov --cov-report=term-missing --cov-report=xml:coverage.xml
 
       # Real-stack Redis channel-layer evidence (#924). Runs only the
       # redis-marked integration tests against the Redis service, with xdist
@@ -1384,7 +1385,7 @@ jobs:
           uv run python manage.py collectstatic --noinput
           start=$(date +%s)
           set +e
-          uv run pytest tests/ --ignore=tests/documentation -m "not redis" \
+          uv run pytest tests/ -m "not redis" \
             --junit-xml=postgres-junit.xml -p no:cacheprovider
           status=$?
           set -e

@@ -1,5 +1,7 @@
 # AWS self-hosted runner provisioning
 
+Part of the Shifter deploy and operations docs; start at the [documentation home](../index.md).
+
 Every AWS deploy job (`_core.yml`, `_range.yml`, `_shifter-engine.yml`,
 `_shifter-platform.yml`, `packer.yml`) runs on `runs-on: self-hosted`. A fresh
 AWS account has no runners, so the AWS Deploy workflow cannot run until you
@@ -8,7 +10,7 @@ the runner Terraform root reuses.
 
 This runbook is the standup entry point. The authoritative reference for runner
 architecture, health monitoring, removal, and gotchas is
-[`platform/terraform/global/github-runner/README.md`](../../platform/terraform/global/github-runner/README.md).
+[`platform/terraform/global/github-runner/README.md`](https://github.com/Brad-Edwards/shifter/blob/dev/platform/terraform/global/github-runner/README.md).
 
 ## Prerequisite
 
@@ -144,4 +146,4 @@ gh api repos/Brad-Edwards/shifter/actions/runners --jq '.runners[] | {name, stat
 
 Once every runner shows `status: online`, the AWS Deploy workflow can run. To
 remove or replace a runner, see the "Removing a runner" section of the
-[github-runner README](../../platform/terraform/global/github-runner/README.md).
+[github-runner README](https://github.com/Brad-Edwards/shifter/blob/dev/platform/terraform/global/github-runner/README.md).
