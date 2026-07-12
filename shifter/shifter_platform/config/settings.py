@@ -194,7 +194,7 @@ TEMPLATES = [
                 "mission_control.context_processors.active_range",
                 "mission_control.context_processors.terminal_cdn_assets",
                 "mission_control.context_processors.docs_site_url",
-                "shared.context_processors.user_permissions",
+                "config.context_processors.user_permissions",
                 "ctf.context_processors.ctf_navigation",
             ],
         },

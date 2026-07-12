@@ -23,8 +23,16 @@ from management.services import (
     bind_provider_identity,
     resolve_user_by_provider_identity,
 )
-from risk_register.models import AuditLog
-from risk_register.services import AuditEvent, AuthPrincipal, audit_auth_event, audit_log, get_client_ip
+from shared.audit import (
+    AuditAction,
+    AuditActorType,
+    AuditEntityType,
+    AuditEvent,
+    AuthPrincipal,
+    audit_auth_event,
+    audit_log,
+    get_client_ip,
+)
 from shared.verified_identity import VerifiedIdentity, VerifiedIdentityError
 
 if TYPE_CHECKING:
@@ -200,7 +208,7 @@ class ShifterOIDCBackend(OIDCAuthenticationBackend):
 
         # Audit log: new user created via OIDC
         audit_auth_event(
-            action=AuditLog.Action.CREATE,
+            action=AuditAction.CREATE,
             principal=AuthPrincipal(user_id=user.id, email=user.email, cognito_sub=identity.subject),
             context="User created via OIDC first login",
         )
@@ -253,7 +261,7 @@ class ShifterOIDCBackend(OIDCAuthenticationBackend):
             # then re-raise so mozilla-django-oidc's callback failure handling is
             # unchanged.
             audit_auth_event(
-                action=AuditLog.Action.LOGIN_FAILED,
+                action=AuditAction.LOGIN_FAILED,
                 source_ip=source_ip,
                 user_agent=user_agent,
                 context=f"OIDC authentication error: {type(exc).__name__}",
@@ -263,7 +271,7 @@ class ShifterOIDCBackend(OIDCAuthenticationBackend):
         if user:
             # Successful authentication
             audit_auth_event(
-                action=AuditLog.Action.LOGIN,
+                action=AuditAction.LOGIN,
                 principal=AuthPrincipal(
                     user_id=user.id,
                     email=user.email,
@@ -279,7 +287,7 @@ class ShifterOIDCBackend(OIDCAuthenticationBackend):
             # The backend returned None (no matching/valid user); we cannot get
             # the email here as auth failed.
             audit_auth_event(
-                action=AuditLog.Action.LOGIN_FAILED,
+                action=AuditAction.LOGIN_FAILED,
                 source_ip=source_ip,
                 user_agent=user_agent,
                 context="OIDC authentication failed: no_user",
@@ -336,10 +344,10 @@ class ShifterOIDCBackend(OIDCAuthenticationBackend):
                 if bind_outcome != BindOutcome.UNCHANGED or updated_fields:
                     audit_log(
                         AuditEvent(
-                            entity_type=AuditLog.EntityType.USER,
+                            entity_type=AuditEntityType.USER,
                             entity_id=user.id,
-                            action=AuditLog.Action.ROLE_SYNC,
-                            actor_type=AuditLog.ActorType.SYSTEM,
+                            action=AuditAction.ROLE_SYNC,
+                            actor_type=AuditActorType.SYSTEM,
                             new_state={"bind": bind_outcome.value, "updated_fields": updated_fields},
                             context="oidc verified-identity bind/elevate",
                         ),

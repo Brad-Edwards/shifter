@@ -14,6 +14,7 @@ keeps working unchanged.
 from __future__ import annotations
 
 from .accounts import create_participant_accounts, rename_participant_username, reset_participant_credentials
+from .auth import authenticate_ctf_participant
 from .bulk_import import bulk_import_participants
 from .lifecycle import (
     delete_participant,
@@ -30,6 +31,7 @@ from .queries import (
 )
 
 __all__ = [
+    "authenticate_ctf_participant",
     "bulk_import_participants",
     "create_participant_accounts",
     "delete_participant",

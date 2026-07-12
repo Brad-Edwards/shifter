@@ -24,8 +24,16 @@ from management.services import (
     bind_provider_identity,
     resolve_user_by_provider_identity,
 )
-from risk_register.models import AuditLog
-from risk_register.services import AuditEvent, AuthPrincipal, audit_auth_event, audit_log, get_client_ip
+from shared.audit import (
+    AuditAction,
+    AuditActorType,
+    AuditEntityType,
+    AuditEvent,
+    AuthPrincipal,
+    audit_auth_event,
+    audit_log,
+    get_client_ip,
+)
 from shared.verified_identity import VerifiedIdentity
 
 if TYPE_CHECKING:
@@ -287,7 +295,7 @@ class IdentityPlatformBackend(BaseBackend):
 
         source_ip, user_agent = _request_audit_context(request)
         audit_auth_event(
-            action=AuditLog.Action.CREATE if created else AuditLog.Action.LOGIN,
+            action=AuditAction.CREATE if created else AuditAction.LOGIN,
             principal=AuthPrincipal(user_id=user.id, email=user.email, cognito_sub=identity.subject),
             source_ip=source_ip,
             user_agent=user_agent,
@@ -312,10 +320,10 @@ class IdentityPlatformBackend(BaseBackend):
                 if bind_outcome != BindOutcome.UNCHANGED or updated_fields:
                     audit_log(
                         AuditEvent(
-                            entity_type=AuditLog.EntityType.USER,
+                            entity_type=AuditEntityType.USER,
                             entity_id=user.id,
-                            action=AuditLog.Action.ROLE_SYNC,
-                            actor_type=AuditLog.ActorType.SYSTEM,
+                            action=AuditAction.ROLE_SYNC,
+                            actor_type=AuditActorType.SYSTEM,
                             new_state={"bind": bind_outcome.value, "updated_fields": updated_fields},
                             context="identity_platform verified-identity bind/elevate",
                         ),

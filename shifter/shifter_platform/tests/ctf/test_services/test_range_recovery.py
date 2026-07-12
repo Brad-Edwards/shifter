@@ -57,6 +57,7 @@ from ctf.services.range.spares import create_managed_spare_user
 from engine.models import Range as EngineRange
 from engine.models import Request as EngineRequest
 from risk_register.models import AuditLog
+from shared.audit import AuditAction
 from shared.cloud.exceptions import CloudTaskError
 from shared.enums import RangeSource, RequestType, ResourceStatus
 
@@ -262,7 +263,7 @@ class TestRebuildRecovery:
         assert recovery.old_range_instance_id == old_range.pk
         assert recovery.created_by_id == organizer_user.id
 
-        audit = AuditLog.objects.get(action=AuditLog.Action.RECOVER, entity_id=old_range.pk)
+        audit = AuditLog.objects.get(action=AuditAction.RECOVER, entity_id=old_range.pk)
         assert audit.actor_id == organizer_user.id
         assert audit.new_state["participant_id"] == str(participant_pk)
         assert audit.new_state["strategy"] == RecoveryStrategy.REBUILD.value
@@ -542,7 +543,7 @@ class TestIdempotentRetry:
         assert call_count["n"] == 2
         # No duplicate recovery record or audit row from the retry.
         assert CTFRangeRecovery.objects.filter(participant=participant).count() == 1
-        assert AuditLog.objects.filter(action=AuditLog.Action.RECOVER, entity_id=old_range.pk).count() == 1
+        assert AuditLog.objects.filter(action=AuditAction.RECOVER, entity_id=old_range.pk).count() == 1
 
         participant.refresh_from_db()
         assert participant.range_instance_id == spare_range.pk
