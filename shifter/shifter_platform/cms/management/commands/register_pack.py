@@ -10,7 +10,7 @@ traceback).
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from django.contrib.auth import get_user_model
 from django.core.exceptions import PermissionDenied
@@ -19,7 +19,10 @@ from django.core.management.base import BaseCommand, CommandError, CommandParser
 from cms.exceptions import CMSError
 from cms.services import PackRegistrationRequest, register_pack
 
-User = get_user_model()
+if TYPE_CHECKING:
+    from django.contrib.auth.models import User
+
+user_model = get_user_model()
 
 
 class Command(BaseCommand):
@@ -67,11 +70,11 @@ class Command(BaseCommand):
             )
         )
 
-    def _resolve_actor(self, username: str) -> Any:
+    def _resolve_actor(self, username: str) -> User:
         """Return the registering user or raise a clean ``CommandError``."""
         try:
-            return User.objects.get(username=username)
-        except User.DoesNotExist as exc:
+            return user_model.objects.get(username=username)
+        except user_model.DoesNotExist as exc:
             raise CommandError(f"actor '{username}' not found") from exc
 
     def _parse_provenance(self, raw: str) -> dict[str, Any]:

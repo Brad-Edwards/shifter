@@ -35,7 +35,6 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any
 
 import jsonschema
 import yaml
@@ -118,7 +117,7 @@ def _check_pack(pack_root: Path) -> tuple[list[str], str | None]:
     return errors, pack_name
 
 
-def _check_identity(pack_yaml: dict[str, Any], errors: list[str]) -> str | None:
+def _check_identity(pack_yaml: dict[str, object], errors: list[str]) -> str | None:
     """Validate the pack identity block; return the declared name (or ``None``)."""
     name = pack_yaml.get("name")
     if not isinstance(name, str) or not name.strip():
@@ -127,7 +126,7 @@ def _check_identity(pack_yaml: dict[str, Any], errors: list[str]) -> str | None:
     return name
 
 
-def _check_provenance(pack_root: Path, pack_yaml: dict[str, Any], pack_name: str | None, errors: list[str]) -> None:
+def _check_provenance(pack_root: Path, pack_yaml: dict[str, object], pack_name: str | None, errors: list[str]) -> None:
     """Validate the required provenance ledger against the packaged schema."""
     rel = pack_yaml.get("provenance_ledger", DEFAULT_PROVENANCE_LEDGER)
     ledger_path = _contained_path(pack_root, rel, "provenance_ledger", errors)
@@ -142,12 +141,13 @@ def _check_provenance(pack_root: Path, pack_yaml: dict[str, Any], pack_name: str
         return
     _validate_against_schema(ledger, provenance_schema_path(), "provenance ledger", errors)
     _check_content_safety(ledger, errors)
-    ledger_name = ledger.get("pack", {}).get("name") if isinstance(ledger.get("pack"), dict) else None
+    pack_block = ledger.get("pack")
+    ledger_name = pack_block.get("name") if isinstance(pack_block, dict) else None
     if pack_name is not None and ledger_name != pack_name:
         errors.append("provenance ledger: pack name does not match pack.yaml")
 
 
-def _check_content_safety(ledger: dict[str, Any], errors: list[str]) -> None:
+def _check_content_safety(ledger: dict[str, object], errors: list[str]) -> None:
     """Every content-safety attestation must be present and true (exclusion policy)."""
     safety = ledger.get("content_safety")
     if not isinstance(safety, dict):
@@ -158,7 +158,7 @@ def _check_content_safety(ledger: dict[str, Any], errors: list[str]) -> None:
             errors.append(f"provenance ledger: content_safety.{flag} must be true")
 
 
-def _check_compatibility(pack_root: Path, pack_yaml: dict[str, Any], errors: list[str]) -> None:
+def _check_compatibility(pack_root: Path, pack_yaml: dict[str, object], errors: list[str]) -> None:
     """Validate the compatibility manifest against the packaged schema, when referenced."""
     rel = pack_yaml.get("compatibility_manifest")
     if rel is None:
@@ -219,7 +219,7 @@ def _validate_against_schema(doc: object, schema_path: str, label: str, errors: 
         errors.append(f"{label}: schema violation '{err.validator}' at {location}")
 
 
-def _load_yaml(path: Path, label: str, errors: list[str]) -> Any:
+def _load_yaml(path: Path, label: str, errors: list[str]) -> object:
     """Safe-load a YAML document, recording a bounded error on failure."""
     try:
         with path.open(encoding="utf-8") as handle:

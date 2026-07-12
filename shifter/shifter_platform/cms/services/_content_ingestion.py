@@ -31,7 +31,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING
 
 from django.conf import settings
 from django.db import IntegrityError, transaction
@@ -45,6 +45,9 @@ from risk_register.services import AuditEvent, audit_log
 from shared.auth import validate_cms_authoring_user
 from shared.log_sanitize import safe_log_value
 from shared.schemas.aces_package_source import AcesPackageSourceError
+
+if TYPE_CHECKING:
+    from django.contrib.auth.models import User
 
 logger = logging.getLogger(__name__)
 
@@ -81,7 +84,7 @@ class PackRegistrationRequest:
     package_digest: str
     lock_ref: str = ""
     lock_digest: str = ""
-    provenance: dict[str, Any] | None = None
+    provenance: dict[str, object] | None = None
 
 
 @dataclass(frozen=True)
@@ -96,7 +99,7 @@ class RegisteredPack:
     created: bool
 
 
-def register_pack(*, user: Any, request: PackRegistrationRequest, request_id: str = "") -> RegisteredPack:
+def register_pack(*, user: User, request: PackRegistrationRequest, request_id: str = "") -> RegisteredPack:
     """Register a pack through the single uniform ingestion boundary.
 
     Args:
@@ -214,7 +217,7 @@ def _resolve_repo_pack_root(package_ref: str) -> Path:
     return candidate
 
 
-def _audit_registration(row: AcesPackageSource, user: Any, request_id: str) -> None:
+def _audit_registration(row: AcesPackageSource, user: User, request_id: str) -> None:
     """Record a sanitized audit event for a successful registration."""
     audit_log(
         AuditEvent(

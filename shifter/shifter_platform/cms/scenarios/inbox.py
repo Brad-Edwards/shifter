@@ -19,13 +19,16 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import yaml
 
 from cms.models import AcesPackageSource
 from cms.services import PackRegistrationRequest, RegisteredPack, register_pack
 from shared.log_sanitize import safe_log_value
+
+if TYPE_CHECKING:
+    from django.contrib.auth.models import User
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +50,7 @@ def load_inbox_manifest(manifest_path: Path | None = None) -> list[dict[str, Any
 
 
 def register_inbox_packs(
-    *, actor: Any, manifest_path: Path | None = None, request_id: str = ""
+    *, actor: User, manifest_path: Path | None = None, request_id: str = ""
 ) -> list[RegisteredPack]:
     """Register every declared in-box pack through the uniform ingestion service.
 
