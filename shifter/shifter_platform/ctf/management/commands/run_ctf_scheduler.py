@@ -83,6 +83,9 @@ class Command(BaseCommand):
         while not self.shutdown:
             try:
                 self._recover_stale_tasks()
+                from ctf.services.participant.accounts import purge_expired_participant_accounts
+
+                purge_expired_participant_accounts()
                 tasks = self._fetch_due_tasks(batch_size)
                 for task in tasks:
                     if self.shutdown:

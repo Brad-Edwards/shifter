@@ -169,6 +169,7 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "config.middleware.CTFAccountBoundaryMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
@@ -393,7 +394,7 @@ if not DEBUG:
 # ------------------------------------------------------------------------------
 # Authentication
 # ------------------------------------------------------------------------------
-# Authentication backends, OIDC endpoint discovery, magic-link config,
+# Authentication backends, OIDC endpoint discovery, CTF local-auth config,
 # and ``OIDC_EXEMPT_URLS`` are defined in ``config._oidc_settings`` so
 # this module stays under the 500-line cap. Re-exported via star-import
 # here (``noqa`` suppresses the unused/ambiguous-import warnings — these

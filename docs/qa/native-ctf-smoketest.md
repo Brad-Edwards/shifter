@@ -108,7 +108,7 @@ print('status', e.status, 'participants', CTFParticipant.objects.filter(event=e)
 
 ## Part 2—Participant journey
 
-> Goal: a participant can register, solve, score, and get a working range.
+> Goal: a participant can log in with a temporary account, change the bootstrap password, solve, score, and get a working range.
 
 ### 2.1 Register & view challenges **[Browser]**
 

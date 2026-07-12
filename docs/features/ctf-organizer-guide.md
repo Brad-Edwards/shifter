@@ -57,11 +57,16 @@ import a roster. Each participant is tracked through registration, range assignm
 and scoring. Use **Brackets** to group participants into ranked cohorts, and (in team
 mode) manage team membership.
 
-Participant magic links remain reusable by default and expire at the event end, so
-participants can return through the same invitation link for the full active CTF
-window. Resending a magic link rotates the token while keeping the same event-end
-expiry. If an unusually long event needs a stricter bearer-token lifetime, operators
-can set `MAGIC_LINK_EVENT_MAX_EXPIRY_HOURS` to cap event-backed magic links.
+Participants use isolated temporary accounts on the dedicated CTF login page.
+Generate accounts before an event, hand out the generated username and bootstrap
+password manually, or attach an optional delivery email. The event form can override
+the platform bootstrap password for stricter events. A participant detail page lets
+you rename a generated username; names remain globally unique and start with
+`range-`. Email delivery sends the
+login URL and username separately from the password. A reset invalidates the current
+password, restores the event bootstrap password, and forces another password change.
+Accounts stop authenticating at event end and are anonymized after the configured
+participant-account retention window.
 
 ## 4. Ranges
 

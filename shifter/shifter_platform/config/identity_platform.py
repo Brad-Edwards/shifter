@@ -247,7 +247,7 @@ def _resolve_identity_platform_user(identity: VerifiedIdentity) -> DjangoUser | 
     matched = resolve_user_by_provider_identity(identity.issuer, identity.subject).first()
     if matched is not None:
         return matched
-    return User.objects.filter(username=identity.email).first()
+    return User.objects.filter(username=identity.email, profile__is_ctf_account=False).first()
 
 
 class IdentityPlatformBackend(BaseBackend):
@@ -326,7 +326,7 @@ class IdentityPlatformBackend(BaseBackend):
 
     def get_user(self, user_id: int) -> DjangoUser | None:
         try:
-            return User.objects.get(pk=user_id)
+            return User.objects.select_related("profile").get(pk=user_id)
         except User.DoesNotExist:
             return None
 

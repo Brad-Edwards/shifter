@@ -10,10 +10,10 @@ They are gitignored and must not be committed:
 
 | File | Produced by |
 |---|---|
-| `provisioning_state.json` | `orchestrate_provisioning.py` — resumable machine-readable batch state |
-| `provisioning_status.md` | `orchestrate_provisioning.py` — human-readable batch log |
-| `health_report.md` | `check_range_health.py --output …` — per-range health sweep |
-| `postprovision_status.md` | post-provision supervisor scripts — splice/Bedrock follow-up status |
+| `provisioning_state.json` | `orchestrate_provisioning.py`—resumable machine-readable batch state |
+| `provisioning_status.md` | `orchestrate_provisioning.py`—human-readable batch log |
+| `health_report.md` | `check_range_health.py --output …`—per-range health sweep |
+| `postprovision_status.md` | post-provision supervisor scripts—splice/Bedrock follow-up status |
 
 Regenerate them by re-running the corresponding command during an operator
 session. `adr_guard`'s `no-tracked-generated-artifacts` check (ADR-004-R8)
@@ -268,9 +268,9 @@ through the public web UI.
 
 2. Create an active `CTFEvent` with `scenario_id="polaris"` and an organizer
    owner. Add fake participants with `ctf.services.participant.invite_participant`;
-   this creates the participant Django users. If you are not testing email or
-   magic-link delivery, do not call `resend_invite`, and do not print or store
-   invite tokens in evidence.
+   this creates isolated temporary participant users. If you are not testing
+   credential email delivery, do not call the reset/delivery action, and never
+   print or store bootstrap passwords in evidence.
 
 3. Trigger deployment through the same view the organizer UI calls:
    `ctf.views.api_provision_ranges`. A `RequestFactory` POST with the event
