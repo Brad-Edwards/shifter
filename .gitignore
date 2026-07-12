@@ -495,3 +495,6 @@ temp/
 
 # Operator-local deployment config (synced to SHIFTER_CONFIG_* secrets; never commit)
 /shifter.yaml
+
+# mkdocs build output (docs site is published by .github/workflows/docs.yml)
+/site/

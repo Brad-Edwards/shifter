@@ -41,7 +41,6 @@ def ctf_participant():
     p.pk = uuid4()
     p.email = "participant@test.com"
     p.name = "Test Participant"
-    p.invite_token = "test-invite-token"
     p.invited_at = None
     p.range_status = "pending"
     p.registered_at = "2025-01-01T00:00:00Z"
@@ -55,7 +54,6 @@ def ctf_participant_invited():
     p.pk = uuid4()
     p.email = "invited@test.com"
     p.name = "Invited Participant"
-    p.invite_token = "invited-token"
     p.invited_at = "2025-01-01T00:00:00Z"
     p.range_status = "pending"
     return p
@@ -94,111 +92,6 @@ def blocking_smtp():
     return BlockingMessage, release, delivered
 
 
-class TestSendInvitations:
-    """Tests for send_invitations."""
-
-    @patch("ctf.services.notification.CTFParticipant")
-    @patch("ctf.services.notification.CTFEvent")
-    def test_not_found(self, mock_event_cls, mock_part_cls):
-        """Raises CTFNotFoundError for nonexistent event."""
-        mock_event_cls.DoesNotExist = type("DoesNotExist", (Exception,), {})
-        mock_event_cls.objects.get.side_effect = mock_event_cls.DoesNotExist
-        with pytest.raises(CTFNotFoundError):
-            notification.send_invitations(uuid4())
-
-    @patch("ctf.services.notification.CTFNotification")
-    @patch("ctf.services.notification.CTFParticipant")
-    @patch("ctf.services.notification.CTFEvent")
-    def test_sends_to_uninvited(
-        self, mock_event_cls, mock_part_cls, mock_notif_cls, ctf_event, ctf_participant_invited
-    ):
-        """Dispatches invitations (async, fire-and-forget) and updates invited_at."""
-        ctf_participant_invited.invited_at = None
-        mock_event_cls.objects.get.return_value = ctf_event
-        mock_event_cls.DoesNotExist = Exception
-        mock_part_cls.objects.filter.return_value = [ctf_participant_invited]
-
-        with (
-            patch.object(notification, "_send_email", return_value=None) as mock_send,
-            patch.object(notification, "_build_registration_url", return_value="https://example.com/register"),
-            patch.object(notification, "_render_email", return_value=("<html>", "text", "")),
-        ):
-            result = notification.send_invitations(ctf_event.pk)
-
-        assert result["sent"] == 1
-        mock_send.assert_called_once()
-        ctf_participant_invited.save.assert_called()
-
-    @patch("ctf.services.notification.CTFNotification")
-    @patch("ctf.services.notification.CTFParticipant")
-    @patch("ctf.services.notification.CTFEvent")
-    def test_sends_to_already_invited(
-        self, mock_event_cls, mock_part_cls, mock_notif_cls, ctf_event, ctf_participant_invited
-    ):
-        """Dispatches to all participants including already-invited ones."""
-        mock_event_cls.objects.get.return_value = ctf_event
-        mock_event_cls.DoesNotExist = Exception
-        mock_part_cls.objects.filter.return_value = [ctf_participant_invited]
-
-        with (
-            patch.object(notification, "_send_email", return_value=None),
-            patch.object(notification, "_build_registration_url", return_value="https://example.com/register"),
-            patch.object(notification, "_render_email", return_value=("<html>", "text", "")),
-        ):
-            result = notification.send_invitations(ctf_event.pk)
-
-        assert result["sent"] == 1
-
-    @patch("ctf.services.notification.CTFNotification")
-    @patch("ctf.services.notification.CTFParticipant")
-    @patch("ctf.services.notification.CTFEvent")
-    def test_tracks_failures(self, mock_event_cls, mock_part_cls, mock_notif_cls, ctf_event, ctf_participant_invited):
-        """A synchronous rendering failure (the surviving failure path under async
-        delivery) is counted in ``failed`` and does not dispatch a send."""
-        ctf_participant_invited.invited_at = None
-        mock_event_cls.objects.get.return_value = ctf_event
-        mock_event_cls.DoesNotExist = Exception
-        mock_part_cls.objects.filter.return_value = [ctf_participant_invited]
-
-        with (
-            patch.object(notification, "_send_email", return_value=None) as mock_send,
-            patch.object(notification, "_build_registration_url", return_value="https://example.com/register"),
-            patch.object(notification, "_render_email", side_effect=Exception("template error")),
-        ):
-            result = notification.send_invitations(ctf_event.pk)
-
-        assert result["failed"] == 1
-        assert result["sent"] == 0
-        mock_send.assert_not_called()
-
-    @patch("ctf.services.notification.CTFNotification")
-    @patch("ctf.services.notification.CTFParticipant")
-    @patch("ctf.services.notification.CTFEvent")
-    def test_creates_notification_record(
-        self, mock_event_cls, mock_part_cls, mock_notif_cls, ctf_event, ctf_participant_invited
-    ):
-        """Creates CTFNotification record after dispatch, with honest 'Queued' wording."""
-        ctf_participant_invited.invited_at = None
-        mock_event_cls.objects.get.return_value = ctf_event
-        mock_event_cls.DoesNotExist = Exception
-        mock_part_cls.objects.filter.return_value = [ctf_participant_invited]
-
-        with (
-            patch.object(notification, "_send_email", return_value=None),
-            patch.object(notification, "_build_registration_url", return_value="https://example.com/register"),
-            patch.object(notification, "_render_email", return_value=("<html>", "text", "")),
-        ):
-            notification.send_invitations(ctf_event.pk)
-
-        mock_notif_cls.objects.create.assert_called_once()
-        call_kwargs = mock_notif_cls.objects.create.call_args.kwargs
-        assert call_kwargs["event"] == ctf_event
-        assert call_kwargs["notification_type"] == NotificationType.INVITE.value
-        assert call_kwargs["status"] == NotificationStatus.SENT.value
-        assert call_kwargs["sent_count"] == 1
-        assert "Queued" in call_kwargs["body"]
-
-
 @pytest.mark.django_db
 class TestSendInvitationsAsyncDispatchEndToEnd:
     """Integration coverage for PLAT-103 clause 3 in the invitation send loop.
@@ -208,6 +101,10 @@ class TestSendInvitationsAsyncDispatchEndToEnd:
     external SMTP boundary is patched), proving the whole production path
     dispatches asynchronously without waiting on delivery.
     """
+
+    def test_not_found(self):
+        with pytest.raises(CTFNotFoundError):
+            notification.send_invitations(uuid4())
 
     @pytest.fixture
     def invited_event_participant(self):

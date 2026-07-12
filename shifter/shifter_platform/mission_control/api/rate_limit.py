@@ -42,6 +42,7 @@ from rest_framework.throttling import BaseThrottle
 from rest_framework.views import APIView
 
 from mission_control.api.permissions import mission_control_actor_user
+from shared.rate_limit import consume_fixed_window
 
 logger = logging.getLogger(__name__)
 
@@ -62,61 +63,6 @@ class LaunchAdmissionUnavailable(APIException):
     def __init__(self, wait: float | None = None, detail: object = None, code: str | None = None) -> None:
         self.wait = wait
         super().__init__(detail=detail, code=code)
-
-
-# Atomic fixed-window increment for a Redis-backed cache: INCR auto-creates the
-# key (→ 1) when missing, and EXPIRE is applied on creation (c == 1) OR whenever
-# the key somehow carries no TTL (TTL == -1, self-healing). Running increment +
-# expiry as one server-side script closes the expiry-boundary race that a
-# separate add()+incr() leaves — where INCR recreates an expired key with NO TTL
-# and the counter never resets, throttling that budget permanently.
-_LUA_INCR_EXPIRE = (
-    "local c = redis.call('INCR', KEYS[1])\n"
-    "if c == 1 or redis.call('TTL', KEYS[1]) == -1 then\n"
-    "  redis.call('EXPIRE', KEYS[1], ARGV[1])\n"
-    "end\n"
-    "return c"
-)
-
-
-def _redis_client(cache: BaseCache, made_key: str) -> Any | None:
-    """Return the raw redis client for a Redis-backed cache, else ``None``.
-
-    Django's ``RedisCache`` exposes ``get_client`` on its inner client;
-    ``LocMemCache`` (tests / single-process dev) does not, so this returns
-    ``None`` and the caller uses the portable cache-API path.
-    """
-    get_client = getattr(getattr(cache, "_cache", None), "get_client", None)
-    if get_client is None:
-        return None
-    try:
-        return get_client(made_key, write=True)
-    except Exception:
-        # A misbehaving backend must not crash the admission-path wiring.
-        return None
-
-
-def _consume(cache: BaseCache, key: str, window: int) -> int:
-    """Atomically increment ``key`` within a fixed ``window`` and return the count.
-
-    On a Redis-backed cache the increment and its expiry run as one atomic
-    server-side script, so the fixed-window key always carries a TTL — including
-    at the expiry boundary, where a separate ``add`` + ``incr`` would recreate a
-    TTL-less key and throttle that budget permanently. On a ``LocMemCache``
-    (single-process tests / dev) the portable ``add`` + ``incr`` path is used:
-    each op is atomic in-process and the window-boundary miss is handled by
-    re-seeding on the ``ValueError`` DjangoCache raises for a missing key.
-    """
-    made_key = cache.make_key(key, version=cache.version)
-    client = _redis_client(cache, made_key)
-    if client is not None:
-        return int(client.eval(_LUA_INCR_EXPIRE, 1, made_key, window))
-    try:
-        cache.add(key, 0, window)
-        return int(cache.incr(key))
-    except ValueError:
-        cache.set(key, 1, window)
-        return 1
 
 
 class _LaunchRateThrottle(BaseThrottle):
@@ -167,8 +113,8 @@ class _LaunchRateThrottle(BaseThrottle):
         fleet_max, fleet_window = policy["fleet"]["max"], policy["fleet"]["window"]
         cache = self._cache()
         try:
-            actor_count = _consume(cache, self._actor_key(actor_pk), actor_window)
-            fleet_count = _consume(cache, self._fleet_key(), fleet_window)
+            actor_count = consume_fixed_window(cache, self._actor_key(actor_pk), actor_window)
+            fleet_count = consume_fixed_window(cache, self._fleet_key(), fleet_window)
         except Exception as exc:
             # Any admission-backend error must fail closed for these launch mutations.
             logger.warning(

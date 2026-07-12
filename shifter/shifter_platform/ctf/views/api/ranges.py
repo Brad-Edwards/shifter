@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 
 from ctf.views import _access
 from ctf.views._access import (
-    _check_invite_rate_limit,
+    _check_credential_delivery_rate_limit,
     _get_user,
     _json_error,
     _resolve_owned_participant,
@@ -386,7 +386,7 @@ def api_send_invitations(request: HttpRequest, event_id: UUID) -> JsonResponse:
     """
     from ctf.services.notification import send_invitations
 
-    if not _check_invite_rate_limit(_get_user(request).pk):
+    if not _check_credential_delivery_rate_limit(_get_user(request).pk):
         return JsonResponse({"error": "Too many invitations. Try again later."}, status=429)
 
     _event, error = _resolve_owned_event_json(request, event_id)

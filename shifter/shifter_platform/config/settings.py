@@ -80,7 +80,14 @@ if not SECRET_KEY:
     raise ValueError("DJANGO_SECRET_KEY environment variable is required")
 # SECRET_KEY_FALLBACKS (zero-downtime rotation) lives in config._database_settings.
 
-DEBUG = _env_bool("DJANGO_DEBUG", False)
+# Under a test run (``IS_TEST_RUN`` = ``TESTING=1`` or pytest as argv[0]) the
+# posture defaults to DEBUG=True so a clean-checkout ``uv run pytest`` matches CI
+# instead of inheriting the production HTTPS posture that a bare run would get
+# from ``DJANGO_DEBUG`` being unset (#1529 / REV1 Q7). An explicit ``DJANGO_DEBUG``
+# always wins; production (``IS_TEST_RUN`` false) is unchanged and still defaults
+# to DEBUG=False. The test posture lives in config, per config._runtime_env owning
+# dev/test defaults -- not in a wrapper or a value CI must inject.
+DEBUG = _env_bool("DJANGO_DEBUG", IS_TEST_RUN)
 ENVIRONMENT = require_environment()
 _allowed_hosts_raw = required_runtime_env("DJANGO_ALLOWED_HOSTS", dev_default="localhost,127.0.0.1")
 ALLOWED_HOSTS = [host.strip() for host in _allowed_hosts_raw.split(",") if host.strip()]
@@ -103,6 +110,12 @@ CSRF_TRUSTED_ORIGINS = [o.strip() for o in _csrf_origins.split(",") if o.strip()
 # Site URL for internal callbacks (e.g., provisioner callback)
 # Required in all environments - no default fallback
 SITE_URL = os.environ.get("SITE_URL")
+
+# Public documentation site (ADR-038). Templates link out to the hosted mkdocs
+# site rather than the retired in-app docs reader; kept here (config, not
+# hardcoded in templates) and exposed via mission_control.context_processors.
+# docs_site_url. Trailing slash so template paths append directly.
+DOCS_SITE_URL = os.environ.get("DOCS_SITE_URL", "https://brad-edwards.github.io/shifter/")
 
 # Application definition
 INSTALLED_APPS = [
@@ -127,7 +140,6 @@ INSTALLED_APPS = [
     "anymail",
     "mission_control.apps.MissionControlConfig",
     "risk_register.apps.RiskRegisterConfig",
-    "documentation.apps.DocumentationConfig",
     "engine.apps.EngineConfig",
     "cms.apps.CMSConfig",
     "management.apps.ManagementConfig",
@@ -157,6 +169,7 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "config.middleware.CTFAccountBoundaryMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
@@ -180,6 +193,7 @@ TEMPLATES = [
                 "django.contrib.messages.context_processors.messages",
                 "mission_control.context_processors.active_range",
                 "mission_control.context_processors.terminal_cdn_assets",
+                "mission_control.context_processors.docs_site_url",
                 "shared.context_processors.user_permissions",
                 "ctf.context_processors.ctf_navigation",
             ],
@@ -380,7 +394,7 @@ if not DEBUG:
 # ------------------------------------------------------------------------------
 # Authentication
 # ------------------------------------------------------------------------------
-# Authentication backends, OIDC endpoint discovery, magic-link config,
+# Authentication backends, OIDC endpoint discovery, CTF local-auth config,
 # and ``OIDC_EXEMPT_URLS`` are defined in ``config._oidc_settings`` so
 # this module stays under the 500-line cap. Re-exported via star-import
 # here (``noqa`` suppresses the unused/ambiguous-import warnings — these

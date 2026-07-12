@@ -4,7 +4,7 @@ Tests cover:
 - OIDC backend extension for CTF user types
 - Dashboard routing by user type
 - Access control decorators
-- CTF magic link authentication
+- Dedicated temporary-account authentication boundaries
 - CTF context processor
 - Dev auth CTF user type support
 

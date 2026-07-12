@@ -20,8 +20,8 @@ app_name = "ctf"
 participant_patterns = [
     # Dashboard
     path("", views.participant_dashboard, name="participant_dashboard"),
-    path("register/", views.ctf_register, name="ctf_register"),
-    path("register/exchange/", views.ctf_register_exchange, name="ctf_register_exchange"),
+    path("login/", views.ctf_login, name="ctf_login"),
+    path("change-password/", views.ctf_change_password, name="ctf_change_password"),
     path("event/", views.participant_event, name="participant_event"),
     # Challenges
     path("challenges/", views.participant_challenges, name="challenges"),
@@ -91,6 +91,11 @@ admin_patterns = [
         name="admin_participant_import",
     ),
     path(
+        "admin/events/<uuid:event_id>/participants/generate/",
+        views.admin_participant_batch,
+        name="admin_participant_batch",
+    ),
+    path(
         "admin/events/<uuid:event_id>/participants/add/",
         views.admin_participant_add,
         name="admin_participant_add",
@@ -99,6 +104,16 @@ admin_patterns = [
         "admin/participants/<uuid:participant_id>/",
         views.admin_participant_detail,
         name="admin_participant_detail",
+    ),
+    path(
+        "admin/participants/<uuid:participant_id>/rename/",
+        views.admin_participant_rename,
+        name="admin_participant_rename",
+    ),
+    path(
+        "admin/participants/<uuid:participant_id>/delivery-email/",
+        views.admin_participant_email,
+        name="admin_participant_email",
     ),
     # Teams
     path("admin/events/<uuid:event_id>/teams/", views.admin_team_list, name="admin_team_list"),

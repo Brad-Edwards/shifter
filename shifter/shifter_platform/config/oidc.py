@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 from urllib.parse import urlencode
 
 from django.conf import settings
+from django.contrib.auth import get_user_model
 from django.core.exceptions import SuspiciousOperation
 from django.db import transaction
 from mozilla_django_oidc.auth import OIDCAuthenticationBackend
@@ -96,6 +97,14 @@ class ShifterOIDCBackend(OIDCAuthenticationBackend):
         self._verified_issuer: str | None = None
         self._verified_subject: str | None = None
 
+    def get_user(self, user_id: int) -> Any:
+        """Load the account-origin profile with the session user."""
+        user_model = get_user_model()
+        try:
+            return user_model._default_manager.select_related("profile").get(pk=user_id)
+        except user_model.DoesNotExist:
+            return None
+
     def verify_token(self, token: str, **kwargs: Any) -> Any:
         """Validate the token signature, then assert issuer/audience/azp match this deployment.
 
@@ -170,7 +179,7 @@ class ShifterOIDCBackend(OIDCAuthenticationBackend):
             matches = resolve_user_by_provider_identity(issuer, subject)
             if matches.exists():
                 return matches
-        return super().filter_users_by_claims(claims)
+        return super().filter_users_by_claims(claims).exclude(profile__is_ctf_account=True)
 
     def create_user(self, claims: dict[str, Any]) -> User:
         """Create user and bind/elevate from verified identity evidence.
@@ -205,6 +214,10 @@ class ShifterOIDCBackend(OIDCAuthenticationBackend):
         ``transaction.atomic()`` so a binding conflict or strict-audit failure
         leaves no partial mutation on the existing account (issue #1521).
         """
+        from management.services import is_temporary_ctf_account
+
+        if is_temporary_ctf_account(user):
+            raise SuspiciousOperation("Temporary CTF accounts cannot use platform authentication")
         identity = self._verified_identity(claims)
         with transaction.atomic():
             user = super().update_user(user, claims)

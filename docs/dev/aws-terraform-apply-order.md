@@ -1,5 +1,7 @@
 # AWS Terraform apply order
 
+Part of the Shifter deploy and operations docs; start at the [documentation home](../index.md).
+
 This is the authoritative order for applying the AWS Terraform stacks on a fresh
 account, the backend state key each stack uses, and the values you must override
 before the first apply. Follow it top to bottom. The CI Deploy workflow applies

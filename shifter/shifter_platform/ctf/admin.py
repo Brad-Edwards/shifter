@@ -491,8 +491,6 @@ class CTFParticipantAdmin(SoftDeleteAdminMixin, admin.ModelAdmin):
     ordering = ["event", "name"]
     readonly_fields = [
         "id",
-        "invite_token",
-        "invite_token_expires",
         "created_at",
         "updated_at",
         "deleted_at",
@@ -527,8 +525,6 @@ class CTFParticipantAdmin(SoftDeleteAdminMixin, admin.ModelAdmin):
             {
                 "fields": [
                     "cognito_sub",
-                    "invite_token",
-                    "invite_token_expires",
                     "invited_at",
                     "registered_at",
                     "last_active_at",

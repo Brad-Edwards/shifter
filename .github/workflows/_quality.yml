@@ -73,7 +73,7 @@ jobs:
       mcp_lint_packages: ${{ steps.detect.outputs.mcp_lint_packages }}
       mcp_test_packages: ${{ steps.detect.outputs.mcp_test_packages }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           fetch-depth: 0
 
@@ -192,7 +192,7 @@ jobs:
     if: ${{ (needs.paths.outputs.run_all == 'true' || needs.paths.outputs.adr_guard == 'true') }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       # The self-hosted runner ships with Python 3.9, but `adr_guard.py`
       # imports the stdlib `tomllib` module added in 3.11. `uv` brings its
@@ -236,7 +236,7 @@ jobs:
     if: ${{ (needs.paths.outputs.run_all == 'true' || needs.paths.outputs.ci_workflows == 'true') }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
       - uses: devops-actions/actionlint@467e2ce19b2310e93c9ffa0b50fe31f86b5a7f23 # v0.1.10
 
   terraform-lint:
@@ -247,7 +247,7 @@ jobs:
     if: ${{ (needs.paths.outputs.run_all == 'true' || needs.paths.outputs.terraform == 'true') }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Setup TFLint
         uses: terraform-linters/setup-tflint@6e87008f9dd1fe3e34e66aca6c97b4a69f72a7f4 # v4
@@ -396,6 +396,154 @@ jobs:
           python3 -m unittest scripts.check_tf_runner_network.test_check_tf_runner_network
           python3 -m unittest scripts.check_tf_gcp_iam_resource_scope.test_check_tf_gcp_iam_resource_scope
 
+  # ===========================================================================
+  # Terraform root validation (issue #1528)
+  #
+  # PR quality never ran a backendless `terraform init` + `terraform validate`,
+  # so a composition error (a renamed module output, an unparseable provider
+  # argument) could merge before any workflow parsed the affected root.
+  # scripts/check_tf_roots/ owns platform/terraform/validation-inventory.yaml
+  # and emits the CI matrix; the per-root job below runs locked, credential-free
+  # init/validate on GitHub-hosted runners. This is a distinct layer from
+  # TFLint / Checkov / the check_tf_* security scanners above.
+  # ===========================================================================
+  terraform-matrix:
+    permissions:
+      contents: read
+    name: Terraform validation inventory + matrix
+    needs: [paths]
+    if: ${{ (needs.paths.outputs.run_all == 'true' || needs.paths.outputs.terraform == 'true') }}
+    runs-on: ubuntu-latest
+    outputs:
+      roots: ${{ steps.gen.outputs.roots }}
+      module_tests: ${{ steps.gen.outputs.module_tests }}
+      has_module_tests: ${{ steps.gen.outputs.has_module_tests }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+
+      # Fail closed on an invalid inventory (unclassified root/module, provider
+      # drift, missing lockfile) and pin the checker's own behavior before any
+      # matrix is emitted.
+      - name: Validate inventory and run checker tests
+        run: |
+          set -euo pipefail
+          uv run --python 3.11 --with 'pyyaml==6.0.2' \
+            python3 scripts/check_tf_roots/check_tf_roots.py --check
+          uv run --python 3.11 --with 'pyyaml==6.0.2' \
+            python3 -m unittest scripts.check_tf_roots.test_check_tf_roots
+
+      - name: Generate validation matrices
+        id: gen
+        run: |
+          set -euo pipefail
+          roots="$(uv run --python 3.11 --with 'pyyaml==6.0.2' \
+            python3 scripts/check_tf_roots/check_tf_roots.py --matrix)"
+          module_tests="$(uv run --python 3.11 --with 'pyyaml==6.0.2' \
+            python3 scripts/check_tf_roots/check_tf_roots.py --module-tests)"
+          {
+            echo "roots=${roots}"
+            echo "module_tests=${module_tests}"
+          } >> "$GITHUB_OUTPUT"
+          if [ "${module_tests}" = "[]" ]; then
+            echo "has_module_tests=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_module_tests=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  terraform-validate:
+    permissions:
+      contents: read
+    name: Validate (terraform ${{ matrix.root.id }})
+    needs: [terraform-matrix]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        root: ${{ fromJSON(needs.terraform-matrix.outputs.roots) }}
+    env:
+      TF_IN_AUTOMATION: '1'
+      # No cloud credentials are provided; disabling EC2 metadata discovery
+      # keeps a stray provider call from hanging on the runner metadata IP.
+      AWS_EC2_METADATA_DISABLED: 'true'
+      TF_PLUGIN_CACHE_DIR: ${{ github.workspace }}/.tf-plugin-cache
+      # Pass the (inventory-validated, path-contained) matrix path as
+      # environment data rather than interpolating it into a shell script.
+      ROOT_PATH: ${{ matrix.root.path }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Prepare provider cache directory
+        run: mkdir -p "${TF_PLUGIN_CACHE_DIR}"
+
+      - uses: actions/cache@v4
+        with:
+          path: ${{ env.TF_PLUGIN_CACHE_DIR }}
+          key: terraform-providers-${{ runner.os }}-${{ runner.arch }}-${{ matrix.root.terraform_version }}-${{ hashFiles(format('{0}/.terraform.lock.hcl', matrix.root.path)) }}
+          restore-keys: |
+            terraform-providers-${{ runner.os }}-${{ runner.arch }}-${{ matrix.root.terraform_version }}-
+
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
+        with:
+          terraform_version: ${{ matrix.root.terraform_version }}
+          terraform_wrapper: false
+
+      # Locked, backendless, noninteractive: verifies module/provider
+      # resolution and checksums without a backend or cloud credentials.
+      # -lockfile=readonly makes dependency drift fail instead of rewriting
+      # the reviewed lockfile.
+      - name: terraform init (backendless, locked)
+        run: >-
+          terraform -chdir="${ROOT_PATH}" init
+          -backend=false -input=false -lockfile=readonly -no-color
+
+      - name: terraform validate
+        run: terraform -chdir="${ROOT_PATH}" validate -no-color
+
+  # Reusable-module contract tests (issue #1528 AC3, rollout tracked in #1597).
+  # Only modules whose inventory `contract` ships an executable test appear in
+  # the matrix; when none do, the job is skipped.
+  terraform-module-contracts:
+    permissions:
+      contents: read
+    name: Contract test (${{ matrix.module.path }})
+    needs: [terraform-matrix]
+    if: ${{ needs.terraform-matrix.outputs.has_module_tests == 'true' }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        module: ${{ fromJSON(needs.terraform-matrix.outputs.module_tests) }}
+    env:
+      TF_IN_AUTOMATION: '1'
+      AWS_EC2_METADATA_DISABLED: 'true'
+      TF_PLUGIN_CACHE_DIR: ${{ github.workspace }}/.tf-plugin-cache
+      # Pass the (inventory-validated, path-contained) matrix path as
+      # environment data rather than interpolating it into a shell script.
+      MODULE_PATH: ${{ matrix.module.path }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Prepare provider cache directory
+        run: mkdir -p "${TF_PLUGIN_CACHE_DIR}"
+
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
+        with:
+          terraform_version: ${{ matrix.module.terraform_version }}
+          terraform_wrapper: false
+
+      # Reusable modules carry no lockfile, so init resolves providers fresh
+      # (not readonly). The contract test uses mock providers, so it needs no
+      # cloud credentials.
+      - name: terraform init (backendless)
+        run: >-
+          terraform -chdir="${MODULE_PATH}" init
+          -backend=false -input=false -no-color
+
+      - name: terraform test
+        run: terraform -chdir="${MODULE_PATH}" test -no-color
+
   # Pin the behavior of the Polaris CTFd workshop sync helpers. Issue #702
   # shipped 38/39 challenges unsubmittable because flag-row reconciliation
   # sat behind a category allowlist; these tests exercise the flag/hint
@@ -412,7 +560,7 @@ jobs:
     if: ${{ !inputs.skip_tests && (needs.paths.outputs.run_all == 'true' || needs.paths.outputs.ctfd_workshop == 'true') }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Run Polaris CTFd sync tests
         working-directory: scripts/ctfd-workshop
@@ -426,7 +574,7 @@ jobs:
     if: ${{ (needs.paths.outputs.run_all == 'true' || needs.paths.outputs.shifter_platform == 'true') }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Setup uv
         uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
@@ -449,10 +597,10 @@ jobs:
     if: ${{ (needs.paths.outputs.run_all == 'true' || needs.paths.outputs.shifter_platform == 'true') }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '20.19'
           cache: 'npm'
@@ -478,10 +626,10 @@ jobs:
     if: ${{ (needs.paths.outputs.run_all == 'true' || needs.paths.outputs.shifter_platform == 'true') }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '20.19'
           cache: 'npm'
@@ -515,7 +663,7 @@ jobs:
     if: ${{ (needs.paths.outputs.run_all == 'true' || needs.paths.outputs.provisioner == 'true') }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Setup uv
         uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
@@ -535,7 +683,7 @@ jobs:
     if: ${{ (needs.paths.outputs.run_all == 'true' || needs.paths.outputs.packer == 'true') }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Setup uv
         uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
@@ -555,7 +703,7 @@ jobs:
     if: ${{ (needs.paths.outputs.run_all == 'true' || needs.paths.outputs.bootstrap == 'true') }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Setup uv
         uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
@@ -575,7 +723,7 @@ jobs:
     if: ${{ (needs.paths.outputs.run_all == 'true' || needs.paths.outputs.gcp_scripts == 'true') }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Setup uv
         uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
@@ -595,7 +743,7 @@ jobs:
     if: ${{ (needs.paths.outputs.run_all == 'true' || needs.paths.outputs.check_layer_imports == 'true') }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Setup uv
         uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
@@ -615,7 +763,7 @@ jobs:
     if: ${{ (needs.paths.outputs.run_all == 'true' || needs.paths.outputs.handle_sd_replacement == 'true') }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Setup uv
         uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
@@ -635,7 +783,7 @@ jobs:
     if: ${{ (needs.paths.outputs.run_all == 'true' || needs.paths.outputs.check_rds_pending_modifications == 'true') }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Setup uv
         uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
@@ -655,7 +803,7 @@ jobs:
     if: ${{ (needs.paths.outputs.run_all == 'true' || needs.paths.outputs.assert_portal_inspection == 'true') }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Setup uv
         uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
@@ -675,7 +823,7 @@ jobs:
     if: ${{ (needs.paths.outputs.run_all == 'true' || needs.paths.outputs.installation == 'true') }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Setup uv
         uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
@@ -695,7 +843,7 @@ jobs:
     if: ${{ (needs.paths.outputs.run_all == 'true' || needs.paths.outputs.event_load_harness == 'true') }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Setup uv
         uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
@@ -715,7 +863,7 @@ jobs:
     if: ${{ (needs.paths.outputs.run_all == 'true' || needs.paths.outputs.k8s == 'true') }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Install kustomize (hermetic, version-pinned, checksum-verified)
         env:
@@ -737,9 +885,15 @@ jobs:
           "${RUNNER_TEMP}/kustomize-bin/kustomize" version
 
       - name: Install kube-linter
+        env:
+          # ADR-037-R3: upstream ships a cosign .sig but no SHA256 manifest, so
+          # the reviewed sha256 of v0.7.2's kube-linter-linux.tar.gz is pinned
+          # here and verified before extraction. Bump alongside the version.
+          KUBE_LINTER_SHA256: 8a0f8ba6c28910acd4886cc4d501ed32f3d404a53ac5e72c45a0dd893fcadb03
         run: |
           curl -fsSL -o /tmp/kube-linter.tar.gz \
             "https://github.com/stackrox/kube-linter/releases/download/v0.7.2/kube-linter-linux.tar.gz"
+          echo "${KUBE_LINTER_SHA256}  /tmp/kube-linter.tar.gz" | sha256sum -c -
           tar -xzf /tmp/kube-linter.tar.gz -C /tmp kube-linter
 
       # Render every kustomize root before linting. The previous "lint the
@@ -768,7 +922,7 @@ jobs:
     if: ${{ (needs.paths.outputs.run_all == 'true' || needs.paths.outputs.k8s == 'true') }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Install kustomize (hermetic, version-pinned, checksum-verified)
         env:
@@ -788,9 +942,14 @@ jobs:
 
       - name: Install kubeconform
         run: |
-          curl -fsSL -o /tmp/kubeconform.tar.gz \
+          # ADR-037-R3: verify against the release CHECKSUMS manifest before
+          # extraction; save under the manifest's filename so `sha256sum -c` matches.
+          curl -fsSL -o /tmp/kubeconform-linux-amd64.tar.gz \
             "https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz"
-          tar -xzf /tmp/kubeconform.tar.gz -C /tmp kubeconform
+          curl -fsSL -o /tmp/kubeconform.CHECKSUMS \
+            "https://github.com/yannh/kubeconform/releases/download/v0.6.7/CHECKSUMS"
+          (cd /tmp && grep "kubeconform-linux-amd64.tar.gz" kubeconform.CHECKSUMS | sha256sum -c -)
+          tar -xzf /tmp/kubeconform-linux-amd64.tar.gz -C /tmp kubeconform
 
       # Same rationale as k8s-lint: validate the rendered (kustomized) shape
       # so overlay patches don't fail schema validation as standalone partial
@@ -835,7 +994,7 @@ jobs:
     if: ${{ (needs.paths.outputs.run_all == 'true' || needs.paths.outputs.shifter_platform == 'true' || needs.paths.outputs.cyberscript == 'true') }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Setup uv
         uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
@@ -865,7 +1024,7 @@ jobs:
     if: ${{ (needs.paths.outputs.run_all == 'true' || needs.paths.outputs.provisioner == 'true') }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Setup uv
         uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
@@ -890,7 +1049,7 @@ jobs:
     if: ${{ (needs.paths.outputs.run_all == 'true' || needs.paths.outputs.check_layer_imports == 'true' || needs.paths.outputs.shifter_platform == 'true') }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Setup uv
         uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
@@ -911,7 +1070,7 @@ jobs:
     if: ${{ (needs.paths.outputs.run_all == 'true' || needs.paths.outputs.shifter_platform == 'true' || needs.paths.outputs.check_layer_imports == 'true') }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Setup uv
         uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
@@ -946,7 +1105,7 @@ jobs:
     if: ${{ (needs.paths.outputs.run_all == 'true' || needs.paths.outputs.shifter_platform == 'true') }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Setup uv
         uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
@@ -964,7 +1123,7 @@ jobs:
     if: ${{ (needs.paths.outputs.run_all == 'true' || needs.paths.outputs.provisioner == 'true') }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Setup uv
         uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
@@ -984,7 +1143,7 @@ jobs:
     if: ${{ (needs.paths.outputs.run_all == 'true' || needs.paths.outputs.packer == 'true') }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Setup uv
         uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
@@ -1002,7 +1161,7 @@ jobs:
     if: ${{ (needs.paths.outputs.run_all == 'true' || needs.paths.outputs.bootstrap == 'true') }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Setup uv
         uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
@@ -1020,7 +1179,7 @@ jobs:
     if: ${{ (needs.paths.outputs.run_all == 'true' || needs.paths.outputs.gcp_scripts == 'true') }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Setup uv
         uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
@@ -1038,7 +1197,7 @@ jobs:
     if: ${{ (needs.paths.outputs.run_all == 'true' || needs.paths.outputs.check_layer_imports == 'true') }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Setup uv
         uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
@@ -1057,7 +1216,7 @@ jobs:
     if: ${{ (needs.paths.outputs.run_all == 'true' || needs.paths.outputs.installation == 'true') }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Setup uv
         uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
@@ -1075,7 +1234,7 @@ jobs:
     if: ${{ (needs.paths.outputs.run_all == 'true' || needs.paths.outputs.event_load_harness == 'true') }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Setup uv
         uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
@@ -1114,7 +1273,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Setup uv
         uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
@@ -1135,7 +1294,12 @@ jobs:
           DJANGO_SECRET_KEY: ${{ github.run_id }}-${{ github.run_attempt }}
         run: |
           uv run python manage.py collectstatic --noinput
-          uv run pytest tests/ --ignore=tests/documentation -m "not redis and not postgres" --cov=. --cov-report=term-missing --cov-report=xml:coverage.xml
+          # ``--cov`` (no path) measures the production roots declared in
+          # pyproject ``[tool.coverage.run] source`` and honours its ``omit`` +
+          # ``fail_under`` (#1529 / REV1 Q6): config, not the command line, owns
+          # the coverage universe and the non-regression floor. The documentation
+          # suite runs here too (Q4, no ``--ignore=tests/documentation``).
+          uv run pytest tests/ -m "not redis and not postgres" --cov --cov-report=term-missing --cov-report=xml:coverage.xml
 
       # Real-stack Redis channel-layer evidence (#924). Runs only the
       # redis-marked integration tests against the Redis service, with xdist
@@ -1158,7 +1322,7 @@ jobs:
           uv run pytest tests/integration/asgi -m redis -n0 -p no:cacheprovider
 
       - name: Upload coverage
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: coverage-shifter-platform
           path: shifter/shifter_platform/coverage.xml
@@ -1205,7 +1369,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Setup uv
         uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
@@ -1236,7 +1400,7 @@ jobs:
           uv run python manage.py collectstatic --noinput
           start=$(date +%s)
           set +e
-          uv run pytest tests/ --ignore=tests/documentation -m "not redis" \
+          uv run pytest tests/ -m "not redis" \
             --junit-xml=postgres-junit.xml -p no:cacheprovider
           status=$?
           set -e
@@ -1271,7 +1435,7 @@ jobs:
 
       - name: Upload PostgreSQL lane JUnit (failure evidence)
         if: ${{ always() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: postgres-lane-junit
           path: shifter/shifter_platform/postgres-junit.xml
@@ -1286,7 +1450,7 @@ jobs:
     if: ${{ !inputs.skip_tests && ((needs.paths.outputs.run_all == 'true' || needs.paths.outputs.provisioner == 'true')) }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Setup uv
         uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
@@ -1299,10 +1463,10 @@ jobs:
         working-directory: shifter/engine/provisioner
         env:
           TESTING: "1"
-        run: uv run --with pytest-cov pytest tests/ --cov=. --cov-report=xml:coverage.xml
+        run: uv run --with pytest-cov pytest tests/ --cov --cov-report=xml:coverage.xml
 
       - name: Upload coverage
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: coverage-provisioner
           path: shifter/engine/provisioner/coverage.xml
@@ -1317,7 +1481,7 @@ jobs:
     if: ${{ !inputs.skip_tests && ((needs.paths.outputs.run_all == 'true' || needs.paths.outputs.packer == 'true')) }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Setup uv
         uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
@@ -1326,17 +1490,13 @@ jobs:
         working-directory: shifter/packer
         run: uv sync --group dev
 
+      # No ``--cov``: this package ships Packer HCL, not owned production Python
+      # (its ``tests/`` validate the HCL/config), so a Python coverage number
+      # would only measure tests covering themselves. It is not a Sonar coverage
+      # publisher (#1529 / REV1 Q6 -- do not manufacture a misleading percentage).
       - name: Run tests
         working-directory: shifter/packer
-        run: uv run --with pytest-cov pytest tests/ --cov=. --cov-report=xml:coverage.xml
-
-      - name: Upload coverage
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-packer
-          path: shifter/packer/coverage.xml
-          if-no-files-found: error
-          retention-days: 1
+        run: uv run pytest tests/
 
   cyberscript-tests:
     permissions:
@@ -1346,7 +1506,7 @@ jobs:
     if: ${{ !inputs.skip_tests && ((needs.paths.outputs.run_all == 'true' || needs.paths.outputs.cyberscript == 'true')) }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Setup uv
         uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
@@ -1365,7 +1525,7 @@ jobs:
     if: ${{ !inputs.skip_tests && ((needs.paths.outputs.run_all == 'true' || needs.paths.outputs.bootstrap == 'true')) }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Setup uv
         uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
@@ -1376,10 +1536,10 @@ jobs:
 
       - name: Run tests
         working-directory: scripts/bootstrap
-        run: uv run --with pytest-cov pytest tests/ --cov=. --cov-report=xml:coverage.xml
+        run: uv run --with pytest-cov pytest tests/ --cov --cov-report=xml:coverage.xml
 
       - name: Upload coverage
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: coverage-bootstrap
           path: scripts/bootstrap/coverage.xml
@@ -1394,7 +1554,7 @@ jobs:
     if: ${{ !inputs.skip_tests && ((needs.paths.outputs.run_all == 'true' || needs.paths.outputs.gcp_scripts == 'true')) }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Setup uv
         uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
@@ -1415,7 +1575,7 @@ jobs:
     if: ${{ !inputs.skip_tests && ((needs.paths.outputs.run_all == 'true' || needs.paths.outputs.polaris_aws_range == 'true')) }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Setup uv
         uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
@@ -1434,7 +1594,7 @@ jobs:
     if: ${{ !inputs.skip_tests && ((needs.paths.outputs.run_all == 'true' || needs.paths.outputs.check_layer_imports == 'true')) }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Setup uv
         uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
@@ -1445,10 +1605,10 @@ jobs:
 
       - name: Run tests
         working-directory: scripts/check_layer_imports
-        run: uv run --with pytest-cov pytest tests/ --cov=. --cov-report=xml:coverage.xml
+        run: uv run --with pytest-cov pytest tests/ --cov --cov-report=xml:coverage.xml
 
       - name: Upload coverage
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: coverage-check-layer-imports
           path: scripts/check_layer_imports/coverage.xml
@@ -1463,7 +1623,7 @@ jobs:
     if: ${{ !inputs.skip_tests && ((needs.paths.outputs.run_all == 'true' || needs.paths.outputs.handle_sd_replacement == 'true')) }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Setup uv
         uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
@@ -1484,7 +1644,7 @@ jobs:
     if: ${{ !inputs.skip_tests && ((needs.paths.outputs.run_all == 'true' || needs.paths.outputs.check_rds_pending_modifications == 'true')) }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Setup uv
         uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
@@ -1505,7 +1665,7 @@ jobs:
     if: ${{ !inputs.skip_tests && ((needs.paths.outputs.run_all == 'true' || needs.paths.outputs.assert_portal_inspection == 'true')) }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Setup uv
         uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
@@ -1526,7 +1686,7 @@ jobs:
     if: ${{ !inputs.skip_tests && ((needs.paths.outputs.run_all == 'true' || needs.paths.outputs.installation == 'true')) }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Setup uv
         uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
@@ -1537,10 +1697,10 @@ jobs:
 
       - name: Run tests
         working-directory: shifter/installation
-        run: uv run --with pytest-cov pytest tests/ --cov=. --cov-report=xml:coverage.xml
+        run: uv run --with pytest-cov pytest tests/ --cov --cov-report=xml:coverage.xml
 
       - name: Upload coverage
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: coverage-installation
           path: shifter/installation/coverage.xml
@@ -1555,7 +1715,7 @@ jobs:
     if: ${{ !inputs.skip_tests && ((needs.paths.outputs.run_all == 'true' || needs.paths.outputs.event_load_harness == 'true')) }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Setup uv
         uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
@@ -1576,7 +1736,7 @@ jobs:
     if: ${{ !inputs.skip_tests && ((needs.paths.outputs.run_all == 'true' || needs.paths.outputs.shifter_platform == 'true')) }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Setup uv
         uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
@@ -1597,7 +1757,7 @@ jobs:
     if: ${{ !inputs.skip_tests && ((needs.paths.outputs.run_all == 'true' || needs.paths.outputs.scenario_smoketest == 'true')) }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Setup uv
         uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
@@ -1615,7 +1775,7 @@ jobs:
     if: ${{ !inputs.skip_tests && ((needs.paths.outputs.run_all == 'true' || needs.paths.outputs.adr_guard == 'true')) }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       # Same rationale as adr-conformance: `adr_guard` imports `tomllib`
       # (stdlib 3.11+); the self-hosted runner ships 3.9. Use `uv` to
@@ -1639,10 +1799,10 @@ jobs:
     if: ${{ !inputs.skip_tests && ((needs.paths.outputs.run_all == 'true' || needs.paths.outputs.shifter_platform == 'true')) }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '20.19'
           cache: 'npm'
@@ -1657,7 +1817,7 @@ jobs:
         run: npm run test:coverage
 
       - name: Upload coverage
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: coverage-shifter-platform-js
           path: shifter/shifter_platform/coverage/lcov.info
@@ -1676,10 +1836,10 @@ jobs:
       matrix:
         package: ${{ fromJSON(needs.paths.outputs.mcp_lint_packages) }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '20.19'
           cache: 'npm'
@@ -1705,10 +1865,10 @@ jobs:
       matrix:
         package: ${{ fromJSON(needs.paths.outputs.mcp_test_packages) }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '20.19'
           cache: 'npm'
@@ -1734,10 +1894,10 @@ jobs:
     if: ${{ (needs.paths.outputs.run_all == 'true' || needs.paths.outputs.terraform == 'true') }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Cache Checkov
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ~/.local
           key: ${{ runner.os }}-checkov-${{ hashFiles('.github/workflows/_quality.yml') }}
@@ -1770,10 +1930,10 @@ jobs:
     # Terraform soft-fail is NOT permitted to inherit from this.
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Cache Checkov
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ~/.local
           key: ${{ runner.os }}-checkov-k8s-${{ hashFiles('.github/workflows/_quality.yml') }}
@@ -1798,7 +1958,7 @@ jobs:
     name: Security (trivy advisory)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Install Trivy (hermetic, version-pinned, checksum-verified)
         env:
@@ -1838,7 +1998,7 @@ jobs:
             platform/terraform/
 
       - name: Upload Trivy SARIF artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: trivy-advisory-sarif
           path: ${{ runner.temp }}/trivy-results/*.sarif
@@ -1851,7 +2011,7 @@ jobs:
     name: Security (osv-scanner advisory)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Install OSV-Scanner (hermetic, version-pinned, checksum-verified)
         env:
@@ -1888,7 +2048,7 @@ jobs:
           fi
 
       - name: Upload OSV-Scanner SARIF artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: osv-scanner-advisory-sarif
           path: ${{ runner.temp }}/osv-results/*.sarif
@@ -1902,7 +2062,7 @@ jobs:
     needs: [paths]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           fetch-depth: 0
 
@@ -1934,7 +2094,7 @@ jobs:
     if: ${{ (needs.paths.outputs.run_all == 'true' || needs.paths.outputs.shifter_platform == 'true') }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Setup uv
         uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
@@ -1976,7 +2136,7 @@ jobs:
     if: ${{ inputs.run_stack_smoke && !inputs.skip_tests && (needs.paths.outputs.run_all == 'true' || needs.paths.outputs.stack_smoke == 'true') }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Setup uv
         uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
@@ -2001,13 +2161,12 @@ jobs:
       - shifter-platform-tests
       - shifter-platform-js-tests
       - shifter-engine-tests
-      - packer-tests
       - bootstrap-tests
       - check-layer-imports-tests
       - installation-tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           # Full history so SonarCloud attributes new code accurately for
           # pull-request (new-code) quality-gate analysis.
@@ -2021,7 +2180,7 @@ jobs:
         if: >-
           ${{ (needs.paths.outputs.run_all == 'true' || needs.paths.outputs.shifter_platform == 'true')
           && needs.shifter-platform-tests.result == 'success' }}
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: coverage-shifter-platform
           path: shifter/shifter_platform
@@ -2029,7 +2188,7 @@ jobs:
         if: >-
           ${{ (needs.paths.outputs.run_all == 'true' || needs.paths.outputs.shifter_platform == 'true')
           && needs.shifter-platform-js-tests.result == 'success' }}
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: coverage-shifter-platform-js
           path: shifter/shifter_platform/coverage
@@ -2037,23 +2196,15 @@ jobs:
         if: >-
           ${{ (needs.paths.outputs.run_all == 'true' || needs.paths.outputs.provisioner == 'true')
           && needs.shifter-engine-tests.result == 'success' }}
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: coverage-provisioner
           path: shifter/engine/provisioner
-      - name: Download packer coverage
-        if: >-
-          ${{ (needs.paths.outputs.run_all == 'true' || needs.paths.outputs.packer == 'true')
-          && needs.packer-tests.result == 'success' }}
-        uses: actions/download-artifact@v8
-        with:
-          name: coverage-packer
-          path: shifter/packer
       - name: Download bootstrap coverage
         if: >-
           ${{ (needs.paths.outputs.run_all == 'true' || needs.paths.outputs.bootstrap == 'true')
           && needs.bootstrap-tests.result == 'success' }}
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: coverage-bootstrap
           path: scripts/bootstrap
@@ -2061,7 +2212,7 @@ jobs:
         if: >-
           ${{ (needs.paths.outputs.run_all == 'true' || needs.paths.outputs.check_layer_imports == 'true')
           && needs.check-layer-imports-tests.result == 'success' }}
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: coverage-check-layer-imports
           path: scripts/check_layer_imports
@@ -2069,19 +2220,19 @@ jobs:
         if: >-
           ${{ (needs.paths.outputs.run_all == 'true' || needs.paths.outputs.installation == 'true')
           && needs.installation-tests.result == 'success' }}
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: coverage-installation
           path: shifter/installation
 
       - name: Setup Java for SonarScanner
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@0f481fcb613427c0f801b606911222b5b6f3083a # v5.5.0
         with:
           distribution: temurin
           java-version: '21'
 
       - name: SonarQube Cloud scan
-        uses: SonarSource/sonarqube-scan-action@v8
+        uses: SonarSource/sonarqube-scan-action@713881670b6b3676cda39549040e2d88c70d582e # v8.2.0
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         with:

@@ -475,7 +475,7 @@ boundary). The corresponding 11 `ctf.views.*` entries were removed from
 
 1. Add or update the ADR in `index.yaml`.
 2. Implement or wire a check in `scripts/adr_guard/adr_guard.py`.
-3. Document the user-visible mechanism in `shifter/shifter_platform/documentation/docs/technical/dev/adr-enforcement.md`.
+3. Document the user-visible mechanism in `docs/technical/dev/adr-enforcement.md`.
 4. If the rule cannot be enforced yet, add a dated exception in `exceptions.yaml` instead of leaving it implicit.
 
 ## Exception Format

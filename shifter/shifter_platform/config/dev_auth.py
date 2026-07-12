@@ -117,7 +117,11 @@ def dev_login(request):
             user_type = "standard"
 
         user, _created = User.objects.get_or_create(username=email, defaults={"email": email, "is_active": True})
-        login(request, user, backend="django.contrib.auth.backends.ModelBackend")
+        from management.services import is_temporary_ctf_account
+
+        if is_temporary_ctf_account(user):
+            return HttpResponseForbidden("Temporary CTF accounts cannot use platform authentication")
+        login(request, user, backend="config.auth.PlatformModelBackend")
 
         # Sync CTF group membership + profile via the shared, audited helper so
         # dev-login produces the same fail-closed ROLE_SYNC audit trail as the
