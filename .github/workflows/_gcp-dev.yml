@@ -72,9 +72,15 @@ jobs:
           version: v1.34.1
       - name: Install kubeconform
         run: |
-          curl -fsSL -o /tmp/kubeconform.tar.gz \
+          # ADR-037-R3: verify the download against the release CHECKSUMS
+          # manifest before extraction. The archive is saved under the exact name
+          # the manifest references so `sha256sum -c` matches.
+          curl -fsSL -o /tmp/kubeconform-linux-amd64.tar.gz \
             "https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz"
-          tar -xzf /tmp/kubeconform.tar.gz -C /tmp kubeconform
+          curl -fsSL -o /tmp/kubeconform.CHECKSUMS \
+            "https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/CHECKSUMS"
+          (cd /tmp && grep "kubeconform-linux-amd64.tar.gz" kubeconform.CHECKSUMS | sha256sum -c -)
+          tar -xzf /tmp/kubeconform-linux-amd64.tar.gz -C /tmp kubeconform
       - run: terraform fmt -check -recursive
         working-directory: platform/terraform/gcp
       - run: terraform init -backend=false
@@ -98,6 +104,7 @@ jobs:
     permissions:
       contents: read
       id-token: write
+      attestations: write
     env:
       GCP_ENVIRONMENT: ${{ inputs.environment }}
       USE_GKE_GCLOUD_AUTH_PLUGIN: "True"
@@ -400,39 +407,30 @@ jobs:
           password: ${{ steps.auth.outputs.access_token }}
       - name: Set short SHA
         run: echo "SHORT_SHA=$(echo '${{ github.sha }}' | cut -c1-7)" >> "$GITHUB_ENV"
-      - name: Pin overlay image tags to short SHA
+      - name: Rewrite overlay image project and service accounts
         run: |
           python3 - <<'PY'
           import os
           import re
           from pathlib import Path
 
-          short_sha = os.environ["SHORT_SHA"]
           path = Path(os.environ["K8S_OVERLAY_DIR"]) / "kustomization.yaml"
           content = path.read_text(encoding="utf-8")
-
-          # Quote the tag: an all-numeric short SHA (e.g. 5660494) would otherwise
-          # be parsed as a YAML number and kustomize rejects newTag (must be string).
-          updated, replacements = re.subn(
-            r"(?m)^(\s*newTag:\s*)\S+\s*$",
-            lambda match: f'{match.group(1)}"{short_sha}"',
-            content,
-          )
-          if replacements == 0:
-            raise SystemExit(f"::error file={str(path)}::No image newTag entries found to pin")
 
           # The committed newName values carry a placeholder Artifact Registry
           # project; rewrite it to the deployment's real AR project (taken from
           # the build's PORTAL_IMAGE_ROOT) so pods pull from where the images were
-          # actually pushed, not the committed placeholder.
+          # actually pushed, not the committed placeholder. Image identity is
+          # pinned to a verified @sha256 digest AFTER the build (ADR-037-R6, the
+          # "Pin overlay images to verified digests" step below), never a tag.
           project = re.search(r"pkg\.dev/([^/]+)/", os.environ["PORTAL_IMAGE_ROOT"]).group(1)
           updated, name_fixes = re.subn(
             r"(?m)^(\s*newName:\s*\S*?pkg\.dev/)[^/]+/",
             rf"\g<1>{project}/",
-            updated,
+            content,
           )
           path.write_text(updated, encoding="utf-8")
-          print(f"Pinned {replacements} tags to {short_sha}; rewrote {name_fixes} image projects to {project}")
+          print(f"Rewrote {name_fixes} image projects to {project}")
 
           # The Workload Identity GSA annotations carry the same placeholder
           # project; point them at the deployment project so the pods' KSAs
@@ -449,6 +447,7 @@ jobs:
           PY
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
       - name: Build and push portal image
+        id: build-portal
         uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25
         with:
           context: ./shifter
@@ -457,7 +456,11 @@ jobs:
           tags: |
             ${{ env.PORTAL_IMAGE_ROOT }}:${{ env.SHORT_SHA }}
           no-cache: true
+          # Build provenance (ADR-037-R5): SBOM + max provenance, attested below.
+          provenance: mode=max
+          sbom: true
       - name: Build and push provisioner image
+        id: build-provisioner
         uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25
         with:
           context: ./shifter
@@ -466,7 +469,10 @@ jobs:
           tags: |
             ${{ env.PROVISIONER_IMAGE_ROOT }}:${{ env.SHORT_SHA }}
           no-cache: true
+          provenance: mode=max
+          sbom: true
       - name: Build and push guacd image
+        id: build-guacd
         uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25
         with:
           context: ./shifter/engine/guacd
@@ -474,7 +480,10 @@ jobs:
           tags: |
             ${{ env.GUACD_IMAGE_ROOT }}:${{ env.SHORT_SHA }}
           no-cache: true
+          provenance: mode=max
+          sbom: true
       - name: Build and push guacamole-client image
+        id: build-guacamole-client
         uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25
         with:
           context: ./shifter/engine/guacamole
@@ -482,6 +491,32 @@ jobs:
           tags: |
             ${{ env.GUACAMOLE_CLIENT_IMAGE_ROOT }}:${{ env.SHORT_SHA }}
           no-cache: true
+          provenance: mode=max
+          sbom: true
+      - name: Attest build provenance (portal)
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        with:
+          subject-name: ${{ env.PORTAL_IMAGE_ROOT }}
+          subject-digest: ${{ steps.build-portal.outputs.digest }}
+          push-to-registry: false
+      - name: Attest build provenance (provisioner)
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        with:
+          subject-name: ${{ env.PROVISIONER_IMAGE_ROOT }}
+          subject-digest: ${{ steps.build-provisioner.outputs.digest }}
+          push-to-registry: false
+      - name: Attest build provenance (guacd)
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        with:
+          subject-name: ${{ env.GUACD_IMAGE_ROOT }}
+          subject-digest: ${{ steps.build-guacd.outputs.digest }}
+          push-to-registry: false
+      - name: Attest build provenance (guacamole-client)
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        with:
+          subject-name: ${{ env.GUACAMOLE_CLIENT_IMAGE_ROOT }}
+          subject-digest: ${{ steps.build-guacamole-client.outputs.digest }}
+          push-to-registry: false
       - uses: google-github-actions/get-gke-credentials@3da1e46a907576cefaa90c484278bb5b259dd395
         with:
           cluster_name: ${{ env.GKE_CLUSTER_NAME }}
@@ -489,6 +524,10 @@ jobs:
           project_id: ${{ env.PROJECT_ID }}
       - name: Render generated runtime env
         env:
+          # ENGINE_TASK_IMAGE is pinned to the verified provisioner @sha256
+          # digest (ADR-037-R6), not a mutable tag; the GKE admission policy
+          # (ADR-006-R4) follows this exact value.
+          PROVISIONER_DIGEST: ${{ steps.build-provisioner.outputs.digest }}
           # GCE range-cell backend config (issue #1387). Non-secret; sourced from
           # repository/environment variables so each account supplies its own
           # image families, zone, and service accounts. Unset variables fall back
@@ -515,7 +554,7 @@ jobs:
           # rendered or applied (ADR-008-R1/R3).
           python3 scripts/gcp/render_runtime_env.py \
             --terraform-output-json /tmp/gcp-terraform-outputs.json \
-            --image-tag "${SHORT_SHA}" \
+            --engine-image-digest "${PROVISIONER_DIGEST}" \
             --output "${K8S_OVERLAY_DIR}/platform-runtime.generated.env"
       - name: Render generated edge manifest
         run: |
@@ -538,6 +577,72 @@ jobs:
       # Roll out the production-secure workload (new runtime ConfigMap + restart)
       # BEFORE (re-)applying the public edge, so the public Ingress never routes
       # to pods still running an older, less-secure runtime config.
+      - name: Pin overlay images to verified digests
+        env:
+          PORTAL_DIGEST: ${{ steps.build-portal.outputs.digest }}
+          GUACD_DIGEST: ${{ steps.build-guacd.outputs.digest }}
+          GUACAMOLE_CLIENT_DIGEST: ${{ steps.build-guacamole-client.outputs.digest }}
+        run: |
+          python3 - <<'PY'
+          import os
+          import re
+          from pathlib import Path
+
+          # ADR-037-R6: deploy the exact verified image@sha256, not a mutable tag.
+          # Replace each overlay image's newTag with the digest built this run so
+          # `kubectl apply` and the provenance verification below reference the
+          # same immutable bytes; kustomize renders newName@digest.
+          path = Path(os.environ["K8S_OVERLAY_DIR"]) / "kustomization.yaml"
+          content = path.read_text(encoding="utf-8")
+          digests = {
+            "portal": os.environ["PORTAL_DIGEST"],
+            "guacd": os.environ["GUACD_DIGEST"],
+            "guacamole-client": os.environ["GUACAMOLE_CLIENT_DIGEST"],
+          }
+          for image, digest in digests.items():
+            if not re.fullmatch(r"sha256:[0-9a-f]{64}", digest):
+              raise SystemExit(f"::error::invalid digest for {image}: {digest!r}")
+            pattern = re.compile(
+              r"(?m)^(?P<pre>\s*-\s*name:\s*\S*/" + re.escape(image)
+              + r"\s*\n\s*newName:\s*\S+\s*\n)\s*newTag:\s*\S+\s*$"
+            )
+            content, n = pattern.subn(rf"\g<pre>    digest: {digest}", content)
+            if n != 1:
+              raise SystemExit(
+                f"::error::expected exactly one overlay image entry for {image}, found {n}"
+              )
+          path.write_text(content, encoding="utf-8")
+          print("Pinned overlay images to verified digests:",
+                {k: v[:19] + "..." for k, v in digests.items()})
+          PY
+      - name: Verify image build provenance
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PORTAL_DIGEST: ${{ steps.build-portal.outputs.digest }}
+          PROVISIONER_DIGEST: ${{ steps.build-provisioner.outputs.digest }}
+          GUACD_DIGEST: ${{ steps.build-guacd.outputs.digest }}
+          GUACAMOLE_CLIENT_DIGEST: ${{ steps.build-guacamole-client.outputs.digest }}
+        run: |
+          # ADR-037-R6: verify the GitHub OIDC-signed provenance attestation for
+          # each built image@digest and the fixed Brad-Edwards/shifter identity
+          # before the GKE rollout. These are the same digests the overlay was
+          # just pinned to (and ENGINE_TASK_IMAGE), so the verified bytes are the
+          # deployed bytes. No bypass mode.
+          set -euo pipefail
+          verify() {
+            local root="$1" digest="$2" label="$3"
+            if [[ -z "$digest" || ! "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+              echo "::error::${label} build did not produce a valid image digest to verify"
+              exit 1
+            fi
+            echo "Verifying provenance for ${label} (${digest})"
+            gh attestation verify "oci://${root}@${digest}" --repo Brad-Edwards/shifter
+          }
+          verify "${PORTAL_IMAGE_ROOT}" "${PORTAL_DIGEST}" "portal"
+          verify "${PROVISIONER_IMAGE_ROOT}" "${PROVISIONER_DIGEST}" "provisioner"
+          verify "${GUACD_IMAGE_ROOT}" "${GUACD_DIGEST}" "guacd"
+          verify "${GUACAMOLE_CLIENT_IMAGE_ROOT}" "${GUACAMOLE_CLIENT_DIGEST}" "guacamole-client"
+
       - name: Apply GKE workload manifests
         run: kubectl apply -k "${K8S_OVERLAY_DIR}"
       - name: Apply private-service NetworkPolicy

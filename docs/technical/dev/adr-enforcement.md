@@ -59,7 +59,7 @@ Deploy-time enforcement (ADR-035):
   and the spec are kept in step by the parity test in
   `scripts/bootstrap/tests/test_preflight.py`.
 
-Documentation site (ADR-037):
+Documentation site (ADR-038):
 
 - Documentation is authored as Markdown under top-level `docs/` and published as a
   single public mkdocs (Material) site on GitHub Pages by
@@ -266,6 +266,18 @@ The first slice intentionally stays small:
   secrets on the reusable workflow, and poll SSM command status until the
   requested manage timeout rather than using the fixed-limit
   `aws ssm wait command-executed` waiter.
+
+- `workflow-action-sha-pinning`
+  Enforces ADR-037-R1: every non-local `uses:` action in a cloud-credentialed
+  workflow must pin a full 40-hex commit SHA. A workflow is classified
+  credentialed when it requests `id-token: write`, runs on a self-hosted runner,
+  invokes a cloud-auth action (`aws-actions/configure-aws-credentials`,
+  `google-github-actions/auth`), or passes a `workload_identity_provider`. The
+  check parses workflows as data via the `_dw_*` model and fails closed: an
+  unparseable workflow, an unclassifiable ref, or a mutable ref (tag or branch)
+  is a violation. `actions/*` is in scope. Keep the `# <version>` comment next to
+  each SHA for Dependabot. Refresh guidance:
+  `docs/architecture/rev1-build-deployment-provenance.md`.
 
 - `TFLint`
   Adds Terraform linting on top of `terraform fmt` and `terraform validate`.
