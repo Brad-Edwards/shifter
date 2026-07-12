@@ -39,7 +39,11 @@ from aces_contracts.runtime_state import ApplyResult, RuntimeSnapshot, SnapshotE
 from aces_processor.semantics.realization import CONCERN_PAYLOAD_PATH
 from aces_runtime.registry import BackendRegistry, RuntimeTarget, RuntimeTargetComponents
 
-from shared.aces.composition_envelope import COMPOSITION_RESOURCE_TYPES, composition_diagnostics
+from shared.aces.composition_envelope import (
+    COMPOSITION_RESOURCE_TYPES,
+    account_operation_diagnostics,
+    composition_diagnostics,
+)
 from shared.aces.contracts import ACES_PROVISIONING_PLAN_CONTRACT_VERSION, SHIFTER_BACKEND_NAME
 from shared.aces.dispatch_port import ShifterDispatchResult, ShifterProvisioningDispatchPort
 from shared.aces.manifest import SHIFTER_PROVISIONER_CAPABILITIES, create_shifter_backend_manifest
@@ -340,6 +344,17 @@ def interpret_provisioning_plan(
         (r, r.payload) for r in provisioning if r.resource_type == NODE_RESOURCE_TYPE and isinstance(r.payload, Mapping)
     ]
     diagnostics.extend(_unknown_network_diagnostics(node_resources, _network_lookup(network_resources)))
+
+    # Gate account features carried by materializing (CREATE/UPDATE) operations too, so an
+    # operation-only or resource-divergent account payload cannot bypass the realization
+    # ledger before dispatch (#1563 codex review). Deduplicate against the resource pass:
+    # a resource and its own CREATE operation produce an identical diagnostic.
+    seen = {(diagnostic.code, diagnostic.address, diagnostic.message) for diagnostic in diagnostics}
+    for diagnostic in account_operation_diagnostics(plan.operations, capabilities):
+        key = (diagnostic.code, diagnostic.address, diagnostic.message)
+        if key not in seen:
+            seen.add(key)
+            diagnostics.append(diagnostic)
 
     if any(diagnostic.is_error for diagnostic in diagnostics):
         return None, diagnostics

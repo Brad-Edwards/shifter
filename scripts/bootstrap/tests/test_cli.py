@@ -298,6 +298,7 @@ class TestMainCLI:
         with (
             patch("sys.argv", ["deploy.py", "bootstrap", "--env", "dev", "--profile", "test"]),
             patch("deploy.check_dependencies") as mock_check,
+            patch("shutil.which", return_value="/usr/bin/tool"),
             patch("deploy.bootstrap_account"),
             patch("deploy.walkthrough_github_secrets"),
             patch("deploy.walkthrough_backend_config"),
@@ -317,6 +318,7 @@ class TestMainCLI:
         with (
             patch("sys.argv", ["deploy.py", "bootstrap", "--env", "dev", "--profile", "test"]),
             patch("deploy.check_dependencies"),
+            patch("shutil.which", return_value="/usr/bin/tool"),
             patch("deploy.bootstrap_account") as mock_bootstrap,
             patch("deploy.walkthrough_github_secrets"),
             patch("deploy.walkthrough_backend_config"),
@@ -332,6 +334,7 @@ class TestMainCLI:
         with (
             patch("sys.argv", ["deploy.py", "terraform", "--env", "dev", "--profile", "test"]),
             patch("deploy.check_dependencies"),
+            patch("shutil.which", return_value="/usr/bin/tool"),
             patch("deploy.get_repo_root", return_value=mock_repo_root),
             patch("deploy.terraform_deploy") as mock_terraform,
             patch("deploy.walkthrough_acm_validation"),
@@ -350,6 +353,7 @@ class TestMainCLI:
         with (
             patch("sys.argv", ["deploy.py", "full", "--env", "dev", "--profile", "test"]),
             patch("deploy.check_dependencies"),
+            patch("shutil.which", return_value="/usr/bin/tool"),
             patch("deploy.full_deployment") as mock_full,
         ):
             deploy.main()
@@ -382,6 +386,7 @@ class TestMainCLI:
         with (
             patch("sys.argv", ["deploy.py", "bootstrap", "--env", "dev", "--profile", "test", "--dry-run"]),
             patch("deploy.check_dependencies"),
+            patch("shutil.which", return_value="/usr/bin/tool"),
             patch("deploy.bootstrap_account") as mock_bootstrap,
             patch("deploy.walkthrough_github_secrets"),
             patch("deploy.walkthrough_backend_config"),
@@ -398,6 +403,7 @@ class TestMainCLI:
         with (
             patch("sys.argv", ["deploy.py", "terraform", "--env", "dev", "--profile", "test", "--dry-run"]),
             patch("deploy.check_dependencies"),
+            patch("shutil.which", return_value="/usr/bin/tool"),
             patch("deploy.get_repo_root", return_value=mock_repo_root),
             patch("deploy.terraform_deploy") as mock_terraform,
         ):
@@ -428,6 +434,35 @@ class TestMainCLI:
             deploy.main()
 
             assert mock_gdc_bootstrap.call_args[1]["dry_run"] is True
+
+    # ---------------------------------------------------------------------
+    # preflight subcommand (shared deploy prerequisite gate)
+    #
+    # Observable behavior only: the real gate runs against a patched shutil.which
+    # boundary (ADR-019), so a present toolchain passes and a missing one exits 1.
+    # ---------------------------------------------------------------------
+
+    def test_preflight_command_passes_when_tools_present(self, mock_stdin_non_tty):
+        """preflight --cloud aws exits cleanly when the required tools are on PATH."""
+        with (
+            patch("sys.argv", ["deploy.py", "preflight", "--cloud", "aws", "--env", "dev"]),
+            patch("shutil.which", return_value="/usr/bin/tool"),
+        ):
+            deploy.main()
+
+    def test_preflight_command_fails_on_missing_tool(self, mock_stdin_non_tty):
+        """preflight fails fast (exit 1) when a required deploy tool is missing.
+
+        git is present so check_dependencies passes; terraform/aws are absent so the
+        preflight gate itself is what fails.
+        """
+        with (
+            patch("sys.argv", ["deploy.py", "preflight", "--cloud", "aws", "--env", "dev"]),
+            patch("shutil.which", side_effect=lambda name: "/usr/bin/git" if name == "git" else None),
+            pytest.raises(SystemExit) as exc,
+        ):
+            deploy.main()
+        assert exc.value.code == 1
 
     # ---------------------------------------------------------------------
     # runners subcommand (issue #1433)

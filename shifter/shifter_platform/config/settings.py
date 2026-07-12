@@ -26,6 +26,8 @@ load_dotenv()
 # the wildcard *is* the contract (Django's official split-settings
 # pattern uses ``from .base import *``).
 from config._api_token_settings import *  # NOSONAR  # noqa: E402
+from config._browser_security import *  # NOSONAR  # noqa: E402
+from config._cache_settings import *  # NOSONAR  # noqa: E402
 from config._channels import *  # NOSONAR  # noqa: E402
 from config._channels import _build_channel_layers  # noqa: E402
 from config._cloud import *  # NOSONAR  # noqa: E402
@@ -33,6 +35,7 @@ from config._drf_settings import *  # NOSONAR  # noqa: E402
 from config._email import *  # NOSONAR  # noqa: E402
 from config._guacamole_settings import *  # NOSONAR  # noqa: E402
 from config._logging_config import *  # NOSONAR  # noqa: E402
+from config._rate_limit_settings import *  # NOSONAR  # noqa: E402
 from config._runtime_env import AUTH_PROVIDER, IS_TEST_RUN, require_environment, required_runtime_env  # noqa: E402
 from config._terminal_assets import *  # NOSONAR  # noqa: E402
 
@@ -142,6 +145,12 @@ MIDDLEWARE = [
     "config.middleware.RequestIDMiddleware",
     "config.middleware.RequestInFlightMiddleware",
     "django.middleware.security.SecurityMiddleware",
+    # Browser security policy (ADR-036): native CSP beside SecurityMiddleware and
+    # outside WhiteNoise so legacy HTML, the SPA host, redirects, errors, APIs,
+    # and static responses pass through one policy boundary. The custom
+    # middleware sets only the headers Django does not own.
+    "django.middleware.csp.ContentSecurityPolicyMiddleware",
+    "config.middleware.BrowserPolicyHeadersMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.locale.LocaleMiddleware",
@@ -274,6 +283,10 @@ TERMINAL_CONNECT_EXECUTOR_WORKERS = _env_int("TERMINAL_CONNECT_EXECUTOR_WORKERS"
 # TerminalExecutorSaturated and the connect is closed with SERVICE_UNAVAILABLE
 # (4503, retryable) instead of being queued without limit (#929).
 TERMINAL_CONNECT_EXECUTOR_QUEUE_SLACK = _env_int("TERMINAL_CONNECT_EXECUTOR_QUEUE_SLACK", 16)
+
+# Launch-endpoint rate limiting (LAUNCH_RATE_LIMIT_ENABLED, LAUNCH_RATE_LIMITS)
+# lives in config/_rate_limit_settings.py (star-imported above) to keep this
+# module under the Sonar S104 500-line cap; see mission_control/api/rate_limit.py.
 
 # CTF scheduler (run_ctf_scheduler) stale-task recovery window. A long
 # SPIN_UP_RANGES run heartbeats its task's updated_at, so this only needs to

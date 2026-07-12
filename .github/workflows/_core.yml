@@ -53,6 +53,24 @@ jobs:
         working-directory: platform/terraform/environments/${{ inputs.environment }}
     steps:
       - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+      - name: Preflight - validate deploy prerequisites
+        # Shared fail-safe gate (scripts/bootstrap/preflight.py): reports every
+        # missing prerequisite up front before any Terraform apply, so a missing
+        # secret fails here in seconds rather than mid-run. See docs/dev/deploy-secrets.md.
+        working-directory: scripts/bootstrap
+        env:
+          ENVIRONMENT: ${{ inputs.environment }}
+          AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
+          AWS_ROLE_ARN_DEV: ${{ secrets.AWS_ROLE_ARN_DEV }}
+          AWS_ROLE_ARN_PROOF: ${{ secrets.AWS_ROLE_ARN_PROOF }}
+          TF_INFRA_STATE_BUCKET: ${{ secrets.TF_INFRA_STATE_BUCKET }}
+          TF_INFRA_STATE_BUCKET_DEV: ${{ secrets.TF_INFRA_STATE_BUCKET_DEV }}
+          TF_INFRA_STATE_BUCKET_PROOF: ${{ secrets.TF_INFRA_STATE_BUCKET_PROOF }}
+          TF_VARS_DEV_CORE: ${{ secrets.TF_VARS_DEV_CORE }}
+          TF_VARS_PROOF_CORE: ${{ secrets.TF_VARS_PROOF_CORE }}
+          TF_VARS_PROD_CORE: ${{ secrets.TF_VARS_PROD_CORE }}
+        run: uv run python -m preflight --cloud aws --env "$ENVIRONMENT" --component core --headless
       - name: Resolve AWS deploy role
         id: aws-role
         env:

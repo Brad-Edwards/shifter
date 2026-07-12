@@ -45,6 +45,20 @@ Review controls:
 - `.github/copilot-instructions.md` now points GitHub Copilot toward the same ADR enforcement model.
 - `.github/workflows/_gcp-dev.yml` now pins `platform/k8s/gcp/overlays/gcp-dev/kustomization.yaml` image `newTag` values to `${SHORT_SHA}` before `kubectl apply -k`, preventing mutable `:latest` restarts from drifting to a different image than the commit being deployed.
 
+Deploy-time enforcement (ADR-035):
+
+- `scripts/bootstrap/preflight.py` is a shared, fail-safe deploy preflight. It is
+  the single source of truth for deployment prerequisites (tools, secrets, config)
+  and runs the same checks locally (the deploy CLI runs it at the start of
+  `bootstrap`/`terraform`/`full`, and `deploy.py preflight` runs it on demand) and
+  in CI (each reusable deploy workflow runs `python -m preflight` before any
+  Terraform apply). It reports every missing prerequisite up front instead of
+  failing lazily mid-run, and skips are always explicit and logged
+  (`SHIFTER_SKIP_OPERATOR_BOOTSTRAP`), never a silent conditional step skip. This
+  is a runtime gate rather than an `adr_guard` static check; `docs/dev/deploy-secrets.md`
+  and the spec are kept in step by the parity test in
+  `scripts/bootstrap/tests/test_preflight.py`.
+
 ## Current Checks
 
 The first slice intentionally stays small:

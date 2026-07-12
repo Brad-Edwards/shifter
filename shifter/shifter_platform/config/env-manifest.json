@@ -63,6 +63,11 @@
       "source_file": "config/_email.py"
     },
     {
+      "default": "'report-only'",
+      "name": "BROWSER_CSP_MODE",
+      "source_file": "config/_browser_security.py"
+    },
+    {
       "default": "'aws'",
       "name": "CLOUD_PROVIDER",
       "source_file": "config/_cloud.py"

@@ -133,6 +133,21 @@ Deployment section of
 7. Point the configured hostname at the reserved global ingress IP so the
    Google-managed TLS certificate can activate.
 
+### Preflight (validate prerequisites, no changes)
+```bash
+./scripts/bootstrap/deploy.py preflight --cloud aws --env dev
+./scripts/bootstrap/deploy.py preflight --cloud aws --env dev --component portal
+./scripts/bootstrap/deploy.py preflight --cloud gcp --env gcp-dev
+# --headless : non-interactive; fail on any missing required prerequisite, no prompts
+```
+The shared, fail-safe prerequisite gate (`preflight.py`): checks tools, secrets,
+and config and reports every gap up front before any change. The same checks run
+in the CI deploy workflows. `bootstrap`, `terraform`, and `full` run it
+automatically at the start; it is interactive by default (auto-headless off a
+TTY). The first Identity Platform operator credentials are required unless
+`SHIFTER_SKIP_OPERATOR_BOOTSTRAP=true` is set (the skip is logged, never silent).
+See `docs/dev/deploy-secrets.md`.
+
 ### Bootstrap Only
 ```bash
 ./scripts/bootstrap/deploy.py bootstrap --env prod --profile <your-prod-profile>
@@ -178,9 +193,12 @@ repo-specific fixes from the live spike:
 
 ## Options
 
-- `--env` (required): `dev`, `proof`, or `prod`
+- `--env` (required): `dev`, `proof`, or `prod` (`gcp-dev` for the `preflight --cloud gcp` path)
 - `--profile` (required): AWS CLI profile name
 - `--dry-run` (optional): Show what would happen without making changes
+- `--cloud` (preflight only): `aws` or `gcp`
+- `--component` (preflight only): `core`, `range`, or `portal` to scope AWS overlay checks
+- `--headless` (bootstrap/terraform/full/preflight): non-interactive; fail on missing prerequisites without prompting (auto-detected off a TTY)
 - `--use-existing-network` (runners only): Reuse a configured `vpc_id`/`subnet_id` or the `allow_default_vpc` opt-in instead of provisioning a dedicated runner VPC
 - `--runner-count` (runners only): Override `runner_count` for this apply
 - `--project-id` (GDC only): GCP project ID, defaults to `PANW_GCP_DEV` or repo-root `.env`
@@ -191,6 +209,7 @@ repo-specific fixes from the live spike:
 
 ```bash
 ./scripts/bootstrap/deploy.py --help
+./scripts/bootstrap/deploy.py preflight --help
 ./scripts/bootstrap/deploy.py bootstrap --help
 ./scripts/bootstrap/deploy.py terraform --help
 ./scripts/bootstrap/deploy.py runners --help
