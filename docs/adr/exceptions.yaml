@@ -2,6 +2,15 @@
   {
     "rule_id": "ADR-004-R11",
     "owner": "@Brad-Edwards",
+    "reason": "CKV_GCP_38 (boot disk CSEK): the GCP-native dev-tenant runner (#1546) boot disk relies on Google-managed at-rest encryption (AES-256) rather than a customer-supplied/managed key. CSEK/CMEK would require provisioning and managing a KMS key + IAM in the dedicated runner root for marginal defense-in-depth over Google's default encryption, on a private, re-creatable dev-tenant runner. Inline `# checkov:skip=CKV_GCP_38` on google_compute_instance.runner points back to this entry; a CMEK upgrade is tracked with the runner hardening follow-up (#1613 area).",
+    "expires_on": "2027-07-13",
+    "paths": [
+      "platform/terraform/gcp/global/github-runner/"
+    ]
+  },
+  {
+    "rule_id": "ADR-004-R11",
+    "owner": "@Brad-Edwards",
     "reason": "CKV2_AWS_34 (SSM Parameter encrypted): repo policy is 'secrets live in Secrets Manager, not SSM Parameter Store.' Every aws_ssm_parameter in platform/terraform/ holds non-sensitive references (ARNs, URLs, ECR identifiers, feature flags) by convention. Promoting them to SecureString would add KMS API calls and destroy/create churn for zero defense-in-depth gain.",
     "expires_on": "2027-05-26",
     "paths": [

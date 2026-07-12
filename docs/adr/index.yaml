@@ -394,6 +394,11 @@
         "id": "ADR-008-R7",
         "description": "GCP application workload identities (portal, workers, CTF scheduler, and provisioner) must not receive project-level Secret Manager payload/admin or Cloud Storage object-admin roles. Static runtime access is bound on each named secret or bucket from the resource-owning module's outputs (portal/secrets `runtime_secret_ids`, portal/gcs `assets_bucket_name`), driven by a single canonical workload/resource matrix in `platform/terraform/gcp/modules/portal/iam/main.tf`. Dynamic provisioner-created secret lifecycle must be isolated by a dedicated project or broker because secret creation is authorized on the parent project before a resource-name condition can constrain the new secret ID; resource-name conditions remain appropriate for existing-secret access/update/delete. Repo-native Terraform guards and effective-permission tests must cover direct, binding/policy, local-map, and equivalent project custom-role shapes. The check is implemented in `scripts/check_tf_gcp_iam_resource_scope/check_tf_gcp_iam_resource_scope.py` and wired as the `check-tf-gcp-iam-resource-scope` pre-commit hook plus a CI step in `.github/workflows/_quality.yml`, with its unittest + effective-permission oracle suite included in the `check_tf_*` checker tests. Until the dedicated boundary lands, the guard allowlists exactly two project-level residuals it cannot yet resource-scope — portal `roles/secretmanager.secretAccessor` (reads per-range `*-ssh`/`*-rdp-password` guest credentials) and provisioner `roles/secretmanager.admin` (per-range dynamic-secret create/version/access/delete + vertex-key setIamPolicy + operator GDC secret reads) — each carrying an expiry so the exception cannot outlive its review; the dedicated range-secret project / broker boundary that removes both is designed in #1586. Recorded by the architecture preflight for #1517.",
         "checks": []
+      },
+      {
+        "id": "ADR-008-R8",
+        "description": "The GCP-native self-hosted GitHub Actions runner (issue #1546) must live in a dedicated, custom-mode VPC (never the project default network) with the instance private-only (no external IP), SSH ingress admitted only from Google's IAP relay range (35.235.240.0/20) and targeted at the runner service account, and Cloud NAT for egress. This mirrors the AWS ADR-004-R20 default-VPC guard for GCP so the runner cannot be silently placed on a shared or default network. The runner-specific network invariants (dedicated custom VPC + IAP-scoped SSH, which Checkov does not assert) are enforced by `scripts/check_tf_gcp_runner_network/check_tf_gcp_runner_network.py`, wired as the `check-tf-gcp-runner-network` pre-commit hook plus a CI step in `.github/workflows/_quality.yml`, with its unittest included in the `check_tf_*` checker tests; the external-IP and world-open-SSH invariants are covered generically by Checkov. Recorded by the architecture preflight for #1546.",
+        "checks": []
       }
     ],
     "exceptions": [],
@@ -417,7 +422,11 @@
       "docs/architecture/gcp-workload-resource-iam-preflight-1517.md",
       "scripts/check_tf_gcp_iam_resource_scope/check_tf_gcp_iam_resource_scope.py",
       "docs/architecture/gcp-gcs-cmek-preflight.md",
-      "docs/architecture/gcp-redis-auth-tls-preflight.md"
+      "docs/architecture/gcp-redis-auth-tls-preflight.md",
+      "scripts/check_tf_gcp_runner_network/check_tf_gcp_runner_network.py",
+      "platform/terraform/gcp/modules/github-runner-network/main.tf",
+      "platform/terraform/gcp/global/github-runner/main.tf",
+      "docs/architecture/gcp-native-github-runner-preflight-1546.md"
     ]
   },
   {
@@ -1470,7 +1479,7 @@
     "title": "Product, distribution, and development surfaces",
     "status": "accepted",
     "scope": "repository",
-    "decision": "Shifter separates product (tenant), distribution, and development surfaces. A capability is product-plane if a bare operator tenant needs it to run or extend Shifter; such dual-use capabilities (content ingestion, image baking) are built once as product capabilities and produced by maintainers through that same path (dogfood), not as maintainer-bespoke implementations. The CI/build/deploy runner fleet is development-plane and must not live in a deploy-target account. Operator content acquisition and entitlement are resolved outside the platform.",
+    "decision": "Shifter separates product (tenant), distribution, and development surfaces. A capability is product-plane if a bare operator tenant needs it to run or extend Shifter; such dual-use capabilities (content ingestion, image baking) are built once as product capabilities and produced by maintainers through that same path (dogfood), not as maintainer-bespoke implementations. The CI/build/deploy runner fleet is development-plane and must not live in a product/operator deploy-target account (see ADR-033-R2, amended by #1546 for maintainer-owned dev tenants). Operator content acquisition and entitlement are resolved outside the platform.",
     "rules": [
       {
         "id": "ADR-033-R1",
@@ -1479,7 +1488,7 @@
       },
       {
         "id": "ADR-033-R2",
-        "description": "The CI/build/deploy runner fleet is development-plane and must not reside in a deploy-target account; environment deploy/bake uses ephemeral compute in the target tenant or maintainer-isolated infrastructure, so environment teardown never removes the deploy mechanism.",
+        "description": "The CI/build/deploy runner fleet is development-plane and must not reside in a product/operator deploy-target account; environment deploy/bake uses ephemeral compute in the target tenant or maintainer-isolated infrastructure, so environment teardown never removes the deploy mechanism. Amended by #1546 for maintainer-owned dev tenants (the only deployments that exist today; there is no product deployment model yet): a self-contained per-tenant runner MAY live in that tenant's own project when (a) it is a dedicated, re-creatable Terraform execution root with a state prefix separate from the platform root, so a platform destroy never removes it, and (b) the deploy mechanism itself remains the repo's bootstrap CLI (scripts/bootstrap, deploy.py runners), not tenant-resident state. Dev tenants must not depend on another tenant's runner fleet (cross-tenant containment): a GCP dev tenant runs its own CI/deploy rather than borrowing the AWS fleet.",
         "checks": []
       },
       {
