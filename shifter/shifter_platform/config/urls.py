@@ -7,6 +7,7 @@ from django.urls import include, path
 from django.views.decorators.http import require_safe
 
 from config import api_urls
+from config.csp_report import csp_report
 from config.dev_auth import dev_login, dev_logout
 from config.health import CoarseHealthCheckView
 from config.views import (
@@ -39,6 +40,9 @@ def _root_page(request: HttpRequest, *args: object, **kwargs: object) -> HttpRes
 urlpatterns = [
     path("", _root_page, name="home"),
     path("privacy/", privacy_notice, name="privacy_notice"),
+    # Same-origin CSP violation report collector (ADR-036-R3). POST-only,
+    # anonymous, CSRF-exempt transport plumbing; not a public business API.
+    path("security/csp-report/", csp_report, name="csp_report"),
     path("login/", platform_login, name="platform_login"),
     path("auth/identity/session/", identity_platform_session, name="identity_platform_session"),
     path("dashboard/", dashboard_router, name="dashboard_router"),
