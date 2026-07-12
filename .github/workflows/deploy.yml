@@ -416,7 +416,8 @@ jobs:
     name: GCP Dev
     needs: [changes, quality]
     # `_gcp-dev.yml::deploy` requests `id-token: write` (GCP OIDC via
-    # workload identity federation). Reusable workflows can't request
+    # workload identity federation) and `attestations: write` (SBOM +
+    # provenance attestation, ADR-037-R5/R6). Reusable workflows can't request
     # higher GITHUB_TOKEN scopes than the caller grants — without this
     # block the workflow fails at startup with
     # `nested job 'deploy' is requesting 'id-token: write', but is only
@@ -424,6 +425,7 @@ jobs:
     permissions:
       contents: read
       id-token: write
+      attestations: write
     if: |
       always() &&
       github.event_name != 'pull_request' &&
@@ -533,10 +535,12 @@ jobs:
     name: Shifter Engine
     needs: [changes, quality, core]
     # `_shifter-engine.yml::build` + `deploy` request `id-token: write`
-    # (AWS OIDC for ECR + ECS task push).
+    # (AWS OIDC for ECR + ECS task push) and `attestations: write` (SBOM +
+    # provenance attestation, ADR-037-R5/R6).
     permissions:
       contents: read
       id-token: write
+      attestations: write
     if: |
       always() &&
       github.event_name != 'pull_request' &&
@@ -563,13 +567,15 @@ jobs:
     needs: [changes, quality, core, range, shifter-engine]
     # `_shifter-platform.yml` jobs (plan, push-guacamole-images, apply,
     # build, deploy, post-deploy-smoke) request `id-token: write` (AWS OIDC),
-    # `pull-requests: write` (plan comments), and `issues: write` (smoke
-    # failure issues). Caller grants the union.
+    # `pull-requests: write` (plan comments), `issues: write` (smoke
+    # failure issues), and `attestations: write` (SBOM + provenance
+    # attestation, ADR-037-R5/R6). Caller grants the union.
     permissions:
       contents: read
       id-token: write
       pull-requests: write
       issues: write
+      attestations: write
     if: |
       always() &&
       github.event_name != 'pull_request' &&

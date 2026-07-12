@@ -87,6 +87,12 @@ that attestation with `gh attestation verify` against the fixed
 any runtime. Any verifier failure, missing attestation, repository mismatch, or
 digest mismatch is a hard `::error::` and non-zero exit; there is no bypass.
 
+The image-building reusable workflows request the `attestations` token scope, so
+`deploy.yml` grants `attestations: write` to the jobs that call
+`_shifter-engine.yml`, `_shifter-platform.yml`, and `_gcp-dev.yml`. A reusable
+workflow cannot request a broader `GITHUB_TOKEN` scope than its caller, so
+omitting this grant fails the run at startup.
+
 ## Scope: OCI images vs. Packer VM images
 
 The attestation and verification controls apply to the **OCI** release images
