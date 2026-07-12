@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 import secrets
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 from uuid import UUID
 
 from django.conf import settings
@@ -24,7 +24,7 @@ from management.services import configure_temporary_ctf_account
 from shared.auth import CTF_PARTICIPANT_GROUP
 
 if TYPE_CHECKING:
-    from django.contrib.auth.models import User
+    from django.contrib.auth.models import AnonymousUser, User
 else:
     User = get_user_model()
 
@@ -152,7 +152,12 @@ def attach_isolated_account(participant: CTFParticipant) -> CTFParticipant:
     return participant
 
 
-def rename_participant_username(participant_id: UUID, username: str, *, actor: Any) -> CTFParticipant:
+def rename_participant_username(
+    participant_id: UUID,
+    username: str,
+    *,
+    actor: User | AnonymousUser,
+) -> CTFParticipant:
     """Rename a marked participant account after organizer ownership checks."""
     normalized = normalize_participant_username(username)
     with transaction.atomic():
@@ -315,23 +320,30 @@ def purge_expired_participant_accounts() -> int:
     return sum(anonymize_participant_account(participant_id) for participant_id in participant_ids)
 
 
-def live_participant_for_user(user: Any) -> CTFParticipant | None:
+def live_participant_for_user(user: User | AnonymousUser) -> CTFParticipant | None:
     """Return the sole live participation admitted for a temporary account."""
     participant = None
     profile = None
-    if getattr(user, "is_active", False):
+    concrete_user = user if isinstance(user, User) else None
+    if concrete_user is not None and concrete_user.is_active:
         try:
-            profile = user.profile
+            profile = concrete_user.profile
         except (AttributeError, ObjectDoesNotExist):
             profile = None
     eligible_profile = profile is not None and profile.is_ctf_account and profile.user_type == "ctf_participant"
-    eligible_user = eligible_profile and not user.is_staff and not user.is_superuser
-    if eligible_user and set(user.groups.values_list("name", flat=True)) == {CTF_PARTICIPANT_GROUP}:
+    eligible_user = (
+        eligible_profile and concrete_user is not None and not concrete_user.is_staff and not concrete_user.is_superuser
+    )
+    if (
+        eligible_user
+        and concrete_user is not None
+        and set(concrete_user.groups.values_list("name", flat=True)) == {CTF_PARTICIPANT_GROUP}
+    ):
         now = timezone.now()
         matches = list(
             CTFParticipant.objects.select_related("event")
             .filter(
-                user=user,
+                user=concrete_user,
                 deleted_at__isnull=True,
                 event__status__in=["active", "paused"],
                 event__event_start__lte=now,

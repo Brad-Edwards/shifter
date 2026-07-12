@@ -112,9 +112,7 @@ from ctf.views.api.scoreboard import (
     api_scoreboard,
 )
 from ctf.views.participant import (
-    ctf_change_password,
     ctf_help,
-    ctf_login,
     participant_dashboard,
     participant_event,
     participant_range,
@@ -123,6 +121,7 @@ from ctf.views.participant import (
     scoreboard,
     team_join,
 )
+from ctf.views.participant_auth import ctf_change_password, ctf_login
 from ctf.views.participant_challenges import (
     challenge_detail,
     participant_challenges,

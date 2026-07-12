@@ -88,7 +88,7 @@
       "source_file": "config/settings.py"
     },
     {
-      "default": "'ShifterAcesRanges'",
+      "default": "_DEFAULT_CTF_BOOTSTRAP_VALUE",
       "name": "CTF_DEFAULT_PARTICIPANT_PASSWORD",
       "source_file": "config/_oidc_settings.py"
     },
