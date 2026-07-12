@@ -87,6 +87,109 @@ class AdrGuardTests(unittest.TestCase):
             self.assertEqual(len(violations), 1)
             self.assertIn("unknown rule id", violations[0].message)
 
+    def test_range_substrate_interface_contract_is_structurally_enforced(self) -> None:
+        contract = {
+            "kind": "range-substrate/v1",
+            "operations": ["provision", "destroy", "pause", "resume"],
+            "resources": ["network", "instance", "ngfw", "remote-access"],
+            "conformance": {
+                "shared_black_box_suite": True,
+                "real_provider_promotion_evidence": True,
+            },
+            "adapters": {
+                "initial": ["aws-terraform", "gcp-gdc"],
+                "deferred": ["azure"],
+            },
+            "issue_references": {
+                "283": {"disposition": "out-of-scope"},
+                "478": {"operations": ["provision", "destroy", "pause", "resume"]},
+                "265": {"disposition": "out-of-scope"},
+                "277": {"disposition": "out-of-scope"},
+            },
+        }
+
+        self.assertEqual(ADR_GUARD.validate_interface_contract(contract, "ADR-037"), [])
+
+        mutations = {
+            "missing operation": lambda value: value["operations"].remove("pause"),
+            "missing resource": lambda value: value["resources"].remove("remote-access"),
+            "missing conformance evidence": lambda value: value["conformance"].update(
+                {"real_provider_promotion_evidence": False}
+            ),
+            "azure not deferred": lambda value: value["adapters"].update(
+                {"initial": ["aws-terraform", "gcp-gdc", "azure"], "deferred": []}
+            ),
+            "missing program reference": lambda value: value["issue_references"].pop("478"),
+            "unmapped program reference": lambda value: value["issue_references"].update(
+                {"478": {}}
+            ),
+            "contradictory program reference": lambda value: value[
+                "issue_references"
+            ].update(
+                {
+                    "478": {
+                        "operations": ["provision"],
+                        "disposition": "out-of-scope",
+                    }
+                }
+            ),
+            "unknown program disposition": lambda value: value[
+                "issue_references"
+            ].update({"478": {"disposition": "covered-elsewhere"}}),
+            "duplicate program operation": lambda value: value[
+                "issue_references"
+            ].update({"478": {"operations": ["provision", "provision"]}}),
+        }
+        for label, mutate in mutations.items():
+            with self.subTest(label=label):
+                changed = json.loads(json.dumps(contract))
+                mutate(changed)
+                self.assertTrue(ADR_GUARD.validate_interface_contract(changed, "ADR-037"))
+
+        invalid_contract = json.loads(json.dumps(contract))
+        invalid_contract["operations"].remove("pause")
+        entry_with_invalid_contract = {
+            "id": "ADR-037",
+            "title": "Provider-neutral range substrate",
+            "status": "accepted",
+            "scope": "range_provisioning",
+            "decision": "d",
+            "interface_contract": invalid_contract,
+            "rules": [],
+            "exceptions": [],
+            "enforcement": ["ci"],
+            "evidence": ["x"],
+        }
+        invalid_contract_violations: list[ADR_GUARD.Violation] = []
+        ADR_GUARD._check_adr_entry(
+            entry_with_invalid_contract,
+            set(),
+            set(),
+            invalid_contract_violations,
+        )
+        self.assertTrue(
+            any(
+                item.path == "docs/adr/index.yaml"
+                and "interface_contract.operations must contain exactly" in item.message
+                for item in invalid_contract_violations
+            )
+        )
+
+        entry_without_contract = {
+            "id": "ADR-037",
+            "title": "Provider-neutral range substrate",
+            "status": "accepted",
+            "scope": "range_provisioning",
+            "decision": "d",
+            "rules": [],
+            "exceptions": [],
+            "enforcement": ["ci"],
+            "evidence": ["x"],
+        }
+        violations: list[ADR_GUARD.Violation] = []
+        ADR_GUARD._check_adr_entry(entry_without_contract, set(), set(), violations)
+        self.assertTrue(any("interface_contract" in item.message for item in violations))
+
     def test_validate_adr_exceptions_rejects_expired_entries(self) -> None:
         errors = ADR_GUARD.validate_adr_exceptions(
             [

@@ -42,6 +42,12 @@ REQUIRED_ADR_KEYS = {
     "evidence",
 }
 REQUIRED_EXCEPTION_KEYS = {"rule_id", "owner", "reason", "expires_on"}
+REQUIRED_INTERFACE_CONTRACTS = {"ADR-037": "range-substrate/v1"}
+RANGE_SUBSTRATE_OPERATIONS = frozenset({"provision", "destroy", "pause", "resume"})
+RANGE_SUBSTRATE_RESOURCES = frozenset({"network", "instance", "ngfw", "remote-access"})
+RANGE_SUBSTRATE_INITIAL_ADAPTERS = frozenset({"aws-terraform", "gcp-gdc"})
+RANGE_SUBSTRATE_DEFERRED_ADAPTERS = frozenset({"azure"})
+RANGE_SUBSTRATE_ISSUE_REFERENCES = frozenset({"283", "478", "265", "277"})
 GUARDRAIL_PREFIXES = (
     ".github/workflows/",
     ".claude/hooks/",
@@ -302,6 +308,115 @@ def _registry_violation(path: str, message: str) -> Violation:
     return Violation("adr-registry", "ADR-REGISTRY", path, message)
 
 
+def _validate_exact_string_members(
+    value: object,
+    expected: frozenset[str],
+    field: str,
+) -> list[str]:
+    """Validate one closed interface-contract string collection."""
+    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+        return [f"{field} must be a list of strings"]
+    if len(value) != len(set(value)):
+        return [f"{field} must not contain duplicates"]
+    actual = set(value)
+    if actual != expected:
+        return [
+            f"{field} must contain exactly {sorted(expected)}; got {sorted(actual)}"
+        ]
+    return []
+
+
+def validate_interface_contract(contract: object, adr_id: str) -> list[str]:
+    """Validate executable invariants declared by a typed ADR interface contract."""
+    if not isinstance(contract, dict):
+        return [f"{adr_id} interface_contract must be an object"]
+
+    expected_kind = REQUIRED_INTERFACE_CONTRACTS.get(adr_id)
+    kind = contract.get("kind")
+    if expected_kind is not None and kind != expected_kind:
+        return [f"{adr_id} interface_contract kind must be {expected_kind!r}"]
+    if kind != "range-substrate/v1":
+        return [f"{adr_id} interface_contract has unsupported kind {kind!r}"]
+
+    errors: list[str] = []
+    errors.extend(
+        _validate_exact_string_members(
+            contract.get("operations"),
+            RANGE_SUBSTRATE_OPERATIONS,
+            f"{adr_id} interface_contract.operations",
+        )
+    )
+    errors.extend(
+        _validate_exact_string_members(
+            contract.get("resources"),
+            RANGE_SUBSTRATE_RESOURCES,
+            f"{adr_id} interface_contract.resources",
+        )
+    )
+
+    conformance = contract.get("conformance")
+    if not isinstance(conformance, dict):
+        errors.append(f"{adr_id} interface_contract.conformance must be an object")
+    else:
+        for obligation in ("shared_black_box_suite", "real_provider_promotion_evidence"):
+            if conformance.get(obligation) is not True:
+                errors.append(
+                    f"{adr_id} interface_contract.conformance.{obligation} must be true"
+                )
+
+    adapters = contract.get("adapters")
+    if not isinstance(adapters, dict):
+        errors.append(f"{adr_id} interface_contract.adapters must be an object")
+    else:
+        errors.extend(
+            _validate_exact_string_members(
+                adapters.get("initial"),
+                RANGE_SUBSTRATE_INITIAL_ADAPTERS,
+                f"{adr_id} interface_contract.adapters.initial",
+            )
+        )
+        errors.extend(
+            _validate_exact_string_members(
+                adapters.get("deferred"),
+                RANGE_SUBSTRATE_DEFERRED_ADAPTERS,
+                f"{adr_id} interface_contract.adapters.deferred",
+            )
+        )
+
+    references = contract.get("issue_references")
+    if not isinstance(references, dict):
+        errors.append(f"{adr_id} interface_contract.issue_references must be an object")
+        return errors
+    actual_references = set(references)
+    if actual_references != RANGE_SUBSTRATE_ISSUE_REFERENCES:
+        errors.append(
+            f"{adr_id} interface_contract.issue_references must contain exactly "
+            f"{sorted(RANGE_SUBSTRATE_ISSUE_REFERENCES)}; got {sorted(actual_references)}"
+        )
+    for reference, mapping in references.items():
+        if not isinstance(mapping, dict):
+            errors.append(f"{adr_id} issue reference {reference} mapping must be an object")
+            continue
+        mapping_fields = set(mapping)
+        if mapping_fields == {"disposition"} and mapping["disposition"] == "out-of-scope":
+            continue
+        operations = mapping.get("operations")
+        if (
+            mapping_fields != {"operations"}
+            or not isinstance(operations, list)
+            or not operations
+            or not all(isinstance(operation, str) for operation in operations)
+            or not set(operations).issubset(RANGE_SUBSTRATE_OPERATIONS)
+            or len(operations) != len(set(operations))
+        ):
+            errors.append(
+                f"{adr_id} issue reference {reference} must exclusively map to a "
+                "non-empty, duplicate-free list of declared operations or have only "
+                "disposition 'out-of-scope'"
+            )
+    return errors
+
+
 def _check_adr_entry(
     entry: dict,
     adr_ids: set[str],
@@ -327,6 +442,19 @@ def _check_adr_entry(
     if adr_id in adr_ids:
         violations.append(_registry_violation("docs/adr/index.yaml", f"Duplicate ADR id: {adr_id}"))
     adr_ids.add(adr_id)
+
+    interface_contract = entry.get("interface_contract")
+    if adr_id in REQUIRED_INTERFACE_CONTRACTS and interface_contract is None:
+        violations.append(
+            _registry_violation(
+                "docs/adr/index.yaml",
+                f"{adr_id} must define interface_contract kind "
+                f"{REQUIRED_INTERFACE_CONTRACTS[adr_id]!r}",
+            )
+        )
+    elif interface_contract is not None:
+        for error in validate_interface_contract(interface_contract, adr_id):
+            violations.append(_registry_violation("docs/adr/index.yaml", error))
 
     rules = entry.get("rules", [])
     if not isinstance(rules, list):
