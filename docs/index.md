@@ -1,0 +1,43 @@
+# Shifter documentation
+
+Shifter is a cyber-range platform for running XDR and NGFW demos and CTF events
+on AWS and GCP. This site is the home for deploying, operating, and developing
+it.
+
+This first release of the site covers the **deploy and operations** docs. Product
+and user guides move here in a later phase (see issue #1591); until then they
+remain in the in-app documentation reader.
+
+## Deploy and operations
+
+Read these when you stand up or run an environment. The
+[deploy preflight](https://github.com/Brad-Edwards/shifter/blob/dev/scripts/bootstrap/preflight.py)
+enforces the prerequisites documented here before any Terraform apply.
+
+| Doc | Read this when |
+|---|---|
+| [Deploy secrets and variables](dev/deploy-secrets.md) | You are configuring the GitHub secrets and repository variables a fresh AWS or GCP standup needs. This is the authoritative checklist. |
+| [AWS Terraform apply order](dev/aws-terraform-apply-order.md) | You need the order the AWS stacks apply in and the preconditions each one has. |
+| [AWS AMI seeding](dev/aws-ami-seeding-runbook.md) | You are seeding the range guest AMIs the portal stack reads. |
+| [AWS runner provisioning](dev/aws-runner-provisioning-runbook.md) | You are provisioning and registering the self-hosted CI runners. |
+| [AWS environment teardown](dev/aws-teardown-runbook.md) | You are tearing an AWS environment down. |
+| [GCP range-cell deploy](dev/gcp-range-cell-deploy.md) | You are deploying the GCP GCE range-cell backend. |
+| [Polaris on the GCP range-cell](dev/polaris-gcp-range-cell.md) | You are running the Polaris scenario on the GCP range-cell backend. |
+| [Secrets rotation](dev/secrets-rotation-runbook.md) | You are rotating deployment or runtime secrets. |
+| [Service Discovery ForceNew](dev/service-discovery-forcenew.md) | You hit a Service Discovery replacement and need the operational rule. |
+
+## Operations runbooks
+
+Read these when you respond to an incident or operate the running platform.
+
+| Doc | Read this when |
+|---|---|
+| [Disaster recovery](ops/disaster-recovery.md) | You are recovering the AWS portal stack after a failure. |
+| [GitHub runner health alerts](ops/github-runner-health-alerts.md) | A runner-health alert fired and you need the response steps. |
+| [TechVault golden AMI bake](ops/techvault-bake-runbook.md) | You are baking the TechVault golden AMI. |
+
+## Governance
+
+| Doc | Read this when |
+|---|---|
+| [ADR enforcement](adr/README.md) | You need how architecture decisions are recorded and enforced in CI. |

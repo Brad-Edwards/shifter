@@ -59,6 +59,16 @@ Deploy-time enforcement (ADR-035):
   and the spec are kept in step by the parity test in
   `scripts/bootstrap/tests/test_preflight.py`.
 
+Documentation site (ADR-037):
+
+- Documentation is authored as Markdown under top-level `docs/` and published as a
+  single public mkdocs (Material) site on GitHub Pages by
+  `.github/workflows/docs.yml` (`mkdocs build --strict` gates PRs; pushes to the
+  default branch publish). Internal design notes, machine registries, and scratch
+  dirs stay in-repo but are excluded from the published site via `mkdocs.yml`
+  `exclude_docs`. The in-app Django documentation app is retired in Phase B
+  (issue #1596). This is a runtime/build gate, not an `adr_guard` static check.
+
 ## Current Checks
 
 The first slice intentionally stays small:
