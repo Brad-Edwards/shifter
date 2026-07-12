@@ -5131,12 +5131,22 @@ def _dw_runs_on(job: dict):
     return job.get("runs-on")
 
 
+# Runner labels the ADR-003-R5 exposure check treats as self-hosted-class. A
+# GCP-native runner (issue #1546) registers with `--no-default-labels` + a custom
+# label, so a job selecting it never carries the literal `self-hosted` label;
+# without this set the exposure check would skip that job and leave a
+# pull_request-reachability blind spot when GCP-dev CI is cut over to its own
+# runner. New self-hosted runner labels (e.g. a future gcp-prod, or a per-account
+# AWS tenant label) MUST be added here so the gate cannot be bypassed.
+_SELF_HOSTED_CLASS_LABELS = frozenset({"self-hosted", "gcp-dev"})
+
+
 def _dw_is_self_hosted(job: dict) -> bool:
     ro = _dw_runs_on(job)
     if isinstance(ro, str):
-        return ro == "self-hosted"
+        return ro in _SELF_HOSTED_CLASS_LABELS
     if isinstance(ro, (list, tuple)):
-        return "self-hosted" in ro
+        return any(label in _SELF_HOSTED_CLASS_LABELS for label in ro)
     return False
 
 

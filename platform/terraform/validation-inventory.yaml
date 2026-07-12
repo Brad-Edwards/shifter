@@ -107,6 +107,15 @@ roots:
       - registry.terraform.io/hashicorp/archive
       - registry.terraform.io/hashicorp/google
       - registry.terraform.io/hashicorp/random
+  # GCP-native self-hosted runner (issue #1546). A dedicated execution root and
+  # state prefix, separate from the gcp-dev platform root, so a platform destroy
+  # never removes the runner (dev-tenant containment).
+  - id: gcp-global-github-runner
+    path: platform/terraform/gcp/global/github-runner
+    owner: "@Brad-Edwards"
+    toolchain: gcp-1.7.1
+    providers:
+      - registry.terraform.io/hashicorp/google
   - id: aws-global-iam
     path: platform/terraform/global/iam
     owner: "@Brad-Edwards"
@@ -280,6 +289,11 @@ modules:
     reason: "Contract-test rollout tracked in #1597."
     tracking: "#1597"
   - path: platform/terraform/gcp/modules/range/vpc
+    owner: "@Brad-Edwards"
+    contract: deferred
+    reason: "Contract-test rollout tracked in #1597."
+    tracking: "#1597"
+  - path: platform/terraform/gcp/modules/github-runner-network
     owner: "@Brad-Edwards"
     contract: deferred
     reason: "Contract-test rollout tracked in #1597."

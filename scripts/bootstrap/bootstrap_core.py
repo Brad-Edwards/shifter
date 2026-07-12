@@ -252,6 +252,53 @@ def run_cmd(
         return None
 
 
+def run_cmd_secret_stdin(
+    cmd: list[str],
+    *,
+    secret_stdin: str,
+    dry_run: bool = False,
+) -> int:
+    """Run ``cmd`` feeding ``secret_stdin`` to the child's stdin; return the exit code.
+
+    The secret-input path for the GCP runner registration handoff (issue #1546):
+    the single-use GitHub registration token is piped to an interactive
+    ``config.sh`` over the ``gcloud compute ssh`` stdin stream. Unlike
+    :func:`run_cmd`, this path is built so the token cannot leak:
+
+    - ``secret_stdin`` is never rendered. The argv must carry no secret (the
+      caller uses a static remote command); this asserts the secret is absent
+      from argv so a caller cannot accidentally place the token on the command
+      line (where it would be visible via ``/proc/<pid>/cmdline``).
+    - The child's stdout/stderr are captured and discarded instead of being
+      streamed or dumped verbatim on failure (as :func:`run_cmd` does), so a
+      token echoed by the remote command cannot reach the operator log.
+    - Only the integer exit code is returned — never a ``CompletedProcess``
+      carrying captured output — so the result itself cannot leak the secret.
+
+    The (non-secret) argv is logged through the same redactor as :func:`run_cmd`.
+    """
+    _validate_argv(cmd)
+    needle = secret_stdin.strip()
+    if needle and any(needle in arg for arg in cmd):
+        raise ValueError("secret_stdin must not appear in argv; the token must travel over stdin only")
+    cmd_str = _redact_argv_for_log(cmd)
+    if dry_run:
+        _emit_line(f"{Colors.BLUE}[DRY-RUN] Would run (secret stdin): {cmd_str}{Colors.END}")
+        return 0
+
+    info(f"Running (secret stdin): {cmd_str}")
+    result = subprocess.run(  # nosec B603 B607
+        cmd,
+        input=secret_stdin,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        error(f"Command failed (exit {result.returncode}); child output suppressed to avoid secret leakage")
+    return result.returncode
+
+
 def get_aws_account_id(profile: str = None) -> str:
     """Get current AWS account ID."""
     cmd = ["aws", "sts", "get-caller-identity", "--query", "Account", "--output", "text"]
