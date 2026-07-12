@@ -1279,7 +1279,7 @@ jobs:
           DJANGO_SECRET_KEY: ${{ github.run_id }}-${{ github.run_attempt }}
         run: |
           uv run python manage.py collectstatic --noinput
-          uv run pytest tests/ --ignore=tests/documentation -m "not redis and not postgres" --cov=. --cov-report=term-missing --cov-report=xml:coverage.xml
+          uv run pytest tests/ -m "not redis and not postgres" --cov=. --cov-report=term-missing --cov-report=xml:coverage.xml
 
       # Real-stack Redis channel-layer evidence (#924). Runs only the
       # redis-marked integration tests against the Redis service, with xdist
@@ -1380,7 +1380,7 @@ jobs:
           uv run python manage.py collectstatic --noinput
           start=$(date +%s)
           set +e
-          uv run pytest tests/ --ignore=tests/documentation -m "not redis" \
+          uv run pytest tests/ -m "not redis" \
             --junit-xml=postgres-junit.xml -p no:cacheprovider
           status=$?
           set -e

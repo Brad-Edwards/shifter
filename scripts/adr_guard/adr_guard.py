@@ -42,7 +42,7 @@ REQUIRED_ADR_KEYS = {
     "evidence",
 }
 REQUIRED_EXCEPTION_KEYS = {"rule_id", "owner", "reason", "expires_on"}
-REQUIRED_INTERFACE_CONTRACTS = {"ADR-038": "range-substrate/v1"}
+REQUIRED_INTERFACE_CONTRACTS = {"ADR-039": "range-substrate/v1"}
 RANGE_SUBSTRATE_OPERATIONS = frozenset({"provision", "destroy", "pause", "resume"})
 RANGE_SUBSTRATE_RESOURCES = frozenset({"network", "instance", "ngfw", "remote-access"})
 RANGE_SUBSTRATE_INITIAL_ADAPTERS = frozenset({"aws-terraform", "gcp-gdc"})
@@ -77,9 +77,9 @@ GUARDRAIL_FILES = {
 }
 DOC_PATHS = (
     "docs/adr/",
-    "shifter/shifter_platform/documentation/docs/technical/dev/adr-enforcement.md",
-    "shifter/shifter_platform/documentation/docs/technical/dev/index.md",
-    "shifter/shifter_platform/documentation/docs/technical/index.md",
+    "docs/technical/dev/adr-enforcement.md",
+    "docs/technical/dev/index.md",
+    "docs/technical/index.md",
 )
 
 
@@ -2731,13 +2731,12 @@ _QUALITY_NON_DOCS_REQUIRED_GLOBS = (
     "**",
     "!docs/**",
     "!**/*.md",
-    "!shifter/shifter_platform/documentation/**",
 )
 _QUALITY_GUARDRAIL_DOCS_REQUIRED_GLOBS = (
     ".github/pull_request_template.md",
     ".github/copilot-instructions.md",
     "docs/adr/**",
-    "shifter/shifter_platform/documentation/docs/technical/dev/adr-enforcement.md",
+    "docs/technical/dev/adr-enforcement.md",
 )
 _PR_GATE_SKIPPED_QUALITY_GUARD = (
     '[ "$quality_result" = "skipped" ] && [ "$quality_relevant" != "false" ]'

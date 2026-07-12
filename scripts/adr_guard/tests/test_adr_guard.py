@@ -108,7 +108,7 @@ class AdrGuardTests(unittest.TestCase):
             },
         }
 
-        self.assertEqual(ADR_GUARD.validate_interface_contract(contract, "ADR-038"), [])
+        self.assertEqual(ADR_GUARD.validate_interface_contract(contract, "ADR-039"), [])
 
         mutations = {
             "missing operation": lambda value: value["operations"].remove("pause"),
@@ -144,12 +144,12 @@ class AdrGuardTests(unittest.TestCase):
             with self.subTest(label=label):
                 changed = json.loads(json.dumps(contract))
                 mutate(changed)
-                self.assertTrue(ADR_GUARD.validate_interface_contract(changed, "ADR-038"))
+                self.assertTrue(ADR_GUARD.validate_interface_contract(changed, "ADR-039"))
 
         invalid_contract = json.loads(json.dumps(contract))
         invalid_contract["operations"].remove("pause")
         entry_with_invalid_contract = {
-            "id": "ADR-038",
+            "id": "ADR-039",
             "title": "Provider-neutral range substrate",
             "status": "accepted",
             "scope": "range_provisioning",
@@ -176,7 +176,7 @@ class AdrGuardTests(unittest.TestCase):
         )
 
         entry_without_contract = {
-            "id": "ADR-038",
+            "id": "ADR-039",
             "title": "Provider-neutral range substrate",
             "status": "accepted",
             "scope": "range_provisioning",
@@ -369,13 +369,12 @@ class DeployWorkflowPlanScopeTests(unittest.TestCase):
             "**",
             "!docs/**",
             "!**/*.md",
-            "!shifter/shifter_platform/documentation/**",
         ]
         guardrail_doc_globs = guardrail_doc_globs or [
             ".github/pull_request_template.md",
             ".github/copilot-instructions.md",
             "docs/adr/**",
-            "shifter/shifter_platform/documentation/docs/technical/dev/adr-enforcement.md",
+            "docs/technical/dev/adr-enforcement.md",
         ]
         portal_image_globs = portal_image_globs or ["shifter/shifter_platform/**"]
         quality_only_globs = quality_only_globs or [
@@ -745,7 +744,7 @@ class DeployWorkflowPlanScopeTests(unittest.TestCase):
                 self._deploy_text(
                     guardrail_doc_globs=[
                         "docs/adr/**",
-                        "shifter/shifter_platform/documentation/docs/technical/dev/adr-enforcement.md",
+                        "docs/technical/dev/adr-enforcement.md",
                     ]
                 ),
                 self._platform_text(),
@@ -955,7 +954,6 @@ class DeployWorkflowPlanScopeTests(unittest.TestCase):
                 "              - '**'\n"
                 "              - '!docs/**'\n"
                 "              - '!**/*.md'\n"
-                "              - '!shifter/shifter_platform/documentation/**'\n"
                 "      - id: quality_guardrails\n"
                 "        with:\n"
                 "          filters: |\n"
@@ -963,7 +961,7 @@ class DeployWorkflowPlanScopeTests(unittest.TestCase):
                 "              - '.github/pull_request_template.md'\n"
                 "              - '.github/copilot-instructions.md'\n"
                 "              - 'docs/adr/**'\n"
-                "              - 'shifter/shifter_platform/documentation/docs/technical/dev/adr-enforcement.md'\n"
+                "              - 'docs/technical/dev/adr-enforcement.md'\n"
                 "  quality:\n"
                 "    if: |\n"
                 "      # needs.changes.outputs.quality_relevant == 'true'\n"
@@ -5278,7 +5276,7 @@ class NoLiveCloudIdentifiersTests(unittest.TestCase):
 class DocumentationCoverageTests(unittest.TestCase):
     """ADR-022-R1: major features carry user and technical documentation."""
 
-    DOCS_ROOT = "shifter/shifter_platform/documentation/docs"
+    DOCS_ROOT = "docs"
 
     def _write_repo(self, repo_root: Path, manifest: object, docs: dict[str, str]) -> None:
         adr_dir = repo_root / "docs" / "adr"
