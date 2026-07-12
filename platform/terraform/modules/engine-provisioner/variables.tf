@@ -384,3 +384,68 @@ variable "permissions_boundary_arn" {
   description = "Permissions boundary ARN required on CI-created shifter-* roles"
   type        = string
 }
+
+# ------------------------------------------------------------------------------
+# Polaris Bedrock Agent Config (#1377)
+# ------------------------------------------------------------------------------
+# Threaded into the ECS task container as AWS_POLARIS_AGENT_* env vars,
+# consumed by shifter/engine/provisioner/config.py's
+# load_aws_polaris_agent_config(). All default to empty/zero so the
+# feature stays off until populated per-environment via the deploy
+# secrets mechanism; enablement is signaled by
+# aws_polaris_agent_main_inference_profile_arn being non-empty. Do not
+# hardcode account-specific ARNs here.
+
+variable "aws_polaris_agent_region" {
+  description = "AWS region for Bedrock Polaris agent invocation"
+  type        = string
+  default     = ""
+}
+
+variable "aws_polaris_agent_main_model_id" {
+  description = "Bedrock model ID for the Polaris agent's main model"
+  type        = string
+  default     = ""
+}
+
+variable "aws_polaris_agent_small_model_id" {
+  description = "Bedrock model ID for the Polaris agent's small/fast model"
+  type        = string
+  default     = ""
+}
+
+variable "aws_polaris_agent_main_inference_profile_arn" {
+  description = "Approved Bedrock inference-profile ARN for the main model. Non-empty is the Polaris agent feature's enablement signal."
+  type        = string
+  default     = ""
+}
+
+variable "aws_polaris_agent_small_inference_profile_arn" {
+  description = "Approved Bedrock inference-profile ARN for the small/fast model"
+  type        = string
+  default     = ""
+}
+
+variable "aws_polaris_agent_main_backing_model_arns" {
+  description = "Backing Bedrock foundation-model ARNs for the main inference profile"
+  type        = list(string)
+  default     = []
+}
+
+variable "aws_polaris_agent_small_backing_model_arns" {
+  description = "Backing Bedrock foundation-model ARNs for the small/fast inference profile"
+  type        = list(string)
+  default     = []
+}
+
+variable "aws_polaris_agent_sts_session_duration_seconds" {
+  description = "STS AssumeRole session duration for the Polaris agent role, in seconds (AWS minimum is 900)"
+  type        = number
+  default     = 0
+}
+
+variable "aws_polaris_agent_refresh_window_seconds" {
+  description = "Seconds before STS session expiry at which the range host refreshes Polaris agent credentials"
+  type        = number
+  default     = 0
+}

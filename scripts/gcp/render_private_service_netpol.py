@@ -10,12 +10,12 @@ authorizing those endpoints must be generated at deploy time and shipped
 alongside the existing `platform-runtime.generated.env` and
 `platform-edge.generated.yaml`.
 
-Output: a single NetworkPolicy ("allow-platform-private-service-egress")
-in the `shifter-platform` namespace, with per-host `/32` ipBlocks for the
-Cloud SQL and Memorystore private IPs, plus the GKE services CIDR (used by
-restricted.googleapis.com). Ports: 5432 (Cloud SQL), 6378 (Memorystore TLS,
-ADR-008-R6), and 6379 (plaintext Redis, kept for compatibility with
-pre-#963 environments). The narrow per-host CIDRs match the Helm chart's
+Output: two NetworkPolicies in `shifter-platform`: one platform-wide policy
+with per-host `/32` ipBlocks for Cloud SQL and Memorystore, and one policy that
+allows only the dedicated provisioner-launcher pod to reach the in-cluster
+Kubernetes API in the GKE services CIDR. Ports: 443 (Kubernetes API), 5432
+(Cloud SQL), 6378 (Memorystore TLS, ADR-008-R6), and 6379 (plaintext Redis,
+kept for compatibility with pre-#963 environments). The narrow per-host CIDRs match the Helm chart's
 `privateServiceCidrs` flow in `scripts/bootstrap/deploy.py` so the two
 deploy paths share the same private-service contract.
 """
@@ -77,10 +77,6 @@ def render_netpol(outputs: dict[str, object]) -> str:
         if cidr not in seen:
             seen.add(cidr)
             ordered_cidrs.append(cidr)
-    if gke_services_cidr not in seen:
-        seen.add(gke_services_cidr)
-        ordered_cidrs.append(gke_services_cidr)
-
     ip_blocks = "\n".join(f"        - ipBlock:\n            cidr: {cidr}" for cidr in ordered_cidrs)
 
     # YAML is hand-formatted (rather than via PyYAML) for two reasons:
@@ -114,6 +110,28 @@ spec:
         - protocol: TCP
           # Memorystore TLS endpoint (ADR-008-R6, #963).
           port: 6378
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-provisioner-launcher-kubernetes-api-egress-generated
+  namespace: shifter-platform
+  labels:
+    app.kubernetes.io/name: shifter
+    app.kubernetes.io/part-of: shifter
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: worker-provisioner-launcher
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: {gke_services_cidr}
+      ports:
+        - protocol: TCP
+          port: 443
 """
 
 

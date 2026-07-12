@@ -22,7 +22,7 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       serviceAccountName: portal
-      automountServiceAccountToken: true
+      automountServiceAccountToken: false
       affinity:
         podAntiAffinity:
           preferredDuringSchedulingIgnoredDuringExecution:

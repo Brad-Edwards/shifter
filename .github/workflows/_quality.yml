@@ -259,6 +259,20 @@ jobs:
         working-directory: platform/terraform
         run: tflint --recursive --config "${GITHUB_WORKSPACE}/.tflint.hcl"
 
+      # Issue #1377: the per-range Polaris Bedrock agent role's inline
+      # policy must stay scoped to exactly bedrock:InvokeModel /
+      # bedrock:InvokeModelWithResponseStream on the two approved inference
+      # profiles and their backing models (conditioned on
+      # bedrock:InferenceProfileArn), and its trust policy must stay scoped
+      # to the shared range-instance role AND the exact Polaris EC2 source
+      # instance (ec2:SourceInstanceARN). Mirrors the
+      # check-tf-iam-bedrock-agent-scope pre-commit hook so a commit that
+      # skipped pre-commit cannot land the regression.
+      - name: Run check-tf-iam-bedrock-agent-scope
+        run: |
+          python3 scripts/check_tf_iam_bedrock_agent_scope/check_tf_iam_bedrock_agent_scope.py \
+            shifter/engine/provisioner/terraform/modules/range/iam.tf
+
       # ADR-004-R10 / issue #52: the kms:Decrypt grant for the portal
       # Secrets Manager CMK on roles that read Secrets Manager. Wired
       # alongside terraform-lint because the inputs are .tf files and
@@ -383,6 +397,7 @@ jobs:
           python3 -m unittest scripts.check_tf_iam_ssm_scope.test_check_tf_iam_ssm_scope
           python3 -m unittest scripts.check_tf_iam_role_naming.test_check_tf_iam_role_naming
           python3 -m unittest scripts.check_tf_iam_ssm_range_scope.test_check_tf_iam_ssm_range_scope
+          python3 -m unittest scripts.check_tf_iam_bedrock_agent_scope.test_check_tf_iam_bedrock_agent_scope
           python3 -m unittest scripts.check_tf_sg_cidrs.test_check_tf_sg_cidrs
           python3 -m unittest scripts.check_tf_kms_secrets_grant.test_check_tf_kms_secrets_grant
           python3 -m unittest scripts.check_tf_rds_security.test_check_tf_rds_security
