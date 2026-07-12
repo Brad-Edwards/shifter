@@ -1,19 +1,24 @@
 """End-to-end: an authored ACES scenario with composition realizes real bootstrap.
 
 This is the cross-boundary proof that composition realization is genuine (ADR-032,
-issue #1477). It compiles a real ACES SDL (a file, an account, and a service
-feature) through the upstream compiler, serializes the plan exactly as the
-platform persists it, then parses and realizes it with the **provisioner-side**
-modules loaded standalone (in production the provisioner ships no aces_* and reads
-the serialized plan as plain data) -- asserting the scenario's file content,
-account, and service package genuinely appear in the guest bootstrap. If the
-compiler's payload convention shifts, or the provisioner reader/realizer drifts,
-this fails.
+issue #1477). It compiles a real ACES SDL (a directory content placement and an
+account) through the upstream compiler, serializes the plan exactly as the platform
+persists it, then parses and realizes it with the **provisioner-side** modules
+loaded standalone (in production the provisioner ships no aces_* and reads the
+serialized plan as plain data) -- asserting the scenario's directory content and
+account genuinely appear in the guest bootstrap. If the compiler's payload
+convention shifts, or the provisioner reader/realizer drifts, this fails.
+
+It exercises only terms the manifest genuinely declares (#1563): ``directory``
+content and account placements. Inline-``file`` content realization is real
+provisioner behaviour but is no longer a declared manifest capability -- the coarse
+``file`` type also admits unrealized source-backed files -- so it is covered by the
+provisioner composition unit tests in ``test_aces_gcp_composition.py``, not cited
+here as manifest support.
 """
 
 from __future__ import annotations
 
-import base64
 import importlib.util
 import sys
 from dataclasses import dataclass
@@ -41,10 +46,9 @@ nodes:
     source: base-linux
 content:
   seed:
-    type: file
+    type: directory
     target: web
-    path: /srv/seed.txt
-    text: hello-aces
+    destination: /srv/data
 accounts:
   alice:
     username: alice
@@ -96,8 +100,7 @@ def test_authored_scenario_realizes_genuine_bootstrap(provisioner):
     web = next(node for node in parsed.nodes if node.address.rsplit(".", 1)[-1] == "web")
     script = composition.node_bootstrap_script(web, parsed)
 
-    # The scenario's file and account are genuinely realized in the guest bootstrap.
-    assert base64.b64encode(b"hello-aces").decode() in script  # inline file content
-    assert "/srv/seed.txt" in script
+    # The scenario's directory content and account are genuinely realized in the guest bootstrap.
+    assert "mkdir -p /srv/data" in script  # directory content (a retained, declared term)
     assert "useradd -m alice" in script  # account
     assert "usermod -aG ops alice" in script  # group membership

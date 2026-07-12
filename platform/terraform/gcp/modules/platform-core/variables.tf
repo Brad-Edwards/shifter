@@ -303,6 +303,12 @@ variable "email_sender_domain" {
   default     = ""
 }
 
+variable "vmseries_bootstrap_bucket_name" {
+  description = "Optional GCS bucket the provisioner writes VM-Series bootstrap ISOs to (GDC VM-Series path only). Empty grants the provisioner no binding on it (ADR-008-R7); set it when a GDC VM-Series deployment configures GDC_VMSERIES_BOOTSTRAP_BUCKET."
+  type        = string
+  default     = ""
+}
+
 variable "range_provisioner_ports" {
   description = "TCP ports the platform provisioner is allowed to reach on the range VPC. Used to construct the range-allow-platform-provisioner firewall rule. The range VPC otherwise denies all ingress (ADR-008-R4)."
   type        = list(number)

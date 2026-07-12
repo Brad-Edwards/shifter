@@ -298,6 +298,27 @@ repos:
         files: ^(platform/terraform/modules/engine-provisioner/iam\.tf|platform/terraform/modules/portal/ec2/main\.tf|platform/terraform/modules/guacamole/iam\.tf)$
         pass_filenames: false
 
+      # ADR-008-R7 / issue #1517: GCP application workload identities (portal,
+      # workers, ctf-scheduler, provisioner) must not receive project-level
+      # Secret Manager payload/admin or Cloud Storage object-admin roles; static
+      # access is bound per named secret / bucket. Only the two dynamic-secret
+      # residuals tracked in #1586 are allowlisted. Scoped to the portal/iam
+      # module where the workload identities and their grants are defined.
+      - id: check-tf-gcp-iam-resource-scope
+        name: GCP workload IAM resource scoping (ADR-008-R7)
+        # Scan every .tf in the module (glob, pass_filenames=false) so a forbidden
+        # grant or custom role added in a sibling file — not just main.tf — is
+        # still caught. The hook's files: regex gates when it runs; the glob is
+        # what gets scanned.
+        entry: >-
+          bash -c '
+          python3 scripts/check_tf_gcp_iam_resource_scope/check_tf_gcp_iam_resource_scope.py
+          platform/terraform/gcp/modules/portal/iam/*.tf
+          '
+        language: system
+        files: ^platform/terraform/gcp/modules/portal/iam/.*\.tf$
+        pass_filenames: false
+
       # Custom: RDS instance IAM auth and explicit CA certificate check.
       # Checkov enforces IAM DB auth, but its current modern-CA rule
       # passes when ca_cert_identifier is absent; this checker closes
@@ -349,10 +370,11 @@ repos:
           python3 -m unittest scripts.check_tf_kms_secrets_grant.test_check_tf_kms_secrets_grant &&
           python3 -m unittest scripts.check_tf_rds_security.test_check_tf_rds_security &&
           python3 -m unittest scripts.check_portal_target_sg_sources.test_check_portal_target_sg_sources &&
-          python3 -m unittest scripts.check_tf_runner_network.test_check_tf_runner_network
+          python3 -m unittest scripts.check_tf_runner_network.test_check_tf_runner_network &&
+          python3 -m unittest scripts.check_tf_gcp_iam_resource_scope.test_check_tf_gcp_iam_resource_scope
           '
         language: system
-        files: ^scripts/(check_tf_(iam_ec2_scope|iam_elb_scope|iam_ssm_scope|iam_ssm_range_scope|sg_cidrs|kms_secrets_grant|rds_security|runner_network)|check_portal_target_sg_sources)/
+        files: ^scripts/(check_tf_(iam_ec2_scope|iam_elb_scope|iam_ssm_scope|iam_ssm_range_scope|sg_cidrs|kms_secrets_grant|rds_security|runner_network|gcp_iam_resource_scope)|check_portal_target_sg_sources)/
         pass_filenames: false
 
   # Kubernetes schema validation

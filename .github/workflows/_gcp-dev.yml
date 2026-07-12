@@ -111,6 +111,11 @@ jobs:
       GCP_BOOTSTRAP_ADMIN_PASSWORD: ${{ secrets.GCP_BOOTSTRAP_ADMIN_PASSWORD }}
       GCP_SERVICE_ACCOUNT: ${{ secrets.GCP_SERVICE_ACCOUNT }}
       GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+      # Explicit, audited opt-out for the first Identity Platform operator bootstrap.
+      # Set the repo variable to "true" to deliberately skip operator creation; the
+      # preflight downgrades the missing-credential failure to a logged warning and
+      # the seed step below is skipped. Unset/false keeps operator creds required.
+      SHIFTER_SKIP_OPERATOR_BOOTSTRAP: ${{ vars.SHIFTER_SKIP_OPERATOR_BOOTSTRAP }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
       - name: Ensure GCP deploy auth is configured
@@ -136,6 +141,19 @@ jobs:
         with:
           terraform_version: "1.7.1"
       - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+      - name: Preflight - validate deploy prerequisites
+        # Shared fail-safe gate (scripts/bootstrap/preflight.py): reports every
+        # missing prerequisite up front before Terraform/Helm run, so a missing
+        # secret fails here in seconds rather than mid-run. The bootstrap operator
+        # credentials are required unless SHIFTER_SKIP_OPERATOR_BOOTSTRAP=true.
+        # See docs/dev/deploy-secrets.md.
+        working-directory: scripts/bootstrap
+        env:
+          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          GCP_PUBLIC_HOSTNAME: ${{ secrets.GCP_PUBLIC_HOSTNAME }}
+          GCP_IDENTITY_ALLOWED_EMAIL_DOMAIN: ${{ secrets.GCP_IDENTITY_ALLOWED_EMAIL_DOMAIN }}
+          GCP_MASTER_AUTHORIZED_CIDRS: ${{ secrets.GCP_MASTER_AUTHORIZED_CIDRS }}
+        run: uv run python -m preflight --cloud gcp --env "${GCP_ENVIRONMENT}" --headless
       - name: Render local.auto.tfvars from secrets/variables
         env:
           GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
@@ -315,7 +333,11 @@ jobs:
           gcloud container clusters get-credentials "${CLUSTER}" \
             --region "${LOCATION}" --project "${GCP_PROJECT_ID}"
       - name: Seed Identity Platform bootstrap operator
-        if: env.GCP_BOOTSTRAP_ADMIN_EMAIL != '' && env.GCP_BOOTSTRAP_ADMIN_PASSWORD != ''
+        # Runs unless operator bootstrap is explicitly opted out. The preflight
+        # step already failed the deploy if the credentials were missing without
+        # the opt-out, so reaching here means creds are present (seed) or the
+        # opt-out is set (skip) -- never a silent no-op on empty secrets.
+        if: env.SHIFTER_SKIP_OPERATOR_BOOTSTRAP != 'true'
         # Run under the bootstrap project's interpreter (Python 3.12 + its deps);
         # the runner's system python3 is too old for deploy.py's `X | None` unions.
         run: |

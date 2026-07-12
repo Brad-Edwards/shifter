@@ -388,6 +388,11 @@
         "id": "ADR-008-R6",
         "description": "GCP Memorystore for the platform control-plane cache must run with auth_enabled = true and transit_encryption_mode = SERVER_AUTHENTICATION. The AUTH token and the Memorystore server CA both flow through Secret Manager and are hydrated by the runtime entrypoint exactly like the DB and app secrets; neither value may appear in ConfigMaps, generated env files, or process argv. Django Channels consumes the cache via a TLS (rediss://) channels_redis dict-form host carrying ssl_cert_reqs=required and ssl_ca_data set to the Memorystore CA. STANDARD_HA is the default production tier (high-availability posture); auth/TLS posture is independent of tier and is always-on at the module level.",
         "checks": []
+      },
+      {
+        "id": "ADR-008-R7",
+        "description": "GCP application workload identities (portal, workers, CTF scheduler, and provisioner) must not receive project-level Secret Manager payload/admin or Cloud Storage object-admin roles. Static runtime access is bound on each named secret or bucket from the resource-owning module's outputs (portal/secrets `runtime_secret_ids`, portal/gcs `assets_bucket_name`), driven by a single canonical workload/resource matrix in `platform/terraform/gcp/modules/portal/iam/main.tf`. Dynamic provisioner-created secret lifecycle must be isolated by a dedicated project or broker because secret creation is authorized on the parent project before a resource-name condition can constrain the new secret ID; resource-name conditions remain appropriate for existing-secret access/update/delete. Repo-native Terraform guards and effective-permission tests must cover direct, binding/policy, local-map, and equivalent project custom-role shapes. The check is implemented in `scripts/check_tf_gcp_iam_resource_scope/check_tf_gcp_iam_resource_scope.py` and wired as the `check-tf-gcp-iam-resource-scope` pre-commit hook plus a CI step in `.github/workflows/_quality.yml`, with its unittest + effective-permission oracle suite included in the `check_tf_*` checker tests. Until the dedicated boundary lands, the guard allowlists exactly two project-level residuals it cannot yet resource-scope — portal `roles/secretmanager.secretAccessor` (reads per-range `*-ssh`/`*-rdp-password` guest credentials) and provisioner `roles/secretmanager.admin` (per-range dynamic-secret create/version/access/delete + vertex-key setIamPolicy + operator GDC secret reads) — each carrying an expiry so the exception cannot outlive its review; the dedicated range-secret project / broker boundary that removes both is designed in #1586. Recorded by the architecture preflight for #1517.",
+        "checks": []
       }
     ],
     "exceptions": [],
@@ -408,6 +413,8 @@
       "docs/architecture/gke-control-plane-access-preflight.md",
       "docs/architecture/gcp-vpc-firewall-preflight.md",
       "docs/architecture/gcp-cloud-sql-deletion-protection-preflight.md",
+      "docs/architecture/gcp-workload-resource-iam-preflight-1517.md",
+      "scripts/check_tf_gcp_iam_resource_scope/check_tf_gcp_iam_resource_scope.py",
       "docs/architecture/gcp-gcs-cmek-preflight.md",
       "docs/architecture/gcp-redis-auth-tls-preflight.md"
     ]
@@ -1354,7 +1361,7 @@
       },
       {
         "id": "ADR-031-R5",
-        "description": "ACES catalog launchability and the ACES-native launch service (cms.services.create_aces_native_range, routed via create_range_dispatch) are gated by SHIFTER_ACES_NATIVE_PROVISIONING (default off); with the flag off no ACES entry is launchable and create_range_dispatch is byte-identical to create_range. The launch service reuses create_range's ownership/active-range/audit helpers and persists the same CMS Request + RangeInstance bookkeeping (range_spec=None -- no cyberscript RangeSpec) so Mission Control visibility, active-range admission, and the range.status.updated -> apply_range_status flow work uniformly keyed by request_id. To be genuinely launch-conformant the Shifter backend manifest must declare every node type it realizes -- including 'switch' for networks, since the aces-sdl planner rejects any network resource otherwise -- and its provisional PROVISIONING snapshot must echo the authored exact realization concerns (CONCERN_PAYLOAD_PATH: os_family, node_type, content spec.type) so the RuntimeManager.apply SEM-218 non-approximation gate confirms realized == authored.",
+        "description": "ACES catalog launchability and the ACES-native launch service (cms.services.create_aces_native_range, routed via create_range_dispatch) are gated by SHIFTER_ACES_NATIVE_PROVISIONING (default off); with the flag off no ACES entry is launchable and create_range_dispatch is byte-identical to create_range. The launch service reuses create_range's ownership/active-range/audit helpers and persists the same CMS Request + RangeInstance bookkeeping (range_spec=None -- no cyberscript RangeSpec) so Mission Control visibility, active-range admission, and the range.status.updated -> apply_range_status flow work uniformly keyed by request_id. To be genuinely launch-conformant the Shifter backend manifest must declare all and only terms the backend genuinely realizes -- including 'switch' for networks, since the aces-sdl planner rejects any network resource otherwise. Its provisional PROVISIONING snapshot must echo the authored exact concerns covered by the public CONCERN_PAYLOAD_PATH (os_family, node_type, content spec.type) for the RuntimeManager.apply SEM-218 non-approximation gate. Account features not covered by that public path require an equivalent Shifter validate/apply assertion, using the canonical ACES account-feature extractor and an evidence-backed realization envelope independent of the manifest declaration, before dispatch; account values must not enter diagnostics or snapshot evidence.",
         "checks": []
       }
     ],
@@ -1363,7 +1370,9 @@
     "evidence": [
       "https://github.com/Brad-Edwards/shifter/issues/1262",
       "https://github.com/Brad-Edwards/shifter/issues/1264",
+      "https://github.com/Brad-Edwards/shifter/issues/1563",
       "docs/architecture/aces-runtime-target-backend-manifest-preflight-1233.md",
+      "docs/architecture/aces-backend-manifest-realizability-preflight-1563.md",
       "docs/architecture/aces-migration-parity-inventory.yaml",
       ".importlinter",
       "shifter/shifter_platform/shared/aces/runtime_target.py",
@@ -1409,7 +1418,7 @@
       },
       {
         "id": "ADR-032-R6",
-        "description": "ACES composition (content-placement, feature-binding, account-placement) is realized genuinely at the backend as guest bootstrap: inline content becomes real files, directories are created, accounts become real guest users, and service features run a real install+enable step. Non-inline content and feature artifacts are supplied by the baked image or guest repo (baked-image delivery); the backend does not fetch external artifacts and does not emit inert descriptor stubs. Realization is fail-closed (a placement targeting an absent node, or an unsafe identifier, aborts) and is driven only by authored/compiled content, never scenario-sniffed.",
+        "description": "ACES composition capability claims form an honest, fail-closed realizability ledger, not an inventory of fields the backend parses or preserves. A content or account term may be declared only when every plan shape admitted by that public capability has a genuine guest effect backed by cross-boundary evidence; creating only a parent/destination, writing a marker or descriptor, retaining a projection field, or echoing authored intent is not realization. Coarse capabilities stay narrowed when the public contract cannot distinguish a genuinely realized variant from an unsupported one. Materialized account features must also be revalidated through the canonical ACES extractor against an evidence-backed realization envelope independent of the manifest declaration before dispatch. A removed term is re-declared only with its genuine realization and conformance evidence; realization remains driven only by authored/compiled content, never scenario-sniffed.",
         "checks": []
       },
       {
@@ -1422,11 +1431,120 @@
     "enforcement": ["ci", "agent-policy"],
     "evidence": [
       "https://github.com/Brad-Edwards/shifter/issues/1264",
+      "https://github.com/Brad-Edwards/shifter/issues/1563",
       "docs/architecture/aces-runtime-target-backend-manifest-preflight-1233.md",
       "docs/architecture/aces-provisioning-plan-transport-preflight-1522.md",
+      "docs/architecture/aces-backend-manifest-realizability-preflight-1563.md",
       ".importlinter",
       "shifter/shifter_platform/pyproject.toml",
       "shifter/shifter_platform/shared/aces/runtime_target.py"
+    ]
+  },
+  {
+    "id": "ADR-033",
+    "title": "Product, distribution, and development surfaces",
+    "status": "accepted",
+    "scope": "repository",
+    "decision": "Shifter separates product (tenant), distribution, and development surfaces. A capability is product-plane if a bare operator tenant needs it to run or extend Shifter; such dual-use capabilities (content ingestion, image baking) are built once as product capabilities and produced by maintainers through that same path (dogfood), not as maintainer-bespoke implementations. The CI/build/deploy runner fleet is development-plane and must not live in a deploy-target account. Operator content acquisition and entitlement are resolved outside the platform.",
+    "rules": [
+      {
+        "id": "ADR-033-R1",
+        "description": "Capabilities a bare operator tenant needs to run or extend Shifter (including content ingestion and image baking) are product-plane; maintainers produce shipped/blessed artifacts through the same product capability rather than a maintainer-bespoke implementation.",
+        "checks": []
+      },
+      {
+        "id": "ADR-033-R2",
+        "description": "The CI/build/deploy runner fleet is development-plane and must not reside in a deploy-target account; environment deploy/bake uses ephemeral compute in the target tenant or maintainer-isolated infrastructure, so environment teardown never removes the deploy mechanism.",
+        "checks": []
+      },
+      {
+        "id": "ADR-033-R3",
+        "description": "Operator content acquisition and entitlement are resolved outside the platform; the platform contains no entitlement system (see ADR-034).",
+        "checks": []
+      }
+    ],
+    "exceptions": [],
+    "enforcement": [
+      "agent-policy"
+    ],
+    "evidence": [
+      "docs/architecture/product-development-surfaces.md",
+      "docs/architecture/uniform-content-ingestion-contract.md",
+      "docs/adr/index.yaml"
+    ]
+  },
+  {
+    "id": "ADR-034",
+    "title": "Uniform content-ingestion contract",
+    "status": "accepted",
+    "scope": "repository",
+    "decision": "Content ingestion is one uniform, source-agnostic, entitlement-blind contract. The pack is the universal unit and the in-box catalog is not a privileged path. Image materialization is per-pack pull-or-bake (reference and/or recipe); packs may carry no images or parameterized experiment runs. Ingestion validates realizability against the backend manifest and surfaces non-realizability to the author without creating loopholes. Content is the source of truth and a published image is a cache.",
+    "rules": [
+      {
+        "id": "ADR-034-R1",
+        "description": "Registering a pack is a single source-agnostic, entitlement-blind operation; shipped, public, private, and self-authored packs use the identical import path and the in-box catalog is not a privileged path.",
+        "checks": []
+      },
+      {
+        "id": "ADR-034-R2",
+        "description": "Image materialization is per-pack pull-or-bake (reference and/or recipe); packs may carry zero images and may define parameterized experiment runs.",
+        "checks": []
+      },
+      {
+        "id": "ADR-034-R3",
+        "description": "Ingestion validates realizability against the backend manifest and does not create loopholes; non-realizable packs are flagged and surfaced to the author.",
+        "checks": []
+      },
+      {
+        "id": "ADR-034-R4",
+        "description": "Content is the source of truth and published images are a cache; private-distribution entitlement is handled at acquisition, not by a platform entitlement system.",
+        "checks": []
+      }
+    ],
+    "exceptions": [],
+    "enforcement": [
+      "agent-policy"
+    ],
+    "evidence": [
+      "docs/architecture/uniform-content-ingestion-contract.md",
+      "docs/architecture/product-development-surfaces.md",
+      "docs/adr/index.yaml"
+    ]
+  },
+  {
+    "id": "ADR-035",
+    "title": "Deployment prerequisites are validated by a shared fail-safe preflight",
+    "status": "accepted",
+    "scope": "repository",
+    "decision": "A single shared preflight (scripts/bootstrap/preflight.py) is the authoritative check that deployment prerequisites -- tools, secrets/variables, and config -- are present, and it is the same code path locally and in CI. It reports every missing prerequisite up front, before any Terraform apply or account side effect, rather than failing lazily mid-run. The local CLI runs it interactively by default (confirming the manual prerequisites it cannot machine-verify, such as cloud authentication and DNS access) and headlessly off a TTY or with --headless; the CI reusable deploy workflows run it headlessly as an early step before render/plan/apply. Prerequisite skips are always explicit and logged, never silent: the first Identity Platform operator credentials are required unless SHIFTER_SKIP_OPERATOR_BOOTSTRAP is set. The declarative prerequisite spec is kept in step with docs/dev/deploy-secrets.md by a parity test.",
+    "rules": [
+      {
+        "id": "ADR-035-R1",
+        "description": "Deployment prerequisites are declared once in the shared preflight spec (scripts/bootstrap/preflight.py) and enforced by the same code locally (the deploy CLI runs preflight_gate at the start of bootstrap/terraform/full) and in CI (each reusable deploy workflow runs `python -m preflight` before any Terraform apply). A deploy path must not reintroduce a parallel, divergent prerequisite check.",
+        "checks": []
+      },
+      {
+        "id": "ADR-035-R2",
+        "description": "A missing required prerequisite fails the deploy up front (non-zero exit / failed job); optional prerequisites warn. A prerequisite may be skipped only through an explicit, logged opt-out (e.g. SHIFTER_SKIP_OPERATOR_BOOTSTRAP=true), never through a silent conditional step skip on an empty secret.",
+        "checks": []
+      },
+      {
+        "id": "ADR-035-R3",
+        "description": "The preflight spec and docs/dev/deploy-secrets.md must not drift: every secret marked required in the docs has a required check in the spec and vice versa. The parity test in scripts/bootstrap/tests/test_preflight.py enforces this in CI.",
+        "checks": []
+      }
+    ],
+    "exceptions": [],
+    "enforcement": ["ci"],
+    "evidence": [
+      "https://github.com/Brad-Edwards/shifter/issues/1575",
+      "scripts/bootstrap/preflight.py",
+      "scripts/bootstrap/tests/test_preflight.py",
+      "docs/dev/deploy-secrets.md",
+      ".github/workflows/_gcp-dev.yml",
+      ".github/workflows/_core.yml",
+      ".github/workflows/_range.yml",
+      ".github/workflows/_shifter-platform.yml"
     ]
   }
 ]
