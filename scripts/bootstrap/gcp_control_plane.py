@@ -502,7 +502,7 @@ def _render_gcp_runtime_env(
         **parse_env_contract(
             render_gcp_platform_runtime_env(config, bootstrap_operator_email=bootstrap_operator_email)
         ),
-        **parse_env_contract(runtime_renderer.render_env(outputs, image_tag=image_tag)),
+        **parse_env_contract(runtime_renderer.render_env(outputs, engine_image=image_tag)),
     }
 
 

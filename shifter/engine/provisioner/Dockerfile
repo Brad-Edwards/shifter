@@ -1,6 +1,15 @@
 # base image: python:3.12-slim-trixie
 FROM python@sha256:423ed6ab25b1921a477529254bfeeabf5855151dc2c3141699a1bfc852199fbf
 
+# Image metadata. `maintainer` is the label SonarCloud docker:S7028 requires;
+# the org.opencontainers.image.* labels are the modern OCI equivalents.
+LABEL maintainer="Shifter maintainers" \
+      org.opencontainers.image.title="shifter-provisioner" \
+      org.opencontainers.image.description="Shifter engine provisioner (Terraform/Pulumi range provisioning)" \
+      org.opencontainers.image.source="https://github.com/Brad-Edwards/shifter" \
+      org.opencontainers.image.licenses="MIT" \
+      org.opencontainers.image.authors="Shifter maintainers"
+
 # Install Terraform and Pulumi CLI (pinned versions)
 ARG TERRAFORM_VERSION=1.14.3
 ARG PULUMI_VERSION=3.142.0
@@ -14,10 +23,10 @@ RUN apt-get update && apt-get install -y curl openssh-client unzip && \
     # Install Terraform, integrity-verified against HashiCorp's published
     # SHA256SUMS before extraction (ADR-037-R3). The archive is saved under the
     # exact name the checksum manifest references so `sha256sum -c` matches.
-    curl --retry 5 --retry-delay 3 --retry-all-errors --connect-timeout 20 -fsSL \
+    curl --proto '=https' --retry 5 --retry-delay 3 --retry-all-errors --connect-timeout 20 -fsSL \
       -o "terraform_${TERRAFORM_VERSION}_linux_amd64.zip" \
       "https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_linux_amd64.zip" && \
-    curl --retry 5 --retry-delay 3 --retry-all-errors --connect-timeout 20 -fsSL \
+    curl --proto '=https' --retry 5 --retry-delay 3 --retry-all-errors --connect-timeout 20 -fsSL \
       -o terraform_SHA256SUMS \
       "https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_SHA256SUMS" && \
     grep "terraform_${TERRAFORM_VERSION}_linux_amd64.zip" terraform_SHA256SUMS | sha256sum -c - && \
@@ -25,10 +34,10 @@ RUN apt-get update && apt-get install -y curl openssh-client unzip && \
     rm "terraform_${TERRAFORM_VERSION}_linux_amd64.zip" terraform_SHA256SUMS && \
     # Install Pulumi, integrity-verified against the published checksums file
     # before extraction (ADR-037-R3).
-    curl --retry 5 --retry-delay 3 --retry-all-errors --connect-timeout 20 -fsSL \
+    curl --proto '=https' --retry 5 --retry-delay 3 --retry-all-errors --connect-timeout 20 -fsSL \
       -o "pulumi-v${PULUMI_VERSION}-linux-x64.tar.gz" \
       "https://github.com/pulumi/pulumi/releases/download/v${PULUMI_VERSION}/pulumi-v${PULUMI_VERSION}-linux-x64.tar.gz" && \
-    curl --retry 5 --retry-delay 3 --retry-all-errors --connect-timeout 20 -fsSL \
+    curl --proto '=https' --retry 5 --retry-delay 3 --retry-all-errors --connect-timeout 20 -fsSL \
       -o pulumi_checksums.txt \
       "https://github.com/pulumi/pulumi/releases/download/v${PULUMI_VERSION}/pulumi-${PULUMI_VERSION}-checksums.txt" && \
     grep "pulumi-v${PULUMI_VERSION}-linux-x64.tar.gz" pulumi_checksums.txt | sha256sum -c - && \
@@ -55,8 +64,8 @@ RUN apt-get update && apt-get install -y curl openssh-client unzip && \
 # docs/architecture/rev1-build-deployment-provenance.md.
 WORKDIR /app
 COPY engine/provisioner/requirements.lock engine/provisioner/requirements-gcp.lock ./
-RUN pip install --no-cache-dir --require-hashes -r requirements.lock && \
-    pip install --no-cache-dir --require-hashes -r requirements-gcp.lock
+RUN pip install --no-cache-dir --require-hashes --only-binary :all: -r requirements.lock && \
+    pip install --no-cache-dir --require-hashes --only-binary :all: -r requirements-gcp.lock
 
 # First-party wire-contract package (cyberscript) on PYTHONPATH — same pattern as
 # shifter_platform/Dockerfile. Constants-only imports avoid pulling Pydantic into
