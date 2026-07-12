@@ -359,6 +359,17 @@ def get_event(event_id: UUID) -> CTFEvent:
         ) from None
 
 
+def event_pk_if_exists(event_id: UUID) -> UUID | None:
+    """Return the event's primary key if it exists, else ``None``.
+
+    Bounded existence check for cross-domain composition (``config``) that must
+    validate a CTF event id without importing the ``ctf`` domain model. Returns a
+    primitive, never an ORM object (ADR-001, #1523).
+    """
+    pk = CTFEvent.objects.filter(pk=event_id).values_list("pk", flat=True).first()
+    return pk
+
+
 def list_events_for_organizer(user: User) -> QuerySet[CTFEvent]:
     """List CTF events created by an organizer.
 

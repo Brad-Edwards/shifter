@@ -2,7 +2,12 @@
 
 from rest_framework import serializers
 
-from risk_register.models import AuditLog, Comment, Risk, StrideCategory
+from risk_register.models import (
+    AuditLog,
+    Comment,
+    Risk,
+    StrideCategory,
+)
 
 # SonarCloud S1192: extracted duplicated string literals.
 LIKELIHOOD_RANGE_MSG = "Likelihood score must be between 1 and 5"

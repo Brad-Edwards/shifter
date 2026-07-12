@@ -15,6 +15,10 @@ from cms import services
 from cms.exceptions import CMSError
 from cms.models import RangeInstance
 from risk_register.models import AuditLog
+from shared.audit import (
+    AuditAction,
+    AuditEntityType,
+)
 
 pytestmark = pytest.mark.django_db
 
@@ -95,9 +99,7 @@ class TestDestroyRangeByRequestId:
     def test_happy_path_destroys_and_audits(self, user, provision_range):
         ri = provision_range(user, range_id=42)
         services.destroy_range_by_request_id(user, str(ri.request.request_id))
-        assert AuditLog.objects.filter(
-            entity_type=AuditLog.EntityType.RANGE, action=AuditLog.Action.DEPROVISION
-        ).exists()
+        assert AuditLog.objects.filter(entity_type=AuditEntityType.RANGE, action=AuditAction.DEPROVISION).exists()
         assert RangeInstance.all_objects.get(range_id=42).deleted_at is not None
 
 
@@ -121,7 +123,7 @@ class TestCancelRangeByRequestId:
     def test_happy_path_cancels_and_audits(self, user, provision_range):
         ri = provision_range(user, range_id=42)
         services.cancel_range_by_request_id(user, str(ri.request.request_id))
-        assert AuditLog.objects.filter(entity_type=AuditLog.EntityType.RANGE, action=AuditLog.Action.CANCEL).exists()
+        assert AuditLog.objects.filter(entity_type=AuditEntityType.RANGE, action=AuditAction.CANCEL).exists()
 
 
 class TestPauseRangeValidation:
