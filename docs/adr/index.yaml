@@ -1600,5 +1600,56 @@
       "docs/architecture/browser-security-policy-preflight-1520.md",
       "https://docs.djangoproject.com/en/6.0/ref/csp/"
     ]
+  },
+  {
+    "id": "ADR-037",
+    "title": "Build and deployment provenance is pinned, verified, and attested",
+    "status": "accepted",
+    "scope": "shifter_platform",
+    "decision": "Build provenance is a delivery-plane security control layered on the existing GitHub Actions build/deploy workflows, Dockerfiles, and image-reference renderers - not a new API, datastore, Terraform resource, custom signer service, or second deployment framework. Third-party actions in cloud-credentialed workflows are SHA-pinned; committed Docker FROM stages are digest-pinned and refreshed via Dependabot; downloaded executables and Python runtime dependencies are integrity-verified before use; release OCI images carry an SBOM and a GitHub OIDC-signed provenance attestation for the exact repository and digest; and deployment verifies that attestation and the exact image@sha256 before it mutates any runtime. The existing image digest remains the sole deployment identity, and there is no trust-bypass mode.",
+    "rules": [
+      {
+        "id": "ADR-037-R1",
+        "description": "Every non-local uses: action in a cloud-credentialed workflow (one requesting id-token: write, running self-hosted, invoking a cloud-auth action, or passing a workload_identity_provider) MUST pin a full 40-hex commit SHA, including actions/*. A readable '# <version>' comment is retained for Dependabot. Enforced fail-closed by the workflow-action-sha-pinning adr_guard check, which parses workflows as data and reports any unparseable workflow, unclassifiable ref, or mutable ref.",
+        "checks": ["workflow-action-sha-pinning"]
+      },
+      {
+        "id": "ADR-037-R2",
+        "description": "Every committed Docker FROM (builder, runtime, and scenario stages) MUST resolve to an image@sha256 digest; a tag may appear only in an adjacent human-readable comment, never as the resolved build input. Digest refresh is a reviewed Dependabot docker-ecosystem change, not a floating-tag rebuild. Where a scanner rejects a digest-only FROM, the control is retained honestly and any waiver is a dated docs/adr/exceptions.yaml entry.",
+        "checks": []
+      },
+      {
+        "id": "ADR-037-R3",
+        "description": "Executable payloads downloaded by credentialed build paths (CLI binaries such as Terraform, Pulumi, kubeconform, kube-linter; installer scripts; agent packages) MUST be integrity-verified against an official published checksum or signature before execution. A version-pinned URL alone is not a verifier.",
+        "checks": []
+      },
+      {
+        "id": "ADR-037-R4",
+        "description": "Python runtime dependencies baked into deployable images MUST install from a reviewed lock with hash enforcement (uv export --frozen --generate-hashes then uv pip install --require-hashes), matching the shifter_platform image. Exact-version requirements without hashes are insufficient.",
+        "checks": []
+      },
+      {
+        "id": "ADR-037-R5",
+        "description": "Release OCI image builds MUST produce an SBOM and maximum build provenance and MUST create a GitHub OIDC-signed artifact attestation bound to the exact repository name and image@sha256 digest. Build jobs receive only the narrow attestation/id-token permissions; no long-lived signing key or PAT is introduced, and credentials are never passed as Docker build arguments. Packer AMI/GCE artifacts are not OCI images and MUST NOT be represented as OCI provenance.",
+        "checks": []
+      },
+      {
+        "id": "ADR-037-R6",
+        "description": "Before mutating ECS/portal or Kubernetes rollout, deployment MUST verify the GitHub attestation for the fixed Brad-Edwards/shifter repository identity and the exact fully-qualified image@sha256 it will deploy. A valid signature for another repository, a tag resolving to a digest, or a digest merely matching the expected shape is insufficient. Any verifier failure, missing attestation, subject/repository mismatch, or digest mismatch is a hard ::error:: and non-zero exit; there is no first-deploy, continue-on-error, or other bypass.",
+        "checks": []
+      }
+    ],
+    "exceptions": [],
+    "enforcement": ["pre-commit", "ci", "agent-policy"],
+    "evidence": [
+      "https://github.com/Brad-Edwards/shifter/issues/1519",
+      "docs/architecture/rev1-build-deployment-provenance-preflight-1519.md",
+      "docs/architecture/rev1-build-deployment-provenance.md",
+      "scripts/adr_guard/adr_guard.py",
+      "scripts/adr_guard/tests/test_deploy_workflow.py",
+      ".github/dependabot.yml",
+      "https://docs.github.com/en/actions/security-for-github-actions/using-artifact-attestations/using-artifact-attestations-to-establish-provenance-for-builds",
+      "https://docs.docker.com/build/ci/github-actions/attestations/"
+    ]
   }
 ]
