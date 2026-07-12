@@ -34,6 +34,7 @@ from aces_plan import AcesPlan, AcesPlanAccount, AcesPlanContent, AcesPlanFeatur
 #: Conservative identifier charset for values interpolated into a command name
 #: position (usernames, package names). Anything else fails closed.
 _SAFE_IDENTIFIER = re.compile(r"^[A-Za-z0-9._-]+$")
+_SAFE_USERNAME = re.compile(r"^[A-Za-z_][A-Za-z0-9._-]{0,31}$")
 _SERVICE_FEATURE = "service"
 
 
@@ -43,7 +44,8 @@ class AcesGceCompositionError(RuntimeError):
 
 def _safe_identifier(value: str, *, kind: str) -> str:
     """Return ``value`` if it is a safe command identifier, else fail closed."""
-    if not _SAFE_IDENTIFIER.match(value):
+    pattern = _SAFE_USERNAME if kind == "username" else _SAFE_IDENTIFIER
+    if not pattern.fullmatch(value) or value.startswith("-"):
         raise AcesGceCompositionError(f"unsafe {kind} {value!r}: expected characters [A-Za-z0-9._-]")
     return value
 
@@ -84,10 +86,6 @@ def _linux_account(account: AcesPlanAccount) -> list[str]:
         lines.append(
             f"getent group {shlex.quote(group)} >/dev/null 2>&1 && usermod -aG {shlex.quote(group)} {user} || true"
         )
-    if account.mail:
-        lines.append("mkdir -p /etc/aliases.d")
-        lines.append(f"printf '%s: %s\\n' {user} {shlex.quote(account.mail)} > /etc/aliases.d/aces-{user}")
-        lines.append("newaliases >/dev/null 2>&1 || true")
     if account.spn:
         lines.append("mkdir -p /etc/aces/spn")
         lines.append(f"printf '%s\\n' {shlex.quote(account.spn)} > /etc/aces/spn/{user}")
@@ -157,7 +155,6 @@ def _windows_account(account: AcesPlanAccount) -> list[str]:
     ]
     for group in account.groups:
         lines.append(f"Add-LocalGroupMember -Group {_ps_quote(group)} -Member {quoted} -ErrorAction SilentlyContinue")
-    lines.extend(_windows_account_attr_file("mail", user, account.mail))
     lines.extend(_windows_account_attr_file("spn", user, account.spn))
     if account.disabled:
         lines.append(f"Disable-LocalUser -Name {quoted} -ErrorAction SilentlyContinue")
@@ -165,7 +162,7 @@ def _windows_account(account: AcesPlanAccount) -> list[str]:
 
 
 def _windows_account_attr_file(kind: str, user: str, value: str | None) -> list[str]:
-    """Place a Windows account attribute (mail/spn) as a marker file, or nothing."""
+    """Place a Windows account attribute marker file, or nothing."""
     if not value:
         return []
     directory = f"C:\\ProgramData\\aces\\{kind}"

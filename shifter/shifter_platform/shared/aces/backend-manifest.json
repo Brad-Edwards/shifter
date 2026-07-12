@@ -9,10 +9,10 @@
       "max_total_nodes": null,
       "name": "shifter-provisioner",
       "supported_account_features": [
+        "auth_method",
         "disabled",
         "groups",
         "home",
-        "mail",
         "shell"
       ],
       "supported_content_types": [

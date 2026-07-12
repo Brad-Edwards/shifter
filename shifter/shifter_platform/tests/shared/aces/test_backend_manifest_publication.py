@@ -151,11 +151,11 @@ def test_provisioner_capabilities_are_the_narrowed_ledger():
     """#1563: the manifest declares only genuinely-realized provisioning terms."""
     provisioner = create_shifter_backend_manifest().provisioner
 
-    assert provisioner.supported_account_features == frozenset({"groups", "shell", "home", "disabled", "mail"})
+    assert provisioner.supported_account_features == frozenset({"groups", "shell", "home", "disabled", "auth_method"})
     assert provisioner.supported_content_types == frozenset({"directory"})
     # Removed over-claims stay out until their sibling issue lands genuine realization
     # (auth_method -> #1560, spn -> #1561, source-backed file/dataset -> #1564).
-    for dropped in ("spn", "auth_method"):
+    for dropped in ("spn", "mail"):
         assert dropped not in provisioner.supported_account_features
     for dropped in ("file", "dataset"):
         assert dropped not in provisioner.supported_content_types

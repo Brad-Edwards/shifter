@@ -354,11 +354,11 @@ def test_account_feature_outside_envelope_fails_closed() -> None:
     ("spec", "feature", "authored_value"),
     [
         ({"spn": "host/dc1.example.com"}, "spn", "host/dc1.example.com"),
-        ({"auth_method": "kerberos"}, "auth_method", "kerberos"),
+        ({"mail": "alice@example.com"}, "mail", "alice@example.com"),
     ],
 )
 def test_dropped_account_features_fail_closed(spec: dict, feature: str, authored_value: str) -> None:
-    # spn / auth_method were removed from the manifest (#1560/#1561 re-add once realized):
+    # spn / mail are absent from the honest manifest until cross-OS realization exists:
     # a plan requesting either fails closed against the real narrowed capability envelope.
     plan = _plan(
         _node("provision.node.a", "a"),
@@ -374,6 +374,95 @@ def test_dropped_account_features_fail_closed(spec: dict, feature: str, authored
     assert all(authored_value not in d.message for d in diagnostics)
 
 
+@pytest.mark.parametrize("auth_method", ["kerberos", "PASSWORD", "public-key"])
+def test_auth_method_value_outside_backend_policy_fails_closed(auth_method: str) -> None:
+    plan = _plan(
+        _node("provision.node.a", "a"),
+        _account_placement("provision.account.a", target="provision.node.a", auth_method=auth_method),
+    )
+
+    serialized, diagnostics = _interpret(plan)
+
+    assert serialized is None
+    assert any(d.code == "shifter-provisioner.unsupported-account-auth-method" for d in diagnostics)
+    assert all(auth_method not in d.message for d in diagnostics)
+
+
+@pytest.mark.parametrize("auth_method", [None, 1, [], {}])
+def test_explicit_malformed_auth_method_is_not_defaulted(auth_method: object) -> None:
+    plan = _plan(
+        _node("provision.node.a", "a"),
+        _account_placement("provision.account.a", target="provision.node.a", auth_method=auth_method),
+    )
+
+    serialized, diagnostics = _interpret(plan)
+
+    assert serialized is None
+    assert any(d.code == "shifter-provisioner.invalid-account-auth-method" for d in diagnostics)
+
+
+@pytest.mark.parametrize("password_strength", [None, 1, [], {}])
+def test_explicit_malformed_password_strength_is_not_defaulted(password_strength: object) -> None:
+    plan = _plan(
+        _node("provision.node.a", "a"),
+        _account_placement("provision.account.a", target="provision.node.a", password_strength=password_strength),
+    )
+
+    serialized, diagnostics = _interpret(plan)
+
+    assert serialized is None
+    assert any(d.code == "shifter-provisioner.invalid-password-strength" for d in diagnostics)
+
+
+@pytest.mark.parametrize("username", ["aces", "ACES"])
+def test_provisioner_management_username_fails_before_dispatch(username: str) -> None:
+    plan = _plan(
+        _node("provision.node.a", "a"),
+        _account_placement("provision.account.management", target="provision.node.a", username=username),
+    )
+
+    serialized, diagnostics = _interpret(plan)
+
+    assert serialized is None
+    assert any(d.code == "shifter-provisioner.reserved-account-username" for d in diagnostics)
+    assert all(username not in d.message for d in diagnostics)
+
+
+def test_none_password_strength_fails_closed_without_blank_password_semantics() -> None:
+    plan = _plan(
+        _node("provision.node.a", "a"),
+        _account_placement(
+            "provision.account.a",
+            target="provision.node.a",
+            auth_method="password",
+            password_strength="none",
+        ),
+    )
+
+    serialized, diagnostics = _interpret(plan)
+
+    assert serialized is None
+    assert any(d.code == "shifter-provisioner.unsupported-password-strength" for d in diagnostics)
+
+
+def test_disabled_account_allows_explicit_no_password_semantics() -> None:
+    plan = _plan(
+        _node("provision.node.a", "a"),
+        _account_placement(
+            "provision.account.a",
+            target="provision.node.a",
+            auth_method="password",
+            password_strength="none",
+            disabled=True,
+        ),
+    )
+
+    serialized, diagnostics = _interpret(plan)
+
+    assert serialized is not None
+    assert not any(d.code == "shifter-provisioner.unsupported-password-strength" for d in diagnostics)
+
+
 @pytest.mark.parametrize(
     "spec",
     [
@@ -381,7 +470,7 @@ def test_dropped_account_features_fail_closed(spec: dict, feature: str, authored
         {"shell": "/bin/bash"},
         {"home": "/home/alice"},
         {"disabled": True},
-        {"mail": "alice@example.com"},
+        {"auth_method": "publickey"},
     ],
 )
 def test_retained_account_features_pass_declaration_and_evidence(spec: dict) -> None:

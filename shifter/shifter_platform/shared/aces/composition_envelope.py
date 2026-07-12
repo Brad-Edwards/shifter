@@ -36,6 +36,13 @@ COMPOSITION_RESOURCE_TYPES: frozenset[str] = frozenset(
     {CONTENT_PLACEMENT_RESOURCE_TYPE, FEATURE_BINDING_RESOURCE_TYPE, ACCOUNT_PLACEMENT_RESOURCE_TYPE}
 )
 
+#: Canonical login methods Shifter can genuinely realize on both supported
+#: guest dialects. ``aces-sdl`` intentionally leaves ``auth_method`` open, so
+#: this backend-owned value policy must fail closed before dispatch.
+SUPPORTED_ACCOUNT_AUTH_METHODS: frozenset[str] = frozenset({"password", "publickey"})
+SUPPORTED_PASSWORD_STRENGTHS: frozenset[str] = frozenset({"weak", "medium", "strong", "none"})
+_RESERVED_ACCOUNT_USERNAMES: frozenset[str] = frozenset({"aces"})
+
 
 def _diagnostic(code: str, address: str, message: str) -> Diagnostic:
     """Build an ERROR provisioning diagnostic."""
@@ -89,6 +96,72 @@ def _content_placement_diagnostics(
     return diagnostics
 
 
+def _account_identity_diagnostics(address: str, spec: Mapping[str, object]) -> list[Diagnostic]:
+    """Reject account names reserved for the management identity."""
+    raw_username = spec.get("username")
+    if not (isinstance(raw_username, str) and raw_username.casefold() in _RESERVED_ACCOUNT_USERNAMES):
+        return []
+    return [
+        _diagnostic(
+            "shifter-provisioner.reserved-account-username",
+            address,
+            "account username is reserved for the provisioner management identity",
+        )
+    ]
+
+
+def _password_strength_diagnostics(address: str, spec: Mapping[str, object]) -> list[Diagnostic]:
+    """Validate password strength and disabled-account semantics."""
+    raw_strength = spec.get("password_strength", "")
+    if raw_strength == "":
+        strength = "medium"
+    elif not isinstance(raw_strength, str) or raw_strength.strip() != raw_strength:
+        return [
+            _diagnostic(
+                "shifter-provisioner.invalid-password-strength",
+                address,
+                "password_strength must be an omitted, empty, or canonical string",
+            )
+        ]
+    else:
+        strength = raw_strength
+    if strength in SUPPORTED_PASSWORD_STRENGTHS and not (strength == "none" and spec.get("disabled") is not True):
+        return []
+    return [
+        _diagnostic(
+            "shifter-provisioner.unsupported-password-strength",
+            address,
+            "password_strength cannot be realized as a safe login credential",
+        )
+    ]
+
+
+def _account_auth_diagnostics(address: str, spec: Mapping[str, object]) -> list[Diagnostic]:
+    """Validate the account authentication method and its password policy."""
+    raw_method = spec.get("auth_method", "")
+    if raw_method == "":
+        method = "password"
+    elif not isinstance(raw_method, str) or raw_method.strip() != raw_method:
+        return [
+            _diagnostic(
+                "shifter-provisioner.invalid-account-auth-method",
+                address,
+                "account auth_method must be an omitted, empty, or canonical string",
+            )
+        ]
+    else:
+        method = raw_method
+    if method not in SUPPORTED_ACCOUNT_AUTH_METHODS:
+        return [
+            _diagnostic(
+                "shifter-provisioner.unsupported-account-auth-method",
+                address,
+                "account auth_method is outside the backend-supported policy",
+            )
+        ]
+    return _password_strength_diagnostics(address, spec) if method == "password" else []
+
+
 def _account_feature_diagnostics(
     address: str, spec: Mapping[str, object], capabilities: ProvisionerCapabilities
 ) -> list[Diagnostic]:
@@ -101,7 +174,10 @@ def _account_feature_diagnostics(
     ``account-feature-not-realized``. The two branches are mutually exclusive so a
     single feature never double-reports.
     """
-    diagnostics: list[Diagnostic] = []
+    diagnostics = [
+        *_account_identity_diagnostics(address, spec),
+        *_account_auth_diagnostics(address, spec),
+    ]
     for feature in sorted(provisioner_account_features(spec)):
         if feature not in capabilities.supported_account_features:
             diagnostics.append(

@@ -57,11 +57,12 @@ class TestLinux:
         account = AcesPlanAccount(username="bob", target_address="node.web", disabled=True)
         assert "usermod -L bob" in node_bootstrap_script(_node(), _plan(_node(), accounts=(account,)))
 
-    def test_account_mail_writes_alias(self):
+    def test_account_mail_is_not_approximated_by_alias_files(self):
         account = AcesPlanAccount(username="carol", target_address="node.web", mail="carol@example.com")
         script = node_bootstrap_script(_node(), _plan(_node(), accounts=(account,)))
-        assert "/etc/aliases.d/aces-carol" in script and "carol@example.com" in script
-        assert "newaliases" in script
+        assert "/etc/aliases.d" not in script
+        assert "carol@example.com" not in script
+        assert "newaliases" not in script
 
     def test_account_spn_writes_spn_file(self):
         account = AcesPlanAccount(username="svc", target_address="node.web", spn="HTTP/host.example.com")
@@ -122,11 +123,12 @@ class TestWindows:
         assert base64.b64encode(b"hi").decode() in script
         assert "WriteAllBytes" in script
 
-    def test_account_mail_writes_marker(self):
+    def test_account_mail_is_not_approximated_by_marker_file(self):
         node = _node(os_family="windows", address="node.dc")
         account = AcesPlanAccount(username="dave", target_address="node.dc", mail="dave@corp.local")
         script = node_bootstrap_script(node, _plan(node, accounts=(account,)))
-        assert "aces\\mail" in script and "dave@corp.local" in script
+        assert "aces\\mail" not in script
+        assert "dave@corp.local" not in script
 
     def test_service_feature_uses_choco(self):
         node = _node(os_family="windows", address="node.dc")
@@ -145,8 +147,9 @@ class TestSelectionAndSafety:
         content = _content(content_type="file", path="/srv/other", text="x", target_address="node.other")
         assert node_bootstrap_script(_node(), _plan(_node(), content=(content,))) == ""
 
-    def test_unsafe_username_fails_closed(self):
-        account = AcesPlanAccount(username="a; rm -rf /", target_address="node.web")
+    @pytest.mark.parametrize("username", ["a; rm -rf /", "-root", "a" * 33])
+    def test_unsafe_username_fails_closed(self, username: str):
+        account = AcesPlanAccount(username=username, target_address="node.web")
         with pytest.raises(AcesGceCompositionError, match="unsafe username"):
             node_bootstrap_script(_node(), _plan(_node(), accounts=(account,)))
 
