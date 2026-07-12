@@ -1279,7 +1279,11 @@ jobs:
           DJANGO_SECRET_KEY: ${{ github.run_id }}-${{ github.run_attempt }}
         run: |
           uv run python manage.py collectstatic --noinput
-          uv run pytest tests/ --ignore=tests/documentation -m "not redis and not postgres" --cov=. --cov-report=term-missing --cov-report=xml:coverage.xml
+          # ``--cov`` (no path) measures the production roots declared in
+          # pyproject ``[tool.coverage.run] source`` and honours its ``omit`` +
+          # ``fail_under`` (#1529 / REV1 Q6): config, not the command line, owns
+          # the coverage universe and the non-regression floor.
+          uv run pytest tests/ --ignore=tests/documentation -m "not redis and not postgres" --cov --cov-report=term-missing --cov-report=xml:coverage.xml
 
       # Real-stack Redis channel-layer evidence (#924). Runs only the
       # redis-marked integration tests against the Redis service, with xdist
@@ -1443,7 +1447,7 @@ jobs:
         working-directory: shifter/engine/provisioner
         env:
           TESTING: "1"
-        run: uv run --with pytest-cov pytest tests/ --cov=. --cov-report=xml:coverage.xml
+        run: uv run --with pytest-cov pytest tests/ --cov --cov-report=xml:coverage.xml
 
       - name: Upload coverage
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -1470,17 +1474,13 @@ jobs:
         working-directory: shifter/packer
         run: uv sync --group dev
 
+      # No ``--cov``: this package ships Packer HCL, not owned production Python
+      # (its ``tests/`` validate the HCL/config), so a Python coverage number
+      # would only measure tests covering themselves. It is not a Sonar coverage
+      # publisher (#1529 / REV1 Q6 -- do not manufacture a misleading percentage).
       - name: Run tests
         working-directory: shifter/packer
-        run: uv run --with pytest-cov pytest tests/ --cov=. --cov-report=xml:coverage.xml
-
-      - name: Upload coverage
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: coverage-packer
-          path: shifter/packer/coverage.xml
-          if-no-files-found: error
-          retention-days: 1
+        run: uv run pytest tests/
 
   cyberscript-tests:
     permissions:
@@ -1520,7 +1520,7 @@ jobs:
 
       - name: Run tests
         working-directory: scripts/bootstrap
-        run: uv run --with pytest-cov pytest tests/ --cov=. --cov-report=xml:coverage.xml
+        run: uv run --with pytest-cov pytest tests/ --cov --cov-report=xml:coverage.xml
 
       - name: Upload coverage
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -1589,7 +1589,7 @@ jobs:
 
       - name: Run tests
         working-directory: scripts/check_layer_imports
-        run: uv run --with pytest-cov pytest tests/ --cov=. --cov-report=xml:coverage.xml
+        run: uv run --with pytest-cov pytest tests/ --cov --cov-report=xml:coverage.xml
 
       - name: Upload coverage
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -1681,7 +1681,7 @@ jobs:
 
       - name: Run tests
         working-directory: shifter/installation
-        run: uv run --with pytest-cov pytest tests/ --cov=. --cov-report=xml:coverage.xml
+        run: uv run --with pytest-cov pytest tests/ --cov --cov-report=xml:coverage.xml
 
       - name: Upload coverage
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

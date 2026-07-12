@@ -80,7 +80,14 @@ if not SECRET_KEY:
     raise ValueError("DJANGO_SECRET_KEY environment variable is required")
 # SECRET_KEY_FALLBACKS (zero-downtime rotation) lives in config._database_settings.
 
-DEBUG = _env_bool("DJANGO_DEBUG", False)
+# Under a test run (``IS_TEST_RUN`` = ``TESTING=1`` or pytest as argv[0]) the
+# posture defaults to DEBUG=True so a clean-checkout ``uv run pytest`` matches CI
+# instead of inheriting the production HTTPS posture that a bare run would get
+# from ``DJANGO_DEBUG`` being unset (#1529 / REV1 Q7). An explicit ``DJANGO_DEBUG``
+# always wins; production (``IS_TEST_RUN`` false) is unchanged and still defaults
+# to DEBUG=False. The test posture lives in config, per config._runtime_env owning
+# dev/test defaults -- not in a wrapper or a value CI must inject.
+DEBUG = _env_bool("DJANGO_DEBUG", IS_TEST_RUN)
 ENVIRONMENT = require_environment()
 _allowed_hosts_raw = required_runtime_env("DJANGO_ALLOWED_HOSTS", dev_default="localhost,127.0.0.1")
 ALLOWED_HOSTS = [host.strip() for host in _allowed_hosts_raw.split(",") if host.strip()]
