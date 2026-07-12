@@ -771,7 +771,7 @@ repos:
         entry: >-
           bash -c 'cd shifter/shifter_platform && source .venv/bin/activate &&
           TESTING=1 TEST_DB_BACKEND=sqlite DJANGO_DEBUG=true DJANGO_SECRET_KEY=dummy-for-testing python
-          -m pytest tests/ --ignore=tests/documentation
+          -m pytest tests/
           --ignore=tests/risk_register -m "not redis and not postgres" -q --cov=.
           --cov-report=html:../../coverage/shifter_platform
           --cov-report=xml:coverage.xml

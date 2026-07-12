@@ -46,7 +46,7 @@
     "enforcement": ["pre-commit", "agent-policy"],
     "evidence": [
       "docs/adr/README.md",
-      "shifter/shifter_platform/documentation/docs/technical/dev/adr-enforcement.md"
+      "docs/technical/dev/adr-enforcement.md"
     ]
   },
   {
@@ -231,8 +231,8 @@
       "platform/terraform/.checkov.yaml",
       "docs/adr/exceptions.yaml",
       "docs/architecture/checkov-soft-fail-preflight-757.md",
-      "shifter/shifter_platform/documentation/docs/technical/dev/adr-enforcement.md",
-      "shifter/shifter_platform/documentation/docs/technical/dev/ci-cd.md"
+      "docs/technical/dev/adr-enforcement.md",
+      "docs/technical/dev/ci-cd.md"
     ]
   },
   {
@@ -271,7 +271,7 @@
       "docs/architecture/root-configured-backend-bundles.md",
       "platform/terraform/gcp/README.md",
       "platform/k8s/gcp/README.md",
-      "shifter/shifter_platform/documentation/docs/technical/dev/ci-cd.md"
+      "docs/technical/dev/ci-cd.md"
     ]
   },
   {
@@ -348,8 +348,8 @@
       "scripts/bootstrap/deploy.py",
       "platform/k8s/gcp/README.md",
       "platform/terraform/gcp/README.md",
-      "shifter/shifter_platform/documentation/docs/technical/platform_infrastructure/gcp-infrastructure.md",
-      "shifter/shifter_platform/documentation/docs/technical/dev/ci-cd.md"
+      "docs/technical/platform_infrastructure/gcp-infrastructure.md",
+      "docs/technical/dev/ci-cd.md"
     ]
   },
   {
@@ -407,7 +407,7 @@
       "platform/charts/shifter/templates/guacamole-backendconfig.yaml",
       "platform/terraform/gcp/README.md",
       "platform/k8s/gcp/README.md",
-      "shifter/shifter_platform/documentation/docs/technical/platform_infrastructure/networking.md",
+      "docs/technical/platform_infrastructure/networking.md",
       "shifter/shifter_platform/config/settings.py",
       "shifter/shifter_platform/entrypoint.sh",
       "docs/architecture/gke-control-plane-access-preflight.md",
@@ -512,8 +512,8 @@
       ".github/workflows/_gcp-dev.yml",
       "docs/architecture/root-configured-backend-bundles.md",
       "docs/architecture/verified-oidc-admin-bootstrap-preflight-1521.md",
-      "shifter/shifter_platform/documentation/docs/technical/architecture.md",
-      "shifter/shifter_platform/documentation/docs/technical/dev/secrets.md"
+      "docs/technical/architecture.md",
+      "docs/technical/dev/secrets.md"
     ]
   },
   {
@@ -576,8 +576,8 @@
       ".github/workflows/_gcp-dev.yml",
       ".github/workflows/_shifter-platform.yml",
       "docs/dev/deploy-secrets.md",
-      "shifter/shifter_platform/documentation/docs/technical/dev/ci-cd.md",
-      "shifter/shifter_platform/documentation/docs/technical/architecture.md"
+      "docs/technical/dev/ci-cd.md",
+      "docs/technical/architecture.md"
     ]
   },
   {
@@ -913,7 +913,7 @@
       "scripts/adr_guard/boundary_mock_baseline.json",
       "scripts/adr_guard/tests/test_adr_guard.py",
       "docs/adr/README.md",
-      "shifter/shifter_platform/documentation/docs/technical/dev/adr-enforcement.md"
+      "docs/technical/dev/adr-enforcement.md"
     ]
   },
   {
@@ -1000,7 +1000,7 @@
       "docs/adr/documentation-coverage.yaml",
       "scripts/adr_guard/adr_guard.py",
       "scripts/adr_guard/tests/test_adr_guard.py",
-      "shifter/shifter_platform/documentation/docs/technical/dev/adr-enforcement.md"
+      "docs/technical/dev/adr-enforcement.md"
     ]
   },
   {
@@ -1055,7 +1055,7 @@
       "platform/terraform/modules/portal/messaging/main.tf",
       "platform/terraform/gcp/modules/portal/messaging/main.tf",
       "docs/architecture/range-event-delivery-preflight-476.md",
-      "shifter/shifter_platform/documentation/docs/technical/architecture.md"
+      "docs/technical/architecture.md"
     ]
   },
   {
@@ -1606,11 +1606,11 @@
     "title": "Documentation is a single public mkdocs site on GitHub Pages",
     "status": "accepted",
     "scope": "repository",
-    "decision": "Shifter documentation is authored as Markdown under top-level docs/ and published as one public mkdocs (Material) site on GitHub Pages. There is no second docs system: the in-app login-gated Django documentation app is retired (Phase B, issue #1596) and its product/user docs move onto the same site. Internal design notes and machine registries stay in the repository but are kept off the published site. Doc relocations preserve content verbatim.",
+    "decision": "Shifter documentation is authored as Markdown under top-level docs/ and published as one public mkdocs (Material) site on GitHub Pages. There is no second docs system: the in-app login-gated Django documentation app is retired and its product/user docs move onto the same site. Internal design notes and machine registries stay in the repository but are kept off the published site. Doc relocations preserve content verbatim.",
     "rules": [
       {
         "id": "ADR-037-R1",
-        "description": "Documentation is authored as Markdown under top-level docs/ and published as a single public mkdocs Material site on GitHub Pages (.github/workflows/docs.yml). A parallel docs system must not be reintroduced; the in-app Django documentation app is retired in Phase B (issue #1596) rather than maintained alongside the site.",
+        "description": "Documentation is authored as Markdown under top-level docs/ and published as a single public mkdocs Material site on GitHub Pages (.github/workflows/docs.yml). A parallel docs system must not be reintroduced; the in-app Django documentation app is retired rather than maintained alongside the site.",
         "checks": []
       },
       {
@@ -1628,8 +1628,6 @@
     "enforcement": ["ci"],
     "evidence": [
       "https://github.com/Brad-Edwards/shifter/issues/1591",
-      "https://github.com/Brad-Edwards/shifter/issues/1595",
-      "https://github.com/Brad-Edwards/shifter/issues/1596",
       "mkdocs.yml",
       ".github/workflows/docs.yml",
       "docs/index.md"

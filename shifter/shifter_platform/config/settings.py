@@ -127,7 +127,6 @@ INSTALLED_APPS = [
     "anymail",
     "mission_control.apps.MissionControlConfig",
     "risk_register.apps.RiskRegisterConfig",
-    "documentation.apps.DocumentationConfig",
     "engine.apps.EngineConfig",
     "cms.apps.CMSConfig",
     "management.apps.ManagementConfig",

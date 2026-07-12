@@ -5,7 +5,7 @@ name: Vale
 # error level and only against the Markdown files a PR actually changes, so new
 # and edited docs must be clean without requiring a one-shot cleanup of the
 # pre-existing backlog across the repo's Markdown corpus. See
-# documentation/docs/technical/dev/adr-enforcement.md.
+# docs/technical/dev/adr-enforcement.md.
 
 on:
   pull_request:
