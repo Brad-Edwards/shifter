@@ -23,6 +23,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 from pathlib import Path
 
 
@@ -173,16 +174,45 @@ def _project_from_self_link(self_link: object) -> str:
     return ""
 
 
-def _validated_image_tag(image_tag: str) -> str:
-    tag = image_tag.strip()
-    if not tag:
-        raise ValueError("image_tag must be non-empty")
-    if tag == "latest":
-        raise ValueError("image_tag must be immutable; refusing to render latest")
-    return tag
+_ENGINE_DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 
 
-def render_env(outputs: dict[str, object], *, image_tag: str) -> str:
+def _validated_engine_digest(engine_image_digest: str) -> str:
+    """Require an immutable ``sha256:<64 hex>`` provisioner image digest.
+
+    The CI GKE deploy path passes the verified build digest so ENGINE_TASK_IMAGE
+    (which the GKE ValidatingAdmissionPolicy pins to, ADR-006-R4) is the exact
+    attested image, never a mutable tag (ADR-037-R6).
+    """
+    digest = engine_image_digest.strip()
+    if not digest:
+        raise ValueError("engine_image_digest must be non-empty")
+    if not _ENGINE_DIGEST_RE.match(digest):
+        raise ValueError(
+            "engine_image_digest must be an immutable sha256 digest (sha256:<64 hex>); refusing to render a mutable tag"
+        )
+    return digest
+
+
+def _engine_task_image(root: str, engine_image: str) -> str:
+    """Build ENGINE_TASK_IMAGE from the provisioner image root.
+
+    ``engine_image`` is either an immutable ``sha256:<64 hex>`` digest (the CI
+    GKE deploy path, ADR-037-R6 -> ``root@digest``) or a version tag (the GDC
+    bootstrap path, which resolves its own image identity -> ``root:tag``).
+    ``latest`` and empty values are refused in both modes.
+    """
+    identity = engine_image.strip()
+    if not identity:
+        raise ValueError("engine_image must be non-empty")
+    if _ENGINE_DIGEST_RE.match(identity):
+        return f"{root}@{identity}"
+    if identity == "latest":
+        raise ValueError("engine_image must be immutable; refusing to render latest")
+    return f"{root}:{identity}"
+
+
+def render_env(outputs: dict[str, object], *, engine_image: str) -> str:
     """Render the GCP portal runtime env contract.
 
     A configured public hostname and managed TLS are mandatory: the renderer
@@ -191,7 +221,6 @@ def render_env(outputs: dict[str, object], *, image_tag: str) -> str:
     session/CSRF cookies, Identity Platform auth, ``https://<hostname>``
     ``SITE_URL``) is emitted unconditionally.
     """
-    pinned_image_tag = _validated_image_tag(image_tag)
     assets_bucket = _value(outputs, "assets_bucket_name")
     terraform_state_bucket = _value(outputs, "terraform_state_bucket_name")
     topic_id = _value(outputs, "platform_events_topic_id")
@@ -284,7 +313,7 @@ def render_env(outputs: dict[str, object], *, image_tag: str) -> str:
         "GUACAMOLE_POSTGRESQL_HOSTNAME": guacamole_database["host"],
         "GUACAMOLE_POSTGRESQL_PORT": str(guacamole_database["port"]),
         "GUACAMOLE_POSTGRESQL_DATABASE": guacamole_database["database_name"],
-        "ENGINE_TASK_IMAGE": f"{image_roots['pulumi-provisioner']}:{pinned_image_tag}",
+        "ENGINE_TASK_IMAGE": _engine_task_image(image_roots["pulumi-provisioner"], engine_image),
         # GCP deployments authenticate against Identity Platform in every case.
         "AUTH_PROVIDER": "identity_platform",
         # Real deploy project (not the overlay placeholder), so Google client
@@ -363,12 +392,14 @@ def render_env(outputs: dict[str, object], *, image_tag: str) -> str:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--terraform-output-json", required=True, type=Path)
-    parser.add_argument("--image-tag", required=True)
+    parser.add_argument("--engine-image-digest", required=True)
     parser.add_argument("--output", required=True, type=Path)
     args = parser.parse_args()
 
     outputs = json.loads(args.terraform_output_json.read_text())
-    rendered = render_env(outputs, image_tag=args.image_tag)
+    # The CLI (CI GKE deploy) enforces an immutable digest (ADR-037-R6); the
+    # GDC bootstrap calls render_env() directly with its own image identity.
+    rendered = render_env(outputs, engine_image=_validated_engine_digest(args.engine_image_digest))
     args.output.write_text(rendered)
     return 0
 
