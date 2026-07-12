@@ -117,7 +117,7 @@
       },
       {
         "id": "ADR-004-R2",
-        "description": "Terraform code is linted with TFLint in addition to fmt and validate.",
+        "description": "Terraform code is linted with TFLint in addition to fmt and validate. Every Terraform execution root is registered in platform/terraform/validation-inventory.yaml (classified against every tracked Terraform directory, with a validation owner, a named toolchain profile, and declared provider source addresses verified against its committed lockfile); scripts/check_tf_roots/ validates that inventory and emits the pull-request CI matrix that runs a credential-free, backendless `terraform init -backend=false -lockfile=readonly` plus `terraform validate` per affected root in .github/workflows/_quality.yml. A tracked Terraform directory that is not classified fails the gate, so a new root cannot merge without validation ownership.",
         "checks": []
       },
       {

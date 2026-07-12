@@ -381,6 +381,154 @@ jobs:
           python3 -m unittest scripts.check_tf_runner_network.test_check_tf_runner_network
           python3 -m unittest scripts.check_tf_gcp_iam_resource_scope.test_check_tf_gcp_iam_resource_scope
 
+  # ===========================================================================
+  # Terraform root validation (issue #1528)
+  #
+  # PR quality never ran a backendless `terraform init` + `terraform validate`,
+  # so a composition error (a renamed module output, an unparseable provider
+  # argument) could merge before any workflow parsed the affected root.
+  # scripts/check_tf_roots/ owns platform/terraform/validation-inventory.yaml
+  # and emits the CI matrix; the per-root job below runs locked, credential-free
+  # init/validate on GitHub-hosted runners. This is a distinct layer from
+  # TFLint / Checkov / the check_tf_* security scanners above.
+  # ===========================================================================
+  terraform-matrix:
+    permissions:
+      contents: read
+    name: Terraform validation inventory + matrix
+    needs: [paths]
+    if: ${{ (needs.paths.outputs.run_all == 'true' || needs.paths.outputs.terraform == 'true') }}
+    runs-on: ubuntu-latest
+    outputs:
+      roots: ${{ steps.gen.outputs.roots }}
+      module_tests: ${{ steps.gen.outputs.module_tests }}
+      has_module_tests: ${{ steps.gen.outputs.has_module_tests }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+
+      # Fail closed on an invalid inventory (unclassified root/module, provider
+      # drift, missing lockfile) and pin the checker's own behavior before any
+      # matrix is emitted.
+      - name: Validate inventory and run checker tests
+        run: |
+          set -euo pipefail
+          uv run --python 3.11 --with 'pyyaml==6.0.2' \
+            python3 scripts/check_tf_roots/check_tf_roots.py --check
+          uv run --python 3.11 --with 'pyyaml==6.0.2' \
+            python3 -m unittest scripts.check_tf_roots.test_check_tf_roots
+
+      - name: Generate validation matrices
+        id: gen
+        run: |
+          set -euo pipefail
+          roots="$(uv run --python 3.11 --with 'pyyaml==6.0.2' \
+            python3 scripts/check_tf_roots/check_tf_roots.py --matrix)"
+          module_tests="$(uv run --python 3.11 --with 'pyyaml==6.0.2' \
+            python3 scripts/check_tf_roots/check_tf_roots.py --module-tests)"
+          {
+            echo "roots=${roots}"
+            echo "module_tests=${module_tests}"
+          } >> "$GITHUB_OUTPUT"
+          if [ "${module_tests}" = "[]" ]; then
+            echo "has_module_tests=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_module_tests=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  terraform-validate:
+    permissions:
+      contents: read
+    name: Validate (terraform ${{ matrix.root.id }})
+    needs: [terraform-matrix]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        root: ${{ fromJSON(needs.terraform-matrix.outputs.roots) }}
+    env:
+      TF_IN_AUTOMATION: '1'
+      # No cloud credentials are provided; disabling EC2 metadata discovery
+      # keeps a stray provider call from hanging on the runner metadata IP.
+      AWS_EC2_METADATA_DISABLED: 'true'
+      TF_PLUGIN_CACHE_DIR: ${{ github.workspace }}/.tf-plugin-cache
+      # Pass the (inventory-validated, path-contained) matrix path as
+      # environment data rather than interpolating it into a shell script.
+      ROOT_PATH: ${{ matrix.root.path }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Prepare provider cache directory
+        run: mkdir -p "${TF_PLUGIN_CACHE_DIR}"
+
+      - uses: actions/cache@v4
+        with:
+          path: ${{ env.TF_PLUGIN_CACHE_DIR }}
+          key: terraform-providers-${{ runner.os }}-${{ runner.arch }}-${{ matrix.root.terraform_version }}-${{ hashFiles(format('{0}/.terraform.lock.hcl', matrix.root.path)) }}
+          restore-keys: |
+            terraform-providers-${{ runner.os }}-${{ runner.arch }}-${{ matrix.root.terraform_version }}-
+
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
+        with:
+          terraform_version: ${{ matrix.root.terraform_version }}
+          terraform_wrapper: false
+
+      # Locked, backendless, noninteractive: verifies module/provider
+      # resolution and checksums without a backend or cloud credentials.
+      # -lockfile=readonly makes dependency drift fail instead of rewriting
+      # the reviewed lockfile.
+      - name: terraform init (backendless, locked)
+        run: >-
+          terraform -chdir="${ROOT_PATH}" init
+          -backend=false -input=false -lockfile=readonly -no-color
+
+      - name: terraform validate
+        run: terraform -chdir="${ROOT_PATH}" validate -no-color
+
+  # Reusable-module contract tests (issue #1528 AC3, rollout tracked in #1597).
+  # Only modules whose inventory `contract` ships an executable test appear in
+  # the matrix; when none do, the job is skipped.
+  terraform-module-contracts:
+    permissions:
+      contents: read
+    name: Contract test (${{ matrix.module.path }})
+    needs: [terraform-matrix]
+    if: ${{ needs.terraform-matrix.outputs.has_module_tests == 'true' }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        module: ${{ fromJSON(needs.terraform-matrix.outputs.module_tests) }}
+    env:
+      TF_IN_AUTOMATION: '1'
+      AWS_EC2_METADATA_DISABLED: 'true'
+      TF_PLUGIN_CACHE_DIR: ${{ github.workspace }}/.tf-plugin-cache
+      # Pass the (inventory-validated, path-contained) matrix path as
+      # environment data rather than interpolating it into a shell script.
+      MODULE_PATH: ${{ matrix.module.path }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Prepare provider cache directory
+        run: mkdir -p "${TF_PLUGIN_CACHE_DIR}"
+
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
+        with:
+          terraform_version: ${{ matrix.module.terraform_version }}
+          terraform_wrapper: false
+
+      # Reusable modules carry no lockfile, so init resolves providers fresh
+      # (not readonly). The contract test uses mock providers, so it needs no
+      # cloud credentials.
+      - name: terraform init (backendless)
+        run: >-
+          terraform -chdir="${MODULE_PATH}" init
+          -backend=false -input=false -no-color
+
+      - name: terraform test
+        run: terraform -chdir="${MODULE_PATH}" test -no-color
+
   # Pin the behavior of the Polaris CTFd workshop sync helpers. Issue #702
   # shipped 38/39 challenges unsubmittable because flag-row reconciliation
   # sat behind a category allowlist; these tests exercise the flag/hint
