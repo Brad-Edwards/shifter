@@ -65,10 +65,10 @@ __all__ = [
 #: (``switch`` nodes) as backend networks/subnets, realizes authored node ACLs as
 #: backend firewall rules, and realizes authored composition as guest bootstrap:
 #: ``directory`` content placements, feature bindings, and account placements
-#: (groups/shell/home/disabled/mail). Every declared term must be backed by a real
+#: (groups/shell/home/disabled/auth_method). Every declared term must be backed by a real
 #: guest effect (ADR-031 / ADR-032); a term realized only structurally or as a
 #: marker file is dropped until its sibling issue lands genuine realization plus
-#: cross-boundary evidence -- ``auth_method`` (#1560), ``spn`` (#1561), and
+#: cross-boundary evidence -- ``mail`` (no common provider), ``spn`` (#1561), and
 #: source-backed content ``file`` / ``dataset`` (#1564). ``file`` is one coarse
 #: type-level capability that cannot distinguish an inline file (realized) from a
 #: source-backed file (only a parent directory is created), so it stays out
@@ -83,7 +83,7 @@ SHIFTER_PROVISIONER_CAPABILITIES = ProvisionerCapabilities(
     supported_node_types=frozenset({"vm", "switch"}),
     supported_os_families=frozenset({"linux", "windows"}),
     supported_content_types=frozenset({"directory"}),
-    supported_account_features=frozenset({"groups", "shell", "home", "disabled", "mail"}),
+    supported_account_features=frozenset({"groups", "shell", "home", "disabled", "auth_method"}),
     max_total_nodes=None,
     supports_acls=True,
     supports_accounts=True,

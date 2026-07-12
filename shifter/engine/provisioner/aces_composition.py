@@ -9,9 +9,13 @@ into GCE guest bootstrap.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
+
+_PORTABLE_ACCOUNT_USERNAME = re.compile(r"^[A-Za-z_][A-Za-z0-9._-]{0,31}$")
+_RESERVED_ACCOUNT_USERNAMES = frozenset({"aces"})
 
 
 @dataclass(frozen=True)
@@ -47,7 +51,8 @@ class AcesPlanAccount:
     home: str | None = None
     mail: str | None = None
     spn: str | None = None
-    auth_method: str | None = None
+    auth_method: str = "password"
+    password_strength: str = "medium"  # noqa: S105 -- policy label, not a credential
     disabled: bool = False
 
 
@@ -75,6 +80,16 @@ def _mapping(value: object) -> Mapping[str, Any]:
 def _opt_str(value: object) -> str | None:
     """Return a stripped non-empty string, or None."""
     return value.strip() if isinstance(value, str) and value.strip() else None
+
+
+def _credential_policy_string(spec: Mapping[str, Any], field: str, default: str) -> str:
+    """Preserve omission/default semantics while rejecting explicit malformed values."""
+    raw = spec.get(field, "")
+    if raw == "":
+        return default
+    if not isinstance(raw, str) or raw.strip() != raw:
+        raise ValueError(f"account {field} must be a canonical string")
+    return raw
 
 
 def _str_tuple(value: object) -> tuple[str, ...]:
@@ -130,6 +145,10 @@ def build_account(payload: Mapping[str, Any]) -> AcesPlanAccount | None:
     target = _opt_str(payload.get("target_address")) or _opt_str(payload.get("node_name"))
     if username is None or target is None:
         return None
+    if not _PORTABLE_ACCOUNT_USERNAME.fullmatch(username):
+        raise ValueError("account username is not portable across supported guest operating systems")
+    if username.casefold() in _RESERVED_ACCOUNT_USERNAMES:
+        raise ValueError("account username is reserved for provisioner management")
     return AcesPlanAccount(
         username=username,
         target_address=target,
@@ -138,7 +157,8 @@ def build_account(payload: Mapping[str, Any]) -> AcesPlanAccount | None:
         home=_opt_str(spec.get("home")),
         mail=_opt_str(spec.get("mail")),
         spn=_opt_str(spec.get("spn")),
-        auth_method=_opt_str(spec.get("auth_method")),
+        auth_method=_credential_policy_string(spec, "auth_method", "password"),
+        password_strength=_credential_policy_string(spec, "password_strength", "medium"),
         disabled=spec.get("disabled") is True,
     )
 

@@ -21,7 +21,7 @@ in the pinned aces-sdl release. Remove the shim in favour of the public gate onc
 released ACES contract exposes account-feature realization evidence.
 
 A sibling issue adds a term here (and to the manifest) only after the provisioner
-genuinely realizes it with cross-boundary proof: ``auth_method`` -> #1560,
+genuinely realizes it with cross-boundary proof: ``auth_method`` -> #1560 and
 ``spn`` -> #1561. The set is intentionally not OS-conditional; a retained term must
 hold across the supported guest dialects (Linux and Windows) or be narrowed further.
 """
@@ -31,6 +31,6 @@ from __future__ import annotations
 #: Account-feature terms the Shifter backend genuinely realizes as a guest effect,
 #: independent of ``ProvisionerCapabilities.supported_account_features``. Hand-authored
 #: evidence, never auto-derived from the manifest declaration.
-REALIZED_ACCOUNT_FEATURES: frozenset[str] = frozenset({"groups", "shell", "home", "disabled", "mail"})
+REALIZED_ACCOUNT_FEATURES: frozenset[str] = frozenset({"groups", "shell", "home", "disabled", "auth_method"})
 
 __all__ = ["REALIZED_ACCOUNT_FEATURES"]

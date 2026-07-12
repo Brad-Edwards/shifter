@@ -55,6 +55,7 @@ __all__ = [
     "ACES_PROVISIONING_PLAN_CONTRACT_VERSION",
     "MAXIMUM_ACES_SDL_VERSION_EXCLUSIVE",
     "MINIMUM_ACES_SDL_VERSION",
+    "SUPPORTED_ACCOUNT_AUTH_METHODS",
     "SUPPORTED_CONTRACT_VERSIONS",
     "SUPPORTED_RESOURCE_TYPES",
     "AcesPlan",
@@ -103,6 +104,12 @@ SUPPORTED_CONTRACT_VERSIONS: frozenset[str] = frozenset({ACES_PROVISIONING_PLAN_
 #: conformance gate.
 MINIMUM_ACES_SDL_VERSION = "0.19.1"
 MAXIMUM_ACES_SDL_VERSION_EXCLUSIVE = "0.20.0"
+
+#: Duplicated intentionally across the separate deployable boundary and pinned
+#: to ``shared.aces.composition_envelope`` by a producer/consumer parity test.
+SUPPORTED_ACCOUNT_AUTH_METHODS: frozenset[str] = frozenset({"password", "publickey"})
+SUPPORTED_PASSWORD_STRENGTHS: frozenset[str] = frozenset({"weak", "medium", "strong", "none"})
+_NO_CREDENTIAL_STRENGTH = "none"
 
 _MIB = 1024 * 1024
 
@@ -294,13 +301,29 @@ def _build_composition[CompositionValue: (AcesPlanContent, AcesPlanAccount, Aces
     """
     built: list[CompositionValue] = []
     for address, payload in pairs:
-        value = builder(payload)
+        try:
+            value = builder(payload)
+        except ValueError as exc:
+            raise AcesPlanError(str(exc)) from None
         if value is None:
             raise AcesPlanError(f"malformed {resource_type} resource at {address}")
         if value.target_address not in node_lookup:
             raise AcesPlanError(f"{resource_type} resource at {address} targets unknown node {value.target_address!r}")
         built.append(value)
     return tuple(built)
+
+
+def _validate_account_credentials(account: AcesPlanAccount) -> None:
+    """Repeat account credential policy at the separate provisioner boundary."""
+    if account.auth_method not in SUPPORTED_ACCOUNT_AUTH_METHODS:
+        raise AcesPlanError("unsupported account auth_method")
+    if account.auth_method == "password" and (
+        account.password_strength not in SUPPORTED_PASSWORD_STRENGTHS
+        or (account.password_strength == _NO_CREDENTIAL_STRENGTH and not account.disabled)
+    ):
+        raise AcesPlanError("unsupported password_strength for account credential")
+    if account.mail is not None:
+        raise AcesPlanError("account mail is not realized consistently across supported guest operating systems")
 
 
 def parse_plan(range_config: dict[str, Any] | None) -> AcesPlan:
@@ -358,6 +381,8 @@ def parse_plan(range_config: dict[str, Any] | None) -> AcesPlan:
     nodes = tuple(_node(address, payload, network_lookup) for address, payload in sorted(node_pairs))
     content = _build_composition(build_content, CONTENT_RESOURCE_TYPE, composition[CONTENT_RESOURCE_TYPE], node_lookup)
     accounts = _build_composition(build_account, ACCOUNT_RESOURCE_TYPE, composition[ACCOUNT_RESOURCE_TYPE], node_lookup)
+    for account in accounts:
+        _validate_account_credentials(account)
     features = _build_composition(build_feature, FEATURE_RESOURCE_TYPE, composition[FEATURE_RESOURCE_TYPE], node_lookup)
 
     return AcesPlan(

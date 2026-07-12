@@ -1366,6 +1366,7 @@
       "https://github.com/Brad-Edwards/shifter/issues/1563",
       "docs/architecture/aces-runtime-target-backend-manifest-preflight-1233.md",
       "docs/architecture/aces-backend-manifest-realizability-preflight-1563.md",
+      "docs/architecture/aces-account-credentials-preflight-1560.md",
       "docs/architecture/aces-migration-parity-inventory.yaml",
       ".importlinter",
       "shifter/shifter_platform/shared/aces/runtime_target.py",
@@ -1428,6 +1429,7 @@
       "docs/architecture/aces-runtime-target-backend-manifest-preflight-1233.md",
       "docs/architecture/aces-provisioning-plan-transport-preflight-1522.md",
       "docs/architecture/aces-backend-manifest-realizability-preflight-1563.md",
+      "docs/architecture/aces-account-credentials-preflight-1560.md",
       ".importlinter",
       "shifter/shifter_platform/pyproject.toml",
       "shifter/shifter_platform/shared/aces/runtime_target.py"
