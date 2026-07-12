@@ -16,6 +16,7 @@ _LUA_INCR_EXPIRE = (
 
 
 def _redis_client(cache: BaseCache, made_key: str) -> Any | None:
+    """Return the native Redis client when the cache backend exposes one."""
     get_client = getattr(getattr(cache, "_cache", None), "get_client", None)
     if get_client is None:
         return None

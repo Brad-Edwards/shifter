@@ -79,7 +79,11 @@
                     <form method="post" action="{% url 'ctf:admin_participant_rename' participant_id=participant.pk %}">
                         {% csrf_token %}
                         <label for="participant-username">{% trans "Rename username" %}</label>
-                        <input id="participant-username" name="username" value="{{ participant.user.username }}" maxlength="49" required>
+                        <input id="participant-username"
+                               name="username"
+                               value="{{ participant.user.username }}"
+                               maxlength="49"
+                               required>
                         <button type="submit" class="btn btn-secondary">{% trans "Rename" %}</button>
                     </form>
                 {% endif %}

@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 import secrets
 from collections.abc import Callable
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 from django.conf import settings
@@ -61,6 +61,7 @@ def normalize_participant_username(username: str) -> str:
 
 
 def _new_user(password: str, username_factory: Callable[[], str]) -> User:
+    """Create a unique isolated user within a bounded retry loop."""
     for _ in range(_HANDLE_ATTEMPTS):
         username = normalize_participant_username(username_factory())
         try:
@@ -69,6 +70,34 @@ def _new_user(password: str, username_factory: Callable[[], str]) -> User:
         except IntegrityError:
             continue
     raise CTFValidationError("Unable to allocate a unique participant username", code="CTF_USERNAME_EXHAUSTED")
+
+
+def _validate_account_request(count: int, email: str) -> None:
+    """Validate organizer-supplied batch inputs."""
+    if count < 1 or count > _MAX_GENERATED_ACCOUNTS:
+        raise CTFValidationError(
+            f"Account count must be between 1 and {_MAX_GENERATED_ACCOUNTS}",
+            code="CTF_INVALID_ACCOUNT_COUNT",
+        )
+    if count > 1 and email:
+        raise CTFValidationError("Batch-created accounts cannot share a delivery email", code="CTF_BATCH_EMAIL")
+
+
+def _event_for_account_creation(event_id: UUID, count: int) -> tuple[CTFEvent, int]:
+    """Lock and validate the event, returning its current seat count."""
+    try:
+        event = CTFEvent.objects.select_for_update().get(pk=event_id)
+    except CTFEvent.DoesNotExist:
+        raise CTFNotFoundError("Event not found", details={"event_id": str(event_id)}) from None
+    if event.registration_deadline and timezone.now() > event.registration_deadline:
+        raise CTFValidationError(
+            "Registration deadline has passed",
+            code="CTF_REGISTRATION_DEADLINE_PASSED",
+        )
+    active_count = event.participants.filter(deleted_at__isnull=True).count()
+    if event.max_participants and active_count + count > event.max_participants:
+        raise CTFValidationError("Event has reached maximum participants", code="CTF_MAX_PARTICIPANTS_REACHED")
+    return event, active_count
 
 
 @sensitive_variables("password")
@@ -80,31 +109,11 @@ def create_participant_accounts(
     display_name: str = "",
 ) -> list[CTFParticipant]:
     """Create isolated participant seats and enqueue canonical provisioning."""
-    if count < 1 or count > _MAX_GENERATED_ACCOUNTS:
-        raise CTFValidationError(
-            f"Account count must be between 1 and {_MAX_GENERATED_ACCOUNTS}",
-            code="CTF_INVALID_ACCOUNT_COUNT",
-        )
-    if count > 1 and email:
-        raise CTFValidationError("Batch-created accounts cannot share a delivery email", code="CTF_BATCH_EMAIL")
-
-    try:
-        event = CTFEvent.objects.get(pk=event_id)
-    except CTFEvent.DoesNotExist:
-        raise CTFNotFoundError("Event not found", details={"event_id": str(event_id)}) from None
+    _validate_account_request(count, email)
 
     created: list[CTFParticipant] = []
     with transaction.atomic():
-        event = CTFEvent.objects.select_for_update().get(pk=event.pk)
-        if event.registration_deadline and timezone.now() > event.registration_deadline:
-            raise CTFValidationError(
-                "Registration deadline has passed",
-                code="CTF_REGISTRATION_DEADLINE_PASSED",
-            )
-        active_count = event.participants.filter(deleted_at__isnull=True).count()
-        if event.max_participants and active_count + count > event.max_participants:
-            raise CTFValidationError("Event has reached maximum participants", code="CTF_MAX_PARTICIPANTS_REACHED")
-
+        event, active_count = _event_for_account_creation(event_id, count)
         group, _ = Group.objects.get_or_create(name=CTF_PARTICIPANT_GROUP)
         password = effective_bootstrap_password(event)
         now = timezone.now()
@@ -143,7 +152,7 @@ def attach_isolated_account(participant: CTFParticipant) -> CTFParticipant:
     return participant
 
 
-def rename_participant_username(participant_id: UUID, username: str, *, actor) -> CTFParticipant:
+def rename_participant_username(participant_id: UUID, username: str, *, actor: Any) -> CTFParticipant:
     """Rename a marked participant account after organizer ownership checks."""
     normalized = normalize_participant_username(username)
     with transaction.atomic():
@@ -306,30 +315,30 @@ def purge_expired_participant_accounts() -> int:
     return sum(anonymize_participant_account(participant_id) for participant_id in participant_ids)
 
 
-def live_participant_for_user(user) -> CTFParticipant | None:
+def live_participant_for_user(user: Any) -> CTFParticipant | None:
     """Return the sole live participation admitted for a temporary account."""
-    if not getattr(user, "is_active", False):
-        return None
-    try:
-        profile = user.profile
-    except (AttributeError, ObjectDoesNotExist):
-        return None
-    if not profile.is_ctf_account or profile.user_type != "ctf_participant":
-        return None
-    if user.is_staff or user.is_superuser:
-        return None
-    if set(user.groups.values_list("name", flat=True)) != {CTF_PARTICIPANT_GROUP}:
-        return None
-    now = timezone.now()
-    matches = list(
-        CTFParticipant.objects.select_related("event")
-        .filter(
-            user=user,
-            deleted_at__isnull=True,
-            event__status__in=["active", "paused"],
-            event__event_start__lte=now,
-            event__event_end__gt=now,
+    participant = None
+    profile = None
+    if getattr(user, "is_active", False):
+        try:
+            profile = user.profile
+        except (AttributeError, ObjectDoesNotExist):
+            profile = None
+    eligible_profile = profile is not None and profile.is_ctf_account and profile.user_type == "ctf_participant"
+    eligible_user = eligible_profile and not user.is_staff and not user.is_superuser
+    if eligible_user and set(user.groups.values_list("name", flat=True)) == {CTF_PARTICIPANT_GROUP}:
+        now = timezone.now()
+        matches = list(
+            CTFParticipant.objects.select_related("event")
+            .filter(
+                user=user,
+                deleted_at__isnull=True,
+                event__status__in=["active", "paused"],
+                event__event_start__lte=now,
+                event__event_end__gt=now,
+            )
+            .exclude(status=ParticipantStatus.DISQUALIFIED.value)[:2]
         )
-        .exclude(status=ParticipantStatus.DISQUALIFIED.value)[:2]
-    )
-    return matches[0] if len(matches) == 1 else None
+        if len(matches) == 1:
+            participant = matches[0]
+    return participant

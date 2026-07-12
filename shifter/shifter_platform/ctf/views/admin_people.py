@@ -30,6 +30,9 @@ logger = logging.getLogger(__name__)
 
 _EVENT_NOT_FOUND_MSG = "Event not found"
 _FORBIDDEN_EVENT_MSG = "Forbidden: You do not have access to this event"
+_PARTICIPANT_NOT_FOUND_MSG = "Participant not found"
+_PARTICIPANT_LIST_ROUTE = "ctf:admin_participant_list"
+_PARTICIPANT_DETAIL_ROUTE = "ctf:admin_participant_detail"
 
 
 @login_required
@@ -154,7 +157,7 @@ def admin_participant_import(request: HttpRequest, event_id: UUID) -> HttpRespon
                     safe_log_value(event_id),
                 )
                 messages.success(request, f"Successfully imported {imported_count} participants.")
-                return redirect("ctf:admin_participant_list", event_id=event_id)
+                return redirect(_PARTICIPANT_LIST_ROUTE, event_id=event_id)
             except CTFValidationError as e:
                 errors = _participant_import_error_messages(e)
     else:
@@ -168,37 +171,6 @@ def admin_participant_import(request: HttpRequest, event_id: UUID) -> HttpRespon
     }
 
     return render(request, "ctf/admin/participant_import.html", context)
-
-
-@login_required
-@ctf_organizer_required
-@require_http_methods(["GET", "POST"])
-def admin_participant_batch(request: HttpRequest, event_id: UUID) -> HttpResponse:
-    """Generate a bounded batch of isolated participant accounts."""
-    from django.contrib import messages
-    from django.http import Http404
-
-    from ctf.exceptions import CTFNotFoundError, CTFValidationError
-    from ctf.forms import CTFParticipantBatchForm
-    from ctf.services import get_event
-    from ctf.services.participant.accounts import create_participant_accounts
-
-    try:
-        event = get_event(event_id)
-    except CTFNotFoundError:
-        raise Http404(_EVENT_NOT_FOUND_MSG) from None
-    if event.created_by_id != request.user.pk:
-        return HttpResponse(_FORBIDDEN_EVENT_MSG, status=403)
-    form = CTFParticipantBatchForm(request.POST or None)
-    if request.method == "POST" and form.is_valid():
-        try:
-            participants = create_participant_accounts(event_id, count=form.cleaned_data["count"])
-        except CTFValidationError as exc:
-            form.add_error(None, str(exc))
-        else:
-            messages.success(request, f"Generated {len(participants)} participant accounts.")
-            return redirect("ctf:admin_participant_list", event_id=event_id)
-    return render(request, "ctf/admin/participant_batch.html", {"event": event, "form": form})
 
 
 @login_required
@@ -222,14 +194,14 @@ def admin_participant_rename(request: HttpRequest, participant_id: UUID) -> Http
                 actor=request.user,
             )
         except CTFNotFoundError:
-            raise Http404("Participant not found") from None
+            raise Http404(_PARTICIPANT_NOT_FOUND_MSG) from None
         except CTFValidationError as exc:
             messages.error(request, str(exc))
         else:
             messages.success(request, "Participant username updated.")
-            return redirect("ctf:admin_participant_detail", participant_id=participant.pk)
+            return redirect(_PARTICIPANT_DETAIL_ROUTE, participant_id=participant.pk)
     messages.error(request, "Invalid participant username.")
-    return redirect("ctf:admin_participant_detail", participant_id=participant_id)
+    return redirect(_PARTICIPANT_DETAIL_ROUTE, participant_id=participant_id)
 
 
 @login_required
@@ -249,7 +221,7 @@ def admin_participant_email(request: HttpRequest, participant_id: UUID) -> HttpR
             deleted_at__isnull=True,
         )
     except CTFParticipant.DoesNotExist:
-        raise Http404("Participant not found") from None
+        raise Http404(_PARTICIPANT_NOT_FOUND_MSG) from None
     if participant.event.created_by_id != request.user.pk:
         return HttpResponse(_FORBIDDEN_EVENT_MSG, status=403)
     form = CTFParticipantEmailForm(request.POST)
@@ -259,7 +231,7 @@ def admin_participant_email(request: HttpRequest, participant_id: UUID) -> HttpR
         participant.email = form.cleaned_data["email"].strip().lower()
         participant.save(update_fields=["email", "updated_at"])
         messages.success(request, "Delivery email updated.")
-    return redirect("ctf:admin_participant_detail", participant_id=participant_id)
+    return redirect(_PARTICIPANT_DETAIL_ROUTE, participant_id=participant_id)
 
 
 @login_required
@@ -284,7 +256,7 @@ def admin_participant_detail(request: HttpRequest, participant_id: UUID) -> Http
     try:
         participant = get_participant(participant_id)
     except CTFNotFoundError:
-        raise Http404("Participant not found") from None
+        raise Http404(_PARTICIPANT_NOT_FOUND_MSG) from None
 
     # Check permission - organizers can only access their own events' participants
     if participant.event.created_by_id != request.user.pk:
@@ -358,7 +330,7 @@ def admin_participant_add(request: HttpRequest, event_id: UUID) -> HttpResponse:
                     safe_log_value(event_id),
                 )
                 messages.success(request, f"Participant {participant.name} added successfully.")
-                return redirect("ctf:admin_participant_list", event_id=event_id)
+                return redirect(_PARTICIPANT_LIST_ROUTE, event_id=event_id)
             except CTFValidationError as e:
                 form.add_error(None, str(e))
     else:

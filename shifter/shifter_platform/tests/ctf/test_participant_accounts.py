@@ -267,3 +267,56 @@ def test_first_password_change_rejects_bootstrap_reuse(client, ctf_event_active,
     assert response.status_code == 200
     assert "Choose a password different from the event bootstrap password" in response.content.decode()
     assert get_user_profile(participant.user).must_change_password is True
+
+
+def test_organizer_can_render_and_generate_participant_batch(
+    authenticated_organizer_client,
+    ctf_event,
+    monkeypatch,
+):
+    monkeypatch.setattr("ctf.services.participant.accounts.request_event_provisioning", lambda *_a, **_kw: None)
+    url = reverse("ctf:admin_participant_batch", kwargs={"event_id": ctf_event.id})
+
+    get_response = authenticated_organizer_client.get(url)
+    post_response = authenticated_organizer_client.post(url, {"count": 2})
+
+    assert get_response.status_code == 200
+    assert post_response.status_code == 302
+    assert ctf_event.participants.filter(user__profile__is_ctf_account=True).count() == 2
+
+
+def test_organizer_can_rename_and_attach_delivery_email(authenticated_organizer_client, ctf_event, monkeypatch):
+    monkeypatch.setattr("ctf.services.participant.accounts.request_event_provisioning", lambda *_a, **_kw: None)
+    participant = create_participant_accounts(ctf_event.id, count=1)[0]
+
+    rename_response = authenticated_organizer_client.post(
+        reverse("ctf:admin_participant_rename", kwargs={"participant_id": participant.id}),
+        {"username": "range-renamed-seat"},
+    )
+    email_response = authenticated_organizer_client.post(
+        reverse("ctf:admin_participant_email", kwargs={"participant_id": participant.id}),
+        {"email": "Delivery@Example.test"},
+    )
+
+    participant.refresh_from_db()
+    participant.user.refresh_from_db()
+    assert rename_response.status_code == 302
+    assert email_response.status_code == 302
+    assert participant.user.username == "range-renamed-seat"
+    assert participant.email == "delivery@example.test"
+
+
+def test_organizer_participant_detail_reveals_current_bootstrap_password(
+    authenticated_organizer_client,
+    ctf_event,
+    monkeypatch,
+):
+    monkeypatch.setattr("ctf.services.participant.accounts.request_event_provisioning", lambda *_a, **_kw: None)
+    participant = create_participant_accounts(ctf_event.id, count=1)[0]
+
+    response = authenticated_organizer_client.get(
+        reverse("ctf:admin_participant_detail", kwargs={"participant_id": participant.id})
+    )
+
+    assert response.status_code == 200
+    assert "ShifterAcesRanges" in response.content.decode()

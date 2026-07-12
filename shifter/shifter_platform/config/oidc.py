@@ -97,7 +97,7 @@ class ShifterOIDCBackend(OIDCAuthenticationBackend):
         self._verified_issuer: str | None = None
         self._verified_subject: str | None = None
 
-    def get_user(self, user_id: int):
+    def get_user(self, user_id: int) -> Any:
         """Load the account-origin profile with the session user."""
         user_model = get_user_model()
         try:

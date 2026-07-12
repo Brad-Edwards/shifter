@@ -3,6 +3,8 @@
 Platform administration models for user profiles and activity logging.
 """
 
+from typing import Any
+
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
@@ -109,10 +111,10 @@ class UserProfile(models.Model):
             )
         ]
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"Profile for {self.user.email}"
 
-    def save(self, *args, **kwargs):
+    def save(self, *args: Any, **kwargs: Any) -> None:
         """Prevent the temporary-account origin marker from being cleared."""
         if self.pk and not self.is_ctf_account and type(self).objects.filter(pk=self.pk, is_ctf_account=True).exists():
             raise ValidationError({"is_ctf_account": "The temporary CTF account marker is immutable."})

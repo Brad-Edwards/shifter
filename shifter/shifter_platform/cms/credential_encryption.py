@@ -13,12 +13,27 @@ re-saves each row.
 
 from __future__ import annotations
 
-from shared.field_encryption import ENCRYPTED_VALUE_PREFIX, EncryptedJSONField  # noqa: F401
-from shared.field_encryption import _transform_sensitive as _transform_sensitive
+from typing import Any
 
-# Compatibility aliases for existing tests and migrations.
-from shared.field_encryption import decrypt_value as _decrypt_value  # noqa: F401
-from shared.field_encryption import encrypt_value as _encrypt_value  # noqa: F401
+from shared import field_encryption as _shared_encryption
+
+ENCRYPTED_VALUE_PREFIX = _shared_encryption.ENCRYPTED_VALUE_PREFIX
+EncryptedJSONField = _shared_encryption.EncryptedJSONField
+
+
+def _encrypt_value(value: str) -> str:
+    """Compatibility wrapper for legacy callers and migrations."""
+    return _shared_encryption.encrypt_value(value)
+
+
+def _decrypt_value(value: str) -> str:
+    """Compatibility wrapper for legacy callers and migrations."""
+    return _shared_encryption.decrypt_value(value)
+
+
+def _transform_sensitive(data: dict[str, Any], keys: frozenset[str], *, encrypt: bool) -> dict[str, Any]:
+    """Compatibility wrapper for legacy tests and migrations."""
+    return _shared_encryption._transform_sensitive(data, keys, encrypt=encrypt)
 
 
 class EncryptedCredentialDataField(EncryptedJSONField):

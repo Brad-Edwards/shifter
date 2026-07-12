@@ -79,21 +79,24 @@ class CTFAccountBoundaryMiddleware:
 
         user = request.user
         if not is_temporary_ctf_account(user):
-            return self.get_response(request)
+            response = self.get_response(request)
+        else:
+            path = request.path
+            from ctf.services.participant.accounts import live_participant_for_user
 
-        path = request.path
-        from ctf.services.participant.accounts import live_participant_for_user
-
-        if path != "/logout/" and live_participant_for_user(user) is None:
-            return HttpResponse("Forbidden", status=403, content_type="text/plain")
-        participant_surface = (path.startswith("/ctf/") and not path.startswith("/ctf/admin/")) or path.startswith(
-            "/api/v1/ctf/"
-        )
-        if path not in _CTF_ACCOUNT_ALWAYS_ALLOWED and not participant_surface:
-            return HttpResponse("Forbidden", status=403, content_type="text/plain")
-        if is_ctf_password_change_required(user) and path not in _CTF_ACCOUNT_ALWAYS_ALLOWED:
-            return redirect("ctf:ctf_change_password")
-        return self.get_response(request)
+            participant_surface = (path.startswith("/ctf/") and not path.startswith("/ctf/admin/")) or path.startswith(
+                "/api/v1/ctf/"
+            )
+            forbidden = (path != "/logout/" and live_participant_for_user(user) is None) or (
+                path not in _CTF_ACCOUNT_ALWAYS_ALLOWED and not participant_surface
+            )
+            if forbidden:
+                response = HttpResponse("Forbidden", status=403, content_type="text/plain")
+            elif is_ctf_password_change_required(user) and path not in _CTF_ACCOUNT_ALWAYS_ALLOWED:
+                response = redirect("ctf:ctf_change_password")
+            else:
+                response = self.get_response(request)
+        return response
 
 
 class HealthCheckMiddleware:

@@ -360,29 +360,25 @@ def configure_temporary_ctf_account(user: User, event_id: UUID) -> None:
 
 def is_temporary_ctf_account(user: User | AnonymousUser) -> bool:
     """Return the durable account-origin marker without exposing the model."""
-    if not getattr(user, "is_authenticated", False) or not isinstance(user, get_user_model()):
-        return False
-    user_id = user.pk
-    if user_id is None:
-        return False
-    try:
-        return user.profile.is_ctf_account
-    except UserProfile.DoesNotExist:
-        return False
+    result = False
+    if getattr(user, "is_authenticated", False) and isinstance(user, get_user_model()) and user.pk is not None:
+        try:
+            result = user.profile.is_ctf_account
+        except UserProfile.DoesNotExist:
+            result = False
+    return result
 
 
 def is_ctf_password_change_required(user: User | AnonymousUser) -> bool:
     """Return whether a marked account is still bootstrap-password gated."""
-    if not getattr(user, "is_authenticated", False) or not isinstance(user, get_user_model()):
-        return False
-    user_id = user.pk
-    if user_id is None:
-        return False
-    try:
-        profile = user.profile
-    except UserProfile.DoesNotExist:
-        return False
-    return profile.is_ctf_account and profile.must_change_password
+    result = False
+    if getattr(user, "is_authenticated", False) and isinstance(user, get_user_model()) and user.pk is not None:
+        try:
+            profile = user.profile
+            result = profile.is_ctf_account and profile.must_change_password
+        except UserProfile.DoesNotExist:
+            result = False
+    return result
 
 
 def set_ctf_password_change_required(user: User, required: bool) -> None:

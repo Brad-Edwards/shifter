@@ -77,7 +77,7 @@ else:
 
 CTF_DEFAULT_PARTICIPANT_PASSWORD = os.environ.get(
     "CTF_DEFAULT_PARTICIPANT_PASSWORD",
-    "ShifterAcesRanges",
+    "ShifterAcesRanges",  # NOSONAR -- documented non-secret bootstrap credential, rotated on first login
 )
 CTF_PARTICIPANT_ACCOUNT_RETENTION_HOURS = int(os.environ.get("CTF_PARTICIPANT_ACCOUNT_RETENTION_HOURS", "24"))
 CTF_LOGIN_RATE_LIMIT_MAX = int(os.environ.get("CTF_LOGIN_RATE_LIMIT_MAX", "5"))

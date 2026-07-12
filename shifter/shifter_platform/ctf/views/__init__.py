@@ -37,9 +37,9 @@ from ctf.views.admin_notifications import (
     admin_notification_create,
     admin_notification_list,
 )
+from ctf.views.admin_participant_accounts import admin_participant_batch
 from ctf.views.admin_people import (
     admin_participant_add,
-    admin_participant_batch,
     admin_participant_detail,
     admin_participant_email,
     admin_participant_import,

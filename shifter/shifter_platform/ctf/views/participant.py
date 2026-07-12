@@ -30,11 +30,14 @@ from ctf.views._access import (
     ctf_participant_required,
     ctf_role_required,
 )
+from shared.rate_limit import consume_fixed_window
 
 logger = logging.getLogger(__name__)
 
 _SCOREBOARD_TEMPLATE = "ctf/participant/scoreboard.html"
 _SOLVE_HISTORY_TEMPLATE = "ctf/participant/solve_history.html"
+_CTF_LOGIN_TEMPLATE = "ctf/participant/login.html"
+_CTF_CHANGE_CREDENTIAL_TEMPLATE = "ctf/participant/change_password.html"
 
 
 def _ctf_login_rate_limited(request: HttpRequest, username: str) -> tuple[bool, int]:
@@ -43,7 +46,6 @@ def _ctf_login_rate_limited(request: HttpRequest, username: str) -> tuple[bool, 
     from django.core.cache import caches
 
     from risk_register.services import get_client_ip
-    from shared.rate_limit import consume_fixed_window
 
     window = int(getattr(settings, "CTF_LOGIN_RATE_LIMIT_WINDOW_SECONDS", 300))
     maximum = int(getattr(settings, "CTF_LOGIN_RATE_LIMIT_MAX", 5))
@@ -69,6 +71,7 @@ def ctf_login(request: HttpRequest) -> HttpResponse:
     from config.auth import CTFParticipantBackend
 
     error = None
+    response = None
     if request.method == "POST":
         username = request.POST.get("username", "")[:150]
         password = request.POST.get("password", "")
@@ -77,34 +80,38 @@ def ctf_login(request: HttpRequest) -> HttpResponse:
         except Exception:
             response = render(
                 request,
-                "ctf/participant/login.html",
+                _CTF_LOGIN_TEMPLATE,
                 {"error": "Login is temporarily unavailable. Please retry shortly."},
                 status=503,
             )
             response["Retry-After"] = "60"
-            return response
-        if limited:
-            response = render(
-                request,
-                "ctf/participant/login.html",
-                {"error": "Invalid username or password."},
-                status=429,
-            )
-            response["Retry-After"] = str(window)
-            return response
-        user = CTFParticipantBackend().authenticate(
-            request,
-            username=username,
-            password=password,
-            ctf_participant=True,
-        )
-        if user is not None:
-            login(request, user, backend="config.auth.CTFParticipantBackend")
-            if user.profile.must_change_password:
-                return redirect(reverse("ctf:ctf_change_password"))
-            return redirect(reverse("ctf:participant_range"))
-        error = "Invalid username or password."
-    return render(request, "ctf/participant/login.html", {"error": error})
+        else:
+            if limited:
+                response = render(
+                    request,
+                    _CTF_LOGIN_TEMPLATE,
+                    {"error": "Invalid username or password."},
+                    status=429,
+                )
+                response["Retry-After"] = str(window)
+            else:
+                user = CTFParticipantBackend().authenticate(
+                    request,
+                    username=username,
+                    password=password,
+                    ctf_participant=True,
+                )
+                if user is not None:
+                    login(request, user, backend="config.auth.CTFParticipantBackend")
+                    destination = (
+                        "ctf:ctf_change_password" if user.profile.must_change_password else "ctf:participant_range"
+                    )
+                    response = redirect(reverse(destination))
+                else:
+                    error = "Invalid username or password."
+    if response is None:
+        response = render(request, _CTF_LOGIN_TEMPLATE, {"error": error})
+    return response
 
 
 @never_cache
@@ -119,22 +126,28 @@ def ctf_change_password(request: HttpRequest) -> HttpResponse:
     from management.services import is_temporary_ctf_account, set_ctf_password_change_required
 
     if not is_temporary_ctf_account(request.user):
-        return HttpResponse("Forbidden", status=403)
-    form = PasswordChangeForm(request.user, request.POST or None)
-    if request.method == "POST" and form.is_valid():
-        from ctf.services.participant.accounts import effective_bootstrap_password, live_participant_for_user
+        response = HttpResponse("Forbidden", status=403)
+    else:
+        form = PasswordChangeForm(request.user, request.POST or None)
+        response = None
+        if request.method == "POST" and form.is_valid():
+            from ctf.services.participant.accounts import effective_bootstrap_password, live_participant_for_user
 
-        participant = live_participant_for_user(request.user)
-        if participant is not None and form.cleaned_data["new_password1"] == effective_bootstrap_password(
-            participant.event
-        ):
-            form.add_error("new_password1", "Choose a password different from the event bootstrap password.")
-            return render(request, "ctf/participant/change_password.html", {"form": form})
-        user = form.save()
-        set_ctf_password_change_required(user, False)
-        update_session_auth_hash(request, user)
-        return redirect("ctf:participant_range")
-    return render(request, "ctf/participant/change_password.html", {"form": form})
+            participant = live_participant_for_user(request.user)
+            bootstrap_reused = participant is not None and form.cleaned_data[
+                "new_password1"
+            ] == effective_bootstrap_password(participant.event)
+            if bootstrap_reused:
+                form.add_error("new_password1", "Choose a password different from the event bootstrap password.")
+            else:
+                user = form.save()
+                set_ctf_password_change_required(user, False)
+                update_session_auth_hash(request, user)
+                response = redirect("ctf:participant_range")
+        if response is None:
+            response = render(request, _CTF_CHANGE_CREDENTIAL_TEMPLATE, {"form": form})
+    assert response is not None
+    return response
 
 
 @login_required

@@ -1,15 +1,17 @@
 """WebSocket account-origin authorization boundary."""
 
+from typing import Any
+
 from channels.db import database_sync_to_async
 
 
 class CTFAccountWebSocketBoundary:
     """Close every platform socket for temporary CTF accounts."""
 
-    def __init__(self, application):
+    def __init__(self, application: Any) -> None:
         self.application = application
 
-    async def __call__(self, scope, receive, send):
+    async def __call__(self, scope: dict[str, Any], receive: Any, send: Any) -> None:
         user = scope.get("user")
         if user is not None and await self._is_ctf_account(user):
             await send({"type": "websocket.close", "code": 4403})
@@ -17,7 +19,7 @@ class CTFAccountWebSocketBoundary:
         await self.application(scope, receive, send)
 
     @database_sync_to_async
-    def _is_ctf_account(self, user) -> bool:
+    def _is_ctf_account(self, user: Any) -> bool:
         from management.services import is_temporary_ctf_account
 
         return is_temporary_ctf_account(user)
