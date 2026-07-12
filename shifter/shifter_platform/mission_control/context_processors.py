@@ -173,3 +173,12 @@ def _safe_active_range(request: HttpRequest) -> dict[str, Any]:
         )
         return _empty_active_range_context()
     return _build_active_range_context(range_context, request, user_id)
+
+
+def docs_site_url(request: HttpRequest) -> dict[str, Any]:
+    """Expose the public documentation site URL to templates (ADR-038).
+
+    Templates link out to the hosted mkdocs site instead of hardcoding the
+    absolute URL; the value is configured in settings.DOCS_SITE_URL.
+    """
+    return {"DOCS_SITE_URL": settings.DOCS_SITE_URL}

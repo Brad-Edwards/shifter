@@ -104,6 +104,12 @@ CSRF_TRUSTED_ORIGINS = [o.strip() for o in _csrf_origins.split(",") if o.strip()
 # Required in all environments - no default fallback
 SITE_URL = os.environ.get("SITE_URL")
 
+# Public documentation site (ADR-038). Templates link out to the hosted mkdocs
+# site rather than the retired in-app docs reader; kept here (config, not
+# hardcoded in templates) and exposed via mission_control.context_processors.
+# docs_site_url. Trailing slash so template paths append directly.
+DOCS_SITE_URL = os.environ.get("DOCS_SITE_URL", "https://brad-edwards.github.io/shifter/")
+
 # Application definition
 INSTALLED_APPS = [
     "daphne",
@@ -179,6 +185,7 @@ TEMPLATES = [
                 "django.contrib.messages.context_processors.messages",
                 "mission_control.context_processors.active_range",
                 "mission_control.context_processors.terminal_cdn_assets",
+                "mission_control.context_processors.docs_site_url",
                 "shared.context_processors.user_permissions",
                 "ctf.context_processors.ctf_navigation",
             ],
