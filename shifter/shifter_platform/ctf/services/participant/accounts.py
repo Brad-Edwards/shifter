@@ -320,37 +320,39 @@ def purge_expired_participant_accounts() -> int:
     return sum(anonymize_participant_account(participant_id) for participant_id in participant_ids)
 
 
+def _eligible_ctf_user(user: User | AnonymousUser) -> User | None:
+    """Return a concrete user only when its account boundary is intact."""
+    if not isinstance(user, User) or not user.is_active:
+        return None
+    try:
+        profile = user.profile
+    except (AttributeError, ObjectDoesNotExist):
+        return None
+    if not profile.is_ctf_account or profile.user_type != "ctf_participant":
+        return None
+    if user.is_staff or user.is_superuser:
+        return None
+    if set(user.groups.values_list("name", flat=True)) != {CTF_PARTICIPANT_GROUP}:
+        return None
+    return user
+
+
 def live_participant_for_user(user: User | AnonymousUser) -> CTFParticipant | None:
     """Return the sole live participation admitted for a temporary account."""
-    participant = None
-    profile = None
-    concrete_user = user if isinstance(user, User) else None
-    if concrete_user is not None and concrete_user.is_active:
-        try:
-            profile = concrete_user.profile
-        except (AttributeError, ObjectDoesNotExist):
-            profile = None
-    eligible_profile = profile is not None and profile.is_ctf_account and profile.user_type == "ctf_participant"
-    eligible_user = (
-        eligible_profile and concrete_user is not None and not concrete_user.is_staff and not concrete_user.is_superuser
-    )
-    if (
-        eligible_user
-        and concrete_user is not None
-        and set(concrete_user.groups.values_list("name", flat=True)) == {CTF_PARTICIPANT_GROUP}
-    ):
-        now = timezone.now()
-        matches = list(
-            CTFParticipant.objects.select_related("event")
-            .filter(
-                user=concrete_user,
-                deleted_at__isnull=True,
-                event__status__in=["active", "paused"],
-                event__event_start__lte=now,
-                event__event_end__gt=now,
-            )
-            .exclude(status=ParticipantStatus.DISQUALIFIED.value)[:2]
+    concrete_user = _eligible_ctf_user(user)
+    if concrete_user is None:
+        return None
+
+    now = timezone.now()
+    matches = list(
+        CTFParticipant.objects.select_related("event")
+        .filter(
+            user=concrete_user,
+            deleted_at__isnull=True,
+            event__status__in=["active", "paused"],
+            event__event_start__lte=now,
+            event__event_end__gt=now,
         )
-        if len(matches) == 1:
-            participant = matches[0]
-    return participant
+        .exclude(status=ParticipantStatus.DISQUALIFIED.value)[:2]
+    )
+    return matches[0] if len(matches) == 1 else None
