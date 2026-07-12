@@ -265,6 +265,20 @@ repos:
         language: system
         files: ^platform/terraform/modules/range/vpc/iam\.tf$
 
+      # Issue #1377: the per-range Polaris Bedrock agent role must keep its
+      # inline policy scoped to exactly bedrock:InvokeModel /
+      # bedrock:InvokeModelWithResponseStream on the two approved inference
+      # profiles and their backing models (conditioned on
+      # bedrock:InferenceProfileArn), and its trust policy scoped to the
+      # shared range-instance role AND the exact Polaris EC2 source instance
+      # (ec2:SourceInstanceARN). Scoped to the engine provisioner range
+      # module IAM file where the role is defined.
+      - id: check-tf-iam-bedrock-agent-scope
+        name: AWS Polaris Bedrock agent IAM scoping (#1377)
+        entry: python3 scripts/check_tf_iam_bedrock_agent_scope/check_tf_iam_bedrock_agent_scope.py
+        language: system
+        files: ^shifter/engine/provisioner/terraform/modules/range/iam\.tf$
+
       # Custom: Secrets Manager kms:Decrypt grant check (issue #52).
       # Ensures every aws_iam_role defined in scoped files that reads
       # the portal Secrets Manager CMK has an attached
@@ -365,6 +379,7 @@ repos:
           python3 -m unittest scripts.check_tf_iam_elb_scope.test_check_tf_iam_elb_scope &&
           python3 -m unittest scripts.check_tf_iam_ssm_scope.test_check_tf_iam_ssm_scope &&
           python3 -m unittest scripts.check_tf_iam_ssm_range_scope.test_check_tf_iam_ssm_range_scope &&
+          python3 -m unittest scripts.check_tf_iam_bedrock_agent_scope.test_check_tf_iam_bedrock_agent_scope &&
           python3 -m unittest scripts.check_tf_iam_role_naming.test_check_tf_iam_role_naming &&
           python3 -m unittest scripts.check_tf_sg_cidrs.test_check_tf_sg_cidrs &&
           python3 -m unittest scripts.check_tf_kms_secrets_grant.test_check_tf_kms_secrets_grant &&
@@ -374,7 +389,7 @@ repos:
           python3 -m unittest scripts.check_tf_gcp_iam_resource_scope.test_check_tf_gcp_iam_resource_scope
           '
         language: system
-        files: ^scripts/(check_tf_(iam_ec2_scope|iam_elb_scope|iam_ssm_scope|iam_ssm_range_scope|sg_cidrs|kms_secrets_grant|rds_security|runner_network|gcp_iam_resource_scope)|check_portal_target_sg_sources)/
+        files: ^scripts/(check_tf_(iam_ec2_scope|iam_elb_scope|iam_ssm_scope|iam_ssm_range_scope|iam_bedrock_agent_scope|sg_cidrs|kms_secrets_grant|rds_security|runner_network|gcp_iam_resource_scope)|check_portal_target_sg_sources)/
         pass_filenames: false
 
   # Kubernetes schema validation

@@ -25,32 +25,6 @@ from plans.polaris_range_bootstrap import PolarisRangeBootstrapPlan
 logger = logging.getLogger(__name__)
 
 
-def _set_aws_imds_hop_limit(instance_id: str) -> None:
-    """Raise the IMDSv2 hop limit so the a14-kali container can reach IMDS (AWS only).
-
-    The container is one extra hop from the EC2 host's network namespace
-    through the docker bridge; the default hop limit of 1 blocks it from
-    reaching IMDS at 169.254.169.254 and picking up the instance role. GCP
-    has no equivalent (the Vertex shard uses the metadata server directly), so
-    this runs only on the AWS path. Idempotent.
-    """
-    try:
-        import boto3 as _boto3
-
-        _ec2 = _boto3.client("ec2", region_name=os.environ.get("AWS_REGION", "us-east-2"))
-        _ec2.modify_instance_metadata_options(
-            InstanceId=instance_id,
-            HttpPutResponseHopLimit=2,
-            HttpTokens="required",
-            HttpEndpoint="enabled",
-        )
-        logger.info("Set IMDSv2 hop limit=2 on %s for kali container reachability", instance_id)
-    except Exception as e:
-        # Warn rather than fail provisioning — claude inside kali will surface
-        # the loss of creds at runtime if this slip propagates that far.
-        logger.warning("failed to set IMDS hop limit on %s: %s", instance_id, e)
-
-
 def _run_polaris_range_bootstrap(
     instance_data: dict[str, Any],
     instance_id: str,
@@ -59,12 +33,15 @@ def _run_polaris_range_bootstrap(
     *,
     range_id: int = 0,
     provider: str | None = None,
+    agent_role_arn: str = "",
 ) -> None:
     """Run PolarisRangeBootstrapPlan against a polaris range host.
 
     ``instance_data`` is the provisioner instance output; it selects the guest
     transport (SSM for AWS, direct SSH for GCE). ``provider`` defaults to
     ``CLOUD_PROVIDER`` and picks the S3/Bedrock (AWS) vs GCS/Vertex (GCP) steps.
+    ``agent_role_arn`` is the non-secret per-range Polaris Bedrock agent role
+    ARN (Terraform output, #1377); only consumed on the AWS path.
     """
     if not dc_ip:
         raise SetupError(
@@ -87,9 +64,6 @@ def _run_polaris_range_bootstrap(
         len(public_key),
     )
 
-    if resolved_provider != "gcp":
-        _set_aws_imds_hop_limit(instance_id)
-
     execution = build_guest_execution_context(
         instance_data,
         os_type=str(instance_data.get("os", "ubuntu")),
@@ -106,6 +80,7 @@ def _run_polaris_range_bootstrap(
                 self.dc_ip = dc_ip
                 self.public_key = public_key
                 self.range_id = range_id
+                self.agent_role_arn = agent_role_arn
 
         context = plan.get_context(_PolarisCtx())
         result = orchestrator.orchestrate(

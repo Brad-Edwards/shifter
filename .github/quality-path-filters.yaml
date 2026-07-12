@@ -53,7 +53,9 @@ terraform:
   - 'scripts/check_tf_kms_secrets_grant/**'
   - 'scripts/check_tf_rds_security/**'
   - 'scripts/check_tf_iam_ssm_range_scope/**'
+  - 'scripts/check_tf_iam_bedrock_agent_scope/**'
   - 'scripts/check_portal_target_sg_sources/**'
+  - 'shifter/engine/provisioner/terraform/modules/range/**'
 
 k8s:
   - 'platform/k8s/**'
