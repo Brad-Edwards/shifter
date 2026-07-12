@@ -19,35 +19,32 @@ from management.services import is_temporary_ctf_account
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import User
-    from django.http import HttpRequest
 
 
-def authenticate_ctf_participant(
-    request: HttpRequest | None,
-    username: str | None,
-    password: str | None,
-) -> User | None:
+def authenticate_ctf_participant(username: str | None, password: str | None) -> User | None:
     """Return the live CTF participant matching the credentials, else ``None``.
 
     Mirrors ``ModelBackend`` password verification (including the timing-attack
     mitigation for unknown usernames) and then applies the CTF gates: the account
     must be active, a temporary CTF account, and a live participant.
     """
-    user_model = get_user_model()
     if username is None or password is None:
         return None
+
+    user_model = get_user_model()
     try:
         user = user_model._default_manager.get_by_natural_key(username)
     except user_model.DoesNotExist:
         # Run the default password hasher once to keep timing uniform for
         # unknown usernames (matches django.contrib.auth.backends.ModelBackend).
         user_model().set_password(password)
-        return None
-    if not user.check_password(password):
-        return None
-    if not (getattr(user, "is_active", False) and is_temporary_ctf_account(user)):
+        user = None
+    if user is None or not user.check_password(password):
         return None
 
     from ctf.services.participant.accounts import live_participant_for_user
 
-    return user if live_participant_for_user(user) is not None else None
+    is_live_ctf_participant = (
+        user.is_active and is_temporary_ctf_account(user) and live_participant_for_user(user) is not None
+    )
+    return user if is_live_ctf_participant else None

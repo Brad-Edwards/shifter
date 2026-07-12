@@ -53,7 +53,7 @@ class CTFParticipantBackend(_ProfileAwareModelBackend):
             return None
         from ctf.services import authenticate_ctf_participant
 
-        return authenticate_ctf_participant(request, username, password)
+        return authenticate_ctf_participant(username, password)
 
     def user_can_authenticate(self, user: User | AnonymousUser | None) -> bool:
         return user is not None and is_temporary_ctf_account(user) and super().user_can_authenticate(user)

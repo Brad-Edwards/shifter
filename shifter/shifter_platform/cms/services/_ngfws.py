@@ -7,11 +7,7 @@ from typing import TYPE_CHECKING, Any, Literal, cast
 from uuid import UUID
 
 from cms.exceptions import CMSError
-from shared.audit import (
-    AuditAction,
-    AuditActorType,
-    AuditEntityType,
-)
+from shared.audit import AuditAction, AuditActorType, AuditEntityType
 from shared.constants import USER_CANNOT_BE_NONE, USER_MUST_BE_SAVED
 from shared.enums import ResourceStatus
 from shared.log_sanitize import safe_log_value

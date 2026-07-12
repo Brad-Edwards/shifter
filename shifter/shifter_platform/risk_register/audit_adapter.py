@@ -14,9 +14,15 @@ from shared.audit import AuditEvent
 
 
 class DjangoAuditLogWriter:
-    """Persist :class:`~shared.audit.AuditEvent` rows to ``risk_register.AuditLog``."""
+    """Persist :class:`~shared.audit.AuditEvent` rows to ``risk_register.AuditLog``.
 
-    def write(self, event: AuditEvent) -> None:
+    Satisfies the ``shared.audit.AuditWriter`` port structurally. ``write`` is a
+    static method because the mapping is stateless; instances still expose it as
+    a callable ``.write(event)``, so the port binding is unchanged.
+    """
+
+    @staticmethod
+    def write(event: AuditEvent) -> None:
         """Map an audit event onto the durable ``AuditLog`` row.
 
         Raises whatever the ORM raises on a persistence failure; the shared

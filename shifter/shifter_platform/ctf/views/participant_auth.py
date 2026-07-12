@@ -83,7 +83,7 @@ def ctf_login(request: HttpRequest) -> HttpResponse:
         password = request.POST.get("password", "")
         response = _login_throttle_response(request, username)
         if response is None:
-            user = authenticate_ctf_participant(request, username=username, password=password)
+            user = authenticate_ctf_participant(username=username, password=password)
             if user is None:
                 error = "Invalid username or password."
             else:
