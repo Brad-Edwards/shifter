@@ -30,7 +30,7 @@ isolated from other participants' ranges.
 - Connect to range instances with the same SSH/RDP terminal flow used elsewhere in
   the portal. See [Terminal](terminal).
 
-You do not launch or destroy your CTF range yourself — the platform provisions it for
+You do not launch or destroy your CTF range yourself—the platform provisions it for
 you and cleans it up after the event.
 
 ## Challenges
@@ -53,7 +53,7 @@ prerequisite, so the list can grow during the event.
 2. Recover the flag from your range.
 3. Enter the flag in the submission box and submit.
 
-Flags are checked server-side against a stored hash — the platform never holds your
+Flags are checked server-side against a stored hash—the platform never holds your
 flag in plaintext. Submissions are rate-limited: an event may set a cooldown between
 attempts and a per-challenge attempt limit. A correct submission scores the
 challenge's points the first time; later correct submissions for the same challenge do

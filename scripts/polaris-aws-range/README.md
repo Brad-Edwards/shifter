@@ -10,10 +10,10 @@ They are gitignored and must not be committed:
 
 | File | Produced by |
 |---|---|
-| `provisioning_state.json` | `orchestrate_provisioning.py` — resumable machine-readable batch state |
-| `provisioning_status.md` | `orchestrate_provisioning.py` — human-readable batch log |
-| `health_report.md` | `check_range_health.py --output …` — per-range health sweep |
-| `postprovision_status.md` | post-provision supervisor scripts — splice/Bedrock follow-up status |
+| `provisioning_state.json` | `orchestrate_provisioning.py`—resumable machine-readable batch state |
+| `provisioning_status.md` | `orchestrate_provisioning.py`—human-readable batch log |
+| `health_report.md` | `check_range_health.py --output …`—per-range health sweep |
+| `postprovision_status.md` | post-provision supervisor scripts—splice/Bedrock follow-up status |
 
 Regenerate them by re-running the corresponding command during an operator
 session. `adr_guard`'s `no-tracked-generated-artifacts` check (ADR-004-R8)

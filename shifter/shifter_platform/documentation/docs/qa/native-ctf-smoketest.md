@@ -1,4 +1,4 @@
-# Native CTF — Smoke & Validation Protocol
+# Native CTF—Smoke & Validation Protocol
 
 Validates the **native Shifter CTF** (the `ctf/` app at `/ctf/`): events, challenges,
 flags, prerequisites, scoring, teams, scoreboard, and per-participant range
@@ -7,11 +7,11 @@ provisioning. The standalone Polaris CTFd is out of scope.
 Run this against a freshly deployed tenant before trusting it for a real event
 (for example, before a Polaris scenario run). The protocol has two parts:
 
-- **Part 1–2 — Smoke:** the organizer and participant happy paths work end to end.
-- **Part 3 — Regression guards:** the concurrency, integrity, and state-machine
+- **Part 1–2—Smoke:** the organizer and participant happy paths work end to end.
+- **Part 3—Regression guards:** the concurrency, integrity, and state-machine
   failure modes found in the native CTF (see [Known open issues](#known-open-issues)).
   These are scripted negative tests; several currently **fail** until the linked
-  issues are fixed — that is the point of having them.
+  issues are fixed—that is the point of having them.
 
 Each check is marked **[CLI/DB]** (an operator runs it with cloud credentials) or
 **[Browser]** (an operator drives the UI; interactive login needs Cognito MFA and
@@ -34,7 +34,7 @@ entrypoint fetches `DJANGO_SECRET_KEY` and the DB/cache/S3 credentials from Secr
 Manager into the main process; a fresh `docker exec` does not inherit them and the
 command fails with `DJANGO_SECRET_KEY environment variable is required`.
 
-Use the secrets-aware path instead — either the `shifter-ops` MCP
+Use the secrets-aware path instead—either the `shifter-ops` MCP
 `run_manage_command` tool, or run inside the container with the entrypoint
 environment sourced. Throughout this doc, `manage <cmd>` is shorthand for "run
 `<cmd>` via the secrets-aware path."
@@ -48,7 +48,7 @@ environment sourced. Throughout this doc, `manage <cmd>` is shorthand for "run
 
 ---
 
-## Part 1 — Organizer journey
+## Part 1—Organizer journey
 
 > Goal: an organizer can build a complete, releasable event.
 
@@ -106,7 +106,7 @@ print('status', e.status, 'participants', CTFParticipant.objects.filter(event=e)
 
 ---
 
-## Part 2 — Participant journey
+## Part 2—Participant journey
 
 > Goal: a participant can log in with a temporary account, change the bootstrap password, solve, score, and get a working range.
 
@@ -133,7 +133,7 @@ print('correct_rows', CTFSubmission.objects.filter(participant=p, is_correct=Tru
 
 ### 2.3 Scoreboard **[Browser + CLI/DB]**
 
-1. Open `/ctf/scoreboard/` — A appears with the right score.
+1. Open `/ctf/scoreboard/`—A appears with the right score.
 2. After `scoreboard_freeze_at`, new solves must **not** change the visible board.
 
 ### 2.4 Participant range lifecycle **[Browser + CLI/DB]**
@@ -156,7 +156,7 @@ aws ec2 describe-instances --profile "$AWS_PROFILE" --region "$AWS_REGION" \
 
 ---
 
-## Part 3 — Regression guards
+## Part 3—Regression guards
 
 Scripted negative tests for the failure modes the adversarial audit confirmed.
 Each names the issue it guards and the pass criterion. Run them with two
@@ -187,7 +187,7 @@ print('correct_rows', CTFSubmission.objects.filter(participant_id='${PID}', chal
 # PASS iff correct_rows == 1
 ```
 
-Backstop check — the partial unique constraints exist after migrations:
+Backstop check—the partial unique constraints exist after migrations:
 
 ```bash
 manage makemigrations --check --dry-run        # expect "No changes"
@@ -205,7 +205,7 @@ Two participants on one team both solve challenge X.
 ### G-C. Range lifecycle pk vs range_id
 
 Provision a participant range, then in the DB force `RangeInstance.range_id` to
-differ from its `pk` (the production case — `range_id` is set asynchronously):
+differ from its `pk` (the production case—`range_id` is set asynchronously):
 
 ```bash
 manage shell -c "from cms.models import RangeInstance; r=RangeInstance.objects.latest('created_at'); \
@@ -214,7 +214,7 @@ r.range_id = (r.range_id or 0) + 1000; r.save(update_fields=['range_id']); print
 
 Drive **stop / start / destroy** from the participant UI.
 
-- **Pass:** each operates on the correct range — no `CMSError "Range not found"`,
+- **Pass:** each operates on the correct range—no `CMSError "Range not found,"`
   no orphaned running range after destroy. Issue [#1139](https://github.com/Brad-Edwards/shifter/issues/1139).
   (Unit tests mock the bridges and miss this; it must be exercised live.)
 
@@ -236,9 +236,9 @@ Pause the event.
 
 ### G-F. Event-task reschedule on window edit
 
-Open registration (schedules `EVENT_END` at T). Activate. Edit `event_end` to T+1h.
+Open registration (schedules `EVENT_END` at T). Activate. Edit `event_end` to T plus 1 hour.
 
-- **Pass:** the pending `EVENT_END` `CTFScheduledTask.scheduled_for` now equals T+1h
+- **Pass:** the pending `EVENT_END` `CTFScheduledTask.scheduled_for` now equals T plus 1 hour
   and no stale PENDING task remains at T. Issue [#1141](https://github.com/Brad-Edwards/shifter/issues/1141).
 
 ```bash
@@ -256,7 +256,7 @@ print(list(CTFScheduledTask.objects.filter(task_type='EVENT_END', status='PENDIN
 
 ---
 
-## Part 4 — Teardown
+## Part 4—Teardown
 
 ```bash
 # Destroy any participant ranges, then confirm none are orphaned (cost guard).
