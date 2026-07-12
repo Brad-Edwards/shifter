@@ -26,7 +26,7 @@ def _ctf_login_rate_limited(request: HttpRequest, username: str) -> tuple[bool, 
     from django.conf import settings
     from django.core.cache import caches
 
-    from risk_register.services import get_client_ip
+    from shared.audit import get_client_ip
 
     window = int(getattr(settings, "CTF_LOGIN_RATE_LIMIT_WINDOW_SECONDS", 300))
     maximum = int(getattr(settings, "CTF_LOGIN_RATE_LIMIT_MAX", 5))
@@ -74,7 +74,7 @@ def ctf_login(request: HttpRequest) -> HttpResponse:
     from django.contrib.auth import login
     from django.urls import reverse
 
-    from config.auth import CTFParticipantBackend
+    from ctf.services import authenticate_ctf_participant
 
     response = None
     error = None
@@ -83,12 +83,7 @@ def ctf_login(request: HttpRequest) -> HttpResponse:
         password = request.POST.get("password", "")
         response = _login_throttle_response(request, username)
         if response is None:
-            user = CTFParticipantBackend().authenticate(
-                request,
-                username=username,
-                password=password,
-                ctf_participant=True,
-            )
+            user = authenticate_ctf_participant(request, username=username, password=password)
             if user is None:
                 error = "Invalid username or password."
             else:

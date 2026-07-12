@@ -17,6 +17,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 
 from risk_register.models import AuditLog
+from shared.audit import AuditAction
 from shared.auth import CTF_ORGANIZER_GROUP, CTF_PARTICIPANT_GROUP
 
 User = get_user_model()
@@ -49,7 +50,7 @@ def test_migration_revokes_and_audits_existing_organizers():
     migration_rows = AuditLog.objects.filter(
         entity_type="user",
         entity_id=org_user.id,
-        action=AuditLog.Action.ROLE_SYNC,
+        action=AuditAction.ROLE_SYNC,
         context__icontains="separated from self-service",
     )
     assert migration_rows.count() == 1
@@ -64,4 +65,4 @@ def test_migration_revokes_and_audits_existing_organizers():
 def test_migration_no_op_when_no_organizer_members():
     Group.objects.get_or_create(name=CTF_ORGANIZER_GROUP)
     _MIGRATION.revoke_self_service_organizers(global_apps, None)
-    assert AuditLog.objects.filter(action=AuditLog.Action.ROLE_SYNC).count() == 0
+    assert AuditLog.objects.filter(action=AuditAction.ROLE_SYNC).count() == 0

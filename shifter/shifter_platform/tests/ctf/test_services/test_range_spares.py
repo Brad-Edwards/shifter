@@ -38,6 +38,7 @@ from ctf.services.range.spares import (
     provision_event_spares,
 )
 from risk_register.models import AuditLog
+from shared.audit import AuditAction
 
 _NO_AGENT_SCENARIO_DEFINITION = {
     "instances": [
@@ -128,7 +129,7 @@ class TestProvisionEventSpares:
             instance = RangeInstance.objects.get(pk=spare.range_instance_id)
             assert instance.user_id == spare.owner_user_id
 
-        audit = AuditLog.objects.get(action=AuditLog.Action.SPARE_PROVISION)
+        audit = AuditLog.objects.get(action=AuditAction.SPARE_PROVISION)
         assert audit.actor_id == organizer_user.id
         assert audit.new_state["event_id"] == str(event_with_scenario.pk)
         assert audit.new_state["created"] == 2
@@ -450,12 +451,29 @@ class TestCleanupEventSparesBestEffort:
     """
 
     @pytest.mark.django_db
-    def test_swallows_a_real_cleanup_failure_without_raising(self):
+    def test_swallows_a_real_cleanup_failure_without_raising(self, monkeypatch):
         import uuid
 
-        from ctf.services.range.lifecycle import _cleanup_event_spares_best_effort
+        from ctf.services.range import lifecycle
+
+        # Spy on the module logger (app loggers set propagate=False, so caplog's
+        # root handler would miss the record). This asserts the swallow path is
+        # the one exercised — the failure is logged for on-call visibility with
+        # the event id and the exception traceback, not silently discarded.
+        calls: list[tuple] = []
+        monkeypatch.setattr(
+            lifecycle.logger,
+            "exception",
+            lambda msg, *args, **kwargs: calls.append((msg, args)),
+        )
 
         # No event exists for this id, so the real `cleanup_event_spares` call
         # inside genuinely raises `CTFNotFoundError`; the wrapper must swallow it
         # rather than let it propagate.
-        _cleanup_event_spares_best_effort(uuid.uuid4())
+        event_id = uuid.uuid4()
+        lifecycle._cleanup_event_spares_best_effort(event_id)
+
+        assert calls, "expected the swallowed spare-cleanup failure to be logged"
+        msg, args = calls[0]
+        assert "spare-pool cleanup failed" in msg
+        assert any(str(event_id) == str(arg) for arg in args)

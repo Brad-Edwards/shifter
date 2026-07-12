@@ -589,7 +589,7 @@ repos:
         name: architecture (import linter)
         entry: bash -c 'cd shifter/shifter_platform && uv run lint-imports --config ../../.importlinter'
         language: system
-        files: ^(shifter/shifter_platform/(cms|engine|management|mission_control|shared|ctf)/.*\.py$|\.importlinter$)
+        files: ^(shifter/shifter_platform/(cms|engine|management|mission_control|shared|ctf|config|risk_register)/.*\.py$|\.importlinter$)
         pass_filenames: false
         verbose: true
 

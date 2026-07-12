@@ -83,36 +83,35 @@ def _range_summary(user: User | None) -> dict[str, object]:
 
 
 def _event_summary(user: User | None) -> dict[str, object]:
-    """Return a bounded active-event summary, failing closed on any error."""
-    event = None
-    if user is not None:
-        try:
-            from ctf.bridges import get_user_role
+    """Return a bounded active-event summary, failing closed on any error.
 
-            event = getattr(get_user_role(user), "active_ctf_event", None)
-        except Exception:
-            logger.exception("dashboard summary: active-event lookup failed")
-            event = None
-    if event is None:
+    Consumes the public ``ctf.services`` facade rather than the CTF-owned
+    outbound ``ctf.bridges`` module (ADR-001, #1523).
+    """
+    if user is None:
         return {"present": False, "name": None}
-    name = getattr(event, "name", None)
-    return {"present": True, "name": str(name) if name is not None else None}
+    try:
+        from ctf.services import active_event_summary
+
+        return active_event_summary(user)
+    except Exception:
+        logger.exception("dashboard summary: active-event lookup failed")
+        return {"present": False, "name": None}
 
 
 def _risk_register_summary(request: Request) -> dict[str, object]:
-    """Return the risk-register load, gated by advisory access, failing closed."""
-    from risk_register.access import principal_has_risk_register_access
+    """Return the risk-register load, gated by advisory access, failing closed.
 
-    if not principal_has_risk_register_access(request):
-        return {"accessible": False, "open_count": None}
+    Consumes the public ``risk_register.services`` facade rather than reaching
+    into risk-register models or access policy directly (ADR-001, #1523).
+    """
     try:
-        from risk_register.models import Risk, Status
+        from risk_register.services import dashboard_risk_summary
 
-        open_count = Risk.objects.filter(status=Status.OPEN).count()
+        return dashboard_risk_summary(request)
     except Exception:
-        logger.exception("dashboard summary: risk-register count failed")
-        return {"accessible": True, "open_count": None}
-    return {"accessible": True, "open_count": open_count}
+        logger.exception("dashboard summary: risk-register lookup failed")
+        return {"accessible": False, "open_count": None}
 
 
 class DashboardSummaryView(APIView):

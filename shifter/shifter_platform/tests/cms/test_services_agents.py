@@ -139,6 +139,7 @@ class TestCreateAgent:
 
     def test_passes_upload_method_through(self, user, windows_os):
         from risk_register.models import AuditLog
+        from shared.audit import AuditAction, AuditEntityType
 
         agent = services.create_agent(
             user,
@@ -150,9 +151,7 @@ class TestCreateAgent:
             sha256="abc123",
             upload_method="presigned",
         )
-        row = AuditLog.objects.get(
-            entity_type=AuditLog.EntityType.AGENT, entity_id=agent.id, action=AuditLog.Action.CREATE
-        )
+        row = AuditLog.objects.get(entity_type=AuditEntityType.AGENT, entity_id=agent.id, action=AuditAction.CREATE)
         assert row.new_state["upload_method"] == "presigned"
 
     def test_propagates_asset_error_on_invalid_os(self, user):
