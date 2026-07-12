@@ -165,13 +165,12 @@ See [`aws-runner-provisioning-runbook.md`](aws-runner-provisioning-runbook.md).
 
 The `global/iam` stack (applied by bootstrap, not by `deploy.yml`) owns the
 GitHub OIDC provider, the `github-actions-shifter-<env>` deploy role, its five
-permission policies, the `shifter-<env>-ci-role-boundary` policy, **and** the
-account-scoped `cursor-bedrock-agent` user (via `cursor-bedrock.tf`).
+permission policies, and the `shifter-<env>-ci-role-boundary` policy.
 `terraform destroy` of the env stacks does not touch any of it. **Destroy
 `global/iam` before deleting the state bucket** (the bucket holds its state).
 Skipping this is the #1431 failure: a later fresh bootstrap starts from empty
 state and collides with these surviving resources (`EntityAlreadyExists` on the
-cursor-bedrock user and the CI boundary policy).
+CI boundary policy).
 
 ```bash
 cd platform/terraform/global/iam
@@ -179,9 +178,6 @@ terraform init -reconfigure -backend-config=<env>.s3.tfbackend -backend-config="
 terraform destroy -auto-approve -var-file=<env>.tfvars
 ```
 
-Destroying `global/iam` deletes the `cursor-bedrock-agent` user and rotates its
-access key; a fresh bootstrap recreates both. That user is unused tooling slated
-for removal (tracked in #1473); once it is gone this recreate churn goes away.
 Also delete any stray temporary `github-actions-shifter-<env>-bootstrap` role
 (bootstrap normally removes it).
 
@@ -208,8 +204,8 @@ secrets (`AWS_ROLE_ARN`, `TF_INFRA_STATE_BUCKET`, `TF_VARS_PROD_PORTAL`,
 ## 8. Verify the account is empty
 
 Confirm no residual EC2, ASG, RDS, ALB, Network Firewall, ECR, IAM
-`github-actions-shifter-*` roles, `shifter-<env>-*` policies,
-`cursor-bedrock-agent` user, OIDC provider, `<env>-range` / `/vpc/` CloudWatch
-log groups, or `{uuid}` state bucket remain before a fresh bootstrap. Preserve
+`github-actions-shifter-*` roles, `shifter-<env>-*` policies, OIDC provider,
+`<env>-range` / `/vpc/` CloudWatch log groups, or `{uuid}` state bucket remain
+before a fresh bootstrap. Preserve
 only what you intend to reuse (for example range AMIs and their `/shifter/ami/*`
 SSM parameters).

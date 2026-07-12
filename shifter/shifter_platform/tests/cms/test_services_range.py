@@ -164,6 +164,7 @@ class TestCreateRangeBehavior:
     def test_marks_owned_range_failed_when_engine_dispatch_fails(self, user, make_agent, hydratable_scenario, settings):
         from engine.models import Range as EngineRange
         from risk_register.models import AuditLog
+        from shared.audit import AuditAction, AuditEntityType
 
         settings.CLOUD_PROVIDER = "aws"
         settings.LOCAL_PROVISIONER = None
@@ -182,8 +183,8 @@ class TestCreateRangeBehavior:
         assert range_instance.deleted_at is not None
         assert EngineRange.objects.get(user=user).status == EngineRange.Status.FAILED
         assert not AuditLog.objects.filter(
-            entity_type=AuditLog.EntityType.RANGE,
-            action=AuditLog.Action.PROVISION,
+            entity_type=AuditEntityType.RANGE,
+            action=AuditAction.PROVISION,
             actor_id=user.id,
         ).exists()
 

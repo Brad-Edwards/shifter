@@ -13,8 +13,12 @@ from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_http_methods, require_POST
 
 from config import identity_platform as identity_platform_auth
-from risk_register.models import AuditLog
-from risk_register.services import AuthPrincipal, audit_auth_event, get_client_ip
+from shared.audit import (
+    AuditAction,
+    AuthPrincipal,
+    audit_auth_event,
+    get_client_ip,
+)
 from shared.auth import is_ctf_organizer, is_ctf_participant
 from shared.errors import classify_user_message
 
@@ -183,7 +187,7 @@ def logout_view(request):
     # Capture the audit identity and request context before Django ``logout``
     # flushes the session below.
     audit_auth_event(
-        action=AuditLog.Action.LOGOUT,
+        action=AuditAction.LOGOUT,
         principal=AuthPrincipal(user_id=request.user.id, email=email),
         source_ip=get_client_ip(request),
         user_agent=request.META.get("HTTP_USER_AGENT", "")[:500],

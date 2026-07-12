@@ -8,7 +8,11 @@ from uuid import UUID
 
 from cms.exceptions import CMSError
 from cms.models import AgentConfig, RangeInstance
-from risk_register.models import AuditLog
+from shared.audit import (
+    AuditAction,
+    AuditActorType,
+    AuditEntityType,
+)
 from shared.constants import USER_CANNOT_BE_NONE, USER_MUST_BE_SAVED
 from shared.enums import ResourceStatus
 from shared.schemas.persistence import wrap_persisted_spec
@@ -235,11 +239,11 @@ def _audit_range_provision(
 ) -> None:
     """Write the audit-log entry for a successful create_range request."""
     _audit_log_call(
-        entity_type=AuditLog.EntityType.RANGE,
+        entity_type=AuditEntityType.RANGE,
         # Range ID not yet assigned at this point.
         entity_id=0,
-        action=AuditLog.Action.PROVISION,
-        actor_type=AuditLog.ActorType.USER,
+        action=AuditAction.PROVISION,
+        actor_type=AuditActorType.USER,
         actor_id=user.id,
         new_state={
             "request_id": str(request_id),

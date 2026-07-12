@@ -16,6 +16,10 @@ from cms.exceptions import CMSError
 from cms.models import RangeInstance
 from engine.models import Range as EngineRange
 from risk_register.models import AuditLog
+from shared.audit import (
+    AuditAction,
+    AuditEntityType,
+)
 from shared.cloud.exceptions import CloudTaskError
 from shared.enums import ResourceStatus
 from tests.conftest import INVALID_RANGE_IDS, INVALID_USERS
@@ -64,7 +68,7 @@ class TestDestroyRange:
         ri = provision_range(user, range_id=42)
         services.destroy_range(user, ri.pk)
         assert AuditLog.objects.filter(
-            entity_type=AuditLog.EntityType.RANGE, entity_id=ri.pk, action=AuditLog.Action.DEPROVISION
+            entity_type=AuditEntityType.RANGE, entity_id=ri.pk, action=AuditAction.DEPROVISION
         ).exists()
 
     def test_reverts_when_engine_dispatch_fails(self, user, provision_range, settings):
@@ -120,7 +124,7 @@ class TestCancelRange:
         provision_range(user, range_id=42)
         services.cancel_range(user, 42)
         assert AuditLog.objects.filter(
-            entity_type=AuditLog.EntityType.RANGE, entity_id=42, action=AuditLog.Action.CANCEL
+            entity_type=AuditEntityType.RANGE, entity_id=42, action=AuditAction.CANCEL
         ).exists()
 
     def test_cancel_retry_is_idempotent_without_duplicate_audit(self, user, provision_range):
@@ -130,9 +134,9 @@ class TestCancelRange:
         assert _reload(42).status == ResourceStatus.DESTROYING.value
         assert (
             AuditLog.objects.filter(
-                entity_type=AuditLog.EntityType.RANGE,
+                entity_type=AuditEntityType.RANGE,
                 entity_id=42,
-                action=AuditLog.Action.CANCEL,
+                action=AuditAction.CANCEL,
             ).count()
             == 1
         )
@@ -145,9 +149,9 @@ class TestCancelRange:
 
         assert _reload(42).status == ResourceStatus.PROVISIONING.value
         assert not AuditLog.objects.filter(
-            entity_type=AuditLog.EntityType.RANGE,
+            entity_type=AuditEntityType.RANGE,
             entity_id=42,
-            action=AuditLog.Action.CANCEL,
+            action=AuditAction.CANCEL,
         ).exists()
 
     def test_raises_cms_error_when_range_not_found(self, user):
@@ -194,9 +198,9 @@ class TestCancelRangeByRequestId:
         assert _reload(42).status == ResourceStatus.DESTROYING.value
         assert (
             AuditLog.objects.filter(
-                entity_type=AuditLog.EntityType.RANGE,
+                entity_type=AuditEntityType.RANGE,
                 entity_id=ri.id,
-                action=AuditLog.Action.CANCEL,
+                action=AuditAction.CANCEL,
             ).count()
             == 1
         )
@@ -209,9 +213,9 @@ class TestCancelRangeByRequestId:
 
         assert _reload(42).status == ResourceStatus.PROVISIONING.value
         assert not AuditLog.objects.filter(
-            entity_type=AuditLog.EntityType.RANGE,
+            entity_type=AuditEntityType.RANGE,
             entity_id=ri.id,
-            action=AuditLog.Action.CANCEL,
+            action=AuditAction.CANCEL,
         ).exists()
 
     def test_raises_cms_error_when_range_not_found(self, user):

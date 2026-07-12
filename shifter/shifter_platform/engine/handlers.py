@@ -12,9 +12,13 @@ from django.utils import timezone
 
 from engine.models import Range
 from engine.services import record_aces_operation_status, record_aces_runtime_snapshot
-from risk_register.models import AuditLog
-from risk_register.services import StateChange, audit_log_system_event
 from shared.aces.contracts import EVENT_TYPE_ACES_OPERATION, EVENT_TYPE_ACES_SNAPSHOT
+from shared.audit import (
+    AuditAction,
+    AuditEntityType,
+    StateChange,
+    audit_log_system_event,
+)
 from shared.enums import ResourceStatus
 from shared.messages.envelope import parse_sns_message
 from shared.messages.events import (
@@ -34,13 +38,13 @@ logger = logging.getLogger(__name__)
 def _status_to_action(status: str) -> str:
     """Map range status to audit action."""
     status_action_map = {
-        ResourceStatus.READY.value: AuditLog.Action.READY,
-        ResourceStatus.FAILED.value: AuditLog.Action.FAILED,
-        ResourceStatus.DESTROYED.value: AuditLog.Action.DEPROVISION,
-        ResourceStatus.PROVISIONING.value: AuditLog.Action.PROVISION,
-        ResourceStatus.DESTROYING.value: AuditLog.Action.DEPROVISION,
+        ResourceStatus.READY.value: AuditAction.READY,
+        ResourceStatus.FAILED.value: AuditAction.FAILED,
+        ResourceStatus.DESTROYED.value: AuditAction.DEPROVISION,
+        ResourceStatus.PROVISIONING.value: AuditAction.PROVISION,
+        ResourceStatus.DESTROYING.value: AuditAction.DEPROVISION,
     }
-    return status_action_map.get(status, AuditLog.Action.UPDATE)
+    return status_action_map.get(status, AuditAction.UPDATE)
 
 
 def process_event(message: str | dict) -> None:
@@ -174,7 +178,7 @@ def _handle_status_updated(event: RangeStatusUpdatedPayload) -> None:
 
     # Audit log the status change
     audit_log_system_event(
-        entity_type=AuditLog.EntityType.RANGE,
+        entity_type=AuditEntityType.RANGE,
         entity_id=range_id,
         action=_status_to_action(new_status),
         source="engine.handlers",
@@ -271,9 +275,9 @@ def _handle_ngfw_event(event: NGFWEventPayload) -> None:
     # UUID app_id as entity_id makes the audit write raise ValueError, so the
     # NGFW audit row is lost — see tests/engine/test_handlers.py.)
     audit_log_system_event(
-        entity_type=AuditLog.EntityType.NGFW,
+        entity_type=AuditEntityType.NGFW,
         entity_id=0,
-        action=_status_to_action(status) if status else AuditLog.Action.UPDATE,
+        action=_status_to_action(status) if status else AuditAction.UPDATE,
         source="engine.handlers",
         state=StateChange(
             new={

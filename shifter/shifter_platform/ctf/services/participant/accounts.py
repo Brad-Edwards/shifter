@@ -180,15 +180,20 @@ def rename_participant_username(
             participant.user.save(update_fields=["username"])
         except IntegrityError as exc:
             raise CTFValidationError("Username is already in use", code="CTF_DUPLICATE_USERNAME") from exc
-        from risk_register.models import AuditLog
-        from risk_register.services import AuditEvent, audit_log
+        from shared.audit import (
+            AuditAction,
+            AuditActorType,
+            AuditEntityType,
+            AuditEvent,
+            audit_log,
+        )
 
         audit_log(
             AuditEvent(
-                entity_type=AuditLog.EntityType.USER,
+                entity_type=AuditEntityType.USER,
                 entity_id=participant.user.pk,
-                action=AuditLog.Action.UPDATE,
-                actor_type=AuditLog.ActorType.USER,
+                action=AuditAction.UPDATE,
+                actor_type=AuditActorType.USER,
                 actor_id=actor.pk,
                 previous_state={"username": old_username},
                 new_state={"username": normalized},

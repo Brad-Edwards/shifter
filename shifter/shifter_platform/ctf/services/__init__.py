@@ -52,6 +52,7 @@ from ctf.services.challenge import (
     verify_flag,
     verify_single_flag,
 )
+from ctf.services.dashboard import active_event_summary
 from ctf.services.event import (
     activate_event,
     archive_event,
@@ -60,6 +61,7 @@ from ctf.services.event import (
     create_event,
     delete_event,
     end_event,
+    event_pk_if_exists,
     force_delete_event,
     get_event,
     get_event_stats,
@@ -82,6 +84,7 @@ from ctf.services.hint import (
     use_hint,
 )
 from ctf.services.participant import (
+    authenticate_ctf_participant,
     bulk_import_participants,
     delete_participant,
     disqualify_participant,
@@ -118,12 +121,14 @@ from ctf.services.submission import (
 
 __all__ = [
     "activate_event",
+    "active_event_summary",
     "add_challenge_file",
     "add_flag",
     "add_hint",
     "add_prerequisite",
     "archive_event",
     "assign_participant_bracket",
+    "authenticate_ctf_participant",
     "bulk_import_participants",
     "calculate_score",
     "cancel_event",
@@ -140,6 +145,7 @@ __all__ = [
     "destroy_participant_range",
     "disqualify_participant",
     "end_event",
+    "event_pk_if_exists",
     "force_delete_event",
     "get_available_challenges",
     "get_bracket",

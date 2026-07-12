@@ -23,6 +23,10 @@ from cms.assets.services import (
 )
 from cms.models import AgentConfig, AgentType, OperatingSystem
 from risk_register.models import AuditLog
+from shared.audit import (
+    AuditAction,
+    AuditEntityType,
+)
 
 pytestmark = pytest.mark.django_db
 
@@ -138,18 +142,14 @@ class TestCreateAgent:
     def test_logs_activity(self, user, windows_os):
         agent = create_agent(user, _spec(name="Logged Agent", filename="logged.msi"))
 
-        row = AuditLog.objects.get(
-            entity_type=AuditLog.EntityType.AGENT, entity_id=agent.id, action=AuditLog.Action.CREATE
-        )
+        row = AuditLog.objects.get(entity_type=AuditEntityType.AGENT, entity_id=agent.id, action=AuditAction.CREATE)
         assert row.new_state["name"] == "Logged Agent"
         assert row.new_state["filename"] == "logged.msi"
         assert row.actor_id == user.id
 
     def test_logs_upload_method_when_provided(self, user, windows_os):
         agent = create_agent(user, _spec(name="Presigned Agent", upload_method="presigned"))
-        row = AuditLog.objects.get(
-            entity_type=AuditLog.EntityType.AGENT, entity_id=agent.id, action=AuditLog.Action.CREATE
-        )
+        row = AuditLog.objects.get(entity_type=AuditEntityType.AGENT, entity_id=agent.id, action=AuditAction.CREATE)
         assert row.new_state["upload_method"] == "presigned"
 
     def test_raises_for_invalid_os_slug(self, user):
@@ -205,9 +205,7 @@ class TestDeleteAgent:
         agent = make_agent(user)
         delete_agent(agent)
 
-        row = AuditLog.objects.get(
-            entity_type=AuditLog.EntityType.AGENT, entity_id=agent.id, action=AuditLog.Action.DELETE
-        )
+        row = AuditLog.objects.get(entity_type=AuditEntityType.AGENT, entity_id=agent.id, action=AuditAction.DELETE)
         assert row.previous_state["name"] == agent.name
         assert row.actor_id == user.id
 

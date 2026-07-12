@@ -71,10 +71,9 @@
   {
     "rule_id": "ADR-004-R11",
     "owner": "@Brad-Edwards",
-    "reason": "CKV_AWS_273 / CKV_AWS_274 / CKV_AWS_40 / CKV2_AWS_22 (IAM users without SSO / with AdministratorAccess / direct policy attachment / console access): apply to programmatic-only service accounts (cursor-bedrock and similar) where there is no human and SSO does not apply. Each affected user is access-key-only (no console password) and scoped via inline policy.",
+    "reason": "CKV_AWS_273 / CKV_AWS_274 / CKV_AWS_40 / CKV2_AWS_22 (IAM users without SSO / with AdministratorAccess / direct policy attachment / console access): apply to the se-admins IAM users, PANW SEs who need admin access to the dev AWS account where AWS SSO is not configured. Console access with a first-login password reset is required; AdministratorAccess is attached by design.",
     "expires_on": "2027-05-26",
     "paths": [
-      "platform/terraform/global/iam/",
       "platform/terraform/global/se-admins/"
     ]
   },
