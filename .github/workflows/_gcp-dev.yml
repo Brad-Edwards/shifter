@@ -96,8 +96,12 @@ jobs:
       - run: /tmp/kubeconform -strict -summary /tmp/gcp-platform.yaml
 
   deploy:
+    # Runs on the GCP tenant's own runner (label gcp-dev), provisioned by
+    # `deploy.py runners --cloud gcp` (issue #1546), so a GCP dev tenant deploys
+    # without borrowing the AWS self-hosted fleet. gcp-dev is self-hosted-class
+    # to the ADR-003-R5 exposure checker, so the PR gate below still applies.
     name: Deploy (${{ inputs.environment }})
-    runs-on: self-hosted
+    runs-on: gcp-dev
     environment: ${{ inputs.github_environment }}
     needs: validate
     if: inputs.deploy_changes && github.event_name != 'pull_request'

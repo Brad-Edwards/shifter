@@ -36,6 +36,13 @@ try:
 except ImportError:
     RUNNER_AVAILABLE = False
 
+try:
+    from gcp_runner import get_gcp_runner_config, provision_and_register_gcp_runners
+
+    GCP_RUNNER_AVAILABLE = True
+except ImportError:
+    GCP_RUNNER_AVAILABLE = False
+
 HELP_HEADLESS = "Non-interactive preflight: fail on missing prerequisites without prompting (auto-detected off a TTY)"
 _AWS_COMPONENTS = ("core", "range", "portal")
 
@@ -158,39 +165,84 @@ def runners_deployment(
     )
 
 
+def gcp_runners_deployment(
+    env: str,
+    project_id: str,
+    region: str,
+    zone: str,
+    *,
+    dry_run: bool = False,
+    runner_count: int | None = None,
+    labels: str | None = None,
+) -> None:
+    """Provision + register GCP-native self-hosted runners (issue #1546).
+
+    The GCP counterpart to :func:`runners_deployment`: Terraform provisions the
+    GCE fleet plus a mandatory dedicated custom VPC (ADR-008-R8, no opt-out),
+    then each runner is registered over ``gcloud compute ssh --tunnel-through-iap``
+    with a per-runner token delivered over stdin and verified online + labeled via
+    the GitHub runners API. Tokens are minted per runner and never persisted (see
+    gcp_runner.py). Uses the operator's default gcloud/ADC identity (no profile).
+    """
+    if not GCP_RUNNER_AVAILABLE:
+        error("GCP runner module not available - cannot provision GCP runners")
+        sys.exit(1)
+    if not project_id:
+        error("GCP runner provisioning requires --project-id (or PANW_GCP_DEV / repo-root .env)")
+        sys.exit(1)
+
+    defaults = BootstrapConfig(env=env)
+    runner_config = get_gcp_runner_config(
+        env=env,
+        project_id=project_id,
+        region=region,
+        zone=zone,
+        github_org=defaults.github_org,
+        github_repo=defaults.github_repo,
+        labels=labels,
+    )
+    provision_and_register_gcp_runners(
+        runner_config,
+        dry_run=dry_run,
+        runner_count=runner_count,
+    )
+
+
 def _missing_dependency_lines(commands: dict[str, str]) -> list[str]:
     """Return formatted '  - cmd: desc' lines for each command not found on PATH."""
     return [f"  - {cmd}: {desc}" for cmd, desc in commands.items() if not shutil.which(cmd)]
 
 
-def check_dependencies(command: str | None = None) -> None:
-    """Check command-specific dependencies before starting."""
-    required = {"git": "Git - https://git-scm.com/downloads"}
+# Tool -> install-hint. `_required_tools` selects the subset a command needs.
+_TOOL_HINTS = {
+    "git": "Git - https://git-scm.com/downloads",
+    "aws": "AWS CLI - https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html",
+    "terraform": "Terraform - https://developer.hashicorp.com/terraform/downloads",
+    "gcloud": "Google Cloud CLI - https://cloud.google.com/sdk/docs/install",
+    "gh": "GitHub CLI - https://cli.github.com/",
+    "ssh-keygen": "OpenSSH client tools - https://www.openssh.com/",
+    "docker": "Docker - https://docs.docker.com/engine/install/",
+    "kubectl": "kubectl - https://kubernetes.io/docs/tasks/tools/",
+    "helm": "Helm - https://helm.sh/docs/intro/install/",
+}
 
-    if command in {None, "bootstrap", "terraform", "full", "runners"}:
-        required.update(
-            {
-                "aws": "AWS CLI - https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html",
-                "terraform": "Terraform - https://developer.hashicorp.com/terraform/downloads",
-            }
-        )
 
-    # The runners path mints registration tokens via the GitHub CLI.
-    if command == "runners":
-        required["gh"] = "GitHub CLI - https://cli.github.com/"
-
+def _required_tools(command: str | None, cloud: str | None) -> set[str]:
+    """Return the set of required CLI tools for a bootstrap command."""
     if command == "gdc-bootstrap":
-        required.update(
-            {
-                "gcloud": "Google Cloud CLI - https://cloud.google.com/sdk/docs/install",
-                "ssh-keygen": "OpenSSH client tools - https://www.openssh.com/",
-                "terraform": "Terraform - https://developer.hashicorp.com/terraform/downloads",
-                "docker": "Docker - https://docs.docker.com/engine/install/",
-                "kubectl": "kubectl - https://kubernetes.io/docs/tasks/tools/",
-                "helm": "Helm - https://helm.sh/docs/intro/install/",
-            }
-        )
+        return {"git", "gcloud", "ssh-keygen", "terraform", "docker", "kubectl", "helm"}
+    if command == "runners":
+        # GCP runners use gcloud + ADC (no AWS CLI); both clouds need gh + terraform.
+        cloud_tools = {"gcloud"} if cloud == Cloud.GCP.value else {"aws"}
+        return {"git", "gh", "terraform"} | cloud_tools
+    if command in {None, "bootstrap", "terraform", "full"}:
+        return {"git", "aws", "terraform"}
+    return {"git"}
 
+
+def check_dependencies(command: str | None = None, cloud: str | None = None) -> None:
+    """Check command-specific dependencies before starting."""
+    required = {tool: _TOOL_HINTS[tool] for tool in _required_tools(command, cloud)}
     optional = {"gh": "GitHub CLI - https://cli.github.com/ (recommended for automating GitHub secrets)"}
 
     missing_required = _missing_dependency_lines(required)
@@ -207,6 +259,57 @@ def check_dependencies(command: str | None = None) -> None:
         for item in missing_optional:
             print(item)
         print()
+
+
+def _add_runners_subparser(subparsers: argparse._SubParsersAction) -> None:
+    """Wire the `runners` subcommand (issue #1433 AWS; issue #1546 GCP).
+
+    --cloud selects the provider; AWS is the default for back-compat. GCP
+    provisions into the target GCP project (dev-tenant containment) with a
+    dedicated runner VPC and IAP-only registration.
+    """
+    runners_parser = subparsers.add_parser(
+        "runners",
+        help="Provision and auto-register self-hosted GitHub Actions runners (dedicated runner VPC by default)",
+    )
+    runners_parser.add_argument(
+        "--cloud", choices=[c.value for c in Cloud], default=Cloud.AWS.value, help="Target cloud (default: aws)"
+    )
+    runners_parser.add_argument(
+        "--env",
+        required=True,
+        help="Environment (AWS: dev/proof/prod; GCP: e.g. gcp-dev). Validated per --cloud.",
+    )
+    runners_parser.add_argument("--profile", help=HELP_AWS_PROFILE + " (AWS only)")
+    runners_parser.add_argument("--dry-run", action="store_true", help=HELP_DRY_RUN)
+    runners_parser.add_argument(
+        "--use-existing-network",
+        action="store_true",
+        help=(
+            "Do not provision a dedicated runner network; use the vpc_id/subnet_id or "
+            "allow_default_vpc opt-in already configured in the runner tfvars."
+        ),
+    )
+    runners_parser.add_argument(
+        "--runner-count",
+        type=int,
+        default=None,
+        help="Override runner_count for this apply (defaults to the runner tfvars value).",
+    )
+    # GCP-only flags (ignored for --cloud aws). GCP uses the operator's default
+    # gcloud/ADC identity, so there is no --profile equivalent.
+    runners_parser.add_argument(
+        "--project-id",
+        default=get_default_gdc_project_id(),
+        help="GCP project ID to provision runners into (GCP only; defaults to PANW_GCP_DEV or repo-root .env)",
+    )
+    runners_parser.add_argument("--region", default="us-central1", help="GCP region (GCP only)")
+    runners_parser.add_argument("--zone", default="us-central1-a", help="GCP compute zone (GCP only)")
+    runners_parser.add_argument(
+        "--labels",
+        default=None,
+        help="Custom runner label set (GCP only; defaults to the environment name, e.g. gcp-dev)",
+    )
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -269,28 +372,7 @@ Examples:
     )
     preflight_parser.add_argument("--headless", action="store_const", const=True, default=None, help=HELP_HEADLESS)
 
-    # Runners command (issue #1433): provision + auto-register self-hosted runners.
-    runners_parser = subparsers.add_parser(
-        "runners",
-        help="Provision and auto-register self-hosted GitHub Actions runners (dedicated runner VPC by default)",
-    )
-    runners_parser.add_argument("--env", required=True, choices=AWS_ENVIRONMENTS, help="Environment")
-    runners_parser.add_argument("--profile", required=True, help=HELP_AWS_PROFILE)
-    runners_parser.add_argument("--dry-run", action="store_true", help=HELP_DRY_RUN)
-    runners_parser.add_argument(
-        "--use-existing-network",
-        action="store_true",
-        help=(
-            "Do not provision a dedicated runner VPC; use the vpc_id/subnet_id or "
-            "allow_default_vpc opt-in already configured in the runner tfvars."
-        ),
-    )
-    runners_parser.add_argument(
-        "--runner-count",
-        type=int,
-        default=None,
-        help="Override runner_count for this apply (defaults to the runner tfvars value).",
-    )
+    _add_runners_subparser(subparsers)
 
     gdc_parser = subparsers.add_parser(
         "gdc-bootstrap",
@@ -318,11 +400,49 @@ Examples:
     return parser
 
 
+def _dispatch_runners(args: argparse.Namespace) -> None:
+    """Dispatch the `runners` subcommand to the AWS or GCP provisioning path."""
+    if args.cloud == Cloud.GCP.value:
+        # The dedicated runner network is mandatory for GCP (ADR-008-R8), so the
+        # AWS-only existing-network opt-out is rejected rather than silently ignored.
+        if args.use_existing_network:
+            error("--use-existing-network is not supported for --cloud gcp; the dedicated runner network is mandatory")
+            sys.exit(1)
+        # gcp_runner._verify_prerequisites fails closed on gh auth + gcloud ADC
+        # before any mutation. The full platform preflight_gate is intentionally
+        # not used here: a runner standup must not require the platform
+        # environment's secret/config surface.
+        gcp_runners_deployment(
+            args.env,
+            args.project_id,
+            args.region,
+            args.zone,
+            dry_run=args.dry_run,
+            runner_count=args.runner_count,
+            labels=args.labels,
+        )
+        return
+
+    if args.env not in AWS_ENVIRONMENTS:
+        error(f"--env must be one of {', '.join(AWS_ENVIRONMENTS)} for --cloud aws (got '{args.env}')")
+        sys.exit(1)
+    if not args.profile:
+        error("--profile is required for --cloud aws")
+        sys.exit(1)
+    runners_deployment(
+        args.env,
+        args.profile,
+        dry_run=args.dry_run,
+        use_existing_network=args.use_existing_network,
+        runner_count=args.runner_count,
+    )
+
+
 def main() -> None:
     """Parse CLI arguments and dispatch the requested bootstrap operation."""
     parser = _build_parser()
     args = parser.parse_args()
-    check_dependencies(args.command)
+    check_dependencies(args.command, cloud=getattr(args, "cloud", None))
 
     if args.command == "preflight":
         preflight_gate(Cloud(args.cloud), Mode.LOCAL, args.env, component=args.component, headless=args.headless)
@@ -353,13 +473,7 @@ def main() -> None:
         full_deployment(args.env, args.profile, dry_run=args.dry_run)
 
     elif args.command == "runners":
-        runners_deployment(
-            args.env,
-            args.profile,
-            dry_run=args.dry_run,
-            use_existing_network=args.use_existing_network,
-            runner_count=args.runner_count,
-        )
+        _dispatch_runners(args)
 
     elif args.command == "gdc-bootstrap":
         gdc_bootstrap_cluster(

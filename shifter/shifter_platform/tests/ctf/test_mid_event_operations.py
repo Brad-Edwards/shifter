@@ -14,6 +14,7 @@ from ctf.models import CTFChallenge, CTFEvent, CTFFlag, CTFParticipant, CTFSched
 from ctf.services import update_event
 from ctf.services.challenge import add_flag, remove_flag, update_challenge, update_flag, verify_flag
 from risk_register.models import AuditLog
+from shared.audit import AuditAction
 
 
 @pytest.mark.django_db
@@ -184,7 +185,7 @@ class TestLiveFlagRepair:
         )
         assert AuditLog.objects.count() == before_count + 1
         entry = AuditLog.objects.latest("timestamp")
-        assert entry.action == AuditLog.Action.UPDATE
+        assert entry.action == AuditAction.UPDATE
         assert entry.new_state["challenge_id"] == str(challenge.pk)
         assert entry.new_state["flag_id"] == str(flag_obj.pk)
         assert set(entry.new_state.keys()) == {

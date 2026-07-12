@@ -38,7 +38,10 @@ from engine.services import get_instance_ips_by_uuid as engine_get_instance_ips_
 from engine.services import pause_range as engine_pause_range
 from engine.services import reassign_range_owner_by_request as engine_reassign_range_owner
 from engine.services import resume_range as engine_resume_range
-from risk_register.services import AuditEvent, audit_log
+from shared.audit import (
+    AuditEvent,
+    audit_log,
+)
 
 from ._aces_range_create import create_aces_native_range, create_range_dispatch
 

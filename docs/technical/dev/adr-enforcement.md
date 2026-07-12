@@ -78,15 +78,29 @@ The first slice intentionally stays small:
 
 - `layer-imports`
   Enforces the existing cross-layer import policy from `scripts/check_layer_imports/layer_imports.yaml`.
-  Service-package imports may use only the public facade (for example
-  `cms.services`); private split-package submodules such as
+  Every first-party Django app is classified there (ADR-001-R3, #1523) as a
+  domain (`engine`, `cms`, `management`, `ctf`, `risk_register`), presentation
+  (`mission_control`), support/contracts (`shared`), or support/composition
+  (`config`) layer. Service-package imports may use only the public facade (for
+  example `cms.services`); private split-package submodules such as
   `cms.services._range_pause` are not cross-layer seams. This covers both the
   dotted form (`import cms.services._range_pause`) and the
   `from cms.services import _range_pause` form, the latter detected via an AST
   pass since the regex scan only sees the facade module path. The rule is
-  mirrored in `scripts/adr_guard/adr_guard.py` and the standalone
-  `scripts/check_layer_imports/check_layer_imports.py` so local and CI
-  enforcement agree; `shared` remains the freely importable contracts layer.
+  mirrored in `scripts/adr_guard/adr_guard.py`, the standalone
+  `scripts/check_layer_imports/check_layer_imports.py`, and
+  `management check_model_fks`; the hard-coded package lists are held to
+  set-equality with the canonical classification by tests, and `.importlinter`
+  adds a coarser package-level net. `shared` remains the freely importable
+  contracts layer.
+
+- `installed-apps-classified`
+  Fails closed when a first-party Django app is added to `INSTALLED_APPS`
+  without a classification in `layer_imports.yaml`, when a classification entry
+  is stale (no local `AppConfig`), or when an `INSTALLED_APPS` entry is a
+  dynamic expression the checker cannot statically resolve (ADR-001-R3, #1523).
+  The retired `documentation` package (ADR-038) has no `AppConfig` and is not
+  classified.
 
 - `guardrail-docs`
   Requires guardrail changes to update ADR or developer docs in the same change.

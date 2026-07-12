@@ -90,6 +90,7 @@ class TaskRunner(Protocol):
         container_name: str,
         env_overrides: dict[str, str] | None = None,
         network_config: dict[str, Any] | None = None,
+        task_identity: str | None = None,
     ) -> str | None: ...
 
     def get_task_status(self, cluster: str, task_id: str) -> dict[str, Any] | None: ...
