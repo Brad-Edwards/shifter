@@ -221,9 +221,7 @@ def _operation_identity(payload: dict[str, object]) -> UUID:
             row.provisioner_operation_id = uuid4()
             row.save(update_fields=["provisioner_operation", "provisioner_operation_id"])
         operation_id = row.provisioner_operation_id
-        # The rotation branch above guarantees an operation id.
-        if operation_id is None:  # pragma: no cover
-            raise RuntimeError("failed to reserve a provisioner operation generation")
+        assert operation_id is not None, "operation generation must be reserved"
         return operation_id
 
 
@@ -238,14 +236,18 @@ def clear_provisioner_operation_after_failure(row: Range | Instance) -> list[str
 
 def _resolve_failure_target(payload: dict[str, object]) -> Range | Instance | None:
     """Lock the domain row named by a validated failure payload."""
+    target: Range | Instance | None
     if "request_id" not in payload:
-        return Range.objects.select_for_update().filter(pk=int(str(payload["range_id"]))).first()
-    request = Request.objects.filter(request_id=UUID(str(payload["request_id"]))).first()
-    if request is None:
-        return None
-    if payload.get("resource") in {"range", "aces-range"}:
-        return Range.objects.select_for_update().filter(request=request).first()
-    return Instance.objects.select_for_update().filter(request=request, role=Instance.Role.NGFW).first()
+        target = Range.objects.select_for_update().filter(pk=int(str(payload["range_id"]))).first()
+    else:
+        request = Request.objects.filter(request_id=UUID(str(payload["request_id"]))).first()
+        if request is None:
+            target = None
+        elif payload.get("resource") in {"range", "aces-range"}:
+            target = Range.objects.select_for_update().filter(request=request).first()
+        else:
+            target = Instance.objects.select_for_update().filter(request=request, role=Instance.Role.NGFW).first()
+    return target
 
 
 def _generation_still_authorizes_failure(

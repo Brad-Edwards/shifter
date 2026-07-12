@@ -63,6 +63,7 @@ class Command(BaseCommand):
         stopped = threading.Event()
 
         def heartbeat_loop() -> None:
+            """Refresh liveness until the active provider call completes."""
             while not stopped.wait(HEARTBEAT_INTERVAL_SECONDS):
                 self._touch_heartbeat()
 

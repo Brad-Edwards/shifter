@@ -183,7 +183,8 @@ class GCPTaskRunner:
     - ``command`` is passed as container args so the image ENTRYPOINT is kept.
     """
 
-    def _load_kubernetes_api(self) -> tuple[object, object, object, type[Exception]]:
+    @staticmethod
+    def _load_kubernetes_api() -> tuple[object, object, object, type[Exception]]:
         try:
             kubernetes = importlib.import_module("kubernetes")
         except ImportError as e:
@@ -727,8 +728,7 @@ class GCPTaskRunner:
     def _build_launch_job(self, context: _RunTaskContext) -> object:
         """Create sensitive state and build the corresponding Job manifest."""
         if context.sensitive_env:
-            if context.secret_name is None:  # pragma: no cover - derived above
-                raise CloudTaskError("GCP task runner failed to derive a Secret name")
+            assert context.secret_name is not None, "sensitive env requires a derived Secret name"
             self._ensure_sensitive_secret(
                 apis=context.apis,
                 namespace=context.namespace,
