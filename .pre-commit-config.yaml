@@ -343,6 +343,20 @@ repos:
         files: ^(\.pre-commit-config\.yaml|\.github/workflows/_quality\.yml|platform/terraform/\.checkov\.yaml)$
         pass_filenames: false
 
+      # Terraform validation inventory (#1528): fail closed when a tracked
+      # Terraform directory is not classified as a root or module, when a root
+      # lacks a committed lockfile, or when a root's declared providers drift
+      # from its lockfile. Non-authoritative local mirror of the CI
+      # terraform-matrix gate — it calls the same helper with the same flags.
+      # The helper scans the whole tracked estate via git, so the file list is
+      # a trigger only (pass_filenames=false).
+      - id: check-tf-roots
+        name: Terraform validation inventory (roots + modules classified)
+        entry: python3 scripts/check_tf_roots/check_tf_roots.py --check
+        language: system
+        files: ^(platform/terraform/validation-inventory\.yaml|scripts/check_tf_roots/.*|.*\.tf|.*/\.terraform\.lock\.hcl)$
+        pass_filenames: false
+
       # Pin the behavior of the custom check_tf_* IAM/security
       # checkers themselves. Their test suites (synthetic HCL fixtures
       # covering wildcards, list resources, scoped conditions, missing
@@ -371,10 +385,11 @@ repos:
           python3 -m unittest scripts.check_tf_rds_security.test_check_tf_rds_security &&
           python3 -m unittest scripts.check_portal_target_sg_sources.test_check_portal_target_sg_sources &&
           python3 -m unittest scripts.check_tf_runner_network.test_check_tf_runner_network &&
-          python3 -m unittest scripts.check_tf_gcp_iam_resource_scope.test_check_tf_gcp_iam_resource_scope
+          python3 -m unittest scripts.check_tf_gcp_iam_resource_scope.test_check_tf_gcp_iam_resource_scope &&
+          python3 -m unittest scripts.check_tf_roots.test_check_tf_roots
           '
         language: system
-        files: ^scripts/(check_tf_(iam_ec2_scope|iam_elb_scope|iam_ssm_scope|iam_ssm_range_scope|sg_cidrs|kms_secrets_grant|rds_security|runner_network|gcp_iam_resource_scope)|check_portal_target_sg_sources)/
+        files: ^scripts/(check_tf_(iam_ec2_scope|iam_elb_scope|iam_ssm_scope|iam_ssm_range_scope|sg_cidrs|kms_secrets_grant|rds_security|runner_network|gcp_iam_resource_scope|roots)|check_portal_target_sg_sources)/
         pass_filenames: false
 
   # Kubernetes schema validation
