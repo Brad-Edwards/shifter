@@ -5242,6 +5242,193 @@ def check_deploy_runner_exposure(repo_root: Path, files: list[str] | None) -> li
     return violations
 
 
+# --- ADR-037-R1 hard check: cloud-credentialed workflows pin action SHAs ----
+# Every non-local `uses:` action in a cloud-credentialed workflow is an
+# executable dependency that runs with cloud credentials; a mutable tag can be
+# moved by a compromised or careless maintainer, so it must resolve to a full
+# 40-hex commit SHA (supply-chain provenance, issue #1519). This mirrors the
+# `_dw_*` workflow-as-data model rather than string-matching workflow text, and
+# fails closed: a workflow that cannot be parsed cannot be classified.
+_ACTION_PIN_CHECK = "workflow-action-sha-pinning"
+_ACTION_PIN_RULE = "ADR-037-R1"
+_ACTION_PIN_SHA40 = re.compile(r"^[0-9a-f]{40}$")
+_ACTION_PIN_OCI_DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
+_CLOUD_AUTH_ACTIONS = (
+    "aws-actions/configure-aws-credentials",
+    "google-github-actions/auth",
+)
+
+
+def _action_pin_violation(path: str, message: str) -> Violation:
+    return Violation(_ACTION_PIN_CHECK, _ACTION_PIN_RULE, path, message)
+
+
+def _dw_iter_workflow_files(repo_root: Path) -> list[str]:
+    """Repo-relative paths of every GitHub Actions workflow file, sorted."""
+    wf_dir = repo_root / ".github" / "workflows"
+    if not wf_dir.is_dir():
+        return []
+    return sorted(
+        f".github/workflows/{p.name}"
+        for p in wf_dir.iterdir()
+        if p.is_file() and p.suffix in (".yml", ".yaml")
+    )
+
+
+def _dw_permissions_grant_id_token(perms) -> bool:
+    if isinstance(perms, str):
+        return perms.strip().lower() == "write-all"
+    if isinstance(perms, dict):
+        return str(perms.get("id-token", "")).strip().lower() == "write"
+    return False
+
+
+def _dw_job_steps(job: dict) -> list:
+    steps = job.get("steps")
+    return steps if isinstance(steps, list) else []
+
+
+def _dw_step_uses(step) -> str | None:
+    if isinstance(step, dict):
+        uses = step.get("uses")
+        if isinstance(uses, str):
+            return uses.strip()
+    return None
+
+
+def _dw_step_uses_cloud_auth(step) -> bool:
+    uses = _dw_step_uses(step)
+    if uses and any(
+        uses == a or uses.startswith(a + "@") for a in _CLOUD_AUTH_ACTIONS
+    ):
+        return True
+    if isinstance(step, dict):
+        with_block = step.get("with")
+        if isinstance(with_block, dict) and "workload_identity_provider" in with_block:
+            return True
+    return False
+
+
+def _dw_job_is_cloud_credentialed(job: dict) -> bool:
+    if _dw_permissions_grant_id_token(job.get("permissions")):
+        return True
+    if _dw_is_self_hosted(job):
+        return True
+    return any(_dw_step_uses_cloud_auth(step) for step in _dw_job_steps(job))
+
+
+def _dw_workflow_is_cloud_credentialed(wf: dict) -> bool:
+    """True when a workflow requests cloud credentials in any form.
+
+    Markers: top-level or job-level ``id-token: write`` (or ``write-all``), a
+    self-hosted runner, a cloud-auth action, or a ``workload_identity_provider``
+    input. Any one is sufficient; the classifier fails toward "credentialed" so
+    an unpinned action is never silently exempted.
+    """
+    if _dw_permissions_grant_id_token(wf.get("permissions")):
+        return True
+    jobs = wf.get("jobs")
+    if not isinstance(jobs, dict):
+        return False
+    return any(
+        _dw_job_is_cloud_credentialed(job)
+        for job in jobs.values()
+        if isinstance(job, dict)
+    )
+
+
+def _dw_iter_uses_refs(wf: dict):
+    """Yield ``(job_id, uses_ref)`` for every job- and step-level ``uses:``."""
+    jobs = wf.get("jobs")
+    if not isinstance(jobs, dict):
+        return
+    for jid, job in jobs.items():
+        if not isinstance(job, dict):
+            continue
+        job_uses = job.get("uses")
+        if isinstance(job_uses, str):
+            yield jid, job_uses.strip()
+        for step in _dw_job_steps(job):
+            uses = _dw_step_uses(step)
+            if uses:
+                yield jid, uses
+
+
+def _dw_uses_is_sha_pinned(ref: str) -> bool:
+    parts = ref.rsplit("@", 1)
+    if len(parts) != 2:
+        return False
+    after = parts[1]
+    # Repository actions pin a 40-hex git commit SHA; container (`docker://`)
+    # actions pin an OCI `sha256:<64 hex>` digest. Both are immutable.
+    return bool(_ACTION_PIN_SHA40.match(after) or _ACTION_PIN_OCI_DIGEST.match(after))
+
+
+def _workflow_action_pin_relevant(files: list[str] | None) -> bool:
+    if files is None:
+        return True
+    return any(
+        f.startswith(".github/workflows/") or f == _ADR_GUARD_SCRIPT_PATH
+        for f in files
+    )
+
+
+def check_workflow_action_sha_pinning(
+    repo_root: Path, files: list[str] | None
+) -> list[Violation]:
+    """Cloud-credentialed workflows pin every action to a full SHA (ADR-037-R1).
+
+    Enumerates every ``.github/workflows/*.yml`` as data, classifies each as
+    cloud-credentialed, and requires every non-local ``uses:`` reference in a
+    credentialed workflow to be a full 40-hex commit SHA. Fails closed: a
+    workflow that cannot be parsed cannot be classified, so it is reported.
+    ``actions/*`` is included - GitHub-owned actions are executable dependencies
+    too, as are ``docker://`` container actions, which must pin an OCI
+    ``sha256:<64 hex>`` digest. Only local reusable-workflow refs (``./...``) are
+    exempt.
+    """
+    import yaml  # local import: keeps PyYAML optional for non-workflow checks
+
+    if not _workflow_action_pin_relevant(files):
+        return []
+
+    violations: list[Violation] = []
+    for rel in _dw_iter_workflow_files(repo_root):
+        try:
+            wf = _dw_load_workflow(repo_root, rel)
+        except (_DwShapeError, yaml.YAMLError) as exc:
+            violations.append(
+                _action_pin_violation(
+                    rel,
+                    "workflow could not be parsed for ADR-037-R1, so its "
+                    f"cloud-credential status cannot be verified: {exc}",
+                )
+            )
+            continue
+        if not _dw_workflow_is_cloud_credentialed(wf):
+            continue
+        for jid, ref in _dw_iter_uses_refs(wf):
+            # Local reusable-workflow refs (`./...`) are first-party and exempt.
+            # `docker://` container actions are NOT exempt: they are remote
+            # executable dependencies too, so they must pin an OCI digest.
+            if ref.startswith("./"):
+                continue
+            if not _dw_uses_is_sha_pinned(ref):
+                hint = (
+                    "an OCI 'sha256:<64 hex>' digest"
+                    if ref.startswith("docker://")
+                    else "a full 40-hex commit SHA (keep a '# <version>' comment for Dependabot)"
+                )
+                violations.append(
+                    _action_pin_violation(
+                        rel,
+                        f"job '{jid}' uses '{ref}' with a mutable ref; "
+                        f"ADR-037-R1 requires {hint} in cloud-credentialed workflows",
+                    )
+                )
+    return violations
+
+
 # ---------------------------------------------------------------------------
 # ADR-004-R14: live cloud identifier hygiene.
 #
@@ -5725,6 +5912,7 @@ CHECKS = {
     "aws-platform-renders-deploy-tfvars": check_platform_renders_deploy_tfvars,
     "deploy-verification-fail-loud": check_deploy_verification_fail_loud,
     "deploy-workflow-runner-exposure": check_deploy_runner_exposure,
+    "workflow-action-sha-pinning": check_workflow_action_sha_pinning,
     "no-live-cloud-identifiers": check_no_live_cloud_identifiers,
     "no-mission-control-flag-literals": check_mission_control_no_flag_literals,
     "no-terraform-operational-placeholders": check_no_terraform_operational_placeholders,
@@ -5751,6 +5939,7 @@ CHECK_LEVELS = {
         "aws-platform-renders-deploy-tfvars",
         "deploy-verification-fail-loud",
         "deploy-workflow-runner-exposure",
+        "workflow-action-sha-pinning",
         "no-live-cloud-identifiers",
         "no-mission-control-flag-literals",
         "no-terraform-operational-placeholders",
@@ -5777,6 +5966,7 @@ CHECK_LEVELS = {
         "aws-platform-renders-deploy-tfvars",
         "deploy-verification-fail-loud",
         "deploy-workflow-runner-exposure",
+        "workflow-action-sha-pinning",
         "no-live-cloud-identifiers",
         "no-mission-control-flag-literals",
         "no-terraform-operational-placeholders",

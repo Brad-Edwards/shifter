@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-PINNED_IMAGE_TAG = "abc1234"
+PINNED_ENGINE_DIGEST = "sha256:" + "1" * 64
 
 
 def _load_module_from_path(module_path: Path, module_name: str):
@@ -168,7 +168,7 @@ def test_render_env_emits_production_security_profile():
     """The GCP runtime is always production-secure and addressed via https://<hostname>."""
     module = _load_module("render_runtime_env.py", "render_runtime_env")
 
-    rendered = module.render_env(_outputs(), image_tag=PINNED_IMAGE_TAG)
+    rendered = module.render_env(_outputs(), engine_image_digest=PINNED_ENGINE_DIGEST)
 
     # Production runtime security profile — unconditional.
     assert "DJANGO_DEBUG=false\n" in rendered
@@ -208,14 +208,14 @@ def test_render_env_emits_production_security_profile():
     assert "RANGE_VPC_CIDR=10.50.0.0/16\n" in rendered
     assert (
         "ENGINE_TASK_IMAGE=us-central1-docker.pkg.dev/"
-        "shifter-gcp-dev/shifter-gcp-dev-pulumi-provisioner/pulumi-provisioner:abc1234\n"
+        "shifter-gcp-dev/shifter-gcp-dev-pulumi-provisioner/pulumi-provisioner@" + PINNED_ENGINE_DIGEST + "\n"
     ) in rendered
 
 
 def test_render_env_keys_match_runtime_inventory(monkeypatch):
     module = _load_module("render_runtime_env.py", "render_runtime_env")
 
-    assert _rendered_keys(module.render_env(_outputs(), image_tag=PINNED_IMAGE_TAG)) == set(
+    assert _rendered_keys(module.render_env(_outputs(), engine_image_digest=PINNED_ENGINE_DIGEST)) == set(
         GCP_GENERATED_RUNTIME_ENV_KEYS
     )
 
@@ -227,7 +227,7 @@ def test_render_env_keys_match_runtime_inventory(monkeypatch):
             identity_allowed_emails=["alice@example.com", "bob@example.com"],
             email_config=_FULL_MAILGUN_EMAIL_CONFIG,
         ),
-        image_tag=PINNED_IMAGE_TAG,
+        engine_image_digest=PINNED_ENGINE_DIGEST,
     )
 
     assert _rendered_keys(rendered) == set(GCP_GENERATED_RUNTIME_ENV_KEYS | GCP_OPTIONAL_GENERATED_RUNTIME_ENV_KEYS)
@@ -237,7 +237,7 @@ def test_render_env_forwards_gce_range_cell_contract(monkeypatch):
     module = _load_module("render_runtime_env.py", "render_runtime_env")
     _seed_gce_range_env(monkeypatch)
 
-    rendered = module.render_env(_outputs(), image_tag=PINNED_IMAGE_TAG)
+    rendered = module.render_env(_outputs(), engine_image_digest=PINNED_ENGINE_DIGEST)
 
     assert "GCP_RANGE_BACKEND=gce\n" in rendered
     assert "GCP_RANGE_CELL_NETWORK_MODE=vpc-per-range\n" in rendered
@@ -251,7 +251,7 @@ def test_render_env_still_supports_gdc_backend_override(monkeypatch):
     module = _load_module("render_runtime_env.py", "render_runtime_env")
     monkeypatch.setenv("GCP_RANGE_BACKEND", "gdc")
 
-    rendered = module.render_env(_outputs(), image_tag=PINNED_IMAGE_TAG)
+    rendered = module.render_env(_outputs(), engine_image_digest=PINNED_ENGINE_DIGEST)
 
     assert "GCP_RANGE_BACKEND=gdc\n" in rendered
 
@@ -260,7 +260,7 @@ def test_render_env_cell_project_id_env_override_wins(monkeypatch):
     module = _load_module("render_runtime_env.py", "render_runtime_env")
     monkeypatch.setenv("GCP_RANGE_CELL_PROJECT_ID", "prod-real-project")
 
-    rendered = module.render_env(_outputs(), image_tag=PINNED_IMAGE_TAG)
+    rendered = module.render_env(_outputs(), engine_image_digest=PINNED_ENGINE_DIGEST)
 
     assert "GCP_RANGE_CELL_PROJECT_ID=prod-real-project\n" in rendered
 
@@ -278,8 +278,8 @@ def test_main_writes_rendered_runtime_env(tmp_path, monkeypatch):
             "render_runtime_env.py",
             "--terraform-output-json",
             str(outputs_path),
-            "--image-tag",
-            PINNED_IMAGE_TAG,
+            "--engine-image-digest",
+            PINNED_ENGINE_DIGEST,
             "--output",
             str(output_path),
         ],
@@ -287,7 +287,7 @@ def test_main_writes_rendered_runtime_env(tmp_path, monkeypatch):
 
     assert module.main() == 0
 
-    assert output_path.read_text() == module.render_env(outputs, image_tag=PINNED_IMAGE_TAG)
+    assert output_path.read_text() == module.render_env(outputs, engine_image_digest=PINNED_ENGINE_DIGEST)
 
 
 @pytest.mark.parametrize(
@@ -304,22 +304,22 @@ def test_render_env_fails_closed_on_insecure_inputs(missing_kwargs, expected_sub
     module = _load_module("render_runtime_env.py", "render_runtime_env")
 
     with pytest.raises(ValueError, match=expected_substring):
-        module.render_env(_outputs(**missing_kwargs), image_tag=PINNED_IMAGE_TAG)
+        module.render_env(_outputs(**missing_kwargs), engine_image_digest=PINNED_ENGINE_DIGEST)
 
 
-@pytest.mark.parametrize("image_tag", ["", "  ", "latest"])
-def test_render_env_rejects_missing_or_moving_image_tags(image_tag):
+@pytest.mark.parametrize("engine_image_digest", ["", "  ", "latest", "abc1234", "sha256:zz"])
+def test_render_env_rejects_missing_or_mutable_engine_digest(engine_image_digest):
     module = _load_module("render_runtime_env.py", "render_runtime_env")
 
-    with pytest.raises(ValueError, match="image_tag"):
-        module.render_env(_outputs(), image_tag=image_tag)
+    with pytest.raises(ValueError, match="engine_image_digest"):
+        module.render_env(_outputs(), engine_image_digest=engine_image_digest)
 
 
 def test_render_env_renders_identity_allow_list_from_terraform_outputs():
     """IDENTITY_ALLOWED_EMAIL_DOMAIN / IDENTITY_ALLOWED_EMAILS come from Terraform outputs, not literals/env."""
     module = _load_module("render_runtime_env.py", "render_runtime_env")
 
-    default_rendered = module.render_env(_outputs(), image_tag=PINNED_IMAGE_TAG)
+    default_rendered = module.render_env(_outputs(), engine_image_digest=PINNED_ENGINE_DIGEST)
     assert "IDENTITY_ALLOWED_EMAIL_DOMAIN=paloaltonetworks.com\n" in default_rendered
     assert "IDENTITY_ALLOWED_EMAILS=" not in default_rendered  # empty list -> no key
 
@@ -328,7 +328,7 @@ def test_render_env_renders_identity_allow_list_from_terraform_outputs():
             identity_allowed_email_domain="contractors.example.com",
             identity_allowed_emails=["alice@partner.test", "bob@partner.test"],
         ),
-        image_tag=PINNED_IMAGE_TAG,
+        engine_image_digest=PINNED_ENGINE_DIGEST,
     )
     assert "IDENTITY_ALLOWED_EMAIL_DOMAIN=contractors.example.com\n" in custom_rendered
     assert "IDENTITY_ALLOWED_EMAILS=alice@partner.test,bob@partner.test\n" in custom_rendered
@@ -342,7 +342,7 @@ def test_render_env_emits_redis_tls_and_secret_id_for_authenticated_cache():
     """
     module = _load_module("render_runtime_env.py", "render_runtime_env")
 
-    rendered = module.render_env(_outputs(), image_tag=PINNED_IMAGE_TAG)
+    rendered = module.render_env(_outputs(), engine_image_digest=PINNED_ENGINE_DIGEST)
 
     assert "REDIS_HOST=10.0.0.20\n" in rendered
     assert "REDIS_PORT=6379\n" in rendered
@@ -356,7 +356,7 @@ def test_render_env_never_emits_redis_password_or_url():
     Manager + entrypoint hydration only (ADR-008-R6, #963)."""
     module = _load_module("render_runtime_env.py", "render_runtime_env")
 
-    rendered = module.render_env(_outputs(), image_tag=PINNED_IMAGE_TAG)
+    rendered = module.render_env(_outputs(), engine_image_digest=PINNED_ENGINE_DIGEST)
 
     # Negative assertions — exact key names the entrypoint exports and any
     # plausible URL/password keys the renderer could leak.
@@ -387,7 +387,7 @@ def test_render_env_fails_closed_when_cache_payload_lacks_tls_flag():
     outputs["control_plane_cache"] = {"value": {"host": "10.0.0.20", "port": 6379}}
 
     with pytest.raises(ValueError, match="tls_enabled"):
-        module.render_env(outputs, image_tag=PINNED_IMAGE_TAG)
+        module.render_env(outputs, engine_image_digest=PINNED_ENGINE_DIGEST)
 
 
 def test_render_env_fails_closed_when_redis_secret_id_missing():
@@ -406,14 +406,14 @@ def test_render_env_fails_closed_when_redis_secret_id_missing():
     }
 
     with pytest.raises(ValueError, match='runtime_secret_ids\\["redis"\\]'):
-        module.render_env(outputs, image_tag=PINNED_IMAGE_TAG)
+        module.render_env(outputs, engine_image_digest=PINNED_ENGINE_DIGEST)
 
 
 def test_render_env_emits_console_backend_when_email_unconfigured():
     """Email is optional, but the runtime backend choice is explicit."""
     module = _load_module("render_runtime_env.py", "render_runtime_env")
 
-    rendered = module.render_env(_outputs(), image_tag=PINNED_IMAGE_TAG)
+    rendered = module.render_env(_outputs(), engine_image_digest=PINNED_ENGINE_DIGEST)
 
     assert "EMAIL_BACKEND=django.core.mail.backends.console.EmailBackend\n" in rendered
     for key in ("DEFAULT_FROM_EMAIL", "EMAIL_API_KEY_SECRET_ID", "MAILGUN_SENDER_DOMAIN"):
@@ -433,7 +433,7 @@ def test_render_env_emits_sendgrid_email_config():
                 "api_key_secret_id": EMAIL_SECRET_ID,
             }
         ),
-        image_tag=PINNED_IMAGE_TAG,
+        engine_image_digest=PINNED_ENGINE_DIGEST,
     )
 
     assert f"EMAIL_BACKEND={SENDGRID_BACKEND}\n" in rendered
@@ -445,7 +445,9 @@ def test_render_env_emits_sendgrid_email_config():
 def test_render_env_emits_mailgun_sender_domain():
     module = _load_module("render_runtime_env.py", "render_runtime_env")
 
-    rendered = module.render_env(_outputs(email_config=_FULL_MAILGUN_EMAIL_CONFIG), image_tag=PINNED_IMAGE_TAG)
+    rendered = module.render_env(
+        _outputs(email_config=_FULL_MAILGUN_EMAIL_CONFIG), engine_image_digest=PINNED_ENGINE_DIGEST
+    )
 
     assert f"EMAIL_BACKEND={MAILGUN_BACKEND}\n" in rendered
     assert "MAILGUN_SENDER_DOMAIN=mg.shifter.example.test\n" in rendered
@@ -466,7 +468,7 @@ def test_render_env_never_emits_email_api_key_value():
                 "api_key": "SG.must-not-render",
             }
         ),
-        image_tag=PINNED_IMAGE_TAG,
+        engine_image_digest=PINNED_ENGINE_DIGEST,
     )
 
     assert "SG.must-not-render" not in rendered
@@ -501,7 +503,7 @@ def test_render_env_fails_closed_on_incomplete_email(email_config, expected_miss
     module = _load_module("render_runtime_env.py", "render_runtime_env")
 
     with pytest.raises(ValueError, match=expected_missing):
-        module.render_env(_outputs(email_config=email_config), image_tag=PINNED_IMAGE_TAG)
+        module.render_env(_outputs(email_config=email_config), engine_image_digest=PINNED_ENGINE_DIGEST)
 
 
 def test_render_env_preserves_bootstrap_admin_lists_from_environment(monkeypatch):
@@ -509,7 +511,7 @@ def test_render_env_preserves_bootstrap_admin_lists_from_environment(monkeypatch
     monkeypatch.setenv("PLATFORM_BOOTSTRAP_STAFF_EMAILS", "admin@example.com")
     monkeypatch.setenv("PLATFORM_BOOTSTRAP_SUPERUSER_EMAILS", "admin@example.com")
 
-    rendered = module.render_env(_outputs(), image_tag=PINNED_IMAGE_TAG)
+    rendered = module.render_env(_outputs(), engine_image_digest=PINNED_ENGINE_DIGEST)
 
     assert "PLATFORM_BOOTSTRAP_STAFF_EMAILS=admin@example.com\n" in rendered
     assert "PLATFORM_BOOTSTRAP_SUPERUSER_EMAILS=admin@example.com\n" in rendered

@@ -257,6 +257,18 @@ The first slice intentionally stays small:
   requested manage timeout rather than using the fixed-limit
   `aws ssm wait command-executed` waiter.
 
+- `workflow-action-sha-pinning`
+  Enforces ADR-037-R1: every non-local `uses:` action in a cloud-credentialed
+  workflow must pin a full 40-hex commit SHA. A workflow is classified
+  credentialed when it requests `id-token: write`, runs on a self-hosted runner,
+  invokes a cloud-auth action (`aws-actions/configure-aws-credentials`,
+  `google-github-actions/auth`), or passes a `workload_identity_provider`. The
+  check parses workflows as data via the `_dw_*` model and fails closed: an
+  unparseable workflow, an unclassifiable ref, or a mutable ref (tag or branch)
+  is a violation. `actions/*` is in scope. Keep the `# <version>` comment next to
+  each SHA for Dependabot. Refresh guidance:
+  `docs/architecture/rev1-build-deployment-provenance.md`.
+
 - `TFLint`
   Adds Terraform linting on top of `terraform fmt` and `terraform validate`.
   The initial profile is intentionally narrow: it leaves existing repo-wide
