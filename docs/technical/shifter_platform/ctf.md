@@ -19,11 +19,11 @@ provisioning path.
 
 | Group | Prefix | Audience |
 |-------|--------|----------|
-| Participant | `/ctf/` | Competitors: dashboard, register, challenges, range, scoreboard, team |
+| Participant | `/ctf/` | Competitors: dedicated login, password change, dashboard, challenges, range, scoreboard, team |
 | Organizer/Admin | `/ctf/admin/` | Organizers: events, challenges, participants, teams, brackets, ranges, notifications, analytics |
 | API | `/ctf/api/` | JSON endpoints for events, challenges, scenarios |
 
-Participant access uses a register / exchange flow; organizer views are gated to CTF
+Participant access uses isolated temporary username/password accounts; organizer views are gated to CTF
 organizer roles. The portal sidebar distinguishes participant-only users so the two
 surfaces stay structurally separate (see ADR-013).
 

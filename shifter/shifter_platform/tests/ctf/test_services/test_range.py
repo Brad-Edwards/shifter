@@ -33,8 +33,6 @@ def _make_unregistered_participant(event, idx):
         email=f"throttle-{idx}@test.com",
         name=f"Throttle Participant {idx}",
         status=ParticipantStatus.INVITED.value,
-        invite_token=f"throttle-{event.pk}-{idx}",
-        invite_token_expires=timezone.now() + timedelta(days=7),
     )
 
 

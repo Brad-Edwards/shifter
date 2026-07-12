@@ -321,10 +321,10 @@ class TestAtomicRedisConsume:
     TTL-less key at the expiry boundary."""
 
     def test_redis_backed_consume_uses_atomic_lua_with_ttl(self):
-        from mission_control.api.rate_limit import _LUA_INCR_EXPIRE, _consume
+        from shared.rate_limit import _LUA_INCR_EXPIRE, consume_fixed_window
 
         client = _FakeRedisClient()
-        count = _consume(_FakeRedisCache(client), "launch-rl:range:fleet", 60)
+        count = consume_fixed_window(_FakeRedisCache(client), "launch-rl:range:fleet", 60)
 
         assert count == 1
         assert len(client.eval_calls) == 1

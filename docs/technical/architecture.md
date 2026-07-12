@@ -44,7 +44,7 @@ Common operator requirements:
 - MFA required (TOTP)
 - Domain restriction for allowed email domains
 - Email verification required
-- CTF participant magic links remain separate from the corporate identity-provider flow
+- Temporary CTF participant username/password accounts remain separate from the corporate identity-provider flow
 
 ### Hosting
 

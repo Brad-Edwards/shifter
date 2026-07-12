@@ -88,6 +88,11 @@
       "source_file": "config/settings.py"
     },
     {
+      "default": "_DEFAULT_CTF_BOOTSTRAP_VALUE",
+      "name": "CTF_DEFAULT_PARTICIPANT_PASSWORD",
+      "source_file": "config/_oidc_settings.py"
+    },
+    {
       "default": "'30'",
       "name": "CTF_DEFAULT_RANGE_SPINUP_MINUTES",
       "source_file": "config/settings.py"
@@ -96,6 +101,21 @@
       "default": "'ctf@example.com'",
       "name": "CTF_FROM_EMAIL",
       "source_file": "config/settings.py"
+    },
+    {
+      "default": "'5'",
+      "name": "CTF_LOGIN_RATE_LIMIT_MAX",
+      "source_file": "config/_oidc_settings.py"
+    },
+    {
+      "default": "'300'",
+      "name": "CTF_LOGIN_RATE_LIMIT_WINDOW_SECONDS",
+      "source_file": "config/_oidc_settings.py"
+    },
+    {
+      "default": "'24'",
+      "name": "CTF_PARTICIPANT_ACCOUNT_RETENTION_HOURS",
+      "source_file": "config/_oidc_settings.py"
     },
     {
       "default": "'0.1'",
@@ -386,21 +406,6 @@
       "default": "'INFO'",
       "name": "LOG_LEVEL",
       "source_file": "config/_logging_config.py"
-    },
-    {
-      "default": null,
-      "name": "MAGIC_LINK_EVENT_MAX_EXPIRY_HOURS",
-      "source_file": "config/_oidc_settings.py"
-    },
-    {
-      "default": "'24'",
-      "name": "MAGIC_LINK_EXPIRY_HOURS",
-      "source_file": "config/_oidc_settings.py"
-    },
-    {
-      "default": "'False'",
-      "name": "MAGIC_LINK_SINGLE_USE",
-      "source_file": "config/_oidc_settings.py"
     },
     {
       "default": "''",
