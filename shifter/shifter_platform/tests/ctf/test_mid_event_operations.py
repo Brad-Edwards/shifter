@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import timedelta
 
 import pytest
-from django.urls import reverse
+from django.core.exceptions import ValidationError
 from django.utils import timezone
 
 from cms.models import RangeInstance
@@ -13,7 +13,6 @@ from ctf.enums import ChallengeCategory, ChallengeDifficulty, EventStatus, Sched
 from ctf.models import CTFChallenge, CTFEvent, CTFFlag, CTFParticipant, CTFScheduledTask
 from ctf.services import update_event
 from ctf.services.challenge import add_flag, remove_flag, update_challenge, update_flag, verify_flag
-from management.services import set_active_ctf_event
 from risk_register.models import AuditLog
 
 
@@ -252,15 +251,13 @@ class TestLiveFlagRepair:
 
 
 @pytest.mark.django_db
-class TestApiRangeStatusActiveEvent:
-    """api_range_status must scope to the user's active CTF event."""
+class TestParticipantAccountEventIsolation:
+    """One temporary account cannot be shared between active events."""
 
-    def test_api_range_status_uses_active_event_participant(
+    def test_account_cannot_be_reused_across_active_events(
         self,
-        client,
         participant_user,
         organizer_user,
-        db,
     ):
         older_event = CTFEvent.objects.create(
             name="Older Event",
@@ -300,35 +297,23 @@ class TestApiRangeStatusActiveEvent:
             range_instance_id=older_range.pk,
             range_status="ready",
         )
-        newer_participant = CTFParticipant.objects.create(
-            event=newer_event,
-            user=participant_user,
-            email=participant_user.email,
-            name="Newer Participant",
-            status="active",
-            registered_at=timezone.now(),
-            range_instance_id=newer_range.pk,
-            range_status="provisioning",
-        )
-        set_active_ctf_event(participant_user, older_event.pk)
-
-        client.force_login(participant_user)
-        url = reverse("ctf:api_range_status")
-        response = client.get(url)
-
-        assert response.status_code == 200
-        payload = response.json()
-        assert payload["participant_id"] == str(older_participant.pk)
-        assert payload["status"] == "ready"
-        assert payload["range_instance_id"] == older_range.pk
-        assert newer_participant.pk != older_participant.pk
-        assert newer_participant.range_instance_id != older_participant.range_instance_id
+        with pytest.raises(ValidationError, match="unique_active_ctf_participant_user"):
+            CTFParticipant.objects.create(
+                event=newer_event,
+                user=participant_user,
+                email=participant_user.email,
+                name="Newer Participant",
+                status="active",
+                registered_at=timezone.now(),
+                range_instance_id=newer_range.pk,
+                range_status="provisioning",
+            )
+        assert older_participant.range_instance_id == older_range.pk
 
 
 @pytest.mark.django_db
-class TestDisqualifyCrossEventIsolation:
-    """#1142: disqualifying/deleting a participant from one event must not strip
-    the platform-wide CTF Participant group or lock the user out of other events."""
+class TestDisqualifyIsolatedAccount:
+    """Disqualification retires the event-scoped temporary identity."""
 
     def _event(self, organizer_user, name):
         return CTFEvent.objects.create(
@@ -341,14 +326,10 @@ class TestDisqualifyCrossEventIsolation:
             scenario_id="basic",
         )
 
-    def test_disqualify_keeps_group_and_repoints_active_event(self, participant_user, organizer_user):
-        from ctf.services.participant import disqualify_participant
-        from management.services import get_user_profile
-        from shared.auth import is_ctf_participant
-
+    def test_same_account_cannot_join_two_active_events(self, participant_user, organizer_user):
         event_a = self._event(organizer_user, "Event A")
         event_b = self._event(organizer_user, "Event B")
-        part_a = CTFParticipant.objects.create(
+        CTFParticipant.objects.create(
             event=event_a,
             user=participant_user,
             email=participant_user.email,
@@ -356,25 +337,19 @@ class TestDisqualifyCrossEventIsolation:
             status="active",
             registered_at=timezone.now(),
         )
-        CTFParticipant.objects.create(
-            event=event_b,
-            user=participant_user,
-            email=participant_user.email,
-            name="P",
-            status="active",
-            registered_at=timezone.now(),
-        )
-        set_active_ctf_event(participant_user, event_a.pk)
-
-        disqualify_participant(part_a.id)
-
-        # Group retained (still an eligible participant in B), active event re-pointed to B.
-        assert is_ctf_participant(participant_user) is True
-        assert get_user_profile(participant_user).active_ctf_event_id == event_b.pk
+        with pytest.raises(ValidationError, match="unique_active_ctf_participant_user"):
+            CTFParticipant.objects.create(
+                event=event_b,
+                user=participant_user,
+                email=participant_user.email,
+                name="P",
+                status="active",
+                registered_at=timezone.now(),
+            )
 
     def test_disqualify_clears_group_when_no_other_participation(self, participant_user, organizer_user):
         from ctf.services.participant import disqualify_participant
-        from management.services import get_user_profile
+        from management.services import configure_temporary_ctf_account, get_user_profile
         from shared.auth import is_ctf_participant
 
         event_a = self._event(organizer_user, "Solo Event")
@@ -386,10 +361,12 @@ class TestDisqualifyCrossEventIsolation:
             status="active",
             registered_at=timezone.now(),
         )
-        set_active_ctf_event(participant_user, event_a.pk)
+        configure_temporary_ctf_account(participant_user, event_a.pk)
 
         disqualify_participant(part_a.id)
 
-        # No other eligible participation: group removed, active event cleared.
+        participant_user.refresh_from_db()
         assert is_ctf_participant(participant_user) is False
+        assert participant_user.is_active is False
+        assert participant_user.username.startswith("ctf-tombstone-")
         assert get_user_profile(participant_user).active_ctf_event_id is None

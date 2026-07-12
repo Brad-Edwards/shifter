@@ -23,6 +23,7 @@ from ctf.enums import (
     RatingVisibility,
     ScoringMode,
 )
+from shared.field_encryption import EncryptedStringField
 
 from ._base import CTFBaseModel
 
@@ -103,6 +104,11 @@ class CTFEvent(CTFBaseModel):
         default=24,
         validators=[MinValueValidator(1), MaxValueValidator(168)],
         help_text="Hours after event end before auto-cleanup (1-168)",
+    )
+    participant_password_override = EncryptedStringField(
+        blank=True,
+        default="",
+        help_text="Optional event-wide bootstrap password for temporary participant accounts",
     )
     max_participants = models.PositiveIntegerField(
         null=True,

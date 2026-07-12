@@ -21,6 +21,7 @@ __all__ = [
     "AcesPlanImage",
     "AcesPlanNetwork",
     "AcesPlanNode",
+    "AcesPlanServicePort",
 ]
 
 
@@ -57,6 +58,21 @@ class AcesPlanAcl:
 
 
 @dataclass(frozen=True)
+class AcesPlanServicePort:
+    """A node's authored service port (ACES ``ServicePort`` / OCSF NetworkEndpoint).
+
+    Layer-4 transport-exposure intent, realized as fail-closed per-node-tag ingress
+    by the GCE backend (ADR-032-R8). ``protocol`` is normalized to ``tcp``/``udp``
+    and ``port`` is a concrete ``1..65535`` integer; ``name`` is retained for stable
+    ordering / diagnostics only, never for provider resource identity.
+    """
+
+    port: int
+    protocol: str
+    name: str = ""
+
+
+@dataclass(frozen=True)
 class AcesPlanNode:
     """A compute node to provision, with authored intent extracted verbatim."""
 
@@ -69,6 +85,7 @@ class AcesPlanNode:
     vcpus: int | None = None
     image: AcesPlanImage | None = None
     acls: tuple[AcesPlanAcl, ...] = ()
+    services: tuple[AcesPlanServicePort, ...] = ()
 
 
 @dataclass(frozen=True)

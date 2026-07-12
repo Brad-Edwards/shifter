@@ -1,5 +1,7 @@
 # GCP GCE range-cell deploy runbook
 
+Part of the Shifter deploy and operations docs; start at the [documentation home](../index.md).
+
 The GCP range backend defaults to the GCE range-cell path. This runbook covers
 enabling it in a real environment, mapping images, and rolling back to GDC.
 

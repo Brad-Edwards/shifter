@@ -68,7 +68,27 @@ max-complexity = 15
 quote-style = "double"
 indent-style = "space"
 
+[tool.coverage.run]
+# Production-only coverage (#1529 / REV1 Q6). CI measures this package with
+# ``pytest --cov`` from the package root; without omitting the test tree the
+# tests cover themselves and inflate the reported metric. ``source = ["."]``
+# keeps repo-relative paths for the SonarCloud report while ``omit`` drops all
+# tests, conftest hooks, and fixtures so the number reflects owned production
+# behavior only.
+source = ["."]
+omit = [
+    "tests/*",
+    "*/tests/*",
+    "conftest.py",
+    "*/conftest.py",
+]
+
 [tool.coverage.report]
+# Non-regression floor (#1529 / REV1 Q6). Measured production-only baseline is
+# 80%; the floor sits one point under it to absorb run-to-run variance and
+# ratchets up as coverage improves (a real reduction needs a reviewed exception).
+# See docs/dev/testing.md.
+fail_under = 79
 # Keep coverage's default (pragma: no cover) and also exclude unreachable
 # abstract-mixin stubs so they need no inline `# pragma` directive (Sonar S139).
 exclude_lines = [

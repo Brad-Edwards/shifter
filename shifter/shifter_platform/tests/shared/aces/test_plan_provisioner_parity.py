@@ -11,13 +11,22 @@ transport version contract.
 Compatibility is asserted against public APIs and Shifter-owned fixtures only -- no
 private reference-backend helpers (ADR-032-R7 / issue #1522). This guards the
 *consumer's own* extraction against regression (editing ``aces_plan.py``'s accessors
-breaks these expectations). It is deliberately not a live differential oracle
-against the reference backend -- the private ``aces_backend_libvirt`` accessors are
-not a compatibility contract (ADR-032-R7). An upstream ACES payload-convention change
-is instead bounded by the supported ``aces-sdl`` window
-``[MINIMUM_ACES_SDL_VERSION, MAXIMUM_ACES_SDL_VERSION_EXCLUSIVE)`` the consumer
-enforces, and must be re-validated (this fixture + the ACES conformance gate) when
-that window is raised.
+breaks these expectations). It is deliberately not a live differential oracle against
+the reference backend's *private* accessors -- those are not a compatibility contract
+(ADR-032-R7). An upstream ACES payload-convention change is instead bounded by the
+supported ``aces-sdl`` window ``[MINIMUM_ACES_SDL_VERSION,
+MAXIMUM_ACES_SDL_VERSION_EXCLUSIVE)`` the consumer enforces, and must be re-validated
+(this fixture + the ACES conformance gate) when that window is raised.
+
+Exception (ADR-032-R8 / issue #1562): ``TestServiceExtractionParity`` is a bounded,
+services-only differential against the reference backend's *public* pure interpreter
+(``aces_backend_libvirt.realization.interpret_provisioning_plan``) for *valid, named*
+tcp/udp services. It uses no private accessors and is a best-effort, test-only oracle
+(skipped if the reference backend is not installed), so it does not make the reference
+backend a runtime compatibility contract. Shifter's stricter, fail-closed handling of
+unnamed services and unknown protocols (which the reference silently drops / coerces to
+TCP) is a deliberate divergence, so the differential intentionally covers only the
+valid overlap where both must agree.
 """
 
 from __future__ import annotations
@@ -175,3 +184,58 @@ class TestProvisionerReaderContract:
         # (resolved to a concrete CIDR at realization, fail-closed).
         assert (acl.action, acl.direction, acl.protocol, acl.ports) == ("accept", "in", "tcp", (22,))
         assert acl.from_net == "net.lan" and acl.to_net is None
+
+
+def _plan_with_services(services: list[dict]) -> ProvisioningPlan:
+    node = PlannedResource(
+        address="node.web",
+        domain=RuntimeDomain.PROVISIONING,
+        resource_type="node",
+        payload={
+            "name": "web",
+            "node_type": "vm",
+            "os_family": "linux",
+            "spec": {
+                "node": {"type": "vm", "os": "linux", "services": services},
+                "infrastructure": {"networks": ["net.lan"]},
+            },
+        },
+    )
+    network = PlannedResource(
+        address="net.lan",
+        domain=RuntimeDomain.PROVISIONING,
+        resource_type="network",
+        payload={"name": "lan", "spec": {"infrastructure": {"properties": {"cidr": "10.9.0.0/24"}}}},
+    )
+    return ProvisioningPlan(resources={node.address: node, network.address: network})
+
+
+class TestServiceExtractionParity:
+    """Services-only differential vs the reference backend's PUBLIC interpreter (ADR-032-R8)."""
+
+    def test_valid_named_services_match_public_libvirt_reference(self, reader):
+        # Test-only oracle (public API only, no private accessors); skipped if the
+        # reference backend is not installed so it never becomes a runtime contract.
+        libvirt = pytest.importorskip("aces_backend_libvirt.realization")
+        services = [
+            {"name": "http", "port": 80, "protocol": "tcp"},
+            {"name": "dns", "port": 53, "protocol": "udp"},
+        ]
+        plan = _plan_with_services(services)
+
+        reference = libvirt.interpret_provisioning_plan(plan)
+        reference_domain = next(domain for domain in reference.domains if domain.address == "node.web")
+        reference_tuples = {(svc.protocol, svc.port, svc.name) for svc in reference_domain.services}
+
+        parsed = reader.parse_plan(serialize_provisioning_plan(plan))
+        shifter_node = next(node for node in parsed.nodes if node.address == "node.web")
+        shifter_tuples = {(svc.protocol, svc.port, svc.name) for svc in shifter_node.services}
+
+        assert shifter_tuples == reference_tuples == {("tcp", 80, "http"), ("udp", 53, "dns")}
+
+    def test_shifter_is_stricter_than_reference_on_unknown_protocol(self, reader):
+        # The reference coerces an unknown protocol to TCP (fail-open); Shifter rejects
+        # it at its separate trust boundary (fail-closed) -- a deliberate divergence.
+        serialized = serialize_provisioning_plan(_plan_with_services([{"name": "x", "port": 80, "protocol": "sctp"}]))
+        with pytest.raises(reader.AcesPlanError, match="protocol"):
+            reader.parse_plan(serialized)

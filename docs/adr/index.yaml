@@ -46,7 +46,7 @@
     "enforcement": ["pre-commit", "agent-policy"],
     "evidence": [
       "docs/adr/README.md",
-      "shifter/shifter_platform/documentation/docs/technical/dev/adr-enforcement.md"
+      "docs/technical/dev/adr-enforcement.md"
     ]
   },
   {
@@ -209,6 +209,11 @@
         "id": "ADR-004-R20",
         "description": "The self-hosted GitHub Actions deploy runner defined in `platform/terraform/global/github-runner/main.tf` MUST fail closed on account-default-VPC placement by default. A range's `private_dns_enabled` interface VPC endpoints override service hostnames for the entire VPC, so a range sharing the runner's VPC can hijack the runner's AWS API resolution and black-hole CI (the ~107-minute wedge that #1220's `timeout-minutes` only backstops). The preferred placements are a dedicated runner VPC or the portal VPC private tier, selected via the operator-supplied `var.vpc_id` / `var.subnet_id` (live `vpc-*`/`subnet-*` IDs are never committed, per ADR-004-R14). Enforcement is fail-closed at plan/apply time: the stack resolves the account default VPC via `data.aws_vpcs.default` and an `aws_security_group.runner` `lifecycle.precondition` rejects a resolved runner VPC (`local.runner_vpc_id`) matching it, with a second precondition rejecting a runner subnet that does not belong to that VPC. An explicit, documented opt-in escape hatch `var.allow_default_vpc` (default `false`, so the guard stays fail-closed for everyone who does not set it) permits default-VPC placement where the range private-DNS collision risk is knowingly accepted; when set with empty `var.vpc_id`/`var.subnet_id` the stack auto-resolves the default VPC and one of its subnets so no live IDs are committed. aws-dev and aws-proof set it `true` today; the durable placement design (keep default VPC vs. build reproducible isolated placement) is being reassessed in #1437. The presence of the guard is pinned by `scripts/check_tf_runner_network/check_tf_runner_network.py`, wired as the `check-tf-runner-network` pre-commit hook and the matching `_quality.yml` step, with its unittest suite included in the `check_tf_*` checker tests, so the precondition cannot be silently removed. Established by #1222; opt-in escape hatch added by #1425.",
         "checks": []
+      },
+      {
+        "id": "ADR-004-R21",
+        "description": "The per-range Polaris Bedrock agent role (`aws_iam_role.polaris_agent` in `shifter/engine/provisioner/terraform/modules/range/iam.tf`) MUST stay scoped to exactly the narrow shape #1377 established. Its inline policy (`aws_iam_role_policy.polaris_agent`) MUST grant only `bedrock:InvokeModel` and `bedrock:InvokeModelWithResponseStream` (no other action, and never a `bedrock:*` or full `*` wildcard), and its `Resource` fields MUST reference only the four `polaris_agent_main_inference_profile_arn` / `polaris_agent_small_inference_profile_arn` / `polaris_agent_main_backing_model_arns` / `polaris_agent_small_backing_model_arns` variables (never `Resource = \"*\"` or any other wildcard ARN); the statement granting access to the backing foundation models MUST carry a `bedrock:InferenceProfileArn` condition scoping it to the approved inference profiles, since those models are reachable only through those profiles. The role's trust policy MUST bind `Principal.AWS` to `var.range_instance_role_arn` (never a wildcard or a service principal) AND MUST carry a `StringEquals` condition on `ec2:SourceInstanceARN`, so no range host other than the exact Polaris EC2 instance can assume it even though the shared range-instance role's own IAM policy allows assuming anything in the shifter-${environment}-*-polaris-agent namespace. The role MUST also set a permissions boundary (`var.polaris_agent_permissions_boundary_arn`) and the standard Shifter tags (`local.common_tags`). No S3, SSM, IAM, KMS, Secrets Manager, or arbitrary STS access is granted. Enforced by `scripts/check_tf_iam_bedrock_agent_scope/check_tf_iam_bedrock_agent_scope.py`, wired as the `check-tf-iam-bedrock-agent-scope` pre-commit hook and a CI step in `.github/workflows/_quality.yml` right after `tflint --recursive`, with its unittest suite included in the `check_tf_*` checker tests. Established by #1377.",
+        "checks": []
       }
     ],
     "exceptions": [],
@@ -224,6 +229,7 @@
       "scripts/check_tf_kms_secrets_grant/check_tf_kms_secrets_grant.py",
       "scripts/check_tf_rds_security/check_tf_rds_security.py",
       "scripts/check_tf_iam_ssm_range_scope/check_tf_iam_ssm_range_scope.py",
+      "scripts/check_tf_iam_bedrock_agent_scope/check_tf_iam_bedrock_agent_scope.py",
       "scripts/check_portal_target_sg_sources/check_portal_target_sg_sources.py",
       "scripts/check_tf_iam_role_naming/check_tf_iam_role_naming.py",
       "scripts/check_tf_runner_network/check_tf_runner_network.py",
@@ -231,8 +237,8 @@
       "platform/terraform/.checkov.yaml",
       "docs/adr/exceptions.yaml",
       "docs/architecture/checkov-soft-fail-preflight-757.md",
-      "shifter/shifter_platform/documentation/docs/technical/dev/adr-enforcement.md",
-      "shifter/shifter_platform/documentation/docs/technical/dev/ci-cd.md"
+      "docs/technical/dev/adr-enforcement.md",
+      "docs/technical/dev/ci-cd.md"
     ]
   },
   {
@@ -244,7 +250,7 @@
     "rules": [
       {
         "id": "ADR-005-R1",
-        "description": "Shared cloud factories must route supported providers through adapter packages rather than provider-specific call sites in domain code.",
+        "description": "Shared cloud factories must route supported providers through adapter packages rather than provider-specific call sites in domain code. Whole-range provision/destroy/pause/resume is governed by ADR-039's bundle-selected range-substrate adapter, not exposed as a composition of public low-level cloud factories.",
         "checks": ["cloud-factory-seam"]
       },
       {
@@ -269,9 +275,10 @@
       ".github/workflows/_gcp-dev.yml",
       "platform/terraform/gcp/modules/platform-core/main.tf",
       "docs/architecture/root-configured-backend-bundles.md",
+      "docs/architecture/provider-neutral-range-substrate.md",
       "platform/terraform/gcp/README.md",
       "platform/k8s/gcp/README.md",
-      "shifter/shifter_platform/documentation/docs/technical/dev/ci-cd.md"
+      "docs/technical/dev/ci-cd.md"
     ]
   },
   {
@@ -349,8 +356,8 @@
       "scripts/bootstrap/deploy.py",
       "platform/k8s/gcp/README.md",
       "platform/terraform/gcp/README.md",
-      "shifter/shifter_platform/documentation/docs/technical/platform_infrastructure/gcp-infrastructure.md",
-      "shifter/shifter_platform/documentation/docs/technical/dev/ci-cd.md"
+      "docs/technical/platform_infrastructure/gcp-infrastructure.md",
+      "docs/technical/dev/ci-cd.md"
     ]
   },
   {
@@ -408,7 +415,7 @@
       "platform/charts/shifter/templates/guacamole-backendconfig.yaml",
       "platform/terraform/gcp/README.md",
       "platform/k8s/gcp/README.md",
-      "shifter/shifter_platform/documentation/docs/technical/platform_infrastructure/networking.md",
+      "docs/technical/platform_infrastructure/networking.md",
       "shifter/shifter_platform/config/settings.py",
       "shifter/shifter_platform/entrypoint.sh",
       "docs/architecture/gke-control-plane-access-preflight.md",
@@ -491,6 +498,11 @@
         "id": "ADR-009-R6",
         "description": "Provider-authenticated accounts that hold or may acquire platform privilege must bind immutably to the validated provider issuer and subject. Returning login resolves that tuple before email; a different issuer or subject for the same email fails closed and must never overwrite the stored binding. Cognito/OIDC and Identity Platform must consume one provider-neutral verified-identity and persistence policy seam rather than duplicate binding or bootstrap workflows.",
         "checks": []
+      },
+      {
+        "id": "ADR-009-R7",
+        "description": "Temporary local CTF participant accounts are a distinct, durably marked account origin, never a provider role variant: creation always uses a fresh Django user and never links by email, provider subject, or another platform-user attribute; CTF password login admits only the immutable marker plus a live event participation; and every provider/platform login and non-participant HTTP, API-token, admin, dev-auth, and WebSocket surface must treat the marker as a deny-authoritative signal before binding, elevation, role synchronization, or session/surface admission. Delivery email remains participant metadata, never an identity key. Role/group state, username shape, missing provider fields, and negative staff flags are not substitutes for the marker.",
+        "checks": []
       }
     ],
     "exceptions": [],
@@ -513,8 +525,9 @@
       ".github/workflows/_gcp-dev.yml",
       "docs/architecture/root-configured-backend-bundles.md",
       "docs/architecture/verified-oidc-admin-bootstrap-preflight-1521.md",
-      "shifter/shifter_platform/documentation/docs/technical/architecture.md",
-      "shifter/shifter_platform/documentation/docs/technical/dev/secrets.md"
+      "docs/architecture/ctf-isolated-participant-accounts-preflight-1206.md",
+      "docs/technical/architecture.md",
+      "docs/technical/dev/secrets.md"
     ]
   },
   {
@@ -541,7 +554,7 @@
       },
       {
         "id": "ADR-011-R4",
-        "description": "Runtime provider and capability adapter selection must be derived from validated backend configuration while preserving shared service boundaries and adapter protocols.",
+        "description": "Runtime provider and capability adapter selection must be derived from validated backend configuration while preserving shared service boundaries and adapter protocols. Per-range provision/destroy/pause/resume uses ADR-039's single bundle-selected range-substrate adapter; backend-bundle metadata, task dispatch, and the runtime substrate implementation remain distinct concerns.",
         "checks": []
       },
       {
@@ -564,6 +577,7 @@
     "enforcement": ["agent-policy", "ci"],
     "evidence": [
       "docs/architecture/root-configured-backend-bundles.md",
+      "docs/architecture/provider-neutral-range-substrate.md",
       "docs/architecture/aws-deploy-tfvars-preflight-1249.md",
       "docs/adr/index.yaml",
       "shifter/installation/__init__.py",
@@ -577,8 +591,8 @@
       ".github/workflows/_gcp-dev.yml",
       ".github/workflows/_shifter-platform.yml",
       "docs/dev/deploy-secrets.md",
-      "shifter/shifter_platform/documentation/docs/technical/dev/ci-cd.md",
-      "shifter/shifter_platform/documentation/docs/technical/architecture.md"
+      "docs/technical/dev/ci-cd.md",
+      "docs/technical/architecture.md"
     ]
   },
   {
@@ -914,7 +928,7 @@
       "scripts/adr_guard/boundary_mock_baseline.json",
       "scripts/adr_guard/tests/test_adr_guard.py",
       "docs/adr/README.md",
-      "shifter/shifter_platform/documentation/docs/technical/dev/adr-enforcement.md"
+      "docs/technical/dev/adr-enforcement.md"
     ]
   },
   {
@@ -1001,7 +1015,7 @@
       "docs/adr/documentation-coverage.yaml",
       "scripts/adr_guard/adr_guard.py",
       "scripts/adr_guard/tests/test_adr_guard.py",
-      "shifter/shifter_platform/documentation/docs/technical/dev/adr-enforcement.md"
+      "docs/technical/dev/adr-enforcement.md"
     ]
   },
   {
@@ -1056,7 +1070,7 @@
       "platform/terraform/modules/portal/messaging/main.tf",
       "platform/terraform/gcp/modules/portal/messaging/main.tf",
       "docs/architecture/range-event-delivery-preflight-476.md",
-      "shifter/shifter_platform/documentation/docs/technical/architecture.md"
+      "docs/technical/architecture.md"
     ]
   },
   {
@@ -1442,16 +1456,23 @@
         "id": "ADR-032-R7",
         "description": "The serialized ProvisioningPlan transport must declare and validate supported contract and producer versions before realization. The consumer must reject unknown resource types, malformed payloads, duplicate identities, duplicate aliases, dangling node/network/composition references, and unsupported topology terms before any cloud, Terraform, SSH, SSM, or guest mutation. Compatibility tests must use public ACES APIs, public fixtures, or Shifter-owned serialized fixtures; private reference-backend helpers are not a compatibility contract.",
         "checks": []
+      },
+      {
+        "id": "ADR-032-R8",
+        "description": "ACES Node.services entries are authored layer-4 transport exposure intent, not informational labels, guest service installation, participant authorization, or an override of authored ACLs. The GCE realization must validate the compiled spec.node.services payload again at the separate provisioner trust boundary and realize supported TCP/UDP ports as deterministic per-node-tag ingress policy sourced only from concrete CIDRs declared by networks in that same compiled range. It must never widen a service to 0.0.0.0/0, platform/portal/operator CIDRs, or another range by default. The existing management-plane allow remains higher precedence than authored ACLs; authored ACLs remain higher precedence than service-derived allows. Unsupported or malformed service shapes and any priority/source scope that cannot be represented without widening must fail before cloud mutation. The projection is process-local realization data only; it must not become a second SDL, persisted schema, API DTO, setting, or participant-access contract.",
+        "checks": []
       }
     ],
     "exceptions": [],
     "enforcement": ["ci", "agent-policy"],
     "evidence": [
       "https://github.com/Brad-Edwards/shifter/issues/1264",
+      "https://github.com/Brad-Edwards/shifter/issues/1562",
       "https://github.com/Brad-Edwards/shifter/issues/1563",
       "docs/architecture/aces-runtime-target-backend-manifest-preflight-1233.md",
       "docs/architecture/aces-provisioning-plan-transport-preflight-1522.md",
       "docs/architecture/aces-backend-manifest-realizability-preflight-1563.md",
+      "docs/architecture/aces-service-reachability-preflight-1562.md",
       "docs/architecture/aces-account-credentials-preflight-1560.md",
       ".importlinter",
       "shifter/shifter_platform/pyproject.toml",
@@ -1651,6 +1672,127 @@
       ".github/dependabot.yml",
       "https://docs.github.com/en/actions/security-for-github-actions/using-artifact-attestations/using-artifact-attestations-to-establish-provenance-for-builds",
       "https://docs.docker.com/build/ci/github-actions/attestations/"
+    ]
+  },
+  {
+    "id": "ADR-038",
+    "title": "Documentation is a single public mkdocs site on GitHub Pages",
+    "status": "accepted",
+    "scope": "repository",
+    "decision": "Shifter documentation is authored as Markdown under top-level docs/ and published as one public mkdocs (Material) site on GitHub Pages. There is no second docs system: the in-app login-gated Django documentation app is retired and its product/user docs move onto the same site. Internal design notes and machine registries stay in the repository but are kept off the published site. Doc relocations preserve content verbatim.",
+    "rules": [
+      {
+        "id": "ADR-038-R1",
+        "description": "Documentation is authored as Markdown under top-level docs/ and published as a single public mkdocs Material site on GitHub Pages (.github/workflows/docs.yml). A parallel docs system must not be reintroduced; the in-app Django documentation app is retired rather than maintained alongside the site.",
+        "checks": []
+      },
+      {
+        "id": "ADR-038-R2",
+        "description": "Internal design notes (docs/architecture/*preflight*.md, *-adr.md), _deprecated content, machine registries (docs/adr/*.yaml), and scratch dirs (notes/, plans/) stay in the repository but are excluded from the published site via mkdocs exclude_docs. Every published page is reachable from nav and the site builds under `mkdocs build --strict`.",
+        "checks": []
+      },
+      {
+        "id": "ADR-038-R3",
+        "description": "Documentation relocations preserve content verbatim (git mv); doc bodies are not regenerated or rewritten as part of a move.",
+        "checks": []
+      }
+    ],
+    "exceptions": [],
+    "enforcement": ["ci"],
+    "evidence": [
+      "https://github.com/Brad-Edwards/shifter/issues/1591",
+      "mkdocs.yml",
+      ".github/workflows/docs.yml",
+      "docs/index.md"
+    ]
+  },
+  {
+    "id": "ADR-039",
+    "title": "Provider-neutral range substrate",
+    "status": "accepted",
+    "scope": "range_provisioning",
+    "decision": "Each root-selected backend bundle selects exactly one provider-neutral range-substrate adapter exposing four convergent operations -- provision, destroy, pause, and resume -- over the complete range resource set (networks, instances, optional NGFW, and remote-access bindings). The port consumes existing validated RangeSpec or ACES realization intent rather than a new topology schema, returns closed versioned non-secret resource bindings, uses one classified error contract and request-scoped idempotency semantics, and is trusted only after the shared black-box lifecycle/security conformance suite passes. Task dispatch, backend metadata, public workflow/status, ACES semantic conformance, and Guacamole credential/session construction remain separate concerns. AWS Terraform and GCP GDC are the initial adapters; Azure is deferred until both pass conformance and may enter only as another bundle/adapter behind this contract.",
+    "interface_contract": {
+      "kind": "range-substrate/v1",
+      "operations": ["provision", "destroy", "pause", "resume"],
+      "resources": ["network", "instance", "ngfw", "remote-access"],
+      "conformance": {
+        "shared_black_box_suite": true,
+        "real_provider_promotion_evidence": true
+      },
+      "adapters": {
+        "initial": ["aws-terraform", "gcp-gdc"],
+        "deferred": ["azure"]
+      },
+      "issue_references": {
+        "283": {"disposition": "out-of-scope"},
+        "478": {"operations": ["provision", "destroy", "pause", "resume"]},
+        "265": {"disposition": "out-of-scope"},
+        "277": {"disposition": "out-of-scope"}
+      }
+    },
+    "rules": [
+      {
+        "id": "ADR-039-R1",
+        "description": "The published range-substrate port has exactly four operations: provision, destroy, pause, and resume. Each operation covers the complete request-owned resource set -- networks, instances, optional NGFW, and remote-access readiness/bindings -- and reaches an observed postcondition or returns a classified failure. Task or Job submission is delivery, not substrate success; cancel is workflow policy, not a fifth operation.",
+        "checks": []
+      },
+      {
+        "id": "ADR-039-R2",
+        "description": "Substrate inputs and results are closed and versioned. The port consumes existing validated RequestSpec/RangeSpec or ADR-032 ACES ProvisioningPlan realization intent and must not introduce another scenario/topology schema, public status enum, provider API DTO, event family, repository, validator, or exception hierarchy. Results contain canonical non-secret bindings and a versioned adapter-state reference/projection, never raw provider responses or credential values.",
+        "checks": []
+      },
+      {
+        "id": "ADR-039-R3",
+        "description": "Operations are request/generation scoped and convergent: same-key/same-intent provision, repeated destroy, and repeated pause/resume at the target state are successful no-ops; same-key/different-intent and concurrent conflicting mutations fail before mutation; timeout/partial outcomes are observed and reconciled before retry. Destroy distinguishes per-range from shared ownership, preserves recovery state until absence is observed, and never deletes shared NGFW/network resources.",
+        "checks": []
+      },
+      {
+        "id": "ADR-039-R4",
+        "description": "Every adapter maps failures into the shared substrate codes and retry dispositions (invalid-intent, unsupported-capability, not-found, conflict, identity-or-policy, prerequisite, rate-limited, transient-provider, timeout-unknown, partial-failure, adapter-defect). Diagnostics are bounded and sanitized; raw SDK/Terraform errors, resource inventories, secret references/values, and provider payloads do not enter API/websocket errors, events, metrics, or logs.",
+        "checks": []
+      },
+      {
+        "id": "ADR-039-R5",
+        "description": "Security-sensitive provider assumptions are interface obligations: least-privilege workload identity; installation/request ownership proof; protected and serialized state; fail-closed ingress, cross-range, management, metadata/API, DNS, and egress controls; secret-reference-only persistence/output; structured argv with no credentials/config blobs; and existing admission/runtime hardening. Substrate conformance does not override ADR-030 live-fire backend approval.",
+        "checks": []
+      },
+      {
+        "id": "ADR-039-R6",
+        "description": "A canonical black-box conformance suite runs unchanged for every adapter and covers contract/version rejection before mutation, all resource families, four-operation replay/concurrency/partial-failure behavior, lossless pause/resume, access readiness, shared-NGFW behavior, ownership/orphan cleanup, error/redaction/observability, and adapter security probes. Stable maturity additionally requires disposable real-provider evidence. An adapter missing a mandatory operation cannot claim full conformance or stable eligibility for a profile requiring it.",
+        "checks": []
+      },
+      {
+        "id": "ADR-039-R7",
+        "description": "The backend-bundle registry is the sole adapter-selection seam. AWS Terraform and GCP GDC are the initial adapters; GDC's current non-lossless pod and disabled pause/resume behavior remains an explicit conformance gap. Azure is deferred until both initial adapters pass and may be added only as another backend bundle/adapter with its own settings and conformance evidence, without provider branches in domain workflows or shared public contracts.",
+        "checks": []
+      },
+      {
+        "id": "ADR-039-R8",
+        "description": "Existing workflow/security/persistence incumbents remain authoritative: Mission Control/CTF/CMS own auth and audit; ResourceStatus owns public lifecycle state; installation owns config validation; Engine owns orchestration/state; ADR-025 owns durable events/reconciliation; provider secret stores plus Engine/Mission Control own remote-access secret resolution and Guacamole; and #478 owns replacement of the provisioner's direct Django-table integration. Substrate work must reuse rather than duplicate these layers.",
+        "checks": []
+      }
+    ],
+    "exceptions": [],
+    "enforcement": ["agent-policy", "ci"],
+    "evidence": [
+      "https://github.com/Brad-Edwards/shifter/issues/1322",
+      "docs/architecture/provider-neutral-range-substrate.md",
+      "docs/architecture/branch-routing-provider-coupling-inventory.md",
+      "docs/architecture/root-configured-backend-bundles.md",
+      "docs/architecture/range-isolation-model.md",
+      "docs/architecture/vm-guest-credential-preflight-762.md",
+      "docs/architecture/range-event-delivery-preflight-476.md",
+      "docs/architecture/gcp-range-cell-backend-preflight-1341.md",
+      "shifter/installation/contract.py",
+      "shifter/installation/registry.py",
+      "shifter/shifter_platform/engine/ecs.py",
+      "shifter/shifter_platform/engine/services/_range.py",
+      "shifter/shifter_platform/engine/services/_lifecycle.py",
+      "shifter/engine/provisioner/range_terraform_runner.py",
+      "shifter/engine/provisioner/range_ops.py",
+      "shifter/engine/provisioner/events.py",
+      "shifter/engine/provisioner/log_redact.py"
     ]
   }
 ]
