@@ -276,9 +276,14 @@ Dispatch on main  → AWS prod deploy
 - `aws_first_deploy` (default `false`): allow the AWS engine deploy to skip the ECS task-family existence check. Set `true` only for the first-ever deploy to a fresh AWS environment, before the platform Terraform apply has created the provisioner task definition. On any normal deploy a missing or typo'd task family fails the run instead of skipping silently. Clear it (re-run without the flag) once the platform stack has been applied.
 - `gcp_require_active_certificate` (default `true`): require the GKE ManagedCertificate to be Active for the public hostname. Set `false` only for first-time GCP bootstrap, before DNS for the hostname has been pointed at the ingress IP.
 
-## Self-Hosted Runner
+## Runner Policy
 
-All workflows run on `self-hosted` runners (not GitHub-hosted). The runner has:
+Workflows choose one runner class per job. Portable quality jobs run on
+`ubuntu-latest`; trusted deployment, image-build, Packer, and
+environment-mutating jobs run on `self-hosted` runners. GitHub Actions does not
+provide native fallback between those runner classes.
+
+The self-hosted runner has:
 
 - AWS CLI configured
 - gcloud SDK support for GCP workflows

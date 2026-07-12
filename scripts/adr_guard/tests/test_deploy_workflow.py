@@ -387,6 +387,72 @@ class TestProvisionerDeployTestGate(unittest.TestCase):
             )
 
 
+class TestEngineValidateRunnerPlacement(unittest.TestCase):
+    """#1474: the engine `validate` image-shape gate runs on the trusted
+    self-hosted runner class so a GitHub-hosted runner-acquisition stall cannot
+    cancel it before steps start (which skipped the whole Platform stage). It is
+    hardened as defense in depth. Runner placement is pinned here as parsed
+    workflow structure - runner class, PR reachability, permissions, needs, and
+    timeout backstop - so the next placement change has one test surface to
+    update. ``TestRunnerExposure`` already proves the generic PR-denial /
+    push-reachability invariant for every self-hosted job.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.engine = _load("_shifter-engine.yml")
+        cls.jobs = ADR_GUARD._dw_jobs(cls.engine, "_shifter-engine.yml")
+        cls.validate = cls.jobs["validate"]
+
+    def test_validate_runs_on_self_hosted(self):
+        self.assertTrue(
+            ADR_GUARD._dw_is_self_hosted(self.validate),
+            "_shifter-engine.yml `validate` must run on the self-hosted runner "
+            "class (#1474); GitHub-hosted acquisition stalls cancelled the job "
+            "and skipped Platform.",
+        )
+
+    def test_validate_denied_on_pull_request_but_runs_on_push(self):
+        expr = ADR_GUARD._dw_job_if(self.validate)
+        self.assertTrue(
+            ADR_GUARD._dw_job_denied_on_pull_request(expr),
+            f"`validate` is self-hosted and must fail closed on pull_request "
+            f"(ADR-003-R5). if: {expr}",
+        )
+        self.assertTrue(
+            ADR_GUARD._dw_evaluate_if(expr, event_name="push"),
+            f"`validate` must still run on push or its PR-denial is vacuous. "
+            f"if: {expr}",
+        )
+
+    def test_validate_depends_on_provisioner_test_gate(self):
+        needs = self.validate.get("needs", [])
+        needs = {needs} if isinstance(needs, str) else set(needs)
+        self.assertIn(
+            "test",
+            needs,
+            "`validate` must depend on the #555 provisioner test gate",
+        )
+
+    def test_validate_keeps_minimal_permissions(self):
+        # Validate does a local image build only and takes no cloud credentials;
+        # it must not request id-token / attestations or any write scope.
+        self.assertEqual(
+            self.validate.get("permissions"),
+            {"contents": "read"},
+            "`validate` must keep contents:read only (no OIDC / attestations)",
+        )
+
+    def test_validate_has_timeout_backstop(self):
+        timeout = self.validate.get("timeout-minutes")
+        self.assertIsInstance(
+            timeout,
+            int,
+            "`validate` must set a timeout-minutes backstop (#1220 convention)",
+        )
+        self.assertGreater(timeout, 0)
+
+
 class TestEngineImageDigest(unittest.TestCase):
     """#935: the engine deploy pins an immutable ECR digest, not a tag lookup."""
 
