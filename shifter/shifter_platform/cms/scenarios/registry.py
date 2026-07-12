@@ -334,21 +334,6 @@ def _db_source_entries(metadata_map: dict[str, Any], yaml_ids: set[str]) -> tupl
     return entries, db_ids
 
 
-def active_legacy_scenario_ids() -> set[str]:
-    """Active YAML-default + DB-custom scenario ids: the no-shadow set.
-
-    This is the authoritative "already taken by a legacy scenario" set. The
-    unified projection uses it to fail-closed shadow ACES entries, and the
-    uniform content-ingestion path (#1578) uses it to reject a pack whose
-    ``scenario_id`` would shadow an active legacy scenario (preserving the
-    ADR-024 cutover posture). It matches exactly the non-ACES ids the projection
-    produces: YAML defaults plus active DB customs that do not collide with them.
-    """
-    yaml_ids = {template.id for template in get_yaml_scenarios()}
-    db_ids = {template.id for template in _get_db_scenarios() if template.id not in yaml_ids}
-    return yaml_ids | db_ids
-
-
 def _aces_source_entries(metadata_map: dict[str, Any], known_ids: set[str]) -> list[dict[str, Any]]:
     """Build ACES entries, fail-closed skipping any id that shadows an active legacy scenario."""
     entries = []

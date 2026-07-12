@@ -4,10 +4,10 @@ import pytest
 from django.contrib.auth import get_user_model
 
 from cms.models import AcesPackageSource, Scenario, ScenarioMetadata
+from cms.scenarios.legacy_ids import active_legacy_scenario_ids
 from cms.scenarios.registry import (
     ScenarioWorkflow,
     _aces_launchable,
-    active_legacy_scenario_ids,
     check_scenario_access,
     get_catalog_entry,
     get_scenario_detail,

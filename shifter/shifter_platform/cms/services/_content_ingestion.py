@@ -38,8 +38,8 @@ from django.db import IntegrityError, transaction
 
 from cms.exceptions import CMSError
 from cms.models import AcesPackageSource
+from cms.scenarios.legacy_ids import active_legacy_scenario_ids
 from cms.scenarios.pack_validation import PackValidationError, validate_pack
-from cms.scenarios.registry import active_legacy_scenario_ids
 from risk_register.models import AuditLog
 from risk_register.services import AuditEvent, audit_log
 from shared.auth import validate_cms_authoring_user

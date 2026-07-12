@@ -166,14 +166,21 @@ def _check_compatibility(pack_root: Path, pack_yaml: dict[str, object], errors: 
     manifest_path = _contained_path(pack_root, rel, "compatibility_manifest", errors)
     if manifest_path is None:
         return
+    manifest = _load_compatibility_manifest(manifest_path, errors)
+    if manifest is not None:
+        _validate_against_schema(manifest, compatibility_schema_path(), "compatibility manifest", errors)
+
+
+def _load_compatibility_manifest(manifest_path: Path, errors: list[str]) -> dict[str, object] | None:
+    """Load a referenced compatibility manifest as a mapping, or record why not."""
     if not manifest_path.is_file():
         errors.append("compatibility manifest is referenced but missing")
-        return
+        return None
     manifest = _load_yaml(manifest_path, "compatibility manifest", errors)
     if not isinstance(manifest, dict):
         errors.append("compatibility manifest is not a mapping")
-        return
-    _validate_against_schema(manifest, compatibility_schema_path(), "compatibility manifest", errors)
+        return None
+    return manifest
 
 
 def _check_sdl(pack_root: Path, errors: list[str]) -> None:
