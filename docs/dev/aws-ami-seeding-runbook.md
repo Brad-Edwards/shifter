@@ -1,5 +1,7 @@
 # AWS range AMI seeding
 
+Part of the Shifter deploy and operations docs; start at the [documentation home](../index.md).
+
 The Portal Terraform stack reads the range base AMIs from SSM as data sources
 (`/shifter/ami/kali`, `/shifter/ami/ubuntu`, `/shifter/ami/windows`,
 `/shifter/ami/dc`). If any parameter is missing, `terraform plan` for the Portal
@@ -10,7 +12,7 @@ guest AMIs from the same `/shifter/ami/*` parameters.
 Packer sources live in `shifter/packer/` (`kali.pkr.hcl`, `ubuntu.pkr.hcl`,
 `windows.pkr.hcl`, `dc.pkr.hcl`, shared `variables.pkr.hcl`, per-env
 `dev.pkrvars.hcl` / `proof.pkrvars.hcl`). The deep reference is
-[`shifter/packer/README.md`](../../shifter/packer/README.md).
+[`shifter/packer/README.md`](https://github.com/Brad-Edwards/shifter/blob/dev/shifter/packer/README.md).
 
 ## Ordering: no circular dependency with the portal VPC
 

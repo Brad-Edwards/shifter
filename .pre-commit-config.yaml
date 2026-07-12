@@ -298,6 +298,27 @@ repos:
         files: ^(platform/terraform/modules/engine-provisioner/iam\.tf|platform/terraform/modules/portal/ec2/main\.tf|platform/terraform/modules/guacamole/iam\.tf)$
         pass_filenames: false
 
+      # ADR-008-R7 / issue #1517: GCP application workload identities (portal,
+      # workers, ctf-scheduler, provisioner) must not receive project-level
+      # Secret Manager payload/admin or Cloud Storage object-admin roles; static
+      # access is bound per named secret / bucket. Only the two dynamic-secret
+      # residuals tracked in #1586 are allowlisted. Scoped to the portal/iam
+      # module where the workload identities and their grants are defined.
+      - id: check-tf-gcp-iam-resource-scope
+        name: GCP workload IAM resource scoping (ADR-008-R7)
+        # Scan every .tf in the module (glob, pass_filenames=false) so a forbidden
+        # grant or custom role added in a sibling file — not just main.tf — is
+        # still caught. The hook's files: regex gates when it runs; the glob is
+        # what gets scanned.
+        entry: >-
+          bash -c '
+          python3 scripts/check_tf_gcp_iam_resource_scope/check_tf_gcp_iam_resource_scope.py
+          platform/terraform/gcp/modules/portal/iam/*.tf
+          '
+        language: system
+        files: ^platform/terraform/gcp/modules/portal/iam/.*\.tf$
+        pass_filenames: false
+
       # Custom: RDS instance IAM auth and explicit CA certificate check.
       # Checkov enforces IAM DB auth, but its current modern-CA rule
       # passes when ca_cert_identifier is absent; this checker closes
@@ -320,6 +341,20 @@ repos:
         entry: python3 scripts/check_checkov_invocation_parity/check_checkov_invocation_parity.py
         language: system
         files: ^(\.pre-commit-config\.yaml|\.github/workflows/_quality\.yml|platform/terraform/\.checkov\.yaml)$
+        pass_filenames: false
+
+      # Terraform validation inventory (#1528): fail closed when a tracked
+      # Terraform directory is not classified as a root or module, when a root
+      # lacks a committed lockfile, or when a root's declared providers drift
+      # from its lockfile. Non-authoritative local mirror of the CI
+      # terraform-matrix gate — it calls the same helper with the same flags.
+      # The helper scans the whole tracked estate via git, so the file list is
+      # a trigger only (pass_filenames=false).
+      - id: check-tf-roots
+        name: Terraform validation inventory (roots + modules classified)
+        entry: python3 scripts/check_tf_roots/check_tf_roots.py --check
+        language: system
+        files: ^(platform/terraform/validation-inventory\.yaml|scripts/check_tf_roots/.*|.*\.tf|.*/\.terraform\.lock\.hcl)$
         pass_filenames: false
 
       # Pin the behavior of the custom check_tf_* IAM/security
@@ -349,10 +384,12 @@ repos:
           python3 -m unittest scripts.check_tf_kms_secrets_grant.test_check_tf_kms_secrets_grant &&
           python3 -m unittest scripts.check_tf_rds_security.test_check_tf_rds_security &&
           python3 -m unittest scripts.check_portal_target_sg_sources.test_check_portal_target_sg_sources &&
-          python3 -m unittest scripts.check_tf_runner_network.test_check_tf_runner_network
+          python3 -m unittest scripts.check_tf_runner_network.test_check_tf_runner_network &&
+          python3 -m unittest scripts.check_tf_gcp_iam_resource_scope.test_check_tf_gcp_iam_resource_scope &&
+          python3 -m unittest scripts.check_tf_roots.test_check_tf_roots
           '
         language: system
-        files: ^scripts/(check_tf_(iam_ec2_scope|iam_elb_scope|iam_ssm_scope|iam_ssm_range_scope|sg_cidrs|kms_secrets_grant|rds_security|runner_network)|check_portal_target_sg_sources)/
+        files: ^scripts/(check_tf_(iam_ec2_scope|iam_elb_scope|iam_ssm_scope|iam_ssm_range_scope|sg_cidrs|kms_secrets_grant|rds_security|runner_network|gcp_iam_resource_scope|roots)|check_portal_target_sg_sources)/
         pass_filenames: false
 
   # Kubernetes schema validation
@@ -749,7 +786,7 @@ repos:
         entry: >-
           bash -c 'cd shifter/shifter_platform && source .venv/bin/activate &&
           TESTING=1 TEST_DB_BACKEND=sqlite DJANGO_DEBUG=true DJANGO_SECRET_KEY=dummy-for-testing python
-          -m pytest tests/ --ignore=tests/documentation
+          -m pytest tests/
           --ignore=tests/risk_register -m "not redis and not postgres" -q --cov=.
           --cov-report=html:../../coverage/shifter_platform
           --cov-report=xml:coverage.xml

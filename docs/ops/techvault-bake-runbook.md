@@ -1,7 +1,7 @@
 # TechVault Golden AMI Bake Runbook
 
 Region: `us-east-2` (all resources)
-Scenario: [`cms/scenarios/templates/techvault.yaml`](../../shifter/shifter_platform/cms/scenarios/templates/techvault.yaml)
+Scenario: [`cms/scenarios/templates/techvault.yaml`](https://github.com/Brad-Edwards/shifter/blob/dev/shifter/shifter_platform/cms/scenarios/templates/techvault.yaml)
 User docs: `documentation/docs/scenarios/techvault.md`
 Precedent: this mirrors the POLARIS bake pattern. See
 [`docs/architecture/polaris-scenario-bake-preflight-618.md`](../architecture/polaris-scenario-bake-preflight-618.md).

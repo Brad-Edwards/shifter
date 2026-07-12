@@ -254,6 +254,8 @@ class TestCompositionExtraction:
                     "groups": ["ops", "sudo"],
                     "shell": "/bin/bash",
                     "home": "/home/alice",
+                    "auth_method": "publickey",
+                    "password_strength": "strong",
                     "disabled": False,
                 },
             },
@@ -262,8 +264,155 @@ class TestCompositionExtraction:
         assert account.username == "alice"
         assert account.groups == ("ops", "sudo")
         assert account.login_shell == "/bin/bash"
+        assert account.auth_method == "publickey"
+        assert account.password_strength == "strong"
         assert account.target_address == "provision.node.web"
         assert account.disabled is False
+
+    def test_account_defaults_to_password_and_medium_strength(self):
+        account_resource = _resource(
+            "account.alice",
+            "account-placement",
+            {
+                "account_name": "alice",
+                "target_address": "provision.node.web",
+                "spec": {"username": "alice"},
+            },
+        )
+
+        account = parse_plan(_serialized(account_resource, self._target_node())).accounts[0]
+
+        assert account.auth_method == "password"
+        assert account.password_strength == "medium"
+
+    @pytest.mark.parametrize("auth_method", ["kerberos", "PASSWORD", "public-key"])
+    def test_rejects_unsupported_account_auth_method(self, auth_method: str):
+        account_resource = _resource(
+            "account.alice",
+            "account-placement",
+            {
+                "account_name": "alice",
+                "target_address": "provision.node.web",
+                "spec": {"username": "alice", "auth_method": auth_method},
+            },
+        )
+
+        with pytest.raises(AcesPlanError, match="unsupported account auth_method"):
+            parse_plan(_serialized(account_resource, self._target_node()))
+
+    @pytest.mark.parametrize("auth_method", [None, 1, [], {}])
+    def test_rejects_malformed_explicit_account_auth_method(self, auth_method: object):
+        account_resource = _resource(
+            "account.alice",
+            "account-placement",
+            {
+                "account_name": "alice",
+                "target_address": "provision.node.web",
+                "spec": {"username": "alice", "auth_method": auth_method},
+            },
+        )
+
+        with pytest.raises(AcesPlanError, match="auth_method must be a canonical string"):
+            parse_plan(_serialized(account_resource, self._target_node()))
+
+    @pytest.mark.parametrize("password_strength", ["none", "extreme", "MEDIUM"])
+    def test_rejects_unsafe_password_strength(self, password_strength: str):
+        account_resource = _resource(
+            "account.alice",
+            "account-placement",
+            {
+                "account_name": "alice",
+                "target_address": "provision.node.web",
+                "spec": {
+                    "username": "alice",
+                    "auth_method": "password",
+                    "password_strength": password_strength,
+                },
+            },
+        )
+
+        with pytest.raises(AcesPlanError, match="unsupported password_strength"):
+            parse_plan(_serialized(account_resource, self._target_node()))
+
+    @pytest.mark.parametrize("password_strength", [None, 1, [], {}])
+    def test_rejects_malformed_explicit_password_strength(self, password_strength: object):
+        account_resource = _resource(
+            "account.alice",
+            "account-placement",
+            {
+                "account_name": "alice",
+                "target_address": "provision.node.web",
+                "spec": {"username": "alice", "password_strength": password_strength},
+            },
+        )
+
+        with pytest.raises(AcesPlanError, match="password_strength must be a canonical string"):
+            parse_plan(_serialized(account_resource, self._target_node()))
+
+    @pytest.mark.parametrize("username", ["a;id", "a'lice", "a lice", "-root", "a" * 33])
+    def test_rejects_username_unsafe_for_supported_guest_dialects(self, username: str):
+        account_resource = _resource(
+            "account.bad",
+            "account-placement",
+            {
+                "account_name": username,
+                "target_address": "provision.node.web",
+                "spec": {"username": username},
+            },
+        )
+
+        with pytest.raises(AcesPlanError, match="account username is not portable"):
+            parse_plan(_serialized(account_resource, self._target_node()))
+
+    @pytest.mark.parametrize("username", ["aces", "ACES"])
+    def test_rejects_provisioner_management_username(self, username: str):
+        account_resource = _resource(
+            "account.management-collision",
+            "account-placement",
+            {
+                "account_name": username,
+                "target_address": "provision.node.web",
+                "spec": {"username": username},
+            },
+        )
+
+        with pytest.raises(AcesPlanError, match="reserved for provisioner management"):
+            parse_plan(_serialized(account_resource, self._target_node()))
+
+    def test_disabled_account_accepts_explicit_no_password_without_generating_blank_login(self):
+        account_resource = _resource(
+            "account.alice",
+            "account-placement",
+            {
+                "account_name": "alice",
+                "target_address": "provision.node.web",
+                "spec": {
+                    "username": "alice",
+                    "auth_method": "password",
+                    "password_strength": "none",
+                    "disabled": True,
+                },
+            },
+        )
+
+        account = parse_plan(_serialized(account_resource, self._target_node())).accounts[0]
+
+        assert account.disabled is True
+        assert account.password_strength == "none"
+
+    def test_rejects_mail_in_separate_provisioner_consumer(self):
+        account_resource = _resource(
+            "account.alice",
+            "account-placement",
+            {
+                "account_name": "alice",
+                "target_address": "provision.node.web",
+                "spec": {"username": "alice", "mail": "alice@example.com"},
+            },
+        )
+
+        with pytest.raises(AcesPlanError, match="account mail is not realized"):
+            parse_plan(_serialized(account_resource, self._target_node()))
 
     def test_extracts_service_feature(self):
         feature_resource = _resource(

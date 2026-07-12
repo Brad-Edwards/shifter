@@ -577,8 +577,6 @@ class TestValidationAndFailures:
             email="unregistered@test.com",
             name="Unregistered",
             status=ParticipantStatus.INVITED.value,
-            invite_token="recovery-test-token",
-            invite_token_expires=timezone.now() + timedelta(days=7),
         )
         with pytest.raises(CTFValidationError, match="registered"):
             recover_participant_range(

@@ -170,7 +170,7 @@ def logout_view(request):
     session cleared and are redirected to Cognito's logout endpoint to
     also clear the identity provider session.
 
-    All other users (magic-link CTF participants, dev-login) get a
+    All other users (local CTF participants, dev-login) get a
     simple Django session logout and redirect to the landing page.
     """
     if not request.user.is_authenticated:

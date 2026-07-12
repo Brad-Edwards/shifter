@@ -20,6 +20,7 @@ from mission_control.api._base import (
     _validated,
 )
 from mission_control.api.permissions import HasMissionControlActor
+from mission_control.api.rate_limit import NGFWLaunchRateThrottle
 from mission_control.api.serializers import (
     CredentialCreateResponseSerializer,
     CredentialCreateSerializer,
@@ -45,6 +46,8 @@ class NGFWCreateView(MissionControlAPIView):
     """Create a new NGFW."""
 
     permission_classes = [IsAuthenticatedSessionOrApiToken, HasMissionControlActor, _ngfw_write_permission()]
+    # Backpressure (#322): per-actor + fleet admission budget, before CMS.
+    throttle_classes = [NGFWLaunchRateThrottle]
 
     @extend_schema(responses=NGFWCreateResponseSerializer, operation_id="api_v1_mission_control_ngfw_create")
     def post(self, request: Request) -> Response | JsonResponse:

@@ -238,8 +238,6 @@ class TestForceDeleteEvent:
             email="ranged@test.com",
             name="Ranged Participant",
             status=ParticipantStatus.INVITED.value,
-            invite_token="ranged-token",
-            invite_token_expires=timezone.now() + timedelta(days=7),
             range_instance_id=42,
             range_status="ready",
         )
@@ -295,8 +293,6 @@ class TestForceDeleteEvent:
             email="ok@test.com",
             name="OK",
             status=ParticipantStatus.INVITED.value,
-            invite_token="ok-token",
-            invite_token_expires=timezone.now() + timedelta(days=7),
             range_instance_id=42,
             range_status="ready",
         )

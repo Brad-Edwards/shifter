@@ -135,8 +135,6 @@ def make_participant(event=None, **overrides) -> CTFParticipant:
         "user_id": 1,
         "status": ParticipantStatus.ACTIVE.value,
         "registered_at": timezone.now(),
-        "invite_token": "test-token-abcdef123456",
-        "invite_token_expires": timezone.now() + timedelta(days=7),
         "last_active_at": None,
     }
     defaults.update(overrides)

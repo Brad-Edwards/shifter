@@ -20,7 +20,7 @@ if TYPE_CHECKING:
     )
 
 from ctf.views._access import (
-    _check_invite_rate_limit,
+    _check_credential_delivery_rate_limit,
     _get_user,
     _json_error,
     _resolve_owned_participant,
@@ -260,7 +260,7 @@ def _resend_invite_response(participant_id: UUID) -> JsonResponse:
 @ctf_organizer_required
 @require_POST
 def api_participant_resend_invite(request: HttpRequest, participant_id: UUID) -> JsonResponse:
-    """API: Resend magic link email to a participant.
+    """API: Reset and resend participant credentials.
 
     Regenerates the invite token and sends a new email.
     Works for any participant regardless of registration status.
@@ -268,7 +268,7 @@ def api_participant_resend_invite(request: HttpRequest, participant_id: UUID) ->
     Args:
         participant_id: UUID of the participant.
     """
-    if not _check_invite_rate_limit(_get_user(request).pk):
+    if not _check_credential_delivery_rate_limit(_get_user(request).pk):
         return JsonResponse({"error": "Too many invitations. Try again later."}, status=429)
 
     _participant, error = _resolve_owned_participant(request, participant_id)

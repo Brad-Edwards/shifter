@@ -54,6 +54,11 @@ terraform:
   - 'scripts/check_tf_rds_security/**'
   - 'scripts/check_tf_iam_ssm_range_scope/**'
   - 'scripts/check_portal_target_sg_sources/**'
+  # Root init/validate gate (#1528): the inventory checker plus the two
+  # Terraform roots that live outside platform/terraform/.
+  - 'scripts/check_tf_roots/**'
+  - 'scripts/polaris-aws-range/**'
+  - 'shifter/engine/provisioner/terraform/**'
 
 k8s:
   - 'platform/k8s/**'

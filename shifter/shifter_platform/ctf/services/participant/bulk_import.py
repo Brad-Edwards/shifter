@@ -39,7 +39,7 @@ def _parse_participants_csv(csv_content: str) -> list[tuple[str, str]]:
         if not name:
             errors.append(f"Line {line_num}: Name is required")
             continue
-        if not email or "@" not in email:
+        if email and "@" not in email:
             errors.append(f"Line {line_num}: Invalid email format")
             continue
         participants_data.append((name, email))
@@ -50,23 +50,6 @@ def _parse_participants_csv(csv_content: str) -> list[tuple[str, str]]:
             details={"errors": errors},
         )
     return participants_data
-
-
-def _emails_or_raise_on_duplicate(participants_data: list[tuple[str, str]]) -> set[str]:
-    """Return the set of unique emails; raise if any duplicate appears in input."""
-    seen_emails: set[str] = set()
-    duplicates: list[str] = []
-    for _name, email in participants_data:
-        if email in seen_emails:
-            duplicates.append(email)
-        seen_emails.add(email)
-    if duplicates:
-        raise CTFValidationError(
-            "Duplicate emails in import",
-            code="CTF_DUPLICATE_EMAILS",
-            details={"duplicates": duplicates},
-        )
-    return seen_emails
 
 
 def _assert_event_accepts_import(event: CTFEvent, participants_data: list[tuple[str, str]]) -> None:
@@ -125,20 +108,8 @@ def bulk_import_participants(
         ) from None
 
     participants_data = _parse_participants_csv(csv_content)
-    seen_emails = _emails_or_raise_on_duplicate(participants_data)
     # Capacity is asserted under the event row lock inside the transaction
     # below (#1145), so concurrent imports cannot race past max_participants.
-
-    existing = CTFParticipant.objects.filter(
-        event=event,
-        email__in=seen_emails,
-    ).values_list("email", flat=True)
-    if existing:
-        raise CTFValidationError(
-            "Some participants already exist",
-            code="CTF_EXISTING_PARTICIPANTS",
-            details={"existing": list(existing)},
-        )
 
     created: list[CTFParticipant] = []
     with transaction.atomic():

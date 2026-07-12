@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 
 def send_invitations(event_id: UUID) -> dict[str, Any]:
-    """Send magic link emails to all participants.
+    """Reset and queue credentials for participants with delivery email.
 
     Args:
         event_id: UUID of the event.
@@ -54,26 +54,12 @@ def send_invitations(event_id: UUID) -> dict[str, Any]:
     failed = 0
 
     for participant in participants:
+        if not participant.email:
+            continue
         try:
-            registration_url = _build_registration_url(participant.invite_token)
-            html_content, text_content, custom_subject = _render_email(
-                "invitation",
-                {
-                    "event": event,
-                    "participant": participant,
-                    # Expose only the registration URL, not the raw token, so
-                    # organizer-authored templates cannot reintroduce the token
-                    # into a query string or other leak surface (#1088).
-                    "registration_url": registration_url,
-                },
-                event=event,
-            )
-            _send_email(
-                recipient=participant.email,
-                subject=custom_subject or f"You're invited to {event.name}",
-                html_content=html_content,
-                text_content=text_content,
-            )
+            from ctf.services.participant.accounts import reset_participant_credentials
+
+            reset_participant_credentials(participant.pk)
 
             from django.utils import timezone
 
@@ -553,21 +539,12 @@ def notify_organizer_event_end(event_id: UUID) -> None:
 # -----------------------------------------------------------------------------
 
 
-def _build_registration_url(invite_token: str) -> str:
-    """Build a full registration URL from an invite token.
-
-    The token is placed in the URL *fragment* (``#token=...``), never the query
-    string. Browsers do not send the fragment to the server, so the credential
-    stays out of proxy/ALB access logs, the request formatter, and the
-    ``Referer`` header (SonarCloud ``pythonenterprise:S8435``). The registration
-    page's JavaScript reads the fragment and POSTs it to the token-exchange
-    endpoint. ``token_urlsafe`` output is already fragment-safe, so no
-    percent-encoding is required.
-    """
+def _build_ctf_login_url() -> str:
+    """Build the tokenless dedicated CTF participant login URL."""
     from django.conf import settings
     from django.urls import reverse
 
-    path = reverse("ctf:ctf_register") + f"#token={invite_token}"
+    path = reverse("ctf:ctf_login")
     base = (getattr(settings, "SITE_URL", "") or "").rstrip("/")
     return f"{base}{path}"
 

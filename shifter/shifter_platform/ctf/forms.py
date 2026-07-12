@@ -13,6 +13,7 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from django import forms
+from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 
 from ctf.models import CTFBracket, CTFChallenge, CTFEvent, CTFNotification, CTFParticipant
@@ -62,6 +63,7 @@ class CTFEventForm(forms.ModelForm):
             "scenario_id",
             "auto_cleanup",
             "cleanup_delay_hours",
+            "participant_password_override",
             "range_spinup_minutes",
             "max_participants",
             "team_mode",
@@ -76,6 +78,10 @@ class CTFEventForm(forms.ModelForm):
         ]
         widgets = {
             "description": forms.Textarea(attrs={"rows": 4}),
+            "participant_password_override": forms.PasswordInput(
+                attrs={"autocomplete": "new-password"},
+                render_value=True,
+            ),
             "event_start": forms.DateTimeInput(
                 attrs={"type": "datetime-local"},
                 format=DATETIME_LOCAL_FORMAT,
@@ -93,6 +99,12 @@ class CTFEventForm(forms.ModelForm):
                 format=DATETIME_LOCAL_FORMAT,
             ),
         }
+
+    def clean_participant_password_override(self) -> str:
+        value = self.cleaned_data.get("participant_password_override", "")
+        if value:
+            validate_password(value)
+        return value
 
     def __init__(self, *args, user=None, **kwargs):
         """Initialize form with scenario dropdown and datetime-local format support.
@@ -458,6 +470,24 @@ class CTFParticipantImportForm(forms.Form):
                 raise ValidationError("File size must be less than 1MB.")
 
         return csv_file
+
+
+class CTFParticipantBatchForm(forms.Form):
+    """Bounded generated-account batch request."""
+
+    count = forms.IntegerField(min_value=1, max_value=100, initial=10)
+
+
+class CTFParticipantRenameForm(forms.Form):
+    """Organizer-controlled username rename."""
+
+    username = forms.CharField(max_length=49)
+
+
+class CTFParticipantEmailForm(forms.Form):
+    """Optional delivery-email attachment."""
+
+    email = forms.EmailField(required=False)
 
 
 class CTFNotificationForm(forms.ModelForm):
