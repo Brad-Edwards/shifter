@@ -73,6 +73,28 @@ class AcesGceSecretOps:
     delete_ssh: Callable[[int, str], None]
 
 
+@dataclass(frozen=True)
+class AcesGceApplyOptions:
+    """Optional infrastructure and credential bindings for an ACES apply."""
+
+    config: GCERangeCellConfig | None = None
+    clients: GCEClients | None = None
+    secret_ops: AcesGceSecretOps | None = None
+    account_secret_ops: AcesAccountCredentialOps | None = None
+    credential_installer: Callable[..., None] = install_instance_account_credentials
+
+
+@dataclass(frozen=True)
+class _AcesGceApplyRuntime:
+    """Resolved non-optional bindings shared by ACES resource realization."""
+
+    config: GCERangeCellConfig
+    clients: GCEClients
+    secret_ops: AcesGceSecretOps
+    account_secret_ops: AcesAccountCredentialOps
+    credential_installer: Callable[..., None]
+
+
 def _default_secret_ops() -> AcesGceSecretOps:
     """Return the production ACES SSH-secret operation bindings."""
     return AcesGceSecretOps(ensure_ssh=ensure_aces_ssh_secret, delete_ssh=delete_aces_ssh_secret)
@@ -152,26 +174,27 @@ def _ensure_aces_instance(
 
 def _provision_aces_resources(
     plan: RangeCellPlan,
-    clients: GCEClients,
-    config: GCERangeCellConfig,
-    secret_ops: AcesGceSecretOps,
-    account_secret_ops: AcesAccountCredentialOps,
+    runtime: _AcesGceApplyRuntime,
     bootstrap_by_node: dict[str, str],
     accounts_by_node: dict[str, tuple[AcesPlanAccount, ...]],
-    credential_installer: Callable[..., None],
 ) -> list[ResourceDict]:
     """Create the network, subnets, firewalls, and instances for an ACES range."""
     if plan["manage_network"]:
-        _ensure_network(plan, clients)
+        _ensure_network(plan, runtime.clients)
     for subnet in plan["subnets"]:
-        _ensure_subnetwork(plan, clients, subnet)
+        _ensure_subnetwork(plan, runtime.clients, subnet)
     for firewall in plan["firewalls"]:
-        _ensure_firewall(plan, clients, firewall)
+        _ensure_firewall(plan, runtime.clients, firewall)
     instance_outputs: list[ResourceDict] = []
     for instance in plan["instances"]:
-        _ensure_address(plan, clients, instance)
+        _ensure_address(plan, runtime.clients, instance)
         ssh_secret_ref, ssh_public_key, host_public_key = _ensure_aces_instance(
-            plan, clients, config, instance, secret_ops, bootstrap_by_node
+            plan,
+            runtime.clients,
+            runtime.config,
+            instance,
+            runtime.secret_ops,
+            bootstrap_by_node,
         )
         output = _instance_output(
             plan,
@@ -180,17 +203,17 @@ def _provision_aces_resources(
             rdp_password_secret_ref=None,
             ssh_public_key=ssh_public_key,
             host_public_key=host_public_key,
-            config=config,
+            config=runtime.config,
         )
         accounts = accounts_by_node.get(_node_address_of(instance), ())
         if accounts:
-            credential_installer(
+            runtime.credential_installer(
                 range_id=plan["range_id"],
                 instance_key=instance["uuid"],
                 platform=instance["os_type"],
                 instance_output=output,
                 accounts=accounts,
-                secret_ops=account_secret_ops,
+                secret_ops=runtime.account_secret_ops,
             )
         instance_outputs.append(output)
     return instance_outputs
@@ -201,20 +224,19 @@ def apply_aces_range_cell(
     range_id: int,
     aces_plan: AcesPlan,
     resolve_image: Callable[[AcesPlanNode], GCERangeImageProfile],
-    config: GCERangeCellConfig | None = None,
-    clients: GCEClients | None = None,
-    secret_ops: AcesGceSecretOps | None = None,
-    *,
-    account_secret_ops: AcesAccountCredentialOps | None = None,
-    credential_installer: Callable[..., None] = install_instance_account_credentials,
+    options: AcesGceApplyOptions | None = None,
 ) -> ResourceDict:
     """Provision an ACES GCE range cell and return provisioner outputs."""
-    resolved_config = config or load_gce_range_cell_config()
-    resolved_clients = clients or _build_clients()
-    resolved_secret_ops = secret_ops or _default_secret_ops()
-    resolved_account_secret_ops = account_secret_ops or default_account_credential_ops()
+    options = options or AcesGceApplyOptions()
+    runtime = _AcesGceApplyRuntime(
+        config=options.config or load_gce_range_cell_config(),
+        clients=options.clients or _build_clients(),
+        secret_ops=options.secret_ops or _default_secret_ops(),
+        account_secret_ops=options.account_secret_ops or default_account_credential_ops(),
+        credential_installer=options.credential_installer,
+    )
     _assert_composition_targets_resolve(aces_plan)
-    plan = build_aces_range_cell_plan(request_uuid, range_id, aces_plan, resolve_image, resolved_config)
+    plan = build_aces_range_cell_plan(request_uuid, range_id, aces_plan, resolve_image, runtime.config)
     bootstrap_by_node = {
         node.address: script for node in aces_plan.nodes if (script := node_bootstrap_script(node, aces_plan))
     }
@@ -225,13 +247,9 @@ def apply_aces_range_cell(
     try:
         instance_outputs = _provision_aces_resources(
             plan,
-            resolved_clients,
-            resolved_config,
-            resolved_secret_ops,
-            resolved_account_secret_ops,
+            runtime,
             bootstrap_by_node,
             accounts_by_node,
-            credential_installer,
         )
     except Exception:
         logger.exception("ACES GCE range-cell apply failed; attempting cleanup request_id=%s", request_uuid)
@@ -239,10 +257,10 @@ def apply_aces_range_cell(
             request_uuid,
             range_id,
             aces_plan,
-            config=resolved_config,
-            clients=resolved_clients,
-            secret_ops=resolved_secret_ops,
-            account_secret_ops=resolved_account_secret_ops,
+            config=runtime.config,
+            clients=runtime.clients,
+            secret_ops=runtime.secret_ops,
+            account_secret_ops=runtime.account_secret_ops,
         )
         raise
     return {"subnets": _subnet_outputs(plan), "instances": instance_outputs}

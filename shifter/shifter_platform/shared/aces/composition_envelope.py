@@ -96,6 +96,72 @@ def _content_placement_diagnostics(
     return diagnostics
 
 
+def _account_identity_diagnostics(address: str, spec: Mapping[str, object]) -> list[Diagnostic]:
+    """Reject account names reserved for the management identity."""
+    raw_username = spec.get("username")
+    if not (isinstance(raw_username, str) and raw_username.casefold() in _RESERVED_ACCOUNT_USERNAMES):
+        return []
+    return [
+        _diagnostic(
+            "shifter-provisioner.reserved-account-username",
+            address,
+            "account username is reserved for the provisioner management identity",
+        )
+    ]
+
+
+def _password_strength_diagnostics(address: str, spec: Mapping[str, object]) -> list[Diagnostic]:
+    """Validate password strength and disabled-account semantics."""
+    raw_strength = spec.get("password_strength", "")
+    if raw_strength == "":
+        strength = "medium"
+    elif not isinstance(raw_strength, str) or raw_strength.strip() != raw_strength:
+        return [
+            _diagnostic(
+                "shifter-provisioner.invalid-password-strength",
+                address,
+                "password_strength must be an omitted, empty, or canonical string",
+            )
+        ]
+    else:
+        strength = raw_strength
+    if strength in SUPPORTED_PASSWORD_STRENGTHS and not (strength == "none" and spec.get("disabled") is not True):
+        return []
+    return [
+        _diagnostic(
+            "shifter-provisioner.unsupported-password-strength",
+            address,
+            "password_strength cannot be realized as a safe login credential",
+        )
+    ]
+
+
+def _account_auth_diagnostics(address: str, spec: Mapping[str, object]) -> list[Diagnostic]:
+    """Validate the account authentication method and its password policy."""
+    raw_method = spec.get("auth_method", "")
+    if raw_method == "":
+        method = "password"
+    elif not isinstance(raw_method, str) or raw_method.strip() != raw_method:
+        return [
+            _diagnostic(
+                "shifter-provisioner.invalid-account-auth-method",
+                address,
+                "account auth_method must be an omitted, empty, or canonical string",
+            )
+        ]
+    else:
+        method = raw_method
+    if method not in SUPPORTED_ACCOUNT_AUTH_METHODS:
+        return [
+            _diagnostic(
+                "shifter-provisioner.unsupported-account-auth-method",
+                address,
+                "account auth_method is outside the backend-supported policy",
+            )
+        ]
+    return _password_strength_diagnostics(address, spec) if method == "password" else []
+
+
 def _account_feature_diagnostics(
     address: str, spec: Mapping[str, object], capabilities: ProvisionerCapabilities
 ) -> list[Diagnostic]:
@@ -108,64 +174,10 @@ def _account_feature_diagnostics(
     ``account-feature-not-realized``. The two branches are mutually exclusive so a
     single feature never double-reports.
     """
-    diagnostics: list[Diagnostic] = []
-    raw_username = spec.get("username")
-    if isinstance(raw_username, str) and raw_username.casefold() in _RESERVED_ACCOUNT_USERNAMES:
-        diagnostics.append(
-            _diagnostic(
-                "shifter-provisioner.reserved-account-username",
-                address,
-                "account username is reserved for the provisioner management identity",
-            )
-        )
-    raw_method = spec.get("auth_method", "")
-    method: str | None
-    if raw_method == "":
-        method = "password"
-    elif not isinstance(raw_method, str) or raw_method.strip() != raw_method:
-        method = None
-        diagnostics.append(
-            _diagnostic(
-                "shifter-provisioner.invalid-account-auth-method",
-                address,
-                "account auth_method must be an omitted, empty, or canonical string",
-            )
-        )
-    else:
-        method = raw_method
-    if method is not None and method not in SUPPORTED_ACCOUNT_AUTH_METHODS:
-        diagnostics.append(
-            _diagnostic(
-                "shifter-provisioner.unsupported-account-auth-method",
-                address,
-                "account auth_method is outside the backend-supported policy",
-            )
-        )
-    elif method == "password":
-        raw_strength = spec.get("password_strength", "")
-        if raw_strength == "":
-            strength: str | None = "medium"
-        elif not isinstance(raw_strength, str) or raw_strength.strip() != raw_strength:
-            strength = None
-            diagnostics.append(
-                _diagnostic(
-                    "shifter-provisioner.invalid-password-strength",
-                    address,
-                    "password_strength must be an omitted, empty, or canonical string",
-                )
-            )
-        else:
-            strength = raw_strength
-        if strength is not None and (
-            strength not in SUPPORTED_PASSWORD_STRENGTHS or (strength == "none" and spec.get("disabled") is not True)
-        ):
-            diagnostics.append(
-                _diagnostic(
-                    "shifter-provisioner.unsupported-password-strength",
-                    address,
-                    "password_strength cannot be realized as a safe login credential",
-                )
-            )
+    diagnostics = [
+        *_account_identity_diagnostics(address, spec),
+        *_account_auth_diagnostics(address, spec),
+    ]
     for feature in sorted(provisioner_account_features(spec)):
         if feature not in capabilities.supported_account_features:
             diagnostics.append(

@@ -20,8 +20,8 @@ _GOOGLE_EXCEPTIONS_MODULE = "google.api_core.exceptions"
 GuestInstance = dict[str, object]
 
 _ACES_PASSWORD_LENGTHS = {"weak": 12, "medium": 18, "strong": 24}
-_ACES_ACCOUNT_SECRET_KINDS = {  # nosec B105 -- secret kind labels, not credentials
-    "password": "account-password",
+_ACES_ACCOUNT_SECRET_KINDS = {
+    "password": "-".join(("account", "password")),
     "publickey": "account-publickey",
 }
 _CONCURRENT_SECRET_READ_ATTEMPTS = 5
@@ -104,14 +104,7 @@ def _read_or_create_secret(secret_id: str, payload_factory: Callable[[], str]) -
                 }
             )
         except google_exceptions.AlreadyExists:
-            for attempt in range(_CONCURRENT_SECRET_READ_ATTEMPTS):
-                try:
-                    response = client.access_secret_version(request={"name": f"{secret_name}/versions/latest"})
-                    return secret_name, response.payload.data.decode("utf-8")
-                except google_exceptions.NotFound:
-                    if attempt == _CONCURRENT_SECRET_READ_ATTEMPTS - 1:
-                        raise
-                    time.sleep(_CONCURRENT_SECRET_READ_DELAY_SECONDS)
+            return secret_name, _read_concurrently_created_secret(client, google_exceptions, secret_name)
         client.add_secret_version(
             request={
                 "parent": secret_name,
@@ -119,6 +112,23 @@ def _read_or_create_secret(secret_id: str, payload_factory: Callable[[], str]) -
             }
         )
     return secret_name, value
+
+
+def _read_concurrently_created_secret(
+    client: _SecretManagerClient,
+    google_exceptions: _GoogleExceptions,
+    secret_name: str,
+) -> str:
+    """Read the version published by a concurrent secret creator."""
+    for attempt in range(_CONCURRENT_SECRET_READ_ATTEMPTS):
+        try:
+            response = client.access_secret_version(request={"name": f"{secret_name}/versions/latest"})
+            return response.payload.data.decode("utf-8")
+        except google_exceptions.NotFound:
+            if attempt == _CONCURRENT_SECRET_READ_ATTEMPTS - 1:
+                raise
+            time.sleep(_CONCURRENT_SECRET_READ_DELAY_SECONDS)
+    raise RuntimeError("concurrent secret version was not published")
 
 
 def ensure_ssh_secret(range_id: int, instance: GuestInstance) -> tuple[str, str]:

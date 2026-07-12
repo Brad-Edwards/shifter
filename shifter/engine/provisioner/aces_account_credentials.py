@@ -30,6 +30,8 @@ class AcesAccountCredentialOps:
     ensure_password: Callable[[int, str, str, str], tuple[str, str]]
     ensure_public_key: Callable[[int, str, str], tuple[str, str]]
     delete: Callable[[int, str, str, str], None]
+    execution_builder: Callable[..., GuestExecutionContext] = build_guest_execution_context
+    orchestrator_factory: Callable[[Executor], SetupOrchestrator] = SetupOrchestrator
 
 
 def default_account_credential_ops() -> AcesAccountCredentialOps:
@@ -50,6 +52,7 @@ def _run_password_strategy(
     account: AcesPlanAccount,
     secret_ops: AcesAccountCredentialOps,
 ) -> None:
+    """Install one authored account's password through the setup orchestrator."""
     _secret_ref, password = secret_ops.ensure_password(
         range_id, instance_key, account.username, account.password_strength
     )
@@ -69,6 +72,7 @@ def _run_public_key_strategy(
     account: AcesPlanAccount,
     secret_ops: AcesAccountCredentialOps,
 ) -> None:
+    """Install one authored account's public key through the setup orchestrator."""
     _secret_ref, public_key = secret_ops.ensure_public_key(range_id, instance_key, account.username)
     plan = SetAuthorizedKeyPlan(platform=platform)
     context = plan.get_context({"account_username": account.username, "account_public_key": public_key})
@@ -85,15 +89,13 @@ def install_instance_account_credentials(
     instance_output: dict[str, Any],
     accounts: Iterable[AcesPlanAccount],
     secret_ops: AcesAccountCredentialOps,
-    execution_builder: Callable[..., GuestExecutionContext] = build_guest_execution_context,
-    orchestrator_factory: Callable[[Executor], SetupOrchestrator] = SetupOrchestrator,
 ) -> None:
     """Install and verify every enabled authored-account credential on one guest."""
     enabled_accounts = tuple(account for account in accounts if not account.disabled)
     if not enabled_accounts:
         return
     try:
-        execution = execution_builder(instance_output, provider="gcp", os_type=platform, role="aces-node")
+        execution = secret_ops.execution_builder(instance_output, provider="gcp", os_type=platform, role="aces-node")
     except Exception:
         raise AcesAccountCredentialError(
             f"failed to establish credential setup channel for instance {instance_key!r}"
@@ -105,7 +107,7 @@ def install_instance_account_credentials(
             raise AcesAccountCredentialError(
                 f"failed to establish credential setup channel for instance {instance_key!r}"
             ) from None
-        orchestrator = orchestrator_factory(execution.executor)
+        orchestrator = secret_ops.orchestrator_factory(execution.executor)
         for account in enabled_accounts:
             try:
                 if account.auth_method == "password":
@@ -116,7 +118,8 @@ def install_instance_account_credentials(
                     _run_public_key_strategy(
                         orchestrator, execution, range_id, instance_key, platform, account, secret_ops
                     )
-                else:  # defense in depth; the plan parser rejects this first
+                # Defense in depth; the plan parser rejects this first.
+                else:
                     raise ValueError("unsupported authored-account credential strategy")
             except Exception:
                 raise AcesAccountCredentialError(

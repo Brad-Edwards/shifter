@@ -1,5 +1,6 @@
 """Tests for ACES authored-account credential strategy dispatch (#1560)."""
 
+from dataclasses import replace
 from types import SimpleNamespace
 from typing import ClassVar
 from unittest.mock import MagicMock, call
@@ -70,6 +71,11 @@ def test_password_strategy_generates_by_strength_and_reuses_password_plan():
     ops, calls = _ops()
     execution = _Execution()
     _Orchestrator.instances.clear()
+    ops = replace(
+        ops,
+        execution_builder=lambda *_args, **_kwargs: execution,
+        orchestrator_factory=_Orchestrator,
+    )
 
     result = install_instance_account_credentials(
         range_id=7,
@@ -78,8 +84,6 @@ def test_password_strategy_generates_by_strength_and_reuses_password_plan():
         instance_output={"private_ip": execution.target},
         accounts=(_account(password_strength="strong"),),
         secret_ops=ops,
-        execution_builder=lambda *_args, **_kwargs: execution,
-        orchestrator_factory=_Orchestrator,
     )
 
     assert result is None
@@ -95,6 +99,11 @@ def test_public_key_strategy_uses_account_specific_plan():
     ops, calls = _ops()
     execution = _Execution()
     _Orchestrator.instances.clear()
+    ops = replace(
+        ops,
+        execution_builder=lambda *_args, **_kwargs: execution,
+        orchestrator_factory=_Orchestrator,
+    )
 
     install_instance_account_credentials(
         range_id=7,
@@ -103,8 +112,6 @@ def test_public_key_strategy_uses_account_specific_plan():
         instance_output={"private_ip": execution.target},
         accounts=(_account(auth_method="publickey"),),
         secret_ops=ops,
-        execution_builder=lambda *_args, **_kwargs: execution,
-        orchestrator_factory=_Orchestrator,
     )
 
     calls.ensure_public_key.assert_called_once_with(7, "node.web#0", "alice")
@@ -116,6 +123,11 @@ def test_public_key_strategy_uses_account_specific_plan():
 def test_disabled_accounts_never_generate_or_install_credentials():
     ops, calls = _ops()
     execution_builder = MagicMock()
+    ops = replace(
+        ops,
+        execution_builder=execution_builder,
+        orchestrator_factory=_Orchestrator,
+    )
 
     install_instance_account_credentials(
         range_id=7,
@@ -124,8 +136,6 @@ def test_disabled_accounts_never_generate_or_install_credentials():
         instance_output={},
         accounts=(_account(disabled=True),),
         secret_ops=ops,
-        execution_builder=execution_builder,
-        orchestrator_factory=_Orchestrator,
     )
 
     calls.ensure_password.assert_not_called()
@@ -141,6 +151,12 @@ def test_failure_is_coarse_and_execution_is_closed():
         def orchestrate(self, target, plan, context, document_name):
             raise RuntimeError("SECRET-PASSWORD")
 
+    ops = replace(
+        ops,
+        execution_builder=lambda *_args, **_kwargs: execution,
+        orchestrator_factory=FailingOrchestrator,
+    )
+
     with pytest.raises(AcesAccountCredentialError) as exc_info:
         install_instance_account_credentials(
             range_id=7,
@@ -149,8 +165,6 @@ def test_failure_is_coarse_and_execution_is_closed():
             instance_output={"private_ip": execution.target},
             accounts=(_account(),),
             secret_ops=ops,
-            execution_builder=lambda *_args, **_kwargs: execution,
-            orchestrator_factory=FailingOrchestrator,
         )
 
     assert "SECRET-PASSWORD" not in str(exc_info.value)
@@ -163,6 +177,11 @@ def test_management_channel_failure_is_coarse_and_execution_is_closed():
     ops, _calls = _ops()
     execution = _Execution()
     execution.wait_for_ready.side_effect = RuntimeError("provider-payload-SECRET-PASSWORD")
+    ops = replace(
+        ops,
+        execution_builder=lambda *_args, **_kwargs: execution,
+        orchestrator_factory=_Orchestrator,
+    )
 
     with pytest.raises(AcesAccountCredentialError) as exc_info:
         install_instance_account_credentials(
@@ -172,8 +191,6 @@ def test_management_channel_failure_is_coarse_and_execution_is_closed():
             instance_output={"private_ip": execution.target},
             accounts=(_account(),),
             secret_ops=ops,
-            execution_builder=lambda *_args, **_kwargs: execution,
-            orchestrator_factory=_Orchestrator,
         )
 
     assert str(exc_info.value) == "failed to establish credential setup channel for instance 'node.web#0'"

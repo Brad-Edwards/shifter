@@ -52,7 +52,8 @@ class AcesPlanAccount:
     mail: str | None = None
     spn: str | None = None
     auth_method: str = "password"
-    password_strength: str = "medium"  # noqa: S105 -- policy label, not a credential
+    # Policy label, not a credential.
+    password_strength: str = "medium"  # noqa: S105
     disabled: bool = False
 
 

@@ -18,7 +18,12 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from aces_account_credentials import AcesAccountCredentialOps, install_instance_account_credentials
-from aces_gcp_apply import AcesGceSecretOps, apply_aces_range_cell, destroy_aces_range_cell
+from aces_gcp_apply import (
+    AcesGceApplyOptions,
+    AcesGceSecretOps,
+    apply_aces_range_cell,
+    destroy_aces_range_cell,
+)
 from aces_gcp_plan import AcesGcePlanError
 from aces_plan import AcesPlan, AcesPlanAccount, AcesPlanContent, AcesPlanImage, AcesPlanNetwork, AcesPlanNode
 from config import GCERangeCellConfig, GCERangeImageProfile
@@ -98,6 +103,21 @@ def _secret_ops() -> tuple[AcesGceSecretOps, SimpleNamespace]:
     return AcesGceSecretOps(ensure_ssh=mocks.ensure_ssh, delete_ssh=mocks.delete_ssh), mocks
 
 
+def _apply_options(
+    config: GCERangeCellConfig,
+    clients: SimpleNamespace,
+    secret_ops: AcesGceSecretOps,
+    **overrides,
+) -> AcesGceApplyOptions:
+    """Build injectable ACES apply options for fake-GCP tests."""
+    return AcesGceApplyOptions(
+        config=config,
+        clients=clients,
+        secret_ops=secret_ops,
+        **overrides,
+    )
+
+
 def _account_secret_ops() -> tuple[AcesAccountCredentialOps, SimpleNamespace]:
     mocks = SimpleNamespace(
         ensure_password=MagicMock(return_value=("projects/proj-1/secrets/password", "PASSWORD")),
@@ -118,7 +138,7 @@ class TestApply:
     def test_provisions_network_subnet_firewall_and_instances(self):
         clients = _clients()
         secret_ops, secret_mocks = _secret_ops()
-        output = apply_aces_range_cell("req-1", 7, _plan(), _resolver, _config(), clients, secret_ops)
+        output = apply_aces_range_cell("req-1", 7, _plan(), _resolver, _apply_options(_config(), clients, secret_ops))
 
         assert clients.networks.insert.called  # vpc-per-range manages its own VPC
         assert clients.subnetworks.insert.call_count == 1
@@ -133,27 +153,33 @@ class TestApply:
     def test_ssh_secret_keyed_on_aces_instance_not_scenario(self):
         clients = _clients()
         secret_ops, secret_mocks = _secret_ops()
-        apply_aces_range_cell("req-1", 7, _plan(), _resolver, _config(), clients, secret_ops)
+        apply_aces_range_cell("req-1", 7, _plan(), _resolver, _apply_options(_config(), clients, secret_ops))
         keys = sorted(call.args[1] for call in secret_mocks.ensure_ssh.call_args_list)
         assert keys == ["node.web#0", "node.web#1"]
 
     def test_shared_vpc_does_not_create_network(self):
         clients = _clients()
         secret_ops, _ = _secret_ops()
-        apply_aces_range_cell("req-1", 7, _plan(), _resolver, _config("shared-vpc"), clients, secret_ops)
+        apply_aces_range_cell(
+            "req-1",
+            7,
+            _plan(),
+            _resolver,
+            _apply_options(_config("shared-vpc"), clients, secret_ops),
+        )
         assert not clients.networks.insert.called
 
     def test_reconcile_existing_instance_skips_insert(self):
         clients = _clients(exists=True)
         secret_ops, _ = _secret_ops()
-        apply_aces_range_cell("req-1", 7, _plan(), _resolver, _config(), clients, secret_ops)
+        apply_aces_range_cell("req-1", 7, _plan(), _resolver, _apply_options(_config(), clients, secret_ops))
         assert not clients.instances.insert.called
 
     def test_apply_failure_triggers_cleanup_and_reraises(self):
         clients = _clients(instance_insert_error=RuntimeError("boom"))
         secret_ops, secret_mocks = _secret_ops()
         with pytest.raises(RuntimeError, match="boom"):
-            apply_aces_range_cell("req-1", 7, _plan(), _resolver, _config(), clients, secret_ops)
+            apply_aces_range_cell("req-1", 7, _plan(), _resolver, _apply_options(_config(), clients, secret_ops))
         # Cleanup ran: the reconstructive destroy sweeps every instance's SSH
         # secret unconditionally (nothing exists yet to GCE-delete since the first
         # insert failed, so instances.delete is legitimately not reached).
@@ -186,7 +212,13 @@ class TestCompositionIntegration:
         )
         clients = _clients()
         secret_ops, _ = _secret_ops()
-        apply_aces_range_cell("req-1", 7, _plan_with_content(content), _resolver, _config(), clients, secret_ops)
+        apply_aces_range_cell(
+            "req-1",
+            7,
+            _plan_with_content(content),
+            _resolver,
+            _apply_options(_config(), clients, secret_ops),
+        )
         startup = self._startup_script(clients)
         import base64
 
@@ -198,7 +230,13 @@ class TestCompositionIntegration:
         clients = _clients()
         secret_ops, _ = _secret_ops()
         with pytest.raises(AcesGcePlanError, match="not present in this plan"):
-            apply_aces_range_cell("req-1", 7, _plan_with_content(content), _resolver, _config(), clients, secret_ops)
+            apply_aces_range_cell(
+                "req-1",
+                7,
+                _plan_with_content(content),
+                _resolver,
+                _apply_options(_config(), clients, secret_ops),
+            )
 
 
 def _plan_with_accounts(*accounts: AcesPlanAccount, os_family: str = "linux", count: int = 2) -> AcesPlan:
@@ -254,18 +292,21 @@ def test_normal_apply_path_realizes_both_account_auth_methods_without_output_exp
         )
 
     def credential_installer(**kwargs):
-        install_instance_account_credentials(**kwargs, execution_builder=execution_builder)
+        kwargs["secret_ops"] = replace(kwargs["secret_ops"], execution_builder=execution_builder)
+        install_instance_account_credentials(**kwargs)
 
     output = apply_aces_range_cell(
         "req-1",
         7,
         _plan_with_accounts(*accounts, os_family=os_family, count=1),
         _resolver,
-        _config(),
-        clients,
-        ssh_ops,
-        account_secret_ops=account_ops,
-        credential_installer=credential_installer,
+        _apply_options(
+            _config(),
+            clients,
+            ssh_ops,
+            account_secret_ops=account_ops,
+            credential_installer=credential_installer,
+        ),
     )
 
     rendered_scripts = "\n".join(executors[0].scripts)
@@ -304,11 +345,13 @@ class TestAccountCredentialIntegration:
             7,
             _plan_with_accounts(account),
             _resolver,
-            _config(),
-            clients,
-            ssh_ops,
-            account_secret_ops=account_ops,
-            credential_installer=installer,
+            _apply_options(
+                _config(),
+                clients,
+                ssh_ops,
+                account_secret_ops=account_ops,
+                credential_installer=installer,
+            ),
         )
 
         assert installer.call_count == 2
@@ -331,11 +374,13 @@ class TestAccountCredentialIntegration:
                 7,
                 _plan_with_accounts(account),
                 _resolver,
-                _config(),
-                clients,
-                ssh_ops,
-                account_secret_ops=account_ops,
-                credential_installer=installer,
+                _apply_options(
+                    _config(),
+                    clients,
+                    ssh_ops,
+                    account_secret_ops=account_ops,
+                    credential_installer=installer,
+                ),
             )
 
         installer.assert_not_called()
@@ -352,11 +397,13 @@ class TestAccountCredentialIntegration:
             7,
             _plan_with_accounts(account),
             _resolver,
-            _config(),
-            clients,
-            ssh_ops,
-            account_secret_ops=account_ops,
-            credential_installer=installer,
+            _apply_options(
+                _config(),
+                clients,
+                ssh_ops,
+                account_secret_ops=account_ops,
+                credential_installer=installer,
+            ),
         )
 
         assert not clients.instances.insert.called
@@ -375,11 +422,13 @@ class TestAccountCredentialIntegration:
                 7,
                 _plan_with_accounts(account),
                 _resolver,
-                _config(),
-                clients,
-                ssh_ops,
-                account_secret_ops=account_ops,
-                credential_installer=installer,
+                _apply_options(
+                    _config(),
+                    clients,
+                    ssh_ops,
+                    account_secret_ops=account_ops,
+                    credential_installer=installer,
+                ),
             )
 
         assert ssh_mocks.delete_ssh.call_count == 2
