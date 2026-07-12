@@ -31,14 +31,18 @@ HEARTBEAT_INTERVAL_SECONDS = 30
 
 
 class Command(BaseCommand):
+    """Drain due launch intents while maintaining worker liveness."""
+
     help = "Launch due provisioner intents from the dedicated launcher identity."
 
     def add_arguments(self, parser: ArgumentParser) -> None:
+        """Register batch and polling options for the launcher worker."""
         parser.add_argument("--batch-size", type=int, default=20)
         parser.add_argument("--loop", action="store_true", default=False)
         parser.add_argument("--interval", type=int, default=10)
 
     def handle(self, *args: Any, **options: Any) -> None:
+        """Drain once or continuously according to the command options."""
         while True:
             self._touch_heartbeat()
             drained = self._drain_batch(options["batch_size"])
@@ -49,6 +53,7 @@ class Command(BaseCommand):
 
     @staticmethod
     def _touch_heartbeat() -> None:
+        """Refresh the launcher liveness marker when the filesystem permits."""
         with contextlib.suppress(OSError):
             HEARTBEAT_FILE.touch()
 

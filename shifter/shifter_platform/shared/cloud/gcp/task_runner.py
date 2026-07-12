@@ -6,8 +6,9 @@ import importlib
 import logging
 import os
 import uuid
+from dataclasses import dataclass
 from hashlib import sha256
-from typing import Any
+from typing import Any, Protocol, cast
 
 from django.conf import settings
 
@@ -33,6 +34,73 @@ _SHIFTER_LABEL_TASK_RUNNER = "shifter.dev/task-runner"
 _SHIFTER_TASK_RUNNER_GCP = "gcp"
 _SHIFTER_ANNOTATION_TASK_IDENTITY = "shifter.dev/task-identity"
 _KUBERNETES_REQUEST_TIMEOUT_SECONDS = 30
+
+
+@dataclass(frozen=True)
+class _KubernetesApis:
+    """Dynamically loaded Kubernetes API objects used during one launch."""
+
+    batch: object
+    core: object
+    client: object
+    exception: type[Exception]
+
+
+class _OwnerReference(Protocol):
+    """Attributes serialized from the dynamically loaded Kubernetes model."""
+
+    api_version: object
+    kind: object
+    name: object
+    uid: object
+    controller: object
+    block_owner_deletion: object
+
+
+@dataclass(frozen=True)
+class _JobIdentity:
+    """Expected immutable identity of a deterministic provisioner Job."""
+
+    job_name: str
+    task_identity: str
+    image: str
+    command: list[str]
+    container_name: str
+    service_account_name: str
+    secret_name: str | None
+
+
+@dataclass(frozen=True)
+class _JobLaunch:
+    """Inputs shared by create and ambiguous-create recovery."""
+
+    apis: _KubernetesApis
+    namespace: str
+    job: object
+    identity: _JobIdentity | None
+    secret_name: str | None
+
+
+@dataclass(frozen=True)
+class _RunTaskContext:
+    """Resolved Kubernetes inputs for one TaskRunner invocation."""
+
+    apis: _KubernetesApis
+    namespace: str
+    image: str
+    command: list[str]
+    container_name: str
+    env_overrides: dict[str, str] | None
+    task_identity: str | None
+    identity: _JobIdentity | None
+    sensitive_env: dict[str, str]
+    secret_name: str | None
+
+
+def _api_call(api: object, method: str, **kwargs: object) -> object:
+    """Invoke one method on a dynamically loaded Kubernetes client object."""
+    callback = getattr(api, method)
+    return callback(**kwargs)
 
 
 def _shifter_resource_labels(container_name: str, *, include_task_runner: bool) -> dict[str, str]:
@@ -115,7 +183,7 @@ class GCPTaskRunner:
     - ``command`` is passed as container args so the image ENTRYPOINT is kept.
     """
 
-    def _load_kubernetes_api(self) -> tuple[Any, Any, Any, type[Exception]]:
+    def _load_kubernetes_api(self) -> tuple[object, object, object, type[Exception]]:
         try:
             kubernetes = importlib.import_module("kubernetes")
         except ImportError as e:
@@ -140,7 +208,7 @@ class GCPTaskRunner:
         return client.BatchV1Api(), client.CoreV1Api(), client, api_exception
 
     @staticmethod
-    def _job_sensitive_secret_name(job: Any) -> str | None:
+    def _job_sensitive_secret_name(job: object) -> str | None:
         """Return the per-Job sensitive-env Secret referenced by a Job."""
         pod_spec = getattr(getattr(getattr(job, "spec", None), "template", None), "spec", None)
         for container in getattr(pod_spec, "containers", None) or []:
@@ -154,10 +222,8 @@ class GCPTaskRunner:
     def _reconcile_observed_job(
         self,
         *,
-        job: Any,
-        client: Any,
-        batch_api: Any,
-        core_api: Any,
+        job: object,
+        apis: _KubernetesApis,
         namespace: str,
         job_name: str,
     ) -> None:
@@ -166,9 +232,7 @@ class GCPTaskRunner:
         if secret_name is None:
             return
         self._install_owner_reference_or_unwind(
-            client=client,
-            batch_api=batch_api,
-            core_api=core_api,
+            apis=apis,
             namespace=namespace,
             job_name=job_name,
             job_uid=getattr(getattr(job, "metadata", None), "uid", None),
@@ -178,44 +242,47 @@ class GCPTaskRunner:
 
     def _validate_observed_job(
         self,
-        job: Any,
-        *,
-        job_name: str,
-        task_identity: str,
-        image: str,
-        command: list[str],
-        container_name: str,
-        service_account_name: str,
-        expected_secret_name: str | None,
+        job: object,
+        identity: _JobIdentity,
     ) -> None:
         """Reject a deterministic-name collision that is not this exact intent."""
         metadata = getattr(job, "metadata", None)
         annotations = getattr(metadata, "annotations", None) or {}
         pod_spec = getattr(getattr(getattr(job, "spec", None), "template", None), "spec", None)
         containers = getattr(pod_spec, "containers", None) or []
-        observed_service_account = getattr(pod_spec, "service_account_name", None) or ""
-        matches = (
-            getattr(metadata, "name", None) == job_name
-            and annotations.get(_SHIFTER_ANNOTATION_TASK_IDENTITY) == task_identity
-            and observed_service_account == service_account_name
-            and len(containers) == 1
-            and getattr(containers[0], "name", None) == container_name
-            and getattr(containers[0], "image", None) == image
-            and list(getattr(containers[0], "args", None) or []) == command
-            and self._job_sensitive_secret_name(job) == expected_secret_name
-        )
-        if not matches:
+        container = containers[0] if len(containers) == 1 else None
+        observed = {
+            "job_name": getattr(metadata, "name", None),
+            "task_identity": annotations.get(_SHIFTER_ANNOTATION_TASK_IDENTITY),
+            "service_account_name": getattr(pod_spec, "service_account_name", None) or "",
+            "container_name": getattr(container, "name", None),
+            "image": getattr(container, "image", None),
+            "command": list(getattr(container, "args", None) or []),
+            "secret_name": self._job_sensitive_secret_name(job),
+        }
+        expected = {
+            "job_name": identity.job_name,
+            "task_identity": identity.task_identity,
+            "service_account_name": identity.service_account_name,
+            "container_name": identity.container_name,
+            "image": identity.image,
+            "command": identity.command,
+            "secret_name": identity.secret_name,
+        }
+        if observed != expected:
             raise CloudTaskError("Observed Kubernetes Job does not match the reserved provisioner launch identity")
 
     @staticmethod
     def _read_idempotent_job(
-        batch_api: Any,
+        batch_api: object,
         api_exception: type[Exception],
         namespace: str,
         job_name: str,
-    ) -> Any | None:
+    ) -> object | None:
         try:
-            return batch_api.read_namespaced_job(
+            return _api_call(
+                batch_api,
+                "read_namespaced_job",
                 name=job_name,
                 namespace=namespace,
                 _request_timeout=_KUBERNETES_REQUEST_TIMEOUT_SECONDS,
@@ -225,105 +292,69 @@ class GCPTaskRunner:
                 return None
             raise
 
+    def _accept_observed_job(self, launch: _JobLaunch, observed: object) -> tuple[object, str, str | None, bool]:
+        """Validate and reconcile a reserved Job found after a create attempt."""
+        identity = launch.identity
+        if identity is None:
+            self._cleanup_sensitive_secret(launch.apis.core, launch.secret_name, launch.namespace)
+            raise CloudTaskError("Deterministic Job recovery requires a task identity")
+        try:
+            self._validate_observed_job(observed, identity)
+        except CloudTaskError:
+            self._cleanup_sensitive_secret(launch.apis.core, launch.secret_name, launch.namespace)
+            raise
+        observed_secret_name = self._job_sensitive_secret_name(observed)
+        if launch.secret_name != observed_secret_name:
+            self._cleanup_sensitive_secret(launch.apis.core, launch.secret_name, launch.namespace)
+        self._reconcile_observed_job(
+            job=observed,
+            apis=launch.apis,
+            namespace=launch.namespace,
+            job_name=identity.job_name,
+        )
+        return observed, identity.job_name, observed_secret_name, True
+
+    def _observe_reserved_job(self, launch: _JobLaunch) -> object | None:
+        """Read the deterministic Job associated with a launch, when available."""
+        identity = launch.identity
+        if identity is None:
+            return None
+        return self._read_idempotent_job(
+            launch.apis.batch,
+            launch.apis.exception,
+            launch.namespace,
+            identity.job_name,
+        )
+
     def _create_or_observe_job(
         self,
-        *,
-        batch_api: Any,
-        core_api: Any,
-        client: Any,
-        api_exception: type[Exception],
-        namespace: str,
-        job: Any,
-        deterministic_job_name: str | None,
-        secret_name: str | None,
-        task_identity: str | None,
-        image: str,
-        command: list[str],
-        container_name: str,
-        service_account_name: str,
-    ) -> tuple[Any, str, str | None, bool]:
+        launch: _JobLaunch,
+    ) -> tuple[object, str, str | None, bool]:
+        """Create a Job or reconcile the same deterministic Job after ambiguity."""
         try:
-            created = batch_api.create_namespaced_job(
-                namespace=namespace,
-                body=job,
+            created = _api_call(
+                launch.apis.batch,
+                "create_namespaced_job",
+                namespace=launch.namespace,
+                body=launch.job,
                 _request_timeout=_KUBERNETES_REQUEST_TIMEOUT_SECONDS,
             )
         except Exception as create_exc:
-            if not deterministic_job_name:
-                self._cleanup_sensitive_secret(core_api, secret_name, namespace)
-                raise
-            observed = self._read_idempotent_job(batch_api, api_exception, namespace, deterministic_job_name)
+            observed = self._observe_reserved_job(launch)
             if observed is None:
                 status = getattr(create_exc, "status", None)
-                if status in {400, 401, 403, 405, 406, 415, 422}:
-                    self._cleanup_sensitive_secret(core_api, secret_name, namespace)
+                if launch.identity is None or status in {400, 401, 403, 405, 406, 415, 422}:
+                    self._cleanup_sensitive_secret(launch.apis.core, launch.secret_name, launch.namespace)
                 raise
-            if task_identity is None:
-                self._cleanup_sensitive_secret(core_api, secret_name, namespace)
-                raise CloudTaskError("Deterministic Job recovery requires a task identity") from create_exc
-            try:
-                self._validate_observed_job(
-                    observed,
-                    job_name=deterministic_job_name,
-                    task_identity=task_identity,
-                    image=image,
-                    command=command,
-                    container_name=container_name,
-                    service_account_name=service_account_name,
-                    expected_secret_name=secret_name,
-                )
-            except CloudTaskError:
-                self._cleanup_sensitive_secret(core_api, secret_name, namespace)
-                raise
-            observed_secret_name = self._job_sensitive_secret_name(observed)
-            if secret_name != observed_secret_name:
-                self._cleanup_sensitive_secret(core_api, secret_name, namespace)
-            self._reconcile_observed_job(
-                job=observed,
-                client=client,
-                batch_api=batch_api,
-                core_api=core_api,
-                namespace=namespace,
-                job_name=deterministic_job_name,
-            )
-            return observed, deterministic_job_name, observed_secret_name, True
+            return self._accept_observed_job(launch, observed)
 
         job_name = getattr(getattr(created, "metadata", None), "name", None)
         if job_name:
-            return created, job_name, secret_name, False
-        if deterministic_job_name:
-            observed = self._read_idempotent_job(batch_api, api_exception, namespace, deterministic_job_name)
-            if observed is not None:
-                if task_identity is None:
-                    self._cleanup_sensitive_secret(core_api, secret_name, namespace)
-                    raise CloudTaskError("Deterministic Job recovery requires a task identity")
-                try:
-                    self._validate_observed_job(
-                        observed,
-                        job_name=deterministic_job_name,
-                        task_identity=task_identity,
-                        image=image,
-                        command=command,
-                        container_name=container_name,
-                        service_account_name=service_account_name,
-                        expected_secret_name=secret_name,
-                    )
-                except CloudTaskError:
-                    self._cleanup_sensitive_secret(core_api, secret_name, namespace)
-                    raise
-                observed_secret_name = self._job_sensitive_secret_name(observed)
-                if secret_name != observed_secret_name:
-                    self._cleanup_sensitive_secret(core_api, secret_name, namespace)
-                self._reconcile_observed_job(
-                    job=observed,
-                    client=client,
-                    batch_api=batch_api,
-                    core_api=core_api,
-                    namespace=namespace,
-                    job_name=deterministic_job_name,
-                )
-                return observed, deterministic_job_name, observed_secret_name, True
-        self._cleanup_sensitive_secret(core_api, secret_name, namespace)
+            return created, str(job_name), launch.secret_name, False
+        observed = self._observe_reserved_job(launch)
+        if observed is not None:
+            return self._accept_observed_job(launch, observed)
+        self._cleanup_sensitive_secret(launch.apis.core, launch.secret_name, launch.namespace)
         raise CloudTaskError("Kubernetes API did not return a Job name")
 
     def _build_env(
@@ -409,9 +440,7 @@ class GCPTaskRunner:
     def _ensure_sensitive_secret(
         self,
         *,
-        core_api: Any,
-        api_exception: type[Exception],
-        client: Any,
+        apis: _KubernetesApis,
         namespace: str,
         secret_name: str,
         sensitive_env: dict[str, str],
@@ -419,14 +448,16 @@ class GCPTaskRunner:
         task_identity: str | None,
     ) -> None:
         """Create a per-intent Secret, or recover it after an ambiguous create."""
-        secret_body = self._build_sensitive_secret(client, secret_name, sensitive_env, container_name)
+        secret_body = self._build_sensitive_secret(apis.client, secret_name, sensitive_env, container_name)
         try:
-            core_api.create_namespaced_secret(
+            _api_call(
+                apis.core,
+                "create_namespaced_secret",
                 namespace=namespace,
                 body=secret_body,
                 _request_timeout=_KUBERNETES_REQUEST_TIMEOUT_SECONDS,
             )
-        except api_exception as exc:
+        except apis.exception as exc:
             if task_identity is None or getattr(exc, "status", None) != 409:
                 raise
             # A deterministic per-intent Secret can remain after an ambiguous
@@ -440,7 +471,9 @@ class GCPTaskRunner:
                 "stringData": dict(sensitive_env),
                 "type": "Opaque",
             }
-            core_api.patch_namespaced_secret(
+            _api_call(
+                apis.core,
+                "patch_namespaced_secret",
                 name=secret_name,
                 namespace=namespace,
                 body=patch_body,
@@ -622,6 +655,135 @@ class GCPTaskRunner:
             "stopped_reason": stopped_reason,
         }
 
+    def _resolve_run_context(
+        self,
+        namespace: str,
+        image: str,
+        command: list[str],
+        container_name: str,
+        env_overrides: dict[str, str] | None,
+        task_identity: str | None,
+    ) -> _RunTaskContext:
+        """Load Kubernetes clients and derive deterministic launch identities."""
+        apis = _KubernetesApis(*self._load_kubernetes_api())
+        service_account_name = str(getattr(settings, "ENGINE_TASK_SERVICE_ACCOUNT_NAME", "") or "")
+        sensitive_env, _plain_env = split_env(env_overrides or {})
+        secret_name = self._build_secret_name(container_name, task_identity) if sensitive_env else None
+        identity = None
+        if task_identity:
+            identity = _JobIdentity(
+                job_name=build_idempotent_job_name(container_name, task_identity),
+                task_identity=task_identity,
+                image=image,
+                command=command,
+                container_name=container_name,
+                service_account_name=service_account_name,
+                secret_name=secret_name,
+            )
+        return _RunTaskContext(
+            apis=apis,
+            namespace=namespace,
+            image=image,
+            command=command,
+            container_name=container_name,
+            env_overrides=env_overrides,
+            task_identity=task_identity,
+            identity=identity,
+            sensitive_env=sensitive_env,
+            secret_name=secret_name,
+        )
+
+    def _existing_task_ref(self, context: _RunTaskContext) -> str | None:
+        """Reconcile and return an already accepted deterministic Job."""
+        identity = context.identity
+        if identity is None:
+            return None
+        observed = self._read_idempotent_job(
+            context.apis.batch,
+            context.apis.exception,
+            context.namespace,
+            identity.job_name,
+        )
+        if observed is None:
+            return None
+        self._validate_observed_job(observed, identity)
+        if context.sensitive_env and context.secret_name is not None:
+            self._ensure_sensitive_secret(
+                apis=context.apis,
+                namespace=context.namespace,
+                secret_name=context.secret_name,
+                sensitive_env=context.sensitive_env,
+                container_name=context.container_name,
+                task_identity=context.task_identity,
+            )
+        self._reconcile_observed_job(
+            job=observed,
+            apis=context.apis,
+            namespace=context.namespace,
+            job_name=identity.job_name,
+        )
+        return f"{context.namespace}/{identity.job_name}"
+
+    def _build_launch_job(self, context: _RunTaskContext) -> object:
+        """Create sensitive state and build the corresponding Job manifest."""
+        if context.sensitive_env:
+            if context.secret_name is None:  # pragma: no cover - derived above
+                raise CloudTaskError("GCP task runner failed to derive a Secret name")
+            self._ensure_sensitive_secret(
+                apis=context.apis,
+                namespace=context.namespace,
+                secret_name=context.secret_name,
+                sensitive_env=context.sensitive_env,
+                container_name=context.container_name,
+                task_identity=context.task_identity,
+            )
+        try:
+            env = self._build_env(
+                context.apis.client,
+                context.env_overrides,
+                sensitive_secret_name=context.secret_name,
+            )
+            return self._build_job(
+                context.apis.client,
+                context.image,
+                context.container_name,
+                context.command,
+                env,
+                task_identity=context.task_identity,
+            )
+        except Exception:
+            self._cleanup_sensitive_secret(context.apis.core, context.secret_name, context.namespace)
+            raise
+
+    def _submit_launch_job(self, context: _RunTaskContext, job: object) -> str:
+        """Submit a built Job and finish ownership of any sensitive Secret."""
+        launch = _JobLaunch(
+            apis=context.apis,
+            namespace=context.namespace,
+            job=job,
+            identity=context.identity,
+            secret_name=context.secret_name,
+        )
+        created, job_name, effective_secret_name, owner_reconciled = self._create_or_observe_job(launch)
+        if effective_secret_name is not None and not owner_reconciled:
+            self._install_owner_reference_or_unwind(
+                apis=context.apis,
+                namespace=context.namespace,
+                job_name=job_name,
+                job_uid=getattr(getattr(created, "metadata", None), "uid", None),
+                secret_name=effective_secret_name,
+            )
+        task_ref = f"{context.namespace}/{job_name}"
+        logger.info("run_task: started job=%s image=%s", task_ref, context.image)
+        return task_ref
+
+    def _run_task(self, context: _RunTaskContext) -> str:
+        """Reconcile an existing Job or submit a newly built manifest."""
+        existing_ref = self._existing_task_ref(context)
+        if existing_ref is not None:
+            return existing_ref
+        return self._submit_launch_job(context, self._build_launch_job(context))
+
     def run_task(
         self,
         task_definition: str,
@@ -643,108 +805,15 @@ class GCPTaskRunner:
             raise CloudTaskError("GCP task runner requires a container image in ENGINE_TASK_DEFINITION")
 
         try:
-            batch_api, core_api, client, api_exception = self._load_kubernetes_api()
-            deterministic_job_name = build_idempotent_job_name(container_name, task_identity) if task_identity else None
-            service_account_name = str(getattr(settings, "ENGINE_TASK_SERVICE_ACCOUNT_NAME", "") or "")
-            sensitive_env, _plain_env = split_env(env_overrides or {})
-            secret_name = self._build_secret_name(container_name, task_identity) if sensitive_env else None
-            if deterministic_job_name:
-                observed = self._read_idempotent_job(batch_api, api_exception, namespace, deterministic_job_name)
-                if observed is not None:
-                    self._validate_observed_job(
-                        observed,
-                        job_name=deterministic_job_name,
-                        task_identity=str(task_identity),
-                        image=image,
-                        command=command,
-                        container_name=container_name,
-                        service_account_name=service_account_name,
-                        expected_secret_name=secret_name,
-                    )
-                    if sensitive_env and secret_name is not None:
-                        self._ensure_sensitive_secret(
-                            core_api=core_api,
-                            api_exception=api_exception,
-                            client=client,
-                            namespace=namespace,
-                            secret_name=secret_name,
-                            sensitive_env=sensitive_env,
-                            container_name=container_name,
-                            task_identity=task_identity,
-                        )
-                    self._reconcile_observed_job(
-                        job=observed,
-                        client=client,
-                        batch_api=batch_api,
-                        core_api=core_api,
-                        namespace=namespace,
-                        job_name=deterministic_job_name,
-                    )
-                    return f"{namespace}/{deterministic_job_name}"
-            # Partition env so sensitive values flow through a per-Job
-            # Secret instead of literal value= entries on the Pod spec
-            # (issue #1185).
-            if sensitive_env:
-                assert secret_name is not None
-                self._ensure_sensitive_secret(
-                    core_api=core_api,
-                    api_exception=api_exception,
-                    client=client,
-                    namespace=namespace,
-                    secret_name=secret_name,
-                    sensitive_env=sensitive_env,
-                    container_name=container_name,
-                    task_identity=task_identity,
-                )
-            # Codex review #1180 cycle 2 finding 3: every operation
-            # between Secret creation and ownerReference installation
-            # must be inside the unwind scope. _build_env / _build_job
-            # are local Python helpers that should not raise, but a
-            # future refactor or upstream client model change could
-            # introduce a TypeError or attribute lookup failure that
-            # would otherwise orphan the Secret with no ownerReference
-            # target.
-            try:
-                env = self._build_env(client, env_overrides, sensitive_secret_name=secret_name)
-                job = self._build_job(client, image, container_name, command, env, task_identity=task_identity)
-            except Exception:
-                self._cleanup_sensitive_secret(core_api, secret_name, namespace)
-                raise
-            created, job_name, effective_secret_name, owner_reconciled = self._create_or_observe_job(
-                batch_api=batch_api,
-                core_api=core_api,
-                client=client,
-                api_exception=api_exception,
-                namespace=namespace,
-                job=job,
-                deterministic_job_name=deterministic_job_name,
-                secret_name=secret_name,
-                task_identity=task_identity,
-                image=image,
-                command=command,
-                container_name=container_name,
-                service_account_name=service_account_name,
+            context = self._resolve_run_context(
+                namespace,
+                image,
+                command,
+                container_name,
+                env_overrides,
+                task_identity,
             )
-            # Owner-reference installation is part of the success
-            # contract (codex review #1180 cycle 1 finding 6): if we
-            # cannot install it, the Secret becomes an indefinite
-            # orphan no Job GC will ever reach. Treat the patch
-            # failure as a run-level failure — delete the Job + the
-            # Secret and raise. This surfaces permission mismatches
-            # loudly instead of silently leaving secrets behind.
-            if effective_secret_name is not None and not owner_reconciled:
-                self._install_owner_reference_or_unwind(
-                    client=client,
-                    batch_api=batch_api,
-                    core_api=core_api,
-                    namespace=namespace,
-                    job_name=job_name,
-                    job_uid=getattr(getattr(created, "metadata", None), "uid", None),
-                    secret_name=effective_secret_name,
-                )
-            task_id = f"{namespace}/{job_name}"
-            logger.info("run_task: started job=%s image=%s", task_id, image)
-            return task_id
+            return self._run_task(context)
         except CloudTaskError:
             raise
         except Exception as e:
@@ -756,7 +825,7 @@ class GCPTaskRunner:
             raise CloudTaskError(f"Failed to create Kubernetes Job ({type(e).__name__})") from e
 
     @staticmethod
-    def _owner_ref_to_dict(owner_ref: Any) -> dict[str, Any]:
+    def _owner_ref_to_dict(owner_ref: _OwnerReference) -> dict[str, object]:
         """Convert a V1OwnerReference to the camelCase dict shape the
         apiserver expects in a strategic-merge patch body."""
         return {
@@ -792,9 +861,7 @@ class GCPTaskRunner:
     def _install_owner_reference_or_unwind(
         self,
         *,
-        client: Any,
-        batch_api: Any,
-        core_api: Any,
+        apis: _KubernetesApis,
         namespace: str,
         job_name: str,
         job_uid: str | None,
@@ -808,8 +875,8 @@ class GCPTaskRunner:
         if not job_uid:
             if unwind_on_failure:
                 self._unwind_run(
-                    batch_api,
-                    core_api,
+                    apis.batch,
+                    apis.core,
                     namespace,
                     job_name,
                     secret_name,
@@ -819,17 +886,24 @@ class GCPTaskRunner:
                 f"GCP task runner: cannot install Secret ownerReference (Job {job_name} returned no uid)"
             )
 
-        owner_ref = client.V1OwnerReference(
-            api_version="batch/v1",
-            kind="Job",
-            name=job_name,
-            uid=job_uid,
-            controller=True,
-            block_owner_deletion=True,
+        owner_ref = cast(
+            _OwnerReference,
+            _api_call(
+                apis.client,
+                "V1OwnerReference",
+                api_version="batch/v1",
+                kind="Job",
+                name=job_name,
+                uid=job_uid,
+                controller=True,
+                block_owner_deletion=True,
+            ),
         )
         patch_body = {"metadata": {"ownerReferences": [self._owner_ref_to_dict(owner_ref)]}}
         try:
-            core_api.patch_namespaced_secret(
+            _api_call(
+                apis.core,
+                "patch_namespaced_secret",
                 name=secret_name,
                 namespace=namespace,
                 body=patch_body,
@@ -838,8 +912,8 @@ class GCPTaskRunner:
         except Exception as patch_err:
             if unwind_on_failure:
                 self._unwind_run(
-                    batch_api,
-                    core_api,
+                    apis.batch,
+                    apis.core,
                     namespace,
                     job_name,
                     secret_name,

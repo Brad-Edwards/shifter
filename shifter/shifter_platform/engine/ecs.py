@@ -483,6 +483,33 @@ def start_teardown(range_id: int, user_id: int) -> str | None:
 # =============================================================================
 
 
+def _dispatch_remote_provisioner_task(command: list[str], request_id: UUID, resource: str) -> str | None:
+    """Queue a GCP launch or submit the equivalent configured task runner job."""
+    queued, queued_ref = _enqueue_gcp_launch(command)
+    if queued:
+        return queued_ref
+    task_config = _get_engine_task_config()
+    if task_config is None:
+        return None
+    cluster, task_definition, network_config = task_config
+    logger.info("Starting %s ECS task for request_id=%s command=%s", resource, request_id, command)
+    try:
+        runner = get_task_runner()
+        task_arn = runner.run_task(
+            task_definition=task_definition,
+            cluster=cluster,
+            command=command,
+            container_name=PROVISIONER_CONTAINER_NAME,
+            env_overrides=_get_gcp_provisioner_env_overrides(),
+            network_config=network_config,
+        )
+        logger.info("Started %s ECS task: request_id=%s task_arn=%s", resource, request_id, task_arn)
+        return task_arn
+    except CloudTaskError as exc:
+        logger.exception("Failed to start %s ECS task for request_id=%s: %s", resource, request_id, exc)
+        raise
+
+
 def _start_range_ecs_task(request_id: UUID, command: str, resource: str = "range") -> str | None:
     """Start an ECS Fargate task for Range operations using request_id.
 
@@ -515,7 +542,7 @@ def _start_range_ecs_task(request_id: UUID, command: str, resource: str = "range
     if command not in valid_commands:
         raise ValueError(f"Invalid command: {command}. Must be one of {valid_commands}.")
 
-    # Check for local provisioner mode first
+    command_list = [resource, command, "--request-id", str(request_id)]
     if _is_local_provisioner_enabled():
         logger.info(
             "Using local provisioner for %s request_id=%s command=%s",
@@ -523,37 +550,8 @@ def _start_range_ecs_task(request_id: UUID, command: str, resource: str = "range
             request_id,
             command,
         )
-        command_list = [resource, command, "--request-id", str(request_id)]
         return _run_local_provisioner(command_list)
-
-    command_list = [resource, command, "--request-id", str(request_id)]
-    queued, queued_ref = _enqueue_gcp_launch(command_list)
-    if queued:
-        return queued_ref
-
-    task_config = _get_engine_task_config()
-    if task_config is None:
-        return None
-
-    cluster, task_definition, network_config = task_config
-
-    logger.info("Starting %s ECS task for request_id=%s command=%s", resource, request_id, command)
-
-    try:
-        runner = get_task_runner()
-        task_arn = runner.run_task(
-            task_definition=task_definition,
-            cluster=cluster,
-            command=command_list,
-            container_name=PROVISIONER_CONTAINER_NAME,
-            env_overrides=_get_gcp_provisioner_env_overrides(),
-            network_config=network_config,
-        )
-        logger.info("Started %s ECS task: request_id=%s task_arn=%s", resource, request_id, task_arn)
-        return task_arn
-    except CloudTaskError as e:
-        logger.exception("Failed to start %s ECS task for request_id=%s: %s", resource, request_id, e)
-        raise
+    return _dispatch_remote_provisioner_task(command_list, request_id, resource)
 
 
 def start_range_provisioning(request_id: UUID) -> str | None:
@@ -669,7 +667,6 @@ def _start_ngfw_ecs_task(request_id: UUID, command: list[str]) -> str | None:
     if not command:
         raise ValueError("command must be a non-empty list")
 
-    # Check for local provisioner mode first
     if _is_local_provisioner_enabled():
         logger.info(
             "Using local provisioner for NGFW request_id=%s command=%s",
@@ -677,34 +674,7 @@ def _start_ngfw_ecs_task(request_id: UUID, command: list[str]) -> str | None:
             command,
         )
         return _run_local_provisioner(command)
-
-    queued, queued_ref = _enqueue_gcp_launch(command)
-    if queued:
-        return queued_ref
-
-    task_config = _get_engine_task_config()
-    if task_config is None:
-        return None
-
-    cluster, task_definition, network_config = task_config
-
-    logger.info("Starting NGFW ECS task for request_id=%s command=%s", request_id, command)
-
-    try:
-        runner = get_task_runner()
-        task_arn = runner.run_task(
-            task_definition=task_definition,
-            cluster=cluster,
-            command=command,
-            container_name=PROVISIONER_CONTAINER_NAME,
-            env_overrides=_get_gcp_provisioner_env_overrides(),
-            network_config=network_config,
-        )
-        logger.info("Started NGFW ECS task: request_id=%s task_arn=%s", request_id, task_arn)
-        return task_arn
-    except CloudTaskError as e:
-        logger.exception("Failed to start NGFW ECS task for request_id=%s: %s", request_id, e)
-        raise
+    return _dispatch_remote_provisioner_task(command, request_id, "NGFW")
 
 
 def start_ngfw_provisioning(request_id: UUID) -> str | None:

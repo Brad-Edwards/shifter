@@ -741,6 +741,8 @@ class ProvisionerLaunchIntent(models.Model):
     launched_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
+        """Table configuration for durable provisioner launch intents."""
+
         db_table = "engine_provisioner_launch_intent"
         constraints = [
             models.UniqueConstraint(
