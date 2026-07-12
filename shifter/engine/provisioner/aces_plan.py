@@ -49,7 +49,9 @@ from aces_plan_types import (
     AcesPlanImage,
     AcesPlanNetwork,
     AcesPlanNode,
+    AcesPlanServicePort,
 )
+from aces_service import build_node_services
 
 __all__ = [
     "ACES_PROVISIONING_PLAN_CONTRACT_VERSION",
@@ -67,6 +69,7 @@ __all__ = [
     "AcesPlanImage",
     "AcesPlanNetwork",
     "AcesPlanNode",
+    "AcesPlanServicePort",
     "parse_plan",
 ]
 
@@ -423,6 +426,7 @@ def _node(address: str, payload: Mapping[str, Any], network_lookup: dict[str, st
         vcpus=_vcpus(payload),
         image=_image(payload),
         acls=acls,
+        services=build_node_services(_node_spec(payload).get("services")),
     )
 
 
