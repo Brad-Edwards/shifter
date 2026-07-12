@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 import secrets
 from collections.abc import Callable
+from contextlib import suppress
 from typing import TYPE_CHECKING
 from uuid import UUID
 
@@ -322,19 +323,18 @@ def purge_expired_participant_accounts() -> int:
 
 def _eligible_ctf_user(user: User | AnonymousUser) -> User | None:
     """Return a concrete user only when its account boundary is intact."""
-    if not isinstance(user, User) or not user.is_active:
-        return None
-    try:
-        profile = user.profile
-    except (AttributeError, ObjectDoesNotExist):
-        return None
-    if not profile.is_ctf_account or profile.user_type != "ctf_participant":
-        return None
-    if user.is_staff or user.is_superuser:
-        return None
-    if set(user.groups.values_list("name", flat=True)) != {CTF_PARTICIPANT_GROUP}:
-        return None
-    return user
+    eligible_user = None
+    profile = None
+    if isinstance(user, User) and user.is_active:
+        with suppress(AttributeError, ObjectDoesNotExist):
+            profile = user.profile
+        if profile is not None:
+            has_account_marker = profile.is_ctf_account and profile.user_type == "ctf_participant"
+            has_safe_permissions = not user.is_staff and not user.is_superuser
+            has_exact_group = set(user.groups.values_list("name", flat=True)) == {CTF_PARTICIPANT_GROUP}
+            if all((has_account_marker, has_safe_permissions, has_exact_group)):
+                eligible_user = user
+    return eligible_user
 
 
 def live_participant_for_user(user: User | AnonymousUser) -> CTFParticipant | None:
