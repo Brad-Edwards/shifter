@@ -323,6 +323,15 @@ jobs:
         run: |
           python3 scripts/check_tf_runner_network/check_tf_runner_network.py
 
+      # ADR-008 / issue #1546: the GCP-native self-hosted runner must live in a
+      # dedicated custom-mode VPC (never the project default network) and admit
+      # SSH only from Google's IAP range. Mirrors the check-tf-gcp-runner-network
+      # pre-commit hook so a commit that skipped pre-commit cannot weaken the
+      # runner network isolation.
+      - name: Run check-tf-gcp-runner-network
+        run: |
+          python3 scripts/check_tf_gcp_runner_network/check_tf_gcp_runner_network.py
+
       # Issue #1178: the shared range guest instance role must not grant SSM
       # Parameter Store access on a Resource that wildcards the environment or
       # range segment (parameter/shifter/*/range/*). Mirrors the
@@ -394,6 +403,7 @@ jobs:
           python3 -m unittest scripts.check_tf_rds_security.test_check_tf_rds_security
           python3 -m unittest scripts.check_portal_target_sg_sources.test_check_portal_target_sg_sources
           python3 -m unittest scripts.check_tf_runner_network.test_check_tf_runner_network
+          python3 -m unittest scripts.check_tf_gcp_runner_network.test_check_tf_gcp_runner_network
           python3 -m unittest scripts.check_tf_gcp_iam_resource_scope.test_check_tf_gcp_iam_resource_scope
 
   # ===========================================================================

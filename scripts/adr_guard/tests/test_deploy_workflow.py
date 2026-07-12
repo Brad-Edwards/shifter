@@ -95,6 +95,28 @@ class TestRunnerExposure(unittest.TestCase):
         )
 
 
+class TestSelfHostedClassLabels(unittest.TestCase):
+    """ADR-003-R5 exposure recognizes custom self-hosted-class labels (#1546).
+
+    A GCP-native runner registers with ``--no-default-labels`` + a custom label,
+    so a job selecting it never carries the literal ``self-hosted`` label. The
+    exposure check must still treat such a job as self-hosted-class, or the
+    pull_request-reachability gate develops a blind spot when GCP-dev CI is cut
+    over to its own runner.
+    """
+
+    def test_literal_self_hosted_is_recognized(self):
+        self.assertTrue(ADR_GUARD._dw_is_self_hosted({"runs-on": "self-hosted"}))
+
+    def test_custom_gcp_label_is_recognized_as_self_hosted_class(self):
+        self.assertTrue(ADR_GUARD._dw_is_self_hosted({"runs-on": "gcp-dev"}))
+        self.assertTrue(ADR_GUARD._dw_is_self_hosted({"runs-on": ["gcp-dev"]}))
+
+    def test_github_hosted_label_is_not_self_hosted(self):
+        self.assertFalse(ADR_GUARD._dw_is_self_hosted({"runs-on": "ubuntu-latest"}))
+        self.assertFalse(ADR_GUARD._dw_is_self_hosted({"runs-on": ["ubuntu-latest"]}))
+
+
 class TestUpstreamGating(unittest.TestCase):
     """#781: a failed/cancelled upstream must block every deploy job."""
 
