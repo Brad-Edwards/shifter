@@ -217,6 +217,11 @@
         "id": "ADR-004-R20",
         "description": "The self-hosted GitHub Actions deploy runner defined in `platform/terraform/global/github-runner/main.tf` MUST fail closed on account-default-VPC placement by default. A range's `private_dns_enabled` interface VPC endpoints override service hostnames for the entire VPC, so a range sharing the runner's VPC can hijack the runner's AWS API resolution and black-hole CI (the ~107-minute wedge that #1220's `timeout-minutes` only backstops). The preferred placements are a dedicated runner VPC or the portal VPC private tier, selected via the operator-supplied `var.vpc_id` / `var.subnet_id` (live `vpc-*`/`subnet-*` IDs are never committed, per ADR-004-R14). Enforcement is fail-closed at plan/apply time: the stack resolves the account default VPC via `data.aws_vpcs.default` and an `aws_security_group.runner` `lifecycle.precondition` rejects a resolved runner VPC (`local.runner_vpc_id`) matching it, with a second precondition rejecting a runner subnet that does not belong to that VPC. An explicit, documented opt-in escape hatch `var.allow_default_vpc` (default `false`, so the guard stays fail-closed for everyone who does not set it) permits default-VPC placement where the range private-DNS collision risk is knowingly accepted; when set with empty `var.vpc_id`/`var.subnet_id` the stack auto-resolves the default VPC and one of its subnets so no live IDs are committed. aws-dev and aws-proof set it `true` today; the durable placement design (keep default VPC vs. build reproducible isolated placement) is being reassessed in #1437. The presence of the guard is pinned by `scripts/check_tf_runner_network/check_tf_runner_network.py`, wired as the `check-tf-runner-network` pre-commit hook and the matching `_quality.yml` step, with its unittest suite included in the `check_tf_*` checker tests, so the precondition cannot be silently removed. Established by #1222; opt-in escape hatch added by #1425.",
         "checks": []
+      },
+      {
+        "id": "ADR-004-R21",
+        "description": "The per-range Polaris Bedrock agent role (`aws_iam_role.polaris_agent` in `shifter/engine/provisioner/terraform/modules/range/iam.tf`) MUST stay scoped to exactly the narrow shape #1377 established. Its inline policy (`aws_iam_role_policy.polaris_agent`) MUST grant only `bedrock:InvokeModel` and `bedrock:InvokeModelWithResponseStream` (no other action, and never a `bedrock:*` or full `*` wildcard), and its `Resource` fields MUST reference only the four `polaris_agent_main_inference_profile_arn` / `polaris_agent_small_inference_profile_arn` / `polaris_agent_main_backing_model_arns` / `polaris_agent_small_backing_model_arns` variables (never `Resource = \"*\"` or any other wildcard ARN); the statement granting access to the backing foundation models MUST carry a `bedrock:InferenceProfileArn` condition scoping it to the approved inference profiles, since those models are reachable only through those profiles. The role's trust policy MUST bind `Principal.AWS` to `var.range_instance_role_arn` (never a wildcard or a service principal) AND MUST carry a `StringEquals` condition on `ec2:SourceInstanceARN`, so no range host other than the exact Polaris EC2 instance can assume it even though the shared range-instance role's own IAM policy allows assuming anything in the shifter-${environment}-*-polaris-agent namespace. The role MUST also set a permissions boundary (`var.polaris_agent_permissions_boundary_arn`) and the standard Shifter tags (`local.common_tags`). No S3, SSM, IAM, KMS, Secrets Manager, or arbitrary STS access is granted. Enforced by `scripts/check_tf_iam_bedrock_agent_scope/check_tf_iam_bedrock_agent_scope.py`, wired as the `check-tf-iam-bedrock-agent-scope` pre-commit hook and a CI step in `.github/workflows/_quality.yml` right after `tflint --recursive`, with its unittest suite included in the `check_tf_*` checker tests. Established by #1377.",
+        "checks": []
       }
     ],
     "exceptions": [],
@@ -232,6 +237,7 @@
       "scripts/check_tf_kms_secrets_grant/check_tf_kms_secrets_grant.py",
       "scripts/check_tf_rds_security/check_tf_rds_security.py",
       "scripts/check_tf_iam_ssm_range_scope/check_tf_iam_ssm_range_scope.py",
+      "scripts/check_tf_iam_bedrock_agent_scope/check_tf_iam_bedrock_agent_scope.py",
       "scripts/check_portal_target_sg_sources/check_portal_target_sg_sources.py",
       "scripts/check_tf_iam_role_naming/check_tf_iam_role_naming.py",
       "scripts/check_tf_runner_network/check_tf_runner_network.py",
@@ -307,7 +313,7 @@
       },
       {
         "id": "ADR-006-R4",
-        "description": "Creation of Jobs running as the privileged provisioner service account in the shifter-jobs namespace must be gated by a ValidatingAdmissionPolicy (present and byte-identical in platform/k8s/gcp/base/ and the helm-rendered output of platform/charts/shifter). The policy must deny such Jobs unless they mirror the full canonical GCPTaskRunner contract: submitted by the workers service account, single container named pulumi-provisioner, pinned ENGINE_TASK_IMAGE, no command (entrypoint) override, a range/ngfw command family, no envFrom, emptyDir-only volumes, the read-only/non-root/drop-ALL container security context, and restartPolicy Never. Pinning only the image is insufficient because the caller could keep the image and override the executable fields. RBAC cannot constrain serviceAccountName and the restricted PSS profile does not pin serviceAccountName, image, or command. Enforced at runtime by the cluster and in CI by the structural invariant tests.",
+        "description": "Creation of Jobs running as the privileged provisioner service account in the jobs namespace and mutation of their per-intent sensitive-env Secrets must be owned by one dedicated provisioner-launcher workload identity. Portal, CTF scheduler, general workers, and the provisioner runtime identity have no provisioner Job-launch or Secret mutation grant and mount no Kubernetes API token; the provisioner Job also disables token automount while retaining GKE Workload Identity. RBAC, default-deny egress, runtime configuration, and the fail-closed ValidatingAdmissionPolicy (equivalent across the GCP base and Helm default render, with Helm identity/namespace fields derived from canonical values) name one launcher principal. Admission denies non-provisioner Jobs from that launcher and denies provisioner Jobs unless they mirror the canonical GCPTaskRunner contract: pinned image/pull policy and literal values, exact operation/identifier grammar, deterministic task/Secret identity, required Secret-backed database bindings, one non-indexed execution, exact bounded volumes/mounts, no auxiliary execution fields, and canonical pod/container security. Dynamic creates cannot be constrained with RBAC resourceNames known at deployment time; use the dedicated principal, semantic admission, deterministic create-or-observe identity, ownerReferences, and resourceNames only for fixed targets. Enforced by effective-authorization, Helm override/parity, and rendered-CEL semantic denial tests. Recorded by the architecture preflight for #1518.",
         "checks": []
       }
     ],
@@ -326,7 +332,8 @@
       "shifter/shifter_platform/shared/cloud/gcp/task_runner.py",
       "shifter/engine/provisioner/Dockerfile",
       "shifter/engine/provisioner/terraform_base.py",
-      "platform/terraform/modules/engine-provisioner/task_definition.tf"
+      "platform/terraform/modules/engine-provisioner/task_definition.tf",
+      "docs/architecture/gcp-provisioner-launch-boundary-preflight-1518.md"
     ]
   },
   {
@@ -1457,16 +1464,23 @@
         "id": "ADR-032-R7",
         "description": "The serialized ProvisioningPlan transport must declare and validate supported contract and producer versions before realization. The consumer must reject unknown resource types, malformed payloads, duplicate identities, duplicate aliases, dangling node/network/composition references, and unsupported topology terms before any cloud, Terraform, SSH, SSM, or guest mutation. Compatibility tests must use public ACES APIs, public fixtures, or Shifter-owned serialized fixtures; private reference-backend helpers are not a compatibility contract.",
         "checks": []
+      },
+      {
+        "id": "ADR-032-R8",
+        "description": "ACES Node.services entries are authored layer-4 transport exposure intent, not informational labels, guest service installation, participant authorization, or an override of authored ACLs. The GCE realization must validate the compiled spec.node.services payload again at the separate provisioner trust boundary and realize supported TCP/UDP ports as deterministic per-node-tag ingress policy sourced only from concrete CIDRs declared by networks in that same compiled range. It must never widen a service to 0.0.0.0/0, platform/portal/operator CIDRs, or another range by default. The existing management-plane allow remains higher precedence than authored ACLs; authored ACLs remain higher precedence than service-derived allows. Unsupported or malformed service shapes and any priority/source scope that cannot be represented without widening must fail before cloud mutation. The projection is process-local realization data only; it must not become a second SDL, persisted schema, API DTO, setting, or participant-access contract.",
+        "checks": []
       }
     ],
     "exceptions": [],
     "enforcement": ["ci", "agent-policy"],
     "evidence": [
       "https://github.com/Brad-Edwards/shifter/issues/1264",
+      "https://github.com/Brad-Edwards/shifter/issues/1562",
       "https://github.com/Brad-Edwards/shifter/issues/1563",
       "docs/architecture/aces-runtime-target-backend-manifest-preflight-1233.md",
       "docs/architecture/aces-provisioning-plan-transport-preflight-1522.md",
       "docs/architecture/aces-backend-manifest-realizability-preflight-1563.md",
+      "docs/architecture/aces-service-reachability-preflight-1562.md",
       "docs/architecture/aces-account-credentials-preflight-1560.md",
       ".importlinter",
       "shifter/shifter_platform/pyproject.toml",

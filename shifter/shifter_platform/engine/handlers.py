@@ -160,6 +160,11 @@ def _handle_status_updated(event: RangeStatusUpdatedPayload) -> None:
         range_obj.error_message = error_message
         update_fields.append("error_message")
 
+    if new_status == ResourceStatus.FAILED.value:
+        from engine.launch_intents import clear_provisioner_operation_after_failure
+
+        update_fields.extend(clear_provisioner_operation_after_failure(range_obj))
+
     if new_status == ResourceStatus.DESTROYED.value:
         range_obj.destroyed_at = now
         update_fields.append("destroyed_at")

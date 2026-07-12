@@ -27,6 +27,15 @@ from gcp_range_cell_plan import FirewallEntry, FirewallPlan, _short_resource_nam
 _ACL_FIREWALL_BASE_PRIORITY = 1000
 _ANY_CIDR = "0.0.0.0/0"
 
+#: Service-derived ingress allows are rendered in this deterministic protocol order;
+#: one aggregated rule per protocol keeps the GCP rule count minimal (ADR-032-R8).
+_SERVICE_PROTOCOL_ORDER = ("tcp", "udp")
+#: Service allows sit ABOVE authored ACLs (the plan layer passes a per-node base
+#: above that node's ACL band), so an authored ACL deny still wins over a service
+#: allow and both stay below the priority-900 management rule. This ceiling fails
+#: closed before emitting an out-of-band (unrepresentable) priority (ADR-032-R8).
+_SERVICE_FIREWALL_PRIORITY_CEILING = 60000
+
 
 class AcesGceFirewallError(RuntimeError):
     """Raised when an authored ACL cannot be realized fail-closed as a GCE firewall."""
@@ -102,4 +111,73 @@ def build_acl_firewalls(range_id: int, node: AcesPlanNode, tag: str, cidr_lookup
             firewall = _acl_firewall(range_id, node.name, tag, acl, index, ingress=False)
             firewall["destination_ranges"] = [_resolve_endpoint(acl.to_net, cidr_lookup)]
             firewalls.append(firewall)
+    return firewalls
+
+
+def service_base_priority(node: AcesPlanNode) -> int:
+    """Return the first service-firewall priority for a node: strictly above its ACL band.
+
+    Authored ACLs occupy ``[1000, 1000 + len(acls) - 1]``; service allows start one slot
+    above the whole band (and above the base per-subnet allow at 1000), so an authored
+    ACL deny always outranks a service allow and the management rule (900) outranks both
+    (ADR-032-R8).
+    """
+    return _ACL_FIREWALL_BASE_PRIORITY + 1 + len(node.acls)
+
+
+def build_service_firewalls(
+    range_id: int,
+    node: AcesPlanNode,
+    tag: str,
+    source_cidrs: tuple[str, ...],
+    base_priority: int,
+) -> list[FirewallPlan]:
+    """Render fail-closed per-node-tag INGRESS firewalls for a node's authored services.
+
+    Realizes authored ``Node.services`` as layer-4 ingress reachability (ADR-032-R8):
+    one aggregated INGRESS rule per protocol (``tcp`` then ``udp``, ports sorted),
+    targeting this node's tag, admitting only the same-range ``source_cidrs`` -- never
+    ``0.0.0.0/0``, portal/operator, or another range. Fails closed
+    (:class:`AcesGceFirewallError`) when there is no source CIDR to admit from, when an
+    unsupported protocol survived to realization, or when the required priority would
+    fall outside the service band (so an unrepresentable ordering never widens policy).
+    ``base_priority`` is supplied by the plan layer strictly above the node's ACL band,
+    keeping authored ACL denies (and the management rule) higher precedence.
+    """
+    if not node.services:
+        return []
+    sources = sorted(set(source_cidrs))
+    if not sources:
+        raise AcesGceFirewallError(
+            f"node {node.address!r} declares services but the range has no source CIDR to admit them from"
+        )
+    ports_by_protocol: dict[str, set[int]] = {}
+    for service in node.services:
+        ports_by_protocol.setdefault(service.protocol, set()).add(service.port)
+    unsupported = set(ports_by_protocol) - set(_SERVICE_PROTOCOL_ORDER)
+    if unsupported:
+        raise AcesGceFirewallError(f"node {node.address!r} has unsupported service protocol(s) {sorted(unsupported)}")
+
+    firewalls: list[FirewallPlan] = []
+    priority = base_priority
+    for protocol in _SERVICE_PROTOCOL_ORDER:
+        ports = ports_by_protocol.get(protocol)
+        if not ports:
+            continue
+        if not 0 < priority < _SERVICE_FIREWALL_PRIORITY_CEILING:
+            raise AcesGceFirewallError(
+                f"node {node.address!r} service firewall priority {priority} is outside the service band "
+                f"(1, {_SERVICE_FIREWALL_PRIORITY_CEILING})"
+            )
+        firewalls.append(
+            {
+                "name": _short_resource_name("shifter-r", range_id, node.name, "svc", protocol),
+                "direction": "INGRESS",
+                "priority": priority,
+                "target_tags": [tag],
+                "source_ranges": sources,
+                "allowed": [{"IPProtocol": protocol, "ports": [str(port) for port in sorted(ports)]}],
+            }
+        )
+        priority += 1
     return firewalls

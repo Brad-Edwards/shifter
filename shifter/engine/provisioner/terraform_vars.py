@@ -23,6 +23,7 @@ from config import (
     generate_presigned_url,
     get_range_availability_zone,
     is_gce_range_cell_backend,
+    load_aws_polaris_agent_config,
     load_range_network_config,
     resolve_ngfw_attachment_config,
 )
@@ -179,6 +180,76 @@ def _build_aws_extra_tf_variables() -> dict[str, Any]:
     }
 
 
+def _range_has_polaris_vm_instance(range_spec: dict[str, Any]) -> bool:
+    """Return True when the spec has an instance whose ami_key is 'polaris-vm'.
+
+    Captured directly from the raw scenario instance dicts before
+    ``_build_tf_instance`` resolves and discards the raw ``ami_key`` string
+    (it only keeps the resolved ``ami_id``).
+    """
+    return any(
+        inst.get("ami_key") == "polaris-vm"
+        for subnet in range_spec.get("subnets", [])
+        for inst in subnet.get("instances", [])
+    )
+
+
+def _get_range_instance_role_arn() -> str:
+    """Return the shared range-host IAM role ARN (RANGE_INSTANCE_ROLE_ARN env var).
+
+    Trusted principal for the per-range Polaris Bedrock agent role's
+    assume-role policy (#1377).
+    """
+    return os.environ.get("RANGE_INSTANCE_ROLE_ARN", "").strip()
+
+
+def _build_aws_polaris_agent_tf_variables(polaris_agent_enabled: bool) -> dict[str, Any]:
+    """AWS-only Terraform variables for the per-range Polaris Bedrock agent role (#1377).
+
+    Fails closed: an AWS polaris-vm range with no AWS Polaris agent config, or
+    no RANGE_INSTANCE_ROLE_ARN, raises rather than silently disabling the
+    per-range agent role -- there is no IMDS/instance-profile fallback.
+    """
+    if not polaris_agent_enabled:
+        return {"polaris_agent_enabled": False}
+
+    agent_config = load_aws_polaris_agent_config()
+    if agent_config is None:
+        raise RuntimeError(
+            "AWS Polaris range requires the AWS Polaris agent Bedrock configuration "
+            "(AWS_POLARIS_AGENT_MAIN_INFERENCE_PROFILE_ARN and related AWS_POLARIS_AGENT_* "
+            "env vars) to be set; see config.load_aws_polaris_agent_config()."
+        )
+
+    range_instance_role_arn = _get_range_instance_role_arn()
+    if not range_instance_role_arn:
+        raise RuntimeError(
+            "AWS Polaris range requires RANGE_INSTANCE_ROLE_ARN (the shared range-host "
+            "role ARN) to be set so the per-range Polaris agent role can trust it."
+        )
+
+    # Defensive fail-closed guard (ADR-004-R21): config.load_aws_polaris_agent_config()
+    # already requires a non-empty boundary for an enabled role, but this seam must
+    # never itself emit an enabled-role apply with no permissions boundary, even if a
+    # caller builds AWSPolarisAgentConfig directly and bypasses that validation.
+    if not agent_config.permissions_boundary_arn:
+        raise RuntimeError(
+            "AWS Polaris agent config is missing a permissions boundary ARN; an enabled "
+            "per-range Bedrock agent role must always carry a permissions boundary "
+            "(ADR-004-R21)."
+        )
+
+    return {
+        "polaris_agent_enabled": True,
+        "range_instance_role_arn": range_instance_role_arn,
+        "polaris_agent_main_inference_profile_arn": agent_config.main_inference_profile_arn,
+        "polaris_agent_small_inference_profile_arn": agent_config.small_inference_profile_arn,
+        "polaris_agent_main_backing_model_arns": list(agent_config.main_backing_model_arns),
+        "polaris_agent_small_backing_model_arns": list(agent_config.small_backing_model_arns),
+        "polaris_agent_permissions_boundary_arn": agent_config.permissions_boundary_arn,
+    }
+
+
 def _build_range_terraform_variables(
     request_id: str,
     range_id: int,
@@ -218,6 +289,7 @@ def _build_range_terraform_variables(
         return variables
 
     variables.update(_build_aws_extra_tf_variables())
+    variables.update(_build_aws_polaris_agent_tf_variables(_range_has_polaris_vm_instance(range_spec)))
     return variables
 
 
