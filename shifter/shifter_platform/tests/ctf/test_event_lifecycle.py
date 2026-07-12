@@ -176,7 +176,7 @@ def _mock_auth_organizer(mock_user):
         patch("django.contrib.auth.middleware.get_user", return_value=mock_user),
         patch("ctf.context_processors.ctf_navigation", return_value=ctx_proc_defaults),
         patch("mission_control.context_processors.active_range", return_value=range_ctx_defaults),
-        patch("shared.context_processors.user_permissions", return_value={"can_access_threat_research": False}),
+        patch("config.context_processors.user_permissions", return_value={"can_access_threat_research": False}),
     ):
         yield
 
@@ -526,6 +526,37 @@ class TestEventServices:
         pks = {e.pk for e in get_organizer_events(organizer_user)}
         assert mine.pk in pks
         assert theirs.pk not in pks
+
+    def test_get_organizer_events_filters_by_status(self, organizer_user):
+        """get_organizer_events(status=...) applies the status filter against real rows.
+
+        Regression guard for the admin_event_list ``?status=`` path: dropping
+        ``filter(status=status)`` would leak the active event into a draft-only
+        query here, where the view test that mocks the service could not catch it.
+        """
+        from ctf.models import CTFEvent
+        from ctf.services import get_organizer_events
+
+        draft = CTFEvent.objects.create(
+            name="Draft one",
+            created_by=organizer_user,
+            status=EventStatus.DRAFT.value,
+            event_start=timezone.now() + timedelta(days=1),
+            event_end=timezone.now() + timedelta(days=1, hours=8),
+            scenario_id="basic",
+        )
+        active = CTFEvent.objects.create(
+            name="Active one",
+            created_by=organizer_user,
+            status=EventStatus.ACTIVE.value,
+            event_start=timezone.now() + timedelta(days=1),
+            event_end=timezone.now() + timedelta(days=1, hours=8),
+            scenario_id="basic",
+        )
+
+        draft_pks = {e.pk for e in get_organizer_events(organizer_user, status=EventStatus.DRAFT.value)}
+        assert draft.pk in draft_pks
+        assert active.pk not in draft_pks
 
     def test_get_event_returns_event(self, mock_event):
         """get_event should return event by ID."""

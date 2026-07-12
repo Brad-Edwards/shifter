@@ -25,8 +25,14 @@ from django.contrib.auth.models import Group
 from django.db import transaction
 
 from management.services import get_user_profile, set_active_ctf_event
-from risk_register.models import AuditLog
-from risk_register.services import RequestAudit, StateChange, audit_role_sync, get_client_ip, get_request_id
+from shared.audit import (
+    AuditActorType,
+    RequestAudit,
+    StateChange,
+    audit_role_sync,
+    get_client_ip,
+    get_request_id,
+)
 from shared.auth import CTF_PARTICIPANT_GROUP
 
 if TYPE_CHECKING:
@@ -86,11 +92,11 @@ def _sync_active_ctf_event(user: User, user_type: str, ctf_event_id: str | None)
         logger.warning("Invalid ctf_event_id for user %s, ignoring", getattr(user, "pk", None))
         return
 
-    from ctf.models import CTFEvent
+    from ctf.services import event_pk_if_exists
 
-    event = CTFEvent.objects.filter(pk=event_uuid).first()
-    if event:
-        set_active_ctf_event(user, event.pk)
+    event_pk = event_pk_if_exists(event_uuid)
+    if event_pk is not None:
+        set_active_ctf_event(user, event_pk)
     else:
         logger.warning("CTF event %s not found for user %s", event_uuid, getattr(user, "pk", None))
 
@@ -101,7 +107,7 @@ def sync_user_type(
     *,
     source: str,
     request: HttpRequest | None = None,
-    actor_type: str = AuditLog.ActorType.USER,
+    actor_type: str = AuditActorType.USER,
     ctf_event_id: str | None = None,
 ) -> None:
     """Align a user's CTF group membership and profile with ``claimed_user_type``.

@@ -8,7 +8,7 @@ Located in `platform/terraform/global/`. These stacks manage cross-cutting infra
 
 | Stack | Purpose |
 |-------|---------|
-| `iam/` | GitHub OIDC provider, CI/CD IAM roles, Cursor Bedrock access |
+| `iam/` | GitHub OIDC provider, CI/CD IAM roles |
 | `github-runner/` | Self-hosted GitHub Actions runner infrastructure |
 | `dev-box/` | Windows development workstation |
 
@@ -21,7 +21,6 @@ GitHub OIDC authentication and IAM roles for CI/CD pipelines.
 - GitHub OIDC identity provider
 - IAM roles for GitHub Actions (`github-actions-shifter-dev`, `github-actions-shifter-prod`)
 - Scoped IAM policies for infrastructure management
-- Cursor Bedrock IAM user for IDE access
 
 **Deploy:**
 
@@ -43,13 +42,6 @@ Add the role ARN to GitHub repository secrets:
 
 - `AWS_ROLE_ARN_DEV` - Output from dev deployment
 - `AWS_ROLE_ARN` - Output from prod deployment
-
-Get Cursor Bedrock credentials:
-
-```bash
-terraform output cursor_bedrock_access_key_id
-terraform output -raw cursor_bedrock_secret_access_key
-```
 
 ## GitHub Runner Stack
 

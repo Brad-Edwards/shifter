@@ -18,6 +18,7 @@ from django.utils import timezone
 from engine.handlers import process_event, process_range_event
 from engine.models import Range
 from risk_register.models import AuditLog
+from shared.audit import AuditEntityType
 from shared.enums import ResourceStatus
 
 pytestmark = pytest.mark.django_db
@@ -282,7 +283,7 @@ class TestProcessNgfwEvent:
         process_ngfw_event(self._ngfw_event())
         assert AuditLog.objects.count() == before + 1
 
-        row = AuditLog.objects.filter(entity_type=AuditLog.EntityType.NGFW).latest("timestamp")
+        row = AuditLog.objects.filter(entity_type=AuditEntityType.NGFW).latest("timestamp")
         # entity_id is an int column; the UUID app_id must NOT be jammed into it.
         assert row.entity_id == 0
         # The UUID identifiers are preserved in the audit state instead.
