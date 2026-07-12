@@ -2145,7 +2145,6 @@ jobs:
       - shifter-platform-tests
       - shifter-platform-js-tests
       - shifter-engine-tests
-      - packer-tests
       - bootstrap-tests
       - check-layer-imports-tests
       - installation-tests
@@ -2185,14 +2184,6 @@ jobs:
         with:
           name: coverage-provisioner
           path: shifter/engine/provisioner
-      - name: Download packer coverage
-        if: >-
-          ${{ (needs.paths.outputs.run_all == 'true' || needs.paths.outputs.packer == 'true')
-          && needs.packer-tests.result == 'success' }}
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: coverage-packer
-          path: shifter/packer
       - name: Download bootstrap coverage
         if: >-
           ${{ (needs.paths.outputs.run_all == 'true' || needs.paths.outputs.bootstrap == 'true')
