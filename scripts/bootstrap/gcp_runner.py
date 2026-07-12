@@ -7,13 +7,18 @@ least-privilege service account; this module applies that root and registers
 each runner over ``gcloud compute ssh --tunnel-through-iap`` -- there is no SSM
 on GCP and none is needed.
 
-Registration security (per the #1546 preflight, ADR-008, mirroring the #1433
-AWS policy): a single-use GitHub registration token is minted per runner via
-``gh api``, held in memory only, and delivered to an interactive ``config.sh``
-over the SSH **stdin** stream via :func:`bootstrap_core.run_cmd_secret_stdin`.
-The token is never a ``config.sh`` argument, an SSH ``--command`` argument, a
-``--token`` value, a Terraform input/output/state value, instance metadata, a
-Secret Manager secret, or an operator-log line. The runner registers with
+Registration security (per the #1546 preflight, ADR-008): a single-use GitHub
+registration token is minted per runner via ``gh api`` (held in memory only)
+and delivered to the host over the SSH **stdin** stream via
+:func:`bootstrap_core.run_cmd_secret_stdin` into a root-only temp file. It is
+kept off the operator's local argv/logs, Terraform state, instance metadata,
+and Secret Manager. The runner's ``config.sh`` requires ``--token`` for
+non-interactive registration (its ``Console.ReadKey`` prompt fails on redirected
+stdin; no ``--token-file``/env channel), so the token is referenced as
+``--token "$(cat "$TOKFILE")"`` and appears only momentarily in the isolated,
+single-tenant runner VM's process args during registration, then the temp file
+is removed and the single-use token expires (accepted bounded residual; see
+ADR-008-R8 and follow-up to remove it entirely). The runner registers with
 ``--no-default-labels`` and a custom label (default: the environment name, e.g.
 ``gcp-dev``) so it cannot pick up bare ``runs-on: self-hosted`` jobs before
 per-account routing exists (ADR-003-R5). The automated path fails closed unless
@@ -63,6 +68,10 @@ _SSH_READY_DELAY_SECONDS = 10
 # or the bound is hit (then fail closed).
 _ONLINE_ATTEMPTS = 20
 _ONLINE_DELAY_SECONDS = 6
+
+# One runner's status as read from the GitHub runners API: {"status": str,
+# "labels": list[str]}. Aliased so signatures stay concrete (no bare dict).
+RunnerStatus = dict[str, object]
 
 # Startup-script completion marker. Root-owned and world-readable, OUTSIDE the
 # runner user's home: the readiness probe runs as the operator's OS Login
@@ -130,7 +139,7 @@ def get_gcp_runner_config(
     )
 
 
-def _verify_prerequisites(config: GcpRunnerConfig) -> None:
+def _verify_prerequisites() -> None:
     """Fail closed before any mutation unless gh auth + gcloud ADC are present.
 
     The runner path needs GitHub auth to mint per-runner tokens and gcloud
@@ -267,7 +276,7 @@ def register_runner(config: GcpRunnerConfig, target: GcpRunnerTarget, *, dry_run
     return rc
 
 
-def wait_for_runner_ssh(target: GcpRunnerTarget, config: GcpRunnerConfig) -> None:
+def wait_for_runner_ssh(target: GcpRunnerTarget) -> None:
     """Poll for registration readiness with a bounded timeout; fail closed otherwise.
 
     A RUNNING GCE instance -- and even a reachable SSH session -- is not
@@ -288,12 +297,29 @@ def wait_for_runner_ssh(target: GcpRunnerTarget, config: GcpRunnerConfig) -> Non
     raise SystemExit(1)
 
 
+def _parse_runner_status_map(raw: str) -> dict[str, RunnerStatus]:
+    """Parse the ``gh api .../actions/runners`` payload into {name: {status, labels}}."""
+    runners = json.loads(raw) if raw else []
+    return {
+        r.get("name"): {
+            "status": r.get("status"),
+            "labels": [lbl.get("name") for lbl in r.get("labels", [])],
+        }
+        for r in runners
+    }
+
+
+def _runner_online_with_label(detail: RunnerStatus | None, label: str) -> bool:
+    """True iff the runner exists, is online, and carries the expected label."""
+    return bool(detail) and detail.get("status") == "online" and label in detail.get("labels", [])
+
+
 def verify_runners(
     config: GcpRunnerConfig,
     expected_names: list[str],
     *,
     dry_run: bool = False,
-) -> dict[str, dict]:
+) -> dict[str, RunnerStatus]:
     """Verify runners via the GitHub runners API; return {name: {status, labels}}.
 
     Unlike the AWS path, GCP verification also reads each runner's labels: a
@@ -315,17 +341,10 @@ def verify_runners(
         capture=True,
     )
     raw = (result.stdout or "").strip() if result else ""
-    runners = json.loads(raw) if raw else []
-    by_name = {
-        r.get("name"): {
-            "status": r.get("status"),
-            "labels": [lbl.get("name") for lbl in r.get("labels", [])],
-        }
-        for r in runners
-    }
+    by_name = _parse_runner_status_map(raw)
     for name in expected_names:
         detail = by_name.get(name)
-        if detail and detail["status"] == "online" and config.labels in detail["labels"]:
+        if _runner_online_with_label(detail, config.labels):
             success(f"Runner {name} is online with label '{config.labels}'")
         else:
             warn(f"Runner {name} not verified (status: {(detail or {}).get('status') or 'not found'})")
@@ -334,7 +353,7 @@ def verify_runners(
 
 def _registration_failures(
     reg_exit_by_name: dict[str, int | None],
-    verified: dict[str, dict],
+    verified: dict[str, RunnerStatus],
     expected_names: list[str],
     expected_label: str,
 ) -> list[str]:
@@ -461,7 +480,7 @@ def provision_and_register_gcp_runners(
     header("Automated GCP GitHub Runner Provisioning & Registration")
 
     if not dry_run:
-        _verify_prerequisites(config)
+        _verify_prerequisites()
 
     targets = apply_runner_terraform(config, dry_run=dry_run, runner_count=runner_count)
 
@@ -476,7 +495,7 @@ def provision_and_register_gcp_runners(
     reg_exit_by_name: dict[str, int | None] = {}
     for target in targets:
         subheader(f"Registering {target.runner_name}")
-        wait_for_runner_ssh(target, config)
+        wait_for_runner_ssh(target)
         reg_exit_by_name[target.runner_name] = register_runner(config, target)
 
     expected = [t.runner_name for t in targets]

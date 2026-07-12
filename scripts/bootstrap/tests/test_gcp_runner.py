@@ -434,4 +434,4 @@ class TestWaitForRunnerSsh:
         mock_gcp_deploy.run_cmd.return_value = MagicMock(returncode=255, stdout="")
 
         with pytest.raises(SystemExit):
-            gcp_runner.wait_for_runner_ssh(_target(), _cfg())
+            gcp_runner.wait_for_runner_ssh(_target())
