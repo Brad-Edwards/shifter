@@ -357,7 +357,7 @@ class TestPolarisAwsAgentSecurity:
 
     def test_kali_bedrock_shard_renders_sts_refresh_and_credential_process(self, monkeypatch, aws_polaris_agent_env):
         from orchestrators.setup_orchestrator import SetupOrchestrator
-        from plans._polaris_scripts import KALI_BEDROCK_SHARD_SCRIPT
+        from plans._polaris_scripts_aws import KALI_BEDROCK_SHARD_SCRIPT
 
         context = self._aws_context(monkeypatch, aws_polaris_agent_env)
         rendered = SetupOrchestrator._render_script(KALI_BEDROCK_SHARD_SCRIPT, context, "polaris_kali_bedrock_shard")
@@ -375,7 +375,7 @@ class TestPolarisAwsAgentSecurity:
         assert "mv " in rendered
 
     def test_kali_bedrock_shard_has_no_imds_reliance(self, monkeypatch, aws_polaris_agent_env):
-        from plans._polaris_scripts import KALI_BEDROCK_SHARD_SCRIPT
+        from plans._polaris_scripts_aws import KALI_BEDROCK_SHARD_SCRIPT
 
         lowered = KALI_BEDROCK_SHARD_SCRIPT.lower()
         assert "hop limit" not in lowered
@@ -388,14 +388,14 @@ class TestPolarisAwsAgentSecurity:
         """No `set -x` (would echo secrets to logs); the initial refresh call is
         a bare statement under `set -e`, not `|| true`/`|| echo warn`, so a
         failed assume-role aborts the whole step instead of continuing."""
-        from plans._polaris_scripts import KALI_BEDROCK_SHARD_SCRIPT
+        from plans._polaris_scripts_aws import KALI_BEDROCK_SHARD_SCRIPT
 
         assert "set -x" not in KALI_BEDROCK_SHARD_SCRIPT
         assert '"$REFRESH_SCRIPT"\n' in KALI_BEDROCK_SHARD_SCRIPT
 
     def test_kali_bedrock_shard_requires_role_arn_and_region(self, monkeypatch, aws_polaris_agent_env):
         from orchestrators.setup_orchestrator import SetupOrchestrator
-        from plans._polaris_scripts import KALI_BEDROCK_SHARD_SCRIPT
+        from plans._polaris_scripts_aws import KALI_BEDROCK_SHARD_SCRIPT
 
         context = self._aws_context(monkeypatch, aws_polaris_agent_env)
         context["role_arn"] = ""
@@ -405,7 +405,7 @@ class TestPolarisAwsAgentSecurity:
     # --- INSTALL_IMDS_FIREWALL_SCRIPT: durable DOCKER-USER block ----------
 
     def test_install_imds_firewall_targets_docker_user_and_preserves_dns_resolver(self):
-        from plans._polaris_scripts import INSTALL_IMDS_FIREWALL_SCRIPT
+        from plans._polaris_scripts_aws import INSTALL_IMDS_FIREWALL_SCRIPT
 
         script = INSTALL_IMDS_FIREWALL_SCRIPT
         assert "DOCKER-USER" in script
@@ -417,7 +417,7 @@ class TestPolarisAwsAgentSecurity:
     def test_install_imds_firewall_is_durable_not_a_one_time_call(self):
         """Must install a restore unit ordered against Docker -- not just call
         iptables once (the exact anti-pattern the design doc calls out)."""
-        from plans._polaris_scripts import INSTALL_IMDS_FIREWALL_SCRIPT
+        from plans._polaris_scripts_aws import INSTALL_IMDS_FIREWALL_SCRIPT
 
         script = INSTALL_IMDS_FIREWALL_SCRIPT
         assert "docker.service" in script
@@ -426,7 +426,7 @@ class TestPolarisAwsAgentSecurity:
         assert ".service" in script
 
     def test_install_imds_firewall_fails_closed_on_missing_rule_or_inactive_unit(self):
-        from plans._polaris_scripts import INSTALL_IMDS_FIREWALL_SCRIPT
+        from plans._polaris_scripts_aws import INSTALL_IMDS_FIREWALL_SCRIPT
 
         script = INSTALL_IMDS_FIREWALL_SCRIPT
         assert "exit 1" in script
@@ -434,7 +434,7 @@ class TestPolarisAwsAgentSecurity:
         assert "is-active" in script
 
     def test_install_imds_firewall_blocks_ipv6_imds_too(self):
-        from plans._polaris_scripts import INSTALL_IMDS_FIREWALL_SCRIPT
+        from plans._polaris_scripts_aws import INSTALL_IMDS_FIREWALL_SCRIPT
 
         script = INSTALL_IMDS_FIREWALL_SCRIPT
         assert "ip6tables" in script
@@ -468,10 +468,8 @@ class TestPolarisAwsAgentSecurity:
         never written into the container layer via ``docker cp`` / ``docker exec``
         (which a recreate discards)."""
         from orchestrators.setup_orchestrator import SetupOrchestrator
-        from plans._polaris_scripts import (
-            KALI_BEDROCK_SHARD_SCRIPT,
-            POLARIS_RANGE_BOOTSTRAP_SCRIPT,
-        )
+        from plans._polaris_scripts import POLARIS_RANGE_BOOTSTRAP_SCRIPT
+        from plans._polaris_scripts_aws import KALI_BEDROCK_SHARD_SCRIPT
 
         context = self._aws_context(monkeypatch, aws_polaris_agent_env)
         context.update({"dc_ip": "10.1.2.7", "public_key": "ssh-rsa AAAA"})
@@ -514,9 +512,9 @@ class TestPolarisAwsAgentSecurity:
         import tempfile
 
         from orchestrators.setup_orchestrator import SetupOrchestrator
-        from plans._polaris_scripts import (
+        from plans._polaris_scripts import POLARIS_RANGE_BOOTSTRAP_SCRIPT
+        from plans._polaris_scripts_aws import (
             KALI_BEDROCK_SHARD_SCRIPT,
-            POLARIS_RANGE_BOOTSTRAP_SCRIPT,
             VERIFY_POLARIS_BOOTSTRAP_SCRIPT_AWS,
         )
 
@@ -584,7 +582,8 @@ class TestPolarisAwsAgentSecurity:
         from plans.polaris_range_bootstrap import PolarisRangeBootstrapPlan
 
         plan = PolarisRangeBootstrapPlan(provider="aws")
-        from plans._polaris_scripts import VERIFY_POLARIS_BOOTSTRAP_SCRIPT, VERIFY_POLARIS_BOOTSTRAP_SCRIPT_AWS
+        from plans._polaris_scripts import VERIFY_POLARIS_BOOTSTRAP_SCRIPT
+        from plans._polaris_scripts_aws import VERIFY_POLARIS_BOOTSTRAP_SCRIPT_AWS
 
         assert plan.verify_step.script == VERIFY_POLARIS_BOOTSTRAP_SCRIPT_AWS
         assert plan.verify_step.script != VERIFY_POLARIS_BOOTSTRAP_SCRIPT
@@ -600,19 +599,19 @@ class TestPolarisAwsAgentSecurity:
             assert marker in VERIFY_POLARIS_BOOTSTRAP_SCRIPT_AWS
 
     def test_aws_verify_script_checks_firewall_present(self):
-        from plans._polaris_scripts import VERIFY_POLARIS_BOOTSTRAP_SCRIPT_AWS
+        from plans._polaris_scripts_aws import VERIFY_POLARIS_BOOTSTRAP_SCRIPT_AWS
 
         assert "DOCKER-USER" in VERIFY_POLARIS_BOOTSTRAP_SCRIPT_AWS
         assert "169.254.169.254/32" in VERIFY_POLARIS_BOOTSTRAP_SCRIPT_AWS
 
     def test_aws_verify_script_checks_sts_refresh_and_creds_file(self):
-        from plans._polaris_scripts import VERIFY_POLARIS_BOOTSTRAP_SCRIPT_AWS
+        from plans._polaris_scripts_aws import VERIFY_POLARIS_BOOTSTRAP_SCRIPT_AWS
 
         assert "/run/shifter-agent/credentials.json" in VERIFY_POLARIS_BOOTSTRAP_SCRIPT_AWS
 
     def test_aws_verify_script_checks_caller_identity_is_agent_role(self, monkeypatch, aws_polaris_agent_env):
         from orchestrators.setup_orchestrator import SetupOrchestrator
-        from plans._polaris_scripts import VERIFY_POLARIS_BOOTSTRAP_SCRIPT_AWS
+        from plans._polaris_scripts_aws import VERIFY_POLARIS_BOOTSTRAP_SCRIPT_AWS
 
         context = self._aws_context(monkeypatch, aws_polaris_agent_env)
         context.update({"dc_ip": "10.1.2.7"})
@@ -627,7 +626,7 @@ class TestPolarisAwsAgentSecurity:
 
     def test_aws_verify_script_checks_bedrock_smoke_invocation(self, monkeypatch, aws_polaris_agent_env):
         from orchestrators.setup_orchestrator import SetupOrchestrator
-        from plans._polaris_scripts import VERIFY_POLARIS_BOOTSTRAP_SCRIPT_AWS
+        from plans._polaris_scripts_aws import VERIFY_POLARIS_BOOTSTRAP_SCRIPT_AWS
 
         context = self._aws_context(monkeypatch, aws_polaris_agent_env)
         context.update({"dc_ip": "10.1.2.7"})
@@ -639,7 +638,7 @@ class TestPolarisAwsAgentSecurity:
         assert context["small_model_id"] in rendered
 
     def test_aws_verify_script_checks_imds_denied_from_a14_kali(self):
-        from plans._polaris_scripts import VERIFY_POLARIS_BOOTSTRAP_SCRIPT_AWS
+        from plans._polaris_scripts_aws import VERIFY_POLARIS_BOOTSTRAP_SCRIPT_AWS
 
         script = VERIFY_POLARIS_BOOTSTRAP_SCRIPT_AWS
         assert "169.254.169.254" in script

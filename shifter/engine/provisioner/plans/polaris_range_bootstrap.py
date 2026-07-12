@@ -36,11 +36,13 @@ from config import load_aws_polaris_agent_config
 
 from ._polaris_scripts import (
     FETCH_POLARIS_TESTS_SCRIPT,
-    INSTALL_IMDS_FIREWALL_SCRIPT,
     INSTALL_SPLICE_WATCHER_SCRIPT,
-    KALI_BEDROCK_SHARD_SCRIPT,
     POLARIS_RANGE_BOOTSTRAP_SCRIPT,
     VERIFY_POLARIS_BOOTSTRAP_SCRIPT,
+)
+from ._polaris_scripts_aws import (
+    INSTALL_IMDS_FIREWALL_SCRIPT,
+    KALI_BEDROCK_SHARD_SCRIPT,
     VERIFY_POLARIS_BOOTSTRAP_SCRIPT_AWS,
     render_aws_agent_blocks,
 )
