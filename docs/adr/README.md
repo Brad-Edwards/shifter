@@ -153,6 +153,15 @@ Current mechanisms:
   unbounded `parameter/shifter/<env>/range/*`). The provisioner
   orchestrator role's env-scoped grant is not inspected. Guards the #1178
   cross-tenant credential-access fix.
+- `scripts/check_tf_iam_bedrock_agent_scope/check_tf_iam_bedrock_agent_scope.py`:
+  ADR-004-R21 IAM hardening check for the per-range Polaris Bedrock agent
+  role. Rejects any inline policy action other than
+  `bedrock:InvokeModel`/`InvokeModelWithResponseStream`, any policy
+  Resource other than the four approved inference-profile/backing-model
+  variables, a backing-model statement missing its
+  `bedrock:InferenceProfileArn` condition, and a trust policy whose
+  Principal is not `var.range_instance_role_arn` or that is missing the
+  `ec2:SourceInstanceARN` condition. Guards the #1377 narrow-scope role.
 - `scripts/adr_guard/adr_guard.py` `mcp-no-shell-exec` check:
   flags any file under `mcp/` (`.js`, `.mjs`, `.cjs`) that imports
   `child_process` (any shape: named, default, namespace, CommonJS

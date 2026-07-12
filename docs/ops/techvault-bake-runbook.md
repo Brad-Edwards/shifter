@@ -42,7 +42,9 @@ cannot touch a live deployment:
 - Tag everything `Project=techvault-bake` for clean teardown.
 
 Launch the bake host: Ubuntu 24.04, **r5.2xlarge**, ~**100 GB** gp3 root,
-the SSM instance profile, IMDSv2 required.
+the SSM instance profile, IMDSv2 required. The root volume must be encrypted
+with the target account's EBS encryption posture; the range provisioner refuses
+AMI launches that would create unencrypted root volumes.
 
 ## Bake procedure
 
@@ -112,7 +114,8 @@ records `ssh_username=ubuntu` and sets the per-range RDP password.
 ### 4. Quiesce and image (leave the stack RUNNING)
 
 Do **not** `aptl lab stop`. Kill any transient test processes, then create the
-image with the stack running so the containers auto-start on the next boot:
+image with the stack running so the containers auto-start on the next boot. The
+resulting AMI must have an encrypted root snapshot before it is registered:
 
 ```bash
 aws ec2 create-image --instance-id <bake-host> --name "techvault-golden-4.1.2-ide-<date>" \
@@ -122,6 +125,9 @@ aws ec2 create-image --instance-id <bake-host> --name "techvault-golden-4.1.2-id
 
 `create-image` (default, no `--no-reboot`) stops the instance for a consistent
 snapshot; on boot docker restarts the `unless-stopped`/`always` containers.
+If the bake host root volume is not encrypted, do not publish this AMI. Re-launch
+or copy into an encrypted AMI, then verify the final AMI's root snapshot
+encryption state before updating `/shifter/ami/techvault`.
 
 ### 5. Golden verify (non-negotiable)
 
@@ -165,6 +171,10 @@ VS Code seat, images the running stack, golden-verifies, and updates
 `/shifter/ami/techvault`. It follows the `workflow_dispatch`-only bake boundary
 from `docs/architecture/polaris-scenario-bake-preflight-618.md` (never wired to
 push, pull_request, or schedule).
+
+The workflow must publish only an encrypted AMI. See
+`docs/architecture/techvault-encrypted-ami-preflight-1455.md` for the encryption
+boundary and guardrails.
 
 The workflow is self-contained: it drives the bake inline over SSM RunCommand
 and has no separate `scripts/` bake range. The operator supplies the isolated

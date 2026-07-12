@@ -65,6 +65,22 @@ resource "aws_ecs_task_definition" "engine_provisioner" {
       { name = "NGFW_INSTANCE_PROFILE_NAME", value = var.ngfw_instance_profile_name },
       # Messaging (SNS for range events)
       { name = "SNS_RANGE_EVENTS_ARN", value = var.sns_topic_arn },
+      # Polaris Bedrock agent config (#1377). See
+      # shifter/engine/provisioner/config.py load_aws_polaris_agent_config().
+      # RANGE_INSTANCE_ROLE_ARN reuses the existing shared range-host role
+      # ARN (already granted iam:PassRole above) as the per-range Polaris
+      # agent role's trust principal.
+      { name = "AWS_POLARIS_AGENT_REGION", value = var.aws_polaris_agent_region },
+      { name = "AWS_POLARIS_AGENT_MAIN_MODEL_ID", value = var.aws_polaris_agent_main_model_id },
+      { name = "AWS_POLARIS_AGENT_SMALL_MODEL_ID", value = var.aws_polaris_agent_small_model_id },
+      { name = "AWS_POLARIS_AGENT_MAIN_INFERENCE_PROFILE_ARN", value = var.aws_polaris_agent_main_inference_profile_arn },
+      { name = "AWS_POLARIS_AGENT_SMALL_INFERENCE_PROFILE_ARN", value = var.aws_polaris_agent_small_inference_profile_arn },
+      { name = "AWS_POLARIS_AGENT_MAIN_BACKING_MODEL_ARNS", value = join(",", var.aws_polaris_agent_main_backing_model_arns) },
+      { name = "AWS_POLARIS_AGENT_SMALL_BACKING_MODEL_ARNS", value = join(",", var.aws_polaris_agent_small_backing_model_arns) },
+      { name = "AWS_POLARIS_AGENT_STS_SESSION_DURATION_SECONDS", value = tostring(var.aws_polaris_agent_sts_session_duration_seconds) },
+      { name = "AWS_POLARIS_AGENT_REFRESH_WINDOW_SECONDS", value = tostring(var.aws_polaris_agent_refresh_window_seconds) },
+      { name = "AWS_POLARIS_AGENT_PERMISSIONS_BOUNDARY_ARN", value = var.permissions_boundary_arn },
+      { name = "RANGE_INSTANCE_ROLE_ARN", value = var.range_instance_role_arn },
     ]
 
     secrets = [
