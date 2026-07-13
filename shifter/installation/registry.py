@@ -9,31 +9,28 @@ backend or a profile is a registry entry, not a schema change or a branch router
 is exactly one such table in the repo; Django, workflows, bootstrap scripts, and CI
 consume *this* one rather than maintaining their own.
 
-The ``aws`` entry below is the migrated backend bundle (#1116 / GH #728): it carries a
-closed ``settings_model`` (:class:`AwsSettings`), machine-readable ``reference_pattern``
-secret grammars, and the ``prod`` / ``dev`` / ``proof`` deployment profiles the AWS
-deployment paths actually use, on top of the backend identity, owned repo roots, required
-Terraform/CLI tools, the root-config validation check, a portal health probe, and the
-``CLOUD_PROVIDER`` and app/database secret-reference runtime bindings the platform
-consumes today. Describing the existing AWS contract does not move Terraform/state,
-rewrite workflows, or build a renderer — those stay in their existing owners
-(branch-routing replacement is #730); constrained by ADR-011-R5.
-
-The ``gcp`` entry is still *provisional*: its ``settings_model`` and each
-``RequiredSecret.reference_pattern`` are left unset (any ``settings`` mapping is accepted;
-references are checked at deploy time) until the GCP backend bundle migration (#1117 / GH
-#729). The ``local`` backend is #1119. Constrained by ADR-011.
+The ``aws`` (#1116 / GH #728) and ``gcp`` (#1117 / GH #729) entries below are both migrated
+backend bundles. Each carries a closed ``settings_model`` (:class:`AwsSettings` /
+:class:`installation.settings_gcp.GcpBackendSettings`), machine-readable
+``RequiredSecret.reference_pattern`` secret grammars, the full generated runtime-env
+projection, the deployment profiles its deploy paths actually use, and the backend identity,
+owned repo roots, required tools, root-config validation check, and portal health probe.
+Describing these contracts does not move Terraform/state, rewrite workflows, or build a
+renderer — those stay in their existing owners (branch-routing replacement is #730);
+constrained by ADR-011-R5.
 
 ``range_egress`` is a *shared, cross-backend* platform setting owned and validated by
-:mod:`installation.range_egress` (verbatim, non-secret CIDR diagnostics, #775). It is not
-a backend-owned key, so a closed ``settings_model`` (:class:`AwsSettings`) deliberately
-does not declare it; the loader validates it separately for every backend.
+:mod:`installation.range_egress` (verbatim, non-secret CIDR diagnostics, #775). It is not a
+backend-owned key, so the closed ``settings_model`` classes deliberately do not declare it;
+the loader strips it out of ``settings`` and validates it separately for every backend. The
+``local`` backend is #1119. Constrained by ADR-011.
 """
 
 from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from . import runtime_inventory
 from .contract import (
     BackendBundle,
     BackendCapability,
@@ -50,6 +47,7 @@ from .contract import (
     RequiredTool,
     ValidationCheck,
 )
+from .settings_gcp import GcpBackendSettings
 
 # The contract-shape version every bundle below is written against. Pinned literally so
 # that adding a future ``contract_version`` to ``SUPPORTED_CONTRACT_VERSIONS`` does not
@@ -130,6 +128,19 @@ _ROOT_CONFIG_CHECK = ValidationCheck(
         description="Validate the root installation config (shifter.yaml) shape.",
     ),
     description="Fail fast on a malformed shifter.yaml before any backend infrastructure runs.",
+)
+
+# Anchored grammar for a GCP ``django_secret_key`` reference: a Google Secret Manager
+# resource name (``projects/<project>/secrets/<name>/versions/<version>``), or a
+# GitHub Actions secret name / environment variable identifier. ``prompt`` is accepted
+# separately by ``RequiredSecret.matches_reference``. AWS Secrets Manager paths
+# (``shifter/prod/...``) are intentionally not valid GCP references.
+_GCP_SECRET_REFERENCE_PATTERN = (
+    # An anchored (^...$) reference grammar, not a credential — silence the hardcoded-secret
+    # heuristics. Anchoring is explicit so the *published* pattern enforces the same full-string
+    # grammar as ``RequiredSecret.matches_reference`` (which applies re.fullmatch), rather than
+    # letting an external consumer's re.match/re.search accept substring garbage.
+    r"^(?:projects/[^/\s]+/secrets/[^/\s]+/versions/[^/\s]+|[A-Za-z_][A-Za-z0-9_]*)$"  # noqa: S105 # nosec B105
 )
 
 _PORTAL_HEALTH_CHECK = HealthCheck(
@@ -249,6 +260,144 @@ _AWS_BUNDLE = BackendBundle(
     docs=("docs/architecture/root-configured-backend-bundles.md", "shifter/installation/README.md"),
 )
 
+# The GCP generated runtime env is authored by the GCP backend runtime-env renderer and
+# its key set is owned by ``installation.runtime_inventory``. The bundle's generated
+# outputs are built from that single source so the contract projection and the runtime
+# inventory cannot drift (a conformance test asserts the two agree).
+_GCP_RENDERER = "gcp backend runtime-env renderer (scripts/gcp/render_runtime_env.py)"
+
+# Generated runtime-env keys whose *value* is a Google Secret Manager reference (fetched
+# at startup by entrypoint.sh); the reference id rides the ConfigMap-bound env, the value
+# never does. Everything else is public runtime configuration.
+_GCP_SECRET_REFERENCE_RUNTIME_KEYS: frozenset[str] = frozenset(
+    {
+        "APP_SECRET_ID",
+        "DB_SECRET_ID",
+        "REDIS_SECRET_ID",
+        "GUACAMOLE_SECRET_ID",
+        "GDC_ACCESS_SECRET_ID",
+        "DC_DOMAIN_PASSWORD_SECRET_ID",
+        "EMAIL_API_KEY_SECRET_ID",
+    }
+)
+
+
+def _gcp_output_roles(name: str) -> tuple[ProcessRole, ...]:
+    """The exact ProcessRole consumers of one GCP generated runtime-env key.
+
+    Every generated key rides the shared runtime env the portal/worker platform image
+    loads, so portal and worker always consume it. The standalone provisioner Job receives
+    only the forwarded subset the platform task runner propagates
+    (``runtime_inventory.GCP_PROVISIONER_FORWARDED_RUNTIME_ENV_KEYS``, kept in parity with
+    ``engine.ecs._GCP_PROVISIONER_ENV_KEYS``). Among those, the ``GCP_RANGE_*`` keys are the
+    range-guest realization configuration the provisioner applies to range tasks, so they
+    also declare the range-task consumer. This is derived per key, not a blanket assignment.
+    """
+    roles: list[ProcessRole] = [ProcessRole.PORTAL, ProcessRole.WORKER]
+    if name in runtime_inventory.GCP_PROVISIONER_FORWARDED_RUNTIME_ENV_KEYS:
+        roles.append(ProcessRole.PROVISIONER)
+        if name.startswith("GCP_RANGE_"):
+            roles.append(ProcessRole.RANGE_TASK)
+    return tuple(roles)
+
+
+def _gcp_runtime_output(name: str, *, optional: bool) -> GeneratedOutput:
+    """Build one classified GCP generated runtime-env output."""
+    optional_note = " Optional; emitted only when the deployment configures it." if optional else ""
+    roles = _gcp_output_roles(name)
+    if name in _GCP_SECRET_REFERENCE_RUNTIME_KEYS:
+        return GeneratedOutput(
+            name=name,
+            kind=OutputKind.RUNTIME_ENV,
+            owner=_GCP_RENDERER,
+            source="a Google Secret Manager reference rendered from the Terraform runtime_secret_ids output",
+            destination=OutputDestination.RUNTIME_ENV,
+            sensitivity=OutputSensitivity.SECRET_REFERENCE,
+            process_roles=roles,
+            description=(
+                f"Reference to the {name} secret in the platform runtime environment; the process fetches the "
+                f"value from Google Secret Manager at startup (entrypoint.sh) — a reference only, the secret "
+                f"value stays in Secret Manager.{optional_note}"
+            ),
+        )
+    api_key_note = (
+        " Browser client configuration for Identity Platform, not an authentication secret: it is public, "
+        "but must not be dumped through logs or error messages."
+        if name == "IDENTITY_PLATFORM_API_KEY"
+        else ""
+    )
+    return GeneratedOutput(
+        name=name,
+        kind=OutputKind.RUNTIME_ENV,
+        owner=_GCP_RENDERER,
+        source="rendered from validated Terraform outputs and the normalized root config",
+        destination=OutputDestination.RUNTIME_ENV,
+        sensitivity=OutputSensitivity.PUBLIC,
+        process_roles=roles,
+        description=(
+            f"Public GCP runtime configuration value ({name}) emitted into the platform runtime "
+            f"environment.{api_key_note}{optional_note}"
+        ),
+    )
+
+
+def _gcp_generated_outputs() -> tuple[GeneratedOutput, ...]:
+    """The full GCP generated runtime-env projection, classified and sorted by key name.
+
+    Built from ``runtime_inventory``'s required and optional GCP key sets so the contract's
+    generated outputs are exactly the keys the renderer emits — enumerated, not just the
+    handful the provisional entry carried.
+    """
+    required = sorted(runtime_inventory.GCP_GENERATED_RUNTIME_ENV_KEYS)
+    optional = sorted(runtime_inventory.GCP_OPTIONAL_GENERATED_RUNTIME_ENV_KEYS)
+    return (
+        *(_gcp_runtime_output(name, optional=False) for name in required),
+        *(_gcp_runtime_output(name, optional=True) for name in optional),
+    )
+
+
+# Canonical pre-mutation validation front doors for the GCP bundle. Each is a pure,
+# repository-relative argv array whose executable is a declared required tool. They are the
+# fast, credential-free checks a setup/doctor flow runs before touching infrastructure;
+# the fuller pre-mutation suite (tflint with init, kubeconform, runtime-env rendering from
+# representative Terraform outputs, admission parity) stays CI-enforced in _gcp-dev.yml.
+_GCP_VALIDATION_CHECKS: tuple[ValidationCheck, ...] = (
+    _ROOT_CONFIG_CHECK,
+    ValidationCheck(
+        name="terraform-fmt",
+        command=CommandSpec(
+            argv=("terraform", "fmt", "-check", "-recursive", "platform/terraform/gcp"),
+            description="Check the GCP Terraform is canonically formatted.",
+        ),
+        description="Fail on unformatted GCP Terraform before planning or applying.",
+    ),
+    ValidationCheck(
+        name="helm-template",
+        command=CommandSpec(
+            argv=("helm", "template", "platform/charts/shifter"),
+            description="Render the shared platform Helm chart to catch template errors.",
+        ),
+        description="Fail closed if the platform chart does not render.",
+    ),
+    ValidationCheck(
+        name="kustomize-render",
+        command=CommandSpec(
+            argv=("kubectl", "kustomize", "platform/k8s/gcp/overlays/gcp-dev"),
+            description="Render the GCP Kubernetes overlay to catch kustomize errors.",
+        ),
+        description="Fail closed if the GCP Kubernetes overlay does not render.",
+    ),
+    ValidationCheck(
+        name="kube-linter",
+        command=CommandSpec(
+            argv=("kube-linter", "lint", "--config", ".kube-linter.yaml", "platform/k8s/gcp/"),
+            description="Lint the GCP Kubernetes manifests for workload security posture.",
+        ),
+        description="Enforce the Kubernetes workload security posture (PSS, capabilities, limits).",
+    ),
+)
+
+
 _GCP_BUNDLE = BackendBundle(
     contract_version=_CONTRACT_VERSION,
     name="gcp",
@@ -260,13 +409,17 @@ _GCP_BUNDLE = BackendBundle(
         "overlays under platform/k8s/gcp and the shared Helm chart under platform/charts/shifter."
     ),
     supported_profiles=frozenset({"prod", "dev"}),
-    settings_model=None,  # the GCP backend bundle migration (#1117) supplies the real schema
+    settings_model=GcpBackendSettings,
     required_tools=(
         RequiredTool(name="uv", purpose="run the Shifter installation tooling (shifter-config validate)"),
         RequiredTool(name="terraform", purpose="provision GCP infrastructure (platform/terraform/gcp)"),
         RequiredTool(name="gcloud", purpose="Google Cloud SDK: authentication, GKE credentials, Secret Manager"),
         RequiredTool(name="helm", purpose="render and install the platform chart (platform/charts/shifter)"),
         RequiredTool(name="kubectl", purpose="apply Kubernetes manifests under platform/k8s/gcp"),
+        RequiredTool(
+            name="kube-linter",
+            purpose="lint the GCP Kubernetes manifests (platform/k8s/gcp) for security posture",
+        ),
         RequiredTool(name="docker", purpose="build the Shifter Platform container image"),
     ),
     required_secrets=(
@@ -277,19 +430,11 @@ _GCP_BUNDLE = BackendBundle(
                 "a Google Secret Manager resource name (projects/<project>/secrets/<name>/versions/<v>), a "
                 "GitHub Actions secret name, an environment variable, or the literal 'prompt'"
             ),
+            reference_pattern=_GCP_SECRET_REFERENCE_PATTERN,
         ),
     ),
-    generated_outputs=(
-        _cloud_provider_output("gcp backend runtime-env renderer (scripts/gcp/render_runtime_env.py)"),
-        *_secret_outputs(
-            "gcp backend runtime-env renderer (scripts/gcp/render_runtime_env.py)",
-            store="Google Secret Manager",
-            app_name="APP_SECRET_ID",
-            db_name="DB_SECRET_ID",
-            kind=OutputKind.RUNTIME_ENV,
-        ),
-    ),
-    validation_checks=(_ROOT_CONFIG_CHECK,),
+    generated_outputs=_gcp_generated_outputs(),
+    validation_checks=_GCP_VALIDATION_CHECKS,
     health_checks=(_PORTAL_HEALTH_CHECK,),
     capabilities=_AWS_AND_GCP_CAPABILITIES,
     owned_files=OwnedFiles(
