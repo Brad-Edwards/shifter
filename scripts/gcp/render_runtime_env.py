@@ -272,6 +272,11 @@ def render_env(outputs: dict[str, object], *, engine_image: str) -> str:
     bootstrap_superuser_emails = ",".join(_csv_env("PLATFORM_BOOTSTRAP_SUPERUSER_EMAILS"))
 
     values = {
+        # This module IS the GCP backend runtime-env renderer (installation.registry's
+        # ``_cloud_provider_output``); CLOUD_PROVIDER is this backend's own identity,
+        # renderer-owned rather than a static overlay literal or branch-name inference
+        # (PLAT-2005, docs/architecture/root-configured-backend-bundles.md).
+        "CLOUD_PROVIDER": "gcp",
         "STORAGE_BUCKET_NAME": assets_bucket,
         "AGENT_STORAGE_BUCKET": assets_bucket,
         "TF_STATE_BUCKET": terraform_state_bucket,

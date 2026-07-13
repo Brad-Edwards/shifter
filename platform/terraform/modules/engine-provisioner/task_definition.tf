@@ -27,6 +27,13 @@ resource "aws_ecs_task_definition" "engine_provisioner" {
 
     environment = [
       { name = "ENVIRONMENT", value = var.environment },
+      # Explicit backend selection for the provisioner (PLAT-2005). The AWS
+      # provisioner previously relied on the runtime's implicit "aws" default;
+      # runtime now fails closed on a missing/unsupported backend, so every
+      # deployed role must receive the value explicitly. Renderer-owned: the
+      # value comes from var.cloud_provider (rendered from shifter.yaml at
+      # deploy time), not a hardcoded literal.
+      { name = "CLOUD_PROVIDER", value = var.cloud_provider },
       { name = "SECRETS_KMS_KEY_ARN", value = var.secrets_manager_kms_key_arn },
       { name = "AWS_REGION", value = local.region },
       { name = "DB_HOST", value = var.db_host },

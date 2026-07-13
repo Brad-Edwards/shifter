@@ -18,6 +18,7 @@ import subprocess  # nosec B404 - used for local dev provisioner only
 from typing import TYPE_CHECKING, Any
 
 from django.conf import settings
+from django.core.exceptions import ImproperlyConfigured
 
 from shared.cloud import PROVISIONER_CONTAINER_NAME, get_task_runner
 from shared.cloud.exceptions import CloudTaskError
@@ -178,7 +179,7 @@ def _run_local_provisioner(command: list[str]) -> str | None:
 
     # Ensure required env vars are set (from Django settings or environment)
     env.setdefault("ENVIRONMENT", getattr(settings, "ENVIRONMENT", "dev"))
-    env.setdefault("CLOUD_PROVIDER", getattr(settings, "CLOUD_PROVIDER", "aws"))
+    env.setdefault("CLOUD_PROVIDER", settings.CLOUD_PROVIDER)
     env.setdefault("CLOUD_REGION", getattr(settings, "CLOUD_REGION", "us-east-2"))
     env.setdefault("AWS_REGION", getattr(settings, "AWS_REGION", "us-east-2"))
     gcp_project_id = getattr(settings, "GCP_PROJECT_ID", "")
@@ -234,11 +235,11 @@ def _is_local_provisioner_enabled() -> bool:
 
 def _get_gcp_provisioner_env_overrides() -> dict[str, str] | None:
     """Forward the runtime env contract needed by ephemeral GKE provisioner Jobs."""
-    if getattr(settings, "CLOUD_PROVIDER", "aws") != "gcp":
+    if settings.CLOUD_PROVIDER != "gcp":
         return None
 
     fallback_values = {
-        "CLOUD_PROVIDER": getattr(settings, "CLOUD_PROVIDER", ""),
+        "CLOUD_PROVIDER": settings.CLOUD_PROVIDER,
         "ENVIRONMENT": getattr(settings, "ENVIRONMENT", ""),
         "CLOUD_REGION": getattr(settings, "CLOUD_REGION", ""),
         "AWS_REGION": getattr(settings, "AWS_REGION", ""),
@@ -267,7 +268,7 @@ def _get_engine_task_config() -> tuple[str, str, dict[str, Any] | None] | None:
         Tuple of (cluster_or_location, task_definition_or_job, network_config)
         or None if configuration is incomplete.
     """
-    provider = getattr(settings, "CLOUD_PROVIDER", "aws")
+    provider = settings.CLOUD_PROVIDER
     cluster: str = (
         getattr(settings, "ENGINE_TASK_CLUSTER", None) or getattr(settings, "ENGINE_ECS_CLUSTER_ARN", None) or ""
     )
@@ -277,7 +278,9 @@ def _get_engine_task_config() -> tuple[str, str, dict[str, Any] | None] | None:
 
     if provider == "gcp":
         return _gcp_engine_task_config(cluster, task_definition)
-    return _aws_engine_task_config(cluster, task_definition)
+    if provider == "aws":
+        return _aws_engine_task_config(cluster, task_definition)
+    raise ImproperlyConfigured(f"Unsupported CLOUD_PROVIDER for engine task dispatch: {provider!r}")
 
 
 def _gcp_engine_task_config(cluster: str, task_definition: str) -> tuple[str, str, dict[str, Any] | None] | None:
@@ -346,7 +349,7 @@ def _validate_start_ecs_task_args(range_id: int, user_id: int, command: str) -> 
 
 def _enqueue_gcp_launch(command: list[str]) -> tuple[bool, str | None]:
     """Return whether GCP queueing handled the command and its reserved task ref."""
-    if getattr(settings, "CLOUD_PROVIDER", "").lower() != "gcp":
+    if settings.CLOUD_PROVIDER != "gcp":
         return False, None
     if _get_engine_task_config() is None:
         # Preserve the public callers' configured-provider failure signal while

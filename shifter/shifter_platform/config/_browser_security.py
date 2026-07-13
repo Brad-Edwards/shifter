@@ -90,14 +90,19 @@ def _storage_connect_origins() -> list[str]:
     """Exact signed-upload origins for the resolved cloud provider."""
     if CLOUD_PROVIDER == "gcp":
         return [_GCS_ORIGIN]
-    # AWS is the default provider. Signed uploads use virtual-hosted-style URLs;
-    # include the bucket host when known plus the regional S3 host.
-    region = AWS_S3_REGION or "us-east-2"
-    origins: list[str] = []
-    if AWS_S3_BUCKET_NAME:
-        origins.append(f"https://{AWS_S3_BUCKET_NAME}.s3.{region}.amazonaws.com")
-    origins.append(f"https://s3.{region}.amazonaws.com")
-    return origins
+    if CLOUD_PROVIDER == "aws":
+        # Signed uploads use virtual-hosted-style URLs; include the bucket host
+        # when known plus the regional S3 host.
+        region = AWS_S3_REGION or "us-east-2"
+        origins: list[str] = []
+        if AWS_S3_BUCKET_NAME:
+            origins.append(f"https://{AWS_S3_BUCKET_NAME}.s3.{region}.amazonaws.com")
+        origins.append(f"https://s3.{region}.amazonaws.com")
+        return origins
+    # Unsupported means a startup/configuration error, not AWS-compatible
+    # behavior (docs/architecture/root-configured-backend-bundles.md, "Gotchas
+    # and anti-patterns").
+    raise ImproperlyConfigured(f"Unsupported CLOUD_PROVIDER for browser storage CSP origins: {CLOUD_PROVIDER!r}")
 
 
 def build_browser_csp() -> dict[str, list[str]]:

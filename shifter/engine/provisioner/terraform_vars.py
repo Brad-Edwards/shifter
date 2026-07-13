@@ -21,12 +21,14 @@ from catalog.instances import (
     _get_victim_instance_type,
     _get_windows_instance_type,
 )
+from cloud.exceptions import CloudProviderNotImplementedError
 from config import (
     generate_presigned_url,
     get_range_availability_zone,
     is_gce_range_cell_backend,
     load_aws_polaris_agent_config,
     load_range_network_config,
+    resolve_cloud_provider,
     resolve_ngfw_attachment_config,
 )
 from provisioner_ami import get_ami_id
@@ -58,17 +60,20 @@ def _resolve_instance_type(role: str, tf_os_type: str, override: str | None) -> 
     """
     if override:
         return override
-    if os.environ.get("CLOUD_PROVIDER", "aws").lower() == "gcp":
+    provider = resolve_cloud_provider()
+    if provider == "gcp":
         return ""
-    if role == "attacker":
-        resolved = _get_kali_instance_type()
-    elif role == "dc":
-        resolved = _get_dc_instance_type()
-    elif tf_os_type == "windows":
-        resolved = _get_windows_instance_type()
-    else:
-        resolved = _get_victim_instance_type()
-    return resolved
+    if provider == "aws":
+        if role == "attacker":
+            resolved = _get_kali_instance_type()
+        elif role == "dc":
+            resolved = _get_dc_instance_type()
+        elif tf_os_type == "windows":
+            resolved = _get_windows_instance_type()
+        else:
+            resolved = _get_victim_instance_type()
+        return resolved
+    raise CloudProviderNotImplementedError(provider)
 
 
 def _range_egress_mode() -> str:
@@ -285,14 +290,18 @@ def _build_range_terraform_variables(
         "subnets": tf_subnets,
     }
 
-    if _get_cloud_provider() == "gcp":
+    provider = _get_cloud_provider()
+    if provider == "gcp":
         if ngfw_attachment:
             variables["ngfw_attachment"] = ngfw_attachment
         return variables
 
-    variables.update(_build_aws_extra_tf_variables())
-    variables.update(_build_aws_polaris_agent_tf_variables(_range_has_polaris_vm_instance(range_spec)))
-    return variables
+    if provider == "aws":
+        variables.update(_build_aws_extra_tf_variables())
+        variables.update(_build_aws_polaris_agent_tf_variables(_range_has_polaris_vm_instance(range_spec)))
+        return variables
+
+    raise CloudProviderNotImplementedError(provider)
 
 
 def _build_gce_range_cell_variables(

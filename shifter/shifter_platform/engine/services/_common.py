@@ -12,6 +12,8 @@ import logging
 import os
 from typing import Any
 
+from django.conf import settings
+
 from engine.secrets import SecretsError
 
 logger = logging.getLogger(__name__)
@@ -179,8 +181,11 @@ def _resolve_dc_password(instance: dict[str, Any]) -> str | None:
     is intentional only for the DC host itself; non-DC guests use
     per-instance secret references.
     """
+    # The portal's own backend is the validated composition-root selection
+    # (PLAT-2005), not an ad-hoc env read; the persisted instance value keeps its
+    # historical "aws" compatibility default.
     instance_provider = _first_connection_value(instance.get("cloud_provider")).lower() or "aws"
-    portal_provider = os.environ.get("CLOUD_PROVIDER", "aws").lower()
+    portal_provider = settings.CLOUD_PROVIDER
     if instance_provider != portal_provider:
         return None
     return os.environ.get("DC_DOMAIN_PASSWORD")

@@ -15,9 +15,9 @@ credential shard) are selected by ``PolarisRangeBootstrapPlan``.
 from __future__ import annotations
 
 import logging
-import os
 from typing import Any
 
+from config import resolve_cloud_provider
 from executors.factory import build_guest_execution_context
 from orchestrators.setup_orchestrator import SetupError, SetupOrchestrator
 from plans.polaris_range_bootstrap import PolarisRangeBootstrapPlan
@@ -55,7 +55,7 @@ def _run_polaris_range_bootstrap(
             "(per-instance ssh public key was not propagated to instance output)"
         )
 
-    resolved_provider = provider or os.environ.get("CLOUD_PROVIDER", "aws")
+    resolved_provider = provider or resolve_cloud_provider()
     logger.info(
         "Running polaris range bootstrap on %s provider=%s (dc_ip=%s, key length=%d)",
         instance_id,

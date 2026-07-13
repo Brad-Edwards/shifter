@@ -67,11 +67,15 @@ COPY engine/provisioner/requirements.lock engine/provisioner/requirements-gcp.lo
 RUN pip install --no-cache-dir --require-hashes --only-binary :all: -r requirements.lock && \
     pip install --no-cache-dir --require-hashes --only-binary :all: -r requirements-gcp.lock
 
-# First-party wire-contract package (cyberscript) on PYTHONPATH — same pattern as
-# shifter_platform/Dockerfile. The provisioner uses only the dependency-light
-# envelope, exception, and digest-verification paths; canonical Pydantic
-# validation runs producer-side before the artifact is persisted.
+# First-party shared packages on PYTHONPATH (cyberscript = wire-contract constants,
+# installation = root installation config) — same pattern as shifter_platform/Dockerfile.
+# `config.resolve_cloud_provider` validates CLOUD_PROVIDER against
+# installation.registry (PLAT-2005), which needs pydantic; pydantic is a declared
+# provisioner runtime dependency (requirements.lock), installed above. Range-cell
+# consumers use only cyberscript's dependency-light envelope, exception, and digest
+# paths; canonical Pydantic validation runs producer-side before persistence.
 COPY cyberscript /opt/shifter-libs/cyberscript
+COPY installation /opt/shifter-libs/installation
 
 # Dependency-light platform contract used by the standalone GCP range-cell
 # runner. Copy only the package initializer and contract module so the image
