@@ -14,9 +14,10 @@ enabled, travels the same path a product range launch takes:
 
 1. `cms.services.create_range_dispatch` routes the ACES scenario to
    `create_range_dispatch -> create_aces_native_range` (ADR-031-R5).
-2. `shared.aces.package_loader` resolves the package to its SDL entry, compiles
-   it with `aces-sdl`, plans it against the provisioning-only backend, and
-   dispatches the compiled plan through `CmsAcesDispatchPort ->
+2. `shared.aces.package_loader` resolves the registered pack root after CMS
+   verifies its canonical content digest, selects its single direct SDL entry,
+   compiles it with `aces-sdl`, plans it against the provisioning-only backend,
+   and dispatches the compiled plan through `CmsAcesDispatchPort ->
    engine.services.create_aces_range`.
 3. The engine persists the serialized plan keyed by `request_id`, writes the
    operation receipt, and starts the provisioner `aces-range` task.
@@ -53,9 +54,11 @@ Prerequisites:
 - `SHIFTER_ACES_NATIVE_PROVISIONING=true` (the command refuses otherwise).
 - A registered `AcesPackageSource` whose `scenario_id` is passed to the command,
   with `conformance_status=passed` and a `package_ref` that resolves under
-  `ACES_PACKAGE_ROOT` to an SDL entry file. The in-repo
-  `scenario-dev/aces-validation/shifter-aces-validation.sdl.yaml` is a minimal,
-  provisioning-only package suitable for this purpose.
+  `ACES_PACKAGE_ROOT` to an immutable pack root. Its associated-artifact
+  manifest and persisted `package_digest` must verify, and the pack must contain
+  exactly one direct SDL entry. The in-repo
+  `scenario-dev/shifter-aces-validation/` pack is a minimal,
+  provisioning-only input suitable for this purpose.
 
 ## What does not satisfy the gate
 

@@ -1466,7 +1466,7 @@
       },
       {
         "id": "ADR-032-R4",
-        "description": "Shifter depends on the aces-sdl PyPI package pinned to a released version (currently 0.19.1); it must not pin to a git ref or a non-released build. aces_* SDL packages are imported only within shared.aces (ADR-024, ADR-031-R1); the engine, provisioner, and other layers consume the serialized plan as plain data without importing aces_*.",
+        "description": "Shifter depends on released PyPI artifacts pinned as one compatible pair (currently aces-scenario-packs 1.2.0 and its exact aces-sdl 0.20.0 dependency); it must not pin either contract to a git ref or non-released build. The provisioner consumer retains a bounded rolling-read window for persisted producer plans (currently [0.19.1, 0.21.0)). aces_* SDL packages are imported only within shared.aces (ADR-024, ADR-031-R1); the engine, provisioner, and other layers consume the serialized plan as plain data without importing aces_*.",
         "checks": []
       },
       {
@@ -1544,7 +1544,7 @@
     "title": "Uniform content-ingestion contract",
     "status": "accepted",
     "scope": "repository",
-    "decision": "Content ingestion is one uniform, source-agnostic, entitlement-blind contract. The pack is the universal unit and the in-box catalog is not a privileged path. Image materialization is per-pack pull-or-bake (reference and/or recipe); packs may carry no images or parameterized experiment runs. Ingestion validates realizability against the backend manifest and surfaces non-realizability to the author without creating loopholes. Content is the source of truth and a published image is a cache.",
+    "decision": "Content ingestion is one uniform, source-agnostic, entitlement-blind contract. The pack is the universal unit and the in-box catalog is not a privileged path. Repo pack identity is bound to the canonical ACES associated-artifact digest at registration and verified again before native launch. Image materialization is per-pack pull-or-bake (reference and/or recipe); packs may carry no images or parameterized experiment runs. Ingestion validates realizability against the backend manifest and surfaces non-realizability to the author without creating loopholes. Content is the source of truth and a published image is a cache.",
     "rules": [
       {
         "id": "ADR-034-R1",
@@ -1565,6 +1565,11 @@
         "id": "ADR-034-R4",
         "description": "Content is the source of truth and published images are a cache; private-distribution entitlement is handled at acquisition, not by a platform entitlement system.",
         "checks": []
+      },
+      {
+        "id": "ADR-034-R5",
+        "description": "A repo package_ref identifies a containment-checked pack root. Registration validates the upstream pack contract and binds the advertised package_digest to the exact canonical ACES associated-artifact inventory and bytes; native launch verifies that persisted digest again before SDL resolution, parsing, planning, or dispatch. Repo pack staging is immutable, and object-backed references remain non-launchable until their resolver provides equivalent identity guarantees.",
+        "checks": []
       }
     ],
     "exceptions": [],
@@ -1573,7 +1578,9 @@
     ],
     "evidence": [
       "docs/architecture/uniform-content-ingestion-contract.md",
+      "docs/architecture/uniform-content-ingestion-preflight-1578.md",
       "docs/architecture/product-development-surfaces.md",
+      "docs/ops/content-ingestion.md",
       "docs/adr/index.yaml"
     ]
   },
