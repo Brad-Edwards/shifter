@@ -150,13 +150,20 @@ above, plus the following:
 | `GCP_PACKER_SERVICE_ACCOUNT` | variable | no | Service account the builder VM runs as. Falls back to `GCP_SERVICE_ACCOUNT`. |
 | `GCP_PACKER_MACHINE_TYPE` | variable | no | Builder machine type. Default `e2-standard-2`. |
 | `GCP_PACKER_USE_INTERNAL_IP` | variable | no | `true` builds without an external IP (requires IAP `35.235.240.0/20` to the builder). Default `false`. |
+| `GCP_VALIDATE_MACHINE_TYPE` | variable | no | Machine type for the `packer-gcp-validate.yml` disposable validation VM. Default `e2-standard-4`. |
 | `GCP_GDC_VM_IMAGE_BUCKET` | variable | for export | GCS bucket the built image is exported into as a `gs://` qcow2 for the GDC VM Runtime (Terraform output `gdc_vm_image_bucket`). The export step fails loud if unset. See `docs/architecture/gcp-guest-images.md`. |
-| `GCP_POLARIS_STACK_BUCKET` | variable | polaris-vm | GCS bucket holding the Polaris compose-stack tarball (`<bucket>/polaris/stack/polaris-stack.tar.gz`). The `polaris-vm` build's `host-setup.sh` fetches it and `docker compose build`s the stack into the image; empty leaves the host range-ready without the stack baked. The packer builder SA needs `roles/storage.objectViewer` on the bucket. See "Baking the polaris-vm host image" in `docs/dev/gcp-range-cell-deploy.md`. |
+| `GCP_POLARIS_STACK_BUCKET` | variable | polaris-vm | GCS bucket holding the Polaris compose-stack tarball (`<bucket>/polaris/stack/polaris-stack.tar.gz`). The `polaris-vm` build's `host-setup.sh` fetches it and `docker compose build`s the stack into the image. **Required for a promotable `polaris-vm`:** the build fails if the stack is absent. The packer builder SA needs `roles/storage.objectViewer` on the bucket. See "Baking the polaris-vm host image" in `docs/dev/gcp-range-cell-deploy.md`. |
+| `GCP_POLARIS_STACK_SHA256` | variable | polaris-vm | Required sha256 digest of the compose-stack tarball; the `polaris-vm` build verifies the fetched tarball and fails on mismatch, so a mutable GCS key cannot change what is baked. |
+| `GCP_POLARIS_STACK_GENERATION` | variable | no | Optional GCS object generation to pin the exact immutable tarball version (`gs://bucket/key#generation`). |
 | `GCP_DEV_PROJECT_ID` | secret | for promote | Source (dev) project for `packer-gcp-promote.yml`; the prod project is the `prod` environment's `GCP_PROJECT_ID`. |
 
 Images are published to the image family `shifter-<type>` (the version pointer;
-there is no SSM equivalent). For Windows/DC, the workflow generates a throwaway
-`winrm_bootstrap_password` per run and injects it via `PKR_VAR_*`; nothing is
+there is no SSM equivalent). A built dev image must pass the
+`packer-gcp-validate.yml` candidate-boot gate (which labels it
+`validated=passed`) before `packer-gcp-promote.yml` will copy that exact image to
+prod. For Windows/DC, the workflow generates a throwaway `winrm_bootstrap_password`
+per run and injects it via `PKR_VAR_*`; the pre-promoted `dc-prebaked` build also
+generates a per-run DSRM password (`PKR_VAR_dc_dsrm_password`). Nothing is
 committed.
 
 ## AWS portal (`dev` / `prod`)
