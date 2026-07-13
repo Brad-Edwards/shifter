@@ -2,7 +2,7 @@
 
 Reproducible AMI builds for Shifter range instances.
 
-> **GCP (GCE) builds** live in [`gcp/`](gcp/README.md) — a separate
+> **GCP (GCE) builds** live in [`gcp/`](gcp/README.md), a separate
 > `googlecompute` template set parallel to these AWS `amazon-ebs` templates
 > (issue #505). `packer` invoked here never sees the `gcp/` templates, so the
 > AWS flow below is unaffected.
@@ -57,7 +57,7 @@ AWS_PROFILE=<dev account profile> packer build -var-file=dev.pkrvars.hcl .
 
 After a successful build:
 1. AMI ID is printed to console
-2. Manifest written to `{ami_type}-manifest.json` (e.g., `kali-manifest.json`, `ubuntu-manifest.json`)
+2. Manifest written to `{ami_type}-manifest.json` (for example, `kali-manifest.json`, `ubuntu-manifest.json`)
 3. SSM Parameter `/shifter/ami/{ami_type}` updated by GitHub Actions
 
 ## Kali AMI Contents

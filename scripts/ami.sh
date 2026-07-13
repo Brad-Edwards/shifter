@@ -56,7 +56,7 @@ if is_scenario_type "$AMI_TYPE"; then
     echo "Dispatch it directly, e.g.:"
     echo "  gh workflow run packer.yml --repo $REPO --ref $BRANCH \\"
     echo "    -f ami_type=$AMI_TYPE -f subnet_id=subnet-... -f security_group_id=sg-... \\"
-    echo "    -f instance_profile=<ssm-profile>$([ "$AMI_TYPE" = polaris-vm ] && echo ' -f s3_bucket=... -f s3_key=...' || echo ' [-f aptl_version=4.1.2]')"
+    echo "    -f instance_profile=<ssm-profile>$([ "$AMI_TYPE" = polaris-vm ] && echo ' -f s3_tarball_uri=s3://bucket/key' || echo ' [-f aptl_version=4.1.2]')"
     exit 1
 fi
 

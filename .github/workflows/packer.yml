@@ -65,15 +65,10 @@ on:
         required: false
         type: string
         default: '4.1.2'
-      s3_bucket:
-        description: '[polaris-vm] S3 bucket holding the operator-uploaded Polaris build tarball'
+      s3_tarball_uri:
+        description: '[polaris-vm] s3://bucket/key of the operator-uploaded Polaris build tarball'
         required: false
         type: string
-      s3_key:
-        description: '[polaris-vm] S3 key of the Polaris build tarball'
-        required: false
-        type: string
-        default: 'polaris/build-v1.tar.gz'
 
 permissions:
   id-token: write
@@ -239,8 +234,7 @@ jobs:
       INSTANCE_TYPE: ${{ inputs.instance_type }}
       SSM_PARAM_INPUT: ${{ inputs.ssm_param }}
       APTL_VERSION: ${{ inputs.aptl_version }}
-      S3_BUCKET: ${{ inputs.s3_bucket }}
-      S3_KEY: ${{ inputs.s3_key }}
+      S3_TARBALL_URI: ${{ inputs.s3_tarball_uri }}
 
     steps:
       - name: Validate scenario inputs
@@ -303,12 +297,10 @@ jobs:
               } >> "$GITHUB_ENV"
               ;;
             polaris-vm)
-              req s3_bucket "$S3_BUCKET"
-              req s3_key "$S3_KEY"
-              match s3_bucket "$S3_BUCKET" '^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$'
-              match s3_key "$S3_KEY" '^[A-Za-z0-9._/-]+$'
+              req s3_tarball_uri "$S3_TARBALL_URI"
+              match s3_tarball_uri "$S3_TARBALL_URI" '^s3://[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]/[A-Za-z0-9._/-]+$'
               {
-                echo "POLARIS_TARBALL_S3_URI=s3://${S3_BUCKET}/${S3_KEY}"
+                echo "POLARIS_TARBALL_S3_URI=${S3_TARBALL_URI}"
                 echo "SCENARIO=polaris"
                 echo "MIN_CONTAINERS=17"
                 echo "NAME_FILTER="
@@ -388,8 +380,8 @@ jobs:
         if: ${{ inputs.ami_type == 'polaris-vm' }}
         run: |
           set -euo pipefail
-          if ! aws s3api head-object --bucket "$S3_BUCKET" --key "$S3_KEY" >/dev/null 2>&1; then
-            echo "::error::build tarball s3://${S3_BUCKET}/${S3_KEY} not found - upload it before running this bake"
+          if ! aws s3 ls "$S3_TARBALL_URI" >/dev/null 2>&1; then
+            echo "::error::build tarball ${S3_TARBALL_URI} not found - upload it before running this bake"
             exit 1
           fi
 

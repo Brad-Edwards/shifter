@@ -182,7 +182,7 @@ wired to push, pull_request, or schedule).
 > now deleted). Packer owns builder launch, provisioning, image creation, and
 > teardown; the bake phases and the encryption + golden-verify gates are
 > unchanged. Note: the scenario builds use Packer's Session Manager SSH tunnel,
-> which needs `ssm:StartSession` on the deploy role — added to
+> which needs `ssm:StartSession` on the deploy role, added to
 > `platform/terraform/global/iam/github-oidc.tf` in the same change and applied
 > by an IAM `terraform apply`.
 
