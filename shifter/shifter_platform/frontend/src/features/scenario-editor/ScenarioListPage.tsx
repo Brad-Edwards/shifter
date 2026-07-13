@@ -51,7 +51,8 @@ export function ScenarioListPage() {
   }, [query.data, search, source, availability]);
 
   const total = query.data?.length ?? 0;
-  const description = query.data ? `${total} ${total === 1 ? "scenario" : "scenarios"} in the catalog` : "Scenario catalog";
+  const noun = total === 1 ? "scenario" : "scenarios";
+  const description = query.data ? `${total} ${noun} in the catalog` : "Scenario catalog";
 
   return (
     <>

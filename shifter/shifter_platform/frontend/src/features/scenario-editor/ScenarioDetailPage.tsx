@@ -36,6 +36,170 @@ function Field({ label, children }: Readonly<{ label: string; children: ReactNod
   );
 }
 
+type MetadataMutation = ReturnType<typeof useUpdateScenarioMetadata>;
+
+function ScenarioActions({
+  scenario,
+  metadata,
+  exporting,
+  onExport,
+  onClone,
+  onDelete,
+}: Readonly<{
+  scenario: ScenarioDetail;
+  metadata: MetadataMutation;
+  exporting: boolean;
+  onExport: () => void;
+  onClone: () => void;
+  onDelete: () => void;
+}>) {
+  return (
+    <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+      {scenario.editable ? (
+        <>
+          <Link className={cn(buttonVariants({ variant: "outline", size: "sm" }))} to={scenarioEditPath(scenario.id)}>
+            Edit
+          </Link>
+          <Link
+            className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
+            to={scenarioYamlEditPath(scenario.id)}
+          >
+            Edit YAML
+          </Link>
+        </>
+      ) : null}
+      <Button variant="outline" size="sm" onClick={onClone}>
+        Clone
+      </Button>
+      {scenario.exportable ? (
+        <Button variant="outline" size="sm" onClick={onExport} disabled={exporting}>
+          Export YAML
+        </Button>
+      ) : null}
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => metadata.mutate({ enabled: !scenario.enabled })}
+        disabled={metadata.isPending}
+      >
+        {scenario.enabled ? "Disable" : "Enable"}
+      </Button>
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => metadata.mutate({ staff_only: !scenario.staff_only })}
+        disabled={metadata.isPending}
+      >
+        {scenario.staff_only ? "Make available to all" : "Make staff-only"}
+      </Button>
+      {scenario.deletable ? (
+        <Button variant="destructive" size="sm" onClick={onDelete}>
+          Delete
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
+function OverviewCard({ scenario }: Readonly<{ scenario: ScenarioDetail }>) {
+  return (
+    <Card>
+      <CardContent>
+        <dl>
+          <Field label="Source">
+            <SourceBadge source={scenario.source} />
+          </Field>
+          <Field label="Type">{scenario.scenario_type}</Field>
+          <Field label="Availability">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <EnabledBadge enabled={scenario.enabled} />
+              {scenario.staff_only ? <StaffOnlyBadge /> : null}
+            </div>
+          </Field>
+          <Field label="Launchable">{scenario.launchable ? "Yes" : "No"}</Field>
+          <Field label="NGFW">{scenario.ngfw ? "Required" : "Not required"}</Field>
+          <Field label="Description">
+            <p className="whitespace-pre-wrap">{scenario.description || "—"}</p>
+          </Field>
+        </dl>
+      </CardContent>
+    </Card>
+  );
+}
+
+function InstancesCard({ scenario }: Readonly<{ scenario: ScenarioDetail }>) {
+  if (scenario.instances.length === 0) return null;
+  return (
+    <Card className="mt-6 overflow-hidden py-0">
+      <Table>
+        <TableHeader>
+          <TableRow className="hover:bg-transparent">
+            <TableHead>Instance</TableHead>
+            <TableHead className="w-[120px]">Role</TableHead>
+            <TableHead className="w-[130px]">OS</TableHead>
+            <TableHead className="w-[100px]">XDR</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {scenario.instances.map((instance) => (
+            <TableRow key={instance.name}>
+              <TableCell className="font-medium">{instance.name}</TableCell>
+              <TableCell>{instance.role}</TableCell>
+              <TableCell>{instance.os_type}</TableCell>
+              <TableCell>{instance.xdr_agent ? "Yes" : "No"}</TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </Card>
+  );
+}
+
+function SubnetsCard({ scenario }: Readonly<{ scenario: ScenarioDetail }>) {
+  if (scenario.subnets.length === 0) return null;
+  return (
+    <Card className="mt-6">
+      <CardContent>
+        <h2 className="mb-3 text-sm font-semibold">Subnets</h2>
+        <ul className="flex flex-col gap-2 text-sm">
+          {scenario.subnets.map((subnet) => (
+            <li key={subnet.name}>
+              <span className="font-medium">{subnet.name}</span>
+              <span className="text-muted-foreground"> — {subnet.instances.join(", ")}</span>
+              {subnet.connected_to && subnet.connected_to.length > 0 ? (
+                <span className="text-muted-foreground"> (connects to {subnet.connected_to.join(", ")})</span>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      </CardContent>
+    </Card>
+  );
+}
+
+function AcesCard({ scenario }: Readonly<{ scenario: ScenarioDetail }>) {
+  const aces = scenario.aces;
+  if (!aces) return null;
+  return (
+    <Card className="mt-6">
+      <CardContent>
+        <h2 className="mb-3 text-sm font-semibold">ACES package provenance</h2>
+        <dl>
+          <Field label="Contract">
+            {aces.contract_kind} / {aces.contract_profile}
+          </Field>
+          <Field label="Package">{aces.package_ref}</Field>
+          <Field label="Version">{aces.package_version}</Field>
+          <Field label="Digest">
+            <span className="font-mono text-xs break-all">{aces.package_digest}</span>
+          </Field>
+          <Field label="Conformance">{aces.conformance_status}</Field>
+        </dl>
+      </CardContent>
+    </Card>
+  );
+}
+
 export function ScenarioDetailPage() {
   const params = useParams();
   const navigate = useNavigate();
@@ -99,50 +263,14 @@ export function ScenarioDetailPage() {
           </div>
         </div>
         {canAuthor ? (
-          <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
-            {scenario.editable ? (
-              <>
-                <Link className={cn(buttonVariants({ variant: "outline", size: "sm" }))} to={scenarioEditPath(scenario.id)}>
-                  Edit
-                </Link>
-                <Link
-                  className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
-                  to={scenarioYamlEditPath(scenario.id)}
-                >
-                  Edit YAML
-                </Link>
-              </>
-            ) : null}
-            <Button variant="outline" size="sm" onClick={() => setShowClone(true)}>
-              Clone
-            </Button>
-            {scenario.exportable ? (
-              <Button variant="outline" size="sm" onClick={() => exportMutation.mutate()} disabled={exportMutation.isPending}>
-                Export YAML
-              </Button>
-            ) : null}
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => metadata.mutate({ enabled: !scenario.enabled })}
-              disabled={metadata.isPending}
-            >
-              {scenario.enabled ? "Disable" : "Enable"}
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => metadata.mutate({ staff_only: !scenario.staff_only })}
-              disabled={metadata.isPending}
-            >
-              {scenario.staff_only ? "Make available to all" : "Make staff-only"}
-            </Button>
-            {scenario.deletable ? (
-              <Button variant="destructive" size="sm" onClick={() => setShowDelete(true)}>
-                Delete
-              </Button>
-            ) : null}
-          </div>
+          <ScenarioActions
+            scenario={scenario}
+            metadata={metadata}
+            exporting={exportMutation.isPending}
+            onExport={() => exportMutation.mutate()}
+            onClone={() => setShowClone(true)}
+            onDelete={() => setShowDelete(true)}
+          />
         ) : null}
       </div>
 
@@ -159,73 +287,10 @@ export function ScenarioDetailPage() {
         </Alert>
       ) : null}
 
-      <Card>
-        <CardContent>
-          <dl>
-            <Field label="Source">
-              <SourceBadge source={scenario.source} />
-            </Field>
-            <Field label="Type">{scenario.scenario_type}</Field>
-            <Field label="Availability">
-              <div className="flex flex-wrap items-center gap-1.5">
-                <EnabledBadge enabled={scenario.enabled} />
-                {scenario.staff_only ? <StaffOnlyBadge /> : null}
-              </div>
-            </Field>
-            <Field label="Launchable">{scenario.launchable ? "Yes" : "No"}</Field>
-            <Field label="NGFW">{scenario.ngfw ? "Required" : "Not required"}</Field>
-            <Field label="Description">
-              <p className="whitespace-pre-wrap">{scenario.description || "—"}</p>
-            </Field>
-          </dl>
-        </CardContent>
-      </Card>
-
-      {scenario.aces ? <AcesCard scenario={scenario} /> : null}
-
-      {scenario.instances.length > 0 ? (
-        <Card className="mt-6 overflow-hidden py-0">
-          <Table>
-            <TableHeader>
-              <TableRow className="hover:bg-transparent">
-                <TableHead>Instance</TableHead>
-                <TableHead className="w-[120px]">Role</TableHead>
-                <TableHead className="w-[130px]">OS</TableHead>
-                <TableHead className="w-[100px]">XDR</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {scenario.instances.map((instance) => (
-                <TableRow key={instance.name}>
-                  <TableCell className="font-medium">{instance.name}</TableCell>
-                  <TableCell>{instance.role}</TableCell>
-                  <TableCell>{instance.os_type}</TableCell>
-                  <TableCell>{instance.xdr_agent ? "Yes" : "No"}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </Card>
-      ) : null}
-
-      {scenario.subnets.length > 0 ? (
-        <Card className="mt-6">
-          <CardContent>
-            <h2 className="mb-3 text-sm font-semibold">Subnets</h2>
-            <ul className="flex flex-col gap-2 text-sm">
-              {scenario.subnets.map((subnet) => (
-                <li key={subnet.name}>
-                  <span className="font-medium">{subnet.name}</span>
-                  <span className="text-muted-foreground"> — {subnet.instances.join(", ")}</span>
-                  {subnet.connected_to && subnet.connected_to.length > 0 ? (
-                    <span className="text-muted-foreground"> (connects to {subnet.connected_to.join(", ")})</span>
-                  ) : null}
-                </li>
-              ))}
-            </ul>
-          </CardContent>
-        </Card>
-      ) : null}
+      <OverviewCard scenario={scenario} />
+      <AcesCard scenario={scenario} />
+      <InstancesCard scenario={scenario} />
+      <SubnetsCard scenario={scenario} />
 
       <ConfirmDialog
         open={showDelete}
@@ -255,29 +320,6 @@ export function ScenarioDetailPage() {
         }}
       />
     </>
-  );
-}
-
-function AcesCard({ scenario }: Readonly<{ scenario: ScenarioDetail }>) {
-  const aces = scenario.aces;
-  if (!aces) return null;
-  return (
-    <Card className="mt-6">
-      <CardContent>
-        <h2 className="mb-3 text-sm font-semibold">ACES package provenance</h2>
-        <dl>
-          <Field label="Contract">
-            {aces.contract_kind} / {aces.contract_profile}
-          </Field>
-          <Field label="Package">{aces.package_ref}</Field>
-          <Field label="Version">{aces.package_version}</Field>
-          <Field label="Digest">
-            <span className="font-mono text-xs break-all">{aces.package_digest}</span>
-          </Field>
-          <Field label="Conformance">{aces.conformance_status}</Field>
-        </dl>
-      </CardContent>
-    </Card>
   );
 }
 

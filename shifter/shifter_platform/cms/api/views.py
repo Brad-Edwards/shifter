@@ -12,10 +12,12 @@ the source-capability projection the editor renders from.
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from django.contrib.auth.models import User
 from drf_spectacular.utils import extend_schema
 from rest_framework import status
+from rest_framework.permissions import BasePermission
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -90,7 +92,7 @@ def _classify(scenario_type: str, is_default: bool) -> tuple[str, bool, bool, bo
     return source, editable, deletable, exportable
 
 
-def _structural_detail_payload(detail: dict) -> dict:
+def _structural_detail_payload(detail: dict[str, Any]) -> dict[str, Any]:
     """Build the editor detail payload from a registry structural detail dict."""
     scenario_type = detail.get("scenario_type", "demo")
     is_default = bool(detail.get("is_default", False))
@@ -115,7 +117,7 @@ def _structural_detail_payload(detail: dict) -> dict:
     }
 
 
-def _aces_detail_payload(scenario_id: str) -> dict | None:
+def _aces_detail_payload(scenario_id: str) -> dict[str, Any] | None:
     """Build a read-only editor detail payload for an ACES catalog entry."""
     entry = catalog_presentation.get_catalog_presentation(scenario_id)
     if entry is None:
@@ -253,7 +255,7 @@ class ScenarioResourceView(APIView):
     scope, so permissions are resolved per method.
     """
 
-    def get_permissions(self) -> list:
+    def get_permissions(self) -> list[BasePermission]:
         """Read scope for retrieval; write scope for mutations."""
         classes = CMS_READ_PERMISSIONS if self.request.method == "GET" else CMS_WRITE_PERMISSIONS
         return [permission() for permission in classes]
@@ -261,7 +263,7 @@ class ScenarioResourceView(APIView):
     @extend_schema(responses=ScenarioDetailSerializer)
     def get(self, request: Request, scenario_id: str) -> Response:
         """Return full structural detail (or a read-only ACES projection)."""
-        payload: dict | None
+        payload: dict[str, Any] | None
         try:
             payload = _structural_detail_payload(get_scenario_detail(scenario_id))
         except ValueError:

@@ -1,47 +1,27 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
-import { Loader2, Plus, Trash2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 
 import { useCreateScenario, useScenario, useUpdateScenario } from "@/api/scenarios";
 import { ApiError } from "@/api/errors";
-import {
-  INSTANCE_OS_TYPES,
-  INSTANCE_ROLES,
-  type ScenarioCreate,
-  type ScenarioDetail,
-  type ScenarioInstance,
-  type ScenarioSubnet,
-} from "@/api/types";
+import type { ScenarioCreate, ScenarioDetail, ScenarioInstance, ScenarioSubnet } from "@/api/types";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 
-import { titleCase } from "./format";
+import {
+  emptyInstance,
+  emptySubnet,
+  InstancesCard,
+  SubnetsCard,
+  type InstanceForm,
+  type SubnetForm,
+} from "./ScenarioFormFields";
 import { scenarioListPath, scenarioPath } from "./routes";
-
-interface InstanceForm {
-  name: string;
-  role: ScenarioInstance["role"];
-  os_type: ScenarioInstance["os_type"];
-  xdr_agent: boolean;
-  domain_controller: boolean;
-  join_domain: boolean;
-  ami_key: string;
-  instance_type: string;
-  dc_domain_name: string;
-  dc_netbios_name: string;
-}
-
-interface SubnetForm {
-  name: string;
-  instances: string;
-  connected_to: string;
-}
 
 interface FormState {
   scenario_id: string;
@@ -51,30 +31,6 @@ interface FormState {
   instances: InstanceForm[];
   subnets: SubnetForm[];
 }
-
-function emptyInstance(): InstanceForm {
-  return {
-    name: "",
-    role: "victim",
-    os_type: "from_agent",
-    xdr_agent: false,
-    domain_controller: false,
-    join_domain: false,
-    ami_key: "",
-    instance_type: "",
-    dc_domain_name: "",
-    dc_netbios_name: "",
-  };
-}
-
-const EMPTY: FormState = {
-  scenario_id: "",
-  name: "",
-  description: "",
-  ngfw: false,
-  instances: [emptyInstance()],
-  subnets: [],
-};
 
 function splitList(value: string): string[] {
   return value
@@ -89,7 +45,8 @@ function fromDetail(detail: ScenarioDetail): FormState {
     name: detail.name,
     description: detail.description,
     ngfw: detail.ngfw,
-    instances: detail.instances.map((instance) => ({
+    instances: detail.instances.map((instance, index) => ({
+      key: `load-${index}`,
       name: instance.name,
       role: instance.role,
       os_type: instance.os_type,
@@ -101,7 +58,8 @@ function fromDetail(detail: ScenarioDetail): FormState {
       dc_domain_name: instance.dc_config?.domain_name ?? "",
       dc_netbios_name: instance.dc_config?.netbios_name ?? "",
     })),
-    subnets: detail.subnets.map((subnet) => ({
+    subnets: detail.subnets.map((subnet, index) => ({
+      key: `load-s-${index}`,
       name: subnet.name,
       instances: subnet.instances.join(", "),
       connected_to: (subnet.connected_to ?? []).join(", "),
@@ -153,7 +111,18 @@ export function ScenarioFormPage({ mode }: Readonly<{ mode: "create" | "edit" }>
   const update = useUpdateScenario(scenarioId);
   const mutation = mode === "create" ? create : update;
 
-  const [state, setState] = useState<FormState>(EMPTY);
+  // Monotonic client-side key source for form rows (stable, non-index list keys).
+  const keyCounter = useRef(0);
+  const nextKey = () => `row-${keyCounter.current++}`;
+
+  const [state, setState] = useState<FormState>(() => ({
+    scenario_id: "",
+    name: "",
+    description: "",
+    ngfw: false,
+    instances: [emptyInstance(nextKey())],
+    subnets: [],
+  }));
   const [initialized, setInitialized] = useState(mode === "create");
 
   useEffect(() => {
@@ -179,6 +148,10 @@ export function ScenarioFormPage({ mode }: Readonly<{ mode: "create" | "edit" }>
       ...prev,
       subnets: prev.subnets.map((subnet, i) => (i === index ? { ...subnet, ...patch } : subnet)),
     }));
+  }
+
+  function removeAt<T>(list: T[], index: number): T[] {
+    return list.filter((_, i) => i !== index);
   }
 
   function onSubmit(event: React.FormEvent) {
@@ -295,25 +268,15 @@ export function ScenarioFormPage({ mode }: Readonly<{ mode: "create" | "edit" }>
         <InstancesCard
           instances={state.instances}
           onChange={setInstance}
-          onAdd={() => set("instances", [...state.instances, emptyInstance()])}
-          onRemove={(index) =>
-            set(
-              "instances",
-              state.instances.filter((_, i) => i !== index),
-            )
-          }
+          onAdd={() => set("instances", [...state.instances, emptyInstance(nextKey())])}
+          onRemove={(index) => set("instances", removeAt(state.instances, index))}
         />
 
         <SubnetsCard
           subnets={state.subnets}
           onChange={setSubnet}
-          onAdd={() => set("subnets", [...state.subnets, { name: "", instances: "", connected_to: "" }])}
-          onRemove={(index) =>
-            set(
-              "subnets",
-              state.subnets.filter((_, i) => i !== index),
-            )
-          }
+          onAdd={() => set("subnets", [...state.subnets, emptySubnet(nextKey())])}
+          onRemove={(index) => set("subnets", removeAt(state.subnets, index))}
         />
 
         <div className="flex justify-end gap-2">
@@ -327,222 +290,5 @@ export function ScenarioFormPage({ mode }: Readonly<{ mode: "create" | "edit" }>
         </div>
       </form>
     </div>
-  );
-}
-
-function InstancesCard({
-  instances,
-  onChange,
-  onAdd,
-  onRemove,
-}: Readonly<{
-  instances: InstanceForm[];
-  onChange: (index: number, patch: Partial<InstanceForm>) => void;
-  onAdd: () => void;
-  onRemove: (index: number) => void;
-}>) {
-  return (
-    <Card>
-      <CardContent className="flex flex-col gap-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold">Instances</h2>
-          <Button type="button" variant="outline" size="sm" onClick={onAdd}>
-            <Plus className="size-4" /> Add instance
-          </Button>
-        </div>
-        {instances.map((instance, index) => (
-          <fieldset key={index} className="flex flex-col gap-3 rounded-md border border-border/60 p-4">
-            <legend className="px-1 text-xs text-muted-foreground">Instance {index + 1}</legend>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="flex flex-col gap-2">
-                <Label htmlFor={`i-name-${index}`}>Name</Label>
-                <Input
-                  id={`i-name-${index}`}
-                  value={instance.name}
-                  onChange={(event) => onChange(index, { name: event.target.value })}
-                />
-              </div>
-              <div className="flex flex-col gap-2">
-                <Label htmlFor={`i-role-${index}`}>Role</Label>
-                <Select
-                  value={instance.role}
-                  onValueChange={(value) => onChange(index, { role: value as InstanceForm["role"] })}
-                >
-                  <SelectTrigger id={`i-role-${index}`} className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {INSTANCE_ROLES.map((value) => (
-                      <SelectItem key={value} value={value}>
-                        {titleCase(value)}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="flex flex-col gap-2">
-                <Label htmlFor={`i-os-${index}`}>OS type</Label>
-                <Select
-                  value={instance.os_type}
-                  onValueChange={(value) => onChange(index, { os_type: value as InstanceForm["os_type"] })}
-                >
-                  <SelectTrigger id={`i-os-${index}`} className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {INSTANCE_OS_TYPES.map((value) => (
-                      <SelectItem key={value} value={value}>
-                        {value}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="flex flex-col gap-2">
-                <Label htmlFor={`i-type-${index}`}>Instance type (optional)</Label>
-                <Input
-                  id={`i-type-${index}`}
-                  value={instance.instance_type}
-                  placeholder="m5.large"
-                  onChange={(event) => onChange(index, { instance_type: event.target.value })}
-                />
-              </div>
-              <div className="flex flex-col gap-2">
-                <Label htmlFor={`i-ami-${index}`}>AMI key (optional)</Label>
-                <Input
-                  id={`i-ami-${index}`}
-                  value={instance.ami_key}
-                  onChange={(event) => onChange(index, { ami_key: event.target.value })}
-                />
-              </div>
-            </div>
-            <div className="flex flex-wrap gap-4">
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  className="size-4 rounded border-input bg-transparent accent-primary"
-                  checked={instance.xdr_agent}
-                  onChange={(event) => onChange(index, { xdr_agent: event.target.checked })}
-                />
-                XDR agent
-              </label>
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  className="size-4 rounded border-input bg-transparent accent-primary"
-                  checked={instance.domain_controller}
-                  onChange={(event) => onChange(index, { domain_controller: event.target.checked })}
-                />
-                Domain controller
-              </label>
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  className="size-4 rounded border-input bg-transparent accent-primary"
-                  checked={instance.join_domain}
-                  onChange={(event) => onChange(index, { join_domain: event.target.checked })}
-                />
-                Join domain
-              </label>
-            </div>
-            {instance.domain_controller ? (
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="flex flex-col gap-2">
-                  <Label htmlFor={`i-dc-domain-${index}`}>Domain name</Label>
-                  <Input
-                    id={`i-dc-domain-${index}`}
-                    value={instance.dc_domain_name}
-                    placeholder="lab.local"
-                    onChange={(event) => onChange(index, { dc_domain_name: event.target.value })}
-                  />
-                </div>
-                <div className="flex flex-col gap-2">
-                  <Label htmlFor={`i-dc-netbios-${index}`}>NetBIOS name</Label>
-                  <Input
-                    id={`i-dc-netbios-${index}`}
-                    value={instance.dc_netbios_name}
-                    placeholder="LAB"
-                    onChange={(event) => onChange(index, { dc_netbios_name: event.target.value })}
-                  />
-                </div>
-              </div>
-            ) : null}
-            {instances.length > 1 ? (
-              <div className="flex justify-end">
-                <Button type="button" variant="ghost" size="sm" onClick={() => onRemove(index)}>
-                  <Trash2 className="size-4" /> Remove
-                </Button>
-              </div>
-            ) : null}
-          </fieldset>
-        ))}
-      </CardContent>
-    </Card>
-  );
-}
-
-function SubnetsCard({
-  subnets,
-  onChange,
-  onAdd,
-  onRemove,
-}: Readonly<{
-  subnets: SubnetForm[];
-  onChange: (index: number, patch: Partial<SubnetForm>) => void;
-  onAdd: () => void;
-  onRemove: (index: number) => void;
-}>) {
-  return (
-    <Card>
-      <CardContent className="flex flex-col gap-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold">Subnets</h2>
-          <Button type="button" variant="outline" size="sm" onClick={onAdd}>
-            <Plus className="size-4" /> Add subnet
-          </Button>
-        </div>
-        {subnets.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No subnets defined.</p>
-        ) : null}
-        {subnets.map((subnet, index) => (
-          <fieldset key={index} className="flex flex-col gap-3 rounded-md border border-border/60 p-4">
-            <legend className="px-1 text-xs text-muted-foreground">Subnet {index + 1}</legend>
-            <div className="flex flex-col gap-2">
-              <Label htmlFor={`s-name-${index}`}>Name</Label>
-              <Input
-                id={`s-name-${index}`}
-                value={subnet.name}
-                onChange={(event) => onChange(index, { name: event.target.value })}
-              />
-            </div>
-            <div className="flex flex-col gap-2">
-              <Label htmlFor={`s-inst-${index}`}>Instances</Label>
-              <Input
-                id={`s-inst-${index}`}
-                value={subnet.instances}
-                placeholder="Attacker, Victim"
-                onChange={(event) => onChange(index, { instances: event.target.value })}
-              />
-              <p className="text-xs text-muted-foreground">Comma-separated instance names in this subnet.</p>
-            </div>
-            <div className="flex flex-col gap-2">
-              <Label htmlFor={`s-conn-${index}`}>Connected to (optional)</Label>
-              <Input
-                id={`s-conn-${index}`}
-                value={subnet.connected_to}
-                placeholder="core"
-                onChange={(event) => onChange(index, { connected_to: event.target.value })}
-              />
-              <p className="text-xs text-muted-foreground">Comma-separated subnet names this subnet can reach.</p>
-            </div>
-            <div className="flex justify-end">
-              <Button type="button" variant="ghost" size="sm" onClick={() => onRemove(index)}>
-                <Trash2 className="size-4" /> Remove
-              </Button>
-            </div>
-          </fieldset>
-        ))}
-      </CardContent>
-    </Card>
   );
 }

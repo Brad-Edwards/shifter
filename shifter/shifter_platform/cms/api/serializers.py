@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from rest_framework import serializers
 
 # Scenario definition option lists mirror ``cms.scenarios.schema`` exactly.
@@ -128,7 +130,7 @@ class _ScenarioDefinitionSerializer(serializers.Serializer):
     instances = ScenarioInstanceSerializer(many=True)
     subnets = ScenarioSubnetSerializer(many=True, required=False, default=list)
 
-    def definition(self) -> dict:
+    def definition(self) -> dict[str, Any]:
         """Return the persisted structural definition (instances/subnets/ngfw)."""
         data = self.validated_data
         return {
@@ -161,7 +163,7 @@ class ScenarioMetadataUpdateSerializer(serializers.Serializer):
     enabled = serializers.BooleanField(required=False)
     staff_only = serializers.BooleanField(required=False)
 
-    def validate(self, attrs: dict) -> dict:
+    def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
         """Require at least one metadata field to change."""
         if "enabled" not in attrs and "staff_only" not in attrs:
             raise serializers.ValidationError("Provide at least one of 'enabled' or 'staff_only'.")
