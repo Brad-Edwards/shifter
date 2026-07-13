@@ -432,6 +432,28 @@ def test_surface_flags_settings_schema_removed() -> None:
     assert any("aws.settings_schema: removed" in c for c in _surface_incompatibilities(frozen, generated))
 
 
+def test_surface_flags_null_to_concrete_settings_schema_as_narrowing() -> None:
+    # #729: a backend that published settings_schema=null accepted any settings mapping;
+    # replacing it with a concrete schema narrows the operator-facing surface, so it must be
+    # flagged breaking (requiring a version bump) rather than treated as additive. Without
+    # this the GCP null->closed transition would have shipped silently within version 1.
+    frozen = {"backend_bundle_schema": {}, "backends": {"gcp": {"settings_schema": None}}}
+    generated = {
+        "backend_bundle_schema": {},
+        "backends": {"gcp": {"settings_schema": {"type": "object", "additionalProperties": False}}},
+    }
+    breaking = _surface_incompatibilities(frozen, generated)
+    assert any("gcp.settings_schema" in c and "narrowed from accept-any" in c for c in breaking)
+
+
+def test_surface_treats_null_to_null_settings_schema_as_unchanged() -> None:
+    # A still-provisional backend (settings_schema stays null, e.g. aws until #728) is not
+    # flagged — only an actual null->concrete narrowing is breaking.
+    frozen = {"backend_bundle_schema": {}, "backends": {"aws": {"settings_schema": None}}}
+    generated = {"backend_bundle_schema": {}, "backends": {"aws": {"settings_schema": None}}}
+    assert _surface_incompatibilities(frozen, generated) == []
+
+
 # --------------------------------------------------------------------------------------
 # Registry conformance gate (AC3) — records validated against the published schema
 # --------------------------------------------------------------------------------------

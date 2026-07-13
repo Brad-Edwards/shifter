@@ -278,15 +278,16 @@ class TestBackendSpecificValidation:
         assert cfg.settings == {"region": "us-east-2"}
 
     def test_provisional_backend_settings_are_returned_unchanged(self, write_config):
-        # With no settings_model the loader leaves the settings as the user wrote them
-        # (a shallow copy) — important for #1112 configs that pass arbitrary settings.
-        original = {"region": "us-central1", "project_id": "acme"}
+        # A backend with no settings_model leaves the settings as the user wrote them (a
+        # shallow copy) — important for #1112 configs that pass arbitrary settings. AWS is
+        # still provisional (its model lands with #728); GCP now has a closed model (#729).
+        original = {"region": "us-east-2", "project_id": "acme"}
         cfg = load_root_config(
             write_config(
                 {
-                    "backend": "gcp",
+                    "backend": "aws",
                     "deployment": {"name": "shifter", "domain": "shifter.example.com"},
-                    "secrets": {"django_secret_key": "prompt"},
+                    "secrets": {"django_secret_key": "prompt", "db_password": "prompt"},
                     "settings": original,
                 }
             )

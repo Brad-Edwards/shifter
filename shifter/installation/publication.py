@@ -306,6 +306,14 @@ def _surface_incompatibilities(frozen: Mapping[str, Any], generated: Mapping[str
             )
         elif old_settings is not None and new_settings is None:
             breaking.append(f"backends.{name}.settings_schema: removed")
+        elif old_settings is None and isinstance(new_settings, Mapping):
+            # A backend that published ``settings_schema: null`` accepted any settings
+            # mapping; replacing it with a concrete schema narrows the operator-facing
+            # settings surface (previously-valid configs can now fail). That is a
+            # backward-incompatible change, not an additive one — publishing it within the
+            # same contract version would let a narrowing ship silently, so it requires a
+            # version bump + migration note just like a removed field.
+            breaking.append(f"backends.{name}.settings_schema: narrowed from accept-any (null) to a published schema")
     return breaking
 
 

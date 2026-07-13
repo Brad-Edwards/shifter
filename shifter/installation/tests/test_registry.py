@@ -43,14 +43,10 @@ def test_each_bundle_is_a_well_formed_backend_bundle(name):
     assert bundle.name == name
     assert bundle.contract_version in SUPPORTED_CONTRACT_VERSIONS
     assert bundle.supported_profiles == _EXPECTED_PROFILES[name]
-    # Provisional entries: per-backend settings / secret-reference enforcement lands with
-    # the migration issues, so the schema accepts any settings mapping and references for
-    # now.
-    assert bundle.settings_model is None
-    assert all(secret.reference_pattern is None for secret in bundle.required_secrets)
-    # A backend that ships today still declares the tools, secrets, checks, outputs, owned
-    # files, and capabilities it needs — the contract is machine-readable enough for
-    # validation and docs generation.
+    # A backend that ships today declares the tools, secrets, checks, outputs, owned files,
+    # and capabilities it needs — the contract is machine-readable enough for validation and
+    # docs generation. (The settings_model / reference_pattern maturity is backend-specific:
+    # see test_aws_bundle_is_still_provisional and test_gcp_bundle_is_complete.)
     assert bundle.required_tools
     assert bundle.required_secrets
     assert bundle.validation_checks
@@ -58,6 +54,24 @@ def test_each_bundle_is_a_well_formed_backend_bundle(name):
     assert bundle.capabilities
     assert bundle.generated_outputs
     assert bundle.owned_files.infrastructure
+
+
+def test_aws_bundle_is_still_provisional():
+    # AWS per-backend settings / secret-reference enforcement lands with #728, so the
+    # schema still accepts any settings mapping and any reference for now.
+    aws = BACKEND_BUNDLES["aws"]
+    assert aws.settings_model is None
+    assert all(secret.reference_pattern is None for secret in aws.required_secrets)
+
+
+def test_gcp_bundle_is_complete():
+    # #729 completed the GCP bundle: a closed settings model and an enforced secret
+    # reference grammar for the operator-supplied Django secret.
+    gcp = BACKEND_BUNDLES["gcp"]
+    assert gcp.settings_model is not None
+    assert gcp.settings_model.model_config.get("extra") == "forbid"
+    django = next(s for s in gcp.required_secrets if s.logical_name == "django_secret_key")
+    assert django.reference_pattern is not None
 
 
 def test_get_backend_bundle_round_trips():

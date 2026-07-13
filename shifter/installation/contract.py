@@ -51,7 +51,10 @@ _SHELL_METACHARACTERS = frozenset(";&|`$<>\n\r")
 #: Backend-contract shape versions this module understands. The backend contract is
 #: versioned independently of the root ``shifter.yaml`` (``RootConfig.version``) so a
 #: future metadata field can be added compatibly; an unknown version fails closed.
-SUPPORTED_CONTRACT_VERSIONS: tuple[int, ...] = (1,)
+#: Version 2 (#729) published the GCP bundle's closed settings schema — a narrowing of the
+#: GCP operator-facing settings surface (accept-any -> required/closed), which the
+#: MIGRATIONS.md compatibility rules require to be a version bump, not an additive change.
+SUPPORTED_CONTRACT_VERSIONS: tuple[int, ...] = (1, 2)
 
 #: The universal "supply this at deploy time" reference value: a ``secrets`` entry whose
 #: value is ``prompt`` declares the secret without committing a concrete reference; it is

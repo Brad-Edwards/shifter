@@ -13,8 +13,22 @@ is the authoritative parser for that file.
 | `aws` | `prod`, `dev` | `django_secret_key`, `db_password` |
 | `gcp` | `prod`, `dev` | `django_secret_key` |
 
-Both backend entries currently accept any `settings` mapping. Backend-specific
-setting keys are still enforced by the deployment path that consumes them.
+The `gcp` backend validates its `settings` against a closed model (#729): unknown
+keys fail fast. The `aws` backend still accepts any `settings` mapping until its
+migration (#728); its setting keys are enforced by the deployment path that consumes
+them.
+
+### GCP settings
+
+| Key | Required | Notes |
+| --- | --- | --- |
+| `project_id` | yes | GCP project id (6-30 chars, a lowercase letter then lowercase letters/digits/hyphens, no trailing hyphen). |
+| `region` | yes | GCP region/location, for example `us-central1`. |
+| `range_egress` | no | Provider-neutral range egress policy (`mode` + `allowed_cidrs`), shared with AWS. Omit for the `status-quo` default. |
+
+The GCP `django_secret_key` reference must be a Google Secret Manager resource name
+(`projects/<project>/secrets/<name>/versions/<version>`), a GitHub Actions secret
+name, an environment variable, or the literal `prompt`.
 
 ## Config File
 
