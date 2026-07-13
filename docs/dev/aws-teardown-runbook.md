@@ -150,6 +150,29 @@ These recur on a full portal destroy and are safe to resolve directly:
 
 ### Broader leftover sweep (resources that block a fresh apply)
 
+**Automated path (preferred).** The bootstrap CLI's `account-recovery` command now
+detects (and, with `--sweep`, deletes) most of this leftover set for you, instead of
+running the class-by-class `aws` commands below by hand:
+
+```bash
+# Read-only detection:
+./scripts/bootstrap/deploy.py account-recovery --env "$ENV" --profile <profile>
+# Detect and delete the owned leftovers:
+./scripts/bootstrap/deploy.py account-recovery --env "$ENV" --profile <profile> --sweep
+```
+
+It refuses to run against a live tenant, acts only on resources whose name and
+`Project=shifter` / `Environment=<env>` ownership tags both match, never touches
+data-bearing resources, and polls asynchronous Network Firewall deletes to
+convergence. It covers: AWS Budgets, RDS DB parameter groups, RDS event subscriptions,
+EventBridge Scheduler schedules, portal SSM parameters under `/shifter/<env>/portal`,
+ECR repositories, KMS aliases, and Network Firewall rule groups. See
+`scripts/bootstrap/README.md` for the full safety model.
+
+The classes `account-recovery` does NOT yet automate stay manual below and are marked
+_(manual)_: RDS DB subnet groups, the ElastiCache subnet group, EC2 key pairs, and
+security groups. Run those after `account-recovery` reports clean.
+
 The env stacks manage every resource below, so a clean `terraform destroy`
 removes them. They survive only when a stack destroy is abandoned partway (see
 the stalls above) or the `{uuid}` state bucket is deleted before a complete
@@ -179,13 +202,13 @@ double-quoted shell string does not trigger backtick command substitution.
     --query "DBParameterGroups[?starts_with(DBParameterGroupName, '$ENV-portal')].DBParameterGroupName" --output text
   aws rds delete-db-parameter-group --db-parameter-group-name <name>
   ```
-- **RDS DB subnet groups** (`<env>-portal-db-subnet`, `<env>-portal-guacamole-db-subnet`):
+- **RDS DB subnet groups** _(manual)_ (`<env>-portal-db-subnet`, `<env>-portal-guacamole-db-subnet`):
   ```bash
   aws rds describe-db-subnet-groups \
     --query "DBSubnetGroups[?starts_with(DBSubnetGroupName, '$ENV-portal')].DBSubnetGroupName" --output text
   aws rds delete-db-subnet-group --db-subnet-group-name <name>
   ```
-- **ElastiCache subnet group** (`<env>-portal-redis`):
+- **ElastiCache subnet group** _(manual)_ (`<env>-portal-redis`):
   ```bash
   aws elasticache describe-cache-subnet-groups \
     --query "CacheSubnetGroups[?starts_with(CacheSubnetGroupName, '$ENV-portal')].CacheSubnetGroupName" --output text
@@ -207,7 +230,7 @@ double-quoted shell string does not trigger backtick command substitution.
     --query 'Parameters[].Name' --output text | tr '\t' '\n' | \
     while read -r p; do [ -n "$p" ] && aws ssm delete-parameter --name "$p"; done
   ```
-- **EC2 key pairs** (`<env>-portal-ctfd-ssh`):
+- **EC2 key pairs** _(manual)_ (`<env>-portal-ctfd-ssh`):
   ```bash
   aws ec2 describe-key-pairs \
     --filters "Name=tag:Project,Values=shifter" "Name=tag:Environment,Values=$ENV" \
@@ -220,7 +243,7 @@ double-quoted shell string does not trigger backtick command substitution.
     --query "EventSubscriptionsList[?starts_with(CustSubscriptionId, '$ENV-portal')].CustSubscriptionId" --output text
   aws rds delete-event-subscription --subscription-name "$ENV-portal-db-backup-events"
   ```
-- **Security groups** (`<env>-portal*`, tagged `Project=shifter`). A leftover SG
+- **Security groups** _(manual)_ (`<env>-portal*`, tagged `Project=shifter`). A leftover SG
   usually lingers because an ENI still references it (the redis rotation SG stall
   above is the common case); delete it once the ENI is gone. Never delete a VPC
   `default` SG:
