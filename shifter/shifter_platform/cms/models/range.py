@@ -15,9 +15,17 @@ from django.db import models
 from cms.models.assets import AgentConfig
 from cms.models.lifecycle import apply_terminal_soft_delete
 from shared.db import SoftDeleteManager, SoftDeleteMixin, SoftDeleteQuerySet
-from shared.enums import RangeSource
+from shared.enums import RangeSource, ResourceStatus
 
 logger = logging.getLogger(__name__)
+
+# Name of the partial unique constraint enforcing at most one active range per
+# (user_id, range_source). Referenced by the migration that adds it and by the
+# CMS service layer, which translates a violation of *this* named constraint
+# into the authored "already have an active range" CMSError (#307). Keep the
+# name in one place so the migration, the model, and the translation cannot
+# drift apart.
+ACTIVE_RANGE_UNIQUE_CONSTRAINT = "uq_rangeinstance_active_per_user_source"
 
 
 class RangeInstance(SoftDeleteMixin, models.Model):
@@ -95,6 +103,21 @@ class RangeInstance(SoftDeleteMixin, models.Model):
         verbose_name = "Range Instance"
         verbose_name_plural = "Range Instances"
         base_manager_name = "all_objects"
+        constraints = [
+            # At most one active range per (user, source). "Active" mirrors
+            # ``cms.services.get_active_range``: a non-soft-deleted row whose
+            # status is not DESTROYING. Terminal DESTROYED/FAILED rows set
+            # ``deleted_at`` via ``save()`` and so leave the predicate; a range
+            # being torn down (DESTROYING) frees the slot for a new launch.
+            # This is the race-proof backstop behind the friendly service
+            # pre-check (#307); it is scoped per source so #450's Mission
+            # Control + CTF coexistence is preserved.
+            models.UniqueConstraint(
+                fields=["user_id", "range_source"],
+                condition=models.Q(deleted_at__isnull=True) & ~models.Q(status=ResourceStatus.DESTROYING.value),
+                name=ACTIVE_RANGE_UNIQUE_CONSTRAINT,
+            ),
+        ]
 
     def __str__(self):
         return f"Range {self.range_id}: {self.scenario_id}"

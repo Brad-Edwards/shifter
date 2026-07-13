@@ -404,6 +404,81 @@ class TestReassignSpareRecovery:
         assert recovery.failure_category == RecoveryFailureCategory.NO_COMPATIBLE_SPARE.value
 
     @pytest.mark.django_db
+    def test_reserve_before_teardown_leaves_old_range_intact_when_pool_exhausted(
+        self, event_with_scenario, rich_participant, second_participant_user, organizer_user
+    ):
+        """No-stranding (#307 review): when a competing recovery has taken the only
+        spare, this recovery fails at reservation BEFORE tearing down the old
+        range, so the participant keeps their old range rather than being left
+        with neither. The atomic claim (not a query-only check) is what closes
+        the consume-between-availability-and-attachment race."""
+        participant, old_range = rich_participant
+        competitor = CTFParticipant.objects.create(
+            event=event_with_scenario,
+            user=second_participant_user,
+            email=second_participant_user.email,
+            name="Competing Participant",
+            status=ParticipantStatus.ACTIVE.value,
+            registered_at=timezone.now(),
+        )
+        # The only spare is already claimed by the competing recovery.
+        spare, _spare_range = _make_pooled_spare(event_with_scenario, owner=second_participant_user)
+        spare.consumed_by = competitor
+        spare.consumed_at = timezone.now()
+        spare.status = SpareRangeStatus.CONSUMED.value
+        spare.save(update_fields=["consumed_by", "consumed_at", "status", "updated_at"])
+
+        with pytest.raises(CTFRangeError, match="No compatible spare"):
+            recover_participant_range(
+                participant.pk,
+                strategy=RecoveryStrategy.REASSIGN_SPARE.value,
+                operator=organizer_user,
+            )
+
+        # Reservation failed before teardown: the old range is neither destroying
+        # nor destroyed, and is still active for the participant.
+        old_range.refresh_from_db()
+        assert old_range.deleted_at is None
+        assert old_range.status not in {ResourceStatus.DESTROYING.value, ResourceStatus.DESTROYED.value}
+        assert EngineRange.resolve_active_for_instance(participant.user, old_range.instance_uuid) is not None
+
+    @pytest.mark.django_db
+    def test_spare_claim_rolls_back_atomically_on_failure(self, event_with_scenario, second_participant_user):
+        """The spare claim and the recovery-pointer write commit as one unit (#307
+        review): a failure after the claim rolls it back, so a spare is never left
+        CONSUMED with no durable pointer -- no pool-capacity leak, and a retry
+        re-claims cleanly rather than orphaning the first spare."""
+        from django.db import transaction
+
+        from ctf.services.range.recovery import _claim_spare
+
+        participant = CTFParticipant.objects.create(
+            event=event_with_scenario,
+            user=second_participant_user,
+            email=second_participant_user.email,
+            name="Claiming Participant",
+            status=ParticipantStatus.ACTIVE.value,
+            registered_at=timezone.now(),
+        )
+        spare_user = create_managed_spare_user()
+        spare, _spare_range = _make_pooled_spare(event_with_scenario, owner=spare_user)
+
+        class _SimulatedCrash(Exception):
+            pass
+
+        # _claim_spare must run inside the caller's transaction; _ensure_spare_reserved
+        # wraps the claim + pointer write together, so a crash in that window rolls
+        # the claim back. Simulate the crash right after the claim.
+        with pytest.raises(_SimulatedCrash), transaction.atomic():
+            claimed = _claim_spare(participant, spare.range_instance_id)
+            assert claimed is not None
+            raise _SimulatedCrash()
+
+        spare.refresh_from_db()
+        assert spare.consumed_by_id is None
+        assert spare.status == SpareRangeStatus.READY.value
+
+    @pytest.mark.django_db
     def test_reassign_spare_rejects_cross_event_range(
         self, event_with_scenario, rich_participant, second_participant_user, organizer_user
     ):
@@ -526,9 +601,12 @@ class TestIdempotentRetry:
         recovery = CTFRangeRecovery.objects.get(participant=participant)
         assert recovery.phase == RecoveryPhase.FAILED.value
         assert recovery.failure_category == RecoveryFailureCategory.OLD_RANGE_TEARDOWN_FAILED.value
-        # The spare was already reassigned before teardown failed.
+        # Reserve-before-teardown ordering (#307): the spare is durably reserved
+        # (its id recorded) before teardown, but ownership is not moved until
+        # after the old range is blocked -- so a teardown failure leaves the
+        # spare reserved yet not-yet-attached.
         assert recovery.replacement_range_instance_id == spare_range.pk
-        assert RangeInstance.objects.get(pk=spare_range.pk).user_id == participant.user_id
+        assert RangeInstance.objects.get(pk=spare_range.pk).user_id != participant.user_id
 
         # Retry: same call resumes and completes without re-reassigning the spare.
         result = recover_participant_range(
