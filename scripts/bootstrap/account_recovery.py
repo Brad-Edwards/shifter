@@ -37,12 +37,20 @@ Safety contract (from the #1472 design):
 from __future__ import annotations
 
 import json
+import time
 from dataclasses import dataclass, field
 from enum import StrEnum
 
 from bootstrap_core import confirm, error, get_aws_account_id, info, run_cmd, subheader, success, warn
 
 AWS_REGION = "us-east-2"
+
+# Bounded wait for the asynchronous Network Firewall rule-group delete to
+# converge before the sweep reports success (delete-rule-group returns while the
+# group is still DELETING). ~2.5 minutes total; a still-present group after that
+# is reported FAILED so the idempotent sweep can be re-run.
+_NFW_DELETE_POLL_ATTEMPTS = 30
+_NFW_DELETE_POLL_DELAY_SECONDS = 5
 
 # Provider default_tags that mark a resource as Terraform-owned for an env.
 _OWNER_PROJECT = ("Project", "shifter")
@@ -108,31 +116,51 @@ class RecoveryReport:
         for f in self.findings:
             suffix = f" ({f.detail})" if f.detail else ""
             lines.append(f"  {symbol[f.action]} {f.resource_class}: {f.identifier}{suffix}")
-        actionable = len(self.actionable)
-        verdict = "clean" if actionable == 0 else f"{actionable} leftover(s)"
+        would_delete = sum(1 for f in self.findings if f.action is Action.WOULD_DELETE)
+        deleted = sum(1 for f in self.findings if f.action is Action.DELETED)
+        parts: list[str] = []
+        if would_delete:
+            parts.append(f"{would_delete} leftover(s)")
+        if deleted:
+            parts.append(f"{deleted} deleted")
         if self.blocked:
-            verdict += f", {len(self.blocked)} blocked (ownership unproven)"
+            parts.append(f"{len(self.blocked)} blocked (ownership unproven)")
         if self.failures:
-            verdict += f", {len(self.failures)} failed"
-        lines.append(f"Result: {verdict}")
+            parts.append(f"{len(self.failures)} check(s) failed")
+        lines.append(f"Result: {', '.join(parts) if parts else 'clean'}")
         return "\n".join(lines)
 
 
-def _aws_json(args: list[str], profile: str) -> dict | list | None:
+class AwsQueryError(RuntimeError):
+    """A read-only AWS discovery query failed, so its result is unknown.
+
+    Distinguishes a genuine failure (permissions, throttling, wrong region) from
+    an empty-but-successful listing, so a failed check is never silently reported
+    as a clean/absent resource, i.e. a false "the account is clean" certification
+    (codex review, #1639).
+    """
+
+
+def _aws_json(args: list[str], profile: str) -> dict | list:
     """Run a read-only ``aws ... --output json`` query and parse the result.
 
-    Returns ``None`` on a non-zero exit (for example a not-found error), so a
-    missing resource reads as "absent" rather than raising. Never raises on the
-    detection path; callers treat ``None``/empty as "nothing here".
+    Raises :class:`AwsQueryError` on a non-zero exit or unparseable output. A
+    successful-but-empty listing returns valid empty JSON (for example
+    ``{"Budgets": []}``), so "nothing here" and "could not check" are never
+    conflated: an errored discovery must surface as a failed check, not as
+    "absent".
     """
     cmd = ["aws", "--profile", profile, "--region", AWS_REGION, *args, "--output", "json"]
     result = run_cmd(cmd, capture=True, check=False, profile=None)
-    if result is None or result.returncode != 0 or not result.stdout.strip():
-        return None
+    if result is None or result.returncode != 0:
+        rc = getattr(result, "returncode", "n/a")
+        raise AwsQueryError(f"`aws {' '.join(args)}` failed (exit {rc})")
+    if not result.stdout.strip():
+        raise AwsQueryError(f"`aws {' '.join(args)}` returned no output")
     try:
         return json.loads(result.stdout)
-    except json.JSONDecodeError:
-        return None
+    except json.JSONDecodeError as exc:
+        raise AwsQueryError(f"`aws {' '.join(args)}` returned unparseable JSON") from exc
 
 
 def _tags_owned_by_env(tags: dict[str, str], environment: str) -> bool:
@@ -189,9 +217,18 @@ class _TaggedHandler(ResourceHandler):
         raise NotImplementedError
 
     def detect(self, environment: str, account_id: str, profile: str) -> list[LeftoverFinding]:
+        # A failed _list() raises AwsQueryError and propagates to detect_leftovers,
+        # which records the whole class as a failed check (never silently "absent").
         findings: list[LeftoverFinding] = []
         for identifier, arn in self._list(profile):
-            tags = self._fetch_tags(arn, profile)
+            try:
+                tags = self._fetch_tags(arn, profile)
+            except AwsQueryError:
+                # Ownership cannot be proven -> fail closed: surface it, never delete.
+                findings.append(
+                    LeftoverFinding(self.resource_class, identifier, Action.BLOCKED, "ownership check failed")
+                )
+                continue
             if _tags_owned_by_env(tags, environment):
                 findings.append(LeftoverFinding(self.resource_class, identifier, Action.WOULD_DELETE))
         return findings or self._absent()
@@ -305,11 +342,52 @@ class NetworkFirewallRuleGroupHandler(_TaggedHandler):
 
     def detect(self, environment: str, account_id: str, profile: str) -> list[LeftoverFinding]:
         # Override to carry the ARN as the identifier (delete addresses by ARN).
+        # A failed _list() raises and propagates to detect_leftovers (failed check).
         findings: list[LeftoverFinding] = []
         for _name, arn in self._list(profile):
-            if _tags_owned_by_env(self._fetch_tags(arn, profile), environment):
+            try:
+                tags = self._fetch_tags(arn, profile)
+            except AwsQueryError:
+                findings.append(LeftoverFinding(self.resource_class, arn, Action.BLOCKED, "ownership check failed"))
+                continue
+            if _tags_owned_by_env(tags, environment):
                 findings.append(LeftoverFinding(self.resource_class, arn, Action.WOULD_DELETE))
         return findings or self._absent()
+
+    def delete(self, finding: LeftoverFinding, profile: str, dry_run: bool) -> Action:
+        # Network Firewall deletes are ASYNCHRONOUS: delete-rule-group only starts
+        # the delete and the group lingers in DELETING for a while. Returning
+        # DELETED immediately would let a following apply collide with a
+        # still-present group (#1639 codex review), so wait for it to actually go
+        # away before reporting success.
+        arn = finding.identifier
+        cmd = [
+            "aws",
+            "--profile",
+            profile,
+            "--region",
+            AWS_REGION,
+            "network-firewall",
+            "delete-rule-group",
+            "--rule-group-arn",
+            arn,
+        ]
+        result = run_cmd(cmd, dry_run=dry_run, check=False, profile=None)
+        if dry_run:
+            return Action.WOULD_DELETE
+        if result is None or result.returncode != 0:
+            return Action.FAILED
+        return self._await_deletion(arn, profile)
+
+    def _await_deletion(self, arn: str, profile: str) -> Action:
+        """Poll until the rule group is gone; describe errors once it is deleted."""
+        for _ in range(_NFW_DELETE_POLL_ATTEMPTS):
+            try:
+                _aws_json(["network-firewall", "describe-rule-group", "--rule-group-arn", arn], profile)
+            except AwsQueryError:
+                return Action.DELETED  # describe fails once the group no longer exists
+            time.sleep(_NFW_DELETE_POLL_DELAY_SECONDS)
+        return Action.FAILED  # still present after the bounded wait; re-run to retry
 
 
 class KmsAliasHandler(ResourceHandler):
@@ -449,7 +527,13 @@ def detect_leftovers(
     account_id = get_aws_account_id(profile)
     report = RecoveryReport(account_id=account_id, environment=environment, region=AWS_REGION)
     for handler in handlers or HANDLERS:
-        report.findings.extend(handler.detect(environment, account_id, profile))
+        try:
+            report.findings.extend(handler.detect(environment, account_id, profile))
+        except AwsQueryError as exc:
+            # A failed discovery is recorded as a FAILED check, never dropped or
+            # silently treated as "absent" (which would false-certify the account
+            # as clean). The orchestrator refuses to sweep when any check failed.
+            report.findings.append(LeftoverFinding(handler.resource_class, "(check failed)", Action.FAILED, str(exc)))
     return report
 
 
@@ -491,14 +575,17 @@ def tenant_is_live(environment: str, profile: str) -> bool:
     "this is not a fresh account" signal.
 
     Fails CLOSED: if the liveness queries cannot be evaluated (an API error, so
-    :func:`_aws_json` returns ``None``), the account is treated as live so a
-    destructive sweep is never authorized on an account we cannot confirm is
-    torn down. An empty account returns valid empty lists (not ``None``), so a
+    :func:`_aws_json` raises :class:`AwsQueryError`), the account is treated as
+    live so a destructive sweep is never authorized on an account we cannot
+    confirm is torn down. An empty account returns valid empty lists, so a
     genuinely clean account is correctly treated as not-live.
     """
-    asgs = _aws_json(["autoscaling", "describe-auto-scaling-groups"], profile)
-    if asgs is None:
+    try:
+        asgs = _aws_json(["autoscaling", "describe-auto-scaling-groups"], profile)
+        dbs = _aws_json(["rds", "describe-db-instances"], profile)
+    except AwsQueryError:
         return True  # cannot confirm -> fail closed
+
     for asg in asgs.get("AutoScalingGroups", []) if isinstance(asgs, dict) else []:
         name = asg.get("AutoScalingGroupName", "")
         if (name.startswith(f"{environment}-portal") or name.startswith(f"shifter-{environment}")) and asg.get(
@@ -506,9 +593,6 @@ def tenant_is_live(environment: str, profile: str) -> bool:
         ):
             return True
 
-    dbs = _aws_json(["rds", "describe-db-instances"], profile)
-    if dbs is None:
-        return True  # cannot confirm -> fail closed
     for db in dbs.get("DBInstances", []) if isinstance(dbs, dict) else []:
         ident = db.get("DBInstanceIdentifier", "")
         if ident.startswith(f"{environment}-") or ident.startswith(f"shifter-{environment}"):
@@ -538,6 +622,16 @@ def account_recovery(environment: str, profile: str, *, sweep: bool, dry_run: bo
 
     report = detect_leftovers(environment, profile)
     info(report.render())
+
+    if report.failures:
+        # A discovery call failed, so detection is incomplete: the account cannot
+        # be certified clean and a sweep would run on a partial picture. Fail loud
+        # and refuse to sweep (#1639 codex review).
+        warn(
+            f"{len(report.failures)} discovery check(s) failed; detection is incomplete and the account cannot be "
+            "certified clean. Refusing to sweep. Fix access/credentials and re-run."
+        )
+        return report
 
     if not report.actionable:
         success("No state-absent leftovers detected; the account is clean for a standup.")
