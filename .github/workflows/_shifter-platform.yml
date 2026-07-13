@@ -63,10 +63,6 @@ on:
         required: false
       SMOKE_TEST_USER_EMAIL:
         required: false
-      SMOKE_LINUX_AGENT_ID:
-        required: false
-      SMOKE_WINDOWS_AGENT_ID:
-        required: false
 
 jobs:
   plan:
@@ -1426,8 +1422,6 @@ jobs:
       AWS_REGION: us-east-2
       ENV: ${{ inputs.environment }}
       SMOKE_TEST_USER_EMAIL: ${{ secrets.SMOKE_TEST_USER_EMAIL }}
-      SMOKE_LINUX_AGENT_ID: ${{ secrets.SMOKE_LINUX_AGENT_ID }}
-      SMOKE_WINDOWS_AGENT_ID: ${{ secrets.SMOKE_WINDOWS_AGENT_ID }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
