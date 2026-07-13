@@ -20,6 +20,7 @@ from cms.models import AcesPackageSource, Scenario
 from cms.scenarios.registry import get_catalog_entry
 from cms.services import PackRegistrationRequest, register_pack
 from risk_register.models import AuditLog
+from shared.audit import AuditAction, AuditEntityType
 
 User = get_user_model()
 
@@ -88,7 +89,7 @@ class TestRegisterPackHappyPath:
 
     def test_records_audit_event(self, staff_user, repo_pack):
         register_pack(user=staff_user, request=_request(repo_pack))
-        entries = AuditLog.objects.filter(entity_type=AuditLog.EntityType.SCENARIO, action=AuditLog.Action.CREATE)
+        entries = AuditLog.objects.filter(entity_type=AuditEntityType.SCENARIO, action=AuditAction.CREATE)
         assert any(FIXTURE_PACK_NAME in str(e.new_state) for e in entries)
 
 

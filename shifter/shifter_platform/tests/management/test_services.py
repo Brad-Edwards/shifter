@@ -21,6 +21,10 @@ from django.utils import timezone
 from management import services
 from management.models import ActivityLog, UserProfile
 from risk_register.models import AuditLog
+from shared.audit import (
+    AuditAction,
+    AuditEntityType,
+)
 from shared.constants import USER_CANNOT_BE_NONE
 
 pytestmark = pytest.mark.django_db
@@ -123,7 +127,7 @@ class TestMarkUserDeleted:
         profile = UserProfile.objects.get(user=user)
         assert profile.deleted_at is not None
         assert AuditLog.objects.filter(
-            entity_type=AuditLog.EntityType.USER, entity_id=user.id, action=AuditLog.Action.DELETE
+            entity_type=AuditEntityType.USER, entity_id=user.id, action=AuditAction.DELETE
         ).exists()
 
     def test_idempotent_when_already_deleted(self, caplog):
@@ -142,7 +146,7 @@ class TestMarkUserDeleted:
         user = _user("markdel3")
         admin = _user("markdel-admin")
         services.mark_user_deleted(user, admin_user=admin)
-        row = AuditLog.objects.get(entity_type=AuditLog.EntityType.USER, entity_id=user.id)
+        row = AuditLog.objects.get(entity_type=AuditEntityType.USER, entity_id=user.id)
         assert row.actor_id == admin.id
 
     def test_raises_typeerror_for_none_user(self):

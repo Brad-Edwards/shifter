@@ -53,9 +53,19 @@ but should not become a second runner IaC root.
   or generated backend files. The token is single-use and short-lived; storing
   it increases exposure without improving restartability.
 - Do not embed the token in a shell command line visible to process listings on
-  the runner host. Prefer feeding it to the remote registration script through
-  stdin or a root-owned temporary file, then deleting it before `svc.sh` starts.
-  The remote script must run with shell tracing disabled around token handling.
+  the runner host (this rules out `config.sh --unattended --token <TOKEN>`,
+  which would place the token on `config.sh`'s argv). Feed it to the remote
+  registration script through a root-owned temporary file, then delete it before
+  `svc.sh` starts. The remote script must run with shell tracing disabled around
+  token handling, and a trap must remove the temp file on any exit so it never
+  lingers.
+- `config.sh` reads its registration-token prompt through a console-only masked
+  reader, so it must run under a PTY (via `expect`) rather than over redirected
+  stdin, which fails with "Cannot read keys ... console input has been
+  redirected" on current runner releases. `expect` waits for the token prompt,
+  then sends the token read from the root-owned file, keeping the token off
+  both `config.sh`'s and `expect`'s argv. The runner host therefore needs
+  `expect` installed at boot (runner root user_data).
 - Build SSM `--parameters` as JSON in one argv element, matching the
   `scripts/portal_deploy/portal_deploy.py` precedent and ADR-010's remote SSM
   boundary guidance. Do not use shorthand `commands=[...]` or shell-escaped

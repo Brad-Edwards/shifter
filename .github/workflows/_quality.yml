@@ -192,7 +192,12 @@ jobs:
     if: ${{ (needs.paths.outputs.run_all == 'true' || needs.paths.outputs.adr_guard == 'true') }}
     runs-on: ubuntu-latest
     steps:
+      # fetch-depth: 0 fetches base-branch history so git-reference guards
+      # (boundary-mock-policy, published-contract-snapshots-immutable) can
+      # resolve the merge base and enforce rather than fail open on a shallow clone.
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          fetch-depth: 0
 
       # The self-hosted runner ships with Python 3.9, but `adr_guard.py`
       # imports the stdlib `tomllib` module added in 3.11. `uv` brings its
@@ -224,6 +229,9 @@ jobs:
           "${RUNNER_TEMP}/helm-bin/helm" version --short
 
       - name: Run ADR guard
+        env:
+          # Fail closed on the git-reference immutability guard now that base history is fetched.
+          ADR_GUARD_SNAPSHOT_ENFORCE: "1"
         run: |
           uv run --python 3.11 --with 'pyyaml==6.0.2' \
             python scripts/adr_guard/adr_guard.py --all --level ci
@@ -323,6 +331,15 @@ jobs:
         run: |
           python3 scripts/check_tf_runner_network/check_tf_runner_network.py
 
+      # ADR-008 / issue #1546: the GCP-native self-hosted runner must live in a
+      # dedicated custom-mode VPC (never the project default network) and admit
+      # SSH only from Google's IAP range. Mirrors the check-tf-gcp-runner-network
+      # pre-commit hook so a commit that skipped pre-commit cannot weaken the
+      # runner network isolation.
+      - name: Run check-tf-gcp-runner-network
+        run: |
+          python3 scripts/check_tf_gcp_runner_network/check_tf_gcp_runner_network.py
+
       # Issue #1178: the shared range guest instance role must not grant SSM
       # Parameter Store access on a Resource that wildcards the environment or
       # range segment (parameter/shifter/*/range/*). Mirrors the
@@ -394,6 +411,7 @@ jobs:
           python3 -m unittest scripts.check_tf_rds_security.test_check_tf_rds_security
           python3 -m unittest scripts.check_portal_target_sg_sources.test_check_portal_target_sg_sources
           python3 -m unittest scripts.check_tf_runner_network.test_check_tf_runner_network
+          python3 -m unittest scripts.check_tf_gcp_runner_network.test_check_tf_gcp_runner_network
           python3 -m unittest scripts.check_tf_gcp_iam_resource_scope.test_check_tf_gcp_iam_resource_scope
 
   # ===========================================================================

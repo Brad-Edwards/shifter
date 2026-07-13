@@ -707,6 +707,7 @@ resource "aws_launch_template" "this" {
   user_data = base64gzip(templatefile("${path.module}/user_data.sh", {
     aws_region                 = var.aws_region
     django_environment         = local.django_environment
+    cloud_provider             = var.cloud_provider
     ecr_repository_url         = var.ecr_repository_url
     log_group_name             = local.log_group_name
     ssm_parameter_store_prefix = var.ssm_parameter_store_prefix
@@ -873,6 +874,7 @@ resource "aws_instance" "this" {
   user_data_base64 = base64gzip(templatefile("${path.module}/user_data.sh", {
     aws_region                 = var.aws_region
     django_environment         = local.django_environment
+    cloud_provider             = var.cloud_provider
     ecr_repository_url         = var.ecr_repository_url
     log_group_name             = local.log_group_name
     ssm_parameter_store_prefix = var.ssm_parameter_store_prefix

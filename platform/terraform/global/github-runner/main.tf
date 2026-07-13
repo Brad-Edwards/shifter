@@ -346,8 +346,19 @@ resource "aws_instance" "runner" {
     # but that script identifies AL2023 as bare "fedora" and bails out, so
     # we install them ourselves at boot to avoid a manual second pass.
     dnf update -y
+    # `expect` drives the Actions runner registration: config.sh reads its
+    # masked registration-token prompt from a console, so registration runs it
+    # under a PTY (see scripts/bootstrap/runner.py) rather than over redirected
+    # stdin.
     dnf install -y docker git jq tar unzip python3.12 python3.12-pip python3.12-devel nodejs npm \
-                   libicu krb5-libs zlib lttng-ust openssl-libs
+                   libicu krb5-libs zlib lttng-ust openssl-libs expect
+
+    # GitHub CLI (gh) is not in the AL2023 default repos, but deploy jobs that
+    # run on these runners invoke `gh` (e.g. _shifter-engine.yml Deploy), so
+    # install it from the official gh-cli repo at boot.
+    dnf install -y 'dnf-command(config-manager)'
+    dnf config-manager --add-repo https://cli.github.com/packages/rpm/gh-cli.repo
+    dnf install -y gh
 
     # Start Docker
     systemctl enable --now docker

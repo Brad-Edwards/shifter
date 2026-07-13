@@ -73,11 +73,28 @@ The following principles are binding:
   between the two is what produced the dev == deploy conflation.
 
 - **The CI runner fleet is development-plane and must not live in a
-  deploy-target account.** The mechanism that deploys or bakes for an
-  environment must never be a resource whose lifecycle is coupled to that
+  product/operator deploy-target account.** The mechanism that deploys or bakes
+  for an environment must never be a resource whose lifecycle is coupled to that
   environment. Operator install/bake provisions its own ephemeral compute inside
   the operator tenant; the maintainer runner fleet lives in maintainer/CI
   infrastructure, isolated from the environments it acts on.
+
+  **Dev-tenant amendment (#1546).** The only deployments that exist today are
+  maintainer-owned *dev tenants* (there is no product deployment model yet), and
+  the current bootstrap is itself a dev-tenant deploy mechanism. For those dev
+  tenants the binding invariant is **cross-tenant containment**: a GCP dev tenant
+  must run its own CI/deploy rather than borrowing the AWS fleet, and neither dev
+  tenant may assume the other exists. A self-contained per-tenant runner MAY live
+  in that tenant's own project provided (a) it is a dedicated, re-creatable
+  Terraform execution root whose state prefix is separate from the platform root,
+  so a platform destroy never removes it, and (b) the deploy mechanism itself
+  remains the repo's bootstrap CLI (`scripts/bootstrap`, `deploy.py runners`),
+  not tenant-resident state. This preserves R2's rationale — teardown never
+  removes the deploy mechanism — because the mechanism lives in the repo and the
+  runner is re-creatable by it. The GCP runner network isolation is enforced by
+  ADR-008-R8. When a real product deployment model lands, product/operator
+  deploy-targets revert to the original "maintainer-isolated or ephemeral"
+  requirement.
 
 - **Ingestion is entitlement-blind (see ADR-034).** Whether and how an operator
   is entitled to a piece of content is resolved at *acquisition*, outside the

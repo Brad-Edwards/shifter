@@ -13,18 +13,22 @@ import logging
 import os
 from typing import Any
 
+from shared.range_cells import build_gcp_vm_range_cell_request
+
 from catalog.instances import (
     _get_dc_instance_type,
     _get_kali_instance_type,
     _get_victim_instance_type,
     _get_windows_instance_type,
 )
+from cloud.exceptions import CloudProviderNotImplementedError
 from config import (
     generate_presigned_url,
     get_range_availability_zone,
     is_gce_range_cell_backend,
     load_aws_polaris_agent_config,
     load_range_network_config,
+    resolve_cloud_provider,
     resolve_ngfw_attachment_config,
 )
 from provisioner_ami import get_ami_id
@@ -56,17 +60,20 @@ def _resolve_instance_type(role: str, tf_os_type: str, override: str | None) -> 
     """
     if override:
         return override
-    if os.environ.get("CLOUD_PROVIDER", "aws").lower() == "gcp":
+    provider = resolve_cloud_provider()
+    if provider == "gcp":
         return ""
-    if role == "attacker":
-        resolved = _get_kali_instance_type()
-    elif role == "dc":
-        resolved = _get_dc_instance_type()
-    elif tf_os_type == "windows":
-        resolved = _get_windows_instance_type()
-    else:
-        resolved = _get_victim_instance_type()
-    return resolved
+    if provider == "aws":
+        if role == "attacker":
+            resolved = _get_kali_instance_type()
+        elif role == "dc":
+            resolved = _get_dc_instance_type()
+        elif tf_os_type == "windows":
+            resolved = _get_windows_instance_type()
+        else:
+            resolved = _get_victim_instance_type()
+        return resolved
+    raise CloudProviderNotImplementedError(provider)
 
 
 def _range_egress_mode() -> str:
@@ -283,73 +290,63 @@ def _build_range_terraform_variables(
         "subnets": tf_subnets,
     }
 
-    if _get_cloud_provider() == "gcp":
+    provider = _get_cloud_provider()
+    if provider == "gcp":
         if ngfw_attachment:
             variables["ngfw_attachment"] = ngfw_attachment
         return variables
 
-    variables.update(_build_aws_extra_tf_variables())
-    variables.update(_build_aws_polaris_agent_tf_variables(_range_has_polaris_vm_instance(range_spec)))
-    return variables
+    if provider == "aws":
+        variables.update(_build_aws_extra_tf_variables())
+        variables.update(_build_aws_polaris_agent_tf_variables(_range_has_polaris_vm_instance(range_spec)))
+        return variables
+
+    raise CloudProviderNotImplementedError(provider)
 
 
-def _build_gce_range_cell_instance(inst: dict[str, Any]) -> dict[str, Any]:
-    """Map one spec instance into the provider-neutral GCE range-cell shape.
-
-    The GCE range-cell backend consumes scenario intent (role, os_type,
-    ami_key, dc_config) and resolves the Compute Engine image, machine size,
-    and host access at its own profile seam. The scenario's AWS ``instance_type``
-    is carried informationally only; GCE never uses it as a machine type.
-    """
-    return {
-        "uuid": inst.get("uuid", ""),
-        "name": inst.get("name", ""),
-        "role": inst.get("role", "victim"),
-        "os_type": inst.get("os_type", inst.get("os", "ubuntu")),
-        "ami_key": inst.get("ami_key", ""),
-        "instance_type": inst.get("instance_type", ""),
-        "join_domain": inst.get("join_domain", False),
-        "dc_config": inst.get("dc_config", {}),
-    }
-
-
-def _build_gce_range_cell_subnets(spec_subnets: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Translate spec subnets+instances into the GCE range-cell nested format."""
-    return [
+def _build_gce_range_cell_variables(
+    request_id: str,
+    range_id: int,
+    range_spec: dict[str, Any],
+    scenario_artifact: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Build the closed GCE VM-cell request around an opaque scenario artifact."""
+    if scenario_artifact is None:
+        raise RuntimeError("GCP/GCE range cells require a digest-bound scenario artifact")
+    bindings = [
         {
-            "name": subnet.get("name", ""),
-            "uuid": subnet.get("uuid", ""),
+            "subnet_ref": subnet.get("uuid", ""),
             "cidr": subnet.get("cidr", ""),
-            "connected_to": subnet.get("connected_to", []),
-            "instances": [_build_gce_range_cell_instance(inst) for inst in subnet.get("instances", [])],
         }
-        for subnet in spec_subnets
+        for subnet in range_spec.get("subnets", [])
+        if subnet.get("cidr")
     ]
+    payload = scenario_artifact.get("payload", {})
+    access_declarations = payload.get("participant_access", []) if isinstance(payload, dict) else []
+    return build_gcp_vm_range_cell_request(
+        request_id=request_id,
+        range_id=range_id,
+        scenario_artifact=scenario_artifact,
+        network_bindings=bindings,
+        access_declarations=access_declarations,
+    )
 
 
-def _build_gce_range_cell_variables(request_id: str, range_id: int, range_spec: dict[str, Any]) -> dict[str, Any]:
-    """Build provider-neutral variables for the GCE range-cell backend.
-
-    Unlike the AWS Terraform variables, this preserves scenario intent
-    (``ami_key``, ``os_type``, ``dc_config``) so the GCE plan can translate it
-    to Compute Engine profiles at its own seam instead of receiving
-    AWS-translated ``ami_id``/``instance_type`` shapes.
-    """
-    return {
-        "range_id": range_id,
-        "request_uuid": request_id,
-        "subnets": _build_gce_range_cell_subnets(range_spec.get("subnets", [])),
-    }
-
-
-def build_range_variables(request_id: str, range_id: int, user_id: int, range_spec: dict[str, Any]) -> dict[str, Any]:
+def build_range_variables(
+    request_id: str,
+    range_id: int,
+    user_id: int,
+    range_spec: dict[str, Any],
+    *,
+    scenario_artifact: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """Return backend-appropriate range variables.
 
-    Routes to the provider-neutral GCE range-cell shape when the GCE backend is
+    Routes to the closed GCE range-cell shape when the GCE backend is
     active, otherwise the AWS Terraform variables. This is the single seam the
     range provision/destroy paths call so the GCE backend never receives
     AWS-translated instance shapes.
     """
     if is_gce_range_cell_backend():
-        return _build_gce_range_cell_variables(request_id, range_id, range_spec)
+        return _build_gce_range_cell_variables(request_id, range_id, range_spec, scenario_artifact)
     return _build_range_terraform_variables(request_id, range_id, user_id, range_spec)

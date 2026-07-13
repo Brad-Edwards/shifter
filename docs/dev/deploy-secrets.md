@@ -57,8 +57,6 @@ missing required secret fails the deploy up front rather than mid-run.
 | `TF_VARS_DEV_PORTAL` | `scripts/sync-deploy-secrets.sh --env dev` | yes | Portal stack `local.auto.tfvars` payload (domain, email, buckets, capacity). |
 | `SHIFTER_CONFIG_DEV_RANGE` | `scripts/sync-deploy-secrets.sh --env dev --stack config --shifter-config ./shifter.yaml` | yes | Deployment `shifter.yaml`; its `settings.range_egress` renders the range egress allowlist. |
 | `SMOKE_TEST_USER_EMAIL` | manual | no | Post-deploy smoke user. See [Post-deploy smoke secrets](#post-deploy-smoke-secrets-dev). |
-| `SMOKE_LINUX_AGENT_ID` | manual | no | Uploaded-agent id. See [Post-deploy smoke secrets](#post-deploy-smoke-secrets-dev). |
-| `SMOKE_WINDOWS_AGENT_ID` | manual | no | Uploaded-agent id. See [Post-deploy smoke secrets](#post-deploy-smoke-secrets-dev). |
 | `PLATFORM_BOOTSTRAP_STAFF_EMAILS` | manual | no | Comma-separated emails elevated to Django `is_staff` on first sign-in. Shared across all environments including prod. |
 | `PLATFORM_BOOTSTRAP_SUPERUSER_EMAILS` | manual | no | Comma-separated emails elevated to `is_superuser`. Shared across all environments including prod. |
 | `SONAR_TOKEN` | manual | no | SonarCloud analysis token for the PR quality gate. Repository-wide, not per-environment. |
@@ -150,13 +148,20 @@ above, plus the following:
 | `GCP_PACKER_SERVICE_ACCOUNT` | variable | no | Service account the builder VM runs as. Falls back to `GCP_SERVICE_ACCOUNT`. |
 | `GCP_PACKER_MACHINE_TYPE` | variable | no | Builder machine type. Default `e2-standard-2`. |
 | `GCP_PACKER_USE_INTERNAL_IP` | variable | no | `true` builds without an external IP (requires IAP `35.235.240.0/20` to the builder). Default `false`. |
+| `GCP_VALIDATE_MACHINE_TYPE` | variable | no | Machine type for the `packer-gcp-validate.yml` disposable validation VM. Default `e2-standard-4`. |
 | `GCP_GDC_VM_IMAGE_BUCKET` | variable | for export | GCS bucket the built image is exported into as a `gs://` qcow2 for the GDC VM Runtime (Terraform output `gdc_vm_image_bucket`). The export step fails loud if unset. See `docs/architecture/gcp-guest-images.md`. |
-| `GCP_POLARIS_STACK_BUCKET` | variable | polaris-vm | GCS bucket holding the Polaris compose-stack tarball (`<bucket>/polaris/stack/polaris-stack.tar.gz`). The `polaris-vm` build's `host-setup.sh` fetches it and `docker compose build`s the stack into the image; empty leaves the host range-ready without the stack baked. The packer builder SA needs `roles/storage.objectViewer` on the bucket. See "Baking the polaris-vm host image" in `docs/dev/gcp-range-cell-deploy.md`. |
+| `GCP_POLARIS_STACK_BUCKET` | variable | polaris-vm | GCS bucket holding the Polaris compose-stack tarball (`<bucket>/polaris/stack/polaris-stack.tar.gz`). The `polaris-vm` build's `host-setup.sh` fetches it and `docker compose build`s the stack into the image. **Required for a promotable `polaris-vm`:** the build fails if the stack is absent. The packer builder SA needs `roles/storage.objectViewer` on the bucket. See "Baking the polaris-vm host image" in `docs/dev/gcp-range-cell-deploy.md`. |
+| `GCP_POLARIS_STACK_SHA256` | variable | polaris-vm | Required sha256 digest of the compose-stack tarball; the `polaris-vm` build verifies the fetched tarball and fails on mismatch, so a mutable GCS key cannot change what is baked. |
+| `GCP_POLARIS_STACK_GENERATION` | variable | no | Optional GCS object generation to pin the exact immutable tarball version (`gs://bucket/key#generation`). |
 | `GCP_DEV_PROJECT_ID` | secret | for promote | Source (dev) project for `packer-gcp-promote.yml`; the prod project is the `prod` environment's `GCP_PROJECT_ID`. |
 
 Images are published to the image family `shifter-<type>` (the version pointer;
-there is no SSM equivalent). For Windows/DC, the workflow generates a throwaway
-`winrm_bootstrap_password` per run and injects it via `PKR_VAR_*`; nothing is
+there is no SSM equivalent). A built dev image must pass the
+`packer-gcp-validate.yml` candidate-boot gate (which labels it
+`validated=passed`) before `packer-gcp-promote.yml` will copy that exact image to
+prod. For Windows/DC, the workflow generates a throwaway `winrm_bootstrap_password`
+per run and injects it via `PKR_VAR_*`; the pre-promoted `dc-prebaked` build also
+generates a per-run DSRM password (`PKR_VAR_dc_dsrm_password`). Nothing is
 committed.
 
 ## AWS portal (`dev` / `prod`)
@@ -344,28 +349,21 @@ egress. The assertion is a no-op when inspection is off.
 ### Post-deploy smoke secrets (dev)
 
 The dev `post-deploy-smoke` job in `.github/workflows/_shifter-platform.yml`
-runs `scripts/smoke-test.sh`, which provisions a range as a smoke user and
-attaches Cortex agents. It runs only for dev applies and is
-`continue-on-error`, so a smoke failure does not fail the deploy; instead the
-job opens a `[smoke-test]` bug issue (labels `bug`, `smoke-test`). These three
-secrets are set manually and are not written by bootstrap or
-`sync-deploy-secrets.sh`.
+runs `scripts/smoke-test.sh`, which provisions a minimal range as a smoke user,
+verifies guest connectivity, and tears it down. It runs only for dev applies and
+is `continue-on-error`, so a smoke failure does not fail the deploy; instead the
+job opens a `[smoke-test]` bug issue (labels `bug`, `smoke-test`).
+
+The smoke validates the **platform**, not scenario content: its ranges are built
+entirely from base range AMIs (`smoke_linux` = Kali + Ubuntu, `smoke_windows` =
+Kali + plain Windows, all `xdr_agent: false`), so it requires **no XDR agent and
+no `SMOKE_*_AGENT_ID` secrets** (#1422). XDR/agent install is scenario content
+and is exercised by real scenarios, not the smoke. Only one secret is needed,
+set manually (not written by bootstrap or `sync-deploy-secrets.sh`):
 
 | Name | Kind | Required | Notes |
 |---|---|---|---|
 | `SMOKE_TEST_USER_EMAIL` | secret | yes (dev smoke) | Email of the portal user the smoke provisions as. If the user does not exist yet it is created on first run. When unset, the smoke step fails loud before doing any work. |
-| `SMOKE_LINUX_AGENT_ID` | secret | yes (dev smoke) | Numeric id of an uploaded Linux Cortex agent config owned by the smoke user. |
-| `SMOKE_WINDOWS_AGENT_ID` | secret | yes (dev smoke) | Numeric id of an uploaded Windows Cortex agent config owned by the smoke user. |
-
-The agent ids are database ids returned by the Mission Control agent-upload
-flow, not values you can invent. To obtain them, sign in to the portal as the
-smoke user, upload a Linux and a Windows Cortex agent installer through the
-agent-upload UI, and record the `agent_id` each upload returns. The installers
-come from Cortex XDR/XSIAM; the range provisioner consumes the uploaded configs
-when it installs the agent on a range guest. This upload step is currently
-manual; automating it as a reusable smoke fixture is tracked in issue #1422.
-Until those ids exist, the dev smoke opens a bug issue on every run rather than
-passing.
 
 ## AWS range (`dev` / `prod`)
 

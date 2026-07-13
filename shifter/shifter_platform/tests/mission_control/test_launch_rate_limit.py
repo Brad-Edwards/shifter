@@ -33,6 +33,7 @@ from engine.models import Range
 from risk_register.models import AuditLog
 from shared.api_tokens import scopes
 from shared.api_tokens.models import ApiToken
+from shared.audit import AuditAction
 
 pytestmark = pytest.mark.django_db
 
@@ -165,7 +166,7 @@ class TestRejectedRequestSideEffects:
         with _enabled():
             first = _post_launch(client, body=body)
             assert first.status_code == 200
-            provisions_after_first = AuditLog.objects.filter(action=AuditLog.Action.PROVISION).count()
+            provisions_after_first = AuditLog.objects.filter(action=AuditAction.PROVISION).count()
             second = _post_launch(client, body=body)
 
         # 429 (NOT the 400 "active range" that only cms_create_range raises)
@@ -173,7 +174,7 @@ class TestRejectedRequestSideEffects:
         # no new provision audit confirm the rejected request had no side effects.
         assert second.status_code == 429
         assert Range.objects.count() == 1
-        assert AuditLog.objects.filter(action=AuditLog.Action.PROVISION).count() == provisions_after_first
+        assert AuditLog.objects.filter(action=AuditAction.PROVISION).count() == provisions_after_first
 
 
 class TestBackendFailureFailsClosed:

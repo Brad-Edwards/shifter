@@ -110,6 +110,7 @@ def _sample_gcp_control_plane_outputs(project_id: str = "prod-rwctxzl6shxk") -> 
                 "portal": f"shiftergcpdev-portal@{project_id}.iam.gserviceaccount.com",
                 "workers": f"shiftergcpdev-workers@{project_id}.iam.gserviceaccount.com",
                 "ctf-scheduler": f"shiftergcpdev-ctf-scheduler@{project_id}.iam.gserviceaccount.com",
+                "provisioner-launcher": (f"shiftergcpdev-provisioner-launcher@{project_id}.iam.gserviceaccount.com"),
                 "provisioner": f"shiftergcpdev-provisioner@{project_id}.iam.gserviceaccount.com",
             }
         },
@@ -882,6 +883,9 @@ class TestGdcControlPlaneHelmValues:
         )
 
         assert values["releaseNamespace"] == "shifter-system"
+        # CLOUD_PROVIDER reaches the merged runtime env solely via the GCP backend
+        # runtime-env renderer (scripts/gcp/render_runtime_env.py); PLAT-2005.
+        assert values["runtimeEnv"]["CLOUD_PROVIDER"] == "gcp"
         assert values["runtimeEnv"]["GCP_PROJECT_ID"] == "prod-rwctxzl6shxk"
         assert values["runtimeEnv"]["GOOGLE_CLOUD_PROJECT"] == "prod-rwctxzl6shxk"
         assert values["runtimeEnv"]["DJANGO_DEBUG"] == "false"
@@ -938,7 +942,8 @@ class TestGdcControlPlaneHelmValues:
                 "199.36.153.4/30",  # NOSONAR - restricted.googleapis.com VIP.
                 "199.36.153.8/30",  # NOSONAR - private.googleapis.com VIP.
             ],
-            "privateServiceCidrs": ["10.40.0.10/32", "10.40.0.20/32", "10.48.0.0/20"],
+            "privateServiceCidrs": ["10.40.0.10/32", "10.40.0.20/32"],
+            "kubernetesApiCidrs": ["10.48.0.0/20"],
             "rangeClusterApiCidrs": [],
             "rangeClusterApiPort": 6444,
         }
@@ -1968,6 +1973,13 @@ class TestGcpBootstrapIdentityPlatform:
         assert "PLATFORM_BOOTSTRAP_STAFF_EMAILS=admin@example.com\n" in rendered
         assert "PLATFORM_BOOTSTRAP_SUPERUSER_EMAILS=admin@example.com\n" in rendered
         assert "GCP_RANGE_BACKEND=gce\n" in rendered
+        assert "ENGINE_TASK_SERVICE_ACCOUNT_NAME=provisioner\n" in rendered
+        # CLOUD_PROVIDER must come from the GCP backend runtime-env renderer only
+        # (PLAT-2005): _render_gcp_runtime_env merges this bootstrap-owned contract
+        # with scripts/gcp/render_runtime_env.py's output, which is the
+        # renderer-owned source of the backend identity. A second hardcoded literal
+        # here would be redundant and could silently drift from that value.
+        assert "CLOUD_PROVIDER" not in deploy.parse_env_contract(rendered)
 
     def test_render_gcp_platform_runtime_env_uses_blank_guest_password_samples(self):
         """The generated env contract must not embed sample guest passwords in source-controlled output."""
@@ -2016,6 +2028,43 @@ class TestArtifactRegistryServiceIdentity:
 
         mock_run.assert_not_called()
         mock_urlopen.assert_not_called()
+
+
+class TestProvisionerLauncherDeploymentParity:
+    """Launcher identity must stay consistent across Terraform, bootstrap, Helm, and runtime config."""
+
+    def test_bootstrap_renders_dedicated_launcher_without_provisioner_cloud_identity(self):
+        service_accounts = _sample_gcp_control_plane_outputs()["workload_service_accounts"]["value"]
+
+        values = gcp_control_plane._helm_service_account_values(service_accounts)
+
+        assert values["provisionerLauncher"] == {
+            "name": "provisioner-launcher",
+            "annotations": {
+                "iam.gke.io/gcp-service-account": service_accounts["provisioner-launcher"],
+            },
+        }
+        assert values["provisioner"]["annotations"]["iam.gke.io/gcp-service-account"] == service_accounts["provisioner"]
+        assert service_accounts["provisioner-launcher"] != service_accounts["provisioner"]
+
+    def test_runtime_and_terraform_keep_launcher_and_privileged_runtime_distinct(self):
+        terraform_iam = (
+            gcp_control_plane.get_repo_root()
+            / "platform"
+            / "terraform"
+            / "gcp"
+            / "modules"
+            / "portal"
+            / "iam"
+            / "main.tf"
+        ).read_text(encoding="utf-8")
+        assert '"provisioner-launcher"' in terraform_iam
+        assert "shifter-platform/provisioner-launcher" in terraform_iam
+        assert "provisioner-launcher = toset([])" in terraform_iam
+        assert (
+            'secret_reader_workloads    = toset(["portal", "workers", "ctf-scheduler", "provisioner-launcher"])'
+            in terraform_iam
+        )
 
 
 class TestGcpIdentityAdminApi:

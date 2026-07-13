@@ -292,6 +292,7 @@ class TestRangeNetworkEnv:
                 "PORTAL_NETWORK_CIDRS": "10.40.0.0/20,10.44.0.0/16",
                 "RANGE_VPC_ID": "vpc-legacy",
                 "RANGE_VPC_CIDR": "10.1.0.0/16",
+                "CLOUD_PROVIDER": "aws",
             },
             clear=True,
         )
@@ -311,6 +312,7 @@ class TestRangeNetworkEnv:
                 "RANGE_VPC_CIDR": "10.1.0.0/16",
                 "PORTAL_VPC_CIDR": "10.0.0.0/16",
                 "AWS_REGION": "us-east-2",
+                "CLOUD_PROVIDER": "aws",
             },
             clear=True,
         )
@@ -683,6 +685,95 @@ class TestRangeNetworkEnv:
 
         with pytest.raises(RuntimeError, match="Missing GCE range image"):
             config.get_profile(role="victim", os_type="windows")
+
+    def test_load_gce_range_cell_config_rejects_malformed_image_reference(self, mocker):
+        # A malformed image reference must fail at config load, not after the
+        # Compute Engine create call rejects it (#1343 gap 7).
+        mocker.patch.dict(
+            os.environ,
+            {
+                "CLOUD_PROVIDER": "gcp",
+                "GCP_RANGE_BACKEND": "gce",
+                "GCP_PROJECT_ID": "test-project",
+                "GCP_REGION": "us-central1",
+                "RANGE_NETWORK_ZONE": "us-central1-b",
+                "GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL": "range-host@test-project.iam.gserviceaccount.com",
+                "RANGE_NETWORK_ID": "projects/test-project/global/networks/range-net",
+                "GCP_RANGE_LINUX_IMAGE": "Not A Valid Image!!",
+            },
+            clear=True,
+        )
+
+        with pytest.raises(RuntimeError, match="GCP_RANGE_LINUX_IMAGE"):
+            load_gce_range_cell_config()
+
+    def test_load_gce_range_cell_config_rejects_unknown_disk_type(self, mocker):
+        mocker.patch.dict(
+            os.environ,
+            {
+                "CLOUD_PROVIDER": "gcp",
+                "GCP_RANGE_BACKEND": "gce",
+                "GCP_PROJECT_ID": "test-project",
+                "GCP_REGION": "us-central1",
+                "RANGE_NETWORK_ZONE": "us-central1-b",
+                "GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL": "range-host@test-project.iam.gserviceaccount.com",
+                "RANGE_NETWORK_ID": "projects/test-project/global/networks/range-net",
+                "GCP_RANGE_LINUX_IMAGE": "projects/debian-cloud/global/images/family/debian-12",
+                "GCP_RANGE_LINUX_DISK_TYPE": "pd-bogus",
+            },
+            clear=True,
+        )
+
+        with pytest.raises(RuntimeError, match="disk type"):
+            load_gce_range_cell_config()
+
+    def test_load_gce_range_cell_config_rejects_disk_below_role_minimum(self, mocker):
+        # Role-policy floor (NOT source-image validation): the documented
+        # Windows/DC >=100 GB minimum is enforced before instance creation so an
+        # obviously-undersized disk fails at config load, not at create time.
+        mocker.patch.dict(
+            os.environ,
+            {
+                "CLOUD_PROVIDER": "gcp",
+                "GCP_RANGE_BACKEND": "gce",
+                "GCP_PROJECT_ID": "test-project",
+                "GCP_REGION": "us-central1",
+                "RANGE_NETWORK_ZONE": "us-central1-b",
+                "GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL": "range-host@test-project.iam.gserviceaccount.com",
+                "RANGE_NETWORK_ID": "projects/test-project/global/networks/range-net",
+                "GCP_RANGE_WINDOWS_IMAGE": "projects/shifter/global/images/family/shifter-windows",
+                "GCP_RANGE_WINDOWS_DISK_SIZE_GB": "50",
+            },
+            clear=True,
+        )
+
+        with pytest.raises(RuntimeError, match="smaller than"):
+            load_gce_range_cell_config()
+
+    def test_load_gce_range_cell_config_accepts_valid_image_reference_forms(self, mocker):
+        # Bare slug, family/<name>, and full projects/... paths are all valid.
+        mocker.patch.dict(
+            os.environ,
+            {
+                "CLOUD_PROVIDER": "gcp",
+                "GCP_RANGE_BACKEND": "gce",
+                "GCP_PROJECT_ID": "test-project",
+                "GCP_REGION": "us-central1",
+                "RANGE_NETWORK_ZONE": "us-central1-b",
+                "GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL": "range-host@test-project.iam.gserviceaccount.com",
+                "RANGE_NETWORK_ID": "projects/test-project/global/networks/range-net",
+                "GCP_RANGE_LINUX_IMAGE": "debian-12",
+                "GCP_RANGE_KALI_IMAGE": "family/shifter-polaris-vm",
+                "GCP_RANGE_DC_IMAGE": "projects/shifter/global/images/shifter-polaris-dc",
+            },
+            clear=True,
+        )
+
+        config = load_gce_range_cell_config()
+
+        assert config.linux.source_image == "debian-12"
+        assert config.kali.source_image == "family/shifter-polaris-vm"
+        assert config.dc.source_image == "projects/shifter/global/images/shifter-polaris-dc"
 
     def test_load_gdc_vmruntime_config_reads_image_contract(self, mocker):
         mocker.patch.dict(
@@ -1152,3 +1243,83 @@ class TestDecryptField:
 
         with pytest.raises(FieldDecryptError):
             decrypt_field(encrypted_value)
+
+
+class TestResolveCloudProvider:
+    """PLAT-2005: one validated CLOUD_PROVIDER resolution point.
+
+    ``resolve_cloud_provider`` normalizes and validates against the
+    ``installation`` registry (the single source of truth for supported
+    backends) instead of the historical scattered
+    ``os.environ.get("CLOUD_PROVIDER", "aws")`` reads. Tests pass an explicit
+    ``env`` mapping so behavior does not depend on ambient process env or
+    pytest's own invocation context, except where that context (running
+    under pytest) is itself the thing under test.
+    """
+
+    def test_valid_aws_is_normalized(self):
+        from config import resolve_cloud_provider
+
+        assert resolve_cloud_provider({"CLOUD_PROVIDER": "AWS"}) == "aws"
+
+    def test_valid_gcp_is_normalized(self):
+        from config import resolve_cloud_provider
+
+        assert resolve_cloud_provider({"CLOUD_PROVIDER": " gcp "}) == "gcp"
+
+    def test_unknown_provider_fails_closed(self):
+        from cloud.exceptions import CloudProviderNotImplementedError
+        from config import resolve_cloud_provider
+
+        with pytest.raises(CloudProviderNotImplementedError, match="azure"):
+            resolve_cloud_provider({"CLOUD_PROVIDER": "azure"})
+
+    def test_missing_allows_historical_aws_default_under_testing_flag(self):
+        from config import resolve_cloud_provider
+
+        assert resolve_cloud_provider({"TESTING": "1"}) == "aws"
+
+    def test_missing_allows_historical_aws_default_under_environment_build(self):
+        from config import resolve_cloud_provider
+
+        assert resolve_cloud_provider({"ENVIRONMENT": "build"}) == "aws"
+
+    def test_missing_allows_historical_aws_default_under_django_debug(self):
+        from config import resolve_cloud_provider
+
+        assert resolve_cloud_provider({"DJANGO_DEBUG": "true"}) == "aws"
+
+    def test_missing_allows_historical_aws_default_under_pytest_invocation(self, monkeypatch):
+        """No explicit dev-signal env key: falls back to the pytest-argv0 signal."""
+        from config import resolve_cloud_provider
+
+        monkeypatch.setattr("sys.argv", ["pytest"])
+
+        assert resolve_cloud_provider({}) == "aws"
+
+    def test_missing_environment_development_does_not_allow_default(self, monkeypatch):
+        """ENVIRONMENT=development/dev is NOT a dev-default signal (deployed dev
+        provisioners must receive CLOUD_PROVIDER explicitly)."""
+        from cloud.exceptions import CloudProviderNotImplementedError
+        from config import resolve_cloud_provider
+
+        monkeypatch.setattr("sys.argv", ["/usr/bin/provisioner"])
+
+        with pytest.raises(CloudProviderNotImplementedError):
+            resolve_cloud_provider({"ENVIRONMENT": "development"})
+
+    def test_missing_fails_closed_with_no_dev_signals(self, monkeypatch):
+        from cloud.exceptions import CloudProviderNotImplementedError
+        from config import resolve_cloud_provider
+
+        monkeypatch.setattr("sys.argv", ["/usr/bin/provisioner"])
+
+        with pytest.raises(CloudProviderNotImplementedError):
+            resolve_cloud_provider({})
+
+    def test_defaults_to_process_environ_when_no_env_mapping_given(self, mocker):
+        from config import resolve_cloud_provider
+
+        mocker.patch.dict(os.environ, {"CLOUD_PROVIDER": "gcp"}, clear=True)
+
+        assert resolve_cloud_provider() == "gcp"

@@ -40,8 +40,7 @@ from cms.exceptions import CMSError
 from cms.models import AcesPackageSource
 from cms.scenarios.legacy_ids import active_legacy_scenario_ids
 from cms.scenarios.pack_validation import PackValidationError, validate_pack
-from risk_register.models import AuditLog
-from risk_register.services import AuditEvent, audit_log
+from shared.audit import AuditAction, AuditActorType, AuditEntityType, AuditEvent, audit_log
 from shared.auth import validate_cms_authoring_user
 from shared.log_sanitize import safe_log_value
 from shared.schemas.aces_package_source import AcesPackageSourceError
@@ -221,12 +220,12 @@ def _audit_registration(row: AcesPackageSource, user: User, request_id: str) -> 
     """Record a sanitized audit event for a successful registration."""
     audit_log(
         AuditEvent(
-            entity_type=AuditLog.EntityType.SCENARIO,
+            entity_type=AuditEntityType.SCENARIO,
             # AcesPackageSource PKs are UUIDs; existing scenario audit records use
             # 0 and carry the scenario_id in the state payload.
             entity_id=0,
-            action=AuditLog.Action.CREATE,
-            actor_type=AuditLog.ActorType.USER,
+            action=AuditAction.CREATE,
+            actor_type=AuditActorType.USER,
             actor_id=getattr(user, "id", None),
             new_state={
                 "scenario_id": row.scenario_id,

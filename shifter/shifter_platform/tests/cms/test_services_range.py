@@ -40,8 +40,13 @@ class TestListRanges:
         assert services.list_ranges(user) == []
 
     def test_returns_the_users_ranges(self, user):
+        from shared.enums import RangeSource
+
+        # One active range per source is the invariant (#307); a user may still
+        # hold one Mission Control and one CTF range at once (#450), so list_ranges
+        # returns both.
         _range_instance(user, range_id=1)
-        _range_instance(user, range_id=2, scenario_id="ad_attack_lab")
+        _range_instance(user, range_id=2, scenario_id="ad_attack_lab", range_source=RangeSource.CTF.value)
         result = services.list_ranges(user)
         assert {r.range_id for r in result} == {1, 2}
 
@@ -164,6 +169,7 @@ class TestCreateRangeBehavior:
     def test_marks_owned_range_failed_when_engine_dispatch_fails(self, user, make_agent, hydratable_scenario, settings):
         from engine.models import Range as EngineRange
         from risk_register.models import AuditLog
+        from shared.audit import AuditAction, AuditEntityType
 
         settings.CLOUD_PROVIDER = "aws"
         settings.LOCAL_PROVISIONER = None
@@ -182,8 +188,8 @@ class TestCreateRangeBehavior:
         assert range_instance.deleted_at is not None
         assert EngineRange.objects.get(user=user).status == EngineRange.Status.FAILED
         assert not AuditLog.objects.filter(
-            entity_type=AuditLog.EntityType.RANGE,
-            action=AuditLog.Action.PROVISION,
+            entity_type=AuditEntityType.RANGE,
+            action=AuditAction.PROVISION,
             actor_id=user.id,
         ).exists()
 
@@ -254,9 +260,11 @@ class TestHasReadyActiveRange:
         assert services.has_ready_active_range(user) is False
 
     def test_uses_most_recent_range(self, user):
-        # Older ready range, newer provisioning range -> mirrors get_active_range's
-        # "most recently created" selection, so the indicator is False.
-        _range_instance(user, range_id=1, status="ready")
+        # The one-active-range-per-source constraint (#307) makes two active
+        # same-source rows impossible, so the older range must be terminal
+        # (DESTROYED soft-deletes it) before a new one exists. The indicator then
+        # reflects the sole active (provisioning, not-ready) range -> False.
+        _range_instance(user, range_id=1, status="destroyed")
         _range_instance(user, range_id=2, status="provisioning")
         assert services.has_ready_active_range(user) is False
 
@@ -403,3 +411,49 @@ class TestRangeSourceAdmission:
         services.create_range(user, hydratable_scenario.scenario_id, {"windows": agent.id})
         ri = RangeInstance.objects.get(user_id=user.id)
         assert ri.range_source == RangeSource.MISSION_CONTROL.value
+
+
+class TestActiveRangeConstraintBackstop:
+    """The DB constraint is the race-proof backstop behind the friendly pre-check (#307).
+
+    ``_reserve_active_range_slot`` runs the atomic Request + RangeInstance
+    reservation and translates the partial-unique-constraint violation a losing
+    concurrent caller hits into the authored CMSError. Driven directly against
+    real rows (no first-party seam patched, per ADR-019); the
+    ``test_range_create_concurrency`` module proves the real threaded race on
+    PostgreSQL.
+    """
+
+    def test_reservation_translates_constraint_collision_without_orphan_request(self, user):
+        from cms.models import Request
+        from cms.services._range_create import _reserve_active_range_slot
+        from shared.enums import RangeSource
+
+        def _persist(cms_request):
+            return RangeInstance.objects.create(
+                request=cms_request,
+                scenario_id="basic",
+                user_id=user.id,
+                range_source=RangeSource.MISSION_CONTROL.value,
+            )
+
+        # First reservation takes the (user, MISSION_CONTROL) slot.
+        _reserve_active_range_slot(user, RangeSource.MISSION_CONTROL, _persist)
+        requests_before = Request.objects.filter(user=user).count()
+
+        # A second reservation collides on the active-range constraint; the named
+        # violation is translated to the authored CMSError and the whole atomic
+        # rolls back, so no orphan Request is left behind.
+        with pytest.raises(CMSError, match="already have an active range"):
+            _reserve_active_range_slot(user, RangeSource.MISSION_CONTROL, _persist)
+
+        assert Request.objects.filter(user=user).count() == requests_before
+        assert RangeInstance.objects.filter(user_id=user.id).count() == 1
+
+    def test_unrelated_integrity_error_is_not_swallowed(self):
+        """Only the named/active-range collision translates; other IntegrityErrors propagate."""
+        from django.db import IntegrityError
+
+        from cms.services._range_create import _is_active_range_conflict
+
+        assert _is_active_range_conflict(IntegrityError("NOT NULL constraint failed: cms_request.user_id")) is False

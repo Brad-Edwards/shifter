@@ -16,6 +16,10 @@ from django.contrib.auth.models import Group
 from config.user_type_sync import USER_TYPE_TO_GROUP, sync_user_type
 from management.services import get_user_profile
 from risk_register.models import AuditLog
+from shared.audit import (
+    AuditAction,
+    AuditEntityType,
+)
 from shared.auth import (
     CTF_ORGANIZER_GROUP,
     CTF_PARTICIPANT_GROUP,
@@ -37,9 +41,9 @@ def _group_names(user) -> set[str]:
 
 def _role_sync_rows(user):
     return AuditLog.objects.filter(
-        entity_type=AuditLog.EntityType.USER,
+        entity_type=AuditEntityType.USER,
         entity_id=user.id,
-        action=AuditLog.Action.ROLE_SYNC,
+        action=AuditAction.ROLE_SYNC,
     )
 
 

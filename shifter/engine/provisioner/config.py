@@ -9,7 +9,10 @@ import json
 import logging
 import os
 import re
+import sys
+from collections.abc import Mapping
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from cryptography.fernet import Fernet
@@ -17,6 +20,66 @@ from cryptography.fernet import Fernet
 from log_redact import safe_log_fingerprint
 
 logger = logging.getLogger(__name__)
+
+# Invocation names that signal a dev/test/build tooling context (mirrors
+# ``config._runtime_env._TOOLING_INVOKERS`` on the Django side).
+_DEV_DEFAULT_TOOLING_INVOKERS = frozenset({"pytest", "mypy", "dmypy"})
+
+
+def _allow_dev_defaults(source: Mapping[str, str]) -> bool:
+    """Return True when ``CLOUD_PROVIDER`` may fall back to the historical default.
+
+    Mirrors ``config._runtime_env.runtime_allows_dev_defaults`` on the Django
+    side exactly, so the provisioner and Django agree on when a missing
+    backend selection may default rather than fail closed, without importing
+    Django or duplicating a second policy definition here. Note that
+    ``ENVIRONMENT=development``/``dev`` is deliberately NOT one of these
+    signals: a deployed dev provisioner must still receive ``CLOUD_PROVIDER``
+    explicitly (see docs/architecture/root-configured-backend-bundles.md,
+    "Runtime Binding").
+    """
+    if source.get("TESTING") == "1":
+        return True
+    if Path(sys.argv[0]).name in _DEV_DEFAULT_TOOLING_INVOKERS:
+        return True
+    if source.get("ENVIRONMENT", "").strip().lower() == "build":
+        return True
+    return source.get("DJANGO_DEBUG", "").strip().lower() == "true"
+
+
+def resolve_cloud_provider(env: Mapping[str, str] | None = None) -> str:
+    """Return the validated active cloud backend for this process (PLAT-2005).
+
+    ``CLOUD_PROVIDER`` is the deploy-time projection of the selected
+    installation backend, delivered to every consuming process role (see
+    docs/architecture/root-configured-backend-bundles.md, "Runtime Binding").
+    This is the provisioner's single resolution point: normalize to
+    lowercase and validate against the ``installation`` registry -- the
+    single source of truth for supported backends -- rather than re-reading
+    the environment with an implicit ``aws`` default at every call site.
+
+    Fails closed with ``CloudProviderNotImplementedError`` when the value is
+    missing in a deployed process (the historical ``aws`` default is allowed
+    only under ``_allow_dev_defaults``) or names an unsupported backend, so a
+    misconfigured deploy cannot silently behave as AWS.
+    """
+    # Lazy imports: ``installation.registry`` pulls in pydantic, and
+    # ``cloud.exceptions`` would otherwise import this module back (``cloud``
+    # resolves its own provider through this function) -- both stay
+    # function-local to avoid import-time cost and a circular import.
+    from installation.registry import KNOWN_BACKENDS
+
+    from cloud.exceptions import CloudProviderNotImplementedError
+
+    source = env if env is not None else os.environ
+    raw = source.get("CLOUD_PROVIDER", "").strip().lower()
+    if not raw:
+        if not _allow_dev_defaults(source):
+            raise CloudProviderNotImplementedError("")
+        raw = "aws"
+    if raw not in KNOWN_BACKENDS:
+        raise CloudProviderNotImplementedError(raw)
+    return raw
 
 
 class FieldDecryptError(RuntimeError):
@@ -461,7 +524,7 @@ def get_gcp_range_backend() -> str:
     GDC VM Runtime path remains fully supported and is selected explicitly with
     ``GCP_RANGE_BACKEND=gdc`` (a one-line rollback for any environment).
     """
-    if os.environ.get("CLOUD_PROVIDER", "aws") != "gcp":
+    if resolve_cloud_provider() != "gcp":
         return ""
     backend = os.environ.get("GCP_RANGE_BACKEND") or os.environ.get("GCP_RANGE_PLANE") or "gce"
     backend = backend.strip().lower()
@@ -551,7 +614,10 @@ def resolve_ngfw_attachment_config(state: dict[str, Any] | None) -> NGFWAttachme
     """Resolve provider-neutral NGFW attachment details from stored state."""
     payload = state if isinstance(state, dict) else {}
     explicit_provider = _first_non_empty_string(payload.get("cloud_provider")).lower()
-    env_default = os.environ.get("CLOUD_PROVIDER", "aws").lower()
+    # Only consult the resolver when the persisted state has no provider tag of
+    # its own -- a persisted value must win outright and must not force a
+    # resolution (and possible fail-closed error) that is not actually needed.
+    env_default = "" if explicit_provider else resolve_cloud_provider()
     cloud_provider = explicit_provider or env_default
     provider_metadata = _get_ngfw_provider_metadata(payload, cloud_provider)
 
@@ -643,19 +709,80 @@ def _load_gdc_scenario_pod_profile(prefix: str, *, default_image: str) -> GDCSce
     )
 
 
+# Disk types the range provisioner accepts. Compute Engine rejects an unknown
+# disk type only after the create call; validate at config load so the operator
+# sees a clear error before a range attempt (#1343 gap 7).
+_VALID_GCE_DISK_TYPES = frozenset({"pd-standard", "pd-balanced", "pd-ssd", "pd-extreme", "hyperdisk-balanced"})
+
+# A Compute Engine resource name segment: lowercase, starts with a letter, and
+# is at most 63 chars (RFC1035, as GCE enforces for image/family names).
+_GCE_NAME = r"[a-z](?:[-a-z0-9]{0,61}[a-z0-9])?"
+# A project id segment permits the domain-scoped ``example.com:project`` legacy
+# form, so allow dots and a single colon in addition to the standard chars.
+_GCE_PROJECT = r"[a-z0-9][-a-z0-9.:]*"
+# Accepted image reference forms:
+#   <name>                                         (bare image or family slug)
+#   family/<name>
+#   [global|projects/<proj>/global]/images[/family]/<name>
+#   an https://…/compute/v1/ prefix on the projects/… form
+_GCE_IMAGE_REFERENCE_RE = re.compile(
+    r"^(?:"
+    rf"{_GCE_NAME}"
+    rf"|family/{_GCE_NAME}"
+    rf"|(?:https://[^/]+/compute/(?:v1|beta)/)?"
+    rf"(?:projects/{_GCE_PROJECT}/)?global/images/(?:family/)?{_GCE_NAME}"
+    r")$"
+)
+
+
+def _validate_gce_image_reference(prefix: str, value: str) -> None:
+    """Reject a malformed GCE image reference before any Compute Engine call."""
+    if not _GCE_IMAGE_REFERENCE_RE.fullmatch(value):
+        raise RuntimeError(
+            f"{prefix}_IMAGE is not a valid Compute Engine image reference: {value!r}. "
+            "Use an image/family name, 'family/<name>', or "
+            "'projects/<project>/global/images[/family]/<name>'."
+        )
+
+
+def _validate_gce_range_profile(prefix: str, profile: GCERangeImageProfile, *, min_disk_size_gb: int) -> None:
+    """Fail fast on a malformed image ref, unknown disk type, or too-small boot disk."""
+    if profile.source_image:
+        _validate_gce_image_reference(prefix, profile.source_image)
+    if profile.disk_type not in _VALID_GCE_DISK_TYPES:
+        raise RuntimeError(
+            f"{prefix}_DISK_TYPE {profile.disk_type!r} is not a supported Compute Engine disk type. "
+            f"Choose one of: {', '.join(sorted(_VALID_GCE_DISK_TYPES))}."
+        )
+    # Role-policy minimum boot-disk size. This is NOT a guarantee that the disk
+    # is >= the actual source image's disk (that would require resolving image
+    # metadata at create time, and the reference may be a mutable family); it
+    # enforces the documented per-role floors (e.g. the Windows/DC images are
+    # 100 GB) so an obviously-undersized disk fails at config load instead of
+    # only at instance creation.
+    if profile.disk_size_gb < min_disk_size_gb:
+        raise RuntimeError(
+            f"{prefix}_DISK_SIZE_GB {profile.disk_size_gb} is smaller than the {min_disk_size_gb} GB "
+            f"role-policy minimum for this guest role."
+        )
+
+
 def _load_gce_range_profile(
     prefix: str,
     *,
     default_machine_type: str,
     default_disk_size_gb: int,
+    min_disk_size_gb: int,
 ) -> GCERangeImageProfile:
     """Load one GCE range guest image/sizing profile."""
-    return GCERangeImageProfile(
+    profile = GCERangeImageProfile(
         source_image=os.environ.get(f"{prefix}_IMAGE", "").strip(),
         machine_type=os.environ.get(f"{prefix}_MACHINE_TYPE", default_machine_type).strip() or default_machine_type,
         disk_size_gb=_get_int_env(f"{prefix}_DISK_SIZE_GB", default_disk_size_gb),
         disk_type=os.environ.get(f"{prefix}_DISK_TYPE", "pd-balanced").strip() or "pd-balanced",
     )
+    _validate_gce_range_profile(prefix, profile, min_disk_size_gb=min_disk_size_gb)
+    return profile
 
 
 def _decode_gdc_access_secret(raw_secret: str) -> tuple[dict[str, Any], str]:
@@ -943,11 +1070,15 @@ def load_gce_range_cell_config() -> GCERangeCellConfig:
             "GCP_RANGE_LINUX",
             default_machine_type="e2-standard-2",
             default_disk_size_gb=50,
+            # debian-12 base is ~10 GB; the Docker host default is 50 GB.
+            min_disk_size_gb=10,
         ),
         kali=_load_gce_range_profile(
             "GCP_RANGE_KALI",
             default_machine_type="e2-standard-4",
             default_disk_size_gb=80,
+            # Kali (converted debian base + tools / polaris stack) needs headroom.
+            min_disk_size_gb=30,
         ),
         windows=_load_gce_range_profile(
             "GCP_RANGE_WINDOWS",
@@ -957,11 +1088,13 @@ def load_gce_range_cell_config() -> GCERangeCellConfig:
             # every Windows guest fails at create. Override via
             # GCP_RANGE_WINDOWS_DISK_SIZE_GB for a larger image.
             default_disk_size_gb=100,
+            min_disk_size_gb=100,
         ),
         dc=_load_gce_range_profile(
             "GCP_RANGE_DC",
             default_machine_type="e2-standard-4",
             default_disk_size_gb=100,
+            min_disk_size_gb=100,
         ),
         portal_network_cidrs=_parse_csv_env(
             os.environ.get("PORTAL_NETWORK_CIDRS", "") or os.environ.get("PORTAL_VPC_CIDR", "")

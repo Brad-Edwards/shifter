@@ -31,19 +31,23 @@ from cms.services._range_create import (
     _assert_no_active_range,
     _assert_scenario_launchable,
     _audit_log_call,
-    _create_cms_request,
+    _reserve_active_range_slot,
     _set_range_instance_status,
     _validate_create_range_scenario,
     _validate_create_range_user,
     create_range,
 )
-from risk_register.models import AuditLog
+from shared.audit import (
+    AuditAction,
+    AuditActorType,
+    AuditEntityType,
+)
 from shared.enums import ResourceStatus
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import User
 
-    from cms.models import AcesPackageSource
+    from cms.models import AcesPackageSource, Request
     from shared.enums import RangeSource
     from shared.schemas.range import RangeContext
 
@@ -96,10 +100,10 @@ def _dispatch_aces_package(request_id: UUID, user: User, package_ref: str) -> No
 def _audit_aces_range_provision(request_id: UUID, scenario: str, user: User, range_source: RangeSource) -> None:
     """Write the audit-log entry for a successful ACES-native launch."""
     _audit_log_call(
-        entity_type=AuditLog.EntityType.RANGE,
+        entity_type=AuditEntityType.RANGE,
         entity_id=0,
-        action=AuditLog.Action.PROVISION,
-        actor_type=AuditLog.ActorType.USER,
+        action=AuditAction.PROVISION,
+        actor_type=AuditActorType.USER,
         actor_id=user.id,
         new_state={
             "request_id": str(request_id),
@@ -149,15 +153,17 @@ def create_aces_native_range(user: User, scenario: str, *, range_source: RangeSo
     _assert_scenario_launchable(scenario)
     source = _load_aces_source_or_raise(scenario)
 
-    request_id, cms_request = _create_cms_request(user)
-    range_instance = RangeInstance.objects.create(
-        request=cms_request,
-        scenario_id=scenario,
-        user_id=user.id,
-        range_source=range_source.value,
-        range_spec=None,
-    )
-    _set_range_instance_status(range_instance, ResourceStatus.PROVISIONING)
+    def _persist(cms_request: Request) -> RangeInstance:
+        """Build the ACES RangeInstance (range_spec=None) for the reservation."""
+        return RangeInstance.objects.create(
+            request=cms_request,
+            scenario_id=scenario,
+            user_id=user.id,
+            range_source=range_source.value,
+            range_spec=None,
+        )
+
+    request_id, _cms_request, range_instance = _reserve_active_range_slot(user, range_source, _persist)
 
     try:
         _dispatch_aces_package(request_id, user, source.package_ref)

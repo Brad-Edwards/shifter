@@ -78,15 +78,29 @@ The first slice intentionally stays small:
 
 - `layer-imports`
   Enforces the existing cross-layer import policy from `scripts/check_layer_imports/layer_imports.yaml`.
-  Service-package imports may use only the public facade (for example
-  `cms.services`); private split-package submodules such as
+  Every first-party Django app is classified there (ADR-001-R3, #1523) as a
+  domain (`engine`, `cms`, `management`, `ctf`, `risk_register`), presentation
+  (`mission_control`), support/contracts (`shared`), or support/composition
+  (`config`) layer. Service-package imports may use only the public facade (for
+  example `cms.services`); private split-package submodules such as
   `cms.services._range_pause` are not cross-layer seams. This covers both the
   dotted form (`import cms.services._range_pause`) and the
   `from cms.services import _range_pause` form, the latter detected via an AST
   pass since the regex scan only sees the facade module path. The rule is
-  mirrored in `scripts/adr_guard/adr_guard.py` and the standalone
-  `scripts/check_layer_imports/check_layer_imports.py` so local and CI
-  enforcement agree; `shared` remains the freely importable contracts layer.
+  mirrored in `scripts/adr_guard/adr_guard.py`, the standalone
+  `scripts/check_layer_imports/check_layer_imports.py`, and
+  `management check_model_fks`; the hard-coded package lists are held to
+  set-equality with the canonical classification by tests, and `.importlinter`
+  adds a coarser package-level net. `shared` remains the freely importable
+  contracts layer.
+
+- `installed-apps-classified`
+  Fails closed when a first-party Django app is added to `INSTALLED_APPS`
+  without a classification in `layer_imports.yaml`, when a classification entry
+  is stale (no local `AppConfig`), or when an `INSTALLED_APPS` entry is a
+  dynamic expression the checker cannot statically resolve (ADR-001-R3, #1523).
+  The retired `documentation` package (ADR-038) has no `AppConfig` and is not
+  classified.
 
 - `guardrail-docs`
   Requires guardrail changes to update ADR or developer docs in the same change.
@@ -163,6 +177,23 @@ The first slice intentionally stays small:
   feature's doc is removed but its index link is left dangling). Adding a major
   feature means adding a manifest entry pointing at its user and technical docs.
 
+- `published-contract-snapshots-immutable`
+  Enforces ADR-011-R8: the published backend-bundle contract's per-version
+  snapshots (`shifter/installation/published_contract/backend-bundle-contract.v<N>.json`)
+  are append-only. Each snapshot records the frozen shape of a published contract
+  version; a contract change ships a *new* version snapshot instead of editing an
+  existing one. The check compares every snapshot present at the base-branch merge
+  base against the working tree and fails when one was modified or deleted, so the
+  breaking-change gate's compatibility oracle cannot be silently rebased. Like
+  `boundary-mock-policy` it resolves the base ref from `GITHUB_BASE_REF` /
+  `ADR_GUARD_BASE_REF` (falling back to `origin/dev`/`origin/main`). It fails **open**
+  locally (a shallow clone with no base history cannot compare, so dev is not blocked)
+  and fails **closed** when `ADR_GUARD_SNAPSHOT_ENFORCE` is set: the `adr-conformance`
+  CI job checks out with `fetch-depth: 0` and sets that variable, so an inability to
+  resolve or read the base becomes an enforcement failure rather than a silent pass. A
+  genuinely absent directory at the base (a real first publication) is distinguished
+  from an unreadable tree and still passes.
+
 - `import-linter`
   Adds package-level forbidden-import contracts across the main Django app layers.
 
@@ -227,7 +258,14 @@ The first slice intentionally stays small:
   reusable workflow carries its own hosted provisioner pytest gate and that
   `_shifter-engine.yml` image validation, image build, and deploy jobs all need
   that gate. This keeps deploy-branch Quality skips from bypassing provisioner
-  tests on the image that is pushed and deployed.
+  tests on the image that is pushed and deployed. The same suite pins the engine
+  `validate` image-shape job's runner placement (#1474): it runs on the trusted
+  self-hosted deploy runner class rather than `ubuntu-latest`, so a
+  GitHub-hosted runner-acquisition stall can no longer cancel it before steps
+  start and skip the whole Platform stage. Because it is self-hosted it is
+  fail-closed on `pull_request` under the `deploy-workflow-runner-exposure`
+  (ADR-003-R5) invariant, keeps `contents: read` only, and carries a
+  `timeout-minutes` backstop (#1220).
 
 - `portal-deploy-mode-source-of-truth`
   Enforces ADR-003-R4 for the AWS portal deploy path. `_shifter-platform.yml`

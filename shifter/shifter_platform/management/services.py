@@ -14,8 +14,13 @@ from django.db import IntegrityError, transaction
 from django.db.models import Q
 from django.utils import timezone
 
-from risk_register.models import AuditLog
-from risk_register.services import AuditEvent, audit_log
+from shared.audit import (
+    AuditAction,
+    AuditActorType,
+    AuditEntityType,
+    AuditEvent,
+    audit_log,
+)
 from shared.constants import USER_CANNOT_BE_NONE
 from shared.log_sanitize import safe_log_fingerprint, safe_log_value
 
@@ -36,7 +41,7 @@ logger = logging.getLogger(__name__)
 def log_activity(action: str, user: User | None, **metadata: Any) -> None:
     """Log an activity for audit trail.
 
-    DEPRECATED: Use risk_register.services.audit_log() instead.
+    DEPRECATED: Use shared.audit.audit_log() instead.
     This function is retained for backward compatibility only.
 
     Args:
@@ -120,10 +125,10 @@ def mark_user_deleted(user: User, admin_user: User | None = None) -> None:
         # Audit log user deletion
         audit_log(
             AuditEvent(
-                entity_type=AuditLog.EntityType.USER,
+                entity_type=AuditEntityType.USER,
                 entity_id=user.id,
-                action=AuditLog.Action.DELETE,
-                actor_type=AuditLog.ActorType.USER if admin_user else AuditLog.ActorType.SYSTEM,
+                action=AuditAction.DELETE,
+                actor_type=AuditActorType.USER if admin_user else AuditActorType.SYSTEM,
                 actor_id=admin_user.id if admin_user else None,
                 previous_state={"email": user.email},
             )

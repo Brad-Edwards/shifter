@@ -3,7 +3,13 @@
 A client-rendered SPA cannot read Django context processors, so it loads the
 authenticated principal, effective permission flags, feature flags, and UX mode
 eligibility once from this endpoint after authentication (replacing
-``shared.context_processors.user_permissions`` for the browser client).
+``config.context_processors.user_permissions`` for the browser client).
+
+This is cross-domain composition (it needs the risk-register access policy), so
+it lives at the ``config`` composition root and consumes the public
+``risk_register.services`` facade rather than importing the risk-register domain
+directly (ADR-001, #1523). It was moved here from ``shared`` so the contracts
+layer no longer imports a feature domain.
 
 The permission flags and mode eligibility are **advisory UI state only**. Every
 mutation and read still passes the authoritative DRF permission classes on the
@@ -13,8 +19,7 @@ cookies, or user-entered content.
 
 Active range/event summaries are cross-app composition and live in the
 composition-root dashboard summary read (``config.api_dashboard``) rather than
-here: ``shared`` is the contracts layer and may not import ``cms``/``ctf``
-services (ADR-001).
+here.
 """
 
 from __future__ import annotations
@@ -29,7 +34,7 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from risk_register.access import principal_has_risk_register_access
+from risk_register.services import principal_has_risk_register_access
 from shared.api.permissions import IsAuthenticatedSessionOrApiToken
 from shared.api_tokens.authentication import ApiTokenAuthentication
 from shared.api_tokens.models import ApiToken
@@ -78,6 +83,7 @@ class BootstrapFeatureFlagsSerializer(serializers.Serializer):
     risk_register_spa = serializers.BooleanField()
     platform_spa = serializers.BooleanField()
     mission_control_spa = serializers.BooleanField()
+    scenario_editor_spa = serializers.BooleanField()
 
 
 class BootstrapSerializer(serializers.Serializer):
@@ -181,6 +187,7 @@ class BootstrapView(APIView):
                 "risk_register_spa": bool(getattr(settings, "RISK_REGISTER_SPA_ENABLED", False)),
                 "platform_spa": bool(getattr(settings, "PLATFORM_SPA_ENABLED", False)),
                 "mission_control_spa": bool(getattr(settings, "MISSION_CONTROL_SPA_ENABLED", False)),
+                "scenario_editor_spa": bool(getattr(settings, "SCENARIO_EDITOR_SPA_ENABLED", False)),
             },
         }
         return Response(BootstrapSerializer(payload).data)

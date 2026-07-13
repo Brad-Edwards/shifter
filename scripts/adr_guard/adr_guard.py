@@ -20,9 +20,13 @@ from fnmatch import fnmatch
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-LAYERS = ("shared", "engine", "cms", "management", "mission_control", "ctf")
+# Every first-party Django app is classified (ADR-001, #1523). Held to
+# set-equality with the canonical classification in layer_imports.yaml by the
+# layer-classification-parity check.
+LAYERS = ("shared", "engine", "cms", "management", "mission_control", "ctf", "config", "risk_register")
 IMPORT_PATTERN = re.compile(
-    r"^\s*(?:from|import)\s+((?:shared|engine|cms|management|mission_control|ctf)(?:\.\w+)*)",
+    r"^\s*(?:from|import)\s+"
+    r"((?:shared|engine|cms|management|mission_control|ctf|config|risk_register)(?:\.\w+)*)",
     re.MULTILINE,
 )
 CYBERSCRIPT_IMPORT_PATTERN = re.compile(
@@ -204,10 +208,17 @@ def filter_excepted_violations(violations: list[Violation], exceptions: list[dic
     return filtered
 
 
-def load_allowed_imports(config_path: Path) -> dict[str, list[str]]:
-    """Load the simple layer import policy without external YAML dependencies."""
-    allowed: dict[str, list[str]] = {}
-    current_layer: str | None = None
+def _iter_yaml_section(config_path: Path, section: str) -> "list[tuple[str, list[str]]]":
+    """Parse one top-level ``section:`` of the layer-policy YAML.
+
+    Minimal, dependency-free reader for the two-level shape used by
+    layer_imports.yaml (``section:`` -> ``key:`` -> ``- item`` list). Only the
+    requested top-level section is parsed; other sections are ignored, so the
+    ``classification`` and ``allowed`` blocks never bleed into each other.
+    """
+    result: dict[str, list[str]] = {}
+    current_section: str | None = None
+    current_key: str | None = None
 
     for raw_line in config_path.read_text(encoding="utf-8").splitlines():
         line = raw_line.split("#", 1)[0].rstrip()
@@ -216,18 +227,30 @@ def load_allowed_imports(config_path: Path) -> dict[str, list[str]]:
         stripped = line.strip()
         indent = len(raw_line) - len(raw_line.lstrip(" "))
 
-        if stripped == "allowed:":
+        if indent == 0 and stripped.endswith(":"):
+            current_section = stripped[:-1]
+            current_key = None
             continue
-
+        if current_section != section:
+            continue
         if indent == 2 and stripped.endswith(":"):
-            current_layer = stripped[:-1]
-            allowed[current_layer] = []
+            current_key = stripped[:-1]
+            result[current_key] = []
             continue
+        if current_key is not None and indent >= 4 and stripped.startswith("- "):
+            result[current_key].append(stripped[2:].strip())
 
-        if current_layer and indent >= 4 and stripped.startswith("- "):
-            allowed[current_layer].append(stripped[2:].strip())
+    return list(result.items())
 
-    return allowed
+
+def load_allowed_imports(config_path: Path) -> dict[str, list[str]]:
+    """Load the simple layer import policy without external YAML dependencies."""
+    return dict(_iter_yaml_section(config_path, "allowed"))
+
+
+def load_classification(config_path: Path) -> dict[str, list[str]]:
+    """Load the canonical package classification without external YAML deps."""
+    return dict(_iter_yaml_section(config_path, "classification"))
 
 
 def is_import_allowed(from_layer: str, module_path: str, allowed: dict[str, list[str]]) -> bool:
@@ -594,6 +617,147 @@ def check_cross_layer_model_imports(repo_root: Path, files: list[str] | None) ->
                         f"{from_layer} imports {module}; prefer a service seam or shared contract",
                     )
                 )
+
+    return violations
+
+
+_PLATFORM_REL = "shifter/shifter_platform"
+_SETTINGS_REL = "shifter/shifter_platform/config/settings.py"
+_LAYER_POLICY_REL = "scripts/check_layer_imports/layer_imports.yaml"
+
+
+def _classified_packages(repo_root: Path) -> set[str]:
+    """Return the union of every canonically classified first-party package."""
+    classification = load_classification(repo_root / _LAYER_POLICY_REL)
+    return {pkg for packages in classification.values() for pkg in packages}
+
+
+def _local_appconfig_packages(repo_root: Path) -> set[str]:
+    """Return local packages under shifter_platform whose apps.py defines an AppConfig.
+
+    A tracked local Django app is a top-level package with an ``apps.py`` that
+    subclasses ``AppConfig``. Directories without an AppConfig (e.g. the retired
+    ``documentation`` package, ADR-038) are not tracked apps and are excluded.
+    """
+    platform = repo_root / _PLATFORM_REL
+    found: set[str] = set()
+    for apps_py in platform.glob("*/apps.py"):
+        try:
+            text = apps_py.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        if re.search(r"class\s+\w+\s*\(\s*[\w.]*AppConfig\b", text):
+            found.add(apps_py.parent.name)
+    return found
+
+
+def _parse_installed_apps(settings_text: str) -> tuple[list[str], list[str]]:
+    """Return (resolved app strings, unresolved dynamic reprs) from INSTALLED_APPS.
+
+    Parses the ``INSTALLED_APPS = [...]`` literal plus ``INSTALLED_APPS.append(...)``
+    calls. Any entry that is not a string constant — a dynamic expression, or an
+    ``extend``/``insert`` mutation — is returned as unresolved so the check fails
+    closed rather than silently skipping it.
+    """
+    resolved: list[str] = []
+    unresolved: list[str] = []
+
+    def _collect_sequence(value: ast.expr, dynamic_detail: str) -> None:
+        """Add string-literal elements of a list/tuple; flag anything else."""
+        if isinstance(value, (ast.List, ast.Tuple)):
+            for elt in value.elts:
+                if isinstance(elt, ast.Constant) and isinstance(elt.value, str):
+                    resolved.append(elt.value)
+                else:
+                    unresolved.append("non-literal INSTALLED_APPS entry")
+        else:
+            unresolved.append(dynamic_detail)
+
+    tree = ast.parse(settings_text)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Name) and target.id == "INSTALLED_APPS":
+                    _collect_sequence(node.value, "INSTALLED_APPS not assigned a list/tuple literal")
+        elif isinstance(node, ast.AugAssign):
+            # INSTALLED_APPS += [...] / += SOME_APPS
+            target = node.target
+            if isinstance(target, ast.Name) and target.id == "INSTALLED_APPS" and isinstance(node.op, ast.Add):
+                _collect_sequence(node.value, "unresolvable INSTALLED_APPS += mutation")
+        elif isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+            func = node.func
+            if isinstance(func.value, ast.Name) and func.value.id == "INSTALLED_APPS":
+                if func.attr == "append":
+                    arg = node.args[0] if node.args else None
+                    if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+                        resolved.append(arg.value)
+                    else:
+                        unresolved.append("non-literal INSTALLED_APPS.append() argument")
+                elif func.attr in {"extend", "insert", "__iadd__", "__add__"}:
+                    unresolved.append(f"unresolvable INSTALLED_APPS.{func.attr}() mutation")
+    return resolved, unresolved
+
+
+def check_installed_apps_classified(repo_root: Path, files: list[str] | None) -> list[Violation]:
+    """Fail closed when a first-party INSTALLED_APPS app is unclassified (#1523).
+
+    Enforces set-equality between the canonical classification
+    (layer_imports.yaml), the tracked local AppConfig packages, and the
+    first-party apps actually installed. Adding a local app to INSTALLED_APPS
+    without classifying it, leaving a stale classification entry, or introducing
+    a dynamic INSTALLED_APPS entry the checker cannot resolve, all fail closed.
+    """
+    del files  # whole-tree invariant; not file-scoped
+    settings_path = repo_root / _SETTINGS_REL
+    policy_path = repo_root / _LAYER_POLICY_REL
+    if not settings_path.exists() or not policy_path.exists():
+        return []
+
+    violations: list[Violation] = []
+    classified = _classified_packages(repo_root)
+    local_apps = _local_appconfig_packages(repo_root)
+    installed, unresolved = _parse_installed_apps(settings_path.read_text(encoding="utf-8"))
+
+    for detail in unresolved:
+        violations.append(
+            Violation(
+                "installed-apps-classified",
+                "ADR-001-R3",
+                _SETTINGS_REL,
+                f"INSTALLED_APPS has an entry the classifier cannot resolve ({detail}); "
+                "use a string literal so first-party apps stay classifiable",
+            )
+        )
+
+    installed_first_party = {entry.split(".")[0] for entry in installed} & local_apps
+
+    for pkg in sorted(installed_first_party - classified):
+        violations.append(
+            Violation(
+                "installed-apps-classified",
+                "ADR-001-R3",
+                _SETTINGS_REL,
+                f"first-party app '{pkg}' is in INSTALLED_APPS but not classified in {_LAYER_POLICY_REL}",
+            )
+        )
+    for pkg in sorted(local_apps - classified):
+        violations.append(
+            Violation(
+                "installed-apps-classified",
+                "ADR-001-R3",
+                _LAYER_POLICY_REL,
+                f"local app '{pkg}' has an AppConfig but is not classified in {_LAYER_POLICY_REL}",
+            )
+        )
+    for pkg in sorted(classified - local_apps):
+        violations.append(
+            Violation(
+                "installed-apps-classified",
+                "ADR-001-R3",
+                _LAYER_POLICY_REL,
+                f"classified package '{pkg}' has no local AppConfig under {_PLATFORM_REL} (stale classification)",
+            )
+        )
 
     return violations
 
@@ -4967,12 +5131,22 @@ def _dw_runs_on(job: dict):
     return job.get("runs-on")
 
 
+# Runner labels the ADR-003-R5 exposure check treats as self-hosted-class. A
+# GCP-native runner (issue #1546) registers with `--no-default-labels` + a custom
+# label, so a job selecting it never carries the literal `self-hosted` label;
+# without this set the exposure check would skip that job and leave a
+# pull_request-reachability blind spot when GCP-dev CI is cut over to its own
+# runner. New self-hosted runner labels (e.g. a future gcp-prod, or a per-account
+# AWS tenant label) MUST be added here so the gate cannot be bypassed.
+_SELF_HOSTED_CLASS_LABELS = frozenset({"self-hosted", "gcp-dev"})
+
+
 def _dw_is_self_hosted(job: dict) -> bool:
     ro = _dw_runs_on(job)
     if isinstance(ro, str):
-        return ro == "self-hosted"
+        return ro in _SELF_HOSTED_CLASS_LABELS
     if isinstance(ro, (list, tuple)):
-        return "self-hosted" in ro
+        return any(label in _SELF_HOSTED_CLASS_LABELS for label in ro)
     return False
 
 
@@ -6019,10 +6193,115 @@ def check_mission_control_no_flag_literals(repo_root: Path, files: list[str] | N
     return violations
 
 
+_PUBLISHED_CONTRACT_DIR = "shifter/installation/published_contract"
+_PUBLISHED_CONTRACT_SNAPSHOT_RE = re.compile(r"^backend-bundle-contract\.v(\d+)\.json$")
+_PUBLISHED_CONTRACT_CHECK = "published-contract-snapshots-immutable"
+_PUBLISHED_CONTRACT_RULE = "ADR-011-R8"
+# CI lanes that fetch base-branch history set this so the check fails CLOSED when it cannot
+# verify immutability. Local/shallow runs (env unset) fail open so dev is not blocked.
+_PUBLISHED_CONTRACT_ENFORCE_ENV = "ADR_GUARD_SNAPSHOT_ENFORCE"
+
+
+def _published_contract_snapshot_names(repo_root: Path, ref: str) -> set[str] | None:
+    """Frozen version-snapshot filenames under the published-contract dir at ``ref``.
+
+    Returns an empty set when the directory does not exist at ``ref`` (a genuine first
+    publication), and ``None`` when the tree could not be read at all (a git read failure) —
+    the two cases are distinct so the caller can fail closed on the unreadable case.
+    """
+    listing = _git_text(repo_root, ["ls-tree", "--name-only", ref, f"{_PUBLISHED_CONTRACT_DIR}/"])
+    if listing is None:
+        return None
+    names = {line.strip().rsplit("/", 1)[-1] for line in listing.splitlines() if line.strip()}
+    return {name for name in names if _PUBLISHED_CONTRACT_SNAPSHOT_RE.match(name)}
+
+
+def _published_contract_enforced() -> bool:
+    return os.environ.get(_PUBLISHED_CONTRACT_ENFORCE_ENV, "").strip().lower() in {"1", "true", "yes"}
+
+
+def _published_contract_violation(path: str, message: str) -> Violation:
+    return Violation(_PUBLISHED_CONTRACT_CHECK, _PUBLISHED_CONTRACT_RULE, path, message)
+
+
+def _published_contract_snapshot_diff(repo_root: Path, ref: str, name: str, enforce: bool) -> list[Violation]:
+    rel = f"{_PUBLISHED_CONTRACT_DIR}/{name}"
+    head_path = repo_root / rel
+    if not head_path.exists():
+        return [
+            _published_contract_violation(
+                rel,
+                "published contract version snapshot was deleted; published versions are immutable "
+                "(append-only). Restore it and ship a new version snapshot instead of removing this one.",
+            )
+        ]
+    base_content = _git_text(repo_root, ["show", f"{ref}:{rel}"])
+    if base_content is None:
+        if enforce:
+            return [_published_contract_violation(rel, "cannot read the published snapshot at the base ref to verify immutability")]
+        return []
+    if head_path.read_text(encoding="utf-8") != base_content:
+        return [
+            _published_contract_violation(
+                rel,
+                "published contract version snapshot was modified; published versions are immutable "
+                "(append-only). Bump contract_version and add a new snapshot instead of changing this one.",
+            )
+        ]
+    return []
+
+
+def check_published_contract_snapshots_immutable(repo_root: Path, files: list[str] | None) -> list[Violation]:
+    """Published backend-bundle contract version snapshots are append-only (ADR-011-R8).
+
+    Each ``backend-bundle-contract.v<N>.json`` records the frozen shape of a published
+    contract version. Once published on the base branch, a snapshot must not be modified or
+    deleted — a contract change ships a *new* version snapshot instead. This is what makes the
+    breaking-change gate's oracle trustworthy, which the working tree alone cannot: the
+    committed snapshot is compared against its content at the base-branch merge base.
+
+    Enforcement is fail-open by default (a shallow clone without base history cannot compare,
+    so local dev is not blocked) and fail-CLOSED when ``ADR_GUARD_SNAPSHOT_ENFORCE`` is set —
+    the CI lane sets it and fetches base history (``fetch-depth: 0``), so an inability to
+    resolve or read the base becomes an enforcement failure rather than a silent pass.
+    """
+    del files  # global repository invariant, not scoped to the changed-file set
+    enforce = _published_contract_enforced()
+    base_refs = _boundary_mock_base_reference_candidates(repo_root)
+    if not base_refs:
+        if enforce:
+            return [
+                _published_contract_violation(
+                    _PUBLISHED_CONTRACT_DIR,
+                    "cannot resolve a base ref to verify published-contract snapshot immutability; "
+                    "the CI lane must fetch base-branch history (fetch-depth: 0)",
+                )
+            ]
+        return []
+    ref = base_refs[0]
+    base_snapshots = _published_contract_snapshot_names(repo_root, ref)
+    if base_snapshots is None:
+        if enforce:
+            return [
+                _published_contract_violation(
+                    _PUBLISHED_CONTRACT_DIR,
+                    "cannot read the published-contract directory at the base ref to verify snapshot immutability",
+                )
+            ]
+        return []
+    if not base_snapshots:
+        return []  # the directory does not exist at the base yet (genuine first publication)
+    violations: list[Violation] = []
+    for name in sorted(base_snapshots):
+        violations.extend(_published_contract_snapshot_diff(repo_root, ref, name, enforce))
+    return violations
+
+
 CHECKS = {
     "adr-registry": check_adr_registry,
     "layer-imports": check_layer_imports,
     "cross-layer-model-imports": check_cross_layer_model_imports,
+    "installed-apps-classified": check_installed_apps_classified,
     "guardrail-docs": check_guardrail_docs,
     "cloud-factory-seam": check_cloud_factory_seam,
     "mcp-no-shell-exec": check_mcp_no_shell_exec,
@@ -6045,6 +6324,7 @@ CHECKS = {
     "no-terraform-operational-placeholders": check_no_terraform_operational_placeholders,
     "github-oidc-no-admin-access": check_github_oidc_no_admin_access,
     "documentation-coverage": check_documentation_coverage,
+    "published-contract-snapshots-immutable": check_published_contract_snapshots_immutable,
     "no-agent-attribution": check_no_agent_attribution,
 }
 CHECK_LEVELS = {
@@ -6052,6 +6332,7 @@ CHECK_LEVELS = {
         "adr-registry",
         "layer-imports",
         "cross-layer-model-imports",
+        "installed-apps-classified",
         "guardrail-docs",
         "cloud-factory-seam",
         "mcp-no-shell-exec",
@@ -6072,12 +6353,14 @@ CHECK_LEVELS = {
         "no-terraform-operational-placeholders",
         "github-oidc-no-admin-access",
         "documentation-coverage",
+        "published-contract-snapshots-immutable",
         "no-agent-attribution",
     ],
     "ci": [
         "adr-registry",
         "layer-imports",
         "cross-layer-model-imports",
+        "installed-apps-classified",
         "cloud-factory-seam",
         "mcp-no-shell-exec",
         "k8s-deployment-security-context",
@@ -6099,6 +6382,7 @@ CHECK_LEVELS = {
         "no-terraform-operational-placeholders",
         "github-oidc-no-admin-access",
         "documentation-coverage",
+        "published-contract-snapshots-immutable",
         "no-agent-attribution",
     ],
     "all": list(CHECKS),

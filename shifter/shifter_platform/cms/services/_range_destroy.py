@@ -12,7 +12,11 @@ from django.utils import timezone
 
 from cms.exceptions import CMSError
 from cms.models import RangeInstance
-from risk_register.models import AuditLog
+from shared.audit import (
+    AuditAction,
+    AuditActorType,
+    AuditEntityType,
+)
 from shared.constants import USER_CANNOT_BE_NONE
 from shared.enums import ResourceStatus
 
@@ -43,11 +47,11 @@ def _engine_cancel_range_by_request_call(request_id: UUID) -> bool:
     return result
 
 
-_TransitionSpec = tuple[str, Callable[[UUID], bool], AuditLog.Action, str, str, bool]
+_TransitionSpec = tuple[str, Callable[[UUID], bool], AuditAction, str, str, bool]
 _DESTROY_TRANSITION: _TransitionSpec = (
     ResourceStatus.DESTROYING.value,
     _engine_destroy_range_by_request_call,
-    AuditLog.Action.DEPROVISION,
+    AuditAction.DEPROVISION,
     "Range cannot be destroyed in current state",
     "destroy_range",
     True,
@@ -55,7 +59,7 @@ _DESTROY_TRANSITION: _TransitionSpec = (
 _CANCEL_TRANSITION: _TransitionSpec = (
     ResourceStatus.DESTROYING.value,
     _engine_cancel_range_by_request_call,
-    AuditLog.Action.CANCEL,
+    AuditAction.CANCEL,
     "Range cannot be cancelled in current state",
     "cancel_range",
     False,
@@ -111,10 +115,10 @@ def _transition_then_dispatch(
 
     if status_changed:
         _audit_log_call(
-            entity_type=AuditLog.EntityType.RANGE,
+            entity_type=AuditEntityType.RANGE,
             entity_id=audit_entity_id,
             action=audit_action,
-            actor_type=AuditLog.ActorType.USER,
+            actor_type=AuditActorType.USER,
             actor_id=user.id,
             previous_state={
                 "status": previous_status,

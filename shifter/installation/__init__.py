@@ -30,6 +30,15 @@ from .contract import (
 )
 from .errors import ConfigIssue, InstallationConfigError
 from .loader import load_root_config, validate_root_config_file
+from .publication import (
+    PUBLISHED_CONTRACT_VERSION,
+    build_contract_artifact,
+    check_publication,
+    find_incompatible_changes,
+    published_backend_bundle_schema,
+    serialize_artifact,
+    validate_published_bundle,
+)
 from .registry import (
     ALLOWED_PROFILES,
     BACKEND_BUNDLES,
@@ -45,6 +54,7 @@ __all__ = [
     "KNOWN_BACKENDS",
     "KNOWN_PROFILES",
     "PROMPT_REFERENCE",
+    "PUBLISHED_CONTRACT_VERSION",
     "SUPPORTED_CONTRACT_VERSIONS",
     "BackendBundle",
     "BackendCapability",
@@ -64,7 +74,13 @@ __all__ = [
     "RequiredTool",
     "RootConfig",
     "ValidationCheck",
+    "build_contract_artifact",
+    "check_publication",
+    "find_incompatible_changes",
     "get_backend_bundle",
     "load_root_config",
+    "published_backend_bundle_schema",
+    "serialize_artifact",
+    "validate_published_bundle",
     "validate_root_config_file",
 ]

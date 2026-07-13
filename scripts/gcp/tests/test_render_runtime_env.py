@@ -212,6 +212,19 @@ def test_render_env_emits_production_security_profile():
     ) in rendered
 
 
+def test_render_env_emits_cloud_provider():
+    """The GCP backend renderer IS the source of the renderer-owned CLOUD_PROVIDER identity
+
+    (PLAT-2005): this module's own backend identity, not a static overlay literal or a
+    branch-name inference.
+    """
+    module = _load_module("render_runtime_env.py", "render_runtime_env")
+
+    rendered = module.render_env(_outputs(), engine_image=PINNED_ENGINE_DIGEST)
+
+    assert "CLOUD_PROVIDER=gcp\n" in rendered
+
+
 def test_render_env_keys_match_runtime_inventory(monkeypatch):
     module = _load_module("render_runtime_env.py", "render_runtime_env")
 

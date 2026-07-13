@@ -67,11 +67,24 @@ jobs:
 
   validate:
     name: Validate (${{ inputs.environment }})
-    # PR validation only needs a local Docker build and no cloud credentials.
-    # Keep it on GitHub-hosted runners so PRs do not queue behind the
-    # deployment runner pool; build/deploy remain self-hosted below.
+    # Engine image-shape validation (local `docker build`, no cloud credentials).
+    # This reusable workflow is only ever called by deploy.yml's PR-gated
+    # `shifter-engine` job, so `validate` runs on the trusted deploy path, never
+    # on pull_request. Run it on the same self-hosted runner class as
+    # build/deploy: on GitHub-hosted runners a runner-acquisition stall can
+    # cancel the job with zero steps started and skip the whole Platform stage
+    # (#1474), and GitHub Actions has no runner-class fallback to repair a job
+    # that never acquired a runner.
     needs: test
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
+    # Defense in depth: ADR-003-R5 (`deploy-workflow-runner-exposure`) requires
+    # every self-hosted job in a reusable deploy workflow to fail closed on
+    # pull_request, so the workflow stays safe if a future caller is added.
+    if: github.event_name != 'pull_request'
+    permissions:
+      contents: read
+    # Backstop only (see #1220); generous vs. a single local --no-cache build.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
       - name: Build provisioner image locally
