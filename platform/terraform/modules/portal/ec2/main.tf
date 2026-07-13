@@ -774,8 +774,8 @@ resource "aws_autoscaling_group" "this" {
   name_prefix               = "${var.name_prefix}-asg-"
   vpc_zone_identifier       = var.subnet_ids
   target_group_arns         = [var.target_group_arn]
-  health_check_type         = "EC2"
-  health_check_grace_period = 900
+  health_check_type         = var.health_check_type
+  health_check_grace_period = var.health_check_grace_period
 
   # Do not block `terraform apply` on the ASG reaching capacity. New instances
   # sit in Pending:Wait until user_data finishes and calls
@@ -800,6 +800,7 @@ resource "aws_autoscaling_group" "this" {
     strategy = "Rolling"
     preferences {
       min_healthy_percentage = var.instance_refresh_min_healthy_percentage
+      instance_warmup        = var.instance_refresh_instance_warmup
     }
   }
 
