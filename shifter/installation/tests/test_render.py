@@ -39,8 +39,13 @@ def _aws(settings: dict | None, aws_config: dict) -> dict:
 
 def _gcp(settings: dict | None, gcp_config: dict) -> dict:
     cfg = dict(gcp_config)
+    # The GCP backend now has a closed settings model (#729) that requires project_id and
+    # region; merge them in so these range-egress-focused render cases load cleanly while
+    # still controlling the range_egress block under test.
+    merged = {"project_id": "acme-shifter", "region": "us-central1", **gcp_config.get("settings", {})}
     if settings is not None:
-        cfg["settings"] = {**gcp_config.get("settings", {}), **settings}
+        merged.update(settings)
+    cfg["settings"] = merged
     return cfg
 
 

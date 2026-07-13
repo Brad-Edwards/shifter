@@ -79,10 +79,11 @@ def test_published_bundle_drops_settings_model_class() -> None:
     # AWS is migrated (#728): its closed settings model publishes as a JSON schema object.
     assert isinstance(aws["settings_schema"], dict)
     assert "region" in aws["settings_schema"].get("properties", {})
-    # GCP is still provisional (no settings model), so its settings_schema is null.
+    # GCP is migrated too (#729): its closed settings model publishes as a JSON schema object.
     gcp = backends["gcp"]
     assert "settings_model" not in gcp
-    assert gcp["settings_schema"] is None
+    assert isinstance(gcp["settings_schema"], dict)
+    assert {"project_id", "region"} <= set(gcp["settings_schema"].get("properties", {}))
     assert aws["supported_profiles"] == sorted(aws["supported_profiles"])
     assert aws["capabilities"] == sorted(aws["capabilities"])
 

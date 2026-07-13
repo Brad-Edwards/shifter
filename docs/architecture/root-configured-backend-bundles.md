@@ -23,6 +23,8 @@ The implementation lives in `shifter/installation/`:
 
 Contract publication guidance for issue #1323 lives in
 `docs/architecture/backend-bundle-contract-publication-preflight-1323.md`.
+GCP migration constraints for issue #729 live in
+`docs/architecture/gcp-backend-bundle-migration-preflight-729.md`.
 
 Published operator docs:
 
@@ -58,8 +60,8 @@ settings and secret reference grammar when they declare those validators.
 
 | Backend | Profiles | Required secrets | Settings validation |
 | --- | --- | --- | --- |
-| `aws` | `prod`, `dev`, `proof` | `django_secret_key`, `db_password` | Closed model: `region` (required); unknown keys rejected. Secret references validated against a machine-readable grammar (#728). |
-| `gcp` | `prod`, `dev` | `django_secret_key` | Any mapping accepted by root-config validation. Deployment tooling validates consumed values (provisional until #729). |
+| `aws` | `prod`, `dev`, `proof` | `django_secret_key`, `db_password` | Closed `AwsSettings` model: `region` (required); unknown keys rejected. Secret references validated against a machine-readable grammar (#728). |
+| `gcp` | `prod`, `dev` | `django_secret_key` | Closed `GcpBackendSettings` model: `project_id`, `region` (required); unknown keys rejected. Secret reference validated against a machine-readable grammar (#729). |
 
 `range_egress` under `settings` is the shared, cross-backend egress policy
 (PLAT-220); it is owned and validated by `installation.range_egress` for every
@@ -172,7 +174,7 @@ The derivation path must preserve these existing cross-cutting gates:
 | Boundary | Canonical incumbent | Required behavior |
 | --- | --- | --- |
 | Root YAML and config shape | `installation.loader`, `installation.schema` | Reject malformed/duplicate/merged YAML, unknown fields, invalid backend/profile combinations, and raw-looking secret material before rendering. Use the sanitized `InstallationConfigError`; never surface rejected values. |
-| Backend-owned settings | `BackendBundle.settings_model` and `secret_reference_issues` | Use one closed (`extra="forbid"`) model per backend and normalize once in `load_root_config`. Do not recreate the model in a renderer, Django settings, Terraform, or a workflow. The provisional `settings_model=None` entries are migration debt, not permission for runtime consumers to accept arbitrary keys. |
+| Backend-owned settings | `BackendBundle.settings_model` and `secret_reference_issues` | Use one closed (`extra="forbid"`) model per backend and normalize once in `load_root_config`. Do not recreate the model in a renderer, Django settings, Terraform, or a workflow. Both AWS (`AwsSettings`, #728) and GCP (`installation.settings_gcp.GcpBackendSettings`, #729) ship closed models; the `local` backend (#1119) remains provisional until its migration. |
 | Output classification | `GeneratedOutput`, `OutputSensitivity`, `OutputDestination`, `ProcessRole` | Keep secret values out of runtime env files, ConfigMaps, Terraform variables, Helm values, dry-run output, and plan/log surfaces. Runtime files may carry public values and secret references only. |
 | Runtime env shape | `installation.runtime_inventory`, `scripts/gcp/render_runtime_env.py`, `config/env-manifest.json` | Keep renderer-owned, static, optional, and secret-backed keys classified and drift-tested. A new key must update every applicable inventory/manifest/test surface rather than bypassing them. |
 | Django/worker startup | `config._runtime_env`, `config._cloud`, `django.core.exceptions.ImproperlyConfigured` | Resolve the normalized binding at the composition root, apply existing dev/test default policy, and fail deployed startup on missing or unsupported configuration. Workers reuse this exact path. |
@@ -232,10 +234,10 @@ are never auto-claimed by existing bundles.
   engine-provisioner modules receive as `var.cloud_provider`. Do not reintroduce a
   hardcoded task-definition/overlay literal or an implicit AWS default; the deployed
   backend identity must come from the selected bundle.
-- AWS and GCP currently have `settings_model=None`. PLAT-2005 may use the validated
-  backend identity and registry-declared capabilities, but must not make adapter
-  selection depend on arbitrary backend settings before the backend migrations supply
-  closed models.
+- Both AWS (#728) and GCP (#729) ship closed `settings_model`s. PLAT-2005 may use the
+  validated backend identity and registry-declared capabilities, but must not make adapter
+  selection depend on arbitrary backend settings where a backend has not yet supplied a
+  closed model.
 - `AUTH_PROVIDER`, `CLOUD_PROVIDER`, deployment profile/environment, and
   `GCP_RANGE_BACKEND` / `GCP_RANGE_PLANE` are separate concepts. Do not normalize them
   into one provider enum or infer one from another inside domain code.
