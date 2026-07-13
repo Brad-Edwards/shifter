@@ -90,7 +90,7 @@ describe("AcesImageRegistryPage", () => {
   });
 
   it("registers a mapping through the API", async () => {
-    mockApi.mockImplementation((path: string, options?: { method?: string }) => {
+    mockApi.mockImplementation((_path: string, options?: { method?: string }) => {
       if (options?.method === "POST") return Promise.resolve(mapping());
       return Promise.resolve([]);
     });
@@ -112,7 +112,7 @@ describe("AcesImageRegistryPage", () => {
   });
 
   it("disables a mapping through the API", async () => {
-    mockApi.mockImplementation((path: string, options?: { method?: string }) => {
+    mockApi.mockImplementation((_path: string, options?: { method?: string }) => {
       if (options?.method === "POST") return Promise.resolve(mapping({ enabled: false }));
       return Promise.resolve([mapping()]);
     });
