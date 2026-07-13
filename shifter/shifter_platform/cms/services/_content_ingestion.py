@@ -38,7 +38,7 @@ from django.db import IntegrityError, transaction
 
 from cms.exceptions import CMSError
 from cms.models import AcesPackageSource
-from cms.scenarios.legacy_ids import active_legacy_scenario_ids
+from cms.scenarios.legacy_ids import ScenarioIdCollisionError, ensure_scenario_id_available
 from cms.scenarios.pack_validation import (
     PackDigestError,
     PackValidationError,
@@ -131,7 +131,10 @@ def register_pack(
             invalid reference record.
     """
     validate_cms_authoring_user(user, "register_pack")
-    _reject_legacy_shadow(request.scenario_id)
+    try:
+        ensure_scenario_id_available(request.scenario_id, registering="pack")
+    except ScenarioIdCollisionError as exc:
+        raise CMSError(str(exc)) from exc
     existing = AcesPackageSource.objects.filter(scenario_id=request.scenario_id).first()
     if existing is not None:
         return _reuse_existing(existing, request, idempotent=idempotent)
@@ -183,12 +186,6 @@ def register_pack(
         conformance_status=row.conformance_status,
         created=True,
     )
-
-
-def _reject_legacy_shadow(scenario_id: str) -> None:
-    """Fail closed if the id shadows an active legacy scenario."""
-    if scenario_id in active_legacy_scenario_ids():
-        raise CMSError(f"pack id '{scenario_id}' shadows an active legacy scenario")
 
 
 def _reuse_existing(

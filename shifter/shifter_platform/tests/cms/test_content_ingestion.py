@@ -16,9 +16,11 @@ from pathlib import Path
 
 import pytest
 from django.contrib.auth import get_user_model
+from django.utils import timezone
 
 from cms.exceptions import CMSError
 from cms.models import AcesPackageSource, Scenario
+from cms.scenarios.legacy_ids import ScenarioIdCollisionError
 from cms.scenarios.pack_validation import PackDigestError, pack_digest
 from cms.scenarios.registry import get_catalog_entry
 from cms.services import PackRegistrationRequest, register_pack
@@ -32,6 +34,14 @@ pytestmark = pytest.mark.django_db
 # The conformant repo pack fixtures are built with this name; a repo pack's
 # catalog id must equal its validated pack identity (finding: scenario_id binding).
 FIXTURE_PACK_NAME = "ingestion-fixture"
+
+
+def _legacy_definition() -> dict[str, object]:
+    return {
+        "instances": [{"name": "A", "role": "attacker", "os_type": "kali", "xdr_agent": False}],
+        "subnets": [{"name": "n", "instances": ["A"]}],
+        "ngfw": False,
+    }
 
 
 @pytest.fixture
@@ -280,6 +290,47 @@ class TestRegisterPackFailsClosed:
                 user=staff_user, request=_request(f"packs/{valid_db_scenario}", scenario_id=valid_db_scenario)
             )
 
+    def test_rejects_legacy_creation_after_pack_registration(self, staff_user, repo_pack):
+        register_pack(user=staff_user, request=_request(repo_pack))
+
+        with pytest.raises(ScenarioIdCollisionError, match="registered ACES pack"):
+            Scenario.objects.create(
+                scenario_id=FIXTURE_PACK_NAME,
+                name="Late Legacy Shadow",
+                description="Must not claim a registered pack id.",
+                definition=_legacy_definition(),
+                created_by=staff_user,
+                updated_by=staff_user,
+            )
+        assert not Scenario.objects.filter(scenario_id=FIXTURE_PACK_NAME).exists()
+
+    def test_rejects_legacy_restore_after_pack_registration(self, staff_user, make_pack, tmp_path, monkeypatch):
+        from django.conf import settings
+
+        scenario_id = "restore-shadow"
+        scenario = Scenario.objects.create(
+            scenario_id=scenario_id,
+            name="Restore Shadow",
+            description="Soft-deleted before pack registration.",
+            definition=_legacy_definition(),
+            created_by=staff_user,
+            updated_by=staff_user,
+        )
+        scenario.deleted_at = timezone.now()
+        scenario.save(update_fields=["deleted_at", "updated_at"])
+        make_pack(tmp_path / "packs" / scenario_id, name=scenario_id)
+        monkeypatch.setattr(settings, "ACES_PACKAGE_ROOT", str(tmp_path))
+        register_pack(
+            user=staff_user,
+            request=_request(f"packs/{scenario_id}", scenario_id=scenario_id),
+        )
+
+        scenario.deleted_at = None
+        with pytest.raises(ScenarioIdCollisionError, match="registered ACES pack"):
+            scenario.save(update_fields=["deleted_at", "updated_at"])
+        assert not Scenario.objects.filter(scenario_id=scenario_id).exists()
+        assert Scenario.all_objects.get(pk=scenario.pk).is_deleted
+
     def test_rejects_duplicate_registration(self, staff_user, repo_pack):
         register_pack(user=staff_user, request=_request(repo_pack))
         with pytest.raises(CMSError, match="already registered"):
@@ -340,11 +391,7 @@ def valid_db_scenario(staff_user):
         scenario_id="db-custom-shadow",
         name="DB Custom Shadow",
         description="Active DB custom used to test no-shadow.",
-        definition={
-            "instances": [{"name": "A", "role": "attacker", "os_type": "kali", "xdr_agent": False}],
-            "subnets": [{"name": "n", "instances": ["A"]}],
-            "ngfw": False,
-        },
+        definition=_legacy_definition(),
         created_by=staff_user,
         updated_by=staff_user,
     )

@@ -16,4 +16,6 @@ request (see the example in `manifest.yaml`). Packs themselves are validated as
 foreign input at registration against the `aces-scenario-packs` contract, and
 their advertised digest must match the exact associated-artifact inventory.
 Bootstrap retries are service-level no-ops only for the same immutable identity;
-manifest or content drift fails visibly.
+manifest or content drift fails visibly. A missing or malformed declaration
+fails the deploy bootstrap, and a failure in any entry rolls back every new
+registration from that invocation rather than installing a partial catalog.

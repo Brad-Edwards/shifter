@@ -60,8 +60,10 @@ The packs Shifter ships by default are declared in
 by `python manage.py bootstrap_inbox_catalog --actor <username>`. There is no
 privileged load path for the in-box catalog: it is registered exactly the way an
 operator registers their own content. The bootstrap is idempotent, so it is safe
-to run after each deploy. No conformant default packs ship yet, so the manifest
-is currently empty.
+to run after each deploy. It validates the complete declaration before writing
+and registers the batch atomically: a missing/malformed manifest or any invalid
+or drifted entry fails visibly and leaves no partially installed batch. No
+conformant default packs ship yet, so the manifest is currently empty.
 
 ## Resolution and launchability
 

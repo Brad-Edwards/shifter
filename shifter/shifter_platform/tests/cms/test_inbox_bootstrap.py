@@ -36,7 +36,7 @@ def admin_actor(db):
     )
 
 
-def _write_manifest(path: Path, entries: list[dict]) -> Path:
+def _write_manifest(path: Path, entries: list[object]) -> Path:
     path.write_text(yaml.safe_dump({"packs": entries}), encoding="utf-8")
     return path
 
@@ -116,8 +116,57 @@ class TestRegisterInboxPacks:
         manifest = _write_manifest(tmp_path / "manifest.yaml", [])
         assert register_inbox_packs(actor=admin_actor, manifest_path=manifest) == []
 
-    def test_absent_manifest_is_a_noop(self, admin_actor, tmp_path):
-        assert register_inbox_packs(actor=admin_actor, manifest_path=tmp_path / "nope.yaml") == []
+    def test_absent_manifest_fails_closed(self, admin_actor, tmp_path):
+        with pytest.raises(CMSError, match="manifest is missing"):
+            register_inbox_packs(actor=admin_actor, manifest_path=tmp_path / "nope.yaml")
+
+    @pytest.mark.parametrize(
+        "body",
+        [
+            "",
+            "- not\n- a\n- mapping\n",
+            "wrong_key: []\n",
+            "packs: {}\n",
+            "packs:\n  - not-a-mapping\n",
+            "packs:\n  - package_ref: packs/missing-id\n",
+            "packs:\n  - scenario_id: bad\n    unsupported_field: true\n",
+        ],
+    )
+    def test_malformed_manifest_fails_closed(self, admin_actor, tmp_path, body):
+        manifest = tmp_path / "manifest.yaml"
+        manifest.write_text(body, encoding="utf-8")
+
+        with pytest.raises(CMSError, match="in-box pack manifest"):
+            register_inbox_packs(actor=admin_actor, manifest_path=manifest)
+        assert AcesPackageSource.objects.count() == 0
+
+    def test_later_pack_failure_rolls_back_earlier_registration(
+        self,
+        admin_actor,
+        make_pack,
+        tmp_path,
+        monkeypatch,
+    ):
+        from django.conf import settings
+
+        make_pack(tmp_path / "packs" / "inbox-first", name="inbox-first")
+        make_pack(tmp_path / "packs" / "inbox-second", name="inbox-second")
+        monkeypatch.setattr(settings, "ACES_PACKAGE_ROOT", str(tmp_path))
+        manifest = _write_manifest(
+            tmp_path / "manifest.yaml",
+            [
+                _inbox_entry("packs/inbox-first", scenario_id="inbox-first"),
+                _inbox_entry(
+                    "packs/inbox-second",
+                    scenario_id="inbox-second",
+                    package_digest="sha256:" + "b" * 64,
+                ),
+            ],
+        )
+
+        with pytest.raises(CMSError, match="does not match"):
+            register_inbox_packs(actor=admin_actor, manifest_path=manifest)
+        assert not AcesPackageSource.objects.filter(scenario_id__in=["inbox-first", "inbox-second"]).exists()
 
 
 class TestBootstrapCommand:
@@ -133,3 +182,10 @@ class TestBootstrapCommand:
 
         with pytest.raises(CommandError):
             call_command("bootstrap_inbox_catalog", "--actor", "nobody@example.com")
+
+    def test_command_surfaces_missing_shipped_manifest(self, admin_actor, tmp_path, monkeypatch):
+        from django.core.management import CommandError, call_command
+
+        monkeypatch.setattr("cms.scenarios.inbox.SHIPPED_INBOX_MANIFEST", tmp_path / "missing.yaml")
+        with pytest.raises(CommandError, match="manifest is missing"):
+            call_command("bootstrap_inbox_catalog", "--actor", admin_actor.username)
