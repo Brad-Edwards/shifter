@@ -141,6 +141,35 @@ Validation commands are stored as argv arrays, not shell strings. Command specs
 reject shell metacharacters, absolute paths, path traversal, and tokens with
 internal whitespace.
 
+## Published Contract
+
+The contract is published as a committed, versioned JSON artifact under
+`published_contract/` so downstream backend-bundle authors and tooling can build
+against it without reading Shifter internals (issue #1323). `publication.py`
+generates the artifact from `contract.py` and `registry.py`; it is never hand-edited.
+
+```bash
+# Regenerate the committed artifact from the code.
+uv run --project shifter/installation shifter-config contract export
+
+# Fail on drift, unversioned breaking changes, or non-conformant backends.
+uv run --project shifter/installation shifter-config contract check
+```
+
+The `installation` test lane enforces the same three gates: drift (committed artifact
+must match the code), breaking change (an incompatible shape change versus the current
+version's immutable frozen snapshot `backend-bundle-contract.v<N>.json` requires a
+`contract_version` bump and a migration note), and registry conformance (every published
+backend record validates against the published JSON schema). See
+`published_contract/MIGRATIONS.md` for the procedure to change the contract.
+
+The published JSON schema encodes the contract's security-relevant validators (identifier
+grammars, safe `argv` tokens, repository-relative paths, the secret-value destination rule).
+To validate a candidate bundle authoritatively, call
+`installation.validate_published_bundle(record)`. It runs the schema plus the full
+`BackendBundle` contract (including the cross-collection invariants JSON Schema cannot
+express), so a bundle it accepts is one the internal contract accepts too.
+
 ## Package Layout
 
 | File | Purpose |
@@ -149,8 +178,10 @@ internal whitespace.
 | `loader.py` | YAML loading, duplicate-key checks, root validation, and backend validation dispatch. |
 | `contract.py` | Backend bundle contract types and invariants. |
 | `registry.py` | Supported backend bundle registry. |
+| `publication.py` | Generate and check the published, versioned contract artifact. |
 | `runtime_inventory.py` | Runtime config surface inventory and env-key drift checker. |
-| `cli.py` | `shifter-config validate`, `render`, and `runtime-inventory`. |
+| `cli.py` | `shifter-config validate`, `render`, `runtime-inventory`, and `contract`. |
 | `render.py` | Render `settings.range_egress` into provider Terraform bridge tfvars. |
 | `errors.py` | Sanitized validation issue model. |
+| `published_contract/` | Committed contract artifact, frozen per-version snapshots, and migration notes. |
 | `examples/` | Valid AWS and GCP example configs. |

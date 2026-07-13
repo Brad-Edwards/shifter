@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import sys
 import tempfile
 import unittest
@@ -5663,6 +5664,121 @@ class GithubOidcNoAdminAccessTests(unittest.TestCase):
 
     def test_clean_repo_passes_oidc_admin_check(self) -> None:
         violations = ADR_GUARD.check_github_oidc_no_admin_access(ADR_GUARD.REPO_ROOT, None)
+        self.assertEqual(violations, [], msg=f"Unexpected violations: {violations}")
+
+
+class PublishedContractSnapshotsImmutableTests(unittest.TestCase):
+    """ADR-011-R8: published contract version snapshots are append-only."""
+
+    DIR = "shifter/installation/published_contract"
+    V1_REL = f"{DIR}/backend-bundle-contract.v1.json"
+    BASE = "BASEREF"
+    BASE_CONTENT = '{"contract_version": 1}\n'
+
+    def _write(self, repo_root: Path, rel: str, text: str) -> None:
+        path = repo_root / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+
+    def _fake_git(self, *, ls_tree: str | None, base_content: str | None):
+        def fake(_repo_root: Path, args: list[str]) -> str | None:
+            if args and args[0] == "ls-tree":
+                return ls_tree
+            if args and args[0] == "show":
+                return base_content
+            return None
+
+        return fake
+
+    def _run(self, repo_root: Path, *, base_refs, ls_tree, base_content, enforce: bool = False):
+        env = {ADR_GUARD._PUBLISHED_CONTRACT_ENFORCE_ENV: "1" if enforce else ""}
+        with (
+            patch.dict(os.environ, env),
+            patch.object(ADR_GUARD, "_boundary_mock_base_reference_candidates", return_value=base_refs),
+            patch.object(ADR_GUARD, "_git_text", side_effect=self._fake_git(ls_tree=ls_tree, base_content=base_content)),
+        ):
+            return ADR_GUARD.check_published_contract_snapshots_immutable(repo_root, None)
+
+    def test_unchanged_snapshot_passes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            self._write(repo_root, self.V1_REL, self.BASE_CONTENT)
+            violations = self._run(
+                repo_root, base_refs=[self.BASE], ls_tree=f"{self.V1_REL}\n", base_content=self.BASE_CONTENT
+            )
+            self.assertEqual(violations, [])
+
+    def test_modified_snapshot_is_flagged(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            self._write(repo_root, self.V1_REL, '{"contract_version": 1, "tampered": true}\n')
+            violations = self._run(
+                repo_root, base_refs=[self.BASE], ls_tree=f"{self.V1_REL}\n", base_content=self.BASE_CONTENT
+            )
+            self.assertEqual(len(violations), 1)
+            self.assertEqual(violations[0].rule_id, "ADR-011-R8")
+            self.assertIn("modified", violations[0].message)
+
+    def test_deleted_snapshot_is_flagged(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)  # head has no v1 snapshot
+            violations = self._run(
+                repo_root, base_refs=[self.BASE], ls_tree=f"{self.V1_REL}\n", base_content=self.BASE_CONTENT
+            )
+            self.assertEqual(len(violations), 1)
+            self.assertIn("deleted", violations[0].message)
+
+    def test_no_base_reference_passes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            violations = self._run(Path(tmp), base_refs=[], ls_tree="", base_content=None)
+            self.assertEqual(violations, [])
+
+    def test_first_publication_passes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            # The published-contract directory does not exist at the base ref yet.
+            violations = self._run(Path(tmp), base_refs=[self.BASE], ls_tree="", base_content=None)
+            self.assertEqual(violations, [])
+
+    def test_unresolvable_base_fails_closed_when_enforced(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            violations = self._run(Path(tmp), base_refs=[], ls_tree="", base_content=None, enforce=True)
+            self.assertEqual(len(violations), 1)
+            self.assertIn("fetch base-branch history", violations[0].message)
+
+    def test_unresolvable_base_passes_when_not_enforced(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(self._run(Path(tmp), base_refs=[], ls_tree="", base_content=None, enforce=False), [])
+
+    def test_unreadable_tree_fails_closed_when_enforced(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            violations = self._run(Path(tmp), base_refs=[self.BASE], ls_tree=None, base_content=None, enforce=True)
+            self.assertEqual(len(violations), 1)
+            self.assertIn("cannot read the published-contract directory", violations[0].message)
+
+    def test_unreadable_snapshot_fails_closed_when_enforced(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            self._write(repo_root, self.V1_REL, self.BASE_CONTENT)
+            # ls-tree lists v1, but reading its base content fails -> cannot verify.
+            violations = self._run(
+                repo_root, base_refs=[self.BASE], ls_tree=f"{self.V1_REL}\n", base_content=None, enforce=True
+            )
+            self.assertEqual(len(violations), 1)
+            self.assertIn("cannot read the published snapshot", violations[0].message)
+
+    def test_first_publication_passes_even_when_enforced(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            # A genuinely-absent directory at base (empty ls-tree) is a real first publication.
+            violations = self._run(Path(tmp), base_refs=[self.BASE], ls_tree="", base_content=None, enforce=True)
+            self.assertEqual(violations, [])
+
+    def test_check_is_registered(self) -> None:
+        self.assertIn("published-contract-snapshots-immutable", ADR_GUARD.CHECKS)
+        self.assertIn("published-contract-snapshots-immutable", ADR_GUARD.CHECK_LEVELS["ci"])
+        self.assertIn("published-contract-snapshots-immutable", ADR_GUARD.CHECK_LEVELS["fast"])
+
+    def test_committed_snapshots_are_append_only(self) -> None:
+        violations = ADR_GUARD.check_published_contract_snapshots_immutable(ADR_GUARD.REPO_ROOT, None)
         self.assertEqual(violations, [], msg=f"Unexpected violations: {violations}")
 
 

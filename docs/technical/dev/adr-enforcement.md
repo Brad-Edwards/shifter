@@ -177,6 +177,23 @@ The first slice intentionally stays small:
   feature's doc is removed but its index link is left dangling). Adding a major
   feature means adding a manifest entry pointing at its user and technical docs.
 
+- `published-contract-snapshots-immutable`
+  Enforces ADR-011-R8: the published backend-bundle contract's per-version
+  snapshots (`shifter/installation/published_contract/backend-bundle-contract.v<N>.json`)
+  are append-only. Each snapshot records the frozen shape of a published contract
+  version; a contract change ships a *new* version snapshot instead of editing an
+  existing one. The check compares every snapshot present at the base-branch merge
+  base against the working tree and fails when one was modified or deleted, so the
+  breaking-change gate's compatibility oracle cannot be silently rebased. Like
+  `boundary-mock-policy` it resolves the base ref from `GITHUB_BASE_REF` /
+  `ADR_GUARD_BASE_REF` (falling back to `origin/dev`/`origin/main`). It fails **open**
+  locally (a shallow clone with no base history cannot compare, so dev is not blocked)
+  and fails **closed** when `ADR_GUARD_SNAPSHOT_ENFORCE` is set: the `adr-conformance`
+  CI job checks out with `fetch-depth: 0` and sets that variable, so an inability to
+  resolve or read the base becomes an enforcement failure rather than a silent pass. A
+  genuinely absent directory at the base (a real first publication) is distinguished
+  from an unreadable tree and still passes.
+
 - `import-linter`
   Adds package-level forbidden-import contracts across the main Django app layers.
 
