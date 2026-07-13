@@ -42,6 +42,21 @@ def _require_resource_list(value: object, field: str) -> list[ResourceDict]:
     return resources
 
 
+def _collect_instance_refs(
+    instances: list[ResourceDict],
+    subnet_index: int,
+    instance_refs: set[str],
+) -> None:
+    """Add unique authored member identities from one validated subnet."""
+    for instance_index, instance in enumerate(instances):
+        instance_ref = str(instance.get("uuid") or "").strip()
+        if not instance_ref:
+            raise RangeCellContractError(f"subnets[{subnet_index}].instances[{instance_index}] requires a uuid")
+        if instance_ref in instance_refs:
+            raise RangeCellContractError(f"duplicate authored instance uuid: {instance_ref}")
+        instance_refs.add(instance_ref)
+
+
 def _realize_subnets(
     payload: ResourceDict,
     bindings: dict[str, str],
@@ -63,13 +78,7 @@ def _realize_subnets(
         if require_network_bindings and subnet_ref not in bindings:
             raise RuntimeError(f"GCE range subnet requires a network binding to provision: {subnet_ref}")
         instances = _require_resource_list(subnet.get("instances", []), f"subnets[{subnet_index}].instances")
-        for instance_index, instance in enumerate(instances):
-            instance_ref = str(instance.get("uuid") or "").strip()
-            if not instance_ref:
-                raise RangeCellContractError(f"subnets[{subnet_index}].instances[{instance_index}] requires a uuid")
-            if instance_ref in instance_refs:
-                raise RangeCellContractError(f"duplicate authored instance uuid: {instance_ref}")
-            instance_refs.add(instance_ref)
+        _collect_instance_refs(instances, subnet_index, instance_refs)
         realized = deepcopy(subnet)
         realized["cidr"] = bindings.get(subnet_ref, "")
         realized["instances"] = deepcopy(instances)
