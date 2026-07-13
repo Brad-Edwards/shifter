@@ -402,9 +402,34 @@ class TestRegisterRunner:
 
         lines = _registration_script(_target(), "TOKINSCRIPT")
         config_line = next(line for line in lines if "config.sh" in line)
-        # The token is delivered via stdin redirection, not as a config.sh arg.
+        # config.sh is spawned under expect; the token is sent over the PTY at
+        # the prompt, never as a config.sh (or --unattended --token) argument.
         assert "TOKINSCRIPT" not in config_line
         assert "--token" not in config_line
+        assert "--unattended" not in config_line
+
+    def test_registration_drives_config_sh_under_expect_pty(self, mock_deploy):
+        from runner import _registration_script
+
+        script = "\n".join(_registration_script(_target(), "TOKINSCRIPT"))
+        # config.sh needs a console for its masked token prompt, so it runs under
+        # expect (spawn) driven by the expect script file — not over a redirected
+        # stdin (the old `< "$TOKFILE"` form fails on modern runner releases).
+        assert "spawn" in script and "config.sh" in script
+        assert 'expect "$EXPECTFILE" "$TOKFILE"' in script
+        assert '< "$TOKFILE"' not in script
+        # The token file is read inside expect (argv is the file path only) and
+        # both temp files are removed on any exit.
+        assert "[lindex $argv 0]" in script
+        assert "trap 'rm -f" in script
+
+    def test_expect_argv_is_the_token_file_path_not_the_token(self, mock_deploy):
+        from runner import _registration_script
+
+        lines = _registration_script(_target(), "TOKINSCRIPT")
+        expect_line = next(line for line in lines if line.startswith("expect "))
+        # The expect invocation passes file paths, never the token value.
+        assert "TOKINSCRIPT" not in expect_line
 
     def test_token_only_appears_inside_the_parameters_element(self, mock_deploy):
         from runner import register_runner
