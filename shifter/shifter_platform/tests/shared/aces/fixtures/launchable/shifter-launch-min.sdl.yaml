@@ -1,7 +1,7 @@
 name: shifter-launch-min
 description: >
   Minimal provisioning-only ACES scenario used to exercise the Shifter native
-  launch path (one VM node on one network). Authored against aces-sdl 0.19.1.
+  launch path (one VM node on one network). Authored against aces-sdl 0.20.0.
 
 nodes:
   lan:

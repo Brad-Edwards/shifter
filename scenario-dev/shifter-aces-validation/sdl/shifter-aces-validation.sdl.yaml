@@ -2,8 +2,7 @@ name: shifter-aces-validation
 description: >
   Minimal provisioning-only ACES scenario for the Shifter ACES-native cutover
   validation (run_aces_backend_validation, #1264). One VM node on one network,
-  authored against aces-sdl 0.19.1. Register it as an AcesPackageSource with a
-  package_ref that resolves to this file under ACES_PACKAGE_ROOT.
+  authored against aces-sdl 0.20.0.
 
 nodes:
   lan:
