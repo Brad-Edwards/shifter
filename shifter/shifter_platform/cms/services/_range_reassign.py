@@ -5,12 +5,13 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
-from django.db import transaction
+from django.db import IntegrityError, transaction
 
 from cms.exceptions import CMSError
 from cms.models import RangeInstance
 
 from ._common import _validate_caller_user
+from ._range_create import _is_active_range_conflict
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import User
@@ -95,21 +96,39 @@ def reassign_range_owner(range_instance_pk: int, new_user: User) -> None:
 
     request_id = instance.request.request_id
 
-    with transaction.atomic():
-        instance.user_id = new_user.id
-        instance.save(update_fields=["user_id"])
+    try:
+        with transaction.atomic():
+            instance.user_id = new_user.id
+            instance.save(update_fields=["user_id"])
 
-        instance.request.user = new_user
-        instance.request.save(update_fields=["user"])
+            instance.request.user = new_user
+            instance.request.save(update_fields=["user"])
 
-        accepted = _engine_reassign_range_owner_call(request_id, new_user)
-        if not accepted:
+            accepted = _engine_reassign_range_owner_call(request_id, new_user)
+            if not accepted:
+                logger.warning(
+                    "reassign_range_owner: no engine range for request_id=%s (range_instance_pk=%s)",
+                    request_id,
+                    range_instance_pk,
+                )
+                raise CMSError(f"Range {range_instance_pk} has no engine range for request {request_id}")
+    except IntegrityError as exc:
+        # The new owner already holds an active range for this source (#307).
+        # The CMS UPDATE fails before the engine call, so the whole transaction
+        # rolls back and neither CMS nor engine ownership moves. Translate the
+        # named collision; propagate any other integrity error.
+        if _is_active_range_conflict(exc):
             logger.warning(
-                "reassign_range_owner: no engine range for request_id=%s (range_instance_pk=%s)",
-                request_id,
+                "reassign_range_owner: new owner user_id=%s already has an active range for "
+                "range_source=%s (range_instance_pk=%s)",
+                new_user.id,
+                instance.range_source,
                 range_instance_pk,
             )
-            raise CMSError(f"Range {range_instance_pk} has no engine range for request {request_id}")
+            raise CMSError(
+                f"Cannot reassign range {range_instance_pk}: the new owner already has an active range for this source."
+            ) from exc
+        raise
 
     logger.info(
         "reassign_range_owner: range_instance_pk=%s reassigned to user_id=%s",

@@ -31,7 +31,7 @@ from cms.services._range_create import (
     _assert_no_active_range,
     _assert_scenario_launchable,
     _audit_log_call,
-    _create_cms_request,
+    _reserve_active_range_slot,
     _set_range_instance_status,
     _validate_create_range_scenario,
     _validate_create_range_user,
@@ -47,7 +47,7 @@ from shared.enums import ResourceStatus
 if TYPE_CHECKING:
     from django.contrib.auth.models import User
 
-    from cms.models import AcesPackageSource
+    from cms.models import AcesPackageSource, Request
     from shared.enums import RangeSource
     from shared.schemas.range import RangeContext
 
@@ -153,15 +153,16 @@ def create_aces_native_range(user: User, scenario: str, *, range_source: RangeSo
     _assert_scenario_launchable(scenario)
     source = _load_aces_source_or_raise(scenario)
 
-    request_id, cms_request = _create_cms_request(user)
-    range_instance = RangeInstance.objects.create(
-        request=cms_request,
-        scenario_id=scenario,
-        user_id=user.id,
-        range_source=range_source.value,
-        range_spec=None,
-    )
-    _set_range_instance_status(range_instance, ResourceStatus.PROVISIONING)
+    def _persist(cms_request: Request) -> RangeInstance:
+        return RangeInstance.objects.create(
+            request=cms_request,
+            scenario_id=scenario,
+            user_id=user.id,
+            range_source=range_source.value,
+            range_spec=None,
+        )
+
+    request_id, _cms_request, range_instance = _reserve_active_range_slot(user, range_source, _persist)
 
     try:
         _dispatch_aces_package(request_id, user, source.package_ref)

@@ -178,3 +178,28 @@ class TestReassignRangeOwnerErrors:
         # dispatch failed must have rolled back.
         assert RangeInstance.objects.get(pk=ri.pk).user_id == user_a.id
         assert CmsRequest.objects.get(request_id=request_id).user_id == user_a.id
+
+
+class TestReassignRangeOwnerActiveRangeCollision:
+    """Reassigning into an already-occupied (user, source) slot is rejected (#307).
+
+    Database enforcement is the backstop; the service translates the predictable
+    collision into a CMSError without partially moving CMS or engine ownership.
+    """
+
+    def test_raises_and_rolls_back_when_new_owner_already_has_active_range(self, user_a, user_b):
+        # Both helpers create CTF-source ranges. user_b already holds an active
+        # CTF range, so moving user_a's CTF range to user_b would create a second
+        # active (user_b, CTF) range and trips the constraint.
+        ri = _make_owned_range(owner=user_a)
+        request_id = ri.request.request_id
+        _make_range_without_engine_range(owner=user_b)
+
+        with pytest.raises(CMSError, match="already has an active range for this source"):
+            services.reassign_range_owner(ri.pk, user_b)
+
+        # No partial move: the CMS UPDATE rolled back and the engine call (which
+        # runs only after the CMS save) never fired, so ownership is unchanged.
+        assert RangeInstance.objects.get(pk=ri.pk).user_id == user_a.id
+        assert CmsRequest.objects.get(request_id=request_id).user_id == user_a.id
+        assert EngineRange.objects.get(request__request_id=request_id).user_id == user_a.id

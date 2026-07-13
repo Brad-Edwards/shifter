@@ -6,8 +6,10 @@ import logging
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
+from django.db import IntegrityError, transaction
+
 from cms.exceptions import CMSError
-from cms.models import AgentConfig, RangeInstance
+from cms.models import ACTIVE_RANGE_UNIQUE_CONSTRAINT, AgentConfig, RangeInstance
 from shared.audit import (
     AuditAction,
     AuditActorType,
@@ -18,6 +20,8 @@ from shared.enums import ResourceStatus
 from shared.schemas.persistence import wrap_persisted_spec
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from django.contrib.auth.models import User
 
     from cms.models import Request
@@ -26,6 +30,12 @@ if TYPE_CHECKING:
     from shared.schemas.range import RangeContext, RangeSpec
 
 logger = logging.getLogger(__name__)
+
+# Authored, user-facing message for the single-active-range invariant. Shared by
+# the friendly service pre-check (``_assert_no_active_range``) and the database
+# constraint translation (``_reserve_active_range_slot``) so both admission
+# rejections read identically and neither leaks driver/SQL detail (#307).
+_ACTIVE_RANGE_MESSAGE = "You already have an active range. Please destroy it before creating a new one."
 
 
 def _engine_create_range_call(request_spec: Any) -> Any:  # NOSONAR
@@ -108,7 +118,13 @@ def _validate_create_range_agents_by_os(user: User, agents_by_os: dict[str, int]
 
 
 def _assert_no_active_range(user: User, range_source: RangeSource | None = None) -> None:
-    """Raise CMSError if the user already has an active range for the given source."""
+    """Raise CMSError if the user already has an active range for the given source.
+
+    This is the friendly, fast pre-check for the common sequential case; it is a
+    read-before-create and therefore races under concurrency. The authoritative
+    backstop is the partial unique constraint enforced in
+    :func:`_reserve_active_range_slot` (#307).
+    """
     existing = _get_active_range_call(user, range_source)
     if existing:
         logger.warning(
@@ -117,8 +133,64 @@ def _assert_no_active_range(user: User, range_source: RangeSource | None = None)
             range_source,
             existing.range_id,
         )
-        msg = "You already have an active range. Please destroy it before creating a new one."
-        raise CMSError(msg)
+        raise CMSError(_ACTIVE_RANGE_MESSAGE)
+
+
+def _is_active_range_conflict(exc: IntegrityError) -> bool:
+    """Return True iff ``exc`` violates the active-range unique constraint.
+
+    Detection is backend-aware. PostgreSQL (production) names the violated
+    constraint via ``exc.__cause__.diag.constraint_name`` -- the authoritative
+    signal. SQLite (the fast test lane) reports the violated *columns* rather
+    than the index name, so we fall back to matching the ``(user_id,
+    range_source)`` column pair, which is unique to this constraint on
+    ``RangeInstance``. Either way, only *this* constraint counts as an
+    active-range conflict, so unrelated integrity errors still propagate (#307
+    preflight: do not catch every ``IntegrityError`` as a duplicate range).
+    """
+    cause = exc.__cause__
+    diag = getattr(cause, "diag", None)
+    if getattr(diag, "constraint_name", None) == ACTIVE_RANGE_UNIQUE_CONSTRAINT:
+        return True
+    message = str(exc)
+    if ACTIVE_RANGE_UNIQUE_CONSTRAINT in message:
+        return True
+    return "user_id" in message and "range_source" in message
+
+
+def _reserve_active_range_slot(
+    user: User,
+    range_source: RangeSource,
+    persist_instance: Callable[[Request], RangeInstance],
+) -> tuple[UUID, Request, RangeInstance]:
+    """Atomically reserve the single active-range slot for ``(user, range_source)``.
+
+    One transaction creates the CMS ``Request``, persists the ``RangeInstance``
+    (built by ``persist_instance``), and sets it PROVISIONING. The partial
+    unique constraint on ``(user_id, range_source)`` for active rows is the
+    race-proof backstop: a losing concurrent caller's INSERT raises
+    ``IntegrityError``, the whole transaction rolls back (so no orphan
+    ``Request`` is left behind), and the *named* violation is translated into the
+    authored active-range ``CMSError``. Unrelated integrity errors propagate.
+
+    Cloud/engine dispatch MUST happen outside this call — never hold the
+    transaction open across an Engine/ACES/broker call (#307 preflight).
+    """
+    try:
+        with transaction.atomic():
+            request_id, cms_request = _create_cms_request(user)
+            range_instance = persist_instance(cms_request)
+            _set_range_instance_status(range_instance, ResourceStatus.PROVISIONING)
+    except IntegrityError as exc:
+        if _is_active_range_conflict(exc):
+            logger.warning(
+                "create_range: active-range constraint collision for user_id=%s range_source=%s",
+                user.id,
+                range_source.value,
+            )
+            raise CMSError(_ACTIVE_RANGE_MESSAGE) from exc
+        raise
+    return request_id, cms_request, range_instance
 
 
 def _assert_scenario_launchable(scenario: str) -> None:
@@ -350,9 +422,10 @@ def create_range(
         agents = _lookup_agents_by_os(user, agents_by_os)
         range_spec = hydrate_scenario(scenario, user.id, agents)
 
-        request_id, cms_request = _create_cms_request(user)
-        range_instance = _persist_range_instance_record(cms_request, scenario, user, agents, range_spec, range_source)
-        _set_range_instance_status(range_instance, ResourceStatus.PROVISIONING)
+        def _persist(cms_request: Request) -> RangeInstance:
+            return _persist_range_instance_record(cms_request, scenario, user, agents, range_spec, range_source)
+
+        request_id, _cms_request, range_instance = _reserve_active_range_slot(user, range_source, _persist)
         try:
             _dispatch_engine_range(request_id, user, range_spec)
         except Exception:

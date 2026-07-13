@@ -383,11 +383,14 @@ class TestReconcileRangeInstances:
         instance_1 = _range_instance(user, cms_req_1, status=ResourceStatus.PROVISIONING.value)
         _backdate_range_instance(instance_1)
 
-        # Row 2 — will succeed: processed normally
+        # Row 2 — will succeed: processed normally. A different user so the two
+        # stale PROVISIONING ranges don't trip the one-active-range-per-source
+        # constraint (#307); the reconciler batches stale ranges across users.
+        user2 = _user()
         req_id_2 = uuid4()
-        cms_req_2 = _cms_request(user, req_id_2)
-        _engine_request_and_range(user, req_id_2, engine_status=ResourceStatus.READY.value)
-        instance_2 = _range_instance(user, cms_req_2, status=ResourceStatus.PROVISIONING.value)
+        cms_req_2 = _cms_request(user2, req_id_2)
+        _engine_request_and_range(user2, req_id_2, engine_status=ResourceStatus.READY.value)
+        instance_2 = _range_instance(user2, cms_req_2, status=ResourceStatus.PROVISIONING.value)
         _backdate_range_instance(instance_2)
 
         pk_to_fail = instance_1.pk
