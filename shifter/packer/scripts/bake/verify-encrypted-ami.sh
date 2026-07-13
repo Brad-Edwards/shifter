@@ -20,12 +20,12 @@ ENCRYPTED_COUNT="$(aws ec2 describe-images --image-ids "$AMI_ID" \
 
 echo "AMI ${AMI_ID}: ${ENCRYPTED_COUNT}/${EBS_COUNT} EBS volume(s) encrypted"
 
-if [ "$EBS_COUNT" -eq 0 ]; then
-  echo "::error::AMI ${AMI_ID} exposes no EBS volumes to verify; refusing to publish"
+if [[ "$EBS_COUNT" -eq 0 ]]; then
+  echo "::error::AMI ${AMI_ID} exposes no EBS volumes to verify; refusing to publish" >&2
   exit 1
 fi
-if [ "$ENCRYPTED_COUNT" -ne "$EBS_COUNT" ]; then
-  echo "::error::AMI ${AMI_ID} has $((EBS_COUNT - ENCRYPTED_COUNT)) unencrypted EBS volume(s); refusing to publish. Ensure the bake root volume launches with Encrypted=true (the range provisioner requires ec2:Encrypted=true)."
+if [[ "$ENCRYPTED_COUNT" -ne "$EBS_COUNT" ]]; then
+  echo "::error::AMI ${AMI_ID} has $((EBS_COUNT - ENCRYPTED_COUNT)) unencrypted EBS volume(s); refusing to publish. Ensure the bake root volume launches with Encrypted=true (the range provisioner requires ec2:Encrypted=true)." >&2
   exit 1
 fi
 

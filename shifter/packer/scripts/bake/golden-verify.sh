@@ -26,20 +26,20 @@ RUN_ID="${RUN_ID:-manual}"
 
 # NAME_FILTER is workflow-controlled, but validate it anyway before it reaches
 # the remote docker command so it can never break out of the SSM JSON payload.
-if [ -n "$NAME_FILTER" ] && ! printf '%s' "$NAME_FILTER" | grep -qE '^[A-Za-z0-9._-]+$'; then
-  echo "::error::NAME_FILTER contains characters outside [A-Za-z0-9._-]"
+if [[ -n "$NAME_FILTER" ]] && ! printf '%s' "$NAME_FILTER" | grep -qE '^[A-Za-z0-9._-]+$'; then
+  echo "::error::NAME_FILTER contains characters outside [A-Za-z0-9._-]" >&2
   exit 1
 fi
 
 DOCKER_COUNT_CMD="docker ps --filter status=running"
-if [ -n "$NAME_FILTER" ]; then
+if [[ -n "$NAME_FILTER" ]]; then
   DOCKER_COUNT_CMD="${DOCKER_COUNT_CMD} --filter name=${NAME_FILTER}"
 fi
 DOCKER_COUNT_CMD="${DOCKER_COUNT_CMD} -q | wc -l"
 
 VERIFY_INSTANCE_ID=""
 cleanup() {
-  if [ -n "$VERIFY_INSTANCE_ID" ]; then
+  if [[ -n "$VERIFY_INSTANCE_ID" ]]; then
     echo "terminating golden-verify host ${VERIFY_INSTANCE_ID}"
     aws ec2 terminate-instances --instance-ids "$VERIFY_INSTANCE_ID" >/dev/null 2>&1 || true
   fi
@@ -67,8 +67,8 @@ until aws ssm describe-instance-information \
   --filters "Key=InstanceIds,Values=${VERIFY_INSTANCE_ID}" \
   --query 'InstanceInformationList[0].PingStatus' --output text 2>/dev/null \
   | grep -q Online; do
-  if [ "$(date +%s)" -ge "$deadline" ]; then
-    echo "::error::golden-verify host SSM agent did not come online within 10 minutes"
+  if [[ "$(date +%s)" -ge "$deadline" ]]; then
+    echo "::error::golden-verify host SSM agent did not come online within 10 minutes" >&2
     exit 1
   fi
   sleep 15
@@ -87,12 +87,12 @@ while true; do
     --instance-id "$VERIFY_INSTANCE_ID" --query StandardOutputContent \
     --output text 2>/dev/null | tr -dc '0-9' || echo 0)"
   echo "auto-started containers: ${count:-0}"
-  if [ "${count:-0}" -ge "$MIN_CONTAINERS" ]; then
+  if [[ "${count:-0}" -ge "$MIN_CONTAINERS" ]]; then
     echo "container count converged (${count} running, need ${MIN_CONTAINERS})"
     break
   fi
-  if [ "$(date +%s)" -ge "$deadline" ]; then
-    echo "::error::golden verify FAILED: stack did not auto-start (last=${count:-0}, need ${MIN_CONTAINERS})"
+  if [[ "$(date +%s)" -ge "$deadline" ]]; then
+    echo "::error::golden verify FAILED: stack did not auto-start (last=${count:-0}, need ${MIN_CONTAINERS})" >&2
     exit 1
   fi
   sleep 20
@@ -111,12 +111,12 @@ required_list="$(printf '%s' "$REQUIRED_CONTAINERS" | tr ',' ' ')"
 read -r -d '' HEALTH_PROBE <<RSCRIPT || true
 set -uo pipefail
 bad=\$(docker ps -a --format '{{.Names}} {{.State}} {{.Status}}' | grep -Ei 'unhealthy|exited|dead' || true)
-if [ -n "\$bad" ]; then echo "HEALTH_FAIL unhealthy_or_exited"; echo "\$bad"; exit 3; fi
+if [[ -n "\$bad" ]]; then echo "HEALTH_FAIL unhealthy_or_exited"; echo "\$bad"; exit 3; fi
 miss=""
 for c in ${required_list}; do
   docker ps --format '{{.Names}}' | grep -qx "\$c" || miss="\$miss \$c"
 done
-if [ -n "\$miss" ]; then echo "HEALTH_FAIL missing:\$miss"; exit 4; fi
+if [[ -n "\$miss" ]]; then echo "HEALTH_FAIL missing:\$miss"; exit 4; fi
 starting=\$(docker ps --format '{{.Status}}' | grep -c 'health: starting' || true)
 echo "HEALTH_OK starting=\${starting}"
 RSCRIPT
@@ -134,14 +134,14 @@ while true; do
   out="$(aws ssm get-command-invocation --command-id "$cid" \
     --instance-id "$VERIFY_INSTANCE_ID" --query StandardOutputContent --output text 2>/dev/null || true)"
   if printf '%s' "$out" | grep -q HEALTH_FAIL; then
-    echo "::error::golden verify FAILED (health): $(printf '%s' "$out" | tr '\n' ' ')"
+    echo "::error::golden verify FAILED (health): $(printf '%s' "$out" | tr '\n' ' ')" >&2
     exit 1
   fi
   if printf '%s' "$out" | grep -q 'HEALTH_OK starting=0'; then
     echo "golden verify PASSED (${count} running, all healthchecks settled, required services present)"
     break
   fi
-  if [ "$(date +%s)" -ge "$deadline" ]; then
+  if [[ "$(date +%s)" -ge "$deadline" ]]; then
     # No unhealthy/exited and required present, but some healthchecks still
     # 'starting' after the grace window (slow-init services). Not a failure.
     echo "golden verify PASSED (${count} running, required services present; note: some healthchecks still initializing: $(printf '%s' "$out" | tr '\n' ' '))"

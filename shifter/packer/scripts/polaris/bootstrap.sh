@@ -52,7 +52,7 @@ apt-get install -y \
 # Ubuntu 24.04 no longer reliably exposes awscli v1 as an apt package. Install
 # AWS CLI v2 from Amazon's zip so the S3 fetch works on current public Ubuntu.
 rm -rf /tmp/awscliv2 /tmp/awscliv2.zip
-curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscliv2.zip
+curl -fsSL --proto '=https' --proto-redir '=https' "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscliv2.zip
 unzip -q /tmp/awscliv2.zip -d /tmp/awscliv2
 /tmp/awscliv2/aws/install --bin-dir /usr/local/bin --install-dir /usr/local/aws-cli --update
 
@@ -61,7 +61,7 @@ systemctl enable --now docker
 # docker-compose-plugin is not in Ubuntu apt. Install the v2 binary from docker's
 # github release directly so `docker compose` works.
 mkdir -p /usr/libexec/docker/cli-plugins
-curl -fsSL \
+curl -fsSL --proto '=https' --proto-redir '=https' \
     https://github.com/docker/compose/releases/download/v2.29.7/docker-compose-linux-x86_64 \
     -o /usr/libexec/docker/cli-plugins/docker-compose
 chmod +x /usr/libexec/docker/cli-plugins/docker-compose

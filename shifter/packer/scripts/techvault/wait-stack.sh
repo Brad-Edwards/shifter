@@ -14,11 +14,11 @@ deadline=$(( $(date +%s) + 900 ))
 while true; do
   count="$(docker ps --filter name=aptl- --filter status=running -q | wc -l)"
   echo "running aptl containers: ${count}"
-  if [ "${count}" -ge 30 ]; then
+  if [[ "${count}" -ge 30 ]]; then
     echo "stack is up (${count} containers)"
     break
   fi
-  if [ "$(date +%s)" -ge "$deadline" ]; then
+  if [[ "$(date +%s)" -ge "$deadline" ]]; then
     echo "stack did not reach 30 running containers (last=${count})" >&2
     exit 1
   fi

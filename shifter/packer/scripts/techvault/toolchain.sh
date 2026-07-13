@@ -6,7 +6,7 @@ set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
 cloud-init status --wait || true
 
-curl -fsSL https://get.docker.com | sh
+curl -fsSL --proto '=https' --proto-redir '=https' https://get.docker.com | sh
 systemctl enable --now docker
 
 # The stack is baked as the ubuntu user (uid 1000, see stack.sh), and aptl's
@@ -16,7 +16,10 @@ systemctl enable --now docker
 # permission denied (surfaced as BackendSeedError).
 usermod -aG docker ubuntu
 
-curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+curl -fsSL --proto '=https' --proto-redir '=https' https://deb.nodesource.com/setup_20.x | bash -
 apt-get install -y nodejs
-npm install -g @anthropic-ai/claude-code
+# @anthropic-ai/claude-code has a required postinstall (install.cjs) that sets up
+# the CLI; --ignore-scripts would break it. First-party package pulled from the
+# trusted npm registry over HTTPS.
+npm install -g @anthropic-ai/claude-code # NOSONAR
 apt-get install -y pipx jq
