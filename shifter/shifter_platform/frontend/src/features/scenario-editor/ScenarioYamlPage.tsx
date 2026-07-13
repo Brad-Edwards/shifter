@@ -101,6 +101,43 @@ function GuardAlert({ title, children }: Readonly<{ title: string; children: Rea
   );
 }
 
+/** Edit-mode guard: loading / not-found / read-only, or null when editable. */
+function editGuard(
+  detail: ReturnType<typeof useScenario>,
+  scenarioId: string,
+  editable: boolean,
+): ReactNode | null {
+  if (detail.isLoading) {
+    return (
+      <div className="grid place-items-center py-24 text-muted-foreground">
+        <Loader2 className="size-6 animate-spin" aria-label="Loading scenario" />
+      </div>
+    );
+  }
+  if (detail.isError) {
+    return (
+      <GuardAlert title="Scenario not found">
+        <Link className="underline" to={scenarioListPath()}>
+          Back to scenarios
+        </Link>
+        .
+      </GuardAlert>
+    );
+  }
+  if (detail.data && !editable) {
+    return (
+      <GuardAlert title="This scenario cannot be edited here">
+        Built-in, ACES, and CTF scenarios are read-only in the editor.{" "}
+        <Link className="underline" to={scenarioPath(scenarioId)}>
+          Back to scenario
+        </Link>
+        .
+      </GuardAlert>
+    );
+  }
+  return null;
+}
+
 export function ScenarioYamlPage({ mode }: Readonly<{ mode: "create" | "edit" }>) {
   const navigate = useNavigate();
   const params = useParams();
@@ -152,33 +189,9 @@ export function ScenarioYamlPage({ mode }: Readonly<{ mode: "create" | "edit" }>
     });
   }
 
-  if (isEdit && detail.isLoading) {
-    return (
-      <div className="grid place-items-center py-24 text-muted-foreground">
-        <Loader2 className="size-6 animate-spin" aria-label="Loading scenario" />
-      </div>
-    );
-  }
-  if (isEdit && detail.isError) {
-    return (
-      <GuardAlert title="Scenario not found">
-        <Link className="underline" to={scenarioListPath()}>
-          Back to scenarios
-        </Link>
-        .
-      </GuardAlert>
-    );
-  }
-  if (isEdit && detail.data && !editable) {
-    return (
-      <GuardAlert title="This scenario cannot be edited here">
-        Built-in, ACES, and CTF scenarios are read-only in the editor.{" "}
-        <Link className="underline" to={scenarioPath(scenarioId)}>
-          Back to scenario
-        </Link>
-        .
-      </GuardAlert>
-    );
+  if (isEdit) {
+    const guard = editGuard(detail, scenarioId, editable);
+    if (guard) return guard;
   }
 
   const mutation = mode === "create" ? create : update;

@@ -84,6 +84,10 @@ function toInstancePayload(instance: InstanceForm): ScenarioInstance {
   return payload;
 }
 
+function removeAt<T>(list: T[], index: number): T[] {
+  return list.filter((_, i) => i !== index);
+}
+
 function toPayload(state: FormState): ScenarioCreate {
   return {
     scenario_id: state.scenario_id,
@@ -148,10 +152,6 @@ export function ScenarioFormPage({ mode }: Readonly<{ mode: "create" | "edit" }>
       ...prev,
       subnets: prev.subnets.map((subnet, i) => (i === index ? { ...subnet, ...patch } : subnet)),
     }));
-  }
-
-  function removeAt<T>(list: T[], index: number): T[] {
-    return list.filter((_, i) => i !== index);
   }
 
   function onSubmit(event: React.FormEvent) {
