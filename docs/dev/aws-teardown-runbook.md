@@ -148,6 +148,89 @@ These recur on a full portal destroy and are safe to resolve directly:
     --output text); do aws logs delete-log-group --log-group-name "$lg"; done
   ```
 
+### Broader leftover sweep (resources that block a fresh apply)
+
+The env stacks manage every resource below, so a clean `terraform destroy`
+removes them. They survive only when a stack destroy is abandoned partway (see
+the stalls above) or the `{uuid}` state bucket is deleted before a complete
+destroy, which orphans the live resource. A later fresh bootstrap starts from
+empty state and collides (`AlreadyExists` / `ResourceAlreadyExistsException`).
+This is the #1472 leftover set. Run this sweep after the Portal/Range/Core
+destroys report success. Discovery is read-only; delete only what the discovery
+lists. Set the environment and account first:
+
+```bash
+ENV=<env>                                                   # dev | proof | prod
+ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+```
+
+`aws ... --query` uses JMESPath single-quote string literals so the surrounding
+double-quoted shell string does not trigger backtick command substitution.
+
+- **AWS Budgets** (`shifter-<env>-s3-cost-alert`, account-scoped, Core stack):
+  ```bash
+  aws budgets describe-budgets --account-id "$ACCOUNT_ID" \
+    --query "Budgets[?starts_with(BudgetName, 'shifter-$ENV-')].BudgetName" --output text
+  aws budgets delete-budget --account-id "$ACCOUNT_ID" --budget-name "shifter-$ENV-s3-cost-alert"
+  ```
+- **RDS DB parameter groups** (`<env>-portal-postgres-pg`, `<env>-portal-guacamole-postgres-pg`):
+  ```bash
+  aws rds describe-db-parameter-groups \
+    --query "DBParameterGroups[?starts_with(DBParameterGroupName, '$ENV-portal')].DBParameterGroupName" --output text
+  aws rds delete-db-parameter-group --db-parameter-group-name <name>
+  ```
+- **RDS DB subnet groups** (`<env>-portal-db-subnet`, `<env>-portal-guacamole-db-subnet`):
+  ```bash
+  aws rds describe-db-subnet-groups \
+    --query "DBSubnetGroups[?starts_with(DBSubnetGroupName, '$ENV-portal')].DBSubnetGroupName" --output text
+  aws rds delete-db-subnet-group --db-subnet-group-name <name>
+  ```
+- **ElastiCache subnet group** (`<env>-portal-redis`):
+  ```bash
+  aws elasticache describe-cache-subnet-groups \
+    --query "CacheSubnetGroups[?starts_with(CacheSubnetGroupName, '$ENV-portal')].CacheSubnetGroupName" --output text
+  aws elasticache delete-cache-subnet-group --cache-subnet-group-name "$ENV-portal-redis"
+  ```
+- **EventBridge Scheduler schedules** (`<env>-portal-cognito-rotation-reminder`; the
+  dev-box `shifter-dev-box-nightly-shutdown` only if the `global/dev-box` stack was
+  applied and you are retiring it):
+  ```bash
+  aws scheduler list-schedules \
+    --query "Schedules[?starts_with(Name, '$ENV-portal')].Name" --output text
+  aws scheduler delete-schedule --name <name>
+  ```
+- **SSM parameters** under `/shifter/<env>/portal` (~38). Enumerate names only; do
+  not print values. The range AMI params live under `/shifter/ami/*` and are
+  outside this path, so they are preserved:
+  ```bash
+  aws ssm get-parameters-by-path --path "/shifter/$ENV/portal" --recursive \
+    --query 'Parameters[].Name' --output text | tr '\t' '\n' | \
+    while read -r p; do [ -n "$p" ] && aws ssm delete-parameter --name "$p"; done
+  ```
+- **EC2 key pairs** (`<env>-portal-ctfd-ssh`):
+  ```bash
+  aws ec2 describe-key-pairs \
+    --filters "Name=tag:Project,Values=shifter" "Name=tag:Environment,Values=$ENV" \
+    --query "KeyPairs[?starts_with(KeyName, '$ENV-portal')].KeyName" --output text
+  aws ec2 delete-key-pair --key-name "$ENV-portal-ctfd-ssh"
+  ```
+- **RDS event subscriptions** (`<env>-portal-db-backup-events`):
+  ```bash
+  aws rds describe-event-subscriptions \
+    --query "EventSubscriptionsList[?starts_with(CustSubscriptionId, '$ENV-portal')].CustSubscriptionId" --output text
+  aws rds delete-event-subscription --subscription-name "$ENV-portal-db-backup-events"
+  ```
+- **Security groups** (`<env>-portal*`, tagged `Project=shifter`). A leftover SG
+  usually lingers because an ENI still references it (the redis rotation SG stall
+  above is the common case); delete it once the ENI is gone. Never delete a VPC
+  `default` SG:
+  ```bash
+  aws ec2 describe-security-groups \
+    --filters "Name=tag:Project,Values=shifter" "Name=tag:Environment,Values=$ENV" \
+    --query "SecurityGroups[?GroupName!='default' && starts_with(GroupName, '$ENV-portal')].[GroupId,GroupName]" --output text
+  aws ec2 delete-security-group --group-id <sg-id>
+  ```
+
 ## 4. Destroy the runner root and deregister runners
 
 ```bash
@@ -206,6 +289,11 @@ secrets (`AWS_ROLE_ARN`, `TF_INFRA_STATE_BUCKET`, `TF_VARS_PROD_PORTAL`,
 Confirm no residual EC2, ASG, RDS, ALB, Network Firewall, ECR, IAM
 `github-actions-shifter-*` roles, `shifter-<env>-*` policies, OIDC provider,
 `<env>-range` / `/vpc/` CloudWatch log groups, or `{uuid}` state bucket remain
-before a fresh bootstrap. Preserve
-only what you intend to reuse (for example range AMIs and their `/shifter/ami/*`
-SSM parameters).
+before a fresh bootstrap. Also confirm the §3 broader leftover set is gone: the
+`shifter-<env>-s3-cost-alert` budget, `<env>-portal*` RDS DB parameter and subnet
+groups, the `<env>-portal-redis` ElastiCache subnet group, `<env>-portal*`
+EventBridge Scheduler schedules, `/shifter/<env>/portal` SSM parameters,
+`<env>-portal*` EC2 key pairs, the `<env>-portal-db-backup-events` RDS event
+subscription, and `<env>-portal*` security groups. If any remain, re-run the §3
+broader leftover sweep. Preserve only what you intend to reuse (for example range
+AMIs and their `/shifter/ami/*` SSM parameters).
