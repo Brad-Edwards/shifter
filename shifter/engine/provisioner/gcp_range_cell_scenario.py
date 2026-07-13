@@ -155,10 +155,14 @@ def _host_access(
 ) -> tuple[str, str, int]:
     """Realize participant and setup access for a legacy scenario guest."""
     participant_user = get_ssh_username(os_type, role)
-    ami_key = str(instance.get("ami_key", "")).strip().lower()
-    if ami_key in _DOCKER_HOST_AMI_KEYS:
+    if _is_docker_host(instance):
         return participant_user, _DOCKER_HOST_SSH_USERNAME, config.host_mgmt_ssh_port
     return participant_user, participant_user, _DEFAULT_SSH_PORT
+
+
+def _is_docker_host(instance: ResourceDict) -> bool:
+    """Return whether a guest is the host-side Polaris runtime that needs cloud APIs."""
+    return str(instance.get("ami_key", "")).strip().lower() in _DOCKER_HOST_AMI_KEYS
 
 
 def _instance_assignment_key(instance: ResourceDict, index: int) -> str:
@@ -211,6 +215,7 @@ def build_instance_plans(
                     "host_ssh_username": host_ssh_username,
                     "ssh_port": ssh_port,
                     "participant_access_channels": access_by_ref.get(str(instance.get("uuid", "")), []),
+                    "attach_service_account": _is_docker_host(instance),
                 }
             )
     return plans
