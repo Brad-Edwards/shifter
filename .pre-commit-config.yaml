@@ -252,6 +252,16 @@ repos:
         language: system
         files: ^platform/terraform/global/github-runner/main\.tf$
 
+      # ADR-008 / issue #1546: the GCP-native self-hosted runner must live in a
+      # dedicated custom-mode VPC (never the project default network) and admit
+      # SSH only from Google's IAP range, mirroring the AWS ADR-004-R20 guard for
+      # GCP so the isolation cannot be silently weakened.
+      - id: check-tf-gcp-runner-network
+        name: GCP runner network isolation (ADR-008)
+        entry: python3 scripts/check_tf_gcp_runner_network/check_tf_gcp_runner_network.py
+        language: system
+        files: ^platform/terraform/gcp/modules/github-runner-network/main\.tf$
+
       # Issue #1178: the shared range *guest* instance role must not grant SSM
       # Parameter Store access on a Resource that wildcards the environment or
       # range segment (parameter/shifter/*/range/*), which would let any range
@@ -400,11 +410,12 @@ repos:
           python3 -m unittest scripts.check_tf_rds_security.test_check_tf_rds_security &&
           python3 -m unittest scripts.check_portal_target_sg_sources.test_check_portal_target_sg_sources &&
           python3 -m unittest scripts.check_tf_runner_network.test_check_tf_runner_network &&
+          python3 -m unittest scripts.check_tf_gcp_runner_network.test_check_tf_gcp_runner_network &&
           python3 -m unittest scripts.check_tf_gcp_iam_resource_scope.test_check_tf_gcp_iam_resource_scope &&
           python3 -m unittest scripts.check_tf_roots.test_check_tf_roots
           '
         language: system
-        files: ^scripts/(check_tf_(iam_ec2_scope|iam_elb_scope|iam_ssm_scope|iam_ssm_range_scope|iam_bedrock_agent_scope|sg_cidrs|kms_secrets_grant|rds_security|runner_network|gcp_iam_resource_scope|roots)|check_portal_target_sg_sources)/
+        files: ^scripts/(check_tf_(iam_ec2_scope|iam_elb_scope|iam_ssm_scope|iam_ssm_range_scope|iam_bedrock_agent_scope|sg_cidrs|kms_secrets_grant|rds_security|runner_network|gcp_runner_network|gcp_iam_resource_scope|roots)|check_portal_target_sg_sources)/
         pass_filenames: false
 
   # Kubernetes schema validation

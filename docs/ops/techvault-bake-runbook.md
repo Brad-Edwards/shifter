@@ -164,20 +164,33 @@ participant work plus Claude Code (which is remote compute via Bedrock).
 
 ## Automated pipeline
 
-The reproducible path is the `workflow_dispatch` workflow
-`.github/workflows/techvault-scenario-bake.yml` ("TechVault Scenario Bake"),
-which automates the manual steps above: it stands up the stack, installs the
-VS Code seat, images the running stack, golden-verifies, and updates
-`/shifter/ami/techvault`. It follows the `workflow_dispatch`-only bake boundary
-from `docs/architecture/polaris-scenario-bake-preflight-618.md` (never wired to
-push, pull_request, or schedule).
+The reproducible path is the shared `workflow_dispatch` workflow
+`.github/workflows/packer.yml` ("Packer AMI Build"), dispatched with
+`ami_type=techvault`. Its `bake-scenario` job automates the manual steps above:
+Packer stands up the builder over the no-inbound AWS Session Manager
+communicator, runs the bake phases from `shifter/packer/scripts/techvault/`
+(`toolchain.sh` → `stack.sh` → `seat.sh` → `wait-stack.sh`), images the running
+stack (Packer stops-to-snapshot; containers auto-start on boot), then the
+workflow verifies the AMI is encrypted, golden-verifies a fresh instance, and
+publishes `/shifter/ami/techvault`. The Packer source is
+`shifter/packer/techvault.pkr.hcl`. It follows the `workflow_dispatch`-only bake
+boundary from `docs/architecture/polaris-scenario-bake-preflight-618.md` (never
+wired to push, pull_request, or schedule).
+
+> Migrated to Packer in #1469 (was the hand-rolled `run-instances` /
+> SSM-RunCommand-shell / `create-image` workflow `techvault-scenario-bake.yml`,
+> now deleted). Packer owns builder launch, provisioning, image creation, and
+> teardown; the bake phases and the encryption + golden-verify gates are
+> unchanged. Note: the scenario builds use Packer's Session Manager SSH tunnel,
+> which needs `ssm:StartSession` on the deploy role, added to
+> `platform/terraform/global/iam/github-oidc.tf` in the same change and applied
+> by an IAM `terraform apply`.
 
 The workflow must publish only an encrypted AMI. See
 `docs/architecture/techvault-encrypted-ami-preflight-1455.md` for the encryption
 boundary and guardrails.
 
-The workflow is self-contained: it drives the bake inline over SSM RunCommand
-and has no separate `scripts/` bake range. The operator supplies the isolated
-bake subnet, security group, and SSM instance profile (plus the pinned
-`aptl_version`) as inputs. Run this workflow for a normal rebake; the manual
+The operator supplies the isolated bake subnet, no-inbound security group, and
+SSM-enabled builder instance profile (plus the pinned `aptl_version`) as
+`workflow_dispatch` inputs. Run this workflow for a normal rebake; the manual
 steps above are the reference for what it does and for debugging.

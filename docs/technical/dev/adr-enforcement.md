@@ -241,7 +241,14 @@ The first slice intentionally stays small:
   reusable workflow carries its own hosted provisioner pytest gate and that
   `_shifter-engine.yml` image validation, image build, and deploy jobs all need
   that gate. This keeps deploy-branch Quality skips from bypassing provisioner
-  tests on the image that is pushed and deployed.
+  tests on the image that is pushed and deployed. The same suite pins the engine
+  `validate` image-shape job's runner placement (#1474): it runs on the trusted
+  self-hosted deploy runner class rather than `ubuntu-latest`, so a
+  GitHub-hosted runner-acquisition stall can no longer cancel it before steps
+  start and skip the whole Platform stage. Because it is self-hosted it is
+  fail-closed on `pull_request` under the `deploy-workflow-runner-exposure`
+  (ADR-003-R5) invariant, keeps `contents: read` only, and carries a
+  `timeout-minutes` backstop (#1220).
 
 - `portal-deploy-mode-source-of-truth`
   Enforces ADR-003-R4 for the AWS portal deploy path. `_shifter-platform.yml`

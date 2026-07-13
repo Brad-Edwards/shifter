@@ -307,7 +307,7 @@ class TestMainCLI:
 
             deploy.main()
 
-            mock_check.assert_called_once_with("bootstrap")
+            mock_check.assert_called_once_with("bootstrap", cloud=None)
 
     # ---------------------------------------------------------------------
     # Command execution
@@ -491,6 +491,38 @@ class TestMainCLI:
         help_text = capsys.readouterr().out
         assert "--use-existing-network" in help_text
         assert "--runner-count" in help_text
+        # GCP runner path (issue #1546) is wired on the same subcommand.
+        assert "--cloud" in help_text
+        assert "--project-id" in help_text
+
+    def test_runners_cloud_gcp_dispatches_to_gcp_path(self, capsys):
+        """--cloud gcp dry-run plans the GCP runner root, never the AWS SSM path.
+
+        Asserts observable behavior (ADR-019) rather than patching first-party
+        dispatch seams: the GCP path is the only one that threads project_id into
+        the Terraform plan and it never emits an SSM send-command.
+        """
+        with (
+            patch(
+                "sys.argv",
+                ["deploy.py", "runners", "--cloud", "gcp", "--env", "gcp-dev", "--project-id", "my-proj", "--dry-run"],
+            ),
+            patch("shutil.which", return_value="/usr/bin/tool"),
+        ):
+            deploy.main()
+
+        out = capsys.readouterr().out
+        assert "project_id=my-proj" in out
+        assert "send-command" not in out  # never the AWS SSM registration path
+
+    def test_runners_cloud_aws_requires_profile(self):
+        """--cloud aws (default) without --profile fails closed before any work."""
+        with (
+            patch("sys.argv", ["deploy.py", "runners", "--env", "dev"]),
+            patch("shutil.which", return_value="/usr/bin/tool"),
+            pytest.raises(SystemExit),
+        ):
+            deploy.main()
 
 
 class TestRunnersDeployment:
