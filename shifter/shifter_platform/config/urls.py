@@ -2,8 +2,8 @@
 
 from django.conf import settings
 from django.contrib import admin
-from django.http import HttpRequest, HttpResponse
-from django.urls import include, path
+from django.http import Http404, HttpRequest, HttpResponse
+from django.urls import include, path, re_path
 from django.views.decorators.http import require_safe
 
 from config import api_urls
@@ -37,6 +37,31 @@ def _root_page(request: HttpRequest, *args: object, **kwargs: object) -> HttpRes
     return home(request, *args, **kwargs)
 
 
+def _aces_image_registry_spa_enabled() -> bool:
+    """Return whether the SPA shell should serve the ACES image registry pages.
+
+    Greenfield SPA-only surface (#1566): there is no legacy Django page here, so
+    the pages exist only inside the flag-gated SPA. Gated on the platform SPA
+    shell AND ``SHIFTER_ACES_NATIVE_PROVISIONING`` (the issue's hard gate), so the
+    surface is inert unless both are on. No separate cutover flag: nothing is
+    being replaced.
+    """
+    return bool(platform_spa_enabled() and getattr(settings, "ACES_NATIVE_PROVISIONING_ENABLED", False))
+
+
+@require_safe
+def _aces_image_registry_page(request: HttpRequest, *args: object, **kwargs: object) -> HttpResponse:
+    """Serve the SPA shell for the ACES image registry pages, else 404.
+
+    GET/HEAD only. When the surface is disabled the path 404s (there is no legacy
+    page to fall back to), so the route is inert in the default configuration and
+    never swallows a request.
+    """
+    if _aces_image_registry_spa_enabled():
+        return platform_spa_host(request, *args, **kwargs)
+    raise Http404
+
+
 urlpatterns = [
     path("", _root_page, name="home"),
     path("privacy/", privacy_notice, name="privacy_notice"),
@@ -50,6 +75,12 @@ urlpatterns = [
     path("mission-control/", include("mission_control.urls")),
     path("risk-register/", include("risk_register.urls")),
     path("scenario-editor/", include("cms.scenario_editor.urls")),
+    # ACES image registry SPA pages (#1566): greenfield, SPA-only, gated on the
+    # platform SPA shell + SHIFTER_ACES_NATIVE_PROVISIONING. The base path plus a
+    # catch-all under the prefix serve the shell so client-router deep links and
+    # refresh resolve; both 404 when the surface is disabled.
+    path("aces-image-registry/", _aces_image_registry_page, name="aces_image_registry"),
+    re_path(r"^aces-image-registry/.*$", _aces_image_registry_page),
     path("api/v1/", include((api_urls.urlpatterns, api_urls.app_name), namespace="v1")),
     path("ctf/", include("ctf.urls")),
     path("admin/", admin.site.urls),

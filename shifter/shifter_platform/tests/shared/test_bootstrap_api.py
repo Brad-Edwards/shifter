@@ -124,6 +124,22 @@ def test_scenario_editor_spa_feature_flag_default_false(user, settings):
     assert body["feature_flags"]["scenario_editor_spa"] is False
 
 
+def test_aces_native_provisioning_feature_flag_reported(user, settings):
+    settings.ACES_NATIVE_PROVISIONING_ENABLED = True
+    client = APIClient()
+    client.force_authenticate(user=user)
+    body = client.get(BOOTSTRAP_URL).json()
+    assert body["feature_flags"]["aces_native_provisioning"] is True
+
+
+def test_aces_native_provisioning_feature_flag_default_false(user, settings):
+    settings.ACES_NATIVE_PROVISIONING_ENABLED = False
+    client = APIClient()
+    client.force_authenticate(user=user)
+    body = client.get(BOOTSTRAP_URL).json()
+    assert body["feature_flags"]["aces_native_provisioning"] is False
+
+
 def test_modes_default_operator_for_non_participant(user):
     client = APIClient()
     client.force_authenticate(user=user)

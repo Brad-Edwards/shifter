@@ -4,13 +4,24 @@ from __future__ import annotations
 
 from django.urls import path
 
-from cms.api import views
+from cms.api import aces_image_registry, views
 
 app_name = "cms"
 
 urlpatterns = [
     path("catalog/", views.CatalogListView.as_view(), name="catalog-list"),
     path("catalog/<slug:scenario_id>/", views.CatalogDetailView.as_view(), name="catalog-detail"),
+    # ACES image registry management (#1566); gated by SHIFTER_ACES_NATIVE_PROVISIONING.
+    path(
+        "aces-image-mappings/",
+        aces_image_registry.AcesImageMappingListCreateView.as_view(),
+        name="aces-image-mappings",
+    ),
+    path(
+        "aces-image-mappings/disable/",
+        aces_image_registry.AcesImageMappingDisableView.as_view(),
+        name="aces-image-mappings-disable",
+    ),
     path("scenario-editor/validate-yaml/", views.YAMLValidateView.as_view(), name="scenario-editor-validate-yaml"),
     # Structured create + YAML create. `from-yaml/` is declared before the
     # `<slug:scenario_id>/` detail route so it is not captured as a scenario id.

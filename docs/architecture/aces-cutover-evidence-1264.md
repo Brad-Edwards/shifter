@@ -56,6 +56,25 @@ Prerequisites:
   `ACES_PACKAGE_ROOT` to an SDL entry file. The in-repo
   `scenario-dev/aces-validation/shifter-aces-validation.sdl.yaml` is a minimal,
   provisioning-only package suitable for this purpose.
+- An enabled ACES image-registry mapping for the validation package's authored
+  image source: provider `gce`, `source_name=alpine`, and
+  `source_version=3.19`, pointing at the tenant's concrete Alpine-compatible
+  GCE image or image family. Register it through the tenant-facing registry
+  surface added for #1566; do not use Django admin or seed a one-off fixture.
+  Optional sizing defaults such as `machine_type`, `disk_size_gb`, and
+  `disk_type` are backend-owned policy on the mapping, not authored ACES
+  semantics. Register it with the management command (or the equivalent
+  `POST /api/v1/cms/aces-image-mappings/` call, or the ACES Images page in the
+  SPA Author area):
+
+  ```sh
+  python manage.py aces_image_registry --action register \
+      --provider gce --source-name alpine --source-version 3.19 \
+      --image-ref projects/<project>/global/images/family/<alpine-family>
+  ```
+
+  See [manage-aces-image-registry](../how-to/manage-aces-image-registry.md) for
+  the full register / list / disable reference.
 
 ## What does not satisfy the gate
 
@@ -70,3 +89,8 @@ Backend-owned realization details (image ids, machine sizes, subnets, provider
 configuration, secrets) never appear in authored ACES semantics or in the
 evidence. With the flag off, ACES entries are not launchable and this path is
 inert.
+
+Image-registry management is a separate operator concern from package-source
+registration and conformance. A registered validation package without an
+enabled `alpine@3.19` mapping must fail loudly during realization rather than
+falling back to `os_family` or a hard-coded image.

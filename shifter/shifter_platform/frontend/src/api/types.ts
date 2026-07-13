@@ -100,6 +100,22 @@ export type ScenarioInstanceOsType = components["schemas"]["ScenarioInstanceOsTy
 export type ScenarioSource = "builtin" | "custom" | "aces" | "ctf";
 
 /**
+ * ACES image registry types (#1566), re-exported from the generated OpenAPI
+ * schema. The `engine.services` write path stays the authoritative validator;
+ * regenerate `schema.d.ts` via `npm run gen:api` instead of hand-copying.
+ */
+export type AcesImageMapping = components["schemas"]["AcesImageMappingView"];
+export type AcesImageMappingRegister = components["schemas"]["AcesImageMappingRegister"];
+export type AcesImageMappingDisable = components["schemas"]["AcesImageMappingDisable"];
+
+/** Provider choices mirroring engine.models.AcesImageMapping.Provider (UI affordance only). */
+export type AcesImageProvider = "gce" | "aws";
+export const ACES_IMAGE_PROVIDERS: ReadonlyArray<{ value: AcesImageProvider; label: string }> = [
+  { value: "gce", label: "Google Compute Engine" },
+  { value: "aws", label: "AWS EC2" },
+];
+
+/**
  * Runtime option lists for the structured editor. Typed against the generated
  * enums so an invalid value fails typecheck; the backend serializer + Pydantic
  * schema stay authoritative (these are UI affordances only).

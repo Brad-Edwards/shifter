@@ -214,6 +214,19 @@ export const NAV_GROUPS: readonly NavGroup[] = [
         external: false,
         featureFlag: "scenario_editor_spa",
       },
+      // In-SPA ACES image registry management (#1566). Greenfield surface gated
+      // by `aces_native_provisioning` (mirrors SHIFTER_ACES_NATIVE_PROVISIONING);
+      // hidden until the native path is enabled. Advisory visibility only — the
+      // /api/v1/cms/aces-image-mappings/ endpoints remain the authority.
+      {
+        surface: "ACES Images",
+        routeName: "aces_image_registry",
+        purpose: "Map authored ACES image sources to concrete provider images.",
+        routePath: "/aces-image-registry/",
+        iconKey: "boxes",
+        external: false,
+        featureFlag: "aces_native_provisioning",
+      },
     ],
   ),
   makeGroup(
