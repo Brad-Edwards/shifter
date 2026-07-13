@@ -97,10 +97,13 @@ class TestGcpBundleIntegration:
         from installation.errors import InstallationConfigError
         from installation.loader import load_root_config
 
+        # Only load_root_config should raise inside the pytest.raises block; build the
+        # config file first (SonarCloud python:S5915).
+        config_path = write_config(
+            self._gcp_config({"project_id": "acme-shifter", "region": "us-central1", "bogus": "x"})
+        )
         with pytest.raises(InstallationConfigError) as excinfo:
-            load_root_config(
-                write_config(self._gcp_config({"project_id": "acme-shifter", "region": "us-central1", "bogus": "x"}))
-            )
+            load_root_config(config_path)
         assert any(issue.path == "settings.bogus" for issue in excinfo.value.issues)
 
     def test_loader_rejects_gcp_settings_missing_project_id(self, write_config):
