@@ -13,15 +13,24 @@ is the authoritative parser for that file.
 | `aws` | `prod`, `dev`, `proof` | `django_secret_key`, `db_password` | Closed model: `region` (required). |
 | `gcp` | `prod`, `dev` | `django_secret_key` | Any mapping (provisional until #729). |
 
-The `aws` entry validates its `settings` against a closed model (`region`, required) and
-each secret reference against a machine-readable grammar; `proof` is an internal
-new-tenant readiness tier alongside `prod`/`dev`. The `gcp` entry is still provisional: it
-accepts any `settings` mapping and defers secret-reference grammar to the deployment path
-that consumes it, until the GCP backend bundle migration (#729).
+Both the `aws` (#728) and `gcp` (#729) entries validate their `settings` against a closed
+model and each secret reference against a machine-readable grammar; unknown keys fail fast.
+For AWS, `region` is required (`proof` is an internal new-tenant readiness tier alongside
+`prod`/`dev`). For GCP, `project_id` and `region` are required.
+
+### GCP settings
+
+| Key | Required | Notes |
+| --- | --- | --- |
+| `project_id` | yes | GCP project id (6-30 chars, a lowercase letter then lowercase letters/digits/hyphens, no trailing hyphen). |
+| `region` | yes | GCP region/location, for example `us-central1`. |
+
+The GCP `django_secret_key` reference must be a Google Secret Manager resource name
+(`projects/<project>/secrets/<name>/versions/<version>`), a GitHub Actions secret name, an
+environment variable, or the literal `prompt`.
 
 `range_egress` is the shared, cross-backend egress policy (see [Render](#render)); it is
-validated the same way for every backend and is not part of a backend's own settings
-model.
+validated the same way for every backend and is not part of a backend's own settings model.
 
 ## Config File
 

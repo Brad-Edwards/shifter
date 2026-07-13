@@ -21,7 +21,7 @@ from installation.registry import (
 # What the provisional registry must keep accepting (carried over unchanged from the
 # pre-#1113 ``installation.backends`` data, which the registry supersedes).
 _EXPECTED_PROFILES: dict[str, frozenset[str]] = {
-    # AWS admits the real ``proof`` tier (#728); GCP is still prod/dev until #729.
+    # AWS admits the real ``proof`` tier (#728); GCP stays prod/dev (#729, no proof tier).
     "aws": frozenset({"prod", "dev", "proof"}),
     "gcp": frozenset({"prod", "dev"}),
 }
@@ -44,9 +44,10 @@ def test_each_bundle_is_a_well_formed_backend_bundle(name):
     assert bundle.name == name
     assert bundle.contract_version in SUPPORTED_CONTRACT_VERSIONS
     assert bundle.supported_profiles == _EXPECTED_PROFILES[name]
-    # A backend that ships today declares the tools, secrets, checks, outputs, owned
-    # files, and capabilities it needs — the contract is machine-readable enough for
-    # validation and docs generation.
+    # A backend that ships today declares the tools, secrets, checks, outputs, owned files,
+    # and capabilities it needs — the contract is machine-readable enough for validation and
+    # docs generation. (settings_model / reference_pattern completeness is asserted per
+    # backend below: both aws (#728) and gcp (#729) are migrated.)
     assert bundle.required_tools
     assert bundle.required_secrets
     assert bundle.validation_checks
@@ -71,12 +72,16 @@ def test_aws_bundle_is_migrated_with_a_closed_settings_model_and_reference_patte
     assert all(secret.reference_pattern for secret in aws.required_secrets)
 
 
-def test_gcp_bundle_is_still_provisional_until_its_migration():
-    # The GCP backend bundle migration is #1117 / GH #729; until then it accepts any
-    # settings mapping (settings_model=None) and defers secret-reference grammar.
+def test_gcp_bundle_is_migrated_with_a_closed_settings_model_and_reference_pattern():
+    # #729 completed the GCP bundle: a closed settings model and an enforced secret
+    # reference grammar for the operator-supplied Django secret.
+    from installation.settings_gcp import GcpBackendSettings
+
     gcp = BACKEND_BUNDLES["gcp"]
-    assert gcp.settings_model is None
-    assert all(secret.reference_pattern is None for secret in gcp.required_secrets)
+    assert gcp.settings_model is GcpBackendSettings
+    assert gcp.settings_model.model_config.get("extra") == "forbid"
+    django = next(s for s in gcp.required_secrets if s.logical_name == "django_secret_key")
+    assert django.reference_pattern is not None
 
 
 def test_aws_admits_the_real_proof_profile_but_gcp_does_not():

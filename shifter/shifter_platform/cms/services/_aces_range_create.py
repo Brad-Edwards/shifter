@@ -73,17 +73,34 @@ def _load_aces_source_or_raise(scenario: str) -> AcesPackageSource:
         raise CMSError(f"No ACES package registered for scenario '{scenario}'") from None
 
 
-def _dispatch_aces_package(request_id: UUID, user: User, package_ref: str) -> None:
-    """Resolve, load, plan, and dispatch the ACES package; raise CMSError on failure."""
+def _dispatch_aces_package(
+    request_id: UUID,
+    user: User,
+    package_ref: str,
+    package_digest: str,
+) -> None:
+    """Verify, resolve, load, plan, and dispatch one registered ACES pack."""
     from cms.aces.dispatch import CmsAcesDispatchPort
+    from cms.scenarios.pack_validation import PackDigestError, verify_pack_digest
     from shared.aces.package_loader import (
         AcesPackageError,
         launch_aces_package,
-        resolve_scenario_path,
+        resolve_pack_root,
+        resolve_pack_scenario_path,
     )
 
     try:
-        scenario_path = resolve_scenario_path(package_ref, package_root=Path(settings.ACES_PACKAGE_ROOT))
+        pack_root = resolve_pack_root(package_ref, package_root=Path(settings.ACES_PACKAGE_ROOT))
+    except AcesPackageError as exc:
+        raise CMSError(f"ACES package could not be resolved: {exc}") from exc
+    try:
+        digest_matches = verify_pack_digest(pack_root, package_digest)
+    except PackDigestError as exc:
+        raise CMSError("ACES pack content identity could not be verified") from exc
+    if not digest_matches:
+        raise CMSError("ACES pack content digest no longer matches registration")
+    try:
+        scenario_path = resolve_pack_scenario_path(pack_root)
     except AcesPackageError as exc:
         raise CMSError(f"ACES package could not be resolved: {exc}") from exc
 
@@ -166,7 +183,7 @@ def create_aces_native_range(user: User, scenario: str, *, range_source: RangeSo
     request_id, _cms_request, range_instance = _reserve_active_range_slot(user, range_source, _persist)
 
     try:
-        _dispatch_aces_package(request_id, user, source.package_ref)
+        _dispatch_aces_package(request_id, user, source.package_ref, source.package_digest)
     except Exception:
         _set_range_instance_status(range_instance, ResourceStatus.FAILED)
         raise

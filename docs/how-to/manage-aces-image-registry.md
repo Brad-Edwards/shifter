@@ -83,8 +83,7 @@ again with the same natural key.
 
 ## Validation Package Mapping
 
-The in-repo validation package
-(`scenario-dev/aces-validation/shifter-aces-validation.sdl.yaml`) authors a
+The in-repo validation pack (`scenario-dev/shifter-aces-validation/`) authors a
 single image with `source: {name: alpine, version: "3.19"}`. Before running the
 ACES backend validation, register a `gce` mapping for `source_name=alpine`,
 `source_version=3.19` pointing at a concrete Alpine-compatible GCE image or
