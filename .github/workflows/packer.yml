@@ -14,11 +14,6 @@ on:
           - dc
           - polaris-dc
           - brokenbk
-          - ctf-webshell
-          - ctf-mailroom
-          - ctf-helpdesk
-          - ctf-devbox
-          - ctf-vault
           # Scenario AMIs baked over the no-inbound SSM communicator (bake-scenario job).
           - techvault
           - polaris-vm
