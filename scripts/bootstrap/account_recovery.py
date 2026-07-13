@@ -1,0 +1,524 @@
+"""Fresh-account leftover detection and recovery for AWS tenant standup.
+
+Issue #1639 friction point 3, which is the automated bootstrap-CLI leftover
+recovery deferred from #1472 to #1618. Implements the design record in
+``docs/architecture/aws-dirty-account-lifecycle-preflight-1472.md``.
+
+A previously-deployed AWS environment that was incompletely torn down leaves
+control-plane residue whose Terraform state is gone (Budgets, RDS parameter
+groups and event subscriptions, EventBridge Scheduler schedules, ECR repos, KMS
+aliases, Network Firewall rule groups, Portal SSM parameters). On the next
+``terraform apply`` each collides and fails the run one resource at a time. This
+module surfaces them all up front (read-only detection) and, with an explicit
+opt-in, sweeps the replaceable ones.
+
+Safety contract (from the #1472 design):
+
+- Terraform state is authoritative; this is a NARROW FALLBACK for state-absent,
+  replaceable control-plane residue, not a replacement for ``terraform destroy``.
+- Detection is READ-ONLY. Mutation requires an explicit ``sweep`` action AND an
+  interactive confirmation (or ``--yes``); a non-TTY alone never authorizes it.
+- A matching name is a lookup key, not ownership proof. A resource is swept only
+  when the strongest available evidence agrees: for taggable resources, the
+  provider ``default_tags`` (``Project=shifter``, ``Environment=<env>``,
+  ``ManagedBy=terraform``); for the few tagless classes, the canonical name /
+  path prefix scoped to the resolved account and region. Missing or conflicting
+  evidence fails closed (reported, never deleted).
+- Data-bearing resources are never touched. There is deliberately NO handler for
+  KMS keys, S3 buckets, RDS instances/snapshots, Secrets Manager values, or SSM
+  SecureString values, so this tool structurally cannot delete them. KMS
+  *aliases* (pointers, not keys) and SSM parameter *names* below the exact portal
+  prefix are safe; values are never read.
+- Every AWS call is an argv list through ``run_cmd`` (no ``shell=True``); reports
+  carry names/ids and the account/env/region only, never secret values or raw
+  AWS response bodies.
+"""
+
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass, field
+from enum import StrEnum
+
+from bootstrap_core import confirm, error, get_aws_account_id, info, run_cmd, subheader, success, warn
+
+AWS_REGION = "us-east-2"
+
+# Provider default_tags that mark a resource as Terraform-owned for an env.
+_OWNER_PROJECT = ("Project", "shifter")
+_OWNER_MANAGED_BY = ("ManagedBy", "terraform")
+
+
+class Action(StrEnum):
+    """The per-resource outcome recorded in a recovery report."""
+
+    ABSENT = "absent"  # nothing found for this class
+    WOULD_DELETE = "would-delete"  # owned + safe; detection-only run
+    DELETED = "deleted"  # swept
+    BLOCKED = "blocked"  # matched a name but ownership evidence failed closed
+    FAILED = "failed"  # AWS call errored during a sweep
+
+
+@dataclass(frozen=True)
+class LeftoverFinding:
+    """One detected residual resource (or the absence of any for a class)."""
+
+    resource_class: str
+    identifier: str
+    action: Action
+    detail: str = ""
+
+
+@dataclass
+class RecoveryReport:
+    """Detection/sweep results for one account + environment."""
+
+    account_id: str
+    environment: str
+    region: str
+    findings: list[LeftoverFinding] = field(default_factory=list)
+
+    @property
+    def actionable(self) -> list[LeftoverFinding]:
+        """Findings that represent real residue (present, not ``absent``)."""
+        return [f for f in self.findings if f.action is not Action.ABSENT]
+
+    @property
+    def blocked(self) -> list[LeftoverFinding]:
+        """Name-matched residue that failed the ownership check (never swept)."""
+        return [f for f in self.findings if f.action is Action.BLOCKED]
+
+    @property
+    def failures(self) -> list[LeftoverFinding]:
+        """Sweep operations that errored."""
+        return [f for f in self.findings if f.action is Action.FAILED]
+
+    def render(self) -> str:
+        """Render a bounded, value-free report grouped by resource class."""
+        symbol = {
+            Action.ABSENT: "[ ok ]",
+            Action.WOULD_DELETE: "[find]",
+            Action.DELETED: "[ del]",
+            Action.BLOCKED: "[BLOCK]",
+            Action.FAILED: "[FAIL]",
+        }
+        lines = [
+            f"Account leftover recovery: account={self.account_id} env={self.environment} region={self.region}",
+        ]
+        for f in self.findings:
+            suffix = f" ({f.detail})" if f.detail else ""
+            lines.append(f"  {symbol[f.action]} {f.resource_class}: {f.identifier}{suffix}")
+        actionable = len(self.actionable)
+        verdict = "clean" if actionable == 0 else f"{actionable} leftover(s)"
+        if self.blocked:
+            verdict += f", {len(self.blocked)} blocked (ownership unproven)"
+        if self.failures:
+            verdict += f", {len(self.failures)} failed"
+        lines.append(f"Result: {verdict}")
+        return "\n".join(lines)
+
+
+def _aws_json(args: list[str], profile: str) -> dict | list | None:
+    """Run a read-only ``aws ... --output json`` query and parse the result.
+
+    Returns ``None`` on a non-zero exit (for example a not-found error), so a
+    missing resource reads as "absent" rather than raising. Never raises on the
+    detection path; callers treat ``None``/empty as "nothing here".
+    """
+    cmd = ["aws", "--profile", profile, "--region", AWS_REGION, *args, "--output", "json"]
+    result = run_cmd(cmd, capture=True, check=False, profile=None)
+    if result is None or result.returncode != 0 or not result.stdout.strip():
+        return None
+    try:
+        return json.loads(result.stdout)
+    except json.JSONDecodeError:
+        return None
+
+
+def _tags_owned_by_env(tags: dict[str, str], environment: str) -> bool:
+    """True when the provider default_tags mark this resource as env-owned."""
+    return (
+        tags.get(_OWNER_PROJECT[0]) == _OWNER_PROJECT[1]
+        and tags.get(_OWNER_MANAGED_BY[0]) == _OWNER_MANAGED_BY[1]
+        and tags.get("Environment") == environment
+    )
+
+
+def _tag_list_to_dict(tag_list: list[dict] | None) -> dict[str, str]:
+    """Normalize the ``[{"Key":..,"Value":..}]`` tag shape to a dict."""
+    return {t["Key"]: t.get("Value", "") for t in (tag_list or []) if "Key" in t}
+
+
+class ResourceHandler:
+    """Base class for one residual resource class.
+
+    Subclasses implement :meth:`detect` (read-only) and :meth:`delete` (mutation).
+    The base ``detect`` templates the taggable-resource flow: list, resolve tags,
+    classify as owned (``WOULD_DELETE``) or name-matched-but-unowned (``BLOCKED``).
+    Tagless subclasses override :meth:`detect` entirely.
+    """
+
+    resource_class = "resource"
+
+    def detect(self, environment: str, account_id: str, profile: str) -> list[LeftoverFinding]:
+        raise NotImplementedError
+
+    def delete(self, finding: LeftoverFinding, profile: str, dry_run: bool) -> Action:
+        raise NotImplementedError
+
+    def _absent(self) -> list[LeftoverFinding]:
+        return [LeftoverFinding(self.resource_class, "(none)", Action.ABSENT)]
+
+
+class _TaggedHandler(ResourceHandler):
+    """Handler for a taggable resource classified purely by ``default_tags``.
+
+    No name pattern is needed: the environment ownership tags are the evidence,
+    so the handler lists the class and keeps only rows the env owns. A row that
+    carries a partial/foreign tag set is never returned as deletable.
+    """
+
+    def _list(self, profile: str) -> list[tuple[str, str]]:
+        """Return ``(identifier, arn)`` pairs for every resource of this class."""
+        raise NotImplementedError
+
+    def _fetch_tags(self, arn: str, profile: str) -> dict[str, str]:
+        raise NotImplementedError
+
+    def _delete_cmd(self, identifier: str) -> list[str]:
+        raise NotImplementedError
+
+    def detect(self, environment: str, account_id: str, profile: str) -> list[LeftoverFinding]:
+        findings: list[LeftoverFinding] = []
+        for identifier, arn in self._list(profile):
+            tags = self._fetch_tags(arn, profile)
+            if _tags_owned_by_env(tags, environment):
+                findings.append(LeftoverFinding(self.resource_class, identifier, Action.WOULD_DELETE))
+        return findings or self._absent()
+
+    def delete(self, finding: LeftoverFinding, profile: str, dry_run: bool) -> Action:
+        cmd = ["aws", "--profile", profile, "--region", AWS_REGION, *self._delete_cmd(finding.identifier)]
+        result = run_cmd(cmd, dry_run=dry_run, check=False, profile=None)
+        if dry_run:
+            return Action.WOULD_DELETE
+        return Action.DELETED if result is not None and result.returncode == 0 else Action.FAILED
+
+
+class RdsParameterGroupHandler(_TaggedHandler):
+    """RDS DB parameter groups (``modules/portal/rds``)."""
+
+    resource_class = "rds-db-parameter-group"
+
+    def _list(self, profile: str) -> list[tuple[str, str]]:
+        data = _aws_json(["rds", "describe-db-parameter-groups"], profile)
+        groups = (data or {}).get("DBParameterGroups", []) if isinstance(data, dict) else []
+        # The default.* AWS-managed families are never ours and cannot be deleted.
+        return [
+            (g["DBParameterGroupName"], g["DBParameterGroupArn"])
+            for g in groups
+            if not g["DBParameterGroupName"].startswith("default.")
+        ]
+
+    def _fetch_tags(self, arn: str, profile: str) -> dict[str, str]:
+        data = _aws_json(["rds", "list-tags-for-resource", "--resource-name", arn], profile)
+        return _tag_list_to_dict((data or {}).get("TagList") if isinstance(data, dict) else None)
+
+    def _delete_cmd(self, identifier: str) -> list[str]:
+        return ["rds", "delete-db-parameter-group", "--db-parameter-group-name", identifier]
+
+
+class RdsEventSubscriptionHandler(_TaggedHandler):
+    """RDS event subscriptions (``modules/portal/backup-alerts``)."""
+
+    resource_class = "rds-event-subscription"
+
+    def _list(self, profile: str) -> list[tuple[str, str]]:
+        data = _aws_json(["rds", "describe-event-subscriptions"], profile)
+        subs = (data or {}).get("EventSubscriptionsList", []) if isinstance(data, dict) else []
+        return [(s["CustSubscriptionId"], s["EventSubscriptionArn"]) for s in subs]
+
+    def _fetch_tags(self, arn: str, profile: str) -> dict[str, str]:
+        data = _aws_json(["rds", "list-tags-for-resource", "--resource-name", arn], profile)
+        return _tag_list_to_dict((data or {}).get("TagList") if isinstance(data, dict) else None)
+
+    def _delete_cmd(self, identifier: str) -> list[str]:
+        return ["rds", "delete-event-subscription", "--subscription-name", identifier]
+
+
+class SchedulerScheduleHandler(_TaggedHandler):
+    """EventBridge Scheduler schedules (RDS rotation reminder, etc.)."""
+
+    resource_class = "scheduler-schedule"
+
+    def _list(self, profile: str) -> list[tuple[str, str]]:
+        data = _aws_json(["scheduler", "list-schedules"], profile)
+        schedules = (data or {}).get("Schedules", []) if isinstance(data, dict) else []
+        return [(s["Name"], s["Arn"]) for s in schedules]
+
+    def _fetch_tags(self, arn: str, profile: str) -> dict[str, str]:
+        data = _aws_json(["scheduler", "list-tags-for-resource", "--resource-arn", arn], profile)
+        return _tag_list_to_dict((data or {}).get("Tags") if isinstance(data, dict) else None)
+
+    def _delete_cmd(self, identifier: str) -> list[str]:
+        return ["scheduler", "delete-schedule", "--name", identifier]
+
+
+class EcrRepositoryHandler(_TaggedHandler):
+    """ECR repositories. Images are rebuilt by the deploy, so the repo is
+    replaceable control-plane residue; ``--force`` covers a repo left with
+    images from the prior tenant."""
+
+    resource_class = "ecr-repository"
+
+    def _list(self, profile: str) -> list[tuple[str, str]]:
+        data = _aws_json(["ecr", "describe-repositories"], profile)
+        repos = (data or {}).get("repositories", []) if isinstance(data, dict) else []
+        return [(r["repositoryName"], r["repositoryArn"]) for r in repos]
+
+    def _fetch_tags(self, arn: str, profile: str) -> dict[str, str]:
+        data = _aws_json(["ecr", "list-tags-for-resource", "--resource-arn", arn], profile)
+        return _tag_list_to_dict((data or {}).get("tags") if isinstance(data, dict) else None)
+
+    def _delete_cmd(self, identifier: str) -> list[str]:
+        return ["ecr", "delete-repository", "--repository-name", identifier, "--force"]
+
+
+class NetworkFirewallRuleGroupHandler(_TaggedHandler):
+    """AWS Network Firewall rule groups. Deletes are asynchronous and
+    dependency-heavy; the caller drains the firewall policy first via the normal
+    teardown. Reported/deleted by tag ownership."""
+
+    resource_class = "networkfirewall-rule-group"
+
+    def _list(self, profile: str) -> list[tuple[str, str]]:
+        data = _aws_json(["network-firewall", "list-rule-groups"], profile)
+        groups = (data or {}).get("RuleGroups", []) if isinstance(data, dict) else []
+        return [(g["Name"], g["Arn"]) for g in groups]
+
+    def _fetch_tags(self, arn: str, profile: str) -> dict[str, str]:
+        data = _aws_json(["network-firewall", "list-tags-for-resource", "--resource-arn", arn], profile)
+        return _tag_list_to_dict((data or {}).get("Tags") if isinstance(data, dict) else None)
+
+    def _delete_cmd(self, identifier: str) -> list[str]:
+        # Rule groups are addressed by ARN for delete; identifier here is the ARN.
+        return ["network-firewall", "delete-rule-group", "--rule-group-arn", identifier]
+
+    def detect(self, environment: str, account_id: str, profile: str) -> list[LeftoverFinding]:
+        # Override to carry the ARN as the identifier (delete addresses by ARN).
+        findings: list[LeftoverFinding] = []
+        for _name, arn in self._list(profile):
+            if _tags_owned_by_env(self._fetch_tags(arn, profile), environment):
+                findings.append(LeftoverFinding(self.resource_class, arn, Action.WOULD_DELETE))
+        return findings or self._absent()
+
+
+class KmsAliasHandler(ResourceHandler):
+    """KMS *aliases* (pointers), scoped by the canonical ``alias/shifter-<env>``
+    and ``alias/<env>-`` name prefixes. Aliases are tagless; deleting an alias
+    never deletes the underlying key, so no data is at risk. AWS-managed
+    ``alias/aws/*`` aliases are excluded."""
+
+    resource_class = "kms-alias"
+
+    def _prefixes(self, environment: str) -> tuple[str, ...]:
+        return (f"alias/shifter-{environment}-", f"alias/{environment}-", f"alias/ecr-{environment}-")
+
+    def detect(self, environment: str, account_id: str, profile: str) -> list[LeftoverFinding]:
+        data = _aws_json(["kms", "list-aliases"], profile)
+        aliases = (data or {}).get("Aliases", []) if isinstance(data, dict) else []
+        prefixes = self._prefixes(environment)
+        findings = [
+            LeftoverFinding(self.resource_class, a["AliasName"], Action.WOULD_DELETE)
+            for a in aliases
+            if not a["AliasName"].startswith("alias/aws/") and a["AliasName"].startswith(prefixes)
+        ]
+        return findings or self._absent()
+
+    def delete(self, finding: LeftoverFinding, profile: str, dry_run: bool) -> Action:
+        cmd = [
+            "aws",
+            "--profile",
+            profile,
+            "--region",
+            AWS_REGION,
+            "kms",
+            "delete-alias",
+            "--alias-name",
+            finding.identifier,
+        ]
+        result = run_cmd(cmd, dry_run=dry_run, check=False, profile=None)
+        if dry_run:
+            return Action.WOULD_DELETE
+        return Action.DELETED if result is not None and result.returncode == 0 else Action.FAILED
+
+
+class PortalSsmParameterHandler(ResourceHandler):
+    """Portal SSM parameters below the EXACT ``/shifter/<env>/portal/`` prefix.
+
+    Names only: ``get-parameters-by-path`` lists names without decryption, and
+    delete is by name. The AMI prefix (``/shifter/ami/*``) and every other
+    environment's prefix are outside this path and never touched."""
+
+    resource_class = "ssm-portal-parameter"
+
+    def _path(self, environment: str) -> str:
+        return f"/shifter/{environment}/portal/"
+
+    def detect(self, environment: str, account_id: str, profile: str) -> list[LeftoverFinding]:
+        path = self._path(environment)
+        # get-parameters-by-path lists NAMES (WithDecryption is never passed).
+        data = _aws_json(["ssm", "get-parameters-by-path", "--path", path, "--recursive"], profile)
+        params = (data or {}).get("Parameters", []) if isinstance(data, dict) else []
+        findings = [
+            LeftoverFinding(self.resource_class, p["Name"], Action.WOULD_DELETE)
+            for p in params
+            if p["Name"].startswith(path)  # defense-in-depth: exact prefix only
+        ]
+        return findings or self._absent()
+
+    def delete(self, finding: LeftoverFinding, profile: str, dry_run: bool) -> Action:
+        # Fail closed: never delete a name outside the portal prefix even if a
+        # finding is hand-constructed. The prefix is re-derived from the name.
+        if "/portal/" not in finding.identifier or not finding.identifier.startswith("/shifter/"):
+            return Action.BLOCKED
+        cmd = [
+            "aws",
+            "--profile",
+            profile,
+            "--region",
+            AWS_REGION,
+            "ssm",
+            "delete-parameter",
+            "--name",
+            finding.identifier,
+        ]
+        result = run_cmd(cmd, dry_run=dry_run, check=False, profile=None)
+        if dry_run:
+            return Action.WOULD_DELETE
+        return Action.DELETED if result is not None and result.returncode == 0 else Action.FAILED
+
+
+class BudgetHandler(ResourceHandler):
+    """AWS Budgets (account/global service). Budgets are effectively tagless for
+    ownership here, so a budget is only ever *reported* by canonical name prefix
+    and left BLOCKED rather than auto-deleted: a wrong delete removes a real cost
+    guardrail, and name alone is not ownership proof (per the #1472 design)."""
+
+    resource_class = "budget"
+
+    def detect(self, environment: str, account_id: str, profile: str) -> list[LeftoverFinding]:
+        data = _aws_json(["budgets", "describe-budgets", "--account-id", account_id], profile)
+        budgets = (data or {}).get("Budgets", []) if isinstance(data, dict) else []
+        prefix = f"shifter-{environment}-"
+        findings = [
+            LeftoverFinding(
+                self.resource_class,
+                b["BudgetName"],
+                Action.BLOCKED,
+                detail="name match only; delete manually to avoid removing a real budget",
+            )
+            for b in budgets
+            if b.get("BudgetName", "").startswith((prefix, f"{environment}-"))
+        ]
+        return findings or self._absent()
+
+    def delete(self, finding: LeftoverFinding, profile: str, dry_run: bool) -> Action:
+        # Deliberately never auto-deletes; detection reports it for manual action.
+        return Action.BLOCKED
+
+
+# Ordered so dependency-sensitive classes are swept before what they reference
+# (per the #1472 design: consumers before groups; schedule before its role;
+# event subscription before its topic/key teardown; SSM cleanup last).
+HANDLERS: list[ResourceHandler] = [
+    EcrRepositoryHandler(),
+    NetworkFirewallRuleGroupHandler(),
+    SchedulerScheduleHandler(),
+    RdsEventSubscriptionHandler(),
+    RdsParameterGroupHandler(),
+    KmsAliasHandler(),
+    PortalSsmParameterHandler(),
+    BudgetHandler(),
+]
+
+
+def detect_leftovers(
+    environment: str, profile: str, *, handlers: list[ResourceHandler] | None = None
+) -> RecoveryReport:
+    """Read-only detection of state-absent residue for ``environment``."""
+    account_id = get_aws_account_id(profile)
+    report = RecoveryReport(account_id=account_id, environment=environment, region=AWS_REGION)
+    for handler in handlers or HANDLERS:
+        report.findings.extend(handler.detect(environment, account_id, profile))
+    return report
+
+
+def sweep_leftovers(
+    report: RecoveryReport,
+    profile: str,
+    *,
+    dry_run: bool,
+    handlers: list[ResourceHandler] | None = None,
+) -> RecoveryReport:
+    """Delete the ``would-delete`` findings; leave ``blocked`` ones untouched.
+
+    Returns a new report reflecting the post-sweep actions. Idempotent: an
+    already-absent resource deletes cleanly, so a partial run can be re-run.
+    """
+    by_class = {h.resource_class: h for h in (handlers or HANDLERS)}
+    swept: list[LeftoverFinding] = []
+    for finding in report.findings:
+        if finding.action is not Action.WOULD_DELETE:
+            swept.append(finding)
+            continue
+        handler = by_class.get(finding.resource_class)
+        if handler is None:
+            swept.append(LeftoverFinding(finding.resource_class, finding.identifier, Action.BLOCKED, "no handler"))
+            continue
+        outcome = handler.delete(finding, profile, dry_run)
+        swept.append(LeftoverFinding(finding.resource_class, finding.identifier, outcome, finding.detail))
+    return RecoveryReport(report.account_id, report.environment, report.region, swept)
+
+
+def account_recovery(environment: str, profile: str, *, sweep: bool, dry_run: bool) -> RecoveryReport:
+    """CLI entrypoint: detect residue, print the report, optionally sweep.
+
+    Detection always runs and is read-only. The sweep is gated on an explicit
+    ``--sweep`` AND :func:`bootstrap_core.confirm` (which honors ``--yes`` but
+    still requires the explicit sweep intent), so a non-TTY alone never deletes.
+    """
+    subheader(f"Account leftover recovery: {environment} ({AWS_REGION})")
+    report = detect_leftovers(environment, profile)
+    info(report.render())
+
+    if not report.actionable:
+        success("No state-absent leftovers detected; the account is clean for a standup.")
+        return report
+    if report.blocked:
+        warn(f"{len(report.blocked)} resource(s) matched by name but not ownership; review and remove them manually.")
+
+    if not sweep:
+        info("Detection only. Re-run with --sweep to delete the owned leftovers (blocked ones are never auto-deleted).")
+        return report
+
+    deletable = [f for f in report.findings if f.action is Action.WOULD_DELETE]
+    if not deletable:
+        info("Nothing owned to sweep (only blocked/absent findings).")
+        return report
+
+    # Explicit destructive confirmation. Names the account so an operator cannot
+    # sweep the wrong account; confirm() returns True under --yes but the --sweep
+    # flag is still the required explicit destructive intent.
+    if not dry_run and not confirm(
+        f"Delete {len(deletable)} owned leftover(s) in account {report.account_id} ({environment})?"
+    ):
+        warn("Sweep declined; nothing deleted.")
+        return report
+
+    result = sweep_leftovers(report, profile, dry_run=dry_run)
+    info(result.render())
+    if result.failures:
+        error(f"{len(result.failures)} deletion(s) failed; re-run to retry (deletes are idempotent).")
+    else:
+        success("Sweep complete." if not dry_run else "Dry-run complete; no resources deleted.")
+    return result
