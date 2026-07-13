@@ -392,9 +392,10 @@ def test_range_cell_firewalls_are_deterministic_from_cell_identity():
 @pytest.mark.parametrize("field", ["portal_network_cidrs", "egress_allow_cidrs"])
 def test_range_cell_firewalls_reject_universal_allow_cidrs(field):
     config = dataclasses.replace(_sample_config(), **{field: ("0.0.0.0/0",)})
+    variables = _variables()
 
     with pytest.raises(RuntimeError, match=r"must not include 0\.0\.0\.0/0"):
-        render_range_cell_plan("req-123", _variables(), config)
+        render_range_cell_plan("req-123", variables, config)
 
 
 @pytest.mark.parametrize(
@@ -406,9 +407,10 @@ def test_range_cell_firewalls_reject_universal_allow_cidrs(field):
 )
 def test_range_cell_firewalls_reject_malformed_boundary_cidrs(field, cidr, message):
     config = dataclasses.replace(_sample_config(), **{field: (cidr,)})
+    variables = _variables()
 
     with pytest.raises(RuntimeError, match=message):
-        render_range_cell_plan("req-123", _variables(), config)
+        render_range_cell_plan("req-123", variables, config)
 
 
 def test_range_cell_firewalls_deduplicate_explicit_egress_cidrs():
