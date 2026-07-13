@@ -31,14 +31,16 @@ from installation.render import render_cloud_provider_tfvars, render_tfvars
 def _aws(settings: dict | None, aws_config: dict) -> dict:
     cfg = dict(aws_config)
     if settings is not None:
-        cfg["settings"] = settings
+        # Merge onto the fixture's settings so the required ``region`` (#728) is preserved
+        # while the test supplies its own ``range_egress`` policy.
+        cfg["settings"] = {**aws_config.get("settings", {}), **settings}
     return cfg
 
 
 def _gcp(settings: dict | None, gcp_config: dict) -> dict:
     cfg = dict(gcp_config)
     if settings is not None:
-        cfg["settings"] = settings
+        cfg["settings"] = {**gcp_config.get("settings", {}), **settings}
     return cfg
 
 

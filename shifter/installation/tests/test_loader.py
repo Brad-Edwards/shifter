@@ -171,11 +171,81 @@ class TestBackendSpecificValidation:
         base.update(extra)
         return base
 
-    def test_provisional_backend_accepts_any_settings(self, write_config):
-        # The shipped (un-monkeypatched) aws bundle has no settings_model, so any mapping
-        # is fine; this is the default behavior the loader must keep for #1112 configs.
-        cfg = load_root_config(write_config(self._aws_config(settings={"region": "us-east-2", "anything": True})))
-        assert cfg.settings == {"region": "us-east-2", "anything": True}
+    def test_real_aws_bundle_rejects_unknown_settings(self, write_config):
+        # #728: the shipped aws bundle now has a closed settings_model, so an unknown key is
+        # rejected — no longer the provisional "accept any mapping" behavior.
+        with pytest.raises(InstallationConfigError) as exc:
+            load_root_config(write_config(self._aws_config(settings={"region": "us-east-2", "anything": True})))
+        assert "settings.anything" in {issue.path for issue in exc.value.issues}
+
+    def test_real_aws_bundle_requires_region(self, write_config):
+        # region is required operator intent for AWS (#728); an empty settings block fails.
+        with pytest.raises(InstallationConfigError) as exc:
+            load_root_config(write_config(self._aws_config(settings={})))
+        assert "settings.region" in {issue.path for issue in exc.value.issues}
+
+    def test_real_aws_bundle_rejects_a_malformed_region(self, write_config):
+        with pytest.raises(InstallationConfigError) as exc:
+            load_root_config(write_config(self._aws_config(settings={"region": "US_EAST_2"})))
+        assert "settings.region" in {issue.path for issue in exc.value.issues}
+
+    def test_real_aws_bundle_enforces_the_secret_reference_pattern(self, write_config):
+        # The real aws django_secret_key now carries a reference_pattern; a value that is
+        # not a valid reference is reported at its path and never echoed. ``%`` is outside
+        # the AWS reference grammar (and this token is not a substring of any message).
+        bad = self._aws_config(secrets={"django_secret_key": "BADREF%%%", "db_password": "prompt"})
+        with pytest.raises(InstallationConfigError) as exc:
+            load_root_config(write_config(bad))
+        assert "secrets.django_secret_key" in {issue.path for issue in exc.value.issues}
+        for issue in exc.value.issues:
+            assert "BADREF%%%" not in issue.render()
+
+    def test_real_aws_bundle_accepts_a_secrets_manager_reference(self, write_config):
+        cfg = load_root_config(
+            write_config(
+                self._aws_config(
+                    secrets={"django_secret_key": "shifter/prod/django-secret-key", "db_password": "prompt"}
+                )
+            )
+        )
+        assert cfg.secrets["django_secret_key"] == "shifter/prod/django-secret-key"
+
+    def test_real_aws_bundle_accepts_the_proof_profile(self, write_config):
+        cfg = load_root_config(
+            write_config(
+                self._aws_config(deployment={"name": "shifter", "domain": "shifter.example.com", "profile": "proof"})
+            )
+        )
+        assert cfg.deployment.profile == "proof"
+
+    def test_real_aws_bundle_still_validates_range_egress_with_verbatim_cidr_errors(self, write_config):
+        # range_egress stays owned by installation.range_egress even with a closed AWS
+        # settings_model: an invalid CIDR is surfaced at its settings.range_egress path with
+        # the verbatim (non-secret, #775) message, not sanitized by the settings-model path.
+        bad = self._aws_config(
+            settings={"region": "us-east-2", "range_egress": {"mode": "allowlist", "allowed_cidrs": ["not-a-cidr"]}}
+        )
+        with pytest.raises(InstallationConfigError) as exc:
+            load_root_config(write_config(bad))
+        cidr_issues = [i for i in exc.value.issues if i.path.startswith("settings.range_egress.allowed_cidrs")]
+        assert cidr_issues
+        # Verbatim message (range_egress owns it), not the settings-model sanitized text.
+        assert any("prefix length" in i.message for i in cidr_issues)
+        assert all("failed a backend-specific validation check" not in i.message for i in cidr_issues)
+
+    def test_provisional_gcp_backend_still_accepts_any_settings(self, write_config):
+        # GCP is still provisional (settings_model=None) until #729, so any mapping is fine.
+        cfg = load_root_config(
+            write_config(
+                {
+                    "backend": "gcp",
+                    "deployment": {"name": "shifter", "domain": "shifter.example.com"},
+                    "secrets": {"django_secret_key": "prompt"},
+                    "settings": {"region": "us-central1", "anything": True},
+                }
+            )
+        )
+        assert cfg.settings == {"region": "us-central1", "anything": True}
 
     def test_backend_settings_problem_is_reported_at_its_settings_path(self, write_config, strict_aws):
         with pytest.raises(InstallationConfigError) as exc:
@@ -313,9 +383,9 @@ class TestValidateRootConfigFile:
         strict = registry_mod.BACKEND_BUNDLES["aws"].model_copy(update={"settings_model": _StrictAwsSettings})
         monkeypatch.setitem(registry_mod.BACKEND_BUNDLES, "aws", strict)
 
-        # aws_config declares the required secrets, so the only problem is the missing
-        # ``region`` the strict settings model requires.
-        issues = validate_root_config_file(write_config(aws_config))
+        # aws_config declares the required secrets; strip its settings so the only problem
+        # is the missing ``region`` the strict settings model requires.
+        issues = validate_root_config_file(write_config({**aws_config, "settings": {}}))
         assert {issue.path for issue in issues} == {"settings.region"}
 
     def test_range_egress_validation_runs_in_loader(self, write_config):

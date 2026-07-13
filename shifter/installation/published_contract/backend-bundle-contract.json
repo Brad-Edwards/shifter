@@ -605,13 +605,13 @@
           "logical_name": "django_secret_key",
           "purpose": "seeds the app secret bundle (Django SECRET_KEY) for the portal and workers",
           "reference_grammar": "an AWS Secrets Manager secret name or ARN, a GitHub Actions secret name, an environment variable, or the literal 'prompt'",
-          "reference_pattern": null
+          "reference_pattern": "[A-Za-z0-9][A-Za-z0-9._/+=@:-]*"
         },
         {
           "logical_name": "db_password",
           "purpose": "application database password",
           "reference_grammar": "an AWS Secrets Manager secret name or ARN, a GitHub Actions secret name, an environment variable, or the literal 'prompt'",
-          "reference_pattern": null
+          "reference_pattern": "[A-Za-z0-9][A-Za-z0-9._/+=@:-]*"
         }
       ],
       "required_tools": [
@@ -636,10 +636,26 @@
           "purpose": "build the Shifter Platform container image"
         }
       ],
-      "settings_schema": null,
+      "settings_schema": {
+        "additionalProperties": false,
+        "description": "Closed operator-intent settings for the AWS backend (PLAT-2006, GH #728).\n\nOnly genuine operator intent lives here. Terraform variables, generated runtime\noutputs, workflow secret names, and provider SDK payloads are *not* settings — copying\nthem in would turn ``settings`` into a second provider schema (preflight #728).\n``extra='forbid'`` fails unknown AWS settings closed, so a typo or a stale key is a\nconfig-time error rather than a silently-ignored value.\n\nThe shared cross-backend ``range_egress`` policy is intentionally *absent*: it is owned\nand validated by :mod:`installation.range_egress` (which surfaces verbatim, non-secret\nCIDR diagnostics, #775), and the loader validates it separately for every backend. See\nthe module docstring.",
+        "properties": {
+          "region": {
+            "pattern": "^[a-z]{2}(?:-[a-z]+)+-\\d+$",
+            "title": "Region",
+            "type": "string"
+          }
+        },
+        "required": [
+          "region"
+        ],
+        "title": "AwsSettings",
+        "type": "object"
+      },
       "supported_profiles": [
         "dev",
-        "prod"
+        "prod",
+        "proof"
       ],
       "title": "Amazon Web Services",
       "validation_checks": [
