@@ -64,6 +64,10 @@ _EXPLICIT_BINDINGS = (
     EnvBinding(name="OIDC_RP_CLIENT_SECRET", default=None, source_file=_OIDC_SETTINGS_FILE),
     EnvBinding(name="API_TOKEN_LAST_USED_COALESCE_SECONDS", default="300", source_file=_API_POLICY_FILE),
     EnvBinding(name="API_TOKEN_MAX_TTL_DAYS", default="365", source_file=_API_POLICY_FILE),
+    # Read via `_env_bool(...)` (a helper, not a literal `os.environ.get`), so the
+    # AST walker cannot see it; declared explicitly to keep the Scenario Editor
+    # SPA rollout flag in the manifest (#1371).
+    EnvBinding(name="SCENARIO_EDITOR_SPA_ENABLED", default="False", source_file=_SETTINGS_FILE),
 )
 
 

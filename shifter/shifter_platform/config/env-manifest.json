@@ -498,6 +498,11 @@
       "source_file": "config/settings.py"
     },
     {
+      "default": "False",
+      "name": "SCENARIO_EDITOR_SPA_ENABLED",
+      "source_file": "config/settings.py"
+    },
+    {
       "default": "'31536000'",
       "name": "SECURE_HSTS_SECONDS",
       "source_file": "config/settings.py"

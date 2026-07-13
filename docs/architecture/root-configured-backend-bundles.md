@@ -58,8 +58,12 @@ settings and secret reference grammar when they declare those validators.
 
 | Backend | Profiles | Required secrets | Settings validation |
 | --- | --- | --- | --- |
-| `aws` | `prod`, `dev` | `django_secret_key`, `db_password` | Any mapping accepted by root-config validation. Deployment tooling validates consumed values. |
-| `gcp` | `prod`, `dev` | `django_secret_key` | Any mapping accepted by root-config validation. Deployment tooling validates consumed values. |
+| `aws` | `prod`, `dev`, `proof` | `django_secret_key`, `db_password` | Closed model: `region` (required); unknown keys rejected. Secret references validated against a machine-readable grammar (#728). |
+| `gcp` | `prod`, `dev` | `django_secret_key` | Any mapping accepted by root-config validation. Deployment tooling validates consumed values (provisional until #729). |
+
+`range_egress` under `settings` is the shared, cross-backend egress policy
+(PLAT-220); it is owned and validated by `installation.range_egress` for every
+backend, so a backend's closed settings model does not redeclare it.
 
 ## Validation
 

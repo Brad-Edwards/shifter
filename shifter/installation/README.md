@@ -8,13 +8,20 @@ is the authoritative parser for that file.
 
 ## Supported Backends
 
-| Backend | Profiles | Required secrets |
-| --- | --- | --- |
-| `aws` | `prod`, `dev` | `django_secret_key`, `db_password` |
-| `gcp` | `prod`, `dev` | `django_secret_key` |
+| Backend | Profiles | Required secrets | Settings validation |
+| --- | --- | --- | --- |
+| `aws` | `prod`, `dev`, `proof` | `django_secret_key`, `db_password` | Closed model: `region` (required). |
+| `gcp` | `prod`, `dev` | `django_secret_key` | Any mapping (provisional until #729). |
 
-Both backend entries currently accept any `settings` mapping. Backend-specific
-setting keys are still enforced by the deployment path that consumes them.
+The `aws` entry validates its `settings` against a closed model (`region`, required) and
+each secret reference against a machine-readable grammar; `proof` is an internal
+new-tenant readiness tier alongside `prod`/`dev`. The `gcp` entry is still provisional: it
+accepts any `settings` mapping and defers secret-reference grammar to the deployment path
+that consumes it, until the GCP backend bundle migration (#729).
+
+`range_egress` is the shared, cross-backend egress policy (see [Render](#render)); it is
+validated the same way for every backend and is not part of a backend's own settings
+model.
 
 ## Config File
 
