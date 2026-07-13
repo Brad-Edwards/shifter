@@ -46,7 +46,7 @@ def _outputs(*, gke_services_cidr: str = "10.48.0.0/20") -> dict[str, object]:
 def test_render_emits_per_host_cidrs_and_protected_ports():
     """The generated NetworkPolicy must scope egress to per-endpoint /32
     CIDRs (matching the Helm chart's `privateServiceCidrs` flow) and allow
-    only the DB / Redis / Memorystore-TLS ports — never broad RFC1918
+    only the Kubernetes API / DB / Redis / Memorystore-TLS ports — never broad RFC1918
     supernets (ADR-008-R4, ADR-008-R6, #959/#963)."""
     module = _load_module("render_private_service_netpol.py", "render_private_service_netpol")
 
@@ -62,13 +62,17 @@ def test_render_emits_per_host_cidrs_and_protected_ports():
     assert "cidr: 10.40.0.10/32" in rendered  # Cloud SQL
     assert "cidr: 10.40.0.20/32" in rendered  # Memorystore
     assert "cidr: 10.40.0.11/32" in rendered  # Guacamole DB
-    assert "cidr: 10.48.0.0/20" in rendered  # GKE services range
+    assert "name: allow-provisioner-launcher-kubernetes-api-egress-generated" in rendered
+    assert "app.kubernetes.io/component: worker-provisioner-launcher" in rendered
+    assert rendered.count("cidr: 10.48.0.0/20") == 1  # GKE services range
     # Negative: the RFC1918 supernets used by the static Kustomize base
     # earlier in development must never appear in the generated output.
     assert "10.0.0.0/8" not in rendered
     assert "172.16.0.0/12" not in rendered
     assert "192.168.0.0/16" not in rendered
-    # Ports: only the documented DB/Redis ports.
+    # Ports: only the documented Kubernetes API / DB / Redis ports. API egress
+    # is a separate launcher-selected rule rather than a platform-wide grant.
+    assert "port: 443" in rendered  # Kubernetes API Service
     assert "port: 5432" in rendered
     assert "port: 6378" in rendered  # Memorystore TLS endpoint
     assert "port: 6379" in rendered  # Plaintext (compat) port

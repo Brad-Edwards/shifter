@@ -160,14 +160,25 @@ See `docs/dev/deploy-secrets.md`.
 
 ### Runners (provision + auto-register self-hosted runners)
 ```bash
+# AWS (default): runners over SSM, into the account --profile authenticates to.
 ./scripts/bootstrap/deploy.py runners --env dev --profile <your-dev-profile>
 # --use-existing-network : reuse a configured vpc_id/subnet_id or allow_default_vpc opt-in
 # --runner-count N       : override runner_count for this apply
 # --dry-run              : show the plan without minting a token or sending SSM commands
+
+# GCP (issue #1546): GCE runner into the target GCP project, over IAP (no SSM).
+# Uses the operator's default gcloud/ADC identity (no --profile).
+./scripts/bootstrap/deploy.py runners --cloud gcp --env gcp-dev --project-id <gcp-project>
+# --region / --zone      : GCP region/zone (default us-central1 / us-central1-a)
+# --labels               : custom runner label(s) (default: the env name, e.g. gcp-dev)
 ```
 Provisions the runner fleet (dedicated runner VPC by default) and registers each
 runner end-to-end. Registration tokens are minted per runner and never persisted
-to Terraform state, user data, a secret store, or logs (issue #1433).
+to Terraform state, instance metadata/user data, a secret store, or logs
+(issue #1433 for AWS/SSM; issue #1546 for GCP, where the token is delivered over
+the `gcloud compute ssh` stdin stream and the runner registers with a `gcp-dev`
+label so it never joins the AWS `self-hosted` pool). The GCP path fails closed
+unless each runner is online with the expected label.
 
 ### Full Deployment (bootstrap + terraform)
 ```bash

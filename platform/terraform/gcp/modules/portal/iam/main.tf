@@ -3,14 +3,16 @@ locals {
     "portal",
     "workers",
     "ctf-scheduler",
+    "provisioner-launcher",
     "provisioner",
   ])
 
   workload_identity_members = {
-    portal        = "serviceAccount:${var.project_id}.svc.id.goog[shifter-platform/portal]"
-    workers       = "serviceAccount:${var.project_id}.svc.id.goog[shifter-platform/workers]"
-    ctf-scheduler = "serviceAccount:${var.project_id}.svc.id.goog[shifter-platform/ctf-scheduler]"
-    provisioner   = "serviceAccount:${var.project_id}.svc.id.goog[shifter-jobs/provisioner]"
+    portal               = "serviceAccount:${var.project_id}.svc.id.goog[shifter-platform/portal]"
+    workers              = "serviceAccount:${var.project_id}.svc.id.goog[shifter-platform/workers]"
+    ctf-scheduler        = "serviceAccount:${var.project_id}.svc.id.goog[shifter-platform/ctf-scheduler]"
+    provisioner-launcher = "serviceAccount:${var.project_id}.svc.id.goog[shifter-platform/provisioner-launcher]"
+    provisioner          = "serviceAccount:${var.project_id}.svc.id.goog[shifter-jobs/provisioner]"
   }
 
   node_roles = toset([
@@ -44,6 +46,9 @@ locals {
     "ctf-scheduler" = toset([
       "roles/pubsub.publisher",
     ])
+    # The launch worker reaches Postgres and Kubernetes only. It receives no
+    # project-scoped cloud role and is deliberately distinct from provisioner.
+    provisioner-launcher = toset([])
     provisioner = toset([
       # The provision Job runs under this identity and mints a short-lived
       # Artifact Registry access token, planting it as an imagePullSecret so the
@@ -67,9 +72,9 @@ locals {
   # and email when configured). guacamole-db is excluded: it is delivered to the
   # separate guacamole-client pod as a native Kubernetes Secret, never fetched
   # from Secret Manager by these identities. The provisioner is absent: it
-  # receives DB / field-key / DC-password values as forwarded literals and does
-  # not read the runtime bundles from Secret Manager itself.
-  secret_reader_workloads    = toset(["portal", "workers", "ctf-scheduler"])
+  # receives DB / field-key / DC-password values through its per-Job ephemeral
+  # Kubernetes Secret and does not read runtime bundles from Secret Manager.
+  secret_reader_workloads    = toset(["portal", "workers", "ctf-scheduler", "provisioner-launcher"])
   runtime_secret_reader_keys = [for key in keys(var.runtime_secret_ids) : key if key != "guacamole-db"]
   workload_secret_bindings = {
     for pair in setproduct(tolist(local.secret_reader_workloads), local.runtime_secret_reader_keys) :

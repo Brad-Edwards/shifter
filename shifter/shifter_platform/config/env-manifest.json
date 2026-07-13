@@ -28,6 +28,11 @@
       "source_file": "config/_api_token_settings.py"
     },
     {
+      "default": "1",
+      "name": "AUDIT_TRUSTED_PROXY_HOPS",
+      "source_file": "config/settings.py"
+    },
+    {
       "default": "'oidc'",
       "name": "AUTH_PROVIDER",
       "source_file": "config/_runtime_env.py"

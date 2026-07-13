@@ -32,6 +32,10 @@ from cms.services._ngfws import (
     _validate_ngfw_user,
 )
 from risk_register.models import AuditLog
+from shared.audit import (
+    AuditAction,
+    AuditEntityType,
+)
 from shared.cloud.exceptions import CloudTaskError
 from shared.enums import RequestType, ResourceStatus
 from shared.schemas.app import NGFWAppContext, NGFWAppRef
@@ -298,7 +302,7 @@ class TestCreateNgfw:
         assert app.app_type.slug == "panw-ngfw"
         assert App.objects.filter(instance__request__user=user, app_type__slug="panw-ngfw").exists()
         assert AuditLog.objects.filter(
-            entity_type=AuditLog.EntityType.NGFW, action=AuditLog.Action.PROVISION, actor_id=user.id
+            entity_type=AuditEntityType.NGFW, action=AuditAction.PROVISION, actor_id=user.id
         ).exists()
 
     def test_creates_ngfw_via_pin(self, user, deployment_profile, scm_credential):
@@ -365,8 +369,8 @@ class TestCreateNgfw:
         assert engine_instance.status == ResourceStatus.FAILED.value
         assert engine_app.status == ResourceStatus.FAILED.value
         assert not AuditLog.objects.filter(
-            entity_type=AuditLog.EntityType.NGFW,
-            action=AuditLog.Action.PROVISION,
+            entity_type=AuditEntityType.NGFW,
+            action=AuditAction.PROVISION,
             actor_id=user.id,
         ).exists()
 
@@ -399,8 +403,8 @@ class TestCreateNgfw:
         assert cms_instance.deleted_at is not None
 
         assert not AuditLog.objects.filter(
-            entity_type=AuditLog.EntityType.NGFW,
-            action=AuditLog.Action.PROVISION,
+            entity_type=AuditEntityType.NGFW,
+            action=AuditAction.PROVISION,
             actor_id=user.id,
         ).exists()
 
@@ -431,7 +435,7 @@ class TestDestroyNgfw:
         assert app.status == ResourceStatus.DESTROYING.value
         assert app.deleted_at is not None
         assert AuditLog.objects.filter(
-            entity_type=AuditLog.EntityType.NGFW, action=AuditLog.Action.DEPROVISION, actor_id=user.id
+            entity_type=AuditEntityType.NGFW, action=AuditAction.DEPROVISION, actor_id=user.id
         ).exists()
 
     def test_raises_when_not_found(self, user):

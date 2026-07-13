@@ -30,7 +30,15 @@ class PlatformModelBackend(_ProfileAwareModelBackend):
 
 
 class CTFParticipantBackend(_ProfileAwareModelBackend):
-    """Local password backend reachable only from the dedicated CTF view."""
+    """Django auth backend for CTF participants.
+
+    Registered in ``AUTHENTICATION_BACKENDS`` (composition). The participant
+    authentication *logic* is CTF-domain and lives in
+    ``ctf.services.authenticate_ctf_participant``; this backend delegates to it
+    so the CTF domain does not import the composition layer (ADR-001, #1523).
+    ``get_user`` / ``user_can_authenticate`` are retained here because Django
+    reloads the session principal through the registered backend.
+    """
 
     def authenticate(
         self,
@@ -39,14 +47,13 @@ class CTFParticipantBackend(_ProfileAwareModelBackend):
         password: str | None = None,
         **kwargs: Any,
     ) -> User | None:
+        # Only run when explicitly targeted by the CTF login path, so the generic
+        # authenticate() flow never routes a platform account through here.
         if kwargs.pop("ctf_participant", False) is not True:
             return None
-        user = super().authenticate(request, username=username, password=password, **kwargs)
-        if user is None:
-            return None
-        from ctf.services.participant.accounts import live_participant_for_user
+        from ctf.services import authenticate_ctf_participant
 
-        return user if live_participant_for_user(user) is not None else None
+        return authenticate_ctf_participant(username, password)
 
     def user_can_authenticate(self, user: User | AnonymousUser | None) -> bool:
         return user is not None and is_temporary_ctf_account(user) and super().user_can_authenticate(user)

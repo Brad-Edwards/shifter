@@ -34,9 +34,9 @@ from mission_control.api.serializers import (
 )
 from mission_control.utils import build_connection_urls
 from mission_control.views._common import _audit_range_lifecycle, _logger, _pkg
-from risk_register.models import AuditLog
 from shared.aces.presentation import build_range_aces_projection, build_range_participant_runtime_projection
 from shared.api.permissions import IsAuthenticatedSessionOrApiToken
+from shared.audit import AuditAction
 from shared.auth import is_ctf_participant_only
 from shared.errors import classify_user_message
 from shared.exceptions import CMSError
@@ -166,7 +166,7 @@ class LaunchRangeView(MissionControlAPIView):
         )
         _audit_range_lifecycle(
             _raw_request(request),
-            AuditLog.Action.PROVISION,
+            AuditAction.PROVISION,
             range_request_id=str(range_ctx.request_id),
             extra_state={"scenario": scenario, "agents": agents_by_os},
         )
@@ -243,7 +243,7 @@ class CancelRangeView(RangeLifecycleView):
     """Cancel a pending or active range."""
 
     log_verb = "cancelled"
-    audit_action = AuditLog.Action.CANCEL
+    audit_action = AuditAction.CANCEL
     by_request_attr = "cancel_range_by_request_id"
     by_id_attr = "cancel_range"
     lifecycle_verb = "cancel"
@@ -256,7 +256,7 @@ class DestroyRangeView(RangeLifecycleView):
     """Destroy a range."""
 
     log_verb = "destroyed"
-    audit_action = AuditLog.Action.DEPROVISION
+    audit_action = AuditAction.DEPROVISION
     by_request_attr = "destroy_range_by_request_id"
     by_id_attr = "destroy_range"
     lifecycle_verb = "destroy"
@@ -269,7 +269,7 @@ class PauseRangeView(RangeLifecycleView):
     """Pause a range."""
 
     log_verb = "paused"
-    audit_action = AuditLog.Action.PAUSE
+    audit_action = AuditAction.PAUSE
     by_request_attr = "pause_range_by_request_id"
     by_id_attr = "pause_range"
     lifecycle_verb = "pause"
@@ -282,7 +282,7 @@ class ResumeRangeView(RangeLifecycleView):
     """Resume a paused range."""
 
     log_verb = "resumed"
-    audit_action = AuditLog.Action.RESUME
+    audit_action = AuditAction.RESUME
     by_request_attr = "resume_range_by_request_id"
     by_id_attr = "resume_range"
     lifecycle_verb = "resume"

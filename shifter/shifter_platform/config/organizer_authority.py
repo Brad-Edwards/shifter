@@ -40,8 +40,14 @@ from django.db.models.signals import m2m_changed
 
 from config.cognito_groups import COGNITO_GROUPS_CLAIM, normalize_cognito_groups
 from management.services import get_user_profile
-from risk_register.models import AuditLog
-from risk_register.services import RequestAudit, StateChange, audit_role_sync, get_client_ip, get_request_id
+from shared.audit import (
+    AuditActorType,
+    RequestAudit,
+    StateChange,
+    audit_role_sync,
+    get_client_ip,
+    get_request_id,
+)
 from shared.auth import CTF_ORGANIZER_GROUP
 
 if TYPE_CHECKING:
@@ -130,7 +136,7 @@ def _grant_organizer(user: User, *, provenance: str, audit_source: str, request:
         new = sorted(user.groups.values_list("name", flat=True))
         audit_role_sync(
             user_id=user.id,
-            actor_type=AuditLog.ActorType.SYSTEM,
+            actor_type=AuditActorType.SYSTEM,
             actor_id=None,
             change=StateChange(previous={"groups": previous}, new={"groups": new}),
             source=audit_source,
@@ -160,7 +166,7 @@ def _revoke_provider_organizer(user: User, *, request: HttpRequest | None) -> No
         new = sorted(user.groups.values_list("name", flat=True))
         audit_role_sync(
             user_id=user.id,
-            actor_type=AuditLog.ActorType.SYSTEM,
+            actor_type=AuditActorType.SYSTEM,
             actor_id=None,
             change=StateChange(previous={"groups": previous}, new={"groups": new}),
             source="provider_group_revoked",
@@ -230,7 +236,7 @@ def _record_local_membership_change(user: User, *, added: bool) -> None:
         profile.save(update_fields=["organizer_grant_source"])
         audit_role_sync(
             user_id=user.id,
-            actor_type=AuditLog.ActorType.SYSTEM,
+            actor_type=AuditActorType.SYSTEM,
             actor_id=None,
             change=StateChange(previous={"groups": previous}, new={"groups": new}),
             source=audit_source,
