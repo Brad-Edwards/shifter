@@ -203,7 +203,17 @@ export const NAV_GROUPS: readonly NavGroup[] = [
     "operator",
     { audience: "organizer", permissionPolicy: "threat_research", ownerApp: "cms", external: true },
     [
-      { surface: "Scenarios", routeName: "scenario_editor:list", purpose: "Browse scenarios and readiness metadata.", routePath: "/scenario-editor/", iconKey: "file-code" },
+      // In-SPA once SCENARIO_EDITOR_SPA_ENABLED is on (#1371); the feature-flag
+      // gate hides the entry until the flag flips, matching the rollout pattern.
+      {
+        surface: "Scenarios",
+        routeName: "scenario_editor:list",
+        purpose: "Browse scenarios and readiness metadata.",
+        routePath: "/scenario-editor/",
+        iconKey: "file-code",
+        external: false,
+        featureFlag: "scenario_editor_spa",
+      },
     ],
   ),
   makeGroup(

@@ -75,7 +75,7 @@ export interface paths {
             cookie?: never;
         };
         /** @description Return all catalog entries as read-only presentation DTOs. */
-        get: operations["cms_catalog_retrieve"];
+        get: operations["cms_catalog_list"];
         put?: never;
         post?: never;
         delete?: never;
@@ -92,13 +92,100 @@ export interface paths {
             cookie?: never;
         };
         /** @description Return one catalog entry's read-only presentation DTO. */
-        get: operations["cms_catalog_retrieve_2"];
+        get: operations["cms_catalog_retrieve"];
         put?: never;
         post?: never;
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cms/scenario-editor/scenarios/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Create a custom scenario through the scenario-editor service layer. */
+        post: operations["cms_scenario_editor_scenarios_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cms/scenario-editor/scenarios/{scenario_id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Return full structural detail (or a read-only ACES projection). */
+        get: operations["cms_scenario_editor_scenarios_retrieve"];
+        put?: never;
+        post?: never;
+        /** @description Soft-delete a custom scenario through the service layer. */
+        delete: operations["cms_scenario_editor_scenarios_destroy"];
+        options?: never;
+        head?: never;
+        /** @description Replace a custom scenario's definition through the service layer. */
+        patch: operations["cms_scenario_editor_scenarios_partial_update"];
+        trace?: never;
+    };
+    "/api/v1/cms/scenario-editor/scenarios/{scenario_id}/clone/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Clone the source scenario through the service layer. */
+        post: operations["cms_scenario_editor_scenarios_clone_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cms/scenario-editor/scenarios/{scenario_id}/export/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Return the scenario's YAML rendering (metadata overlay stripped). */
+        get: operations["cms_scenario_editor_scenarios_export_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cms/scenario-editor/scenarios/{scenario_id}/metadata/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** @description Apply an explicit desired-state metadata update through the service layer. */
+        patch: operations["cms_scenario_editor_scenarios_metadata_partial_update"];
         trace?: never;
     };
     "/api/v1/cms/scenario-editor/scenarios/from-yaml/": {
@@ -1310,7 +1397,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Return the authenticated actor's range history, newest first. */
+        /** @description Return the authenticated actor's Mission Control range history, newest first. */
         get: operations["api_v1_mission_control_ranges_list"];
         put?: never;
         post?: never;
@@ -1514,6 +1601,28 @@ export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         /**
+         * @description Read-only, allowlisted ACES package-source presentation fields.
+         *
+         *     Every field is bounded provenance/identity metadata. This serializer never
+         *     exposes raw ACES SDL, imported module bodies, generated content, flags,
+         *     credentials, presigned URLs, provider payloads, or runtime config.
+         */
+        AcesCatalogFields: {
+            readonly source_kind: string;
+            readonly contract_kind: string;
+            readonly contract_profile: string;
+            readonly package_ref: string;
+            readonly package_version: string;
+            readonly package_digest: string;
+            readonly lock_ref: string;
+            readonly lock_digest: string;
+            readonly conformance_status: string;
+            readonly conformance_report_ref: string;
+            readonly provenance_summary: {
+                [key: string]: unknown;
+            };
+        };
+        /**
          * @description Read-only projection of one ACES operation sidecar record (#1275).
          *
          *     Serializes an ``AcesOperationRecordProjection`` (already redacted by the
@@ -1682,6 +1791,7 @@ export interface components {
             risk_register_spa: boolean;
             platform_spa: boolean;
             mission_control_spa: boolean;
+            scenario_editor_spa: boolean;
         };
         /** @description UX mode eligibility (participant/operator). Not an authorization fact. */
         BootstrapModes: {
@@ -1704,6 +1814,24 @@ export interface components {
             is_authenticated: boolean;
             is_staff: boolean;
             is_superuser: boolean;
+        };
+        /**
+         * @description Read-only catalog entry projection for the CMS catalog API.
+         *
+         *     Serializes the presentation DTO from ``cms.scenarios.catalog_presentation``.
+         *     ``aces`` is present only for ACES package-backed entries; legacy YAML/DB
+         *     entries serialize it as ``null``.
+         */
+        CatalogEntry: {
+            readonly id: string;
+            readonly name: string;
+            readonly scenario_type: string;
+            readonly source: string;
+            readonly is_default: boolean;
+            readonly enabled: boolean;
+            readonly staff_only: boolean;
+            readonly launchable: boolean;
+            readonly aces: components["schemas"]["AcesCatalogFields"] | null;
         };
         /** @description Serializer for Comment model. */
         Comment: {
@@ -1737,6 +1865,11 @@ export interface components {
             aces_participant_runtime: {
                 [key: string]: unknown;
             } | null;
+        };
+        /** @description Domain-controller configuration, mirroring ``schema.DCConfig``. */
+        DCConfig: {
+            domain_name: string;
+            netbios_name: string;
         };
         /** @description Bounded active-event summary. */
         DashboardEvent: {
@@ -1815,12 +1948,28 @@ export interface components {
         InstancePresentation: {
             uuid: string | null;
             name: string;
-            role: components["schemas"]["RoleEnum"];
-            os_type: components["schemas"]["OsTypeEnum"];
+            role: components["schemas"]["InstancePresentationRoleEnum"];
+            os_type: components["schemas"]["InstancePresentationOsTypeEnum"];
             join_domain: boolean;
             ami_key: string | null;
             private_ip: string | null;
         };
+        /**
+         * @description * `kali` - kali
+         *     * `ubuntu` - ubuntu
+         *     * `windows` - windows
+         *     * `panos` - panos
+         * @enum {string}
+         */
+        InstancePresentationOsTypeEnum: "kali" | "ubuntu" | "windows" | "panos";
+        /**
+         * @description * `attacker` - attacker
+         *     * `victim` - victim
+         *     * `dc` - dc
+         *     * `ngfw` - ngfw
+         * @enum {string}
+         */
+        InstancePresentationRoleEnum: "attacker" | "victim" | "dc" | "ngfw";
         /** @description Response body for ``LaunchRangeView.post``. */
         LaunchRangeResponse: {
             success: boolean;
@@ -1849,14 +1998,6 @@ export interface components {
         NGFWListResponse: {
             ngfws: components["schemas"]["NGFWListItem"][];
         };
-        /**
-         * @description * `kali` - kali
-         *     * `ubuntu` - ubuntu
-         *     * `windows` - windows
-         *     * `panos` - panos
-         * @enum {string}
-         */
-        OsTypeEnum: "kali" | "ubuntu" | "windows" | "panos";
         PaginatedAuditLogList: {
             /** @example 123 */
             count: number;
@@ -1909,6 +2050,20 @@ export interface components {
             affected_assets?: string;
             mitigation_status?: string;
             resolution_reason?: string;
+        };
+        /** @description Metadata (availability/audience) update; both fields optional for PATCH. */
+        PatchedScenarioMetadataUpdate: {
+            enabled?: boolean;
+            staff_only?: boolean;
+        };
+        /** @description Structured update request: full definition replacement (no identity change). */
+        PatchedScenarioUpdate: {
+            name?: string;
+            description?: string;
+            /** @default false */
+            ngfw: boolean;
+            instances?: components["schemas"]["ScenarioInstance"][];
+            subnets?: components["schemas"]["ScenarioSubnet"][];
         };
         /**
          * @description One entry in the range-history list (``GET .../ranges/``, #1370).
@@ -2050,14 +2205,94 @@ export interface components {
             mitigation_status?: string;
             resolution_reason?: string;
         };
+        /** @description Clone request body. */
+        ScenarioClone: {
+            new_scenario_id: string;
+            /** @default  */
+            new_name: string;
+        };
+        /** @description Structured create request: identity plus definition. */
+        ScenarioCreate: {
+            name: string;
+            description: string;
+            /** @default false */
+            ngfw: boolean;
+            instances: components["schemas"]["ScenarioInstance"][];
+            subnets?: components["schemas"]["ScenarioSubnet"][];
+            scenario_id: string;
+        };
+        /** @description Response for a create/clone: the new scenario's identity. */
+        ScenarioCreated: {
+            readonly scenario_id: string;
+            readonly name: string;
+        };
+        /**
+         * @description Full scenario detail with source-capability flags for the editor.
+         *
+         *     ``source`` classifies the entry (``builtin`` / ``custom`` / ``aces`` /
+         *     ``ctf``) and the capability booleans tell the SPA which actions to offer.
+         *     ``instances`` / ``subnets`` are populated for structural (demo) scenarios;
+         *     ``aces`` carries the read-only provenance block for ACES entries.
+         */
+        ScenarioDetail: {
+            readonly id: string;
+            readonly name: string;
+            readonly description: string;
+            readonly scenario_type: string;
+            readonly source: string;
+            readonly is_default: boolean;
+            readonly enabled: boolean;
+            readonly staff_only: boolean;
+            readonly launchable: boolean;
+            readonly editable: boolean;
+            readonly deletable: boolean;
+            readonly exportable: boolean;
+            readonly ngfw: boolean;
+            readonly instances: components["schemas"]["ScenarioInstance"][];
+            readonly subnets: components["schemas"]["ScenarioSubnet"][];
+            readonly aces: components["schemas"]["AcesCatalogFields"] | null;
+        };
+        /** @description Response for an export: the scenario id and its YAML rendering. */
+        ScenarioExport: {
+            readonly scenario_id: string;
+            readonly yaml: string;
+        };
+        /**
+         * @description A single scenario instance, mirroring ``schema.InstanceConfig``.
+         *
+         *     Kept field-complete against the Pydantic schema so a round-trip through the
+         *     editor never silently drops instance fields (the legacy form hardcoded a
+         *     partial list). The service layer re-validates the full definition.
+         */
+        ScenarioInstance: {
+            name: string;
+            role: components["schemas"]["ScenarioInstanceRoleEnum"];
+            os_type: components["schemas"]["ScenarioInstanceOsTypeEnum"];
+            /** @default false */
+            xdr_agent: boolean;
+            /** @default false */
+            domain_controller: boolean;
+            /** @default false */
+            join_domain: boolean;
+            dc_config?: components["schemas"]["DCConfig"] | null;
+            ami_key?: string | null;
+            instance_type?: string | null;
+        };
+        /**
+         * @description * `kali` - kali
+         *     * `windows` - windows
+         *     * `ubuntu` - ubuntu
+         *     * `from_agent` - from_agent
+         * @enum {string}
+         */
+        ScenarioInstanceOsTypeEnum: "kali" | "windows" | "ubuntu" | "from_agent";
         /**
          * @description * `attacker` - attacker
          *     * `victim` - victim
          *     * `dc` - dc
-         *     * `ngfw` - ngfw
          * @enum {string}
          */
-        RoleEnum: "attacker" | "victim" | "dc" | "ngfw";
+        ScenarioInstanceRoleEnum: "attacker" | "victim" | "dc";
         /**
          * @description One entry from ``cms.services.list_launchable_scenarios``.
          *
@@ -2088,6 +2323,18 @@ export interface components {
         /** @description Response body for ``ScenarioListView.get``. */
         ScenarioListResponse: {
             scenarios: components["schemas"]["ScenarioListItem"][];
+        };
+        /** @description Response for a metadata update: the resolved overlay state. */
+        ScenarioMetadataState: {
+            readonly scenario_id: string;
+            readonly enabled: boolean;
+            readonly staff_only: boolean;
+        };
+        /** @description A single scenario subnet, mirroring ``schema.SubnetConfig``. */
+        ScenarioSubnet: {
+            name: string;
+            instances: string[];
+            connected_to?: string[];
         };
         /**
          * @description * `critical` - Critical
@@ -2133,6 +2380,18 @@ export interface components {
             s3_key: string;
             upload_token: string;
             expected_os: string | null;
+        };
+        /** @description Validate a YAML-content request body. */
+        YAMLContent: {
+            yaml_content: string;
+        };
+        /** @description Response for the YAML validate endpoint. */
+        YAMLValidationResult: {
+            readonly valid: boolean;
+            readonly errors: string[];
+            readonly definition: {
+                [key: string]: unknown;
+            } | null;
         };
     };
     responses: never;
@@ -2210,7 +2469,7 @@ export interface operations {
             };
         };
     };
-    cms_catalog_retrieve: {
+    cms_catalog_list: {
         parameters: {
             query?: never;
             header?: never;
@@ -2219,16 +2478,84 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["CatalogEntry"][];
+                };
             };
         };
     };
-    cms_catalog_retrieve_2: {
+    cms_catalog_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                scenario_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CatalogEntry"];
+                };
+            };
+        };
+    };
+    cms_scenario_editor_scenarios_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ScenarioCreate"];
+                "application/x-www-form-urlencoded": components["schemas"]["ScenarioCreate"];
+                "multipart/form-data": components["schemas"]["ScenarioCreate"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScenarioCreated"];
+                };
+            };
+        };
+    };
+    cms_scenario_editor_scenarios_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                scenario_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScenarioDetail"];
+                };
+            };
+        };
+    };
+    cms_scenario_editor_scenarios_destroy: {
         parameters: {
             query?: never;
             header?: never;
@@ -2240,11 +2567,113 @@ export interface operations {
         requestBody?: never;
         responses: {
             /** @description No response body */
-            200: {
+            204: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    cms_scenario_editor_scenarios_partial_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                scenario_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PatchedScenarioUpdate"];
+                "application/x-www-form-urlencoded": components["schemas"]["PatchedScenarioUpdate"];
+                "multipart/form-data": components["schemas"]["PatchedScenarioUpdate"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScenarioDetail"];
+                };
+            };
+        };
+    };
+    cms_scenario_editor_scenarios_clone_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                scenario_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ScenarioClone"];
+                "application/x-www-form-urlencoded": components["schemas"]["ScenarioClone"];
+                "multipart/form-data": components["schemas"]["ScenarioClone"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScenarioCreated"];
+                };
+            };
+        };
+    };
+    cms_scenario_editor_scenarios_export_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                scenario_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScenarioExport"];
+                };
+            };
+        };
+    };
+    cms_scenario_editor_scenarios_metadata_partial_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                scenario_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PatchedScenarioMetadataUpdate"];
+                "application/x-www-form-urlencoded": components["schemas"]["PatchedScenarioMetadataUpdate"];
+                "multipart/form-data": components["schemas"]["PatchedScenarioMetadataUpdate"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScenarioMetadataState"];
+                };
             };
         };
     };
@@ -2255,14 +2684,21 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["YAMLContent"];
+                "application/x-www-form-urlencoded": components["schemas"]["YAMLContent"];
+                "multipart/form-data": components["schemas"]["YAMLContent"];
+            };
+        };
         responses: {
-            /** @description No response body */
-            200: {
+            201: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ScenarioCreated"];
+                };
             };
         };
     };
@@ -2273,14 +2709,21 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["YAMLContent"];
+                "application/x-www-form-urlencoded": components["schemas"]["YAMLContent"];
+                "multipart/form-data": components["schemas"]["YAMLContent"];
+            };
+        };
         responses: {
-            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["YAMLValidationResult"];
+                };
             };
         };
     };
