@@ -9,6 +9,15 @@ variable "environment" {
   type        = string
 }
 
+# Renderer-owned backend selection (PLAT-2005). Supplied at deploy time via a
+# rendered cloud_provider.auto.tfvars (shifter-config render-runtime), never a
+# committed terraform.tfvars literal. No default: a missing tfvar must fail
+# the plan loudly instead of silently synthesizing "aws".
+variable "cloud_provider" {
+  description = "Backend identity ('aws', 'gcp', ...) threaded to the portal ec2 and engine-provisioner module calls. Rendered from shifter.yaml's settings.backend; must not be hardcoded or defaulted here."
+  type        = string
+}
+
 variable "aws_region" {
   description = "AWS region"
   type        = string

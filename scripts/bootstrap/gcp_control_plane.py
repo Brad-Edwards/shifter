@@ -149,7 +149,11 @@ def render_gcp_platform_runtime_env(
         [bootstrap_operator_email or ""],
     )
     lines = [
-        "CLOUD_PROVIDER=gcp",
+        # CLOUD_PROVIDER is not rendered here: _render_gcp_runtime_env merges this
+        # bootstrap-owned contract with scripts/gcp/render_runtime_env.py's output,
+        # which is the renderer-owned source of the backend identity (PLAT-2005).
+        # A second hardcoded literal here would be redundant and could silently
+        # drift from that renderer-owned value.
         f"ENVIRONMENT={config.environment}",
         f"CLOUD_REGION={config.region}",
         f"GCP_REGION={config.region}",

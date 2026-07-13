@@ -67,10 +67,13 @@ COPY engine/provisioner/requirements.lock engine/provisioner/requirements-gcp.lo
 RUN pip install --no-cache-dir --require-hashes --only-binary :all: -r requirements.lock && \
     pip install --no-cache-dir --require-hashes --only-binary :all: -r requirements-gcp.lock
 
-# First-party wire-contract package (cyberscript) on PYTHONPATH — same pattern as
-# shifter_platform/Dockerfile. Constants-only imports avoid pulling Pydantic into
-# the provisioner runtime beyond what pip already installs for other deps.
+# First-party shared packages on PYTHONPATH (cyberscript = wire-contract constants,
+# installation = root installation config) — same pattern as shifter_platform/Dockerfile.
+# `config.resolve_cloud_provider` validates CLOUD_PROVIDER against
+# installation.registry (PLAT-2005), which needs pydantic; pydantic is a declared
+# provisioner runtime dependency (requirements.lock), installed above.
 COPY cyberscript /opt/shifter-libs/cyberscript
+COPY installation /opt/shifter-libs/installation
 
 # Copy provisioner code as root-owned, immutable image content. The runtime
 # user does NOT own /app — Terraform writes go to TERRAFORM_WORKSPACE_DIR

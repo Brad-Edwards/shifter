@@ -165,6 +165,10 @@ jobs:
               - 'shifter/shifter_platform/shared/cloud/gcp/**'
               - 'shifter/shifter_platform/shared/cloud/types.py'
               - 'shifter/engine/provisioner/cloud/gcp/**'
+              # The GCP portal and provisioner images consume the installation
+              # package to resolve/validate the backend at runtime (PLAT-2005),
+              # so an installation change must rebuild both GCP consumers.
+              - 'shifter/installation/**'
               - 'shifter/shifter_platform/config/settings.py'
               - 'shifter/shifter_platform/engine/ecs.py'
               - 'shifter/shifter_platform/entrypoint.sh'
@@ -610,6 +614,9 @@ jobs:
       TF_INFRA_STATE_BUCKET_DEV: ${{ secrets.TF_INFRA_STATE_BUCKET_DEV }}
       TF_INFRA_STATE_BUCKET_PROOF: ${{ secrets.TF_INFRA_STATE_BUCKET_PROOF }}
       TF_VARS_PROOF_PORTAL: ${{ secrets.TF_VARS_PROOF_PORTAL }}
+      SHIFTER_CONFIG_DEV_RANGE: ${{ secrets.SHIFTER_CONFIG_DEV_RANGE }}
+      SHIFTER_CONFIG_PROOF_RANGE: ${{ secrets.SHIFTER_CONFIG_PROOF_RANGE }}
+      SHIFTER_CONFIG_PROD_RANGE: ${{ secrets.SHIFTER_CONFIG_PROD_RANGE }}
       SMOKE_TEST_USER_EMAIL: ${{ secrets.SMOKE_TEST_USER_EMAIL }}
       SMOKE_LINUX_AGENT_ID: ${{ secrets.SMOKE_LINUX_AGENT_ID }}
       SMOKE_WINDOWS_AGENT_ID: ${{ secrets.SMOKE_WINDOWS_AGENT_ID }}

@@ -44,6 +44,11 @@ _EXPLICIT_BINDINGS = (
     # Read via `_resolve_test_db_backend` (a `Mapping.get`, not a literal
     # `os.environ.get`), so the AST walker cannot see it (#1524).
     EnvBinding(name="TEST_DB_BACKEND", default="sqlite", source_file=_DATABASE_SETTINGS_FILE),
+    # Resolved via `resolve_cloud_provider()` (registry-validated, not a literal
+    # `os.environ.get`), so the AST walker cannot see it; declared explicitly to
+    # keep it in the manifest (PLAT-2005). The "aws" value is the dev/test/build
+    # default only -- a deployed process must receive it explicitly.
+    EnvBinding(name="CLOUD_PROVIDER", default="'aws'", source_file="config/_cloud.py"),
     EnvBinding(name="DJANGO_ALLOWED_HOSTS", default=None, source_file=_SETTINGS_FILE),
     # Read via `_env_int(...)` (a helper, not a literal `os.environ.get`), so the
     # AST walker cannot see it; declared explicitly per the audit config-binding

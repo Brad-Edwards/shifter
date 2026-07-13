@@ -112,12 +112,149 @@ secret store.
 
 ## Runtime Binding
 
-Backend metadata declares generated outputs consumed by runtime processes. The
-current registry declares `CLOUD_PROVIDER` for portal, worker, and provisioner
-roles. Django and provisioner code still select cloud adapters from
-`CLOUD_PROVIDER` at runtime through the existing cloud factory seams.
+Runtime configuration is a deploy-time projection of validated installation
+intent, not a second operator-authored contract:
 
-Backend selection is not derived from branch names.
+```text
+shifter.yaml
+  -> installation.loader.load_root_config
+  -> selected BackendBundle settings/secrets validation
+  -> backend-owned renderer plus validated infrastructure outputs
+  -> process-role runtime bindings
+  -> existing Django and provisioner cloud factories
+```
+
+Only deployment tooling reads `shifter.yaml`. Portal, worker, and provisioner
+containers consume the derived bindings; they do not mount, parse, persist, or
+live-reload the root file. A configuration change takes effect through the
+normal render/deploy/restart path.
+
+The selected backend identity is emitted once for every consuming process role.
+All deployed roles must receive the same value, and deployed startup must fail
+when it is absent or unsupported rather than silently defaulting to AWS. Explicit
+development, test, and build defaults remain governed by
+`config._runtime_env.runtime_allows_dev_defaults`. Django management-command
+workers import the same settings modules as the portal and must not gain a
+separate loader or provider selector.
+
+`installation.registry` remains declarative: it owns backend identity,
+capabilities, settings validation, generated-output metadata, sensitivity, and
+process roles. It does not import Django or provider adapter implementations.
+Runtime operations continue through the existing protocol/factory seams in
+`shifter_platform.shared.cloud` and `engine/provisioner/cloud`; domain services
+must not branch on the backend or import provider SDKs. Backend metadata,
+task-runner dispatch, and ADR-039's per-range substrate adapter are distinct
+concepts. `GCP_RANGE_BACKEND` / `GCP_RANGE_PLANE` are range realization choices,
+not alternative installation backend selectors.
+
+Every root setting that affects a runtime must become a declared generated
+output with an owner, destination, sensitivity, and `ProcessRole`. Infrastructure
+identifiers discovered after provisioning may join the projection as validated
+renderer inputs; they are derived state, not competing installation intent.
+Renderers must emit only the keys required by the destination role. They must not
+copy the parent process environment wholesale.
+
+Backend selection is not derived from branch names, workflow refs, Terraform
+directory names, Helm values, or compatibility names such as
+`pulumi-provisioner`.
+
+### Runtime validation and security gates
+
+The derivation path must preserve these existing cross-cutting gates:
+
+| Boundary | Canonical incumbent | Required behavior |
+| --- | --- | --- |
+| Root YAML and config shape | `installation.loader`, `installation.schema` | Reject malformed/duplicate/merged YAML, unknown fields, invalid backend/profile combinations, and raw-looking secret material before rendering. Use the sanitized `InstallationConfigError`; never surface rejected values. |
+| Backend-owned settings | `BackendBundle.settings_model` and `secret_reference_issues` | Use one closed (`extra="forbid"`) model per backend and normalize once in `load_root_config`. Do not recreate the model in a renderer, Django settings, Terraform, or a workflow. The provisional `settings_model=None` entries are migration debt, not permission for runtime consumers to accept arbitrary keys. |
+| Output classification | `GeneratedOutput`, `OutputSensitivity`, `OutputDestination`, `ProcessRole` | Keep secret values out of runtime env files, ConfigMaps, Terraform variables, Helm values, dry-run output, and plan/log surfaces. Runtime files may carry public values and secret references only. |
+| Runtime env shape | `installation.runtime_inventory`, `scripts/gcp/render_runtime_env.py`, `config/env-manifest.json` | Keep renderer-owned, static, optional, and secret-backed keys classified and drift-tested. A new key must update every applicable inventory/manifest/test surface rather than bypassing them. |
+| Django/worker startup | `config._runtime_env`, `config._cloud`, `django.core.exceptions.ImproperlyConfigured` | Resolve the normalized binding at the composition root, apply existing dev/test default policy, and fail deployed startup on missing or unsupported configuration. Workers reuse this exact path. |
+| Identity selection | ADR-009, `AUTH_PROVIDER`, `config._oidc_settings`, `config.identity_platform` | Keep identity-provider selection distinct from the cloud backend. If a backend renderer emits `AUTH_PROVIDER`, validate its allowlist and continue through the existing issuer, token, verified-email, immutable-subject, MFA, and bootstrap authorization gates; a matching cloud backend is not identity validation. |
+| Secret hydration | `entrypoint.sh`, provider secret stores | Pass references through deployment artifacts and fetch values at startup. Secret payloads flow through stdin/environment, never command argv, generated public files, or log messages. Preserve the current reference/value distinction and existing KMS/workload-identity controls. |
+| Provisioner task dispatch | `engine.ecs._GCP_PROVISIONER_ENV_KEYS`, `shared.cloud.sensitive_env`, `GCPTaskRunner`, `restrict-provisioner-jobs` admission policy | Keep explicit env-key forwarding, sensitive values in ephemeral Secret-backed `valueFrom` entries, pinned images/commands, and fail-closed literal/secret allowlists. Any binding change must keep the base and Helm admission policies plus their structural tests synchronized. |
+| Adapter errors and observability | `shared.cloud.exceptions`, `engine/provisioner/cloud/exceptions.py`, `config._posture`, `shared.log_sanitize` | Keep installation validation errors separate from cloud-operation errors. Log only normalized non-secret posture (backend, profile/environment, capability names) and bounded/sanitized diagnostics; never dump root config, env mappings, secret references, Terraform output payloads, or provider responses. |
+| Persistence and delivery | Engine resource state, `ProvisionerLaunchIntent`, range-event outbox/reconciler | The active installation backend is process configuration, not a new database row, request field, launch-intent field, or event field. Existing persisted `cloud_provider` values remain historical resource ownership/cleanup metadata, never a live selector. |
+| Public error surfaces | `shared.api.errors`, `shared.errors`, coarse health responses and status events | Configuration failures stop startup or task dispatch. They do not pass raw installation/provider exception text, config paths, references, or capability details into HTTP, WebSocket, health, or event envelopes. Reuse fixed or sanitized public messages. |
+
+Unsupported backend/capability combinations fail before infrastructure mutation or
+task submission. Runtime factory errors remain a defense-in-depth backstop, not
+the primary validator.
+
+The process/OS boundary carries only the classified projection. Backend names may be
+literal environment values because they are public, but root config blobs, provider
+credentials, secret values, and secret references must not appear in process argv.
+Provisioner argv remains the existing validated operation plus request identifier;
+backend selection is not a request-controlled `--provider` option. Long-lived
+containers must not receive a mounted root config merely to re-prove selection.
+
+### Whole-repository and extensibility guardrails
+
+The active-provider read is currently scattered beyond the two cloud factory modules.
+The implementation must account for Django cloud settings and startup posture,
+capacity metrics, browser CSP/storage selection, Engine task dispatch and terminal
+credential guards, provisioner cloud/executor factories, Terraform/range/NGFW/state
+helpers, and Polaris bootstrap. These sites must consume their composition root's one
+validated selection. A legacy persisted resource with no provider tag may keep its
+documented compatibility interpretation; that historical fallback must not become a
+live process default.
+
+The host/config surfaces are also one contract: AWS portal/worker/provisioner Terraform
+environment declarations; the GCP renderer, static/generated env ownership,
+Kustomize/Helm ConfigMaps, task-runner forwarding, and both admission-policy copies;
+the portal and provisioner Docker build inputs; and CI/deploy path filters. If the
+provisioner image consumes `installation` as the portal image already does, an
+`installation/**` change must exercise and rebuild both consumers. Env-manifest,
+runtime-inventory, admission drift, built-image smoke, actionlint, Terraform, Helm,
+kube-linter, and kubeconform checks remain synchronized with the surfaces they guard.
+
+The extension parameter is the selected `BackendBundle`, `ProcessRole`, and
+`BackendCapability`. Runtime composition roots may own a lazy constructor map keyed by
+backend and capability; executable class/import paths do not belong in the declarative
+installation registry. A future backend adds a bundle/settings model, classified
+outputs, only the adapter constructors for capabilities it claims, and conformance
+evidence. It must not require provider branches in domain services, public DTOs,
+events, worker workflow, or ADR-039's range-substrate port. New capability enum members
+are never auto-claimed by existing bundles.
+
+### Gotchas and anti-patterns
+
+- `CLOUD_PROVIDER` is renderer-owned for both backends (PLAT-2005): GCP emits it from
+  `scripts/gcp/render_runtime_env.py` (a generated key in the runtime inventory, not a
+  static overlay literal), and AWS derives it from `shifter.yaml` at deploy time via
+  `shifter-config render-runtime` into `cloud_provider.auto.tfvars`, which the portal and
+  engine-provisioner modules receive as `var.cloud_provider`. Do not reintroduce a
+  hardcoded task-definition/overlay literal or an implicit AWS default; the deployed
+  backend identity must come from the selected bundle.
+- AWS and GCP currently have `settings_model=None`. PLAT-2005 may use the validated
+  backend identity and registry-declared capabilities, but must not make adapter
+  selection depend on arbitrary backend settings before the backend migrations supply
+  closed models.
+- `AUTH_PROVIDER`, `CLOUD_PROVIDER`, deployment profile/environment, and
+  `GCP_RANGE_BACKEND` / `GCP_RANGE_PLANE` are separate concepts. Do not normalize them
+  into one provider enum or infer one from another inside domain code.
+- Do not fall through to AWS for an unknown provider in optional subsystems such as
+  metrics or browser storage policy. Unsupported means a startup/configuration error,
+  not AWS-compatible behavior.
+- Do not hardcode supported-provider lists in exception messages or duplicate a
+  capability matrix in settings, Terraform, Helm, or the provisioner. Derive support
+  from the installation registry; keep executable adapter wiring only at composition
+  roots.
+- Do not update only a renderer or factory. Generated env inventories, Django's env
+  manifest, AWS task definitions, GCP admission allowlists, Docker inputs, workflow path
+  filters, and focused tests are downstream consumers of the same contract.
+
+### Runtime binding non-goals
+
+- No database model, repository, API DTO, request parameter, session value, or
+  per-tenant override for installation backend selection.
+- No second backend registry or exception hierarchy in Django, workers,
+  provisioner code, renderers, Terraform, Helm, or workflows.
+- No provider SDK objects, Terraform output shapes, or bundle metadata exposed to
+  domain services.
+- No removal of compatibility env aliases in this change; aliases are read-side
+  migration aids and must not become new authoring surfaces.
+- No redesign of task dispatch, range lifecycle/persistence, ADR-039 substrate
+  semantics, authentication, secret storage, or provider infrastructure.
 
 ## Backend Bundle Contract
 

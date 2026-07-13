@@ -5,7 +5,6 @@ range path is GDC-based and no longer routes through the retired Compute Engine
 Terraform module.
 """
 
-import os
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -15,7 +14,8 @@ import gdc_range_networks
 import gdc_scenario_pods
 import gdc_vmruntime_assets
 import terraform_base
-from config import get_gcp_range_backend
+from cloud.exceptions import CloudProviderNotImplementedError
+from config import get_gcp_range_backend, resolve_cloud_provider
 
 AWS_RANGE_MODULE_PATH = Path(__file__).parent / "terraform" / "modules" / "range"
 
@@ -23,17 +23,20 @@ _LABEL = "Range"
 
 
 def _get_provider() -> str:
-    return os.environ.get("CLOUD_PROVIDER", "aws")
+    return resolve_cloud_provider()
 
 
 def get_range_module_path() -> Path:
     """Return the provider-specific range Terraform module path."""
-    if _get_provider() == "gcp":
+    provider = _get_provider()
+    if provider == "gcp":
         raise RuntimeError(
             "Active GCP range provisioning targets a provider-native runner and does not expose a "
             "Terraform module path. Call apply_range()/destroy_range() for the provider-routed path."
         )
-    return AWS_RANGE_MODULE_PATH
+    if provider == "aws":
+        return AWS_RANGE_MODULE_PATH
+    raise CloudProviderNotImplementedError(provider)
 
 
 def _uses_active_gdc_range_plane() -> bool:
@@ -51,7 +54,10 @@ def get_range_state_key_prefix() -> str:
         return "gcp/gdc-ranges"
     if _uses_gce_range_cells():
         return "gcp/gce-range-cells"
-    return "ranges"
+    provider = _get_provider()
+    if provider == "aws":
+        return "ranges"
+    raise CloudProviderNotImplementedError(provider)
 
 
 def has_terraform_state(request_uuid: str) -> bool:

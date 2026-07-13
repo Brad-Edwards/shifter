@@ -13,6 +13,8 @@ import logging
 import os
 from typing import Any
 
+from config import resolve_cloud_provider
+
 logger = logging.getLogger(__name__)
 
 
@@ -65,7 +67,7 @@ def _validate_provisioned_outputs(
 
 def _get_cloud_provider() -> str:
     """Return the active cloud provider for range state persistence."""
-    return os.environ.get("CLOUD_PROVIDER", "aws")
+    return resolve_cloud_provider()
 
 
 def _get_bool_env(name: str) -> bool | None:

@@ -600,6 +600,7 @@ module "ec2" {
 
   aws_region               = var.aws_region
   environment              = var.environment
+  cloud_provider           = var.cloud_provider
   ec2_ami_id               = var.ec2_ami_id
   name_prefix              = local.name_prefix
   iam_name_prefix          = local.iam_name_prefix
@@ -852,6 +853,7 @@ module "engine_provisioner" {
   iam_name_prefix             = local.iam_name_prefix
   permissions_boundary_arn    = local.ci_role_permissions_boundary_arn
   environment                 = var.environment
+  cloud_provider              = var.cloud_provider
   tags                        = var.tags
   log_retention_days          = var.log_retention_days
   secrets_manager_kms_key_arn = aws_kms_key.secrets_manager.arn

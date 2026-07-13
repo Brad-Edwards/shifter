@@ -13,6 +13,11 @@ stays small: parse paths, read files, print sanitized results.
 the provider-specific Terraform bridge ``.tfvars`` for the config's backend, so the
 deployed firewall rules are generated from the single authoritative source rather than
 hand-copied into a second gitignored allowlist (ADR-017-R4).
+
+``render-runtime`` (PLAT-2005) renders the selected backend into the renderer-owned
+``cloud_provider`` Terraform tfvar, so the runtime cloud-provider identity is derived
+from the validated installation config rather than hardcoded or inferred from a branch
+name.
 """
 
 from __future__ import annotations
@@ -23,7 +28,7 @@ from pathlib import Path
 
 from .errors import InstallationConfigError
 from .loader import load_root_config
-from .render import render_tfvars
+from .render import render_cloud_provider_tfvars, render_tfvars
 from .runtime_inventory import RUNTIME_SURFACES, validate_runtime_inventory
 
 DEFAULT_CONFIG_FILENAME = "shifter.yaml"
@@ -74,6 +79,28 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Write the rendered .tfvars to FILE (default: stdout).",
     )
+    render_runtime = subcommands.add_parser(
+        "render-runtime",
+        help="Render the selected backend into a renderer-owned cloud_provider Terraform tfvar.",
+        description=(
+            "Render the validated backend selection from shifter.yaml into the renderer-owned "
+            "cloud_provider Terraform tfvar, so the runtime cloud-provider identity is derived "
+            "from the installation config rather than hardcoded or inferred from a branch name."
+        ),
+    )
+    render_runtime.add_argument(
+        "path",
+        nargs="?",
+        default=DEFAULT_CONFIG_FILENAME,
+        help=f"Path to the config file (default: ./{DEFAULT_CONFIG_FILENAME}).",
+    )
+    render_runtime.add_argument(
+        "--output",
+        "-o",
+        metavar="FILE",
+        default=None,
+        help="Write the rendered tfvar to FILE (default: stdout).",
+    )
     inventory = subcommands.add_parser(
         "runtime-inventory",
         help="List or check the repo runtime configuration inventory.",
@@ -111,7 +138,7 @@ def _cmd_validate(path_str: str) -> int:
     return 0
 
 
-def _emit_rendered(rendered: str, output: str | None, backend: str) -> int:
+def _emit_rendered(rendered: str, output: str | None, backend: str, *, what: str = "range egress bridge tfvars") -> int:
     """Write rendered tfvars to ``output`` (or stdout when None); return the exit code."""
     if output is None:
         sys.stdout.write(rendered)
@@ -123,9 +150,9 @@ def _emit_rendered(rendered: str, output: str | None, backend: str) -> int:
         output_path.write_text(rendered, encoding="utf-8")
     except (OSError, ValueError) as exc:
         detail = getattr(exc, "strerror", None) or str(exc)
-        print(f"{output!r}: could not write rendered tfvars: {detail}", file=sys.stderr)
+        print(f"{output!r}: could not write rendered {what}: {detail}", file=sys.stderr)
         return 1
-    print(f"{output_path}: wrote range egress bridge tfvars ({backend}).", file=sys.stderr)
+    print(f"{output_path}: wrote {what} ({backend}).", file=sys.stderr)
     return 0
 
 
@@ -140,6 +167,19 @@ def _cmd_render(path_str: str, output: str | None) -> int:
             print(f"  - {issue.render()}", file=sys.stderr)
         return 1
     return _emit_rendered(render_tfvars(config), output, config.backend)
+
+
+def _cmd_render_runtime(path_str: str, output: str | None) -> int:
+    """Render the renderer-owned ``cloud_provider`` tfvar for the config at ``path_str``."""
+    config_path = Path(path_str)
+    try:
+        config = load_root_config(config_path)
+    except InstallationConfigError as exc:
+        print(f"{config_path}: invalid", file=sys.stderr)
+        for issue in exc.issues:
+            print(f"  - {issue.render()}", file=sys.stderr)
+        return 1
+    return _emit_rendered(render_cloud_provider_tfvars(config), output, config.backend, what="cloud_provider tfvar")
 
 
 def _cmd_runtime_inventory(repo_root_str: str, *, check: bool) -> int:
@@ -174,6 +214,8 @@ def main(argv: list[str] | None = None) -> int:
         exit_code = _cmd_validate(args.path)
     elif args.command == "render":
         exit_code = _cmd_render(args.path, args.output)
+    elif args.command == "render-runtime":
+        exit_code = _cmd_render_runtime(args.path, args.output)
     elif args.command == "runtime-inventory":
         exit_code = _cmd_runtime_inventory(args.repo_root, check=args.check)
     else:

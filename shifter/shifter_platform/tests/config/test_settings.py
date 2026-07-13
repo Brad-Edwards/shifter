@@ -40,6 +40,7 @@ def _settings_import_env(**updates: str | None) -> dict[str, str]:
             "DJANGO_SECRET_KEY": "settings-import-secret",
             "ENVIRONMENT": "production",
             "DJANGO_DEBUG": "false",
+            "CLOUD_PROVIDER": "aws",
             "DJANGO_ALLOWED_HOSTS": "portal.example.test,localhost,127.0.0.1",
             "FIELD_ENCRYPTION_KEY": "YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY=",
             "DB_NAME": "shifter",
@@ -97,6 +98,22 @@ def test_production_settings_require_effective_allowed_hosts() -> None:
 
     assert result.returncode != 0
     assert "DJANGO_ALLOWED_HOSTS" in result.stderr + result.stdout
+
+
+def test_production_settings_require_cloud_provider() -> None:
+    """A deployed portal must fail closed when CLOUD_PROVIDER is absent (PLAT-2005)."""
+    result = _run_settings_import(_settings_import_env(CLOUD_PROVIDER=None))
+
+    assert result.returncode != 0
+    assert "CLOUD_PROVIDER" in result.stderr + result.stdout
+
+
+def test_production_settings_reject_unsupported_cloud_provider() -> None:
+    """An unsupported backend fails closed instead of behaving as AWS (PLAT-2005)."""
+    result = _run_settings_import(_settings_import_env(CLOUD_PROVIDER="azure"))
+
+    assert result.returncode != 0
+    assert "CLOUD_PROVIDER" in result.stderr + result.stdout
 
 
 def test_field_encryption_key_has_single_settings_initializer() -> None:
