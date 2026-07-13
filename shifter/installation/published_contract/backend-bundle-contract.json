@@ -393,8 +393,7 @@
       },
       "contract_version": {
         "enum": [
-          1,
-          2
+          1
         ],
         "title": "Contract Version",
         "type": "integer"
@@ -522,7 +521,7 @@
         "storage",
         "task-runner"
       ],
-      "contract_version": 2,
+      "contract_version": 1,
       "description": "Shifter on AWS: ECS task execution, RDS, SQS, S3, Secrets Manager, and Cognito/OIDC identity, provisioned by the Terraform modules under platform/terraform (and the CloudFormation under platform/cloudformation) and deployed by the AWS workflow.",
       "docs": [
         "docs/architecture/root-configured-backend-bundles.md",
@@ -606,13 +605,13 @@
           "logical_name": "django_secret_key",
           "purpose": "seeds the app secret bundle (Django SECRET_KEY) for the portal and workers",
           "reference_grammar": "an AWS Secrets Manager secret name or ARN, a GitHub Actions secret name, an environment variable, or the literal 'prompt'",
-          "reference_pattern": null
+          "reference_pattern": "[A-Za-z0-9][A-Za-z0-9._/+=@:-]*"
         },
         {
           "logical_name": "db_password",
           "purpose": "application database password",
           "reference_grammar": "an AWS Secrets Manager secret name or ARN, a GitHub Actions secret name, an environment variable, or the literal 'prompt'",
-          "reference_pattern": null
+          "reference_pattern": "[A-Za-z0-9][A-Za-z0-9._/+=@:-]*"
         }
       ],
       "required_tools": [
@@ -637,10 +636,26 @@
           "purpose": "build the Shifter Platform container image"
         }
       ],
-      "settings_schema": null,
+      "settings_schema": {
+        "additionalProperties": false,
+        "description": "Closed operator-intent settings for the AWS backend (PLAT-2006, GH #728).\n\nOnly genuine operator intent lives here. Terraform variables, generated runtime\noutputs, workflow secret names, and provider SDK payloads are *not* settings — copying\nthem in would turn ``settings`` into a second provider schema (preflight #728).\n``extra='forbid'`` fails unknown AWS settings closed, so a typo or a stale key is a\nconfig-time error rather than a silently-ignored value.\n\nThe shared cross-backend ``range_egress`` policy is intentionally *absent*: it is owned\nand validated by :mod:`installation.range_egress` (which surfaces verbatim, non-secret\nCIDR diagnostics, #775), and the loader validates it separately for every backend. See\nthe module docstring.",
+        "properties": {
+          "region": {
+            "pattern": "^[a-z]{2}(?:-[a-z]+)+-\\d+$",
+            "title": "Region",
+            "type": "string"
+          }
+        },
+        "required": [
+          "region"
+        ],
+        "title": "AwsSettings",
+        "type": "object"
+      },
       "supported_profiles": [
         "dev",
-        "prod"
+        "prod",
+        "proof"
       ],
       "title": "Amazon Web Services",
       "validation_checks": [
@@ -675,7 +690,7 @@
         "storage",
         "task-runner"
       ],
-      "contract_version": 2,
+      "contract_version": 1,
       "description": "Shifter on GCP: GKE workloads, Cloud SQL, Pub/Sub, GCS, Secret Manager, and Identity Platform identity, provisioned by the Terraform configuration under platform/terraform/gcp with Kubernetes overlays under platform/k8s/gcp and the shared Helm chart under platform/charts/shifter.",
       "docs": [
         "docs/architecture/root-configured-backend-bundles.md",
@@ -2053,40 +2068,8 @@
         }
       ],
       "settings_schema": {
-        "$defs": {
-          "RangeEgressMode": {
-            "description": "Operating mode for the range egress policy.\n\n``status-quo`` is the documented default when the operator omits the block: each\nbackend preserves its existing posture so PLAT-220 is opt-in. The other modes are\nactive platform contracts. ``none`` (ADR-026) removes the runtime default route on\nAWS participant subnets; it is not the same as ``deny-all``, which keeps a firewall\ndefault route with default-deny enforcement.",
-            "enum": [
-              "status-quo",
-              "deny-all",
-              "allowlist",
-              "none"
-            ],
-            "title": "RangeEgressMode",
-            "type": "string"
-          },
-          "RangeEgressPolicy": {
-            "additionalProperties": false,
-            "description": "Operator-declared egress policy for range networks (PLAT-220).\n\nThe platform contract is provider-neutral: ``mode`` + ``allowed_cidrs``. AWS and\nGCP backends each translate this into their cloud-native firewall syntax.",
-            "properties": {
-              "allowed_cidrs": {
-                "items": {
-                  "type": "string"
-                },
-                "title": "Allowed Cidrs",
-                "type": "array"
-              },
-              "mode": {
-                "$ref": "#/$defs/RangeEgressMode",
-                "default": "status-quo"
-              }
-            },
-            "title": "RangeEgressPolicy",
-            "type": "object"
-          }
-        },
         "additionalProperties": false,
-        "description": "Validated ``settings`` for the ``gcp`` backend bundle.",
+        "description": "Closed operator-intent settings for the ``gcp`` backend bundle (PLAT-2003, #729).\n\nOnly genuine operator intent lives here (project and region). Terraform variables,\ngenerated runtime outputs, and provider SDK payloads are not settings — copying them in\nwould turn ``settings`` into a second provider schema. ``extra='forbid'`` fails unknown\nGCP settings closed. The shared cross-backend ``range_egress`` policy is deliberately not\ndeclared; the loader validates it separately for every backend (see the module docstring).",
         "properties": {
           "project_id": {
             "description": "GCP project id: 6-30 characters, a lowercase letter followed by lowercase letters, digits, and hyphens, not ending in a hyphen.",
@@ -2095,9 +2078,6 @@
             "pattern": "^[a-z][a-z0-9-]{4,28}[a-z0-9]$",
             "title": "Project Id",
             "type": "string"
-          },
-          "range_egress": {
-            "$ref": "#/$defs/RangeEgressPolicy"
           },
           "region": {
             "description": "Lowercase GCP region/location token (letters, digits, and internal hyphens), e.g. 'us-central1'.",
@@ -2195,9 +2175,8 @@
       ]
     }
   },
-  "contract_version": 2,
+  "contract_version": 1,
   "supported_contract_versions": [
-    1,
-    2
+    1
   ]
 }

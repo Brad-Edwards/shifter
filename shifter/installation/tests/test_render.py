@@ -31,7 +31,9 @@ from installation.render import render_cloud_provider_tfvars, render_tfvars
 def _aws(settings: dict | None, aws_config: dict) -> dict:
     cfg = dict(aws_config)
     if settings is not None:
-        cfg["settings"] = settings
+        # Merge onto the fixture's settings so the required ``region`` (#728) is preserved
+        # while the test supplies its own ``range_egress`` policy.
+        cfg["settings"] = {**aws_config.get("settings", {}), **settings}
     return cfg
 
 
@@ -40,7 +42,7 @@ def _gcp(settings: dict | None, gcp_config: dict) -> dict:
     # The GCP backend now has a closed settings model (#729) that requires project_id and
     # region; merge them in so these range-egress-focused render cases load cleanly while
     # still controlling the range_egress block under test.
-    merged = {"project_id": "acme-shifter", "region": "us-central1"}
+    merged = {"project_id": "acme-shifter", "region": "us-central1", **gcp_config.get("settings", {})}
     if settings is not None:
         merged.update(settings)
     cfg["settings"] = merged
@@ -131,8 +133,9 @@ class TestRenderGcp:
         from installation.errors import InstallationConfigError
 
         path = write_config(_gcp({"range_egress": {"mode": "none"}}, gcp_config))
+        config = load_root_config(path)
         with pytest.raises(InstallationConfigError, match="AWS only"):
-            render_tfvars(load_root_config(path))
+            render_tfvars(config)
 
 
 class TestRenderShape:
@@ -141,7 +144,9 @@ class TestRenderShape:
             _aws({"range_egress": {"mode": "allowlist", "allowed_cidrs": ["203.0.113.0/24"]}}, aws_config)
         )
         config = load_root_config(path)
-        assert render_tfvars(config) == render_tfvars(config)
+        first = render_tfvars(config)
+        second = render_tfvars(config)
+        assert first == second
 
     def test_output_carries_generated_header(self, write_config, aws_config):
         path = write_config(_aws({"range_egress": {"mode": "status-quo"}}, aws_config))
@@ -277,7 +282,9 @@ class TestRenderCloudProviderTfvars:
 
     def test_output_is_deterministic(self, examples_dir):
         config = load_root_config(examples_dir / "aws.yaml")
-        assert render_cloud_provider_tfvars(config) == render_cloud_provider_tfvars(config)
+        first = render_cloud_provider_tfvars(config)
+        second = render_cloud_provider_tfvars(config)
+        assert first == second
 
 
 class TestRenderRuntimeCli:

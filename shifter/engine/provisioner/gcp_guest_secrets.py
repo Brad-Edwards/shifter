@@ -140,6 +140,15 @@ def ensure_ssh_secret(range_id: int, instance: GuestInstance) -> tuple[str, str]
     return secret_name, derive_ssh_public_key(private_key)
 
 
+def ensure_participant_ssh_secret(range_id: int, instance: GuestInstance) -> tuple[str, str]:
+    """Create/read a participant key distinct from the host-management key."""
+    secret_name, private_key = _read_or_create_secret(
+        _guest_secret_id(range_id, instance, "participant-ssh"),
+        lambda: generate_ssh_keypair()[0],
+    )
+    return secret_name, derive_ssh_public_key(private_key)
+
+
 def ensure_rdp_password_secret(range_id: int, instance: GuestInstance) -> tuple[str, str]:
     """Create or read a per-instance local password secret."""
     return _read_or_create_secret(
@@ -253,6 +262,11 @@ def delete_guest_secret(range_id: int, instance: GuestInstance, kind: str) -> No
 def delete_ssh_secret(range_id: int, instance: GuestInstance) -> None:
     """Delete the per-instance SSH secret."""
     delete_guest_secret(range_id, instance, "ssh")
+
+
+def delete_participant_ssh_secret(range_id: int, instance: GuestInstance) -> None:
+    """Delete the per-instance participant SSH secret."""
+    delete_guest_secret(range_id, instance, "participant-ssh")
 
 
 def delete_rdp_password_secret(range_id: int, instance: GuestInstance) -> None:

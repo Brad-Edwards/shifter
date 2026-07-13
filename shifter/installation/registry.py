@@ -9,21 +9,26 @@ backend or a profile is a registry entry, not a schema change or a branch router
 is exactly one such table in the repo; Django, workflows, bootstrap scripts, and CI
 consume *this* one rather than maintaining their own.
 
-The ``gcp`` entry below is *complete* (issue #729): it carries a closed
-``settings_model`` (:class:`installation.settings_gcp.GcpBackendSettings`), a
-``RequiredSecret.reference_pattern`` for the operator-supplied Django secret, the full
-generated runtime-env projection classified from :mod:`installation.runtime_inventory`,
-and the canonical pre-mutation validation checks. The ``aws`` entry is still
-*provisional*: it carries the backend identity, supported profiles, owned repo roots,
-required tools, the root-config check, a portal health probe, and the ``CLOUD_PROVIDER``
-and app/database secret-reference runtime bindings — enough to exercise the contract —
-but its ``settings_model`` and ``RequiredSecret.reference_pattern`` are left unset (any
-``settings`` mapping is accepted; references are checked at deploy time) until the AWS
-backend bundle migration (#728) fills them in. The ``local`` backend is #1119.
-Constrained by ADR-011.
+The ``aws`` (#1116 / GH #728) and ``gcp`` (#1117 / GH #729) entries below are both migrated
+backend bundles. Each carries a closed ``settings_model`` (:class:`AwsSettings` /
+:class:`installation.settings_gcp.GcpBackendSettings`), machine-readable
+``RequiredSecret.reference_pattern`` secret grammars, the full generated runtime-env
+projection, the deployment profiles its deploy paths actually use, and the backend identity,
+owned repo roots, required tools, root-config validation check, and portal health probe.
+Describing these contracts does not move Terraform/state, rewrite workflows, or build a
+renderer — those stay in their existing owners (branch-routing replacement is #730);
+constrained by ADR-011-R5.
+
+``range_egress`` is a *shared, cross-backend* platform setting owned and validated by
+:mod:`installation.range_egress` (verbatim, non-secret CIDR diagnostics, #775). It is not a
+backend-owned key, so the closed ``settings_model`` classes deliberately do not declare it;
+the loader strips it out of ``settings`` and validates it separately for every backend. The
+``local`` backend is #1119. Constrained by ADR-011.
 """
 
 from __future__ import annotations
+
+from pydantic import BaseModel, ConfigDict, Field
 
 from . import runtime_inventory
 from .contract import (
@@ -47,10 +52,54 @@ from .settings_gcp import GcpBackendSettings
 # The contract-shape version every bundle below is written against. Pinned literally so
 # that adding a future ``contract_version`` to ``SUPPORTED_CONTRACT_VERSIONS`` does not
 # silently re-version these bundles — a new version requires an intentional edit here
-# (and a settings/renderer migration for the backend). Version 2 (#729) published the GCP
-# bundle's closed settings schema, a backward-incompatible narrowing of the GCP settings
-# surface; see published_contract/MIGRATIONS.md "Contract version 2".
-_CONTRACT_VERSION = 2
+# (and a settings/renderer migration for the backend).
+_CONTRACT_VERSION = 1
+
+# A plausible AWS region token: two letters, one or more lowercase words, then a trailing
+# number — ``us-east-2``, ``us-gov-east-1``, ``ap-southeast-4``. Deliberately permissive:
+# the exact region set is an AWS concern validated at deploy time, so this only catches
+# config-time typos (wrong case, underscores, missing number) rather than pinning a list.
+# It is applied via ``Field(pattern=...)`` (not a ``@field_validator``) so the *same*
+# constraint governs both runtime validation and the published JSON schema — a validator
+# would enforce it at load time while leaving the published contract permitting any string
+# (the boundary-contract gap #728 must not open).
+_AWS_REGION_PATTERN = r"^[a-z]{2}(?:-[a-z]+)+-\d+$"
+
+# The reference grammar shared by both AWS secrets: an AWS Secrets Manager secret name or
+# ARN, a GitHub Actions secret name, or an environment variable name — a single-line token
+# of reference-safe characters, matched full-string by ``RequiredSecret.matches_reference``
+# (which accepts ``prompt`` independently). This is a *positive* grammar layered on top of
+# the root schema's raw-material rejection (multi-line / PEM / over-long), not a duplicate
+# of it; it never sees or echoes the value.
+_AWS_REFERENCE_PATTERN = r"[A-Za-z0-9][A-Za-z0-9._/+=@:-]*"
+
+# The reference_grammar description shared by both AWS secrets (kept in one place so the
+# human text and the machine pattern stay in step).
+_AWS_REFERENCE_GRAMMAR = (
+    "an AWS Secrets Manager secret name or ARN, a GitHub Actions secret name, an environment "
+    "variable, or the literal 'prompt'"
+)
+
+
+class AwsSettings(BaseModel):
+    """Closed operator-intent settings for the AWS backend (PLAT-2006, GH #728).
+
+    Only genuine operator intent lives here. Terraform variables, generated runtime
+    outputs, workflow secret names, and provider SDK payloads are *not* settings — copying
+    them in would turn ``settings`` into a second provider schema (preflight #728).
+    ``extra='forbid'`` fails unknown AWS settings closed, so a typo or a stale key is a
+    config-time error rather than a silently-ignored value.
+
+    The shared cross-backend ``range_egress`` policy is intentionally *absent*: it is owned
+    and validated by :mod:`installation.range_egress` (which surfaces verbatim, non-secret
+    CIDR diagnostics, #775), and the loader validates it separately for every backend. See
+    the module docstring.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    region: str = Field(pattern=_AWS_REGION_PATTERN)
+
 
 # Process roles that share the derived runtime environment.
 _RUNTIME_ROLES: tuple[ProcessRole, ...] = (ProcessRole.PORTAL, ProcessRole.WORKER, ProcessRole.PROVISIONER)
@@ -161,8 +210,13 @@ _AWS_BUNDLE = BackendBundle(
         "provisioned by the Terraform modules under platform/terraform (and the CloudFormation under "
         "platform/cloudformation) and deployed by the AWS workflow."
     ),
-    supported_profiles=frozenset({"prod", "dev"}),
-    settings_model=None,  # the AWS backend bundle migration (#1116) supplies the real schema
+    # prod / dev are the OSS profiles; proof is the internal new-tenant readiness tier that
+    # has its own Terraform root (platform/terraform/environments/proof) and aws-proof
+    # deploy path (.github/workflows/deploy.yml, _core.yml, _range.yml). Admit it explicitly
+    # rather than strand a real environment the deploy paths already target (preflight #728).
+    supported_profiles=frozenset({"prod", "dev", "proof"}),
+    # Migrated by #1116 / GH #728: the closed operator-intent schema, no longer None.
+    settings_model=AwsSettings,
     required_tools=(
         RequiredTool(name="uv", purpose="run the Shifter installation tooling (shifter-config validate)"),
         RequiredTool(name="terraform", purpose="provision AWS infrastructure (platform/terraform)"),
@@ -173,18 +227,14 @@ _AWS_BUNDLE = BackendBundle(
         RequiredSecret(
             logical_name="django_secret_key",
             purpose="seeds the app secret bundle (Django SECRET_KEY) for the portal and workers",
-            reference_grammar=(
-                "an AWS Secrets Manager secret name or ARN, a GitHub Actions secret name, an environment "
-                "variable, or the literal 'prompt'"
-            ),
+            reference_grammar=_AWS_REFERENCE_GRAMMAR,
+            reference_pattern=_AWS_REFERENCE_PATTERN,
         ),
         RequiredSecret(
             logical_name="db_password",
             purpose="application database password",
-            reference_grammar=(
-                "an AWS Secrets Manager secret name or ARN, a GitHub Actions secret name, an environment "
-                "variable, or the literal 'prompt'"
-            ),
+            reference_grammar=_AWS_REFERENCE_GRAMMAR,
+            reference_pattern=_AWS_REFERENCE_PATTERN,
         ),
     ),
     generated_outputs=(

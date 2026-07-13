@@ -72,11 +72,32 @@ def test_published_records_validate_against_published_schema() -> None:
 
 
 def test_published_bundle_drops_settings_model_class() -> None:
-    aws = build_contract_artifact()["backends"]["aws"]
+    backends = build_contract_artifact()["backends"]
+    aws = backends["aws"]
+    # The Python class is never serialized; it is projected to ``settings_schema``.
     assert "settings_model" not in aws
-    assert aws["settings_schema"] is None  # provisional aws bundle has no settings model
+    # AWS is migrated (#728): its closed settings model publishes as a JSON schema object.
+    assert isinstance(aws["settings_schema"], dict)
+    assert "region" in aws["settings_schema"].get("properties", {})
+    # GCP is migrated too (#729): its closed settings model publishes as a JSON schema object.
+    gcp = backends["gcp"]
+    assert "settings_model" not in gcp
+    assert isinstance(gcp["settings_schema"], dict)
+    assert {"project_id", "region"} <= set(gcp["settings_schema"].get("properties", {}))
     assert aws["supported_profiles"] == sorted(aws["supported_profiles"])
     assert aws["capabilities"] == sorted(aws["capabilities"])
+
+
+def test_published_aws_settings_schema_enforces_the_region_grammar() -> None:
+    # #728: the runtime region grammar (AwsSettings) must also be expressed in the
+    # *published* schema. If it were enforced only by a @field_validator, the published
+    # artifact would permit any string and a downstream consumer validating against it
+    # would accept a region that load_root_config rejects (boundary-contract gap).
+    settings_schema = build_contract_artifact()["backends"]["aws"]["settings_schema"]
+    validator = jsonschema.Draft202012Validator(settings_schema)
+    assert list(validator.iter_errors({"region": "us-east-2"})) == []
+    # The same malformed region the runtime rejects must fail against the published schema.
+    assert list(validator.iter_errors({"region": "US_EAST_2"}))
 
 
 def test_published_bundle_emits_settings_schema_when_model_present() -> None:
@@ -430,28 +451,6 @@ def test_surface_flags_settings_schema_removed() -> None:
     frozen = {"backend_bundle_schema": {}, "backends": {"aws": {"settings_schema": {"type": "object"}}}}
     generated = {"backend_bundle_schema": {}, "backends": {"aws": {"settings_schema": None}}}
     assert any("aws.settings_schema: removed" in c for c in _surface_incompatibilities(frozen, generated))
-
-
-def test_surface_flags_null_to_concrete_settings_schema_as_narrowing() -> None:
-    # #729: a backend that published settings_schema=null accepted any settings mapping;
-    # replacing it with a concrete schema narrows the operator-facing surface, so it must be
-    # flagged breaking (requiring a version bump) rather than treated as additive. Without
-    # this the GCP null->closed transition would have shipped silently within version 1.
-    frozen = {"backend_bundle_schema": {}, "backends": {"gcp": {"settings_schema": None}}}
-    generated = {
-        "backend_bundle_schema": {},
-        "backends": {"gcp": {"settings_schema": {"type": "object", "additionalProperties": False}}},
-    }
-    breaking = _surface_incompatibilities(frozen, generated)
-    assert any("gcp.settings_schema" in c and "narrowed from accept-any" in c for c in breaking)
-
-
-def test_surface_treats_null_to_null_settings_schema_as_unchanged() -> None:
-    # A still-provisional backend (settings_schema stays null, e.g. aws until #728) is not
-    # flagged — only an actual null->concrete narrowing is breaking.
-    frozen = {"backend_bundle_schema": {}, "backends": {"aws": {"settings_schema": None}}}
-    generated = {"backend_bundle_schema": {}, "backends": {"aws": {"settings_schema": None}}}
-    assert _surface_incompatibilities(frozen, generated) == []
 
 
 # --------------------------------------------------------------------------------------

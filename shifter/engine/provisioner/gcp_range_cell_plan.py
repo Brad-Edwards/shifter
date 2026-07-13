@@ -5,8 +5,9 @@ from __future__ import annotations
 import ipaddress
 from typing import NotRequired, TypedDict, cast
 
+from shared.range_cells import RangeCellContractError, validate_gcp_vm_range_cell_request
+
 from config import GCERangeCellConfig, GCERangeImageProfile, load_gce_range_cell_config
-from executors.factory import get_ssh_username
 from gcp_range_cell_naming import (
     _label_value,
     _network_name_from_id,
@@ -16,10 +17,9 @@ from gcp_range_cell_naming import (
     _subnet_tag,
     _subnetwork_self_link,
 )
+from gcp_range_cell_scenario import build_instance_plans, realize_range_spec
 
 _MANAGED_BY_LABEL = "shifter-provisioner"
-
-_DEFAULT_SSH_PORT = 22
 
 # private.googleapis.com VIP range. Private Google Access on the range subnet,
 # the range VPC's private-googleapis DNS zone, and a route for this /30 (all in
@@ -28,15 +28,6 @@ _DEFAULT_SSH_PORT = 22
 # private_google_access is set, so guests reach Vertex AI / Cloud Storage /
 # Secret Manager while staying off the general internet.
 _GOOGLE_PRIVATE_API_VIP_CIDR = "199.36.153.8/30"  # NOSONAR
-
-# Scenario image keys whose range host is an Ubuntu Docker host: the
-# participant-facing service (e.g. the Polaris Kali container) publishes the
-# host's :22/:3389, so the provisioner drives the host sshd on the management
-# port as the host login user, keeping :22/:3389 for participant access. The
-# scenario image key is translated to a validated GCE profile here rather than
-# passing the AWS ``ami_key``/``instance_type`` through to Compute Engine.
-_DOCKER_HOST_AMI_KEYS = frozenset({"polaris-vm"})
-_DOCKER_HOST_SSH_USERNAME = "ubuntu"
 
 ResourceDict = dict[str, object]
 ComputeResource = dict[str, object]
@@ -107,6 +98,7 @@ class InstancePlan(TypedDict):
     ssh_username: str
     host_ssh_username: str
     ssh_port: int
+    participant_access_channels: list[str]
 
 
 class RangeCellPlan(TypedDict):
@@ -173,11 +165,6 @@ def _assign_instance_ips(subnet_cidr: str, instances: list[ScenarioInstance]) ->
     return assignments
 
 
-def _instance_assignment_key(instance: ScenarioInstance, index: int) -> str:
-    """Return the stable key used to map an instance to an assigned IP."""
-    return str(instance.get("uuid") or instance.get("name") or f"asset-{index}")
-
-
 def _connected_source_ranges(subnet: ResourceDict, subnet_by_name: dict[str, ResourceDict]) -> list[str]:
     """Return CIDRs allowed to reach one subnet from declared peer links."""
     source_ranges = [str(subnet.get("cidr", "")).strip()]
@@ -234,96 +221,6 @@ def _build_subnet_plans(
                 "instances": instances,
             }
         )
-    return plans
-
-
-def _profile_for_instance(
-    config: GCERangeCellConfig,
-    instance: ScenarioInstance,
-    *,
-    require_images: bool,
-) -> GCERangeImageProfile:
-    """Resolve the image profile for one range instance.
-
-    Machine size comes from the GCE range profile (``GCP_RANGE_*_MACHINE_TYPE``),
-    never the scenario's AWS ``instance_type`` (e.g. ``m5.2xlarge``), which is an
-    EC2 shape and is not a valid Compute Engine machine type.
-    """
-    if not require_images:
-        return GCERangeImageProfile()
-    return config.get_profile(
-        role=str(instance.get("role", "victim")),
-        os_type=str(instance.get("os_type", instance.get("os", "ubuntu"))),
-    )
-
-
-def _host_access(
-    config: GCERangeCellConfig, instance: ScenarioInstance, os_type: str, role: str
-) -> tuple[str, str, int]:
-    """Resolve ``(participant_ssh_username, host_ssh_username, host_ssh_port)``.
-
-    The participant SSH user is what the portal terminal / Guacamole connects
-    as on :22 (the participant-facing service). The host SSH user + port are
-    what the provisioner drives for guest setup.
-
-    Docker-host scenarios (whose participant container publishes host :22)
-    split the two: the participant reaches the container as its native user on
-    :22, while the provisioner reaches the host sshd on the management port as
-    the host login user. Native single-service guests use the same user on :22
-    for both.
-    """
-    participant_user = get_ssh_username(os_type, role)
-    ami_key = str(instance.get("ami_key", "")).strip().lower()
-    if ami_key in _DOCKER_HOST_AMI_KEYS:
-        return participant_user, _DOCKER_HOST_SSH_USERNAME, config.host_mgmt_ssh_port
-    return participant_user, participant_user, _DEFAULT_SSH_PORT
-
-
-def _build_instance_plans(
-    *,
-    variables: ResourceDict,
-    config: GCERangeCellConfig,
-    subnet_plans: list[SubnetPlan],
-    require_images: bool,
-) -> list[InstancePlan]:
-    """Render deterministic instance plans for every planned subnet."""
-    range_id = int(str(variables["range_id"]))
-    plans: list[InstancePlan] = []
-    for subnet_plan in subnet_plans:
-        for index, instance in enumerate(subnet_plan["instances"]):
-            key = _instance_assignment_key(instance, index)
-            role = str(instance.get("role", "victim"))
-            os_type = str(instance.get("os_type", instance.get("os", "ubuntu")))
-            ssh_username, host_ssh_username, ssh_port = _host_access(config, instance, os_type, role)
-            resource_name = _short_resource_name(
-                "shifter-r",
-                range_id,
-                subnet_plan["name"],
-                instance.get("name") or instance.get("uuid") or index,
-            )
-            plans.append(
-                {
-                    "name": str(instance.get("name", "")).strip() or resource_name,
-                    "uuid": str(instance.get("uuid", "")),
-                    "resource_name": resource_name,
-                    "address_name": _short_resource_name(resource_name, "ip"),
-                    "subnet_name": subnet_plan["name"],
-                    "subnet_resource_name": subnet_plan["resource_name"],
-                    "subnetwork_link": subnet_plan["self_link"],
-                    # Destroy (no CIDR, empty ip_assignments) deletes by resource
-                    # name and needs no private IP; provision always has the key.
-                    "private_ip": subnet_plan["ip_assignments"].get(key, ""),
-                    "role": role,
-                    "os_type": os_type,
-                    "asset_type": "gce_vm",
-                    "tags": [_network_tag(range_id), subnet_plan["tag"], _short_resource_name("shifter-role", role)],
-                    "profile": _profile_for_instance(config, instance, require_images=require_images),
-                    "source": instance,
-                    "ssh_username": ssh_username,
-                    "host_ssh_username": host_ssh_username,
-                    "ssh_port": ssh_port,
-                }
-            )
     return plans
 
 
@@ -422,8 +319,16 @@ def render_range_cell_plan(
     require_images: bool = True,
 ) -> RangeCellPlan:
     """Render the deterministic GCE resources for one range cell."""
+    validated_request = validate_gcp_vm_range_cell_request(variables)
+    operation = validated_request["operation"]
+    if operation["request_id"] != request_uuid:
+        raise RangeCellContractError("range-cell request_id does not match the invoked operation")
+    realized_variables = realize_range_spec(
+        validated_request,
+        require_network_bindings=require_images,
+    )
     resolved_config = config or load_gce_range_cell_config()
-    range_id = int(str(variables["range_id"]))
+    range_id = int(operation["range_id"])
     if resolved_config.network_mode == "shared-vpc":
         # Range subnets live in the pre-existing, platform-peered range VPC; the
         # range never creates or deletes the VPC itself.
@@ -435,17 +340,21 @@ def render_range_cell_plan(
         network_link = _network_self_link(resolved_config.project_id, network_name)
         manage_network = True
     subnet_plans = _build_subnet_plans(
-        variables=variables,
+        variables=realized_variables,
         config=resolved_config,
         network_name=network_name,
         network_link=network_link,
         require_images=require_images,
     )
-    instance_plans = _build_instance_plans(
-        variables=variables,
-        config=resolved_config,
-        subnet_plans=subnet_plans,
-        require_images=require_images,
+    instance_plans = cast(
+        list[InstancePlan],
+        build_instance_plans(
+            range_id=range_id,
+            config=resolved_config,
+            subnet_plans=cast(list[ResourceDict], subnet_plans),
+            access_declarations=cast(list[ResourceDict], realized_variables["access_declarations"]),
+            require_images=require_images,
+        ),
     )
     return {
         "project_id": resolved_config.project_id,

@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 from shared.enums import CANCELLABLE_STATUSES, ResourceStatus
+from shared.range_cells import build_scenario_artifact
 from shared.schemas import RangeRef, RangeSpec, RequestSpec
 from shared.schemas.persistence import wrap_persisted_spec
 
@@ -125,6 +126,7 @@ def _persist_range_atomically(
 
         user = user_model.objects.get(id=range_spec.user_id)
         subnet_index = range_model.allocate_subnet_index()
+        range_artifact = build_scenario_artifact(wrap_persisted_spec("range_spec", range_spec))
 
         range_uuid = range_spec.uuid
         if range_uuid:
@@ -137,7 +139,7 @@ def _persist_range_atomically(
                 cms_user_id=range_spec.user_id,
                 status=range_model.Status.PROVISIONING,
                 subnet_index=subnet_index,
-                range_config=wrap_persisted_spec("range_spec", range_spec),
+                range_config=range_artifact,
             )
         else:
             range_obj = range_model.objects.create(
@@ -146,7 +148,7 @@ def _persist_range_atomically(
                 cms_user_id=range_spec.user_id,
                 status=range_model.Status.PROVISIONING,
                 subnet_index=subnet_index,
-                range_config=wrap_persisted_spec("range_spec", range_spec),
+                range_config=range_artifact,
             )
 
         logger.info(

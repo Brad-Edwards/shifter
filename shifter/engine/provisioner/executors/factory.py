@@ -141,9 +141,9 @@ def _build_gce_execution_context(
     target = instance_data.get("private_ip", "")
     if not target:
         raise ValueError("GCE guest execution requires private_ip in instance output")
-    secret_id = instance_data.get("ssh_key_secret_arn", "")
+    secret_id = instance_data.get("gcp_host_ssh_key_secret_ref") or instance_data.get("ssh_key_secret_arn", "")
     if not secret_id:
-        raise ValueError("GCE guest execution requires ssh_key_secret_arn in instance output")
+        raise ValueError("GCE guest execution requires a host-management SSH secret reference")
     private_key = (secret_reader or get_secrets_store().get_secret)(secret_id)
     # Provisioner guest setup drives the host sshd, which for Docker-host guests
     # (e.g. the Polaris range host) is a different user + port than the

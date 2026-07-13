@@ -5,24 +5,28 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from installation.range_egress import RangeEgressMode, RangeEgressPolicy
 from installation.settings_gcp import GcpBackendSettings
 
 
 class TestGcpBackendSettings:
-    def test_minimal_valid_settings_defaults_range_egress_to_status_quo(self):
+    def test_minimal_valid_settings(self):
         settings = GcpBackendSettings.model_validate({"project_id": "acme-shifter", "region": "us-central1"})
         assert settings.project_id == "acme-shifter"
         assert settings.region == "us-central1"
-        # range_egress is composed from the canonical model, not copied.
-        assert isinstance(settings.range_egress, RangeEgressPolicy)
-        assert settings.range_egress.mode is RangeEgressMode.STATUS_QUO
-        assert settings.range_egress.allowed_cidrs == []
 
     def test_model_is_closed_and_rejects_unknown_settings(self):
         # extra='forbid' — an unknown GCP setting fails before any infrastructure mutation.
         with pytest.raises(ValidationError):
             GcpBackendSettings.model_validate({"project_id": "acme-shifter", "region": "us-central1", "bogus": "value"})
+
+    def test_range_egress_is_not_a_model_field(self):
+        # range_egress is a shared cross-backend key validated by the loader, not the model
+        # (mirrors AwsSettings); the closed model rejects it as an unknown key.
+        assert "range_egress" not in GcpBackendSettings.model_fields
+        with pytest.raises(ValidationError):
+            GcpBackendSettings.model_validate(
+                {"project_id": "acme-shifter", "region": "us-central1", "range_egress": {"mode": "status-quo"}}
+            )
 
     def test_project_id_is_required(self):
         with pytest.raises(ValidationError):
@@ -62,31 +66,12 @@ class TestGcpBackendSettings:
         settings = GcpBackendSettings.model_validate({"project_id": "acme-shifter", "region": region})
         assert settings.region == region
 
-    def test_range_egress_is_composed_and_validated(self):
-        settings = GcpBackendSettings.model_validate(
-            {
-                "project_id": "acme-shifter",
-                "region": "us-central1",
-                "range_egress": {"mode": "allowlist", "allowed_cidrs": ["203.0.113.0/24"]},
-            }
-        )
-        assert settings.range_egress.mode is RangeEgressMode.ALLOWLIST
-        assert settings.range_egress.allowed_cidrs == ["203.0.113.0/24"]
-
-    def test_range_egress_bad_cidr_is_rejected_via_composed_policy(self):
-        # The GCP model reuses RangeEgressPolicy's validators rather than copying them.
-        with pytest.raises(ValidationError):
-            GcpBackendSettings.model_validate(
-                {
-                    "project_id": "acme-shifter",
-                    "region": "us-central1",
-                    "range_egress": {"mode": "allowlist", "allowed_cidrs": ["not-a-cidr"]},
-                }
-            )
-
 
 class TestGcpBundleIntegration:
-    """The gcp registry entry uses the closed model, and the loader enforces it end to end."""
+    """The gcp registry entry uses the closed model, and the loader enforces it end to end.
+
+    (Deeper loader coverage — range_egress ownership, secret-reference grammar — lives in
+    ``test_loader.py`` alongside the AWS equivalents.)"""
 
     def test_registry_gcp_bundle_uses_the_closed_settings_model(self):
         from installation.registry import get_backend_bundle
@@ -101,13 +86,12 @@ class TestGcpBundleIntegration:
             "settings": settings,
         }
 
-    def test_loader_accepts_valid_gcp_settings_and_normalizes_range_egress(self, write_config):
+    def test_loader_accepts_valid_gcp_settings(self, write_config):
         from installation.loader import load_root_config
 
         cfg = load_root_config(write_config(self._gcp_config({"project_id": "acme-shifter", "region": "us-central1"})))
         assert cfg.settings["project_id"] == "acme-shifter"
-        # range_egress is normalized to the canonical status-quo shape (json mode) by the loader.
-        assert cfg.settings["range_egress"] == {"mode": "status-quo", "allowed_cidrs": []}
+        assert cfg.settings["region"] == "us-central1"
 
     def test_loader_rejects_unknown_gcp_setting_fail_closed(self, write_config):
         from installation.errors import InstallationConfigError
@@ -120,12 +104,7 @@ class TestGcpBundleIntegration:
         assert any(issue.path == "settings.bogus" for issue in excinfo.value.issues)
 
     def test_loader_rejects_gcp_settings_missing_project_id(self, write_config):
-        from installation.loader import load_root_config, validate_root_config_file
+        from installation.loader import validate_root_config_file
 
         issues = validate_root_config_file(write_config(self._gcp_config({"region": "us-central1"})))
         assert any(issue.path == "settings.project_id" for issue in issues)
-        # load_root_config raises for the same config.
-        from installation.errors import InstallationConfigError
-
-        with pytest.raises(InstallationConfigError):
-            load_root_config(write_config(self._gcp_config({"region": "us-central1"})))

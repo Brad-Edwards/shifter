@@ -176,3 +176,25 @@ class TestGetRangeDataNGFWLookup:
         result = get_range_data_by_request_id("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
 
         assert result["ngfw_instance_id"] is None
+
+    def test_preserves_wrapped_scenario_envelope_for_range_cell_validation(self, monkeypatch):
+        """The provisioner keeps the producer envelope as well as its payload view."""
+        from shared.range_cells import build_scenario_artifact
+
+        from provisioner_db import get_range_data_by_request_id
+
+        envelope = build_scenario_artifact(
+            {
+                "spec_schema": "range_spec",
+                "spec_version": "1",
+                "payload": {"scenario_id": "scenario-a", "user_id": 7, "subnets": []},
+            }
+        )
+        row = (*_RANGE_ROW_NO_NGFW[:3], envelope, *_RANGE_ROW_NO_NGFW[4:])
+        mock_conn, _mock_cursor = _make_mock_cursor(row)
+        monkeypatch.setattr("provisioner_db.get_db_connection", MagicMock(return_value=mock_conn))
+
+        result = get_range_data_by_request_id("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
+
+        assert result["spec"] == envelope["payload"]
+        assert result["spec_envelope"] == envelope

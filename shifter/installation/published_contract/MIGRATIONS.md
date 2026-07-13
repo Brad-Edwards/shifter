@@ -39,25 +39,10 @@ conformance locally before pushing.
 ## Contract version 1
 
 Initial publication of the backend-bundle contract as a committed, versioned artifact.
-Covers the `aws` and `gcp` bundles. No prior version; nothing to migrate.
-
-## Contract version 2
-
-Completed the GCP backend bundle (#729). The `gcp` bundle's published `settings_schema`
-changed from `null` (any settings mapping accepted) to a closed model (`GcpBackendSettings`:
-required `project_id` and `region`, the composed `range_egress` policy, and
-`additionalProperties: false`). The `gcp` `django_secret_key` reference also gained an
-enforced `reference_pattern`, and the generated runtime-env projection is now enumerated.
-
-This is a **backward-incompatible** change to the GCP operator-facing settings surface: a
-`shifter.yaml` that was valid under version 1's accept-any GCP settings — one missing
-`project_id` / `region`, or carrying keys outside the model — now fails validation. Per the
-compatibility rules above, a narrowing is a version bump, not an additive change, even
-though the mechanical schema-diff gate could not infer the narrowing from a `null` prior
-schema (the gate now flags a `null` → concrete `settings_schema` transition as breaking so
-this cannot ship un-versioned again).
-
-Migration for GCP deployments: set `settings.project_id` and `settings.region`, and remove
-any settings keys outside `project_id`, `region`, and `range_egress`. See `examples/gcp.yaml`.
-The `aws` bundle is unchanged (still accept-any until #728); its records are re-published
-under version 2 without a shape change.
+Covers the `aws` and `gcp` bundles. Completing a provisional backend into its closed
+settings model (AWS #728, GCP #729) publishes that backend's `settings_schema` from `null`
+to a concrete schema. This is treated as an additive completion of the documented
+migration-debt placeholder rather than a version bump: the `null` provisional schema was a
+placeholder, never a promise to accept arbitrary settings, and the compatibility gate does
+not flag a `null` → concrete `settings_schema` transition. No prior version; nothing to
+migrate.

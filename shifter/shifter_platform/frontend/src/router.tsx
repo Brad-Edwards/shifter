@@ -16,6 +16,10 @@ import { TerminalPage } from "@/features/mission-control/TerminalPage";
 import { RiskDetailPage } from "@/features/risk-register/RiskDetailPage";
 import { RiskFormPage } from "@/features/risk-register/RiskFormPage";
 import { RiskListPage } from "@/features/risk-register/RiskListPage";
+import { ScenarioDetailPage } from "@/features/scenario-editor/ScenarioDetailPage";
+import { ScenarioFormPage } from "@/features/scenario-editor/ScenarioFormPage";
+import { ScenarioListPage } from "@/features/scenario-editor/ScenarioListPage";
+import { ScenarioYamlPage } from "@/features/scenario-editor/ScenarioYamlPage";
 
 // One platform router at the site root (#1369). The Django host serves the
 // shell for the SPA-owned page paths (root and /risk-register/*), so deep links
@@ -25,6 +29,9 @@ const riskRegisterHandle: RouteHandle = { permissionPolicy: "risk_register_acces
 // Mission Control (#1370) is gated the same way the "Operate" nav group is:
 // any authenticated principal, same as its legacy Django views.
 const missionControlHandle: RouteHandle = { permissionPolicy: "authenticated" };
+// Scenario Editor (#1371) is gated on CMS-authoring access, the same advisory
+// policy the existing "Author" nav group / legacy threat-research views use.
+const scenarioEditorHandle: RouteHandle = { permissionPolicy: "threat_research" };
 
 export const router = createBrowserRouter(
   [
@@ -66,6 +73,23 @@ export const router = createBrowserRouter(
             { path: "ngfw/setup", element: <NgfwWizardPage /> },
             { path: "ngfw/:appId", element: <NgfwDetailPage /> },
             { path: "credentials", element: <CredentialsPage /> },
+          ],
+        },
+        {
+          // Scenario Editor (#1371) rehomed under the unified client router.
+          // Its legacy Django counterpart lives at the same /scenario-editor/
+          // page paths (see features/scenario-editor/routes.ts); static
+          // segments (create, create/yaml) outrank the ":scenarioId" dynamic
+          // route regardless of declaration order.
+          path: "scenario-editor",
+          handle: scenarioEditorHandle,
+          children: [
+            { index: true, element: <ScenarioListPage /> },
+            { path: "create", element: <ScenarioFormPage mode="create" /> },
+            { path: "create/yaml", element: <ScenarioYamlPage mode="create" /> },
+            { path: ":scenarioId", element: <ScenarioDetailPage /> },
+            { path: ":scenarioId/edit", element: <ScenarioFormPage mode="edit" /> },
+            { path: ":scenarioId/editor", element: <ScenarioYamlPage mode="edit" /> },
           ],
         },
         { path: "*", element: <NotFoundPage /> },
