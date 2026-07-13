@@ -72,11 +72,31 @@ def test_published_records_validate_against_published_schema() -> None:
 
 
 def test_published_bundle_drops_settings_model_class() -> None:
-    aws = build_contract_artifact()["backends"]["aws"]
+    backends = build_contract_artifact()["backends"]
+    aws = backends["aws"]
+    # The Python class is never serialized; it is projected to ``settings_schema``.
     assert "settings_model" not in aws
-    assert aws["settings_schema"] is None  # provisional aws bundle has no settings model
+    # AWS is migrated (#728): its closed settings model publishes as a JSON schema object.
+    assert isinstance(aws["settings_schema"], dict)
+    assert "region" in aws["settings_schema"].get("properties", {})
+    # GCP is still provisional (no settings model), so its settings_schema is null.
+    gcp = backends["gcp"]
+    assert "settings_model" not in gcp
+    assert gcp["settings_schema"] is None
     assert aws["supported_profiles"] == sorted(aws["supported_profiles"])
     assert aws["capabilities"] == sorted(aws["capabilities"])
+
+
+def test_published_aws_settings_schema_enforces_the_region_grammar() -> None:
+    # #728: the runtime region grammar (AwsSettings) must also be expressed in the
+    # *published* schema. If it were enforced only by a @field_validator, the published
+    # artifact would permit any string and a downstream consumer validating against it
+    # would accept a region that load_root_config rejects (boundary-contract gap).
+    settings_schema = build_contract_artifact()["backends"]["aws"]["settings_schema"]
+    validator = jsonschema.Draft202012Validator(settings_schema)
+    assert list(validator.iter_errors({"region": "us-east-2"})) == []
+    # The same malformed region the runtime rejects must fail against the published schema.
+    assert list(validator.iter_errors({"region": "US_EAST_2"}))
 
 
 def test_published_bundle_emits_settings_schema_when_model_present() -> None:
