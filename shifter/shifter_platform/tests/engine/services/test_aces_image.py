@@ -82,10 +82,9 @@ class TestValidation:
             upsert_aces_image_mapping(provider="gce", source_name="kali", image_ref="")
 
     def test_rejects_non_positive_disk_size(self):
+        options = AcesImageMappingOptions(disk_size_gb=0)
         with pytest.raises(AcesImageMappingError):
-            upsert_aces_image_mapping(
-                provider="gce", source_name="kali", image_ref="img", options=AcesImageMappingOptions(disk_size_gb=0)
-            )
+            upsert_aces_image_mapping(provider="gce", source_name="kali", image_ref="img", options=options)
 
 
 class TestList:
