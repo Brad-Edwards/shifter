@@ -165,7 +165,7 @@ output "packer_build_service_account_email" {
 }
 
 output "range_host_service_account_email" {
-  description = "GCE range host SA email; set GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL to this for a same-project range cell."
+  description = "GCE range host SA email for hosts that need cloud APIs; set GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL for a same-project range cell."
   value       = module.platform_core.range_host_service_account_email
 }
 

@@ -29,7 +29,7 @@ def _plan() -> dict:
     }
 
 
-def _instance(*, os_type: str = "kali") -> dict:
+def _instance(*, os_type: str = "kali", attach_service_account: bool = True) -> dict:
     return {
         "resource_name": "shifter-r-42-kali",
         "address_name": "shifter-r-42-kali-ip",
@@ -46,6 +46,7 @@ def _instance(*, os_type: str = "kali") -> dict:
             disk_size_gb=80,
             disk_type="pd-ssd",
         ),
+        "attach_service_account": attach_service_account,
     }
 
 
@@ -148,6 +149,7 @@ class TestInstanceResource:
         assert body["labels"]["range"] == "shifter-range-42"
         assert body["tags"] == {"items": ["shifter-range-42", "shifter-range-42-polaris"]}
         assert body["network_interfaces"][0]["network_i_p"] == "10.50.2.4"
+        assert "access_configs" not in body["network_interfaces"][0]
         disk = body["disks"][0]["initialize_params"]
         assert disk["source_image"] == "projects/kali/global/images/kali"
         assert disk["disk_size_gb"] == 80
@@ -198,3 +200,13 @@ class TestInstanceResource:
         assert HOST_PUBLIC_KEY_METADATA_KEY not in meta
         assert "startup-script" not in meta
         assert meta["ssh-keys"] == "ubuntu:ssh-ed25519 AAAAkey"
+
+    def test_configured_service_account_is_omitted_when_guest_does_not_need_cloud_apis(self):
+        body = instance_resource(
+            _plan(),
+            _instance(attach_service_account=False),
+            _config(service_account_email="range-host@test-project.iam.gserviceaccount.com"),
+            ssh_public_key="ssh-ed25519 AAAAkey",
+        )
+
+        assert "service_accounts" not in body

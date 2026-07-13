@@ -115,6 +115,7 @@ class TestInstances:
         assert instance["role"] == "aces-node"
         assert instance["os_type"] == "linux"
         assert instance["profile"].source_image == "projects/x/global/images/kali-1"
+        assert instance["attach_service_account"] is False
 
     def test_count_fans_out_to_distinct_instances_and_ips(self):
         node = _node(count=3)

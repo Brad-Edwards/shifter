@@ -99,6 +99,7 @@ class InstancePlan(TypedDict):
     host_ssh_username: str
     ssh_port: int
     participant_access_channels: list[str]
+    attach_service_account: bool
 
 
 class RangeCellPlan(TypedDict):
@@ -232,6 +233,8 @@ def _firewall_plan(
     """Render the firewall plan for internal range traffic and management."""
     range_tag = _network_tag(range_id)
     subnet_cidrs = [subnet["cidr"] for subnet in subnet_plans]
+    portal_network_cidrs = _validated_boundary_cidrs("portal_network_cidrs", config.portal_network_cidrs)
+    egress_allow_cidrs = _validated_boundary_cidrs("egress_allow_cidrs", config.egress_allow_cidrs)
     firewalls: list[FirewallPlan] = []
     for subnet in subnet_plans:
         firewalls.append(
@@ -244,7 +247,7 @@ def _firewall_plan(
                 "allowed": [{"IPProtocol": "all"}],
             }
         )
-    if config.portal_network_cidrs:
+    if portal_network_cidrs:
         # SSH (participant + native-guest host), RDP, and the Docker-host
         # management sshd port (Polaris host, whose Kali container binds :22).
         mgmt_ports = ["22", "3389"]
@@ -256,7 +259,7 @@ def _firewall_plan(
                 "direction": "INGRESS",
                 "priority": 900,
                 "target_tags": [range_tag],
-                "source_ranges": list(config.portal_network_cidrs),
+                "source_ranges": portal_network_cidrs,
                 "allowed": [{"IPProtocol": "tcp", "ports": mgmt_ports}],
             }
         )
@@ -280,14 +283,14 @@ def _firewall_plan(
             },
         ]
     )
-    if config.egress_allow_cidrs:
+    if egress_allow_cidrs:
         firewalls.append(
             {
                 "name": _short_resource_name("shifter-r", range_id, "egress-allow"),
                 "direction": "EGRESS",
                 "priority": 1100,
                 "target_tags": [range_tag],
-                "destination_ranges": list(config.egress_allow_cidrs),
+                "destination_ranges": egress_allow_cidrs,
                 "allowed": [{"IPProtocol": "all"}],
             }
         )
@@ -309,6 +312,24 @@ def _firewall_plan(
             }
         )
     return firewalls
+
+
+def _validated_boundary_cidrs(field: str, values: tuple[str, ...]) -> list[str]:
+    """Return normalized explicit IPv4 boundary exceptions, rejecting universal allows."""
+    normalized: list[str] = []
+    for value in values:
+        try:
+            network = ipaddress.ip_network(value, strict=True)
+        except ValueError as exc:
+            raise RuntimeError(f"{field} contains an invalid network: {value}") from exc
+        if not isinstance(network, ipaddress.IPv4Network):
+            raise RuntimeError(f"{field} must contain only IPv4 networks")
+        if network.prefixlen == 0:
+            raise RuntimeError(f"{field} must not include 0.0.0.0/0")
+        cidr = str(network)
+        if cidr not in normalized:
+            normalized.append(cidr)
+    return normalized
 
 
 def render_range_cell_plan(

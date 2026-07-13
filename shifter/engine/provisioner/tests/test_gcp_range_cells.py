@@ -17,6 +17,7 @@ from shared.range_cells import (
 )
 
 from config import GCERangeCellConfig, GCERangeImageProfile
+from gcp_range_cell_outputs import InstanceCredentials, instance_output
 from gcp_range_cells import (
     GCEGuestSecretOps,
     GCEVertexCredentialOps,
@@ -357,6 +358,134 @@ def test_render_range_cell_plan_uses_vpc_per_range_and_deterministic_ips():
         "shifter-r-42-egress-internal",
         "shifter-r-42-egress-deny",
     }
+
+
+def test_range_cell_firewalls_do_not_allow_cross_range_private_traffic():
+    first_variables = _variables()
+    second_variables = deepcopy(first_variables)
+    second_variables["operation"]["range_id"] = 43
+    second_variables["network_bindings"][0]["cidr"] = "10.50.3.0/28"
+
+    first = render_range_cell_plan("req-123", first_variables, _sample_config())
+    second = render_range_cell_plan("req-123", second_variables, _sample_config())
+
+    first_allowed = [rule for rule in first["firewalls"] if "allowed" in rule]
+    second_cidr = second["subnets"][0]["cidr"]
+    assert all(second_cidr not in rule.get("source_ranges", []) for rule in first_allowed)
+    assert all(second_cidr not in rule.get("destination_ranges", []) for rule in first_allowed)
+    assert {tag for rule in first["firewalls"] for tag in rule["target_tags"]}.isdisjoint(
+        {tag for rule in second["firewalls"] for tag in rule["target_tags"]}
+    )
+
+
+def test_range_cell_firewalls_are_deterministic_from_cell_identity():
+    variables = _variables()
+    config = dataclasses.replace(_sample_config(), egress_allow_cidrs=("10.60.0.10/32",))
+
+    first = render_range_cell_plan("req-123", variables, config)
+    second = render_range_cell_plan("req-123", deepcopy(variables), config)
+
+    assert first["firewalls"] == second["firewalls"]
+    assert all(rule["target_tags"][0].startswith("shifter-range-42") for rule in first["firewalls"])
+
+
+@pytest.mark.parametrize("field", ["portal_network_cidrs", "egress_allow_cidrs"])
+def test_range_cell_firewalls_reject_universal_allow_cidrs(field):
+    config = dataclasses.replace(_sample_config(), **{field: ("0.0.0.0/0",)})
+    variables = _variables()
+
+    with pytest.raises(RuntimeError, match=r"must not include 0\.0\.0\.0/0"):
+        render_range_cell_plan("req-123", variables, config)
+
+
+@pytest.mark.parametrize(
+    ("field", "cidr", "message"),
+    [
+        ("portal_network_cidrs", "10.40.0.1/20", "invalid network"),
+        ("egress_allow_cidrs", "2001:db8::/64", "only IPv4"),
+    ],
+)
+def test_range_cell_firewalls_reject_malformed_boundary_cidrs(field, cidr, message):
+    config = dataclasses.replace(_sample_config(), **{field: (cidr,)})
+    variables = _variables()
+
+    with pytest.raises(RuntimeError, match=message):
+        render_range_cell_plan("req-123", variables, config)
+
+
+def test_range_cell_firewalls_deduplicate_explicit_egress_cidrs():
+    config = dataclasses.replace(_sample_config(), egress_allow_cidrs=("10.60.0.0/24", "10.60.0.0/24"))
+
+    plan = render_range_cell_plan("req-123", _variables(), config)
+    egress = next(rule for rule in plan["firewalls"] if rule["name"].endswith("-egress-allow"))
+
+    assert egress["destination_ranges"] == ["10.60.0.0/24"]
+
+
+def test_range_cell_rule_count_is_bounded_per_cell_not_per_instance():
+    payload = _scenario_payload()
+    base_instances = payload["subnets"][0]["instances"]
+    payload["subnets"][0]["instances"] = [deepcopy(base_instances[index % 2]) for index in range(50)]
+    for index, instance in enumerate(payload["subnets"][0]["instances"]):
+        instance["uuid"] = f"instance-{index}"
+        instance["name"] = f"guest-{index}"
+    payload["participant_access"] = []
+
+    plan = render_range_cell_plan(
+        "req-123",
+        _variables(payload=payload, bindings=[{"subnet_ref": "subnet-uuid", "cidr": "10.50.2.0/24"}]),
+        _sample_config(),
+    )
+
+    assert len(plan["instances"]) == 50
+    assert len(plan["firewalls"]) == len(plan["subnets"]) + 3
+
+
+def test_base_firewall_templates_stay_at_three_rules_for_101_single_subnet_cells():
+    config = dataclasses.replace(_shared_vpc_config(), portal_network_cidrs=())
+    names: set[str] = set()
+    rule_count = 0
+    for offset in range(101):
+        variables = _variables()
+        variables["operation"]["range_id"] = offset + 1
+        variables["network_bindings"][0]["cidr"] = f"10.50.{offset // 16}.{(offset % 16) * 16}/28"
+        firewalls = render_range_cell_plan("req-123", variables, config)["firewalls"]
+        rule_count += len(firewalls)
+        names.update(rule["name"] for rule in firewalls)
+
+    assert rule_count == 303
+    assert len(names) == rule_count
+
+
+def test_only_polaris_docker_host_requires_the_host_service_account():
+    payload = _scenario_payload()
+    payload["subnets"][0]["instances"][0]["ami_key"] = "polaris-vm"
+
+    plan = render_range_cell_plan("req-123", _variables(payload=payload), _sample_config())
+    by_name = {instance["name"]: instance for instance in plan["instances"]}
+
+    assert by_name["kali"]["attach_service_account"] is True
+    assert by_name["dc01"]["attach_service_account"] is False
+
+
+def test_instance_output_reports_service_account_only_for_polaris_host():
+    payload = _scenario_payload()
+    payload["subnets"][0]["instances"][0]["ami_key"] = "polaris-vm"
+    config = _sample_config()
+    plan = render_range_cell_plan("req-123", _variables(payload=payload), config)
+    by_name = {instance["name"]: instance for instance in plan["instances"]}
+    credentials = InstanceCredentials(
+        host_ssh_secret_ref="projects/test/secrets/host-ssh",
+        participant_ssh_secret_ref=None,
+        rdp_password_secret_ref=None,
+        ssh_public_key="ssh-ed25519 HOST",
+    )
+
+    host_output = instance_output(plan, by_name["kali"], credentials, config)
+    native_output = instance_output(plan, by_name["dc01"], credentials, config)
+
+    assert host_output["gcp_service_account_email"] == config.service_account_email
+    assert native_output["gcp_service_account_email"] == ""
 
 
 def test_render_plan_destroy_tolerates_missing_subnet_cidr():
@@ -836,7 +965,7 @@ def test_apply_range_cell_is_idempotent_when_resources_exist(mocker):
                 "gcp_instance_name": "shifter-r-42-polaris-kali",
                 "gcp_address_name": "shifter-r-42-polaris-kali-ip",
                 "gcp_network_tags": ["shifter-range-42", "shifter-range-42-polaris", "shifter-role-attacker"],
-                "gcp_service_account_email": "range-host@test-project.iam.gserviceaccount.com",
+                "gcp_service_account_email": "",
                 "rdp_password_secret_arn": "projects/test/secrets/rdp",
                 "gcp_bootstrap_rdp_password_secret_ref": "projects/test/secrets/rdp",
             },
@@ -866,7 +995,7 @@ def test_apply_range_cell_is_idempotent_when_resources_exist(mocker):
                 "gcp_instance_name": "shifter-r-42-polaris-dc01",
                 "gcp_address_name": "shifter-r-42-polaris-dc01-ip",
                 "gcp_network_tags": ["shifter-range-42", "shifter-range-42-polaris", "shifter-role-dc"],
-                "gcp_service_account_email": "range-host@test-project.iam.gserviceaccount.com",
+                "gcp_service_account_email": "",
             },
         ],
     }
