@@ -18,7 +18,7 @@ log() {
   echo "shifter-validate: $*"
   return 0
 }
-fail() {
+fail() { # NOSONAR - terminates the script; an explicit return does not apply
   echo "shifter-validate: FAIL $*" >&2
   exit 1
 }
