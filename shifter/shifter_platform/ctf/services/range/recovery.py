@@ -17,15 +17,11 @@ partway through never re-runs an already-completed step or duplicates the
 replacement range or the audit row.
 
 Both strategies block the old range before attaching the replacement, because
-CMS admits only one active range per source per user (issue #450's
-``_assert_no_active_range``, hardened into a DB constraint by #307). ``rebuild``
-must block first so the same-user rebuild does not collide with the still-active
-old range; ``reassign_spare`` likewise blocks first because the DB constraint now
-rejects the transient two-active window its former reassign-first ordering relied
-on. To keep #1018's guarantee that a missing spare never strands the participant,
+CMS admits only one active range per source per user (#450's
+``_assert_no_active_range``, hardened into a DB constraint by #307). So
 ``reassign_spare`` durably reserves a compatible spare (an atomic ``FOR UPDATE``
-claim that a competing recovery cannot take) before tearing down the old range,
-and moves its ownership only after teardown.
+claim a competing recovery cannot take) before teardown -- keeping #1018's
+no-stranding guarantee -- and moves ownership only after the old range is blocked.
 """
 
 from __future__ import annotations
@@ -194,28 +190,16 @@ def _rebuild_replacement(participant: CTFParticipant) -> tuple[int, UUID]:
 def _claim_spare(participant: CTFParticipant, spare_range_instance_id: int | None) -> CTFSpareRange | None:
     """Durably reserve a compatible spare from the participant's event pool, or `None`.
 
-    Selects a READY, unconsumed spare ``FOR UPDATE`` and marks it CONSUMED so a
-    concurrent recovery cannot claim the same one. A query-only availability
-    check races (#307 review): a competitor can consume the spare between the
-    check and the ownership move, after this recovery has already destroyed the
-    old range, stranding the participant. The atomic claim closes that window.
-
-    Ownership is NOT moved here -- attaching the spare to the participant before
-    the old range is blocked would give them a second active same-source range,
-    which the #307 constraint forbids. :func:`_ensure_spare_attached` moves
-    ownership after teardown.
-
-    MUST be called within the caller's ``transaction.atomic()`` (it uses
-    ``select_for_update``): :func:`_ensure_spare_reserved` wraps this claim and
-    the recovery-pointer write in one transaction so a crash can never leave a
-    spare CONSUMED with no durable pointer recording the claim.
-
-    Tenant isolation and scenario compatibility are event-scoped: the
-    ``CTFSpareRange.event`` FK is the boundary (a spare from another event can
-    never satisfy this query, even when named by ``spare_range_instance_id``),
-    and spares are provisioned per event with ``event.scenario_id``. A spare
-    whose local ``status`` lags the live CMS READY state is confirmed via the
-    bridge before it is claimed.
+    Selects a READY, unconsumed, event-scoped spare ``FOR UPDATE`` and marks it
+    CONSUMED so a concurrent recovery cannot take it -- a query-only check would
+    race (a competitor could consume it between check and attach, after this
+    recovery destroyed the old range, stranding the participant, #307 review).
+    Event scoping (the ``CTFSpareRange.event`` FK) is the tenant boundary even
+    for an explicitly named spare; a stale-local-status spare is confirmed
+    live-READY via the bridge first. Ownership moves later, in
+    :func:`_ensure_spare_attached` (after teardown), per the #307 constraint.
+    MUST run inside the caller's transaction (``select_for_update``);
+    :func:`_ensure_spare_reserved` wraps this claim and the pointer write atomically.
     """
     from ctf.bridges import cms_get_range_status
 
@@ -249,18 +233,13 @@ def _ensure_spare_reserved(
 ) -> None:
     """Reserve the replacement spare before any teardown (idempotent).
 
-    Records the claimed spare's ``RangeInstance`` id on the recovery so a resume
-    reuses the same reserved spare rather than claiming a second one. Raising
-    here (no compatible spare) happens BEFORE the old range is blocked, so a
-    missing spare never strands the participant with a destroyed old range and no
-    replacement (#1018 guarantee, preserved under the #307 block-first order).
+    Records the claimed spare id (a resume reuses it). Raising (no spare) happens
+    BEFORE teardown, so a missing spare never strands the participant (#1018).
     """
     if recovery.replacement_range_instance_id is not None:
         return
-    # Claim the spare and record the pointer in ONE transaction: if the process
-    # dies between the two, both roll back, so a spare is never left CONSUMED
-    # without a durable recovery pointer (which would leak pool capacity and let
-    # a retry claim a second spare, breaking data-driven idempotency).
+    # Claim + record the pointer in ONE transaction: a crash between them rolls
+    # both back, so a spare is never CONSUMED without a durable recovery pointer.
     with transaction.atomic():
         spare = _claim_spare(participant, spare_range_instance_id)
         if spare is None:
@@ -275,13 +254,10 @@ def _ensure_spare_reserved(
 
 
 def _ensure_spare_attached(recovery: CTFRangeRecovery, participant: CTFParticipant) -> None:
-    """Attach the reserved spare to the participant after the old range is blocked (idempotent).
+    """Attach the reserved spare after the old range is blocked (idempotent, #307).
 
-    Runs only once the old range has left the active slot, so moving the
-    reserved spare's CMS/engine ownership to the participant satisfies the #307
-    one-active-range-per-source invariant. ``cms_reassign_range_owner`` is a
-    no-op when the participant already owns the range (resume safe), and the
-    freed managed spare user is deleted once.
+    ``cms_reassign_range_owner`` is a no-op when already owned (resume safe);
+    the freed managed spare user is deleted once.
     """
     from ctf.bridges import cms_reassign_range_owner
     from ctf.services.range.spares import delete_managed_spare_user
@@ -308,15 +284,12 @@ def _ensure_spare_attached(recovery: CTFRangeRecovery, participant: CTFParticipa
 
 
 def _ensure_rebuild_replacement_ready(recovery: CTFRangeRecovery, participant: CTFParticipant) -> None:
-    """Provision a fresh rebuild replacement range (idempotent).
+    """Provision a fresh rebuild replacement range (idempotent; rebuild-only).
 
-    Rebuild-only: reassign_spare reserves its replacement via
-    :func:`_ensure_spare_reserved` before teardown. Idempotency is data-driven:
-    skip once a replacement id is already recorded.
+    reassign_spare reserves via :func:`_ensure_spare_reserved` before teardown.
     """
     if recovery.replacement_range_instance_id is not None:
         return
-
     replacement_id, replacement_request_id = _rebuild_replacement(participant)
 
     recovery.replacement_range_instance_id = replacement_id
@@ -356,8 +329,7 @@ def _ensure_participant_repointed(participant: CTFParticipant, recovery: CTFRang
 
     replacement_id = recovery.replacement_range_instance_id
     if replacement_id is None:
-        # The replacement id is recorded first -- by _ensure_spare_reserved
-        # (reassign_spare) or _ensure_rebuild_replacement_ready (rebuild).
+        # The replacement id is recorded first (reserve / rebuild-ready step).
         raise _range_error(
             "Replacement range id missing during repoint",
             category=RecoveryFailureCategory.INTERNAL_ERROR,
@@ -485,18 +457,13 @@ def recover_participant_range(
         return _recovery_result(recovery)
 
     try:
-        # Both strategies block the old range before attaching the replacement:
-        # CMS admits only one active range per source per user (#450, now a DB
-        # constraint under #307), so the old range must leave the active slot
-        # before a same-user range takes it.
+        # Both strategies block the old range before attaching the replacement
+        # (#307 one-active-range-per-source; see the module docstring).
         if strategy == RecoveryStrategy.REBUILD.value:
             _ensure_old_range_blocked(recovery, old_range_instance_id, _participant_user(participant))
             _ensure_rebuild_replacement_ready(recovery, participant)
         else:
-            # reassign_spare: durably reserve the spare BEFORE teardown so a
-            # missing spare fails without stranding the participant, block the
-            # old range to free the one-active-range-per-source slot, then move
-            # the reserved spare's ownership to the participant.
+            # reassign_spare reserves the spare before teardown (no stranding).
             _ensure_spare_reserved(recovery, participant, spare_range_instance_id)
             _ensure_old_range_blocked(recovery, old_range_instance_id, _participant_user(participant))
             _ensure_spare_attached(recovery, participant)

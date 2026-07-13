@@ -423,6 +423,7 @@ def create_range(
         range_spec = hydrate_scenario(scenario, user.id, agents)
 
         def _persist(cms_request: Request) -> RangeInstance:
+            """Build the RangeInstance for the reservation from the hydrated spec."""
             return _persist_range_instance_record(cms_request, scenario, user, agents, range_spec, range_source)
 
         request_id, _cms_request, range_instance = _reserve_active_range_slot(user, range_source, _persist)

@@ -154,6 +154,7 @@ def create_aces_native_range(user: User, scenario: str, *, range_source: RangeSo
     source = _load_aces_source_or_raise(scenario)
 
     def _persist(cms_request: Request) -> RangeInstance:
+        """Build the ACES RangeInstance (range_spec=None) for the reservation."""
         return RangeInstance.objects.create(
             request=cms_request,
             scenario_id=scenario,
