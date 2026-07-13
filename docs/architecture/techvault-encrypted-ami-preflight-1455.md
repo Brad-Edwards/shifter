@@ -11,6 +11,16 @@ This requirement-free issue is governed by the GitHub issue. This note records
 the architecture boundary and guardrails only; it is not an implementation
 plan.
 
+> **Note (#1469, 2026-07-13):** the TechVault bake was migrated to Packer
+> (`shifter/packer/techvault.pkr.hcl`, dispatched via
+> `.github/workflows/packer.yml` `ami_type=techvault`; the hand-rolled
+> `techvault-scenario-bake.yml` is deleted). This note's "replace the bake with
+> Packer" non-goal was scoped to #1455; #1469 is the issue that performed that
+> migration. The encryption boundary below is unchanged and still binding: the
+> bake verifies every EBS mapping is encrypted (`scripts/bake/verify-encrypted-ami.sh`)
+> before publishing `/shifter/ami/techvault`, and the provisioner
+> `ec2:Encrypted=true` gate is preserved.
+
 ## Boundary And Decision
 
 Keep the range provisioner's encrypted-root-volume IAM condition as the

@@ -173,6 +173,27 @@ resource "aws_iam_policy" "compute" {
         Resource = "*"
       },
       {
+        # Packer's amazon-ebs SSM communicator (ssh_interface = "session_manager",
+        # used by the no-inbound techvault / polaris-vm scenario bakes) opens an
+        # SSH-over-SSM tunnel to the EC2 builder via the AWS-StartSSHSession
+        # document. The management policy's SSMRunCommand grant covers SendCommand
+        # but not StartSession, so the scenario bakes fail with AccessDenied
+        # without this. Lives in the compute policy (it targets EC2 build hosts)
+        # to keep the management managed-policy under the 6144-char limit (#254).
+        Sid    = "SSMSessionManagerForPackerBuilds"
+        Effect = "Allow"
+        Action = [
+          "ssm:StartSession",
+          "ssm:TerminateSession",
+          "ssm:ResumeSession"
+        ]
+        Resource = [
+          "arn:aws:ec2:${var.aws_region}:${data.aws_caller_identity.current.account_id}:instance/*",
+          "arn:aws:ssm:${var.aws_region}::document/AWS-StartSSHSession",
+          "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:session/*"
+        ]
+      },
+      {
         Sid    = "AutoScaling"
         Effect = "Allow"
         Action = [
