@@ -14,8 +14,14 @@
 #   MGMT_SSH_PORT        polaris-vm host management sshd port (default 2222)
 set -uo pipefail
 
-log() { echo "shifter-validate: $*"; }
-fail() { echo "shifter-validate: FAIL $*" >&2; exit 1; }
+log() {
+  echo "shifter-validate: $*"
+  return 0
+}
+fail() {
+  echo "shifter-validate: FAIL $*" >&2
+  exit 1
+}
 
 IMAGE_TYPE="${VALIDATE_IMAGE_TYPE:-}"
 MGMT_SSH_PORT="${MGMT_SSH_PORT:-2222}"

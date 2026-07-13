@@ -30,7 +30,10 @@ SSH_KEY="${SSH_KEY:-}"
 SSH_USER="${SSH_USER:-validator}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-log() { echo "gather-evidence: $*"; }
+log() {
+  echo "gather-evidence: $*"
+  return 0
+}
 
 if [[ "${IMAGE_TYPE}" == "dc-prebaked" ]]; then
   REMOTE_PORT="${LDAP_PORT}"
@@ -48,7 +51,10 @@ gcloud compute start-iap-tunnel "${VM}" "${REMOTE_PORT}" \
 TUNNEL_PID=$!
 # Invoked indirectly via `trap ... EXIT`.
 # shellcheck disable=SC2329
-cleanup() { kill "${TUNNEL_PID}" 2>/dev/null || true; }
+cleanup() {
+  kill "${TUNNEL_PID}" 2>/dev/null || true
+  return 0
+}
 trap cleanup EXIT
 
 # Wait for the tunnel's local port to accept connections (VM boot + tunnel).
@@ -61,18 +67,18 @@ for _ in $(seq 1 60); do
   sleep 10
 done
 if [[ "${tunnel_up}" -ne 1 ]]; then
-  echo "::error::IAP tunnel to ${VM}:${REMOTE_PORT} never became reachable"
+  echo "::error::IAP tunnel to ${VM}:${REMOTE_PORT} never became reachable" >&2
   exit 1
 fi
 log "tunnel reachable"
 
 if [[ "${IMAGE_TYPE}" == "dc-prebaked" ]]; then
   # Runner-side AD probe; retry while AD DS finishes coming up after boot.
-  command -v ldapsearch >/dev/null 2>&1 || { echo "::error::ldapsearch not installed on the runner"; exit 1; }
+  command -v ldapsearch >/dev/null 2>&1 || { echo "::error::ldapsearch not installed on the runner" >&2; exit 1; }
   # A dc-prebaked validation MUST prove a specific forest identity; refuse when
   # the expected domain was not resolved (#1343 codex Sec F2).
   if [[ -z "${EXPECTED_DOMAIN}" ]]; then
-    echo "::error::no expected domain resolved for the DC profile; refusing to validate an unbound forest"
+    echo "::error::no expected domain resolved for the DC profile; refusing to validate an unbound forest" >&2
     exit 1
   fi
   # rc stays non-zero unless a probe actually SUCCEEDS. Do NOT read $? after the
@@ -93,7 +99,7 @@ fi
 # Linux: SSH-execute the check script; the runner gates on its exit code. Retry
 # ONLY on ssh connection errors (255) while the guest finishes booting; a script
 # that ran and failed is a real, immediate failure.
-[[ -n "${SSH_KEY}" ]] || { echo "::error::SSH_KEY not provided for Linux validation"; exit 1; }
+[[ -n "${SSH_KEY}" ]] || { echo "::error::SSH_KEY not provided for Linux validation" >&2; exit 1; }
 rc=255
 for _ in $(seq 1 40); do
   ssh -i "${SSH_KEY}" -p "${LPORT}" \

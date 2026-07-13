@@ -17,8 +17,14 @@
 #                    (#1343 codex Sec F2).
 set -uo pipefail
 
-log() { echo "shifter-validate: $*"; }
-fail() { echo "shifter-validate: FAIL $*" >&2; exit 1; }
+log() {
+  echo "shifter-validate: $*"
+  return 0
+}
+fail() {
+  echo "shifter-validate: FAIL $*" >&2
+  exit 1
+}
 
 LDAP_HOST="${LDAP_HOST:-localhost:389}"
 EXPECTED_DOMAIN="${EXPECTED_DOMAIN:-}"
