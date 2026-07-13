@@ -588,6 +588,11 @@
         "id": "ADR-011-R7",
         "description": "AWS deploy workflows whose committed terraform.tfvars is an example.com baseline must render the deployment-owned override from GitHub Actions secrets into a gitignored local.auto.tfvars before terraform init/validate/plan/apply. Committed AWS terraform.tfvars files remain non-operational example baselines; the render step fails loud when the active environment's secret is missing.",
         "checks": ["aws-platform-renders-deploy-tfvars"]
+      },
+      {
+        "id": "ADR-011-R8",
+        "description": "The backend-bundle contract is published as a committed, versioned artifact generated from the Pydantic contract and registry (shifter/installation/published_contract/), never hand-maintained. The published JSON schema encodes the contract's security-relevant validators (identifier grammars, safe argv tokens, repository-relative paths, the secret-value destination rule) and installation.validate_published_bundle is the parity-complete portable validator that additionally enforces the cross-collection invariants JSON Schema cannot express, so a bundle a downstream author validates cannot pass while the internal contract would reject it. The installation test lane fails on drift between the artifact and the code, on a backward-incompatible change anywhere on the published validation surface (bundle schema or a backend settings schema) that lacks a contract_version bump plus a migration note, and on a published backend that does not validate against the published schema. Published per-version snapshots (backend-bundle-contract.v<N>.json) are append-only: the published-contract-snapshots-immutable adr_guard check rejects modifying or deleting a snapshot already published on the base branch, and fails closed (ADR_GUARD_SNAPSHOT_ENFORCE) in the CI lane that fetches base history. The published contract_version is independent of RootConfig.version and the installation package version.",
+        "checks": ["published-contract-snapshots-immutable"]
       }
     ],
     "exceptions": [],
@@ -601,6 +606,9 @@
       "shifter/installation/schema.py",
       "shifter/installation/contract.py",
       "shifter/installation/registry.py",
+      "shifter/installation/publication.py",
+      "shifter/installation/published_contract/backend-bundle-contract.json",
+      "shifter/installation/published_contract/MIGRATIONS.md",
       "shifter/installation/README.md",
       "shifter/shifter_platform/shared/cloud/__init__.py",
       "shifter/engine/provisioner/cloud/__init__.py",

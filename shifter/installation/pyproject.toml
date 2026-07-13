@@ -8,6 +8,7 @@ version = "0.2.0"
 description = "Root installation config and backend bundle contract for Shifter OSS deployments"
 requires-python = ">=3.12"
 dependencies = [
+    "jsonschema>=4.0",
     "pydantic>=2.0",
     "pyyaml>=6.0",
 ]

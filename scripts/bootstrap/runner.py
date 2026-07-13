@@ -325,37 +325,64 @@ def _registration_script(target: RunnerTarget, token: str) -> list[str]:
     Security handling of the token (per the #1433 preflight and #1222 guardrail):
 
     - Shell tracing is disabled (`set +x`) so nothing is echoed to the SSM output
-      stream.
-    - The token is written to a root-owned 0600 temp file and fed to `config.sh`
-      over **stdin** — it is never a `config.sh` command-line argument, so it
-      cannot be read from `/proc/<pid>/cmdline` during registration. All other
-      prompts are suppressed by explicit flags so only the token prompt consumes
-      stdin. `config.sh` runs interactively (no `--unattended`) precisely so it
-      reads the token from stdin instead of argv.
-    - The temp file is deleted before the service starts.
+      stream, and a trap removes both temp files on any exit so the token file
+      never lingers on the host.
+    - The token is written to a root-owned 0600 temp file and read *inside*
+      `expect`; it is never a `config.sh` (or `expect`) command-line argument, so
+      it cannot be read from `/proc/<pid>/cmdline` during registration.
+    - `config.sh` reads its registration-token prompt through a console-only
+      masked reader — it fails with "Cannot read keys ... console input has been
+      redirected" when stdin is a pipe/file — so registration runs it under a PTY
+      via `expect`, which waits for the token prompt before sending the token read
+      from the file. Every other prompt is suppressed by explicit flags. This
+      keeps the token off argv without resorting to `--unattended --token`, which
+      would place the token on `config.sh`'s command line (forbidden by #1433).
 
     The token still rides inside the SSM command body (the accepted send-command
     residual), but never in Terraform, user data, a persistent secret store, or
     operator logs (the JSON blob is masked whole by the run_cmd redactor).
     `.runner` / `.credentials` are the only long-lived result.
     """
-    config_cmd = (
-        f"sudo -u ec2-user ./config.sh --url {target.repo_url} "
-        f"--name {target.runner_name} --labels {target.all_labels} "
-        f'--work {target.work_folder} --runnergroup Default --replace < "$TOKFILE"'
+    # config.sh gets no --token: expect sends the token over the PTY at the
+    # prompt. Tcl `$token`/`$argv`/`$result` stay literal; only the target values
+    # are interpolated. `$argv` is the token-file path, not the token itself.
+    config_args = (
+        f"--url {target.repo_url} --name {target.runner_name} "
+        f"--labels {target.all_labels} --work {target.work_folder} "
+        "--runnergroup Default --replace"
     )
+    expect_script = f"""set timeout 300
+set fh [open [lindex $argv 0] r]
+set token [string trim [read $fh]]
+close $fh
+spawn -noecho sudo -u ec2-user ./config.sh {config_args}
+expect {{
+    -re {{(?i)token}} {{ send -- "$token\\r" }}
+    timeout {{ send_user "expect: timed out waiting for the token prompt\\n"; exit 2 }}
+    eof {{ send_user "expect: config.sh exited before the token prompt\\n"; exit 3 }}
+}}
+expect eof
+catch wait result
+exit [lindex $result 3]"""
     return [
         "set -euo pipefail",
         "set +x",
         f"cd {RUNNER_HOME}",
         "umask 077",
         'TOKFILE="$(mktemp /root/.ghrunner-reg.XXXXXX)"',
-        # Quoted heredoc delimiter: the token is written literally, not expanded.
+        'EXPECTFILE="$(mktemp /root/.ghrunner-exp.XXXXXX)"',
+        # Remove both temp files on any exit so the token file never lingers.
+        'trap \'rm -f "$TOKFILE" "$EXPECTFILE"\' EXIT',
+        # Quoted heredoc delimiters: contents are written literally, not expanded.
         "cat > \"$TOKFILE\" <<'GHTOKEN'",
         token,
         "GHTOKEN",
-        config_cmd,
-        'rm -f "$TOKFILE"',
+        "cat > \"$EXPECTFILE\" <<'GHEXPECT'",
+        *expect_script.split("\n"),
+        "GHEXPECT",
+        # expect argv is the script path + the token-file path; the token itself
+        # is never an argument (it is read from the file inside expect).
+        'expect "$EXPECTFILE" "$TOKFILE"',
         "sudo ./svc.sh install ec2-user",
         "sudo ./svc.sh start",
     ]

@@ -18,6 +18,11 @@ hand-copied into a second gitignored allowlist (ADR-017-R4).
 ``cloud_provider`` Terraform tfvar, so the runtime cloud-provider identity is derived
 from the validated installation config rather than hardcoded or inferred from a branch
 name.
+
+``contract`` (#1323) exports and checks the published, versioned backend-bundle contract
+artifact: ``contract export`` regenerates the committed artifact from the Pydantic contract
+and registry, and ``contract check`` runs the drift, breaking-change, and registry-
+conformance gates (also enforced in the ``installation`` test lane).
 """
 
 from __future__ import annotations
@@ -28,6 +33,13 @@ from pathlib import Path
 
 from .errors import InstallationConfigError
 from .loader import load_root_config
+from .publication import (
+    ARTIFACT_PATH,
+    build_contract_artifact,
+    check_publication,
+    serialize_artifact,
+    version_snapshot_path,
+)
 from .render import render_cloud_provider_tfvars, render_tfvars
 from .runtime_inventory import RUNTIME_SURFACES, validate_runtime_inventory
 
@@ -119,7 +131,46 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Validate tracked runtime env files against the inventory.",
     )
+    _add_contract_parser(subcommands)
     return parser
+
+
+def _add_contract_parser(subcommands: argparse._SubParsersAction) -> None:
+    """Wire the ``contract export`` / ``contract check`` subcommands."""
+    contract = subcommands.add_parser(
+        "contract",
+        help="Export or check the published, versioned backend-bundle contract artifact.",
+        description=(
+            "Publish the backend-bundle contract as a committed, versioned artifact generated "
+            "from the Pydantic contract and registry, and check it for drift, unversioned "
+            "breaking changes, and registry conformance."
+        ),
+    )
+    contract_sub = contract.add_subparsers(dest="contract_command", metavar="<subcommand>")
+    export = contract_sub.add_parser(
+        "export",
+        help="Regenerate the published contract artifact from the code.",
+        description=(
+            "Generate the canonical backend-bundle contract artifact from the Pydantic contract "
+            "and registry and write it to the committed artifact path (or --output)."
+        ),
+    )
+    export.add_argument(
+        "--output",
+        "-o",
+        metavar="FILE",
+        default=None,
+        help="Write the artifact to FILE (default: the committed contract artifact path).",
+    )
+    contract_sub.add_parser(
+        "check",
+        help="Check the published contract for drift, breaking changes, and registry conformance.",
+        description=(
+            "Fail (exit 1) when the committed artifact is out of date with the code, when the "
+            "contract changed incompatibly without a version bump and migration note, or when a "
+            "registered backend does not validate against the published version."
+        ),
+    )
 
 
 def _cmd_validate(path_str: str) -> int:
@@ -202,6 +253,54 @@ def _cmd_runtime_inventory(repo_root_str: str, *, check: bool) -> int:
     return 0
 
 
+def _cmd_contract_export(output: str | None) -> int:
+    """Write the generated contract artifact, and freeze the current version's snapshot if new.
+
+    Writing to a custom ``--output`` only emits the artifact. Writing to the default path also
+    mints the frozen per-version snapshot the first time a contract version is published; it
+    never overwrites an existing snapshot, so a published version's shape stays immutable.
+    """
+    artifact = build_contract_artifact()
+    rendered = serialize_artifact(artifact)
+    destination = Path(output) if output is not None else ARTIFACT_PATH
+    try:
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text(rendered, encoding="utf-8")
+        if output is None:
+            snapshot = version_snapshot_path(artifact["contract_version"])
+            if not snapshot.exists():
+                snapshot.write_text(rendered, encoding="utf-8")
+                print(f"{snapshot}: froze contract version {artifact['contract_version']} snapshot.", file=sys.stderr)
+    except (OSError, ValueError) as exc:
+        detail = getattr(exc, "strerror", None) or str(exc)
+        print(f"{output or destination}: could not write contract artifact: {detail}", file=sys.stderr)
+        return 1
+    print(f"{destination}: wrote backend-bundle contract artifact.", file=sys.stderr)
+    return 0
+
+
+def _cmd_contract_check() -> int:
+    """Run the drift, breaking-change, and registry-conformance gates."""
+    issues = check_publication()
+    if issues:
+        print("backend-bundle contract check failed:", file=sys.stderr)
+        for issue in issues:
+            print(f"  - {issue.render()}", file=sys.stderr)
+        return 1
+    print("backend-bundle contract: OK — artifact current, compatible, and conformant")
+    return 0
+
+
+def _cmd_contract(contract_command: str | None, output: str | None, parser: argparse.ArgumentParser) -> int:
+    """Dispatch the ``contract`` subcommand."""
+    if contract_command == "export":
+        return _cmd_contract_export(output)
+    if contract_command == "check":
+        return _cmd_contract_check()
+    parser.print_help(sys.stderr)
+    return 2
+
+
 def main(argv: list[str] | None = None) -> int:
     """Run the shifter-config command-line interface."""
 
@@ -218,6 +317,8 @@ def main(argv: list[str] | None = None) -> int:
         exit_code = _cmd_render_runtime(args.path, args.output)
     elif args.command == "runtime-inventory":
         exit_code = _cmd_runtime_inventory(args.repo_root, check=args.check)
+    elif args.command == "contract":
+        exit_code = _cmd_contract(args.contract_command, getattr(args, "output", None), parser)
     else:
         parser.print_help(sys.stderr)  # pragma: no cover - argparse rejects unknown subcommands first
         exit_code = 2

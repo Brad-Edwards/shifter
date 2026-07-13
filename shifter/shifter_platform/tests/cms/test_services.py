@@ -91,7 +91,10 @@ class TestGetActiveRange:
         assert get_active_range(user) is None
 
     def test_returns_most_recent_active_range(self, user):
-        old = _range_instance(user, range_id=10, request=_request(user))
+        # Only one active range per source exists at a time (#307). A prior range
+        # must be leaving the slot (DESTROYING, excluded from the active query)
+        # before the current one exists; get_active_range returns the active one.
+        old = _range_instance(user, range_id=10, request=_request(user), status=ResourceStatus.DESTROYING.value)
         RangeInstance.objects.filter(pk=old.pk).update(created_at=timezone.now() - timedelta(hours=1))
         _range_instance(user, range_id=11, scenario_id="new", request=_request(user))
 
