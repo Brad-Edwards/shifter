@@ -71,9 +71,16 @@ RUN pip install --no-cache-dir --require-hashes --only-binary :all: -r requireme
 # installation = root installation config) — same pattern as shifter_platform/Dockerfile.
 # `config.resolve_cloud_provider` validates CLOUD_PROVIDER against
 # installation.registry (PLAT-2005), which needs pydantic; pydantic is a declared
-# provisioner runtime dependency (requirements.lock), installed above.
+# provisioner runtime dependency (requirements.lock), installed above. Range-cell
+# consumers use only cyberscript's dependency-light envelope, exception, and digest
+# paths; canonical Pydantic validation runs producer-side before persistence.
 COPY cyberscript /opt/shifter-libs/cyberscript
 COPY installation /opt/shifter-libs/installation
+
+# Dependency-light platform contract used by the standalone GCP range-cell
+# runner. Copy only the package initializer and contract module so the image
+# does not pull in Django or the rest of shifter_platform.
+COPY shifter_platform/shared/__init__.py shifter_platform/shared/range_cells.py /opt/shifter-libs/shared/
 
 # Copy provisioner code as root-owned, immutable image content. The runtime
 # user does NOT own /app — Terraform writes go to TERRAFORM_WORKSPACE_DIR

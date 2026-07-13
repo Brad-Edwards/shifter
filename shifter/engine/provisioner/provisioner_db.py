@@ -403,6 +403,7 @@ def get_range_data_by_request_id(request_id: str) -> dict[str, Any]:
             "range_id": row[1],
             "user_id": user_id,
             "spec": range_config,
+            "spec_envelope": range_config_raw,
             "subnet_index": row[4],
             "status": row[5],
             "ngfw_instance_id": ngfw_instance_id,

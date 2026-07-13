@@ -1381,6 +1381,7 @@
       "https://github.com/Brad-Edwards/shifter/issues/1354",
       "docs/architecture/gdc-windows-dc-image-build.md",
       "docs/architecture/range-isolation-model.md",
+      "docs/architecture/scenario-gcp-range-cell-contract-preflight-1344.md",
       "scripts/polaris-aws-range/ranges.tf",
       "shifter/engine/provisioner/range_terraform_runner.py",
       "shifter/engine/provisioner/gdc_range_networks.py",
@@ -1764,7 +1765,7 @@
       },
       {
         "id": "ADR-039-R2",
-        "description": "Substrate inputs and results are closed and versioned. The port consumes existing validated RequestSpec/RangeSpec or ADR-032 ACES ProvisioningPlan realization intent and must not introduce another scenario/topology schema, public status enum, provider API DTO, event family, repository, validator, or exception hierarchy. Results contain canonical non-secret bindings and a versioned adapter-state reference/projection, never raw provider responses or credential values.",
+        "description": "Substrate inputs and results are closed and versioned. The port carries existing validated RequestSpec/RangeSpec or ADR-032 ACES ProvisioningPlan realization intent plus its immutable digest and must not introduce another scenario/topology schema, universal placement taxonomy, public status enum, provider API DTO, event family, repository, validator, or exception hierarchy. Scenario realization owns internal composition semantics; substrate lifecycle ownership is limited to provider-safe membership, ownership, state, cleanup, and logical access bindings. Results contain canonical non-secret bindings and a versioned adapter-state reference/projection, never raw provider responses or credential values.",
         "checks": []
       },
       {
@@ -1809,6 +1810,7 @@
       "docs/architecture/vm-guest-credential-preflight-762.md",
       "docs/architecture/range-event-delivery-preflight-476.md",
       "docs/architecture/gcp-range-cell-backend-preflight-1341.md",
+      "docs/architecture/scenario-gcp-range-cell-contract-preflight-1344.md",
       "shifter/installation/contract.py",
       "shifter/installation/registry.py",
       "shifter/shifter_platform/engine/ecs.py",

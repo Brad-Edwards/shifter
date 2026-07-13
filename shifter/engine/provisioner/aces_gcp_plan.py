@@ -292,6 +292,9 @@ def _instance_plans_for_node(
                 "ssh_username": _DEFAULT_SSH_USERNAME,
                 "host_ssh_username": _DEFAULT_SSH_USERNAME,
                 "ssh_port": _DEFAULT_SSH_PORT,
+                # ACES account/access realization remains owned by its native
+                # plan and must not inherit legacy scenario access channels.
+                "participant_access_channels": [],
             }
         )
     return plans
