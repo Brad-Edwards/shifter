@@ -204,7 +204,8 @@ _AWS_BUNDLE = BackendBundle(
     # deploy path (.github/workflows/deploy.yml, _core.yml, _range.yml). Admit it explicitly
     # rather than strand a real environment the deploy paths already target (preflight #728).
     supported_profiles=frozenset({"prod", "dev", "proof"}),
-    settings_model=AwsSettings,  # migrated by #1116 / GH #728 (closed operator-intent schema)
+    # Migrated by #1116 / GH #728: the closed operator-intent schema, no longer None.
+    settings_model=AwsSettings,
     required_tools=(
         RequiredTool(name="uv", purpose="run the Shifter installation tooling (shifter-config validate)"),
         RequiredTool(name="terraform", purpose="provision AWS infrastructure (platform/terraform)"),

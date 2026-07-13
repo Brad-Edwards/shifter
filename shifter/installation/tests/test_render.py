@@ -128,8 +128,9 @@ class TestRenderGcp:
         from installation.errors import InstallationConfigError
 
         path = write_config(_gcp({"range_egress": {"mode": "none"}}, gcp_config))
+        config = load_root_config(path)
         with pytest.raises(InstallationConfigError, match="AWS only"):
-            render_tfvars(load_root_config(path))
+            render_tfvars(config)
 
 
 class TestRenderShape:
@@ -138,7 +139,9 @@ class TestRenderShape:
             _aws({"range_egress": {"mode": "allowlist", "allowed_cidrs": ["203.0.113.0/24"]}}, aws_config)
         )
         config = load_root_config(path)
-        assert render_tfvars(config) == render_tfvars(config)
+        first = render_tfvars(config)
+        second = render_tfvars(config)
+        assert first == second
 
     def test_output_carries_generated_header(self, write_config, aws_config):
         path = write_config(_aws({"range_egress": {"mode": "status-quo"}}, aws_config))
@@ -274,7 +277,9 @@ class TestRenderCloudProviderTfvars:
 
     def test_output_is_deterministic(self, examples_dir):
         config = load_root_config(examples_dir / "aws.yaml")
-        assert render_cloud_provider_tfvars(config) == render_cloud_provider_tfvars(config)
+        first = render_cloud_provider_tfvars(config)
+        second = render_cloud_provider_tfvars(config)
+        assert first == second
 
 
 class TestRenderRuntimeCli:
