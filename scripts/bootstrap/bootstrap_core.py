@@ -263,7 +263,7 @@ def run_cmd(
     dry_run: bool = False,
     check: bool = True,
     capture: bool = False,
-    profile: str = None,
+    profile: str | None = None,
 ) -> subprocess.CompletedProcess | None:
     """Run a command, optionally in dry-run mode."""
     # Insert --profile flag for AWS CLI commands

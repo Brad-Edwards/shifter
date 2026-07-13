@@ -234,7 +234,7 @@ class _TaggedHandler(ResourceHandler):
         """Canonical env naming. Override for a resource-specific pattern."""
         return _name_matches_env(name, environment)
 
-    def _finding_identifier(self, name: str, arn: str) -> str:
+    def _finding_identifier(self, name: str, _arn: str) -> str:
         """What to record/delete by. Name for most; overridden to ARN where the
         delete API addresses the resource by ARN (Network Firewall)."""
         return name
@@ -647,18 +647,43 @@ def tenant_is_live(environment: str, profile: str) -> bool:
     except AwsQueryError:
         return True  # cannot confirm -> fail closed
 
+    asg_prefixes = (f"{environment}-portal", f"shifter-{environment}")
     for asg in asgs.get("AutoScalingGroups", []) if isinstance(asgs, dict) else []:
-        name = asg.get("AutoScalingGroupName", "")
-        if (name.startswith(f"{environment}-portal") or name.startswith(f"shifter-{environment}")) and asg.get(
-            "Instances"
-        ):
+        if asg.get("AutoScalingGroupName", "").startswith(asg_prefixes) and asg.get("Instances"):
             return True
 
+    db_prefixes = (f"{environment}-", f"shifter-{environment}")
     for db in dbs.get("DBInstances", []) if isinstance(dbs, dict) else []:
-        ident = db.get("DBInstanceIdentifier", "")
-        if ident.startswith(f"{environment}-") or ident.startswith(f"shifter-{environment}"):
+        if db.get("DBInstanceIdentifier", "").startswith(db_prefixes):
             return True
     return False
+
+
+def _perform_sweep(report: RecoveryReport, environment: str, profile: str, *, dry_run: bool) -> RecoveryReport:
+    """Confirm and execute the sweep of the owned (would-delete) findings.
+
+    Explicit destructive confirmation names the account so an operator cannot
+    sweep the wrong one; confirm() returns True under --yes but the --sweep flag
+    is still the required explicit destructive intent.
+    """
+    deletable = [f for f in report.findings if f.action is Action.WOULD_DELETE]
+    if not deletable:
+        info("Nothing owned to sweep (only blocked/absent findings).")
+        return report
+
+    if not dry_run and not confirm(
+        f"Delete {len(deletable)} owned leftover(s) in account {report.account_id} ({environment})?"
+    ):
+        warn("Sweep declined; nothing deleted.")
+        return report
+
+    result = sweep_leftovers(report, profile, dry_run=dry_run)
+    info(result.render())
+    if result.failures:
+        error(f"{len(result.failures)} deletion(s) failed; re-run to retry (deletes are idempotent).")
+    else:
+        success("Sweep complete." if not dry_run else "Dry-run complete; no resources deleted.")
+    return result
 
 
 def account_recovery(environment: str, profile: str, *, sweep: bool, dry_run: bool) -> RecoveryReport:
@@ -704,24 +729,4 @@ def account_recovery(environment: str, profile: str, *, sweep: bool, dry_run: bo
         info("Detection only. Re-run with --sweep to delete the owned leftovers (blocked ones are never auto-deleted).")
         return report
 
-    deletable = [f for f in report.findings if f.action is Action.WOULD_DELETE]
-    if not deletable:
-        info("Nothing owned to sweep (only blocked/absent findings).")
-        return report
-
-    # Explicit destructive confirmation. Names the account so an operator cannot
-    # sweep the wrong account; confirm() returns True under --yes but the --sweep
-    # flag is still the required explicit destructive intent.
-    if not dry_run and not confirm(
-        f"Delete {len(deletable)} owned leftover(s) in account {report.account_id} ({environment})?"
-    ):
-        warn("Sweep declined; nothing deleted.")
-        return report
-
-    result = sweep_leftovers(report, profile, dry_run=dry_run)
-    info(result.render())
-    if result.failures:
-        error(f"{len(result.failures)} deletion(s) failed; re-run to retry (deletes are idempotent).")
-    else:
-        success("Sweep complete." if not dry_run else "Dry-run complete; no resources deleted.")
-    return result
+    return _perform_sweep(report, environment, profile, dry_run=dry_run)
