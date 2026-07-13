@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import logging
-import os
 from typing import TYPE_CHECKING, Any
+
+from django.conf import settings
 
 from engine.secrets import SecretsError
 from shared.enums import ResourceStatus
@@ -59,7 +60,7 @@ def _require_rdp_password(instance: dict[str, Any], os_type: str, rdp_password: 
     role = _first_connection_value(instance.get("role"), "instance").lower()
     if os_type == "windows" and role == "dc":
         provider_label = _first_connection_value(instance.get("cloud_provider")).lower() or "aws"
-        portal_provider = os.environ.get("CLOUD_PROVIDER", "aws").lower()
+        portal_provider = settings.CLOUD_PROVIDER
         if provider_label != portal_provider:
             raise ValueError(
                 f"DC password unavailable: instance provider {provider_label!r} "

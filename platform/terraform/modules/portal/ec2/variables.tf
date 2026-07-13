@@ -29,6 +29,16 @@ variable "environment" {
   type        = string
 }
 
+# Renderer-owned backend selection (PLAT-2005). Derived from shifter.yaml at
+# deploy time (shifter-config render-runtime) and received here as a plain
+# Terraform variable, not synthesized in this module. No default: a missing
+# cloud_provider.auto.tfvars must fail the plan loudly rather than silently
+# defaulting to "aws".
+variable "cloud_provider" {
+  description = "Backend identity injected into the portal/worker containers' CLOUD_PROVIDER env var. Rendered from shifter.yaml's settings.backend by shifter-config render-runtime; must not be hardcoded or defaulted here."
+  type        = string
+}
+
 variable "vpc_id" {
   description = "VPC ID"
   type        = string

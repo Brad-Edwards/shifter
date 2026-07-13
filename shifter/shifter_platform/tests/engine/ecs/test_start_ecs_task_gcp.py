@@ -14,6 +14,8 @@ from types import ModuleType, SimpleNamespace
 from unittest.mock import MagicMock, patch
 from uuid import UUID
 
+import pytest
+
 GCP_ENV = {
     "ENVIRONMENT": "gcp-dev",
     "CLOUD_PROVIDER": "gcp",
@@ -126,6 +128,21 @@ class TestGcpTaskConfig:
         assert cluster == "shifter-jobs"
         assert task_definition.endswith("pulumi-provisioner:latest")
         assert network_config is None
+
+    def test_raises_for_unsupported_provider(self, settings):
+        """A future third backend must fail closed rather than silently being
+        dispatched through the AWS ECS task config (the previous
+        ``gcp ? gcp_config : aws_config`` shape treated any non-gcp value as AWS)."""
+        from django.core.exceptions import ImproperlyConfigured
+
+        from engine.ecs import _get_engine_task_config
+
+        settings.CLOUD_PROVIDER = "azure"
+        settings.ENGINE_TASK_CLUSTER = "shifter-jobs"
+        settings.ENGINE_TASK_DEFINITION = "some-task-def"
+
+        with pytest.raises(ImproperlyConfigured, match="azure"):
+            _get_engine_task_config()
 
 
 class TestGcpProvisionerEnvOverrides:

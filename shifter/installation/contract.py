@@ -182,7 +182,7 @@ def _check_unique(values: Iterable[str], *, field: str) -> None:
 _CUSTOM_VALIDATOR_ERROR_TYPES: frozenset[str] = frozenset({"value_error", "assertion_error"})
 
 
-def _safe_pydantic_message(err: dict[str, Any]) -> str:
+def _safe_pydantic_message(err: Mapping[str, Any]) -> str:
     if err["type"] in _CUSTOM_VALIDATOR_ERROR_TYPES:
         return "failed a backend-specific validation check"
     return err["msg"]

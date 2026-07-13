@@ -883,6 +883,9 @@ class TestGdcControlPlaneHelmValues:
         )
 
         assert values["releaseNamespace"] == "shifter-system"
+        # CLOUD_PROVIDER reaches the merged runtime env solely via the GCP backend
+        # runtime-env renderer (scripts/gcp/render_runtime_env.py); PLAT-2005.
+        assert values["runtimeEnv"]["CLOUD_PROVIDER"] == "gcp"
         assert values["runtimeEnv"]["GCP_PROJECT_ID"] == "prod-rwctxzl6shxk"
         assert values["runtimeEnv"]["GOOGLE_CLOUD_PROJECT"] == "prod-rwctxzl6shxk"
         assert values["runtimeEnv"]["DJANGO_DEBUG"] == "false"
@@ -1971,6 +1974,12 @@ class TestGcpBootstrapIdentityPlatform:
         assert "PLATFORM_BOOTSTRAP_SUPERUSER_EMAILS=admin@example.com\n" in rendered
         assert "GCP_RANGE_BACKEND=gce\n" in rendered
         assert "ENGINE_TASK_SERVICE_ACCOUNT_NAME=provisioner\n" in rendered
+        # CLOUD_PROVIDER must come from the GCP backend runtime-env renderer only
+        # (PLAT-2005): _render_gcp_runtime_env merges this bootstrap-owned contract
+        # with scripts/gcp/render_runtime_env.py's output, which is the
+        # renderer-owned source of the backend identity. A second hardcoded literal
+        # here would be redundant and could silently drift from that value.
+        assert "CLOUD_PROVIDER" not in deploy.parse_env_contract(rendered)
 
     def test_render_gcp_platform_runtime_env_uses_blank_guest_password_samples(self):
         """The generated env contract must not embed sample guest passwords in source-controlled output."""

@@ -61,7 +61,7 @@ class TestAWSNetworkInventory:
 class TestGCPNetworkInventory:
     """GCP network inventory behavior."""
 
-    @patch.dict("os.environ", {}, clear=True)
+    @patch.dict("os.environ", {"CLOUD_PROVIDER": "aws"}, clear=True)
     def test_list_subnet_cidrs_requires_gdc_access_bundle(self):
         inventory = GCPNetworkInventory()
 
@@ -137,7 +137,7 @@ class TestGCPNetworkInventory:
                 },
                 clear=False,
             ),
-            patch.dict("os.environ", {}, clear=True),
+            patch.dict("os.environ", {"CLOUD_PROVIDER": "aws"}, clear=True),
         ):
             result = inventory.list_subnet_cidrs("cluster1")
 
