@@ -45,6 +45,7 @@ from cms.scenarios.catalog_presentation import scenario_source
 from cms.scenarios.registry import get_catalog_entry, get_scenario_detail
 from cms.services import PackRegistrationRequest, register_pack
 from shared.api.errors import api_error_response
+from shared.audit import get_request_id
 
 logger = logging.getLogger(__name__)
 
@@ -255,7 +256,11 @@ class PackRegisterView(APIView):
             provenance=data["provenance"],
         )
         try:
-            result = register_pack(user=user, request=registration)
+            result = register_pack(
+                user=user,
+                request=registration,
+                request_id=get_request_id(request._request),
+            )
         except CMSError as exc:
             return api_error_response(
                 code="invalid",

@@ -61,17 +61,14 @@ def _load_provisioner_reader():
     return module
 
 
-def _aces_sdl_pin_floor() -> str:
-    """Return the ``aces-sdl>=`` version floor declared in shifter_platform pyproject."""
+def _exact_dependency_pin(package: str) -> str:
+    """Return one exact runtime dependency pin from platform metadata."""
     data = tomllib.loads(_SHIFTER_PLATFORM_PYPROJECT.read_text())
     for dep in data["project"]["dependencies"]:
         normalized = dep.replace(" ", "")
-        if normalized.startswith("aces-sdl>="):
-            floor = normalized.split(">=", 1)[1]
-            for sep in (",", "<", "!", "~", ";"):
-                floor = floor.split(sep, 1)[0]
-            return floor.strip()
-    raise AssertionError("aces-sdl>= pin not found in shifter_platform/pyproject.toml")
+        if normalized.startswith(f"{package}=="):
+            return normalized.split("==", 1)[1].split(";", 1)[0].strip()
+    raise AssertionError(f"exact {package} pin not found in shifter_platform/pyproject.toml")
 
 
 @pytest.fixture(scope="module")
@@ -86,17 +83,20 @@ def _node_payload() -> dict:
         "count": 3,
         "spec": {
             "node": {"source": {"name": "ubuntu-22.04", "version": "1.2"}, "resources": {"ram": 2147483648, "cpu": 4}},
-            "infrastructure": {"networks": ["net.lan"]},
+            "infrastructure": {"networks": ["provision.network.lan"]},
         },
     }
 
 
 def _plan() -> ProvisioningPlan:
     node = PlannedResource(
-        address="node.web", domain=RuntimeDomain.PROVISIONING, resource_type="node", payload=_node_payload()
+        address="provision.node.web",
+        domain=RuntimeDomain.PROVISIONING,
+        resource_type="node",
+        payload=_node_payload(),
     )
     network = PlannedResource(
-        address="net.lan",
+        address="provision.network.lan",
         domain=RuntimeDomain.PROVISIONING,
         resource_type="network",
         payload={"name": "lan", "spec": {"infrastructure": {"properties": {"cidr": "10.9.0.0/24"}}}},
@@ -126,20 +126,24 @@ class TestProvisionerReaderContract:
         assert reader.SUPPORTED_ACCOUNT_AUTH_METHODS == SUPPORTED_ACCOUNT_AUTH_METHODS
 
     def test_supported_aces_sdl_range_agrees_with_pin_and_lock(self, reader):
-        # AC5 / ADR-032-R4+R7: the consumer's supported-producer floor agrees with the
-        # aces-sdl dependency pin, and the installed (uv.lock-resolved) version sits
-        # inside the consumer's bounded window -- so metadata, lock, and ADR wording
-        # stay in sync and a real serialized plan round-trips.
-        assert _aces_sdl_pin_floor() == reader.MINIMUM_ACES_SDL_VERSION
+        # AC5 / ADR-032-R4+R7: the installed producer equals the exact metadata
+        # pin and sits inside the consumer's rolling-compatibility window.
         low = reader._release_tuple(reader.MINIMUM_ACES_SDL_VERSION)
         high = reader._release_tuple(reader.MAXIMUM_ACES_SDL_VERSION_EXCLUSIVE)
         installed = reader._release_tuple(importlib.metadata.version("aces-sdl"))
+        assert importlib.metadata.version("aces-sdl") == _exact_dependency_pin("aces-sdl")
         assert low <= installed < high
+
+    def test_scenario_pack_and_sdl_release_pair_is_exact(self):
+        assert importlib.metadata.version("aces-scenario-packs") == _exact_dependency_pin("aces-scenario-packs")
+        requirements = importlib.metadata.requires("aces-scenario-packs") or []
+        normalized = {requirement.replace(" ", "").lower() for requirement in requirements}
+        assert "aces-sdl==0.20.0" in normalized
 
     def test_extraction_matches_expected_shifter_fixture(self, reader):
         parsed = reader.parse_plan(serialize_provisioning_plan(_plan()))
 
-        node = next(n for n in parsed.nodes if n.address == "node.web")
+        node = next(n for n in parsed.nodes if n.address == "provision.node.web")
         # Authored intent extracted verbatim (Shifter-owned expected values).
         assert node.image is not None
         assert node.image.name == "ubuntu-22.04"
@@ -147,9 +151,9 @@ class TestProvisionerReaderContract:
         assert node.ram_mib == 2048  # 2 GiB bytes -> MiB
         assert node.vcpus == 4
         assert node.os_family == "linux"
-        assert node.network_addresses == ("net.lan",)
+        assert node.network_addresses == ("provision.network.lan",)
 
-        network = next(n for n in parsed.networks if n.address == "net.lan")
+        network = next(n for n in parsed.networks if n.address == "provision.network.lan")
         assert network.cidr == "10.9.0.0/24"
 
     def test_acl_extraction_normalizes_to_expected(self, reader):
@@ -160,18 +164,18 @@ class TestProvisionerReaderContract:
                 "direction": "in",
                 "protocol": "TCP",
                 "ports": [22],
-                "from_net": "net.lan",
+                "from_net": "provision.network.lan",
             }
         ]
         node = PlannedResource(
-            address="node.web",
+            address="provision.node.web",
             domain=RuntimeDomain.PROVISIONING,
             resource_type="node",
             payload={"name": "web", "os_family": "linux", "spec": {"infrastructure": {"acls": raw_acls}}},
         )
         # Declare the network the ACL endpoint references so parse resolves it (ADR-032-R7).
         network = PlannedResource(
-            address="net.lan",
+            address="provision.network.lan",
             domain=RuntimeDomain.PROVISIONING,
             resource_type="network",
             payload={"name": "lan", "spec": {"infrastructure": {"properties": {"cidr": "10.9.0.0/24"}}}},
@@ -183,12 +187,12 @@ class TestProvisionerReaderContract:
         # Shifter-owned normalization: allow->accept, TCP->tcp; endpoint kept as ref
         # (resolved to a concrete CIDR at realization, fail-closed).
         assert (acl.action, acl.direction, acl.protocol, acl.ports) == ("accept", "in", "tcp", (22,))
-        assert acl.from_net == "net.lan" and acl.to_net is None
+        assert acl.from_net == "provision.network.lan" and acl.to_net is None
 
 
 def _plan_with_services(services: list[dict]) -> ProvisioningPlan:
     node = PlannedResource(
-        address="node.web",
+        address="provision.node.web",
         domain=RuntimeDomain.PROVISIONING,
         resource_type="node",
         payload={
@@ -197,12 +201,12 @@ def _plan_with_services(services: list[dict]) -> ProvisioningPlan:
             "os_family": "linux",
             "spec": {
                 "node": {"type": "vm", "os": "linux", "services": services},
-                "infrastructure": {"networks": ["net.lan"]},
+                "infrastructure": {"networks": ["provision.network.lan"]},
             },
         },
     )
     network = PlannedResource(
-        address="net.lan",
+        address="provision.network.lan",
         domain=RuntimeDomain.PROVISIONING,
         resource_type="network",
         payload={"name": "lan", "spec": {"infrastructure": {"properties": {"cidr": "10.9.0.0/24"}}}},
@@ -224,11 +228,11 @@ class TestServiceExtractionParity:
         plan = _plan_with_services(services)
 
         reference = libvirt.interpret_provisioning_plan(plan)
-        reference_domain = next(domain for domain in reference.domains if domain.address == "node.web")
+        reference_domain = next(domain for domain in reference.domains if domain.address == "provision.node.web")
         reference_tuples = {(svc.protocol, svc.port, svc.name) for svc in reference_domain.services}
 
         parsed = reader.parse_plan(serialize_provisioning_plan(plan))
-        shifter_node = next(node for node in parsed.nodes if node.address == "node.web")
+        shifter_node = next(node for node in parsed.nodes if node.address == "provision.node.web")
         shifter_tuples = {(svc.protocol, svc.port, svc.name) for svc in shifter_node.services}
 
         assert shifter_tuples == reference_tuples == {("tcp", 80, "http"), ("udp", 53, "dns")}

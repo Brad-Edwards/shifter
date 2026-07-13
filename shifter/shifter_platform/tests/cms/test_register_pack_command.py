@@ -7,10 +7,14 @@ error surface.
 
 from __future__ import annotations
 
+from contextlib import suppress
+from pathlib import Path
+
 import pytest
 from django.core.management import CommandError, call_command
 
 from cms.models import AcesPackageSource
+from cms.scenarios.pack_validation import PackDigestError, pack_digest
 
 pytestmark = pytest.mark.django_db
 
@@ -32,9 +36,9 @@ CLI_FIXTURE_NAME = "cli-fixture"
 def repo_pack(make_pack, tmp_path, monkeypatch):
     from django.conf import settings
 
-    make_pack(tmp_path / "packs" / "fixture", name=CLI_FIXTURE_NAME)
+    make_pack(tmp_path / "packs" / CLI_FIXTURE_NAME, name=CLI_FIXTURE_NAME)
     monkeypatch.setattr(settings, "ACES_PACKAGE_ROOT", str(tmp_path))
-    return "packs/fixture"
+    return f"packs/{CLI_FIXTURE_NAME}"
 
 
 def _args(package_ref: str, actor: str, **overrides) -> list[str]:
@@ -48,6 +52,11 @@ def _args(package_ref: str, actor: str, **overrides) -> list[str]:
         "--actor": actor,
     }
     values.update(overrides)
+    if "--package-digest" not in overrides and values["--source-kind"] == "repo":
+        from django.conf import settings
+
+        with suppress(PackDigestError, OSError):
+            values["--package-digest"] = pack_digest(Path(settings.ACES_PACKAGE_ROOT) / package_ref)
     args: list[str] = []
     for flag, value in values.items():
         args.extend([flag, value])

@@ -20,7 +20,8 @@ from shared.aces.package_loader import (
     AcesPackageError,
     ShifterLaunchResult,
     launch_aces_package,
-    resolve_scenario_path,
+    resolve_pack_root,
+    resolve_pack_scenario_path,
 )
 from shared.aces.runtime_target import ACES_PROVISIONING_PLAN_KIND
 
@@ -46,21 +47,49 @@ class _RecordingPort:
         )
 
 
-def test_resolve_scenario_path_returns_contained_file():
-    path = resolve_scenario_path(_MINIMAL, package_root=_FIXTURES)
-    assert path == (_FIXTURES / _MINIMAL).resolve()
+def _pack_tree(tmp_path: Path, *, entries: int = 1) -> Path:
+    root = tmp_path / "packs" / "example-pack"
+    sdl_dir = root / "sdl"
+    sdl_dir.mkdir(parents=True)
+    for index in range(entries):
+        (sdl_dir / f"scenario-{index}.sdl.yaml").write_text("name: example-pack\n", encoding="utf-8")
+    return root
 
 
-def test_resolve_scenario_path_rejects_traversal():
+def test_resolve_pack_root_and_single_scenario_path(tmp_path):
+    expected = _pack_tree(tmp_path)
+    root = resolve_pack_root("packs/example-pack", package_root=tmp_path)
+    assert root == expected.resolve()
+    assert resolve_pack_scenario_path(root) == (expected / "sdl" / "scenario-0.sdl.yaml").resolve()
+
+
+def test_resolve_pack_root_rejects_traversal(tmp_path):
     with pytest.raises(AcesPackageError):
-        resolve_scenario_path("../../../../etc/passwd", package_root=_FIXTURES)
+        resolve_pack_root("../../../../etc", package_root=tmp_path)
 
 
-def test_resolve_scenario_path_rejects_missing_and_empty():
+def test_resolve_pack_root_rejects_missing_and_empty(tmp_path):
     with pytest.raises(AcesPackageError):
-        resolve_scenario_path("does-not-exist.sdl.yaml", package_root=_FIXTURES)
+        resolve_pack_root("does-not-exist", package_root=tmp_path)
     with pytest.raises(AcesPackageError):
-        resolve_scenario_path("   ", package_root=_FIXTURES)
+        resolve_pack_root("   ", package_root=tmp_path)
+
+
+def test_resolve_pack_scenario_path_rejects_zero_or_multiple_entries(tmp_path):
+    with pytest.raises(AcesPackageError):
+        resolve_pack_scenario_path(_pack_tree(tmp_path, entries=0))
+    other = tmp_path / "other"
+    with pytest.raises(AcesPackageError):
+        resolve_pack_scenario_path(_pack_tree(other, entries=2))
+
+
+def test_resolve_pack_scenario_path_rejects_symlinked_sdl(tmp_path):
+    root = _pack_tree(tmp_path)
+    real_sdl = root / "real-sdl"
+    (root / "sdl").rename(real_sdl)
+    (root / "sdl").symlink_to(real_sdl, target_is_directory=True)
+    with pytest.raises(AcesPackageError):
+        resolve_pack_scenario_path(root)
 
 
 def test_launch_aces_package_compiles_and_dispatches():

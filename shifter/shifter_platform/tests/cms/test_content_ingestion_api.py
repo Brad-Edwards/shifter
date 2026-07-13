@@ -8,14 +8,19 @@ validates the incoming pack, and returns the shared error envelope on failure.
 from __future__ import annotations
 
 import importlib
+from contextlib import suppress
+from pathlib import Path
 
 import pytest
 from django.urls import clear_url_caches
 from rest_framework.test import APIClient
 
 from cms.models import AcesPackageSource
+from cms.scenarios.pack_validation import PackDigestError, pack_digest
+from risk_register.models import AuditLog
 from shared.api_tokens import scopes
 from shared.api_tokens.models import ApiToken
+from shared.audit import AuditAction, AuditEntityType
 
 pytestmark = pytest.mark.django_db
 
@@ -73,9 +78,9 @@ API_FIXTURE_NAME = "api-fixture"
 def repo_pack(make_pack, tmp_path, monkeypatch):
     from django.conf import settings
 
-    make_pack(tmp_path / "packs" / "fixture", name=API_FIXTURE_NAME)
+    make_pack(tmp_path / "packs" / API_FIXTURE_NAME, name=API_FIXTURE_NAME)
     monkeypatch.setattr(settings, "ACES_PACKAGE_ROOT", str(tmp_path))
-    return "packs/fixture"
+    return f"packs/{API_FIXTURE_NAME}"
 
 
 def _body(package_ref: str, **overrides) -> dict:
@@ -90,16 +95,31 @@ def _body(package_ref: str, **overrides) -> dict:
         "provenance": {"repo": "acme/example"},
     }
     body.update(overrides)
+    if "package_digest" not in overrides and body["source_kind"] == "repo":
+        from django.conf import settings
+
+        with suppress(PackDigestError, OSError):
+            body["package_digest"] = pack_digest(Path(settings.ACES_PACKAGE_ROOT) / package_ref)
     return body
 
 
 class TestPackRegisterEndpoint:
     def test_write_scope_registers_pack(self, api_client, staff_user, repo_pack):
         raw = _token(staff_user, scopes.CMS_AUTHORING_READ, scopes.CMS_AUTHORING_WRITE)
-        response = _bearer(api_client, raw).post(PACKS_URL, _body(repo_pack), format="json")
+        response = _bearer(api_client, raw).post(
+            PACKS_URL,
+            _body(repo_pack),
+            format="json",
+            HTTP_X_REQUEST_ID="pack-api-correlation",
+        )
         assert response.status_code == 201, response.data
         assert response.data["scenario_id"] == API_FIXTURE_NAME
         assert AcesPackageSource.objects.filter(scenario_id=API_FIXTURE_NAME).exists()
+        assert AuditLog.objects.filter(
+            request_id="pack-api-correlation",
+            entity_type=AuditEntityType.SCENARIO,
+            action=AuditAction.CREATE,
+        ).exists()
 
     def test_read_scope_is_forbidden(self, api_client, staff_user, repo_pack):
         raw = _token(staff_user, scopes.CMS_AUTHORING_READ)

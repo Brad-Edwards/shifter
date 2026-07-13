@@ -48,12 +48,13 @@ class ScenarioWorkflow(enum.StrEnum):
 # sites) when a new supported ACES source / contract / profile lands.
 #
 # Only ``repo`` is launchable today: the native launch loader
-# (``shared.aces.package_loader.resolve_scenario_path``) resolves refs only under
-# ``ACES_PACKAGE_ROOT`` with containment enforcement, so an object-storage-backed
-# pack has no launch-time resolution with equivalent containment / immutable
-# identity guarantees. ``object`` re-enters this set only when #1567 supplies an
-# object resolver; until then an object-backed row is registrable and visible in
-# the catalog but fail-closed at the launchability axis (ADR-034 preflight).
+# (``shared.aces.package_loader.resolve_pack_root``) resolves pack roots only
+# under ``ACES_PACKAGE_ROOT`` and launch verifies their canonical digest, so an
+# object-storage-backed pack has no launch-time resolution with equivalent
+# containment / immutable identity guarantees. ``object`` re-enters this set
+# only when #1567 supplies an object resolver; until then an object-backed row is
+# registrable and visible in the catalog but fail-closed at the launchability
+# axis (ADR-034 preflight).
 LAUNCHABLE_SOURCE_KINDS = frozenset({"repo"})
 LAUNCHABLE_CONTRACT_KINDS = frozenset({"aces"})
 LAUNCHABLE_CONTRACT_PROFILES = frozenset({"shifter"})

@@ -9,8 +9,9 @@ pack reaches Shifter (ADR-034).
 A pack is registered as a provenance-only reference: Shifter records where the
 pack lives (`package_ref`), its version and digest, its contract and profile, and
 bounded provenance. It does not copy the pack body into the catalog. Pack content
-is defined by the `aces-scenario-packs` contract, and Shifter validates each
-incoming pack against that contract as foreign input before accepting it. A
+is defined by the `aces-scenario-packs` contract. Shifter pins
+`aces-scenario-packs==1.2.0` with its required `aces-sdl==0.20.0`, and delegates
+validation and canonical content identity to those released libraries. A
 broken, malformed, or non-conformant pack is rejected.
 
 There are three entrypoints onto the same registration service. All of them are
@@ -65,11 +66,24 @@ is currently empty.
 ## Resolution and launchability
 
 `repo` packs resolve under `ACES_PACKAGE_ROOT` with containment enforcement, and
-the catalog id must equal the pack's own validated identity (`pack.yaml` name),
-so one immutable pack cannot be registered under arbitrary aliases. `object`
-(object-storage) packs are registrable but are not launchable until an object
-resolver with equivalent containment and immutable-identity guarantees exists
-(#1567).
+`package_ref` names the pack root, not an SDL file. The root directory name,
+catalog id, and `pack.yaml` name must agree, so one immutable pack cannot be
+registered under arbitrary aliases. The current Shifter profile requires
+exactly one direct `sdl/*.sdl.yaml` entry; zero or multiple entries fail closed
+until an explicit variant selector is part of the contract.
+
+Every repo pack must declare `associated_artifact_manifest` in `pack.yaml`. That
+ACES manifest must cover the exact pack inventory and bind every payload byte to
+one canonical `sha256:<64 lowercase hex>` set digest. Registration verifies the
+advertised `package_digest` before persistence. Native launch verifies the same
+digest again before SDL resolution, parsing, planning, or dispatch, so a pack
+changed or replaced after registration cannot execute. Stage repo packs
+immutably for both operations; mutable working trees are not a supported
+deployment surface.
+
+`object` (object-storage) packs are registrable but are not launchable until an
+object resolver with equivalent containment and immutable-identity guarantees
+exists (#1567).
 
 Registration is not conformance and is not launchability. A caller cannot assert
 that a pack has passed conformance: every registration lands non-passed, and

@@ -2,8 +2,8 @@
 
 Loads the declared in-box pack manifest and registers each entry through the same
 :func:`cms.services.register_pack` service an operator uses — the in-box catalog
-has no privileged load path (ADR-033/ADR-034). Idempotent: already-registered
-packs are skipped, so it is safe to run after every deploy.
+has no privileged load path (ADR-033/ADR-034). Exact already-registered
+identities are no-ops; drift is a visible failure, so deploy retries are safe.
 """
 
 from __future__ import annotations

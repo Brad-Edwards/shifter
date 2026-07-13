@@ -48,17 +48,15 @@ dependencies = [
     # deliberate, PyPI-pinned stack commitment (ADR-032-R4). Upgrade policy
     # (ADR-032-R7): this floor is the supported-producer floor the provisioner
     # consumer enforces (aces_plan.MINIMUM_ACES_SDL_VERSION, kept in agreement by
-    # tests/shared/aces/test_plan_provisioner_parity.py); raising it requires
+    # tests/shared/aces/test_plan_provisioner_parity.py); changing it requires
     # passing the ACES conformance gate (test_backend_conformance_gate.py).
-    "aces-sdl>=0.19.1",
-    # ACES scenario-pack contract: the version-matched pack layout schemas
-    # (provenance ledger, compatibility manifest) that the uniform content
-    # ingestion path (#1578, ADR-034) validates every incoming pack against as
-    # foreign input. Consumed from the published PyPI wheel so the pack contract
-    # is one version-matched artifact rather than a vendored copy of the schemas
-    # (the anti-pattern the package exists to prevent). Subordinate to aces-sdl
-    # (SDL is validated through ACES); its own pin tracks the aces-sdl floor.
-    "aces-scenario-packs>=0.1.0",
+    # aces-scenario-packs 1.2.0 requires this exact SDL release.
+    "aces-sdl==0.20.0",
+    # ACES scenario-pack contract and canonical content-digest implementation
+    # used by the uniform content-ingestion path (#1578, ADR-034). Keep this
+    # exact: its schemas, validator, digest profile, and aces-sdl dependency are
+    # one versioned consumer contract.
+    "aces-scenario-packs==1.2.0",
     "uvicorn-worker",
     # uvicorn's WebSocket protocol backend. Not imported directly: the
     # Gunicorn/Uvicorn ASGI workers (entrypoint.sh) need websockets (or wsproto)

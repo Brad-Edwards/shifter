@@ -9,17 +9,16 @@ no real provisioning is triggered.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 
 from cms.exceptions import CMSError
 from cms.models import AcesPackageSource, RangeInstance
+from cms.scenarios.pack_validation import pack_digest
 from cms.services import create_aces_native_range, create_range_dispatch
 from shared.enums import ResourceStatus
+from tests.cms.conftest import write_pack_content_manifest
 
-_FIXTURES = Path(__file__).parent.parent / "shared" / "aces" / "fixtures" / "launchable"
-_MINIMAL_REF = "shifter-launch-min.sdl.yaml"
+_PACK_REF = "packs/aces-launch"
 _DISPATCH = "cms.services._aces_range_create._dispatch_aces_package"
 
 
@@ -41,7 +40,7 @@ def _make_source(user, scenario_id="aces-launch", **overrides):
         "contract_kind": "aces",
         "contract_profile": "shifter",
         "source_kind": "repo",
-        "package_ref": _MINIMAL_REF,
+        "package_ref": _PACK_REF,
         "package_version": "1.0.0",
         "package_digest": "sha256:" + "a" * 64,
         "conformance_status": "passed",
@@ -64,11 +63,18 @@ def test_flag_off_refuses(user, monkeypatch):
 def test_launch_persists_bookkeeping_and_dispatches(user, native_on, monkeypatch):
     _make_source(user)
     seen = {}
-    monkeypatch.setattr(_DISPATCH, lambda request_id, u, package_ref: seen.update(ref=package_ref))
+    monkeypatch.setattr(
+        _DISPATCH,
+        lambda request_id, u, package_ref, package_digest: seen.update(
+            ref=package_ref,
+            digest=package_digest,
+        ),
+    )
     ctx = create_aces_native_range(user, "aces-launch")
 
     assert ctx.request_id is not None
-    assert seen["ref"] == _MINIMAL_REF
+    assert seen["ref"] == _PACK_REF
+    assert seen["digest"] == "sha256:" + "a" * 64
     instance = RangeInstance.objects.get(request__request_id=ctx.request_id)
     assert instance.scenario_id == "aces-launch"
     assert instance.range_spec is None  # no cyberscript RangeSpec for ACES
@@ -145,14 +151,15 @@ def test_dispatch_routes_cyberscript_for_non_aces_when_flag_on(user, native_on, 
 
 
 @pytest.mark.django_db
-def test_end_to_end_chain_with_engine_seam_mocked(user, native_on, monkeypatch):
+def test_end_to_end_chain_with_engine_seam_mocked(user, native_on, make_pack, tmp_path, monkeypatch):
     # Real resolve -> load SDL -> plan -> apply -> CmsAcesDispatchPort.realize;
     # only the engine service is mocked so no real provisioning is dispatched.
     from django.conf import settings
 
     from engine.services import AcesRangeRef
 
-    monkeypatch.setattr(settings, "ACES_PACKAGE_ROOT", str(_FIXTURES))
+    root = make_pack(tmp_path / _PACK_REF, name="aces-launch")
+    monkeypatch.setattr(settings, "ACES_PACKAGE_ROOT", str(tmp_path))
     captured = {}
 
     def fake_create_aces_range(*, request_id, user_id, compiled_plan):
@@ -161,10 +168,54 @@ def test_end_to_end_chain_with_engine_seam_mocked(user, native_on, monkeypatch):
         return AcesRangeRef(request_id=request_id, accepted=True, status="accepted", range_id="rng-1")
 
     monkeypatch.setattr("cms.aces.dispatch.create_aces_range", fake_create_aces_range)
-    _make_source(user)
+    _make_source(user, package_digest=pack_digest(root))
     ctx = create_aces_native_range(user, "aces-launch")
 
     assert ctx.request_id is not None
     assert captured["kind"] == "aces_provisioning_plan"
     assert captured["request_id"] == str(ctx.request_id)
     assert RangeInstance.objects.get(request__request_id=ctx.request_id).status == ResourceStatus.PROVISIONING.value
+
+
+@pytest.mark.django_db
+def test_launch_rejects_pack_mutated_after_registration(user, native_on, make_pack, tmp_path, monkeypatch):
+    from django.conf import settings
+
+    root = make_pack(tmp_path / _PACK_REF, name="aces-launch")
+    registered_digest = pack_digest(root)
+    _make_source(user, package_digest=registered_digest)
+    (root / "docs" / "concepts.md").write_text("mutated after registration\n", encoding="utf-8")
+    monkeypatch.setattr(settings, "ACES_PACKAGE_ROOT", str(tmp_path))
+    monkeypatch.setattr(
+        "cms.aces.dispatch.create_aces_range",
+        lambda **_kwargs: pytest.fail("mutated content reached the dispatch boundary"),
+    )
+
+    with pytest.raises(CMSError, match="content identity could not be verified"):
+        create_aces_native_range(user, "aces-launch")
+
+    instance = RangeInstance.all_objects.get(scenario_id="aces-launch")
+    assert instance.status == ResourceStatus.FAILED.value
+
+
+@pytest.mark.django_db
+def test_launch_rejects_valid_pack_resealed_after_registration(user, native_on, make_pack, tmp_path, monkeypatch):
+    from django.conf import settings
+
+    root = make_pack(tmp_path / _PACK_REF, name="aces-launch")
+    registered_digest = pack_digest(root)
+    _make_source(user, package_digest=registered_digest)
+    (root / "docs" / "concepts.md").write_text("valid replacement bytes\n", encoding="utf-8")
+    replacement_digest = write_pack_content_manifest(root, "aces-launch")
+    assert replacement_digest != registered_digest
+    monkeypatch.setattr(settings, "ACES_PACKAGE_ROOT", str(tmp_path))
+    monkeypatch.setattr(
+        "cms.aces.dispatch.create_aces_range",
+        lambda **_kwargs: pytest.fail("replacement content reached the dispatch boundary"),
+    )
+
+    with pytest.raises(CMSError, match="no longer matches registration"):
+        create_aces_native_range(user, "aces-launch")
+
+    instance = RangeInstance.all_objects.get(scenario_id="aces-launch")
+    assert instance.status == ResourceStatus.FAILED.value

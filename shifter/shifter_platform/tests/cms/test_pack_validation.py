@@ -41,6 +41,29 @@ class TestPackValidationRejectsForeignInput:
         root = make_pack(tmp_path / "pack", pack_yaml={"title": "No name"})
         assert any("name" in e for e in check_pack(root))
 
+    def test_pack_identity_must_match_root_directory(self, make_pack, tmp_path):
+        root = make_pack(tmp_path / "pack", name="different-name")
+        assert "pack.identity.name-mismatch: pack.yaml:name" in check_pack(root)
+
+    def test_duplicate_yaml_key_is_rejected(self, make_pack, tmp_path):
+        root = make_pack(tmp_path / "pack")
+        (root / "pack.yaml").write_text("name: pack\nname: pack\n", encoding="utf-8")
+        assert "yaml.duplicate-key: pack.yaml" in check_pack(root)
+
+    def test_symlink_member_is_rejected(self, make_pack, tmp_path):
+        root = make_pack(tmp_path / "pack")
+        outside = tmp_path / "outside.md"
+        outside.write_text("outside the pack\n", encoding="utf-8")
+        concepts = root / "docs" / "concepts.md"
+        concepts.unlink()
+        concepts.symlink_to(outside)
+        assert "filesystem.unsafe-member" in check_pack(root)
+
+    def test_metadata_resource_limit_is_enforced(self, make_pack, tmp_path):
+        root = make_pack(tmp_path / "pack")
+        (root / "pack.yaml").write_text("x" * (1024 * 1024 + 1), encoding="utf-8")
+        assert "resource.metadata-limit: pack.yaml" in check_pack(root)
+
     def test_missing_provenance_ledger_is_rejected(self, make_pack, tmp_path):
         root = make_pack(tmp_path / "pack")
         (root / "docs/provenance-ledger.yaml").unlink()
@@ -84,9 +107,10 @@ class TestPackValidationRejectsForeignInput:
 
 def _pack_with_compatibility(make_pack, root, *, manifest_rel="pack.compatibility.yaml", manifest=..., write=True):
     """Build a conformant pack that references a compatibility manifest."""
-    pack_yaml = conformant_pack_yaml("ingestion-fixture")
+    pack_name = Path(root).name
+    pack_yaml = conformant_pack_yaml(pack_name)
     pack_yaml["compatibility_manifest"] = manifest_rel
-    built = make_pack(root, pack_yaml=pack_yaml)
+    built = make_pack(root, name=pack_name, pack_yaml=pack_yaml)
     if write:
         if manifest is ...:
             manifest = yaml.safe_load(Path(compatibility_example_path()).read_text(encoding="utf-8"))
@@ -114,4 +138,4 @@ class TestPackValidationCompatibilityManifest:
     def test_compatibility_manifest_escaping_pack_root_is_rejected(self, make_pack, tmp_path):
         root = _pack_with_compatibility(make_pack, tmp_path / "pack", manifest_rel="../outside.yaml", write=False)
         errors = check_pack(root)
-        assert any("compatibility" in e.lower() and "escape" in e.lower() for e in errors)
+        assert "compatibility.pointer.invalid: pack.yaml:compatibility_manifest" in errors

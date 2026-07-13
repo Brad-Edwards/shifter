@@ -11,8 +11,8 @@ shipped manifest (:data:`SHIPPED_INBOX_MANIFEST`) declares an empty pack list.
 The mechanism is in place and exercised by tests; entries are added as first-party
 packs are authored.
 
-Bootstrap is idempotent: an entry whose ``scenario_id`` is already registered is
-skipped, so re-running it after a deploy is safe.
+Bootstrap asks the service for an idempotent retry: an exact immutable identity
+is a no-op, while manifest or byte drift is a visible conflict.
 """
 
 from __future__ import annotations
@@ -23,9 +23,7 @@ from typing import TYPE_CHECKING, Any
 
 import yaml
 
-from cms.models import AcesPackageSource
 from cms.services import PackRegistrationRequest, RegisteredPack, register_pack
-from shared.log_sanitize import safe_log_value
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import User
@@ -68,10 +66,14 @@ def register_inbox_packs(
         if not isinstance(scenario_id, str) or not scenario_id:
             logger.warning("inbox bootstrap: manifest entry missing scenario_id; skipping")
             continue
-        if AcesPackageSource.objects.filter(scenario_id=scenario_id).exists():
-            logger.info("inbox bootstrap: pack already registered; skipping id=%s", safe_log_value(scenario_id))
-            continue
-        registered.append(register_pack(user=actor, request=_entry_to_request(entry), request_id=request_id))
+        result = register_pack(
+            user=actor,
+            request=_entry_to_request(entry),
+            request_id=request_id,
+            idempotent=True,
+        )
+        if result.created:
+            registered.append(result)
     return registered
 
 

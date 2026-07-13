@@ -3,9 +3,11 @@
 Provides shared model builders and fixtures used across CMS test modules.
 """
 
+import hashlib
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 import pytest
 from django.contrib.auth import get_user_model
@@ -182,9 +184,9 @@ def make_credential(credential_type_obj, pk=1, **overrides):
 # -----------------------------------------------------------------------------
 
 # A minimal ACES SDL start state that parses through aces-sdl (mirrors
-# scenario-dev/aces-validation/shifter-aces-validation.sdl.yaml).
+# scenario-dev/shifter-aces-validation/sdl/shifter-aces-validation.sdl.yaml).
 CONFORMANT_PACK_SDL = """\
-name: ingestion-fixture
+name: __PACK_NAME__
 description: Minimal provisioning-only ACES start state for ingestion tests.
 nodes:
   lan:
@@ -218,6 +220,7 @@ def conformant_pack_yaml(name: str) -> dict[str, Any]:
         "description": "Minimal conformant pack for ingestion tests.",
         "authors": ["Test Author <test@example.com>"],
         "provenance_ledger": "docs/provenance-ledger.yaml",
+        "associated_artifact_manifest": "associated-artifacts.json",
     }
 
 
@@ -255,6 +258,49 @@ def conformant_provenance(name: str) -> dict[str, Any]:
     }
 
 
+def write_pack_content_manifest(root: Path, name: str) -> str:
+    """Write the canonical ACES associated-artifact manifest for test bytes."""
+    from aces_contracts.associated_artifacts import associated_artifact_set_digest
+    from aces_contracts.contracts import AssociatedArtifactManifestModel
+
+    manifest_rel = "associated-artifacts.json"
+    members = sorted(
+        path.relative_to(root).as_posix()
+        for path in root.rglob("*")
+        if path.is_file() and path.relative_to(root).as_posix() != manifest_rel
+    )
+    artifacts: dict[str, dict[str, object]] = {}
+    for index, rel in enumerate(members):
+        body = (root / rel).read_bytes()
+        artifact_id = f"artifact-{index}"
+        artifacts[artifact_id] = {
+            "artifact_id": artifact_id,
+            "role": "other",
+            "media_type": "application/octet-stream",
+            "uri": f"aces-scenario-pack:/{quote(rel, safe='/-._~')}",
+            "checksum": {"algorithm": "sha256", "value": hashlib.sha256(body).hexdigest()},
+            "size_bytes": len(body),
+            "created_at": "2026-07-13T00:00:00Z",
+            "source": "shifter-test-fixture",
+            "sensitivity": "internal",
+        }
+    model = AssociatedArtifactManifestModel.model_validate(
+        {
+            "schema_version": "associated-artifact-manifest/v1",
+            "manifest_id": f"{name}-associated-artifacts",
+            "manifest_version": "0.1.0",
+            "canonicalization_profile": "associated-artifact-set/v1",
+            "scope": "scenario",
+            "parent_ref": {"ref_kind": "scenario", "ref_id": name},
+            "artifacts": artifacts,
+            "set_digest": "sha256:" + "0" * 64,
+        }
+    )
+    model = model.model_copy(update={"set_digest": associated_artifact_set_digest(model)})
+    (root / manifest_rel).write_text(model.model_dump_json(indent=2) + "\n", encoding="utf-8")
+    return model.set_digest
+
+
 @pytest.fixture
 def make_pack():
     """Factory: write an ACES scenario pack to disk and return its root Path.
@@ -266,11 +312,13 @@ def make_pack():
     """
     import yaml
 
-    def _make(root, *, name="ingestion-fixture", pack_yaml=..., provenance=..., sdl=CONFORMANT_PACK_SDL):
+    def _make(root, *, name=None, pack_yaml=..., provenance=..., sdl=...):
         root = Path(root)
         root.mkdir(parents=True, exist_ok=True)
+        name = name or root.name
         pack_yaml = conformant_pack_yaml(name) if pack_yaml is ... else pack_yaml
         provenance = conformant_provenance(name) if provenance is ... else provenance
+        sdl = CONFORMANT_PACK_SDL.replace("__PACK_NAME__", name) if sdl is ... else sdl
         if pack_yaml is not None:
             (root / "pack.yaml").write_text(yaml.safe_dump(pack_yaml), encoding="utf-8")
         docs = root / "docs"
@@ -282,6 +330,7 @@ def make_pack():
             sdl_dir = root / "sdl"
             sdl_dir.mkdir(parents=True, exist_ok=True)
             (sdl_dir / "scenario.sdl.yaml").write_text(sdl, encoding="utf-8")
+        write_pack_content_manifest(root, name)
         return root
 
     return _make

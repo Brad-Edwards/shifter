@@ -177,17 +177,15 @@ def test_interpret_serialized_plan_is_json_safe() -> None:
     assert json.loads(json.dumps(serialized)) == serialized
 
 
-def test_interpret_only_includes_provisioning_domain() -> None:
+def test_aces_plan_contract_rejects_mixed_runtime_domains() -> None:
     other = PlannedResource(
         address="orchestration.step.a",
         domain=RuntimeDomain.ORCHESTRATION,
         resource_type="step",
         payload={"name": "a"},
     )
-    serialized, _ = _interpret(_plan(_node("provision.node.a", "a"), other))
-    assert serialized is not None
-    assert "orchestration.step.a" not in serialized["resources"]
-    assert "provision.node.a" in serialized["resources"]
+    with pytest.raises(ValueError, match="plan domain"):
+        _plan(_node("provision.node.a", "a"), other)
 
 
 # --- interpret: real compiled plan --------------------------------------------
@@ -258,17 +256,6 @@ def _feature_binding(address: str, *, target: str, source: str = "nginx") -> Pla
         (lambda: _plan(_node("provision.node.a", "a", links=("ghost",))), "shifter-provisioner.unknown-network"),
         (
             lambda: _plan(
-                PlannedResource(
-                    address="provision.blob.x",
-                    domain=RuntimeDomain.PROVISIONING,
-                    resource_type="blob",
-                    payload={"name": "x"},
-                )
-            ),
-            "shifter-provisioner.unsupported-resource-type",
-        ),
-        (
-            lambda: _plan(
                 _content_placement("provision.content.x", target="provision.node.a", content_type="raw"),
                 _node("provision.node.a", "a"),
             ),
@@ -284,6 +271,17 @@ def test_out_of_envelope_terms_fail_closed(plan_factory, expected_code: str) -> 
     serialized, diagnostics = _interpret(plan_factory())
     assert serialized is None
     assert any(d.is_error and d.code == expected_code for d in diagnostics)
+
+
+def test_aces_plan_contract_rejects_unknown_provisioning_resource_type() -> None:
+    resource = PlannedResource(
+        address="provision.blob.x",
+        domain=RuntimeDomain.PROVISIONING,
+        resource_type="blob",
+        payload={"name": "x"},
+    )
+    with pytest.raises(ValueError, match="resource_type"):
+        _plan(resource)
 
 
 def test_acls_are_in_envelope_and_carried_verbatim() -> None:

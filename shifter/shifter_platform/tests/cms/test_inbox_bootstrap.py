@@ -9,14 +9,17 @@ valid, empty declaration.
 
 from __future__ import annotations
 
+from contextlib import suppress
 from pathlib import Path
 
 import pytest
 import yaml
 from django.contrib.auth import get_user_model
 
+from cms.exceptions import CMSError
 from cms.models import AcesPackageSource
 from cms.scenarios.inbox import SHIPPED_INBOX_MANIFEST, load_inbox_manifest, register_inbox_packs
+from cms.scenarios.pack_validation import PackDigestError, pack_digest
 from cms.scenarios.registry import get_catalog_entry
 
 User = get_user_model()
@@ -50,6 +53,11 @@ def _inbox_entry(package_ref: str, **overrides) -> dict:
         "provenance": {"repo": "Brad-Edwards/shifter"},
     }
     entry.update(overrides)
+    if "package_digest" not in overrides and entry["source_kind"] == "repo":
+        from django.conf import settings
+
+        with suppress(PackDigestError, OSError):
+            entry["package_digest"] = pack_digest(Path(settings.ACES_PACKAGE_ROOT) / package_ref)
     return entry
 
 
@@ -67,9 +75,9 @@ class TestRegisterInboxPacks:
     def test_registers_each_entry_through_the_service(self, admin_actor, make_pack, tmp_path, monkeypatch):
         from django.conf import settings
 
-        make_pack(tmp_path / "packs" / "fixture", name="inbox-fixture")
+        make_pack(tmp_path / "packs" / "inbox-fixture", name="inbox-fixture")
         monkeypatch.setattr(settings, "ACES_PACKAGE_ROOT", str(tmp_path))
-        manifest = _write_manifest(tmp_path / "manifest.yaml", [_inbox_entry("packs/fixture")])
+        manifest = _write_manifest(tmp_path / "manifest.yaml", [_inbox_entry("packs/inbox-fixture")])
 
         registered = register_inbox_packs(actor=admin_actor, manifest_path=manifest)
 
@@ -80,16 +88,29 @@ class TestRegisterInboxPacks:
     def test_is_idempotent(self, admin_actor, make_pack, tmp_path, monkeypatch):
         from django.conf import settings
 
-        make_pack(tmp_path / "packs" / "fixture", name="inbox-fixture")
+        make_pack(tmp_path / "packs" / "inbox-fixture", name="inbox-fixture")
         monkeypatch.setattr(settings, "ACES_PACKAGE_ROOT", str(tmp_path))
-        manifest = _write_manifest(tmp_path / "manifest.yaml", [_inbox_entry("packs/fixture")])
+        manifest = _write_manifest(tmp_path / "manifest.yaml", [_inbox_entry("packs/inbox-fixture")])
 
         first = register_inbox_packs(actor=admin_actor, manifest_path=manifest)
         second = register_inbox_packs(actor=admin_actor, manifest_path=manifest)
 
         assert len(first) == 1
-        assert second == []  # already-registered entries are skipped
+        assert second == []  # exact service-level retry is a no-op
         assert AcesPackageSource.objects.filter(scenario_id="inbox-fixture").count() == 1
+
+    def test_retry_rejects_manifest_identity_drift(self, admin_actor, make_pack, tmp_path, monkeypatch):
+        from django.conf import settings
+
+        make_pack(tmp_path / "packs" / "inbox-fixture", name="inbox-fixture")
+        monkeypatch.setattr(settings, "ACES_PACKAGE_ROOT", str(tmp_path))
+        manifest = _write_manifest(tmp_path / "manifest.yaml", [_inbox_entry("packs/inbox-fixture")])
+        register_inbox_packs(actor=admin_actor, manifest_path=manifest)
+
+        drifted = _inbox_entry("packs/inbox-fixture", package_digest="sha256:" + "b" * 64)
+        _write_manifest(manifest, [drifted])
+        with pytest.raises(CMSError, match="different identity"):
+            register_inbox_packs(actor=admin_actor, manifest_path=manifest)
 
     def test_empty_manifest_is_a_noop(self, admin_actor, tmp_path):
         manifest = _write_manifest(tmp_path / "manifest.yaml", [])
