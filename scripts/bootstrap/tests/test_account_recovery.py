@@ -47,14 +47,19 @@ _NOT_LIVE = {
 
 
 class _FakeResult:
-    def __init__(self, stdout: str = "", returncode: int = 0):
+    def __init__(self, stdout: str = "", returncode: int = 0, stderr: str = ""):
         self.stdout = stdout
         self.returncode = returncode
+        self.stderr = stderr
 
 
 def _fake_run_cmd(responses: dict[str, str], deletes: list[list[str]]):
     """Build a fake run_cmd. ``responses`` maps a command substring to JSON
-    stdout; delete commands are recorded in ``deletes`` and return success."""
+    stdout; delete commands are recorded in ``deletes`` and return success.
+
+    Sentinels: ``__ERROR__`` -> a transient read failure (exit 1, no marker);
+    ``__NOTFOUND__`` -> a not-found failure (exit 1 with a ResourceNotFound
+    stderr), used to confirm a Network Firewall delete converged."""
 
     def fake(cmd, dry_run=False, check=True, capture=False, profile=None):
         joined = " ".join(cmd)
@@ -68,12 +73,13 @@ def _fake_run_cmd(responses: dict[str, str], deletes: list[list[str]]):
             return None
         for needle, payload in responses.items():
             if needle in joined:
-                # "__ERROR__" injects an AWS read failure (exit 1) for that command.
                 if payload == "__ERROR__":
                     return _FakeResult(stdout="", returncode=1)
+                if payload == "__NOTFOUND__":
+                    return _FakeResult(stdout="", returncode=1, stderr="ResourceNotFoundException: not found")
                 return _FakeResult(stdout=payload, returncode=0)
         # Unmatched read -> an empty-but-successful listing (a clean account),
-        # distinct from a failed read (which callers inject via "__ERROR__").
+        # distinct from a failed read (which callers inject via a sentinel).
         return _FakeResult(stdout="{}", returncode=0)
 
     return fake
@@ -341,8 +347,8 @@ class TestNetworkFirewallAsyncDelete:
                     {"RuleGroups": [{"Name": "shifter-proof-victim", "Arn": "arn:nfw:rg/1"}]}
                 ),
                 "network-firewall list-tags-for-resource": json.dumps({"Tags": _OWNER_TAGS}),
-                # describe-rule-group errors once the group is gone -> delete converged.
-                "network-firewall describe-rule-group": "__ERROR__",
+                # describe-rule-group returns not-found once the group is gone -> converged.
+                "network-firewall describe-rule-group": "__NOTFOUND__",
             }
         )
         report = detect_leftovers("proof", "proof")
@@ -351,3 +357,63 @@ class TestNetworkFirewallAsyncDelete:
         assert [f.action for f in nfw] == [Action.DELETED]
         # The delete was issued and convergence confirmed via describe.
         assert any("delete-rule-group" in " ".join(c) for c in deletes)
+
+    def test_transient_describe_error_is_not_treated_as_deleted(self, patched, monkeypatch):
+        # A describe failure with no not-found marker is transient: the sweep must
+        # keep polling and never conclude DELETED from a blip (#1639 codex review).
+        patched(
+            {
+                "network-firewall list-rule-groups": json.dumps(
+                    {"RuleGroups": [{"Name": "shifter-proof-victim", "Arn": "arn:nfw:rg/1"}]}
+                ),
+                "network-firewall list-tags-for-resource": json.dumps({"Tags": _OWNER_TAGS}),
+                "network-firewall describe-rule-group": "__ERROR__",  # transient, not a not-found
+            }
+        )
+        # Keep the bounded wait short and instant for the test.
+        monkeypatch.setattr(account_recovery, "_NFW_DELETE_POLL_ATTEMPTS", 2)
+        monkeypatch.setattr(account_recovery.time, "sleep", lambda *_: None)
+        report = detect_leftovers("proof", "proof")
+        result = sweep_leftovers(report, "proof", dry_run=False)
+        nfw = [f for f in result.findings if f.resource_class == "networkfirewall-rule-group"]
+        # Never DELETED on a transient error; FAILED so the idempotent sweep re-runs.
+        assert [f.action for f in nfw] == [Action.FAILED]
+
+
+class TestNameAndOwnership:
+    """Canonical name PLUS ownership; conflicts are surfaced, not dropped (#1639)."""
+
+    def test_canonical_name_with_conflicting_tags_is_blocked(self, patched):
+        # Name matches the env, but the tags say a different env -> BLOCKED for
+        # manual review, never silently dropped and never deleted.
+        patched(
+            {
+                "describe-db-parameter-groups": json.dumps(
+                    {
+                        "DBParameterGroups": [
+                            {"DBParameterGroupName": "shifter-proof-portal", "DBParameterGroupArn": "arn:conflict"}
+                        ]
+                    }
+                ),
+                "list-tags-for-resource --resource-name arn:conflict": json.dumps({"TagList": _FOREIGN_TAGS}),
+            }
+        )
+        report = detect_leftovers("proof", "proof")
+        pgs = [f for f in report.findings if f.resource_class == "rds-db-parameter-group"]
+        assert [f.action for f in pgs] == [Action.BLOCKED]
+
+    def test_noncanonical_name_is_not_a_candidate(self, patched):
+        # A resource whose name is not canonical for the env is skipped even if a
+        # tag lookup would say owned: name is the required lookup key.
+        patched(
+            {
+                "ecr describe-repositories": json.dumps(
+                    {"repositories": [{"repositoryName": "some-unrelated-repo", "repositoryArn": "arn:x"}]}
+                ),
+                "ecr list-tags-for-resource": json.dumps({"tags": _OWNER_TAGS}),
+            }
+        )
+        report = detect_leftovers("proof", "proof")
+        ecr = [f for f in report.findings if f.resource_class == "ecr-repository"]
+        # Not a candidate -> the class reports absent (no would-delete, no blocked).
+        assert [f.action for f in ecr] == [Action.ABSENT]

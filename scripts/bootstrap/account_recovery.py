@@ -163,6 +163,16 @@ def _aws_json(args: list[str], profile: str) -> dict | list:
         raise AwsQueryError(f"`aws {' '.join(args)}` returned unparseable JSON") from exc
 
 
+def _name_matches_env(name: str, environment: str) -> bool:
+    """True when a resource name follows the canonical Terraform env naming.
+
+    Resources are named from ``${var.name_prefix}`` as ``shifter-<env>-*`` or
+    ``<env>-*`` (for example ``shifter-proof-s3-cost-alert``, ``proof-portal-*``).
+    A name match is a lookup key only; ownership is confirmed separately by tags.
+    """
+    return name.startswith((f"shifter-{environment}-", f"{environment}-"))
+
+
 def _tags_owned_by_env(tags: dict[str, str], environment: str) -> bool:
     """True when the provider default_tags mark this resource as env-owned."""
     return (
@@ -199,15 +209,19 @@ class ResourceHandler:
 
 
 class _TaggedHandler(ResourceHandler):
-    """Handler for a taggable resource classified purely by ``default_tags``.
+    """Handler for a taggable resource classified by canonical NAME plus ownership.
 
-    No name pattern is needed: the environment ownership tags are the evidence,
-    so the handler lists the class and keeps only rows the env owns. A row that
-    carries a partial/foreign tag set is never returned as deletable.
+    Per the #1472 design, a matching name is a lookup key, not ownership proof:
+    a resource is deleted only when its identity is derived from the canonical
+    Terraform naming (``shifter-<env>-*`` / ``<env>-*``) AND the provider
+    ``default_tags`` confirm the environment owns it. A canonically-named
+    resource whose tags do not agree (missing, foreign, or unreadable) is
+    surfaced as BLOCKED for manual review, never silently dropped and never
+    deleted. A resource that does not match the canonical name is not a candidate.
     """
 
     def _list(self, profile: str) -> list[tuple[str, str]]:
-        """Return ``(identifier, arn)`` pairs for every resource of this class."""
+        """Return ``(name, arn)`` pairs for every resource of this class."""
         raise NotImplementedError
 
     def _fetch_tags(self, arn: str, profile: str) -> dict[str, str]:
@@ -216,21 +230,43 @@ class _TaggedHandler(ResourceHandler):
     def _delete_cmd(self, identifier: str) -> list[str]:
         raise NotImplementedError
 
+    def _name_matches(self, name: str, environment: str) -> bool:
+        """Canonical env naming. Override for a resource-specific pattern."""
+        return _name_matches_env(name, environment)
+
+    def _finding_identifier(self, name: str, arn: str) -> str:
+        """What to record/delete by. Name for most; overridden to ARN where the
+        delete API addresses the resource by ARN (Network Firewall)."""
+        return name
+
     def detect(self, environment: str, account_id: str, profile: str) -> list[LeftoverFinding]:
         # A failed _list() raises AwsQueryError and propagates to detect_leftovers,
         # which records the whole class as a failed check (never silently "absent").
         findings: list[LeftoverFinding] = []
-        for identifier, arn in self._list(profile):
+        for name, arn in self._list(profile):
+            if not self._name_matches(name, environment):
+                continue  # not a canonical env-named resource -> not a candidate
+            identifier = self._finding_identifier(name, arn)
             try:
                 tags = self._fetch_tags(arn, profile)
             except AwsQueryError:
-                # Ownership cannot be proven -> fail closed: surface it, never delete.
+                # Ownership cannot be read -> fail closed: surface it, never delete.
                 findings.append(
                     LeftoverFinding(self.resource_class, identifier, Action.BLOCKED, "ownership check failed")
                 )
                 continue
             if _tags_owned_by_env(tags, environment):
                 findings.append(LeftoverFinding(self.resource_class, identifier, Action.WOULD_DELETE))
+            else:
+                # Canonical name but ownership evidence disagrees -> block, never drop.
+                findings.append(
+                    LeftoverFinding(
+                        self.resource_class,
+                        identifier,
+                        Action.BLOCKED,
+                        "canonical name but ownership tags do not agree",
+                    )
+                )
         return findings or self._absent()
 
     def delete(self, finding: LeftoverFinding, profile: str, dry_run: bool) -> Action:
@@ -340,19 +376,10 @@ class NetworkFirewallRuleGroupHandler(_TaggedHandler):
         # Rule groups are addressed by ARN for delete; identifier here is the ARN.
         return ["network-firewall", "delete-rule-group", "--rule-group-arn", identifier]
 
-    def detect(self, environment: str, account_id: str, profile: str) -> list[LeftoverFinding]:
-        # Override to carry the ARN as the identifier (delete addresses by ARN).
-        # A failed _list() raises and propagates to detect_leftovers (failed check).
-        findings: list[LeftoverFinding] = []
-        for _name, arn in self._list(profile):
-            try:
-                tags = self._fetch_tags(arn, profile)
-            except AwsQueryError:
-                findings.append(LeftoverFinding(self.resource_class, arn, Action.BLOCKED, "ownership check failed"))
-                continue
-            if _tags_owned_by_env(tags, environment):
-                findings.append(LeftoverFinding(self.resource_class, arn, Action.WOULD_DELETE))
-        return findings or self._absent()
+    def _finding_identifier(self, name: str, arn: str) -> str:
+        # Delete addresses rule groups by ARN, so carry the ARN as the identifier;
+        # the canonical-name check in the base handler still runs against the name.
+        return arn
 
     def delete(self, finding: LeftoverFinding, profile: str, dry_run: bool) -> Action:
         # Network Firewall deletes are ASYNCHRONOUS: delete-rule-group only starts
@@ -380,14 +407,48 @@ class NetworkFirewallRuleGroupHandler(_TaggedHandler):
         return self._await_deletion(arn, profile)
 
     def _await_deletion(self, arn: str, profile: str) -> Action:
-        """Poll until the rule group is gone; describe errors once it is deleted."""
+        """Poll until the rule group is CONFIRMED gone.
+
+        describe-rule-group returns success while the group still exists
+        (DELETING), a not-found error once it is actually gone, and other errors
+        transiently (throttling, blips). Only a not-found concludes DELETED; a
+        transient error keeps polling, so an API blip is never mistaken for a
+        completed delete (#1639 codex review). Still present after the bounded
+        wait -> FAILED (the idempotent sweep can be re-run).
+        """
         for _ in range(_NFW_DELETE_POLL_ATTEMPTS):
-            try:
-                _aws_json(["network-firewall", "describe-rule-group", "--rule-group-arn", arn], profile)
-            except AwsQueryError:
-                return Action.DELETED  # describe fails once the group no longer exists
+            if self._describe_state(arn, profile) == "gone":
+                return Action.DELETED
             time.sleep(_NFW_DELETE_POLL_DELAY_SECONDS)
-        return Action.FAILED  # still present after the bounded wait; re-run to retry
+        return Action.FAILED
+
+    def _describe_state(self, arn: str, profile: str) -> str:
+        """Return ``present`` | ``gone`` | ``unknown`` for a rule group.
+
+        ``gone`` only when the describe error is specifically a not-found; any
+        other non-zero result is ``unknown`` (transient) so the caller retries
+        rather than concluding the group was deleted.
+        """
+        cmd = [
+            "aws",
+            "--profile",
+            profile,
+            "--region",
+            AWS_REGION,
+            "network-firewall",
+            "describe-rule-group",
+            "--rule-group-arn",
+            arn,
+            "--output",
+            "json",
+        ]
+        result = run_cmd(cmd, capture=True, check=False, profile=None)
+        if result is not None and result.returncode == 0:
+            return "present"
+        stderr = ((getattr(result, "stderr", "") or "") if result is not None else "").lower()
+        if "resourcenotfoundexception" in stderr or "does not exist" in stderr or "not found" in stderr:
+            return "gone"
+        return "unknown"
 
 
 class KmsAliasHandler(ResourceHandler):
