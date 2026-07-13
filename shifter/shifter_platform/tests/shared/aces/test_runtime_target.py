@@ -184,8 +184,9 @@ def test_aces_plan_contract_rejects_mixed_runtime_domains() -> None:
         resource_type="step",
         payload={"name": "a"},
     )
+    node = _node("provision.node.a", "a")
     with pytest.raises(ValueError, match="plan domain"):
-        _plan(_node("provision.node.a", "a"), other)
+        _plan(node, other)
 
 
 # --- interpret: real compiled plan --------------------------------------------

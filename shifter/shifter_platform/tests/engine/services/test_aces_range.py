@@ -127,8 +127,9 @@ class TestCreateAcesRangeDispatchFailure:
         ecs_client.run_task.return_value = {"tasks": [], "failures": [{"reason": "RESOURCE:CPU"}]}
 
         request_id = uuid4()
+        compiled_plan = make_compiled_plan()
         with patch("boto3.client", return_value=ecs_client), pytest.raises(CloudTaskError):
-            create_aces_range(request_id=request_id, user_id=user.id, compiled_plan=make_compiled_plan())
+            create_aces_range(request_id=request_id, user_id=user.id, compiled_plan=compiled_plan)
 
         range_obj = Range.objects.get(request__request_id=request_id)
         assert range_obj.status == Range.Status.FAILED

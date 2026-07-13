@@ -76,11 +76,13 @@ def test_resolve_pack_root_rejects_missing_and_empty(tmp_path):
 
 
 def test_resolve_pack_scenario_path_rejects_zero_or_multiple_entries(tmp_path):
+    empty_pack = _pack_tree(tmp_path, entries=0)
     with pytest.raises(AcesPackageError):
-        resolve_pack_scenario_path(_pack_tree(tmp_path, entries=0))
+        resolve_pack_scenario_path(empty_pack)
     other = tmp_path / "other"
+    multi_scenario_pack = _pack_tree(other, entries=2)
     with pytest.raises(AcesPackageError):
-        resolve_pack_scenario_path(_pack_tree(other, entries=2))
+        resolve_pack_scenario_path(multi_scenario_pack)
 
 
 def test_resolve_pack_scenario_path_rejects_symlinked_sdl(tmp_path):

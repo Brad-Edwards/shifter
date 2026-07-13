@@ -69,12 +69,14 @@ def test_command_registers_pack(admin_actor, repo_pack):
 
 
 def test_command_errors_on_unknown_actor(repo_pack):
+    args = _args(repo_pack, "nobody@example.com")
     with pytest.raises(CommandError):
-        call_command("register_pack", *_args(repo_pack, "nobody@example.com"))
+        call_command("register_pack", *args)
 
 
 def test_command_errors_on_domain_failure(admin_actor, repo_pack):
     # Shadowing a legacy scenario id is a fail-closed CMSError surfaced as a
     # CommandError, not a traceback. The message pins the shadow guard.
+    args = _args(repo_pack, admin_actor.username, **{"--scenario-id": "basic"})
     with pytest.raises(CommandError, match="shadow"):
-        call_command("register_pack", *_args(repo_pack, admin_actor.username, **{"--scenario-id": "basic"}))
+        call_command("register_pack", *args)

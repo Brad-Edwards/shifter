@@ -118,8 +118,9 @@ class TestRegisterPackHappyPath:
             raise RuntimeError("audit unavailable")
 
         monkeypatch.setattr("cms.services._content_ingestion.audit_log", fail_audit)
+        request = _request(repo_pack)
         with pytest.raises(CMSError, match="audit failed"):
-            register_pack(user=staff_user, request=_request(repo_pack))
+            register_pack(user=staff_user, request=request)
         assert not AcesPackageSource.objects.filter(scenario_id=FIXTURE_PACK_NAME).exists()
 
 
@@ -127,13 +128,15 @@ class TestRegisterPackAuthorization:
     def test_non_staff_is_denied(self, regular_user, repo_pack):
         from django.core.exceptions import PermissionDenied
 
+        request = _request(repo_pack)
         with pytest.raises(PermissionDenied):
-            register_pack(user=regular_user, request=_request(repo_pack))
+            register_pack(user=regular_user, request=request)
         assert not AcesPackageSource.objects.filter(scenario_id=FIXTURE_PACK_NAME).exists()
 
     def test_none_user_is_rejected(self, repo_pack):
+        request = _request(repo_pack)
         with pytest.raises(TypeError):
-            register_pack(user=None, request=_request(repo_pack))
+            register_pack(user=None, request=request)
 
 
 class TestRegisterPackEntitlementBlind:
@@ -181,8 +184,9 @@ class TestRegisterPackIdentityBinding:
         # id would let one immutable pack be aliased under many ids. Asserting the
         # bounded message pins the identity guard specifically (a different guard
         # would carry a different message and fail this match).
+        request = _request(repo_pack, scenario_id="some-other-id")
         with pytest.raises(CMSError, match="validated identity"):
-            register_pack(user=staff_user, request=_request(repo_pack, scenario_id="some-other-id"))
+            register_pack(user=staff_user, request=request)
         assert not AcesPackageSource.objects.filter(scenario_id="some-other-id").exists()
 
 
@@ -194,11 +198,9 @@ class TestRegisterPackDigestBinding:
         assert row.package_digest == request.package_digest
 
     def test_rejects_advertised_digest_mismatch(self, staff_user, repo_pack):
+        request = _request(repo_pack, package_digest="sha256:" + "b" * 64)
         with pytest.raises(CMSError, match="does not match"):
-            register_pack(
-                user=staff_user,
-                request=_request(repo_pack, package_digest="sha256:" + "b" * 64),
-            )
+            register_pack(user=staff_user, request=request)
         assert not AcesPackageSource.objects.filter(scenario_id=FIXTURE_PACK_NAME).exists()
 
     def test_rejects_missing_associated_artifact_manifest(self, staff_user, make_pack, tmp_path, monkeypatch):
@@ -207,11 +209,9 @@ class TestRegisterPackDigestBinding:
         root = make_pack(tmp_path / "packs" / "missing-manifest", name="missing-manifest")
         (root / "associated-artifacts.json").unlink()
         monkeypatch.setattr(settings, "ACES_PACKAGE_ROOT", str(tmp_path))
+        request = _request("packs/missing-manifest", scenario_id="missing-manifest")
         with pytest.raises(CMSError, match="digest could not be verified"):
-            register_pack(
-                user=staff_user,
-                request=_request("packs/missing-manifest", scenario_id="missing-manifest"),
-            )
+            register_pack(user=staff_user, request=request)
 
     def test_rejects_bytes_changed_after_manifest_was_sealed(self, staff_user, make_pack, tmp_path, monkeypatch):
         from django.conf import settings
@@ -220,15 +220,13 @@ class TestRegisterPackDigestBinding:
         advertised = pack_digest(root)
         (root / "docs" / "concepts.md").write_text("changed after staging\n", encoding="utf-8")
         monkeypatch.setattr(settings, "ACES_PACKAGE_ROOT", str(tmp_path))
+        request = _request(
+            "packs/mutated-pack",
+            scenario_id="mutated-pack",
+            package_digest=advertised,
+        )
         with pytest.raises(CMSError, match="digest could not be verified"):
-            register_pack(
-                user=staff_user,
-                request=_request(
-                    "packs/mutated-pack",
-                    scenario_id="mutated-pack",
-                    package_digest=advertised,
-                ),
-            )
+            register_pack(user=staff_user, request=request)
 
     def test_rejects_mutation_between_validation_and_digest_binding(
         self,
@@ -251,15 +249,13 @@ class TestRegisterPackDigestBinding:
             return identity
 
         monkeypatch.setattr("cms.services._content_ingestion.validate_pack", validate_then_mutate)
+        request = _request(
+            "packs/validation-race",
+            scenario_id="validation-race",
+            package_digest=advertised,
+        )
         with pytest.raises(CMSError, match="digest could not be verified"):
-            register_pack(
-                user=staff_user,
-                request=_request(
-                    "packs/validation-race",
-                    scenario_id="validation-race",
-                    package_digest=advertised,
-                ),
-            )
+            register_pack(user=staff_user, request=request)
         assert not AcesPackageSource.objects.filter(scenario_id="validation-race").exists()
 
 
@@ -276,8 +272,9 @@ class TestRegisterPackFailsClosed:
         # succeed, failing this test.
         make_pack(tmp_path / "packs" / "basic", name="basic")
         monkeypatch.setattr(settings, "ACES_PACKAGE_ROOT", str(tmp_path))
+        request = _request("packs/basic", scenario_id="basic")
         with pytest.raises(CMSError, match="shadow"):
-            register_pack(user=staff_user, request=_request("packs/basic", scenario_id="basic"))
+            register_pack(user=staff_user, request=request)
         assert not AcesPackageSource.objects.filter(scenario_id="basic").exists()
 
     def test_rejects_shadow_of_active_db_custom(self, staff_user, make_pack, tmp_path, monkeypatch, valid_db_scenario):
@@ -285,20 +282,20 @@ class TestRegisterPackFailsClosed:
 
         make_pack(tmp_path / "packs" / valid_db_scenario, name=valid_db_scenario)
         monkeypatch.setattr(settings, "ACES_PACKAGE_ROOT", str(tmp_path))
+        request = _request(f"packs/{valid_db_scenario}", scenario_id=valid_db_scenario)
         with pytest.raises(CMSError, match="shadow"):
-            register_pack(
-                user=staff_user, request=_request(f"packs/{valid_db_scenario}", scenario_id=valid_db_scenario)
-            )
+            register_pack(user=staff_user, request=request)
 
     def test_rejects_legacy_creation_after_pack_registration(self, staff_user, repo_pack):
         register_pack(user=staff_user, request=_request(repo_pack))
 
+        definition = _legacy_definition()
         with pytest.raises(ScenarioIdCollisionError, match="registered ACES pack"):
             Scenario.objects.create(
                 scenario_id=FIXTURE_PACK_NAME,
                 name="Late Legacy Shadow",
                 description="Must not claim a registered pack id.",
-                definition=_legacy_definition(),
+                definition=definition,
                 created_by=staff_user,
                 updated_by=staff_user,
             )
@@ -333,8 +330,9 @@ class TestRegisterPackFailsClosed:
 
     def test_rejects_duplicate_registration(self, staff_user, repo_pack):
         register_pack(user=staff_user, request=_request(repo_pack))
+        duplicate_request = _request(repo_pack)
         with pytest.raises(CMSError, match="already registered"):
-            register_pack(user=staff_user, request=_request(repo_pack))
+            register_pack(user=staff_user, request=duplicate_request)
         assert AcesPackageSource.objects.filter(scenario_id=FIXTURE_PACK_NAME).count() == 1
 
     def test_rejects_malformed_pack(self, staff_user, make_pack, tmp_path, monkeypatch):
@@ -342,15 +340,17 @@ class TestRegisterPackFailsClosed:
 
         make_pack(tmp_path / "packs" / "broken-pack", name="broken-pack", sdl=None)
         monkeypatch.setattr(settings, "ACES_PACKAGE_ROOT", str(tmp_path))
+        request = _request("packs/broken-pack", scenario_id="broken-pack")
         with pytest.raises(CMSError, match="ingestion validation"):
-            register_pack(user=staff_user, request=_request("packs/broken-pack", scenario_id="broken-pack"))
+            register_pack(user=staff_user, request=request)
 
     def test_rejects_missing_repo_pack(self, staff_user, tmp_path, monkeypatch):
         from django.conf import settings
 
         monkeypatch.setattr(settings, "ACES_PACKAGE_ROOT", str(tmp_path))
+        request = _request("packs/does-not-exist")
         with pytest.raises(CMSError, match="ingestion validation"):
-            register_pack(user=staff_user, request=_request("packs/does-not-exist"))
+            register_pack(user=staff_user, request=request)
 
     def test_rejects_package_ref_escaping_root(self, staff_user, make_pack, tmp_path, monkeypatch):
         from django.conf import settings
@@ -363,11 +363,9 @@ class TestRegisterPackFailsClosed:
         root.mkdir()
         make_pack(tmp_path / "outside" / "escape-target", name="escape-target")
         monkeypatch.setattr(settings, "ACES_PACKAGE_ROOT", str(root))
+        request = _request("../outside/escape-target", scenario_id="escape-target")
         with pytest.raises(CMSError, match="escapes the configured package root"):
-            register_pack(
-                user=staff_user,
-                request=_request("../outside/escape-target", scenario_id="escape-target"),
-            )
+            register_pack(user=staff_user, request=request)
         assert not AcesPackageSource.objects.filter(scenario_id="escape-target").exists()
 
 
