@@ -195,6 +195,12 @@ wait_for 60 "redis" docker exec "$REDIS" redis-cli ping
 # entrypoint without any cloud access. Mirrors deploy_portal.sh env names.
 declare -a common_env=(
   -e ENVIRONMENT=production
+  # Production settings now resolve + validate the active cloud backend at import
+  # (config._runtime_env.resolve_cloud_provider, PLAT-2005) and fail closed when
+  # CLOUD_PROVIDER is absent, exactly as a real deploy must set it. The smoke boots
+  # the AWS-shaped runtime (ElasticMQ/SQS, boto3 endpoint), so it mirrors the AWS
+  # deploy by supplying the backend identity explicitly.
+  -e CLOUD_PROVIDER=aws
   -e "DB_HOST=${PG}" -e DB_PORT=5432 -e "DB_NAME=${DB_NAME}" -e "DB_USER=${DB_USER}" -e "DB_PASSWORD=${DB_PASSWORD}"
   -e "DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY}"
   -e "FIELD_ENCRYPTION_KEY=${FIELD_ENCRYPTION_KEY}"
