@@ -279,7 +279,9 @@ def run_cmd(
     info(f"Running: {cmd_str}")
     try:
         if capture:
-            result = subprocess.run(cmd, check=check, capture_output=True, text=True, env=_subprocess_env())  # nosec B603 B607
+            result = subprocess.run(  # nosec B603 B607
+                cmd, check=check, capture_output=True, text=True, env=_subprocess_env()
+            )
         else:
             result = subprocess.run(cmd, check=check, text=True, env=_subprocess_env())  # nosec B603 B607
         return result
