@@ -38,6 +38,13 @@ _FOREIGN_TAGS = [
     {"Key": "Environment", "Value": "dev"},  # different env -> not owned
 ]
 
+# Empty liveness responses: a torn-down account (no portal ASG, no RDS) so the
+# orchestrator's live-tenant guard passes and detection/sweep proceed.
+_NOT_LIVE = {
+    "autoscaling describe-auto-scaling-groups": json.dumps({"AutoScalingGroups": []}),
+    "rds describe-db-instances": json.dumps({"DBInstances": []}),
+}
+
 
 class _FakeResult:
     def __init__(self, stdout: str = "", returncode: int = 0):
@@ -184,6 +191,7 @@ class TestSweepGating:
     def test_orchestrator_detection_only_without_sweep(self, patched, capsys):
         deletes = patched(
             {
+                **_NOT_LIVE,
                 "ecr describe-repositories": json.dumps(
                     {"repositories": [{"repositoryName": "shifter-proof-portal", "repositoryArn": "arn:ecr"}]}
                 ),
@@ -193,6 +201,61 @@ class TestSweepGating:
         run_account_recovery("proof", "proof", sweep=False, dry_run=False)
         # No --sweep -> nothing deleted even though an owned leftover exists.
         assert deletes == []
+
+
+class TestLivenessGuard:
+    """The tool refuses on a live (or unverifiable) tenant so it can never treat a
+    running tenant's resources as leftovers (issue #1639, caught in live proof)."""
+
+    def test_refuses_and_sweeps_nothing_when_live_asg_present(self, patched):
+        deletes = patched(
+            {
+                "autoscaling describe-auto-scaling-groups": json.dumps(
+                    {"AutoScalingGroups": [{"AutoScalingGroupName": "proof-portal-asg-abc", "Instances": [{"x": 1}]}]}
+                ),
+                # An owned ECR repo also exists, but liveness refusal fires first.
+                "ecr describe-repositories": json.dumps(
+                    {"repositories": [{"repositoryName": "shifter-proof-portal", "repositoryArn": "arn:ecr"}]}
+                ),
+                "ecr list-tags-for-resource": json.dumps({"tags": _OWNER_TAGS}),
+            }
+        )
+        report = run_account_recovery("proof", "proof", sweep=True, dry_run=False)
+        assert report.findings == []  # refused: nothing presented as a leftover
+        assert deletes == []  # and nothing deleted despite --sweep
+
+    def test_fails_closed_when_liveness_undeterminable(self, patched):
+        # describe-auto-scaling-groups errors (unmatched -> returncode 1 -> None),
+        # so liveness cannot be confirmed and the tool must refuse the sweep.
+        deletes = patched(
+            {
+                "ecr describe-repositories": json.dumps(
+                    {"repositories": [{"repositoryName": "shifter-proof-portal", "repositoryArn": "arn:ecr"}]}
+                ),
+                "ecr list-tags-for-resource": json.dumps({"tags": _OWNER_TAGS}),
+            }
+        )
+        report = run_account_recovery("proof", "proof", sweep=True, dry_run=False)
+        assert report.findings == []
+        assert deletes == []
+
+    def test_proceeds_on_torn_down_account(self, patched, monkeypatch):
+        deletes = patched(
+            {
+                **_NOT_LIVE,
+                "ecr describe-repositories": json.dumps(
+                    {"repositories": [{"repositoryName": "shifter-proof-portal", "repositoryArn": "arn:ecr"}]}
+                ),
+                "ecr list-tags-for-resource": json.dumps({"tags": _OWNER_TAGS}),
+            }
+        )
+        # Grant the destructive confirmation (the confirm()/--yes gate is covered
+        # in test_bootstrap_core); here we exercise the torn-down sweep path.
+        monkeypatch.setattr(account_recovery, "confirm", lambda *a, **k: True)
+        report = run_account_recovery("proof", "proof", sweep=True, dry_run=False)
+        # Torn-down account -> detection proceeds and the owned ECR repo is swept.
+        assert any(f.action is Action.DELETED and f.resource_class == "ecr-repository" for f in report.findings)
+        assert any("delete-repository" in " ".join(c) for c in deletes)
 
 
 class TestSafetyInvariants:

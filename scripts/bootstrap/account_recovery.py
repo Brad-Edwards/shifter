@@ -480,14 +480,62 @@ def sweep_leftovers(
     return RecoveryReport(report.account_id, report.environment, report.region, swept)
 
 
+def tenant_is_live(environment: str, profile: str) -> bool:
+    """True when a running tenant still occupies ``environment`` in this account.
+
+    Leftover recovery targets a TORN-DOWN account whose Terraform state is gone
+    (the #1472 narrow fallback). If the tenant is still live, everything that
+    matches the environment naming is the RUNNING tenant's, not an orphan, and
+    must never be presented as sweepable, so the tool refuses. A portal ASG
+    carrying instances, or an RDS instance for the environment, is a strong
+    "this is not a fresh account" signal.
+
+    Fails CLOSED: if the liveness queries cannot be evaluated (an API error, so
+    :func:`_aws_json` returns ``None``), the account is treated as live so a
+    destructive sweep is never authorized on an account we cannot confirm is
+    torn down. An empty account returns valid empty lists (not ``None``), so a
+    genuinely clean account is correctly treated as not-live.
+    """
+    asgs = _aws_json(["autoscaling", "describe-auto-scaling-groups"], profile)
+    if asgs is None:
+        return True  # cannot confirm -> fail closed
+    for asg in asgs.get("AutoScalingGroups", []) if isinstance(asgs, dict) else []:
+        name = asg.get("AutoScalingGroupName", "")
+        if (name.startswith(f"{environment}-portal") or name.startswith(f"shifter-{environment}")) and asg.get(
+            "Instances"
+        ):
+            return True
+
+    dbs = _aws_json(["rds", "describe-db-instances"], profile)
+    if dbs is None:
+        return True  # cannot confirm -> fail closed
+    for db in dbs.get("DBInstances", []) if isinstance(dbs, dict) else []:
+        ident = db.get("DBInstanceIdentifier", "")
+        if ident.startswith(f"{environment}-") or ident.startswith(f"shifter-{environment}"):
+            return True
+    return False
+
+
 def account_recovery(environment: str, profile: str, *, sweep: bool, dry_run: bool) -> RecoveryReport:
     """CLI entrypoint: detect residue, print the report, optionally sweep.
 
     Detection always runs and is read-only. The sweep is gated on an explicit
     ``--sweep`` AND :func:`bootstrap_core.confirm` (which honors ``--yes`` but
     still requires the explicit sweep intent), so a non-TTY alone never deletes.
+
+    Refuses entirely when a live tenant is present (issue #1639): recovery is only
+    for a torn-down account, so it must not treat a running tenant's resources as
+    leftovers. Use ``terraform destroy`` to tear down a live tenant first.
     """
     subheader(f"Account leftover recovery: {environment} ({AWS_REGION})")
+
+    if tenant_is_live(environment, profile):
+        warn(
+            f"A live (or unverifiable) tenant is present in {environment}; refusing. Leftover recovery is only "
+            "for a torn-down account whose Terraform state is gone. Run `terraform destroy` for a live tenant."
+        )
+        return RecoveryReport(get_aws_account_id(profile), environment, AWS_REGION, [])
+
     report = detect_leftovers(environment, profile)
     info(report.render())
 
