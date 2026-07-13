@@ -25,7 +25,6 @@ def _install_destroy_fakes(monkeypatch, *, status="ready", variables=None):
     monkeypatch.setattr("terraform_ops.build_range_variables", mock_build_vars)
     monkeypatch.setattr("terraform_ops.publish_destroyed", mock_publish)
     monkeypatch.setattr("terraform_ops.mark_range_instances_destroyed", mock_mark)
-    monkeypatch.setattr("terraform_ops.remove_ngfw_subnets", MagicMock())
     return mock_get_data, mock_tf_runner, mock_build_vars, mock_publish, mock_mark
 
 

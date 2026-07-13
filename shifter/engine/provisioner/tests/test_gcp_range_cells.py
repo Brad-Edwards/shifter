@@ -235,16 +235,18 @@ def test_render_range_cell_plan_rejects_subnet_without_uuid():
     payload = _scenario_payload()
     del payload["subnets"][0]["uuid"]
     variables = _variables(payload=payload)
+    config = _sample_config()
 
     with pytest.raises(RuntimeError, match="requires name and uuid"):
-        render_range_cell_plan("req-123", variables, _sample_config())
+        render_range_cell_plan("req-123", variables, config)
 
 
 def test_render_range_cell_plan_rejects_subnet_without_cidr_when_images_required():
     variables = _variables(bindings=[])
+    config = _sample_config()
 
     with pytest.raises(RuntimeError, match="requires a network binding"):
-        render_range_cell_plan("req-123", variables, _sample_config())
+        render_range_cell_plan("req-123", variables, config)
 
 
 def test_apply_shared_vpc_skips_network_create(mocker):
@@ -371,8 +373,9 @@ def test_render_plan_destroy_tolerates_missing_subnet_cidr():
 
 def test_render_plan_provision_requires_subnet_cidr():
     variables = _variables(bindings=[])
+    config = _sample_config()
     with pytest.raises(RuntimeError, match="requires a network binding"):
-        render_range_cell_plan("req-123", variables, _sample_config())
+        render_range_cell_plan("req-123", variables, config)
 
 
 def test_render_plan_requires_subnet_name_and_uuid():
@@ -381,8 +384,9 @@ def test_render_plan_requires_subnet_name_and_uuid():
     payload = _scenario_payload()
     payload["subnets"][0]["uuid"] = ""
     variables = _variables(payload=payload, bindings=[])
+    config = _sample_config()
     with pytest.raises(RuntimeError, match="requires name and uuid"):
-        render_range_cell_plan("req-123", variables, _sample_config(), require_images=False)
+        render_range_cell_plan("req-123", variables, config, require_images=False)
 
 
 def test_render_plan_translates_polaris_vm_to_docker_host_access():
@@ -608,12 +612,13 @@ def test_contract_validation_precedes_every_gce_client_mutation(mocker):
     secret_ops, secret_mocks = _mock_secret_ops(mocker)
     vertex_ops, vertex_mocks = _mock_vertex_ops(mocker)
     malformed = _variables() | {"unexpected": True}
+    config = _sample_config()
 
     with pytest.raises(RangeCellContractError, match="unexpected field"):
         apply_range_cell(
             "req-123",
             malformed,
-            config=_sample_config(),
+            config=config,
             clients=clients,
             secret_ops=secret_ops,
             vertex_ops=vertex_ops,
@@ -635,12 +640,13 @@ def test_outer_access_cannot_expand_digest_bound_scenario_authorization(mocker):
     secret_ops, secret_mocks = _mock_secret_ops(mocker)
     variables = _variables()
     variables["access_declarations"] = [{"target_ref": "dc-uuid", "channel": "ssh"}]
+    config = _sample_config()
 
     with pytest.raises(RangeCellContractError, match="do not match the digest-bound scenario artifact"):
         apply_range_cell(
             "req-123",
             variables,
-            config=_sample_config(),
+            config=config,
             clients=clients,
             secret_ops=secret_ops,
         )
@@ -671,16 +677,21 @@ def test_scenario_adapter_rejects_invalid_membership_before_provider_mutation(mo
     payload = _scenario_payload()
     payload["subnets"][0]["instances"] = instances
     payload["participant_access"] = []
+    config = _sample_config()
 
-    with pytest.raises(RangeCellContractError, match=message):
+    def apply_invalid_payload():
+        variables = _variables(payload=payload)
         apply_range_cell(
             "req-123",
-            _variables(payload=payload),
-            config=_sample_config(),
+            variables,
+            config=config,
             clients=clients,
             secret_ops=secret_ops,
             vertex_ops=vertex_ops,
         )
+
+    with pytest.raises(RangeCellContractError, match=message):
+        apply_invalid_payload()
 
     clients.networks.insert.assert_not_called()
     clients.subnetworks.insert.assert_not_called()
@@ -871,18 +882,20 @@ def test_apply_range_cell_cleans_up_on_failure(mocker):
     clients.instances.insert.side_effect = RuntimeError("insert failed")
     secret_ops, _mocks = _mock_secret_ops(mocker)
     cleanup = mocker.Mock()
+    variables = _variables()
+    config = _sample_config()
 
     with pytest.raises(RuntimeError, match="insert failed"):
         apply_range_cell(
             "req-123",
-            _variables(),
-            config=_sample_config(),
+            variables,
+            config=config,
             clients=clients,
             secret_ops=secret_ops,
             cleanup_range_cell=cleanup,
         )
 
-    cleanup.assert_called_once_with("req-123", _variables())
+    cleanup.assert_called_once_with("req-123", variables)
 
 
 def test_apply_range_cell_cleans_up_when_access_output_contains_a_secret_value(mocker):
@@ -890,18 +903,20 @@ def test_apply_range_cell_cleans_up_when_access_output_contains_a_secret_value(m
     secret_ops, secret_mocks = _mock_secret_ops(mocker)
     secret_mocks.ensure_participant_ssh.return_value = ("inline-secret-value", "ssh-ed25519 AAAA")
     cleanup = mocker.Mock()
+    variables = _variables()
+    config = _sample_config()
 
     with pytest.raises(RangeCellContractError, match="GCP Secret Manager reference"):
         apply_range_cell(
             "req-123",
-            _variables(),
-            config=_sample_config(),
+            variables,
+            config=config,
             clients=clients,
             secret_ops=secret_ops,
             cleanup_range_cell=cleanup,
         )
 
-    cleanup.assert_called_once_with("req-123", _variables())
+    cleanup.assert_called_once_with("req-123", variables)
 
 
 def test_build_clients_uses_google_compute_default_classes(mocker, monkeypatch):
@@ -950,18 +965,20 @@ def test_apply_range_cell_raises_on_completed_operation_error(mocker):
     }
     secret_ops, _mocks = _mock_secret_ops(mocker)
     cleanup = mocker.Mock()
+    variables = _variables()
+    config = _sample_config()
 
     with pytest.raises(RuntimeError, match="QUOTA_EXCEEDED: too many networks"):
         apply_range_cell(
             "req-123",
-            _variables(),
-            config=_sample_config(),
+            variables,
+            config=config,
             clients=clients,
             secret_ops=secret_ops,
             cleanup_range_cell=cleanup,
         )
 
-    cleanup.assert_called_once_with("req-123", _variables())
+    cleanup.assert_called_once_with("req-123", variables)
 
 
 def test_destroy_range_cell_deletes_every_resource(mocker):

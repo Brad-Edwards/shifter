@@ -165,9 +165,10 @@ class TestCreateRangeErrorValidation:
     def test_propagates_and_rolls_back_on_subnet_exhaustion(self, user, monkeypatch):
         monkeypatch.setattr(Range, "SUBNET_INDEX_MAX", 1)
         Range.objects.create(user=user, subnet_index=1, status=Range.Status.READY)  # consume the only index
+        spec = make_request_spec(user_id=user.id)
 
         with pytest.raises(ValueError, match="No subnet indices available"):
-            create_range(make_request_spec(user_id=user.id))
+            create_range(spec)
 
         # No new Range row was created (allocation fails before persistence).
         assert Range.objects.count() == 1

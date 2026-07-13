@@ -42,6 +42,7 @@ from config import GCERangeCellConfig, GCERangeImageProfile, load_gce_range_cell
 from gcp_guest_secrets import delete_aces_ssh_secret, ensure_aces_ssh_secret
 from gcp_range_cell_clients import GCEClients, _build_clients
 from gcp_range_cell_ops import _wait_for_operation
+from gcp_range_cell_outputs import InstanceCredentials, instance_output, subnet_outputs
 from gcp_range_cell_plan import InstancePlan, RangeCellPlan, ResourceDict
 from gcp_range_cell_resources import instance_resource
 from gcp_range_cells import (
@@ -52,8 +53,6 @@ from gcp_range_cells import (
     _ensure_subnetwork,
     _get_or_none,
     _host_public_key_from_instance,
-    _instance_output,
-    _subnet_outputs,
 )
 from utils.crypto import generate_ssh_host_keypair
 
@@ -196,15 +195,17 @@ def _provision_aces_resources(
             runtime.secret_ops,
             bootstrap_by_node,
         )
-        output = _instance_output(
+        output = instance_output(
             plan,
             instance,
-            host_ssh_secret_ref=ssh_secret_ref,
-            participant_ssh_secret_ref=None,
-            rdp_password_secret_ref=None,
-            ssh_public_key=ssh_public_key,
-            host_public_key=host_public_key,
-            config=runtime.config,
+            InstanceCredentials(
+                host_ssh_secret_ref=ssh_secret_ref,
+                participant_ssh_secret_ref=None,
+                rdp_password_secret_ref=None,
+                ssh_public_key=ssh_public_key,
+                host_public_key=host_public_key,
+            ),
+            runtime.config,
         )
         accounts = accounts_by_node.get(_node_address_of(instance), ())
         if accounts:
@@ -264,7 +265,7 @@ def apply_aces_range_cell(
             account_secret_ops=runtime.account_secret_ops,
         )
         raise
-    return {"subnets": _subnet_outputs(plan), "instances": instance_outputs}
+    return {"subnets": subnet_outputs(plan), "instances": instance_outputs}
 
 
 def destroy_aces_range_cell(

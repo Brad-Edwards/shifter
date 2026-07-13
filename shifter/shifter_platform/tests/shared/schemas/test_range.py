@@ -334,12 +334,13 @@ class TestRangeSpec:
         """RangeSpec rejects participant access to non-members."""
         from shared.schemas.range import RangeAccessBinding, RangeSpec
 
+        participant_access = [RangeAccessBinding(target_ref="foreign", channel="ssh")]
         with pytest.raises(ValidationError, match="unknown member"):
             RangeSpec(
                 scenario_id="basic",
                 user_id=1,
                 subnets=[],
-                participant_access=[RangeAccessBinding(target_ref="foreign", channel="ssh")],
+                participant_access=participant_access,
             )
 
     def test_participant_access_rejects_duplicate_target_channel(self):
@@ -349,11 +350,12 @@ class TestRangeSpec:
 
         instance = InstanceSpec(uuid="member-a", role="attacker", os_type="kali")
         binding = RangeAccessBinding(target_ref="member-a", channel="ssh")
+        subnets = [SubnetSpec(name="attack", uuid="subnet-a", instances=[instance])]
         with pytest.raises(ValidationError, match="duplicate target/channel"):
             RangeSpec(
                 scenario_id="basic",
                 user_id=1,
-                subnets=[SubnetSpec(name="attack", uuid="subnet-a", instances=[instance])],
+                subnets=subnets,
                 participant_access=[binding, binding],
             )
 

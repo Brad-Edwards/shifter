@@ -162,6 +162,7 @@ def test_gce_variable_builder_rejects_missing_scenario_artifact():
 def test_contract_request_cannot_fall_back_to_an_unsafe_backend(monkeypatch, environment):
     gdc_network_apply = MagicMock()
     terraform_apply = MagicMock()
+    request = _contract_request()
     monkeypatch.setattr("range_terraform_runner.gdc_range_networks.apply_range_networks", gdc_network_apply)
     monkeypatch.setattr("range_terraform_runner.terraform_base.apply", terraform_apply)
 
@@ -169,7 +170,7 @@ def test_contract_request_cannot_fall_back_to_an_unsafe_backend(monkeypatch, env
         patch.dict("os.environ", environment, clear=True),
         pytest.raises(RuntimeError, match="GCP/GCE VM range-cell backend"),
     ):
-        apply_range("request-a", _contract_request())
+        apply_range("request-a", request)
 
     gdc_network_apply.assert_not_called()
     terraform_apply.assert_not_called()

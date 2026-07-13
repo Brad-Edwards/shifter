@@ -1311,7 +1311,7 @@ class TestGdcProvisioning:
             MagicMock(return_value={"range_id": 42, "user_id": 7, "spec": {"ngfw": True}}),
         )
         monkeypatch.setattr(
-            "terraform_ops.get_user_ngfw_data",
+            "terraform_ngfw_range.get_user_ngfw_data",
             MagicMock(
                 return_value={
                     "cloud_provider": "gcp",

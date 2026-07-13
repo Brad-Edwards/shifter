@@ -80,17 +80,16 @@ def test_scenario_artifact_digest_detects_payload_tampering():
     artifact = build_scenario_artifact(_envelope())
     tampered = deepcopy(artifact)
     tampered["payload"]["scenario_id"] = "scenario-b"  # type: ignore[index]
+    request = build_gcp_vm_range_cell_request(
+        request_id="request-a",
+        range_id=42,
+        scenario_artifact=artifact,
+        network_bindings=[{"subnet_ref": "subnet-a", "cidr": "10.50.2.0/28"}],
+    )
+    request["scenario_artifact"] = tampered
 
     with pytest.raises(RangeCellContractError, match="digest mismatch"):
-        validate_gcp_vm_range_cell_request(
-            build_gcp_vm_range_cell_request(
-                request_id="request-a",
-                range_id=42,
-                scenario_artifact=artifact,
-                network_bindings=[{"subnet_ref": "subnet-a", "cidr": "10.50.2.0/28"}],
-            )
-            | {"scenario_artifact": tampered}
-        )
+        validate_gcp_vm_range_cell_request(request)
 
 
 def test_scenario_artifact_builder_requires_the_canonical_range_spec():
@@ -130,11 +129,12 @@ def test_request_rejects_unknown_version_backend_and_fields(path, value, message
 
 
 def test_request_rejects_duplicate_network_membership():
+    artifact = build_scenario_artifact(_envelope())
     with pytest.raises(RangeCellContractError, match="duplicate subnet_ref"):
         build_gcp_vm_range_cell_request(
             request_id="request-a",
             range_id=42,
-            scenario_artifact=build_scenario_artifact(_envelope()),
+            scenario_artifact=artifact,
             network_bindings=[
                 {"subnet_ref": "subnet-a", "cidr": "10.50.2.0/28"},
                 {"subnet_ref": "subnet-a", "cidr": "10.50.3.0/28"},
@@ -144,12 +144,13 @@ def test_request_rejects_duplicate_network_membership():
 
 def test_request_rejects_duplicate_participant_access_declarations():
     declaration = {"target_ref": "instance-a", "channel": "ssh"}
+    artifact = build_scenario_artifact(_envelope())
 
     with pytest.raises(RangeCellContractError, match="duplicate access declaration"):
         build_gcp_vm_range_cell_request(
             request_id="request-a",
             range_id=42,
-            scenario_artifact=build_scenario_artifact(_envelope()),
+            scenario_artifact=artifact,
             network_bindings=[{"subnet_ref": "subnet-a", "cidr": "10.50.2.0/28"}],
             access_declarations=[declaration, declaration],
         )

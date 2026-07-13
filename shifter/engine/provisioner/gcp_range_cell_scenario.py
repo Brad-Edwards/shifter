@@ -24,12 +24,14 @@ ResourceDict = dict[str, Any]
 
 
 def _resource_dicts(value: object) -> list[ResourceDict]:
+    """Return only mapping entries from a legacy resource list."""
     if not isinstance(value, list):
         return []
     return [item for item in value if isinstance(item, dict)]
 
 
 def _require_resource_list(value: object, field: str) -> list[ResourceDict]:
+    """Return a resource list or raise a field-specific contract error."""
     if not isinstance(value, list):
         raise RangeCellContractError(f"{field} must be a list")
     resources: list[ResourceDict] = []
@@ -40,19 +42,16 @@ def _require_resource_list(value: object, field: str) -> list[ResourceDict]:
     return resources
 
 
-def realize_range_spec(
-    request: dict[str, object],
+def _realize_subnets(
+    payload: ResourceDict,
+    bindings: dict[str, str],
     *,
     require_network_bindings: bool,
-) -> ResourceDict:
-    """Overlay platform CIDR bindings onto a defensive copy of legacy topology."""
-    validated = validate_gcp_vm_range_cell_request(request)
-    payload = deepcopy(validated["scenario_artifact"]["payload"])
-    bindings = {binding["subnet_ref"]: binding["cidr"] for binding in validated["network_bindings"]}
+) -> tuple[list[ResourceDict], set[str], set[str]]:
+    """Apply admitted CIDRs while validating authored subnet and member identities."""
     realized_subnets: list[ResourceDict] = []
     authored_refs: set[str] = set()
     instance_refs: set[str] = set()
-
     for subnet_index, subnet in enumerate(_require_resource_list(payload.get("subnets", []), "subnets")):
         subnet_name = str(subnet.get("name") or "").strip()
         subnet_ref = str(subnet.get("uuid") or "").strip()
@@ -75,25 +74,52 @@ def realize_range_spec(
         realized["cidr"] = bindings.get(subnet_ref, "")
         realized["instances"] = deepcopy(instances)
         realized_subnets.append(realized)
+    return realized_subnets, authored_refs, instance_refs
 
-    foreign_refs = sorted(set(bindings) - authored_refs)
-    if foreign_refs:
-        raise RangeCellContractError(f"network binding references foreign authored subnet: {foreign_refs[0]}")
+
+def _validate_access_declarations(
+    validated: ResourceDict,
+    payload: ResourceDict,
+    instance_refs: set[str],
+) -> list[ResourceDict]:
+    """Verify outer participant access against digest-bound scenario intent."""
     access_declarations = deepcopy(validated["access_declarations"])
     artifact_declarations = payload.get("participant_access", [])
-    if {(str(declaration["target_ref"]), str(declaration["channel"])) for declaration in access_declarations} != {
-        (str(declaration["target_ref"]), str(declaration["channel"]))
-        for declaration in _require_resource_list(artifact_declarations, "participant_access")
-    }:
+    outer_pairs = {(str(item["target_ref"]), str(item["channel"])) for item in access_declarations}
+    artifact_pairs = {
+        (str(item["target_ref"]), str(item["channel"]))
+        for item in _require_resource_list(artifact_declarations, "participant_access")
+    }
+    if outer_pairs != artifact_pairs:
         raise RangeCellContractError("outer access declarations do not match the digest-bound scenario artifact")
     for declaration in access_declarations:
         target_ref = declaration["target_ref"]
         if target_ref not in instance_refs:
             raise RangeCellContractError(f"participant access references foreign authored member: {target_ref}")
+    return access_declarations
+
+
+def realize_range_spec(
+    request: dict[str, object],
+    *,
+    require_network_bindings: bool,
+) -> ResourceDict:
+    """Overlay platform CIDR bindings onto a defensive copy of legacy topology."""
+    validated = validate_gcp_vm_range_cell_request(request)
+    payload = deepcopy(validated["scenario_artifact"]["payload"])
+    bindings = {binding["subnet_ref"]: binding["cidr"] for binding in validated["network_bindings"]}
+    realized_subnets, authored_refs, instance_refs = _realize_subnets(
+        payload,
+        bindings,
+        require_network_bindings=require_network_bindings,
+    )
+    foreign_refs = sorted(set(bindings) - authored_refs)
+    if foreign_refs:
+        raise RangeCellContractError(f"network binding references foreign authored subnet: {foreign_refs[0]}")
     return {
         "range_id": validated["operation"]["range_id"],
         "subnets": realized_subnets,
-        "access_declarations": access_declarations,
+        "access_declarations": _validate_access_declarations(validated, payload, instance_refs),
     }
 
 
@@ -127,6 +153,7 @@ def _host_access(
 
 
 def _instance_assignment_key(instance: ResourceDict, index: int) -> str:
+    """Return the stable address-allocation key for a scenario instance."""
     return str(instance.get("uuid") or instance.get("name") or f"asset-{index}")
 
 

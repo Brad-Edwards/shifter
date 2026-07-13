@@ -28,6 +28,7 @@ PROVIDER = "gcp"
 BACKEND = "gce"
 
 _DIGEST_KEY = "digest"
+_PERSISTED_ENVELOPE_FIELD = "persisted scenario envelope"
 _ARTIFACT_KEYS = frozenset({SPEC_SCHEMA_KEY, SPEC_VERSION_KEY, PAYLOAD_KEY, _DIGEST_KEY})
 _ENVELOPE_KEYS = frozenset({SPEC_SCHEMA_KEY, SPEC_VERSION_KEY, PAYLOAD_KEY})
 _REQUEST_KEYS = frozenset(
@@ -50,18 +51,21 @@ ContractDict = dict[str, Any]
 
 
 def _require_dict(value: object, field: str) -> ContractDict:
+    """Return a mapping or raise a field-specific contract error."""
     if not isinstance(value, dict):
         raise RangeCellContractError(f"{field} must be an object")
     return value
 
 
 def _require_list(value: object, field: str) -> list[object]:
+    """Return a list or raise a field-specific contract error."""
     if not isinstance(value, list):
         raise RangeCellContractError(f"{field} must be a list")
     return value
 
 
 def _require_exact_keys(value: ContractDict, expected: frozenset[str], field: str) -> None:
+    """Require a closed object with exactly the declared field names."""
     actual = frozenset(value)
     unexpected = sorted(actual - expected)
     if unexpected:
@@ -72,18 +76,21 @@ def _require_exact_keys(value: ContractDict, expected: frozenset[str], field: st
 
 
 def _require_text(value: object, field: str) -> str:
+    """Return normalized non-empty text or raise a contract error."""
     if not isinstance(value, str) or not value.strip():
         raise RangeCellContractError(f"{field} must be a non-empty string")
     return value.strip()
 
 
 def _require_range_id(value: object) -> int:
+    """Return a positive range identifier, excluding booleans."""
     if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
         raise RangeCellContractError("operation.range_id must be a positive integer")
     return value
 
 
 def _canonical_json(value: object, field: str) -> bytes:
+    """Serialize JSON data deterministically for digest calculation."""
     try:
         serialized = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False)
     except (TypeError, ValueError) as exc:
@@ -92,6 +99,7 @@ def _canonical_json(value: object, field: str) -> bytes:
 
 
 def _artifact_digest(envelope: ContractDict) -> str:
+    """Return the versioned SHA-256 digest for a canonical envelope."""
     return f"sha256:{hashlib.sha256(_canonical_json(envelope, 'scenario artifact')).hexdigest()}"
 
 
@@ -103,15 +111,15 @@ def build_scenario_artifact(envelope: dict[str, object], *, expected_schema: str
     remains dependency-light and verifies the already-minted digest without
     importing the scenario schema graph.
     """
-    source = deepcopy(_require_dict(envelope, "persisted scenario envelope"))
-    _require_exact_keys(source, _ENVELOPE_KEYS, "persisted scenario envelope")
-    schema = _require_text(source[SPEC_SCHEMA_KEY], f"persisted scenario envelope.{SPEC_SCHEMA_KEY}")
+    source = deepcopy(_require_dict(envelope, _PERSISTED_ENVELOPE_FIELD))
+    _require_exact_keys(source, _ENVELOPE_KEYS, _PERSISTED_ENVELOPE_FIELD)
+    schema = _require_text(source[SPEC_SCHEMA_KEY], f"{_PERSISTED_ENVELOPE_FIELD}.{SPEC_SCHEMA_KEY}")
     if schema != expected_schema:
         raise RangeCellContractError(f"spec_schema mismatch: expected {expected_schema}, got {schema}")
-    version = _require_text(source[SPEC_VERSION_KEY], f"persisted scenario envelope.{SPEC_VERSION_KEY}")
+    version = _require_text(source[SPEC_VERSION_KEY], f"{_PERSISTED_ENVELOPE_FIELD}.{SPEC_VERSION_KEY}")
     if version != SPEC_VERSION:
         raise RangeCellContractError(f"Unsupported spec_version: {version}")
-    _require_dict(source[PAYLOAD_KEY], f"persisted scenario envelope.{PAYLOAD_KEY}")
+    _require_dict(source[PAYLOAD_KEY], f"{_PERSISTED_ENVELOPE_FIELD}.{PAYLOAD_KEY}")
     try:
         from cyberscript.schemas.persistence import validate_persisted_spec
 
@@ -122,7 +130,7 @@ def build_scenario_artifact(envelope: dict[str, object], *, expected_schema: str
     # fields ignored by legacy Pydantic defaults instead of blessing an
     # unvalidated extension bag as scenario intent.
     source[PAYLOAD_KEY] = validated.model_dump(mode="json")
-    _canonical_json(source, "persisted scenario envelope")
+    _canonical_json(source, _PERSISTED_ENVELOPE_FIELD)
     return source | {_DIGEST_KEY: _artifact_digest(source)}
 
 
@@ -146,6 +154,7 @@ def validate_scenario_artifact(artifact: object, *, expected_schema: str = "rang
 
 
 def _validate_operation(value: object) -> ContractDict:
+    """Validate and normalize operation correlation fields."""
     operation = deepcopy(_require_dict(value, "operation"))
     _require_exact_keys(operation, frozenset({"request_id", "range_id"}), "operation")
     operation["request_id"] = _require_text(operation["request_id"], "operation.request_id")
@@ -154,6 +163,7 @@ def _validate_operation(value: object) -> ContractDict:
 
 
 def _validate_admission(value: object) -> ContractDict:
+    """Validate the closed provider/backend admission selector."""
     admission = deepcopy(_require_dict(value, "admission"))
     _require_exact_keys(admission, frozenset({"provider", "backend"}), "admission")
     provider = _require_text(admission["provider"], "admission.provider")
@@ -166,6 +176,7 @@ def _validate_admission(value: object) -> ContractDict:
 
 
 def _validate_network_bindings(value: object) -> list[ContractDict]:
+    """Validate unique authored-subnet to IPv4 network bindings."""
     bindings: list[ContractDict] = []
     seen_refs: set[str] = set()
     for index, raw_binding in enumerate(_require_list(value, "network_bindings")):
@@ -253,6 +264,7 @@ def is_gcp_vm_range_cell_request(value: object) -> bool:
 
 
 def _validate_cell(value: object) -> ContractDict:
+    """Validate lifecycle state and membership scope for a range cell."""
     cell = deepcopy(_require_dict(value, "cell"))
     expected = frozenset({"cell_id", "provider", "backend", "lifecycle_state", "subnet_refs"})
     _require_exact_keys(cell, expected, "cell")
@@ -271,6 +283,7 @@ def _validate_cell(value: object) -> ContractDict:
 
 
 def _validate_members(value: object, subnet_refs: set[str]) -> list[ContractDict]:
+    """Validate realized members against the cell's authored subnet set."""
     members: list[ContractDict] = []
     authored_refs: set[str] = set()
     resource_ids: set[str] = set()
@@ -304,6 +317,7 @@ def _validate_members(value: object, subnet_refs: set[str]) -> list[ContractDict
 
 
 def _validate_access(value: object, member_refs: set[str]) -> list[ContractDict]:
+    """Validate resolved participant access for realized cell members."""
     access_records: list[ContractDict] = []
     expected = frozenset({"target_ref", "channel", "address", "port", "credential_ref"})
     seen: set[tuple[str, str]] = set()
