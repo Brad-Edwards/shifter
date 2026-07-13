@@ -19,11 +19,29 @@ usage() {
     echo "  -p <type>   Promote AMI to prod (runs packer-promote.yml)"
     echo ""
     echo "AMI types:"
-    echo "  Base: kali, ubuntu, windows, dc, brokenbk"
+    echo "  Base: kali, ubuntu, windows, dc, polaris-dc, brokenbk"
     echo "  CTF: ctf-webshell, ctf-mailroom, ctf-helpdesk, ctf-devbox, ctf-vault"
+    echo "  Scenario: techvault, polaris-vm (need extra inputs; see note below)"
+    echo ""
+    echo "Scenario bakes run over the no-inbound SSM communicator and require an"
+    echo "operator-supplied isolated bake subnet/security-group/instance-profile"
+    echo "(and, for polaris-vm, the S3 build tarball). Dispatch them with the extra"
+    echo "-f inputs, e.g.:"
+    echo "  gh workflow run packer.yml --repo $REPO --ref $BRANCH \\"
+    echo "    -f ami_type=techvault -f subnet_id=subnet-... -f security_group_id=sg-... \\"
+    echo "    -f instance_profile=<ssm-profile> [-f aptl_version=4.1.2]"
     echo ""
     echo "Current branch: $BRANCH"
     exit 1
+}
+
+# Scenario AMIs need extra dispatch inputs this helper does not collect; refuse a
+# doomed one-arg dispatch and point at the full command instead.
+is_scenario_type() {
+    case "$1" in
+        techvault | polaris-vm) return 0 ;;
+        *) return 1 ;;
+    esac
 }
 
 if [[ $# -lt 2 ]]; then
@@ -32,6 +50,15 @@ fi
 
 ACTION=$1
 AMI_TYPE=$2
+
+if is_scenario_type "$AMI_TYPE"; then
+    echo "'$AMI_TYPE' is a scenario AMI and needs extra dispatch inputs this helper does not collect."
+    echo "Dispatch it directly, e.g.:"
+    echo "  gh workflow run packer.yml --repo $REPO --ref $BRANCH \\"
+    echo "    -f ami_type=$AMI_TYPE -f subnet_id=subnet-... -f security_group_id=sg-... \\"
+    echo "    -f instance_profile=<ssm-profile>$([ "$AMI_TYPE" = polaris-vm ] && echo ' -f s3_bucket=... -f s3_key=...' || echo ' [-f aptl_version=4.1.2]')"
+    exit 1
+fi
 
 case $ACTION in
     -b)

@@ -20,6 +20,25 @@ Reproducible AMI builds for Shifter range instances.
 | Kali | `kali.pkr.hcl` | Kali Linux with pentesting tools, sshpass, Caldera, Claude Code |
 | Ubuntu | `ubuntu.pkr.hcl` | Ubuntu 22.04 victim with Apache, MySQL, Docker, Claude Code |
 | Windows | `windows.pkr.hcl` | Windows Server 2022 with XAMPP, IIS, OpenSSH, Claude Code |
+| Polaris DC | `polaris-dc.pkr.hcl` | Pre-promoted BOREAS.LOCAL Windows domain controller (WinRM) |
+| TechVault | `techvault.pkr.hcl` | APTL `techvault-operational` stack + VS Code seat (scenario, SSM) |
+| Polaris VM | `polaris-vm.pkr.hcl` | 17-container polaris scenario host (scenario, SSM) |
+
+### Scenario AMIs (SSM communicator)
+
+`techvault.pkr.hcl` and `polaris-vm.pkr.hcl` bake full Docker Compose stacks and
+differ from the base images: they connect over the **no-inbound AWS Session
+Manager SSH tunnel** (no public IP, no inbound SG rule), bake an **encrypted
+root volume**, and are baked with their stack **running** so a range launch is a
+boot plus container auto-start. They are dispatched through the shared
+`.github/workflows/packer.yml` (`ami_type=techvault` / `polaris-vm`), whose
+`bake-scenario` job adds an encryption check and a fresh-boot golden-verify
+before publishing `/shifter/ami/<key>`. The operator supplies an isolated bake
+subnet, a no-inbound security group, and an SSM-enabled builder instance profile
+as workflow inputs (plus `aptl_version` for techvault, or the S3 build tarball
+for polaris-vm). Provisioner bodies live in `scripts/techvault/`,
+`scripts/polaris/`, and the runner-side verify helpers in `scripts/bake/`.
+Migrated from the hand-rolled SSM bake workflows in #1469.
 
 ## Quick Start
 

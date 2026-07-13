@@ -1,0 +1,22 @@
+#!/bin/bash
+# TechVault bake — phase 1: host toolchain (runs as root via Packer sudo).
+# Faithful port of the retired techvault-scenario-bake.yml "toolchain" phase.
+set -euo pipefail
+
+export DEBIAN_FRONTEND=noninteractive
+cloud-init status --wait || true
+
+curl -fsSL https://get.docker.com | sh
+systemctl enable --now docker
+
+# The stack is baked as the ubuntu user (uid 1000, see stack.sh), and aptl's
+# very first docker op (the Suricata named-volume seed) runs as ubuntu.
+# get.docker.com does not add ubuntu to the docker group when installed as
+# root, so grant it explicitly or the seed fails with a docker.sock
+# permission denied (surfaced as BackendSeedError).
+usermod -aG docker ubuntu
+
+curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+apt-get install -y nodejs
+npm install -g @anthropic-ai/claude-code
+apt-get install -y pipx jq
