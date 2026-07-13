@@ -15,8 +15,10 @@ import logging
 import os
 from typing import Any
 
+from shared.range_cells import RangeCellContractError, validate_scenario_artifact
+
 import range_terraform_runner
-from config import load_range_network_config, resolve_ngfw_attachment_config
+from config import is_gce_range_cell_backend, load_range_network_config, resolve_ngfw_attachment_config
 from events import publish_destroyed, publish_failed, publish_ready, publish_status_update
 from executors.aws_executor import AWSExecutor
 from instance_orchestrator import run_instance_setup
@@ -110,7 +112,33 @@ def _release_subnet_allocations_best_effort(request_id: str) -> None:
         logger.warning("Failed to release subnet allocations: %s", e)
 
 
-def _attempt_terraform_auto_cleanup(request_id: str, range_id: int, user_id: int, range_spec: dict[str, Any]) -> None:
+def _build_operation_variables(
+    request_id: str,
+    range_id: int,
+    user_id: int,
+    range_spec: dict[str, Any],
+    scenario_artifact: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Build backend variables while preserving legacy call behavior."""
+    if scenario_artifact is None:
+        return build_range_variables(request_id, range_id, user_id, range_spec)
+    return build_range_variables(
+        request_id,
+        range_id,
+        user_id,
+        range_spec,
+        scenario_artifact=scenario_artifact,
+    )
+
+
+def _attempt_terraform_auto_cleanup(
+    request_id: str,
+    range_id: int,
+    user_id: int,
+    range_spec: dict[str, Any],
+    *,
+    scenario_artifact: dict[str, Any] | None = None,
+) -> None:
     """Best-effort `terraform destroy` after a failed provision."""
     logger.error(
         "Provision failed for range_id=%s request_id=%s - attempting Terraform cleanup...",
@@ -118,7 +146,13 @@ def _attempt_terraform_auto_cleanup(request_id: str, range_id: int, user_id: int
         request_id,
     )
     try:
-        cleanup_variables = build_range_variables(request_id, range_id, user_id, range_spec)
+        cleanup_variables = _build_operation_variables(
+            request_id,
+            range_id,
+            user_id,
+            range_spec,
+            scenario_artifact,
+        )
         range_terraform_runner.destroy_range(request_id, variables=cleanup_variables)
         range_terraform_runner.cleanup_range_state(request_id)
         logger.info("Auto-cleanup succeeded for range_id=%s", range_id)
@@ -133,16 +167,47 @@ def _attempt_terraform_auto_cleanup(request_id: str, range_id: int, user_id: int
 
 
 def _dispatch_terraform_operation(
-    operation: str, request_id: str, range_id: int, user_id: int, range_spec: dict[str, Any]
+    operation: str,
+    request_id: str,
+    range_id: int,
+    user_id: int,
+    range_spec: dict[str, Any],
+    *,
+    scenario_artifact: dict[str, Any] | None = None,
 ) -> None:
     """Run the requested Terraform operation; raise ValueError for unknown ops."""
     if operation == "up":
-        _run_terraform_provision(request_id, range_id, user_id, range_spec)
+        if scenario_artifact is None:
+            _run_terraform_provision(request_id, range_id, user_id, range_spec)
+            return
+        _run_terraform_provision(
+            request_id,
+            range_id,
+            user_id,
+            range_spec,
+            scenario_artifact=scenario_artifact,
+        )
         return
     if operation == "destroy":
-        _run_terraform_destroy(request_id, range_id, user_id, range_spec)
+        if scenario_artifact is None:
+            _run_terraform_destroy(request_id, range_id, user_id, range_spec)
+            return
+        _run_terraform_destroy(
+            request_id,
+            range_id,
+            user_id,
+            range_spec,
+            scenario_artifact=scenario_artifact,
+        )
         return
     raise ValueError(f"Unknown operation: {operation}")
+
+
+def _safe_failure_message(exc: Exception) -> str:
+    """Return a bounded authored event message for a lifecycle failure."""
+    if isinstance(exc, RangeCellContractError):
+        return "Range-cell contract validation failed"
+    return str(exc)[:1000]
 
 
 def run_range_terraform(operation: str, request_id: str) -> None:
@@ -154,16 +219,37 @@ def run_range_terraform(operation: str, request_id: str) -> None:
     user_id = range_data["user_id"]
     range_spec = range_data.get("spec", {})
 
-    if range_spec.get("ngfw", False):
-        _ensure_ngfw_ready_for_provisioning(range_id, user_id)
-
+    scenario_artifact = None
+    operation_dispatched = False
     try:
-        _dispatch_terraform_operation(operation, request_id, range_id, user_id, range_spec)
+        # Verify the producer-minted artifact before any NGFW or provider
+        # operation. Other backends retain their existing legacy payload path.
+        if is_gce_range_cell_backend():
+            scenario_artifact = validate_scenario_artifact(range_data.get("spec_envelope"))
+
+        if range_spec.get("ngfw", False):
+            _ensure_ngfw_ready_for_provisioning(range_id, user_id)
+
+        operation_dispatched = True
+        _dispatch_terraform_operation(
+            operation,
+            request_id,
+            range_id,
+            user_id,
+            range_spec,
+            scenario_artifact=scenario_artifact,
+        )
     except Exception as e:
-        error_msg = str(e)[:1000]
+        error_msg = _safe_failure_message(e)
         logger.exception("Range Terraform operation failed: %s", error_msg)
-        if operation == "up":
-            _attempt_terraform_auto_cleanup(request_id, range_id, user_id, range_spec)
+        if operation == "up" and operation_dispatched:
+            _attempt_terraform_auto_cleanup(
+                request_id,
+                range_id,
+                user_id,
+                range_spec,
+                scenario_artifact=scenario_artifact,
+            )
         publish_failed(
             request_id=request_id,
             range_id=range_id,
@@ -178,6 +264,8 @@ def _run_terraform_provision(
     range_id: int,
     user_id: int,
     range_spec: dict[str, Any],
+    *,
+    scenario_artifact: dict[str, Any] | None = None,
 ) -> None:
     """Run Terraform apply for range, then run instance setup."""
     publish_status_update(
@@ -189,12 +277,23 @@ def _run_terraform_provision(
 
     logger.info("Running terraform apply for range...")
 
-    spec_subnets = _allocate_range_subnet_cidrs(request_id, range_id, range_spec)
+    spec_subnets = _allocate_range_subnet_cidrs(
+        request_id,
+        range_id,
+        range_spec,
+        persist_to_scenario=not is_gce_range_cell_backend(),
+    )
 
     # Build backend-appropriate range variables from the range spec (now with
-    # CIDRs). GCE range cells receive provider-neutral scenario intent; AWS
-    # receives Terraform variables.
-    provision_variables = build_range_variables(request_id, range_id, user_id, range_spec)
+    # CIDRs). GCE range cells receive a closed request around the persisted
+    # scenario artifact; AWS receives Terraform variables.
+    provision_variables = _build_operation_variables(
+        request_id,
+        range_id,
+        user_id,
+        range_spec,
+        scenario_artifact,
+    )
 
     # Run the provider-routed apply
     output_data = range_terraform_runner.apply_range(request_id, provision_variables)
@@ -251,8 +350,14 @@ def _run_terraform_provision(
     publish_ready(request_id=request_id, range_id=range_id, user_id=user_id)
 
 
-def _allocate_range_subnet_cidrs(request_id: str, range_id: int, range_spec: dict[str, Any]) -> list[dict[str, Any]]:
-    """Allocate subnet CIDRs from the active VPC and persist them onto the range spec."""
+def _allocate_range_subnet_cidrs(
+    request_id: str,
+    range_id: int,
+    range_spec: dict[str, Any],
+    *,
+    persist_to_scenario: bool = True,
+) -> list[dict[str, Any]]:
+    """Allocate subnet CIDRs, optionally retaining legacy scenario persistence."""
     spec_subnets = range_spec.get("subnets", [])
     if not spec_subnets:
         return spec_subnets
@@ -280,7 +385,8 @@ def _allocate_range_subnet_cidrs(request_id: str, range_id: int, range_spec: dic
     logger.info("Allocated CIDRs: %s", allocated_cidrs)
     for i, subnet in enumerate(spec_subnets):
         subnet["cidr"] = allocated_cidrs[i]
-    _update_range_config(range_id, range_spec)
+    if persist_to_scenario:
+        _update_range_config(range_id, range_spec)
     return spec_subnets
 
 
@@ -447,6 +553,8 @@ def _run_terraform_destroy(
     range_id: int,
     user_id: int,
     range_spec: dict[str, Any],
+    *,
+    scenario_artifact: dict[str, Any] | None = None,
 ) -> None:
     """Run Terraform destroy for range."""
     if not _ensure_range_is_active(request_id, range_id):
@@ -458,7 +566,13 @@ def _run_terraform_destroy(
     logger.info("Running terraform destroy for range...")
     terraform_succeeded = False
     try:
-        destroy_variables = build_range_variables(request_id, range_id, user_id, range_spec)
+        destroy_variables = _build_operation_variables(
+            request_id,
+            range_id,
+            user_id,
+            range_spec,
+            scenario_artifact,
+        )
         range_terraform_runner.destroy_range(request_id, variables=destroy_variables)
         terraform_succeeded = True
         logger.info("Cleaning up Terraform state...")

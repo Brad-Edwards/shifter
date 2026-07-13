@@ -9,6 +9,24 @@ from unittest.mock import Mock, call, patch
 import pytest
 
 
+def _range_cell_variables():
+    from shared.range_cells import build_gcp_vm_range_cell_request, build_scenario_artifact
+
+    artifact = build_scenario_artifact(
+        {
+            "spec_schema": "range_spec",
+            "spec_version": "1",
+            "payload": {"scenario_id": "scenario-a", "user_id": 7, "subnets": []},
+        }
+    )
+    return build_gcp_vm_range_cell_request(
+        request_id="req-123",
+        range_id=42,
+        scenario_artifact=artifact,
+        network_bindings=[],
+    )
+
+
 class TestProviderRouting:
     """Test provider-routed module and state prefix selection."""
 
@@ -112,7 +130,7 @@ class TestProviderRouting:
     def test_apply_range_dispatches_to_gce_range_cell_backend(self):
         from range_terraform_runner import apply_range
 
-        variables = {"range_id": 42, "subnets": []}
+        variables = _range_cell_variables()
         calls = []
 
         def fake_apply(request_uuid, received_variables):
@@ -128,7 +146,7 @@ class TestProviderRouting:
     def test_destroy_range_dispatches_to_gce_range_cell_backend(self):
         from range_terraform_runner import destroy_range
 
-        variables = {"range_id": 42, "subnets": []}
+        variables = _range_cell_variables()
         calls = []
 
         def fake_destroy(request_uuid, received_variables):

@@ -61,6 +61,15 @@ keeps using the validated serialized `ProvisioningPlan` and the process-local
 realization projection allowed by ADR-032. The substrate contract must not create a
 third scenario, topology, node, network, or account schema.
 
+Owning the lifecycle and cleanup of instance resources does not make the substrate the
+semantic owner of scenario composition. The scenario realization path owns VM count and
+roles, containers or nested Kubernetes, internal topology, images, services, ports,
+DNS, startup order, and bootstrap behavior. The substrate may enforce provider safety,
+membership, ownership, and access-binding invariants on the resulting resources, but it
+must not classify scenario internals into a universal placement taxonomy. The GCP
+specialization is fixed by
+[`scenario-gcp-range-cell-contract-preflight-1344.md`](scenario-gcp-range-cell-contract-preflight-1344.md).
+
 A successful operation returns one closed, versioned result containing the request and
 operation identifiers, `changed` or `already-converged`, achieved lifecycle state,
 canonical resource bindings keyed by authored resource UUID, and bounded warning codes.
@@ -73,7 +82,9 @@ UUID, protocol, address/port, username when non-secret, and a secret *reference*
 credential is required. Passwords, private keys, Guacamole tokens/URLs, kubeconfigs,
 and provider access tokens never cross this interface. Guacamole session construction
 and just-in-time secret resolution remain in the existing Engine/Mission Control access
-services.
+services. A scenario declares a logical member target and access channel; the platform
+resolves the concrete provider address and rejects foreign or non-member targets rather
+than accepting an arbitrary scenario-supplied hostname.
 
 ### Idempotency and concurrency
 

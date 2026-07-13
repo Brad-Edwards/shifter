@@ -68,9 +68,15 @@ RUN pip install --no-cache-dir --require-hashes --only-binary :all: -r requireme
     pip install --no-cache-dir --require-hashes --only-binary :all: -r requirements-gcp.lock
 
 # First-party wire-contract package (cyberscript) on PYTHONPATH — same pattern as
-# shifter_platform/Dockerfile. Constants-only imports avoid pulling Pydantic into
-# the provisioner runtime beyond what pip already installs for other deps.
+# shifter_platform/Dockerfile. The provisioner uses only the dependency-light
+# envelope, exception, and digest-verification paths; canonical Pydantic
+# validation runs producer-side before the artifact is persisted.
 COPY cyberscript /opt/shifter-libs/cyberscript
+
+# Dependency-light platform contract used by the standalone GCP range-cell
+# runner. Copy only the package initializer and contract module so the image
+# does not pull in Django or the rest of shifter_platform.
+COPY shifter_platform/shared/__init__.py shifter_platform/shared/range_cells.py /opt/shifter-libs/shared/
 
 # Copy provisioner code as root-owned, immutable image content. The runtime
 # user does NOT own /app — Terraform writes go to TERRAFORM_WORKSPACE_DIR

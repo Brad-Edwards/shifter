@@ -70,6 +70,7 @@ class TestCreateRangePersistence:
         range_obj = Range.objects.get()
         assert range_obj.range_config["spec_schema"] == "range_spec"
         assert range_obj.range_config["spec_version"] == "1"
+        assert range_obj.range_config["digest"].startswith("sha256:")
         assert range_obj.range_config["payload"]["scenario_id"] == "basic-attack"
 
     def test_allocates_a_subnet_index(self, user):

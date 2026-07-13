@@ -92,6 +92,9 @@ class TestAutoCleanupPassesVariables:
         """Auto-cleanup should rebuild variables and pass them to destroy_range."""
         from terraform_ops import run_range_terraform
 
+        monkeypatch.setenv("CLOUD_PROVIDER", "aws")
+        monkeypatch.delenv("GCP_RANGE_BACKEND", raising=False)
+
         mock_get_data = MagicMock(
             return_value={
                 "range_id": 80,
@@ -121,6 +124,9 @@ class TestAutoCleanupPassesVariables:
         import logging
 
         from terraform_ops import run_range_terraform
+
+        monkeypatch.setenv("CLOUD_PROVIDER", "aws")
+        monkeypatch.delenv("GCP_RANGE_BACKEND", raising=False)
 
         monkeypatch.setattr(
             "terraform_ops.get_range_data_by_request_id",
@@ -152,6 +158,9 @@ class TestAutoCleanupPassesVariables:
     def test_no_cleanup_on_destroy_failure(self, monkeypatch):
         """Auto-cleanup should only run for 'up' operations, not 'destroy'."""
         from terraform_ops import run_range_terraform
+
+        monkeypatch.setenv("CLOUD_PROVIDER", "aws")
+        monkeypatch.delenv("GCP_RANGE_BACKEND", raising=False)
 
         mock_get_data = MagicMock(
             return_value={

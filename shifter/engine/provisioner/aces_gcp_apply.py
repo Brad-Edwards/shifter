@@ -199,7 +199,8 @@ def _provision_aces_resources(
         output = _instance_output(
             plan,
             instance,
-            ssh_secret_ref=ssh_secret_ref,
+            host_ssh_secret_ref=ssh_secret_ref,
+            participant_ssh_secret_ref=None,
             rdp_password_secret_ref=None,
             ssh_public_key=ssh_public_key,
             host_public_key=host_public_key,

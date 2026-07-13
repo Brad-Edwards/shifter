@@ -134,10 +134,12 @@ def _set_local_password_or_raise(
             )
         rdp_token = f"{{{{ssm-secure:{ssm_param_name}}}}}"
     else:
-        secret_ref = instance_data.get("rdp_password_secret_arn")
+        secret_ref = instance_data.get("gcp_bootstrap_rdp_password_secret_ref") or instance_data.get(
+            "rdp_password_secret_arn"
+        )
         if not secret_ref:
             raise SetupError(
-                f"{failure_prefix}: instance {instance_id} has no rdp_password_secret_arn "
+                f"{failure_prefix}: instance {instance_id} has no bootstrap RDP secret reference "
                 "in its provisioned state; provisioner did not record a per-instance secret reference"
             )
         fetched = _resolve_rdp_password_from_secret_ref(secret_ref)

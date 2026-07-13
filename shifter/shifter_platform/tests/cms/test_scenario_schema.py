@@ -449,3 +449,34 @@ class TestScenarioTemplate:
         assert req["requires_windows"] is True
         assert req["requires_linux"] is True
         assert req["has_from_agent"] is False
+
+
+class TestParticipantAccessConfig:
+    """Tests for explicit scenario participant-access declarations."""
+
+    def test_participant_access_rejects_unknown_instance(self):
+        """Participant access is an explicit closed target/channel allowlist."""
+        from cms.scenarios.schema import InstanceConfig, ParticipantAccessConfig, ScenarioTemplate
+
+        with pytest.raises(ValidationError, match="unknown instance"):
+            ScenarioTemplate(
+                id="test",
+                name="Test",
+                description="Test",
+                instances=[InstanceConfig(name="Attacker", role="attacker", os_type="kali")],
+                participant_access=[ParticipantAccessConfig(target="Missing", channel="ssh")],
+            )
+
+    def test_participant_access_rejects_duplicate_target_channel(self):
+        """A scenario cannot ambiguously authorize the same channel twice."""
+        from cms.scenarios.schema import InstanceConfig, ParticipantAccessConfig, ScenarioTemplate
+
+        binding = ParticipantAccessConfig(target="Attacker", channel="ssh")
+        with pytest.raises(ValidationError, match="Duplicate participant access"):
+            ScenarioTemplate(
+                id="test",
+                name="Test",
+                description="Test",
+                instances=[InstanceConfig(name="Attacker", role="attacker", os_type="kali")],
+                participant_access=[binding, binding],
+            )

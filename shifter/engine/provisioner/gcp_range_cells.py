@@ -7,10 +7,14 @@ import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from shared.range_cells import RangeCellContractError, build_gcp_vm_range_cell_result
+
 from config import GCERangeCellConfig, load_gce_range_cell_config
 from gcp_guest_secrets import (
+    delete_participant_ssh_secret,
     delete_rdp_password_secret,
     delete_ssh_secret,
+    ensure_participant_ssh_secret,
     ensure_rdp_password_secret,
     ensure_ssh_secret,
 )
@@ -45,8 +49,10 @@ class GCEGuestSecretOps:
     """Guest credential operations used by the GCE range-cell backend."""
 
     ensure_ssh: Callable[[int, ScenarioInstance], tuple[str, str]]
+    ensure_participant_ssh: Callable[[int, ScenarioInstance], tuple[str, str]]
     ensure_rdp_password: Callable[[int, ScenarioInstance], tuple[str, str]]
     delete_ssh: Callable[[int, ScenarioInstance], None]
+    delete_participant_ssh: Callable[[int, ScenarioInstance], None]
     delete_rdp_password: Callable[[int, ScenarioInstance], None]
 
 
@@ -54,8 +60,10 @@ def _default_secret_ops() -> GCEGuestSecretOps:
     """Return the production guest-secret operation bindings."""
     return GCEGuestSecretOps(
         ensure_ssh=ensure_ssh_secret,
+        ensure_participant_ssh=ensure_participant_ssh_secret,
         ensure_rdp_password=ensure_rdp_password_secret,
         delete_ssh=delete_ssh_secret,
+        delete_participant_ssh=delete_participant_ssh_secret,
         delete_rdp_password=delete_rdp_password_secret,
     )
 
@@ -180,14 +188,13 @@ def _ensure_instance(
     config: GCERangeCellConfig,
     instance: InstancePlan,
     secret_ops: GCEGuestSecretOps,
-) -> tuple[str, str | None, str, str]:
+) -> tuple[str, str | None, str | None, str, str]:
     """Create one range instance and its guest credential secrets.
 
-    Returns ``(ssh_secret_ref, rdp_password_secret_ref, ssh_public_key,
-    host_public_key)``. The provisioner mints the guest's SSH *host* keypair,
-    injects the private half via the guest startup script, and returns the public
-    half so the setup runner can seed known_hosts (StrictHostKeyChecking against a
-    trusted side-channel key). Neither public key is secret.
+    The host-management SSH key is always separate from a declared participant
+    SSH key.  The latter is the only SSH credential eligible for the closed
+    access result.  The provisioner also mints the guest's SSH host keypair and
+    returns its public half for strict host-key verification.
     """
     name = instance["resource_name"]
     existing = _get_or_none(
@@ -197,13 +204,32 @@ def _ensure_instance(
         zone=plan["zone"],
         instance=name,
     )
-    secret_ref, public_key = secret_ops.ensure_ssh(plan["range_id"], instance["source"])
+    host_secret_ref, host_management_public_key = secret_ops.ensure_ssh(plan["range_id"], instance["source"])
+    access_channels = set(instance["participant_access_channels"])
+    participant_ssh_secret_ref: str | None = None
+    scenario_public_key = host_management_public_key
+    if "ssh" in access_channels:
+        participant_ssh_secret_ref, participant_public_key = secret_ops.ensure_participant_ssh(
+            plan["range_id"], instance["source"]
+        )
+        scenario_public_key = participant_public_key
+        if instance["host_ssh_username"] == instance["ssh_username"]:
+            # Native guests use one OS account for setup and participant SSH.
+            # Preserve both keys so a reconcile can still use the private
+            # management key while only the participant key is brokerable.
+            scenario_public_key = f"{host_management_public_key}\n{participant_public_key}"
     rdp_password_secret_ref: str | None = None
     if instance["role"] != "dc":
         rdp_password_secret_ref, _password = secret_ops.ensure_rdp_password(plan["range_id"], instance["source"])
     if existing is not None:
         logger.info("GCE range instance exists name_fp=%s", safe_log_fingerprint(name))
-        return secret_ref, rdp_password_secret_ref, public_key, _host_public_key_from_instance(existing)
+        return (
+            host_secret_ref,
+            participant_ssh_secret_ref,
+            rdp_password_secret_ref,
+            scenario_public_key,
+            _host_public_key_from_instance(existing),
+        )
 
     host_private_key, host_public_key = generate_ssh_host_keypair()
     host_private_key_b64 = base64.b64encode(host_private_key.encode()).decode("ascii")
@@ -214,20 +240,21 @@ def _ensure_instance(
             plan,
             instance,
             config,
-            ssh_public_key=public_key,
+            ssh_public_key=host_management_public_key,
             host_private_key_b64=host_private_key_b64,
             host_public_key=host_public_key,
         ),
     )
     _wait_for_operation(plan, clients, operation, "zone")
-    return secret_ref, rdp_password_secret_ref, public_key, host_public_key
+    return host_secret_ref, participant_ssh_secret_ref, rdp_password_secret_ref, scenario_public_key, host_public_key
 
 
 def _instance_output(
     plan: RangeCellPlan,
     instance: InstancePlan,
     *,
-    ssh_secret_ref: str,
+    host_ssh_secret_ref: str,
+    participant_ssh_secret_ref: str | None,
     rdp_password_secret_ref: str | None,
     ssh_public_key: str,
     host_public_key: str = "",
@@ -243,12 +270,15 @@ def _instance_output(
         "subnet_name": instance["subnet_name"],
         "instance_id": instance["resource_name"],
         "private_ip": instance["private_ip"],
-        "ssh_key_secret_arn": ssh_secret_ref,
+        # Participant-facing fields are populated only when the scenario
+        # explicitly authorized the corresponding channel.
+        "ssh_key_secret_arn": participant_ssh_secret_ref or "",
         "ssh_username": instance["ssh_username"],
         "public_key": ssh_public_key,
         # Seeds the setup runner's known_hosts (executors/factory reads
         # gcp_host_public_key) for StrictHostKeyChecking against the injected key.
         "gcp_host_public_key": host_public_key,
+        "gcp_host_ssh_key_secret_ref": host_ssh_secret_ref,
         "gcp_host_ssh_username": instance["host_ssh_username"],
         "gcp_host_ssh_port": instance["ssh_port"],
         "gcp_project_id": plan["project_id"],
@@ -264,8 +294,9 @@ def _instance_output(
         "gcp_service_account_email": config.service_account_email,
     }
     if rdp_password_secret_ref:
-        output["rdp_password_secret_arn"] = rdp_password_secret_ref
-        output["gcp_rdp_password_secret_ref"] = rdp_password_secret_ref
+        output["gcp_bootstrap_rdp_password_secret_ref"] = rdp_password_secret_ref
+        if "rdp" in instance["participant_access_channels"]:
+            output["rdp_password_secret_arn"] = rdp_password_secret_ref
     return output
 
 
@@ -317,14 +348,19 @@ def _provision_range_resources(
     instance_outputs: list[ResourceDict] = []
     for instance in plan["instances"]:
         _ensure_address(plan, clients, instance)
-        ssh_secret_ref, rdp_password_secret_ref, ssh_public_key, host_public_key = _ensure_instance(
-            plan, clients, config, instance, secret_ops
-        )
+        (
+            host_ssh_secret_ref,
+            participant_ssh_secret_ref,
+            rdp_password_secret_ref,
+            ssh_public_key,
+            host_public_key,
+        ) = _ensure_instance(plan, clients, config, instance, secret_ops)
         instance_outputs.append(
             _instance_output(
                 plan,
                 instance,
-                ssh_secret_ref=ssh_secret_ref,
+                host_ssh_secret_ref=host_ssh_secret_ref,
+                participant_ssh_secret_ref=participant_ssh_secret_ref,
                 rdp_password_secret_ref=rdp_password_secret_ref,
                 ssh_public_key=ssh_public_key,
                 host_public_key=host_public_key,
@@ -332,6 +368,56 @@ def _provision_range_resources(
             )
         )
     return instance_outputs
+
+
+def _range_cell_result(
+    request: ResourceDict,
+    plan: RangeCellPlan,
+    instance_outputs: list[ResourceDict],
+) -> ResourceDict:
+    """Render the closed outer lifecycle, membership, and logical-access result."""
+    subnet_refs = {subnet["name"]: subnet["uuid"] for subnet in plan["subnets"]}
+    outputs_by_ref = {str(output.get("uuid", "")): output for output in instance_outputs}
+    members: list[dict[str, object]] = []
+    access: list[dict[str, object]] = []
+    for instance in plan["instances"]:
+        authored_ref = instance["uuid"]
+        output = outputs_by_ref.get(authored_ref)
+        if output is None:
+            raise RuntimeError(f"GCE range-cell output is missing authored member: {authored_ref}")
+        members.append(
+            {
+                "authored_ref": authored_ref,
+                "resource_id": (
+                    f"projects/{plan['project_id']}/zones/{plan['zone']}/instances/{instance['resource_name']}"
+                ),
+                "subnet_ref": subnet_refs[instance["subnet_name"]],
+                "lifecycle_state": "ready",
+            }
+        )
+        for channel in instance["participant_access_channels"]:
+            credential_field = "ssh_key_secret_arn" if channel == "ssh" else "rdp_password_secret_arn"
+            credential_ref = str(output.get(credential_field, ""))
+            if not credential_ref:
+                raise RangeCellContractError(
+                    "declared participant access is missing a participant credential reference: "
+                    f"{authored_ref}/{channel}"
+                )
+            access.append(
+                {
+                    "target_ref": authored_ref,
+                    "channel": channel,
+                    "address": instance["private_ip"],
+                    "port": 22 if channel == "ssh" else 3389,
+                    "credential_ref": credential_ref,
+                }
+            )
+    return build_gcp_vm_range_cell_result(
+        request,
+        cell_id=f"gcp:{plan['project_id']}:{plan['region']}:{plan['range_id']}",
+        members=members,
+        access=access,
+    )
 
 
 def apply_range_cell(
@@ -346,14 +432,17 @@ def apply_range_cell(
 ) -> ResourceDict:
     """Create or reconcile a live-fire GCE range cell and return provisioner outputs."""
     resolved_config = config or load_gce_range_cell_config()
+    # Validate the closed contract and scenario binding before constructing any
+    # provider or secret client, let alone mutating a cloud resource.
+    plan = render_range_cell_plan(request_uuid, variables, resolved_config)
     resolved_clients = clients or _build_clients()
     resolved_secret_ops = secret_ops or _default_secret_ops()
     resolved_vertex_ops = vertex_ops or _default_vertex_ops()
-    plan = render_range_cell_plan(request_uuid, variables, resolved_config)
     try:
         instance_outputs = _provision_range_resources(
             plan, resolved_clients, resolved_config, resolved_secret_ops, resolved_vertex_ops
         )
+        range_cell_result = _range_cell_result(variables, plan, instance_outputs)
     except Exception:
         logger.exception("GCE range-cell apply failed; attempting cleanup request_id=%s", request_uuid)
         cleanup = cleanup_range_cell or (
@@ -368,7 +457,11 @@ def apply_range_cell(
         )
         cleanup(request_uuid, variables)
         raise
-    return {"subnets": _subnet_outputs(plan), "instances": instance_outputs}
+    return {
+        "subnets": _subnet_outputs(plan),
+        "instances": instance_outputs,
+        "range_cell": range_cell_result,
+    }
 
 
 def _delete_resource(
@@ -403,10 +496,10 @@ def destroy_range_cell(
         logger.info("No GCE range variables provided for request %s; nothing to destroy", request_uuid)
         return
     resolved_config = config or load_gce_range_cell_config()
+    plan = render_range_cell_plan(request_uuid, variables, resolved_config, require_images=False)
     resolved_clients = clients or _build_clients()
     resolved_secret_ops = secret_ops or _default_secret_ops()
     resolved_vertex_ops = vertex_ops or _default_vertex_ops()
-    plan = render_range_cell_plan(request_uuid, variables, resolved_config, require_images=False)
 
     # Delete the per-range Vertex agent key first; it is independent of the
     # Compute resources and idempotent, so it converges even on repeated destroy.
@@ -434,6 +527,7 @@ def destroy_range_cell(
             address=instance["address_name"],
         )
         resolved_secret_ops.delete_ssh(plan["range_id"], instance["source"])
+        resolved_secret_ops.delete_participant_ssh(plan["range_id"], instance["source"])
         resolved_secret_ops.delete_rdp_password(plan["range_id"], instance["source"])
 
     for firewall in reversed(plan["firewalls"]):
