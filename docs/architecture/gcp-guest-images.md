@@ -181,6 +181,33 @@ hygiene rather than relying on sysprep:
 - The **live** domain Administrator credential is rotated **per range at
   runtime** by `plans/dc_setup.py` (`DC_DOMAIN_PASSWORD`), not baked.
 
+### First live validation run (operator verification)
+
+The candidate-boot validation subsystem (`packer-gcp-validate.yml` and
+`shifter/packer/gcp/scripts/validate/*`) is exercised in CI only for template,
+workflow, and script **shape** (`packer validate`, `actionlint`, `shellcheck`,
+and the structural and behavioral unit tests). Its live behaviour is GCP-only
+and is not exercised until an operator dispatches the workflow against a real
+project: the IAP tunnel to the candidate VM, the runner's SSH to the polaris-vm
+management port (2222), and the DC LDAP rootDSE probe.
+
+Treat the **first `packer-gcp-validate.yml` run per environment** as the smoke
+test for that live path, and confirm:
+
+- `start-iap-tunnel` reaches the candidate on the SSH port (22 for generic
+  Linux, the configured management port for polaris-vm) and on 389 for a DC.
+- The injected instance SSH key lets the runner reach the guest as the
+  `validator` user (project SSH keys are blocked, so an instance key is used).
+- `ldapsearch` on the runner returns the expected forest rootDSE for a
+  `dc-prebaked` candidate.
+- The disposable validation VM is deleted on both success and failure.
+
+A failure on that first run is a wiring issue in the validation path, not a
+candidate-image defect; fix it before relying on the `validated=passed` label as
+a promotion gate. Follow-up hardening of this subsystem is tracked in #1621
+(attestation-bound evidence, dispatch-ref workflow trust) and #1622 (real
+source-image disk check, deeper DC service/content probing).
+
 ## Operating the pipeline
 
 Build + export one guest (Actions → "Packer GCE Image Build" → pick type/env, or):
