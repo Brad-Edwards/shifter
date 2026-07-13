@@ -246,19 +246,49 @@ class TestBackendSpecificValidation:
         assert any("prefix length" in i.message for i in cidr_issues)
         assert all("failed a backend-specific validation check" not in i.message for i in cidr_issues)
 
-    def test_provisional_gcp_backend_still_accepts_any_settings(self, write_config):
-        # GCP is still provisional (settings_model=None) until #729, so any mapping is fine.
-        cfg = load_root_config(
-            write_config(
+    def _gcp_config(self, settings: dict) -> dict:
+        return {
+            "backend": "gcp",
+            "deployment": {"name": "shifter", "domain": "shifter.example.com"},
+            "secrets": {"django_secret_key": "prompt"},
+            "settings": settings,
+        }
+
+    def test_real_gcp_bundle_rejects_unknown_settings(self, write_config):
+        # #729: the shipped gcp bundle now has a closed settings_model, so an unknown key is
+        # rejected — no longer the provisional "accept any mapping" behavior.
+        path = write_config(self._gcp_config({"project_id": "acme-shifter", "region": "us-central1", "anything": True}))
+        with pytest.raises(InstallationConfigError) as exc:
+            load_root_config(path)
+        assert "settings.anything" in {issue.path for issue in exc.value.issues}
+
+    def test_real_gcp_bundle_requires_project_id_and_region(self, write_config):
+        path = write_config(self._gcp_config({}))
+        with pytest.raises(InstallationConfigError) as exc:
+            load_root_config(path)
+        paths = {issue.path for issue in exc.value.issues}
+        assert {"settings.project_id", "settings.region"} <= paths
+
+    def test_real_gcp_bundle_still_validates_range_egress_with_verbatim_cidr_errors(self, write_config):
+        # range_egress stays owned by installation.range_egress even with a closed GCP
+        # settings_model (mirrors AWS): an invalid CIDR is surfaced with the verbatim,
+        # non-secret (#775) message at its settings.range_egress path, not sanitized by the
+        # settings-model path.
+        path = write_config(
+            self._gcp_config(
                 {
-                    "backend": "gcp",
-                    "deployment": {"name": "shifter", "domain": "shifter.example.com"},
-                    "secrets": {"django_secret_key": "prompt"},
-                    "settings": {"region": "us-central1", "anything": True},
+                    "project_id": "acme-shifter",
+                    "region": "us-central1",
+                    "range_egress": {"mode": "allowlist", "allowed_cidrs": ["not-a-cidr"]},
                 }
             )
         )
-        assert cfg.settings == {"region": "us-central1", "anything": True}
+        with pytest.raises(InstallationConfigError) as exc:
+            load_root_config(path)
+        cidr_issues = [i for i in exc.value.issues if i.path.startswith("settings.range_egress.allowed_cidrs")]
+        assert cidr_issues
+        assert any("prefix length" in i.message for i in cidr_issues)
+        assert all("failed a backend-specific validation check" not in i.message for i in cidr_issues)
 
     def test_backend_settings_problem_is_reported_at_its_settings_path(self, write_config, strict_aws):
         path = write_config(self._aws_config(settings={"region": "us-east-2", "bogus": True}))
@@ -368,16 +398,22 @@ class TestBackendSpecificValidation:
         cfg = load_root_config(write_config(self._aws_config(settings={})))
         assert cfg.settings == {"region": "us-east-2"}
 
-    def test_provisional_backend_settings_are_returned_unchanged(self, write_config):
-        # With no settings_model the loader leaves the settings as the user wrote them
-        # (a shallow copy) — important for #1112 configs that pass arbitrary settings.
-        original = {"region": "us-central1", "project_id": "acme"}
+    def test_settings_model_none_returns_settings_unchanged(self, write_config, monkeypatch):
+        # A backend with no settings_model leaves the settings as the user wrote them (a
+        # shallow copy) — important for #1112 configs that pass arbitrary settings. Both
+        # shipped backends now have closed models (aws #728, gcp #729), so exercise the
+        # provisional passthrough via a bundle whose settings_model is temporarily None.
+        from installation import registry as registry_mod
+
+        provisional = registry_mod.BACKEND_BUNDLES["aws"].model_copy(update={"settings_model": None})
+        monkeypatch.setitem(registry_mod.BACKEND_BUNDLES, "aws", provisional)
+        original = {"region": "us-east-2", "anything": True}
         cfg = load_root_config(
             write_config(
                 {
-                    "backend": "gcp",
+                    "backend": "aws",
                     "deployment": {"name": "shifter", "domain": "shifter.example.com"},
-                    "secrets": {"django_secret_key": "prompt"},
+                    "secrets": {"django_secret_key": "prompt", "db_password": "prompt"},
                     "settings": original,
                 }
             )
@@ -410,9 +446,9 @@ class TestValidateRootConfigFile:
         assert {issue.path for issue in issues} == {"settings.region"}
 
     def test_range_egress_validation_runs_in_loader(self, write_config):
-        # PLAT-220: range_egress is validated cross-backend by the loader after the
-        # bundle's own settings validation. An invalid CIDR is surfaced by the loader
-        # (not silently passed through by a settings_model=None bundle).
+        # PLAT-220: range_egress is validated cross-backend by the loader alongside the
+        # bundle's own settings validation. An invalid CIDR is surfaced by the loader at its
+        # settings.range_egress path, even with a closed backend settings model (#729).
         issues = validate_root_config_file(
             write_config(
                 {
@@ -420,6 +456,7 @@ class TestValidateRootConfigFile:
                     "deployment": {"name": "shifter", "domain": "shifter.example.com"},
                     "secrets": {"django_secret_key": "prompt"},
                     "settings": {
+                        "project_id": "acme-shifter",
                         "region": "us-central1",
                         "range_egress": {"mode": "allowlist", "allowed_cidrs": ["not-a-cidr"]},
                     },
