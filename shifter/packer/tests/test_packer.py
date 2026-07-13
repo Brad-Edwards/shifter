@@ -4,6 +4,8 @@ Tests for Packer AMI build configuration.
 Run with: pytest shifter/packer/tests/test_packer.py -v
 """
 
+import os
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -83,7 +85,15 @@ class TestScriptContent:
     @pytest.fixture
     def all_scripts(self):
         scripts = []
-        for pattern in ["kali/*.sh", "ubuntu/*.sh", "brokenbk/*.sh", "common/*.sh"]:
+        for pattern in [
+            "kali/*.sh",
+            "ubuntu/*.sh",
+            "brokenbk/*.sh",
+            "common/*.sh",
+            "techvault/*.sh",
+            "polaris/*.sh",
+            "bake/*.sh",
+        ]:
             scripts.extend(SCRIPTS_DIR.glob(pattern))
         return scripts
 
@@ -175,9 +185,21 @@ class TestPackerTemplates:
         # Security context: packer_path from shutil.which() in controlled test environment
         subprocess.run([packer_path, "init", "."], capture_output=True, cwd=PACKER_DIR)  # noqa: S603
 
-        # Validate with var-file (no defaults)
+        # Validate with var-file (no defaults). The scenario sources
+        # (techvault / polaris-vm) use the SSM session_manager communicator,
+        # which requires a non-empty iam_instance_profile at validate time; the
+        # var-file does not carry one (it is an operator dispatch input), so pass
+        # a validate-only placeholder. It never reaches AWS — validate is a
+        # static config check.
         result = subprocess.run(  # noqa: S603
-            [packer_path, "validate", "-var-file=dev.pkrvars.hcl", "."],
+            [
+                packer_path,
+                "validate",
+                "-var-file=dev.pkrvars.hcl",
+                "-var",
+                "builder_instance_profile=ci-validate",
+                ".",
+            ],
             capture_output=True,
             text=True,
             cwd=PACKER_DIR,
@@ -470,3 +492,184 @@ class TestPackerWorkflowCleanup:
         ssm_idx = workflow_content.index("- name: Update")
         cleanup_idx = workflow_content.index(self.CLEANUP_STEP_NAME)
         assert ssm_idx < cleanup_idx
+
+
+class TestScenarioBakeTemplates:
+    """Packer sources for the SSM-communicator scenario bakes (#1469)."""
+
+    SCENARIO_SOURCES = ("techvault", "polaris-vm")
+
+    @staticmethod
+    def _content(source: str) -> str:
+        path = PACKER_DIR / f"{source}.pkr.hcl"
+        assert path.exists(), f"Missing scenario template: {path.name}"
+        return path.read_text()
+
+    @pytest.mark.parametrize("source", SCENARIO_SOURCES)
+    def test_scenario_template_exists(self, source):
+        assert (PACKER_DIR / f"{source}.pkr.hcl").exists()
+
+    @pytest.mark.parametrize("source", SCENARIO_SOURCES)
+    def test_uses_session_manager_communicator(self, source):
+        """No-inbound bake: SSH over Session Manager, explicit profile + SG."""
+        content = self._content(source)
+        assert '"session_manager"' in content
+        assert "iam_instance_profile" in content
+        # Isolation is the operator no-inbound SG (not dropping the public IP);
+        # the SG must reach the builder, so it is threaded into the source.
+        assert "security_group_ids" in content
+        assert "var.security_group_id" in content
+
+    @pytest.mark.parametrize("source", SCENARIO_SOURCES)
+    def test_encrypted_root_volume(self, source):
+        content = self._content(source)
+        assert "launch_block_device_mappings" in content
+        assert re.search(r"encrypted\s*=\s*true", content)
+
+    @pytest.mark.parametrize("source", SCENARIO_SOURCES)
+    def test_imdsv2_enforced(self, source):
+        content = self._content(source)
+        assert re.search(r'http_tokens\s*=\s*"required"', content)
+        assert re.search(r'imds_support\s*=\s*"v2\.0"', content)
+
+    @pytest.mark.parametrize("source", SCENARIO_SOURCES)
+    def test_shutdown_behavior_terminates(self, source):
+        assert re.search(r'shutdown_behavior\s*=\s*"terminate"', self._content(source))
+
+    @pytest.mark.parametrize("source", SCENARIO_SOURCES)
+    def test_long_ami_polling_window(self, source):
+        """Large baked AMIs snapshot for 30-60 min; the AMI-ready wait must be
+        extended past Packer's default or the build fails after a good bake."""
+        content = self._content(source)
+        assert "aws_polling" in content
+        m = re.search(r"max_attempts\s*=\s*(\d+)", content)
+        delay = re.search(r"delay_seconds\s*=\s*(\d+)", content)
+        assert m and delay, "aws_polling must set delay_seconds + max_attempts"
+        # >= 45 min of headroom for the large-image snapshot.
+        assert int(m.group(1)) * int(delay.group(1)) >= 2700
+
+    @pytest.mark.parametrize(
+        ("source", "builder_name"),
+        [
+            ("techvault", "packer-builder-techvault"),
+            ("polaris-vm", "packer-builder-polaris-vm"),
+        ],
+    )
+    def test_run_tag_name_matches_cleanup_selector(self, source, builder_name):
+        """Workflow cleanup keys off packer-builder-<ami_type>; templates must align."""
+        assert re.search(rf'Name\s*=\s*"{re.escape(builder_name)}"', self._content(source))
+
+
+class TestScenarioBakeScripts:
+    """Provisioner + verify script bodies for the scenario bakes (#1469)."""
+
+    def test_techvault_provisioner_scripts_exist(self):
+        for script in ("toolchain.sh", "stack.sh", "seat.sh", "wait-stack.sh"):
+            assert (SCRIPTS_DIR / "techvault" / script).exists(), f"missing techvault/{script}"
+
+    def test_polaris_bootstrap_exists(self):
+        assert (SCRIPTS_DIR / "polaris" / "bootstrap.sh").exists()
+
+    def test_bake_verify_scripts_exist(self):
+        for script in ("verify-encrypted-ami.sh", "golden-verify.sh"):
+            assert (SCRIPTS_DIR / "bake" / script).exists(), f"missing bake/{script}"
+
+    def test_techvault_stack_runs_as_ubuntu(self):
+        """Wazuh certs need uid 1000; the stack must run as the ubuntu user."""
+        content = (SCRIPTS_DIR / "techvault" / "stack.sh").read_text()
+        assert "sudo -u ubuntu" in content
+        assert "aptl lab start" in content
+
+    def test_polaris_bootstrap_pulls_tarball_and_runs_stack(self):
+        content = (SCRIPTS_DIR / "polaris" / "bootstrap.sh").read_text()
+        assert "POLARIS_TARBALL_S3_URI" in content
+        assert "docker compose build" in content
+        assert "docker compose up -d" in content
+
+    @staticmethod
+    def _run_encryption_verify(tmp_path, ebs_count, enc_count):
+        """Execute verify-encrypted-ami.sh against a fake `aws` shim that returns
+        controlled describe-images counts (repo pattern: exercise the bash gate,
+        don't just grep it)."""
+        fake = tmp_path / "aws"
+        fake.write_text(
+            "#!/bin/bash\n"
+            'for a in "$@"; do\n'
+            '  case "$a" in\n'
+            '    *Ebs.Encrypted*) echo "$FAKE_ENC_COUNT"; exit 0;;\n'
+            "    *'[?Ebs]'*) echo \"$FAKE_EBS_COUNT\"; exit 0;;\n"
+            "  esac\n"
+            "done\n"
+            "echo 0\n"
+        )
+        fake.chmod(0o755)
+        env = {
+            **os.environ,
+            "PATH": f"{tmp_path}:{os.environ['PATH']}",
+            "AMI_ID": "ami-test",
+            "FAKE_EBS_COUNT": str(ebs_count),
+            "FAKE_ENC_COUNT": str(enc_count),
+        }
+        return subprocess.run(  # noqa: S603
+            [str(SCRIPTS_DIR / "bake" / "verify-encrypted-ami.sh")],
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+
+    def test_encryption_verify_passes_when_all_encrypted(self, tmp_path):
+        r = self._run_encryption_verify(tmp_path, ebs_count=1, enc_count=1)
+        assert r.returncode == 0, f"stdout={r.stdout} stderr={r.stderr}"
+
+    def test_encryption_verify_fails_when_unencrypted(self, tmp_path):
+        r = self._run_encryption_verify(tmp_path, ebs_count=1, enc_count=0)
+        assert r.returncode == 1, "must refuse to publish an unencrypted AMI"
+        assert "unencrypted" in (r.stdout + r.stderr).lower()
+
+    def test_encryption_verify_fails_when_no_ebs(self, tmp_path):
+        r = self._run_encryption_verify(tmp_path, ebs_count=0, enc_count=0)
+        assert r.returncode == 1, "must refuse when there are no EBS volumes to verify"
+
+
+class TestScenarioBakeWorkflow:
+    """packer.yml invariants for the scenario bake job (#1469)."""
+
+    @pytest.fixture
+    def wf(self):
+        assert PACKER_WORKFLOW.exists()
+        return PACKER_WORKFLOW.read_text()
+
+    def test_bake_scenario_job_present(self, wf):
+        assert "bake-scenario:" in wf
+
+    def test_scenario_ami_type_choices(self, wf):
+        assert "- techvault" in wf
+        assert "- polaris-vm" in wf
+
+    def test_encryption_and_golden_verify_precede_publish(self, wf):
+        """Encryption + fresh-boot golden verify are gates before SSM publish."""
+        enc_idx = wf.index("verify-encrypted-ami.sh")
+        golden_idx = wf.index("golden-verify.sh")
+        publish_idx = wf.index("Publish the AMI to SSM")
+        assert enc_idx < publish_idx
+        assert golden_idx < publish_idx
+
+    def test_session_manager_plugin_installed(self, wf):
+        assert "session-manager-plugin" in wf
+
+    def test_base_build_skips_scenario_types(self, wf):
+        assert '!contains(fromJSON(\'["techvault","polaris-vm"]\'), inputs.ami_type)' in wf
+
+    def test_legacy_bake_workflows_deleted(self):
+        wdir = REPO_ROOT / ".github" / "workflows"
+        assert not (wdir / "techvault-scenario-bake.yml").exists()
+        assert not (wdir / "polaris-scenario-bake.yml").exists()
+
+
+class TestAmiHelperAlignment:
+    """scripts/ami.sh must stay aligned with packer.yml AMI types (#1469 preflight)."""
+
+    def test_scenario_types_listed(self):
+        content = (REPO_ROOT / "scripts" / "ami.sh").read_text()
+        assert "techvault" in content
+        assert "polaris-vm" in content
