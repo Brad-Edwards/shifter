@@ -12,7 +12,7 @@ import ipaddress
 import os
 import shutil
 import socket
-import subprocess  # nosec B404
+import subprocess  # nosec B404 NOSONAR
 import urllib.error
 import urllib.request
 from collections.abc import Callable, Sequence
