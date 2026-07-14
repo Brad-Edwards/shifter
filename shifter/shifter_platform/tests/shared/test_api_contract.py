@@ -139,3 +139,42 @@ class TestBreakingChangeGate:
         ok, detail = contract.check_breaking_against("origin/dev")
         assert ok
         assert "skipped" in detail.lower()
+
+    @staticmethod
+    def _fake_git(*, verify_rc: int, ls_tree_rc: int, ls_tree_out: str, show_out: str = "{}"):
+        def fake_git(*args: str) -> SimpleNamespace:
+            if args[:2] == ("rev-parse", "--show-toplevel"):
+                return SimpleNamespace(returncode=0, stdout="/\n", stderr="")
+            if args[0] == "rev-parse":
+                return SimpleNamespace(returncode=verify_rc, stdout="", stderr="bad ref")
+            if args[0] == "ls-tree":
+                return SimpleNamespace(returncode=ls_tree_rc, stdout=ls_tree_out, stderr="ls-tree failed")
+            if args[0] == "show":
+                return SimpleNamespace(returncode=0, stdout=show_out, stderr="")
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+        return fake_git
+
+    def test_resolve_base_returns_none_when_path_genuinely_absent(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # Ref resolves, ls-tree succeeds with empty output -> genuine first publication.
+        monkeypatch.setattr(contract, "_git", self._fake_git(verify_rc=0, ls_tree_rc=0, ls_tree_out=""))
+        assert contract.resolve_base_document("origin/dev") is None
+
+    def test_resolve_base_fails_closed_on_unresolvable_ref(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(contract, "_git", self._fake_git(verify_rc=1, ls_tree_rc=0, ls_tree_out=""))
+        with pytest.raises(RuntimeError, match="could not be resolved"):
+            contract.resolve_base_document("bogus-ref")
+
+    def test_resolve_base_fails_closed_on_lookup_error(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # Ref resolves but the path query itself errors -> must raise, never skip.
+        monkeypatch.setattr(contract, "_git", self._fake_git(verify_rc=0, ls_tree_rc=128, ls_tree_out=""))
+        with pytest.raises(RuntimeError, match="failed to query"):
+            contract.resolve_base_document("origin/dev")
+
+    def test_resolve_base_reads_present_artifact(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(
+            contract,
+            "_git",
+            self._fake_git(verify_rc=0, ls_tree_rc=0, ls_tree_out="100644 blob abc\topenapi/v1.json\n", show_out="{}"),
+        )
+        assert contract.resolve_base_document("origin/dev") == "{}"

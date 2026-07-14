@@ -136,9 +136,14 @@ def resolve_base_document(base_ref: str, major: str = API_MAJOR) -> str | None:
     resolved = _git("rev-parse", "--verify", "--quiet", f"{base_ref}^{{commit}}")
     if resolved.returncode != 0:
         raise RuntimeError(f"base ref {base_ref!r} could not be resolved for the breaking-change gate")
-    # A resolvable ref with no artifact object is the only legitimate skip.
-    exists = _git("cat-file", "-e", f"{base_ref}:{repo_relative}")
-    if exists.returncode != 0:
+    # Discriminate "path genuinely absent" from "lookup failed": ls-tree exits 0
+    # for a resolvable ref and prints a tree entry only when the path exists. A
+    # nonzero status is an error and must fail closed, never skip the gate.
+    listed = _git("ls-tree", base_ref, "--", repo_relative)
+    if listed.returncode != 0:
+        raise RuntimeError(f"failed to query {repo_relative} at {base_ref}: {listed.stderr.strip()}")
+    if not listed.stdout.strip():
+        # Ref resolves but has no committed artifact — the legitimate first-publication skip.
         return None
     shown = _git("show", f"{base_ref}:{repo_relative}")
     if shown.returncode != 0:
