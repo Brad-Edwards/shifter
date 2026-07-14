@@ -226,8 +226,8 @@ The first slice intentionally stays small:
   `portal_image` filter covering `shifter/shifter_platform/**`, exposed as a
   `changes`-job output, included in the `shifter_platform` job's trigger
   condition, and consumed by the platform `build` job through the
-  `portal_image_changes` input so an app-only push to an environment branch
-  builds and converges the portal image without running Terraform. The check
+  `portal_image_changes` input so an app-only deploy dispatch builds and
+  converges the portal image without running Terraform. The check
   also requires `.github/workflows/deploy.yml` to pass `skip_tests: false`
   literally into `_quality.yml` (no commit-message parsing or dynamic outputs)
   and requires lint, architecture, and security jobs in `_quality.yml` to stay
@@ -235,8 +235,8 @@ The first slice intentionally stays small:
   when a caller opts in; the deploy router never opts in (#760). Negative
   fixtures in `scripts/adr_guard/tests/test_adr_guard.py` include a minimal
   `_quality.yml` stub so plan-scope tests isolate one violation at a time. The check
-  requires deploy concurrency to queue branch/manual runs rather than cancel
-  in-flight applies; PR cancellation may remain enabled. It also requires every
+  requires deploy concurrency to queue dispatch deploys (keyed per environment)
+  rather than cancel in-flight applies; PR cancellation may remain enabled. It also requires every
   core, range, and platform `terraform plan` / saved-plan `terraform apply`
   command to include `-lock-timeout=5m`, and requires each apply job to create
   and execute a local saved `tfplan` instead of uploading raw binary plans as
@@ -257,8 +257,8 @@ The first slice intentionally stays small:
   `scripts/adr_guard/tests/test_deploy_workflow.py` also assert the engine
   reusable workflow carries its own hosted provisioner pytest gate and that
   `_shifter-engine.yml` image validation, image build, and deploy jobs all need
-  that gate. This keeps deploy-branch Quality skips from bypassing provisioner
-  tests on the image that is pushed and deployed. The same suite pins the engine
+  that gate. This keeps a deploy dispatch's Quality skip from bypassing
+  provisioner tests on the image that is pushed and deployed. The same suite pins the engine
   `validate` image-shape job's runner placement (#1474): it runs on the trusted
   self-hosted deploy runner class rather than `ubuntu-latest`, so a
   GitHub-hosted runner-acquisition stall can no longer cancel it before steps
@@ -266,6 +266,12 @@ The first slice intentionally stays small:
   fail-closed on `pull_request` under the `deploy-workflow-runner-exposure`
   (ADR-003-R5) invariant, keeps `contents: read` only, and carries a
   `timeout-minutes` backstop (#1220).
+
+  The manual-deploy invariant (`TestManualDeployDispatch`, #730) asserts that
+  environment deploys are a `workflow_dispatch` naming the `environment` input
+  (a closed `choice` of `aws-dev` / `aws-proof` / `gcp-dev`), that the `Set
+  environment` step keys on that input rather than a branch-name `case` router,
+  and that `push` / `pull_request` run validation only (no run/apply flags).
 
 - `portal-deploy-mode-source-of-truth`
   Enforces ADR-003-R4 for the AWS portal deploy path. `_shifter-platform.yml`
