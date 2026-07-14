@@ -1355,6 +1355,19 @@ export interface components {
             success: boolean;
             range: components["schemas"]["RangePresentation"];
         };
+        /**
+         * @description Schema-only description of the flat ``{"error": "<message>"}`` body some
+         *     legacy Mission Control endpoints return (e.g. Guacamole bootstrap 503/404).
+         *
+         *     This is NOT the canonical :class:`ApiErrorSerializer` envelope. It exists so
+         *     the contract describes those endpoints' real wire shape truthfully rather
+         *     than pretending they use the structured envelope. New endpoints must use the
+         *     canonical envelope; this documents existing behavior, it does not endorse it.
+         */
+        LegacyError: {
+            /** @description Human-readable error message. */
+            error: string;
+        };
         /** @description Validate NGFW creation requests. */
         NGFWCreate: {
             /** @default  */
@@ -2791,6 +2804,22 @@ export interface operations {
                     "application/json": components["schemas"]["ApiError"];
                 };
             };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LegacyError"];
+                };
+            };
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GuacamoleBootstrapStatus"];
+                };
+            };
         };
     };
     api_v1_mission_control_guacamole_bootstrap_open_retrieve: {
@@ -2855,7 +2884,7 @@ export interface operations {
             };
         };
         responses: {
-            200: {
+            202: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2879,6 +2908,14 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LegacyError"];
                 };
             };
         };
@@ -2898,7 +2935,7 @@ export interface operations {
             };
         };
         responses: {
-            200: {
+            202: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2922,6 +2959,14 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LegacyError"];
                 };
             };
         };
@@ -3034,7 +3079,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            200: {
+            202: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3058,6 +3103,14 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LegacyError"];
                 };
             };
         };
@@ -3749,6 +3802,14 @@ export interface operations {
             };
             /** @description Permission denied. */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

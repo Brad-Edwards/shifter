@@ -37,6 +37,7 @@ from mission_control.views._guacamole import (
 from mission_control.views._guacamole_bootstrap import _authenticated_user_id, _BootstrapViewError, _mark_expired
 from mission_control.views._guacamole_bootstrap import guacamole_bootstrap_response as _guacamole_bootstrap_response
 from shared.api.permissions import IsAuthenticatedSessionOrApiToken
+from shared.api.schema import LegacyErrorSerializer
 from shared.log_sanitize import safe_log_value
 
 if TYPE_CHECKING:
@@ -59,7 +60,7 @@ class GuacamoleRDPURLView(MissionControlReadAPIView):
 
     @extend_schema(
         request=GuacamoleInstanceSerializer,
-        responses=GuacamoleBootstrapQueuedSerializer,
+        responses={202: GuacamoleBootstrapQueuedSerializer, 503: LegacyErrorSerializer},
         operation_id="api_v1_mission_control_guacamole_rdp_url",
     )
     def post(self, request: Request) -> JsonResponse | Response:
@@ -98,7 +99,7 @@ class GuacamoleRangeSSHURLView(MissionControlReadAPIView):
 
     @extend_schema(
         request=GuacamoleInstanceSerializer,
-        responses=GuacamoleBootstrapQueuedSerializer,
+        responses={202: GuacamoleBootstrapQueuedSerializer, 503: LegacyErrorSerializer},
         operation_id="api_v1_mission_control_guacamole_ssh_url",
     )
     def post(self, request: Request) -> JsonResponse | Response:
@@ -137,7 +138,7 @@ class GuacamoleNGFWSSHURLView(MissionControlReadAPIView):
 
     @extend_schema(
         request=None,
-        responses=GuacamoleBootstrapQueuedSerializer,
+        responses={202: GuacamoleBootstrapQueuedSerializer, 503: LegacyErrorSerializer},
         operation_id="api_v1_mission_control_ngfw_ssh_url",
     )
     def post(self, request: Request, app_id: str) -> JsonResponse | Response:
@@ -172,7 +173,13 @@ class GuacamoleBootstrapStatusView(MissionControlReadAPIView):
     permission_classes = [IsAuthenticatedSessionOrApiToken, HasMissionControlActor, _guacamole_read_permission()]
 
     @extend_schema(
-        responses=GuacamoleBootstrapStatusSerializer,
+        responses={
+            200: GuacamoleBootstrapStatusSerializer,
+            # Expired/gone requests return the same status payload at 410.
+            410: GuacamoleBootstrapStatusSerializer,
+            # An unknown request id returns the flat legacy error body.
+            404: LegacyErrorSerializer,
+        },
         operation_id="api_v1_mission_control_guacamole_bootstrap_status_retrieve",
     )
     def get(self, request: Request, request_id: UUID) -> JsonResponse:

@@ -82,6 +82,19 @@ class ApiErrorSerializer(serializers.Serializer):
     error = ApiErrorBodySerializer()
 
 
+class LegacyErrorSerializer(serializers.Serializer):
+    """Schema-only description of the flat ``{"error": "<message>"}`` body some
+    legacy Mission Control endpoints return (e.g. Guacamole bootstrap 503/404).
+
+    This is NOT the canonical :class:`ApiErrorSerializer` envelope. It exists so
+    the contract describes those endpoints' real wire shape truthfully rather
+    than pretending they use the structured envelope. New endpoints must use the
+    canonical envelope; this documents existing behavior, it does not endorse it.
+    """
+
+    error = serializers.CharField(help_text="Human-readable error message.")
+
+
 _SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 
 # Error responses guaranteed by the shared DRF exception handler for EVERY

@@ -27,6 +27,7 @@ from mission_control.api.serializers import (
 )
 from mission_control.upload_session import check_upload_in_progress, set_upload_in_progress, upload_lock_matches_token
 from shared.api.permissions import IsAuthenticatedSessionOrApiToken
+from shared.api.schema import ApiErrorSerializer
 from shared.api_tokens.models import ApiToken
 from shared.errors import classify_user_message
 from shared.exceptions import CMSError
@@ -42,7 +43,7 @@ class UploadInitiateView(MissionControlAPIView):
 
     @extend_schema(
         request=UploadInitiateSerializer,
-        responses=UploadInitiateResponseSerializer,
+        responses={200: UploadInitiateResponseSerializer, 409: ApiErrorSerializer},
         operation_id="api_v1_mission_control_upload_initiate",
     )
     def post(self, request: Request) -> Response:

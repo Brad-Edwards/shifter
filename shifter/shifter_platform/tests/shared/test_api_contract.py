@@ -108,6 +108,23 @@ class TestPublishedContract:
         assert {"ApiTokenAuth", "cookieAuth"} <= set(openapi_document["components"]["securitySchemes"])
 
 
+@pytest.mark.django_db
+class TestLiveResponseParity:
+    """Request-level parity: a live response must agree with the published schema."""
+
+    def test_unauthenticated_request_matches_published_401(self, openapi_document: dict[str, Any]) -> None:
+        from rest_framework.test import APIClient
+
+        response = APIClient().get("/api/v1/risks/")
+        assert response.status_code == 401
+        # Live body is the canonical envelope the exception handler renders...
+        body = response.json()
+        assert {"code", "message"} <= set(body["error"])
+        # ...and the contract publishes exactly that shape for 401 on this operation.
+        published = openapi_document["paths"]["/api/v1/risks/"]["get"]["responses"]["401"]
+        assert published["content"]["application/json"]["schema"]["$ref"].endswith("/ApiError")
+
+
 class TestDriftGate:
     def test_committed_artifact_matches_the_drf_surface(self) -> None:
         is_current, detail = contract.check_drift()

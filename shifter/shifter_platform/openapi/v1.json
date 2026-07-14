@@ -1505,6 +1505,26 @@
             },
             "description": ""
           },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuacamoleBootstrapStatus"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LegacyError"
+                }
+              }
+            },
+            "description": ""
+          },
           "401": {
             "content": {
               "application/json": {
@@ -1640,11 +1660,21 @@
           }
         ],
         "responses": {
-          "200": {
+          "202": {
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/GuacamoleBootstrapQueued"
+                }
+              }
+            },
+            "description": ""
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LegacyError"
                 }
               }
             },
@@ -1712,11 +1742,21 @@
           }
         ],
         "responses": {
-          "200": {
+          "202": {
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/GuacamoleBootstrapQueued"
+                }
+              }
+            },
+            "description": ""
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LegacyError"
                 }
               }
             },
@@ -1938,11 +1978,21 @@
           }
         ],
         "responses": {
-          "200": {
+          "202": {
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/GuacamoleBootstrapQueued"
+                }
+              }
+            },
+            "description": ""
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LegacyError"
                 }
               }
             },
@@ -3045,6 +3095,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/UploadInitiateResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
                 }
               }
             },
@@ -5103,6 +5163,19 @@
         "required": [
           "range",
           "success"
+        ]
+      },
+      "LegacyError": {
+        "type": "object",
+        "description": "Schema-only description of the flat ``{\"error\": \"<message>\"}`` body some\nlegacy Mission Control endpoints return (e.g. Guacamole bootstrap 503/404).\n\nThis is NOT the canonical :class:`ApiErrorSerializer` envelope. It exists so\nthe contract describes those endpoints' real wire shape truthfully rather\nthan pretending they use the structured envelope. New endpoints must use the\ncanonical envelope; this documents existing behavior, it does not endorse it.",
+        "properties": {
+          "error": {
+            "type": "string",
+            "description": "Human-readable error message."
+          }
+        },
+        "required": [
+          "error"
         ]
       },
       "NGFWCreate": {
