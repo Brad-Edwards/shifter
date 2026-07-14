@@ -418,7 +418,7 @@ class GCERangeCellConfig:
     # ``vpc-per-range`` mode, where each range mints its own VPC.
     network_id: str = ""
     service_account_email: str = ""
-    # OAuth scope for the range guest's attached service account. Use
+    # OAuth scope for a range host's attached service account. Use
     # cloud-platform and let the host SA's IAM roles be the real access control
     # (the modern GCP recommendation): scopes are a coarse legacy gate, IAM is
     # fine-grained. cloud-platform is REQUIRED, not merely convenient — the

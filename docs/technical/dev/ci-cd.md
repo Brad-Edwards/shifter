@@ -231,6 +231,16 @@ previous):
 **Auto Scaling mode** refreshes `{env}-portal-asg` and verifies the new digest
 and worker health on every in-service instance.
 
+**Refresh scope and timing (issue #1639).** The ASG instance refresh runs only when the
+portal actually changed (the portal image or platform Terraform). An engine-provisioner-only
+deploy no longer triggers a full portal refresh. Refresh readiness tracks the ALB target
+group (`health_check_type = "ELB"`), so a refresh converges once the portal is actually
+serving instead of waiting out the EC2 "insufficient data to evaluate its health" window.
+The ASG timing is environment-owned Terraform (`health_check_type`,
+`health_check_grace_period`, and `instance_refresh_instance_warmup` on the portal root),
+so a dev or proof tenant can shorten the health-grace to speed up the deploy, test, fix
+loop without changing prod.
+
 ### First-run DNS timing
 
 On a fresh account the first Portal apply blocks while AWS validates ACM

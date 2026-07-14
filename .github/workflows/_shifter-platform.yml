@@ -1306,7 +1306,17 @@ jobs:
           echo "Platform deployment successful!"
 
       - name: Trigger ASG instance refresh
-        if: steps.config.outputs.enable_autoscaling == 'true'
+        # Only cycle the portal fleet when the portal actually changed (issue
+        # #1639): a new portal image (portal_image_changes) or a platform
+        # Terraform change that can alter the launch template / user_data
+        # (platform_changes). An engine-provisioner-only deploy does not change
+        # the portal host, so paying the ~40-minute rolling refresh on it is pure
+        # iteration-loop waste. New instances still read the current image digest
+        # from Parameter Store at boot, so a skipped refresh never serves a stale
+        # image for a portal that did not change.
+        if: >-
+          steps.config.outputs.enable_autoscaling == 'true' &&
+          (inputs.portal_image_changes || inputs.platform_changes)
         env:
           ASG_NAME: ${{ steps.asg.outputs.asg_name }}
         run: |

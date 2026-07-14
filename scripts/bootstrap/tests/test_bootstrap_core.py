@@ -54,3 +54,58 @@ class TestRunCmdSecretStdin:
         out = capsys.readouterr().out
         assert "DRY-RUN" in out
         assert "tok" not in out
+
+
+class TestConfirmAssumeYes:
+    """Non-interactive proceed for confirm() via --yes/assume-yes (issue #1639)."""
+
+    @pytest.fixture(autouse=True)
+    def _reset_assume_yes(self):
+        # Module-level assume-yes state must not leak between tests.
+        import bootstrap_core
+
+        bootstrap_core.set_assume_yes(False)
+        yield
+        bootstrap_core.set_assume_yes(False)
+
+    def test_non_interactive_uses_default_without_assume_yes(self, monkeypatch):
+        import bootstrap_core
+
+        monkeypatch.setattr(bootstrap_core.sys.stdin, "isatty", lambda: False)
+        # Without assume-yes, a non-TTY confirm() falls back to default_yes: the
+        # original auto-abort behavior for prompts that default to "no".
+        assert bootstrap_core.confirm("proceed?", default_yes=False) is False
+        assert bootstrap_core.confirm("proceed?", default_yes=True) is True
+
+    def test_non_interactive_proceeds_under_assume_yes(self, monkeypatch):
+        import bootstrap_core
+
+        monkeypatch.setattr(bootstrap_core.sys.stdin, "isatty", lambda: False)
+        bootstrap_core.set_assume_yes(True)
+        assert bootstrap_core.assume_yes_enabled() is True
+        # --yes makes routine confirm() prompts proceed without a TTY instead of
+        # auto-aborting on the default_yes=False fallback.
+        assert bootstrap_core.confirm("proceed?", default_yes=False) is True
+
+
+class TestSubprocessPagerSuppression:
+    """run_cmd forces AWS_PAGER="" so aws v2 never blocks on its pager (issue #1639)."""
+
+    def test_subprocess_env_forces_empty_aws_pager(self):
+        from bootstrap_core import _subprocess_env
+
+        assert _subprocess_env()["AWS_PAGER"] == ""
+
+    def test_run_cmd_sets_empty_aws_pager_in_child_env(self):
+        from bootstrap_core import run_cmd
+
+        # ${AWS_PAGER+set} -> "set" when present (even empty); ${AWS_PAGER-UNSET}
+        # -> the value ("") when set, else "UNSET". "set:" proves present-and-empty,
+        # distinguishing a forced empty value from an unset variable.
+        result = run_cmd(
+            ["sh", "-c", 'printf %s "${AWS_PAGER+set}:${AWS_PAGER-UNSET}"'],
+            capture=True,
+        )
+
+        assert result is not None
+        assert result.stdout == "set:"

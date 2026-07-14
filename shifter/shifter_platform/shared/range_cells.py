@@ -46,6 +46,7 @@ _REQUEST_KEYS = frozenset(
 _RESULT_KEYS = frozenset({"contract", "contract_version", "capability", "operation", "cell", "members", "access"})
 _LIFECYCLE_STATES = frozenset({"pending", "provisioning", "ready", "destroying", "destroyed", "failed"})
 _ACCESS_CHANNELS = frozenset({"ssh", "rdp"})
+_MAX_NETWORK_BINDING_ADDRESSES = 1 << 16
 
 ContractDict = dict[str, Any]
 
@@ -193,6 +194,14 @@ def _validate_network_bindings(value: object) -> list[ContractDict]:
             raise RangeCellContractError(f"network_bindings[{index}].cidr is not a network") from exc
         if not isinstance(network, ipaddress.IPv4Network):
             raise RangeCellContractError(f"network_bindings[{index}].cidr must be IPv4")
+        if network.num_addresses > _MAX_NETWORK_BINDING_ADDRESSES:
+            raise RangeCellContractError(f"network_bindings[{index}].cidr is larger than /16")
+        for existing in bindings:
+            existing_network = ipaddress.ip_network(existing["cidr"])
+            if network.overlaps(existing_network):
+                raise RangeCellContractError(
+                    f"network_bindings[{index}].cidr overlaps network binding for {existing['subnet_ref']}"
+                )
         bindings.append({"subnet_ref": subnet_ref, "cidr": str(network)})
     return bindings
 
