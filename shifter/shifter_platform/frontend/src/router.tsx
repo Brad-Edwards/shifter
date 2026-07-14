@@ -2,6 +2,7 @@ import { createBrowserRouter } from "react-router-dom";
 
 import { RootLayout, type RouteHandle } from "@/app/RootLayout";
 import { NotFoundPage } from "@/components/not-found";
+import { AcesImageRegistryPage } from "@/features/aces-image-registry/AcesImageRegistryPage";
 import { HomePage } from "@/features/home/HomePage";
 import { AgentsPage } from "@/features/mission-control/AgentsPage";
 import { CredentialsPage } from "@/features/mission-control/CredentialsPage";
@@ -32,6 +33,9 @@ const missionControlHandle: RouteHandle = { permissionPolicy: "authenticated" };
 // Scenario Editor (#1371) is gated on CMS-authoring access, the same advisory
 // policy the existing "Author" nav group / legacy threat-research views use.
 const scenarioEditorHandle: RouteHandle = { permissionPolicy: "threat_research" };
+// ACES image registry (#1566) shares the "Author" CMS-authoring gate; the API
+// additionally 404s unless SHIFTER_ACES_NATIVE_PROVISIONING is on.
+const acesImageRegistryHandle: RouteHandle = { permissionPolicy: "threat_research" };
 
 export const router = createBrowserRouter(
   [
@@ -91,6 +95,14 @@ export const router = createBrowserRouter(
             { path: ":scenarioId/edit", element: <ScenarioFormPage mode="edit" /> },
             { path: ":scenarioId/editor", element: <ScenarioYamlPage mode="edit" /> },
           ],
+        },
+        {
+          // ACES image registry (#1566): greenfield SPA-only surface. The Django
+          // host serves the shell for /aces-image-registry/* GET paths only when
+          // PLATFORM_SPA_ENABLED and SHIFTER_ACES_NATIVE_PROVISIONING are on.
+          path: "aces-image-registry",
+          handle: acesImageRegistryHandle,
+          children: [{ index: true, element: <AcesImageRegistryPage /> }],
         },
         { path: "*", element: <NotFoundPage /> },
       ],

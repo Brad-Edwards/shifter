@@ -372,6 +372,55 @@ variable "instance_refresh_min_healthy_percentage" {
   }
 }
 
+variable "health_check_type" {
+  description = <<-EOT
+    ASG health-check type. "ELB" ties instance/refresh readiness to the ALB
+    target group (real app readiness), so an instance refresh converges when
+    the portal is actually serving. "EC2" only checks EC2 status checks and
+    leaves refreshes sitting on "insufficient data to evaluate its health with
+    Amazon EC2" for the transient warmup window (issue #1639). Kept variable so
+    a non-ALB deployment can fall back to "EC2".
+  EOT
+  type        = string
+  default     = "ELB"
+
+  validation {
+    condition     = contains(["EC2", "ELB"], var.health_check_type)
+    error_message = "health_check_type must be one of: EC2, ELB."
+  }
+}
+
+variable "health_check_grace_period" {
+  description = <<-EOT
+    Seconds the ASG waits after an instance launches before counting its health
+    checks. Long enough to cover docker install + portal container boot. Env-owned
+    (issue #1639) so dev/proof can shorten the iteration loop instead of paying the
+    production-sized grace on every redeploy.
+  EOT
+  type        = number
+  default     = 900
+
+  validation {
+    condition     = var.health_check_grace_period >= 0 && var.health_check_grace_period <= 3600
+    error_message = "health_check_grace_period must be between 0 and 3600 seconds."
+  }
+}
+
+variable "instance_refresh_instance_warmup" {
+  description = <<-EOT
+    Seconds an instance refresh waits for a replacement instance to warm up before
+    counting it toward the healthy percentage. Env-owned (issue #1639); defaults to
+    the health-check grace so behavior is unchanged unless an environment overrides it.
+  EOT
+  type        = number
+  default     = 900
+
+  validation {
+    condition     = var.instance_refresh_instance_warmup >= 0 && var.instance_refresh_instance_warmup <= 3600
+    error_message = "instance_refresh_instance_warmup must be between 0 and 3600 seconds."
+  }
+}
+
 variable "worker_health_alarm_actions" {
   description = "SNS topic ARNs notified when worker lifecycle alarms (#953 unhealthy workers, #274 restart rate) fire; empty disables alarm notifications"
   type        = list(string)

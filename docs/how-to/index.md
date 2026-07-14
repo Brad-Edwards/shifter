@@ -9,6 +9,7 @@ Step-by-step walkthroughs for common tasks.
 ## Advanced Setups
 
 - [Set Up NGFW Demo](ngfw-demo) - Full NGFW integration walkthrough
+- [Manage the ACES Image Registry](manage-aces-image-registry) - Register, list, and disable ACES image mappings
 
 ## Troubleshooting
 

@@ -658,6 +658,9 @@ module "ec2" {
   termination_drain_timeout               = var.termination_drain_timeout
   docker_stop_timeout                     = var.docker_stop_timeout
   instance_refresh_min_healthy_percentage = var.instance_refresh_min_healthy_percentage
+  health_check_type                       = var.health_check_type
+  health_check_grace_period               = var.health_check_grace_period
+  instance_refresh_instance_warmup        = var.instance_refresh_instance_warmup
 
   redis_endpoint     = var.enable_redis ? module.redis.redis_endpoint : ""
   scale_up_threshold = var.scale_up_threshold
