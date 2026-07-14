@@ -62,8 +62,17 @@ Workflow: `.github/workflows/packer.yml`
 
 | AMI Type | Action |
 |----------|--------|
-| kali, ubuntu, windows | Packer build, update dev SSM |
+| kali, ubuntu, windows | Packer build, fresh-boot SSM/DNS validation gate, then update dev SSM |
 | dc | Read from `dc-amis.json`, update dev SSM |
+
+The `kali`, `ubuntu`, and `windows` builds bake a deterministic AmazonProvidedDNS
+upstream into the guest (issue #1633) so DNS is race-free from first boot. Before
+the build overwrites `/shifter/ami/<type>`, a validation gate boots the exact
+candidate AMI in a range-equivalent subnet and requires it to register with SSM
+and resolve the regional SSM endpoint on a fresh boot and after a reboot. A
+failed candidate leaves the previous known-good id in place. The gate inputs
+(`verify_subnet_id`, `verify_security_group_id`, `verify_instance_profile`) are
+described in the [AWS AMI seeding runbook](../../dev/aws-ami-seeding-runbook.md).
 
 ### Promote (Prod)
 
@@ -97,9 +106,16 @@ To create a new DC AMI:
 3. Promote to DC with domain `internal.shifter`, NetBIOS `INTSHIFTER`
 4. Set the domain Administrator password to the value already seeded in
    `shifter-{env}-portal-dc-domain` (Terraform-managed; read it from Secrets
-   Manager, do not invent one)—see `dev/secrets.md`
-5. Sysprep and create AMI
-6. Update `dc-amis.json`
+   Manager, do not invent one), see `dev/secrets.md`
+5. Set the DC's DNS forwarders to the link-local AmazonProvidedDNS so external
+   names such as the regional SSM endpoint resolve deterministically (issue
+   #1633): `Set-DnsServerForwarder -IPAddress 169.254.169.253 -PassThru`. This is
+   the DC-role equivalent of the `FallbackDNS` baked into the Linux guests. Do
+   not reset the DC's adapter to DHCP DNS: a promoted DC points its client at
+   itself and forwards outbound queries, so a DHCP reset would break domain
+   resolution.
+6. Sysprep and create AMI
+7. Update `dc-amis.json`
 
 **Important:** The Administrator password set during promotion must match the
 runtime secret referenced by the portal/engine Terraform stack for domain join
