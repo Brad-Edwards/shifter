@@ -98,15 +98,14 @@ SUPPORTED_CONTRACT_VERSIONS: frozenset[str] = frozenset({ACES_PROVISIONING_PLAN_
 
 #: Supported ``aces-sdl`` producer series this consumer accepts, as a bounded
 #: half-open range ``[MINIMUM, MAXIMUM_EXCLUSIVE)`` (ADR-032-R7 fail-closed: an
-#: unknown future release is rejected, not assumed compatible). The floor matches
-#: the ``aces-sdl>=0.19.1`` pin in ``shifter/shifter_platform/pyproject.toml``
-#: (ADR-032-R4); the exact runtime version is fixed by ``uv.lock``, so the producer
-#: only ever stamps a locked version within this window. A platform-side test
-#: asserts the floor agrees with the pin and the locked version is in range.
+#: unknown future release is rejected, not assumed compatible). The 0.19.1 floor
+#: remains readable for already-persisted plans during rolling deployment, while
+#: the platform producer is pinned exactly to 0.20.0. A platform-side test asserts
+#: that exact producer pin equals the installed version and lies in this window.
 #: Adopting a new series requires raising this window and passing the ACES
 #: conformance gate.
 MINIMUM_ACES_SDL_VERSION = "0.19.1"
-MAXIMUM_ACES_SDL_VERSION_EXCLUSIVE = "0.20.0"
+MAXIMUM_ACES_SDL_VERSION_EXCLUSIVE = "0.21.0"
 
 #: Duplicated intentionally across the separate deployable boundary and pinned
 #: to ``shared.aces.composition_envelope`` by a producer/consumer parity test.

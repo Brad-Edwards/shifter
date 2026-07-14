@@ -142,6 +142,34 @@ def test_request_rejects_duplicate_network_membership():
         )
 
 
+@pytest.mark.parametrize("cidr", ["0.0.0.0/0", "10.0.0.0/15"])
+def test_request_rejects_oversized_range_cell_networks(cidr):
+    artifact = build_scenario_artifact(_envelope())
+
+    with pytest.raises(RangeCellContractError, match="larger than /16"):
+        build_gcp_vm_range_cell_request(
+            request_id="request-a",
+            range_id=42,
+            scenario_artifact=artifact,
+            network_bindings=[{"subnet_ref": "subnet-a", "cidr": cidr}],
+        )
+
+
+def test_request_rejects_overlapping_range_cell_networks():
+    artifact = build_scenario_artifact(_envelope())
+
+    with pytest.raises(RangeCellContractError, match="overlaps"):
+        build_gcp_vm_range_cell_request(
+            request_id="request-a",
+            range_id=42,
+            scenario_artifact=artifact,
+            network_bindings=[
+                {"subnet_ref": "subnet-a", "cidr": "10.50.2.0/27"},
+                {"subnet_ref": "subnet-b", "cidr": "10.50.2.16/28"},
+            ],
+        )
+
+
 def test_request_rejects_duplicate_participant_access_declarations():
     declaration = {"target_ref": "instance-a", "channel": "ssh"}
     artifact = build_scenario_artifact(_envelope())

@@ -1,10 +1,11 @@
 """Load an ACES package into a compiled provisioning plan and dispatch it.
 
 This is the launch-side of the ACES-native path (#1479): it turns a registered
-``package_ref`` into a concrete provisioning dispatch. It resolves the package
-reference to a contained SDL entry file, loads + compiles it with ``aces-sdl``,
-plans it against the Shifter provisioning-only backend, and applies the plan
-through an injected dispatch ``port``.
+``package_ref`` into a concrete provisioning dispatch. It resolves the reference
+to a contained pack root, selects the single direct SDL entry supported by the
+current Shifter profile, loads + compiles it with ``aces-sdl``, plans it against
+the Shifter provisioning-only backend, and applies the plan through an injected
+dispatch ``port``.
 
 Like ``runtime_target`` and ``manifest``, this is one of the few modules allowed
 to import ``aces_*`` (ADR-031-R1 / ADR-024). It never imports ``cms`` or
@@ -47,16 +48,16 @@ class ShifterLaunchResult:
     diagnostics: tuple[str, ...] = ()
 
 
-def resolve_scenario_path(package_ref: str, *, package_root: Path) -> Path:
-    """Resolve ``package_ref`` to a contained SDL entry file under ``package_root``.
+def resolve_pack_root(package_ref: str, *, package_root: Path) -> Path:
+    """Resolve ``package_ref`` to a contained pack directory.
 
-    ``package_ref`` is the repo-relative (or root-relative) path to the package's
-    SDL entry file. Resolution is containment-checked so a crafted reference
-    cannot escape the configured root (defense-in-depth path traversal).
+    ``package_ref`` is the repo-relative (or root-relative) path to the pack
+    root. Resolution is containment-checked so a crafted reference cannot escape
+    the configured root (defense-in-depth path traversal).
 
     Raises:
         AcesPackageError: if the reference is empty, escapes the root, or does
-            not resolve to an existing file.
+            not resolve to an existing directory.
     """
     if not package_ref or not package_ref.strip():
         raise AcesPackageError("package_ref is empty")
@@ -64,9 +65,33 @@ def resolve_scenario_path(package_ref: str, *, package_root: Path) -> Path:
     candidate = (root / package_ref).resolve()
     if candidate != root and root not in candidate.parents:
         raise AcesPackageError("package_ref escapes the configured package root")
-    if not candidate.is_file():
-        raise AcesPackageError("package_ref does not resolve to a package file")
+    if not candidate.is_dir():
+        raise AcesPackageError("package_ref does not resolve to a pack directory")
     return candidate
+
+
+def resolve_pack_scenario_path(pack_root: Path) -> Path:
+    """Return the single direct ``sdl/*.sdl.yaml`` entry for a pack.
+
+    Multi-variant selection needs an explicit contract selector. Until that seam
+    exists, Shifter fails closed instead of choosing an entry by filesystem
+    order. Canonical digest verification is the caller's prerequisite.
+    """
+    root = pack_root.resolve()
+    sdl_dir = root / "sdl"
+    if sdl_dir.is_symlink() or not sdl_dir.is_dir():
+        raise AcesPackageError("pack has no direct SDL entry")
+    entries = sorted(
+        path.resolve()
+        for path in sdl_dir.iterdir()
+        if path.name.endswith(".sdl.yaml") and path.is_file() and not path.is_symlink()
+    )
+    if len(entries) != 1:
+        raise AcesPackageError("pack must contain exactly one direct SDL entry")
+    scenario_path = entries[0]
+    if scenario_path.parent != sdl_dir.resolve() or root not in scenario_path.parents:
+        raise AcesPackageError("pack SDL entry escapes the pack root")
+    return scenario_path
 
 
 def _render_diagnostic(diagnostic: object) -> str:

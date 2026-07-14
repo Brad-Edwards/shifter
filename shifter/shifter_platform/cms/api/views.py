@@ -25,6 +25,7 @@ from rest_framework.views import APIView
 from cms.api.permissions import CMS_READ_PERMISSIONS, CMS_WRITE_PERMISSIONS, cms_actor_user
 from cms.api.serializers import (
     CatalogEntrySerializer,
+    PackRegistrationSerializer,
     ScenarioCloneSerializer,
     ScenarioCreatedSerializer,
     ScenarioCreateSerializer,
@@ -36,12 +37,15 @@ from cms.api.serializers import (
     YAMLContentSerializer,
     YAMLValidationResultSerializer,
 )
+from cms.exceptions import CMSError
 from cms.scenario_editor import services as scenario_services
 from cms.scenario_editor.services import ScenarioEditorError
 from cms.scenarios import catalog_presentation
 from cms.scenarios.catalog_presentation import scenario_source
 from cms.scenarios.registry import get_catalog_entry, get_scenario_detail
+from cms.services import PackRegistrationRequest, register_pack
 from shared.api.errors import api_error_response
+from shared.audit import get_request_id
 
 logger = logging.getLogger(__name__)
 
@@ -219,6 +223,59 @@ class YAMLScenarioCreateView(APIView):
                 request=request,
             )
         return Response({"scenario_id": fields.scenario_id, "name": fields.name}, status=status.HTTP_201_CREATED)
+
+
+class PackRegisterView(APIView):
+    """Register a content pack through the uniform ingestion service (#1578).
+
+    The authenticated operator entrypoint onto ``cms.services.register_pack``. It
+    is source-agnostic and entitlement-blind: the WRITE-scope authorization gate
+    decides who may register content, and no entitlement/acquisition check is
+    added. The pack is validated as foreign input by the service before
+    persistence; failures return the shared error envelope.
+    """
+
+    permission_classes = CMS_WRITE_PERMISSIONS
+
+    def post(self, request: Request) -> Response:
+        """Validate and register a pack, returning a bounded 201 summary."""
+        serializer = PackRegistrationSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = _actor_user(request)
+        data = serializer.validated_data
+        registration = PackRegistrationRequest(
+            scenario_id=data["scenario_id"],
+            source_kind=data["source_kind"],
+            contract_kind=data["contract_kind"],
+            contract_profile=data["contract_profile"],
+            package_ref=data["package_ref"],
+            package_version=data["package_version"],
+            package_digest=data["package_digest"],
+            lock_ref=data["lock_ref"],
+            lock_digest=data["lock_digest"],
+            provenance=data["provenance"],
+        )
+        try:
+            result = register_pack(
+                user=user,
+                request=registration,
+                request_id=get_request_id(request._request),
+            )
+        except CMSError as exc:
+            return api_error_response(
+                code="invalid",
+                message=str(exc),
+                status_code=status.HTTP_400_BAD_REQUEST,
+                request=request,
+            )
+        return Response(
+            {
+                "scenario_id": result.scenario_id,
+                "source_kind": result.source_kind,
+                "conformance_status": result.conformance_status,
+            },
+            status=status.HTTP_201_CREATED,
+        )
 
 
 class ScenarioCreateView(APIView):

@@ -295,6 +295,7 @@ def _instance_plans_for_node(
                 # ACES account/access realization remains owned by its native
                 # plan and must not inherit legacy scenario access channels.
                 "participant_access_channels": [],
+                "attach_service_account": False,
             }
         )
     return plans

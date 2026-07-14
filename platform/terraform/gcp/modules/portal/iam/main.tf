@@ -223,11 +223,12 @@ resource "google_service_account_iam_member" "provisioner_sign_blob" {
 }
 
 # GCE range-cell service accounts (#1509). Distinct from the workload SAs: these
-# are NOT Workload-Identity-bound to a KSA. The host SA is attached to every
-# range guest VM; the vertex SA backs the short-lived per-range key the a14-kali
-# agent uses for Vertex AI. Created in the platform project for the default
-# same-project range cell; a cross-project range cell overrides the emails and
-# provisions the SAs in that project.
+# are NOT Workload-Identity-bound to a KSA. The host SA is attached only to
+# range hosts that need host-side GCS/Secret Manager access; participant/native
+# guests receive no service account. The vertex SA backs the short-lived
+# per-range key the a14-kali agent uses for Vertex AI. Created in the platform
+# project for the default same-project range cell; a cross-project range cell
+# overrides the emails and provisions the SAs in that project.
 resource "google_service_account" "range_host" {
   project      = var.project_id
   account_id   = "${replace(var.name_prefix, "-", "")}-range-host"
@@ -258,8 +259,9 @@ resource "google_project_iam_member" "range_vertex_aiplatform" {
   member  = "serviceAccount:${google_service_account.range_vertex.email}"
 }
 
-# The provisioner attaches the host SA to range guests (actAs -> serviceAccountUser)
-# and mints per-range Vertex keys on the vertex SA (serviceAccountKeyAdmin).
+# The provisioner attaches the host SA only to range hosts that need cloud APIs
+# (actAs -> serviceAccountUser) and mints per-range Vertex keys on the vertex SA
+# (serviceAccountKeyAdmin).
 resource "google_service_account_iam_member" "provisioner_range_host_user" {
   service_account_id = google_service_account.range_host.name
   role               = "roles/iam.serviceAccountUser"

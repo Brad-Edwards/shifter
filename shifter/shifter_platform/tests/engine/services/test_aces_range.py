@@ -31,13 +31,13 @@ User = get_user_model()
 def make_compiled_plan() -> dict:
     """Serialize a small real ACES ProvisioningPlan (1 network + 1 node)."""
     network = PlannedResource(
-        address="net.default",
+        address="provision.network.default",
         domain=RuntimeDomain.PROVISIONING,
         resource_type="network",
         payload={"name": "default", "spec": {"infrastructure": {"properties": {"cidr": "10.0.0.0/24"}}}},
     )
     node = PlannedResource(
-        address="node.attacker",
+        address="provision.node.attacker",
         domain=RuntimeDomain.PROVISIONING,
         resource_type="node",
         payload={
@@ -45,7 +45,7 @@ def make_compiled_plan() -> dict:
             "os_family": "linux",
             "spec": {
                 "node": {"source": {"name": "kali", "version": "2024.1"}, "resources": {"ram": 2147483648, "cpu": 2}},
-                "infrastructure": {"networks": ["net.default"]},
+                "infrastructure": {"networks": ["provision.network.default"]},
             },
         },
     )
@@ -92,7 +92,7 @@ class TestCreateAcesRange:
         # no cyberscript envelope, no Shifter-owned spec.
         assert range_obj.range_config == plan
         assert range_obj.range_config["kind"] == ACES_PROVISIONING_PLAN_KIND
-        assert "node.attacker" in range_obj.range_config["resources"]
+        assert "provision.node.attacker" in range_obj.range_config["resources"]
 
     def test_writes_operation_receipt_sidecar(self, user):
         request_id = uuid4()
@@ -127,8 +127,9 @@ class TestCreateAcesRangeDispatchFailure:
         ecs_client.run_task.return_value = {"tasks": [], "failures": [{"reason": "RESOURCE:CPU"}]}
 
         request_id = uuid4()
+        compiled_plan = make_compiled_plan()
         with patch("boto3.client", return_value=ecs_client), pytest.raises(CloudTaskError):
-            create_aces_range(request_id=request_id, user_id=user.id, compiled_plan=make_compiled_plan())
+            create_aces_range(request_id=request_id, user_id=user.id, compiled_plan=compiled_plan)
 
         range_obj = Range.objects.get(request__request_id=request_id)
         assert range_obj.status == Range.Status.FAILED
