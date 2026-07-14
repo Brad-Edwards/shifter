@@ -166,27 +166,30 @@ def parse_probe_record(stdout: str) -> dict[str, ObservedProbe]:
     treats a missing observation for a target as a fail-closed result. An
     unrecognized outcome value is coerced to ``error`` (never a pass).
     """
+    raw = _extract_record_json(stdout)
+    record: dict[str, ObservedProbe] = {}
+    if isinstance(raw, dict):
+        for check_id, value in raw.items():
+            if isinstance(value, dict):
+                record[str(check_id)] = ObservedProbe(
+                    outcome=_parse_outcome(value.get("outcome")),
+                    detail=str(value.get("detail", "")),
+                    metadata_credentials_useful=_optional_bool(value.get("metadata_credentials_useful")),
+                )
+    return record
+
+
+def _extract_record_json(stdout: str) -> object:
+    """Return the parsed JSON body of the record envelope, or None if absent/malformed."""
     start = stdout.find(_RECORD_START)
     end = stdout.find(_RECORD_END, start + len(_RECORD_START)) if start != -1 else -1
     if start == -1 or end == -1:
-        return {}
+        return None
     body = stdout[start + len(_RECORD_START) : end]
     try:
-        raw = json.loads(body)
+        return json.loads(body)
     except json.JSONDecodeError:
-        return {}
-    if not isinstance(raw, dict):
-        return {}
-    record: dict[str, ObservedProbe] = {}
-    for check_id, value in raw.items():
-        if not isinstance(value, dict):
-            continue
-        record[str(check_id)] = ObservedProbe(
-            outcome=_parse_outcome(value.get("outcome")),
-            detail=str(value.get("detail", "")),
-            metadata_credentials_useful=_optional_bool(value.get("metadata_credentials_useful")),
-        )
-    return record
+        return None
 
 
 def _parse_outcome(value: object) -> ProbeOutcome:

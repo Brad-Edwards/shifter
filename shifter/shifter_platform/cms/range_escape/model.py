@@ -15,7 +15,8 @@ from enum import StrEnum
 from shared.range_escape import BoundaryCode, DestinationClass, Outcome
 
 DEFAULT_MANAGEMENT_PORTS: tuple[int, ...] = (22, 3389)
-DEFAULT_METADATA_IP = "169.254.169.254"  # NOSONAR - the well-known GCP metadata IP, a required constant
+# The well-known GCP metadata server IP; a required constant, not a config value.
+DEFAULT_METADATA_IP = "169.254.169.254"  # NOSONAR
 DEFAULT_METADATA_HOST = "metadata.google.internal"
 
 

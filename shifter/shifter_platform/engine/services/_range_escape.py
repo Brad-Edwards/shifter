@@ -60,7 +60,8 @@ def get_range_membership(request_id: str) -> RangeMembership | None:
     return RangeMembership(range_id=range_obj.id, instances=instances, subnet_cidrs=subnet_cidrs)
 
 
-def run_guest_probe(  # NOSONAR - wide keyword-only SSH transport signature; cohesive connection params
+# Wide keyword-only SSH transport signature; the connection params are cohesive.
+def run_guest_probe(  # NOSONAR
     *,
     host: str,
     username: str,
@@ -97,7 +98,7 @@ def run_guest_probe(  # NOSONAR - wide keyword-only SSH transport signature; coh
     )
 
 
-async def _run_guest_probe(  # NOSONAR - wide keyword-only SSH transport signature; cohesive connection params
+async def _run_guest_probe(  # NOSONAR
     *,
     host: str,
     username: str,

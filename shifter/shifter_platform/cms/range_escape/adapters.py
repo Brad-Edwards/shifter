@@ -22,7 +22,6 @@ from cms.range_escape.probe import parse_probe_record, render_probe_program
 SecretReader = Callable[[str], str]
 GuestExec = Callable[..., str]
 
-_NATIVE_COMMAND = "bash -s"
 # Headroom added to (per-target timeout x target count) for SSH setup and probe
 # overhead, so a fully-closed multi-target run is not killed before it emits its
 # report (which would turn a secure range into a spurious probe failure).
@@ -37,7 +36,8 @@ def _default_secret_reader(secret_ref: str) -> str:
     return get_ssh_key(secret_ref)
 
 
-def _default_guest_exec(  # NOSONAR - wide keyword-only transport adapter; mirrors run_guest_probe
+# Wide keyword-only transport adapter mirroring run_guest_probe; params are cohesive.
+def _default_guest_exec(  # NOSONAR
     *,
     host: str,
     username: str,
@@ -66,15 +66,19 @@ def _default_guest_exec(  # NOSONAR - wide keyword-only transport adapter; mirro
 class NativeVmProbeLauncher:
     """Runs the probe over participant SSH directly on a native range VM."""
 
+    # The remote delivery command. Scenario adapters override the template and the
+    # default container; a ``{container}`` placeholder is filled per participant.
+    _COMMAND_TEMPLATE = "bash -s"
+    _DEFAULT_CONTAINER = ""
+
     def __init__(self, *, secret_reader: SecretReader | None = None, guest_exec: GuestExec | None = None) -> None:
         self._secret_reader = secret_reader or _default_secret_reader
         self._guest_exec = guest_exec or _default_guest_exec
 
-    def _command(
-        self, participant: ParticipantContext
-    ) -> str:  # NOSONAR - template method; participant used by overrides
-        """Return the remote delivery command; overridden by scenario adapters."""
-        return _NATIVE_COMMAND
+    def _build_command(self, participant: ParticipantContext) -> str:
+        """Render the remote delivery command for this adapter and participant."""
+        container = shlex.quote(participant.container or self._DEFAULT_CONTAINER or "container")
+        return self._COMMAND_TEMPLATE.format(container=container)
 
     def launch(
         self,
@@ -96,7 +100,7 @@ class NativeVmProbeLauncher:
                 username=participant.username,
                 private_key=private_key,
                 host_public_key=participant.host_public_key,
-                command=self._command(participant),
+                command=self._build_command(participant),
                 stdin=program,
                 port=participant.ssh_port,
                 timeout_s=transport_timeout_s,
@@ -116,11 +120,8 @@ class PolarisContainerProbeLauncher(NativeVmProbeLauncher):
     host. This is a scenario-owned adapter; the scenario-neutral core is unchanged.
     """
 
+    _COMMAND_TEMPLATE = "sudo docker exec -i {container} bash -s"
     _DEFAULT_CONTAINER = "a14-kali"
-
-    def _command(self, participant: ParticipantContext) -> str:
-        container = participant.container or self._DEFAULT_CONTAINER
-        return f"sudo docker exec -i {shlex.quote(container)} bash -s"
 
 
 __all__ = ["GuestExec", "NativeVmProbeLauncher", "PolarisContainerProbeLauncher", "SecretReader"]

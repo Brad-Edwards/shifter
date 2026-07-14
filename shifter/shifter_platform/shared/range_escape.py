@@ -292,7 +292,8 @@ class EscapeReport:
         return cls.from_dict(data)
 
 
-def evaluate_check(  # NOSONAR - wide keyword-only result factory; a params object would reduce clarity
+# Wide keyword-only result factory; a params object would reduce clarity at call sites.
+def evaluate_check(  # NOSONAR
     *,
     check_id: str,
     boundary_code: BoundaryCode,

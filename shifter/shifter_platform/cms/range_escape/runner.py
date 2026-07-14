@@ -64,7 +64,8 @@ class ProbeLauncher(Protocol):
     ) -> dict[str, ObservedProbe]: ...
 
 
-def run_escape_validation(  # NOSONAR - wide keyword-only orchestration entrypoint; cohesive run inputs
+# Wide keyword-only orchestration entrypoint; the run inputs are cohesive and self-documenting.
+def run_escape_validation(  # NOSONAR
     *,
     subject: RangeUnderTest,
     peers: Sequence[RangeUnderTest] = (),
