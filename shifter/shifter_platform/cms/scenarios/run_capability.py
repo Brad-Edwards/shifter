@@ -75,17 +75,15 @@ def get_run_capability(scenario_id: str) -> dict[str, Any] | None:
         "parameterized": False,
         "parameters": [],
     }
-    if source.source_kind == _OBJECT_SOURCE_KIND:
-        # No containment-checked local resolution until #1567; keep non-resolvable
-        # rather than parse an unavailable artifact.
-        return projection
-
-    parameters = _read_repo_pack_parameters(source.package_ref)
-    if parameters is None:
-        return projection
-    projection["resolvable"] = True
-    projection["parameterized"] = len(parameters) > 0
-    projection["parameters"] = [_parameter_projection(parameter) for parameter in parameters]
+    # Object-backed packs have no containment-checked local resolution until #1567,
+    # so they stay non-resolvable rather than being parsed. Repo packs read their
+    # declared run parameters; a resolution/parse failure degrades soft (None).
+    if source.source_kind != _OBJECT_SOURCE_KIND:
+        parameters = _read_repo_pack_parameters(source.package_ref)
+        if parameters is not None:
+            projection["resolvable"] = True
+            projection["parameterized"] = len(parameters) > 0
+            projection["parameters"] = [_parameter_projection(parameter) for parameter in parameters]
     return projection
 
 

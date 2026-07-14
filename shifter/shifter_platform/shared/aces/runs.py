@@ -180,18 +180,25 @@ def validate_run_binding(
     """
     binding = dict(parameters or {})
     normalized_profile = profile or ""
+    scenario = None
+    diagnostics: tuple[str, ...] = ()
+    # Parse and instantiate under one guard. SDLInstantiationError (a subclass of
+    # SDLError) is caught first so a binding failure yields its bounded per-error
+    # messages, while any other read/parse error degrades to a bounded class label.
     try:
         scenario = parse_sdl_file(scenario_path)
-    except _SDL_READ_ERRORS as exc:
-        return RunBindingResult(ok=False, diagnostics=(_bounded(type(exc).__name__),))
-
-    try:
         instantiate_scenario(scenario, binding, normalized_profile or None)
     except SDLInstantiationError as exc:
-        messages = tuple(_bounded(error) for error in exc.errors[:_MAX_DIAGNOSTICS])
-        return RunBindingResult(ok=False, diagnostics=messages or (_bounded(type(exc).__name__),))
+        scenario = None
+        diagnostics = tuple(_bounded(error) for error in exc.errors[:_MAX_DIAGNOSTICS]) or (
+            _bounded(type(exc).__name__),
+        )
     except _SDL_READ_ERRORS as exc:
-        return RunBindingResult(ok=False, diagnostics=(_bounded(type(exc).__name__),))
+        scenario = None
+        diagnostics = (_bounded(type(exc).__name__),)
+
+    if scenario is None:
+        return RunBindingResult(ok=False, diagnostics=diagnostics)
 
     resolved_id = scenario_id or getattr(scenario, "name", "") or ""
     descriptor = RunDescriptor(
