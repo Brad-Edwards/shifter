@@ -627,6 +627,8 @@ module "ec2" {
   secrets_manager_kms_key_arn = aws_kms_key.secrets_manager.arn
   db_resource_id              = module.rds.db_resource_id
   s3_bucket_arn               = module.s3.bucket_arn
+  aces_package_bucket_arn     = var.aces_package_bucket_arn
+  aces_package_prefix         = var.aces_package_prefix
   app_port                    = var.app_port
   root_volume_size            = var.ec2_root_volume_size
 

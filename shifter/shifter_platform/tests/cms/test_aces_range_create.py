@@ -65,9 +65,9 @@ def test_launch_persists_bookkeeping_and_dispatches(user, native_on, monkeypatch
     seen = {}
     monkeypatch.setattr(
         _DISPATCH,
-        lambda request_id, u, package_ref, package_digest: seen.update(
-            ref=package_ref,
-            digest=package_digest,
+        lambda request_id, u, source: seen.update(
+            ref=source.package_ref,
+            digest=source.package_digest,
         ),
     )
     ctx = create_aces_native_range(user, "aces-launch")
@@ -219,3 +219,124 @@ def test_launch_rejects_valid_pack_resealed_after_registration(user, native_on, 
 
     instance = RangeInstance.all_objects.get(scenario_id="aces-launch")
     assert instance.status == ResourceStatus.FAILED.value
+
+
+@pytest.fixture
+def object_bucket(monkeypatch):
+    from django.conf import settings
+
+    monkeypatch.setattr(settings, "ACES_PACKAGE_BUCKET", "aces-pkgs")
+
+
+def _make_object_source(user, package_digest, scenario_id="aces-launch"):
+    return _make_source(
+        user,
+        scenario_id=scenario_id,
+        source_kind="object",
+        package_ref="mypack.tar.gz",
+        package_digest=package_digest,
+    )
+
+
+def _patch_object_stage(monkeypatch, pack_root):
+    """Stub the object resolver to yield a real on-disk pack (the download +
+    safe-extract path is unit-tested in tests/shared/aces/test_object_source.py),
+    so this drives the launch-side validate -> digest -> dispatch wiring."""
+    from contextlib import contextmanager
+
+    @contextmanager
+    def fake_stage(**_kwargs):
+        yield pack_root
+
+    monkeypatch.setattr("shared.aces.object_source.stage_object_pack", fake_stage)
+    monkeypatch.setattr("shared.cloud.get_object_storage", lambda: object())
+
+
+class TestObjectPackageLaunch:
+    @pytest.mark.django_db
+    def test_object_launch_validates_and_dispatches(
+        self, user, native_on, object_bucket, make_pack, tmp_path, monkeypatch
+    ):
+        from engine.services import AcesRangeRef
+
+        root = make_pack(tmp_path / "aces-launch", name="aces-launch")
+        _make_object_source(user, pack_digest(root))
+        _patch_object_stage(monkeypatch, root)
+        captured = {}
+
+        def fake_create_aces_range(*, request_id, user_id, compiled_plan):
+            captured["kind"] = compiled_plan.get("kind")
+            return AcesRangeRef(request_id=request_id, accepted=True, status="accepted", range_id="rng-1")
+
+        monkeypatch.setattr("cms.aces.dispatch.create_aces_range", fake_create_aces_range)
+        ctx = create_aces_native_range(user, "aces-launch")
+
+        assert captured["kind"] == "aces_provisioning_plan"
+        instance = RangeInstance.objects.get(request__request_id=ctx.request_id)
+        assert instance.status == ResourceStatus.PROVISIONING.value
+
+    @pytest.mark.django_db
+    def test_object_launch_rejects_digest_mismatch(
+        self, user, native_on, object_bucket, make_pack, tmp_path, monkeypatch
+    ):
+        root = make_pack(tmp_path / "aces-launch", name="aces-launch")
+        _make_object_source(user, "sha256:" + "b" * 64)
+        _patch_object_stage(monkeypatch, root)
+        monkeypatch.setattr(
+            "cms.aces.dispatch.create_aces_range",
+            lambda **_kwargs: pytest.fail("mismatched object pack reached the dispatch boundary"),
+        )
+
+        with pytest.raises(CMSError, match="no longer matches registration"):
+            create_aces_native_range(user, "aces-launch")
+        assert RangeInstance.all_objects.get(scenario_id="aces-launch").status == ResourceStatus.FAILED.value
+
+    @pytest.mark.django_db
+    def test_object_launch_rejects_identity_mismatch(
+        self, user, native_on, object_bucket, make_pack, tmp_path, monkeypatch
+    ):
+        # Staged pack's validated identity ("other-name") must equal the
+        # registered scenario_id ("aces-launch") or launch fails closed.
+        root = make_pack(tmp_path / "other-name", name="other-name")
+        _make_object_source(user, pack_digest(root), scenario_id="aces-launch")
+        _patch_object_stage(monkeypatch, root)
+        monkeypatch.setattr(
+            "cms.aces.dispatch.create_aces_range",
+            lambda **_kwargs: pytest.fail("identity-mismatched object pack reached the dispatch boundary"),
+        )
+
+        with pytest.raises(CMSError, match="identity does not match"):
+            create_aces_native_range(user, "aces-launch")
+
+    @pytest.mark.django_db
+    def test_object_launch_rejects_invalid_pack(self, user, native_on, object_bucket, make_pack, tmp_path, monkeypatch):
+        # Object registration defers content validation to launch, so a staged
+        # pack that fails validate_pack (here: missing pack.yaml) must fail closed
+        # at dispatch. This pins the _dispatch_object_aces_package
+        # PackValidationError branch.
+        root = make_pack(tmp_path / "aces-launch", name="aces-launch", pack_yaml=None)
+        # validate_pack fails before the digest check, so the registered digest is
+        # irrelevant here.
+        _make_object_source(user, "sha256:" + "c" * 64)
+        _patch_object_stage(monkeypatch, root)
+        monkeypatch.setattr(
+            "cms.aces.dispatch.create_aces_range",
+            lambda **_kwargs: pytest.fail("invalid object pack reached the dispatch boundary"),
+        )
+
+        with pytest.raises(CMSError, match="failed validation"):
+            create_aces_native_range(user, "aces-launch")
+        assert RangeInstance.all_objects.get(scenario_id="aces-launch").status == ResourceStatus.FAILED.value
+
+    @pytest.mark.django_db
+    def test_object_not_launchable_without_bucket(self, user, native_on, make_pack, tmp_path, monkeypatch):
+        # No object_bucket fixture: an object row is non-launchable when no
+        # package bucket is configured, so admission refuses it before dispatch.
+        from django.conf import settings
+
+        monkeypatch.setattr(settings, "ACES_PACKAGE_BUCKET", "")
+        root = make_pack(tmp_path / "aces-launch", name="aces-launch")
+        _make_object_source(user, pack_digest(root))
+
+        with pytest.raises(CMSError):
+            create_aces_native_range(user, "aces-launch")
