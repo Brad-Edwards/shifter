@@ -751,7 +751,7 @@ jobs:
           DJANGO_DEBUG: "true"
           DJANGO_SECRET_KEY: ${{ github.run_id }}-${{ github.run_attempt }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        run: uv run python manage.py api_contract --breaking-against "${BASE_SHA}" --oasdiff oasdiff
+        run: uv run python manage.py api_contract --breaking-against "${BASE_SHA}"
 
   provisioner-lint:
     permissions:

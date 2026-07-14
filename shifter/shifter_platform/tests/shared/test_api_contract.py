@@ -149,7 +149,7 @@ class TestBreakingChangeGate:
             "run",
             lambda *args, **kwargs: SimpleNamespace(returncode=1, stdout="1 error: api path removed", stderr=""),
         )
-        is_compatible, detail = contract.check_breaking_changes("{}", "{}", oasdiff_bin="oasdiff")
+        is_compatible, detail = contract.check_breaking_changes("{}", "{}")
         assert not is_compatible
         assert "error" in detail
 
@@ -159,7 +159,7 @@ class TestBreakingChangeGate:
             "run",
             lambda *args, **kwargs: SimpleNamespace(returncode=0, stdout="No breaking changes", stderr=""),
         )
-        is_compatible, _detail = contract.check_breaking_changes("{}", "{}", oasdiff_bin="oasdiff")
+        is_compatible, _detail = contract.check_breaking_changes("{}", "{}")
         assert is_compatible
 
     def test_new_major_skips_when_base_artifact_absent(self, monkeypatch: pytest.MonkeyPatch) -> None:

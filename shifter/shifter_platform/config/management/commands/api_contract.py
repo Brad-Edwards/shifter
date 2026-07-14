@@ -33,11 +33,6 @@ class Command(BaseCommand):
             help="Fail if the committed artifact makes consumer-breaking changes vs this base git ref.",
         )
         parser.add_argument(
-            "--oasdiff",
-            default="oasdiff",
-            help="oasdiff binary to invoke for the breaking-change gate (default: oasdiff on PATH).",
-        )
-        parser.add_argument(
             "--major",
             default=API_MAJOR,
             help=f"API major to operate on (default: {API_MAJOR}).",
@@ -48,7 +43,6 @@ class Command(BaseCommand):
         *args: Any,
         check: bool = False,
         breaking_against: str | None = None,
-        oasdiff: str = "oasdiff",
         major: str = API_MAJOR,
         **options: Any,
     ) -> None:
@@ -62,7 +56,7 @@ class Command(BaseCommand):
             self.stdout.write(self.style.SUCCESS(f"OpenAPI contract {artifact_path(major)} is up to date."))
 
         if breaking_against is not None:
-            ok, detail = check_breaking_against(breaking_against, major, oasdiff)
+            ok, detail = check_breaking_against(breaking_against, major)
             if not ok:
                 raise CommandError(
                     f"Breaking API change vs {breaking_against}: {major} must stay backward-compatible. "

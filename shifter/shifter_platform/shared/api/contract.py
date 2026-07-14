@@ -15,7 +15,7 @@ import difflib
 import io
 import json
 import shutil
-import subprocess  # nosec B404 - fixed argv, no shell; read-only git and the pinned oasdiff binary only
+import subprocess  # nosec B404 - fixed argv, no shell; read-only git and pinned oasdiff only  # NOSONAR
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -33,6 +33,11 @@ ARTIFACT_DIR = _APP_ROOT / "openapi"
 # Max unified-diff lines surfaced by the drift gate. Keeps CI output bounded and
 # never dumps the whole artifact (preflight: bounded diagnostics).
 _MAX_DIFF_LINES = 60
+
+# Fixed name of the pinned OpenAPI-aware compatibility checker, resolved from
+# PATH. Not caller-configurable: the binary is provisioned by CI (ADR-037 pin +
+# checksum) so no external/untrusted value ever reaches the subprocess argv.
+_OASDIFF_BIN = "oasdiff"
 
 
 def artifact_path(major: str = API_MAJOR) -> Path:
@@ -55,11 +60,11 @@ def generate_openapi_document() -> str:
         fail_on_warn=True,
         stdout=buffer,
     )
-    document: Any = json.loads(buffer.getvalue())
+    document: dict[str, Any] = json.loads(buffer.getvalue())
     return _canonicalize(document)
 
 
-def _canonicalize(document: Any) -> str:
+def _canonicalize(document: dict[str, Any]) -> str:
     """Render an OpenAPI document to stable, review-friendly JSON.
 
     drf-spectacular emits keys in a deterministic order already; re-dumping with
@@ -151,11 +156,7 @@ def resolve_base_document(base_ref: str, major: str = API_MAJOR) -> str | None:
     return shown.stdout
 
 
-def check_breaking_changes(
-    base_text: str,
-    current_text: str,
-    oasdiff_bin: str = "oasdiff",
-) -> tuple[bool, str]:
+def check_breaking_changes(base_text: str, current_text: str) -> tuple[bool, str]:
     """Compare two OpenAPI documents for consumer-breaking changes via oasdiff.
 
     Returns ``(is_compatible, detail)``. ``oasdiff breaking --fail-on ERR`` exits
@@ -163,7 +164,7 @@ def check_breaking_changes(
     oasdiff, not in this wrapper. A breaking change to ``/api/v1/`` must instead
     ship as a parallel ``/api/v2/`` with a migration note (ADR-040).
     """
-    binary = shutil.which(oasdiff_bin) or oasdiff_bin
+    binary = shutil.which(_OASDIFF_BIN) or _OASDIFF_BIN
     with tempfile.TemporaryDirectory() as tmp:
         base_file = Path(tmp) / "base.json"
         revision_file = Path(tmp) / "revision.json"
@@ -179,11 +180,7 @@ def check_breaking_changes(
     return result.returncode == 0, detail
 
 
-def check_breaking_against(
-    base_ref: str,
-    major: str = API_MAJOR,
-    oasdiff_bin: str = "oasdiff",
-) -> tuple[bool, str]:
+def check_breaking_against(base_ref: str, major: str = API_MAJOR) -> tuple[bool, str]:
     """Run the breaking-change gate for the committed artifact against ``base_ref``.
 
     Returns ``(ok, detail)``. When the base ref has no committed artifact the gate
@@ -195,4 +192,4 @@ def check_breaking_against(
     path = artifact_path(major)
     if not path.exists():
         return False, f"Committed artifact is missing: {path}. Run `manage.py api_contract`."
-    return check_breaking_changes(base_text, path.read_text(encoding="utf-8"), oasdiff_bin)
+    return check_breaking_changes(base_text, path.read_text(encoding="utf-8"))

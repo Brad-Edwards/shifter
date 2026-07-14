@@ -165,7 +165,8 @@ class PlatformAutoSchema(AutoSchema):
         if callable(get_permissions):
             try:
                 return list(get_permissions())
-            except Exception:  # schema generation must not crash on a view's dynamic permissions
+            except Exception:
+                # Schema generation must not crash on a view's dynamic permissions.
                 logger.debug(
                     "get_permissions() failed during schema generation for %s; using static permission_classes",
                     type(self.view).__name__,
