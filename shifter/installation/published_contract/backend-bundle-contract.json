@@ -582,7 +582,7 @@
       "name": "aws",
       "owned_files": {
         "docs": [
-          "shifter/shifter_platform/documentation/docs/technical/dev/ci-cd.md"
+          "docs/technical/dev/ci-cd.md"
         ],
         "examples": [
           "shifter/installation/examples/aws.yaml"

@@ -25,6 +25,8 @@ Contract publication guidance for issue #1323 lives in
 `docs/architecture/backend-bundle-contract-publication-preflight-1323.md`.
 GCP migration constraints for issue #729 live in
 `docs/architecture/gcp-backend-bundle-migration-preflight-729.md`.
+Backend-aware setup and doctor UX constraints for issue #727 live in
+`docs/architecture/backend-aware-setup-doctor-preflight-727.md`.
 
 Published operator docs:
 
