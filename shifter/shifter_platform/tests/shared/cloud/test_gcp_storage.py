@@ -253,10 +253,10 @@ class TestDownloadObject:
         fake_client = MagicMock()
         fake_blob = self._blob_writing(b"x" * 10)
         fake_client.bucket.return_value.blob.return_value = fake_blob
-        dest = tmp_path / "big.tar"
+        dest = str(tmp_path / "big.tar")
 
         with patch("google.cloud.storage.Client", return_value=fake_client), pytest.raises(CloudStorageError):
-            storage.download_object("b", "k", str(dest), max_bytes=1024, expected_identity={"content_length": 5000})
+            storage.download_object("b", "k", dest, max_bytes=1024, expected_identity={"content_length": 5000})
         # Fail closed before touching the network.
         fake_blob.download_to_file.assert_not_called()
 
@@ -285,9 +285,10 @@ class TestDownloadObject:
         fake_blob = self._blob_writing(b"x" * 5000, size=5000)
         fake_client.bucket.return_value.blob.return_value = fake_blob
         dest = tmp_path / "big.tar"
+        dest_arg = str(dest)
 
         with patch("google.cloud.storage.Client", return_value=fake_client), pytest.raises(CloudStorageError):
-            storage.download_object("b", "k", str(dest), max_bytes=1024)
+            storage.download_object("b", "k", dest_arg, max_bytes=1024)
 
         fake_blob.reload.assert_called_once()
         fake_blob.download_to_file.assert_not_called()
@@ -299,13 +300,13 @@ class TestDownloadObject:
         fake_blob = self._blob_writing(b"packbytes", size=9)
         fake_blob.download_to_file.side_effect = PreconditionFailed("generation mismatch")
         fake_client.bucket.return_value.blob.return_value = fake_blob
-        dest = tmp_path / "x.tar"
+        dest = str(tmp_path / "x.tar")
 
         with (
             patch("google.cloud.storage.Client", return_value=fake_client),
             pytest.raises(ObjectPreconditionError),
         ):
-            storage.download_object("b", "k", str(dest), max_bytes=1024, expected_identity={"generation": 777})
+            storage.download_object("b", "k", dest, max_bytes=1024, expected_identity={"generation": 777})
 
     def test_other_failure_maps_to_cloud_storage_error(self, tmp_path):
         storage = GCPObjectStorage()
@@ -313,16 +314,17 @@ class TestDownloadObject:
         fake_blob = self._blob_writing(b"packbytes", size=9)
         fake_blob.download_to_file.side_effect = RuntimeError("transport error")
         fake_client.bucket.return_value.blob.return_value = fake_blob
-        dest = tmp_path / "x.tar"
+        dest = str(tmp_path / "x.tar")
 
         with (
             patch("google.cloud.storage.Client", return_value=fake_client),
             pytest.raises(CloudStorageError) as exc,
         ):
-            storage.download_object("b", "k", str(dest), max_bytes=1024, expected_identity={"content_length": 9})
+            storage.download_object("b", "k", dest, max_bytes=1024, expected_identity={"content_length": 9})
         assert not isinstance(exc.value, ObjectPreconditionError)
 
     def test_rejects_non_positive_max_bytes(self, tmp_path):
         storage = GCPObjectStorage()
+        dest = str(tmp_path / "x")
         with pytest.raises(ValueError):
-            storage.download_object("b", "k", str(tmp_path / "x"), max_bytes=0)
+            storage.download_object("b", "k", dest, max_bytes=0)

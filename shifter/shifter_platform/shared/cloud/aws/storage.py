@@ -26,6 +26,28 @@ logger = logging.getLogger(__name__)
 _DOWNLOAD_CHUNK_BYTES = 1024 * 1024
 
 
+def _stream_capped_to_file(stream: Any, dest_path: str, max_bytes: int) -> int:
+    """Stream ``stream`` to ``dest_path`` in chunks, aborting past ``max_bytes``.
+
+    Returns the number of bytes written. Raises ``CloudStorageError`` the moment
+    the running total would exceed ``max_bytes``. The stream is always closed.
+    """
+    written = 0
+    try:
+        with open(dest_path, "wb") as handle:
+            while True:
+                chunk = stream.read(_DOWNLOAD_CHUNK_BYTES)
+                if not chunk:
+                    break
+                written += len(chunk)
+                if written > max_bytes:
+                    raise CloudStorageError(f"S3 object exceeds max_bytes={max_bytes}")
+                handle.write(chunk)
+    finally:
+        stream.close()
+    return written
+
+
 class AWSObjectStorage:
     """S3 implementation of ObjectStorage protocol."""
 
@@ -264,20 +286,7 @@ class AWSObjectStorage:
         try:
             client = self._get_client()
             response = client.get_object(**get_kwargs)
-            stream = response["Body"]
-            written = 0
-            try:
-                with open(dest_path, "wb") as handle:
-                    while True:
-                        chunk = stream.read(_DOWNLOAD_CHUNK_BYTES)
-                        if not chunk:
-                            break
-                        written += len(chunk)
-                        if written > max_bytes:
-                            raise CloudStorageError(f"S3 object exceeds max_bytes={max_bytes}")
-                        handle.write(chunk)
-            finally:
-                stream.close()
+            written = _stream_capped_to_file(response["Body"], dest_path, max_bytes)
         except ClientError as e:
             code = (e.response.get("Error") or {}).get("Code")
             status = (e.response.get("ResponseMetadata") or {}).get("HTTPStatusCode")

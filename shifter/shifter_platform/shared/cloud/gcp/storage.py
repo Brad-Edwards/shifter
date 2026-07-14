@@ -19,6 +19,23 @@ else:
 logger = logging.getLogger(__name__)
 
 
+def _authoritative_size_and_generation(blob: Any, identity: dict[str, Any]) -> tuple[Any, Any]:
+    """Return (size, generation) for ``blob``, reloading metadata when needed.
+
+    Prefers the caller-supplied head identity; when it lacks ``content_length`` a
+    single metadata reload provides the authoritative size (and the generation to
+    bind the download to).
+    """
+    expected_len = identity.get("content_length")
+    generation = identity.get("generation")
+    if expected_len is None:
+        blob.reload()
+        expected_len = blob.size
+        if generation is None:
+            generation = blob.generation
+    return expected_len, generation
+
+
 class GCPObjectStorage:
     """GCS implementation of ObjectStorage protocol."""
 
@@ -178,9 +195,6 @@ class GCPObjectStorage:
         """
         if max_bytes <= 0:
             raise ValueError("max_bytes must be positive")
-        identity = expected_identity or {}
-        expected_len = identity.get("content_length")
-        generation = identity.get("generation")
         safe_key = safe_log_value(key)
         logger.debug("download_object: bucket=%s key=%s max_bytes=%d", bucket, safe_key, max_bytes)
         api_exceptions = import_google_module("google.api_core.exceptions")
@@ -190,16 +204,10 @@ class GCPObjectStorage:
             # Establish the authoritative size (and generation) before any
             # transfer so the byte cap is enforced up front even when the caller
             # supplied no content_length.
-            if expected_len is None:
-                blob.reload()
-                expected_len = blob.size
-                if generation is None:
-                    generation = blob.generation
+            expected_len, generation = _authoritative_size_and_generation(blob, expected_identity or {})
             if expected_len is None or int(expected_len) > max_bytes:
                 raise CloudStorageError(f"GCS object exceeds max_bytes={max_bytes}")
-            download_kwargs: dict[str, Any] = {}
-            if generation:
-                download_kwargs["if_generation_match"] = int(generation)
+            download_kwargs = {"if_generation_match": int(generation)} if generation else {}
             with open(dest_path, "wb") as handle:
                 blob.download_to_file(handle, **download_kwargs)
             written = os.path.getsize(dest_path)

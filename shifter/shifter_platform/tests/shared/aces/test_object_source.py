@@ -215,12 +215,14 @@ class TestRejectUnsafeMember:
         _reject_unsafe_member(directory)
 
     def test_rejects_path_traversal(self):
+        member = tarfile.TarInfo("mypack/../escape")
         with pytest.raises(AcesPackageError):
-            _reject_unsafe_member(tarfile.TarInfo("mypack/../escape"))
+            _reject_unsafe_member(member)
 
     def test_rejects_absolute_path(self):
+        member = tarfile.TarInfo("/etc/evil")
         with pytest.raises(AcesPackageError):
-            _reject_unsafe_member(tarfile.TarInfo("/etc/evil"))
+            _reject_unsafe_member(member)
 
     def test_rejects_symlink_even_with_in_bounds_target(self):
         # Stricter than the stdlib filter: a symlink whose target stays inside

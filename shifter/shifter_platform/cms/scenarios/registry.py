@@ -45,26 +45,16 @@ class ScenarioWorkflow(enum.StrEnum):
 
 
 # Data-driven launchability allowlists. Widen these constants (not the call
-# sites) when a new supported ACES source / contract / profile lands.
-#
-# Both ``repo`` and ``object`` are launchable. A ``repo`` pack resolves under
-# ``ACES_PACKAGE_ROOT`` with canonical-digest verification at launch; an
-# ``object``-storage-backed pack resolves through the #1567 launch resolver
-# (``shared.aces.object_source.stage_object_pack``), which downloads the single
-# immutable archive named by ``package_ref``, safely extracts it, and verifies
-# the same canonical ``package_digest`` before dispatch -- the equivalent
-# identity guarantees ADR-034-R5 requires. Object launchability additionally
-# requires a configured package bucket (``SHIFTER_ACES_PACKAGE_BUCKET``, see
-# :func:`_source_kind_launchable`); with none set an object-backed row stays
-# registrable and visible in the catalog but non-launchable (fail closed at the
-# readiness axis -- a config decision, never a catalog-time network probe).
+# sites) when a new supported ACES source / contract / profile lands. Both
+# ``repo`` and ``object`` are launchable (object via the #1567 launch resolver,
+# ADR-034-R5); object launchability also requires a configured package bucket
+# (see :func:`_source_kind_launchable`), so an object-backed row with none set
+# stays registrable and visible but non-launchable (fail closed).
 LAUNCHABLE_SOURCE_KINDS = frozenset({"repo", "object"})
 LAUNCHABLE_CONTRACT_KINDS = frozenset({"aces"})
 LAUNCHABLE_CONTRACT_PROFILES = frozenset({"shifter"})
 
-# Source kind of an object-storage-backed package (resolved at launch by the
-# #1567 object resolver rather than under ``ACES_PACKAGE_ROOT``).
-_OBJECT_SOURCE_KIND = "object"
+_OBJECT_SOURCE_KIND = "object"  # resolved at launch by the #1567 object resolver
 
 # (contract_kind, contract_profile) pairs that have a wired runtime launch
 # adapter — i.e. a launchable entry of that kind/profile can actually be turned
@@ -187,14 +177,8 @@ def _aces_launchable(source: AcesPackageSource, *, known_legacy_ids: set[str]) -
 
 
 def _source_kind_launchable(source_kind: str) -> bool:
-    """Whether a source kind is launchable, including its config-readiness gate.
-
-    ``object`` additionally requires a configured package bucket
-    (``SHIFTER_ACES_PACKAGE_BUCKET``) so an object-backed row on a deployment
-    without package storage stays non-launchable (fail closed) rather than
-    appearing launchable and failing only at retrieval time. This is a config
-    decision, not a catalog-time network probe.
-    """
+    """Whether a source kind is launchable; ``object`` also requires a configured
+    package bucket (config readiness, not a catalog-time network probe)."""
     if source_kind not in LAUNCHABLE_SOURCE_KINDS:
         return False
     if source_kind == _OBJECT_SOURCE_KIND:

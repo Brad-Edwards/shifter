@@ -215,31 +215,32 @@ class TestDownloadObject:
         storage = AWSObjectStorage()
         fake_client = MagicMock()
         fake_client.get_object.return_value = {"Body": BytesIO(b"x" * 5000), "ETag": '"e"'}
-        dest = tmp_path / "big.tar"
+        dest = str(tmp_path / "big.tar")
 
         with patch("boto3.client", return_value=fake_client), pytest.raises(CloudStorageError):
-            storage.download_object("b", "k", str(dest), max_bytes=1024)
+            storage.download_object("b", "k", dest, max_bytes=1024)
 
     def test_precondition_failure_maps_to_object_precondition_error(self, tmp_path):
         storage = AWSObjectStorage()
         fake_client = MagicMock()
         fake_client.get_object.side_effect = _precondition_error("GetObject")
-        dest = tmp_path / "x.tar"
+        dest = str(tmp_path / "x.tar")
 
         with patch("boto3.client", return_value=fake_client), pytest.raises(ObjectPreconditionError):
-            storage.download_object("b", "k", str(dest), max_bytes=1024, expected_identity={"etag": "abc123"})
+            storage.download_object("b", "k", dest, max_bytes=1024, expected_identity={"etag": "abc123"})
 
     def test_other_client_error_maps_to_cloud_storage_error(self, tmp_path):
         storage = AWSObjectStorage()
         fake_client = MagicMock()
         fake_client.get_object.side_effect = _make_client_error("AccessDenied")
-        dest = tmp_path / "x.tar"
+        dest = str(tmp_path / "x.tar")
 
         with patch("boto3.client", return_value=fake_client), pytest.raises(CloudStorageError) as exc:
-            storage.download_object("b", "k", str(dest), max_bytes=1024)
+            storage.download_object("b", "k", dest, max_bytes=1024)
         assert not isinstance(exc.value, ObjectPreconditionError)
 
     def test_rejects_non_positive_max_bytes(self, tmp_path):
         storage = AWSObjectStorage()
+        dest = str(tmp_path / "x")
         with pytest.raises(ValueError):
-            storage.download_object("b", "k", str(tmp_path / "x"), max_bytes=0)
+            storage.download_object("b", "k", dest, max_bytes=0)

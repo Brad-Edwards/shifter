@@ -133,16 +133,7 @@ def _safe_extract(
     """
     try:
         with tarfile.open(archive_path, mode="r:*") as tar:
-            members = tar.getmembers()
-            if len(members) > max_entries:
-                raise AcesPackageError("object package archive has too many entries")
-            total = 0
-            for member in members:
-                _reject_unsafe_member(member)
-                if member.isreg():
-                    total += member.size
-                    if total > max_uncompressed_bytes:
-                        raise AcesPackageError("object package archive exceeds the uncompressed size bound")
+            _scan_members(tar.getmembers(), max_uncompressed_bytes=max_uncompressed_bytes, max_entries=max_entries)
             tar.extractall(path=dest, filter="data")
     except AcesPackageError:
         raise
@@ -150,15 +141,42 @@ def _safe_extract(
         raise AcesPackageError(f"object package archive could not be extracted: {safe_log_value(exc)}") from exc
 
 
+def _scan_members(
+    members: list[tarfile.TarInfo],
+    *,
+    max_uncompressed_bytes: int,
+    max_entries: int,
+) -> None:
+    """Pre-scan members: reject unsafe entries and enforce count/size bounds."""
+    if len(members) > max_entries:
+        raise AcesPackageError("object package archive has too many entries")
+    total = 0
+    for member in members:
+        _reject_unsafe_member(member)
+        if member.isreg():
+            total += member.size
+            if total > max_uncompressed_bytes:
+                raise AcesPackageError("object package archive exceeds the uncompressed size bound")
+
+
 def _reject_unsafe_member(member: tarfile.TarInfo) -> None:
     """Reject any archive member that is not a plain contained file or directory."""
+    _reject_unsafe_member_type(member)
+    _reject_unsafe_member_path(member.name)
+
+
+def _reject_unsafe_member_type(member: tarfile.TarInfo) -> None:
+    """Reject link, special-device, and other non-file/non-directory members."""
     if member.issym() or member.islnk():
         raise AcesPackageError("object package archive contains a link entry")
     if member.ischr() or member.isblk() or member.isfifo():
         raise AcesPackageError("object package archive contains a special-device entry")
     if not (member.isreg() or member.isdir()):
         raise AcesPackageError("object package archive contains an unsupported entry type")
-    name = member.name
+
+
+def _reject_unsafe_member_path(name: str) -> None:
+    """Reject absolute paths and parent-directory traversal in a member name."""
     if name.startswith("/") or PurePosixPath(name).is_absolute():
         raise AcesPackageError("object package archive contains an absolute path")
     if ".." in PurePosixPath(name).parts:
