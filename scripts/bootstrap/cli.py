@@ -4,6 +4,7 @@ import argparse
 import shutil
 import sys
 
+from account_recovery import account_recovery
 from aws_bootstrap import AWS_ENVIRONMENTS, BootstrapConfig, bootstrap_account
 from bootstrap_core import (
     HELP_AWS_PROFILE,
@@ -15,6 +16,7 @@ from bootstrap_core import (
     get_default_gdc_project_id,
     header,
     info,
+    set_assume_yes,
     warn,
 )
 from gcp_control_plane import gdc_bootstrap_cluster
@@ -44,6 +46,10 @@ except ImportError:
     GCP_RUNNER_AVAILABLE = False
 
 HELP_HEADLESS = "Non-interactive preflight: fail on missing prerequisites without prompting (auto-detected off a TTY)"
+HELP_YES = (
+    "Assume 'yes' for routine confirmation prompts so the bootstrap can run without a TTY "
+    "(issue #1639). Does NOT authorize destructive cleanup; the leftover sweep has its own opt-in."
+)
 _AWS_COMPONENTS = ("core", "range", "portal")
 
 
@@ -346,6 +352,7 @@ Examples:
     bootstrap_parser.add_argument("--profile", required=True, help=HELP_AWS_PROFILE)
     bootstrap_parser.add_argument("--dry-run", action="store_true", help=HELP_DRY_RUN)
     bootstrap_parser.add_argument("--headless", action="store_const", const=True, default=None, help=HELP_HEADLESS)
+    bootstrap_parser.add_argument("--yes", action="store_true", help=HELP_YES)
 
     # Terraform command
     tf_parser = subparsers.add_parser("terraform", help="Deploy Terraform infrastructure")
@@ -353,6 +360,7 @@ Examples:
     tf_parser.add_argument("--profile", required=True, help=HELP_AWS_PROFILE)
     tf_parser.add_argument("--dry-run", action="store_true", help=HELP_DRY_RUN)
     tf_parser.add_argument("--headless", action="store_const", const=True, default=None, help=HELP_HEADLESS)
+    tf_parser.add_argument("--yes", action="store_true", help=HELP_YES)
 
     # Full command
     full_parser = subparsers.add_parser("full", help="Full interactive deployment (bootstrap + config + terraform)")
@@ -360,6 +368,7 @@ Examples:
     full_parser.add_argument("--profile", required=True, help=HELP_AWS_PROFILE)
     full_parser.add_argument("--dry-run", action="store_true", help=HELP_DRY_RUN)
     full_parser.add_argument("--headless", action="store_const", const=True, default=None, help=HELP_HEADLESS)
+    full_parser.add_argument("--yes", action="store_true", help=HELP_YES)
 
     # Preflight command: validate deploy prerequisites without making any change.
     preflight_parser = subparsers.add_parser(
@@ -371,6 +380,23 @@ Examples:
         "--component", choices=sorted(_AWS_COMPONENTS), default=None, help="AWS component to scope overlay checks"
     )
     preflight_parser.add_argument("--headless", action="store_const", const=True, default=None, help=HELP_HEADLESS)
+
+    # Account leftover recovery: detect (and optionally sweep) state-absent
+    # control-plane residue from an incomplete prior teardown so a re-standup
+    # does not fail collision-by-collision (issue #1639 / #1618).
+    recovery_parser = subparsers.add_parser(
+        "account-recovery",
+        help="Detect (and optionally --sweep) leftover AWS resources from an incomplete prior teardown",
+    )
+    recovery_parser.add_argument("--env", required=True, choices=AWS_ENVIRONMENTS, help="Environment")
+    recovery_parser.add_argument("--profile", required=True, help=HELP_AWS_PROFILE)
+    recovery_parser.add_argument(
+        "--sweep",
+        action="store_true",
+        help="Delete the owned leftovers (explicit destructive opt-in; detection is read-only without it)",
+    )
+    recovery_parser.add_argument("--dry-run", action="store_true", help=HELP_DRY_RUN)
+    recovery_parser.add_argument("--yes", action="store_true", help=HELP_YES)
 
     _add_runners_subparser(subparsers)
 
@@ -442,10 +468,20 @@ def main() -> None:
     """Parse CLI arguments and dispatch the requested bootstrap operation."""
     parser = _build_parser()
     args = parser.parse_args()
+    # --yes lets the bootstrap flow's confirm() prompts proceed without a TTY
+    # (issue #1639). Routine prompts only; the leftover sweep stays separately gated.
+    if getattr(args, "yes", False):
+        set_assume_yes(True)
     check_dependencies(args.command, cloud=getattr(args, "cloud", None))
 
     if args.command == "preflight":
         preflight_gate(Cloud(args.cloud), Mode.LOCAL, args.env, component=args.component, headless=args.headless)
+        return
+
+    if args.command == "account-recovery":
+        # Recovery is not a deploy; it resolves the account itself and gates its
+        # own destructive sweep. It does not run the deploy preflight_gate.
+        account_recovery(args.env, args.profile, sweep=args.sweep, dry_run=args.dry_run)
         return
 
     # Fail-safe gate: verify prerequisites and confirm the manual ones before any

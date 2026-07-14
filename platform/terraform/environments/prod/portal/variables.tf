@@ -726,6 +726,24 @@ variable "instance_refresh_min_healthy_percentage" {
   default     = 50
 }
 
+variable "health_check_type" {
+  description = "Portal ASG health-check type: ELB ties refresh readiness to ALB target health; EC2 is a non-ALB fallback (#1639)."
+  type        = string
+  default     = "ELB"
+}
+
+variable "health_check_grace_period" {
+  description = "Seconds the portal ASG waits after launch before health checks count; env-owned so dev/proof can shorten the loop (#1639)."
+  type        = number
+  default     = 900
+}
+
+variable "instance_refresh_instance_warmup" {
+  description = "Seconds an instance refresh waits for a replacement to warm up before counting it healthy; env-owned (#1639)."
+  type        = number
+  default     = 900
+}
+
 # --- AWS Polaris Bedrock agent credential profile (#1377) ---
 # Off by default; populated (via the deploy-secrets tfvars mechanism) only in an
 # environment that runs AWS Polaris ranges. Passed into the engine-provisioner
