@@ -51,7 +51,7 @@ class NGFWCreateView(MissionControlAPIView):
 
     @extend_schema(
         request=NGFWCreateSerializer,
-        responses=NGFWCreateResponseSerializer,
+        responses={201: NGFWCreateResponseSerializer},
         operation_id="api_v1_mission_control_ngfw_create",
     )
     def post(self, request: Request) -> Response | JsonResponse:
@@ -136,7 +136,7 @@ class CredentialCreateView(MissionControlAPIView):
 
     @extend_schema(
         request=CredentialCreateSerializer,
-        responses=CredentialCreateResponseSerializer,
+        responses={201: CredentialCreateResponseSerializer},
         operation_id="api_v1_mission_control_credentials_create",
     )
     def post(self, request: Request) -> Response | JsonResponse:

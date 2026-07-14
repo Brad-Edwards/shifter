@@ -61,16 +61,6 @@
             },
             "description": ""
           },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Invalid request."
-          },
           "401": {
             "content": {
               "application/json": {
@@ -131,16 +121,6 @@
             },
             "description": ""
           },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Invalid request."
-          },
           "401": {
             "content": {
               "application/json": {
@@ -160,16 +140,6 @@
               }
             },
             "description": "Permission denied."
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Resource not found."
           }
         }
       }
@@ -199,16 +169,6 @@
               }
             },
             "description": ""
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Invalid request."
           },
           "401": {
             "content": {
@@ -281,16 +241,6 @@
             },
             "description": ""
           },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Invalid request."
-          },
           "401": {
             "content": {
               "application/json": {
@@ -360,16 +310,6 @@
               }
             },
             "description": ""
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Invalid request."
           },
           "401": {
             "content": {
@@ -443,16 +383,6 @@
             },
             "description": ""
           },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Invalid request."
-          },
           "401": {
             "content": {
               "application/json": {
@@ -507,16 +437,6 @@
               }
             },
             "description": ""
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Invalid request."
           },
           "401": {
             "content": {
@@ -580,16 +500,6 @@
             },
             "description": ""
           },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Invalid request."
-          },
           "401": {
             "content": {
               "application/json": {
@@ -609,16 +519,6 @@
               }
             },
             "description": "Permission denied."
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Resource not found."
           }
         },
         "x-required-scopes": [
@@ -671,16 +571,6 @@
               }
             },
             "description": ""
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Invalid request."
           },
           "401": {
             "content": {
@@ -754,16 +644,6 @@
             },
             "description": ""
           },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Invalid request."
-          },
           "401": {
             "content": {
               "application/json": {
@@ -826,16 +706,6 @@
             },
             "description": ""
           },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Invalid request."
-          },
           "401": {
             "content": {
               "application/json": {
@@ -855,16 +725,6 @@
               }
             },
             "description": "Permission denied."
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Resource not found."
           }
         },
         "x-required-scopes": [
@@ -925,16 +785,6 @@
             },
             "description": ""
           },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Invalid request."
-          },
           "401": {
             "content": {
               "application/json": {
@@ -954,16 +804,6 @@
               }
             },
             "description": "Permission denied."
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Resource not found."
           }
         },
         "x-required-scopes": [
@@ -998,16 +838,6 @@
           "204": {
             "description": "No response body"
           },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Invalid request."
-          },
           "401": {
             "content": {
               "application/json": {
@@ -1027,16 +857,6 @@
               }
             },
             "description": "Permission denied."
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Resource not found."
           }
         },
         "x-required-scopes": [
@@ -1100,16 +920,6 @@
             },
             "description": ""
           },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Invalid request."
-          },
           "401": {
             "content": {
               "application/json": {
@@ -1129,16 +939,6 @@
               }
             },
             "description": "Permission denied."
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Resource not found."
           }
         },
         "x-required-scopes": [
@@ -1182,16 +982,6 @@
             },
             "description": ""
           },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Invalid request."
-          },
           "401": {
             "content": {
               "application/json": {
@@ -1211,16 +1001,6 @@
               }
             },
             "description": "Permission denied."
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Resource not found."
           }
         },
         "x-required-scopes": [
@@ -1283,16 +1063,6 @@
             },
             "description": ""
           },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Invalid request."
-          },
           "401": {
             "content": {
               "application/json": {
@@ -1312,16 +1082,6 @@
               }
             },
             "description": "Permission denied."
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Resource not found."
           }
         },
         "x-required-scopes": [
@@ -1374,16 +1134,6 @@
               }
             },
             "description": ""
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Invalid request."
           },
           "401": {
             "content": {
@@ -1457,16 +1207,6 @@
             },
             "description": ""
           },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Invalid request."
-          },
           "401": {
             "content": {
               "application/json": {
@@ -1519,16 +1259,6 @@
             },
             "description": ""
           },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Invalid request."
-          },
           "401": {
             "content": {
               "application/json": {
@@ -1577,16 +1307,6 @@
               }
             },
             "description": ""
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Invalid request."
           },
           "401": {
             "content": {
@@ -1650,7 +1370,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "content": {
               "application/json": {
                 "schema": {
@@ -1659,16 +1379,6 @@
               }
             },
             "description": ""
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Invalid request."
           },
           "401": {
             "content": {
@@ -1732,16 +1442,6 @@
             },
             "description": ""
           },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Invalid request."
-          },
           "401": {
             "content": {
               "application/json": {
@@ -1761,16 +1461,6 @@
               }
             },
             "description": "Permission denied."
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Resource not found."
           }
         },
         "x-required-scopes": [
@@ -1815,16 +1505,6 @@
             },
             "description": ""
           },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Invalid request."
-          },
           "401": {
             "content": {
               "application/json": {
@@ -1844,16 +1524,6 @@
               }
             },
             "description": "Permission denied."
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Resource not found."
           }
         },
         "x-required-scopes": [
@@ -1907,16 +1577,6 @@
               }
             },
             "description": ""
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Invalid request."
           },
           "401": {
             "content": {
@@ -1990,16 +1650,6 @@
             },
             "description": ""
           },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Invalid request."
-          },
           "401": {
             "content": {
               "application/json": {
@@ -2072,16 +1722,6 @@
             },
             "description": ""
           },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Invalid request."
-          },
           "401": {
             "content": {
               "application/json": {
@@ -2143,7 +1783,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "content": {
               "application/json": {
                 "schema": {
@@ -2152,16 +1792,6 @@
               }
             },
             "description": ""
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Invalid request."
           },
           "401": {
             "content": {
@@ -2255,16 +1885,6 @@
             },
             "description": ""
           },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Invalid request."
-          },
           "401": {
             "content": {
               "application/json": {
@@ -2284,16 +1904,6 @@
               }
             },
             "description": "Permission denied."
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Resource not found."
           }
         },
         "x-required-scopes": [
@@ -2338,16 +1948,6 @@
             },
             "description": ""
           },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Invalid request."
-          },
           "401": {
             "content": {
               "application/json": {
@@ -2367,16 +1967,6 @@
               }
             },
             "description": "Permission denied."
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Resource not found."
           }
         },
         "x-required-scopes": [
@@ -2409,16 +1999,6 @@
               }
             },
             "description": ""
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Invalid request."
           },
           "401": {
             "content": {
@@ -2471,16 +2051,6 @@
               }
             },
             "description": ""
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Invalid request."
           },
           "401": {
             "content": {
@@ -2545,16 +2115,6 @@
             },
             "description": ""
           },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Invalid request."
-          },
           "401": {
             "content": {
               "application/json": {
@@ -2574,16 +2134,6 @@
               }
             },
             "description": "Permission denied."
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Resource not found."
           }
         },
         "x-required-scopes": [
@@ -2628,16 +2178,6 @@
             },
             "description": ""
           },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Invalid request."
-          },
           "401": {
             "content": {
               "application/json": {
@@ -2657,16 +2197,6 @@
               }
             },
             "description": "Permission denied."
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Resource not found."
           }
         },
         "x-required-scopes": [
@@ -2711,16 +2241,6 @@
             },
             "description": ""
           },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Invalid request."
-          },
           "401": {
             "content": {
               "application/json": {
@@ -2740,16 +2260,6 @@
               }
             },
             "description": "Permission denied."
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Resource not found."
           }
         },
         "x-required-scopes": [
@@ -2794,16 +2304,6 @@
             },
             "description": ""
           },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Invalid request."
-          },
           "401": {
             "content": {
               "application/json": {
@@ -2823,16 +2323,6 @@
               }
             },
             "description": "Permission denied."
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Resource not found."
           }
         },
         "x-required-scopes": [
@@ -2877,16 +2367,6 @@
             },
             "description": ""
           },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Invalid request."
-          },
           "401": {
             "content": {
               "application/json": {
@@ -2906,16 +2386,6 @@
               }
             },
             "description": "Permission denied."
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Resource not found."
           }
         },
         "x-required-scopes": [
@@ -2967,16 +2437,6 @@
               }
             },
             "description": ""
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Invalid request."
           },
           "401": {
             "content": {
@@ -3049,16 +2509,6 @@
             },
             "description": ""
           },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Invalid request."
-          },
           "401": {
             "content": {
               "application/json": {
@@ -3129,16 +2579,6 @@
               }
             },
             "description": ""
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Invalid request."
           },
           "401": {
             "content": {
@@ -3221,16 +2661,6 @@
             },
             "description": ""
           },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Invalid request."
-          },
           "401": {
             "content": {
               "application/json": {
@@ -3302,16 +2732,6 @@
             },
             "description": ""
           },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Invalid request."
-          },
           "401": {
             "content": {
               "application/json": {
@@ -3364,16 +2784,6 @@
             },
             "description": ""
           },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Invalid request."
-          },
           "401": {
             "content": {
               "application/json": {
@@ -3425,16 +2835,6 @@
               }
             },
             "description": ""
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Invalid request."
           },
           "401": {
             "content": {
@@ -3508,16 +2908,6 @@
             },
             "description": ""
           },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Invalid request."
-          },
           "401": {
             "content": {
               "application/json": {
@@ -3589,16 +2979,6 @@
             },
             "description": ""
           },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Invalid request."
-          },
           "401": {
             "content": {
               "application/json": {
@@ -3669,16 +3049,6 @@
               }
             },
             "description": ""
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Invalid request."
           },
           "401": {
             "content": {
@@ -3761,16 +3131,6 @@
             },
             "description": ""
           },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Invalid request."
-          },
           "401": {
             "content": {
               "application/json": {
@@ -3841,16 +3201,6 @@
             },
             "description": ""
           },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Invalid request."
-          },
           "401": {
             "content": {
               "application/json": {
@@ -3914,16 +3264,6 @@
             },
             "description": ""
           },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Invalid request."
-          },
           "401": {
             "content": {
               "application/json": {
@@ -3943,16 +3283,6 @@
               }
             },
             "description": "Permission denied."
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Resource not found."
           }
         },
         "x-required-scopes": [
@@ -4015,16 +3345,6 @@
             },
             "description": ""
           },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Invalid request."
-          },
           "401": {
             "content": {
               "application/json": {
@@ -4044,16 +3364,6 @@
               }
             },
             "description": "Permission denied."
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Resource not found."
           }
         },
         "x-required-scopes": [
@@ -4115,16 +3425,6 @@
             },
             "description": ""
           },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Invalid request."
-          },
           "401": {
             "content": {
               "application/json": {
@@ -4144,16 +3444,6 @@
               }
             },
             "description": "Permission denied."
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Resource not found."
           }
         },
         "x-required-scopes": [
@@ -4189,16 +3479,6 @@
           "204": {
             "description": "No response body"
           },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Invalid request."
-          },
           "401": {
             "content": {
               "application/json": {
@@ -4218,16 +3498,6 @@
               }
             },
             "description": "Permission denied."
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Resource not found."
           }
         },
         "x-required-scopes": [
@@ -4292,16 +3562,6 @@
             },
             "description": ""
           },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Invalid request."
-          },
           "401": {
             "content": {
               "application/json": {
@@ -4321,16 +3581,6 @@
               }
             },
             "description": "Permission denied."
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Resource not found."
           }
         },
         "x-required-scopes": [
@@ -4377,16 +3627,6 @@
             },
             "description": ""
           },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Invalid request."
-          },
           "401": {
             "content": {
               "application/json": {
@@ -4406,16 +3646,6 @@
               }
             },
             "description": "Permission denied."
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Resource not found."
           }
         },
         "x-required-scopes": [
@@ -4477,16 +3707,6 @@
             },
             "description": ""
           },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Invalid request."
-          },
           "401": {
             "content": {
               "application/json": {
@@ -4506,16 +3726,6 @@
               }
             },
             "description": "Permission denied."
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Resource not found."
           }
         },
         "x-required-scopes": [
@@ -4560,16 +3770,6 @@
           "204": {
             "description": "No response body"
           },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Invalid request."
-          },
           "401": {
             "content": {
               "application/json": {
@@ -4589,16 +3789,6 @@
               }
             },
             "description": "Permission denied."
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            },
-            "description": "Resource not found."
           }
         },
         "x-required-scopes": [

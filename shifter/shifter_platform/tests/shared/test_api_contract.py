@@ -66,10 +66,24 @@ class TestPublishedContract:
         assert {"code", "message"} <= set(body)
 
     def test_error_responses_reference_the_envelope(self, openapi_document: dict[str, Any]) -> None:
+        # Only the statuses the shared exception handler guarantees are injected.
         risks = openapi_document["paths"]["/api/v1/risks/"]["get"]
-        for code in ("400", "401", "403"):
+        for code in ("401", "403"):
             schema = risks["responses"][code]["content"]["application/json"]["schema"]
             assert schema["$ref"].endswith("/ApiError")
+
+    def test_body_dependent_errors_are_not_injected_globally(self, openapi_document: dict[str, Any]) -> None:
+        # 400/404 shapes vary per endpoint (some legacy views return non-envelope
+        # errors), so they must not be blanket-injected onto every operation.
+        risks = openapi_document["paths"]["/api/v1/risks/"]["get"]
+        assert "400" not in risks["responses"]
+        assert "404" not in risks["responses"]
+
+    def test_created_endpoints_declare_201(self, openapi_document: dict[str, Any]) -> None:
+        # NGFW/credential creates return 201; the contract must not claim 200.
+        ngfw = openapi_document["paths"]["/api/v1/mission-control/ngfw/"]["post"]
+        assert "201" in ngfw["responses"]
+        assert "200" not in ngfw["responses"]
 
     def test_token_scopes_published_for_scoped_operations(self, openapi_document: dict[str, Any]) -> None:
         assert openapi_document["paths"]["/api/v1/risks/"]["get"]["x-required-scopes"] == ["risk:read"]

@@ -121,17 +121,28 @@ def resolve_base_document(base_ref: str, major: str = API_MAJOR) -> str | None:
 
     Reads the artifact from the base branch via ``git show`` so the
     breaking-change comparison uses the already-published contract, never a
-    baseline the current PR can rewrite. Returns ``None`` when the base ref has
-    no artifact (first publication of this major) — the caller treats that as
-    "nothing to break".
+    baseline the current PR can rewrite.
+
+    Fails closed: an unresolvable base ref or an unreadable artifact object
+    raises, so a broken baseline lookup can never silently let a breaking change
+    through. Returns ``None`` ONLY when the base ref resolves but genuinely has no
+    committed artifact (the legitimate first-publication case).
     """
     toplevel = _git("rev-parse", "--show-toplevel")
     if toplevel.returncode != 0:
         raise RuntimeError(f"git rev-parse failed: {toplevel.stderr.strip()}")
-    repo_relative = artifact_path(major).relative_to(Path(toplevel.stdout.strip()))
-    shown = _git("show", f"{base_ref}:{repo_relative.as_posix()}")
-    if shown.returncode != 0:
+    repo_relative = artifact_path(major).relative_to(Path(toplevel.stdout.strip())).as_posix()
+    # The base ref itself must resolve; if it does not, fail rather than skip.
+    resolved = _git("rev-parse", "--verify", "--quiet", f"{base_ref}^{{commit}}")
+    if resolved.returncode != 0:
+        raise RuntimeError(f"base ref {base_ref!r} could not be resolved for the breaking-change gate")
+    # A resolvable ref with no artifact object is the only legitimate skip.
+    exists = _git("cat-file", "-e", f"{base_ref}:{repo_relative}")
+    if exists.returncode != 0:
         return None
+    shown = _git("show", f"{base_ref}:{repo_relative}")
+    if shown.returncode != 0:
+        raise RuntimeError(f"failed to read {repo_relative} at {base_ref}: {shown.stderr.strip()}")
     return shown.stdout
 
 

@@ -84,13 +84,14 @@ class ApiErrorSerializer(serializers.Serializer):
 
 _SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 
-# Error responses attached to every published JSON operation. All in-scope
-# operations require authentication and validate their input, so 400/401/403
-# always apply; 404 is added for addressable (path-parameter) operations and
-# 429 for throttled views. Each references the shared ApiError envelope, so a
-# consumer can type every failure from the committed contract alone.
-_BASE_ERROR_DESCRIPTIONS: dict[str, str] = {
-    "400": "Invalid request.",
+# Error responses guaranteed by the shared DRF exception handler for EVERY
+# authenticated operation, independent of the view body: authentication and
+# authorization run before the view and always render the shared envelope. These
+# are always truthful. Body-dependent statuses (400/404/410 and their shapes)
+# vary per endpoint — some legacy views return non-envelope errors — so they are
+# declared per-view where they apply rather than injected globally; the contract
+# never over-claims a response an endpoint does not actually return.
+_GUARANTEED_ERROR_DESCRIPTIONS: dict[str, str] = {
     "401": "Authentication failed.",
     "403": "Permission denied.",
 }
@@ -120,7 +121,7 @@ class PlatformAutoSchema(AutoSchema):
         scopes = self._required_scopes(method)
         if scopes:
             operation["x-required-scopes"] = scopes
-        self._add_error_responses(operation, path)
+        self._add_error_responses(operation)
         return operation
 
     def _required_scopes(self, method: str) -> list[str]:
@@ -162,13 +163,16 @@ class PlatformAutoSchema(AutoSchema):
             for permission in getattr(self.view, "permission_classes", [])
         ]
 
-    def _add_error_responses(self, operation: dict[str, Any], path: str) -> None:
-        """Attach the shared error envelope to the operation's failure responses."""
+    def _add_error_responses(self, operation: dict[str, Any]) -> None:
+        """Attach the shared error envelope to the operation's guaranteed failures.
+
+        Only statuses the DRF exception handler always produces (401/403, and 429
+        when the view is throttled) are injected, so every published error
+        response is truthful regardless of the view's body.
+        """
         responses: dict[str, Any] = operation.setdefault("responses", {})
         error_ref = self.resolve_serializer(ApiErrorSerializer, "response").ref
-        descriptions = dict(_BASE_ERROR_DESCRIPTIONS)
-        if "{" in path:
-            descriptions["404"] = "Resource not found."
+        descriptions = dict(_GUARANTEED_ERROR_DESCRIPTIONS)
         if getattr(self.view, "throttle_classes", None):
             descriptions["429"] = "Request was throttled."
         for code, description in descriptions.items():

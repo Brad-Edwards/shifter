@@ -1876,15 +1876,6 @@ export interface operations {
                     "application/json": components["schemas"]["PaginatedAuditLogList"];
                 };
             };
-            /** @description Invalid request. */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
             /** @description Authentication failed. */
             401: {
                 headers: {
@@ -1925,15 +1916,6 @@ export interface operations {
                     "application/json": components["schemas"]["AuditLog"];
                 };
             };
-            /** @description Invalid request. */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
             /** @description Authentication failed. */
             401: {
                 headers: {
@@ -1945,15 +1927,6 @@ export interface operations {
             };
             /** @description Permission denied. */
             403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Resource not found. */
-            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -1978,15 +1951,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Bootstrap"];
-                };
-            };
-            /** @description Invalid request. */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
                 };
             };
             /** @description Authentication failed. */
@@ -2027,15 +1991,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AcesImageMappingView"][];
-                };
-            };
-            /** @description Invalid request. */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
                 };
             };
             /** @description Authentication failed. */
@@ -2081,15 +2036,6 @@ export interface operations {
                     "application/json": components["schemas"]["AcesImageMappingView"];
                 };
             };
-            /** @description Invalid request. */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
             /** @description Authentication failed. */
             401: {
                 headers: {
@@ -2133,15 +2079,6 @@ export interface operations {
                     "application/json": components["schemas"]["AcesImageMappingView"];
                 };
             };
-            /** @description Invalid request. */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
             /** @description Authentication failed. */
             401: {
                 headers: {
@@ -2177,15 +2114,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CatalogEntry"][];
-                };
-            };
-            /** @description Invalid request. */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
                 };
             };
             /** @description Authentication failed. */
@@ -2227,15 +2155,6 @@ export interface operations {
                     "application/json": components["schemas"]["CatalogEntry"];
                 };
             };
-            /** @description Invalid request. */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
             /** @description Authentication failed. */
             401: {
                 headers: {
@@ -2247,15 +2166,6 @@ export interface operations {
             };
             /** @description Permission denied. */
             403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Resource not found. */
-            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2286,15 +2196,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PackRegistrationResult"];
-                };
-            };
-            /** @description Invalid request. */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
                 };
             };
             /** @description Authentication failed. */
@@ -2340,15 +2241,6 @@ export interface operations {
                     "application/json": components["schemas"]["ScenarioCreated"];
                 };
             };
-            /** @description Invalid request. */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
             /** @description Authentication failed. */
             401: {
                 headers: {
@@ -2388,15 +2280,6 @@ export interface operations {
                     "application/json": components["schemas"]["ScenarioDetail"];
                 };
             };
-            /** @description Invalid request. */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
             /** @description Authentication failed. */
             401: {
                 headers: {
@@ -2408,15 +2291,6 @@ export interface operations {
             };
             /** @description Permission denied. */
             403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Resource not found. */
-            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2444,15 +2318,6 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Invalid request. */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
             /** @description Authentication failed. */
             401: {
                 headers: {
@@ -2464,15 +2329,6 @@ export interface operations {
             };
             /** @description Permission denied. */
             403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Resource not found. */
-            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2507,15 +2363,6 @@ export interface operations {
                     "application/json": components["schemas"]["ScenarioDetail"];
                 };
             };
-            /** @description Invalid request. */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
             /** @description Authentication failed. */
             401: {
                 headers: {
@@ -2527,15 +2374,6 @@ export interface operations {
             };
             /** @description Permission denied. */
             403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Resource not found. */
-            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2570,15 +2408,6 @@ export interface operations {
                     "application/json": components["schemas"]["ScenarioCreated"];
                 };
             };
-            /** @description Invalid request. */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
             /** @description Authentication failed. */
             401: {
                 headers: {
@@ -2590,15 +2419,6 @@ export interface operations {
             };
             /** @description Permission denied. */
             403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Resource not found. */
-            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2627,15 +2447,6 @@ export interface operations {
                     "application/json": components["schemas"]["ScenarioExport"];
                 };
             };
-            /** @description Invalid request. */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
             /** @description Authentication failed. */
             401: {
                 headers: {
@@ -2647,15 +2458,6 @@ export interface operations {
             };
             /** @description Permission denied. */
             403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Resource not found. */
-            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2690,15 +2492,6 @@ export interface operations {
                     "application/json": components["schemas"]["ScenarioMetadataState"];
                 };
             };
-            /** @description Invalid request. */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
             /** @description Authentication failed. */
             401: {
                 headers: {
@@ -2710,15 +2503,6 @@ export interface operations {
             };
             /** @description Permission denied. */
             403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Resource not found. */
-            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2749,15 +2533,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ScenarioCreated"];
-                };
-            };
-            /** @description Invalid request. */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
                 };
             };
             /** @description Authentication failed. */
@@ -2803,15 +2578,6 @@ export interface operations {
                     "application/json": components["schemas"]["YAMLValidationResult"];
                 };
             };
-            /** @description Invalid request. */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
             /** @description Authentication failed. */
             401: {
                 headers: {
@@ -2847,15 +2613,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DashboardSummary"];
-                };
-            };
-            /** @description Invalid request. */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
                 };
             };
             /** @description Authentication failed. */
@@ -2895,15 +2652,6 @@ export interface operations {
                     "application/json": components["schemas"]["AgentListResponse"];
                 };
             };
-            /** @description Invalid request. */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
             /** @description Authentication failed. */
             401: {
                 headers: {
@@ -2939,21 +2687,12 @@ export interface operations {
             };
         };
         responses: {
-            200: {
+            201: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
                     "application/json": components["schemas"]["CredentialCreateResponse"];
-                };
-            };
-            /** @description Invalid request. */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
                 };
             };
             /** @description Authentication failed. */
@@ -2995,15 +2734,6 @@ export interface operations {
                     "application/json": components["schemas"]["SuccessResponse"];
                 };
             };
-            /** @description Invalid request. */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
             /** @description Authentication failed. */
             401: {
                 headers: {
@@ -3015,15 +2745,6 @@ export interface operations {
             };
             /** @description Permission denied. */
             403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Resource not found. */
-            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3052,15 +2773,6 @@ export interface operations {
                     "application/json": components["schemas"]["GuacamoleBootstrapStatus"];
                 };
             };
-            /** @description Invalid request. */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
             /** @description Authentication failed. */
             401: {
                 headers: {
@@ -3072,15 +2784,6 @@ export interface operations {
             };
             /** @description Permission denied. */
             403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Resource not found. */
-            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3107,15 +2810,6 @@ export interface operations {
                 };
                 content: {
                     "text/html": string;
-                };
-            };
-            /** @description Invalid request. */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
                 };
             };
             /** @description Authentication failed. */
@@ -3169,15 +2863,6 @@ export interface operations {
                     "application/json": components["schemas"]["GuacamoleBootstrapQueued"];
                 };
             };
-            /** @description Invalid request. */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
             /** @description Authentication failed. */
             401: {
                 headers: {
@@ -3221,15 +2906,6 @@ export interface operations {
                     "application/json": components["schemas"]["GuacamoleBootstrapQueued"];
                 };
             };
-            /** @description Invalid request. */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
             /** @description Authentication failed. */
             401: {
                 headers: {
@@ -3265,21 +2941,12 @@ export interface operations {
             };
         };
         responses: {
-            200: {
+            201: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
                     "application/json": components["schemas"]["NGFWCreateResponse"];
-                };
-            };
-            /** @description Invalid request. */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
                 };
             };
             /** @description Authentication failed. */
@@ -3336,15 +3003,6 @@ export interface operations {
                     "application/json": components["schemas"]["NGFWDestroyResponse"];
                 };
             };
-            /** @description Invalid request. */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
             /** @description Authentication failed. */
             401: {
                 headers: {
@@ -3356,15 +3014,6 @@ export interface operations {
             };
             /** @description Permission denied. */
             403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Resource not found. */
-            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3393,15 +3042,6 @@ export interface operations {
                     "application/json": components["schemas"]["GuacamoleBootstrapQueued"];
                 };
             };
-            /** @description Invalid request. */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
             /** @description Authentication failed. */
             401: {
                 headers: {
@@ -3413,15 +3053,6 @@ export interface operations {
             };
             /** @description Permission denied. */
             403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Resource not found. */
-            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3446,15 +3077,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["NGFWListResponse"];
-                };
-            };
-            /** @description Invalid request. */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
                 };
             };
             /** @description Authentication failed. */
@@ -3492,15 +3114,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CurrentRangeResponse"];
-                };
-            };
-            /** @description Invalid request. */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
                 };
             };
             /** @description Authentication failed. */
@@ -3542,15 +3155,6 @@ export interface operations {
                     "application/json": components["schemas"]["AcesOperationRecordListResponse"];
                 };
             };
-            /** @description Invalid request. */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
             /** @description Authentication failed. */
             401: {
                 headers: {
@@ -3562,15 +3166,6 @@ export interface operations {
             };
             /** @description Permission denied. */
             403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Resource not found. */
-            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3599,15 +3194,6 @@ export interface operations {
                     "application/json": components["schemas"]["AcesOperationRecordListResponse"];
                 };
             };
-            /** @description Invalid request. */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
             /** @description Authentication failed. */
             401: {
                 headers: {
@@ -3619,15 +3205,6 @@ export interface operations {
             };
             /** @description Permission denied. */
             403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Resource not found. */
-            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3656,15 +3233,6 @@ export interface operations {
                     "application/json": components["schemas"]["AcesParticipantRuntimeRecordListResponse"];
                 };
             };
-            /** @description Invalid request. */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
             /** @description Authentication failed. */
             401: {
                 headers: {
@@ -3676,15 +3244,6 @@ export interface operations {
             };
             /** @description Permission denied. */
             403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Resource not found. */
-            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3713,15 +3272,6 @@ export interface operations {
                     "application/json": components["schemas"]["AcesParticipantRuntimeRecordListResponse"];
                 };
             };
-            /** @description Invalid request. */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
             /** @description Authentication failed. */
             401: {
                 headers: {
@@ -3733,15 +3283,6 @@ export interface operations {
             };
             /** @description Permission denied. */
             403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Resource not found. */
-            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3770,15 +3311,6 @@ export interface operations {
                     "application/json": components["schemas"]["AcesOperationRecordListResponse"];
                 };
             };
-            /** @description Invalid request. */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
             /** @description Authentication failed. */
             401: {
                 headers: {
@@ -3790,15 +3322,6 @@ export interface operations {
             };
             /** @description Permission denied. */
             403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Resource not found. */
-            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3829,15 +3352,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SuccessResponse"];
-                };
-            };
-            /** @description Invalid request. */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
                 };
             };
             /** @description Authentication failed. */
@@ -3883,15 +3397,6 @@ export interface operations {
                     "application/json": components["schemas"]["SuccessResponse"];
                 };
             };
-            /** @description Invalid request. */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
             /** @description Authentication failed. */
             401: {
                 headers: {
@@ -3933,15 +3438,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["LaunchRangeResponse"];
-                };
-            };
-            /** @description Invalid request. */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
                 };
             };
             /** @description Authentication failed. */
@@ -3996,15 +3492,6 @@ export interface operations {
                     "application/json": components["schemas"]["SuccessResponse"];
                 };
             };
-            /** @description Invalid request. */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
             /** @description Authentication failed. */
             401: {
                 headers: {
@@ -4048,15 +3535,6 @@ export interface operations {
                     "application/json": components["schemas"]["SuccessResponse"];
                 };
             };
-            /** @description Invalid request. */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
             /** @description Authentication failed. */
             401: {
                 headers: {
@@ -4094,15 +3572,6 @@ export interface operations {
                     "application/json": components["schemas"]["RangeHistoryResponse"];
                 };
             };
-            /** @description Invalid request. */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
             /** @description Authentication failed. */
             401: {
                 headers: {
@@ -4138,15 +3607,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ScenarioListResponse"];
-                };
-            };
-            /** @description Invalid request. */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
                 };
             };
             /** @description Authentication failed. */
@@ -4192,15 +3652,6 @@ export interface operations {
                     "application/json": components["schemas"]["SuccessResponse"];
                 };
             };
-            /** @description Invalid request. */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
             /** @description Authentication failed. */
             401: {
                 headers: {
@@ -4244,15 +3695,6 @@ export interface operations {
                     "application/json": components["schemas"]["UploadCompleteResponse"];
                 };
             };
-            /** @description Invalid request. */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
             /** @description Authentication failed. */
             401: {
                 headers: {
@@ -4294,15 +3736,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["UploadInitiateResponse"];
-                };
-            };
-            /** @description Invalid request. */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
                 };
             };
             /** @description Authentication failed. */
@@ -4349,15 +3782,6 @@ export interface operations {
                     "application/json": components["schemas"]["PaginatedRiskList"];
                 };
             };
-            /** @description Invalid request. */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
             /** @description Authentication failed. */
             401: {
                 headers: {
@@ -4401,15 +3825,6 @@ export interface operations {
                     "application/json": components["schemas"]["RiskCreate"];
                 };
             };
-            /** @description Invalid request. */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
             /** @description Authentication failed. */
             401: {
                 headers: {
@@ -4450,15 +3865,6 @@ export interface operations {
                     "application/json": components["schemas"]["Risk"];
                 };
             };
-            /** @description Invalid request. */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
             /** @description Authentication failed. */
             401: {
                 headers: {
@@ -4470,15 +3876,6 @@ export interface operations {
             };
             /** @description Permission denied. */
             403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Resource not found. */
-            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -4514,15 +3911,6 @@ export interface operations {
                     "application/json": components["schemas"]["RiskUpdate"];
                 };
             };
-            /** @description Invalid request. */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
             /** @description Authentication failed. */
             401: {
                 headers: {
@@ -4534,15 +3922,6 @@ export interface operations {
             };
             /** @description Permission denied. */
             403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Resource not found. */
-            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -4571,15 +3950,6 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Invalid request. */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
             /** @description Authentication failed. */
             401: {
                 headers: {
@@ -4591,15 +3961,6 @@ export interface operations {
             };
             /** @description Permission denied. */
             403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Resource not found. */
-            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -4635,15 +3996,6 @@ export interface operations {
                     "application/json": components["schemas"]["RiskUpdate"];
                 };
             };
-            /** @description Invalid request. */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
             /** @description Authentication failed. */
             401: {
                 headers: {
@@ -4655,15 +4007,6 @@ export interface operations {
             };
             /** @description Permission denied. */
             403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Resource not found. */
-            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -4699,15 +4042,6 @@ export interface operations {
                     "application/json": components["schemas"]["Risk"];
                 };
             };
-            /** @description Invalid request. */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
             /** @description Authentication failed. */
             401: {
                 headers: {
@@ -4719,15 +4053,6 @@ export interface operations {
             };
             /** @description Permission denied. */
             403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Resource not found. */
-            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -4756,15 +4081,6 @@ export interface operations {
                     "application/json": components["schemas"]["Comment"][];
                 };
             };
-            /** @description Invalid request. */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
             /** @description Authentication failed. */
             401: {
                 headers: {
@@ -4776,15 +4092,6 @@ export interface operations {
             };
             /** @description Permission denied. */
             403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Resource not found. */
-            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -4819,15 +4126,6 @@ export interface operations {
                     "application/json": components["schemas"]["Comment"];
                 };
             };
-            /** @description Invalid request. */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
             /** @description Authentication failed. */
             401: {
                 headers: {
@@ -4839,15 +4137,6 @@ export interface operations {
             };
             /** @description Permission denied. */
             403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Resource not found. */
-            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -4876,15 +4165,6 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Invalid request. */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
             /** @description Authentication failed. */
             401: {
                 headers: {
@@ -4896,15 +4176,6 @@ export interface operations {
             };
             /** @description Permission denied. */
             403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Resource not found. */
-            404: {
                 headers: {
                     [name: string]: unknown;
                 };
