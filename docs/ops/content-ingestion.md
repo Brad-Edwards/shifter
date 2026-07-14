@@ -109,3 +109,24 @@ that a pack has passed conformance: every registration lands non-passed, and
 conformance is promoted out of band by a trusted conformance process. A
 registered pack may remain review-only or non-realizable, and launchability
 continues to be decided by the registry.
+
+## Image-optional packs and parameterized runs
+
+Image-bearing is optional (ADR-034). A pack whose SDL declares no VM image
+`source` is valid content: it imports through the same registration service,
+appears in the catalog, and is not failed by realizability merely for lacking
+images. Image count is never a realizability proxy. Absence of an authored image
+is not the same as "always launchable": a source-less VM still needs the backend
+to supply a base OS at realization (the tenant-managed ACES image registry), and
+a scenario whose plan requires an unsupported backend term still fails closed.
+
+A scenario's runs may be parameterized through ACES SDL `variables`: the
+multi-run experiment unit over one scenario/profile. Shifter represents a
+parameterized run as `scenario_id + profile + parameter binding identity`,
+validated against the scenario's declared variables (via the ACES SDL
+instantiation contract) before planning. Parameter values are never persisted:
+the package record stays provenance-only, a run is identified by a one-way digest
+of its binding, and the catalog-model run-capability projection surfaces only a
+bounded schema (each variable's name, type, whether it is required, whether it
+has a default, and how many allowed values it declares), never the authored
+defaults, allowed-value enumerations, or per-run values.
