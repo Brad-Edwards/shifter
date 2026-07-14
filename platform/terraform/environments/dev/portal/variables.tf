@@ -893,3 +893,15 @@ variable "aws_polaris_agent_refresh_window_seconds" {
   type        = number
   default     = 300
 }
+
+variable "aces_package_bucket_arn" {
+  description = "ARN of the S3 bucket holding object-backed ACES package archives (#1567). Grants the portal role read-only access; set it (with SHIFTER_ACES_PACKAGE_BUCKET on the app) to enable object-backed ACES packages. Empty disables the grant."
+  type        = string
+  default     = ""
+}
+
+variable "aces_package_prefix" {
+  description = "Optional key prefix under the ACES package bucket the portal may read (least-privilege scoping)."
+  type        = string
+  default     = ""
+}
