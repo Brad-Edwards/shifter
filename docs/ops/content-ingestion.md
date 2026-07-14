@@ -83,9 +83,26 @@ changed or replaced after registration cannot execute. Stage repo packs
 immutably for both operations; mutable working trees are not a supported
 deployment surface.
 
-`object` (object-storage) packs are registrable but are not launchable until an
-object resolver with equivalent containment and immutable-identity guarantees
-exists (#1567).
+`object` (object-storage) packs are launchable (#1567). `package_ref` names a
+single immutable archive object holding the pack (one archive per ref, not a
+storage prefix used as a directory). At launch the resolver downloads that
+archive from the configured package bucket into a private temporary directory,
+safely extracts it under fail-closed bounds (archive/uncompressed size and entry
+caps; absolute paths, `..` traversal, symlinks, hardlinks, and device/special
+files are rejected), then re-runs the upstream pack contract validation, asserts
+the extracted pack identity equals the registered `scenario_id`, and verifies the
+same canonical `package_digest` (the equivalent containment and immutable-identity
+guarantees repo packs get, ADR-034-R5), all before SDL resolution, parsing,
+planning, or dispatch. The staged directory is always removed afterward.
+
+Object launch requires deployment configuration: set `SHIFTER_ACES_PACKAGE_BUCKET`
+(and optionally `SHIFTER_ACES_PACKAGE_PREFIX`) on the app, and grant the portal
+workload least-privilege read-only access to that bucket/prefix in Terraform
+(`aces_package_bucket_arn` on AWS, `aces_package_bucket_name` on GCP). With no
+bucket configured an object row stays registrable and visible in the catalog but
+non-launchable (fail closed): a readiness decision, not a catalog-time network
+probe. Size and traversal bounds are tunable via `SHIFTER_ACES_PACKAGE_MAX_ARCHIVE_BYTES`,
+`SHIFTER_ACES_PACKAGE_MAX_UNCOMPRESSED_BYTES`, and `SHIFTER_ACES_PACKAGE_MAX_ENTRIES`.
 
 Registration is not conformance and is not launchability. A caller cannot assert
 that a pack has passed conformance: every registration lands non-passed, and

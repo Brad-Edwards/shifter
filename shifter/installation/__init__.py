@@ -28,6 +28,15 @@ from .contract import (
     RequiredTool,
     ValidationCheck,
 )
+from .doctor import (
+    CheckScope,
+    CheckStatus,
+    CheckTier,
+    DoctorCheckResult,
+    DoctorReport,
+    check_backend,
+    run_doctor,
+)
 from .errors import ConfigIssue, InstallationConfigError
 from .loader import load_root_config, validate_root_config_file
 from .publication import (
@@ -46,6 +55,7 @@ from .registry import (
     KNOWN_PROFILES,
     get_backend_bundle,
 )
+from .scaffold import ScaffoldError, ScaffoldResult, available_backends, scaffold_config
 from .schema import DeploymentConfig, RootConfig
 
 __all__ = [
@@ -59,9 +69,14 @@ __all__ = [
     "BackendBundle",
     "BackendCapability",
     "BackendMaturity",
+    "CheckScope",
+    "CheckStatus",
+    "CheckTier",
     "CommandSpec",
     "ConfigIssue",
     "DeploymentConfig",
+    "DoctorCheckResult",
+    "DoctorReport",
     "GeneratedOutput",
     "HealthCheck",
     "InstallationConfigError",
@@ -73,13 +88,19 @@ __all__ = [
     "RequiredSecret",
     "RequiredTool",
     "RootConfig",
+    "ScaffoldError",
+    "ScaffoldResult",
     "ValidationCheck",
+    "available_backends",
     "build_contract_artifact",
+    "check_backend",
     "check_publication",
     "find_incompatible_changes",
     "get_backend_bundle",
     "load_root_config",
     "published_backend_bundle_schema",
+    "run_doctor",
+    "scaffold_config",
     "serialize_artifact",
     "validate_published_bundle",
     "validate_root_config_file",

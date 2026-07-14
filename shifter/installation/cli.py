@@ -6,8 +6,17 @@ scripts, and operators catch malformed root config before Terraform, Helm, Djang
 workers, or deployment scripts run. ``runtime-inventory`` checks the checked-in runtime
 env surfaces by file path and env-key name only. The *contents* of ``settings`` (and
 which settings a backend requires) are validated by the selected backend bundle's
-contract (#1113); the backend-aware setup/doctor UX is #1115. This command deliberately
-stays small: parse paths, read files, print sanitized results.
+contract (#1113). This command deliberately stays small: parse paths, read files, print
+sanitized results.
+
+``init`` and ``doctor`` are the backend-aware setup/validation UX (#1115). ``init`` copies
+a checked ``examples/<backend>.yaml`` to ``shifter.yaml`` so an operator starts from a
+valid, backend-shaped config (local-only — it touches no cloud API and writes no secrets).
+``doctor`` validates the selected backend before infrastructure is applied: it runs the
+checks the selected backend bundle declares (required tools, secret references, generated
+outputs, owned paths, validation checks, and — opt-in — read-only health probes),
+classifies each by side-effect tier (local-only, cloud-read-only, deployment-mutating),
+and is non-mutating by default.
 
 ``render`` (#958) turns the validated, normalized ``settings.range_egress`` policy into
 the provider-specific Terraform bridge ``.tfvars`` for the config's backend, so the
@@ -28,9 +37,11 @@ conformance gates (also enforced in the ``installation`` test lane).
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
+from .doctor import CheckScope, CheckStatus, DoctorReport, run_doctor
 from .errors import InstallationConfigError
 from .loader import load_root_config
 from .publication import (
@@ -42,6 +53,7 @@ from .publication import (
 )
 from .render import render_cloud_provider_tfvars, render_tfvars
 from .runtime_inventory import RUNTIME_SURFACES, validate_runtime_inventory
+from .scaffold import ScaffoldError, available_backends, scaffold_config
 
 DEFAULT_CONFIG_FILENAME = "shifter.yaml"
 
@@ -131,8 +143,83 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Validate tracked runtime env files against the inventory.",
     )
+    _add_init_parser(subcommands)
+    _add_doctor_parser(subcommands)
     _add_contract_parser(subcommands)
     return parser
+
+
+def _add_init_parser(subcommands: argparse._SubParsersAction) -> None:
+    """Wire the ``init`` subcommand: scaffold a starting shifter.yaml from a checked example."""
+    init = subcommands.add_parser(
+        "init",
+        help="Scaffold a starting shifter.yaml from a checked backend example.",
+        description=(
+            "Copy the checked example config for the selected backend to a shifter.yaml so you "
+            f"start from a valid, backend-shaped config (default: ./{DEFAULT_CONFIG_FILENAME}). "
+            "Local-only: it authenticates to nothing, writes no secrets, and touches no cloud "
+            "API. Omit --backend to list the available backends."
+        ),
+    )
+    init.add_argument(
+        "--backend",
+        default=None,
+        help="Backend to scaffold (for example aws or gcp). Omit to list the available backends.",
+    )
+    init.add_argument(
+        "--output",
+        "-o",
+        metavar="FILE",
+        default=None,
+        help=f"Destination path for the scaffolded config (default: ./{DEFAULT_CONFIG_FILENAME}).",
+    )
+    init.add_argument(
+        "--force",
+        action="store_true",
+        help="Overwrite the destination if it already exists.",
+    )
+
+
+def _add_doctor_parser(subcommands: argparse._SubParsersAction) -> None:
+    """Wire the ``doctor`` subcommand: validate the selected backend before deploy."""
+    doctor = subcommands.add_parser(
+        "doctor",
+        help="Validate the selected backend before applying infrastructure.",
+        description=(
+            "Validate the backend selected by a root installation config (default: "
+            f"./{DEFAULT_CONFIG_FILENAME}) before infrastructure is applied. Runs the checks the "
+            "selected backend bundle declares — required tools, secret references, generated "
+            "outputs, owned repo paths, validation checks, and (opt-in) read-only health probes — "
+            "and labels each by side-effect tier. Non-mutating by default."
+        ),
+    )
+    doctor.add_argument(
+        "path",
+        nargs="?",
+        default=DEFAULT_CONFIG_FILENAME,
+        help=f"Path to the config file (default: ./{DEFAULT_CONFIG_FILENAME}).",
+    )
+    doctor.add_argument(
+        "--repo-root",
+        default=".",
+        help="Repository root the owned-path and validation checks run against (default: current directory).",
+    )
+    doctor.add_argument(
+        "--checks",
+        choices=[scope.value for scope in CheckScope],
+        default=CheckScope.LOCAL.value,
+        help=(
+            "Which check tiers to run: 'local' (default, non-network) validates config, tools, and "
+            "runs the backend's credential-free validation checks; 'cloud'/'all' additionally run "
+            "read-only health probes. Deployment-mutating steps are never run."
+        ),
+    )
+    doctor.add_argument(
+        "--json",
+        action="store_true",
+        dest="as_json",
+        help="Emit the report as JSON instead of human-readable text.",
+    )
 
 
 def _add_contract_parser(subcommands: argparse._SubParsersAction) -> None:
@@ -291,6 +378,62 @@ def _cmd_contract_check() -> int:
     return 0
 
 
+def _cmd_init(backend: str | None, output: str | None, *, force: bool) -> int:
+    """Scaffold a starting ``shifter.yaml`` from the checked example for ``backend``."""
+    if backend is None:
+        print("Available backends:")
+        for name in available_backends():
+            print(f"  - {name}")
+        print("Specify one with: shifter-config init --backend <name>", file=sys.stderr)
+        return 2
+    try:
+        result = scaffold_config(backend, output, force=force)
+    except ScaffoldError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    print(
+        f"{result.destination}: scaffolded the {result.backend} config from {result.source.name}. "
+        f"Next: edit it, then run 'shifter-config doctor {result.destination}'."
+    )
+    return 0
+
+
+#: The fixed-width status tags used in the human-readable doctor report.
+_STATUS_TAG = {
+    CheckStatus.PASS: "PASS",
+    CheckStatus.FAIL: "FAIL",
+    CheckStatus.WARN: "WARN",
+    CheckStatus.SKIP: "SKIP",
+    CheckStatus.INFO: "INFO",
+}
+
+
+def _print_doctor_report(report: DoctorReport) -> None:
+    """Print a sanitized, tier-labelled doctor report to stdout."""
+    print(f"doctor: backend={report.backend or '(unresolved)'} profile={report.profile or '(unknown)'}")
+    for result in report.results:
+        tag = _STATUS_TAG[result.status]
+        line = f"  [{tag}] ({result.tier.value}) {result.name}: {result.summary}"
+        if result.remediation:
+            line += f"\n         -> {result.remediation}"
+        print(line)
+    counts = {status: sum(1 for r in report.results if r.status is status) for status in CheckStatus}
+    summary = ", ".join(f"{counts[status]} {_STATUS_TAG[status].lower()}" for status in CheckStatus if counts[status])
+    print(f"doctor: {summary or 'no checks run'} — {'OK' if report.ok else 'FAILED'}")
+
+
+def _cmd_doctor(path_str: str, repo_root: str, checks: str, *, as_json: bool) -> int:
+    """Validate the backend selected by ``path_str`` and print a tier-labelled report."""
+    report = run_doctor(Path(path_str), scope=CheckScope(checks), repo_root=Path(repo_root))
+    if as_json:
+        print(json.dumps(report.to_dict(), indent=2))
+    else:
+        _print_doctor_report(report)
+    if not report.ok:
+        print("doctor: backend not ready — resolve the failures above before deploying.", file=sys.stderr)
+    return report.exit_code()
+
+
 def _cmd_contract(contract_command: str | None, output: str | None, parser: argparse.ArgumentParser) -> int:
     """Dispatch the ``contract`` subcommand."""
     if contract_command == "export":
@@ -317,6 +460,10 @@ def main(argv: list[str] | None = None) -> int:
         exit_code = _cmd_render_runtime(args.path, args.output)
     elif args.command == "runtime-inventory":
         exit_code = _cmd_runtime_inventory(args.repo_root, check=args.check)
+    elif args.command == "init":
+        exit_code = _cmd_init(args.backend, args.output, force=args.force)
+    elif args.command == "doctor":
+        exit_code = _cmd_doctor(args.path, args.repo_root, args.checks, as_json=args.as_json)
     elif args.command == "contract":
         exit_code = _cmd_contract(args.contract_command, getattr(args, "output", None), parser)
     else:
