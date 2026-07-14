@@ -230,6 +230,15 @@ Standup runbooks for the phases referenced below:
 For a new AWS account, bootstrap the backend and CI identity before trying
 to use the `aws-dev` deploy branch:
 
+If the account was **re-used** (a prior Shifter tenant was torn down here), first run
+`./scripts/bootstrap/deploy.py account-recovery --env dev --profile <profile>` to detect
+orphaned control-plane leftovers that would otherwise fail `terraform apply` one
+collision at a time, and add `--sweep` to delete the owned ones. It refuses on a live
+tenant and never touches data-bearing resources. See `scripts/bootstrap/README.md` and
+`aws-teardown-runbook.md`. Off a TTY (CI or an automation wrapper), pass `--yes` on the
+bootstrap commands below so their confirmation prompts proceed without a terminal;
+`--yes` does not authorize the recovery sweep, which always needs `--sweep`.
+
 1. Run `./scripts/bootstrap/deploy.py bootstrap --env dev --profile <profile>`.
    This creates the shared S3 state bucket, creates the GitHub OIDC role,
    sets `AWS_ROLE_ARN_DEV` and `TF_INFRA_STATE_BUCKET_DEV` (the env-suffixed

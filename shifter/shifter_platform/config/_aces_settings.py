@@ -42,9 +42,11 @@ __all__ = [
 # form so the generated config/env-manifest.json picks it up automatically.
 ACES_NATIVE_PROVISIONING_ENABLED = os.environ.get("SHIFTER_ACES_NATIVE_PROVISIONING", "False").lower() == "true"
 
-# Filesystem root under which an ACES package_ref is resolved to its SDL entry
-# file by the native launch loader (#1479). Repo-relative package refs are joined
-# to this root with containment enforcement (no traversal escape). Defaults to
+# Filesystem root under which an ACES package_ref is resolved to its pack root by
+# registration and the native launch loader (#1479, #1578). Repo-relative pack
+# roots are joined to this setting with containment enforcement; launch verifies
+# their canonical content digest before selecting the single direct SDL entry.
+# Defaults to
 # the repo root so in-repo scenario packages (e.g. scenario-dev/...) resolve out
 # of the box; override per environment when packages live elsewhere. Read via the
 # literal os.environ.get form so config/env-manifest.json picks it up.

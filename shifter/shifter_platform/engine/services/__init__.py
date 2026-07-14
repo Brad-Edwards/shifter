@@ -18,7 +18,14 @@ from engine.secrets import SecretsError, get_rdp_password, get_ssh_key
 from engine.ssh import SSHConnection
 
 from ._aces_evidence import record_aces_operation_status, record_aces_runtime_snapshot
-from ._aces_image import AcesImageMappingError, AcesImageMappingOptions, upsert_aces_image_mapping
+from ._aces_image import (
+    AcesImageMappingError,
+    AcesImageMappingOptions,
+    AcesImageMappingView,
+    disable_aces_image_mapping,
+    list_aces_image_mappings,
+    upsert_aces_image_mapping,
+)
 from ._aces_range import AcesRangeRef, create_aces_range
 from ._aces_status import project_aces_operation_status
 from ._common import EngineError
@@ -45,6 +52,7 @@ from ._terminal import (
 __all__ = (
     "AcesImageMappingError",
     "AcesImageMappingOptions",
+    "AcesImageMappingView",
     "AcesRangeRef",
     "EngineError",
     "SSHConnection",
@@ -59,6 +67,7 @@ __all__ = (
     "destroy_ngfw",
     "destroy_range",
     "destroy_range_by_request",
+    "disable_aces_image_mapping",
     "get_authoritative_range_status",
     "get_instance_ips_by_uuid",
     "get_range_status",
@@ -68,6 +77,7 @@ __all__ = (
     "get_ssh_connection_info",
     "get_ssh_key",
     "get_user_ready_range_instances",
+    "list_aces_image_mappings",
     "pause_range",
     "project_aces_operation_status",
     "reassign_range_owner_by_request",

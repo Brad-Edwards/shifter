@@ -55,6 +55,13 @@ ADR-033.
   never asks how the operator obtained a pack. Adding content is *just a content
   update*; how the operator got it is out of scope.
 
+- **Repo pack identity is byte-bound at ingestion and use.** A repository
+  `package_ref` identifies a containment-checked pack root. Registration uses
+  the canonical ACES associated-artifact manifest to bind the advertised digest
+  to the exact inventory and payload bytes; native launch verifies that digest
+  again before resolving or executing SDL. This trust control is identical for
+  shipped, public, private, and self-authored content and is not entitlement.
+
 - **Materialization is per-pack pull-or-bake.** Each image a pack needs carries
   a reference (pull) and/or a bake recipe (build). At provision time the tenant
   pulls a published image when one is available for its cloud/region, otherwise
@@ -79,6 +86,9 @@ ADR-033.
 
 - One ingestion path serves operators and maintainers; the shipped catalog loads
   through it (dogfooding, per ADR-033).
+- Repo content must be staged immutably with a conformant associated-artifact
+  manifest; changed or ambiguously rooted content fails closed at registration
+  or launch.
 - The pack schema must express, per image, a reference and/or a bake recipe, and
   must allow zero images and parameterized runs.
 - Realizability becomes a first-class, author-visible check, wired from the
