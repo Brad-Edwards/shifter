@@ -27,7 +27,7 @@ from cms.range_escape.resolve import (
     platform_inventory_from_config,
     resolve_range_under_test,
 )
-from cms.range_escape.runner import ProbeLauncher, run_escape_validation
+from cms.range_escape.runner import ProbeLauncher, RunOptions, run_escape_validation
 from shared.range_escape import Verdict
 
 
@@ -86,17 +86,20 @@ class Command(BaseCommand):
             raise CommandError(str(exc)) from exc
 
         started_at = timezone.now().isoformat()
+        run_options = RunOptions(
+            suite_id=f"escape-{subject.range_id}-{subject.request_id[:8]}",
+            started_at=started_at,
+            ended_at=timezone.now().isoformat(),
+            policy_inputs={"egress_mode": egress.mode, "adapter": adapter},
+            per_target_timeout_s=per_target_timeout_s,
+        )
         report = run_escape_validation(
             subject=subject,
             peers=peers,
             platform=platform,
             egress=egress,
             launcher=build_launcher(adapter),
-            suite_id=f"escape-{subject.range_id}-{subject.request_id[:8]}",
-            started_at=started_at,
-            ended_at=timezone.now().isoformat(),
-            policy_inputs={"egress_mode": egress.mode, "adapter": adapter},
-            per_target_timeout_s=per_target_timeout_s,
+            options=run_options,
         )
 
         payload = report.to_json()

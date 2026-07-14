@@ -14,7 +14,7 @@ from typing import Any
 import pytest
 
 from engine.services import _range_escape
-from engine.services._range_escape import GuestProbeError, run_guest_probe
+from engine.services._range_escape import GuestProbeError, GuestProbeRequest, run_guest_probe
 
 
 class _FakeResult:
@@ -68,29 +68,29 @@ def _install_fake(monkeypatch: pytest.MonkeyPatch, result: _FakeResult) -> _Fake
     return fake
 
 
+def _request(**overrides: object) -> GuestProbeRequest:
+    base: dict[str, object] = {
+        "host": "10.0.0.4",
+        "username": "kali",
+        "private_key": "PRIV",
+        "host_public_key": "ssh-ed25519 AAAAKEY",
+        "command": "bash -s",
+        "stdin": "program",
+    }
+    base.update(overrides)
+    return GuestProbeRequest(**base)  # type: ignore[arg-type]
+
+
 def test_missing_host_key_refuses_to_run() -> None:
+    request = _request(host_public_key="   ")
     with pytest.raises(GuestProbeError, match="missing guest host identity"):
-        run_guest_probe(
-            host="10.0.0.4",
-            username="kali",
-            private_key="PRIV",
-            host_public_key="   ",
-            command="bash -s",
-            stdin="program",
-        )
+        run_guest_probe(request)
 
 
 def test_connection_is_pinned_to_host_key(monkeypatch: pytest.MonkeyPatch) -> None:
     fake = _install_fake(monkeypatch, _FakeResult(stdout="__ESCAPE_RECORD__{}__END__", exit_status=0))
 
-    out = run_guest_probe(
-        host="10.0.0.4",
-        username="kali",
-        private_key="PRIV",
-        host_public_key="ssh-ed25519 AAAAKEY",
-        command="bash -s",
-        stdin="program",
-    )
+    out = run_guest_probe(_request())
 
     assert out == "__ESCAPE_RECORD__{}__END__"
     # The known_hosts is pinned to the supplied host key, not accept-any.
@@ -102,11 +102,4 @@ def test_nonzero_remote_exit_is_rejected(monkeypatch: pytest.MonkeyPatch) -> Non
     _install_fake(monkeypatch, _FakeResult(stdout="partial", exit_status=1))
 
     with pytest.raises(GuestProbeError, match="exited 1"):
-        run_guest_probe(
-            host="10.0.0.4",
-            username="kali",
-            private_key="PRIV",
-            host_public_key="ssh-ed25519 AAAAKEY",
-            command="bash -s",
-            stdin="program",
-        )
+        run_guest_probe(_request())

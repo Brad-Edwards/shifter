@@ -17,6 +17,7 @@ from shared.range_escape import (
     REQUIRED_CORE_BOUNDARIES,
     VERSION,
     BoundaryCode,
+    CheckContext,
     CheckResult,
     CheckScope,
     CheckStatus,
@@ -32,14 +33,24 @@ from shared.range_escape import (
 )
 
 
-def _core_pass(boundary: BoundaryCode) -> CheckResult:
-    """A passing core check for ``boundary`` (blocked boundary observed unreachable)."""
-    return evaluate_check(
-        check_id=f"core.{boundary.value}",
+def _ctx(
+    check_id: str,
+    boundary: BoundaryCode,
+    destination: DestinationClass = DestinationClass.PLATFORM_POD,
+) -> CheckContext:
+    return CheckContext(
+        check_id=check_id,
         boundary_code=boundary,
         scope=CheckScope.CORE,
         source_context="participant:range-1",
-        destination_class=DestinationClass.PLATFORM_POD,
+        destination_class=destination,
+    )
+
+
+def _core_pass(boundary: BoundaryCode) -> CheckResult:
+    """A passing core check for ``boundary`` (blocked boundary observed unreachable)."""
+    return evaluate_check(
+        _ctx(f"core.{boundary.value}", boundary),
         expected=Outcome.UNREACHABLE,
         observed=Outcome.UNREACHABLE,
         elapsed_ms=12,
@@ -49,11 +60,7 @@ def _core_pass(boundary: BoundaryCode) -> CheckResult:
 def _control_pass() -> CheckResult:
     """A passing positive control (participant reached a known-live target)."""
     return evaluate_check(
-        check_id="control.probe_capability",
-        boundary_code=BoundaryCode.PROBE_CONTROL,
-        scope=CheckScope.CORE,
-        source_context="participant:range-1",
-        destination_class=DestinationClass.CONTROL,
+        _ctx("control.probe_capability", BoundaryCode.PROBE_CONTROL, DestinationClass.CONTROL),
         expected=Outcome.REACHABLE,
         observed=Outcome.REACHABLE,
         elapsed_ms=5,
@@ -98,11 +105,7 @@ class TestVerdict:
         checks = _all_required_core_pass()
         checks.append(
             evaluate_check(
-                check_id="core.metadata_server.leaked",
-                boundary_code=BoundaryCode.METADATA_SERVER,
-                scope=CheckScope.CORE,
-                source_context="participant:range-1",
-                destination_class=DestinationClass.METADATA,
+                _ctx("core.metadata_server.leaked", BoundaryCode.METADATA_SERVER, DestinationClass.METADATA),
                 expected=Outcome.UNREACHABLE,
                 observed=Outcome.REACHABLE,
                 elapsed_ms=3,
@@ -121,11 +124,11 @@ class TestVerdict:
         checks = _all_required_core_pass()
         checks.append(
             evaluate_check(
-                check_id="core.cross_range_private_ip.no_peer",
-                boundary_code=BoundaryCode.CROSS_RANGE_PRIVATE_IP,
-                scope=CheckScope.CORE,
-                source_context="participant:range-1",
-                destination_class=DestinationClass.PEER_RANGE,
+                _ctx(
+                    "core.cross_range_private_ip.no_peer",
+                    BoundaryCode.CROSS_RANGE_PRIVATE_IP,
+                    DestinationClass.PEER_RANGE,
+                ),
                 expected=Outcome.UNREACHABLE,
                 observed=None,
                 status=CheckStatus.NOT_APPLICABLE,
@@ -146,11 +149,7 @@ class TestVerdict:
         for code in PEER_DEPENDENT_BOUNDARIES:
             checks.append(
                 evaluate_check(
-                    check_id=f"core.{code.value}.skipped",
-                    boundary_code=code,
-                    scope=CheckScope.CORE,
-                    source_context="participant:range-1",
-                    destination_class=DestinationClass.PEER_RANGE,
+                    _ctx(f"core.{code.value}.skipped", code, DestinationClass.PEER_RANGE),
                     expected=Outcome.UNREACHABLE,
                     observed=None,
                     status=CheckStatus.SKIP,
@@ -168,11 +167,7 @@ class TestVerdict:
 class TestEvaluateCheck:
     def test_status_derived_pass_when_observed_matches_expected(self) -> None:
         result = evaluate_check(
-            check_id="c1",
-            boundary_code=BoundaryCode.INTERNET_EGRESS,
-            scope=CheckScope.CORE,
-            source_context="participant:range-1",
-            destination_class=DestinationClass.INTERNET,
+            _ctx("c1", BoundaryCode.INTERNET_EGRESS, DestinationClass.INTERNET),
             expected=Outcome.REACHABLE,
             observed=Outcome.REACHABLE,
             elapsed_ms=5,
@@ -181,11 +176,7 @@ class TestEvaluateCheck:
 
     def test_status_derived_fail_when_observed_differs(self) -> None:
         result = evaluate_check(
-            check_id="c2",
-            boundary_code=BoundaryCode.CROSS_RANGE_DNS,
-            scope=CheckScope.CORE,
-            source_context="participant:range-1",
-            destination_class=DestinationClass.PEER_RANGE,
+            _ctx("c2", BoundaryCode.CROSS_RANGE_DNS, DestinationClass.PEER_RANGE),
             expected=Outcome.UNREACHABLE,
             observed=Outcome.REACHABLE,
             elapsed_ms=5,
@@ -194,11 +185,7 @@ class TestEvaluateCheck:
 
     def test_explicit_skip_requires_no_observed(self) -> None:
         result = evaluate_check(
-            check_id="c3",
-            boundary_code=BoundaryCode.CROSS_RANGE_DNS,
-            scope=CheckScope.CORE,
-            source_context="participant:range-1",
-            destination_class=DestinationClass.PEER_RANGE,
+            _ctx("c3", BoundaryCode.CROSS_RANGE_DNS, DestinationClass.PEER_RANGE),
             expected=Outcome.UNREACHABLE,
             observed=None,
             status=CheckStatus.SKIP,
@@ -207,17 +194,9 @@ class TestEvaluateCheck:
         assert result.status is CheckStatus.SKIP
 
     def test_missing_observed_without_explicit_status_is_rejected(self) -> None:
+        context = _ctx("c4", BoundaryCode.CROSS_RANGE_DNS, DestinationClass.PEER_RANGE)
         with pytest.raises(EscapeContractError):
-            evaluate_check(
-                check_id="c4",
-                boundary_code=BoundaryCode.CROSS_RANGE_DNS,
-                scope=CheckScope.CORE,
-                source_context="participant:range-1",
-                destination_class=DestinationClass.PEER_RANGE,
-                expected=Outcome.UNREACHABLE,
-                observed=None,
-                elapsed_ms=0,
-            )
+            evaluate_check(context, expected=Outcome.UNREACHABLE, observed=None, elapsed_ms=0)
 
 
 class TestRoundTrip:

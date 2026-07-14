@@ -13,6 +13,7 @@ boundaries as ``not_applicable`` when no peer is supplied.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import dataclass, field
 from typing import Protocol
 
 from cms.range_escape.inventory import build_management_ingress_targets, build_subject_targets
@@ -29,6 +30,7 @@ from shared.range_escape import (
     PEER_DEPENDENT_BOUNDARIES,
     REQUIRED_CORE_BOUNDARIES,
     BoundaryCode,
+    CheckContext,
     CheckResult,
     CheckScope,
     CheckStatus,
@@ -64,46 +66,53 @@ class ProbeLauncher(Protocol):
     ) -> dict[str, ObservedProbe]: ...
 
 
-# Wide keyword-only orchestration entrypoint; the run inputs are cohesive and self-documenting.
-def run_escape_validation(  # NOSONAR
+@dataclass(frozen=True)
+class RunOptions:
+    """Suite identity, timing, policy fingerprints, and the per-probe timeout for a run."""
+
+    suite_id: str
+    started_at: str
+    ended_at: str
+    policy_inputs: dict[str, str] = field(default_factory=dict)
+    per_target_timeout_s: int = _DEFAULT_PER_TARGET_TIMEOUT_S
+
+
+def run_escape_validation(
     *,
     subject: RangeUnderTest,
-    peers: Sequence[RangeUnderTest] = (),
     platform: PlatformInventory,
     egress: EgressPolicy,
     launcher: ProbeLauncher,
-    suite_id: str,
-    started_at: str,
-    ended_at: str,
-    policy_inputs: dict[str, str] | None = None,
-    per_target_timeout_s: int = _DEFAULT_PER_TARGET_TIMEOUT_S,
+    options: RunOptions,
+    peers: Sequence[RangeUnderTest] = (),
 ) -> EscapeReport:
     """Run the escape suite against ``subject`` (and ``peers``) and return the report."""
     mode = SuiteMode.MULTI_RANGE if peers else SuiteMode.ONE_RANGE
+    timeout = options.per_target_timeout_s
     checks: list[CheckResult] = []
 
     subject_source = _source_label(subject.range_id)
     subject_targets = build_subject_targets(subject=subject, peers=peers, platform=platform, egress=egress)
-    subject_obs = launcher.launch(subject.participant, subject_targets, per_target_timeout_s=per_target_timeout_s)
+    subject_obs = launcher.launch(subject.participant, subject_targets, per_target_timeout_s=timeout)
     checks.extend(_result_for(target, subject_obs.get(target.check_id), subject_source) for target in subject_targets)
 
     for peer in peers:
         peer_source = _source_label(peer.range_id)
         mgmt_targets = build_management_ingress_targets(subject=subject, peer=peer)
-        peer_obs = launcher.launch(peer.participant, mgmt_targets, per_target_timeout_s=per_target_timeout_s)
+        peer_obs = launcher.launch(peer.participant, mgmt_targets, per_target_timeout_s=timeout)
         checks.extend(_result_for(target, peer_obs.get(target.check_id), peer_source) for target in mgmt_targets)
 
     checks.extend(_coverage_checks(checks, mode, subject_source))
 
     return EscapeReport(
-        suite_id=suite_id,
+        suite_id=options.suite_id,
         mode=mode,
         request_id=subject.request_id,
         range_id=subject.range_id,
-        started_at=started_at,
-        ended_at=ended_at,
+        started_at=options.started_at,
+        ended_at=options.ended_at,
         checks=checks,
-        policy_inputs=dict(policy_inputs or {}),
+        policy_inputs=dict(options.policy_inputs),
         peer_request_ids=[peer.request_id for peer in peers],
         peer_range_ids=[peer.range_id for peer in peers],
     )
@@ -128,16 +137,23 @@ def _result_for(target: ProbeTarget, observed: ObservedProbe | None, source_cont
         return _metadata_result(target, observed, source_context)
     status, observed_outcome = _status_for(target.expected, observed.outcome)
     return evaluate_check(
-        check_id=target.check_id,
-        boundary_code=target.boundary_code,
-        scope=CheckScope.CORE,
-        source_context=source_context,
-        destination_class=target.destination_class,
+        _context(target, source_context),
         expected=target.expected,
         observed=observed_outcome,
         status=status,
         elapsed_ms=0,
         diagnostic=observed.detail,
+    )
+
+
+def _context(target: ProbeTarget, source_context: str) -> CheckContext:
+    """Build the core check identity for a probe target."""
+    return CheckContext(
+        check_id=target.check_id,
+        boundary_code=target.boundary_code,
+        scope=CheckScope.CORE,
+        source_context=source_context,
+        destination_class=target.destination_class,
     )
 
 
@@ -183,11 +199,7 @@ def _metadata_result(target: ProbeTarget, observed: ObservedProbe, source_contex
         status = CheckStatus.PASS
         observed_outcome = Outcome.UNREACHABLE
     return evaluate_check(
-        check_id=target.check_id,
-        boundary_code=target.boundary_code,
-        scope=CheckScope.CORE,
-        source_context=source_context,
-        destination_class=target.destination_class,
+        _context(target, source_context),
         expected=Outcome.UNREACHABLE,
         observed=observed_outcome,
         status=status,
@@ -233,4 +245,4 @@ def _source_label(range_id: int) -> str:
     return f"participant:range-{range_id}"
 
 
-__all__ = ["ProbeLauncher", "run_escape_validation"]
+__all__ = ["ProbeLauncher", "RunOptions", "run_escape_validation"]

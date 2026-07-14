@@ -42,7 +42,7 @@ from ._range import (
     get_range_status,
     reassign_range_owner_by_request,
 )
-from ._range_escape import GuestProbeError, RangeMembership, get_range_membership, run_guest_probe
+from ._range_escape import GuestProbeError, GuestProbeRequest, RangeMembership, get_range_membership, run_guest_probe
 from ._terminal import (
     connect_ngfw_terminal,
     connect_terminal,
@@ -57,6 +57,7 @@ __all__ = (
     "AcesRangeRef",
     "EngineError",
     "GuestProbeError",
+    "GuestProbeRequest",
     "RangeMembership",
     "SSHConnection",
     "SecretsError",

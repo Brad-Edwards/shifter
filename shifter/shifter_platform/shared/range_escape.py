@@ -292,14 +292,20 @@ class EscapeReport:
         return cls.from_dict(data)
 
 
-# Wide keyword-only result factory; a params object would reduce clarity at call sites.
-def evaluate_check(  # NOSONAR
+@dataclass(frozen=True)
+class CheckContext:
+    """The identity of a check (its id and the boundary/source/destination it probes)."""
+
+    check_id: str
+    boundary_code: BoundaryCode
+    scope: CheckScope
+    source_context: str
+    destination_class: DestinationClass
+
+
+def evaluate_check(
+    context: CheckContext,
     *,
-    check_id: str,
-    boundary_code: BoundaryCode,
-    scope: CheckScope,
-    source_context: str,
-    destination_class: DestinationClass,
     expected: Outcome,
     observed: Outcome | None,
     elapsed_ms: int,
@@ -314,16 +320,16 @@ def evaluate_check(  # NOSONAR
     """
     if status is None:
         if observed is None:
-            raise EscapeContractError(f"check {check_id!r} has no observed outcome and no explicit status")
+            raise EscapeContractError(f"check {context.check_id!r} has no observed outcome and no explicit status")
         resolved = CheckStatus.PASS if observed == expected else CheckStatus.FAIL
     else:
         resolved = status
     return CheckResult(
-        check_id=check_id,
-        boundary_code=boundary_code,
-        scope=scope,
-        source_context=source_context,
-        destination_class=destination_class,
+        check_id=context.check_id,
+        boundary_code=context.boundary_code,
+        scope=context.scope,
+        source_context=context.source_context,
+        destination_class=context.destination_class,
         expected=expected,
         observed=observed,
         status=resolved,
@@ -390,6 +396,7 @@ __all__ = [
     "REQUIRED_CORE_BOUNDARIES",
     "VERSION",
     "BoundaryCode",
+    "CheckContext",
     "CheckResult",
     "CheckScope",
     "CheckStatus",

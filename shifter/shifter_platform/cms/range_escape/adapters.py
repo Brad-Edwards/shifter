@@ -15,12 +15,16 @@ from __future__ import annotations
 
 import shlex
 from collections.abc import Callable, Sequence
+from typing import TYPE_CHECKING
 
 from cms.range_escape.model import ObservedProbe, ParticipantContext, ProbeTarget
 from cms.range_escape.probe import parse_probe_record, render_probe_program
 
+if TYPE_CHECKING:
+    from engine.services import GuestProbeRequest
+
 SecretReader = Callable[[str], str]
-GuestExec = Callable[..., str]
+GuestExec = Callable[["GuestProbeRequest"], str]
 
 # Headroom added to (per-target timeout x target count) for SSH setup and probe
 # overhead, so a fully-closed multi-target run is not killed before it emits its
@@ -36,31 +40,11 @@ def _default_secret_reader(secret_ref: str) -> str:
     return get_ssh_key(secret_ref)
 
 
-# Wide keyword-only transport adapter mirroring run_guest_probe; params are cohesive.
-def _default_guest_exec(  # NOSONAR
-    *,
-    host: str,
-    username: str,
-    private_key: str,
-    host_public_key: str,
-    command: str,
-    stdin: str,
-    port: int,
-    timeout_s: int,
-) -> str:
+def _default_guest_exec(request: GuestProbeRequest) -> str:
     """Default guest-exec: run the probe over the portal SSH transport."""
     from engine.services import run_guest_probe
 
-    return run_guest_probe(
-        host=host,
-        username=username,
-        private_key=private_key,
-        host_public_key=host_public_key,
-        command=command,
-        stdin=stdin,
-        port=port,
-        timeout_s=timeout_s,
-    )
+    return run_guest_probe(request)
 
 
 class NativeVmProbeLauncher:
@@ -87,24 +71,25 @@ class NativeVmProbeLauncher:
         *,
         per_target_timeout_s: int = _DEFAULT_PER_TARGET_TIMEOUT_S,
     ) -> dict[str, ObservedProbe]:
-        from engine.services import GuestProbeError
+        from engine.services import GuestProbeError, GuestProbeRequest
 
         program = render_probe_program(targets, per_target_timeout_s=per_target_timeout_s)
         private_key = self._secret_reader(participant.credential_ref)
         # The transport must outlive every per-target attempt run serially, or a
         # fully-closed range (all attempts time out) is killed before it reports.
         transport_timeout_s = per_target_timeout_s * max(1, len(targets)) + _TRANSPORT_OVERHEAD_S
+        request = GuestProbeRequest(
+            host=participant.address,
+            username=participant.username,
+            private_key=private_key,
+            host_public_key=participant.host_public_key,
+            command=self._build_command(participant),
+            stdin=program,
+            port=participant.ssh_port,
+            timeout_s=transport_timeout_s,
+        )
         try:
-            stdout = self._guest_exec(
-                host=participant.address,
-                username=participant.username,
-                private_key=private_key,
-                host_public_key=participant.host_public_key,
-                command=self._build_command(participant),
-                stdin=program,
-                port=participant.ssh_port,
-                timeout_s=transport_timeout_s,
-            )
+            stdout = self._guest_exec(request)
         except GuestProbeError:
             # A probe that could not verifiably run yields no observations; the
             # runner marks every target fail-closed rather than passing.

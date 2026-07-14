@@ -21,7 +21,7 @@ from cms.range_escape.model import (
     RangeUnderTest,
 )
 from cms.range_escape.probe import parse_probe_record
-from cms.range_escape.runner import run_escape_validation
+from cms.range_escape.runner import RunOptions, run_escape_validation
 from shared.range_escape import BoundaryCode, CheckStatus, Outcome, SuiteMode, Verdict
 
 
@@ -97,6 +97,10 @@ def _clock() -> tuple[str, str]:
     return "2026-07-14T00:00:00Z", "2026-07-14T00:02:00Z"
 
 
+def _options(started: str, ended: str, suite_id: str = "s1") -> RunOptions:
+    return RunOptions(suite_id=suite_id, started_at=started, ended_at=ended)
+
+
 class TestRunnerOneRange:
     def test_one_range_all_secure_passes(self) -> None:
         started, ended = _clock()
@@ -106,9 +110,7 @@ class TestRunnerOneRange:
             platform=_platform(),
             egress=_deny_egress(),
             launcher=FakeLauncher(),
-            suite_id="s1",
-            started_at=started,
-            ended_at=ended,
+            options=_options(started, ended),
         )
         assert report.mode is SuiteMode.ONE_RANGE
         assert report.verdict is Verdict.PASSED
@@ -121,9 +123,7 @@ class TestRunnerOneRange:
             platform=_platform(),
             egress=_deny_egress(),
             launcher=FakeLauncher(),
-            suite_id="s1",
-            started_at=started,
-            ended_at=ended,
+            options=_options(started, ended),
         )
         peer_checks = {
             c.boundary_code: c for c in report.checks if c.boundary_code == BoundaryCode.CROSS_RANGE_PRIVATE_IP
@@ -151,9 +151,7 @@ class TestRunnerOneRange:
             platform=_platform(),
             egress=_deny_egress(),
             launcher=launcher,
-            suite_id="s1",
-            started_at=started,
-            ended_at=ended,
+            options=_options(started, ended),
         )
         assert report.verdict is Verdict.FAILED
         metadata_check = next(c for c in report.checks if c.boundary_code == BoundaryCode.METADATA_SERVER)
@@ -176,9 +174,7 @@ class TestRunnerOneRange:
             platform=_platform(),
             egress=_deny_egress(),
             launcher=launcher,
-            suite_id="s1",
-            started_at=started,
-            ended_at=ended,
+            options=_options(started, ended),
         )
         failed = [c for c in report.checks if c.status is CheckStatus.FAIL]
         assert [c.boundary_code for c in failed] == [BoundaryCode.PLATFORM_POD_CIDR]
@@ -193,9 +189,7 @@ class TestRunnerMultiRange:
             platform=_platform(),
             egress=_deny_egress(),
             launcher=FakeLauncher(),
-            suite_id="s1",
-            started_at=started,
-            ended_at=ended,
+            options=_options(started, ended),
         )
         assert report.mode is SuiteMode.MULTI_RANGE
         assert report.verdict is Verdict.PASSED
@@ -215,9 +209,7 @@ class TestRunnerMultiRange:
             platform=_platform(),
             egress=_deny_egress(),
             launcher=launcher,
-            suite_id="s1",
-            started_at=started,
-            ended_at=ended,
+            options=_options(started, ended),
         )
         assert report.verdict is Verdict.FAILED
 
@@ -232,9 +224,7 @@ class TestRunnerMultiRange:
             platform=_platform(),
             egress=_deny_egress(),
             launcher=launcher,
-            suite_id="s1",
-            started_at=started,
-            ended_at=ended,
+            options=_options(started, ended),
         )
         launched_range_ids = {rid for rid, _ in launcher.launched}
         assert launched_range_ids == {1, 2}
@@ -266,9 +256,7 @@ class TestScenarioNeutrality:
                 platform=_platform(),
                 egress=_deny_egress(),
                 launcher=FakeLauncher(),
-                suite_id=f"s-{comp.range_id}",
-                started_at=started,
-                ended_at=ended,
+                options=_options(started, ended, suite_id=f"s-{comp.range_id}"),
             )
             assert report.verdict is Verdict.PASSED
 
@@ -371,9 +359,7 @@ class TestProbeParsing:
             platform=_platform(),
             egress=_deny_egress(),
             launcher=EmptyLauncher(),
-            suite_id="s1",
-            started_at=started,
-            ended_at=ended,
+            options=_options(started, ended),
         )
         assert report.verdict is Verdict.FAILED
         assert any(c.status is CheckStatus.FAIL for c in report.checks)
