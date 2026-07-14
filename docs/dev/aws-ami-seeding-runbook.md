@@ -64,24 +64,25 @@ resolve the regional SSM endpoint, so a successful registration is the durable
 proof that guest DNS works), resolves the endpoint through the guest system
 resolver, reboots, and confirms both again. The SSM parameter is overwritten
 only after the gate passes; a failed candidate leaves the previous known-good id
-in place. The gate needs three inputs:
+in place.
 
-- `verify_subnet_id`: a range-equivalent subnet that can reach SSM (private SSM
-  endpoints or a NAT path), with no inbound.
-- `verify_security_group_id`: a no-inbound, egress-all security group.
-- `verify_instance_profile`: the SSM-enabled range instance profile. Read it from
-  the range stack output:
-  `terraform -chdir=platform/terraform/environments/dev/range output -raw range_instance_profile_name`.
+The gate reads its subnet, security group, and instance profile from **trusted
+repository Actions variables**, not dispatch inputs, so the candidate's launch
+identity cannot be chosen at dispatch time. Set these once per account (Settings
+-> Secrets and variables -> Actions -> Variables), suffixed by environment
+(`_DEV` / `_PROOF`):
 
-Dispatch the three built base types with the gate inputs:
+| Variable | Value |
+|----------|-------|
+| `PACKER_VERIFY_SUBNET_ID_<ENV>` | A range-equivalent subnet that can reach SSM (private SSM endpoints or a NAT path), no inbound |
+| `PACKER_VERIFY_SG_ID_<ENV>` | A no-inbound, egress-all security group |
+| `PACKER_VERIFY_INSTANCE_PROFILE_<ENV>` | The SSM-enabled range instance profile (name ends in `-range-instance`), from `terraform -chdir=platform/terraform/environments/<env>/range output -raw range_instance_profile_name` |
+
+Dispatch the three built base types (the gate reads the variables above):
 
 ```bash
 for t in kali ubuntu windows; do
-  gh workflow run "Packer AMI Build" \
-    -f ami_type="$t" -f environment=dev -f ref=dev \
-    -f verify_subnet_id=subnet-xxxxxxxxxxxxxxxxx \
-    -f verify_security_group_id=sg-xxxxxxxxxxxxxxxxx \
-    -f verify_instance_profile="$(terraform -chdir=platform/terraform/environments/dev/range output -raw range_instance_profile_name)"
+  gh workflow run "Packer AMI Build" -f ami_type="$t" -f environment=dev -f ref=dev
 done
 ```
 

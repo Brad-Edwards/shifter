@@ -70,9 +70,10 @@ upstream into the guest (issue #1633) so DNS is race-free from first boot. Befor
 the build overwrites `/shifter/ami/<type>`, a validation gate boots the exact
 candidate AMI in a range-equivalent subnet and requires it to register with SSM
 and resolve the regional SSM endpoint on a fresh boot and after a reboot. A
-failed candidate leaves the previous known-good id in place. The gate inputs
-(`verify_subnet_id`, `verify_security_group_id`, `verify_instance_profile`) are
-described in the [AWS AMI seeding runbook](../../dev/aws-ami-seeding-runbook.md).
+failed candidate leaves the previous known-good id in place. The gate reads its
+subnet, security group, and instance profile from trusted repository Actions
+variables (`PACKER_VERIFY_*_<ENV>`), not dispatch inputs; they are described in
+the [AWS AMI seeding runbook](../../dev/aws-ami-seeding-runbook.md).
 
 ### Promote (Prod)
 

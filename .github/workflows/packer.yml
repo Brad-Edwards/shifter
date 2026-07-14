@@ -30,23 +30,14 @@ on:
         required: false
         type: string
         default: 'dev'
-      # --- base-image fresh-boot validation gate (kali / ubuntu / windows) -------
-      # Issue #1633: the exact built AMI is booted in a runtime-equivalent range
-      # subnet and must register with SSM + resolve the regional SSM endpoint
-      # (fresh boot AND after a reboot) before /shifter/ami/<type> is overwritten.
-      # Required for kali/ubuntu/windows; ignored for dc (prebaked) and scenarios.
-      verify_subnet_id:
-        description: '[base verify] Range-equivalent subnet id (SSM-reachable, no inbound) to boot the candidate AMI in'
-        required: false
-        type: string
-      verify_security_group_id:
-        description: '[base verify] Security group id for the candidate (no inbound, egress-all)'
-        required: false
-        type: string
-      verify_instance_profile:
-        description: '[base verify] SSM-enabled range instance profile to attach to the candidate'
-        required: false
-        type: string
+      # Base-image fresh-boot validation gate (issue #1633): for kali/ubuntu/windows
+      # the exact built AMI is booted in a runtime-equivalent range subnet and must
+      # register with SSM + resolve the regional SSM endpoint (fresh boot AND after
+      # a reboot) before /shifter/ami/<type> is overwritten. Its subnet, security
+      # group, and instance profile come from trusted repository Actions variables
+      # (PACKER_VERIFY_*_<ENV>), NOT free-form dispatch inputs, so a dispatcher
+      # cannot select what the candidate launches with. workflow_dispatch is capped
+      # at 10 inputs, so these are variables rather than inputs by necessity too.
       # --- scenario bake inputs (techvault / polaris-vm only) --------------------
       # The scenario builders run in an operator-supplied isolated bake VPC with
       # no inbound and drive the guest over AWS Session Manager. These inputs are
@@ -228,14 +219,37 @@ jobs:
         env:
           AMI_TYPE: ${{ inputs.ami_type }}
           RUN_ID: ${{ github.run_id }}
-          VERIFY_SUBNET_ID: ${{ inputs.verify_subnet_id }}
-          VERIFY_SECURITY_GROUP_ID: ${{ inputs.verify_security_group_id }}
-          VERIFY_INSTANCE_PROFILE: ${{ inputs.verify_instance_profile }}
+          ENVIRONMENT: ${{ inputs.environment }}
+          # Trusted repository Actions variables (admin-set), not dispatch inputs,
+          # so the candidate's subnet/sg/instance-profile cannot be chosen by the
+          # dispatcher (issue #1633 codex security review).
+          VERIFY_SUBNET_ID_DEV: ${{ vars.PACKER_VERIFY_SUBNET_ID_DEV }}
+          VERIFY_SUBNET_ID_PROOF: ${{ vars.PACKER_VERIFY_SUBNET_ID_PROOF }}
+          VERIFY_SG_ID_DEV: ${{ vars.PACKER_VERIFY_SG_ID_DEV }}
+          VERIFY_SG_ID_PROOF: ${{ vars.PACKER_VERIFY_SG_ID_PROOF }}
+          VERIFY_INSTANCE_PROFILE_DEV: ${{ vars.PACKER_VERIFY_INSTANCE_PROFILE_DEV }}
+          VERIFY_INSTANCE_PROFILE_PROOF: ${{ vars.PACKER_VERIFY_INSTANCE_PROFILE_PROOF }}
         run: |
           set -euo pipefail
+          case "$ENVIRONMENT" in
+            dev)
+              VERIFY_SUBNET_ID="$VERIFY_SUBNET_ID_DEV"
+              VERIFY_SECURITY_GROUP_ID="$VERIFY_SG_ID_DEV"
+              VERIFY_INSTANCE_PROFILE="$VERIFY_INSTANCE_PROFILE_DEV"
+              ;;
+            proof)
+              VERIFY_SUBNET_ID="$VERIFY_SUBNET_ID_PROOF"
+              VERIFY_SECURITY_GROUP_ID="$VERIFY_SG_ID_PROOF"
+              VERIFY_INSTANCE_PROFILE="$VERIFY_INSTANCE_PROFILE_PROOF"
+              ;;
+            *)
+              echo "::error::unsupported environment '${ENVIRONMENT}' for base-image validation"
+              exit 1
+              ;;
+          esac
           req() {
             if [ -z "${2:-}" ]; then
-              echo "::error::${1} is required to validate the ${AMI_TYPE} base image (issue #1633)"
+              echo "::error::repository variable ${1} is required to validate the ${AMI_TYPE} base image (issue #1633); set it for ${ENVIRONMENT}"
               exit 1
             fi
           }
@@ -245,14 +259,15 @@ jobs:
               exit 1
             fi
           }
-          req verify_subnet_id "$VERIFY_SUBNET_ID"
-          req verify_security_group_id "$VERIFY_SECURITY_GROUP_ID"
-          req verify_instance_profile "$VERIFY_INSTANCE_PROFILE"
+          ENV_UPPER=$(printf '%s' "$ENVIRONMENT" | tr '[:lower:]' '[:upper:]')
+          req "PACKER_VERIFY_SUBNET_ID_${ENV_UPPER}" "$VERIFY_SUBNET_ID"
+          req "PACKER_VERIFY_SG_ID_${ENV_UPPER}" "$VERIFY_SECURITY_GROUP_ID"
+          req "PACKER_VERIFY_INSTANCE_PROFILE_${ENV_UPPER}" "$VERIFY_INSTANCE_PROFILE"
           match verify_subnet_id "$VERIFY_SUBNET_ID" '^subnet-[0-9a-f]+$'
           match verify_security_group_id "$VERIFY_SECURITY_GROUP_ID" '^sg-[0-9a-f]+$'
           # Allowlist the profile to the range instance-profile naming convention
-          # (<prefix>-range-instance) so a dispatcher cannot pass an arbitrary,
-          # more-privileged profile to the candidate (iam:PassRole exfil path).
+          # (<prefix>-range-instance) so no arbitrary, more-privileged profile is
+          # passed to the candidate (iam:PassRole exfil path).
           match verify_instance_profile "$VERIFY_INSTANCE_PROFILE" '^[A-Za-z0-9_+=,.@/-]*-range-instance$'
           export AMI_TYPE RUN_ID
           export INSTANCE_TYPE="t3.large"
