@@ -33,6 +33,16 @@ output "gke_services_cidr" {
   value       = module.platform_core.gke_services_cidr
 }
 
+output "gke_pods_cidr" {
+  description = "GKE pod CIDR. Non-secret; source for the range-escape validation config (#1347)."
+  value       = module.platform_core.gke_pods_cidr
+}
+
+output "gke_nodes_cidr" {
+  description = "GKE node subnet CIDR. Non-secret; source for the range-escape validation config (#1347)."
+  value       = module.platform_core.gke_nodes_cidr
+}
+
 output "gke_cluster_name" {
   description = "Name of the GKE cluster."
   value       = module.platform_core.gke_cluster_name

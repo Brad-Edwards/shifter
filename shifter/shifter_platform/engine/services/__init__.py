@@ -42,6 +42,7 @@ from ._range import (
     get_range_status,
     reassign_range_owner_by_request,
 )
+from ._range_escape import GuestProbeError, RangeMembership, get_range_membership, run_guest_probe
 from ._terminal import (
     connect_ngfw_terminal,
     connect_terminal,
@@ -55,6 +56,8 @@ __all__ = (
     "AcesImageMappingView",
     "AcesRangeRef",
     "EngineError",
+    "GuestProbeError",
+    "RangeMembership",
     "SSHConnection",
     "SecretsError",
     "cancel_range",
@@ -70,6 +73,7 @@ __all__ = (
     "disable_aces_image_mapping",
     "get_authoritative_range_status",
     "get_instance_ips_by_uuid",
+    "get_range_membership",
     "get_range_status",
     "get_ranges_for_ngfw",
     "get_rdp_connection_info",
@@ -84,6 +88,7 @@ __all__ = (
     "record_aces_operation_status",
     "record_aces_runtime_snapshot",
     "resume_range",
+    "run_guest_probe",
     "start_ngfw",
     "stop_ngfw",
     "transaction",
