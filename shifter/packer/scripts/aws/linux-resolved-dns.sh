@@ -34,7 +34,7 @@ echo "=== Baking AmazonProvidedDNS fallback for systemd-resolved (#1633) ==="
 # Fail closed on an unsupported resolver stack: this fix only makes sense when
 # systemd-resolved owns DNS. A build that cannot bake the fix must fail so it is
 # caught before publication, not silently no-op.
-if [ ! -d /run/systemd/system ] || ! systemctl cat systemd-resolved.service >/dev/null 2>&1; then
+if [[ ! -d /run/systemd/system ]] || ! systemctl cat systemd-resolved.service >/dev/null 2>&1; then
     echo "ERROR: systemd-resolved is not present; unsupported resolver stack for an AWS range guest" >&2
     exit 1
 fi
@@ -52,21 +52,19 @@ systemctl restart systemd-resolved
 # image is not using the stub resolver the FallbackDNS drop-in is inert and the
 # durable fix would silently not apply.
 resolv_target="$(readlink -f /etc/resolv.conf || true)"
-if ! printf '%s' "$resolv_target" | grep -qE 'stub-resolv\.conf|systemd/resolve'; then
-    if ! grep -q '127.0.0.53' /etc/resolv.conf; then
-        echo "ERROR: /etc/resolv.conf is not the systemd-resolved stub (127.0.0.53)" >&2
-        cat /etc/resolv.conf >&2 || true
-        exit 1
-    fi
+if ! printf '%s' "$resolv_target" | grep -qE 'stub-resolv\.conf|systemd/resolve' &&
+    ! grep -q '127.0.0.53' /etc/resolv.conf; then
+    echo "ERROR: /etc/resolv.conf is not the systemd-resolved stub (127.0.0.53)" >&2
+    cat /etc/resolv.conf >&2 || true
+    exit 1
 fi
 
 # Assert the fallback is registered in the running resolver.
-if command -v resolvectl >/dev/null 2>&1; then
-    if ! resolvectl status | grep -q "$FALLBACK_DNS"; then
-        echo "ERROR: FallbackDNS ${FALLBACK_DNS} not registered with systemd-resolved" >&2
-        resolvectl status >&2 || true
-        exit 1
-    fi
+if command -v resolvectl >/dev/null 2>&1 &&
+    ! resolvectl status | grep -q "$FALLBACK_DNS"; then
+    echo "ERROR: FallbackDNS ${FALLBACK_DNS} not registered with systemd-resolved" >&2
+    resolvectl status >&2 || true
+    exit 1
 fi
 
 # Prove real resolution works through the system resolver during the bake.
