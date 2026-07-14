@@ -54,7 +54,8 @@ LAUNCHABLE_SOURCE_KINDS = frozenset({"repo", "object"})
 LAUNCHABLE_CONTRACT_KINDS = frozenset({"aces"})
 LAUNCHABLE_CONTRACT_PROFILES = frozenset({"shifter"})
 
-_OBJECT_SOURCE_KIND = "object"  # resolved at launch by the #1567 object resolver
+# Resolved at launch by the #1567 object resolver, not under ACES_PACKAGE_ROOT.
+_OBJECT_SOURCE_KIND = "object"
 
 # (contract_kind, contract_profile) pairs that have a wired runtime launch
 # adapter — i.e. a launchable entry of that kind/profile can actually be turned

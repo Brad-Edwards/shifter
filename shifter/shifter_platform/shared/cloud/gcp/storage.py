@@ -12,14 +12,16 @@ from shared.cloud.gcp.base import import_google_module
 from shared.log_sanitize import safe_log_value
 
 if TYPE_CHECKING:
+    from google.cloud.storage import Blob as GCSBlob
     from google.cloud.storage import Client as GCSClient
 else:
     GCSClient = Any
+    GCSBlob = Any
 
 logger = logging.getLogger(__name__)
 
 
-def _authoritative_size_and_generation(blob: Any, identity: dict[str, Any]) -> tuple[Any, Any]:
+def _authoritative_size_and_generation(blob: GCSBlob, identity: dict[str, Any]) -> tuple[int | None, int | None]:
     """Return (size, generation) for ``blob``, reloading metadata when needed.
 
     Prefers the caller-supplied head identity; when it lacks ``content_length`` a

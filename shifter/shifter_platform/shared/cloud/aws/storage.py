@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 _DOWNLOAD_CHUNK_BYTES = 1024 * 1024
 
 
-def _stream_capped_to_file(stream: Any, dest_path: str, max_bytes: int) -> int:
+def _stream_capped_to_file(stream: BinaryIO, dest_path: str, max_bytes: int) -> int:
     """Stream ``stream`` to ``dest_path`` in chunks, aborting past ``max_bytes``.
 
     Returns the number of bytes written. Raises ``CloudStorageError`` the moment
