@@ -109,12 +109,12 @@ def check_drift(major: str = API_MAJOR) -> tuple[bool, str]:
     return False, detail
 
 
-def _git(*args: str) -> subprocess.CompletedProcess[str]:
-    """Run a read-only git command rooted at the artifact directory."""
+def _git(*args: str, cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
+    """Run a read-only git command (defaults to the artifact directory)."""
     git = shutil.which("git") or "git"
     return subprocess.run(  # noqa: S603  # nosec B603 - fixed argv, no shell; read-only git
         [git, *args],
-        cwd=ARTIFACT_DIR,
+        cwd=cwd or ARTIFACT_DIR,
         capture_output=True,
         text=True,
         check=False,
@@ -133,10 +133,14 @@ def resolve_base_document(base_ref: str, major: str = API_MAJOR) -> str | None:
     through. Returns ``None`` ONLY when the base ref resolves but genuinely has no
     committed artifact (the legitimate first-publication case).
     """
-    toplevel = _git("rev-parse", "--show-toplevel")
-    if toplevel.returncode != 0:
-        raise RuntimeError(f"git rev-parse failed: {toplevel.stderr.strip()}")
-    repo_relative = artifact_path(major).relative_to(Path(toplevel.stdout.strip())).as_posix()
+    toplevel_result = _git("rev-parse", "--show-toplevel")
+    if toplevel_result.returncode != 0:
+        raise RuntimeError(f"git rev-parse failed: {toplevel_result.stderr.strip()}")
+    toplevel = Path(toplevel_result.stdout.strip())
+    # Path-scoped git commands run from the repo root so the repo-relative
+    # pathspec (ls-tree) and the ``<ref>:<path>`` lookup (git show) resolve
+    # consistently regardless of where the process was launched.
+    repo_relative = artifact_path(major).relative_to(toplevel).as_posix()
     # The base ref itself must resolve; if it does not, fail rather than skip.
     resolved = _git("rev-parse", "--verify", "--quiet", f"{base_ref}^{{commit}}")
     if resolved.returncode != 0:
@@ -144,13 +148,13 @@ def resolve_base_document(base_ref: str, major: str = API_MAJOR) -> str | None:
     # Discriminate "path genuinely absent" from "lookup failed": ls-tree exits 0
     # for a resolvable ref and prints a tree entry only when the path exists. A
     # nonzero status is an error and must fail closed, never skip the gate.
-    listed = _git("ls-tree", base_ref, "--", repo_relative)
+    listed = _git("ls-tree", base_ref, "--", repo_relative, cwd=toplevel)
     if listed.returncode != 0:
         raise RuntimeError(f"failed to query {repo_relative} at {base_ref}: {listed.stderr.strip()}")
     if not listed.stdout.strip():
         # Ref resolves but has no committed artifact — the legitimate first-publication skip.
         return None
-    shown = _git("show", f"{base_ref}:{repo_relative}")
+    shown = _git("show", f"{base_ref}:{repo_relative}", cwd=toplevel)
     if shown.returncode != 0:
         raise RuntimeError(f"failed to read {repo_relative} at {base_ref}: {shown.stderr.strip()}")
     return shown.stdout
@@ -166,10 +170,15 @@ def check_breaking_changes(base_text: str, current_text: str) -> tuple[bool, str
     """
     binary = shutil.which(_OASDIFF_BIN) or _OASDIFF_BIN
     with tempfile.TemporaryDirectory() as tmp:
+        # Fixed, literal file names under a private temp dir — the paths never
+        # derive from the document contents; only trusted OpenAPI JSON is written
+        # through the open file handle.
         base_file = Path(tmp) / "base.json"
         revision_file = Path(tmp) / "revision.json"
-        base_file.write_text(base_text, encoding="utf-8")
-        revision_file.write_text(current_text, encoding="utf-8")
+        with base_file.open("w", encoding="utf-8") as handle:
+            handle.write(base_text)
+        with revision_file.open("w", encoding="utf-8") as handle:
+            handle.write(current_text)
         result = subprocess.run(  # noqa: S603  # nosec B603 - fixed argv, no shell; pinned oasdiff binary
             [binary, "breaking", str(base_file), str(revision_file), "--fail-on", "ERR"],
             capture_output=True,

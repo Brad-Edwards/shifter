@@ -9,14 +9,17 @@ the boundary-mock policy.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
-from django.db import connection
+from django.core.management import call_command
+from django.core.management.base import CommandError
 
+import config.management.commands.api_contract as api_contract_command
 from shared.api import contract
-from shared.api.schema import exclude_unpublished_endpoints
+from shared.api.schema import PlatformAutoSchema, exclude_unpublished_endpoints
 
 
 @pytest.fixture(scope="module")
@@ -126,20 +129,13 @@ class TestLiveResponseParity:
         assert published["content"]["application/json"]["schema"]["$ref"].endswith("/ApiError")
 
 
-class TestDriftGate:
-    @pytest.mark.skipif(
-        connection.vendor != "sqlite",
-        reason=(
-            "The committed artifact is the hermetic SQLite generation (gen:api / api_contract "
-            "convention). drf-spectacular derives integer bounds from the backend's "
-            "integer_field_ranges (SQLite reports int64 for SmallIntegerField; PostgreSQL reports "
-            "the real ±32767), so a fresh generation under another backend legitimately differs. "
-            "The authoritative drift gate is the SQLite CI job (`API contract (shifter_platform)`)."
-        ),
-    )
-    def test_committed_artifact_matches_the_drf_surface(self) -> None:
-        is_current, detail = contract.check_drift()
-        assert is_current, detail
+# The committed-artifact-vs-DRF-surface drift gate is enforced authoritatively by
+# the standalone CI job (`manage.py api_contract --check`, a fresh hermetic SQLite
+# process). It is deliberately NOT asserted here: regenerating the whole schema
+# mid-suite is sensitive to global state (URL conf, SPECTACULAR_SETTINGS,
+# drf-spectacular's extension registry) that other tests can mutate, and it also
+# varies by DB backend (integer_field_ranges). check_drift's own logic is covered
+# in isolation by TestContractDriftBranches and TestApiContractCommand below.
 
 
 class TestBreakingChangeGate:
@@ -170,7 +166,7 @@ class TestBreakingChangeGate:
 
     @staticmethod
     def _fake_git(*, verify_rc: int, ls_tree_rc: int, ls_tree_out: str, show_out: str = "{}"):
-        def fake_git(*args: str) -> SimpleNamespace:
+        def fake_git(*args: str, cwd: Any = None) -> SimpleNamespace:
             if args[:2] == ("rev-parse", "--show-toplevel"):
                 return SimpleNamespace(returncode=0, stdout="/\n", stderr="")
             if args[0] == "rev-parse":
@@ -206,3 +202,104 @@ class TestBreakingChangeGate:
             self._fake_git(verify_rc=0, ls_tree_rc=0, ls_tree_out="100644 blob abc\topenapi/v1.json\n", show_out="{}"),
         )
         assert contract.resolve_base_document("origin/dev") == "{}"
+
+    def test_resolve_base_runs_path_commands_from_repo_root(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # Guards the base-path fix: ls-tree/show must run from the repo root so a
+        # repo-relative pathspec and <ref>:<path> resolve (an artifact in a
+        # subdirectory must be found, not treated as absent and skipped).
+        monkeypatch.setattr(contract, "ARTIFACT_DIR", Path("/repo/api"))
+        seen: dict[str, Any] = {}
+
+        def fake_git(*args: str, cwd: Any = None) -> SimpleNamespace:
+            if args[:2] == ("rev-parse", "--show-toplevel"):
+                return SimpleNamespace(returncode=0, stdout="/repo\n", stderr="")
+            if args[0] == "ls-tree":
+                seen["ls_tree"] = cwd
+                return SimpleNamespace(returncode=0, stdout="100644 blob abc\tapi/v1.json\n", stderr="")
+            if args[0] == "show":
+                seen["show"] = cwd
+                return SimpleNamespace(returncode=0, stdout="{}", stderr="")
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+        monkeypatch.setattr(contract, "_git", fake_git)
+        assert contract.resolve_base_document("origin/dev") == "{}"
+        assert seen["ls_tree"] == Path("/repo")
+        assert seen["show"] == Path("/repo")
+
+    def test_git_helper_invokes_git_with_argv_and_cwd(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        captured: dict[str, Any] = {}
+
+        def fake_run(argv: list[str], **kwargs: Any) -> SimpleNamespace:
+            captured["argv"] = argv
+            captured["cwd"] = kwargs.get("cwd")
+            return SimpleNamespace(returncode=0, stdout="ok", stderr="")
+
+        monkeypatch.setattr(contract.subprocess, "run", fake_run)
+        result = contract._git("status", cwd=Path("/repo/cwd"))
+        assert result.stdout == "ok"
+        assert captured["argv"][1:] == ["status"]
+        assert captured["cwd"] == Path("/repo/cwd")
+
+    def test_breaking_against_reports_missing_committed_artifact(
+        self, tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(contract, "resolve_base_document", lambda base_ref, major=contract.API_MAJOR: "{}")
+        monkeypatch.setattr(contract, "ARTIFACT_DIR", tmp_path)
+        ok, detail = contract.check_breaking_against("origin/dev")
+        assert not ok
+        assert "missing" in detail.lower()
+
+
+class TestContractDriftBranches:
+    def test_check_drift_reports_missing_artifact(self, tmp_path: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(contract, "ARTIFACT_DIR", tmp_path)  # no committed artifact present
+        ok, detail = contract.check_drift()
+        assert not ok
+        assert "missing" in detail.lower()
+
+    def test_check_drift_reports_bounded_diff(self, tmp_path: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(contract, "ARTIFACT_DIR", tmp_path)
+        (tmp_path / "v1.json").write_text('{"openapi": "3.0.3"}\n', encoding="utf-8")
+        ok, detail = contract.check_drift()
+        assert not ok
+        assert detail  # a unified diff, not empty
+
+
+class TestApiContractCommand:
+    def test_write_then_check_roundtrip(self, tmp_path: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(contract, "ARTIFACT_DIR", tmp_path)
+        call_command("api_contract")
+        assert (tmp_path / "v1.json").exists()
+        call_command("api_contract", check=True)  # regenerated == committed -> no CommandError
+
+    def test_check_raises_on_drift(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(api_contract_command, "check_drift", lambda major: (False, "boom"))
+        with pytest.raises(CommandError, match="drift"):
+            call_command("api_contract", check=True)
+
+    def test_breaking_against_skips_when_absent(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(contract, "resolve_base_document", lambda base_ref, major=contract.API_MAJOR: None)
+        call_command("api_contract", breaking_against="origin/dev")  # skip -> no CommandError
+
+    def test_breaking_against_raises_on_break(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(api_contract_command, "check_breaking_against", lambda base_ref, major: (False, "break"))
+        with pytest.raises(CommandError, match="Breaking API change"):
+            call_command("api_contract", breaking_against="origin/dev")
+
+
+class TestPlatformAutoSchemaFallback:
+    def test_resolved_permissions_falls_back_when_get_permissions_raises(self) -> None:
+        class _Perm:
+            required_read_scope = "risk:read"
+            required_write_scope = "risk:write"
+
+        class _View:
+            permission_classes = [_Perm]
+
+            def get_permissions(self) -> list[Any]:
+                raise RuntimeError("boom")
+
+        schema = PlatformAutoSchema()
+        schema.view = _View()
+        resolved = schema._resolved_permissions()
+        assert any(isinstance(permission, _Perm) for permission in resolved)
