@@ -100,6 +100,7 @@ def test_connection_is_pinned_to_host_key(monkeypatch: pytest.MonkeyPatch) -> No
 
 def test_nonzero_remote_exit_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
     _install_fake(monkeypatch, _FakeResult(stdout="partial", exit_status=1))
+    request = _request()
 
     with pytest.raises(GuestProbeError, match="exited 1"):
-        run_guest_probe(_request())
+        run_guest_probe(request)
