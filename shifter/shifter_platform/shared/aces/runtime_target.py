@@ -28,7 +28,6 @@ consumes the serialized plan as plain data via the injected dispatch port.
 from __future__ import annotations
 
 import importlib.metadata
-import ipaddress
 import json
 from collections.abc import Mapping
 from typing import Any
@@ -48,6 +47,7 @@ from shared.aces.composition_envelope import (
 from shared.aces.contracts import ACES_PROVISIONING_PLAN_CONTRACT_VERSION, SHIFTER_BACKEND_NAME
 from shared.aces.dispatch_port import ShifterDispatchResult, ShifterProvisioningDispatchPort
 from shared.aces.manifest import SHIFTER_PROVISIONER_CAPABILITIES, create_shifter_backend_manifest
+from shared.aces.network_family import network_address_family_diagnostics
 from shared.log_sanitize import safe_log_value
 
 __all__ = [
@@ -74,15 +74,6 @@ SUPPORTED_RESOURCE_TYPES: frozenset[str] = (
 #: Discriminator for the serialized plan persisted in ``range_config`` so the
 #: provisioner ``aces-range`` path can tell it apart from a cyberscript envelope.
 ACES_PROVISIONING_PLAN_KIND = "aces_provisioning_plan"
-
-#: Provisioner ``constraints`` key that publishes the supported network address
-#: family, and its only supported value (issue #1568). ACES SDL accepts IPv6 and
-#: dual-stack networks; the GCE range-cell substrate is IPv4-only, so a non-IPv4
-#: network is an unsupported *capability* (not malformed input) and is rejected on
-#: this shared validate/apply path before any dispatch. Kept in lockstep with
-#: ``shared.aces.manifest.SHIFTER_PROVISIONER_CAPABILITIES.constraints``.
-NETWORK_ADDRESS_FAMILY_CONSTRAINT = "network-address-family"
-IPV4_ONLY_ADDRESS_FAMILY = "ipv4-only"
 
 _MAX_DIAGNOSTIC = 480
 
@@ -168,16 +159,6 @@ def _network_refs(payload: Mapping[str, object]) -> tuple[str, ...]:
     return ()
 
 
-def _network_cidr(payload: Mapping[str, object]) -> str:
-    """Return the network's authored CIDR (``spec.infrastructure.properties.cidr``), or empty."""
-    properties = _infrastructure_spec(payload).get("properties")
-    if isinstance(properties, Mapping):
-        cidr = properties.get("cidr")
-        if isinstance(cidr, str) and cidr.strip():
-            return cidr.strip()
-    return ""
-
-
 def _network_lookup(network_resources: list[tuple[PlannedResource, Mapping[str, object]]]) -> dict[str, str]:
     """Map every handle a node might reference a network by to its canonical address."""
     lookup: dict[str, str] = {}
@@ -227,39 +208,6 @@ def _node_envelope_diagnostics(
     return diagnostics
 
 
-def _network_envelope_diagnostics(
-    resource: PlannedResource, payload: Mapping[str, object], capabilities: ProvisionerCapabilities
-) -> list[Diagnostic]:
-    """Return capability-envelope diagnostics for a single network resource.
-
-    Enforces the published ``network-address-family`` constraint (issue #1568): when
-    the backend declares ``ipv4-only``, a network whose CIDR parses to a non-IPv4
-    family is an unsupported-capability plan, not malformed SDL. The diagnostic
-    names only the supported family and never echoes the authored CIDR (which
-    ``aces_range_ops`` would otherwise forward into failure events). A missing or
-    unparseable CIDR is left to the transport/plan validators, so this gate does not
-    mislabel malformed input as an address-family rejection.
-    """
-    if capabilities.constraints.get(NETWORK_ADDRESS_FAMILY_CONSTRAINT) != IPV4_ONLY_ADDRESS_FAMILY:
-        return []
-    cidr = _network_cidr(payload)
-    if not cidr:
-        return []
-    try:
-        network = ipaddress.ip_network(cidr, strict=False)
-    except ValueError:
-        return []
-    if isinstance(network, ipaddress.IPv4Network):
-        return []
-    return [
-        _diagnostic(
-            "shifter-provisioner.unsupported-network-address-family",
-            resource.address,
-            "unsupported network address family; this provisioning-only backend supports only ipv4 networks",
-        )
-    ]
-
-
 def _capability_envelope_diagnostics(
     resources: list[PlannedResource], capabilities: ProvisionerCapabilities
 ) -> list[Diagnostic]:
@@ -289,7 +237,7 @@ def _capability_envelope_diagnostics(
             total_nodes += _node_count(payload)
             diagnostics.extend(_node_envelope_diagnostics(resource, payload, capabilities))
         elif resource.resource_type == NETWORK_RESOURCE_TYPE:
-            diagnostics.extend(_network_envelope_diagnostics(resource, payload, capabilities))
+            diagnostics.extend(network_address_family_diagnostics(resource, payload, capabilities, _diagnostic))
         elif resource.resource_type in COMPOSITION_RESOURCE_TYPES:
             diagnostics.extend(composition_diagnostics(resource, payload, capabilities, node_addresses))
     if capabilities.max_total_nodes is not None and total_nodes > capabilities.max_total_nodes:

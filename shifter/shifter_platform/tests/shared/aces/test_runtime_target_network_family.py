@@ -12,9 +12,12 @@ duplicated.
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import pytest
 from aces_contracts.runtime_state import RuntimeSnapshot
 
+from shared.aces.manifest import SHIFTER_PROVISIONER_CAPABILITIES
 from shared.aces.runtime_target import ShifterProvisioner
 from tests.shared.aces.test_runtime_target import (
     _FORBIDDEN_DIAGNOSTIC_SUBSTRINGS,
@@ -68,6 +71,16 @@ def test_network_family_gate_defers_on_missing_or_unparseable_cidr(cidr: str) ->
     an unsupported address family, nor crash validate()/apply().
     """
     _, diagnostics = _interpret(_plan(_network("provision.network.lan", "lan", cidr=cidr)))
+    assert not any(d.code == _FAMILY_CODE for d in diagnostics)
+
+
+def test_gate_is_inert_when_constraint_not_published() -> None:
+    """The gate is disclosure-driven: a backend that does not publish the ipv4-only
+    constraint does not reject an IPv6 network here (declaration and enforcement move
+    together). This guards against the gate firing on capabilities that never claimed it."""
+    capabilities = replace(SHIFTER_PROVISIONER_CAPABILITIES, constraints={})
+    plan = _plan(_network("provision.network.lan", "lan", cidr="2001:db8::/64"))
+    _, diagnostics = _interpret(plan, capabilities=capabilities)
     assert not any(d.code == _FAMILY_CODE for d in diagnostics)
 
 

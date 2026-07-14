@@ -110,10 +110,11 @@ class TestSubnets:
         # forwarded by aces_range_ops into failure events, so it must not echo the
         # authored network literal.
         authored_cidr = "fd00:dead:beef::/64"
+        plan = _plan((_node(),), (_network(cidr=authored_cidr),))
+        resolver = _resolver()
+        config = _config()
         with pytest.raises(AcesGcePlanError) as excinfo:
-            build_aces_range_cell_plan(
-                "req-1", 7, _plan((_node(),), (_network(cidr=authored_cidr),)), _resolver(), _config()
-            )
+            build_aces_range_cell_plan("req-1", 7, plan, resolver, config)
         message = str(excinfo.value)
         assert "IPv4" in message
         lowered = message.lower()
