@@ -91,6 +91,7 @@ def _control_target(subject: RangeUnderTest) -> ProbeTarget:
 
 
 def _platform_targets(platform: PlatformInventory) -> list[ProbeTarget]:
+    """Return probe targets for every platform-network boundary."""
     targets: list[ProbeTarget] = []
     targets.extend(_cidr_targets(platform.pod_cidr, BoundaryCode.PLATFORM_POD_CIDR, DestinationClass.PLATFORM_POD))
     targets.extend(
@@ -138,6 +139,7 @@ def _platform_targets(platform: PlatformInventory) -> list[ProbeTarget]:
 
 
 def _cidr_targets(cidr: str, boundary: BoundaryCode, destination: DestinationClass) -> list[ProbeTarget]:
+    """Return sampled address x port probe targets for one platform CIDR boundary."""
     targets: list[ProbeTarget] = []
     for address in _cidr_sample_addresses(cidr):
         for port in _PLATFORM_PORTS:
@@ -156,6 +158,7 @@ def _cidr_targets(cidr: str, boundary: BoundaryCode, destination: DestinationCla
 
 
 def _metadata_target(platform: PlatformInventory) -> ProbeTarget:
+    """Build the metadata-server probe target."""
     return ProbeTarget(
         check_id="core.metadata_server",
         boundary_code=BoundaryCode.METADATA_SERVER,
@@ -168,37 +171,33 @@ def _metadata_target(platform: PlatformInventory) -> ProbeTarget:
 
 
 def _egress_targets(egress: EgressPolicy) -> list[ProbeTarget]:
+    """Return internet-egress probe targets per the ADR-017 egress policy.
+
+    Under ``allowlist``, operator-owned live canaries are expected reachable and the
+    denied canaries unreachable; a policy CIDR is never probed as a live canary
+    because it may hold no live host. Under ``status-quo`` the canaries are expected
+    reachable; under ``deny-all``/``none`` they are expected unreachable.
+    """
+    if egress.mode == "allowlist":
+        return _egress_ports_targets(egress.allowed_canaries, "allowed", Outcome.REACHABLE) + _egress_ports_targets(
+            egress.canaries, "denied", Outcome.UNREACHABLE
+        )
+    if egress.mode == "status-quo":
+        return _egress_ports_targets(egress.canaries, "statusquo", Outcome.REACHABLE)
+    return _egress_ports_targets(egress.canaries, "denied", Outcome.UNREACHABLE)
+
+
+def _egress_ports_targets(canaries: Sequence[str], label: str, expected: Outcome) -> list[ProbeTarget]:
+    """Return egress targets for each canary across the representative ports."""
     targets: list[ProbeTarget] = []
-    mode = egress.mode
-    if mode == "allowlist":
-        # Sanctioned lane: operator-owned known-live canaries expected reachable. A
-        # policy CIDR is not probed as a live canary because it may hold no live host.
-        for index, canary in enumerate(egress.allowed_canaries):
-            for port in _EGRESS_PORTS:
-                targets.append(
-                    _egress_target(f"core.internet_egress.allowed.{index}.{port}", canary, port, Outcome.REACHABLE)
-                )
-        for index, canary in enumerate(egress.canaries):
-            for port in _EGRESS_PORTS:
-                targets.append(
-                    _egress_target(f"core.internet_egress.denied.{index}.{port}", canary, port, Outcome.UNREACHABLE)
-                )
-    elif mode == "status-quo":
-        for index, canary in enumerate(egress.canaries):
-            for port in _EGRESS_PORTS:
-                targets.append(
-                    _egress_target(f"core.internet_egress.statusquo.{index}.{port}", canary, port, Outcome.REACHABLE)
-                )
-    else:  # deny-all / none
-        for index, canary in enumerate(egress.canaries):
-            for port in _EGRESS_PORTS:
-                targets.append(
-                    _egress_target(f"core.internet_egress.denied.{index}.{port}", canary, port, Outcome.UNREACHABLE)
-                )
+    for index, canary in enumerate(canaries):
+        for port in _EGRESS_PORTS:
+            targets.append(_egress_target(f"core.internet_egress.{label}.{index}.{port}", canary, port, expected))
     return targets
 
 
 def _egress_target(check_id: str, address: str, port: int, expected: Outcome) -> ProbeTarget:
+    """Build one internet-egress probe target."""
     return ProbeTarget(
         check_id=check_id,
         boundary_code=BoundaryCode.INTERNET_EGRESS,
@@ -211,6 +210,7 @@ def _egress_target(check_id: str, address: str, port: int, expected: Outcome) ->
 
 
 def _cross_range_targets(peers: Sequence[RangeUnderTest]) -> list[ProbeTarget]:
+    """Return cross-range private-IP and peer-owned DNS probe targets."""
     targets: list[ProbeTarget] = []
     for peer in peers:
         for member_ip in peer.member_ips:
@@ -266,6 +266,7 @@ def _cidr_sample_addresses(cidr: str, count: int = _CIDR_SAMPLE_SIZE) -> list[st
 
 
 def _split_endpoint(endpoint: str, *, default_port: int) -> tuple[str, int]:
+    """Split a ``host:port`` endpoint, falling back to ``default_port``."""
     host, sep, port = endpoint.rpartition(":")
     if sep and port.isdigit():
         return host, int(port)
@@ -273,6 +274,7 @@ def _split_endpoint(endpoint: str, *, default_port: int) -> tuple[str, int]:
 
 
 def _slug(value: str) -> str:
+    """Return a check-id-safe slug of an address (dots/colons to underscores)."""
     return value.replace(".", "_").replace(":", "_")
 
 

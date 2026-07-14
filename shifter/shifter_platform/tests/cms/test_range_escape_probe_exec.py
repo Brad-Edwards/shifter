@@ -100,7 +100,7 @@ def test_probe_addresses_are_data_not_shell(tmp_path) -> None:
     # A target address is data, never shell: a shell-metacharacter-shaped address is
     # rejected before rendering, so it can never construct a command or execute.
     marker = tmp_path / "pwned"
-    injected = _tcp_target("evil", f"127.0.0.1$(touch {marker})", 80)
+    targets = [_tcp_target("reach", "127.0.0.1", 80), _tcp_target("evil", f"127.0.0.1$(touch {marker})", 80)]
     with pytest.raises(ValueError, match="unsafe probe target"):
-        render_probe_program([_tcp_target("reach", "127.0.0.1", 80), injected])
+        render_probe_program(targets)
     assert not marker.exists()

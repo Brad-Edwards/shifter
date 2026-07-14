@@ -64,7 +64,7 @@ class ProbeLauncher(Protocol):
     ) -> dict[str, ObservedProbe]: ...
 
 
-def run_escape_validation(
+def run_escape_validation(  # NOSONAR - wide keyword-only orchestration entrypoint; cohesive run inputs
     *,
     subject: RangeUnderTest,
     peers: Sequence[RangeUnderTest] = (),
@@ -109,6 +109,7 @@ def run_escape_validation(
 
 
 def _result_for(target: ProbeTarget, observed: ObservedProbe | None, source_context: str) -> CheckResult:
+    """Classify one probe observation into a check result (fail-closed if missing)."""
     if observed is None:
         return CheckResult(
             check_id=target.check_id,
@@ -151,18 +152,25 @@ def _status_for(expected: Outcome, outcome: ProbeOutcome) -> tuple[CheckStatus, 
     if outcome == ProbeOutcome.ERROR:
         return CheckStatus.FAIL, None
     if expected == Outcome.UNREACHABLE:
-        if outcome == ProbeOutcome.BLOCKED:
-            return CheckStatus.PASS, Outcome.UNREACHABLE
-        return CheckStatus.FAIL, Outcome.REACHABLE
-    if outcome == ProbeOutcome.REACHABLE:
-        return CheckStatus.PASS, Outcome.REACHABLE
-    return CheckStatus.FAIL, Outcome.UNREACHABLE
+        return (
+            (CheckStatus.PASS, Outcome.UNREACHABLE)
+            if outcome == ProbeOutcome.BLOCKED
+            else (CheckStatus.FAIL, Outcome.REACHABLE)
+        )
+    return (
+        (CheckStatus.PASS, Outcome.REACHABLE)
+        if outcome == ProbeOutcome.REACHABLE
+        else (CheckStatus.FAIL, Outcome.UNREACHABLE)
+    )
 
 
 def _metadata_result(target: ProbeTarget, observed: ObservedProbe, source_context: str) -> CheckResult:
-    # Metadata is a failure only when it is reachable AND exposes useful
-    # credentials. Blocked/refused (not usefully reachable) pass; an error
-    # (capability failure) is inconclusive and fails closed.
+    """Classify the metadata probe.
+
+    Metadata is a failure only when it is reachable AND exposes useful credentials.
+    Blocked/refused (not usefully reachable) pass; an error (capability failure) is
+    inconclusive and fails closed.
+    """
     if observed.outcome == ProbeOutcome.ERROR:
         status: CheckStatus = CheckStatus.FAIL
         observed_outcome: Outcome | None = None
@@ -204,6 +212,7 @@ def _coverage_checks(existing: Sequence[CheckResult], mode: SuiteMode, source_co
 
 
 def _skip_check(code: BoundaryCode, status: CheckStatus, reason: str, source_context: str) -> CheckResult:
+    """Build an explicit skip / not-applicable check for an unprobed boundary."""
     return CheckResult(
         check_id=f"core.{code.value}.{status.value}",
         boundary_code=code,
@@ -219,6 +228,7 @@ def _skip_check(code: BoundaryCode, status: CheckStatus, reason: str, source_con
 
 
 def _source_label(range_id: int) -> str:
+    """Return the bounded participant source-context label for a range."""
     return f"participant:range-{range_id}"
 
 

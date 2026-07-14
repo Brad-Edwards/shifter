@@ -31,12 +31,13 @@ _DEFAULT_PER_TARGET_TIMEOUT_S = 4
 
 
 def _default_secret_reader(secret_ref: str) -> str:
+    """Resolve an SSH private key from the platform secret store."""
     from engine.services import get_ssh_key
 
     return get_ssh_key(secret_ref)
 
 
-def _default_guest_exec(
+def _default_guest_exec(  # NOSONAR - wide keyword-only transport adapter; mirrors run_guest_probe
     *,
     host: str,
     username: str,
@@ -47,6 +48,7 @@ def _default_guest_exec(
     port: int,
     timeout_s: int,
 ) -> str:
+    """Default guest-exec: run the probe over the portal SSH transport."""
     from engine.services import run_guest_probe
 
     return run_guest_probe(
@@ -68,7 +70,10 @@ class NativeVmProbeLauncher:
         self._secret_reader = secret_reader or _default_secret_reader
         self._guest_exec = guest_exec or _default_guest_exec
 
-    def _command(self, participant: ParticipantContext) -> str:
+    def _command(
+        self, participant: ParticipantContext
+    ) -> str:  # NOSONAR - template method; participant used by overrides
+        """Return the remote delivery command; overridden by scenario adapters."""
         return _NATIVE_COMMAND
 
     def launch(

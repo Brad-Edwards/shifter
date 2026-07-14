@@ -17,6 +17,8 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 from cms.range_escape.model import (
+    DEFAULT_METADATA_HOST,
+    DEFAULT_METADATA_IP,
     EgressPolicy,
     ParticipantContext,
     PlatformInventory,
@@ -78,18 +80,12 @@ def _participant_from_instances(
     adapter: str,
     container: str,
 ) -> ParticipantContext:
+    """Build the participant context from the selected instance for the adapter."""
     inst = _pick_participant_instance(instances)
     address = str(inst.get("private_ip") or "")
     if not address:
         raise RangeResolutionError("participant instance has no private IP")
-    if adapter == "polaris":
-        port = int(inst.get("gcp_host_ssh_port") or 22)
-        credential_ref = str(inst.get("gcp_host_ssh_key_secret_ref") or inst.get("ssh_key_secret_arn") or "")
-        username = str(inst.get("gcp_host_ssh_username") or inst.get("ssh_username") or "participant")
-    else:
-        port = 22
-        credential_ref = str(inst.get("ssh_key_secret_arn") or "")
-        username = str(inst.get("ssh_username") or "participant")
+    port, credential_ref, username = _participant_access(inst, adapter)
     if not credential_ref:
         raise RangeResolutionError("participant instance has no SSH credential reference")
     return ParticipantContext(
@@ -104,6 +100,21 @@ def _participant_from_instances(
         adapter=adapter,
         container=container,
     )
+
+
+def _participant_access(inst: Mapping[str, Any], adapter: str) -> tuple[int, str, str]:
+    """Return (ssh_port, credential_ref, username) for the adapter's access channel.
+
+    The Polaris adapter reaches the participant container over the Docker host's
+    management SSH; the native adapter uses the participant SSH channel directly.
+    """
+    if adapter == "polaris":
+        return (
+            int(inst.get("gcp_host_ssh_port") or 22),
+            str(inst.get("gcp_host_ssh_key_secret_ref") or inst.get("ssh_key_secret_arn") or ""),
+            str(inst.get("gcp_host_ssh_username") or inst.get("ssh_username") or "participant"),
+        )
+    return (22, str(inst.get("ssh_key_secret_arn") or ""), str(inst.get("ssh_username") or "participant"))
 
 
 def _pick_participant_instance(instances: Sequence[Mapping[str, Any]]) -> Mapping[str, Any]:
@@ -136,8 +147,8 @@ def platform_inventory_from_config(config: Mapping[str, Any]) -> PlatformInvento
             node_cidr=str(platform["node_cidr"]),
             portal_private_endpoints=tuple(str(e) for e in platform.get("portal_private_endpoints", [])),
             gke_gdc_api_endpoint=str(platform.get("gke_gdc_api_endpoint", "")),
-            metadata_ip=str(platform.get("metadata_ip", "169.254.169.254")),
-            metadata_host=str(platform.get("metadata_host", "metadata.google.internal")),
+            metadata_ip=str(platform.get("metadata_ip", DEFAULT_METADATA_IP)),
+            metadata_host=str(platform.get("metadata_host", DEFAULT_METADATA_HOST)),
             private_dns_names=tuple(str(n) for n in platform.get("private_dns_names", [])),
         )
     except KeyError as exc:

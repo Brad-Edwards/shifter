@@ -154,6 +154,7 @@ def render_probe_program(targets: Sequence[ProbeTarget], *, per_target_timeout_s
 
 
 def _require_safe(field_name: str, value: str) -> None:
+    """Raise if a probe target field contains anything but IP/hostname/id characters."""
     if not _SAFE_FIELD.match(value):
         raise ValueError(f"unsafe probe target {field_name!r}: only IP/hostname/id characters are allowed")
 
@@ -189,15 +190,18 @@ def parse_probe_record(stdout: str) -> dict[str, ObservedProbe]:
 
 
 def _parse_outcome(value: object) -> ProbeOutcome:
+    """Parse an outcome string, coercing anything unrecognized to ``error``."""
+    outcome = ProbeOutcome.ERROR
     if isinstance(value, str):
         try:
-            return ProbeOutcome(value)
+            outcome = ProbeOutcome(value)
         except ValueError:
-            return ProbeOutcome.ERROR
-    return ProbeOutcome.ERROR
+            outcome = ProbeOutcome.ERROR
+    return outcome
 
 
 def _optional_bool(value: object) -> bool | None:
+    """Return None for a null value, else the value coerced to bool."""
     if value is None:
         return None
     return bool(value)

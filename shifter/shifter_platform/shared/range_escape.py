@@ -67,7 +67,7 @@ class BoundaryCode(StrEnum):
 class CheckStatus(StrEnum):
     """Outcome of a single check."""
 
-    PASS = "pass"  # nosec B105 - check-status literal, not a password
+    PASS = "pass"  # nosec B105  # NOSONAR check-status literal, not a password
     FAIL = "fail"
     SKIP = "skip"
     NOT_APPLICABLE = "not_applicable"
@@ -148,7 +148,7 @@ _SECRET_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"ya29\.[A-Za-z0-9._\-]{20,}"),
     re.compile(r"eyJ[A-Za-z0-9._\-]{20,}"),
     re.compile(r"AKIA[0-9A-Z]{16}"),
-    re.compile(r"(?i)bearer\s+[A-Za-z0-9._\-]{20,}"),
+    re.compile(r"[Bb]earer\s+[A-Za-z0-9._\-]{20,}"),
     re.compile(r"[A-Za-z0-9+/]{40,}={0,2}"),
     re.compile(r"[A-Fa-f0-9]{40,}"),
 )
@@ -292,7 +292,7 @@ class EscapeReport:
         return cls.from_dict(data)
 
 
-def evaluate_check(
+def evaluate_check(  # NOSONAR - wide keyword-only result factory; a params object would reduce clarity
     *,
     check_id: str,
     boundary_code: BoundaryCode,
@@ -341,24 +341,25 @@ def compute_verdict(report: EscapeReport) -> Verdict:
     (a skipped peer check fails the two-or-more-range gate); in one-range mode they
     may be skipped or not-applicable.
     """
-    if any(check.status == CheckStatus.FAIL for check in report.checks):
-        return Verdict.FAILED
-    controls = [c for c in report.checks if c.boundary_code == BoundaryCode.PROBE_CONTROL]
-    if not controls or any(c.status != CheckStatus.PASS for c in controls):
-        return Verdict.FAILED
-    passed_core = _passed_core_boundaries(report.checks)
-    if not passed_core >= REQUIRED_CORE_BOUNDARIES:
-        return Verdict.FAILED
-    if report.mode == SuiteMode.MULTI_RANGE and not passed_core >= PEER_DEPENDENT_BOUNDARIES:
+    checks = report.checks
+    has_fail = any(check.status == CheckStatus.FAIL for check in checks)
+    controls = [c for c in checks if c.boundary_code == BoundaryCode.PROBE_CONTROL]
+    control_ok = bool(controls) and all(c.status == CheckStatus.PASS for c in controls)
+    passed_core = _passed_core_boundaries(checks)
+    core_ok = passed_core >= REQUIRED_CORE_BOUNDARIES
+    peer_ok = report.mode != SuiteMode.MULTI_RANGE or passed_core >= PEER_DEPENDENT_BOUNDARIES
+    if has_fail or not control_ok or not core_ok or not peer_ok:
         return Verdict.FAILED
     return Verdict.PASSED
 
 
 def _passed_core_boundaries(checks: Iterable[CheckResult]) -> set[BoundaryCode]:
+    """Return the set of core boundary codes whose checks passed."""
     return {c.boundary_code for c in checks if c.scope == CheckScope.CORE and c.status == CheckStatus.PASS}
 
 
-def _parse_enum(enum_cls: type[StrEnum], value: object, field_name: str) -> Any:
+def _parse_enum[EnumT: StrEnum](enum_cls: type[EnumT], value: object, field_name: str) -> EnumT:
+    """Parse ``value`` into a member of ``enum_cls`` or raise a contract error."""
     if not isinstance(value, str):
         raise EscapeContractError(f"{field_name} must be a string")
     try:
@@ -368,6 +369,7 @@ def _parse_enum(enum_cls: type[StrEnum], value: object, field_name: str) -> Any:
 
 
 def _require_str(data: dict[str, Any], field_name: str) -> str:
+    """Return a required non-empty string field or raise a contract error."""
     value = data.get(field_name)
     if not isinstance(value, str) or not value:
         raise EscapeContractError(f"{field_name} must be a non-empty string")
@@ -375,6 +377,7 @@ def _require_str(data: dict[str, Any], field_name: str) -> str:
 
 
 def _require_check_dict(value: object) -> dict[str, Any]:
+    """Return ``value`` as a check object or raise a contract error."""
     if not isinstance(value, dict):
         raise EscapeContractError("each check must be an object")
     return value

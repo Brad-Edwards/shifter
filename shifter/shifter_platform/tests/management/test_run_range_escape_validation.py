@@ -84,7 +84,7 @@ def _write_config(tmp_path) -> str:
 
 def test_command_writes_report_and_passes(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(cmd_mod, "resolve_range_under_test", lambda **kw: _range(1))
-    monkeypatch.setattr(cmd_mod, "build_launcher", lambda adapter, container: _SecureLauncher())
+    monkeypatch.setattr(cmd_mod, "build_launcher", lambda adapter: _SecureLauncher())
     out = tmp_path / "report.json"
 
     call_command(
@@ -105,16 +105,11 @@ def test_command_writes_report_and_passes(tmp_path, monkeypatch) -> None:
 
 def test_command_exits_nonzero_on_leak(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(cmd_mod, "resolve_range_under_test", lambda **kw: _range(1))
-    monkeypatch.setattr(cmd_mod, "build_launcher", lambda adapter, container: _LeakyLauncher())
+    monkeypatch.setattr(cmd_mod, "build_launcher", lambda adapter: _LeakyLauncher())
+    config = _write_config(tmp_path)
 
     with pytest.raises(CommandError) as excinfo:
-        call_command(
-            "run_range_escape_validation",
-            "--request-id",
-            "req-1",
-            "--config",
-            _write_config(tmp_path),
-        )
+        call_command("run_range_escape_validation", "--request-id", "req-1", "--config", config)
     assert "platform_pod_cidr" in str(excinfo.value)
 
 
@@ -124,7 +119,7 @@ def test_command_enters_multi_range_with_peer(tmp_path, monkeypatch) -> None:
         "resolve_range_under_test",
         lambda **kw: _range(1) if kw["request_id"] == "req-1" else _range(2),
     )
-    monkeypatch.setattr(cmd_mod, "build_launcher", lambda adapter, container: _SecureLauncher())
+    monkeypatch.setattr(cmd_mod, "build_launcher", lambda adapter: _SecureLauncher())
     out = tmp_path / "report.json"
 
     call_command(

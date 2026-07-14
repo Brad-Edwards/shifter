@@ -78,26 +78,26 @@ def _classify_cidr(
     range_net: _IPNetwork,
     own_subnets: list[_IPNetwork],
 ) -> LeakFinding | None:
+    """Classify one allow-rule CIDR as a leak (or not) for a rendered plan."""
     try:
         net = ipaddress.ip_network(raw_cidr, strict=False)
     except ValueError:
         return LeakFinding(
             BoundaryCode.CROSS_RANGE_PRIVATE_IP, name, direction, raw_cidr, "unparseable CIDR in allow rule"
         )
+    finding: LeakFinding | None = None
     if net.prefixlen == 0:
         code = BoundaryCode.INTERNET_EGRESS if direction == "EGRESS" else BoundaryCode.CROSS_RANGE_PRIVATE_IP
-        return LeakFinding(code, name, direction, raw_cidr, "universal allow (default route)")
-    if net.version != range_net.version:
-        return None
-    if net.overlaps(range_net) and not _within_own(net, own_subnets):
-        return LeakFinding(
+        finding = LeakFinding(code, name, direction, raw_cidr, "universal allow (default route)")
+    elif net.version == range_net.version and net.overlaps(range_net) and not _within_own(net, own_subnets):
+        finding = LeakFinding(
             BoundaryCode.CROSS_RANGE_PRIVATE_IP,
             name,
             direction,
             raw_cidr,
             "allow reaches peer-range address space in the shared range VPC",
         )
-    return None
+    return finding
 
 
 def _within_own(net: _IPNetwork, own_subnets: Iterable[_IPNetwork]) -> bool:
@@ -119,6 +119,7 @@ def _within_own(net: _IPNetwork, own_subnets: Iterable[_IPNetwork]) -> bool:
 
 
 def _own_subnets(plan: Mapping[str, object]) -> list[_IPNetwork]:
+    """Return this range's own subnet networks from a rendered plan."""
     subnets: list[_IPNetwork] = []
     raw = plan.get("subnets")
     if not isinstance(raw, list):
@@ -133,6 +134,7 @@ def _own_subnets(plan: Mapping[str, object]) -> list[_IPNetwork]:
 
 
 def _firewalls(plan: Mapping[str, object]) -> list[Mapping[str, object]]:
+    """Return the firewall rule objects from a rendered plan."""
     raw = plan.get("firewalls")
     if not isinstance(raw, list):
         return []
@@ -140,6 +142,7 @@ def _firewalls(plan: Mapping[str, object]) -> list[Mapping[str, object]]:
 
 
 def _string_list(value: object) -> list[str]:
+    """Return ``value`` as a list of strings, or an empty list."""
     if not isinstance(value, list):
         return []
     return [str(item) for item in value]

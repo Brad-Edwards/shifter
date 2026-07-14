@@ -31,8 +31,12 @@ from cms.range_escape.runner import ProbeLauncher, run_escape_validation
 from shared.range_escape import Verdict
 
 
-def build_launcher(adapter: str, container: str) -> ProbeLauncher:
-    """Return the probe-launch adapter for ``adapter`` (default native VM SSH)."""
+def build_launcher(adapter: str) -> ProbeLauncher:
+    """Return the probe-launch adapter for ``adapter`` (default native VM SSH).
+
+    The participant container name for the Polaris adapter travels on each
+    ParticipantContext, so it is not a build-time argument here.
+    """
     if adapter == "polaris":
         return PolarisContainerProbeLauncher()
     return NativeVmProbeLauncher()
@@ -87,7 +91,7 @@ class Command(BaseCommand):
             peers=peers,
             platform=platform,
             egress=egress,
-            launcher=build_launcher(adapter, container),
+            launcher=build_launcher(adapter),
             suite_id=f"escape-{subject.range_id}-{subject.request_id[:8]}",
             started_at=started_at,
             ended_at=timezone.now().isoformat(),
@@ -112,6 +116,7 @@ class Command(BaseCommand):
 
 
 def _load_config(path: str) -> dict[str, Any]:
+    """Read and parse the operator deployment config JSON, or raise CommandError."""
     try:
         raw = Path(path).read_text()
     except OSError as exc:

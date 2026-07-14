@@ -15,7 +15,7 @@ from enum import StrEnum
 from shared.range_escape import BoundaryCode, DestinationClass, Outcome
 
 DEFAULT_MANAGEMENT_PORTS: tuple[int, ...] = (22, 3389)
-DEFAULT_METADATA_IP = "169.254.169.254"
+DEFAULT_METADATA_IP = "169.254.169.254"  # NOSONAR - the well-known GCP metadata IP, a required constant
 DEFAULT_METADATA_HOST = "metadata.google.internal"
 
 
@@ -151,6 +151,7 @@ class ProbeSpecEntry:
 
 
 def spec_entry_from_target(target: ProbeTarget) -> ProbeSpecEntry:
+    """Project a probe target into its bounded wire-format spec entry."""
     return ProbeSpecEntry(
         check_id=target.check_id,
         kind=target.kind.value,

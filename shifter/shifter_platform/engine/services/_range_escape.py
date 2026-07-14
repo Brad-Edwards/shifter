@@ -60,7 +60,7 @@ def get_range_membership(request_id: str) -> RangeMembership | None:
     return RangeMembership(range_id=range_obj.id, instances=instances, subnet_cidrs=subnet_cidrs)
 
 
-def run_guest_probe(
+def run_guest_probe(  # NOSONAR - wide keyword-only SSH transport signature; cohesive connection params
     *,
     host: str,
     username: str,
@@ -97,7 +97,7 @@ def run_guest_probe(
     )
 
 
-async def _run_guest_probe(
+async def _run_guest_probe(  # NOSONAR - wide keyword-only SSH transport signature; cohesive connection params
     *,
     host: str,
     username: str,
@@ -108,6 +108,7 @@ async def _run_guest_probe(
     port: int,
     timeout_s: int,
 ) -> str:
+    """Open a host-key-pinned SSH session and run the probe command, returning stdout."""
     try:
         key = asyncssh.import_private_key(private_key)
         known_hosts = asyncssh.import_known_hosts(f"{host} {host_public_key.strip()}\n")
@@ -119,7 +120,8 @@ async def _run_guest_probe(
             known_hosts=known_hosts,
         ) as conn:
             result = await conn.run(command, input=stdin, timeout=timeout_s)
-    except (TimeoutError, asyncssh.Error, OSError, ValueError) as exc:
+    except (asyncssh.Error, OSError, ValueError) as exc:
+        # OSError already covers TimeoutError (the asyncssh command timeout).
         raise GuestProbeError(f"in-guest probe transport failed for {host}:{port}") from exc
     if result.exit_status not in (0, None):
         raise GuestProbeError(f"in-guest probe exited {result.exit_status} for {host}:{port}")
