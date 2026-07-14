@@ -35,6 +35,7 @@ from mission_control.views._common import _pkg
 from mission_control.views._credentials import _CredentialError, _persist_credential, _validate_credential_spec
 from mission_control.views._ngfw import _extract_ngfw_create_payload, _NgfwError, _run_ngfw_destroy
 from shared.api.permissions import IsAuthenticatedSessionOrApiToken
+from shared.api.schema import ApiErrorSerializer
 from shared.errors import classify_user_message
 from shared.exceptions import CMSError
 from shared.log_sanitize import safe_log_value
@@ -51,7 +52,7 @@ class NGFWCreateView(MissionControlAPIView):
 
     @extend_schema(
         request=NGFWCreateSerializer,
-        responses={201: NGFWCreateResponseSerializer},
+        responses={201: NGFWCreateResponseSerializer, 400: ApiErrorSerializer},
         operation_id="api_v1_mission_control_ngfw_create",
     )
     def post(self, request: Request) -> Response | JsonResponse:
@@ -136,7 +137,7 @@ class CredentialCreateView(MissionControlAPIView):
 
     @extend_schema(
         request=CredentialCreateSerializer,
-        responses={201: CredentialCreateResponseSerializer},
+        responses={201: CredentialCreateResponseSerializer, 400: ApiErrorSerializer},
         operation_id="api_v1_mission_control_credentials_create",
     )
     def post(self, request: Request) -> Response | JsonResponse:

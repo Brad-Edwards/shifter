@@ -2708,6 +2708,14 @@ export interface operations {
                     "application/json": components["schemas"]["CredentialCreateResponse"];
                 };
             };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
             /** @description Authentication failed. */
             401: {
                 headers: {
@@ -2786,6 +2794,14 @@ export interface operations {
                     "application/json": components["schemas"]["GuacamoleBootstrapStatus"];
                 };
             };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GuacamoleBootstrapStatus"];
+                };
+            };
             /** @description Authentication failed. */
             401: {
                 headers: {
@@ -2813,6 +2829,22 @@ export interface operations {
                 };
             };
             410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GuacamoleBootstrapStatus"];
+                };
+            };
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GuacamoleBootstrapStatus"];
+                };
+            };
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2892,6 +2924,14 @@ export interface operations {
                     "application/json": components["schemas"]["GuacamoleBootstrapQueued"];
                 };
             };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
             /** @description Authentication failed. */
             401: {
                 headers: {
@@ -2943,6 +2983,14 @@ export interface operations {
                     "application/json": components["schemas"]["GuacamoleBootstrapQueued"];
                 };
             };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
             /** @description Authentication failed. */
             401: {
                 headers: {
@@ -2992,6 +3040,14 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["NGFWCreateResponse"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
                 };
             };
             /** @description Authentication failed. */
@@ -3789,6 +3845,14 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["UploadInitiateResponse"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
                 };
             };
             /** @description Authentication failed. */

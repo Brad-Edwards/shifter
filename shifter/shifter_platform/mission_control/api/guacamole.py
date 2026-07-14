@@ -37,7 +37,7 @@ from mission_control.views._guacamole import (
 from mission_control.views._guacamole_bootstrap import _authenticated_user_id, _BootstrapViewError, _mark_expired
 from mission_control.views._guacamole_bootstrap import guacamole_bootstrap_response as _guacamole_bootstrap_response
 from shared.api.permissions import IsAuthenticatedSessionOrApiToken
-from shared.api.schema import LegacyErrorSerializer
+from shared.api.schema import ApiErrorSerializer, LegacyErrorSerializer
 from shared.log_sanitize import safe_log_value
 
 if TYPE_CHECKING:
@@ -60,7 +60,11 @@ class GuacamoleRDPURLView(MissionControlReadAPIView):
 
     @extend_schema(
         request=GuacamoleInstanceSerializer,
-        responses={202: GuacamoleBootstrapQueuedSerializer, 503: LegacyErrorSerializer},
+        responses={
+            202: GuacamoleBootstrapQueuedSerializer,
+            400: ApiErrorSerializer,
+            503: LegacyErrorSerializer,
+        },
         operation_id="api_v1_mission_control_guacamole_rdp_url",
     )
     def post(self, request: Request) -> JsonResponse | Response:
@@ -99,7 +103,11 @@ class GuacamoleRangeSSHURLView(MissionControlReadAPIView):
 
     @extend_schema(
         request=GuacamoleInstanceSerializer,
-        responses={202: GuacamoleBootstrapQueuedSerializer, 503: LegacyErrorSerializer},
+        responses={
+            202: GuacamoleBootstrapQueuedSerializer,
+            400: ApiErrorSerializer,
+            503: LegacyErrorSerializer,
+        },
         operation_id="api_v1_mission_control_guacamole_ssh_url",
     )
     def post(self, request: Request) -> JsonResponse | Response:
@@ -175,8 +183,12 @@ class GuacamoleBootstrapStatusView(MissionControlReadAPIView):
     @extend_schema(
         responses={
             200: GuacamoleBootstrapStatusSerializer,
-            # Expired/gone requests return the same status payload at 410.
+            # A failed bootstrap surfaces the persisted error_status_code (400/500/503)
+            # while an expired/gone request returns 410 — all carry the status payload.
+            400: GuacamoleBootstrapStatusSerializer,
             410: GuacamoleBootstrapStatusSerializer,
+            500: GuacamoleBootstrapStatusSerializer,
+            503: GuacamoleBootstrapStatusSerializer,
             # An unknown request id returns the flat legacy error body.
             404: LegacyErrorSerializer,
         },

@@ -43,7 +43,7 @@ class UploadInitiateView(MissionControlAPIView):
 
     @extend_schema(
         request=UploadInitiateSerializer,
-        responses={200: UploadInitiateResponseSerializer, 409: ApiErrorSerializer},
+        responses={200: UploadInitiateResponseSerializer, 400: ApiErrorSerializer, 409: ApiErrorSerializer},
         operation_id="api_v1_mission_control_upload_initiate",
     )
     def post(self, request: Request) -> Response:

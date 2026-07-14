@@ -1380,6 +1380,16 @@
             },
             "description": ""
           },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
           "401": {
             "content": {
               "application/json": {
@@ -1505,7 +1515,37 @@
             },
             "description": ""
           },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuacamoleBootstrapStatus"
+                }
+              }
+            },
+            "description": ""
+          },
           "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuacamoleBootstrapStatus"
+                }
+              }
+            },
+            "description": ""
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuacamoleBootstrapStatus"
+                }
+              }
+            },
+            "description": ""
+          },
+          "503": {
             "content": {
               "application/json": {
                 "schema": {
@@ -1670,6 +1710,16 @@
             },
             "description": ""
           },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
           "503": {
             "content": {
               "application/json": {
@@ -1752,6 +1802,16 @@
             },
             "description": ""
           },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
           "503": {
             "content": {
               "application/json": {
@@ -1828,6 +1888,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/NGFWCreateResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
                 }
               }
             },
@@ -3095,6 +3165,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/UploadInitiateResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
                 }
               }
             },
