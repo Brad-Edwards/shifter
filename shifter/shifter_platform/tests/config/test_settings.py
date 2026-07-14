@@ -197,7 +197,9 @@ def test_platform_drf_convention_defaults(monkeypatch) -> None:
         "rest_framework.authentication.SessionAuthentication",
     ]
     assert settings_module.REST_FRAMEWORK["EXCEPTION_HANDLER"] == "shared.api.errors.api_exception_handler"
-    assert settings_module.REST_FRAMEWORK["DEFAULT_SCHEMA_CLASS"] == "drf_spectacular.openapi.AutoSchema"
+    # Custom AutoSchema publishes per-operation token scopes and the shared error
+    # envelope into the contract (#1329).
+    assert settings_module.REST_FRAMEWORK["DEFAULT_SCHEMA_CLASS"] == "shared.api.schema.PlatformAutoSchema"
     assert settings_module.REST_FRAMEWORK["DEFAULT_VERSIONING_CLASS"] == "rest_framework.versioning.NamespaceVersioning"
     assert settings_module.REST_FRAMEWORK["ALLOWED_VERSIONS"] == ["v1"]
     assert settings_module.REST_FRAMEWORK["DEFAULT_VERSION"] == "v1"
@@ -215,6 +217,9 @@ def test_platform_drf_convention_defaults(monkeypatch) -> None:
     assert spectacular["SWAGGER_UI_DIST"] == "SIDECAR"
     assert spectacular["SWAGGER_UI_FAVICON_HREF"] == "SIDECAR"
     assert spectacular["REDOC_DIST"] == "SIDECAR"
+    # Contract scoped to the SPA-facing surface: unpublished apps are dropped
+    # from schema generation (#1329).
+    assert spectacular["PREPROCESSING_HOOKS"] == ["shared.api.schema.exclude_unpublished_endpoints"]
 
 
 def test_api_token_policy_read_from_env(monkeypatch) -> None:

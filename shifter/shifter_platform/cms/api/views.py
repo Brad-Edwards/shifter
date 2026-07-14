@@ -25,6 +25,7 @@ from rest_framework.views import APIView
 from cms.api.permissions import CMS_READ_PERMISSIONS, CMS_WRITE_PERMISSIONS, cms_actor_user
 from cms.api.serializers import (
     CatalogEntrySerializer,
+    PackRegistrationResultSerializer,
     PackRegistrationSerializer,
     ScenarioCloneSerializer,
     ScenarioCreatedSerializer,
@@ -237,6 +238,7 @@ class PackRegisterView(APIView):
 
     permission_classes = CMS_WRITE_PERMISSIONS
 
+    @extend_schema(request=PackRegistrationSerializer, responses={201: PackRegistrationResultSerializer})
     def post(self, request: Request) -> Response:
         """Validate and register a pack, returning a bounded 201 summary."""
         serializer = PackRegistrationSerializer(data=request.data)
