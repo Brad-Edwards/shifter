@@ -136,6 +136,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/cms/catalog/packs/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Validate and register a pack, returning a bounded 201 summary. */
+        post: operations["cms_catalog_packs_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/cms/scenario-editor/scenarios/": {
         parameters: {
             query?: never;
@@ -1377,6 +1394,37 @@ export interface components {
         NGFWListResponse: {
             ngfws: components["schemas"]["NGFWListItem"][];
         };
+        /**
+         * @description Validate the shape of a uniform pack-registration request body (#1578).
+         *
+         *     This is a thin boundary check: it rejects missing/oversized/wrong-typed
+         *     fields so the service and the reference-record validator receive a
+         *     well-formed request. Domain validation (source-kind allowlist, digest shape,
+         *     bounded provenance, pack conformance, no-shadow) remains authoritative in the
+         *     service and model — this serializer does not restate it.
+         */
+        PackRegistration: {
+            scenario_id: string;
+            source_kind: string;
+            contract_kind: string;
+            contract_profile: string;
+            package_ref: string;
+            package_version: string;
+            package_digest: string;
+            /** @default  */
+            lock_ref: string;
+            /** @default  */
+            lock_digest: string;
+            provenance?: {
+                [key: string]: unknown;
+            };
+        };
+        /** @description Bounded 201 summary returned after a pack is registered (#1578). */
+        PackRegistrationResult: {
+            readonly scenario_id: string;
+            readonly source_kind: string;
+            readonly conformance_status: string;
+        };
         PaginatedAuditLogList: {
             /** @example 123 */
             count: number;
@@ -1981,6 +2029,33 @@ export interface operations {
                     "application/json": components["schemas"]["AcesImageMappingView"][];
                 };
             };
+            /** @description Invalid request. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
         };
     };
     cms_aces_image_mappings_create: {
@@ -2006,6 +2081,33 @@ export interface operations {
                     "application/json": components["schemas"]["AcesImageMappingView"];
                 };
             };
+            /** @description Invalid request. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
         };
     };
     cms_aces_image_mappings_disable_create: {
@@ -2029,6 +2131,33 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AcesImageMappingView"];
+                };
+            };
+            /** @description Invalid request. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
                 };
             };
         };
@@ -2127,6 +2256,58 @@ export interface operations {
             };
             /** @description Resource not found. */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    cms_catalog_packs_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PackRegistration"];
+                "application/x-www-form-urlencoded": components["schemas"]["PackRegistration"];
+                "multipart/form-data": components["schemas"]["PackRegistration"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PackRegistrationResult"];
+                };
+            };
+            /** @description Invalid request. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };

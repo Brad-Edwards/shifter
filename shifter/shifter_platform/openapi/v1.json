@@ -233,6 +233,252 @@
         }
       }
     },
+    "/api/v1/cms/aces-image-mappings/": {
+      "get": {
+        "operationId": "cms_aces_image_mappings_list",
+        "description": "Return registry rows as allowlisted DTOs (disabled rows included by default).",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "include_disabled",
+            "schema": {
+              "type": "boolean",
+              "default": true
+            }
+          },
+          {
+            "in": "query",
+            "name": "provider",
+            "schema": {
+              "type": "string",
+              "maxLength": 16,
+              "minLength": 1
+            }
+          }
+        ],
+        "tags": [
+          "cms"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AcesImageMappingView"
+                  }
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Invalid request."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        },
+        "x-required-scopes": [
+          "cms:authoring:read"
+        ]
+      },
+      "post": {
+        "operationId": "cms_aces_image_mappings_create",
+        "description": "Register (create or update) a mapping through the single validated write path.",
+        "tags": [
+          "cms"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AcesImageMappingRegister"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/AcesImageMappingRegister"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/AcesImageMappingRegister"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AcesImageMappingView"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Invalid request."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        },
+        "x-required-scopes": [
+          "cms:authoring:write"
+        ]
+      }
+    },
+    "/api/v1/cms/aces-image-mappings/disable/": {
+      "post": {
+        "operationId": "cms_aces_image_mappings_disable_create",
+        "description": "Disable an existing mapping without deleting it (preserves audit).",
+        "tags": [
+          "cms"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AcesImageMappingDisable"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/AcesImageMappingDisable"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/AcesImageMappingDisable"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AcesImageMappingView"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Invalid request."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        },
+        "x-required-scopes": [
+          "cms:authoring:write"
+        ]
+      }
+    },
     "/api/v1/cms/catalog/": {
       "get": {
         "operationId": "cms_catalog_list",
@@ -377,6 +623,88 @@
         },
         "x-required-scopes": [
           "cms:authoring:read"
+        ]
+      }
+    },
+    "/api/v1/cms/catalog/packs/": {
+      "post": {
+        "operationId": "cms_catalog_packs_create",
+        "description": "Validate and register a pack, returning a bounded 201 summary.",
+        "tags": [
+          "cms"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PackRegistration"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/PackRegistration"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/PackRegistration"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PackRegistrationResult"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Invalid request."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        },
+        "x-required-scopes": [
+          "cms:authoring:write"
         ]
       }
     },
@@ -4345,6 +4673,151 @@
           "source_kind"
         ]
       },
+      "AcesImageMappingDisable": {
+        "type": "object",
+        "description": "Shape validation for a disable request (natural key only).",
+        "properties": {
+          "provider": {
+            "type": "string",
+            "maxLength": 16
+          },
+          "source_name": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "source_version": {
+            "type": "string",
+            "default": "",
+            "maxLength": 100
+          }
+        },
+        "required": [
+          "provider",
+          "source_name"
+        ]
+      },
+      "AcesImageMappingRegister": {
+        "type": "object",
+        "description": "Shape validation for a register/upsert request; the service is final validator.\n\nProvider-choice validity, natural-key rules, and soft-disable semantics stay\nin ``engine.services`` so the API and management command cannot drift; this\nserializer only enforces HTTP shape (required fields, max lengths, positive\ndisk size, boolean).",
+        "properties": {
+          "provider": {
+            "type": "string",
+            "maxLength": 16
+          },
+          "source_name": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "image_ref": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "source_version": {
+            "type": "string",
+            "default": "",
+            "maxLength": 100
+          },
+          "machine_type": {
+            "type": "string",
+            "default": "",
+            "maxLength": 100
+          },
+          "disk_size_gb": {
+            "type": "integer",
+            "minimum": 1,
+            "nullable": true
+          },
+          "disk_type": {
+            "type": "string",
+            "default": "",
+            "maxLength": 100
+          },
+          "enabled": {
+            "type": "boolean",
+            "default": true
+          },
+          "notes": {
+            "type": "string",
+            "default": ""
+          }
+        },
+        "required": [
+          "image_ref",
+          "provider",
+          "source_name"
+        ]
+      },
+      "AcesImageMappingView": {
+        "type": "object",
+        "description": "Allowlisted read projection shared by the register, list, and disable responses.\n\nField-for-field with ``engine.services.AcesImageMappingView`` so it renders\neither that DTO (list/disable) or the model instance the upsert returns.",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "readOnly": true
+          },
+          "provider": {
+            "type": "string",
+            "readOnly": true
+          },
+          "source_name": {
+            "type": "string",
+            "readOnly": true
+          },
+          "source_version": {
+            "type": "string",
+            "readOnly": true
+          },
+          "image_ref": {
+            "type": "string",
+            "readOnly": true
+          },
+          "machine_type": {
+            "type": "string",
+            "readOnly": true
+          },
+          "disk_size_gb": {
+            "type": "integer",
+            "readOnly": true,
+            "nullable": true
+          },
+          "disk_type": {
+            "type": "string",
+            "readOnly": true
+          },
+          "enabled": {
+            "type": "boolean",
+            "readOnly": true
+          },
+          "notes": {
+            "type": "string",
+            "readOnly": true
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true
+          }
+        },
+        "required": [
+          "created_at",
+          "disk_size_gb",
+          "disk_type",
+          "enabled",
+          "id",
+          "image_ref",
+          "machine_type",
+          "notes",
+          "provider",
+          "source_name",
+          "source_version",
+          "updated_at"
+        ]
+      },
       "AcesOperationRecord": {
         "type": "object",
         "description": "Read-only projection of one ACES operation sidecar record (#1275).\n\nSerializes an ``AcesOperationRecordProjection`` (already redacted by the\nshared read seam); it never touches the raw model ``payload``.",
@@ -4847,9 +5320,13 @@
           },
           "scenario_editor_spa": {
             "type": "boolean"
+          },
+          "aces_native_provisioning": {
+            "type": "boolean"
           }
         },
         "required": [
+          "aces_native_provisioning",
           "mission_control_spa",
           "platform_spa",
           "risk_register_spa",
@@ -5553,6 +6030,87 @@
         },
         "required": [
           "ngfws"
+        ]
+      },
+      "PackRegistration": {
+        "type": "object",
+        "description": "Validate the shape of a uniform pack-registration request body (#1578).\n\nThis is a thin boundary check: it rejects missing/oversized/wrong-typed\nfields so the service and the reference-record validator receive a\nwell-formed request. Domain validation (source-kind allowlist, digest shape,\nbounded provenance, pack conformance, no-shadow) remains authoritative in the\nservice and model — this serializer does not restate it.",
+        "properties": {
+          "scenario_id": {
+            "type": "string",
+            "maxLength": 100,
+            "pattern": "^[-a-zA-Z0-9_]+$"
+          },
+          "source_kind": {
+            "type": "string",
+            "maxLength": 16
+          },
+          "contract_kind": {
+            "type": "string",
+            "maxLength": 32
+          },
+          "contract_profile": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "package_ref": {
+            "type": "string",
+            "maxLength": 512
+          },
+          "package_version": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "package_digest": {
+            "type": "string",
+            "maxLength": 71
+          },
+          "lock_ref": {
+            "type": "string",
+            "default": "",
+            "maxLength": 512
+          },
+          "lock_digest": {
+            "type": "string",
+            "default": "",
+            "maxLength": 71
+          },
+          "provenance": {
+            "type": "object",
+            "additionalProperties": {}
+          }
+        },
+        "required": [
+          "contract_kind",
+          "contract_profile",
+          "package_digest",
+          "package_ref",
+          "package_version",
+          "scenario_id",
+          "source_kind"
+        ]
+      },
+      "PackRegistrationResult": {
+        "type": "object",
+        "description": "Bounded 201 summary returned after a pack is registered (#1578).",
+        "properties": {
+          "scenario_id": {
+            "type": "string",
+            "readOnly": true
+          },
+          "source_kind": {
+            "type": "string",
+            "readOnly": true
+          },
+          "conformance_status": {
+            "type": "string",
+            "readOnly": true
+          }
+        },
+        "required": [
+          "conformance_status",
+          "scenario_id",
+          "source_kind"
         ]
       },
       "PaginatedAuditLogList": {
