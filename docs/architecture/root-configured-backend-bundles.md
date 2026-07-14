@@ -18,7 +18,11 @@ The implementation lives in `shifter/installation/`:
 - `registry.py` contains the supported backend bundles.
 - `runtime_inventory.py` records checked-in runtime config surfaces and validates
   env-key drift without reading values.
-- `cli.py` exposes `shifter-config validate`.
+- `cli.py` exposes `shifter-config`: `init` (scaffold a starting `shifter.yaml`),
+  `validate`, `doctor` (backend-aware pre-deploy validation, #727), `render`,
+  `render-runtime`, `runtime-inventory`, and `contract`.
+- `doctor.py` / `_doctor_model.py` / `_doctor_seams.py` implement the backend-aware
+  `doctor` executor (#727); `scaffold.py` implements `init`.
 - `examples/` contains validated AWS and GCP examples.
 
 Contract publication guidance for issue #1323 lives in
@@ -31,7 +35,8 @@ Backend-aware setup and doctor UX constraints for issue #727 live in
 Published operator docs:
 
 - `shifter/installation/README.md`
-- `shifter/shifter_platform/documentation/docs/technical/dev/installation-config.md`
+- `docs/technical/dev/installation-config.md`
+- `docs/technical/dev/setup.md`
 
 ## Root Config Boundary
 
