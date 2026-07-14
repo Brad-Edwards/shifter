@@ -60,3 +60,15 @@ class TestScaffoldConfig:
         result = scaffold_config("aws")
         assert result.destination == Path("shifter.yaml")
         assert (tmp_path / "shifter.yaml").is_file()
+
+    def test_nul_byte_in_destination_is_rejected(self) -> None:
+        with pytest.raises(ScaffoldError) as exc:
+            scaffold_config("aws", "shifter\x00.yaml")
+        assert "NUL" in str(exc.value)
+
+    def test_unwritable_destination_raises_scaffold_error(self, tmp_path: Path) -> None:
+        # Writing into a non-existent parent directory raises OSError, surfaced as ScaffoldError.
+        dest = tmp_path / "missing-parent" / "shifter.yaml"
+        with pytest.raises(ScaffoldError) as exc:
+            scaffold_config("aws", dest)
+        assert "could not write" in str(exc.value)

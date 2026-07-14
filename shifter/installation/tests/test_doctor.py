@@ -27,11 +27,13 @@ from installation.doctor import (
     CheckTier,
     CommandOutcome,
     DoctorCheckResult,
+    DoctorProbes,
     DoctorReport,
     HealthOutcome,
     _default_command_runner,
     _default_health_probe,
     _default_tool_probe,
+    _is_global_address,
     check_backend,
     run_doctor,
 )
@@ -103,6 +105,14 @@ def _results_by_name(results):
     return {r.name: r for r in results}
 
 
+def _probes(tool_probe=all_tools_present, command_runner=None, health_probe=None) -> DoctorProbes:
+    return DoctorProbes(
+        tool_probe=tool_probe,
+        command_runner=command_runner or RecordingRunner(),
+        health_probe=health_probe or RecordingProbe(),
+    )
+
+
 def _check(
     bundle: BackendBundle,
     *,
@@ -116,13 +126,10 @@ def _check(
     return check_backend(
         bundle,
         domain="range.example.com",
-        profile="prod",
         secrets=secrets or {},
         scope=scope,
         repo_root=repo_root,
-        tool_probe=tool_probe,
-        command_runner=command_runner or RecordingRunner(),
-        health_probe=health_probe or RecordingProbe(),
+        probes=_probes(tool_probe=tool_probe, command_runner=command_runner, health_probe=health_probe),
     )
 
 
@@ -132,7 +139,7 @@ def _check(
 class TestConfigGate:
     def test_invalid_config_fails_and_reports_issues(self, write_config, tmp_path: Path) -> None:
         path = write_config({"backend": "aws", "deployment": {"name": "x", "domain": "not a domain"}})
-        report = run_doctor(path, repo_root=tmp_path, tool_probe=all_tools_present)
+        report = run_doctor(path, repo_root=tmp_path, probes=_probes())
         assert not report.ok
         assert report.exit_code() == 1
         assert any(r.status is CheckStatus.FAIL for r in report.results)
@@ -144,7 +151,7 @@ class TestConfigGate:
 
     def test_valid_config_passes_the_config_gate(self, write_config, aws_config, tmp_path: Path) -> None:
         path = write_config(aws_config)
-        report = run_doctor(path, repo_root=tmp_path, tool_probe=all_tools_present)
+        report = run_doctor(path, repo_root=tmp_path, probes=_probes())
         root = _results_by_name(report.results)["root-config"]
         assert root.status is CheckStatus.PASS
         assert report.backend == "aws"
@@ -161,7 +168,7 @@ class TestConfigGate:
                 "settings": {"region": "BADREGION"},
             }
         )
-        report = run_doctor(path, repo_root=tmp_path, tool_probe=all_tools_present)
+        report = run_doctor(path, repo_root=tmp_path, probes=_probes())
         rendered = "\n".join(r.summary + (r.remediation or "") for r in report.results)
         assert secret not in rendered
         assert "BADREGION" not in rendered
@@ -442,9 +449,7 @@ class TestRealBundles:
             path,
             repo_root=tmp_path,
             scope=CheckScope.LOCAL,
-            tool_probe=all_tools_present,
-            command_runner=RecordingRunner(CommandOutcome(returncode=0)),
-            health_probe=RecordingProbe(),
+            probes=_probes(command_runner=RecordingRunner(CommandOutcome(returncode=0))),
         )
         tiers = {r.tier for r in report.results}
         assert CheckTier.LOCAL in tiers
@@ -455,9 +460,17 @@ class TestRealBundles:
         import json
 
         path = write_config(aws_config)
-        report = run_doctor(path, repo_root=tmp_path, tool_probe=all_tools_present)
+        report = run_doctor(path, repo_root=tmp_path, probes=_probes())
         payload = json.dumps(report.to_dict())
         assert '"backend": "aws"' in payload
+
+    def test_unregistered_bundle_fails_the_config_gate(self, write_config, aws_config, tmp_path, monkeypatch) -> None:
+        # Defensive branch: a validated backend whose bundle unexpectedly does not resolve.
+        monkeypatch.setattr("installation.doctor.get_backend_bundle", lambda _name: None)
+        path = write_config(aws_config)
+        report = run_doctor(path, repo_root=tmp_path, probes=_probes())
+        assert not report.ok
+        assert any("no backend bundle" in r.summary for r in report.results)
 
 
 class TestReportReadiness:
@@ -503,6 +516,12 @@ class TestDefaultSeams:
         outcome = _default_command_runner(["shifter-not-an-executable-xyz"], tmp_path)
         assert outcome.returncode is None
         assert outcome.error is not None
+
+    def test_is_global_address_classifies_literals(self) -> None:
+        assert _is_global_address("8.8.8.8") is True
+        assert _is_global_address("127.0.0.1") is False  # loopback
+        assert _is_global_address("10.0.0.1") is False  # private
+        assert _is_global_address("not-an-ip") is False  # unparseable
 
     def test_health_probe_rejects_non_http_scheme(self) -> None:
         outcome = _default_health_probe("ftp://example.invalid/health/", 1)

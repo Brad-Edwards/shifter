@@ -38,7 +38,16 @@ class ScaffoldResult:
 
 
 def _example_path(backend: str, examples_dir: Path) -> Path:
+    """The checked example config path for ``backend`` under ``examples_dir``."""
     return examples_dir / f"{backend}.yaml"
+
+
+def _validated_destination(destination: str | Path | None) -> Path:
+    """Normalize the operator-supplied output path, rejecting a NUL byte before any I/O."""
+    raw = destination if destination is not None else DEFAULT_DESTINATION
+    if "\x00" in str(raw):
+        raise ScaffoldError("destination path contains a NUL byte")
+    return Path(raw)
 
 
 def available_backends(examples_dir: Path = EXAMPLES_DIR) -> list[str]:
@@ -70,15 +79,18 @@ def scaffold_config(
         raise ScaffoldError(f"unknown backend {backend!r}; available backends: {offered}")
 
     source = _example_path(backend, examples_dir)
-    dest = Path(destination) if destination is not None else DEFAULT_DESTINATION
+    dest = _validated_destination(destination)
 
     if dest.exists() and not force:
         raise ScaffoldError(f"{dest}: already exists; pass --force to overwrite it")
 
+    content = source.read_text(encoding="utf-8")
     try:
-        content = source.read_text(encoding="utf-8")
-        dest.write_text(content, encoding="utf-8")
-    except OSError as exc:  # pragma: no cover - defensive I/O guard
+        # The operator explicitly chooses this local output path (like `cp` or the render
+        # command's --output); there is no privilege boundary to escape, and the path is
+        # NUL-checked in _validated_destination.
+        dest.write_text(content, encoding="utf-8")  # NOSONAR
+    except OSError as exc:
         detail = getattr(exc, "strerror", None) or str(exc)
         raise ScaffoldError(f"{dest}: could not write scaffolded config: {detail}") from exc
 
