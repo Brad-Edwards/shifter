@@ -104,3 +104,48 @@ def test_legacy_risk_register_flag_still_serves_shell(settings, member):
     resp = client.get(RR_LIST_URL)
     assert resp.status_code == 200
     assert b'id="root"' in resp.content
+
+
+ACES_IMG_URL = "/aces-image-registry/"
+
+
+@pytest.fixture
+def aces_native_on(settings):
+    settings.PLATFORM_SPA_ENABLED = True
+    settings.ACES_NATIVE_PROVISIONING_ENABLED = True
+
+
+class TestAcesImageRegistrySpaHost:
+    """The greenfield ACES image registry pages (#1566) require both flags."""
+
+    def test_served_by_shell_when_both_flags_on(self, aces_native_on, member):
+        client = Client()
+        client.force_login(member)
+        resp = client.get(ACES_IMG_URL)
+        assert resp.status_code == 200
+        assert b'id="root"' in resp.content
+
+    def test_client_deep_link_serves_shell(self, aces_native_on, member):
+        client = Client()
+        client.force_login(member)
+        resp = client.get("/aces-image-registry/anything/")
+        assert resp.status_code == 200
+        assert b'id="root"' in resp.content
+
+    def test_404_when_native_flag_off(self, settings, member):
+        settings.PLATFORM_SPA_ENABLED = True
+        settings.ACES_NATIVE_PROVISIONING_ENABLED = False
+        client = Client()
+        client.force_login(member)
+        assert client.get(ACES_IMG_URL).status_code == 404
+
+    def test_404_when_platform_spa_off(self, settings, member):
+        settings.PLATFORM_SPA_ENABLED = False
+        settings.ACES_NATIVE_PROVISIONING_ENABLED = True
+        client = Client()
+        client.force_login(member)
+        assert client.get(ACES_IMG_URL).status_code == 404
+
+    def test_anonymous_redirects_to_login_when_enabled(self, aces_native_on):
+        resp = Client().get(ACES_IMG_URL)
+        assert resp.status_code == 302
