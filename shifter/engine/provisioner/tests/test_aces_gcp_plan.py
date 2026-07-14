@@ -103,6 +103,23 @@ class TestSubnets:
                 "req-1", 7, _plan((_node(),), (_network(cidr="10.0.0.0/8"),)), _resolver(), _config()
             )
 
+    def test_ipv6_subnet_fails_loud_without_leaking_authored_cidr(self):
+        # #1568: a non-IPv4 (IPv6) subnet is an unsupported capability. This pure plan
+        # builder is the provisioner backstop for persisted/replayed plans -- it fails
+        # loud BEFORE apply reaches any _ensure_* client mutation. The error text is
+        # forwarded by aces_range_ops into failure events, so it must not echo the
+        # authored network literal.
+        authored_cidr = "fd00:dead:beef::/64"
+        with pytest.raises(AcesGcePlanError) as excinfo:
+            build_aces_range_cell_plan(
+                "req-1", 7, _plan((_node(),), (_network(cidr=authored_cidr),)), _resolver(), _config()
+            )
+        message = str(excinfo.value)
+        assert "IPv4" in message
+        lowered = message.lower()
+        for literal in ("fd00", "dead", "beef"):
+            assert literal not in lowered
+
 
 class TestInstances:
     def test_single_node_gets_first_usable_ip(self):

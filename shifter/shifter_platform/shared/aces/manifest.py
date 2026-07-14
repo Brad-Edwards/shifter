@@ -78,6 +78,16 @@ __all__ = [
 #: The apply-time account-feature realization gate (``shared.aces.realization_ledger``
 #: consumed by ``shared.aces.composition_envelope``) is an INDEPENDENT evidence
 #: envelope: re-declaring a term here does not by itself make a plan admissible.
+#:
+#: The ``constraints`` map qualifies ``switch``: Shifter's range-cell substrate is
+#: IPv4-only across planning, addressing, firewall posture, and outputs, so the
+#: backend realizes IPv4 networks only. ACES SDL accepts IPv6/dual-stack, so this
+#: narrower support is published as ``network-address-family = ipv4-only`` (issue
+#: #1568). IPv6-only and mixed IPv4/IPv6 topologies are unsupported and rejected at
+#: admission (``shared.aces.runtime_target``); the provisioner ``_usable_host_ips``
+#: check is the separate backstop for persisted/replayed plans. The key is
+#: provider-neutral by design -- the publication guard forbids provider/subnet/CIDR
+#: detail in the manifest.
 SHIFTER_PROVISIONER_CAPABILITIES = ProvisionerCapabilities(
     name="shifter-provisioner",
     supported_node_types=frozenset({"vm", "switch"}),
@@ -87,6 +97,7 @@ SHIFTER_PROVISIONER_CAPABILITIES = ProvisionerCapabilities(
     max_total_nodes=None,
     supports_acls=True,
     supports_accounts=True,
+    constraints={"network-address-family": "ipv4-only"},
 )
 
 
