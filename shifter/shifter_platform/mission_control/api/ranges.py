@@ -93,7 +93,11 @@ class LaunchRangeView(MissionControlAPIView):
     # Backpressure (#322): per-actor + fleet admission budget, before CMS.
     throttle_classes = [RangeLaunchRateThrottle]
 
-    @extend_schema(responses=LaunchRangeResponseSerializer, operation_id="api_v1_mission_control_range_launch")
+    @extend_schema(
+        request=LaunchRangeSerializer,
+        responses=LaunchRangeResponseSerializer,
+        operation_id="api_v1_mission_control_range_launch",
+    )
     def post(self, request: Request) -> Response:
         """Validate input and create a range for the authenticated actor."""
         if _is_empty_legacy_body(request):
@@ -237,7 +241,11 @@ class RangeLifecycleView(MissionControlAPIView):
 
 
 @extend_schema_view(
-    post=extend_schema(responses=SuccessResponseSerializer, operation_id="api_v1_mission_control_range_cancel")
+    post=extend_schema(
+        request=RangeLifecycleSerializer,
+        responses=SuccessResponseSerializer,
+        operation_id="api_v1_mission_control_range_cancel",
+    )
 )
 class CancelRangeView(RangeLifecycleView):
     """Cancel a pending or active range."""
@@ -250,7 +258,11 @@ class CancelRangeView(RangeLifecycleView):
 
 
 @extend_schema_view(
-    post=extend_schema(responses=SuccessResponseSerializer, operation_id="api_v1_mission_control_range_destroy")
+    post=extend_schema(
+        request=RangeLifecycleSerializer,
+        responses=SuccessResponseSerializer,
+        operation_id="api_v1_mission_control_range_destroy",
+    )
 )
 class DestroyRangeView(RangeLifecycleView):
     """Destroy a range."""
@@ -263,7 +275,11 @@ class DestroyRangeView(RangeLifecycleView):
 
 
 @extend_schema_view(
-    post=extend_schema(responses=SuccessResponseSerializer, operation_id="api_v1_mission_control_range_pause")
+    post=extend_schema(
+        request=RangeLifecycleSerializer,
+        responses=SuccessResponseSerializer,
+        operation_id="api_v1_mission_control_range_pause",
+    )
 )
 class PauseRangeView(RangeLifecycleView):
     """Pause a range."""
@@ -276,7 +292,11 @@ class PauseRangeView(RangeLifecycleView):
 
 
 @extend_schema_view(
-    post=extend_schema(responses=SuccessResponseSerializer, operation_id="api_v1_mission_control_range_resume")
+    post=extend_schema(
+        request=RangeLifecycleSerializer,
+        responses=SuccessResponseSerializer,
+        operation_id="api_v1_mission_control_range_resume",
+    )
 )
 class ResumeRangeView(RangeLifecycleView):
     """Resume a paused range."""

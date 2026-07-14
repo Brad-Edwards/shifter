@@ -1821,5 +1821,53 @@
       "shifter/engine/provisioner/events.py",
       "shifter/engine/provisioner/log_redact.py"
     ]
+  },
+  {
+    "id": "ADR-040",
+    "title": "The versioned platform API is published from DRF with fail-closed compatibility gates",
+    "status": "accepted",
+    "scope": "shifter_platform",
+    "decision": "The canonical DRF /api/v1/ surface is published as deterministic committed OpenAPI JSON generated from runtime URL routing, serializers, permissions, and drf-spectacular annotations. Runtime DRF remains the authoring source and the committed artifact is the downstream consumer contract; frontend and other generated types derive from that artifact. Schema generation fails on warnings or graceful fallbacks, drift compares runtime generation with the artifact, and breaking-change analysis compares the proposal with a trusted base-branch artifact or immutable major snapshot that the same change cannot rewrite. Backward-compatible additions remain in v1; consumer-breaking changes require a parallel /api/v2/, aligned major metadata, and a machine-verifiable migration note while v1 remains available for its migration window. Authentication, application scopes, CSRF conditions, pagination, and the shared sanitized error envelope are represented from their existing canonical implementations rather than duplicated in schema-only policy.",
+    "rules": [
+      {
+        "id": "ADR-040-R1",
+        "description": "The committed OpenAPI artifact MUST be generated deterministically from config/api_urls.py, config/_drf_settings.py, the included DRF views/serializers, and drf-spectacular annotations. Hand-maintained OpenAPI, frontend types as the source, schema-only copies of runtime validators, and publication with any generator warning, unresolved serializer, fallback operation, operation-id collision, or OpenAPI validation error are prohibited.",
+        "checks": []
+      },
+      {
+        "id": "ADR-040-R2",
+        "description": "CI MUST fail on runtime-to-artifact drift and on consumer-breaking differences from a trusted base-branch artifact or immutable per-major snapshot. The compatibility oracle cannot be refreshed by the same proposed change; compatibility semantics live in a pinned OpenAPI-aware checker or package-local code rather than workflow YAML/shell. A break requires a parallel URL major, aligned NamespaceVersioning/settings/schema metadata, and a machine-verifiable migration note; a label, commit message, info.version-only edit, or overwritten baseline is insufficient.",
+        "checks": []
+      },
+      {
+        "id": "ADR-040-R3",
+        "description": "Within /api/v1/, additions are limited to new independent operations, optional request inputs, optional response object fields, wider accepted requests, and non-semantic documentation. Removed/renamed wire elements; newly required or narrowed inputs; wider, optional, nullable, or new closed-union response possibilities; changed status/media/pagination/error/operation-id semantics; tightened auth/role/scope; and behavior-changing defaults are breaking and require /api/v2/ plus migration evidence.",
+        "checks": []
+      },
+      {
+        "id": "ADR-040-R4",
+        "description": "The contract MUST truthfully reuse and describe the existing security and response boundaries: fail-closed shf_ bearer authentication, same-origin session authentication with CSRF on unsafe methods, exact application scopes from shared.api_tokens (never fictitious OAuth2 or wildcard scopes), existing per-app actor/role permissions, PageNumberPagination, and the sanitized shared.api.errors envelope. Generation uses test settings and no live data, credentials, cloud access, secret values, or sensitive process argv; deliberate non-JSON operations declare their actual media and statuses.",
+        "checks": []
+      }
+    ],
+    "exceptions": [],
+    "enforcement": ["agent-policy"],
+    "evidence": [
+      "https://github.com/Brad-Edwards/shifter/issues/1329",
+      "docs/architecture/openapi-contract-publication-preflight-1329.md",
+      "docs/architecture/spa-cutover-architecture-1300.md",
+      "shifter/shifter_platform/config/api_urls.py",
+      "shifter/shifter_platform/config/_drf_settings.py",
+      "shifter/shifter_platform/shared/api/errors.py",
+      "shifter/shifter_platform/shared/api/schema.py",
+      "shifter/shifter_platform/shared/api_tokens/authentication.py",
+      "shifter/shifter_platform/shared/api_tokens/scopes.py",
+      "shifter/shifter_platform/shared/api/contract.py",
+      "shifter/shifter_platform/config/management/commands/api_contract.py",
+      "shifter/shifter_platform/openapi/v1.json",
+      "shifter/shifter_platform/frontend/src/api/schema.d.ts",
+      "docs/architecture/api-versioning-policy.md",
+      ".github/workflows/_quality.yml"
+    ]
   }
 ]

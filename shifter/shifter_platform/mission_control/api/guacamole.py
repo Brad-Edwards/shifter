@@ -9,6 +9,7 @@ from uuid import UUID
 
 from django.http import HttpResponse, JsonResponse
 from django.urls import reverse
+from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import extend_schema
 from rest_framework.request import Request
 from rest_framework.response import Response
@@ -57,7 +58,9 @@ class GuacamoleRDPURLView(MissionControlReadAPIView):
     permission_classes = [IsAuthenticatedSessionOrApiToken, HasMissionControlActor, _guacamole_read_permission()]
 
     @extend_schema(
-        responses=GuacamoleBootstrapQueuedSerializer, operation_id="api_v1_mission_control_guacamole_rdp_url"
+        request=GuacamoleInstanceSerializer,
+        responses=GuacamoleBootstrapQueuedSerializer,
+        operation_id="api_v1_mission_control_guacamole_rdp_url",
     )
     def post(self, request: Request) -> JsonResponse | Response:
         """Queue an RDP bootstrap request for a range instance."""
@@ -94,7 +97,9 @@ class GuacamoleRangeSSHURLView(MissionControlReadAPIView):
     permission_classes = [IsAuthenticatedSessionOrApiToken, HasMissionControlActor, _guacamole_read_permission()]
 
     @extend_schema(
-        responses=GuacamoleBootstrapQueuedSerializer, operation_id="api_v1_mission_control_guacamole_ssh_url"
+        request=GuacamoleInstanceSerializer,
+        responses=GuacamoleBootstrapQueuedSerializer,
+        operation_id="api_v1_mission_control_guacamole_ssh_url",
     )
     def post(self, request: Request) -> JsonResponse | Response:
         """Queue an SSH bootstrap request for a range instance."""
@@ -130,7 +135,11 @@ class GuacamoleNGFWSSHURLView(MissionControlReadAPIView):
 
     permission_classes = [IsAuthenticatedSessionOrApiToken, HasMissionControlActor, _guacamole_read_permission()]
 
-    @extend_schema(responses=GuacamoleBootstrapQueuedSerializer, operation_id="api_v1_mission_control_ngfw_ssh_url")
+    @extend_schema(
+        request=None,
+        responses=GuacamoleBootstrapQueuedSerializer,
+        operation_id="api_v1_mission_control_ngfw_ssh_url",
+    )
     def post(self, request: Request, app_id: str) -> JsonResponse | Response:
         """Queue an SSH bootstrap request for an NGFW instance."""
         user = self.actor_user()
@@ -183,6 +192,16 @@ class GuacamoleBootstrapOpenView(MissionControlReadAPIView):
 
     permission_classes = [IsAuthenticatedSessionOrApiToken, HasMissionControlActor, _guacamole_read_permission()]
 
+    @extend_schema(
+        # Deliberate non-JSON route: returns an HTML opener page that polls the
+        # status endpoint and redirects when the session URL is ready. Declared
+        # with its real media types rather than pretending to return JSON.
+        responses={
+            (200, "text/html"): OpenApiTypes.STR,
+            (404, "text/plain"): OpenApiTypes.STR,
+        },
+        operation_id="api_v1_mission_control_guacamole_bootstrap_open_retrieve",
+    )
     def get(self, request: Request, request_id: UUID) -> HttpResponse:
         """Render an opener page that polls until the bootstrap URL is ready."""
         user = self.actor_user()

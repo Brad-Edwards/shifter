@@ -49,7 +49,11 @@ class NGFWCreateView(MissionControlAPIView):
     # Backpressure (#322): per-actor + fleet admission budget, before CMS.
     throttle_classes = [NGFWLaunchRateThrottle]
 
-    @extend_schema(responses=NGFWCreateResponseSerializer, operation_id="api_v1_mission_control_ngfw_create")
+    @extend_schema(
+        request=NGFWCreateSerializer,
+        responses=NGFWCreateResponseSerializer,
+        operation_id="api_v1_mission_control_ngfw_create",
+    )
     def post(self, request: Request) -> Response | JsonResponse:
         """Start NGFW provisioning for the authenticated actor."""
         data, error = _validated(self, NGFWCreateSerializer, request.data)
@@ -98,7 +102,11 @@ class NGFWDestroyView(MissionControlAPIView):
 
     permission_classes = [IsAuthenticatedSessionOrApiToken, HasMissionControlActor, _ngfw_write_permission()]
 
-    @extend_schema(responses=NGFWDestroyResponseSerializer, operation_id="api_v1_mission_control_ngfw_destroy")
+    @extend_schema(
+        request=NGFWDestroySerializer,
+        responses=NGFWDestroyResponseSerializer,
+        operation_id="api_v1_mission_control_ngfw_destroy",
+    )
     def post(self, request: Request, app_id: str) -> Response | JsonResponse:
         """Start NGFW deprovisioning for the requested app id."""
         data, error = _validated(self, NGFWDestroySerializer, request.data)
@@ -127,7 +135,9 @@ class CredentialCreateView(MissionControlAPIView):
     permission_classes = [IsAuthenticatedSessionOrApiToken, HasMissionControlActor, _credentials_write_permission()]
 
     @extend_schema(
-        responses=CredentialCreateResponseSerializer, operation_id="api_v1_mission_control_credentials_create"
+        request=CredentialCreateSerializer,
+        responses=CredentialCreateResponseSerializer,
+        operation_id="api_v1_mission_control_credentials_create",
     )
     def post(self, request: Request) -> Response | JsonResponse:
         """Validate and persist a Mission Control credential."""
@@ -163,7 +173,11 @@ class CredentialDeleteView(MissionControlAPIView):
 
     permission_classes = [IsAuthenticatedSessionOrApiToken, HasMissionControlActor, _credentials_write_permission()]
 
-    @extend_schema(responses=SuccessResponseSerializer, operation_id="api_v1_mission_control_credentials_delete")
+    @extend_schema(
+        request=None,
+        responses=SuccessResponseSerializer,
+        operation_id="api_v1_mission_control_credentials_delete",
+    )
     def post(self, request: Request, credential_id: int) -> Response:
         """Delete a credential visible to the authenticated actor."""
         user = self.actor_user()
