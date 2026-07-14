@@ -83,12 +83,50 @@ changed or replaced after registration cannot execute. Stage repo packs
 immutably for both operations; mutable working trees are not a supported
 deployment surface.
 
-`object` (object-storage) packs are registrable but are not launchable until an
-object resolver with equivalent containment and immutable-identity guarantees
-exists (#1567).
+`object` (object-storage) packs are launchable (#1567). `package_ref` names a
+single immutable archive object holding the pack (one archive per ref, not a
+storage prefix used as a directory). At launch the resolver downloads that
+archive from the configured package bucket into a private temporary directory,
+safely extracts it under fail-closed bounds (archive/uncompressed size and entry
+caps; absolute paths, `..` traversal, symlinks, hardlinks, and device/special
+files are rejected), then re-runs the upstream pack contract validation, asserts
+the extracted pack identity equals the registered `scenario_id`, and verifies the
+same canonical `package_digest` (the equivalent containment and immutable-identity
+guarantees repo packs get, ADR-034-R5), all before SDL resolution, parsing,
+planning, or dispatch. The staged directory is always removed afterward.
+
+Object launch requires deployment configuration: set `SHIFTER_ACES_PACKAGE_BUCKET`
+(and optionally `SHIFTER_ACES_PACKAGE_PREFIX`) on the app, and grant the portal
+workload least-privilege read-only access to that bucket/prefix in Terraform
+(`aces_package_bucket_arn` on AWS, `aces_package_bucket_name` on GCP). With no
+bucket configured an object row stays registrable and visible in the catalog but
+non-launchable (fail closed): a readiness decision, not a catalog-time network
+probe. Size and traversal bounds are tunable via `SHIFTER_ACES_PACKAGE_MAX_ARCHIVE_BYTES`,
+`SHIFTER_ACES_PACKAGE_MAX_UNCOMPRESSED_BYTES`, and `SHIFTER_ACES_PACKAGE_MAX_ENTRIES`.
 
 Registration is not conformance and is not launchability. A caller cannot assert
 that a pack has passed conformance: every registration lands non-passed, and
 conformance is promoted out of band by a trusted conformance process. A
 registered pack may remain review-only or non-realizable, and launchability
 continues to be decided by the registry.
+
+## Image-optional packs and parameterized runs
+
+Image-bearing is optional (ADR-034). A pack whose SDL declares no VM image
+`source` is valid content: it imports through the same registration service,
+appears in the catalog, and is not failed by realizability merely for lacking
+images. Image count is never a realizability proxy. Absence of an authored image
+is not the same as "always launchable": a source-less VM still needs the backend
+to supply a base OS at realization (the tenant-managed ACES image registry), and
+a scenario whose plan requires an unsupported backend term still fails closed.
+
+A scenario's runs may be parameterized through ACES SDL `variables`: the
+multi-run experiment unit over one scenario/profile. Shifter represents a
+parameterized run as `scenario_id + profile + parameter binding identity`,
+validated against the scenario's declared variables (via the ACES SDL
+instantiation contract) before planning. Parameter values are never persisted:
+the package record stays provenance-only, a run is identified by a one-way digest
+of its binding, and the catalog-model run-capability projection surfaces only a
+bounded schema (each variable's name, type, whether it is required, whether it
+has a default, and how many allowed values it declares), never the authored
+defaults, allowed-value enumerations, or per-run values.

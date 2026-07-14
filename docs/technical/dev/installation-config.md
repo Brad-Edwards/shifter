@@ -16,14 +16,33 @@ uv run --project shifter/installation shifter-config validate shifter.yaml
 The command exits `0` when the file is valid. It exits `1` and prints all
 detected issues when validation fails.
 
-## Start From An Example
+## Doctor
+
+`validate` checks only the shape of `shifter.yaml`. To validate the selected
+backend before applying infrastructure (required tools, secret references,
+generated env, owned repository paths, and the backend bundle's credential-free
+validation checks, plus opt-in read-only health probes), run `doctor`:
 
 ```bash
-cp shifter/installation/examples/aws.yaml shifter.yaml
-uv run --project shifter/installation shifter-config validate shifter.yaml
+uv run --project shifter/installation shifter-config doctor shifter.yaml
 ```
 
-Use `shifter/installation/examples/gcp.yaml` for GCP.
+Every check is labelled local-only, cloud-read-only, or deployment-mutating, and
+`doctor` is non-mutating by default. See [Setup](setup) for the full setup and
+validation flow.
+
+## Start From An Example
+
+Scaffold a starting `shifter.yaml` for a backend, or copy an example directly:
+
+```bash
+# Scaffold ./shifter.yaml from the checked example (omit --backend to list backends).
+uv run --project shifter/installation shifter-config init --backend aws
+# Or copy the example directly:
+cp shifter/installation/examples/aws.yaml shifter.yaml
+```
+
+Use `--backend gcp` (or `examples/gcp.yaml`) for GCP, then run `validate` and `doctor`.
 
 ## Supported Backends
 

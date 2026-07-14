@@ -63,15 +63,42 @@ for the authoritative order.
 
 ## Root Installation Config
 
-Create and validate `shifter.yaml` before deployment:
+Scaffold, edit, then validate `shifter.yaml` before deployment. `init` copies the
+checked example for your backend to `./shifter.yaml` (local-only: it writes no
+secrets and calls no cloud API):
 
 ```bash
-cp shifter/installation/examples/aws.yaml shifter.yaml
+# Scaffold ./shifter.yaml (run `init` with no --backend to list the available backends).
+uv run --project shifter/installation shifter-config init --backend aws
+
+# Edit shifter.yaml for your deployment, then validate its shape.
 uv run --project shifter/installation shifter-config validate shifter.yaml
 ```
 
-Use `shifter/installation/examples/gcp.yaml` for GCP. See
-[Installation Config](installation-config) for the field reference.
+Use `--backend gcp` for GCP. See [Installation Config](installation-config) for the
+field reference.
+
+## Doctor
+
+Once `shifter.yaml` is filled in, run `doctor` to validate the *selected backend* (not
+just the config shape) before applying infrastructure. It runs the checks the backend
+bundle declares (required tools on PATH, secret references, generated outputs, owned
+repository paths, and the bundle's credential-free validation checks) and labels each
+check as local-only, cloud-read-only, or deployment-mutating. It is non-mutating by
+default and its output is backend/profile based, so you never need to read the deploy
+workflow's branch logic to understand a failure.
+
+```bash
+# Local-only checks (default): config, tools, secret references, non-mutating validation.
+uv run --project shifter/installation shifter-config doctor shifter.yaml
+
+# Additionally run read-only health probes of the deployment endpoint (post-deploy).
+uv run --project shifter/installation shifter-config doctor shifter.yaml --checks cloud
+```
+
+`doctor` exits `1` when any blocking check fails. It is a pre-mutation readiness signal;
+the deploy preflight below, Terraform, and runtime health gates remain authoritative for
+their own layers.
 
 ## Preflight
 

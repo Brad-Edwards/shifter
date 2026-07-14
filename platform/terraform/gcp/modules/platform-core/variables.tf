@@ -309,6 +309,12 @@ variable "vmseries_bootstrap_bucket_name" {
   default     = ""
 }
 
+variable "aces_package_bucket_name" {
+  description = "Optional GCS bucket holding object-backed ACES package archives (#1567). Empty grants the portal no binding on it (ADR-008-R7); set it (with SHIFTER_ACES_PACKAGE_BUCKET on the app) when a deployment enables object-backed ACES packages."
+  type        = string
+  default     = ""
+}
+
 variable "range_provisioner_ports" {
   description = "TCP ports the platform provisioner is allowed to reach on the range VPC. Used to construct the range-allow-platform-provisioner firewall rule. The range VPC otherwise denies all ingress (ADR-008-R4)."
   type        = list(number)

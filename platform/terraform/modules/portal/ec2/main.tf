@@ -419,6 +419,39 @@ resource "aws_iam_role_policy" "s3_access" {
   })
 }
 
+# Least-privilege, read-only access to the object-backed ACES package bucket
+# (#1567, ADR-034-R5). The portal pulls the single immutable pack archive at
+# launch and nothing else: GetObject is scoped to the optional key prefix, and
+# ListBucket is constrained by an s3:prefix condition. Created only when a
+# package bucket is configured, so deployments not using object-backed packs get
+# no additional grant.
+resource "aws_iam_role_policy" "aces_package_read" {
+  count = var.aces_package_bucket_arn != "" ? 1 : 0
+  name  = "aces-package-read"
+  role  = aws_iam_role.this.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["s3:GetObject"]
+        Resource = "${var.aces_package_bucket_arn}/${var.aces_package_prefix}*"
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["s3:ListBucket"]
+        Resource = var.aces_package_bucket_arn
+        Condition = {
+          StringLike = {
+            "s3:prefix" = ["${var.aces_package_prefix}*"]
+          }
+        }
+      }
+    ]
+  })
+}
+
 resource "aws_iam_role_policy" "ecs_run_task" {
   name = "ecs-run-task"
   role = aws_iam_role.this.id
