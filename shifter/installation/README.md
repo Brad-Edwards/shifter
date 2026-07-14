@@ -43,6 +43,23 @@ uv run --project shifter/installation shifter-config validate shifter.yaml
 
 Use `examples/gcp.yaml` for GCP.
 
+## Init
+
+`shifter-config init` scaffolds a starting `shifter.yaml` from the checked example
+for a backend, so you begin from a valid, backend-shaped config instead of a blank
+file. It is local-only: it copies committed example text, authenticates to nothing,
+writes no secrets, and touches no cloud API.
+
+```bash
+# List the backends that ship an example.
+uv run --project shifter/installation shifter-config init
+
+# Scaffold ./shifter.yaml for a backend (add --force to overwrite an existing file).
+uv run --project shifter/installation shifter-config init --backend aws
+```
+
+Edit the scaffolded file, then run `doctor` to validate it.
+
 ## Root Fields
 
 | Key | Required | Notes |
@@ -94,6 +111,43 @@ Validation rejects:
 - secret names not used by the selected backend
 
 Validation messages are path-based and do not echo rejected input values.
+
+## Doctor
+
+`shifter-config doctor` validates the selected backend before infrastructure is
+applied. Where `validate` checks only the shape of `shifter.yaml`, `doctor` runs the
+checks the selected backend bundle *declares* (required tools on PATH, secret
+references, generated-output classification, owned repository paths, and the bundle's
+credential-free validation checks) and, opt-in, read-only health probes. It adds no
+backend-specific check list of its own; a new backend gets coverage by declaring bundle
+metadata.
+
+```bash
+# Local-only checks (default): config, tools, secret references, and the backend's
+# non-mutating validation checks. No network, no cloud calls.
+uv run --project shifter/installation shifter-config doctor shifter.yaml
+
+# Also run read-only health probes of the deployment endpoint.
+uv run --project shifter/installation shifter-config doctor shifter.yaml --checks cloud
+
+# Machine-readable report.
+uv run --project shifter/installation shifter-config doctor shifter.yaml --json
+```
+
+Each check is labelled by side-effect tier:
+
+| Tier | When | Examples |
+| --- | --- | --- |
+| `local-only` | default | root-config validation, tool lookup, secret references, generated-output classification, owned-path existence, `terraform fmt -check` / `helm template` / `kubectl kustomize` / `kube-linter lint` |
+| `cloud-read-only` | opt-in (`--checks cloud`) | read-only HTTP probe of the portal `/health/` endpoint |
+| `deployment-mutating` | never run | `terraform apply`, provider/GitHub secret writes, `helm`/`kubectl apply`; reported only, owned by the deploy workflow |
+
+`doctor` is non-mutating by default and exits `1` when any blocking check fails. It never
+resolves a secret value; it checks that references are present and well-formed. Reports name
+the backend, profile, check names, missing tools, and repo-relative paths only, never config
+bodies, secret references or values, or captured command output. `doctor` success is a
+pre-mutation readiness signal, not a substitute for the deploy preflight, Terraform, or
+runtime health gates.
 
 ## Render
 
@@ -196,7 +250,9 @@ express), so a bundle it accepts is one the internal contract accepts too.
 | `registry.py` | Supported backend bundle registry. |
 | `publication.py` | Generate and check the published, versioned contract artifact. |
 | `runtime_inventory.py` | Runtime config surface inventory and env-key drift checker. |
-| `cli.py` | `shifter-config validate`, `render`, `runtime-inventory`, and `contract`. |
+| `cli.py` | `shifter-config init`, `validate`, `doctor`, `render`, `runtime-inventory`, and `contract`. |
+| `doctor.py` | Backend-aware `doctor` executor: tier-classified checks over the selected bundle. |
+| `scaffold.py` | `init` scaffolding: copy a checked example to a starting `shifter.yaml`. |
 | `render.py` | Render `settings.range_egress` into provider Terraform bridge tfvars. |
 | `errors.py` | Sanitized validation issue model. |
 | `published_contract/` | Committed contract artifact, frozen per-version snapshots, and migration notes. |
