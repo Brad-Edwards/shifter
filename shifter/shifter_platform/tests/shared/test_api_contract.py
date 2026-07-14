@@ -13,6 +13,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from django.db import connection
 
 from shared.api import contract
 from shared.api.schema import exclude_unpublished_endpoints
@@ -126,6 +127,16 @@ class TestLiveResponseParity:
 
 
 class TestDriftGate:
+    @pytest.mark.skipif(
+        connection.vendor != "sqlite",
+        reason=(
+            "The committed artifact is the hermetic SQLite generation (gen:api / api_contract "
+            "convention). drf-spectacular derives integer bounds from the backend's "
+            "integer_field_ranges (SQLite reports int64 for SmallIntegerField; PostgreSQL reports "
+            "the real ±32767), so a fresh generation under another backend legitimately differs. "
+            "The authoritative drift gate is the SQLite CI job (`API contract (shifter_platform)`)."
+        ),
+    )
     def test_committed_artifact_matches_the_drf_surface(self) -> None:
         is_current, detail = contract.check_drift()
         assert is_current, detail
