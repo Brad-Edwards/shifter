@@ -13,7 +13,7 @@ from datetime import timedelta
 from django.utils import timezone
 
 from ctf.enums import ChallengeCategory, ChallengeDifficulty, ParticipantStatus
-from ctf.models import CTFChallenge, CTFParticipant, CTFSubmission
+from ctf.models import CTFChallenge, CTFHint, CTFParticipant, CTFSubmission
 
 from ._api_flow_helpers import call_json
 
@@ -151,3 +151,96 @@ class TestParticipantTeam:
         response = call_json(authenticated_participant_client, "get", "api_participant_team")
 
         assert response.status_code == 404
+
+
+class TestParticipantChallengeDetail:
+    """``GET /api/v1/ctf/me/challenges/<id>/``."""
+
+    def _challenge_with_solution(self, event) -> CTFChallenge:
+        return CTFChallenge.objects.create(
+            event=event,
+            name="Solve Me",
+            description="detail body",
+            category=ChallengeCategory.WEB.value,
+            points=100,
+            difficulty=ChallengeDifficulty.EASY.value,
+            flag_hash="$2b$12$detail_placeholder",
+            flag_format="FLAG{...}",
+            solution="the flag was in robots.txt",
+        )
+
+    def test_returns_detail_without_flag_or_solution_pre_end(
+        self, authenticated_participant_client, ctf_participant, ctf_event
+    ):
+        """Detail carries hints/files but never the flag; solution stays hidden."""
+        challenge = self._challenge_with_solution(ctf_event)
+        CTFHint.objects.create(challenge=challenge, text="secret hint", penalty=10, order=0)
+
+        response = call_json(
+            authenticated_participant_client,
+            "get",
+            "api_participant_challenge_detail",
+            kwargs={"challenge_id": challenge.id},
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["id"] == str(challenge.id)
+        assert "flag_hash" not in body
+        assert "flag_format" not in body
+        assert body["show_solution"] is False
+        assert body["solution"] is None
+        assert body["hints"][0]["unlocked"] is False
+        assert body["hints"][0]["text"] is None
+
+    def test_solution_revealed_after_event_ends(self, authenticated_participant_client, ctf_participant, ctf_event):
+        """Once the event has ended the solution is surfaced for review."""
+        challenge = self._challenge_with_solution(ctf_event)
+        ctf_event.status = "ended"
+        ctf_event.save(update_fields=["status"])
+
+        response = call_json(
+            authenticated_participant_client,
+            "get",
+            "api_participant_challenge_detail",
+            kwargs={"challenge_id": challenge.id},
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["show_solution"] is True
+        assert body["solution"] == "the flag was in robots.txt"
+
+    def test_404_for_unknown_challenge(self, authenticated_participant_client, ctf_participant):
+        """An unknown challenge id returns a 404 envelope."""
+        response = call_json(
+            authenticated_participant_client,
+            "get",
+            "api_participant_challenge_detail",
+            kwargs={"challenge_id": "00000000-0000-0000-0000-000000000000"},
+        )
+
+        assert response.status_code == 404
+
+    def test_forbidden_for_challenge_in_other_event(
+        self, authenticated_participant_client, ctf_participant, ctf_event_active
+    ):
+        """A challenge in an event the participant is not in is forbidden."""
+        other = CTFChallenge.objects.create(
+            event=ctf_event_active,
+            name="Other Event Challenge",
+            description="not yours",
+            category=ChallengeCategory.WEB.value,
+            points=100,
+            difficulty=ChallengeDifficulty.EASY.value,
+            flag_hash="$2b$12$other_placeholder",
+        )
+
+        response = call_json(
+            authenticated_participant_client,
+            "get",
+            "api_participant_challenge_detail",
+            kwargs={"challenge_id": other.id},
+        )
+
+        assert response.status_code == 403

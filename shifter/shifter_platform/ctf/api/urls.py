@@ -12,6 +12,11 @@ urlpatterns = [
     # Participant self-reads (typed DRF projections for the SPA workspace).
     path("me/event/", participant_views.ParticipantCurrentEventView.as_view(), name="api_participant_current_event"),
     path("me/challenges/", participant_views.ParticipantChallengeListView.as_view(), name="api_participant_challenges"),
+    path(
+        "me/challenges/<uuid:challenge_id>/",
+        participant_views.ParticipantChallengeDetailView.as_view(),
+        name="api_participant_challenge_detail",
+    ),
     path("me/team/", participant_views.ParticipantTeamView.as_view(), name="api_participant_team"),
     path("events/", views.api_event_list, name="api_event_list"),
     path("events/<uuid:event_id>/", views.api_event_detail, name="api_event_detail"),

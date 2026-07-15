@@ -24,6 +24,7 @@ from rest_framework.views import APIView
 from ctf.api import projections
 from ctf.api._base import CTF_PARTICIPANT_PERMISSIONS, ctf_actor_user
 from ctf.api.serializers import (
+    ParticipantChallengeDetailSerializer,
     ParticipantChallengeListItemSerializer,
     ParticipantCurrentEventSerializer,
     ParticipantTeamSerializer,
@@ -32,9 +33,13 @@ from shared.api.errors import api_error_response
 from shared.api_tokens import scopes
 
 if TYPE_CHECKING:
+    from uuid import UUID
+
     from ctf.models import CTFParticipant
 
 _NO_ACTIVE_EVENT = "No active CTF event for this participant."
+_FORBIDDEN = "Forbidden"
+_CHALLENGE_NOT_FOUND = "Challenge not found."
 _PLAY_READ = (scopes.CTF_PLAY_READ,)
 
 
@@ -124,3 +129,59 @@ class ParticipantTeamView(APIView):
                 request=request,
             )
         return Response(ParticipantTeamSerializer(team).data)
+
+
+class ParticipantChallengeDetailView(APIView):
+    """Return the participant-safe detail projection for one challenge."""
+
+    permission_classes = CTF_PARTICIPANT_PERMISSIONS
+    required_read_scopes = _PLAY_READ
+
+    @extend_schema(responses=ParticipantChallengeDetailSerializer)
+    def get(self, request: Request, challenge_id: UUID) -> Response:
+        """Return the challenge detail, or 404/403 per the read-availability policy."""
+        from ctf.exceptions import CTFNotFoundError, CTFStateError, CTFValidationError
+        from ctf.services.challenge import assert_challenge_readable_for_participant, get_challenge
+        from ctf.services.participant import get_participant_by_user
+
+        actor = ctf_actor_user(request)
+        if actor is None:
+            return api_error_response(
+                code="permission_denied",
+                message=_FORBIDDEN,
+                status_code=status.HTTP_403_FORBIDDEN,
+                request=request,
+            )
+        try:
+            challenge = get_challenge(challenge_id)
+        except CTFNotFoundError:
+            return api_error_response(
+                code="not_found",
+                message=_CHALLENGE_NOT_FOUND,
+                status_code=status.HTTP_404_NOT_FOUND,
+                request=request,
+            )
+        # Event-scoped resolution (codex 765/768/769): a multi-event user must be
+        # looked up against THIS challenge's event, never an arbitrary first row.
+        participant = get_participant_by_user(actor, event_id=challenge.event_id)
+        if participant is None:
+            return api_error_response(
+                code="permission_denied",
+                message=_FORBIDDEN,
+                status_code=status.HTTP_403_FORBIDDEN,
+                request=request,
+            )
+        # Read-availability policy: blocks hidden/unreleased/prerequisite-gated
+        # content while still allowing locked and ended/archived review.
+        try:
+            assert_challenge_readable_for_participant(participant, challenge)
+        except (CTFStateError, CTFValidationError):
+            return api_error_response(
+                code="permission_denied",
+                message=_FORBIDDEN,
+                status_code=status.HTTP_403_FORBIDDEN,
+                request=request,
+            )
+        return Response(
+            ParticipantChallengeDetailSerializer(projections.participant_challenge_detail(participant, challenge)).data
+        )

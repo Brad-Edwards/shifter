@@ -108,3 +108,108 @@ def participant_team(participant: CTFParticipant) -> dict[str, Any] | None:
         "name": team.name,
         "members": [{"id": str(member.id), "name": member.name} for member in members],
     }
+
+
+def participant_challenge_detail(participant: CTFParticipant, challenge: Any) -> dict[str, Any]:
+    """Return the participant-safe detail projection for one challenge.
+
+    Composes the canonical challenge / hint / submission / scoring services and
+    the shared play helpers (:mod:`ctf.services.participant.play`). The flag
+    hash, flag format, and validator configuration are never included; hint text
+    is present only for hints this participant has unlocked; the solution is
+    surfaced only once the event has ended/archived, matching the legacy
+    participant-detail policy. The caller MUST have already asserted the
+    challenge is readable for this participant.
+    """
+    from ctf.services.attachment import get_challenge_files
+    from ctf.services.challenge import check_prerequisites_met
+    from ctf.services.hint import get_hints, get_total_hint_penalty, get_unlocked_hints
+    from ctf.services.participant.play import (
+        compute_attempt_state,
+        compute_hint_purchase_info,
+        resolve_target_connection_info,
+    )
+
+    event = participant.event
+    submissions = get_participant_submissions(participant.id, challenge_id=challenge.id)
+    is_solved = submissions.filter(is_correct=True).exists()
+
+    all_hints = list(get_hints(challenge.id))
+    unlocked_ids = {hint.id for hint in get_unlocked_hints(participant.id, challenge.id)}
+    total_hint_penalty = get_total_hint_penalty(participant.id, challenge.id)
+    hint_purchase = compute_hint_purchase_info(event, challenge, all_hints, unlocked_ids, total_hint_penalty)
+    next_hint = hint_purchase["next_hint"]
+
+    prereqs_met, unmet = check_prerequisites_met(challenge.id, participant.id)
+    attempt_count, timeout_retry_after, attempts_remaining = compute_attempt_state(
+        challenge, participant, submissions, submissions.count()
+    )
+    show_solution = bool(challenge.solution and event.status in ("ended", "archived"))
+
+    return {
+        "id": str(challenge.id),
+        "name": challenge.name,
+        "description": challenge.description,
+        "category": challenge.category,
+        "points": challenge.points,
+        "difficulty": challenge.difficulty,
+        "max_attempts": challenge.max_attempts,
+        "attempt_limit_mode": event.attempt_limit_mode,
+        "solved": is_solved,
+        "attempt_count": attempt_count,
+        "attempts_remaining": attempts_remaining,
+        "timeout_retry_after": timeout_retry_after,
+        "hints": [
+            {
+                "id": str(hint.id),
+                "order": hint.order,
+                "penalty": hint.penalty,
+                "unlocked": hint.id in unlocked_ids,
+                "text": hint.text if hint.id in unlocked_ids else None,
+            }
+            for hint in all_hints
+        ],
+        "next_hint_id": str(next_hint.id) if next_hint is not None else None,
+        "next_hint_cost": hint_purchase["next_hint_cost"],
+        "points_after_next_hint": hint_purchase["points_after_next_hint"],
+        "total_hint_penalty": total_hint_penalty,
+        "files": [
+            {
+                "id": str(challenge_file.id),
+                "filename": challenge_file.filename,
+                "display_name": challenge_file.display_name,
+                "size_bytes": challenge_file.file_size_bytes,
+                "content_type": challenge_file.content_type,
+            }
+            for challenge_file in get_challenge_files(challenge.id)
+        ],
+        "prerequisites_met": prereqs_met,
+        "unmet_prerequisites": [{"id": str(required.id), "name": required.name} for required in unmet],
+        "connection_info": resolve_target_connection_info(challenge, participant),
+        "show_solution": show_solution,
+        "solution": challenge.solution if show_solution else None,
+        "rating": _participant_rating(event, participant, challenge),
+    }
+
+
+def _participant_rating(event: Any, participant: CTFParticipant, challenge: Any) -> dict[str, Any] | None:
+    """Return the challenge rating projection for the participant, or None.
+
+    ``None`` when ratings are disabled for the event. The aggregate average and
+    count are surfaced only when rating visibility is ``public``; the
+    participant's own rating is always included so they can see/adjust it.
+    """
+    if event.rating_visibility == "disabled":
+        return None
+    from ctf.models import CTFChallengeRating
+    from ctf.services.submission import get_challenge_rating
+
+    own = CTFChallengeRating.objects.filter(participant=participant, challenge=challenge).first()
+    public = event.rating_visibility == "public"
+    aggregate = get_challenge_rating(challenge.id) if public else {"average": None, "count": 0}
+    return {
+        "average": aggregate["average"],
+        "count": aggregate["count"],
+        "own_rating": own.value if own is not None else None,
+        "public": public,
+    }
