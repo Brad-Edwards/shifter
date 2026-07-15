@@ -114,6 +114,40 @@ def test_active_range_refused(user, native_on, monkeypatch):
 
 
 @pytest.mark.django_db
+def test_live_fire_gate_denies_gdc_before_dispatch(user, native_on, monkeypatch):
+    # Issue #1348 / ADR-030: the ACES-native path shares the same live-fire gate;
+    # a GDC selector is denied before the pack is resolved or dispatched.
+    from django.conf import settings
+
+    _make_source(user)
+    dispatched = {"called": False}
+    monkeypatch.setattr(_DISPATCH, lambda *a, **k: dispatched.update(called=True))
+    monkeypatch.setattr(settings, "CLOUD_PROVIDER", "gcp")
+    monkeypatch.setenv("GCP_RANGE_BACKEND", "gdc")
+
+    with pytest.raises(CMSError, match=r"not an approved live-fire|GCE VM range-cell"):
+        create_aces_native_range(user, "aces-launch")
+
+    assert dispatched["called"] is False
+    assert not RangeInstance.all_objects.filter(user_id=user.id).exists()
+
+
+@pytest.mark.django_db
+def test_live_fire_gate_admits_gce(user, native_on, monkeypatch):
+    from django.conf import settings
+
+    _make_source(user)
+    monkeypatch.setattr(_DISPATCH, lambda *a, **k: None)
+    monkeypatch.setattr(settings, "CLOUD_PROVIDER", "gcp")
+    monkeypatch.setenv("GCP_RANGE_BACKEND", "gce")
+
+    ctx = create_aces_native_range(user, "aces-launch")
+
+    assert ctx.request_id is not None
+    assert RangeInstance.objects.filter(user_id=user.id).exists()
+
+
+@pytest.mark.django_db
 def test_dispatch_routes_cyberscript_when_flag_off(user, monkeypatch):
     from django.conf import settings
 

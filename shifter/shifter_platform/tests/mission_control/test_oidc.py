@@ -381,8 +381,8 @@ class TestShifterOIDCBackendBootstrapAdmin:
 
     @pytest.mark.parametrize(
         "email_verified",
-        [False, "false", "true", 0, 1],
-        ids=["false", "str-false", "str-true", "int-0", "int-1"],
+        [False, "false", 0, 1],
+        ids=["false", "str-false", "int-0", "int-1"],
     )
     def test_create_user_rejects_non_literal_true_email_verified(self, email_verified):
         backend = _stashed_backend(subject="cognito-sub-malformed")
@@ -392,6 +392,18 @@ class TestShifterOIDCBackendBootstrapAdmin:
             backend.create_user(claims)
 
         assert not User.objects.filter(email="malformed@example.com").exists()
+
+    def test_create_user_accepts_cognito_string_true_email_verified(self):
+        """Cognito UserInfo returns email_verified as the string 'true'; the
+        create/bind path must accept it (issue: proof login rejected)."""
+        backend = _stashed_backend(subject="cognito-sub-strtrue")
+        claims = {"email": "strtrue@example.com", "sub": "cognito-sub-strtrue", "email_verified": "true"}
+
+        created = backend.create_user(claims)
+
+        created.refresh_from_db()
+        assert created.email == "strtrue@example.com"
+        assert User.objects.filter(email="strtrue@example.com").exists()
 
 
 @pytest.mark.django_db
@@ -589,13 +601,22 @@ class TestShifterOIDCBackendVerifyClaims:
 
     @pytest.mark.parametrize(
         "value",
-        [False, "false", "true", 0, 1],
-        ids=["false", "str-false", "str-true", "int-0", "int-1"],
+        [False, "false", 0, 1],
+        ids=["false", "str-false", "int-0", "int-1"],
     )
     def test_rejects_non_literal_true_email_verified(self, value):
         backend = _stashed_backend(subject="sub-1")
         claims = {"sub": "sub-1", "email": "u@example.com", "email_verified": value}
         assert backend.verify_claims(claims) is False
+
+    @pytest.mark.parametrize("value", [True, "true", "True", " TRUE "], ids=["bool", "str", "str-caps", "str-pad"])
+    def test_accepts_verified_boolean_or_cognito_string(self, value):
+        """Cognito's UserInfo returns email_verified as the string 'true'; the
+        ID token returns a boolean. Both must be accepted (the string quirk
+        otherwise blocks all Cognito logins)."""
+        backend = _stashed_backend(subject="sub-1")
+        claims = {"sub": "sub-1", "email": "u@example.com", "email_verified": value}
+        assert backend.verify_claims(claims) is True
 
     def test_rejects_subject_mismatch_with_verified_id_token(self):
         """UserInfo's sub must equal the already-verified ID-token sub."""

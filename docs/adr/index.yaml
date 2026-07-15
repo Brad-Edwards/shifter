@@ -1384,8 +1384,10 @@
     "enforcement": ["agent-policy"],
     "evidence": [
       "https://github.com/Brad-Edwards/shifter/issues/1340",
+      "https://github.com/Brad-Edwards/shifter/issues/1348",
       "https://github.com/Brad-Edwards/shifter/issues/1354",
       "docs/architecture/gdc-windows-dc-image-build.md",
+      "docs/architecture/gdc-vm-runtime-live-fire-gate-preflight-1348.md",
       "docs/architecture/range-isolation-model.md",
       "docs/architecture/gcp-range-cell-boundary-controls-preflight-1345.md",
       "docs/architecture/scenario-gcp-range-cell-contract-preflight-1344.md",

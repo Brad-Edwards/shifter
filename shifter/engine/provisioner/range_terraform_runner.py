@@ -10,13 +10,14 @@ from pathlib import Path
 from typing import Any
 
 from shared.range_cells import is_gcp_vm_range_cell_request
+from shared.range_instantiation_policy import InstantiationPurpose, evaluate_gcp_backend_admission
 
 import gcp_range_cells
 import gdc_range_networks
 import gdc_scenario_pods
 import gdc_vmruntime_assets
 import terraform_base
-from cloud.exceptions import CloudProviderNotImplementedError
+from cloud.exceptions import CloudError, CloudProviderNotImplementedError
 from config import get_gcp_range_backend, resolve_cloud_provider
 
 AWS_RANGE_MODULE_PATH = Path(__file__).parent / "terraform" / "modules" / "range"
@@ -83,15 +84,31 @@ def apply_range(
     variables: dict[str, Any],
     working_dir: Path | None = None,
     *,
+    purpose: InstantiationPurpose = InstantiationPurpose.LIVE_FIRE,
     gce_apply_range_cell: Callable[[str, dict[str, Any]], dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    """Run terraform apply for Range and return outputs."""
+    """Run terraform apply for Range and return outputs.
+
+    ``purpose`` defaults to live-fire, the only purpose any current caller uses.
+    A live-fire provision reaching the GDC route is denied as defense in depth
+    (issue #1348 / ADR-030) before any GDC apply call; the retained GDC substrate
+    is reachable only under the explicit non-user validation purpose.
+    """
     _validate_range_cell_route(variables)
     if _uses_gce_range_cells():
         apply_gce = gce_apply_range_cell or gcp_range_cells.apply_range_cell
         return apply_gce(request_uuid, variables)
 
     if _uses_active_gdc_range_plane():
+        # Defense in depth (issue #1348): evaluate the closed policy for the active
+        # GDC backend and deny before any GDC apply call, carrying the stable ADR-039
+        # classification code on the raised error so the incumbent error/event
+        # mapping can treat a policy denial as permanent rather than transient.
+        admission = evaluate_gcp_backend_admission("gdc", None, purpose)
+        if not admission.admitted:
+            error = CloudError(admission.reason)
+            error.code = admission.code
+            raise error
         network_output = gdc_range_networks.apply_range_networks(request_uuid, variables)
         vm_output = gdc_vmruntime_assets.apply_range_assets(
             request_uuid,

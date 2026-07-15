@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from cryptography.fernet import Fernet
+from shared.range_instantiation_policy import GcpRangeBackendError, normalize_gcp_range_backend
 
 from log_redact import safe_log_fingerprint
 
@@ -526,11 +527,15 @@ def get_gcp_range_backend() -> str:
     """
     if resolve_cloud_provider() != "gcp":
         return ""
-    backend = os.environ.get("GCP_RANGE_BACKEND") or os.environ.get("GCP_RANGE_PLANE") or "gce"
-    backend = backend.strip().lower()
-    if backend not in {"gdc", "gce"}:
-        raise RuntimeError(f"GCP_RANGE_BACKEND must be 'gdc' or 'gce', got {backend!r}")
-    return backend
+    # The gce/gdc parse lives once in shared.range_instantiation_policy (#1348);
+    # preserve the historical RuntimeError contract for provisioner callers.
+    try:
+        return normalize_gcp_range_backend(
+            os.environ.get("GCP_RANGE_BACKEND"),
+            os.environ.get("GCP_RANGE_PLANE"),
+        )
+    except GcpRangeBackendError as exc:
+        raise RuntimeError(str(exc)) from exc
 
 
 def _is_active_gdc_range_plane() -> bool:

@@ -28,6 +28,7 @@ from django.conf import settings
 from cms.exceptions import CMSError
 from cms.models import RangeInstance
 from cms.services._range_create import (
+    _assert_live_fire_backend_admitted,
     _assert_no_active_range,
     _assert_scenario_launchable,
     _audit_log_call,
@@ -237,6 +238,7 @@ def create_aces_native_range(user: User, scenario: str, *, range_source: RangeSo
     if range_source is None:
         range_source = RangeSource.MISSION_CONTROL
 
+    _assert_live_fire_backend_admitted()
     _assert_no_active_range(user, range_source)
     _assert_scenario_launchable(scenario)
     source = _load_aces_source_or_raise(scenario)

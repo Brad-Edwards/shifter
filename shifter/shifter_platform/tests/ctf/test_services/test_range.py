@@ -168,6 +168,25 @@ class TestProvisionParticipantRange:
         ):
             range_service.provision_participant_range(ctf_participant.pk)
 
+    @pytest.mark.django_db
+    def test_policy_denial_propagates_permanent_code(self, ctf_participant, settings, monkeypatch):
+        """A real GDC live-fire denial reaches provision with its permanent code intact (#1348).
+
+        No mock: under gcp+gdc the real CMS create_range gate raises a CMSError carrying
+        the ADR-039 identity-or-policy code, so this exercises the actual
+        ``code=_underlying_policy_code(e)`` propagation line the retry wrapper depends on
+        (a regression there would silently downgrade the denial to a retryable error).
+        """
+        from shared.range_instantiation_policy import POLICY_DENIAL_CODE
+
+        settings.CLOUD_PROVIDER = "gcp"
+        monkeypatch.setenv("GCP_RANGE_BACKEND", "gdc")
+
+        with pytest.raises(CTFRangeError) as exc:
+            range_service.provision_participant_range(ctf_participant.pk)
+
+        assert exc.value.code == POLICY_DENIAL_CODE
+
 
 class TestGetRangeStatus:
     """Tests for get_range_status."""
@@ -449,6 +468,48 @@ class TestIsAlreadyAssignedError:
 
     def test_non_range_error_is_not_benign(self):
         assert not provision._is_already_assigned_error(RuntimeError("boom"))
+
+
+class TestPermanentProvisioningError:
+    """The retry wrapper must not retry permanent failures (issue #1348).
+
+    A GDC live-fire policy denial is permanent: CMS carries the ADR-039
+    ``identity-or-policy`` code on ``CMSError.details``, provision propagates it onto
+    the ``CTFRangeError``, and the retry loop treats that code (and the existing
+    validation messages) as non-retryable rather than re-running the same denial for
+    every backoff attempt.
+    """
+
+    def test_policy_denial_code_is_permanent(self):
+        from shared.range_instantiation_policy import POLICY_DENIAL_CODE
+
+        err = CTFRangeError("denied", code=POLICY_DENIAL_CODE)
+        assert provision._is_permanent_provisioning_error(err) is True
+
+    def test_validation_messages_are_permanent(self):
+        assert provision._is_permanent_provisioning_error(CTFRangeError("user must be registered"))
+        assert provision._is_permanent_provisioning_error(CTFRangeError("already has a range"))
+
+    def test_generic_provisioning_failure_is_retryable(self):
+        assert provision._is_permanent_provisioning_error(CTFRangeError("Range provisioning failed: boom")) is False
+
+    def test_prerequisite_code_is_retryable(self):
+        # A prerequisite (config) failure is not the permanent policy denial, so it
+        # stays on the normal retry path.
+        from shared.range_instantiation_policy import PREREQUISITE_DENIAL_CODE
+
+        err = CTFRangeError("misconfigured", code=PREREQUISITE_DENIAL_CODE)
+        assert provision._is_permanent_provisioning_error(err) is False
+
+    def test_underlying_policy_code_extracts_from_details(self):
+        from cms.exceptions import CMSError
+        from shared.range_instantiation_policy import POLICY_DENIAL_CODE
+
+        cause = CMSError("denied", details={"code": POLICY_DENIAL_CODE})
+        assert provision._underlying_policy_code(cause) == POLICY_DENIAL_CODE
+
+    def test_underlying_policy_code_none_when_absent(self):
+        assert provision._underlying_policy_code(RuntimeError("boom")) is None
 
 
 class TestInterruptibleSleep:

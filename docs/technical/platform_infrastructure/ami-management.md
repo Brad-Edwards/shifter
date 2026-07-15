@@ -63,7 +63,7 @@ Workflow: `.github/workflows/packer.yml`
 | AMI Type | Action |
 |----------|--------|
 | kali, ubuntu, windows | Packer build, fresh-boot SSM/DNS validation gate, then update dev SSM |
-| dc | Read from `dc-amis.json`, update dev SSM |
+| dc | Read the id from `dc-amis.json` (trusted `dev` provenance, validated), update dev SSM |
 
 The `kali`, `ubuntu`, and `windows` builds bake a deterministic AmazonProvidedDNS
 upstream into the guest (issue #1633) so DNS is race-free from first boot. Before
@@ -82,7 +82,14 @@ Workflow: `.github/workflows/packer-promote.yml`
 | AMI Type | Action |
 |----------|--------|
 | kali, ubuntu, windows | Copy AMI to prod account, update prod SSM |
-| dc | Read from `dc-amis.json`, update prod SSM |
+| dc | Read the id from `dc-amis.json` (trusted `dev` provenance, validated), update prod SSM |
+
+Both DC publishers read `dc-amis.json` from a dedicated checkout of the protected
+`dev` ref (never the dispatched/build ref or a runner leftover) and resolve it
+through one shared validator, `shifter/packer/scripts/bake/resolve-dc-ami.sh`,
+which fails closed unless the id exists, matches the AMI shape, and names an
+image EC2 reports as `available` and owned by the target account. The prod
+promote job also runs only from a protected ref (`dev`/`main`). See issue #1656.
 
 ## Updating AMIs
 
