@@ -12,6 +12,12 @@ the shipping contract. This note fixes the repository-wide identity and
 authorization boundaries before implementation; it is not an implementation
 plan.
 
+> **Security supersession (#1665):** the public bootstrap-password fallback
+> accepted by the original version of this note is no longer permitted. See
+> `docs/architecture/ctf-bootstrap-credential-hardening-preflight-1665.md` for
+> the fail-closed credential-source and session-quarantine guardrails. All other
+> account-isolation boundaries in this note remain in force.
+
 ## Scope Boundary And Invariants
 
 This is a replacement of the participant authentication and account lifecycle,
@@ -90,10 +96,11 @@ surfaces and is rejected by platform authentication.
 - Call `User.set_password()` / `create_user(password=...)`; the authenticating
   credential stays only as Django's password KDF hash. Never add a reversible
   per-account password field.
-- The effective bootstrap password is event override or the Django setting
-  `CTF_DEFAULT_PARTICIPANT_PASSWORD`, whose accepted default is the deliberately
-  public `ShifterAcesRanges`. Keep that default in application settings, not a
-  Terraform value, ConfigMap, CLI argument, or generated credential file.
+- The effective bootstrap password is an explicit event override or an
+  explicitly configured Django setting, resolved by one service accessor. If
+  neither is present, account creation/reset/reveal fails closed. No repository,
+  settings, deployment, or model default may become an authenticating
+  credential (#1665).
 - An event override must be recoverable for manual reveal and reset/resend, so
   store only that shared event bootstrap value with the existing
   `FIELD_ENCRYPTION_KEY` field-encryption posture. The generic encryption
@@ -105,11 +112,10 @@ surfaces and is rejected by platform authentication.
   action as **reset to the event's current bootstrap password, set
   `must_change_password=True`, invalidate existing sessions, then queue the two
   messages**. Label it as a reset in UI, logs, audit, and confirmation text.
-- Use Django's configured password validators for event overrides and new
-  participant-chosen passwords. The accepted default currently passes the
-  common/minimum/numeric validators. The change-password service must also
-  reject reusing the current bootstrap password; otherwise first-login change
-  can clear the flag without changing the known credential.
+- Use Django's configured password validators for every explicit bootstrap
+  source and new participant-chosen passwords. The change-password service must
+  also reject reusing the current bootstrap password; otherwise first-login
+  change can clear the flag without changing the known credential.
 - Login, password override, reset, reveal, and change views are CSRF-protected,
   HTTPS-only under existing deployment posture, `no-store`, and annotated with
   Django `sensitive_post_parameters` / `sensitive_variables` so exception
@@ -331,8 +337,9 @@ WebSocket. Preserve these seams:
 
 - a pure handle generator plus one validator/normalizer, parameterized by prefix
   and suffix entropy, with database uniqueness authoritative;
-- one effective-bootstrap-password accessor (`event override -> platform
-  default`) used by create, reveal, reset, and email—never four fallback chains;
+- one effective-bootstrap-password accessor (`event override -> explicitly
+  configured platform source -> controlled failure`) used by create, reveal,
+  reset, and email—never four fallback chains;
 - one CTF login policy mapping for per-account and source budgets/lock windows,
   backed by the shared atomic Redis counter with distinct keys;
 - one live-account/access predicate shared by login, participant decorators, and

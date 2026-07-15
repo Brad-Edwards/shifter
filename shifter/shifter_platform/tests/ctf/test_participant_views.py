@@ -16,6 +16,8 @@ from django.utils import timezone
 from ctf.enums import ParticipantStatus
 from ctf.models import CTFParticipant
 
+from .conftest import TEST_CTF_BOOTSTRAP_PASSWORD
+
 # The team_join error path renders a template that uses {% static %}; force the
 # non-manifest static storage so the render does not require a built manifest.
 _SIMPLE_STORAGES = {
@@ -555,7 +557,7 @@ class TestAPIParticipantResendInvite:
 
         assert response.status_code == 200
         participant.user.refresh_from_db()
-        assert participant.user.check_password("ShifterAcesRanges")
+        assert participant.user.check_password(TEST_CTF_BOOTSTRAP_PASSWORD)
 
     def test_resend_works_for_registered_participant(self, authenticated_organizer_client, ctf_event, monkeypatch):
         """Reset works for an already registered isolated account."""
@@ -576,7 +578,7 @@ class TestAPIParticipantResendInvite:
         data = response.json()
         assert data["success"] is True
         participant.user.refresh_from_db()
-        assert participant.user.check_password("ShifterAcesRanges")
+        assert participant.user.check_password(TEST_CTF_BOOTSTRAP_PASSWORD)
         assert participant.user.profile.must_change_password is True
 
 

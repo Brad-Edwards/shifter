@@ -248,7 +248,7 @@ def admin_participant_detail(request: HttpRequest, participant_id: UUID) -> Http
     """
     from django.http import Http404
 
-    from ctf.exceptions import CTFNotFoundError
+    from ctf.exceptions import CTFNotFoundError, CTFValidationError
     from ctf.models import CTFSubmission
     from ctf.services import get_participant
     from ctf.services.participant.accounts import effective_bootstrap_password
@@ -271,7 +271,12 @@ def admin_participant_detail(request: HttpRequest, participant_id: UUID) -> Http
     total_score = participant.total_score
     solved_count = submissions.filter(is_correct=True).count()
     total_attempts = submissions.count()
-    bootstrap_password = effective_bootstrap_password(participant.event)
+    # Fail closed (issue #1665): when no secure bootstrap credential is
+    # configured, disable the reveal action rather than 500 the organizer page.
+    try:
+        bootstrap_password = effective_bootstrap_password(participant.event)
+    except CTFValidationError:
+        bootstrap_password = None
 
     context = {
         "participant": participant,
