@@ -12,11 +12,13 @@ from rest_framework import serializers
 logger = logging.getLogger(__name__)
 
 # Apps whose ``/api/v1/`` surface is not yet part of the published contract
-# (#1329). CTF (``ctf.*``) is excluded until its SPA consumer (#1372) lands; its
-# routes are then added to the contract additively. Exclusion here affects only
-# schema generation — runtime routing, authentication, and behavior are
+# (#1329). CTF (``ctf.*``) was excluded until its SPA consumer (#1372) landed;
+# its routes are now typed DRF views (ctf.api.organizer_views / participant_views)
+# and join the published contract additively, so the tuple is empty. The hook
+# stays wired so a future app can be staged the same way. Exclusion here affects
+# only schema generation — runtime routing, authentication, and behavior are
 # unchanged, so no existing consumer is broken.
-UNPUBLISHED_VIEW_MODULE_PREFIXES: tuple[str, ...] = ("ctf.",)
+UNPUBLISHED_VIEW_MODULE_PREFIXES: tuple[str, ...] = ()
 
 # drf-spectacular endpoint tuple: (path, path_regex, method, callback).
 Endpoint = tuple[str, str, str, Any]

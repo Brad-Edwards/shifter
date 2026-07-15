@@ -41,6 +41,7 @@ from ctf.api.serializers import (
     ChallengeListResponseSerializer,
     ChallengeMutationResultSerializer,
     ChallengeWriteSerializer,
+    CtfScenarioListResponseSerializer,
     DeleteSuccessSerializer,
     EmailTemplateResponseSerializer,
     EmailTemplateRevertResultSerializer,
@@ -82,7 +83,6 @@ from ctf.api.serializers import (
     RateChallengeRequestSerializer,
     RateChallengeResultSerializer,
     ResendInviteResultSerializer,
-    ScenarioListResponseSerializer,
     ScoreTimelineResponseSerializer,
     SendInvitationsResultSerializer,
     SparePoolRequestSerializer,
@@ -320,7 +320,7 @@ class EventListView(APIView):
     required_read_scopes = _EVENT_READ
     required_write_scopes = _EVENT_WRITE
 
-    @extend_schema(responses=EventListResponseSerializer)
+    @extend_schema(operation_id="ctf_events_list", responses=EventListResponseSerializer)
     def get(self, request: Request) -> Response:
         """Return the organizer's events."""
         from ctf.services import get_organizer_events
@@ -355,7 +355,7 @@ class EventDetailView(APIView):
     required_read_scopes = _EVENT_READ
     required_write_scopes = _EVENT_WRITE
 
-    @extend_schema(responses=EventDetailSerializer)
+    @extend_schema(operation_id="ctf_events_retrieve", responses=EventDetailSerializer)
     def get(self, request: Request, event_id: UUID) -> Response:
         """Return the full event detail projection."""
         event, error = _resolve_owned_event(request, event_id)
@@ -440,7 +440,7 @@ class ScenarioListView(APIView):
     permission_classes = CTF_ORGANIZER_PERMISSIONS
     required_read_scopes = _EVENT_READ
 
-    @extend_schema(responses=ScenarioListResponseSerializer)
+    @extend_schema(responses=CtfScenarioListResponseSerializer)
     def get(self, request: Request) -> Response:
         """Return scenario id/name pairs from the CMS registry."""
         import ctf.bridges as ctf_bridges
@@ -656,7 +656,7 @@ class RemoveFlagView(APIView):
     permission_classes = CTF_ORGANIZER_PERMISSIONS
     required_write_scopes = _EVENT_WRITE
 
-    @extend_schema(responses=DeleteSuccessSerializer)
+    @extend_schema(request=None, responses=DeleteSuccessSerializer)
     def post(self, request: Request, flag_id: UUID) -> Response:
         """Resolve the flag, enforce ownership, and delete via the service."""
         from ctf.models import CTFFlag
@@ -720,7 +720,7 @@ class HintDeleteView(APIView):
     permission_classes = CTF_ORGANIZER_PERMISSIONS
     required_write_scopes = _EVENT_WRITE
 
-    @extend_schema(responses={204: None})
+    @extend_schema(request=None, responses={204: None})
     def post(self, request: Request, hint_id: UUID) -> Response:
         """Delete a hint, mapping service exceptions to the shared envelope."""
         from ctf.exceptions import CTFNotFoundError, CTFPermissionError, CTFStateError
@@ -815,7 +815,7 @@ class ChallengeFileDeleteView(APIView):
     permission_classes = CTF_ORGANIZER_PERMISSIONS
     required_write_scopes = _EVENT_WRITE
 
-    @extend_schema(responses=DeleteSuccessSerializer)
+    @extend_schema(request=None, responses=DeleteSuccessSerializer)
     def post(self, request: Request, file_id: UUID) -> Response:
         """Resolve the file, enforce ownership, and delete via the service."""
         from ctf.models import CTFChallengeFile
@@ -920,7 +920,7 @@ class PrerequisiteDeleteView(APIView):
     permission_classes = CTF_ORGANIZER_PERMISSIONS
     required_write_scopes = _EVENT_WRITE
 
-    @extend_schema(responses=DeleteSuccessSerializer)
+    @extend_schema(request=None, responses=DeleteSuccessSerializer)
     def post(self, request: Request, prerequisite_id: UUID) -> Response:
         """Resolve the prerequisite, enforce ownership, and delete via the service."""
         from ctf.models import CTFChallengePrerequisite

@@ -264,17 +264,17 @@ class ForceDeleteEventResultSerializer(serializers.Serializer):
     ranges_failed = serializers.IntegerField(read_only=True)
 
 
-class ScenarioRefSerializer(serializers.Serializer):
+class CtfScenarioRefSerializer(serializers.Serializer):
     """A CMS scenario id/name pair available for a CTF event."""
 
     id = serializers.CharField(read_only=True)
     name = serializers.CharField(read_only=True)
 
 
-class ScenarioListResponseSerializer(serializers.Serializer):
+class CtfScenarioListResponseSerializer(serializers.Serializer):
     """Envelope returned by the scenario list."""
 
-    scenarios = ScenarioRefSerializer(many=True, read_only=True)
+    scenarios = CtfScenarioRefSerializer(many=True, read_only=True)
 
 
 # ---------------------------------------------------------------------------
