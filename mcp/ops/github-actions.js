@@ -13,13 +13,17 @@ import {
   buildGhWorkflowRunArgs,
   ghExec,
   resolveGitRef,
+  resolveProtectedAmiRef,
 } from "./lib.js";
 
 const _HERE = path.dirname(fileURLToPath(import.meta.url));
 const _REPO_ROOT = path.resolve(_HERE, "..", "..");
 
 export function triggerAmiWorkflow({ workflow, ami_type, ref, actionsPath }) {
-  const branch = ref ?? resolveGitRef(_REPO_ROOT);
+  // Base/DC AMI builds and prod promotions run only from a protected ref
+  // (dev|main); reject a working-tree feature branch rather than dispatch a
+  // workflow copy that could weaken its own inline protected-ref gate (#1656).
+  const branch = resolveProtectedAmiRef(ref);
   ghExec(
     buildGhWorkflowRunArgs({
       workflow,
