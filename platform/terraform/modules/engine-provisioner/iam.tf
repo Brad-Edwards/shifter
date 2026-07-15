@@ -1021,6 +1021,11 @@ resource "aws_iam_role_policy" "polaris_agent_role_management" {
           "iam:GetRole",
           "iam:GetRolePolicy",
           "iam:ListRolePolicies",
+          # The AWS provider's read-after-create and read-before-destroy of
+          # aws_iam_role always calls ListAttachedRolePolicies (even though the
+          # agent role uses only an inline policy), so terraform apply/destroy
+          # fails without it. Read-only; scoped to the agent role namespace.
+          "iam:ListAttachedRolePolicies",
           "iam:ListRoleTags"
         ]
         Resource = "arn:aws:iam::${local.account_id}:role/shifter-${var.environment}-*-polaris-agent"
