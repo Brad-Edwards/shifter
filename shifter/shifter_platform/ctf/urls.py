@@ -3,7 +3,13 @@
 Defines URL patterns for:
 - CTF Admin/Organizer views (/ctf/admin/...)
 - CTF Participant views (/ctf/...)
-- CTF API endpoints (/ctf/api/...)
+- CTF scoreboard JSON endpoint (/ctf/api/events/<id>/scoreboard/)
+
+The legacy ``/ctf/api/*`` JSON API was retired (issue #1328): the UI and all
+callers use the canonical ``/api/v1/ctf/`` DRF routes (see ``ctf.api.urls``).
+The single scoreboard endpoint is intentionally retained on the legacy route
+because the v1 scoreboard (``v1:ctf:api_scoreboard`` -> ``PublicScoreboardView``)
+has different access semantics than the participant scoreboard page requires.
 """
 
 from __future__ import annotations
@@ -181,201 +187,12 @@ admin_patterns = [
 # API URLs
 # -----------------------------------------------------------------------------
 api_patterns = [
-    # Event APIs
-    path("api/events/", views.api_event_list, name="api_event_list"),
-    path("api/events/<uuid:event_id>/", views.api_event_detail, name="api_event_detail"),
-    path(
-        "api/events/<uuid:event_id>/force-delete/",
-        views.api_force_delete_event,
-        name="api_force_delete_event",
-    ),
-    path("api/scenarios/", views.api_scenarios, name="api_scenarios"),
-    # Challenge APIs
-    path(
-        "api/events/<uuid:event_id>/challenges/",
-        views.api_challenge_list,
-        name="api_challenge_list",
-    ),
-    path(
-        "api/challenges/<uuid:challenge_id>/",
-        views.api_challenge_detail,
-        name="api_challenge_detail",
-    ),
-    # Submission APIs
-    path(
-        "api/challenges/<uuid:challenge_id>/submit/",
-        views.api_submit_flag,
-        name="api_submit_flag",
-    ),
-    path(
-        "api/challenges/<uuid:challenge_id>/hint/",
-        views.api_use_hint,
-        name="api_use_hint",
-    ),
-    # Hint management (organizer)
-    path(
-        "api/challenges/<uuid:challenge_id>/hints/",
-        views.api_challenge_hints,
-        name="api_challenge_hints",
-    ),
-    path(
-        "api/hints/<uuid:hint_id>/delete/",
-        views.api_hint_delete,
-        name="api_hint_delete",
-    ),
-    path(
-        "api/challenges/<uuid:challenge_id>/rate/",
-        views.api_rate_challenge,
-        name="api_rate_challenge",
-    ),
-    path("api/submissions/", views.api_submissions, name="api_submissions"),
-    # Participant APIs
-    path(
-        "api/events/<uuid:event_id>/participants/",
-        views.api_participant_list,
-        name="api_participant_list",
-    ),
-    path(
-        "api/events/<uuid:event_id>/participants/import/",
-        views.api_participant_import,
-        name="api_participant_import",
-    ),
-    path(
-        "api/participants/<uuid:participant_id>/",
-        views.api_participant_detail,
-        name="api_participant_detail",
-    ),
-    path(
-        "api/participants/<uuid:participant_id>/resend-invite/",
-        views.api_participant_resend_invite,
-        name="api_participant_resend_invite",
-    ),
-    # Range APIs (participant-facing)
-    path("api/range/status/", views.api_range_status, name="api_range_status"),
-    path("api/range/access/", views.api_range_access, name="api_range_access"),
-    # Range APIs (organizer-facing)
-    path(
-        "api/events/<uuid:event_id>/ranges/",
-        views.api_range_list,
-        name="api_range_list",
-    ),
-    path(
-        "api/events/<uuid:event_id>/ranges/provision/",
-        views.api_provision_ranges,
-        name="api_provision_ranges",
-    ),
-    path(
-        "api/events/<uuid:event_id>/spares/",
-        views.api_provision_event_spares,
-        name="api_provision_event_spares",
-    ),
-    path(
-        "api/participants/<uuid:participant_id>/range/provision/",
-        views.api_provision_participant_range,
-        name="api_provision_participant_range",
-    ),
-    path(
-        "api/participants/<uuid:participant_id>/range/destroy/",
-        views.api_destroy_participant_range,
-        name="api_destroy_participant_range",
-    ),
-    path(
-        "api/participants/<uuid:participant_id>/range/stop/",
-        views.api_stop_participant_range,
-        name="api_stop_participant_range",
-    ),
-    path(
-        "api/participants/<uuid:participant_id>/range/start/",
-        views.api_start_participant_range,
-        name="api_start_participant_range",
-    ),
-    path(
-        "api/participants/<uuid:participant_id>/range/restart/",
-        views.api_restart_participant_range,
-        name="api_restart_participant_range",
-    ),
-    path(
-        "api/participants/<uuid:participant_id>/range/recover/",
-        views.api_recover_participant_range,
-        name="api_recover_participant_range",
-    ),
-    # Bracket APIs
-    path(
-        "api/participants/<uuid:participant_id>/bracket/",
-        views.api_assign_bracket,
-        name="api_assign_bracket",
-    ),
-    # Scoreboard APIs
+    # Scoreboard API: intentionally retained on the legacy /ctf/api/ route (#1328).
+    # Every other legacy /ctf/api/* endpoint was retired in favour of /api/v1/ctf/.
     path(
         "api/events/<uuid:event_id>/scoreboard/",
         views.api_scoreboard,
         name="api_scoreboard",
-    ),
-    path(
-        "api/participants/<uuid:participant_id>/score-timeline/",
-        views.api_score_timeline,
-        name="api_score_timeline",
-    ),
-    # Notification APIs
-    path(
-        "api/events/<uuid:event_id>/notifications/",
-        views.api_notification_list,
-        name="api_notification_list",
-    ),
-    path(
-        "api/notifications/<uuid:notification_id>/send/",
-        views.api_notification_send,
-        name="api_notification_send",
-    ),
-    # Email Template APIs
-    path(
-        "api/events/<uuid:event_id>/email-templates/<str:notification_type>/",
-        views.api_event_email_template,
-        name="api_event_email_template",
-    ),
-    # Invitation APIs
-    path(
-        "api/events/<uuid:event_id>/invitations/send/",
-        views.api_send_invitations,
-        name="api_send_invitations",
-    ),
-    # Flag management APIs
-    path(
-        "api/challenges/<uuid:challenge_id>/flags/add/",
-        views.api_add_flag,
-        name="api_add_flag",
-    ),
-    path(
-        "api/flags/<uuid:flag_id>/remove/",
-        views.api_remove_flag,
-        name="api_remove_flag",
-    ),
-    # File attachment APIs
-    path(
-        "api/challenges/<uuid:challenge_id>/files/",
-        views.api_challenge_files,
-        name="api_challenge_files",
-    ),
-    path(
-        "api/files/<uuid:file_id>/delete/",
-        views.api_challenge_file_delete,
-        name="api_challenge_file_delete",
-    ),
-    path(
-        "api/files/<uuid:file_id>/download/",
-        views.api_file_download,
-        name="api_file_download",
-    ),
-    # Prerequisite APIs
-    path(
-        "api/challenges/<uuid:challenge_id>/prerequisites/",
-        views.api_challenge_prerequisites,
-        name="api_challenge_prerequisites",
-    ),
-    path(
-        "api/prerequisites/<uuid:prerequisite_id>/delete/",
-        views.api_prerequisite_delete,
-        name="api_prerequisite_delete",
     ),
 ]
 
