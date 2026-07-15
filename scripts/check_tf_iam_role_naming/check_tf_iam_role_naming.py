@@ -61,6 +61,36 @@ IAM_POLICY_RESOURCE_RE = re.compile(r'^\s*resource\s+"aws_iam_policy"\s+"([^"]+)
 # longer than the values they render to.
 OIDC_POLICY_DOC_LIMIT = 6144
 
+# Base-image-pipeline role (#1656). The packer.yml base `build` job assumes a
+# dedicated least-privilege role instead of the broad deploy role. Its OIDC trust
+# MUST pin the exact protected-branch subjects (never repo:...:*), and its inline
+# policy MUST scope iam:PassRole to the EXACT env range role passed to EC2 - never
+# shifter-*, *-range-instance, or any other wildcard - so the fresh-boot verifier
+# cannot pass a more-privileged profile (ADR-004-R22). These checks run only when
+# the role / inline policy is present, so deploy-only github-oidc.tf fixtures are
+# unaffected.
+IMAGE_ROLE_RE = re.compile(
+    r'^\s*resource\s+"aws_iam_role"\s+"github_actions_image"\s*\{'
+)
+IMAGE_POLICY_RE = re.compile(
+    r'^\s*resource\s+"aws_iam_role_policy"\s+"image_pipeline"\s*\{'
+)
+IMAGE_TRUST_REQUIRED_SUBS: tuple[str, ...] = (
+    "repo:${var.github_org}/${var.github_repo}:ref:refs/heads/dev",
+    "repo:${var.github_org}/${var.github_repo}:ref:refs/heads/main",
+)
+IMAGE_TRUST_WILDCARD_SUB = "repo:${var.github_org}/${var.github_repo}:*"
+IMAGE_PASSROLE_EXACT_RESOURCE = (
+    "arn:aws:iam::${data.aws_caller_identity.current.account_id}:"
+    "role/shifter-${var.environment}-range-range-instance"
+)
+IMAGE_PASSROLE_FORBIDDEN_WILDCARDS: tuple[str, ...] = (
+    "role/shifter-*",
+    "role/${var.environment}-*",
+    "role/*",
+    "*-range-instance",
+)
+
 
 @dataclass
 class Violation:
@@ -193,6 +223,122 @@ def check_github_oidc_policy_doc_size(path: Path, lines: list[str]) -> list[Viol
     return violations
 
 
+def _find_named_resource_block(
+    lines: list[str], header_re: re.Pattern[str]
+) -> list[str] | None:
+    idx = 0
+    while idx < len(lines):
+        if header_re.match(lines[idx]):
+            _, block_lines = _extract_resource_block(lines, idx)
+            return block_lines
+        idx += 1
+    return None
+
+
+def _strip_hcl_comments(text: str) -> str:
+    """Drop `#` line comments so guardrail matching never keys on prose.
+
+    github-oidc.tf uses `#` comments (terraform fmt normalizes to them); a
+    comment mentioning a forbidden wildcard (e.g. an explanatory
+    "not *-range-instance") must not trip the checks below, which match trust /
+    policy content only. `#` never appears inside the ARNs, actions, or OIDC
+    subjects the checks inspect, so this is a safe, precise strip (`//` / `/* */`
+    stripping is intentionally avoided - `instance/*` contains a literal `/*`).
+    """
+    return "\n".join(re.sub(r"#.*$", "", line) for line in text.splitlines())
+
+
+def check_github_oidc_image_role_trust(path: Path, lines: list[str]) -> list[Violation]:
+    """Base-image role OIDC trust must pin exact protected subjects (#1656).
+
+    No-op when the github_actions_image role is absent, so deploy-only fixtures
+    are unaffected; when present, a repo:...:* wildcard sub or a missing exact
+    protected-branch subject fails closed.
+    """
+    block = _find_named_resource_block(lines, IMAGE_ROLE_RE)
+    if block is None:
+        return []
+    compact = re.sub(r"\s+", "", _strip_hcl_comments("\n".join(block)))
+    violations: list[Violation] = []
+    if IMAGE_TRUST_WILDCARD_SUB.replace(" ", "") in compact:
+        violations.append(
+            Violation(
+                path,
+                1,
+                "image-pipeline role OIDC trust must pin exact protected-branch "
+                "subjects, not a repo:...:* wildcard (ADR-004-R22, #1656)",
+            )
+        )
+    for sub in IMAGE_TRUST_REQUIRED_SUBS:
+        if sub.replace(" ", "") not in compact:
+            violations.append(
+                Violation(
+                    path,
+                    1,
+                    f"image-pipeline role OIDC trust must include exact subject "
+                    f"{sub} (ADR-004-R22, #1656)",
+                )
+            )
+    return violations
+
+
+def check_github_oidc_image_passrole_scope(
+    path: Path, lines: list[str]
+) -> list[Violation]:
+    """Base-image policy iam:PassRole must target the exact range role (#1656).
+
+    No-op when the image_pipeline inline policy is absent; when present, the
+    PassRole must name exactly shifter-${var.environment}-range-range-instance,
+    carry the ec2.amazonaws.com service condition, and use no wildcard resource.
+    """
+    block = _find_named_resource_block(lines, IMAGE_POLICY_RE)
+    if block is None:
+        return []
+    text = _strip_hcl_comments("\n".join(block))
+    compact = re.sub(r"\s+", "", text)
+    violations: list[Violation] = []
+    if "iam:PassRole" not in text:
+        violations.append(
+            Violation(
+                path,
+                1,
+                "image-pipeline policy must grant iam:PassRole scoped to the "
+                "exact range role (ADR-004-R22, #1656)",
+            )
+        )
+        return violations
+    if IMAGE_PASSROLE_EXACT_RESOURCE.replace(" ", "") not in compact:
+        violations.append(
+            Violation(
+                path,
+                1,
+                "image-pipeline iam:PassRole must target exactly "
+                "role/shifter-${var.environment}-range-range-instance "
+                "(ADR-004-R22, #1656)",
+            )
+        )
+    for forbidden in IMAGE_PASSROLE_FORBIDDEN_WILDCARDS:
+        if forbidden.replace(" ", "") in compact:
+            violations.append(
+                Violation(
+                    path,
+                    1,
+                    f"image-pipeline iam:PassRole must not use wildcard resource "
+                    f"'{forbidden}' (ADR-004-R22, #1656)",
+                )
+            )
+    if "ec2.amazonaws.com" not in compact:
+        violations.append(
+            Violation(
+                path,
+                1,
+                "image-pipeline iam:PassRole must be conditioned on "
+                "iam:PassedToService = ec2.amazonaws.com (ADR-004-R22, #1656)",
+            )
+        )
+    return violations
+
+
 def check_file(path: Path) -> list[Violation]:
     if path.suffix != ".tf":
         return []
@@ -203,6 +349,8 @@ def check_file(path: Path) -> list[Violation]:
         violations.extend(check_github_oidc_iam_scoped(path, text))
         violations.extend(check_github_oidc_attachment_cap(path, lines))
         violations.extend(check_github_oidc_policy_doc_size(path, lines))
+        violations.extend(check_github_oidc_image_role_trust(path, lines))
+        violations.extend(check_github_oidc_image_passrole_scope(path, lines))
     return violations
 
 

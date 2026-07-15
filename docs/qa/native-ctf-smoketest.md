@@ -22,7 +22,7 @@ cannot be automated).
 ## Setup
 
 ```bash
-export DOMAIN="shifter.keplerops.com"      # the tenant's portal domain
+export DOMAIN="dev.shifter.keplerops.com"  # the tenant's portal domain
 export AWS_PROFILE="proof"                  # cloud profile for this tenant
 export AWS_REGION="us-east-2"
 ```
