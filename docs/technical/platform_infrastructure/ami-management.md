@@ -12,22 +12,39 @@ AMI IDs stored in SSM Parameter Store, built via Packer workflows.
 | `/shifter/ami/ubuntu` | Ubuntu victim instance |
 | `/shifter/ami/windows` | Windows victim instance |
 | `/shifter/ami/dc` | Domain Controller instance |
+| `/shifter/ami/brokenbk` | Broken Bank vulnerable training application |
+| `/shifter/ami/polaris-dc` | Polaris scenario Domain Controller |
+| `/shifter/ami/techvault` | TechVault scenario host |
+| `/shifter/ami/polaris-vm` | Polaris scenario host |
 
-Provisioner fetches AMI IDs at runtime via `main.py:get_ami_from_ssm()`.
+The build workflow publishes each type to `/shifter/ami/<type>`; the provisioner resolves both the legacy known types and any custom key from that path.
+
+Provisioner fetches AMI IDs at runtime via `shifter/engine/provisioner/provisioner_ami.py:get_ami_id()`.
 
 ## AMI Types
 
 ### Packer-Built AMIs
 
-Kali, Ubuntu, and Windows AMIs are built from base images using Packer.
+The kali, ubuntu, windows, brokenbk, and polaris-dc AMIs are built from base images using Packer (the `build` job in `packer.yml`).
 
 | AMI | Base Image | Build Scripts |
 |-----|------------|---------------|
 | **kali** | Official Kali AMI | `shifter/packer/scripts/kali/` |
-| **ubuntu** | Ubuntu 22.04 | `shifter/packer/scripts/linux/` |
+| **ubuntu** | Ubuntu 22.04 | `shifter/packer/scripts/ubuntu/` |
 | **windows** | Windows Server 2022 | `shifter/packer/scripts/windows/` |
+| **brokenbk** | Ubuntu 22.04 | `shifter/packer/scripts/brokenbk/` |
+| **polaris-dc** | Windows Server 2022 | `shifter/packer/scripts/windows/` (shared, plus a scenario content script) |
 
-Build configuration: `shifter/packer/*.pkr.hcl`
+Build configuration: `shifter/packer/*.pkr.hcl` (one file per type).
+
+### Scenario-Baked AMIs
+
+The techvault and polaris-vm scenario AMIs are baked by the separate `bake-scenario` job in `packer.yml`, which drives the guest over the no-inbound AWS Session Manager communicator rather than inbound SSH or WinRM.
+
+| AMI | Base Image | Build Config |
+|-----|------------|--------------|
+| **techvault** | Ubuntu 24.04 | `shifter/packer/techvault.pkr.hcl` (`shifter/packer/scripts/techvault/`) |
+| **polaris-vm** | Ubuntu 24.04 | `shifter/packer/polaris-vm.pkr.hcl` (`shifter/packer/scripts/polaris/`) |
 
 ### Prebaked DC AMI
 
@@ -63,6 +80,8 @@ Workflow: `.github/workflows/packer.yml`
 | AMI Type | Action |
 |----------|--------|
 | kali, ubuntu, windows | Packer build, fresh-boot SSM/DNS validation gate, then update dev SSM |
+| brokenbk, polaris-dc | Packer build, then update dev SSM (no fresh-boot validation gate) |
+| techvault, polaris-vm | Scenario bake over the no-inbound SSM communicator (`bake-scenario` job), then update dev SSM |
 | dc | Read the id from `dc-amis.json` (trusted `dev` provenance, validated), update dev SSM |
 
 The `kali`, `ubuntu`, and `windows` builds bake a deterministic AmazonProvidedDNS
@@ -81,8 +100,10 @@ Workflow: `.github/workflows/packer-promote.yml`
 
 | AMI Type | Action |
 |----------|--------|
-| kali, ubuntu, windows | Copy AMI to prod account, update prod SSM |
+| kali, ubuntu, windows, brokenbk | Copy AMI to prod account, update prod SSM |
 | dc | Read the id from `dc-amis.json` (trusted `dev` provenance, validated), update prod SSM |
+
+`packer-promote.yml` handles only kali, ubuntu, windows, dc, and brokenbk. The polaris-dc, techvault, and polaris-vm AMIs are built per environment (`dev` or `proof`) directly and are not promoted through this workflow.
 
 Both DC publishers read `dc-amis.json` from a dedicated checkout of the protected
 `dev` ref (never the dispatched/build ref or a runner leftover) and resolve it
@@ -93,12 +114,12 @@ promote job also runs only from a protected ref (`dev`/`main`). See issue #1656.
 
 ## Updating AMIs
 
-### Packer-Built (kali, ubuntu, windows)
+### Packer-Built and Scenario-Baked (kali, ubuntu, windows, brokenbk, polaris-dc, techvault, polaris-vm)
 
 1. Modify scripts in `shifter/packer/scripts/`
-2. Run "Packer AMI Build (Dev)" workflow
+2. Run "Packer AMI Build" workflow for the type
 3. Test in dev
-4. Run "Packer AMI Promote to Prod" workflow
+4. For promotable types (kali, ubuntu, windows, brokenbk), run "Packer AMI Promote to Prod"; polaris-dc, techvault, and polaris-vm are built per environment instead
 
 ### Domain Controller
 
@@ -135,7 +156,7 @@ store the password value in environment tfvars.
 | File | Purpose |
 |------|---------|
 | `shifter/packer/dc-amis.json` | DC AMI IDs (version controlled) |
-| `shifter/engine/provisioner/main.py` | `get_ami_from_ssm()` function |
+| `shifter/engine/provisioner/provisioner_ami.py` | `get_ami_id()` function |
 | `shifter/engine/provisioner/catalog/instances.py` | Instance type definitions |
 | `shifter/engine/provisioner/plans/dc_setup.py` | DC verification (no promotion step) |
 
