@@ -114,12 +114,24 @@ def ctf_change_password(request: HttpRequest) -> HttpResponse:
         form = PasswordChangeForm(request.user, request.POST or None)
         response = None
         if request.method == "POST" and form.is_valid():
+            from ctf.exceptions import CTFValidationError
             from ctf.services.participant.accounts import effective_bootstrap_password, live_participant_for_user
 
             participant = live_participant_for_user(request.user)
-            bootstrap_reused = participant is not None and form.cleaned_data[
-                "new_password1"
-            ] == effective_bootstrap_password(participant.event)
+            new_password = form.cleaned_data["new_password1"]
+            # Reject reusing the current credential. The stored password hash is
+            # authoritative even when the bootstrap source is later removed or
+            # rotated (issue #1665), so this closes the quarantine escape where a
+            # participant submits the known bootstrap value as both old and new
+            # password: PasswordChangeForm does not itself require the new
+            # password to differ from the current one. The effective-bootstrap
+            # comparison stays as an additional guard when the source resolves.
+            bootstrap_reused = request.user.check_password(new_password)
+            if not bootstrap_reused and participant is not None:
+                try:
+                    bootstrap_reused = new_password == effective_bootstrap_password(participant.event)
+                except CTFValidationError:
+                    bootstrap_reused = False
             if bootstrap_reused:
                 form.add_error("new_password1", "Choose a password different from the event bootstrap password.")
             else:

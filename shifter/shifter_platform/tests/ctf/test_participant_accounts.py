@@ -21,6 +21,8 @@ from ctf.services.participant.accounts import (
 from ctf.services.participant.lifecycle import disqualify_participant, invite_participant
 from management.services import get_user_profile
 
+from .conftest import TEST_CTF_BOOTSTRAP_PASSWORD
+
 pytestmark = pytest.mark.django_db
 
 User = get_user_model()
@@ -45,7 +47,7 @@ def test_account_creation_never_reuses_platform_user_by_email(ctf_event, standar
     assert participant.user_id != standard_user.id
     assert participant.user.email == ""
     assert participant.email == standard_user.email
-    assert participant.user.check_password("ShifterAcesRanges")
+    assert participant.user.check_password(TEST_CTF_BOOTSTRAP_PASSWORD)
 
 
 def test_account_creation_marks_low_privilege_force_change_account(ctf_event, monkeypatch):
@@ -81,7 +83,7 @@ def test_ctf_login_forces_password_change(client, ctf_event_active, monkeypatch)
 
     response = client.post(
         reverse("ctf:ctf_login"),
-        {"username": participant.user.username, "password": "ShifterAcesRanges"},
+        {"username": participant.user.username, "password": TEST_CTF_BOOTSTRAP_PASSWORD},
     )
 
     assert response.status_code == 302
@@ -137,7 +139,7 @@ def test_platform_password_backend_rejects_ctf_credentials(ctf_event_active, mon
     authenticated = PlatformModelBackend().authenticate(
         None,
         username=participant.user.username,
-        password="ShifterAcesRanges",
+        password=TEST_CTF_BOOTSTRAP_PASSWORD,
     )
 
     assert authenticated is None
@@ -170,7 +172,7 @@ def test_event_bootstrap_password_override_is_used(ctf_event, monkeypatch):
     participant = create_participant_accounts(ctf_event.id, count=1)[0]
 
     assert participant.user.check_password("EventOnly-Password-42")
-    assert not participant.user.check_password("ShifterAcesRanges")
+    assert not participant.user.check_password(TEST_CTF_BOOTSTRAP_PASSWORD)
 
 
 def test_credential_reset_restores_bootstrap_and_sends_two_messages(ctf_event, monkeypatch):
@@ -192,12 +194,12 @@ def test_credential_reset_restores_bootstrap_and_sends_two_messages(ctf_event, m
 
     participant.user.refresh_from_db()
     profile.refresh_from_db()
-    assert participant.user.check_password("ShifterAcesRanges")
+    assert participant.user.check_password(TEST_CTF_BOOTSTRAP_PASSWORD)
     assert profile.must_change_password is True
     assert len(sent) == 2
     assert participant.user.username in sent[0]["text_content"]
-    assert "ShifterAcesRanges" not in sent[0]["text_content"]
-    assert "ShifterAcesRanges" in sent[1]["text_content"]
+    assert TEST_CTF_BOOTSTRAP_PASSWORD not in sent[0]["text_content"]
+    assert TEST_CTF_BOOTSTRAP_PASSWORD in sent[1]["text_content"]
 
 
 def test_disqualification_anonymizes_temporary_account(ctf_event, monkeypatch):
@@ -252,15 +254,15 @@ def test_first_password_change_rejects_bootstrap_reuse(client, ctf_event_active,
     participant = create_participant_accounts(ctf_event_active.id, count=1)[0]
     client.post(
         reverse("ctf:ctf_login"),
-        {"username": participant.user.username, "password": "ShifterAcesRanges"},
+        {"username": participant.user.username, "password": TEST_CTF_BOOTSTRAP_PASSWORD},
     )
 
     response = client.post(
         reverse("ctf:ctf_change_password"),
         {
-            "old_password": "ShifterAcesRanges",
-            "new_password1": "ShifterAcesRanges",
-            "new_password2": "ShifterAcesRanges",
+            "old_password": TEST_CTF_BOOTSTRAP_PASSWORD,
+            "new_password1": TEST_CTF_BOOTSTRAP_PASSWORD,
+            "new_password2": TEST_CTF_BOOTSTRAP_PASSWORD,
         },
     )
 
@@ -319,4 +321,4 @@ def test_organizer_participant_detail_reveals_current_bootstrap_password(
     )
 
     assert response.status_code == 200
-    assert "ShifterAcesRanges" in response.content.decode()
+    assert TEST_CTF_BOOTSTRAP_PASSWORD in response.content.decode()
