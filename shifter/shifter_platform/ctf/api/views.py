@@ -24,32 +24,6 @@ PLAY_READ = (scopes.CTF_PLAY_READ,)
 PLAY_WRITE = (scopes.CTF_PLAY_WRITE,)
 EVENT_OR_PLAY_READ = (scopes.CTF_EVENT_READ, scopes.CTF_PLAY_READ)
 
-api_event_list = legacy_api_view(
-    "EventListView",
-    "ctf.views.api.events.api_event_list",
-    permission_classes=CTF_ORGANIZER_PERMISSIONS,
-    read_scopes=EVENT_READ,
-    write_scopes=EVENT_WRITE,
-)
-api_event_detail = legacy_api_view(
-    "EventDetailView",
-    "ctf.views.api.events.api_event_detail",
-    permission_classes=CTF_ORGANIZER_PERMISSIONS,
-    read_scopes=EVENT_READ,
-    write_scopes=EVENT_WRITE,
-)
-api_force_delete_event = legacy_api_view(
-    "ForceDeleteEventView",
-    "ctf.views.api.events.api_force_delete_event",
-    permission_classes=CTF_ORGANIZER_PERMISSIONS,
-    write_scopes=EVENT_WRITE,
-)
-api_scenarios = legacy_api_view(
-    "ScenarioListView",
-    "ctf.views.api.events.api_scenarios",
-    permission_classes=CTF_ORGANIZER_PERMISSIONS,
-    read_scopes=EVENT_READ,
-)
 api_challenge_list = legacy_api_view(
     "ChallengeListView",
     "ctf.views.api.challenges.api_challenge_list",
@@ -340,11 +314,8 @@ __all__ = [
     "api_challenge_list",
     "api_challenge_prerequisites",
     "api_destroy_participant_range",
-    "api_event_detail",
     "api_event_email_template",
-    "api_event_list",
     "api_file_download",
-    "api_force_delete_event",
     "api_hint_delete",
     "api_notification_list",
     "api_notification_send",
@@ -363,7 +334,6 @@ __all__ = [
     "api_recover_participant_range",
     "api_remove_flag",
     "api_restart_participant_range",
-    "api_scenarios",
     "api_score_timeline",
     "api_scoreboard",
     "api_send_invitations",

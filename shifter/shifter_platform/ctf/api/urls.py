@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from django.urls import path
 
-from ctf.api import participant_views, views
+from ctf.api import organizer_views, participant_views, views
 
 app_name = "ctf"
 
@@ -18,10 +18,14 @@ urlpatterns = [
         name="api_participant_challenge_detail",
     ),
     path("me/team/", participant_views.ParticipantTeamView.as_view(), name="api_participant_team"),
-    path("events/", views.api_event_list, name="api_event_list"),
-    path("events/<uuid:event_id>/", views.api_event_detail, name="api_event_detail"),
-    path("events/<uuid:event_id>/force-delete/", views.api_force_delete_event, name="api_force_delete_event"),
-    path("scenarios/", views.api_scenarios, name="api_scenarios"),
+    path("events/", organizer_views.EventListView.as_view(), name="api_event_list"),
+    path("events/<uuid:event_id>/", organizer_views.EventDetailView.as_view(), name="api_event_detail"),
+    path(
+        "events/<uuid:event_id>/force-delete/",
+        organizer_views.ForceDeleteEventView.as_view(),
+        name="api_force_delete_event",
+    ),
+    path("scenarios/", organizer_views.ScenarioListView.as_view(), name="api_scenarios"),
     path("events/<uuid:event_id>/challenges/", views.api_challenge_list, name="api_challenge_list"),
     path("challenges/<uuid:challenge_id>/", views.api_challenge_detail, name="api_challenge_detail"),
     path("challenges/<uuid:challenge_id>/submit/", views.api_submit_flag, name="api_submit_flag"),

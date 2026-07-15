@@ -160,3 +160,118 @@ class ParticipantChallengeDetailSerializer(serializers.Serializer):
     show_solution = serializers.BooleanField(read_only=True)
     solution = serializers.CharField(read_only=True, allow_null=True)
     rating = ChallengeRatingSerializer(read_only=True, allow_null=True)
+
+
+# ---------------------------------------------------------------------------
+# Organizer serializers (event management)
+# ---------------------------------------------------------------------------
+
+
+class EventSummarySerializer(serializers.Serializer):
+    """List projection of one of an organizer's events."""
+
+    id = serializers.CharField(read_only=True)
+    name = serializers.CharField(read_only=True)
+    status = serializers.CharField(read_only=True)
+    event_start = serializers.DateTimeField(read_only=True)
+    event_end = serializers.DateTimeField(read_only=True)
+    team_mode = serializers.BooleanField(read_only=True)
+
+
+class EventListResponseSerializer(serializers.Serializer):
+    """Envelope returned by the organizer event list."""
+
+    events = EventSummarySerializer(many=True, read_only=True)
+
+
+class EventDetailSerializer(serializers.Serializer):
+    """Full organizer-facing event detail projection."""
+
+    id = serializers.CharField(read_only=True)
+    name = serializers.CharField(read_only=True)
+    description = serializers.CharField(read_only=True, allow_blank=True)
+    status = serializers.CharField(read_only=True)
+    event_start = serializers.DateTimeField(read_only=True)
+    event_end = serializers.DateTimeField(read_only=True)
+    registration_deadline = serializers.DateTimeField(read_only=True, allow_null=True)
+    scenario_id = serializers.CharField(read_only=True, allow_blank=True)
+    auto_cleanup = serializers.BooleanField(read_only=True)
+    cleanup_delay_hours = serializers.IntegerField(read_only=True)
+    max_participants = serializers.IntegerField(read_only=True, allow_null=True)
+    team_mode = serializers.BooleanField(read_only=True)
+    team_size_limit = serializers.IntegerField(read_only=True, allow_null=True)
+    range_config = serializers.DictField(read_only=True)
+    range_spinup_minutes = serializers.IntegerField(read_only=True)
+    submission_cooldown_seconds = serializers.IntegerField(read_only=True)
+    attempt_limit_mode = serializers.CharField(read_only=True)
+    attempt_limit_cooldown_seconds = serializers.IntegerField(read_only=True)
+    rating_visibility = serializers.CharField(read_only=True)
+    scoring_mode = serializers.CharField(read_only=True)
+    scoreboard_visible = serializers.BooleanField(read_only=True)
+    scoreboard_freeze_at = serializers.DateTimeField(read_only=True, allow_null=True)
+
+
+class EventWriteSerializer(serializers.Serializer):
+    """Create/update request body: the mutable event fields only.
+
+    ``status``, ``created_by``, ``id``, and timestamps are intentionally absent;
+    the service layer also filters to mutable fields, so mass assignment is
+    prevented at two layers. Updates are validated ``partial=True`` by the view.
+    """
+
+    name = serializers.CharField(max_length=200)
+    description = serializers.CharField(required=False, allow_blank=True)
+    event_start = serializers.DateTimeField()
+    event_end = serializers.DateTimeField()
+    registration_deadline = serializers.DateTimeField(required=False, allow_null=True)
+    scenario_id = serializers.CharField(required=False, allow_blank=True, max_length=255)
+    auto_cleanup = serializers.BooleanField(required=False)
+    cleanup_delay_hours = serializers.IntegerField(required=False)
+    max_participants = serializers.IntegerField(required=False, allow_null=True)
+    team_mode = serializers.BooleanField(required=False)
+    team_size_limit = serializers.IntegerField(required=False, allow_null=True)
+    range_spinup_minutes = serializers.IntegerField(required=False)
+    range_config = serializers.DictField(required=False)
+    submission_cooldown_seconds = serializers.IntegerField(required=False)
+    attempt_limit_mode = serializers.CharField(required=False)
+    attempt_limit_cooldown_seconds = serializers.IntegerField(required=False)
+    rating_visibility = serializers.CharField(required=False)
+    scoring_mode = serializers.CharField(required=False)
+    scoreboard_visible = serializers.BooleanField(required=False)
+    scoreboard_freeze_at = serializers.DateTimeField(required=False, allow_null=True)
+
+
+class EventMutationResultSerializer(serializers.Serializer):
+    """Compact result returned after creating or updating an event."""
+
+    id = serializers.CharField(read_only=True)
+    name = serializers.CharField(read_only=True)
+    status = serializers.CharField(read_only=True)
+
+
+class ForceDeleteEventRequestSerializer(serializers.Serializer):
+    """Force-delete confirmation body."""
+
+    confirmation_name = serializers.CharField()
+
+
+class ForceDeleteEventResultSerializer(serializers.Serializer):
+    """Summary returned by a force-delete (range teardown counts)."""
+
+    event_id = serializers.CharField(read_only=True)
+    event_name = serializers.CharField(read_only=True)
+    ranges_destroyed = serializers.IntegerField(read_only=True)
+    ranges_failed = serializers.IntegerField(read_only=True)
+
+
+class ScenarioRefSerializer(serializers.Serializer):
+    """A CMS scenario id/name pair available for a CTF event."""
+
+    id = serializers.CharField(read_only=True)
+    name = serializers.CharField(read_only=True)
+
+
+class ScenarioListResponseSerializer(serializers.Serializer):
+    """Envelope returned by the scenario list."""
+
+    scenarios = ScenarioRefSerializer(many=True, read_only=True)
