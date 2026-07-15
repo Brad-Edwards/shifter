@@ -5,7 +5,9 @@
     "orchestrator": null,
     "participant_runtime": null,
     "provisioner": {
-      "constraints": {},
+      "constraints": {
+        "network-address-family": "ipv4-only"
+      },
       "max_total_nodes": null,
       "name": "shifter-provisioner",
       "supported_account_features": [
