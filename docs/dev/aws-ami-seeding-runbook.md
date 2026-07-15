@@ -51,23 +51,55 @@ public subnet with outbound internet egress.
 The `Packer AMI Build` workflow (`.github/workflows/packer.yml`) is
 `workflow_dispatch` on a `self-hosted` runner. It builds one AMI type per run,
 extracts the AMI id from the build manifest, and writes
-`/shifter/ami/<type>` with `aws ssm put-parameter --overwrite`.
+`/shifter/ami/<type>` with `aws ssm put-parameter --overwrite`. The build runs
+only from a protected ref (`dev` or `main`); a dispatch from a feature branch is
+rejected before AWS authentication, because the job executes checked-out code and
+publishes SSM pointers with the deploy role.
 
-Dispatch it once for each of the four base types (`kali`, `ubuntu`, `windows`,
-`dc`):
+For `kali`, `ubuntu`, and `windows` the workflow first runs a fresh-boot
+validation gate (issue #1633) before it seeds SSM. The gate boots the exact
+built AMI in a runtime-equivalent range subnet with the range instance profile,
+waits for the guest to register with SSM (registration requires the guest to
+resolve the regional SSM endpoint, so a successful registration is the durable
+proof that guest DNS works), resolves the endpoint through the guest system
+resolver, reboots, and confirms both again. The SSM parameter is overwritten
+only after the gate passes; a failed candidate leaves the previous known-good id
+in place.
+
+The gate reads its subnet, security group, and instance profile from **trusted
+repository Actions variables**, not dispatch inputs, so the candidate's launch
+identity cannot be chosen at dispatch time. Set these once per account (Settings
+-> Secrets and variables -> Actions -> Variables), suffixed by environment
+(`_DEV` / `_PROOF`):
+
+| Variable | Value |
+|----------|-------|
+| `PACKER_VERIFY_SUBNET_ID_<ENV>` | A range-equivalent subnet that can reach SSM (private SSM endpoints or a NAT path), no inbound |
+| `PACKER_VERIFY_SG_ID_<ENV>` | A no-inbound, egress-all security group |
+| `PACKER_VERIFY_INSTANCE_PROFILE_<ENV>` | The SSM-enabled range instance profile (name ends in `-range-instance`), from `terraform -chdir=platform/terraform/environments/<env>/range output -raw range_instance_profile_name` |
+
+Dispatch the three built base types (the gate reads the variables above):
 
 ```bash
-for t in kali ubuntu windows dc; do
-  gh workflow run "Packer AMI Build" \
-    -f ami_type="$t" -f environment=dev -f ref=dev
+for t in kali ubuntu windows; do
+  gh workflow run "Packer AMI Build" -f ami_type="$t" -f environment=dev -f ref=dev
 done
+```
+
+`dc` is not built by this workflow. `/shifter/ami/dc` is a pre-promoted
+`internal.shifter` Domain Controller published from the checked-in
+`dc-amis.json`; dispatching `ami_type=dc` reads the environment's id from that
+file and seeds SSM without a build (see "Pre-promoted DC AMI" below):
+
+```bash
+gh workflow run "Packer AMI Build" -f ami_type=dc -f environment=dev -f ref=dev
 ```
 
 `environment` accepts `dev` or `proof`. There is no `prod` build option: prod
 AMIs are produced by promoting a validated dev AMI with `packer-promote.yml`, not
 by building directly in prod. The workflow also builds the CTF scenario images
-(`ctf-*`, `brokenbk`) on demand; the four base types above are the ones the
-portal plan requires.
+(`ctf-*`, `brokenbk`) on demand; the base types above are the ones the portal
+plan requires.
 
 ## Build path B: local Packer
 
@@ -85,7 +117,39 @@ aws ssm put-parameter --name /shifter/ami/kali --type String \
   --value "$AMI_ID" --overwrite --region us-east-2
 ```
 
-Repeat for `ubuntu`, `windows`, and `dc`.
+Repeat for `ubuntu` and `windows`. Do not build `dc` locally: `dc.pkr.hcl` is a
+generalized Windows image with the AD DS feature installed but not promoted, and
+publishing it to `/shifter/ami/dc` would corrupt the pre-promoted DC contract.
+Seed `/shifter/ami/dc` from `dc-amis.json` instead:
+
+```bash
+AMI_ID=$(jq -r '.dev' shifter/packer/dc-amis.json)
+aws ssm put-parameter --name /shifter/ami/dc --type String \
+  --value "$AMI_ID" --overwrite --region us-east-2
+```
+
+## Pre-promoted DC AMI
+
+`/shifter/ami/dc` points at a manually created, pre-promoted `internal.shifter`
+Domain Controller (domain `internal.shifter`, NetBIOS `INTSHIFTER`). The AMI ids
+live in `shifter/packer/dc-amis.json`; no Packer source rebuilds them. Both the
+build workflow (`ami_type=dc`) and `packer-promote.yml` publish the checked-in id
+rather than a fresh build.
+
+When you re-bake the pre-promoted DC (see
+[AMI management](../technical/platform_infrastructure/ami-management.md)), set the
+DC's DNS forwarders to the link-local AmazonProvidedDNS so external names such as
+the regional SSM endpoint resolve deterministically:
+
+```powershell
+Set-DnsServerForwarder -IPAddress 169.254.169.253 -PassThru
+```
+
+This is the DC-role equivalent of the `FallbackDNS` baked into the Linux guests.
+Do not apply the Linux or Windows-victim first-boot DNS reset to the DC: a
+promoted DC owns its own DNS (its client points at itself and the DNS Server role
+forwards outbound queries), so resetting the adapter to DHCP DNS would break
+domain resolution.
 
 ## Verify
 
