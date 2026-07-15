@@ -70,7 +70,7 @@ jobs:
     steps:
       # Reject dispatches from non-protected refs BEFORE any checkout or cloud
       # auth. The WIF attribute_condition enforces the same allowlist at the GCP
-      # level (ADR-037-R7), so this step is defence-in-depth: it makes the
+      # level (ADR-037-R7), so this step is defense-in-depth: it makes the
       # policy visible and catches cases where only the script — not the workflow
       # file — has been tampered with. Runs before cloud credentials are issued.
       - name: Reject non-protected dispatch refs

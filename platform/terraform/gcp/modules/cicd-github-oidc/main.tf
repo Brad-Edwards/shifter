@@ -7,6 +7,11 @@
 locals {
   # Restrict federation to this repository's workflows only.
   repo_principal = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.github.name}/attribute.repository/${var.github_org}/${var.github_repo}"
+
+  # CEL condition fragment: assertion.ref must be one of the allowed protected
+  # integration branches (ADR-037-R7). Extracted as a local so the composite
+  # attribute_condition below remains readable and auditable.
+  ref_condition = join(" || ", [for r in var.allowed_workflow_refs : "assertion.ref == \"${r}\""])
 }
 
 resource "google_iam_workload_identity_pool" "github" {
@@ -42,7 +47,7 @@ resource "google_iam_workload_identity_pool_provider" "github" {
   #      (allowed_workflow_refs) are rejected at the provider. This prevents a
   #      repository collaborator from obtaining cloud credentials by dispatching
   #      a credentialed workflow against a mutable feature branch.
-  attribute_condition = "assertion.repository == \"${var.github_org}/${var.github_repo}\" && (${join(" || ", [for r in var.allowed_workflow_refs : "assertion.ref == \"${r}\""])})"
+  attribute_condition = "assertion.repository == \"${var.github_org}/${var.github_repo}\" && (${local.ref_condition})"
 
   oidc {
     issuer_uri = "https://token.actions.githubusercontent.com"
