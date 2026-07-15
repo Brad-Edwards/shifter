@@ -109,9 +109,10 @@ def evaluate_gcp_backend_admission(
     except GcpRangeBackendError as exc:
         return BackendAdmission(False, "", purpose, PREREQUISITE_DENIAL_CODE, str(exc))
 
-    if purpose is InstantiationPurpose.NON_USER_VALIDATION:
-        return BackendAdmission(True, backend, purpose, "", "")
-
-    if backend == _SUPPORTED_LIVE_FIRE_BACKEND:
+    # Non-user validation may use either substrate; a live-fire launch admits only
+    # the approved GCE backend. A single admitted/denied tail keeps this within the
+    # 3-return limit (Sonar python:S1142).
+    admitted = purpose is InstantiationPurpose.NON_USER_VALIDATION or backend == _SUPPORTED_LIVE_FIRE_BACKEND
+    if admitted:
         return BackendAdmission(True, backend, purpose, "", "")
     return BackendAdmission(False, backend, purpose, POLICY_DENIAL_CODE, _LIVE_FIRE_GDC_REASON)
