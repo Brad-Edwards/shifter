@@ -285,7 +285,7 @@ jobs:
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
-      - name: Run file hygiene and secret scan hooks
+      - name: Run file hygiene, secret scan, and always-on guardrail hooks
         run: |
           set -euo pipefail
           export PRE_COMMIT_HOME="${RUNNER_TEMP}/pre-commit-cache"
@@ -294,6 +294,10 @@ jobs:
           . "${RUNNER_TEMP}/precommit-venv/bin/activate"
           python -m pip install --upgrade pip
           python -m pip install 'pre-commit==4.3.0'
+          # adr-guard-parity-inventory (ADR-024-R4 / #1313) is a global invariant
+          # that must run even when the Quality workflow's adr_guard path filter is
+          # false (e.g. a docs-only change that deletes an inventory-referenced
+          # file), so it rides this always-present pre-commit job.
           hooks=(
             trailing-whitespace
             end-of-file-fixer
@@ -303,6 +307,7 @@ jobs:
             check-merge-conflict
             detect-private-key
             gitleaks
+            adr-guard-parity-inventory
           )
           for hook in "${hooks[@]}"; do
             pre-commit run "$hook" --all-files --show-diff-on-failure
