@@ -1125,13 +1125,28 @@ jobs:
           ASG_NAME: ${{ steps.asg.outputs.asg_name }}
         run: |
           echo "Selecting one in-service ASG instance for deploy-owned migration: $ASG_NAME"
-          MIGRATION_INSTANCE_ID=$(aws autoscaling describe-auto-scaling-groups \
-            --auto-scaling-group-names "$ASG_NAME" \
-            --query "AutoScalingGroups[0].Instances[?LifecycleState=='InService' && HealthStatus=='Healthy'] | [0].InstanceId" \
-            --output text)
+          # On a first deploy to a fresh ASG there is no pre-existing in-service
+          # instance: the newly-applied instances must launch, pull the image by
+          # digest, bootstrap, and reach LifecycleState=InService. Poll for one
+          # to appear instead of a one-shot check, which races and fails on a
+          # cold ASG when run seconds after the image-digest param is updated.
+          MIGRATION_INSTANCE_WAIT_SECONDS=600
+          MIGRATION_INSTANCE_POLL_SECONDS=15
+          MIGRATION_INSTANCE_ID=""
+          for i in $(seq 1 $((MIGRATION_INSTANCE_WAIT_SECONDS / MIGRATION_INSTANCE_POLL_SECONDS))); do
+            MIGRATION_INSTANCE_ID=$(aws autoscaling describe-auto-scaling-groups \
+              --auto-scaling-group-names "$ASG_NAME" \
+              --query "AutoScalingGroups[0].Instances[?LifecycleState=='InService' && HealthStatus=='Healthy'] | [0].InstanceId" \
+              --output text)
+            if [ -n "$MIGRATION_INSTANCE_ID" ] && [ "$MIGRATION_INSTANCE_ID" != "None" ]; then
+              break
+            fi
+            echo "Attempt $i: No in-service instance yet in ASG $ASG_NAME; waiting..."
+            sleep "$MIGRATION_INSTANCE_POLL_SECONDS"
+          done
 
           if [ -z "$MIGRATION_INSTANCE_ID" ] || [ "$MIGRATION_INSTANCE_ID" = "None" ]; then
-            echo "::error::No healthy in-service instance found in ASG $ASG_NAME for database migration"
+            echo "::error::No healthy in-service instance found in ASG $ASG_NAME for database migration after ${MIGRATION_INSTANCE_WAIT_SECONDS}s"
             exit 1
           fi
 
