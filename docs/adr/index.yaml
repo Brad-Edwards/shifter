@@ -1706,6 +1706,11 @@
         "id": "ADR-037-R6",
         "description": "Before mutating ECS/portal or Kubernetes rollout, deployment MUST verify the GitHub attestation for the fixed Brad-Edwards/shifter repository identity and the exact fully-qualified image@sha256 it will deploy. A valid signature for another repository, a tag resolving to a digest, or a digest merely matching the expected shape is insufficient. Any verifier failure, missing attestation, subject/repository mismatch, or digest mismatch is a hard ::error:: and non-zero exit; there is no first-deploy, continue-on-error, or other bypass.",
         "checks": []
+      },
+      {
+        "id": "ADR-037-R7",
+        "description": "Cloud-credentialed validation workflows that mint trusted labels (e.g. validated=passed) MUST be restricted to protected integration branches at two independent enforcement layers: (1) a ref-allowlist in the workflow job that rejects non-protected refs before cloud auth is attempted (defense-in-depth), and (2) a ref condition in the OIDC/WIF attribute_condition that rejects tokens from any ref outside the allowlist at the provider level — outside any branch-controlled workflow code. The GCP WIF module enforces this via the allowed_workflow_refs variable (platform/terraform/gcp/modules/cicd-github-oidc). GitHub environment deployment-branch protection MUST also be configured for the target environments so that GitHub rejects runs from non-protected refs before the job starts. Any exception requires a docs/adr/exceptions.yaml entry with owner, justification, and expiry.",
+        "checks": []
       }
     ],
     "exceptions": [],

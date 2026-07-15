@@ -17,7 +17,13 @@ resource "google_iam_workload_identity_pool" "github" {
 }
 
 resource "google_iam_workload_identity_pool_provider" "github" {
-  # checkov:skip=CKV_GCP_125:Federation is repository-scoped the Google-recommended way - `assertion.repository ==` here AND a principalSet-by-repository binding on the build SA. CKV_GCP_125 wants an exact `assertion.sub ==` pin, which would lock builds to a single branch/ref and break workflow_dispatch across refs (#615).
+  # CKV_GCP_125 wants an exact `assertion.sub ==` pin to a single identity
+  # (branch+workflow+env). We enforce the same security intent at the
+  # attribute_condition level by restricting assertion.ref to the protected
+  # integration branches (ADR-037-R7), which is more maintainable and still
+  # rejects tokens from any other branch or fork. The SA's principalSet binding
+  # provides the second layer; together they satisfy the spirit of CKV_GCP_125.
+  # checkov:skip=CKV_GCP_125:ref-allowlist in attribute_condition + principalSet SA binding achieves equivalent protection without locking to a single sub string; see ADR-037-R7.
   project                            = var.project_id
   workload_identity_pool_id          = google_iam_workload_identity_pool.github.workload_identity_pool_id
   workload_identity_pool_provider_id = "github"
@@ -29,9 +35,14 @@ resource "google_iam_workload_identity_pool_provider" "github" {
     "attribute.ref"        = "assertion.ref"
   }
 
-  # Hard gate: tokens from any other repository are rejected at the provider,
-  # before the SA's principalSet binding is even consulted.
-  attribute_condition = "assertion.repository == \"${var.github_org}/${var.github_repo}\""
+  # Two-layer hard gate (ADR-037-R7):
+  #   1. Repository: tokens from any other repository are rejected before the SA
+  #      binding is consulted.
+  #   2. Ref: tokens from branches outside the protected integration allowlist
+  #      (allowed_workflow_refs) are rejected at the provider. This prevents a
+  #      repository collaborator from obtaining cloud credentials by dispatching
+  #      a credentialed workflow against a mutable feature branch.
+  attribute_condition = "assertion.repository == \"${var.github_org}/${var.github_repo}\" && (${join(" || ", [for r in var.allowed_workflow_refs : "assertion.ref == \"${r}\""])})"
 
   oidc {
     issuer_uri = "https://token.actions.githubusercontent.com"
