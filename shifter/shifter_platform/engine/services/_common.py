@@ -14,6 +14,20 @@ from typing import Any
 
 from django.conf import settings
 
+# Re-exported (not just used internally): historical import path for callers
+# and tests that reference the realized-instance projection helpers at
+# ``engine.services._common`` (#685). The implementation lives in the
+# dependency-neutral ``engine._range_state`` so the model compatibility
+# wrappers on ``engine.models.Range`` can consume the same pure functions
+# without importing a private ``engine.services`` submodule (that would make
+# the model depend upward on the service layer, which already depends on the
+# model).
+from engine._range_state import attacker_instance as attacker_instance
+from engine._range_state import attacker_private_ip as attacker_private_ip
+from engine._range_state import find_instance_by_role as find_instance_by_role
+from engine._range_state import find_instance_by_uuid as find_instance_by_uuid
+from engine._range_state import first_victim_private_ip as first_victim_private_ip
+from engine._range_state import victim_instances as victim_instances
 from engine.secrets import SecretsError
 
 logger = logging.getLogger(__name__)

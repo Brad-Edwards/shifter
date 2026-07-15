@@ -7,6 +7,16 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING
 from uuid import UUID
 
+# Re-exported (not just used internally): historical import path for callers
+# and tests that reference status predicates at ``engine.services._lifecycle``
+# (#685). The implementation lives in the dependency-neutral
+# ``engine._range_state`` so the model compatibility wrappers on
+# ``engine.models.Range`` can consume the same pure functions without
+# importing a private ``engine.services`` submodule (that would make the
+# model depend upward on the service layer, which already depends on the
+# model).
+from engine._range_state import is_range_terminal as is_range_terminal
+from engine._range_state import is_range_usable as is_range_usable
 from shared.enums import ResourceStatus
 
 if TYPE_CHECKING:
