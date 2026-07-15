@@ -282,6 +282,14 @@ class TestRangeNetworkEnv:
         assert get_gcp_range_backend() == "gce"
         assert is_gce_range_cell_backend() is True
 
+    def test_gcp_range_backend_rejects_unknown_value(self, mocker):
+        # The gce/gdc parse now lives in shared.range_instantiation_policy (#1348),
+        # but get_gcp_range_backend() still raises RuntimeError for provisioner callers.
+        mocker.patch.dict(os.environ, {"CLOUD_PROVIDER": "gcp", "GCP_RANGE_BACKEND": "bogus"}, clear=True)
+
+        with pytest.raises(RuntimeError, match="GCP_RANGE_BACKEND must be 'gdc' or 'gce'"):
+            get_gcp_range_backend()
+
     def test_load_range_network_config_prefers_generic_env_names(self, mocker):
         mocker.patch.dict(
             os.environ,
