@@ -5,174 +5,13 @@ from __future__ import annotations
 from typing import Any
 
 from django.http import JsonResponse
+from drf_spectacular.utils import extend_schema
 from rest_framework import permissions
 from rest_framework.request import Request
 from rest_framework.views import APIView
 
-from ctf.api._base import (
-    CTF_ORGANIZER_PERMISSIONS,
-    CTF_PARTICIPANT_PERMISSIONS,
-    CTF_ROLE_PERMISSIONS,
-    _canonical_error_response,
-    legacy_api_view,
-)
-from shared.api_tokens import scopes
-
-EVENT_READ = (scopes.CTF_EVENT_READ,)
-EVENT_WRITE = (scopes.CTF_EVENT_WRITE,)
-PLAY_READ = (scopes.CTF_PLAY_READ,)
-PLAY_WRITE = (scopes.CTF_PLAY_WRITE,)
-EVENT_OR_PLAY_READ = (scopes.CTF_EVENT_READ, scopes.CTF_PLAY_READ)
-
-api_submit_flag = legacy_api_view(
-    "SubmitFlagView",
-    "ctf.views.api.play.api_submit_flag",
-    permission_classes=CTF_PARTICIPANT_PERMISSIONS,
-    write_scopes=PLAY_WRITE,
-)
-api_use_hint = legacy_api_view(
-    "UseHintView",
-    "ctf.views.api.play.api_use_hint",
-    permission_classes=CTF_PARTICIPANT_PERMISSIONS,
-    write_scopes=PLAY_WRITE,
-)
-api_submissions = legacy_api_view(
-    "SubmissionListView",
-    "ctf.views.api.play.api_submissions",
-    permission_classes=CTF_PARTICIPANT_PERMISSIONS,
-    read_scopes=PLAY_READ,
-)
-api_participant_list = legacy_api_view(
-    "ParticipantListView",
-    "ctf.views.api.participants.api_participant_list",
-    permission_classes=CTF_ORGANIZER_PERMISSIONS,
-    read_scopes=EVENT_READ,
-    write_scopes=EVENT_WRITE,
-)
-api_participant_import = legacy_api_view(
-    "ParticipantImportView",
-    "ctf.views.api.participants.api_participant_import",
-    permission_classes=CTF_ORGANIZER_PERMISSIONS,
-    write_scopes=EVENT_WRITE,
-)
-api_participant_detail = legacy_api_view(
-    "ParticipantDetailView",
-    "ctf.views.api.participants.api_participant_detail",
-    permission_classes=CTF_ORGANIZER_PERMISSIONS,
-    read_scopes=EVENT_READ,
-    write_scopes=EVENT_WRITE,
-)
-api_participant_resend_invite = legacy_api_view(
-    "ParticipantResendInviteView",
-    "ctf.views.api.participants.api_participant_resend_invite",
-    permission_classes=CTF_ORGANIZER_PERMISSIONS,
-    write_scopes=EVENT_WRITE,
-)
-api_range_status = legacy_api_view(
-    "ParticipantRangeStatusView",
-    "ctf.views.api.ranges.api_range_status",
-    permission_classes=CTF_PARTICIPANT_PERMISSIONS,
-    read_scopes=PLAY_READ,
-)
-api_range_access = legacy_api_view(
-    "ParticipantRangeAccessView",
-    "ctf.views.api.ranges.api_range_access",
-    permission_classes=CTF_PARTICIPANT_PERMISSIONS,
-    read_scopes=PLAY_READ,
-    write_scopes=PLAY_READ,
-)
-api_range_list = legacy_api_view(
-    "EventRangeListView",
-    "ctf.views.api.ranges.api_range_list",
-    permission_classes=CTF_ORGANIZER_PERMISSIONS,
-    read_scopes=EVENT_READ,
-)
-api_provision_ranges = legacy_api_view(
-    "EventRangeProvisionView",
-    "ctf.views.api.ranges.api_provision_ranges",
-    permission_classes=CTF_ORGANIZER_PERMISSIONS,
-    write_scopes=EVENT_WRITE,
-)
-api_provision_participant_range = legacy_api_view(
-    "ParticipantRangeProvisionView",
-    "ctf.views.api.ranges.api_provision_participant_range",
-    permission_classes=CTF_ORGANIZER_PERMISSIONS,
-    write_scopes=EVENT_WRITE,
-)
-api_destroy_participant_range = legacy_api_view(
-    "ParticipantRangeDestroyView",
-    "ctf.views.api.ranges.api_destroy_participant_range",
-    permission_classes=CTF_ORGANIZER_PERMISSIONS,
-    write_scopes=EVENT_WRITE,
-)
-api_stop_participant_range = legacy_api_view(
-    "ParticipantRangeStopView",
-    "ctf.views.api.ranges.api_stop_participant_range",
-    permission_classes=CTF_ORGANIZER_PERMISSIONS,
-    write_scopes=EVENT_WRITE,
-)
-api_start_participant_range = legacy_api_view(
-    "ParticipantRangeStartView",
-    "ctf.views.api.ranges.api_start_participant_range",
-    permission_classes=CTF_ORGANIZER_PERMISSIONS,
-    write_scopes=EVENT_WRITE,
-)
-api_restart_participant_range = legacy_api_view(
-    "ParticipantRangeRestartView",
-    "ctf.views.api.ranges.api_restart_participant_range",
-    permission_classes=CTF_ORGANIZER_PERMISSIONS,
-    write_scopes=EVENT_WRITE,
-)
-api_recover_participant_range = legacy_api_view(
-    "ParticipantRangeRecoverView",
-    "ctf.views.api.ranges.api_recover_participant_range",
-    permission_classes=CTF_ORGANIZER_PERMISSIONS,
-    write_scopes=EVENT_WRITE,
-)
-api_provision_event_spares = legacy_api_view(
-    "EventRangeSpareProvisionView",
-    "ctf.views.api.ranges.api_provision_event_spares",
-    permission_classes=CTF_ORGANIZER_PERMISSIONS,
-    write_scopes=EVENT_WRITE,
-)
-api_assign_bracket = legacy_api_view(
-    "AssignBracketView",
-    "ctf.views.admin_brackets.api_assign_bracket",
-    permission_classes=CTF_ORGANIZER_PERMISSIONS,
-    write_scopes=EVENT_WRITE,
-)
-api_score_timeline = legacy_api_view(
-    "ScoreTimelineView",
-    "ctf.views.api.scoreboard.api_score_timeline",
-    permission_classes=CTF_ROLE_PERMISSIONS,
-    read_scopes=EVENT_OR_PLAY_READ,
-)
-api_notification_list = legacy_api_view(
-    "NotificationListView",
-    "ctf.views.api.notifications.api_notification_list",
-    permission_classes=CTF_ORGANIZER_PERMISSIONS,
-    read_scopes=EVENT_READ,
-    write_scopes=EVENT_WRITE,
-)
-api_notification_send = legacy_api_view(
-    "NotificationSendView",
-    "ctf.views.api.notifications.api_notification_send",
-    permission_classes=CTF_ORGANIZER_PERMISSIONS,
-    write_scopes=EVENT_WRITE,
-)
-api_event_email_template = legacy_api_view(
-    "EventEmailTemplateView",
-    "ctf.views.api.notifications.api_event_email_template",
-    permission_classes=CTF_ORGANIZER_PERMISSIONS,
-    read_scopes=EVENT_READ,
-    write_scopes=EVENT_WRITE,
-)
-api_send_invitations = legacy_api_view(
-    "SendInvitationsView",
-    "ctf.views.api.ranges.api_send_invitations",
-    permission_classes=CTF_ORGANIZER_PERMISSIONS,
-    write_scopes=EVENT_WRITE,
-)
+from ctf.api._base import _canonical_error_response
+from ctf.api.serializers import PublicScoreboardResponseSerializer
 
 
 class PublicScoreboardView(APIView):
@@ -181,6 +20,7 @@ class PublicScoreboardView(APIView):
     versioning_class = None
     permission_classes = [permissions.AllowAny]
 
+    @extend_schema(responses=PublicScoreboardResponseSerializer)
     def get(self, request: Request, event_id: Any) -> JsonResponse:
         """Return the public scoreboard payload for an event."""
         from ctf.exceptions import CTFNotFoundError
@@ -228,29 +68,5 @@ class PublicScoreboardView(APIView):
 api_scoreboard = PublicScoreboardView.as_view()
 
 __all__ = [
-    "api_assign_bracket",
-    "api_destroy_participant_range",
-    "api_event_email_template",
-    "api_notification_list",
-    "api_notification_send",
-    "api_participant_detail",
-    "api_participant_import",
-    "api_participant_list",
-    "api_participant_resend_invite",
-    "api_provision_event_spares",
-    "api_provision_participant_range",
-    "api_provision_ranges",
-    "api_range_access",
-    "api_range_list",
-    "api_range_status",
-    "api_recover_participant_range",
-    "api_restart_participant_range",
-    "api_score_timeline",
     "api_scoreboard",
-    "api_send_invitations",
-    "api_start_participant_range",
-    "api_stop_participant_range",
-    "api_submissions",
-    "api_submit_flag",
-    "api_use_hint",
 ]
