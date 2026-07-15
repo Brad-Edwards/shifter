@@ -30,6 +30,14 @@ on:
         required: false
         type: string
         default: 'dev'
+      # Base-image fresh-boot validation gate (issue #1633): for kali/ubuntu/windows
+      # the exact built AMI is booted in a runtime-equivalent range subnet and must
+      # register with SSM + resolve the regional SSM endpoint (fresh boot AND after
+      # a reboot) before /shifter/ami/<type> is overwritten. Its subnet, security
+      # group, and instance profile come from trusted repository Actions variables
+      # (PACKER_VERIFY_*_<ENV>), NOT free-form dispatch inputs, so a dispatcher
+      # cannot select what the candidate launches with. workflow_dispatch is capped
+      # at 10 inputs, so these are variables rather than inputs by necessity too.
       # --- scenario bake inputs (techvault / polaris-vm only) --------------------
       # The scenario builders run in an operator-supplied isolated bake VPC with
       # no inbound and drive the guest over AWS Session Manager. These inputs are
@@ -81,6 +89,28 @@ jobs:
         working-directory: shifter/packer
 
     steps:
+      # Fail-closed protected-ref gate. This privileged job assumes the AWS deploy
+      # role and then executes the checked-out Packer templates, provisioner
+      # scripts, and scripts/bake/base-image-verify.sh, and publishes /shifter/ami/*
+      # (including the pre-promoted DC id read from the checked-out dc-amis.json).
+      # Restricting the build ref to protected branches keeps a collaborator who
+      # can dispatch + push a branch from pointing this trusted workflow at
+      # unreviewed code or an attacker-controlled DC id (issue #1633 codex review).
+      # Runs before checkout, so it must not use the job-default working-directory.
+      - name: Validate build ref
+        working-directory: ${{ github.workspace }}
+        env:
+          REF: ${{ inputs.ref }}
+        run: |
+          set -euo pipefail
+          case "${REF}" in
+            dev | main) ;;
+            *)
+              echo "::error::base-image builds may only run from a protected ref (dev or main); got '${REF}'"
+              exit 1
+              ;;
+          esac
+
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
@@ -141,7 +171,13 @@ jobs:
       - name: Validate template
         run: packer validate -var-file=${{ inputs.environment }}.pkrvars.hcl -only='*.${{ inputs.ami_type }}' .
 
+      # dc is a pre-promoted internal.shifter DC contract shipped from the
+      # checked-in dc-amis.json (see docs/technical/platform_infrastructure/
+      # ami-management.md), NOT the generalized dc.pkr.hcl build. Building and
+      # publishing the feature-only dc.pkr.hcl image would corrupt the runtime DC
+      # pointer, so dc skips the build and resolves the prebaked id below.
       - name: Build AMI
+        if: inputs.ami_type != 'dc'
         run: |
           packer build -color=false -var-file=${{ inputs.environment }}.pkrvars.hcl -only='*.${{ inputs.ami_type }}' .
 
@@ -155,6 +191,90 @@ jobs:
             echo "- **AMI ID:** \`$AMI_ID\`"
             echo "- **Region:** us-east-2"
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Resolve prebaked DC AMI
+        if: inputs.ami_type == 'dc'
+        env:
+          BUILD_ENVIRONMENT: ${{ inputs.environment }}
+        run: |
+          set -euo pipefail
+          AMI_ID=$(jq -r --arg env "$BUILD_ENVIRONMENT" '.[$env] // ""' dc-amis.json)
+          if [ -z "$AMI_ID" ] || [ "$AMI_ID" = "null" ]; then
+            echo "::error::no prebaked DC AMI id for environment '${BUILD_ENVIRONMENT}' in dc-amis.json (dc is pre-promoted; re-bake per the AMI runbook and update dc-amis.json)"
+            exit 1
+          fi
+          echo "AMI_ID=$AMI_ID" >> "$GITHUB_ENV"
+          {
+            echo "## ${BUILD_ENVIRONMENT} DC AMI (prebaked)"
+            echo "- **AMI ID:** \`$AMI_ID\`"
+            echo "- **Source:** dc-amis.json (pre-promoted internal.shifter DC)"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Fresh-boot validation gate (issue #1633): publish /shifter/ami/<type> only
+      # after the exact candidate AMI registers with SSM and resolves the regional
+      # SSM endpoint on a fresh boot AND after a reboot. A failure here fails the
+      # job before the SSM publish, leaving the previous known-good pointer intact.
+      - name: Validate candidate AMI (fresh-boot SSM + DNS)
+        if: contains(fromJSON('["kali","ubuntu","windows"]'), inputs.ami_type)
+        env:
+          AMI_TYPE: ${{ inputs.ami_type }}
+          RUN_ID: ${{ github.run_id }}
+          ENVIRONMENT: ${{ inputs.environment }}
+          # Trusted repository Actions variables (admin-set), not dispatch inputs,
+          # so the candidate's subnet/sg/instance-profile cannot be chosen by the
+          # dispatcher (issue #1633 codex security review).
+          VERIFY_SUBNET_ID_DEV: ${{ vars.PACKER_VERIFY_SUBNET_ID_DEV }}
+          VERIFY_SUBNET_ID_PROOF: ${{ vars.PACKER_VERIFY_SUBNET_ID_PROOF }}
+          VERIFY_SG_ID_DEV: ${{ vars.PACKER_VERIFY_SG_ID_DEV }}
+          VERIFY_SG_ID_PROOF: ${{ vars.PACKER_VERIFY_SG_ID_PROOF }}
+          VERIFY_INSTANCE_PROFILE_DEV: ${{ vars.PACKER_VERIFY_INSTANCE_PROFILE_DEV }}
+          VERIFY_INSTANCE_PROFILE_PROOF: ${{ vars.PACKER_VERIFY_INSTANCE_PROFILE_PROOF }}
+        run: |
+          set -euo pipefail
+          case "$ENVIRONMENT" in
+            dev)
+              VERIFY_SUBNET_ID="$VERIFY_SUBNET_ID_DEV"
+              VERIFY_SECURITY_GROUP_ID="$VERIFY_SG_ID_DEV"
+              VERIFY_INSTANCE_PROFILE="$VERIFY_INSTANCE_PROFILE_DEV"
+              ;;
+            proof)
+              VERIFY_SUBNET_ID="$VERIFY_SUBNET_ID_PROOF"
+              VERIFY_SECURITY_GROUP_ID="$VERIFY_SG_ID_PROOF"
+              VERIFY_INSTANCE_PROFILE="$VERIFY_INSTANCE_PROFILE_PROOF"
+              ;;
+            *)
+              echo "::error::unsupported environment '${ENVIRONMENT}' for base-image validation"
+              exit 1
+              ;;
+          esac
+          req() {
+            if [ -z "${2:-}" ]; then
+              echo "::error::repository variable ${1} is required to validate the ${AMI_TYPE} base image (issue #1633); set it for ${ENVIRONMENT}"
+              exit 1
+            fi
+          }
+          match() {
+            if ! printf '%s' "$2" | grep -qE "$3"; then
+              echo "::error::${1} is invalid"
+              exit 1
+            fi
+          }
+          ENV_UPPER=$(printf '%s' "$ENVIRONMENT" | tr '[:lower:]' '[:upper:]')
+          req "PACKER_VERIFY_SUBNET_ID_${ENV_UPPER}" "$VERIFY_SUBNET_ID"
+          req "PACKER_VERIFY_SG_ID_${ENV_UPPER}" "$VERIFY_SECURITY_GROUP_ID"
+          req "PACKER_VERIFY_INSTANCE_PROFILE_${ENV_UPPER}" "$VERIFY_INSTANCE_PROFILE"
+          match verify_subnet_id "$VERIFY_SUBNET_ID" '^subnet-[0-9a-f]+$'
+          match verify_security_group_id "$VERIFY_SECURITY_GROUP_ID" '^sg-[0-9a-f]+$'
+          # Allowlist the profile to the range instance-profile naming convention
+          # (<prefix>-range-instance) so no arbitrary, more-privileged profile is
+          # passed to the candidate (iam:PassRole exfil path).
+          match verify_instance_profile "$VERIFY_INSTANCE_PROFILE" '^[A-Za-z0-9_+=,.@/-]*-range-instance$'
+          export AMI_TYPE RUN_ID
+          export INSTANCE_TYPE="t3.large"
+          export SUBNET_ID="$VERIFY_SUBNET_ID"
+          export SECURITY_GROUP_ID="$VERIFY_SECURITY_GROUP_ID"
+          export INSTANCE_PROFILE="$VERIFY_INSTANCE_PROFILE"
+          bash scripts/bake/base-image-verify.sh
 
       - name: Update ${{ inputs.environment }} SSM Parameter
         run: |
@@ -171,17 +291,18 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload manifest
+        if: inputs.ami_type != 'dc'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ${{ inputs.ami_type }}-manifest
           path: shifter/packer/${{ inputs.ami_type }}-manifest.json
 
-      - name: Cleanup Packer builder instances
+      - name: Cleanup Packer builder and verify instances
         if: always()
         run: |
-          echo "Terminating any packer-builder-${{ inputs.ami_type }} instances..."
+          echo "Terminating any packer-builder-${{ inputs.ami_type }} / ami-verify-${{ inputs.ami_type }} instances..."
           INSTANCE_IDS=$(aws ec2 describe-instances \
-            --filters "Name=tag:Name,Values=packer-builder-${{ inputs.ami_type }}" \
+            --filters "Name=tag:Name,Values=packer-builder-${{ inputs.ami_type }},ami-verify-${{ inputs.ami_type }}-${{ github.run_id }}" \
                       "Name=instance-state-name,Values=running,pending,stopping,stopped" \
             --query 'Reservations[].Instances[].InstanceId' \
             --output text)
