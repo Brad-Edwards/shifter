@@ -4,6 +4,7 @@ import argparse
 import shutil
 import sys
 
+from account_recovery import account_recovery
 from aws_bootstrap import AWS_ENVIRONMENTS, BootstrapConfig, bootstrap_account
 from bootstrap_core import (
     HELP_AWS_PROFILE,
@@ -380,6 +381,23 @@ Examples:
     )
     preflight_parser.add_argument("--headless", action="store_const", const=True, default=None, help=HELP_HEADLESS)
 
+    # Account leftover recovery: detect (and optionally sweep) state-absent
+    # control-plane residue from an incomplete prior teardown so a re-standup
+    # does not fail collision-by-collision (issue #1639 / #1618).
+    recovery_parser = subparsers.add_parser(
+        "account-recovery",
+        help="Detect (and optionally --sweep) leftover AWS resources from an incomplete prior teardown",
+    )
+    recovery_parser.add_argument("--env", required=True, choices=AWS_ENVIRONMENTS, help="Environment")
+    recovery_parser.add_argument("--profile", required=True, help=HELP_AWS_PROFILE)
+    recovery_parser.add_argument(
+        "--sweep",
+        action="store_true",
+        help="Delete the owned leftovers (explicit destructive opt-in; detection is read-only without it)",
+    )
+    recovery_parser.add_argument("--dry-run", action="store_true", help=HELP_DRY_RUN)
+    recovery_parser.add_argument("--yes", action="store_true", help=HELP_YES)
+
     _add_runners_subparser(subparsers)
 
     gdc_parser = subparsers.add_parser(
@@ -458,6 +476,12 @@ def main() -> None:
 
     if args.command == "preflight":
         preflight_gate(Cloud(args.cloud), Mode.LOCAL, args.env, component=args.component, headless=args.headless)
+        return
+
+    if args.command == "account-recovery":
+        # Recovery is not a deploy; it resolves the account itself and gates its
+        # own destructive sweep. It does not run the deploy preflight_gate.
+        account_recovery(args.env, args.profile, sweep=args.sweep, dry_run=args.dry_run)
         return
 
     # Fail-safe gate: verify prerequisites and confirm the manual ones before any

@@ -44,6 +44,18 @@ When automated options are available, you'll see:
 
 **Note:** All steps are mandatory for a functioning deployment. Choosing 'n' will abort the script with an explanation of why that step is required.
 
+**Non-interactive (`--yes`).** Off a TTY (CI, an automation wrapper, a container),
+the interactive prompts cannot be answered and the CLI would otherwise abort. Pass
+`--yes` on `bootstrap`, `terraform`, `full`, or `account-recovery` to assume "yes"
+for the routine confirmation prompts, so a fresh tenant can be stood up without a
+terminal (issue #1639). `--yes` covers routine proceed prompts only. It does NOT
+authorize destructive cleanup: the `account-recovery` sweep still requires its own
+explicit `--sweep` flag. `--yes` is distinct from `--headless`, which governs only
+the preflight prerequisite gate.
+
+The CLI also sets `AWS_PAGER=""` for every `aws` call it runs, so the AWS CLI v2
+pager never blocks bootstrap under a non-TTY or PTY.
+
 ## Commands
 
 ## Fresh AWS Account Order
@@ -52,6 +64,12 @@ For a new AWS account, run bootstrap-only first. Do not start with `full`.
 The self-hosted runner Terraform root uses the same S3 backend that
 bootstrap creates, and the AWS deploy workflows cannot run until the
 runners are provisioned and registered.
+
+On a **re-used** account (one that previously ran Shifter and was torn down), run
+`account-recovery --env <env> --profile <profile>` first to detect orphaned leftovers
+from the prior teardown, and `--sweep` them once the report holds no surprises. A
+brand-new account has no leftovers, so this is a no-op there. See the Account Recovery
+command below.
 
 1. Run `bootstrap --env dev --profile <profile>` to create the shared dev
    state bucket, GitHub OIDC provider, and deploy role. Let it set the
@@ -80,12 +98,11 @@ runners are provisioned and registered.
    GitHub Actions, or in gitignored `local.auto.tfvars` files for local
    Terraform runs.
 6. For the first deploy in the moved account, run the `Deploy` GitHub Actions
-   workflow manually with `workflow_dispatch` on `aws-dev`. Manual dispatch
-   forces the full AWS chain (Core -> Range -> Engine -> Platform). A plain
-   branch push still obeys path filters, so it can skip Core or image
-   publishing when the pushed commit only touched bootstrap/backend files.
-   After the first full run succeeds, normal filtered `aws-dev` pushes are
-   appropriate.
+   workflow with `gh workflow run deploy.yml --ref <branch> -f environment=aws-dev`
+   (add `-f aws_first_deploy=true` for the first-ever engine deploy). The
+   dispatch forces the full AWS chain (Core -> Range -> Engine -> Platform).
+   Deployment is always a manual dispatch selecting the `environment`; pushing to
+   a branch runs validation only.
 7. During that first platform apply, publish DNS records for ACM and SES
    validation in the authoritative DNS zone. ACM records come from the root
    Terraform output `acm_validation_records`. SES records come from
@@ -127,9 +144,10 @@ Deployment section of
    Memorystore, Pub/Sub), builds and pushes the control-plane images, renders
    Helm values from Terraform outputs and Secret Manager, and installs the
    Shifter Helm release.
-6. Subsequent deploys run through CI: push to the `gcp-dev` branch, the only
-   branch that deploys the GCP dev environment (see the CI/CD trigger matrix in
-   `docs/technical/dev/ci-cd.md`).
+6. Subsequent deploys run through CI as a manual dispatch:
+   `gh workflow run deploy.yml --ref <branch> -f environment=gcp-dev` (see the
+   CI/CD trigger matrix in `docs/technical/dev/ci-cd.md`). Branch names no longer
+   trigger deploys.
 7. Point the configured hostname at the reserved global ingress IP so the
    Google-managed TLS certificate can activate.
 
@@ -147,6 +165,51 @@ automatically at the start; it is interactive by default (auto-headless off a
 TTY). The first Identity Platform operator credentials are required unless
 `SHIFTER_SKIP_OPERATOR_BOOTSTRAP=true` is set (the skip is logged, never silent).
 See `docs/dev/deploy-secrets.md`.
+
+### Account Recovery (fresh-account leftover detect / sweep)
+```bash
+# Read-only detection (default): report leftovers that would block a fresh apply.
+./scripts/bootstrap/deploy.py account-recovery --env dev --profile <your-dev-profile>
+
+# Delete the owned leftovers (explicit destructive opt-in).
+./scripts/bootstrap/deploy.py account-recovery --env dev --profile <your-dev-profile> --sweep
+
+# Preview the sweep without deleting anything.
+./scripts/bootstrap/deploy.py account-recovery --env dev --profile <your-dev-profile> --sweep --dry-run
+```
+When an account is re-used after an incomplete prior teardown, orphaned control-plane
+residue collides with a fresh `terraform apply` one resource at a time
+(`AlreadyExists` / `ResourceAlreadyExistsException`). This is the #1472 leftover set.
+`account-recovery` finds it up front instead of collision-by-collision (issue #1639 / #1618).
+
+Detection always runs first and is read-only. It reports these state-absent classes:
+ECR repositories, Network Firewall rule groups (deleted asynchronously, so the sweep
+polls to convergence), EventBridge Scheduler schedules, RDS event subscriptions, RDS
+DB parameter groups, KMS aliases, portal SSM parameters under `/shifter/<env>/portal`,
+and AWS Budgets.
+
+Safety model:
+- **Live-tenant refusal.** If a running tenant still occupies the environment (a portal
+  ASG carrying instances, or an RDS instance for the env), the tool refuses entirely and
+  tells you to `terraform destroy` first. It fails closed: if it cannot confirm the
+  account is torn down, it treats the account as live.
+- **Name plus ownership.** A resource is a candidate only when its name matches the
+  environment naming AND its ownership tags agree (`Project=shifter`,
+  `Environment=<env>`). A canonically named resource whose tags disagree is surfaced as
+  `blocked` and never deleted; remove those by hand after review.
+- **No data-bearing deletes.** Only the residue classes above are ever touched. KMS
+  keys, S3 buckets, databases, snapshots, and secret values are never deleted (the tool
+  deletes KMS aliases, not keys, and RDS parameter groups, not instances).
+- **Explicit destructive opt-in.** Detection never deletes. The sweep needs `--sweep`
+  AND a confirmation naming the account; `--yes` satisfies the confirmation but does not
+  replace `--sweep`, so a non-TTY run alone never deletes.
+- **Fail loud.** If any discovery call errors, detection is incomplete, so the tool
+  reports the failure and refuses to sweep rather than certify a partial picture. Deletes
+  are idempotent, so a partial or retried run is safe.
+
+The following fresh-apply blockers are NOT yet automated and remain in the manual sweep
+in `docs/dev/aws-teardown-runbook.md`: RDS DB subnet groups, the ElastiCache subnet
+group, EC2 key pairs, and security groups.
 
 ### Bootstrap Only
 ```bash
@@ -210,6 +273,8 @@ repo-specific fixes from the live spike:
 - `--cloud` (preflight only): `aws` or `gcp`
 - `--component` (preflight only): `core`, `range`, or `portal` to scope AWS overlay checks
 - `--headless` (bootstrap/terraform/full/preflight): non-interactive; fail on missing prerequisites without prompting (auto-detected off a TTY)
+- `--yes` (bootstrap/terraform/full/account-recovery): non-interactive; assume "yes" for routine confirmation prompts so the flow runs without a TTY. Does not authorize the destructive sweep (issue #1639)
+- `--sweep` (account-recovery only): delete the owned leftovers found by detection (explicit destructive opt-in; detection is read-only without it)
 - `--use-existing-network` (runners only): Reuse a configured `vpc_id`/`subnet_id` or the `allow_default_vpc` opt-in instead of provisioning a dedicated runner VPC
 - `--runner-count` (runners only): Override `runner_count` for this apply
 - `--project-id` (GDC only): GCP project ID, defaults to `PANW_GCP_DEV` or repo-root `.env`
@@ -221,6 +286,7 @@ repo-specific fixes from the live spike:
 ```bash
 ./scripts/bootstrap/deploy.py --help
 ./scripts/bootstrap/deploy.py preflight --help
+./scripts/bootstrap/deploy.py account-recovery --help
 ./scripts/bootstrap/deploy.py bootstrap --help
 ./scripts/bootstrap/deploy.py terraform --help
 ./scripts/bootstrap/deploy.py runners --help

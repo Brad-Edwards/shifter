@@ -232,7 +232,7 @@ def instance_resource(
         },
         "deletion_protection": False,
     }
-    if config.service_account_email:
+    if config.service_account_email and instance["attach_service_account"]:
         body["service_accounts"] = [
             {
                 "email": config.service_account_email,

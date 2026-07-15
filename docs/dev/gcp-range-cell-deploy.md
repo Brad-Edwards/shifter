@@ -23,6 +23,53 @@ environment, set the `GCP_RANGE_BACKEND=gdc` repository/environment variable and
 redeploy. The GDC configuration block is retained in the rendered contract and
 is inert while the backend is `gce`.
 
+The environment setting is an operator/backend-policy input, not scenario
+metadata. Issue #1354 owns the policy that decides which requests may use each
+backend. Once a request has been admitted to the GCP VM range-cell contract, the
+provisioner refuses to route it to GDC, GKE, or the legacy Terraform path; an
+operator must not treat `gdc` as a per-request fallback for a contract-tagged
+live-fire user range.
+
+## Scenario-to-cell contract
+
+The boundary is the closed, versioned `shifter.gcp-vm-range-cell` contract in
+`shifter/shifter_platform/shared/range_cells.py`. Its responsibilities are:
+
+- The scenario producer owns VM count and roles, containers or nested
+  Kubernetes, topology and connectivity, ports and DNS, fixed addresses,
+  images, startup/bootstrap behavior, services, and validation. The existing
+  wrapped `RangeSpec` is validated by its canonical Pydantic contract before the
+  Engine persists it as an immutable SHA-256-bound artifact. The standalone
+  provisioner verifies that producer-minted digest without loading the scenario
+  schema graph; the platform does not copy scenario fields into a universal
+  placement model.
+- The platform owns admission to the approved GCP/GCE live-fire capability,
+  operation and cell identity, allocated network bindings, isolation, resource
+  membership and ownership, lifecycle/recovery state, logical access, and
+  cleanup. Allocated CIDRs are bindings and are not written back into the
+  scenario artifact. A later destroy rehydrates those bindings from the
+  platform allocation table when available and otherwise uses the validated
+  authored membership and deterministic resource identity; it never requires a
+  blank CIDR to pass request validation.
+- The outer request and result reject unknown fields and versions. A digest or
+  backend mismatch, malformed/duplicate membership, or missing/foreign network
+  binding fails before any Compute Engine or Secret Manager mutation. Results
+  reject dangling access targets and inline credentials, trigger cell cleanup
+  if output validation fails, and expose credential references rather than
+  credential values. Participant access is a closed scenario declaration keyed
+  by authored member plus `ssh` or `rdp` channel. The result must match that
+  declaration exactly. Participant SSH keys are distinct from host-management
+  setup keys, and host/bootstrap credential references never enter the closed
+  access result.
+
+`gcp_range_cell_scenario.py` is the compatibility adapter for the current
+legacy `RangeSpec`; it owns role/image/host-access interpretation. Polaris is
+one composition supported by that adapter, not a platform range class. A future
+scenario artifact can use a new discriminator/version adapter while retaining
+the same cell lifecycle contract. See
+`docs/architecture/scenario-gcp-range-cell-contract-preflight-1344.md` for the
+full boundary analysis.
+
 ## Required configuration
 
 Set the GCE range-cell variables documented in
@@ -52,10 +99,10 @@ control-plane `GCP_PROJECT_ID` is a deploy-overlay placeholder.
   retained as a selectable mode for a future peering/IAP implementation; do not
   use it for live deployments yet.
 
-## Image mapping
+## Legacy RangeSpec image mapping
 
-A range instance resolves to one of four image profiles by role and OS
-(`GCERangeCellConfig.get_profile`):
+The scenario-owned legacy `RangeSpec` adapter resolves current instances to one
+of four approved image profiles by role and OS (`GCERangeCellConfig.get_profile`):
 
 | Instance | Profile | Variable |
 |---|---|---|

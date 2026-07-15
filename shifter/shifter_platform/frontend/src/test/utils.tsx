@@ -22,7 +22,13 @@ export const STAFF_BOOTSTRAP: Bootstrap = {
     is_ctf_participant: false,
   },
   modes: { participant: false, operator: true, default: "operator" },
-  feature_flags: { risk_register_spa: true, platform_spa: true, mission_control_spa: true },
+  feature_flags: {
+    risk_register_spa: true,
+    platform_spa: true,
+    mission_control_spa: true,
+    scenario_editor_spa: true,
+    aces_native_provisioning: true,
+  },
 };
 
 function testQueryClient(): QueryClient {

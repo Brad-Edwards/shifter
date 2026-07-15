@@ -83,6 +83,12 @@ class BootstrapFeatureFlagsSerializer(serializers.Serializer):
     risk_register_spa = serializers.BooleanField()
     platform_spa = serializers.BooleanField()
     mission_control_spa = serializers.BooleanField()
+    scenario_editor_spa = serializers.BooleanField()
+    # ACES native provisioning (#1566): gates the in-SPA ACES image registry
+    # management surface. Mirrors SHIFTER_ACES_NATIVE_PROVISIONING, so the nav
+    # entry only shows when the whole native path is enabled (advisory only;
+    # the /api/v1/cms/aces-image-mappings/ endpoints remain the authority).
+    aces_native_provisioning = serializers.BooleanField()
 
 
 class BootstrapSerializer(serializers.Serializer):
@@ -186,6 +192,8 @@ class BootstrapView(APIView):
                 "risk_register_spa": bool(getattr(settings, "RISK_REGISTER_SPA_ENABLED", False)),
                 "platform_spa": bool(getattr(settings, "PLATFORM_SPA_ENABLED", False)),
                 "mission_control_spa": bool(getattr(settings, "MISSION_CONTROL_SPA_ENABLED", False)),
+                "scenario_editor_spa": bool(getattr(settings, "SCENARIO_EDITOR_SPA_ENABLED", False)),
+                "aces_native_provisioning": bool(getattr(settings, "ACES_NATIVE_PROVISIONING_ENABLED", False)),
             },
         }
         return Response(BootstrapSerializer(payload).data)

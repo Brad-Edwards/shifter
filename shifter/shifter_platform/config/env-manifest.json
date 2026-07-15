@@ -498,6 +498,11 @@
       "source_file": "config/settings.py"
     },
     {
+      "default": "False",
+      "name": "SCENARIO_EDITOR_SPA_ENABLED",
+      "source_file": "config/settings.py"
+    },
+    {
       "default": "'31536000'",
       "name": "SECURE_HSTS_SECONDS",
       "source_file": "config/settings.py"
@@ -505,6 +510,31 @@
     {
       "default": "'False'",
       "name": "SHIFTER_ACES_NATIVE_PROVISIONING",
+      "source_file": "config/_aces_settings.py"
+    },
+    {
+      "default": "''",
+      "name": "SHIFTER_ACES_PACKAGE_BUCKET",
+      "source_file": "config/_aces_settings.py"
+    },
+    {
+      "default": "'268435456'",
+      "name": "SHIFTER_ACES_PACKAGE_MAX_ARCHIVE_BYTES",
+      "source_file": "config/_aces_settings.py"
+    },
+    {
+      "default": "'20000'",
+      "name": "SHIFTER_ACES_PACKAGE_MAX_ENTRIES",
+      "source_file": "config/_aces_settings.py"
+    },
+    {
+      "default": "'1073741824'",
+      "name": "SHIFTER_ACES_PACKAGE_MAX_UNCOMPRESSED_BYTES",
+      "source_file": "config/_aces_settings.py"
+    },
+    {
+      "default": "''",
+      "name": "SHIFTER_ACES_PACKAGE_PREFIX",
       "source_file": "config/_aces_settings.py"
     },
     {

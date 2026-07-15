@@ -283,6 +283,7 @@ module "portal_iam" {
   assets_bucket_name             = module.portal_gcs.assets_bucket_name
   terraform_state_bucket_name    = "${var.project_id}-terraform-state"
   vmseries_bootstrap_bucket_name = var.vmseries_bootstrap_bucket_name
+  aces_package_bucket_name       = var.aces_package_bucket_name
 
   depends_on = [module.portal_secrets, module.portal_gcs]
 }

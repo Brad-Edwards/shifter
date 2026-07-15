@@ -407,7 +407,7 @@ def get_allocated_cidrs(range_id: int) -> list[str]:
     """
     with _get_db_connection() as conn, conn.cursor() as cur:
         cur.execute(
-            "SELECT cidr FROM engine_subnetallocation WHERE range_id = %s ORDER BY created_at",
+            "SELECT cidr FROM engine_subnetallocation WHERE range_id = %s ORDER BY id",
             (range_id,),
         )
         cidrs = [row[0] for row in cur.fetchall()]

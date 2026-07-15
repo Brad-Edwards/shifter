@@ -9,7 +9,10 @@ import json
 import logging
 import os
 import re
+import sys
+from collections.abc import Mapping
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from cryptography.fernet import Fernet
@@ -17,6 +20,66 @@ from cryptography.fernet import Fernet
 from log_redact import safe_log_fingerprint
 
 logger = logging.getLogger(__name__)
+
+# Invocation names that signal a dev/test/build tooling context (mirrors
+# ``config._runtime_env._TOOLING_INVOKERS`` on the Django side).
+_DEV_DEFAULT_TOOLING_INVOKERS = frozenset({"pytest", "mypy", "dmypy"})
+
+
+def _allow_dev_defaults(source: Mapping[str, str]) -> bool:
+    """Return True when ``CLOUD_PROVIDER`` may fall back to the historical default.
+
+    Mirrors ``config._runtime_env.runtime_allows_dev_defaults`` on the Django
+    side exactly, so the provisioner and Django agree on when a missing
+    backend selection may default rather than fail closed, without importing
+    Django or duplicating a second policy definition here. Note that
+    ``ENVIRONMENT=development``/``dev`` is deliberately NOT one of these
+    signals: a deployed dev provisioner must still receive ``CLOUD_PROVIDER``
+    explicitly (see docs/architecture/root-configured-backend-bundles.md,
+    "Runtime Binding").
+    """
+    if source.get("TESTING") == "1":
+        return True
+    if Path(sys.argv[0]).name in _DEV_DEFAULT_TOOLING_INVOKERS:
+        return True
+    if source.get("ENVIRONMENT", "").strip().lower() == "build":
+        return True
+    return source.get("DJANGO_DEBUG", "").strip().lower() == "true"
+
+
+def resolve_cloud_provider(env: Mapping[str, str] | None = None) -> str:
+    """Return the validated active cloud backend for this process (PLAT-2005).
+
+    ``CLOUD_PROVIDER`` is the deploy-time projection of the selected
+    installation backend, delivered to every consuming process role (see
+    docs/architecture/root-configured-backend-bundles.md, "Runtime Binding").
+    This is the provisioner's single resolution point: normalize to
+    lowercase and validate against the ``installation`` registry -- the
+    single source of truth for supported backends -- rather than re-reading
+    the environment with an implicit ``aws`` default at every call site.
+
+    Fails closed with ``CloudProviderNotImplementedError`` when the value is
+    missing in a deployed process (the historical ``aws`` default is allowed
+    only under ``_allow_dev_defaults``) or names an unsupported backend, so a
+    misconfigured deploy cannot silently behave as AWS.
+    """
+    # Lazy imports: ``installation.registry`` pulls in pydantic, and
+    # ``cloud.exceptions`` would otherwise import this module back (``cloud``
+    # resolves its own provider through this function) -- both stay
+    # function-local to avoid import-time cost and a circular import.
+    from installation.registry import KNOWN_BACKENDS
+
+    from cloud.exceptions import CloudProviderNotImplementedError
+
+    source = env if env is not None else os.environ
+    raw = source.get("CLOUD_PROVIDER", "").strip().lower()
+    if not raw:
+        if not _allow_dev_defaults(source):
+            raise CloudProviderNotImplementedError("")
+        raw = "aws"
+    if raw not in KNOWN_BACKENDS:
+        raise CloudProviderNotImplementedError(raw)
+    return raw
 
 
 class FieldDecryptError(RuntimeError):
@@ -355,7 +418,7 @@ class GCERangeCellConfig:
     # ``vpc-per-range`` mode, where each range mints its own VPC.
     network_id: str = ""
     service_account_email: str = ""
-    # OAuth scope for the range guest's attached service account. Use
+    # OAuth scope for a range host's attached service account. Use
     # cloud-platform and let the host SA's IAM roles be the real access control
     # (the modern GCP recommendation): scopes are a coarse legacy gate, IAM is
     # fine-grained. cloud-platform is REQUIRED, not merely convenient — the
@@ -461,7 +524,7 @@ def get_gcp_range_backend() -> str:
     GDC VM Runtime path remains fully supported and is selected explicitly with
     ``GCP_RANGE_BACKEND=gdc`` (a one-line rollback for any environment).
     """
-    if os.environ.get("CLOUD_PROVIDER", "aws") != "gcp":
+    if resolve_cloud_provider() != "gcp":
         return ""
     backend = os.environ.get("GCP_RANGE_BACKEND") or os.environ.get("GCP_RANGE_PLANE") or "gce"
     backend = backend.strip().lower()
@@ -551,7 +614,10 @@ def resolve_ngfw_attachment_config(state: dict[str, Any] | None) -> NGFWAttachme
     """Resolve provider-neutral NGFW attachment details from stored state."""
     payload = state if isinstance(state, dict) else {}
     explicit_provider = _first_non_empty_string(payload.get("cloud_provider")).lower()
-    env_default = os.environ.get("CLOUD_PROVIDER", "aws").lower()
+    # Only consult the resolver when the persisted state has no provider tag of
+    # its own -- a persisted value must win outright and must not force a
+    # resolution (and possible fail-closed error) that is not actually needed.
+    env_default = "" if explicit_provider else resolve_cloud_provider()
     cloud_provider = explicit_provider or env_default
     provider_metadata = _get_ngfw_provider_metadata(payload, cloud_provider)
 

@@ -29,6 +29,16 @@ variable "environment" {
   type        = string
 }
 
+# Renderer-owned backend selection (PLAT-2005). Derived from shifter.yaml at
+# deploy time (shifter-config render-runtime) and received here as a plain
+# Terraform variable, not synthesized in this module. No default: a missing
+# cloud_provider.auto.tfvars must fail the plan loudly rather than silently
+# defaulting to "aws".
+variable "cloud_provider" {
+  description = "Backend identity injected into the portal/worker containers' CLOUD_PROVIDER env var. Rendered from shifter.yaml's settings.backend by shifter-config render-runtime; must not be hardcoded or defaulted here."
+  type        = string
+}
+
 variable "vpc_id" {
   description = "VPC ID"
   type        = string
@@ -89,6 +99,18 @@ variable "root_volume_size" {
 variable "s3_bucket_arn" {
   description = "ARN of the S3 bucket for user storage"
   type        = string
+}
+
+variable "aces_package_bucket_arn" {
+  description = "ARN of the S3 bucket holding object-backed ACES package archives (#1567). Grants the portal role read-only (GetObject + prefix-scoped ListBucket). Empty disables the grant."
+  type        = string
+  default     = ""
+}
+
+variable "aces_package_prefix" {
+  description = "Optional key prefix under the ACES package bucket the portal may read (least-privilege scoping)."
+  type        = string
+  default     = ""
 }
 
 variable "tags" {

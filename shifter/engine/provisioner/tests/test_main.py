@@ -6,6 +6,7 @@ Only tests for pure logic - no mock-heavy integration tests.
 import json
 import sys
 from contextlib import contextmanager
+from copy import deepcopy
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -1206,8 +1207,48 @@ class TestGdcProvisioning:
         assert "range_instance_role_arn" not in variables
 
     def test_build_range_variables_gce_preserves_scenario_intent(self):
-        """GCE range-cell variables keep ami_key/os_type/dc_config and never AWS-translate."""
+        """GCE carries scenario intent only inside the digest-bound artifact."""
+        from shared.range_cells import build_scenario_artifact
+
         from terraform_vars import build_range_variables
+
+        scenario_payload = {
+            "scenario_id": "polaris",
+            "user_id": 7,
+            "subnets": [
+                {
+                    "name": "polaris",
+                    "uuid": "s1",
+                    "instances": [
+                        {
+                            "uuid": "i1",
+                            "name": "kali",
+                            "role": "attacker",
+                            "os_type": "kali",
+                            "ami_key": "polaris-vm",
+                            "instance_type": "m5.2xlarge",
+                        },
+                        {
+                            "uuid": "i2",
+                            "name": "dc01",
+                            "role": "dc",
+                            "os_type": "windows",
+                            "ami_key": "polaris-dc",
+                            "dc_config": {"domain_name": "boreas.local", "netbios_name": "BOREAS"},
+                        },
+                    ],
+                }
+            ],
+            "participant_access": [
+                {"target_ref": "i1", "channel": "ssh"},
+                {"target_ref": "i1", "channel": "rdp"},
+            ],
+        }
+        artifact = build_scenario_artifact(
+            {"spec_schema": "range_spec", "spec_version": "1", "payload": scenario_payload}
+        )
+        runtime_spec = deepcopy(scenario_payload)
+        runtime_spec["subnets"][0]["cidr"] = "10.50.2.0/28"
 
         with pytest.MonkeyPatch.context() as mp:
             mp.setenv("CLOUD_PROVIDER", "gcp")
@@ -1216,43 +1257,19 @@ class TestGdcProvisioning:
                 request_id="req-gce",
                 range_id=42,
                 user_id=7,
-                range_spec={
-                    "subnets": [
-                        {
-                            "name": "polaris",
-                            "uuid": "s1",
-                            "cidr": "10.50.2.0/28",
-                            "instances": [
-                                {
-                                    "uuid": "i1",
-                                    "name": "kali",
-                                    "role": "attacker",
-                                    "os_type": "kali",
-                                    "ami_key": "polaris-vm",
-                                    "instance_type": "m5.2xlarge",
-                                },
-                                {
-                                    "uuid": "i2",
-                                    "name": "dc01",
-                                    "role": "dc",
-                                    "os_type": "windows",
-                                    "ami_key": "polaris-dc",
-                                    "dc_config": {"domain_name": "boreas.local"},
-                                },
-                            ],
-                        }
-                    ],
-                },
+                range_spec=runtime_spec,
+                scenario_artifact=artifact,
             )
 
-        assert variables["range_id"] == 42
-        assert variables["request_uuid"] == "req-gce"
-        host, dc = variables["subnets"][0]["instances"]
+        assert variables["operation"] == {"request_id": "req-gce", "range_id": 42}
+        host, dc = variables["scenario_artifact"]["payload"]["subnets"][0]["instances"]
         assert host["ami_key"] == "polaris-vm"
         assert host["os_type"] == "kali"
-        # No AWS ami_id translation in the GCE shape.
+        # No AWS ami_id translation or platform scenario re-modeling.
         assert "ami_id" not in host
-        assert dc["dc_config"] == {"domain_name": "boreas.local"}
+        assert dc["dc_config"] == {"domain_name": "boreas.local", "netbios_name": "BOREAS"}
+        assert variables["network_bindings"] == [{"subnet_ref": "s1", "cidr": "10.50.2.0/28"}]
+        assert variables["access_declarations"] == scenario_payload["participant_access"]
 
     def test_build_range_variables_aws_routes_to_terraform_vars(self):
         """Without the GCE backend, the dispatcher returns AWS Terraform variables."""
@@ -1294,7 +1311,7 @@ class TestGdcProvisioning:
             MagicMock(return_value={"range_id": 42, "user_id": 7, "spec": {"ngfw": True}}),
         )
         monkeypatch.setattr(
-            "terraform_ops.get_user_ngfw_data",
+            "terraform_ngfw_range.get_user_ngfw_data",
             MagicMock(
                 return_value={
                     "cloud_provider": "gcp",
@@ -1304,9 +1321,13 @@ class TestGdcProvisioning:
                 }
             ),
         )
+        publish_failed = MagicMock()
+        monkeypatch.setattr("terraform_ops.publish_failed", publish_failed)
 
         with pytest.raises(RuntimeError, match="already be in ready state"):
             run_range_terraform("up", "req-123")
+
+        publish_failed.assert_called_once()
 
     def test_record_and_remove_ngfw_range_attachment_updates_state(self, monkeypatch):
         from provisioner_db_ngfw import _record_ngfw_range_attachment, _remove_ngfw_range_attachment

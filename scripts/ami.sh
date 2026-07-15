@@ -3,8 +3,6 @@
 # Usage:
 #   ./scripts/ami.sh -b kali    # Build AMI in dev
 #   ./scripts/ami.sh -p kali    # Promote AMI to prod
-#   ./scripts/ami.sh -b ctf-webshell  # Build workshop AMI in dev
-#   ./scripts/ami.sh -p ctf-webshell  # Promote workshop AMI to prod
 
 set -e
 
@@ -20,7 +18,6 @@ usage() {
     echo ""
     echo "AMI types:"
     echo "  Base: kali, ubuntu, windows, dc, polaris-dc, brokenbk"
-    echo "  CTF: ctf-webshell, ctf-mailroom, ctf-helpdesk, ctf-devbox, ctf-vault"
     echo "  Scenario: techvault, polaris-vm (need extra inputs; see note below)"
     echo ""
     echo "Scenario bakes run over the no-inbound SSM communicator and require an"

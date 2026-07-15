@@ -1,21 +1,23 @@
 """Runner for range infrastructure operations.
 
-AWS ranges still use Terraform-backed infrastructure modules. The active GCP
-range path is GDC-based and no longer routes through the retired Compute Engine
-Terraform module.
+AWS ranges still use Terraform-backed infrastructure modules. GCP routes to an
+explicit provider-native backend: the closed GCE VM range-cell request or the
+retained GDC path. Neither uses the retired Compute Engine Terraform module.
 """
 
-import os
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
+
+from shared.range_cells import is_gcp_vm_range_cell_request
 
 import gcp_range_cells
 import gdc_range_networks
 import gdc_scenario_pods
 import gdc_vmruntime_assets
 import terraform_base
-from config import get_gcp_range_backend
+from cloud.exceptions import CloudProviderNotImplementedError
+from config import get_gcp_range_backend, resolve_cloud_provider
 
 AWS_RANGE_MODULE_PATH = Path(__file__).parent / "terraform" / "modules" / "range"
 
@@ -23,17 +25,20 @@ _LABEL = "Range"
 
 
 def _get_provider() -> str:
-    return os.environ.get("CLOUD_PROVIDER", "aws")
+    return resolve_cloud_provider()
 
 
 def get_range_module_path() -> Path:
     """Return the provider-specific range Terraform module path."""
-    if _get_provider() == "gcp":
+    provider = _get_provider()
+    if provider == "gcp":
         raise RuntimeError(
             "Active GCP range provisioning targets a provider-native runner and does not expose a "
             "Terraform module path. Call apply_range()/destroy_range() for the provider-routed path."
         )
-    return AWS_RANGE_MODULE_PATH
+    if provider == "aws":
+        return AWS_RANGE_MODULE_PATH
+    raise CloudProviderNotImplementedError(provider)
 
 
 def _uses_active_gdc_range_plane() -> bool:
@@ -45,13 +50,25 @@ def _uses_gce_range_cells() -> bool:
     return _get_provider() == "gcp" and get_gcp_range_backend() == "gce"
 
 
+def _validate_range_cell_route(variables: dict[str, Any] | None) -> None:
+    """Prevent VM-cell requests from entering any legacy provider fallback."""
+    is_cell_request = is_gcp_vm_range_cell_request(variables)
+    if is_cell_request and not _uses_gce_range_cells():
+        raise RuntimeError("GCP VM range-cell requests require the active GCP/GCE VM range-cell backend")
+    if _uses_gce_range_cells() and variables is not None and not is_cell_request:
+        raise RuntimeError("The GCP/GCE VM range-cell backend requires an admitted range-cell contract request")
+
+
 def get_range_state_key_prefix() -> str:
     """Return the provider-specific Terraform state key prefix."""
     if _uses_active_gdc_range_plane():
         return "gcp/gdc-ranges"
     if _uses_gce_range_cells():
         return "gcp/gce-range-cells"
-    return "ranges"
+    provider = _get_provider()
+    if provider == "aws":
+        return "ranges"
+    raise CloudProviderNotImplementedError(provider)
 
 
 def has_terraform_state(request_uuid: str) -> bool:
@@ -69,6 +86,7 @@ def apply_range(
     gce_apply_range_cell: Callable[[str, dict[str, Any]], dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Run terraform apply for Range and return outputs."""
+    _validate_range_cell_route(variables)
     if _uses_gce_range_cells():
         apply_gce = gce_apply_range_cell or gcp_range_cells.apply_range_cell
         return apply_gce(request_uuid, variables)
@@ -103,6 +121,7 @@ def destroy_range(
     gce_destroy_range_cell: Callable[[str, dict[str, Any] | None], None] | None = None,
 ) -> None:
     """Run terraform destroy for Range."""
+    _validate_range_cell_route(variables)
     if _uses_gce_range_cells():
         destroy_gce = gce_destroy_range_cell or gcp_range_cells.destroy_range_cell
         destroy_gce(request_uuid, variables)

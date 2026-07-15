@@ -9,6 +9,15 @@ variable "environment" {
   type        = string
 }
 
+# Renderer-owned backend selection (PLAT-2005). Supplied at deploy time via a
+# rendered cloud_provider.auto.tfvars (shifter-config render-runtime), never a
+# committed terraform.tfvars literal. No default: a missing tfvar must fail
+# the plan loudly instead of silently synthesizing "aws".
+variable "cloud_provider" {
+  description = "Backend identity ('aws', 'gcp', ...) threaded to the portal ec2 and engine-provisioner module calls. Rendered from shifter.yaml's settings.backend; must not be hardcoded or defaulted here."
+  type        = string
+}
+
 variable "aws_region" {
   description = "AWS region"
   type        = string
@@ -717,6 +726,24 @@ variable "instance_refresh_min_healthy_percentage" {
   default     = 50
 }
 
+variable "health_check_type" {
+  description = "Portal ASG health-check type: ELB ties refresh readiness to ALB target health; EC2 is a non-ALB fallback (#1639)."
+  type        = string
+  default     = "ELB"
+}
+
+variable "health_check_grace_period" {
+  description = "Seconds the portal ASG waits after launch before health checks count; env-owned so dev/proof can shorten the loop (#1639)."
+  type        = number
+  default     = 900
+}
+
+variable "instance_refresh_instance_warmup" {
+  description = "Seconds an instance refresh waits for a replacement to warm up before counting it healthy; env-owned (#1639)."
+  type        = number
+  default     = 900
+}
+
 # --- AWS Polaris Bedrock agent credential profile (#1377) ---
 # Off by default; populated (via the deploy-secrets tfvars mechanism) only in an
 # environment that runs AWS Polaris ranges. Passed into the engine-provisioner
@@ -776,4 +803,16 @@ variable "aws_polaris_agent_refresh_window_seconds" {
   description = "Refresh-before-expiry window (s) for the per-range Polaris agent credential (#1377)."
   type        = number
   default     = 300
+}
+
+variable "aces_package_bucket_arn" {
+  description = "ARN of the S3 bucket holding object-backed ACES package archives (#1567). Grants the portal role read-only access; set it (with SHIFTER_ACES_PACKAGE_BUCKET on the app) to enable object-backed ACES packages. Empty disables the grant."
+  type        = string
+  default     = ""
+}
+
+variable "aces_package_prefix" {
+  description = "Optional key prefix under the ACES package bucket the portal may read (least-privilege scoping)."
+  type        = string
+  default     = ""
 }

@@ -203,7 +203,30 @@ export const NAV_GROUPS: readonly NavGroup[] = [
     "operator",
     { audience: "organizer", permissionPolicy: "threat_research", ownerApp: "cms", external: true },
     [
-      { surface: "Scenarios", routeName: "scenario_editor:list", purpose: "Browse scenarios and readiness metadata.", routePath: "/scenario-editor/", iconKey: "file-code" },
+      // In-SPA once SCENARIO_EDITOR_SPA_ENABLED is on (#1371); the feature-flag
+      // gate hides the entry until the flag flips, matching the rollout pattern.
+      {
+        surface: "Scenarios",
+        routeName: "scenario_editor:list",
+        purpose: "Browse scenarios and readiness metadata.",
+        routePath: "/scenario-editor/",
+        iconKey: "file-code",
+        external: false,
+        featureFlag: "scenario_editor_spa",
+      },
+      // In-SPA ACES image registry management (#1566). Greenfield surface gated
+      // by `aces_native_provisioning` (mirrors SHIFTER_ACES_NATIVE_PROVISIONING);
+      // hidden until the native path is enabled. Advisory visibility only — the
+      // /api/v1/cms/aces-image-mappings/ endpoints remain the authority.
+      {
+        surface: "ACES Images",
+        routeName: "aces_image_registry",
+        purpose: "Map authored ACES image sources to concrete provider images.",
+        routePath: "/aces-image-registry/",
+        iconKey: "boxes",
+        external: false,
+        featureFlag: "aces_native_provisioning",
+      },
     ],
   ),
   makeGroup(

@@ -15,6 +15,11 @@ dependencies = [
     "grpcio>=1.80.0",
     "Jinja2>=3.1.6",
     "jmespath>=1.1.0",
+    # Transitive requirement of the installation package (installation/__init__ ->
+    # publication -> jsonschema). The provisioner imports installation.registry to
+    # resolve/validate the backend at runtime (PLAT-2005), so it needs installation's
+    # own runtime deps (pydantic above; jsonschema here).
+    "jsonschema>=4.0",
     "kubernetes>=32.0.0",
     "paramiko>=4.0.0",
     "MarkupSafe>=3.0.3",
@@ -23,6 +28,7 @@ dependencies = [
     "psycopg>=3.3.4",
     "psycopg-binary>=3.3.4",
 "pycparser>=3.0",
+    "pydantic>=2.13.4",
     "python-dateutil>=2.9.0.post0",
     "PyYAML>=6.0.3",
     "redis>=5.2.1",
@@ -44,7 +50,7 @@ dev = [
 ]
 
 [tool.pytest.ini_options]
-pythonpath = ["../.."]
+pythonpath = ["../..", "../../shifter_platform"]
 
 [tool.ruff]
 target-version = "py312"

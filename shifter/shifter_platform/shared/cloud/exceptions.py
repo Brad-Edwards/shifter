@@ -10,11 +10,22 @@ class CloudError(Exception):
 
 
 class CloudProviderNotImplementedError(CloudError):
-    """Raised when a requested cloud provider has no adapter."""
+    """Raised when a requested cloud provider/capability has no adapter.
 
-    def __init__(self, provider: str) -> None:
-        super().__init__(f"Cloud provider '{provider}' is not implemented. Supported providers: aws, gcp")
+    The supported-backend list is derived from the ``installation`` registry --
+    the single source of truth for backends -- rather than a hardcoded literal
+    (PLAT-2005). ``capability`` is set when the failure is a backend that is
+    registered but does not declare the requested cloud capability.
+    """
+
+    def __init__(self, provider: str, capability: object | None = None) -> None:
+        from installation.registry import KNOWN_BACKENDS
+
+        supported = ", ".join(sorted(KNOWN_BACKENDS))
+        scope = f" for capability '{getattr(capability, 'name', capability)}'" if capability is not None else ""
+        super().__init__(f"Cloud provider '{provider}' is not implemented{scope}. Supported providers: {supported}")
         self.provider = provider
+        self.capability = capability
 
 
 class CloudStorageError(CloudError):

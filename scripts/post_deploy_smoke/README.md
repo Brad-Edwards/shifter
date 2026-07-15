@@ -5,7 +5,7 @@ services, verifies guest connectivity, and tears down via request-id ownership p
 
 The smoke validates the **platform** (range provisioning, guest connectivity,
 teardown), not scenario content. Each variant provisions a minimal range built
-entirely from the base range AMIs — `linux` uses the `smoke_linux` scenario
+entirely from the base range AMIs. `linux` uses the `smoke_linux` scenario
 (Kali attacker + Ubuntu victim, SSH probe) and `windows` uses `smoke_windows`
 (Kali attacker + plain Windows victim, RDP probe). Every instance is
 `os_type` kali/ubuntu/windows with `xdr_agent: false`, so **no XDR agent is
@@ -14,7 +14,7 @@ real scenarios, not by the post-deploy smoke (#1422).
 
 ## Required environment
 
-- `SMOKE_TEST_USER_EMAIL` — dedicated automation identity (e.g.
+- `SMOKE_TEST_USER_EMAIL`: dedicated automation identity (for example
   `smoke-dev@paloaltonetworks.com`); created in Django on first run if missing.
   No mailbox or interactive login required; do not use a human operator account.
 - AWS credentials with SSM access to the portal EC2 instance

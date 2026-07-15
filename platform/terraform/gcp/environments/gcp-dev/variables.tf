@@ -258,6 +258,12 @@ variable "range_egress_allowed_cidrs" {
   default     = []
 }
 
+variable "aces_package_bucket_name" {
+  description = "Optional GCS bucket holding object-backed ACES package archives (#1567). Grants the portal read-only access; set it (with SHIFTER_ACES_PACKAGE_BUCKET on the app) to enable object-backed ACES packages. Empty disables the binding."
+  type        = string
+  default     = ""
+}
+
 variable "github_org" {
   description = "GitHub organization allowed to federate into the packer build service account."
   type        = string

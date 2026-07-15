@@ -89,6 +89,16 @@ def test_candidate_allows_self_and_known_origins_only():
             assert text.startswith("https://"), (directive, text)
 
 
+def test_storage_connect_origins_raises_for_unsupported_provider(monkeypatch):
+    """A future third backend must fail closed rather than silently receiving the
+    AWS S3 signed-upload CSP origins (the previous ``gcp ? gcs : aws`` shape
+    treated any non-gcp value as AWS)."""
+    monkeypatch.setattr(bs, "CLOUD_PROVIDER", "azure")
+
+    with pytest.raises(ImproperlyConfigured, match="azure"):
+        bs._storage_connect_origins()
+
+
 def test_candidate_includes_each_required_dependency_origin():
     # Guard against a merge/refactor silently dropping a required origin: the
     # shape check above would still pass, but Identity Platform login or signed

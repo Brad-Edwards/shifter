@@ -588,6 +588,11 @@
         "id": "ADR-011-R7",
         "description": "AWS deploy workflows whose committed terraform.tfvars is an example.com baseline must render the deployment-owned override from GitHub Actions secrets into a gitignored local.auto.tfvars before terraform init/validate/plan/apply. Committed AWS terraform.tfvars files remain non-operational example baselines; the render step fails loud when the active environment's secret is missing.",
         "checks": ["aws-platform-renders-deploy-tfvars"]
+      },
+      {
+        "id": "ADR-011-R8",
+        "description": "The backend-bundle contract is published as a committed, versioned artifact generated from the Pydantic contract and registry (shifter/installation/published_contract/), never hand-maintained. The published JSON schema encodes the contract's security-relevant validators (identifier grammars, safe argv tokens, repository-relative paths, the secret-value destination rule) and installation.validate_published_bundle is the parity-complete portable validator that additionally enforces the cross-collection invariants JSON Schema cannot express, so a bundle a downstream author validates cannot pass while the internal contract would reject it. The installation test lane fails on drift between the artifact and the code, on a backward-incompatible change anywhere on the published validation surface (bundle schema or a backend settings schema) that lacks a contract_version bump plus a migration note, and on a published backend that does not validate against the published schema. Published per-version snapshots (backend-bundle-contract.v<N>.json) are append-only: the published-contract-snapshots-immutable adr_guard check rejects modifying or deleting a snapshot already published on the base branch, and fails closed (ADR_GUARD_SNAPSHOT_ENFORCE) in the CI lane that fetches base history. The published contract_version is independent of RootConfig.version and the installation package version.",
+        "checks": ["published-contract-snapshots-immutable"]
       }
     ],
     "exceptions": [],
@@ -601,6 +606,9 @@
       "shifter/installation/schema.py",
       "shifter/installation/contract.py",
       "shifter/installation/registry.py",
+      "shifter/installation/publication.py",
+      "shifter/installation/published_contract/backend-bundle-contract.json",
+      "shifter/installation/published_contract/MIGRATIONS.md",
       "shifter/installation/README.md",
       "shifter/shifter_platform/shared/cloud/__init__.py",
       "shifter/engine/provisioner/cloud/__init__.py",
@@ -1148,13 +1156,19 @@
         "id": "ADR-024-R3",
         "description": "Archive/delete is generally a post-cutover posture. CyberScript, current CMS scenario templates, Polaris runtime material, CTF behavior, Mission Control, provisioner paths, artifact handling, status models, and validation gates remain current authority until replacement gates are implemented and green. ADR-027 is the accepted exception for the removed legacy experiments path.",
         "checks": []
+      },
+      {
+        "id": "ADR-024-R4",
+        "description": "Every legacy_source and validation_evidence clause in docs/architecture/aces-migration-parity-inventory.yaml that is a repository-relative path or glob must resolve to an existing path (a glob must match at least one path); shell-command and prose clauses are classified and skipped. The aces-parity-inventory-path-integrity adr_guard check enforces this as a global repository invariant (it runs even when the inventory is not in the changed-file set, because a referenced file can be moved or deleted without the inventory itself changing) and treats the inventory as untrusted static input: it inspects path metadata only, rejects absolute paths, '..' traversal, and symlink escape fail-closed, and never reads referenced content or lets inventory text reach a shell or subprocess.",
+        "checks": ["aces-parity-inventory-path-integrity"]
       }
     ],
     "exceptions": [],
-    "enforcement": ["agent-policy"],
+    "enforcement": ["agent-policy", "pre-commit", "ci"],
     "evidence": [
       "docs/architecture/aces-migration-adr.md",
       "docs/architecture/aces-migration-parity-inventory.yaml",
+      "docs/architecture/aces-parity-inventory-path-integrity-preflight-1313.md",
       "docs/architecture/aces-runtime-target-backend-manifest-preflight-1233.md",
       "docs/architecture/aces-operation-status-snapshot-projection-preflight-1234.md",
       "docs/architecture/aces-polaris-acceptance-parity-gate-preflight-1237.md",
@@ -1373,6 +1387,8 @@
       "https://github.com/Brad-Edwards/shifter/issues/1354",
       "docs/architecture/gdc-windows-dc-image-build.md",
       "docs/architecture/range-isolation-model.md",
+      "docs/architecture/gcp-range-cell-boundary-controls-preflight-1345.md",
+      "docs/architecture/scenario-gcp-range-cell-contract-preflight-1344.md",
       "scripts/polaris-aws-range/ranges.tf",
       "shifter/engine/provisioner/range_terraform_runner.py",
       "shifter/engine/provisioner/gdc_range_networks.py",
@@ -1456,7 +1472,7 @@
       },
       {
         "id": "ADR-032-R4",
-        "description": "Shifter depends on the aces-sdl PyPI package pinned to a released version (currently 0.19.1); it must not pin to a git ref or a non-released build. aces_* SDL packages are imported only within shared.aces (ADR-024, ADR-031-R1); the engine, provisioner, and other layers consume the serialized plan as plain data without importing aces_*.",
+        "description": "Shifter depends on released PyPI artifacts pinned as one compatible pair (currently aces-scenario-packs 1.2.0 and its exact aces-sdl 0.20.0 dependency); it must not pin either contract to a git ref or non-released build. The provisioner consumer retains a bounded rolling-read window for persisted producer plans (currently [0.19.1, 0.21.0)). aces_* SDL packages are imported only within shared.aces (ADR-024, ADR-031-R1); the engine, provisioner, and other layers consume the serialized plan as plain data without importing aces_*.",
         "checks": []
       },
       {
@@ -1534,7 +1550,7 @@
     "title": "Uniform content-ingestion contract",
     "status": "accepted",
     "scope": "repository",
-    "decision": "Content ingestion is one uniform, source-agnostic, entitlement-blind contract. The pack is the universal unit and the in-box catalog is not a privileged path. Image materialization is per-pack pull-or-bake (reference and/or recipe); packs may carry no images or parameterized experiment runs. Ingestion validates realizability against the backend manifest and surfaces non-realizability to the author without creating loopholes. Content is the source of truth and a published image is a cache.",
+    "decision": "Content ingestion is one uniform, source-agnostic, entitlement-blind contract. The pack is the universal unit and the in-box catalog is not a privileged path. Repo pack identity is bound to the canonical ACES associated-artifact digest at registration and verified again before native launch. Image materialization is per-pack pull-or-bake (reference and/or recipe); packs may carry no images or parameterized experiment runs. Ingestion validates realizability against the backend manifest and surfaces non-realizability to the author without creating loopholes. Content is the source of truth and a published image is a cache.",
     "rules": [
       {
         "id": "ADR-034-R1",
@@ -1555,6 +1571,11 @@
         "id": "ADR-034-R4",
         "description": "Content is the source of truth and published images are a cache; private-distribution entitlement is handled at acquisition, not by a platform entitlement system.",
         "checks": []
+      },
+      {
+        "id": "ADR-034-R5",
+        "description": "A repo package_ref identifies a containment-checked pack root. Registration validates the upstream pack contract and binds the advertised package_digest to the exact canonical ACES associated-artifact inventory and bytes; native launch verifies that persisted digest again before SDL resolution, parsing, planning, or dispatch. Repo pack staging is immutable, and object-backed references remain non-launchable until their resolver provides equivalent identity guarantees.",
+        "checks": []
       }
     ],
     "exceptions": [],
@@ -1563,7 +1584,9 @@
     ],
     "evidence": [
       "docs/architecture/uniform-content-ingestion-contract.md",
+      "docs/architecture/uniform-content-ingestion-preflight-1578.md",
       "docs/architecture/product-development-surfaces.md",
+      "docs/ops/content-ingestion.md",
       "docs/adr/index.yaml"
     ]
   },
@@ -1756,7 +1779,7 @@
       },
       {
         "id": "ADR-039-R2",
-        "description": "Substrate inputs and results are closed and versioned. The port consumes existing validated RequestSpec/RangeSpec or ADR-032 ACES ProvisioningPlan realization intent and must not introduce another scenario/topology schema, public status enum, provider API DTO, event family, repository, validator, or exception hierarchy. Results contain canonical non-secret bindings and a versioned adapter-state reference/projection, never raw provider responses or credential values.",
+        "description": "Substrate inputs and results are closed and versioned. The port carries existing validated RequestSpec/RangeSpec or ADR-032 ACES ProvisioningPlan realization intent plus its immutable digest and must not introduce another scenario/topology schema, universal placement taxonomy, public status enum, provider API DTO, event family, repository, validator, or exception hierarchy. Scenario realization owns internal composition semantics; substrate lifecycle ownership is limited to provider-safe membership, ownership, state, cleanup, and logical access bindings. Results contain canonical non-secret bindings and a versioned adapter-state reference/projection, never raw provider responses or credential values.",
         "checks": []
       },
       {
@@ -1801,6 +1824,8 @@
       "docs/architecture/vm-guest-credential-preflight-762.md",
       "docs/architecture/range-event-delivery-preflight-476.md",
       "docs/architecture/gcp-range-cell-backend-preflight-1341.md",
+      "docs/architecture/gcp-range-cell-boundary-controls-preflight-1345.md",
+      "docs/architecture/scenario-gcp-range-cell-contract-preflight-1344.md",
       "shifter/installation/contract.py",
       "shifter/installation/registry.py",
       "shifter/shifter_platform/engine/ecs.py",
@@ -1810,6 +1835,54 @@
       "shifter/engine/provisioner/range_ops.py",
       "shifter/engine/provisioner/events.py",
       "shifter/engine/provisioner/log_redact.py"
+    ]
+  },
+  {
+    "id": "ADR-040",
+    "title": "The versioned platform API is published from DRF with fail-closed compatibility gates",
+    "status": "accepted",
+    "scope": "shifter_platform",
+    "decision": "The canonical DRF /api/v1/ surface is published as deterministic committed OpenAPI JSON generated from runtime URL routing, serializers, permissions, and drf-spectacular annotations. Runtime DRF remains the authoring source and the committed artifact is the downstream consumer contract; frontend and other generated types derive from that artifact. Schema generation fails on warnings or graceful fallbacks, drift compares runtime generation with the artifact, and breaking-change analysis compares the proposal with a trusted base-branch artifact or immutable major snapshot that the same change cannot rewrite. Backward-compatible additions remain in v1; consumer-breaking changes require a parallel /api/v2/, aligned major metadata, and a machine-verifiable migration note while v1 remains available for its migration window. Authentication, application scopes, CSRF conditions, pagination, and the shared sanitized error envelope are represented from their existing canonical implementations rather than duplicated in schema-only policy.",
+    "rules": [
+      {
+        "id": "ADR-040-R1",
+        "description": "The committed OpenAPI artifact MUST be generated deterministically from config/api_urls.py, config/_drf_settings.py, the included DRF views/serializers, and drf-spectacular annotations. Hand-maintained OpenAPI, frontend types as the source, schema-only copies of runtime validators, and publication with any generator warning, unresolved serializer, fallback operation, operation-id collision, or OpenAPI validation error are prohibited.",
+        "checks": []
+      },
+      {
+        "id": "ADR-040-R2",
+        "description": "CI MUST fail on runtime-to-artifact drift and on consumer-breaking differences from a trusted base-branch artifact or immutable per-major snapshot. The compatibility oracle cannot be refreshed by the same proposed change; compatibility semantics live in a pinned OpenAPI-aware checker or package-local code rather than workflow YAML/shell. A break requires a parallel URL major, aligned NamespaceVersioning/settings/schema metadata, and a machine-verifiable migration note; a label, commit message, info.version-only edit, or overwritten baseline is insufficient.",
+        "checks": []
+      },
+      {
+        "id": "ADR-040-R3",
+        "description": "Within /api/v1/, additions are limited to new independent operations, optional request inputs, optional response object fields, wider accepted requests, and non-semantic documentation. Removed/renamed wire elements; newly required or narrowed inputs; wider, optional, nullable, or new closed-union response possibilities; changed status/media/pagination/error/operation-id semantics; tightened auth/role/scope; and behavior-changing defaults are breaking and require /api/v2/ plus migration evidence.",
+        "checks": []
+      },
+      {
+        "id": "ADR-040-R4",
+        "description": "The contract MUST truthfully reuse and describe the existing security and response boundaries: fail-closed shf_ bearer authentication, same-origin session authentication with CSRF on unsafe methods, exact application scopes from shared.api_tokens (never fictitious OAuth2 or wildcard scopes), existing per-app actor/role permissions, PageNumberPagination, and the sanitized shared.api.errors envelope. Generation uses test settings and no live data, credentials, cloud access, secret values, or sensitive process argv; deliberate non-JSON operations declare their actual media and statuses.",
+        "checks": []
+      }
+    ],
+    "exceptions": [],
+    "enforcement": ["agent-policy"],
+    "evidence": [
+      "https://github.com/Brad-Edwards/shifter/issues/1329",
+      "docs/architecture/openapi-contract-publication-preflight-1329.md",
+      "docs/architecture/spa-cutover-architecture-1300.md",
+      "shifter/shifter_platform/config/api_urls.py",
+      "shifter/shifter_platform/config/_drf_settings.py",
+      "shifter/shifter_platform/shared/api/errors.py",
+      "shifter/shifter_platform/shared/api/schema.py",
+      "shifter/shifter_platform/shared/api_tokens/authentication.py",
+      "shifter/shifter_platform/shared/api_tokens/scopes.py",
+      "shifter/shifter_platform/shared/api/contract.py",
+      "shifter/shifter_platform/config/management/commands/api_contract.py",
+      "shifter/shifter_platform/openapi/v1.json",
+      "shifter/shifter_platform/frontend/src/api/schema.d.ts",
+      "docs/architecture/api-versioning-policy.md",
+      ".github/workflows/_quality.yml"
     ]
   }
 ]

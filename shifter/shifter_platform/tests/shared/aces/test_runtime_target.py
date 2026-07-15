@@ -177,17 +177,16 @@ def test_interpret_serialized_plan_is_json_safe() -> None:
     assert json.loads(json.dumps(serialized)) == serialized
 
 
-def test_interpret_only_includes_provisioning_domain() -> None:
+def test_aces_plan_contract_rejects_mixed_runtime_domains() -> None:
     other = PlannedResource(
         address="orchestration.step.a",
         domain=RuntimeDomain.ORCHESTRATION,
         resource_type="step",
         payload={"name": "a"},
     )
-    serialized, _ = _interpret(_plan(_node("provision.node.a", "a"), other))
-    assert serialized is not None
-    assert "orchestration.step.a" not in serialized["resources"]
-    assert "provision.node.a" in serialized["resources"]
+    node = _node("provision.node.a", "a")
+    with pytest.raises(ValueError, match="plan domain"):
+        _plan(node, other)
 
 
 # --- interpret: real compiled plan --------------------------------------------
@@ -205,6 +204,32 @@ def test_interpret_consumes_real_compiled_plan() -> None:
     assert serialized is not None
     node_resources = [r for r in serialized["resources"].values() if r["resource_type"] == NODE_RESOURCE_TYPE]
     assert len(node_resources) == 2
+
+
+def test_imageless_scenario_realizes_without_image_diagnostics() -> None:
+    # #1579 / ADR-034: realizability must not fail a scenario merely for lacking
+    # image references. A source-less VM is image-less (the backend supplies the
+    # base OS at realization), so interpret returns a serialized plan with no
+    # errors and emits no image/source diagnostic -- image count is not a
+    # realizability proxy.
+    scenario = parse_sdl(
+        'name: imageless-realizability\nversion: "1.0.0"\nnodes:\n  host:\n    type: vm\n    os: linux\n'
+    )
+    target = create_shifter_backend_target(port=FakeDispatchPort())
+    execution_plan = RuntimeManager(target).plan(scenario)
+    serialized, diagnostics = _interpret(execution_plan.provisioning)
+    assert [d for d in diagnostics if d.is_error] == []
+    assert serialized is not None
+    assert all("image" not in d.message.lower() for d in diagnostics)
+    node_resources = [r for r in serialized["resources"].values() if r["resource_type"] == NODE_RESOURCE_TYPE]
+    assert len(node_resources) == 1
+    # The realized node carries no authored image `source` yet is admissible.
+    assert (
+        not serialized["resources"][node_resources[0]["address"]]["payload"]
+        .get("spec", {})
+        .get("node", {})
+        .get("source")
+    )
 
 
 def _content_placement(address: str, *, target: str, content_type: str = "directory") -> PlannedResource:
@@ -258,17 +283,6 @@ def _feature_binding(address: str, *, target: str, source: str = "nginx") -> Pla
         (lambda: _plan(_node("provision.node.a", "a", links=("ghost",))), "shifter-provisioner.unknown-network"),
         (
             lambda: _plan(
-                PlannedResource(
-                    address="provision.blob.x",
-                    domain=RuntimeDomain.PROVISIONING,
-                    resource_type="blob",
-                    payload={"name": "x"},
-                )
-            ),
-            "shifter-provisioner.unsupported-resource-type",
-        ),
-        (
-            lambda: _plan(
                 _content_placement("provision.content.x", target="provision.node.a", content_type="raw"),
                 _node("provision.node.a", "a"),
             ),
@@ -278,12 +292,27 @@ def _feature_binding(address: str, *, target: str, source: str = "nginx") -> Pla
             lambda: _plan(_content_placement("provision.content.x", target="provision.node.ghost")),
             "shifter-provisioner.unbound-placement",
         ),
+        (
+            lambda: _plan(_network("provision.network.lan", "lan", cidr="2001:db8:1234::/48")),
+            "shifter-provisioner.unsupported-network-address-family",
+        ),
     ],
 )
 def test_out_of_envelope_terms_fail_closed(plan_factory, expected_code: str) -> None:
     serialized, diagnostics = _interpret(plan_factory())
     assert serialized is None
     assert any(d.is_error and d.code == expected_code for d in diagnostics)
+
+
+def test_aces_plan_contract_rejects_unknown_provisioning_resource_type() -> None:
+    resource = PlannedResource(
+        address="provision.blob.x",
+        domain=RuntimeDomain.PROVISIONING,
+        resource_type="blob",
+        payload={"name": "x"},
+    )
+    with pytest.raises(ValueError, match="resource_type"):
+        _plan(resource)
 
 
 def test_acls_are_in_envelope_and_carried_verbatim() -> None:

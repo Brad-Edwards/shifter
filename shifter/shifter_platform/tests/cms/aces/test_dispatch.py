@@ -27,13 +27,13 @@ User = get_user_model()
 
 def make_compiled_plan() -> dict:
     network = PlannedResource(
-        address="net.default",
+        address="provision.network.default",
         domain=RuntimeDomain.PROVISIONING,
         resource_type="network",
         payload={"name": "default", "spec": {"infrastructure": {"properties": {"cidr": "10.0.0.0/24"}}}},
     )
     node = PlannedResource(
-        address="node.attacker",
+        address="provision.node.attacker",
         domain=RuntimeDomain.PROVISIONING,
         resource_type="node",
         payload={
@@ -41,7 +41,7 @@ def make_compiled_plan() -> dict:
             "os_family": "linux",
             "spec": {
                 "node": {"source": {"name": "kali"}, "resources": {"ram": 2147483648, "cpu": 2}},
-                "infrastructure": {"networks": ["net.default"]},
+                "infrastructure": {"networks": ["provision.network.default"]},
             },
         },
     )
@@ -91,4 +91,4 @@ class TestCmsAcesDispatchPort:
         assert range_obj.status == Range.Status.PROVISIONING
         # Serialized ACES plan (self-describing via kind); no cyberscript envelope.
         assert range_obj.range_config["kind"] == ACES_PROVISIONING_PLAN_KIND
-        assert range_obj.range_config["resources"]["node.attacker"]["resource_type"] == "node"
+        assert range_obj.range_config["resources"]["provision.node.attacker"]["resource_type"] == "node"

@@ -63,7 +63,7 @@ but should not become a second runner IaC root.
   reader, so it must run under a PTY (via `expect`) rather than over redirected
   stdin, which fails with "Cannot read keys ... console input has been
   redirected" on current runner releases. `expect` waits for the token prompt,
-  then sends the token read from the root-owned file — keeping the token off
+  then sends the token read from the root-owned file, keeping the token off
   both `config.sh`'s and `expect`'s argv. The runner host therefore needs
   `expect` installed at boot (runner root user_data).
 - Build SSM `--parameters` as JSON in one argv element, matching the

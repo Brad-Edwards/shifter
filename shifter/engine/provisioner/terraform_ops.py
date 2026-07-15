@@ -10,94 +10,32 @@ into the inputs the Terraform module expects.
 
 from __future__ import annotations
 
-import json
 import logging
-import os
 from typing import Any
 
+from shared.range_cells import RangeCellContractError, validate_scenario_artifact
+
 import range_terraform_runner
-from config import load_range_network_config, resolve_ngfw_attachment_config
+from config import is_gce_range_cell_backend, load_range_network_config
 from events import publish_destroyed, publish_failed, publish_ready, publish_status_update
-from executors.aws_executor import AWSExecutor
 from instance_orchestrator import run_instance_setup
-from ngfw_runtime import configure_ngfw_subnets, remove_ngfw_subnets, user_has_active_ranges
-from ngfw_runtime_ops import run_ngfw_operation
 from provisioner_db import (
     _update_range_config,
     get_range_data_by_request_id,
     mark_range_instances_destroyed,
     write_provisioned_state,
 )
-from provisioner_db_ngfw import (
-    _build_ngfw_range_attachment_record,
-    _record_ngfw_range_attachment,
-    _remove_ngfw_range_attachment,
-    get_user_ngfw_data,
+from state_helpers import _validate_provisioned_outputs
+from terraform_ngfw_range import (
+    _configure_ngfw_for_range,
+    _ensure_ngfw_ready_for_provisioning,
+    _maybe_pause_user_ngfw,
+    _remove_ngfw_attachments_for_destroy,
+    _validate_ngfw_range_attachment,
 )
-from state_helpers import _get_cloud_provider, _validate_provisioned_outputs
 from terraform_vars import build_range_variables
 
 logger = logging.getLogger(__name__)
-
-
-def _describe_ec2_state(aws_executor: AWSExecutor, ec2_instance_id: str) -> str | None:
-    """Return the EC2 state name for an instance (``running`` / ``stopped`` / etc.)."""
-    result = aws_executor.describe_instance(ec2_instance_id)
-    if not result.success:
-        return None
-    data = json.loads(result.stdout)
-    reservations = data.get("Reservations", [])
-    if not reservations or not reservations[0].get("Instances"):
-        return None
-    return reservations[0]["Instances"][0].get("State", {}).get("Name")
-
-
-def _recover_aws_ngfw_stuck_resuming(ec2_instance_id: str, ngfw_request_id: str) -> None:
-    """Recover an AWS NGFW whose status field is stuck in 'resuming'."""
-    aws_executor = AWSExecutor()
-    ec2_state = _describe_ec2_state(aws_executor, ec2_instance_id)
-    if ec2_state == "stopped":
-        logger.info("NGFW stuck in 'resuming' but EC2 is stopped, resuming...")
-        run_ngfw_operation("start", ngfw_request_id)
-    elif ec2_state == "running":
-        logger.info("NGFW resuming, EC2 already running")
-    elif ec2_state == "pending":
-        logger.info("NGFW resuming, waiting for EC2 to be running...")
-        aws_executor.wait_for_running(ec2_instance_id)
-
-
-def _resume_aws_ngfw_for_provisioning(ngfw_data: dict[str, Any]) -> None:
-    """Bring an AWS NGFW back into running state before range provisioning."""
-    ngfw_status = ngfw_data.get("status")
-    ec2_instance_id = ngfw_data.get("ec2_instance_id")
-    ngfw_request_id = ngfw_data["ngfw_request_id"]
-    if ngfw_status == "pausing" and ec2_instance_id:
-        logger.info("NGFW is pausing, waiting for pause to complete...")
-        AWSExecutor().wait_for_stopped(ec2_instance_id)
-        return
-    if ngfw_status == "resuming" and ec2_instance_id:
-        _recover_aws_ngfw_stuck_resuming(ec2_instance_id, ngfw_request_id)
-        return
-    logger.info("Resuming paused NGFW for range provisioning...")
-    run_ngfw_operation("start", ngfw_request_id)
-
-
-def _ensure_ngfw_ready_for_provisioning(range_id: int, user_id: int) -> None:
-    """Resume the user's NGFW if paused (AWS) or assert it's already ready (other clouds)."""
-    ngfw_data = get_user_ngfw_data(user_id)
-    if not ngfw_data or not ngfw_data.get("management_ip"):
-        return
-    logger.info("NGFW enabled for range %s", range_id)
-    ngfw_status = ngfw_data.get("status")
-    ngfw_provider = ngfw_data.get("cloud_provider", "aws")
-    if ngfw_provider == "aws" and ngfw_status in ("paused", "pausing", "resuming"):
-        _resume_aws_ngfw_for_provisioning(ngfw_data)
-        return
-    if ngfw_provider != "aws" and ngfw_status != "ready":
-        raise RuntimeError(
-            "GDC-attached NGFW ranges require the NGFW to already be in ready state. "
-            f"Current status={ngfw_status!r} for request_id={ngfw_data['ngfw_request_id']}"
-        )
 
 
 def _release_subnet_allocations_best_effort(request_id: str) -> None:
@@ -110,7 +48,33 @@ def _release_subnet_allocations_best_effort(request_id: str) -> None:
         logger.warning("Failed to release subnet allocations: %s", e)
 
 
-def _attempt_terraform_auto_cleanup(request_id: str, range_id: int, user_id: int, range_spec: dict[str, Any]) -> None:
+def _build_operation_variables(
+    request_id: str,
+    range_id: int,
+    user_id: int,
+    range_spec: dict[str, Any],
+    scenario_artifact: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Build backend variables while preserving legacy call behavior."""
+    if scenario_artifact is None:
+        return build_range_variables(request_id, range_id, user_id, range_spec)
+    return build_range_variables(
+        request_id,
+        range_id,
+        user_id,
+        range_spec,
+        scenario_artifact=scenario_artifact,
+    )
+
+
+def _attempt_terraform_auto_cleanup(
+    request_id: str,
+    range_id: int,
+    user_id: int,
+    range_spec: dict[str, Any],
+    *,
+    scenario_artifact: dict[str, Any] | None = None,
+) -> None:
     """Best-effort `terraform destroy` after a failed provision."""
     logger.error(
         "Provision failed for range_id=%s request_id=%s - attempting Terraform cleanup...",
@@ -118,7 +82,13 @@ def _attempt_terraform_auto_cleanup(request_id: str, range_id: int, user_id: int
         request_id,
     )
     try:
-        cleanup_variables = build_range_variables(request_id, range_id, user_id, range_spec)
+        cleanup_variables = _build_operation_variables(
+            request_id,
+            range_id,
+            user_id,
+            range_spec,
+            scenario_artifact,
+        )
         range_terraform_runner.destroy_range(request_id, variables=cleanup_variables)
         range_terraform_runner.cleanup_range_state(request_id)
         logger.info("Auto-cleanup succeeded for range_id=%s", range_id)
@@ -133,16 +103,36 @@ def _attempt_terraform_auto_cleanup(request_id: str, range_id: int, user_id: int
 
 
 def _dispatch_terraform_operation(
-    operation: str, request_id: str, range_id: int, user_id: int, range_spec: dict[str, Any]
+    operation: str,
+    request_id: str,
+    range_id: int,
+    user_id: int,
+    range_spec: dict[str, Any],
+    *,
+    scenario_artifact: dict[str, Any] | None = None,
 ) -> None:
     """Run the requested Terraform operation; raise ValueError for unknown ops."""
-    if operation == "up":
-        _run_terraform_provision(request_id, range_id, user_id, range_spec)
-        return
-    if operation == "destroy":
-        _run_terraform_destroy(request_id, range_id, user_id, range_spec)
-        return
-    raise ValueError(f"Unknown operation: {operation}")
+    handlers = {"up": _run_terraform_provision, "destroy": _run_terraform_destroy}
+    handler = handlers.get(operation)
+    if handler is None:
+        raise ValueError(f"Unknown operation: {operation}")
+    if scenario_artifact is None:
+        handler(request_id, range_id, user_id, range_spec)
+    else:
+        handler(
+            request_id,
+            range_id,
+            user_id,
+            range_spec,
+            scenario_artifact=scenario_artifact,
+        )
+
+
+def _safe_failure_message(exc: Exception) -> str:
+    """Return a bounded authored event message for a lifecycle failure."""
+    if isinstance(exc, RangeCellContractError):
+        return "Range-cell contract validation failed"
+    return str(exc)[:1000]
 
 
 def run_range_terraform(operation: str, request_id: str) -> None:
@@ -154,16 +144,37 @@ def run_range_terraform(operation: str, request_id: str) -> None:
     user_id = range_data["user_id"]
     range_spec = range_data.get("spec", {})
 
-    if range_spec.get("ngfw", False):
-        _ensure_ngfw_ready_for_provisioning(range_id, user_id)
-
+    scenario_artifact = None
+    operation_dispatched = False
     try:
-        _dispatch_terraform_operation(operation, request_id, range_id, user_id, range_spec)
+        # Verify the producer-minted artifact before any NGFW or provider
+        # operation. Other backends retain their existing legacy payload path.
+        if is_gce_range_cell_backend():
+            scenario_artifact = validate_scenario_artifact(range_data.get("spec_envelope"))
+
+        if range_spec.get("ngfw", False):
+            _ensure_ngfw_ready_for_provisioning(range_id, user_id)
+
+        operation_dispatched = True
+        _dispatch_terraform_operation(
+            operation,
+            request_id,
+            range_id,
+            user_id,
+            range_spec,
+            scenario_artifact=scenario_artifact,
+        )
     except Exception as e:
-        error_msg = str(e)[:1000]
+        error_msg = _safe_failure_message(e)
         logger.exception("Range Terraform operation failed: %s", error_msg)
-        if operation == "up":
-            _attempt_terraform_auto_cleanup(request_id, range_id, user_id, range_spec)
+        if operation == "up" and operation_dispatched:
+            _attempt_terraform_auto_cleanup(
+                request_id,
+                range_id,
+                user_id,
+                range_spec,
+                scenario_artifact=scenario_artifact,
+            )
         publish_failed(
             request_id=request_id,
             range_id=range_id,
@@ -178,6 +189,8 @@ def _run_terraform_provision(
     range_id: int,
     user_id: int,
     range_spec: dict[str, Any],
+    *,
+    scenario_artifact: dict[str, Any] | None = None,
 ) -> None:
     """Run Terraform apply for range, then run instance setup."""
     publish_status_update(
@@ -189,12 +202,23 @@ def _run_terraform_provision(
 
     logger.info("Running terraform apply for range...")
 
-    spec_subnets = _allocate_range_subnet_cidrs(request_id, range_id, range_spec)
+    spec_subnets = _allocate_range_subnet_cidrs(
+        request_id,
+        range_id,
+        range_spec,
+        persist_to_scenario=not is_gce_range_cell_backend(),
+    )
 
     # Build backend-appropriate range variables from the range spec (now with
-    # CIDRs). GCE range cells receive provider-neutral scenario intent; AWS
-    # receives Terraform variables.
-    provision_variables = build_range_variables(request_id, range_id, user_id, range_spec)
+    # CIDRs). GCE range cells receive a closed request around the persisted
+    # scenario artifact; AWS receives Terraform variables.
+    provision_variables = _build_operation_variables(
+        request_id,
+        range_id,
+        user_id,
+        range_spec,
+        scenario_artifact,
+    )
 
     # Run the provider-routed apply
     output_data = range_terraform_runner.apply_range(request_id, provision_variables)
@@ -251,8 +275,14 @@ def _run_terraform_provision(
     publish_ready(request_id=request_id, range_id=range_id, user_id=user_id)
 
 
-def _allocate_range_subnet_cidrs(request_id: str, range_id: int, range_spec: dict[str, Any]) -> list[dict[str, Any]]:
-    """Allocate subnet CIDRs from the active VPC and persist them onto the range spec."""
+def _allocate_range_subnet_cidrs(
+    request_id: str,
+    range_id: int,
+    range_spec: dict[str, Any],
+    *,
+    persist_to_scenario: bool = True,
+) -> list[dict[str, Any]]:
+    """Allocate subnet CIDRs, optionally retaining legacy scenario persistence."""
     spec_subnets = range_spec.get("subnets", [])
     if not spec_subnets:
         return spec_subnets
@@ -280,111 +310,9 @@ def _allocate_range_subnet_cidrs(request_id: str, range_id: int, range_spec: dic
     logger.info("Allocated CIDRs: %s", allocated_cidrs)
     for i, subnet in enumerate(spec_subnets):
         subnet["cidr"] = allocated_cidrs[i]
-    _update_range_config(range_id, range_spec)
+    if persist_to_scenario:
+        _update_range_config(range_id, range_spec)
     return spec_subnets
-
-
-def _validate_ngfw_range_attachment(range_spec: dict[str, Any], user_id: int) -> None:
-    """Raise if a NGFW-required range is not actually attachable to the user's NGFW."""
-    if not range_spec.get("ngfw", False):
-        return
-    ngfw_data = get_user_ngfw_data(user_id)
-    if not ngfw_data or not resolve_ngfw_attachment_config(ngfw_data).is_attachable:
-        raise RuntimeError(
-            "NGFW routing validation failed: range requires NGFW but the active NGFW "
-            "is missing attachable routing state."
-        )
-    logger.info("NGFW-enabled range validated: attachment_mode=%s", ngfw_data.get("attachment_mode", ""))
-
-
-def _build_ngfw_subnet_payloads(
-    spec_subnets: list[dict[str, Any]],
-    subnets_output: dict[str, dict[str, Any]],
-) -> list[dict[str, Any]]:
-    """Build the NGFW subnet-config payloads from per-subnet provisioner outputs."""
-    provider = _get_cloud_provider()
-    subnets_for_ngfw = []
-    for spec_subnet in spec_subnets:
-        subnet_name = spec_subnet.get("name", "")
-        subnet_output = subnets_output.get(subnet_name, {})
-        subnets_for_ngfw.append(
-            {
-                "name": subnet_name,
-                "cidr": subnet_output.get("subnet_cidr", ""),
-                "connected_to": spec_subnet.get("connected_to", []),
-                "provider_metadata": {
-                    "gcp": {
-                        "namespace": subnet_output.get("gdc_namespace", ""),
-                        "network_name": subnet_output.get("gdc_network_name", ""),
-                        "gateway_ip": subnet_output.get("gdc_gateway_ip", ""),
-                    }
-                }
-                if provider == "gcp"
-                else {},
-            }
-        )
-    return subnets_for_ngfw
-
-
-def _configure_ngfw_for_range(
-    *,
-    request_id: str,
-    range_id: int,
-    user_id: int,
-    range_spec: dict[str, Any],
-    spec_subnets: list[dict[str, Any]],
-    subnets_output: dict[str, dict[str, Any]],
-) -> None:
-    """Configure routes/rules on the user's NGFW for this range, if a NGFW is attached."""
-    if not range_spec.get("ngfw", False):
-        return
-
-    ngfw_data = get_user_ngfw_data(user_id)
-    route_next_hop_ip = ngfw_data.get("route_next_hop_ip") if ngfw_data else ""
-    if not (ngfw_data and ngfw_data.get("management_ip") and route_next_hop_ip):
-        return
-
-    logger.info("Configuring NGFW with subnet routes...")
-    subnets_for_ngfw = _build_ngfw_subnet_payloads(spec_subnets, subnets_output)
-    configure_ngfw_subnets(
-        subnets=subnets_for_ngfw,
-        range_id=range_id,
-        management_ip=ngfw_data["management_ip"],
-        ssh_key_secret_arn=ngfw_data["ssh_key_secret_arn"],
-        route_next_hop_ip=route_next_hop_ip,
-        ssm_endpoints_subnet_cidr=os.environ.get("SSM_ENDPOINTS_SUBNET_CIDR", ""),
-    )
-    _record_ngfw_range_attachment(
-        ngfw_request_id=ngfw_data["ngfw_request_id"],
-        ngfw_status=ngfw_data["status"],
-        attachment_record=_build_ngfw_range_attachment_record(
-            range_id=range_id,
-            request_id=request_id,
-            subnets=subnets_for_ngfw,
-            ngfw_data=ngfw_data,
-        ),
-    )
-
-
-def _remove_ngfw_attachments_for_destroy(user_id: int, range_id: int, range_spec: dict[str, Any]) -> None:
-    """Best-effort detach of NGFW subnets / range attachment before terraform destroy.
-
-    Failures are logged and swallowed; terraform destroy runs regardless.
-    """
-    spec_subnets = range_spec.get("subnets", [])
-    if not spec_subnets:
-        return
-    try:
-        ngfw_data = get_user_ngfw_data(user_id) if range_spec.get("ngfw", False) else None
-        remove_ngfw_subnets(user_id, spec_subnets, range_id)
-        if ngfw_data:
-            _remove_ngfw_range_attachment(
-                ngfw_request_id=ngfw_data["ngfw_request_id"],
-                ngfw_status=ngfw_data["status"],
-                range_id=range_id,
-            )
-    except Exception as e:
-        logger.warning("NGFW subnet removal failed (continuing): %s", e)
 
 
 def _recover_missing_subnet_cidrs(range_id: int, range_spec: dict[str, Any]) -> None:
@@ -416,19 +344,6 @@ def _post_destroy_cleanup(request_id: str, range_id: int) -> None:
         logger.warning("Failed to release subnet allocations: %s", e)
 
 
-def _maybe_pause_user_ngfw(user_id: int, range_id: int) -> None:
-    """If this range was the user's last active range, pause their AWS NGFW."""
-    try:
-        if user_has_active_ranges(user_id, range_id):
-            return
-        ngfw_data = get_user_ngfw_data(user_id)
-        if ngfw_data and ngfw_data["status"] == "ready" and ngfw_data.get("cloud_provider") == "aws":
-            logger.info("No other active ranges, pausing NGFW")
-            run_ngfw_operation("stop", ngfw_data["ngfw_request_id"])
-    except Exception as e:
-        logger.warning("Failed to pause NGFW (non-fatal): %s", e)
-
-
 def _ensure_range_is_active(request_id: str, range_id: int) -> bool:
     """Return True if the range exists and is not already destroyed."""
     try:
@@ -447,6 +362,8 @@ def _run_terraform_destroy(
     range_id: int,
     user_id: int,
     range_spec: dict[str, Any],
+    *,
+    scenario_artifact: dict[str, Any] | None = None,
 ) -> None:
     """Run Terraform destroy for range."""
     if not _ensure_range_is_active(request_id, range_id):
@@ -458,7 +375,13 @@ def _run_terraform_destroy(
     logger.info("Running terraform destroy for range...")
     terraform_succeeded = False
     try:
-        destroy_variables = build_range_variables(request_id, range_id, user_id, range_spec)
+        destroy_variables = _build_operation_variables(
+            request_id,
+            range_id,
+            user_id,
+            range_spec,
+            scenario_artifact,
+        )
         range_terraform_runner.destroy_range(request_id, variables=destroy_variables)
         terraform_succeeded = True
         logger.info("Cleaning up Terraform state...")

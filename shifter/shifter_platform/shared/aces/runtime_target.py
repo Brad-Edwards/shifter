@@ -47,6 +47,7 @@ from shared.aces.composition_envelope import (
 from shared.aces.contracts import ACES_PROVISIONING_PLAN_CONTRACT_VERSION, SHIFTER_BACKEND_NAME
 from shared.aces.dispatch_port import ShifterDispatchResult, ShifterProvisioningDispatchPort
 from shared.aces.manifest import SHIFTER_PROVISIONER_CAPABILITIES, create_shifter_backend_manifest
+from shared.aces.network_family import network_address_family_diagnostics
 from shared.log_sanitize import safe_log_value
 
 __all__ = [
@@ -235,6 +236,8 @@ def _capability_envelope_diagnostics(
         elif resource.resource_type == NODE_RESOURCE_TYPE:
             total_nodes += _node_count(payload)
             diagnostics.extend(_node_envelope_diagnostics(resource, payload, capabilities))
+        elif resource.resource_type == NETWORK_RESOURCE_TYPE:
+            diagnostics.extend(network_address_family_diagnostics(resource, payload, capabilities, _diagnostic))
         elif resource.resource_type in COMPOSITION_RESOURCE_TYPES:
             diagnostics.extend(composition_diagnostics(resource, payload, capabilities, node_addresses))
     if capabilities.max_total_nodes is not None and total_nodes > capabilities.max_total_nodes:
