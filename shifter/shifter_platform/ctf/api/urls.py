@@ -33,6 +33,7 @@ urlpatterns = [
     path("range/access/", views.api_range_access, name="api_range_access"),
     path("events/<uuid:event_id>/ranges/", views.api_range_list, name="api_range_list"),
     path("events/<uuid:event_id>/ranges/provision/", views.api_provision_ranges, name="api_provision_ranges"),
+    path("events/<uuid:event_id>/spares/", views.api_provision_event_spares, name="api_provision_event_spares"),
     path(
         "participants/<uuid:participant_id>/range/provision/",
         views.api_provision_participant_range,
@@ -57,6 +58,11 @@ urlpatterns = [
         "participants/<uuid:participant_id>/range/restart/",
         views.api_restart_participant_range,
         name="api_restart_participant_range",
+    ),
+    path(
+        "participants/<uuid:participant_id>/range/recover/",
+        views.api_recover_participant_range,
+        name="api_recover_participant_range",
     ),
     path("participants/<uuid:participant_id>/bracket/", views.api_assign_bracket, name="api_assign_bracket"),
     path("events/<uuid:event_id>/scoreboard/", views.api_scoreboard, name="api_scoreboard"),

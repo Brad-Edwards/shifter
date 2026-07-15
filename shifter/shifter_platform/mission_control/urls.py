@@ -10,11 +10,11 @@ made **per request** (not at import) so the flag can be flipped without a
 restart and so tests can toggle it with ``override_settings``. The enable
 check honours both ``PLATFORM_SPA_ENABLED`` (the platform-wide control) and
 ``MISSION_CONTROL_SPA_ENABLED`` (the Mission-Control-specific extension of
-that flag pattern) — both must be on. The legacy POST action URLs and the
-legacy JSON API endpoints under ``api/`` are always Django-handled: the SPA
-uses the canonical ``/api/v1/mission-control/`` DRF routes exclusively (see
-``mission_control.api.urls``), but old tabs, bookmarks, and rollback rely on
-these. Route *names* are identical in both modes so
+that flag pattern) — both must be on. The remaining legacy POST action URL
+(``agents/<id>/delete/``) is always Django-handled. The legacy JSON API that
+used to live under ``api/`` was retired (issue #1328): the SPA and all callers
+now use the canonical ``/api/v1/mission-control/`` DRF routes exclusively (see
+``mission_control.api.urls``). Page route *names* are identical in both modes so
 ``reverse("mission_control:...")`` callers keep working across the cutover.
 """
 
@@ -69,59 +69,27 @@ urlpatterns = [
     path("settings/", _page(views.settings), name="settings"),
     path("help/", _page(views.help_page), name="help"),
     path("walkthrough/", _page(views.walkthrough), name="walkthrough"),
-    # Legacy presigned-upload JSON API: always Django-handled.
-    path("api/upload/initiate/", views.initiate_upload, name="initiate_upload"),
-    path("api/upload/complete/", views.complete_upload, name="complete_upload"),
-    path("api/upload/cancel/", views.cancel_upload, name="cancel_upload"),
-    # Legacy Range JSON API: always Django-handled.
-    path("api/range/", views.get_range, name="get_range"),
-    path("api/range/launch/", views.launch_range, name="launch_range"),
-    path("api/range/cancel/", views.cancel_range, name="cancel_range"),
-    path("api/range/destroy/", views.destroy_range, name="destroy_range"),
-    path("api/range/pause/", views.pause_range, name="pause_range"),
-    path("api/range/resume/", views.resume_range, name="resume_range"),
-    path("api/agents/", views.list_agents, name="list_agents"),
-    path("api/scenarios/", views.list_scenarios, name="list_scenarios"),
-    # Legacy Guacamole RDP JSON API: always Django-handled.
-    path("api/guacamole/rdp-url/", views.guacamole_rdp_url, name="guacamole_rdp_url"),
-    path("api/guacamole/ssh-url/", views.guacamole_ssh_url, name="guacamole_ssh_url"),
-    path(
-        "api/guacamole/bootstrap/<uuid:request_id>/",
-        views.guacamole_bootstrap_status,
-        name="guacamole_bootstrap_status",
-    ),
-    path(
-        "api/guacamole/bootstrap/<uuid:request_id>/open/",
-        views.guacamole_bootstrap_open,
-        name="guacamole_bootstrap_open",
-    ),
     # NGFW page paths: SPA shell when both flags are on, Django templates when off.
     path("ngfw/", _page(views.ngfw_list), name="ngfw_list"),
     path("ngfw/setup/", _page(views.ngfw_wizard), name="ngfw_wizard"),
     path("ngfw/<uuid:app_id>/", _page(views.ngfw_detail), name="ngfw_detail"),
     path("ngfw/<uuid:app_id>/deprovision/", _page(views.ngfw_deprovision), name="ngfw_deprovision"),
-    # Legacy NGFW JSON API: always Django-handled.
-    path("api/ngfw/", views.api_ngfw_create, name="api_ngfw_create"),
-    path("api/ngfw/list/", views.api_ngfw_list, name="api_ngfw_list"),
-    path("api/ngfw/<uuid:app_id>/destroy/", views.api_ngfw_destroy, name="api_ngfw_destroy"),
-    path("api/ngfw/<uuid:app_id>/ssh-url/", views.api_ngfw_ssh_url, name="api_ngfw_ssh_url"),
     # Credential page paths: SPA shell when both flags are on, Django templates when off.
     path("credentials/", _page(views.credentials_list), name="credentials_list"),
     path("credentials/add/", _page(views.credential_add), name="credential_add"),
     path("credentials/<int:credential_id>/", _page(views.credential_detail), name="credential_detail"),
-    # Legacy credential JSON API: always Django-handled.
-    path("api/credentials/", views.api_credential_create, name="api_credential_create"),
-    path("api/credentials/<int:credential_id>/delete/", views.api_credential_delete, name="api_credential_delete"),
     # Client-router deep links / refresh: SPA shell when enabled, else 404.
     #
-    # Excludes ``files/`` and ``api/scripts/`` — the removed legacy experiments
-    # feature's script-upload page and JSON API (issue #1195, migration
-    # cms.migrations.0034_remove_legacy_experiments). A catch-all that matched
-    # unconditionally would make those paths resolve again (to a view that
-    # 404s at request time), regressing
-    # tests/cms/test_experiments_removed.py::test_legacy_script_surfaces_are_not_routed,
-    # which asserts they are unroutable at the URLconf level (``Resolver404``),
-    # not just 404-at-runtime. Do not remove this exclusion to "simplify" the
-    # regex without confirming that regression test is updated/retired first.
-    re_path(r"^(?!files/$|api/scripts/$).*$", _page(None)),
+    # Excludes ``files/`` and the whole ``api/`` prefix. ``files/`` and
+    # ``api/scripts/`` are the removed legacy experiments feature's surfaces
+    # (issue #1195, migration cms.migrations.0034_remove_legacy_experiments);
+    # the rest of ``api/`` is the retired legacy JSON API (issue #1328 — the SPA
+    # and all callers use the canonical ``/api/v1/mission-control/`` DRF routes).
+    # A catch-all that matched these would make the retired paths resolve again
+    # (to the SPA shell, or a 404-at-request-time view), regressing
+    # tests/cms/test_experiments_removed.py::test_legacy_script_surfaces_are_not_routed
+    # and the #1328 retirement tests, which assert they are unroutable at the
+    # URLconf level (``Resolver404``), not just 404-at-runtime. Do not remove this
+    # exclusion to "simplify" the regex without confirming those tests first.
+    re_path(r"^(?!files/$|api/).*$", _page(None)),
 ]
