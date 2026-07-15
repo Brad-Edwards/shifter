@@ -142,9 +142,9 @@ gh workflow run "Packer AMI Build" -f ami_type=dc -f environment=dev -f ref=dev
 
 `environment` accepts `dev` or `proof`. There is no `prod` build option: prod
 AMIs are produced by promoting a validated dev AMI with `packer-promote.yml`, not
-by building directly in prod. The workflow also builds the CTF scenario images
-(`ctf-*`, `brokenbk`) on demand; the base types above are the ones the portal
-plan requires.
+by building directly in prod. The workflow also builds the scenario AMI types
+(`brokenbk`, `polaris-dc`, `techvault`, `polaris-vm`) on demand; the base types
+above are the ones the portal plan requires.
 
 ## Build path B: local Packer
 
