@@ -4,11 +4,15 @@ from __future__ import annotations
 
 from django.urls import path
 
-from ctf.api import views
+from ctf.api import participant_views, views
 
 app_name = "ctf"
 
 urlpatterns = [
+    # Participant self-reads (typed DRF projections for the SPA workspace).
+    path("me/event/", participant_views.ParticipantCurrentEventView.as_view(), name="api_participant_current_event"),
+    path("me/challenges/", participant_views.ParticipantChallengeListView.as_view(), name="api_participant_challenges"),
+    path("me/team/", participant_views.ParticipantTeamView.as_view(), name="api_participant_team"),
     path("events/", views.api_event_list, name="api_event_list"),
     path("events/<uuid:event_id>/", views.api_event_detail, name="api_event_detail"),
     path("events/<uuid:event_id>/force-delete/", views.api_force_delete_event, name="api_force_delete_event"),
