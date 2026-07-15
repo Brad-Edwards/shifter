@@ -89,6 +89,15 @@
   {
     "rule_id": "ADR-004-R11",
     "owner": "@Brad-Edwards",
+    "reason": "image-pipeline-packer-ec2: CKV_AWS_287 / CKV_AWS_355 / CKV_AWS_290 on aws_iam_role_policy.image_pipeline, the dedicated least-privilege base-image build role (#1656). ec2:GetPasswordData (CKV_AWS_287 credential exposure) is required for Packer Windows base builds (WinRM admin password), and the amazon-ebs builder + fresh-boot verifier + always() cleanup EC2 actions are not ARN-scopable, so the EC2 statement keeps Resource='*' (CKV_AWS_355 / CKV_AWS_290). The role is otherwise least-privilege: OIDC trust pinned to the dev/main protected-branch subjects, iam:PassRole scoped to the exact shifter-<env>-range-range-instance role passed to ec2.amazonaws.com, SSM limited to the verifier calls plus /shifter/ami/* PutParameter, and no other credential-exposure grant. The exact-subject and exact-range-role invariants are pinned by check_tf_iam_role_naming (ADR-004-R22).",
+    "expires_on": "2027-07-15",
+    "paths": [
+      "platform/terraform/global/iam/github-oidc.tf"
+    ]
+  },
+  {
+    "rule_id": "ADR-004-R11",
+    "owner": "@Brad-Edwards",
     "reason": "aws-dev-runner-inline-ssm: CKV_AWS_288 on the GitHub runner SSM agent policy. The same Organizations SCP denies iam:AttachRolePolicy, so the runner role cannot attach AmazonSSMManagedInstanceCore. The inline policy mirrors the AWS-managed SSM agent permissions; wildcard resources are required by the SSM, ssmmessages, and ec2messages agent APIs.",
     "expires_on": "2026-12-07",
     "paths": [

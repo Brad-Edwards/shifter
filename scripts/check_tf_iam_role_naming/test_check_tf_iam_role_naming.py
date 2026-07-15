@@ -177,5 +177,121 @@ class CheckTfIamRoleNamingTest(unittest.TestCase):
             self.assertEqual(check_file(tf), [])
 
 
+class CheckTfImageRoleTest(unittest.TestCase):
+    """Base-image-pipeline role invariants (#1656, ADR-004-R22)."""
+
+    _EXACT_PASSROLE_POLICY = """
+        resource "aws_iam_role_policy" "image_pipeline" {
+          policy = jsonencode({
+            Statement = [{
+              Action   = ["iam:PassRole"]
+              Resource = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/shifter-${var.environment}-range-range-instance"
+              Condition = {
+                StringEquals = {
+                  "iam:PassedToService" = "ec2.amazonaws.com"
+                }
+              }
+            }]
+          })
+        }
+    """
+
+    def _oidc(self, body: str) -> list[str]:
+        with tempfile.TemporaryDirectory() as tmp:
+            tf = _write(Path(tmp), "github-oidc.tf", body)
+            return [v.reason for v in check_file(tf)]
+
+    def test_image_role_exact_subject_and_passrole_pass(self) -> None:
+        reasons = self._oidc(
+            """
+            resource "aws_iam_role" "github_actions_image" {
+              assume_role_policy = jsonencode({
+                Statement = [{
+                  Condition = {
+                    StringEquals = {
+                      "token.actions.githubusercontent.com:sub" = [
+                        "repo:${var.github_org}/${var.github_repo}:ref:refs/heads/dev",
+                        "repo:${var.github_org}/${var.github_repo}:ref:refs/heads/main"
+                      ]
+                    }
+                  }
+                }]
+              })
+            }
+            """
+            + self._EXACT_PASSROLE_POLICY
+        )
+        self.assertFalse(any("image-pipeline" in reason for reason in reasons))
+
+    def test_image_role_wildcard_subject_rejected(self) -> None:
+        reasons = self._oidc(
+            """
+            resource "aws_iam_role" "github_actions_image" {
+              assume_role_policy = jsonencode({
+                Statement = [{
+                  Condition = {
+                    StringEquals = {
+                      "token.actions.githubusercontent.com:sub" = "repo:${var.github_org}/${var.github_repo}:*"
+                    }
+                  }
+                }]
+              })
+            }
+            """
+            + self._EXACT_PASSROLE_POLICY
+        )
+        self.assertTrue(
+            any("not a repo:...:* wildcard" in reason for reason in reasons)
+        )
+
+    def test_image_passrole_wildcard_resource_rejected(self) -> None:
+        reasons = self._oidc(
+            """
+            resource "aws_iam_role_policy" "image_pipeline" {
+              policy = jsonencode({
+                Statement = [{
+                  Action   = ["iam:PassRole"]
+                  Resource = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/shifter-*"
+                  Condition = {
+                    StringEquals = {
+                      "iam:PassedToService" = "ec2.amazonaws.com"
+                    }
+                  }
+                }]
+              })
+            }
+            """
+        )
+        self.assertTrue(any("wildcard resource" in reason for reason in reasons))
+
+    def test_image_passrole_missing_service_condition_rejected(self) -> None:
+        reasons = self._oidc(
+            """
+            resource "aws_iam_role_policy" "image_pipeline" {
+              policy = jsonencode({
+                Statement = [{
+                  Action   = ["iam:PassRole"]
+                  Resource = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/shifter-${var.environment}-range-range-instance"
+                }]
+              })
+            }
+            """
+        )
+        self.assertTrue(any("PassedToService" in reason for reason in reasons))
+
+    def test_deploy_only_oidc_file_skips_image_checks(self) -> None:
+        # No github_actions_image role / image_pipeline policy: the new checks
+        # must no-op so deploy-only files are unaffected.
+        reasons = self._oidc(
+            """
+            resource "aws_iam_role_policy_attachment" "compute" {
+              role       = aws_iam_role.github_actions.name
+              policy_arn = aws_iam_policy.compute.arn
+            }
+            """
+        )
+        self.assertFalse(any("image-pipeline" in reason for reason in reasons))
+
+
 if __name__ == "__main__":
     unittest.main()
