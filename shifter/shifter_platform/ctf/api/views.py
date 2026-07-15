@@ -24,20 +24,6 @@ PLAY_READ = (scopes.CTF_PLAY_READ,)
 PLAY_WRITE = (scopes.CTF_PLAY_WRITE,)
 EVENT_OR_PLAY_READ = (scopes.CTF_EVENT_READ, scopes.CTF_PLAY_READ)
 
-api_challenge_list = legacy_api_view(
-    "ChallengeListView",
-    "ctf.views.api.challenges.api_challenge_list",
-    permission_classes=CTF_ORGANIZER_PERMISSIONS,
-    read_scopes=EVENT_READ,
-    write_scopes=EVENT_WRITE,
-)
-api_challenge_detail = legacy_api_view(
-    "ChallengeDetailView",
-    "ctf.views.api.challenges.api_challenge_detail",
-    permission_classes=CTF_ORGANIZER_PERMISSIONS,
-    read_scopes=EVENT_READ,
-    write_scopes=EVENT_WRITE,
-)
 api_submit_flag = legacy_api_view(
     "SubmitFlagView",
     "ctf.views.api.play.api_submit_flag",
@@ -47,25 +33,6 @@ api_submit_flag = legacy_api_view(
 api_use_hint = legacy_api_view(
     "UseHintView",
     "ctf.views.api.play.api_use_hint",
-    permission_classes=CTF_PARTICIPANT_PERMISSIONS,
-    write_scopes=PLAY_WRITE,
-)
-api_challenge_hints = legacy_api_view(
-    "ChallengeHintListView",
-    "ctf.views.api.hints.api_challenge_hints",
-    permission_classes=CTF_ORGANIZER_PERMISSIONS,
-    read_scopes=EVENT_READ,
-    write_scopes=EVENT_WRITE,
-)
-api_hint_delete = legacy_api_view(
-    "HintDeleteView",
-    "ctf.views.api.hints.api_hint_delete",
-    permission_classes=CTF_ORGANIZER_PERMISSIONS,
-    write_scopes=EVENT_WRITE,
-)
-api_rate_challenge = legacy_api_view(
-    "RateChallengeView",
-    "ctf.views.api.play.api_rate_challenge",
     permission_classes=CTF_PARTICIPANT_PERMISSIONS,
     write_scopes=PLAY_WRITE,
 )
@@ -206,50 +173,6 @@ api_send_invitations = legacy_api_view(
     permission_classes=CTF_ORGANIZER_PERMISSIONS,
     write_scopes=EVENT_WRITE,
 )
-api_add_flag = legacy_api_view(
-    "AddFlagView",
-    "ctf.views.api.flags.api_add_flag",
-    permission_classes=CTF_ORGANIZER_PERMISSIONS,
-    write_scopes=EVENT_WRITE,
-)
-api_remove_flag = legacy_api_view(
-    "RemoveFlagView",
-    "ctf.views.api.flags.api_remove_flag",
-    permission_classes=CTF_ORGANIZER_PERMISSIONS,
-    write_scopes=EVENT_WRITE,
-)
-api_challenge_files = legacy_api_view(
-    "ChallengeFileListView",
-    "ctf.views.api.files.api_challenge_files",
-    permission_classes=CTF_ORGANIZER_PERMISSIONS,
-    read_scopes=EVENT_READ,
-    write_scopes=EVENT_WRITE,
-)
-api_challenge_file_delete = legacy_api_view(
-    "ChallengeFileDeleteView",
-    "ctf.views.api.files.api_challenge_file_delete",
-    permission_classes=CTF_ORGANIZER_PERMISSIONS,
-    write_scopes=EVENT_WRITE,
-)
-api_file_download = legacy_api_view(
-    "ChallengeFileDownloadView",
-    "ctf.views.api.files.api_file_download",
-    permission_classes=CTF_ROLE_PERMISSIONS,
-    read_scopes=EVENT_OR_PLAY_READ,
-)
-api_challenge_prerequisites = legacy_api_view(
-    "ChallengePrerequisiteListView",
-    "ctf.views.api.prerequisites.api_challenge_prerequisites",
-    permission_classes=CTF_ORGANIZER_PERMISSIONS,
-    read_scopes=EVENT_READ,
-    write_scopes=EVENT_WRITE,
-)
-api_prerequisite_delete = legacy_api_view(
-    "PrerequisiteDeleteView",
-    "ctf.views.api.prerequisites.api_prerequisite_delete",
-    permission_classes=CTF_ORGANIZER_PERMISSIONS,
-    write_scopes=EVENT_WRITE,
-)
 
 
 class PublicScoreboardView(APIView):
@@ -305,34 +228,22 @@ class PublicScoreboardView(APIView):
 api_scoreboard = PublicScoreboardView.as_view()
 
 __all__ = [
-    "api_add_flag",
     "api_assign_bracket",
-    "api_challenge_detail",
-    "api_challenge_file_delete",
-    "api_challenge_files",
-    "api_challenge_hints",
-    "api_challenge_list",
-    "api_challenge_prerequisites",
     "api_destroy_participant_range",
     "api_event_email_template",
-    "api_file_download",
-    "api_hint_delete",
     "api_notification_list",
     "api_notification_send",
     "api_participant_detail",
     "api_participant_import",
     "api_participant_list",
     "api_participant_resend_invite",
-    "api_prerequisite_delete",
     "api_provision_event_spares",
     "api_provision_participant_range",
     "api_provision_ranges",
     "api_range_access",
     "api_range_list",
     "api_range_status",
-    "api_rate_challenge",
     "api_recover_participant_range",
-    "api_remove_flag",
     "api_restart_participant_range",
     "api_score_timeline",
     "api_scoreboard",
