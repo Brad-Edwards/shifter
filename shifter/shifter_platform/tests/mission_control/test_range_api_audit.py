@@ -66,7 +66,7 @@ class TestRangeLifecycleAudit:
         request_id = json.loads(launch_resp.content)["range"]["request_id"]
 
         response = client.post(
-            reverse("mission_control:cancel_range"),
+            reverse("v1:mission_control:range-cancel"),
             data=json.dumps({"request_id": request_id}),
             content_type="application/json",
         )
@@ -77,7 +77,7 @@ class TestRangeLifecycleAudit:
     def test_failed_action_does_not_audit(self, authenticated_client):
         client, _user = authenticated_client(email="audit-fail@example.com")
         response = client.post(
-            reverse("mission_control:destroy_range"),
+            reverse("v1:mission_control:range-destroy"),
             data=json.dumps({"request_id": GHOST_REQUEST_ID}),
             content_type="application/json",
         )
@@ -87,7 +87,7 @@ class TestRangeLifecycleAudit:
 
     def test_requires_login_records_no_audit(self):
         response = Client().post(
-            reverse("mission_control:launch_range"),
+            reverse("v1:mission_control:range-launch"),
             data="{}",
             content_type="application/json",
         )
