@@ -185,7 +185,9 @@ Concrete follow-up work identified by this gate is tracked as:
 - #1261, #1262, #1263, and #1264: backend manifest, RuntimeTarget adapter,
   conformance gate, and live Shifter backend validation.
 - #1293: expand Polaris `scenario_smoketest` coverage until the declared
-  cutover challenge universe has zero uncovered entries.
+  cutover challenge universe has zero uncovered entries; the coverage,
+  topology, blocker, and redaction boundaries are fixed in
+  `docs/architecture/aces-polaris-scenario-smoketest-coverage-preflight-1293.md`.
 - #1294: generate the redacted Polaris parity evidence bundle that collects
   conformance, launch, status, smoke, CTFd readback, and rollback artifacts.
 - #1238: define the cutover/archive/rollback plan before the live `polaris`
