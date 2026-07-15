@@ -6,7 +6,6 @@ from typing import Any, cast
 
 from django.contrib.auth.models import User
 from drf_spectacular.utils import extend_schema, extend_schema_view
-from rest_framework import status
 from rest_framework.request import Request
 from rest_framework.response import Response
 
@@ -14,7 +13,6 @@ from cms.services import list_mission_control_range_history
 from mission_control.api._base import (
     MissionControlAPIView,
     MissionControlReadAPIView,
-    _is_empty_legacy_body,
     _range_write_permission,
     _raw_request,
     _validated,
@@ -100,9 +98,6 @@ class LaunchRangeView(MissionControlAPIView):
     )
     def post(self, request: Request) -> Response:
         """Validate input and create a range for the authenticated actor."""
-        if _is_empty_legacy_body(request):
-            return Response({"error": "Invalid JSON"}, status=status.HTTP_400_BAD_REQUEST)
-
         data, error = _validated(self, LaunchRangeSerializer, request.data)
         if error is not None:
             return error

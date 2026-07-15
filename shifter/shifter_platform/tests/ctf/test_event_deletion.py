@@ -361,7 +361,7 @@ class TestApiForceDeleteEvent:
 
     def test_api_force_delete_success(self, organizer_client, mock_event):
         """POST with valid confirmation should return 200 and summary."""
-        url = reverse("ctf:api_force_delete_event", kwargs={"event_id": mock_event.pk})
+        url = reverse("v1:ctf:api_force_delete_event", kwargs={"event_id": mock_event.pk})
 
         with (
             patch("ctf.models.CTFEvent.all_objects") as mock_all,
@@ -389,7 +389,7 @@ class TestApiForceDeleteEvent:
         """POST with wrong confirmation name should return 400."""
         from ctf.exceptions import CTFValidationError
 
-        url = reverse("ctf:api_force_delete_event", kwargs={"event_id": mock_event.pk})
+        url = reverse("v1:ctf:api_force_delete_event", kwargs={"event_id": mock_event.pk})
 
         with (
             patch("ctf.models.CTFEvent.all_objects") as mock_all,
@@ -408,7 +408,7 @@ class TestApiForceDeleteEvent:
 
     def test_api_force_delete_missing_confirmation(self, organizer_client, mock_event):
         """POST without confirmation_name should return 400."""
-        url = reverse("ctf:api_force_delete_event", kwargs={"event_id": mock_event.pk})
+        url = reverse("v1:ctf:api_force_delete_event", kwargs={"event_id": mock_event.pk})
 
         with patch("ctf.models.CTFEvent.all_objects") as mock_all:
             mock_all.get.return_value = mock_event
@@ -420,12 +420,12 @@ class TestApiForceDeleteEvent:
             )
 
         assert resp.status_code == 400
-        assert "confirmation_name" in resp.json()["error"]
+        assert "confirmation_name" in resp.json()["error"]["message"]
 
     def test_api_force_delete_non_owner(self, organizer_client, mock_event):
         """Non-owner should get 403."""
         mock_event.created_by_id = 999  # Not the authenticated user (pk=1)
-        url = reverse("ctf:api_force_delete_event", kwargs={"event_id": mock_event.pk})
+        url = reverse("v1:ctf:api_force_delete_event", kwargs={"event_id": mock_event.pk})
 
         with patch("ctf.models.CTFEvent.all_objects") as mock_all:
             mock_all.get.return_value = mock_event
@@ -442,7 +442,7 @@ class TestApiForceDeleteEvent:
         """Force-deleting a non-existent event should return 404."""
         from ctf.models import CTFEvent
 
-        url = reverse("ctf:api_force_delete_event", kwargs={"event_id": uuid4()})
+        url = reverse("v1:ctf:api_force_delete_event", kwargs={"event_id": uuid4()})
 
         with patch("ctf.models.CTFEvent.all_objects") as mock_all:
             mock_all.get.side_effect = CTFEvent.DoesNotExist

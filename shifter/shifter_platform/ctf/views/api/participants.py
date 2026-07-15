@@ -240,12 +240,15 @@ def api_participant_detail(request: HttpRequest, participant_id: UUID) -> JsonRe
 
 def _resend_invite_response(participant_id: UUID) -> JsonResponse:
     """Regenerate and resend a participant invite, returning success or a 400."""
-    from ctf.exceptions import CTFStateError
+    from ctf.exceptions import CTFStateError, CTFValidationError
     from ctf.services import resend_invite
 
     try:
         updated = resend_invite(participant_id)
-    except CTFStateError as e:
+    except (CTFStateError, CTFValidationError) as e:
+        # CTFValidationError covers the fail-closed bootstrap-credential path
+        # (issue #1665): an unavailable/invalid configured source must surface as
+        # a controlled 400, never an uncaught 500.
         return _json_error(e, _INVALID_PARTICIPANT_REQUEST, 400)
     return JsonResponse(
         {

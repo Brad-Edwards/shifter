@@ -22,7 +22,7 @@ from django.contrib.auth import get_user_model
 from django.test import RequestFactory
 from rest_framework.test import force_authenticate
 
-from mission_control.views import api_ngfw_ssh_url, guacamole_bootstrap_status
+from mission_control.api.views import api_ngfw_ssh_url, guacamole_bootstrap_status
 
 # transaction=True (real commits, no wrapping transaction): the inline Guacamole
 # bootstrap path calls close_old_connections(), which corrupts pytest-django's

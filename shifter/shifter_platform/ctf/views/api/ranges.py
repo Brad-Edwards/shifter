@@ -75,7 +75,7 @@ def api_range_access(request: HttpRequest) -> JsonResponse:
 
     return JsonResponse(
         {
-            "redirect": reverse("mission_control:guacamole_rdp_url"),
+            "redirect": reverse("v1:mission_control:guacamole-rdp-url"),
             "message": "Use the mission_control RDP endpoint directly.",
         }
     )

@@ -42,6 +42,20 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _email_verified_is_true(value: object) -> bool:
+    """Return True only for a verified email, tolerant of provider encoding.
+
+    AWS Cognito's UserInfo endpoint returns ``email_verified`` as the string
+    ``"true"``/``"false"``, while the ID token returns a JSON boolean. Accept a
+    boolean ``True`` or the string ``"true"`` (case-insensitive); reject
+    ``False``, ``"false"``, ``None``, and anything else. Fail-closed: a
+    non-verified or malformed value never counts as verified.
+    """
+    if value is True:
+        return True
+    return isinstance(value, str) and value.strip().lower() == "true"
+
+
 def provider_logout_url(request: HttpRequest) -> str:
     """Return Cognito logout URL to clear the identity provider session.
 
@@ -151,7 +165,12 @@ class ShifterOIDCBackend(OIDCAuthenticationBackend):
         return payload
 
     def verify_claims(self, claims: dict[str, Any]) -> bool:
-        """Require present email/sub and literal ``email_verified is True``.
+        """Require present email/sub and a verified email.
+
+        ``email_verified`` is accepted as boolean ``True`` or the string
+        ``"true"`` (case-insensitive): AWS Cognito's UserInfo endpoint returns
+        it as a string while the ID token returns a boolean. Anything else
+        (``False``, ``"false"``, ``None``, absent) fails closed.
 
         Also requires the UserInfo ``sub`` to equal the already-verified
         ID-token ``sub`` (issue #1521): the UserInfo endpoint's response is
@@ -163,7 +182,7 @@ class ShifterOIDCBackend(OIDCAuthenticationBackend):
         subject = claims.get("sub")
         email = claims.get("email")
         email_verified = claims.get("email_verified")
-        if not subject or not email or email_verified is not True:
+        if not subject or not email or not _email_verified_is_true(email_verified):
             return False
 
         verified_subject = self._verified_subject
@@ -314,7 +333,7 @@ class ShifterOIDCBackend(OIDCAuthenticationBackend):
         # (mozilla-django-oidc's generic callback-failure path).
         email = claims.get("email")
         email_verified = claims.get("email_verified")
-        if not isinstance(email, str) or email_verified is not True:
+        if not isinstance(email, str) or not _email_verified_is_true(email_verified):
             raise SuspiciousOperation("OIDC verified email evidence unavailable for identity binding")
 
         try:

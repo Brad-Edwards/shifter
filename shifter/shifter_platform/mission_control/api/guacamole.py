@@ -16,7 +16,6 @@ from rest_framework.response import Response
 
 from mission_control.api._base import (
     MissionControlReadAPIView,
-    _guacamole_bootstrap_url_names,
     _guacamole_read_permission,
     _validated,
 )
@@ -81,7 +80,6 @@ class GuacamoleRDPURLView(MissionControlReadAPIView):
                 return exc.response
             raise
         return _range_bootstrap_response(
-            request=request,
             user=user,
             protocol=GuacamoleBootstrapRequest.Protocol.RDP,
             target_id=data["instance_uuid"],
@@ -124,7 +122,6 @@ class GuacamoleRangeSSHURLView(MissionControlReadAPIView):
                 return exc.response
             raise
         return _range_bootstrap_response(
-            request=request,
             user=user,
             protocol=GuacamoleBootstrapRequest.Protocol.RANGE_SSH,
             target_id=data["instance_uuid"],
@@ -164,7 +161,6 @@ class GuacamoleNGFWSSHURLView(MissionControlReadAPIView):
             safe_log_value(app_id),
         )
         return _range_bootstrap_response(
-            request=request,
             user=user,
             protocol=GuacamoleBootstrapRequest.Protocol.NGFW_SSH,
             target_id=str(app_id),
@@ -231,11 +227,10 @@ class GuacamoleBootstrapOpenView(MissionControlReadAPIView):
         except _BootstrapViewError as err:
             return err.response
 
-        status_url_name = _guacamole_bootstrap_url_names(request).get(
-            "status_url_name",
-            "mission_control:guacamole_bootstrap_status",
+        status_url = reverse(
+            "v1:mission_control:guacamole-bootstrap-status",
+            kwargs={"request_id": request_id},
         )
-        status_url = reverse(status_url_name, kwargs={"request_id": request_id})
         html = f"""<!doctype html>
 <html lang="en">
 <head>
@@ -277,18 +272,16 @@ class GuacamoleBootstrapOpenView(MissionControlReadAPIView):
 
 def _range_bootstrap_response(
     *,
-    request: Request,
     user: User,
     protocol: str,
     target_id: str,
     build_url: Callable[[], str],
 ) -> JsonResponse:
-    """Create a bootstrap response with canonical route names when applicable."""
+    """Create a bootstrap response with the canonical /api/v1 route names."""
     return _guacamole_bootstrap_response(
         user=user,
         protocol=protocol,
         target_id=target_id,
-        **_guacamole_bootstrap_url_names(request),
         build_url=build_url,
     )
 

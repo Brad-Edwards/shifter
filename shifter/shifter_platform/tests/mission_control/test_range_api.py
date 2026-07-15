@@ -77,12 +77,12 @@ def _seed_participant_runtime(request_id, participant_ref="ctf-participant-1", s
 
 class TestGetRange:
     def test_requires_login(self):
-        response = Client().get(reverse("mission_control:get_range"))
+        response = Client().get(reverse("v1:mission_control:range-current"))
         assert response.status_code == 401
 
     def test_returns_no_range_when_none_exists(self, authenticated_client):
         client, _ = authenticated_client(email="norange@example.com")
-        response = client.get(reverse("mission_control:get_range"))
+        response = client.get(reverse("v1:mission_control:range-current"))
         assert response.status_code == 200
         data = _json(response)
         assert data["has_range"] is False
@@ -94,7 +94,7 @@ class TestGetRange:
         launch_resp, _agent, scenario_id = launch_range_via_api(client, user)
         assert launch_resp.status_code == 200
 
-        response = client.get(reverse("mission_control:get_range"))
+        response = client.get(reverse("v1:mission_control:range-current"))
         assert response.status_code == 200
         data = _json(response)
         assert data["has_range"] is True
@@ -113,7 +113,7 @@ class TestGetRange:
         launch_range_via_api(owner_client, owner)
 
         other_client, _other = authenticated_client(email="other@example.com")
-        response = other_client.get(reverse("mission_control:get_range"))
+        response = other_client.get(reverse("v1:mission_control:range-current"))
         assert response.status_code == 200
         assert _json(response)["has_range"] is False
 
@@ -121,7 +121,7 @@ class TestGetRange:
         client, user = authenticated_client(email="legacy-aces@example.com")
         launch_range_via_api(client, user)
 
-        data = _json(client.get(reverse("mission_control:get_range")))
+        data = _json(client.get(reverse("v1:mission_control:range-current")))
         assert data["has_range"] is True
         assert data["aces_projection"] is None
 
@@ -131,7 +131,7 @@ class TestGetRange:
         request_id = _json(launch_resp)["range"]["request_id"]
         _seed_aces_status(request_id, status="succeeded")
 
-        data = _json(client.get(reverse("mission_control:get_range")))
+        data = _json(client.get(reverse("v1:mission_control:range-current")))
         assert data["has_range"] is True
         projection = data["aces_projection"]
         assert projection is not None
@@ -140,7 +140,7 @@ class TestGetRange:
 
     def test_aces_participant_runtime_null_when_no_range(self, authenticated_client):
         client, _ = authenticated_client(email="no-range-participant-runtime@example.com")
-        data = _json(client.get(reverse("mission_control:get_range")))
+        data = _json(client.get(reverse("v1:mission_control:range-current")))
         assert data["has_range"] is False
         assert data["aces_participant_runtime"] is None
 
@@ -148,7 +148,7 @@ class TestGetRange:
         client, user = authenticated_client(email="legacy-participant-runtime@example.com")
         launch_range_via_api(client, user)
 
-        data = _json(client.get(reverse("mission_control:get_range")))
+        data = _json(client.get(reverse("v1:mission_control:range-current")))
         assert data["has_range"] is True
         assert data["aces_participant_runtime"] is None
         # The sibling aces_projection and existing keys are unaffected.
@@ -160,7 +160,7 @@ class TestGetRange:
         request_id = _json(launch_resp)["range"]["request_id"]
         _seed_participant_runtime(request_id, status="running")
 
-        data = _json(client.get(reverse("mission_control:get_range")))
+        data = _json(client.get(reverse("v1:mission_control:range-current")))
         assert data["has_range"] is True
         participant_runtime = data["aces_participant_runtime"]
         assert participant_runtime is not None
@@ -188,14 +188,14 @@ class TestGetRange:
 class TestLaunchRange:
     def _launch(self, client, body):
         return client.post(
-            reverse("mission_control:launch_range"),
+            reverse("v1:mission_control:range-launch"),
             data=json.dumps(body),
             content_type="application/json",
         )
 
     def test_requires_login(self):
         response = Client().post(
-            reverse("mission_control:launch_range"),
+            reverse("v1:mission_control:range-launch"),
             data="{}",
             content_type="application/json",
         )
@@ -204,25 +204,25 @@ class TestLaunchRange:
     def test_rejects_invalid_json(self, authenticated_client):
         client, _ = authenticated_client(email="badjson@example.com")
         response = client.post(
-            reverse("mission_control:launch_range"),
+            reverse("v1:mission_control:range-launch"),
             data="not json",
             content_type="application/json",
         )
         assert response.status_code == 400
-        assert "Invalid JSON" in _json(response)["error"]
+        assert _json(response)["error"]["code"] == "parse_error"
 
     def test_requires_agent(self, authenticated_client, hydratable_scenario):
         client, _ = authenticated_client(email="noagent@example.com")
         response = self._launch(client, {"scenario": hydratable_scenario.scenario_id})
         assert response.status_code == 400
-        assert "agent" in _json(response)["error"].lower()
+        assert "agent" in json.dumps(_json(response)["error"]["details"]).lower()
 
     def test_rejects_invalid_scenario(self, authenticated_client, make_agent):
         client, user = authenticated_client(email="badscenario@example.com")
         agent = make_agent(user)
         response = self._launch(client, {"agent_id": agent.id, "scenario": "does-not-exist"})
         assert response.status_code == 400
-        assert "scenario" in _json(response)["error"].lower()
+        assert "scenario" in _json(response)["error"]["message"].lower()
 
     def test_rejects_nonexistent_agent(self, authenticated_client, hydratable_scenario):
         client, _ = authenticated_client(email="ghostagent@example.com")
@@ -246,7 +246,7 @@ class TestLaunchRange:
         )
         response = self._launch(client, {"agent_id": agent.id, "scenario": "polaris-pending"})
         assert response.status_code == 400
-        assert "scenario" in _json(response)["error"].lower()
+        assert "scenario" in _json(response)["error"]["message"].lower()
 
     def test_successful_launch_creates_range_and_audit(self, authenticated_client, make_agent, hydratable_scenario):
         client, user = authenticated_client(email="launch@example.com")
@@ -273,7 +273,7 @@ class TestLaunchRange:
 
         second = self._launch(client, {"agent_id": agent.id, "scenario": hydratable_scenario.scenario_id})
         assert second.status_code == 400
-        assert "active range" in _json(second)["error"].lower()
+        assert "active range" in _json(second)["error"]["message"].lower()
         # No second range row was created.
         assert Range.objects.count() == 1
 
@@ -286,7 +286,7 @@ class TestLaunchRange:
 class TestCancelRange:
     def test_requires_login(self):
         response = Client().post(
-            reverse("mission_control:cancel_range"),
+            reverse("v1:mission_control:range-cancel"),
             data="{}",
             content_type="application/json",
         )
@@ -295,17 +295,17 @@ class TestCancelRange:
     def test_requires_identifier(self, authenticated_client):
         client, _ = authenticated_client(email="cancelnoid@example.com")
         response = client.post(
-            reverse("mission_control:cancel_range"),
+            reverse("v1:mission_control:range-cancel"),
             data="{}",
             content_type="application/json",
         )
         assert response.status_code == 400
-        assert "request_id or range_id" in _json(response)["error"]
+        assert "request_id or range_id" in json.dumps(_json(response)["error"]["details"])
 
     def test_cancel_nonexistent_range(self, authenticated_client):
         client, _ = authenticated_client(email="cancelghost@example.com")
         response = client.post(
-            reverse("mission_control:cancel_range"),
+            reverse("v1:mission_control:range-cancel"),
             data=json.dumps({"request_id": "00000000-0000-0000-0000-000000000000"}),
             content_type="application/json",
         )
@@ -317,7 +317,7 @@ class TestCancelRange:
         request_id = _json(launch_resp)["range"]["request_id"]
 
         response = client.post(
-            reverse("mission_control:cancel_range"),
+            reverse("v1:mission_control:range-cancel"),
             data=json.dumps({"request_id": request_id}),
             content_type="application/json",
         )
@@ -334,11 +334,11 @@ class TestParticipantOnlyLifecycleGuard:
     """
 
     LIFECYCLE_VIEWS = [
-        "mission_control:launch_range",
-        "mission_control:cancel_range",
-        "mission_control:destroy_range",
-        "mission_control:pause_range",
-        "mission_control:resume_range",
+        "v1:mission_control:range-launch",
+        "v1:mission_control:range-cancel",
+        "v1:mission_control:range-destroy",
+        "v1:mission_control:range-pause",
+        "v1:mission_control:range-resume",
     ]
 
     def _participant_only(self, authenticated_client, email):
@@ -358,7 +358,8 @@ class TestParticipantOnlyLifecycleGuard:
             content_type="application/json",
         )
         assert response.status_code == 403
-        assert _json(response) == {"error": "Forbidden"}
+        assert _json(response)["error"]["code"] == "permission_denied"
+        assert _json(response)["error"]["message"] == "Permission denied"
 
     def test_participant_only_launch_creates_no_range(
         self, authenticated_client, windows_os, make_agent, hydratable_scenario
@@ -366,7 +367,7 @@ class TestParticipantOnlyLifecycleGuard:
         client, user = self._participant_only(authenticated_client, email="p-launch-state@example.com")
         agent = make_agent(user)
         response = client.post(
-            reverse("mission_control:launch_range"),
+            reverse("v1:mission_control:range-launch"),
             data=json.dumps({"agent_id": agent.id, "scenario": hydratable_scenario.scenario_id}),
             content_type="application/json",
         )
@@ -377,7 +378,7 @@ class TestParticipantOnlyLifecycleGuard:
     def test_participant_only_destroy_writes_no_audit(self, authenticated_client):
         client, _ = self._participant_only(authenticated_client, email="p-destroy-audit@example.com")
         response = client.post(
-            reverse("mission_control:destroy_range"),
+            reverse("v1:mission_control:range-destroy"),
             data=json.dumps({"request_id": "00000000-0000-0000-0000-000000000000"}),
             content_type="application/json",
         )
@@ -386,7 +387,7 @@ class TestParticipantOnlyLifecycleGuard:
 
     def test_participant_only_may_still_read_range(self, authenticated_client):
         client, _ = self._participant_only(authenticated_client, email="p-read@example.com")
-        response = client.get(reverse("mission_control:get_range"))
+        response = client.get(reverse("v1:mission_control:range-current"))
         assert response.status_code == 200
         assert _json(response)["has_range"] is False
 
@@ -395,7 +396,7 @@ class TestParticipantOnlyLifecycleGuard:
         # nonexistent range yields a 400 from the CMS layer, never a 403.
         client, _ = authenticated_client(email="plain-destroy@example.com")
         response = client.post(
-            reverse("mission_control:destroy_range"),
+            reverse("v1:mission_control:range-destroy"),
             data=json.dumps({"request_id": "00000000-0000-0000-0000-000000000000"}),
             content_type="application/json",
         )
@@ -405,7 +406,7 @@ class TestParticipantOnlyLifecycleGuard:
 class TestDestroyRange:
     def test_requires_login(self):
         response = Client().post(
-            reverse("mission_control:destroy_range"),
+            reverse("v1:mission_control:range-destroy"),
             data="{}",
             content_type="application/json",
         )
@@ -414,7 +415,7 @@ class TestDestroyRange:
     def test_destroy_nonexistent_range(self, authenticated_client):
         client, _ = authenticated_client(email="destroyghost@example.com")
         response = client.post(
-            reverse("mission_control:destroy_range"),
+            reverse("v1:mission_control:range-destroy"),
             data=json.dumps({"request_id": "00000000-0000-0000-0000-000000000000"}),
             content_type="application/json",
         )
@@ -426,7 +427,7 @@ class TestDestroyRange:
         request_id = _json(launch_resp)["range"]["request_id"]
 
         response = client.post(
-            reverse("mission_control:destroy_range"),
+            reverse("v1:mission_control:range-destroy"),
             data=json.dumps({"request_id": request_id}),
             content_type="application/json",
         )

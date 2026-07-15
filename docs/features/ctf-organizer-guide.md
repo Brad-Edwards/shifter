@@ -59,12 +59,16 @@ mode) manage team membership.
 
 Participants use isolated temporary accounts on the dedicated CTF login page.
 Generate accounts before an event, hand out the generated username and bootstrap
-password manually, or attach an optional delivery email. The event form can override
-the platform bootstrap password for stricter events. A participant detail page lets
-you rename a generated username; names remain globally unique and start with
-`range-`. Email delivery sends the
-login URL and username separately from the password. A reset invalidates the current
-password, restores the event bootstrap password, and forces another password change.
+password manually, or attach an optional delivery email. A secure bootstrap
+credential is required before accounts can be provisioned: set a per-event
+password override on the event form, or configure the platform-wide
+`CTF_DEFAULT_PARTICIPANT_PASSWORD`. There is no built-in default. If neither is
+configured, account creation, credential reset, and the participant-detail reveal
+refuse rather than assign a shared, guessable password. A participant detail page
+lets you rename a generated username; names remain globally unique and start with
+`range-`. Email delivery sends the login URL and username separately from the
+password. A reset invalidates the current password, restores the event bootstrap
+password, and forces another password change.
 Accounts stop authenticating at event end and are anonymized after the configured
 participant-account retention window.
 
