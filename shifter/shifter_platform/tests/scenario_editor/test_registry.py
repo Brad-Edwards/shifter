@@ -322,6 +322,22 @@ class TestLaunchability:
         _make_aces_source(staff_user, "polaris-pending", conformance_status="pending")
         assert get_catalog_entry("polaris-pending")["launchable"] is False
 
+    def test_object_source_launchable_with_bucket_configured(self, staff_user, aces_launch_adapter, monkeypatch):
+        from django.conf import settings
+
+        monkeypatch.setattr(settings, "ACES_PACKAGE_BUCKET", "aces-pkgs")
+        _make_aces_source(staff_user, "obj-ok", conformance_status="passed", source_kind="object")
+        assert get_catalog_entry("obj-ok")["launchable"] is True
+
+    def test_object_source_not_launchable_without_bucket(self, staff_user, aces_launch_adapter, monkeypatch):
+        from django.conf import settings
+
+        monkeypatch.setattr(settings, "ACES_PACKAGE_BUCKET", "")
+        _make_aces_source(staff_user, "obj-nobucket", conformance_status="passed", source_kind="object")
+        # Registrable and visible, but non-launchable until a package bucket is
+        # configured (config readiness, not a network probe).
+        assert get_catalog_entry("obj-nobucket")["launchable"] is False
+
     def test_unsupported_profile_not_launchable_with_adapter(self, staff_user, aces_launch_adapter):
         # profile is a free single-line string at persistence, but only supported
         # profiles (with a wired adapter) are launchable.

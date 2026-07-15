@@ -255,7 +255,7 @@ _AWS_BUNDLE = BackendBundle(
         scripts=("scripts/bootstrap",),
         workflows=(".github/workflows/deploy.yml",),
         examples=("shifter/installation/examples/aws.yaml",),
-        docs=("shifter/shifter_platform/documentation/docs/technical/dev/ci-cd.md",),
+        docs=("docs/technical/dev/ci-cd.md",),
     ),
     docs=("docs/architecture/root-configured-backend-bundles.md", "shifter/installation/README.md"),
 )

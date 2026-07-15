@@ -40,3 +40,9 @@ variable "vmseries_bootstrap_bucket_name" {
   default     = ""
   description = "Optional GCS bucket the provisioner writes VM-Series bootstrap ISOs to. Empty disables the binding."
 }
+
+variable "aces_package_bucket_name" {
+  type        = string
+  default     = ""
+  description = "Optional GCS bucket holding object-backed ACES package archives (#1567). Grants the portal read-only (objectViewer) access. Empty disables the binding."
+}

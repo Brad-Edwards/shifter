@@ -206,6 +206,32 @@ def test_interpret_consumes_real_compiled_plan() -> None:
     assert len(node_resources) == 2
 
 
+def test_imageless_scenario_realizes_without_image_diagnostics() -> None:
+    # #1579 / ADR-034: realizability must not fail a scenario merely for lacking
+    # image references. A source-less VM is image-less (the backend supplies the
+    # base OS at realization), so interpret returns a serialized plan with no
+    # errors and emits no image/source diagnostic -- image count is not a
+    # realizability proxy.
+    scenario = parse_sdl(
+        'name: imageless-realizability\nversion: "1.0.0"\nnodes:\n  host:\n    type: vm\n    os: linux\n'
+    )
+    target = create_shifter_backend_target(port=FakeDispatchPort())
+    execution_plan = RuntimeManager(target).plan(scenario)
+    serialized, diagnostics = _interpret(execution_plan.provisioning)
+    assert [d for d in diagnostics if d.is_error] == []
+    assert serialized is not None
+    assert all("image" not in d.message.lower() for d in diagnostics)
+    node_resources = [r for r in serialized["resources"].values() if r["resource_type"] == NODE_RESOURCE_TYPE]
+    assert len(node_resources) == 1
+    # The realized node carries no authored image `source` yet is admissible.
+    assert (
+        not serialized["resources"][node_resources[0]["address"]]["payload"]
+        .get("spec", {})
+        .get("node", {})
+        .get("source")
+    )
+
+
 def _content_placement(address: str, *, target: str, content_type: str = "directory") -> PlannedResource:
     return PlannedResource(
         address=address,
@@ -265,6 +291,10 @@ def _feature_binding(address: str, *, target: str, source: str = "nginx") -> Pla
         (
             lambda: _plan(_content_placement("provision.content.x", target="provision.node.ghost")),
             "shifter-provisioner.unbound-placement",
+        ),
+        (
+            lambda: _plan(_network("provision.network.lan", "lan", cidr="2001:db8:1234::/48")),
+            "shifter-provisioner.unsupported-network-address-family",
         ),
     ],
 )

@@ -210,6 +210,60 @@ infrastructure:
       - lan: 10.60.0.10
 """
 
+# A conformant SDL start state with ZERO image references (#1579): no VM node
+# declares a `source`, so the pack carries no images and the backend supplies a
+# base OS at realization. Used to prove image-bearing is optional across
+# ingestion, catalog projection, and realizability (ADR-034).
+IMAGELESS_PACK_SDL = """\
+name: __PACK_NAME__
+description: Image-less provisioning-only ACES start state (no VM source).
+nodes:
+  lan:
+    type: Switch
+  host:
+    type: VM
+    os: linux
+    resources: {ram: 512 mib, cpu: 1}
+infrastructure:
+  lan:
+    count: 1
+    properties: {cidr: 10.80.0.0/24, gateway: 10.80.0.1}
+  host:
+    count: 1
+    links: [lan]
+    properties:
+      - lan: 10.80.0.10
+"""
+
+# A conformant SDL start state whose runs are parameterized via ACES SDL
+# `variables` (#1579): the multi-run experiment unit. Also image-less.
+PARAMETERIZED_PACK_SDL = """\
+name: __PACK_NAME__
+description: Parameterized ACES scenario using SDL variables.
+variables:
+  region:
+    type: string
+    default: alpha
+    required: false
+    allowed_values: [alpha, beta]
+nodes:
+  lan:
+    type: Switch
+  host:
+    type: VM
+    os: linux
+    resources: {ram: 512 mib, cpu: 1}
+infrastructure:
+  lan:
+    count: 1
+    properties: {cidr: 10.81.0.0/24, gateway: 10.81.0.1}
+  host:
+    count: 1
+    links: [lan]
+    properties:
+      - lan: 10.81.0.10
+"""
+
 
 def conformant_pack_yaml(name: str) -> dict[str, Any]:
     return {
@@ -318,7 +372,7 @@ def make_pack():
         name = name or root.name
         pack_yaml = conformant_pack_yaml(name) if pack_yaml is ... else pack_yaml
         provenance = conformant_provenance(name) if provenance is ... else provenance
-        sdl = CONFORMANT_PACK_SDL.replace("__PACK_NAME__", name) if sdl is ... else sdl
+        sdl = CONFORMANT_PACK_SDL if sdl is ... else sdl
         if pack_yaml is not None:
             (root / "pack.yaml").write_text(yaml.safe_dump(pack_yaml), encoding="utf-8")
         docs = root / "docs"
@@ -327,9 +381,12 @@ def make_pack():
         if provenance is not None:
             (docs / "provenance-ledger.yaml").write_text(yaml.safe_dump(provenance), encoding="utf-8")
         if sdl is not None:
+            # Substitute the pack name into any SDL that carries the placeholder
+            # (a no-op for override SDL that omits it), so a pack's scenario
+            # identity matches its root regardless of which SDL body is used.
             sdl_dir = root / "sdl"
             sdl_dir.mkdir(parents=True, exist_ok=True)
-            (sdl_dir / "scenario.sdl.yaml").write_text(sdl, encoding="utf-8")
+            (sdl_dir / "scenario.sdl.yaml").write_text(sdl.replace("__PACK_NAME__", name), encoding="utf-8")
         write_pack_content_manifest(root, name)
         return root
 

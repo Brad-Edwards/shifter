@@ -1,0 +1,6505 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Shifter Platform API",
+    "version": "v1",
+    "description": "Authenticated HTTP/JSON API for Shifter platform integrations."
+  },
+  "paths": {
+    "/api/v1/audit/": {
+      "get": {
+        "operationId": "audit_list",
+        "description": "Read-only ViewSet for audit log queries. Admin only.\n\nProvides list and detail views for querying audit logs.\nSupports filtering by entity_type, entity_id, action, actor_type,\nactor_id, and date range.",
+        "parameters": [
+          {
+            "name": "ordering",
+            "required": false,
+            "in": "query",
+            "description": "Which field to use when ordering the results.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "A page number within the paginated result set.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "search",
+            "required": false,
+            "in": "query",
+            "description": "A search term.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "tags": [
+          "audit"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedAuditLogList"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
+    "/api/v1/audit/{id}/": {
+      "get": {
+        "operationId": "audit_retrieve",
+        "description": "Read-only ViewSet for audit log queries. Admin only.\n\nProvides list and detail views for querying audit logs.\nSupports filtering by entity_type, entity_id, action, actor_type,\nactor_id, and date range.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "schema": {
+              "type": "integer"
+            },
+            "description": "A unique integer value identifying this Audit Log.",
+            "required": true
+          }
+        ],
+        "tags": [
+          "audit"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditLog"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
+    "/api/v1/bootstrap/": {
+      "get": {
+        "operationId": "api_v1_bootstrap_retrieve",
+        "description": "Return the SPA session bootstrap payload for the current principal.",
+        "tags": [
+          "bootstrap"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Bootstrap"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
+    "/api/v1/cms/aces-image-mappings/": {
+      "get": {
+        "operationId": "cms_aces_image_mappings_list",
+        "description": "Return registry rows as allowlisted DTOs (disabled rows included by default).",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "include_disabled",
+            "schema": {
+              "type": "boolean",
+              "default": true
+            }
+          },
+          {
+            "in": "query",
+            "name": "provider",
+            "schema": {
+              "type": "string",
+              "maxLength": 16,
+              "minLength": 1
+            }
+          }
+        ],
+        "tags": [
+          "cms"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AcesImageMappingView"
+                  }
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        },
+        "x-required-scopes": [
+          "cms:authoring:read"
+        ]
+      },
+      "post": {
+        "operationId": "cms_aces_image_mappings_create",
+        "description": "Register (create or update) a mapping through the single validated write path.",
+        "tags": [
+          "cms"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AcesImageMappingRegister"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/AcesImageMappingRegister"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/AcesImageMappingRegister"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AcesImageMappingView"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        },
+        "x-required-scopes": [
+          "cms:authoring:write"
+        ]
+      }
+    },
+    "/api/v1/cms/aces-image-mappings/disable/": {
+      "post": {
+        "operationId": "cms_aces_image_mappings_disable_create",
+        "description": "Disable an existing mapping without deleting it (preserves audit).",
+        "tags": [
+          "cms"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AcesImageMappingDisable"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/AcesImageMappingDisable"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/AcesImageMappingDisable"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AcesImageMappingView"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        },
+        "x-required-scopes": [
+          "cms:authoring:write"
+        ]
+      }
+    },
+    "/api/v1/cms/catalog/": {
+      "get": {
+        "operationId": "cms_catalog_list",
+        "description": "Return all catalog entries as read-only presentation DTOs.",
+        "tags": [
+          "cms"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CatalogEntry"
+                  }
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        },
+        "x-required-scopes": [
+          "cms:authoring:read"
+        ]
+      }
+    },
+    "/api/v1/cms/catalog/{scenario_id}/": {
+      "get": {
+        "operationId": "cms_catalog_retrieve",
+        "description": "Return one catalog entry's read-only presentation DTO.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "scenario_id",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "cms"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatalogEntry"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        },
+        "x-required-scopes": [
+          "cms:authoring:read"
+        ]
+      }
+    },
+    "/api/v1/cms/catalog/packs/": {
+      "post": {
+        "operationId": "cms_catalog_packs_create",
+        "description": "Validate and register a pack, returning a bounded 201 summary.",
+        "tags": [
+          "cms"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PackRegistration"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/PackRegistration"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/PackRegistration"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PackRegistrationResult"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        },
+        "x-required-scopes": [
+          "cms:authoring:write"
+        ]
+      }
+    },
+    "/api/v1/cms/scenario-editor/scenarios/": {
+      "post": {
+        "operationId": "cms_scenario_editor_scenarios_create",
+        "description": "Create a custom scenario through the scenario-editor service layer.",
+        "tags": [
+          "cms"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScenarioCreate"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/ScenarioCreate"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/ScenarioCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScenarioCreated"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        },
+        "x-required-scopes": [
+          "cms:authoring:write"
+        ]
+      }
+    },
+    "/api/v1/cms/scenario-editor/scenarios/{scenario_id}/": {
+      "get": {
+        "operationId": "cms_scenario_editor_scenarios_retrieve",
+        "description": "Return full structural detail (or a read-only ACES projection).",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "scenario_id",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "cms"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScenarioDetail"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        },
+        "x-required-scopes": [
+          "cms:authoring:read"
+        ]
+      },
+      "patch": {
+        "operationId": "cms_scenario_editor_scenarios_partial_update",
+        "description": "Replace a custom scenario's definition through the service layer.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "scenario_id",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "cms"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PatchedScenarioUpdate"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/PatchedScenarioUpdate"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/PatchedScenarioUpdate"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScenarioDetail"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        },
+        "x-required-scopes": [
+          "cms:authoring:write"
+        ]
+      },
+      "delete": {
+        "operationId": "cms_scenario_editor_scenarios_destroy",
+        "description": "Soft-delete a custom scenario through the service layer.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "scenario_id",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "cms"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No response body"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        },
+        "x-required-scopes": [
+          "cms:authoring:write"
+        ]
+      }
+    },
+    "/api/v1/cms/scenario-editor/scenarios/{scenario_id}/clone/": {
+      "post": {
+        "operationId": "cms_scenario_editor_scenarios_clone_create",
+        "description": "Clone the source scenario through the service layer.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "scenario_id",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "cms"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScenarioClone"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/ScenarioClone"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/ScenarioClone"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScenarioCreated"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        },
+        "x-required-scopes": [
+          "cms:authoring:write"
+        ]
+      }
+    },
+    "/api/v1/cms/scenario-editor/scenarios/{scenario_id}/export/": {
+      "get": {
+        "operationId": "cms_scenario_editor_scenarios_export_retrieve",
+        "description": "Return the scenario's YAML rendering (metadata overlay stripped).",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "scenario_id",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "cms"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScenarioExport"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        },
+        "x-required-scopes": [
+          "cms:authoring:read"
+        ]
+      }
+    },
+    "/api/v1/cms/scenario-editor/scenarios/{scenario_id}/metadata/": {
+      "patch": {
+        "operationId": "cms_scenario_editor_scenarios_metadata_partial_update",
+        "description": "Apply an explicit desired-state metadata update through the service layer.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "scenario_id",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "cms"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PatchedScenarioMetadataUpdate"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/PatchedScenarioMetadataUpdate"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/PatchedScenarioMetadataUpdate"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScenarioMetadataState"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        },
+        "x-required-scopes": [
+          "cms:authoring:write"
+        ]
+      }
+    },
+    "/api/v1/cms/scenario-editor/scenarios/from-yaml/": {
+      "post": {
+        "operationId": "cms_scenario_editor_scenarios_from_yaml_create",
+        "description": "Create a custom scenario through the scenario-editor service layer.",
+        "tags": [
+          "cms"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/YAMLContent"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/YAMLContent"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/YAMLContent"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScenarioCreated"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        },
+        "x-required-scopes": [
+          "cms:authoring:write"
+        ]
+      }
+    },
+    "/api/v1/cms/scenario-editor/validate-yaml/": {
+      "post": {
+        "operationId": "cms_scenario_editor_validate_yaml_create",
+        "description": "Return a domain validation result for YAML editor callers.",
+        "tags": [
+          "cms"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/YAMLContent"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/YAMLContent"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/YAMLContent"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/YAMLValidationResult"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        },
+        "x-required-scopes": [
+          "cms:authoring:read"
+        ]
+      }
+    },
+    "/api/v1/dashboard/summary/": {
+      "get": {
+        "operationId": "api_v1_dashboard_summary_retrieve",
+        "description": "Return the bounded operational dashboard summary for the SPA home.",
+        "tags": [
+          "dashboard"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DashboardSummary"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
+    "/api/v1/mission-control/agents/": {
+      "get": {
+        "operationId": "api_v1_mission_control_agents_list",
+        "description": "Return agents available to the authenticated actor.",
+        "tags": [
+          "mission-control"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentListResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        },
+        "x-required-scopes": [
+          "mission_control:range:read"
+        ]
+      }
+    },
+    "/api/v1/mission-control/credentials/": {
+      "post": {
+        "operationId": "api_v1_mission_control_credentials_create",
+        "description": "Validate and persist a Mission Control credential.",
+        "tags": [
+          "mission-control"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CredentialCreate"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/CredentialCreate"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/CredentialCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CredentialCreateResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        },
+        "x-required-scopes": [
+          "mission_control:credentials:write"
+        ]
+      }
+    },
+    "/api/v1/mission-control/credentials/{credential_id}/delete/": {
+      "post": {
+        "operationId": "api_v1_mission_control_credentials_delete",
+        "description": "Delete a credential visible to the authenticated actor.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "credential_id",
+            "schema": {
+              "type": "integer"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "mission-control"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        },
+        "x-required-scopes": [
+          "mission_control:credentials:write"
+        ]
+      }
+    },
+    "/api/v1/mission-control/guacamole/bootstrap/{request_id}/": {
+      "get": {
+        "operationId": "api_v1_mission_control_guacamole_bootstrap_status_retrieve",
+        "description": "Return current status for a queued Guacamole bootstrap request.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "mission-control"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuacamoleBootstrapStatus"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuacamoleBootstrapStatus"
+                }
+              }
+            },
+            "description": ""
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuacamoleBootstrapStatus"
+                }
+              }
+            },
+            "description": ""
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuacamoleBootstrapStatus"
+                }
+              }
+            },
+            "description": ""
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuacamoleBootstrapStatus"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LegacyError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        },
+        "x-required-scopes": [
+          "mission_control:guacamole:read"
+        ]
+      }
+    },
+    "/api/v1/mission-control/guacamole/bootstrap/{request_id}/open/": {
+      "get": {
+        "operationId": "api_v1_mission_control_guacamole_bootstrap_open_retrieve",
+        "description": "Render an opener page that polls until the bootstrap URL is ready.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "mission-control"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        },
+        "x-required-scopes": [
+          "mission_control:guacamole:read"
+        ]
+      }
+    },
+    "/api/v1/mission-control/guacamole/rdp-url/": {
+      "post": {
+        "operationId": "api_v1_mission_control_guacamole_rdp_url",
+        "description": "Queue an RDP bootstrap request for a range instance.",
+        "tags": [
+          "mission-control"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GuacamoleInstance"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/GuacamoleInstance"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/GuacamoleInstance"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuacamoleBootstrapQueued"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LegacyError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        },
+        "x-required-scopes": [
+          "mission_control:guacamole:read"
+        ]
+      }
+    },
+    "/api/v1/mission-control/guacamole/ssh-url/": {
+      "post": {
+        "operationId": "api_v1_mission_control_guacamole_ssh_url",
+        "description": "Queue an SSH bootstrap request for a range instance.",
+        "tags": [
+          "mission-control"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GuacamoleInstance"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/GuacamoleInstance"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/GuacamoleInstance"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuacamoleBootstrapQueued"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LegacyError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        },
+        "x-required-scopes": [
+          "mission_control:guacamole:read"
+        ]
+      }
+    },
+    "/api/v1/mission-control/ngfw/": {
+      "post": {
+        "operationId": "api_v1_mission_control_ngfw_create",
+        "description": "Start NGFW provisioning for the authenticated actor.",
+        "tags": [
+          "mission-control"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NGFWCreate"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/NGFWCreate"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/NGFWCreate"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NGFWCreateResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Request was throttled."
+          }
+        },
+        "x-required-scopes": [
+          "mission_control:ngfw:write"
+        ]
+      }
+    },
+    "/api/v1/mission-control/ngfw/{app_id}/destroy/": {
+      "post": {
+        "operationId": "api_v1_mission_control_ngfw_destroy",
+        "description": "Start NGFW deprovisioning for the requested app id.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "app_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "mission-control"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NGFWDestroy"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/NGFWDestroy"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/NGFWDestroy"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NGFWDestroyResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        },
+        "x-required-scopes": [
+          "mission_control:ngfw:write"
+        ]
+      }
+    },
+    "/api/v1/mission-control/ngfw/{app_id}/ssh-url/": {
+      "post": {
+        "operationId": "api_v1_mission_control_ngfw_ssh_url",
+        "description": "Queue an SSH bootstrap request for an NGFW instance.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "app_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "mission-control"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuacamoleBootstrapQueued"
+                }
+              }
+            },
+            "description": ""
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LegacyError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        },
+        "x-required-scopes": [
+          "mission_control:guacamole:read"
+        ]
+      }
+    },
+    "/api/v1/mission-control/ngfw/list/": {
+      "get": {
+        "operationId": "api_v1_mission_control_ngfw_list",
+        "description": "Return NGFWs owned by the authenticated actor.",
+        "tags": [
+          "mission-control"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NGFWListResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        },
+        "x-required-scopes": [
+          "mission_control:ngfw:read"
+        ]
+      }
+    },
+    "/api/v1/mission-control/range/": {
+      "get": {
+        "operationId": "api_v1_mission_control_range_retrieve",
+        "description": "Return the active range and connection URLs for the request user.",
+        "tags": [
+          "mission-control"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CurrentRangeResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        },
+        "x-required-scopes": [
+          "mission_control:range:read"
+        ]
+      }
+    },
+    "/api/v1/mission-control/range/{request_id}/aces/operation-receipts/": {
+      "get": {
+        "operationId": "api_v1_mission_control_aces_operation_receipts_list",
+        "description": "Return newest-first redacted records for the owned range's request_id.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "mission-control"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AcesOperationRecordListResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        },
+        "x-required-scopes": [
+          "mission_control:range:read"
+        ]
+      }
+    },
+    "/api/v1/mission-control/range/{request_id}/aces/operation-status/": {
+      "get": {
+        "operationId": "api_v1_mission_control_aces_operation_status_list",
+        "description": "Return newest-first redacted records for the owned range's request_id.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "mission-control"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AcesOperationRecordListResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        },
+        "x-required-scopes": [
+          "mission_control:range:read"
+        ]
+      }
+    },
+    "/api/v1/mission-control/range/{request_id}/aces/participant-implementations/": {
+      "get": {
+        "operationId": "api_v1_mission_control_aces_participant_implementations_list",
+        "description": "Return newest-first redacted records for the owned range's request_id.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "mission-control"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AcesParticipantRuntimeRecordListResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        },
+        "x-required-scopes": [
+          "mission_control:range:read"
+        ]
+      }
+    },
+    "/api/v1/mission-control/range/{request_id}/aces/participant-runtimes/": {
+      "get": {
+        "operationId": "api_v1_mission_control_aces_participant_runtimes_list",
+        "description": "Return newest-first redacted records for the owned range's request_id.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "mission-control"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AcesParticipantRuntimeRecordListResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        },
+        "x-required-scopes": [
+          "mission_control:range:read"
+        ]
+      }
+    },
+    "/api/v1/mission-control/range/{request_id}/aces/snapshots/": {
+      "get": {
+        "operationId": "api_v1_mission_control_aces_runtime_snapshots_list",
+        "description": "Return newest-first redacted records for the owned range's request_id.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "mission-control"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AcesOperationRecordListResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        },
+        "x-required-scopes": [
+          "mission_control:range:read"
+        ]
+      }
+    },
+    "/api/v1/mission-control/range/cancel/": {
+      "post": {
+        "operationId": "api_v1_mission_control_range_cancel",
+        "description": "Run the configured range lifecycle service method.",
+        "tags": [
+          "mission-control"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RangeLifecycle"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/RangeLifecycle"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/RangeLifecycle"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        },
+        "x-required-scopes": [
+          "mission_control:range:write"
+        ]
+      }
+    },
+    "/api/v1/mission-control/range/destroy/": {
+      "post": {
+        "operationId": "api_v1_mission_control_range_destroy",
+        "description": "Run the configured range lifecycle service method.",
+        "tags": [
+          "mission-control"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RangeLifecycle"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/RangeLifecycle"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/RangeLifecycle"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        },
+        "x-required-scopes": [
+          "mission_control:range:write"
+        ]
+      }
+    },
+    "/api/v1/mission-control/range/launch/": {
+      "post": {
+        "operationId": "api_v1_mission_control_range_launch",
+        "description": "Validate input and create a range for the authenticated actor.",
+        "tags": [
+          "mission-control"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LaunchRange"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/LaunchRange"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/LaunchRange"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LaunchRangeResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Request was throttled."
+          }
+        },
+        "x-required-scopes": [
+          "mission_control:range:write"
+        ]
+      }
+    },
+    "/api/v1/mission-control/range/pause/": {
+      "post": {
+        "operationId": "api_v1_mission_control_range_pause",
+        "description": "Run the configured range lifecycle service method.",
+        "tags": [
+          "mission-control"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RangeLifecycle"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/RangeLifecycle"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/RangeLifecycle"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        },
+        "x-required-scopes": [
+          "mission_control:range:write"
+        ]
+      }
+    },
+    "/api/v1/mission-control/range/resume/": {
+      "post": {
+        "operationId": "api_v1_mission_control_range_resume",
+        "description": "Run the configured range lifecycle service method.",
+        "tags": [
+          "mission-control"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RangeLifecycle"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/RangeLifecycle"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/RangeLifecycle"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        },
+        "x-required-scopes": [
+          "mission_control:range:write"
+        ]
+      }
+    },
+    "/api/v1/mission-control/ranges/": {
+      "get": {
+        "operationId": "api_v1_mission_control_ranges_list",
+        "description": "Return the authenticated actor's Mission Control range history, newest first.",
+        "tags": [
+          "mission-control"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RangeHistoryResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        },
+        "x-required-scopes": [
+          "mission_control:range:read"
+        ]
+      }
+    },
+    "/api/v1/mission-control/scenarios/": {
+      "get": {
+        "operationId": "api_v1_mission_control_scenarios_list",
+        "description": "Return scenarios available to the authenticated actor.",
+        "tags": [
+          "mission-control"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScenarioListResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        },
+        "x-required-scopes": [
+          "mission_control:range:read"
+        ]
+      }
+    },
+    "/api/v1/mission-control/upload/cancel/": {
+      "post": {
+        "operationId": "api_v1_mission_control_upload_cancel",
+        "description": "Cancel a validated current upload and clear the session marker.",
+        "tags": [
+          "mission-control"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UploadCancel"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/UploadCancel"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/UploadCancel"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        },
+        "x-required-scopes": [
+          "mission_control:upload:write"
+        ]
+      }
+    },
+    "/api/v1/mission-control/upload/complete/": {
+      "post": {
+        "operationId": "api_v1_mission_control_upload_complete",
+        "description": "Finalize a completed upload and clear the session upload marker.",
+        "tags": [
+          "mission-control"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UploadComplete"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/UploadComplete"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/UploadComplete"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadCompleteResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        },
+        "x-required-scopes": [
+          "mission_control:upload:write"
+        ]
+      }
+    },
+    "/api/v1/mission-control/upload/initiate/": {
+      "post": {
+        "operationId": "api_v1_mission_control_upload_initiate",
+        "description": "Create an upload session and presigned destination for an agent.",
+        "tags": [
+          "mission-control"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UploadInitiate"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/UploadInitiate"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/UploadInitiate"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadInitiateResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        },
+        "x-required-scopes": [
+          "mission_control:upload:write"
+        ]
+      }
+    },
+    "/api/v1/risks/": {
+      "get": {
+        "operationId": "risks_list",
+        "description": "ViewSet for Risk CRUD operations.\n\nAccepts a staff/superuser session or a platform API token scoped\n``risk:read`` (safe methods) / ``risk:write`` (mutations).",
+        "parameters": [
+          {
+            "name": "ordering",
+            "required": false,
+            "in": "query",
+            "description": "Which field to use when ordering the results.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "A page number within the paginated result set.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "search",
+            "required": false,
+            "in": "query",
+            "description": "A search term.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "tags": [
+          "risks"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedRiskList"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        },
+        "x-required-scopes": [
+          "risk:read"
+        ]
+      },
+      "post": {
+        "operationId": "risks_create",
+        "description": "Create a new risk with audit logging.",
+        "tags": [
+          "risks"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RiskCreate"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/RiskCreate"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/RiskCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RiskCreate"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        },
+        "x-required-scopes": [
+          "risk:write"
+        ]
+      }
+    },
+    "/api/v1/risks/{id}/": {
+      "get": {
+        "operationId": "risks_retrieve",
+        "description": "ViewSet for Risk CRUD operations.\n\nAccepts a staff/superuser session or a platform API token scoped\n``risk:read`` (safe methods) / ``risk:write`` (mutations).",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "schema": {
+              "type": "integer"
+            },
+            "description": "A unique integer value identifying this risk.",
+            "required": true
+          }
+        ],
+        "tags": [
+          "risks"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Risk"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        },
+        "x-required-scopes": [
+          "risk:read"
+        ]
+      },
+      "put": {
+        "operationId": "risks_update",
+        "description": "Update a risk with audit logging.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "schema": {
+              "type": "integer"
+            },
+            "description": "A unique integer value identifying this risk.",
+            "required": true
+          }
+        ],
+        "tags": [
+          "risks"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RiskUpdate"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/RiskUpdate"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/RiskUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RiskUpdate"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        },
+        "x-required-scopes": [
+          "risk:write"
+        ]
+      },
+      "patch": {
+        "operationId": "risks_partial_update",
+        "description": "ViewSet for Risk CRUD operations.\n\nAccepts a staff/superuser session or a platform API token scoped\n``risk:read`` (safe methods) / ``risk:write`` (mutations).",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "schema": {
+              "type": "integer"
+            },
+            "description": "A unique integer value identifying this risk.",
+            "required": true
+          }
+        ],
+        "tags": [
+          "risks"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PatchedRiskUpdate"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/PatchedRiskUpdate"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/PatchedRiskUpdate"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RiskUpdate"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        },
+        "x-required-scopes": [
+          "risk:write"
+        ]
+      },
+      "delete": {
+        "operationId": "risks_destroy",
+        "description": "Soft-delete a risk.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "schema": {
+              "type": "integer"
+            },
+            "description": "A unique integer value identifying this risk.",
+            "required": true
+          }
+        ],
+        "tags": [
+          "risks"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No response body"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        },
+        "x-required-scopes": [
+          "risk:write"
+        ]
+      }
+    },
+    "/api/v1/risks/{id}/restore/": {
+      "post": {
+        "operationId": "risks_restore_create",
+        "description": "Restore a soft-deleted risk.\n\nBypasses ``self.get_object()`` (which uses the active-only\nSoftDeleteManager and would 404 a deleted risk) and looks the\ntarget up via ``Risk.all_objects`` directly. Object-level\npermission checks are still enforced explicitly because we lose\nthe ``check_object_permissions()`` call that ``self.get_object()``\nwould have run on our behalf.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "schema": {
+              "type": "integer"
+            },
+            "description": "A unique integer value identifying this risk.",
+            "required": true
+          }
+        ],
+        "tags": [
+          "risks"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Risk"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/Risk"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Risk"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Risk"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        },
+        "x-required-scopes": [
+          "risk:write"
+        ]
+      }
+    },
+    "/api/v1/risks/{risk_pk}/comments/": {
+      "get": {
+        "operationId": "risks_comments_list",
+        "description": "List comments for a risk.\n\nWith ``?include_deleted=true`` the parent ``Risk`` is also looked\nup via ``all_objects`` so comment history on a soft-deleted risk\nis reachable; default-active for both parent and children\notherwise.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "risk_pk",
+            "schema": {
+              "type": "integer"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "risks"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Comment"
+                  }
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        },
+        "x-required-scopes": [
+          "risk:read"
+        ]
+      },
+      "post": {
+        "operationId": "risks_comments_create",
+        "description": "Create a comment on a risk.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "risk_pk",
+            "schema": {
+              "type": "integer"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "risks"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Comment"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/Comment"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Comment"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Comment"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        },
+        "x-required-scopes": [
+          "risk:write"
+        ]
+      }
+    },
+    "/api/v1/risks/{risk_pk}/comments/{id}/": {
+      "delete": {
+        "operationId": "risks_comments_destroy",
+        "description": "Soft-delete a comment.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "schema": {
+              "type": "integer"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "risk_pk",
+            "schema": {
+              "type": "integer"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "risks"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No response body"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        },
+        "x-required-scopes": [
+          "risk:write"
+        ]
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AcesCatalogFields": {
+        "type": "object",
+        "description": "Read-only, allowlisted ACES package-source presentation fields.\n\nEvery field is bounded provenance/identity metadata. This serializer never\nexposes raw ACES SDL, imported module bodies, generated content, flags,\ncredentials, presigned URLs, provider payloads, or runtime config.",
+        "properties": {
+          "source_kind": {
+            "type": "string",
+            "readOnly": true
+          },
+          "contract_kind": {
+            "type": "string",
+            "readOnly": true
+          },
+          "contract_profile": {
+            "type": "string",
+            "readOnly": true
+          },
+          "package_ref": {
+            "type": "string",
+            "readOnly": true
+          },
+          "package_version": {
+            "type": "string",
+            "readOnly": true
+          },
+          "package_digest": {
+            "type": "string",
+            "readOnly": true
+          },
+          "lock_ref": {
+            "type": "string",
+            "readOnly": true
+          },
+          "lock_digest": {
+            "type": "string",
+            "readOnly": true
+          },
+          "conformance_status": {
+            "type": "string",
+            "readOnly": true
+          },
+          "conformance_report_ref": {
+            "type": "string",
+            "readOnly": true
+          },
+          "provenance_summary": {
+            "type": "object",
+            "additionalProperties": {},
+            "readOnly": true
+          }
+        },
+        "required": [
+          "conformance_report_ref",
+          "conformance_status",
+          "contract_kind",
+          "contract_profile",
+          "lock_digest",
+          "lock_ref",
+          "package_digest",
+          "package_ref",
+          "package_version",
+          "provenance_summary",
+          "source_kind"
+        ]
+      },
+      "AcesImageMappingDisable": {
+        "type": "object",
+        "description": "Shape validation for a disable request (natural key only).",
+        "properties": {
+          "provider": {
+            "type": "string",
+            "maxLength": 16
+          },
+          "source_name": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "source_version": {
+            "type": "string",
+            "default": "",
+            "maxLength": 100
+          }
+        },
+        "required": [
+          "provider",
+          "source_name"
+        ]
+      },
+      "AcesImageMappingRegister": {
+        "type": "object",
+        "description": "Shape validation for a register/upsert request; the service is final validator.\n\nProvider-choice validity, natural-key rules, and soft-disable semantics stay\nin ``engine.services`` so the API and management command cannot drift; this\nserializer only enforces HTTP shape (required fields, max lengths, positive\ndisk size, boolean).",
+        "properties": {
+          "provider": {
+            "type": "string",
+            "maxLength": 16
+          },
+          "source_name": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "image_ref": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "source_version": {
+            "type": "string",
+            "default": "",
+            "maxLength": 100
+          },
+          "machine_type": {
+            "type": "string",
+            "default": "",
+            "maxLength": 100
+          },
+          "disk_size_gb": {
+            "type": "integer",
+            "minimum": 1,
+            "nullable": true
+          },
+          "disk_type": {
+            "type": "string",
+            "default": "",
+            "maxLength": 100
+          },
+          "enabled": {
+            "type": "boolean",
+            "default": true
+          },
+          "notes": {
+            "type": "string",
+            "default": ""
+          }
+        },
+        "required": [
+          "image_ref",
+          "provider",
+          "source_name"
+        ]
+      },
+      "AcesImageMappingView": {
+        "type": "object",
+        "description": "Allowlisted read projection shared by the register, list, and disable responses.\n\nField-for-field with ``engine.services.AcesImageMappingView`` so it renders\neither that DTO (list/disable) or the model instance the upsert returns.",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "readOnly": true
+          },
+          "provider": {
+            "type": "string",
+            "readOnly": true
+          },
+          "source_name": {
+            "type": "string",
+            "readOnly": true
+          },
+          "source_version": {
+            "type": "string",
+            "readOnly": true
+          },
+          "image_ref": {
+            "type": "string",
+            "readOnly": true
+          },
+          "machine_type": {
+            "type": "string",
+            "readOnly": true
+          },
+          "disk_size_gb": {
+            "type": "integer",
+            "readOnly": true,
+            "nullable": true
+          },
+          "disk_type": {
+            "type": "string",
+            "readOnly": true
+          },
+          "enabled": {
+            "type": "boolean",
+            "readOnly": true
+          },
+          "notes": {
+            "type": "string",
+            "readOnly": true
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true
+          }
+        },
+        "required": [
+          "created_at",
+          "disk_size_gb",
+          "disk_type",
+          "enabled",
+          "id",
+          "image_ref",
+          "machine_type",
+          "notes",
+          "provider",
+          "source_name",
+          "source_version",
+          "updated_at"
+        ]
+      },
+      "AcesOperationRecord": {
+        "type": "object",
+        "description": "Read-only projection of one ACES operation sidecar record (#1275).\n\nSerializes an ``AcesOperationRecordProjection`` (already redacted by the\nshared read seam); it never touches the raw model ``payload``.",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "readOnly": true
+          },
+          "request_id": {
+            "type": "string",
+            "format": "uuid",
+            "readOnly": true
+          },
+          "range_id": {
+            "type": "string",
+            "format": "uuid",
+            "readOnly": true,
+            "nullable": true
+          },
+          "record_kind": {
+            "type": "string",
+            "readOnly": true
+          },
+          "contract_kind": {
+            "type": "string",
+            "readOnly": true
+          },
+          "contract_version": {
+            "type": "string",
+            "readOnly": true
+          },
+          "contract_profile": {
+            "type": "string",
+            "readOnly": true
+          },
+          "source_timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true
+          },
+          "payload_digest": {
+            "type": "string",
+            "readOnly": true
+          },
+          "payload": {
+            "type": "object",
+            "additionalProperties": {},
+            "readOnly": true
+          },
+          "diagnostic_refs": {
+            "type": "object",
+            "additionalProperties": {},
+            "readOnly": true
+          }
+        },
+        "required": [
+          "contract_kind",
+          "contract_profile",
+          "contract_version",
+          "created_at",
+          "diagnostic_refs",
+          "id",
+          "payload",
+          "payload_digest",
+          "range_id",
+          "record_kind",
+          "request_id",
+          "source_timestamp",
+          "updated_at"
+        ]
+      },
+      "AcesOperationRecordListResponse": {
+        "type": "object",
+        "description": "Response body shared by ``mission_control.api.aces`` list endpoints.",
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "record_kind": {
+            "type": "string"
+          },
+          "results": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AcesOperationRecord"
+            }
+          }
+        },
+        "required": [
+          "record_kind",
+          "request_id",
+          "results"
+        ]
+      },
+      "AcesParticipantRuntimeRecord": {
+        "type": "object",
+        "description": "Read-only projection of one ACES participant-runtime sidecar record (#1288).\n\nSerializes an ``AcesParticipantRuntimeRecordProjection`` (already redacted\nby the shared read seam); it never touches the raw model ``payload``.",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "readOnly": true
+          },
+          "request_id": {
+            "type": "string",
+            "format": "uuid",
+            "readOnly": true
+          },
+          "range_id": {
+            "type": "string",
+            "format": "uuid",
+            "readOnly": true,
+            "nullable": true
+          },
+          "range_instance_id": {
+            "type": "string",
+            "format": "uuid",
+            "readOnly": true,
+            "nullable": true
+          },
+          "participant_ref": {
+            "type": "string",
+            "readOnly": true
+          },
+          "record_kind": {
+            "type": "string",
+            "readOnly": true
+          },
+          "contract_kind": {
+            "type": "string",
+            "readOnly": true
+          },
+          "contract_version": {
+            "type": "string",
+            "readOnly": true
+          },
+          "contract_profile": {
+            "type": "string",
+            "readOnly": true
+          },
+          "participant_runtime_profile": {
+            "type": "string",
+            "readOnly": true
+          },
+          "source_timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true
+          },
+          "payload_digest": {
+            "type": "string",
+            "readOnly": true
+          },
+          "payload": {
+            "type": "object",
+            "additionalProperties": {},
+            "readOnly": true
+          },
+          "diagnostic_refs": {
+            "type": "object",
+            "additionalProperties": {},
+            "readOnly": true
+          }
+        },
+        "required": [
+          "contract_kind",
+          "contract_profile",
+          "contract_version",
+          "created_at",
+          "diagnostic_refs",
+          "id",
+          "participant_ref",
+          "participant_runtime_profile",
+          "payload",
+          "payload_digest",
+          "range_id",
+          "range_instance_id",
+          "record_kind",
+          "request_id",
+          "source_timestamp",
+          "updated_at"
+        ]
+      },
+      "AcesParticipantRuntimeRecordListResponse": {
+        "type": "object",
+        "description": "Response body shared by ``mission_control.api.aces_participant`` list endpoints.",
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "record_kind": {
+            "type": "string"
+          },
+          "results": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AcesParticipantRuntimeRecord"
+            }
+          }
+        },
+        "required": [
+          "record_kind",
+          "request_id",
+          "results"
+        ]
+      },
+      "ActionEnum": {
+        "enum": [
+          "create",
+          "update",
+          "delete",
+          "restore",
+          "close",
+          "reopen",
+          "login",
+          "logout",
+          "login_failed",
+          "access_denied",
+          "role_sync",
+          "connect",
+          "disconnect",
+          "provision",
+          "deprovision",
+          "ready",
+          "failed",
+          "pause",
+          "resume",
+          "cancel",
+          "recover",
+          "spare_provision"
+        ],
+        "type": "string",
+        "description": "* `create` - Create\n* `update` - Update\n* `delete` - Delete\n* `restore` - Restore\n* `close` - Close\n* `reopen` - Reopen\n* `login` - Login\n* `logout` - Logout\n* `login_failed` - Login Failed\n* `access_denied` - Access Denied\n* `role_sync` - Role Sync\n* `connect` - Connect\n* `disconnect` - Disconnect\n* `provision` - Provision\n* `deprovision` - Deprovision\n* `ready` - Ready\n* `failed` - Failed\n* `pause` - Pause\n* `resume` - Resume\n* `cancel` - Cancel\n* `recover` - Recover\n* `spare_provision` - Spare Provision"
+      },
+      "ActorTypeEnum": {
+        "enum": [
+          "user",
+          "apikey",
+          "system",
+          "cognito"
+        ],
+        "type": "string",
+        "description": "* `user` - User\n* `apikey` - API Key\n* `system` - System\n* `cognito` - Cognito"
+      },
+      "AgentListItem": {
+        "type": "object",
+        "description": "One entry from ``cms.services.list_agents`` (``_agent_projection_dict``).",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "os_name": {
+            "type": "string"
+          },
+          "os_slug": {
+            "type": "string"
+          },
+          "file_size_mb": {
+            "type": "number",
+            "format": "double"
+          },
+          "original_filename": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "agent_type": {
+            "$ref": "#/components/schemas/AgentTypeEnum"
+          },
+          "agent_type_display": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "agent_type",
+          "agent_type_display",
+          "created_at",
+          "file_size_mb",
+          "id",
+          "name",
+          "original_filename",
+          "os_name",
+          "os_slug"
+        ]
+      },
+      "AgentListResponse": {
+        "type": "object",
+        "description": "Response body for ``AgentListView.get``.",
+        "properties": {
+          "agents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentListItem"
+            }
+          }
+        },
+        "required": [
+          "agents"
+        ]
+      },
+      "AgentTypeEnum": {
+        "enum": [
+          "xdr",
+          "xdr_collector",
+          "cloud_identity_engine"
+        ],
+        "type": "string",
+        "description": "* `xdr` - xdr\n* `xdr_collector` - xdr_collector\n* `cloud_identity_engine` - cloud_identity_engine"
+      },
+      "ApiError": {
+        "type": "object",
+        "description": "Schema-only component for the canonical platform API error envelope.\n\nMirrors :func:`shared.api.errors.api_exception_handler` /\n:func:`shared.api.errors.api_error_response` output. It describes the wire\ncontract; it never runs at request time.",
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/ApiErrorBody"
+          }
+        },
+        "required": [
+          "error"
+        ]
+      },
+      "ApiErrorBody": {
+        "type": "object",
+        "description": "Schema-only description of the ``shared.api.errors`` envelope body.",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Stable machine-readable error code."
+          },
+          "message": {
+            "type": "string",
+            "description": "Safe, user-facing error message."
+          },
+          "details": {
+            "description": "Optional structured field-level detail (present on validation errors)."
+          },
+          "request_id": {
+            "type": "string",
+            "description": "Correlation id echoed from the X-Request-ID request header, when present."
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ]
+      },
+      "AuditLog": {
+        "type": "object",
+        "description": "Serializer for AuditLog model (read-only).",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "readOnly": true
+          },
+          "entity_type": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/EntityTypeEnum"
+              }
+            ],
+            "readOnly": true
+          },
+          "entity_id": {
+            "type": "integer",
+            "readOnly": true
+          },
+          "action": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ActionEnum"
+              }
+            ],
+            "readOnly": true
+          },
+          "actor_type": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ActorTypeEnum"
+              }
+            ],
+            "readOnly": true
+          },
+          "actor_id": {
+            "type": "integer",
+            "readOnly": true,
+            "nullable": true
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true
+          },
+          "previous_state": {
+            "readOnly": true,
+            "nullable": true
+          },
+          "new_state": {
+            "readOnly": true,
+            "nullable": true
+          },
+          "context": {
+            "type": "string",
+            "readOnly": true,
+            "description": "Optional reason or notes"
+          },
+          "source_ip": {
+            "type": "string",
+            "readOnly": true,
+            "nullable": true
+          },
+          "user_agent": {
+            "type": "string",
+            "readOnly": true
+          },
+          "request_id": {
+            "type": "string",
+            "readOnly": true
+          }
+        },
+        "required": [
+          "action",
+          "actor_id",
+          "actor_type",
+          "context",
+          "entity_id",
+          "entity_type",
+          "id",
+          "new_state",
+          "previous_state",
+          "request_id",
+          "source_ip",
+          "timestamp",
+          "user_agent"
+        ]
+      },
+      "Bootstrap": {
+        "type": "object",
+        "description": "Top-level SPA bootstrap payload.",
+        "properties": {
+          "principal": {
+            "$ref": "#/components/schemas/BootstrapPrincipal"
+          },
+          "permissions": {
+            "$ref": "#/components/schemas/BootstrapPermissions"
+          },
+          "modes": {
+            "$ref": "#/components/schemas/BootstrapModes"
+          },
+          "feature_flags": {
+            "$ref": "#/components/schemas/BootstrapFeatureFlags"
+          }
+        },
+        "required": [
+          "feature_flags",
+          "modes",
+          "permissions",
+          "principal"
+        ]
+      },
+      "BootstrapFeatureFlags": {
+        "type": "object",
+        "description": "Server-owned feature flags surfaced to the SPA (no secret values).",
+        "properties": {
+          "risk_register_spa": {
+            "type": "boolean"
+          },
+          "platform_spa": {
+            "type": "boolean"
+          },
+          "mission_control_spa": {
+            "type": "boolean"
+          },
+          "scenario_editor_spa": {
+            "type": "boolean"
+          },
+          "aces_native_provisioning": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "aces_native_provisioning",
+          "mission_control_spa",
+          "platform_spa",
+          "risk_register_spa",
+          "scenario_editor_spa"
+        ]
+      },
+      "BootstrapModes": {
+        "type": "object",
+        "description": "UX mode eligibility (participant/operator). Not an authorization fact.",
+        "properties": {
+          "participant": {
+            "type": "boolean"
+          },
+          "operator": {
+            "type": "boolean"
+          },
+          "default": {
+            "$ref": "#/components/schemas/DefaultEnum"
+          }
+        },
+        "required": [
+          "default",
+          "operator",
+          "participant"
+        ]
+      },
+      "BootstrapPermissions": {
+        "type": "object",
+        "description": "Advisory authorization flags mirroring the template context processors.",
+        "properties": {
+          "can_access_risk_register": {
+            "type": "boolean"
+          },
+          "can_access_threat_research": {
+            "type": "boolean"
+          },
+          "is_ctf_organizer": {
+            "type": "boolean"
+          },
+          "is_ctf_participant": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "can_access_risk_register",
+          "can_access_threat_research",
+          "is_ctf_organizer",
+          "is_ctf_participant"
+        ]
+      },
+      "BootstrapPrincipal": {
+        "type": "object",
+        "description": "Authenticated principal summary for the SPA shell.",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "nullable": true
+          },
+          "username": {
+            "type": "string"
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "is_authenticated": {
+            "type": "boolean"
+          },
+          "is_staff": {
+            "type": "boolean"
+          },
+          "is_superuser": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "display_name",
+          "id",
+          "is_authenticated",
+          "is_staff",
+          "is_superuser",
+          "username"
+        ]
+      },
+      "CatalogEntry": {
+        "type": "object",
+        "description": "Read-only catalog entry projection for the CMS catalog API.\n\nSerializes the presentation DTO from ``cms.scenarios.catalog_presentation``.\n``aces`` is present only for ACES package-backed entries; legacy YAML/DB\nentries serialize it as ``null``.",
+        "properties": {
+          "id": {
+            "type": "string",
+            "readOnly": true
+          },
+          "name": {
+            "type": "string",
+            "readOnly": true
+          },
+          "scenario_type": {
+            "type": "string",
+            "readOnly": true
+          },
+          "source": {
+            "type": "string",
+            "readOnly": true
+          },
+          "is_default": {
+            "type": "boolean",
+            "readOnly": true
+          },
+          "enabled": {
+            "type": "boolean",
+            "readOnly": true
+          },
+          "staff_only": {
+            "type": "boolean",
+            "readOnly": true
+          },
+          "launchable": {
+            "type": "boolean",
+            "readOnly": true
+          },
+          "aces": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AcesCatalogFields"
+              }
+            ],
+            "readOnly": true,
+            "nullable": true
+          }
+        },
+        "required": [
+          "aces",
+          "enabled",
+          "id",
+          "is_default",
+          "launchable",
+          "name",
+          "scenario_type",
+          "source",
+          "staff_only"
+        ]
+      },
+      "Comment": {
+        "type": "object",
+        "description": "Serializer for Comment model.",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "readOnly": true
+          },
+          "risk_id": {
+            "type": "integer",
+            "readOnly": true
+          },
+          "content": {
+            "type": "string"
+          },
+          "author": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CommentAuthor"
+              }
+            ],
+            "readOnly": true
+          },
+          "parent_comment_id": {
+            "type": "integer",
+            "readOnly": true,
+            "nullable": true
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true
+          }
+        },
+        "required": [
+          "author",
+          "content",
+          "created_at",
+          "id",
+          "parent_comment_id",
+          "risk_id"
+        ]
+      },
+      "CommentAuthor": {
+        "type": "object",
+        "description": "Serializer for comment author info.",
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "type"
+        ]
+      },
+      "ConnectionUrl": {
+        "type": "object",
+        "description": "One entry from ``mission_control.utils.build_connection_urls``.",
+        "properties": {
+          "uuid": {
+            "type": "string",
+            "nullable": true
+          },
+          "terminal_url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "terminal_url",
+          "uuid"
+        ]
+      },
+      "CredentialCreate": {
+        "type": "object",
+        "description": "Validate credential creation requests before schema-specific validation.",
+        "properties": {
+          "credential_type": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "expires_at": {
+            "type": "string",
+            "nullable": true
+          },
+          "scm_folder_name": {
+            "type": "string"
+          },
+          "scm_pin_id": {
+            "type": "string"
+          },
+          "scm_pin_value": {
+            "type": "string"
+          },
+          "sls_region": {
+            "type": "string"
+          },
+          "authcode": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "credential_type"
+        ]
+      },
+      "CredentialCreateResponse": {
+        "type": "object",
+        "description": "Response body for ``CredentialCreateView.post`` (HTTP 201).",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "credential_type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "credential_type",
+          "id",
+          "name"
+        ]
+      },
+      "CurrentRangeResponse": {
+        "type": "object",
+        "description": "Response body for ``CurrentRangeView.get``.",
+        "properties": {
+          "has_range": {
+            "type": "boolean"
+          },
+          "range": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RangePresentation"
+              }
+            ],
+            "nullable": true
+          },
+          "connection_urls": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConnectionUrl"
+            }
+          },
+          "aces_projection": {
+            "type": "object",
+            "additionalProperties": {},
+            "nullable": true
+          },
+          "aces_participant_runtime": {
+            "type": "object",
+            "additionalProperties": {},
+            "nullable": true
+          }
+        },
+        "required": [
+          "aces_participant_runtime",
+          "aces_projection",
+          "connection_urls",
+          "has_range",
+          "range"
+        ]
+      },
+      "DCConfig": {
+        "type": "object",
+        "description": "Domain-controller configuration, mirroring ``schema.DCConfig``.",
+        "properties": {
+          "domain_name": {
+            "type": "string"
+          },
+          "netbios_name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "domain_name",
+          "netbios_name"
+        ]
+      },
+      "DashboardEvent": {
+        "type": "object",
+        "description": "Bounded active-event summary.",
+        "properties": {
+          "present": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "name",
+          "present"
+        ]
+      },
+      "DashboardRange": {
+        "type": "object",
+        "description": "Bounded active-range summary.",
+        "properties": {
+          "present": {
+            "type": "boolean"
+          },
+          "status": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "present",
+          "status"
+        ]
+      },
+      "DashboardRiskRegister": {
+        "type": "object",
+        "description": "Risk-register load summary, gated by advisory access.",
+        "properties": {
+          "accessible": {
+            "type": "boolean"
+          },
+          "open_count": {
+            "type": "integer",
+            "nullable": true
+          }
+        },
+        "required": [
+          "accessible",
+          "open_count"
+        ]
+      },
+      "DashboardSummary": {
+        "type": "object",
+        "description": "Top-level dashboard summary payload.",
+        "properties": {
+          "active_range": {
+            "$ref": "#/components/schemas/DashboardRange"
+          },
+          "active_event": {
+            "$ref": "#/components/schemas/DashboardEvent"
+          },
+          "risk_register": {
+            "$ref": "#/components/schemas/DashboardRiskRegister"
+          }
+        },
+        "required": [
+          "active_event",
+          "active_range",
+          "risk_register"
+        ]
+      },
+      "DefaultEnum": {
+        "enum": [
+          "participant",
+          "operator"
+        ],
+        "type": "string",
+        "description": "* `participant` - participant\n* `operator` - operator"
+      },
+      "EntityTypeEnum": {
+        "enum": [
+          "risk",
+          "comment",
+          "apikey",
+          "range",
+          "credential",
+          "agent",
+          "user",
+          "session",
+          "ngfw",
+          "config",
+          "experiment",
+          "scenario",
+          "script"
+        ],
+        "type": "string",
+        "description": "* `risk` - Risk\n* `comment` - Comment\n* `apikey` - API Key\n* `range` - Range\n* `credential` - Credential\n* `agent` - Agent\n* `user` - User\n* `session` - Session\n* `ngfw` - NGFW\n* `config` - Configuration\n* `experiment` - Experiment\n* `scenario` - Scenario\n* `script` - Script"
+      },
+      "GuacamoleBootstrapQueued": {
+        "type": "object",
+        "description": "Response body for a queued Guacamole bootstrap (RDP/SSH/NGFW-SSH POST, HTTP 202).\n\n``url`` here is the compatibility opener route, not a signed session URL\n(that one-time URL is delivered only by the status poll, see\n``GuacamoleBootstrapStatusSerializer``).",
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string"
+          },
+          "status_url": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id",
+          "status",
+          "status_url",
+          "url"
+        ]
+      },
+      "GuacamoleBootstrapStatus": {
+        "type": "object",
+        "description": "Response body for ``GuacamoleBootstrapStatusView.get``.\n\n``url`` is the one-time signed Guacamole session URL, delivered exactly\nonce on a ``succeeded`` poll; never given a real example. ``duration_ms``\nand ``error`` are present only once the bootstrap has finished or failed.",
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string"
+          },
+          "duration_ms": {
+            "type": "integer"
+          },
+          "error": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id",
+          "status"
+        ]
+      },
+      "GuacamoleInstance": {
+        "type": "object",
+        "description": "Validate range Guacamole URL bootstrap requests.",
+        "properties": {
+          "instance_uuid": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "instance_uuid"
+        ]
+      },
+      "InstancePresentation": {
+        "type": "object",
+        "description": "Response-only projection of ``shared.schemas.InstanceContext``.",
+        "properties": {
+          "uuid": {
+            "type": "string",
+            "nullable": true
+          },
+          "name": {
+            "type": "string"
+          },
+          "role": {
+            "$ref": "#/components/schemas/InstancePresentationRoleEnum"
+          },
+          "os_type": {
+            "$ref": "#/components/schemas/InstancePresentationOsTypeEnum"
+          },
+          "join_domain": {
+            "type": "boolean"
+          },
+          "ami_key": {
+            "type": "string",
+            "nullable": true
+          },
+          "private_ip": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "ami_key",
+          "join_domain",
+          "name",
+          "os_type",
+          "private_ip",
+          "role",
+          "uuid"
+        ]
+      },
+      "InstancePresentationOsTypeEnum": {
+        "enum": [
+          "kali",
+          "ubuntu",
+          "windows",
+          "panos"
+        ],
+        "type": "string",
+        "description": "* `kali` - kali\n* `ubuntu` - ubuntu\n* `windows` - windows\n* `panos` - panos"
+      },
+      "InstancePresentationRoleEnum": {
+        "enum": [
+          "attacker",
+          "victim",
+          "dc",
+          "ngfw"
+        ],
+        "type": "string",
+        "description": "* `attacker` - attacker\n* `victim` - victim\n* `dc` - dc\n* `ngfw` - ngfw"
+      },
+      "LaunchRange": {
+        "type": "object",
+        "description": "Validate range launch requests.",
+        "properties": {
+          "agents": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "agent_id": {
+            "type": "integer",
+            "nullable": true
+          },
+          "scenario": {
+            "type": "string",
+            "default": "basic"
+          }
+        }
+      },
+      "LaunchRangeResponse": {
+        "type": "object",
+        "description": "Response body for ``LaunchRangeView.post``.",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "range": {
+            "$ref": "#/components/schemas/RangePresentation"
+          }
+        },
+        "required": [
+          "range",
+          "success"
+        ]
+      },
+      "LegacyError": {
+        "type": "object",
+        "description": "Schema-only description of the flat ``{\"error\": \"<message>\"}`` body some\nlegacy Mission Control endpoints return (e.g. Guacamole bootstrap 503/404).\n\nThis is NOT the canonical :class:`ApiErrorSerializer` envelope. It exists so\nthe contract describes those endpoints' real wire shape truthfully rather\nthan pretending they use the structured envelope. New endpoints must use the\ncanonical envelope; this documents existing behavior, it does not endorse it.",
+        "properties": {
+          "error": {
+            "type": "string",
+            "description": "Human-readable error message."
+          }
+        },
+        "required": [
+          "error"
+        ]
+      },
+      "NGFWCreate": {
+        "type": "object",
+        "description": "Validate NGFW creation requests.",
+        "properties": {
+          "name": {
+            "type": "string",
+            "default": ""
+          },
+          "deployment_profile_id": {
+            "type": "integer",
+            "nullable": true
+          },
+          "registration_method": {
+            "type": "string",
+            "default": ""
+          },
+          "scm_credential_id": {
+            "type": "integer",
+            "nullable": true
+          },
+          "otp_value": {
+            "type": "string",
+            "nullable": true
+          },
+          "otp_folder": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "NGFWCreateResponse": {
+        "type": "object",
+        "description": "Response body for ``NGFWCreateView.post`` (HTTP 201).",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "status"
+        ]
+      },
+      "NGFWDestroy": {
+        "type": "object",
+        "description": "Validate NGFW destroy requests.",
+        "properties": {
+          "confirm_name": {
+            "type": "string",
+            "default": ""
+          }
+        }
+      },
+      "NGFWDestroyResponse": {
+        "type": "object",
+        "description": "Response body for ``NGFWDestroyView.post``.",
+        "properties": {
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "NGFWListItem": {
+        "type": "object",
+        "description": "One entry from ``NGFWListView.get``.",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "serial_number": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "created_at",
+          "id",
+          "name",
+          "serial_number",
+          "status"
+        ]
+      },
+      "NGFWListResponse": {
+        "type": "object",
+        "description": "Response body for ``NGFWListView.get``.",
+        "properties": {
+          "ngfws": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NGFWListItem"
+            }
+          }
+        },
+        "required": [
+          "ngfws"
+        ]
+      },
+      "PackRegistration": {
+        "type": "object",
+        "description": "Validate the shape of a uniform pack-registration request body (#1578).\n\nThis is a thin boundary check: it rejects missing/oversized/wrong-typed\nfields so the service and the reference-record validator receive a\nwell-formed request. Domain validation (source-kind allowlist, digest shape,\nbounded provenance, pack conformance, no-shadow) remains authoritative in the\nservice and model — this serializer does not restate it.",
+        "properties": {
+          "scenario_id": {
+            "type": "string",
+            "maxLength": 100,
+            "pattern": "^[-a-zA-Z0-9_]+$"
+          },
+          "source_kind": {
+            "type": "string",
+            "maxLength": 16
+          },
+          "contract_kind": {
+            "type": "string",
+            "maxLength": 32
+          },
+          "contract_profile": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "package_ref": {
+            "type": "string",
+            "maxLength": 512
+          },
+          "package_version": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "package_digest": {
+            "type": "string",
+            "maxLength": 71
+          },
+          "lock_ref": {
+            "type": "string",
+            "default": "",
+            "maxLength": 512
+          },
+          "lock_digest": {
+            "type": "string",
+            "default": "",
+            "maxLength": 71
+          },
+          "provenance": {
+            "type": "object",
+            "additionalProperties": {}
+          }
+        },
+        "required": [
+          "contract_kind",
+          "contract_profile",
+          "package_digest",
+          "package_ref",
+          "package_version",
+          "scenario_id",
+          "source_kind"
+        ]
+      },
+      "PackRegistrationResult": {
+        "type": "object",
+        "description": "Bounded 201 summary returned after a pack is registered (#1578).",
+        "properties": {
+          "scenario_id": {
+            "type": "string",
+            "readOnly": true
+          },
+          "source_kind": {
+            "type": "string",
+            "readOnly": true
+          },
+          "conformance_status": {
+            "type": "string",
+            "readOnly": true
+          }
+        },
+        "required": [
+          "conformance_status",
+          "scenario_id",
+          "source_kind"
+        ]
+      },
+      "PaginatedAuditLogList": {
+        "type": "object",
+        "required": [
+          "count",
+          "results"
+        ],
+        "properties": {
+          "count": {
+            "type": "integer",
+            "example": 123
+          },
+          "next": {
+            "type": "string",
+            "nullable": true,
+            "format": "uri",
+            "example": "http://api.example.org/accounts/?page=4"
+          },
+          "previous": {
+            "type": "string",
+            "nullable": true,
+            "format": "uri",
+            "example": "http://api.example.org/accounts/?page=2"
+          },
+          "results": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AuditLog"
+            }
+          }
+        }
+      },
+      "PaginatedRiskList": {
+        "type": "object",
+        "required": [
+          "count",
+          "results"
+        ],
+        "properties": {
+          "count": {
+            "type": "integer",
+            "example": 123
+          },
+          "next": {
+            "type": "string",
+            "nullable": true,
+            "format": "uri",
+            "example": "http://api.example.org/accounts/?page=4"
+          },
+          "previous": {
+            "type": "string",
+            "nullable": true,
+            "format": "uri",
+            "example": "http://api.example.org/accounts/?page=2"
+          },
+          "results": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Risk"
+            }
+          }
+        }
+      },
+      "PatchedRiskUpdate": {
+        "type": "object",
+        "description": "Serializer for updating risks.",
+        "properties": {
+          "title": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "description": {
+            "type": "string"
+          },
+          "severity": {
+            "$ref": "#/components/schemas/SeverityEnum"
+          },
+          "status": {
+            "$ref": "#/components/schemas/StatusEnum"
+          },
+          "stride_categories": {
+            "description": "List of STRIDE category codes (S, T, R, I, D, E)"
+          },
+          "likelihood_score": {
+            "type": "integer",
+            "maximum": 9223372036854775807,
+            "minimum": 0,
+            "format": "int64",
+            "nullable": true,
+            "description": "1-5 scale"
+          },
+          "impact_score": {
+            "type": "integer",
+            "maximum": 9223372036854775807,
+            "minimum": 0,
+            "format": "int64",
+            "nullable": true,
+            "description": "1-5 scale"
+          },
+          "attack_vector": {
+            "type": "string"
+          },
+          "affected_assets": {
+            "type": "string"
+          },
+          "mitigation_status": {
+            "type": "string"
+          },
+          "resolution_reason": {
+            "type": "string"
+          }
+        }
+      },
+      "PatchedScenarioMetadataUpdate": {
+        "type": "object",
+        "description": "Metadata (availability/audience) update; both fields optional for PATCH.",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "staff_only": {
+            "type": "boolean"
+          }
+        }
+      },
+      "PatchedScenarioUpdate": {
+        "type": "object",
+        "description": "Structured update request: full definition replacement (no identity change).",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "ngfw": {
+            "type": "boolean",
+            "default": false
+          },
+          "instances": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ScenarioInstance"
+            }
+          },
+          "subnets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ScenarioSubnet"
+            }
+          }
+        }
+      },
+      "RangeHistory": {
+        "type": "object",
+        "description": "One entry in the range-history list (``GET .../ranges/``, #1370).\n\nProjects the durable identifiers off ``cms.models.RangeInstance`` without\nconflating them: ``request_id`` is the durable UUID correlation key\n(``None`` for pre-Request-pattern legacy rows with no linked\n``cms.models.Request``); ``range_id`` is the legacy nullable integer id.",
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "range_id": {
+            "type": "integer",
+            "nullable": true
+          },
+          "scenario_id": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ResourceStatusEnum"
+          },
+          "range_source": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "deleted_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        },
+        "required": [
+          "created_at",
+          "deleted_at",
+          "range_id",
+          "range_source",
+          "request_id",
+          "scenario_id",
+          "status",
+          "updated_at"
+        ]
+      },
+      "RangeHistoryResponse": {
+        "type": "object",
+        "description": "Response body for the range-history list endpoint.",
+        "properties": {
+          "ranges": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RangeHistory"
+            }
+          }
+        },
+        "required": [
+          "ranges"
+        ]
+      },
+      "RangeLifecycle": {
+        "type": "object",
+        "description": "Validate range cancel/destroy/pause/resume requests.",
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "range_id": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      },
+      "RangePresentation": {
+        "type": "object",
+        "description": "Response-only projection of ``shared.schemas.RangeContext``.\n\nField set mirrors ``RangeContext.model_fields`` plus its computed\nproperties (``is_ready``, ``is_terminal``, ``is_active``).",
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "range_id": {
+            "type": "integer",
+            "nullable": true
+          },
+          "scenario_id": {
+            "type": "string"
+          },
+          "user_id": {
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ResourceStatusEnum"
+          },
+          "instances": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/InstancePresentation"
+            }
+          },
+          "agent_name": {
+            "type": "string",
+            "nullable": true
+          },
+          "range_type": {
+            "$ref": "#/components/schemas/RangeTypeEnum"
+          },
+          "is_ready": {
+            "type": "boolean"
+          },
+          "is_terminal": {
+            "type": "boolean"
+          },
+          "is_active": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "agent_name",
+          "instances",
+          "is_active",
+          "is_ready",
+          "is_terminal",
+          "range_id",
+          "range_type",
+          "request_id",
+          "scenario_id",
+          "status",
+          "user_id"
+        ]
+      },
+      "RangeTypeEnum": {
+        "enum": [
+          "demo"
+        ],
+        "type": "string",
+        "description": "* `demo` - demo"
+      },
+      "ResourceStatusEnum": {
+        "enum": [
+          "pending",
+          "provisioning",
+          "ready",
+          "pausing",
+          "paused",
+          "resuming",
+          "destroying",
+          "destroyed",
+          "failed"
+        ],
+        "type": "string",
+        "description": "* `pending` - pending\n* `provisioning` - provisioning\n* `ready` - ready\n* `pausing` - pausing\n* `paused` - paused\n* `resuming` - resuming\n* `destroying` - destroying\n* `destroyed` - destroyed\n* `failed` - failed"
+      },
+      "Risk": {
+        "type": "object",
+        "description": "Serializer for Risk model.",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "readOnly": true
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "description": {
+            "type": "string"
+          },
+          "severity": {
+            "$ref": "#/components/schemas/SeverityEnum"
+          },
+          "status": {
+            "$ref": "#/components/schemas/StatusEnum"
+          },
+          "stride_categories": {
+            "description": "List of STRIDE category codes (S, T, R, I, D, E)"
+          },
+          "likelihood_score": {
+            "type": "integer",
+            "maximum": 9223372036854775807,
+            "minimum": 0,
+            "format": "int64",
+            "nullable": true,
+            "description": "1-5 scale"
+          },
+          "impact_score": {
+            "type": "integer",
+            "maximum": 9223372036854775807,
+            "minimum": 0,
+            "format": "int64",
+            "nullable": true,
+            "description": "1-5 scale"
+          },
+          "risk_score": {
+            "type": "integer",
+            "readOnly": true
+          },
+          "attack_vector": {
+            "type": "string"
+          },
+          "affected_assets": {
+            "type": "string"
+          },
+          "mitigation_status": {
+            "type": "string"
+          },
+          "resolution_reason": {
+            "type": "string"
+          },
+          "comment_count": {
+            "type": "integer",
+            "readOnly": true
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true
+          },
+          "is_deleted": {
+            "type": "boolean",
+            "readOnly": true
+          }
+        },
+        "required": [
+          "comment_count",
+          "created_at",
+          "description",
+          "id",
+          "is_deleted",
+          "risk_score",
+          "title",
+          "updated_at"
+        ]
+      },
+      "RiskCreate": {
+        "type": "object",
+        "description": "Serializer for creating risks.",
+        "properties": {
+          "title": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "description": {
+            "type": "string"
+          },
+          "severity": {
+            "$ref": "#/components/schemas/SeverityEnum"
+          },
+          "status": {
+            "$ref": "#/components/schemas/StatusEnum"
+          },
+          "stride_categories": {
+            "description": "List of STRIDE category codes (S, T, R, I, D, E)"
+          },
+          "likelihood_score": {
+            "type": "integer",
+            "maximum": 9223372036854775807,
+            "minimum": 0,
+            "format": "int64",
+            "nullable": true,
+            "description": "1-5 scale"
+          },
+          "impact_score": {
+            "type": "integer",
+            "maximum": 9223372036854775807,
+            "minimum": 0,
+            "format": "int64",
+            "nullable": true,
+            "description": "1-5 scale"
+          },
+          "attack_vector": {
+            "type": "string"
+          },
+          "affected_assets": {
+            "type": "string"
+          },
+          "mitigation_status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "description",
+          "title"
+        ]
+      },
+      "RiskUpdate": {
+        "type": "object",
+        "description": "Serializer for updating risks.",
+        "properties": {
+          "title": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "description": {
+            "type": "string"
+          },
+          "severity": {
+            "$ref": "#/components/schemas/SeverityEnum"
+          },
+          "status": {
+            "$ref": "#/components/schemas/StatusEnum"
+          },
+          "stride_categories": {
+            "description": "List of STRIDE category codes (S, T, R, I, D, E)"
+          },
+          "likelihood_score": {
+            "type": "integer",
+            "maximum": 9223372036854775807,
+            "minimum": 0,
+            "format": "int64",
+            "nullable": true,
+            "description": "1-5 scale"
+          },
+          "impact_score": {
+            "type": "integer",
+            "maximum": 9223372036854775807,
+            "minimum": 0,
+            "format": "int64",
+            "nullable": true,
+            "description": "1-5 scale"
+          },
+          "attack_vector": {
+            "type": "string"
+          },
+          "affected_assets": {
+            "type": "string"
+          },
+          "mitigation_status": {
+            "type": "string"
+          },
+          "resolution_reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "description",
+          "title"
+        ]
+      },
+      "ScenarioClone": {
+        "type": "object",
+        "description": "Clone request body.",
+        "properties": {
+          "new_scenario_id": {
+            "type": "string"
+          },
+          "new_name": {
+            "type": "string",
+            "default": ""
+          }
+        },
+        "required": [
+          "new_scenario_id"
+        ]
+      },
+      "ScenarioCreate": {
+        "type": "object",
+        "description": "Structured create request: identity plus definition.",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "ngfw": {
+            "type": "boolean",
+            "default": false
+          },
+          "instances": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ScenarioInstance"
+            }
+          },
+          "subnets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ScenarioSubnet"
+            }
+          },
+          "scenario_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "description",
+          "instances",
+          "name",
+          "scenario_id"
+        ]
+      },
+      "ScenarioCreated": {
+        "type": "object",
+        "description": "Response for a create/clone: the new scenario's identity.",
+        "properties": {
+          "scenario_id": {
+            "type": "string",
+            "readOnly": true
+          },
+          "name": {
+            "type": "string",
+            "readOnly": true
+          }
+        },
+        "required": [
+          "name",
+          "scenario_id"
+        ]
+      },
+      "ScenarioDetail": {
+        "type": "object",
+        "description": "Full scenario detail with source-capability flags for the editor.\n\n``source`` classifies the entry (``builtin`` / ``custom`` / ``aces`` /\n``ctf``) and the capability booleans tell the SPA which actions to offer.\n``instances`` / ``subnets`` are populated for structural (demo) scenarios;\n``aces`` carries the read-only provenance block for ACES entries.",
+        "properties": {
+          "id": {
+            "type": "string",
+            "readOnly": true
+          },
+          "name": {
+            "type": "string",
+            "readOnly": true
+          },
+          "description": {
+            "type": "string",
+            "readOnly": true
+          },
+          "scenario_type": {
+            "type": "string",
+            "readOnly": true
+          },
+          "source": {
+            "type": "string",
+            "readOnly": true
+          },
+          "is_default": {
+            "type": "boolean",
+            "readOnly": true
+          },
+          "enabled": {
+            "type": "boolean",
+            "readOnly": true
+          },
+          "staff_only": {
+            "type": "boolean",
+            "readOnly": true
+          },
+          "launchable": {
+            "type": "boolean",
+            "readOnly": true
+          },
+          "editable": {
+            "type": "boolean",
+            "readOnly": true
+          },
+          "deletable": {
+            "type": "boolean",
+            "readOnly": true
+          },
+          "exportable": {
+            "type": "boolean",
+            "readOnly": true
+          },
+          "ngfw": {
+            "type": "boolean",
+            "readOnly": true
+          },
+          "instances": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ScenarioInstance"
+            },
+            "readOnly": true
+          },
+          "subnets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ScenarioSubnet"
+            },
+            "readOnly": true
+          },
+          "aces": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AcesCatalogFields"
+              }
+            ],
+            "readOnly": true,
+            "nullable": true
+          }
+        },
+        "required": [
+          "aces",
+          "deletable",
+          "description",
+          "editable",
+          "enabled",
+          "exportable",
+          "id",
+          "instances",
+          "is_default",
+          "launchable",
+          "name",
+          "ngfw",
+          "scenario_type",
+          "source",
+          "staff_only",
+          "subnets"
+        ]
+      },
+      "ScenarioExport": {
+        "type": "object",
+        "description": "Response for an export: the scenario id and its YAML rendering.",
+        "properties": {
+          "scenario_id": {
+            "type": "string",
+            "readOnly": true
+          },
+          "yaml": {
+            "type": "string",
+            "readOnly": true
+          }
+        },
+        "required": [
+          "scenario_id",
+          "yaml"
+        ]
+      },
+      "ScenarioInstance": {
+        "type": "object",
+        "description": "A single scenario instance, mirroring ``schema.InstanceConfig``.\n\nKept field-complete against the Pydantic schema so a round-trip through the\neditor never silently drops instance fields (the legacy form hardcoded a\npartial list). The service layer re-validates the full definition.",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "role": {
+            "$ref": "#/components/schemas/ScenarioInstanceRoleEnum"
+          },
+          "os_type": {
+            "$ref": "#/components/schemas/ScenarioInstanceOsTypeEnum"
+          },
+          "xdr_agent": {
+            "type": "boolean",
+            "default": false
+          },
+          "domain_controller": {
+            "type": "boolean",
+            "default": false
+          },
+          "join_domain": {
+            "type": "boolean",
+            "default": false
+          },
+          "dc_config": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/DCConfig"
+              }
+            ],
+            "nullable": true
+          },
+          "ami_key": {
+            "type": "string",
+            "nullable": true
+          },
+          "instance_type": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "name",
+          "os_type",
+          "role"
+        ]
+      },
+      "ScenarioInstanceOsTypeEnum": {
+        "enum": [
+          "kali",
+          "windows",
+          "ubuntu",
+          "from_agent"
+        ],
+        "type": "string",
+        "description": "* `kali` - kali\n* `windows` - windows\n* `ubuntu` - ubuntu\n* `from_agent` - from_agent"
+      },
+      "ScenarioInstanceRoleEnum": {
+        "enum": [
+          "attacker",
+          "victim",
+          "dc"
+        ],
+        "type": "string",
+        "description": "* `attacker` - attacker\n* `victim` - victim\n* `dc` - dc"
+      },
+      "ScenarioListItem": {
+        "type": "object",
+        "description": "One entry from ``cms.services.list_launchable_scenarios``.\n\nLegacy YAML/DB scenarios and ACES-derived catalog entries share this\nprojection but are not fully homogeneous; fields the SPA does not render\nstay loosely typed (``DictField``/``ListField(DictField)``) rather than\nmodeling the full ``ScenarioTemplate``/ACES catalog schema here.",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "is_default": {
+            "type": "boolean"
+          },
+          "staff_only": {
+            "type": "boolean"
+          },
+          "launchable": {
+            "type": "boolean"
+          },
+          "ngfw": {
+            "type": "boolean"
+          },
+          "instances": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": {}
+            }
+          },
+          "subnets": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": {}
+            }
+          },
+          "agent_requirements": {
+            "type": "object",
+            "additionalProperties": {}
+          }
+        },
+        "required": [
+          "description",
+          "enabled",
+          "id",
+          "is_default",
+          "launchable",
+          "name",
+          "staff_only"
+        ]
+      },
+      "ScenarioListResponse": {
+        "type": "object",
+        "description": "Response body for ``ScenarioListView.get``.",
+        "properties": {
+          "scenarios": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ScenarioListItem"
+            }
+          }
+        },
+        "required": [
+          "scenarios"
+        ]
+      },
+      "ScenarioMetadataState": {
+        "type": "object",
+        "description": "Response for a metadata update: the resolved overlay state.",
+        "properties": {
+          "scenario_id": {
+            "type": "string",
+            "readOnly": true
+          },
+          "enabled": {
+            "type": "boolean",
+            "readOnly": true
+          },
+          "staff_only": {
+            "type": "boolean",
+            "readOnly": true
+          }
+        },
+        "required": [
+          "enabled",
+          "scenario_id",
+          "staff_only"
+        ]
+      },
+      "ScenarioSubnet": {
+        "type": "object",
+        "description": "A single scenario subnet, mirroring ``schema.SubnetConfig``.",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "instances": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "connected_to": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "instances",
+          "name"
+        ]
+      },
+      "SeverityEnum": {
+        "enum": [
+          "critical",
+          "high",
+          "medium",
+          "low"
+        ],
+        "type": "string",
+        "description": "* `critical` - Critical\n* `high` - High\n* `medium` - Medium\n* `low` - Low"
+      },
+      "StatusEnum": {
+        "enum": [
+          "open",
+          "acknowledged",
+          "mitigating",
+          "resolved",
+          "closed"
+        ],
+        "type": "string",
+        "description": "* `open` - Open\n* `acknowledged` - Acknowledged\n* `mitigating` - Mitigating\n* `resolved` - Resolved\n* `closed` - Closed"
+      },
+      "SuccessResponse": {
+        "type": "object",
+        "description": "Generic ``{\"success\": true}`` response body.\n\nShared by the range lifecycle mutations (cancel/destroy/pause/resume),\nupload cancel, and credential delete — every Mission Control mutation\nendpoint that has no payload beyond a boolean acknowledgement.",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success"
+        ]
+      },
+      "UploadCancel": {
+        "type": "object",
+        "description": "Validate agent-upload cancel requests.",
+        "properties": {
+          "upload_token": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "upload_token"
+        ]
+      },
+      "UploadComplete": {
+        "type": "object",
+        "description": "Validate agent-upload completion requests.",
+        "properties": {
+          "upload_token": {
+            "type": "string",
+            "default": ""
+          }
+        }
+      },
+      "UploadCompleteResponse": {
+        "type": "object",
+        "description": "Response body for ``UploadCompleteView.post``.",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "agent_id": {
+            "type": "integer"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "agent_id",
+          "message",
+          "success"
+        ]
+      },
+      "UploadInitiate": {
+        "type": "object",
+        "description": "Validate agent-upload initiation requests.",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "filename": {
+            "type": "string"
+          },
+          "file_size": {},
+          "agent_type": {
+            "type": "string",
+            "default": "xdr"
+          }
+        }
+      },
+      "UploadInitiateResponse": {
+        "type": "object",
+        "description": "Response body for ``UploadInitiateView.post`` (``cms.services.initiate_upload``).\n\n``presigned_url`` is a short-lived, single-use S3 PUT URL — an existing\nresponse field, typed here for the schema but never given a real example.",
+        "properties": {
+          "presigned_url": {
+            "type": "string"
+          },
+          "s3_key": {
+            "type": "string"
+          },
+          "upload_token": {
+            "type": "string"
+          },
+          "expected_os": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "expected_os",
+          "presigned_url",
+          "s3_key",
+          "upload_token"
+        ]
+      },
+      "YAMLContent": {
+        "type": "object",
+        "description": "Validate a YAML-content request body.",
+        "properties": {
+          "yaml_content": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "yaml_content"
+        ]
+      },
+      "YAMLValidationResult": {
+        "type": "object",
+        "description": "Response for the YAML validate endpoint.",
+        "properties": {
+          "valid": {
+            "type": "boolean",
+            "readOnly": true
+          },
+          "errors": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "readOnly": true
+          },
+          "definition": {
+            "type": "object",
+            "additionalProperties": {},
+            "readOnly": true,
+            "nullable": true
+          }
+        },
+        "required": [
+          "definition",
+          "errors",
+          "valid"
+        ]
+      }
+    },
+    "securitySchemes": {
+      "ApiTokenAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "shf",
+        "description": "Platform API token with scopes from shared.api_tokens.scopes."
+      },
+      "cookieAuth": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "sessionid"
+      }
+    }
+  }
+}

@@ -673,6 +673,86 @@ jobs:
         working-directory: shifter/shifter_platform/frontend
         run: npm run build
 
+  # ===========================================================================
+  # /api/v1/ OpenAPI contract gates (#1329, ADR-040)
+  #
+  # Drift gate: a fresh, hermetic generation must match the committed artifact.
+  # SPA-types gate: schema.d.ts must be the artifact's generated projection.
+  # Breaking-change gate: the committed artifact must not make consumer-breaking
+  # changes to /api/v1/ versus the base branch's already-published artifact
+  # (trusted base SHA, never a baseline this PR can rewrite). Compatibility
+  # semantics come from a pinned OpenAPI-aware checker (oasdiff), not ad hoc
+  # shell. Read-only permissions, no cloud, no database.
+  # ===========================================================================
+  shifter-platform-api-contract:
+    permissions:
+      contents: read
+    name: API contract (shifter_platform)
+    needs: [paths]
+    if: ${{ (needs.paths.outputs.run_all == 'true' || needs.paths.outputs.shifter_platform == 'true') }}
+    runs-on: ubuntu-latest
+    env:
+      OASDIFF_VERSION: "1.23.0"
+      OASDIFF_SHA256: "972b10535c3db4366b9dc3ebc11ca021279af3095267c3cffdca854a3a3c4f89"
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          # Base-branch history is required for the breaking-change comparison.
+          fetch-depth: 0
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '20.19'
+          cache: 'npm'
+          cache-dependency-path: shifter/shifter_platform/frontend/package-lock.json
+
+      - name: Install Python dependencies
+        working-directory: shifter/shifter_platform
+        run: uv sync --group dev
+
+      - name: Install frontend dependencies
+        working-directory: shifter/shifter_platform/frontend
+        run: npm ci
+
+      - name: Drift gate (committed artifact matches DRF surface)
+        working-directory: shifter/shifter_platform
+        env:
+          TESTING: "1"
+          TEST_DB_BACKEND: sqlite
+          DJANGO_DEBUG: "true"
+          DJANGO_SECRET_KEY: ${{ github.run_id }}-${{ github.run_attempt }}
+        run: uv run python manage.py api_contract --check
+
+      - name: SPA types match the committed contract
+        working-directory: shifter/shifter_platform/frontend
+        run: |
+          npx openapi-typescript ../openapi/v1.json -o src/api/schema.d.ts
+          git diff --exit-code -- src/api/schema.d.ts
+
+      - name: Install oasdiff (pinned, checksum-verified)
+        run: |
+          set -euo pipefail
+          curl -fsSL -o /tmp/oasdiff.tar.gz \
+            "https://github.com/oasdiff/oasdiff/releases/download/v${OASDIFF_VERSION}/oasdiff_${OASDIFF_VERSION}_linux_amd64.tar.gz"
+          echo "${OASDIFF_SHA256}  /tmp/oasdiff.tar.gz" | sha256sum -c -
+          tar -xzf /tmp/oasdiff.tar.gz -C /usr/local/bin oasdiff
+          oasdiff --version
+
+      - name: Breaking-change gate (vs base branch contract)
+        if: ${{ github.event_name == 'pull_request' }}
+        working-directory: shifter/shifter_platform
+        env:
+          TESTING: "1"
+          TEST_DB_BACKEND: sqlite
+          DJANGO_DEBUG: "true"
+          DJANGO_SECRET_KEY: ${{ github.run_id }}-${{ github.run_attempt }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: uv run python manage.py api_contract --breaking-against "${BASE_SHA}"
+
   provisioner-lint:
     permissions:
       contents: read

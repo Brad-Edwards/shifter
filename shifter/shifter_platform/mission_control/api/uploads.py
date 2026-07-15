@@ -27,6 +27,7 @@ from mission_control.api.serializers import (
 )
 from mission_control.upload_session import check_upload_in_progress, set_upload_in_progress, upload_lock_matches_token
 from shared.api.permissions import IsAuthenticatedSessionOrApiToken
+from shared.api.schema import ApiErrorSerializer
 from shared.api_tokens.models import ApiToken
 from shared.errors import classify_user_message
 from shared.exceptions import CMSError
@@ -40,7 +41,11 @@ class UploadInitiateView(MissionControlAPIView):
 
     permission_classes = [IsAuthenticatedSessionOrApiToken, HasMissionControlActor, _upload_write_permission()]
 
-    @extend_schema(responses=UploadInitiateResponseSerializer, operation_id="api_v1_mission_control_upload_initiate")
+    @extend_schema(
+        request=UploadInitiateSerializer,
+        responses={200: UploadInitiateResponseSerializer, 400: ApiErrorSerializer, 409: ApiErrorSerializer},
+        operation_id="api_v1_mission_control_upload_initiate",
+    )
     def post(self, request: Request) -> Response:
         """Create an upload session and presigned destination for an agent."""
         if check_upload_in_progress(request.session):
@@ -83,7 +88,11 @@ class UploadCompleteView(MissionControlAPIView):
 
     permission_classes = [IsAuthenticatedSessionOrApiToken, HasMissionControlActor, _upload_write_permission()]
 
-    @extend_schema(responses=UploadCompleteResponseSerializer, operation_id="api_v1_mission_control_upload_complete")
+    @extend_schema(
+        request=UploadCompleteSerializer,
+        responses=UploadCompleteResponseSerializer,
+        operation_id="api_v1_mission_control_upload_complete",
+    )
     def post(self, request: Request) -> Response:
         """Finalize a completed upload and clear the session upload marker."""
         data, error = _validated(self, UploadCompleteSerializer, request.data)
@@ -120,7 +129,11 @@ class UploadCancelView(MissionControlAPIView):
             request.session, upload_token
         )
 
-    @extend_schema(responses=SuccessResponseSerializer, operation_id="api_v1_mission_control_upload_cancel")
+    @extend_schema(
+        request=UploadCancelSerializer,
+        responses=SuccessResponseSerializer,
+        operation_id="api_v1_mission_control_upload_cancel",
+    )
     def post(self, request: Request) -> Response:
         """Cancel a validated current upload and clear the session marker."""
         try:
