@@ -94,6 +94,16 @@ subnet, security group, and instance profile from trusted repository Actions
 variables (`PACKER_VERIFY_*_<ENV>`), not dispatch inputs; they are described in
 the [AWS AMI seeding runbook](../../dev/aws-ami-seeding-runbook.md).
 
+The base `build` job assumes a dedicated least-privilege image-pipeline IAM role
+(`github_actions_image` in `platform/terraform/global/iam`, issue #1656), not the
+broad deploy role. Its OIDC trust is pinned to the `dev`/`main` protected-branch
+subjects, and its `iam:PassRole` is scoped to exactly the
+`shifter-<env>-range-range-instance` role passed to EC2, so the verification
+instance can receive only the range role. The role ARN is wired to the
+`AWS_IMAGE_ROLE_ARN_<ENV>` secret (see the runbook cutover); the
+`check_tf_iam_role_naming` guardrail (ADR-004-R22) pins the exact-subject and
+exact-range-role invariants. `bake-scenario` keeps its own separate role.
+
 ### Promote (Prod)
 
 Workflow: `.github/workflows/packer-promote.yml`
