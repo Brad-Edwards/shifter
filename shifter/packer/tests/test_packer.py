@@ -889,3 +889,207 @@ class TestBaseImageValidationGate:
         assert not accepts("shifter-dev-range-instance-evil")
         assert not accepts("evil-range-instance-admin")
         assert not accepts("")
+
+
+class TestDcAmiProvenance:
+    """Issue #1656: the pre-promoted DC AMI id published to /shifter/ami/dc is
+    read from trusted protected provenance (the dev ref) and validated (shape +
+    ownership + available state) by one resolver shared by both publishers,
+    replacing the prior unvalidated `jq -r` reads and adding a protected-ref gate
+    to the prod promote path.
+    """
+
+    RESOLVER = SCRIPTS_DIR / "bake" / "resolve-dc-ami.sh"
+    PROMOTE_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "packer-promote.yml"
+
+    # --- shared resolver script ------------------------------------------------
+
+    def test_resolver_script_exists(self):
+        assert self.RESOLVER.exists(), "missing scripts/bake/resolve-dc-ami.sh"
+
+    def _run_resolver(self, tmp_path, registry, *, env_key, ami_state):
+        """Run resolve-dc-ami.sh with a stub `aws` that reports `ami_state` for
+        the describe-images ownership/state query (real jq resolves the key)."""
+        registry_path = tmp_path / "dc-amis.json"
+        registry_path.write_text(registry)
+        fakebin = tmp_path / "bin"
+        fakebin.mkdir(exist_ok=True)
+        aws = fakebin / "aws"
+        aws.write_text(
+            "#!/bin/bash\n"
+            'if [ "$1" = "ec2" ] && [ "$2" = "describe-images" ]; then\n'
+            "  printf '%s\\n' \"${FAKE_AMI_STATE:-None}\"\n"
+            "  exit 0\n"
+            "fi\n"
+            "exit 0\n"
+        )
+        aws.chmod(0o755)
+        env = {
+            **os.environ,
+            "PATH": f"{fakebin}{os.pathsep}{os.environ['PATH']}",
+            "DC_AMIS_JSON": str(registry_path),
+            "DC_ENV_KEY": env_key,
+            "EXPECTED_ACCOUNT_ID": "123456789012",
+            "FAKE_AMI_STATE": ami_state,
+        }
+        return subprocess.run(  # noqa: S603
+            ["bash", str(self.RESOLVER)],  # noqa: S607
+            env=env,
+            capture_output=True,
+            text=True,
+        )
+
+    def test_resolver_accepts_valid_owned_available_ami(self, tmp_path):
+        r = self._run_resolver(
+            tmp_path,
+            '{"dev": "ami-0123456789abcdef0", "prod": "ami-05ac9c21a6c0f8767"}',
+            env_key="dev",
+            ami_state="available",
+        )
+        assert r.returncode == 0, r.stderr
+        assert r.stdout.strip() == "ami-0123456789abcdef0"
+
+    def test_resolver_fails_closed_on_missing_key(self, tmp_path):
+        r = self._run_resolver(
+            tmp_path,
+            '{"prod": "ami-0123456789abcdef0"}',
+            env_key="dev",
+            ami_state="available",
+        )
+        assert r.returncode != 0
+        assert "ami-" not in r.stdout
+
+    def test_resolver_fails_closed_on_null_value(self, tmp_path):
+        r = self._run_resolver(tmp_path, '{"dev": null}', env_key="dev", ami_state="available")
+        assert r.returncode != 0
+        assert r.stdout.strip() == ""
+
+    def test_resolver_fails_closed_on_malformed_ami_id(self, tmp_path):
+        r = self._run_resolver(tmp_path, '{"dev": "not-an-ami"}', env_key="dev", ami_state="available")
+        assert r.returncode != 0
+        # The rejected value is not echoed on the published (stdout) surface.
+        assert "not-an-ami" not in r.stdout
+
+    def test_resolver_fails_closed_when_not_available_or_not_owned(self, tmp_path):
+        # describe-images --owners returns no matching image => State "None".
+        r = self._run_resolver(
+            tmp_path,
+            '{"dev": "ami-0123456789abcdef0"}',
+            env_key="dev",
+            ami_state="None",
+        )
+        assert r.returncode != 0
+        assert r.stdout.strip() == ""
+
+    # --- workflow wiring -------------------------------------------------------
+
+    def test_both_publishers_use_shared_resolver(self):
+        # One validated resolver contract, two thin call sites (no drift).
+        assert "resolve-dc-ami.sh" in PACKER_WORKFLOW.read_text()
+        assert "resolve-dc-ami.sh" in self.PROMOTE_WORKFLOW.read_text()
+
+    def test_promote_dropped_unvalidated_jq_read(self):
+        # The prod publisher's bare, unvalidated `jq -r '.prod'` is gone.
+        assert "jq -r '.prod'" not in self.PROMOTE_WORKFLOW.read_text()
+
+    def test_base_reads_dc_registry_and_resolver_from_protected_dev_checkout(self):
+        wf = PACKER_WORKFLOW.read_text()
+        assert "Checkout trusted DC registry (protected provenance)" in wf
+        idx = wf.index("Checkout trusted DC registry (protected provenance)")
+        block = wf[idx : idx + 900]
+        # refs/heads/dev (not the short name) so a tag cannot shadow the branch.
+        assert "ref: refs/heads/dev" in block
+        assert "persist-credentials: false" in block
+        # BOTH the registry and the validator come from protected provenance.
+        assert "shifter/packer/dc-amis.json" in block
+        assert "shifter/packer/scripts/bake/resolve-dc-ami.sh" in block
+
+    def test_base_runs_resolver_from_trusted_checkout_not_build_checkout(self):
+        # The validator executable must come from the trusted dev checkout, not
+        # the caller-selected inputs.ref checkout (codex #1656).
+        wf = PACKER_WORKFLOW.read_text()
+        assert "TRUSTED_RESOLVER: ${{ github.workspace }}/trusted-dc/" in wf
+        assert 'bash "$TRUSTED_RESOLVER"' in wf
+
+    def test_base_resolves_before_publishing(self):
+        wf = PACKER_WORKFLOW.read_text()
+        assert wf.index("resolve-dc-ami.sh") < wf.index("put-parameter"), (
+            "DC resolve/validate must precede the SSM publish"
+        )
+
+    def test_promote_reads_from_protected_dev_and_persists_no_creds(self):
+        wf = self.PROMOTE_WORKFLOW.read_text()
+        idx = wf.index("Checkout trusted DC registry (protected provenance)")
+        block = wf[idx : idx + 400]
+        assert "ref: refs/heads/dev" in block
+        assert "persist-credentials: false" in block
+
+    @staticmethod
+    def _step_run_script(wf: str, step_name: str) -> str:
+        marker = f"- name: {step_name}"
+        start = wf.index(marker)
+        nxt = wf.find("\n      - name:", start + 1)
+        block = wf[start : nxt if nxt != -1 else len(wf)]
+        run_body = block[block.index("run: |") + len("run: |") :]
+        return textwrap.dedent(run_body)
+
+    def test_promote_ref_gate_rejects_unreviewed_refs(self):
+        gate = self._step_run_script(self.PROMOTE_WORKFLOW.read_text(), "Validate promote ref")
+        assert "case" in gate and "REF" in gate
+
+        def run(ref: str) -> int:
+            return subprocess.run(  # noqa: S603
+                ["bash", "-c", gate],  # noqa: S607
+                env={**os.environ, "REF": ref},
+                capture_output=True,
+            ).returncode
+
+        assert run("refs/heads/dev") == 0
+        assert run("refs/heads/main") == 0
+        # A tag whose short name collides with a protected branch must fail.
+        assert run("refs/tags/dev") != 0
+        assert run("refs/tags/main") != 0
+        assert run("refs/heads/attacker-branch") != 0
+        assert run("dev") != 0
+        assert run("dev | evil") != 0
+        assert run("") != 0
+
+    def test_ami_helper_dispatches_protected_ref(self):
+        content = (REPO_ROOT / "scripts" / "ami.sh").read_text()
+        assert "WORKFLOW_REF" in content
+        # Dispatch uses the validated protected ref, never the working-tree branch.
+        assert '--ref "$WORKFLOW_REF"' in content
+        assert '--ref "$BRANCH"' not in content
+
+    def test_ami_helper_ref_gate_rejects_non_protected(self, tmp_path):
+        # Behavioral: execute ami.sh's protected-ref gate with a stubbed `gh` so
+        # accept refs reach a (no-op) dispatch and reject refs exit non-zero
+        # before any dispatch. Goes red if the reject arm loses its `exit 1` or
+        # the allow arm is widened (test-quality review #1656).
+        ami_sh = REPO_ROOT / "scripts" / "ami.sh"
+        fakebin = tmp_path / "bin"
+        fakebin.mkdir()
+        gh = fakebin / "gh"
+        gh.write_text("#!/bin/bash\nexit 0\n")
+        gh.chmod(0o755)
+
+        def run(ref_env):
+            env = {**os.environ, "PATH": f"{fakebin}{os.pathsep}{os.environ['PATH']}"}
+            if ref_env is not None:
+                env["AMI_WORKFLOW_REF"] = ref_env
+            return subprocess.run(  # noqa: S603
+                ["bash", str(ami_sh), "-b", "kali"],  # noqa: S607
+                cwd=REPO_ROOT,
+                env=env,
+                capture_output=True,
+                text=True,
+            ).returncode
+
+        # Protected refs pass the gate and reach the stubbed dispatch (rc 0).
+        assert run("dev") == 0
+        assert run("main") == 0
+        assert run(None) == 0  # unset -> defaults to dev
+        # Non-protected refs are refused before any dispatch.
+        assert run("feature-x") != 0
+        assert run("dev | evil") != 0
+        assert run("refs/tags/dev") != 0
