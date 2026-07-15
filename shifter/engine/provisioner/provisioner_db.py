@@ -362,7 +362,9 @@ def get_range_data_by_request_id(request_id: str) -> dict[str, Any]:
                 rng.user_id,
                 rng.range_config,
                 rng.subnet_index,
-                rng.status
+                rng.status,
+                rng.range_backend,
+                rng.instantiation_purpose
             FROM engine_request r
             JOIN mission_control_range rng ON rng.request_id = r.id
             WHERE r.request_id = %s
@@ -407,6 +409,11 @@ def get_range_data_by_request_id(request_id: str) -> dict[str, Any]:
             "subnet_index": row[4],
             "status": row[5],
             "ngfw_instance_id": ngfw_instance_id,
+            # #1666 write-once ownership binding (NULL for legacy/non-GCP rows).
+            # Destroy/reconcile route from these persisted facts, never the
+            # deploy-wide GCP_RANGE_BACKEND selector.
+            "range_backend": row[6],
+            "instantiation_purpose": row[7],
         }
 
 
@@ -427,7 +434,9 @@ def get_aces_range_data_by_request_id(request_id: str) -> dict[str, Any]:
                 rng.user_id,
                 rng.range_config,
                 rng.subnet_index,
-                rng.status
+                rng.status,
+                rng.range_backend,
+                rng.instantiation_purpose
             FROM engine_request r
             JOIN mission_control_range rng ON rng.request_id = r.id
             WHERE r.request_id = %s
@@ -445,7 +454,62 @@ def get_aces_range_data_by_request_id(request_id: str) -> dict[str, Any]:
         "plan": row[3] if row[3] else {},
         "subnet_index": row[4],
         "status": row[5],
+        # #1666 write-once ownership binding (NULL for legacy/non-GCP rows).
+        "range_backend": row[6],
+        "instantiation_purpose": row[7],
     }
+
+
+# GDC VM Runtime asset types (VM Runtime guests + scenario pods) vs the GCE VM
+# range-cell asset type. This is the durable ownership discriminant persisted on
+# engine_instance.state; used only to resolve legacy (pre-#1666) ranges that have
+# no explicit backend binding (#1666).
+_GDC_ASSET_TYPES = frozenset({"vm_runtime_vm", "scenario_pod"})
+_GCE_ASSET_TYPE = "gce_vm"
+
+
+def resolve_legacy_range_backend(request_id: str) -> str | None:
+    """Resolve a legacy (NULL-binding) GCP range's backend from ownership evidence (#1666).
+
+    Inspects the durable ``asset_type`` discriminant persisted on the range's
+    ``engine_instance.state`` rows: ``gce_vm`` proves the GCE range-cell backend,
+    ``vm_runtime_vm``/``scenario_pod`` prove the GDC VM Runtime backend. Returns
+    the proven backend only when the evidence is unambiguous (exactly one backend
+    across all request-owned instances); returns ``None`` for an empty, mixed, or
+    unrecognized set so the caller fails closed (a ``prerequisite`` denial +
+    operator backfill) rather than guessing from the mutable env selector. Names,
+    scenario shape, current selector, and successful VM boot are NOT evidence.
+    """
+    with get_db_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT ei.state
+            FROM engine_instance ei
+            JOIN engine_request er ON ei.request_id = er.id
+            WHERE er.request_id = %s
+            """,
+            (request_id,),
+        )
+        rows = cur.fetchall()
+
+    backends: set[str] = set()
+    for (state,) in rows:
+        if isinstance(state, str):
+            try:
+                state = json.loads(state)
+            except (TypeError, ValueError):
+                continue
+        if not isinstance(state, dict):
+            continue
+        asset_type = str(state.get("asset_type", "")).strip()
+        if asset_type == _GCE_ASSET_TYPE:
+            backends.add("gce")
+        elif asset_type in _GDC_ASSET_TYPES:
+            backends.add("gdc")
+
+    if len(backends) == 1:
+        return next(iter(backends))
+    return None
 
 
 def get_aces_image_candidates(provider: str, source_name: str) -> list[dict[str, Any]]:

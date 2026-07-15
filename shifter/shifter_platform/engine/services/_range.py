@@ -9,6 +9,7 @@ from uuid import UUID
 
 from shared.enums import CANCELLABLE_STATUSES, ResourceStatus
 from shared.range_cells import build_scenario_artifact
+from shared.range_instantiation_policy import InstantiationPurpose, normalize_gcp_range_backend
 from shared.schemas import RangeRef, RangeSpec, RequestSpec
 from shared.schemas.persistence import wrap_persisted_spec
 
@@ -20,6 +21,7 @@ if TYPE_CHECKING:
     from django.contrib.auth.models import User
 
     from engine.models import Range
+    from shared.range_instantiation_policy import BackendAdmission
 
 logger = logging.getLogger(__name__)
 
@@ -57,11 +59,61 @@ def _atomic() -> ContextManager[None]:
     return _es.transaction.atomic()
 
 
-def create_range(request_spec: RequestSpec) -> RangeRef:
+def _backend_binding_fields(backend_admission: BackendAdmission | None) -> dict[str, str]:
+    """Map an admitted ``BackendAdmission`` to the write-once Range binding columns (#1666).
+
+    Returns ``{}`` for a non-GCP launch (``backend_admission is None``) so the
+    columns stay NULL. The backend and purpose are re-normalized through the single
+    shared policy parser/enum so only closed policy values are ever persisted; the
+    admission already holds normalized values, this is defense in depth.
+    """
+    if backend_admission is None:
+        return {}
+    return {
+        "range_backend": normalize_gcp_range_backend(backend_admission.backend),
+        "instantiation_purpose": InstantiationPurpose(backend_admission.purpose).value,
+    }
+
+
+def _verify_existing_binding(
+    existing_range: Range,
+    request_id: UUID,
+    backend_admission: BackendAdmission | None,
+) -> None:
+    """Enforce write-once binding on an idempotent create reuse (#1666).
+
+    Idempotent create with the same request must carry the same binding; a
+    *different* already-persisted binding is an ADR-039 ``conflict``, never a
+    silent update. A NULL persisted binding (legacy row) is left untouched here --
+    legacy repair is a destroy-time, ownership-evidence concern, not a create-time
+    rewrite.
+    """
+    if backend_admission is None or not existing_range.range_backend:
+        return
+    expected = _backend_binding_fields(backend_admission)
+    current = {
+        "range_backend": existing_range.range_backend,
+        "instantiation_purpose": existing_range.instantiation_purpose,
+    }
+    if current != expected:
+        raise EngineError(
+            f"Range backend binding conflict for request {request_id}: persisted "
+            f"{current['range_backend']}/{current['instantiation_purpose']} differs from admitted "
+            f"{expected['range_backend']}/{expected['instantiation_purpose']} (ADR-039 conflict; write-once)"
+        )
+
+
+def create_range(request_spec: RequestSpec, *, backend_admission: BackendAdmission | None = None) -> RangeRef:
     """Provision infrastructure for range.
 
     Interprets the RequestSpec into Engine models (Request, Instance),
     creates a Range record for backward compat, and triggers ECS provisioning.
+
+    ``backend_admission`` is the trusted #1348 CMS admission result, carried
+    beside (never inside) the RequestSpec. When present (GCP), the normalized
+    (backend, purpose) is persisted as the write-once #1666 ownership binding in
+    the same transaction as the Range, before dispatch, so destroy/reconcile
+    route from it instead of the mutable process selector. ``None`` on non-GCP.
     """
     from django.contrib.auth import get_user_model
 
@@ -92,9 +144,10 @@ def create_range(request_spec: RequestSpec) -> RangeRef:
     existing_range = Range.objects.filter(request__request_id=request_spec.request_id).first()
     if existing_range is not None:
         logger.info("create_range: reusing existing range request_id=%s", request_spec.request_id)
+        _verify_existing_binding(existing_range, request_spec.request_id, backend_admission)
         return _range_ref_from_range(existing_range, request_spec, range_spec)
 
-    range_obj = _persist_range_atomically(request_spec, range_spec, user_model, Range)
+    range_obj = _persist_range_atomically(request_spec, range_spec, user_model, Range, backend_admission)
 
     try:
         task_arn = start_range_provisioning(request_spec.request_id)
@@ -115,10 +168,18 @@ def _persist_range_atomically(
     range_spec: RangeSpec,
     user_model: type[User],
     range_model: type[Range],
+    backend_admission: BackendAdmission | None = None,
 ) -> Range:
-    """Run the interpret + Range + Subnet inserts under a single transaction."""
+    """Run the interpret + Range + Subnet inserts under a single transaction.
+
+    The #1666 backend/purpose ownership binding (when present) is written on the
+    Range in this same transaction, before any launch dispatch, so it is durable
+    ownership from the instant the range exists.
+    """
     from engine.interpreter import interpret
     from engine.models import Subnet
+
+    binding_fields = _backend_binding_fields(backend_admission)
 
     with _atomic():
         request = interpret(request_spec)
@@ -140,6 +201,7 @@ def _persist_range_atomically(
                 status=range_model.Status.PROVISIONING,
                 subnet_index=subnet_index,
                 range_config=range_artifact,
+                **binding_fields,
             )
         else:
             range_obj = range_model.objects.create(
@@ -149,6 +211,7 @@ def _persist_range_atomically(
                 status=range_model.Status.PROVISIONING,
                 subnet_index=subnet_index,
                 range_config=range_artifact,
+                **binding_fields,
             )
 
         logger.info(

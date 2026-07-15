@@ -42,29 +42,41 @@ def get_range_module_path() -> Path:
     raise CloudProviderNotImplementedError(provider)
 
 
-def _uses_active_gdc_range_plane() -> bool:
-    return _get_provider() == "gcp" and get_gcp_range_backend() == "gdc"
+def _resolve_backend(backend: str | None) -> str:
+    """Return the routing backend for a GCP operation (#1666).
+
+    When ``backend`` is given (the per-operation ownership binding resolved at
+    operation start from the persisted Range), route from it. When it is ``None``
+    (the provision path and non-GCP callers) fall back to the deploy-wide
+    ``GCP_RANGE_BACKEND`` env selector. Bound destroy/reconcile always pass an
+    explicit backend, so they never reach the env read below (ADR-030/ADR-039).
+    """
+    return backend or get_gcp_range_backend()
 
 
-def _uses_gce_range_cells() -> bool:
-    """Return whether the active provider uses the GCE range-cell backend."""
-    return _get_provider() == "gcp" and get_gcp_range_backend() == "gce"
+def _uses_active_gdc_range_plane(backend: str | None = None) -> bool:
+    return _get_provider() == "gcp" and _resolve_backend(backend) == "gdc"
 
 
-def _validate_range_cell_route(variables: dict[str, Any] | None) -> None:
+def _uses_gce_range_cells(backend: str | None = None) -> bool:
+    """Return whether this operation uses the GCE range-cell backend."""
+    return _get_provider() == "gcp" and _resolve_backend(backend) == "gce"
+
+
+def _validate_range_cell_route(variables: dict[str, Any] | None, backend: str | None = None) -> None:
     """Prevent VM-cell requests from entering any legacy provider fallback."""
     is_cell_request = is_gcp_vm_range_cell_request(variables)
-    if is_cell_request and not _uses_gce_range_cells():
+    if is_cell_request and not _uses_gce_range_cells(backend):
         raise RuntimeError("GCP VM range-cell requests require the active GCP/GCE VM range-cell backend")
-    if _uses_gce_range_cells() and variables is not None and not is_cell_request:
+    if _uses_gce_range_cells(backend) and variables is not None and not is_cell_request:
         raise RuntimeError("The GCP/GCE VM range-cell backend requires an admitted range-cell contract request")
 
 
-def get_range_state_key_prefix() -> str:
+def get_range_state_key_prefix(backend: str | None = None) -> str:
     """Return the provider-specific Terraform state key prefix."""
-    if _uses_active_gdc_range_plane():
+    if _uses_active_gdc_range_plane(backend):
         return "gcp/gdc-ranges"
-    if _uses_gce_range_cells():
+    if _uses_gce_range_cells(backend):
         return "gcp/gce-range-cells"
     provider = _get_provider()
     if provider == "aws":
@@ -72,11 +84,11 @@ def get_range_state_key_prefix() -> str:
     raise CloudProviderNotImplementedError(provider)
 
 
-def has_terraform_state(request_uuid: str) -> bool:
+def has_terraform_state(request_uuid: str, backend: str | None = None) -> bool:
     """Check if Terraform state exists for the given Range request."""
-    if _uses_active_gdc_range_plane() or _uses_gce_range_cells():
+    if _uses_active_gdc_range_plane(backend) or _uses_gce_range_cells(backend):
         return False
-    return terraform_base.has_terraform_state(get_range_state_key_prefix(), request_uuid)
+    return terraform_base.has_terraform_state(get_range_state_key_prefix(backend), request_uuid)
 
 
 def apply_range(
@@ -136,15 +148,23 @@ def destroy_range(
     variables: dict[str, Any] | None = None,
     *,
     gce_destroy_range_cell: Callable[[str, dict[str, Any] | None], None] | None = None,
+    backend: str | None = None,
 ) -> None:
-    """Run terraform destroy for Range."""
-    _validate_range_cell_route(variables)
-    if _uses_gce_range_cells():
+    """Run terraform destroy for Range.
+
+    ``backend`` is the per-operation ownership binding resolved at operation start
+    from the persisted Range (#1666). When supplied, teardown routes from it -- so
+    a range provisioned on GDC is torn down through the GDC path even after the
+    deploy-wide selector flips to GCE. ``None`` preserves the legacy env-selector
+    behavior (non-GCP and provision-failure fallbacks).
+    """
+    _validate_range_cell_route(variables, backend)
+    if _uses_gce_range_cells(backend):
         destroy_gce = gce_destroy_range_cell or gcp_range_cells.destroy_range_cell
         destroy_gce(request_uuid, variables)
         return
 
-    if _uses_active_gdc_range_plane():
+    if _uses_active_gdc_range_plane(backend):
         gdc_scenario_pods.destroy_range_assets(request_uuid, variables)
         gdc_vmruntime_assets.destroy_range_assets(request_uuid, variables)
         gdc_range_networks.destroy_range_networks(request_uuid, variables)
@@ -152,11 +172,11 @@ def destroy_range(
 
     if working_dir is None:
         working_dir = get_range_module_path()
-    terraform_base.destroy(get_range_state_key_prefix(), request_uuid, working_dir, _LABEL, variables=variables)
+    terraform_base.destroy(get_range_state_key_prefix(backend), request_uuid, working_dir, _LABEL, variables=variables)
 
 
-def cleanup_range_state(request_uuid: str) -> None:
+def cleanup_range_state(request_uuid: str, backend: str | None = None) -> None:
     """Delete range Terraform state after destroy."""
-    if _uses_active_gdc_range_plane() or _uses_gce_range_cells():
+    if _uses_active_gdc_range_plane(backend) or _uses_gce_range_cells(backend):
         return
-    terraform_base.cleanup_state(get_range_state_key_prefix(), request_uuid, _LABEL)
+    terraform_base.cleanup_state(get_range_state_key_prefix(backend), request_uuid, _LABEL)
