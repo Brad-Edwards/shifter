@@ -1156,13 +1156,19 @@
         "id": "ADR-024-R3",
         "description": "Archive/delete is generally a post-cutover posture. CyberScript, current CMS scenario templates, Polaris runtime material, CTF behavior, Mission Control, provisioner paths, artifact handling, status models, and validation gates remain current authority until replacement gates are implemented and green. ADR-027 is the accepted exception for the removed legacy experiments path.",
         "checks": []
+      },
+      {
+        "id": "ADR-024-R4",
+        "description": "Every legacy_source and validation_evidence clause in docs/architecture/aces-migration-parity-inventory.yaml that is a repository-relative path or glob must resolve to an existing path (a glob must match at least one path); shell-command and prose clauses are classified and skipped. The aces-parity-inventory-path-integrity adr_guard check enforces this as a global repository invariant (it runs even when the inventory is not in the changed-file set, because a referenced file can be moved or deleted without the inventory itself changing) and treats the inventory as untrusted static input: it inspects path metadata only, rejects absolute paths, '..' traversal, and symlink escape fail-closed, and never reads referenced content or lets inventory text reach a shell or subprocess.",
+        "checks": ["aces-parity-inventory-path-integrity"]
       }
     ],
     "exceptions": [],
-    "enforcement": ["agent-policy"],
+    "enforcement": ["agent-policy", "pre-commit", "ci"],
     "evidence": [
       "docs/architecture/aces-migration-adr.md",
       "docs/architecture/aces-migration-parity-inventory.yaml",
+      "docs/architecture/aces-parity-inventory-path-integrity-preflight-1313.md",
       "docs/architecture/aces-runtime-target-backend-manifest-preflight-1233.md",
       "docs/architecture/aces-operation-status-snapshot-projection-preflight-1234.md",
       "docs/architecture/aces-polaris-acceptance-parity-gate-preflight-1237.md",
