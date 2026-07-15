@@ -161,6 +161,28 @@ def test_provisioner_capabilities_are_the_narrowed_ledger():
         assert dropped not in provisioner.supported_content_types
 
 
+def test_provisioner_declares_ipv4_only_network_address_family(tmp_path):
+    """#1568: the provisioner honestly publishes IPv4-only networking as a constraint.
+
+    ``switch`` stays supported (Shifter realizes IPv4 networks), the constraint is
+    the opaque ``constraints`` disclosure surface (not a made-up capability enum or
+    realization-support kind), the profile is unchanged, and the rendered payload
+    carries the same constraint without leaking any provider/subnet/CIDR detail.
+    """
+    del tmp_path
+    manifest = create_shifter_backend_manifest()
+    provisioner = manifest.provisioner
+
+    assert provisioner.constraints["network-address-family"] == "ipv4-only"
+    # switch is required for any networked scenario and stays claimed; the limitation
+    # is the address family, not networking itself.
+    assert "switch" in provisioner.supported_node_types
+    assert profile_for_manifest(manifest) == BackendCapabilityProfile.PROVISIONING_ONLY
+
+    payload = render_shifter_backend_manifest_payload()
+    assert payload["capabilities"]["provisioner"]["constraints"]["network-address-family"] == "ipv4-only"
+
+
 def test_profile_inference_does_not_catch_a_term_level_overclaim():
     """#1563: profile inference is blind to a term-level over-claim, so realizability is
     guarded by exact-set assertions (above) and the apply-time evidence gate, not profile shape."""
