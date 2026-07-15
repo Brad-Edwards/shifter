@@ -7,6 +7,7 @@ it into the bounded dict callers consume. Split out of ``engine/ecs.py`` (#685).
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from django.conf import settings
 
@@ -18,7 +19,7 @@ from shared.cloud.exceptions import CloudTaskError
 logger = logging.getLogger("engine.ecs")
 
 
-def _project_task_status(result: dict | None) -> dict:
+def _project_task_status(result: dict[str, Any] | None) -> dict[str, Any]:
     """Project a raw task-runner status result into the bounded caller dict."""
     if result is None:
         return {"status": "UNKNOWN", "reason": "Task not found"}
@@ -31,7 +32,7 @@ def _project_task_status(result: dict | None) -> dict:
     }
 
 
-def get_task_status(task_arn: str) -> dict | None:
+def get_task_status(task_arn: str) -> dict[str, Any] | None:
     """Get the status of an ECS task.
 
     Args:
