@@ -243,7 +243,7 @@ rows:
 
   - id: experiment.lifecycle
     surface: experiment
-    legacy_source: removed legacy cms.experiments schemas (ADR-027 / issue #1195)
+    legacy_source: "removed legacy cms.experiments schemas (ADR-027 / issue #1195)"
     legacy_field: ExperimentStatus, RunStatus, transitions
     category: archive/delete
     aces_target: ACES experiment-core and runtime status contracts
@@ -255,7 +255,7 @@ rows:
 
   - id: experiment.execution-plan
     surface: experiment
-    legacy_source: removed legacy cms.experiments execution planner (ADR-027 / issue #1195)
+    legacy_source: "removed legacy cms.experiments execution planner (ADR-027 / issue #1195)"
     legacy_field: build_execution_plan, ScriptCommand, RunExecutionPlan
     category: archive/delete
     aces_target: ACES participant runtime adapter after profile support exists
@@ -267,7 +267,7 @@ rows:
 
   - id: aces.execution-plan-references
     surface: experiment
-    legacy_source: removed legacy cms.experiments execution planner (ADR-027 / issue #1195)
+    legacy_source: "removed legacy cms.experiments execution planner (ADR-027 / issue #1195)"
     legacy_field: RunExecutionPlan and ScriptCommand references
     category: ACES schema/profile gap
     aces_target: ACES execution-plan reference records after a matching operation profile exists
@@ -279,7 +279,7 @@ rows:
 
   - id: experiment.artifacts
     surface: artifact
-    legacy_source: removed legacy cms.experiments models (ADR-027 / issue #1195)
+    legacy_source: "removed legacy cms.experiments models (ADR-027 / issue #1195)"
     legacy_field: experiment run artifacts and Claude transcript artifacts
     category: archive/delete
     aces_target: ACES evidence/provenance and experiment-run artifact contracts
@@ -308,7 +308,7 @@ rows:
     category: ACES schema/profile gap
     aces_target: ACES behavior-history and evidence records carrying artifact refs, digests, provenance, capture profile, retention class, and redaction status
     shifter_owner: future ACES-backed experiment design, shared.script_context, shared.uploads, shared.cloud, risk_register.services.audit_log
-    validation_evidence: docs/architecture/aces-participant-runtime-history-evidence-preflight-1289.md plus future #1289 implementation tests and ADR-027 removal evidence
+    validation_evidence: "docs/architecture/aces-participant-runtime-history-evidence-preflight-1289.md plus future #1289 implementation tests and ADR-027 removal evidence"
     next_issue_kind: implementation-candidate
     candidate_issue_title: "#1289: Capture participant runtime history and evidence"
     notes: Evidence records are reference-oriented. Rendered commands, prompt bodies, script bodies, transcript bodies, terminal streams, token URLs, SSH keys, RDP passwords, CTF flags, provider payloads, and presigned URLs stay out of ACES records.
@@ -356,7 +356,7 @@ rows:
     category: Shifter backend responsibility
     aces_target: read-only ACES participant/runtime/access-channel projection fields after participant-runtime sidecars exist
     shifter_owner: mission_control.api, mission_control.views, engine.services, shared.api.errors, shared.api_tokens.scopes
-    validation_evidence: future #1290 UI/API tests plus existing mission_control terminal, Guacamole, and range API tests
+    validation_evidence: "future #1290 UI/API tests plus existing mission_control terminal, Guacamole, and range API tests"
     next_issue_kind: implementation-candidate
     candidate_issue_title: "#1290: Project participant runtime access in Mission Control"
     notes: Terminal, SSH, RDP/Guacamole, NGFW SSH, and backend command dispatch are Shifter access-channel projections. They may expose ACES-backed read-only fields, but they do not become authorization, lifecycle truth, evidence redaction, or authored scenario semantics.
@@ -525,7 +525,7 @@ rows:
 
   - id: validation.aces-manifest-conformance
     surface: validation
-    legacy_source: aces-sdl/contracts/profiles/backend/
+    legacy_source: aces-sdl backend profile and conformance contract corpus (upstream PyPI package aces-sdl, not a repository path)
     legacy_field: backend profile and conformance contract corpus
     category: validation gate
     aces_target: ACES backend manifest and conformance CLI

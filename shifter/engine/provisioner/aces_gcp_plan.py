@@ -203,10 +203,16 @@ _MAX_SUBNET_ADDRESSES = 1 << 16
 
 
 def _usable_host_ips(cidr: str) -> list[str]:
-    """Return assignable IPv4 host addresses in ``cidr`` (GCP reserves 2 at each end)."""
+    """Return assignable IPv4 host addresses in ``cidr`` (GCP reserves 2 at each end).
+
+    Backstop for the IPv4-only network address family (issue #1568): the RuntimeTarget
+    admission path rejects non-IPv4 networks before dispatch, and this repeats the check
+    for persisted/replayed plans. The message must not echo the authored CIDR --
+    ``aces_range_ops`` forwards ``str(exc)`` into published failure events.
+    """
     network = ipaddress.ip_network(cidr)
     if not isinstance(network, ipaddress.IPv4Network):
-        raise AcesGcePlanError(f"GCE range cells require IPv4 subnets, got {cidr}")
+        raise AcesGcePlanError("GCE range cells require IPv4 subnets; got an unsupported network address family")
     if network.num_addresses > _MAX_SUBNET_ADDRESSES:
         raise AcesGcePlanError(f"GCE range subnet {cidr} is larger than /16; refusing to enumerate host addresses")
     return [str(host) for host in list(network.hosts())[2:-2]]

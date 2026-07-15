@@ -87,6 +87,11 @@ adr_guard:
   - '.ground-control.yaml'
   - '.gc/plan-rules.md'
   - '.shifter.yaml'
+  # ADR-024-R4 / #1313: route parity-inventory edits through adr-conformance so
+  # the aces-parity-inventory-path-integrity check runs when the ledger itself
+  # changes. Referenced paths are deliberately NOT duplicated here; the
+  # always-run pre-commit hook is the catch-all for deletions elsewhere.
+  - 'docs/architecture/aces-migration-parity-inventory.yaml'
 
 ctfd_workshop:
   - 'scripts/ctfd-workshop/**'
