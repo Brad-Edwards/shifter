@@ -3,17 +3,19 @@
 Runs the provisioner as a local subprocess instead of submitting a remote
 task, gated by the ``LOCAL_PROVISIONER`` setting. Split out of
 ``engine/ecs.py`` (#685).
-
-Before the split, ``os``, ``subprocess``, ``settings``, and the module logger
-were resolved from ``engine/ecs.py``'s own top-level namespace, so
-``unittest.mock.patch("engine.ecs.<name>", ...)`` intercepted them. This
-module re-resolves each collaborator from the live ``engine.ecs`` facade at
-call time (the same late-bound pattern as
-``engine.services._lifecycle._atomic``) so that historical patch seam keeps
-working now that the call sites live in this private submodule.
 """
 
 from __future__ import annotations
+
+import logging
+import os
+import subprocess  # nosec B404 - local dev provisioner only  # NOSONAR
+
+from django.conf import settings
+
+# Log under the stable "engine.ecs" namespace (asserted by tests and used in
+# dashboards) even though this code now lives in a package submodule.
+logger = logging.getLogger("engine.ecs")
 
 
 def _run_local_provisioner(command: list[str]) -> str | None:
@@ -29,13 +31,6 @@ def _run_local_provisioner(command: list[str]) -> str | None:
     Raises:
         RuntimeError: If provisioner fails to start
     """
-    from engine import ecs as _ecs
-
-    os = _ecs.os
-    subprocess = _ecs.subprocess
-    settings = _ecs.settings
-    logger = _ecs.logger
-
     provisioner_path = getattr(settings, "PROVISIONER_PATH", None)
     if not provisioner_path:
         # Default to relative path from Django app. This module lives one
@@ -86,10 +81,10 @@ def _run_local_provisioner(command: list[str]) -> str | None:
     full_command = ["python", main_py, *command]
     logger.info("Starting local provisioner: %s", " ".join(full_command))
 
+    # Security: command is a hardcoded path to our first-party provisioner, not
+    # user input; run non-blocking (background) so dispatch returns immediately.
     try:
-        # Run in background (non-blocking)
-        # Security: command is hardcoded path to our provisioner, not user input
-        process = subprocess.Popen(  # nosec B603
+        process = subprocess.Popen(  # noqa: S603  # nosec B603  # NOSONAR
             full_command,
             cwd=provisioner_path,
             env=env,
@@ -106,7 +101,5 @@ def _run_local_provisioner(command: list[str]) -> str | None:
 
 def _is_local_provisioner_enabled() -> bool:
     """Check if local provisioner mode is enabled."""
-    from engine import ecs as _ecs
-
-    mode = getattr(_ecs.settings, "LOCAL_PROVISIONER", None)
+    mode = getattr(settings, "LOCAL_PROVISIONER", None)
     return mode in ("subprocess", "docker")

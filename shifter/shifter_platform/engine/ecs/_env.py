@@ -3,14 +3,13 @@
 Forwards the runtime env-var contract that ephemeral GKE provisioner Jobs
 need. Split out of the former single-module ``engine/ecs.py`` (#685); the
 import path stays ``engine.ecs`` via the package facade.
-
-``os`` and ``settings`` are resolved from the live ``engine.ecs`` facade at
-call time (see ``engine.ecs._local`` for the same pattern), so the historical
-``patch("engine.ecs.<name>", ...)`` seam keeps working now that this code
-lives in a private submodule.
 """
 
 from __future__ import annotations
+
+import os
+
+from django.conf import settings
 
 _GCP_PROVISIONER_ENV_KEYS = (
     "CLOUD_PROVIDER",
@@ -132,11 +131,6 @@ _GCP_PROVISIONER_ENV_KEYS = (
 
 def _get_gcp_provisioner_env_overrides() -> dict[str, str] | None:
     """Forward the runtime env contract needed by ephemeral GKE provisioner Jobs."""
-    from engine import ecs as _ecs
-
-    os = _ecs.os
-    settings = _ecs.settings
-
     if settings.CLOUD_PROVIDER != "gcp":
         return None
 

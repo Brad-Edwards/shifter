@@ -2,18 +2,19 @@
 
 Reads Django settings into the ``(cluster, task_definition, network_config)``
 tuple the task runner needs. Split out of ``engine/ecs.py`` (#685).
-
-``settings`` and the module logger are resolved from the live ``engine.ecs``
-facade at call time (see ``engine.ecs._local`` for the same pattern), so the
-historical ``patch("engine.ecs.<name>", ...)`` seam keeps working now that
-this code lives in a private submodule.
 """
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
+from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
+
+# Log under the stable "engine.ecs" namespace (asserted by tests and used in
+# dashboards) even though this code now lives in a package submodule.
+logger = logging.getLogger("engine.ecs")
 
 
 def _get_engine_task_config() -> tuple[str, str, dict[str, Any] | None] | None:
@@ -23,10 +24,6 @@ def _get_engine_task_config() -> tuple[str, str, dict[str, Any] | None] | None:
         Tuple of (cluster_or_location, task_definition_or_job, network_config)
         or None if configuration is incomplete.
     """
-    from engine import ecs as _ecs
-
-    settings = _ecs.settings
-
     provider = settings.CLOUD_PROVIDER
     cluster: str = (
         getattr(settings, "ENGINE_TASK_CLUSTER", None) or getattr(settings, "ENGINE_ECS_CLUSTER_ARN", None) or ""
@@ -44,10 +41,8 @@ def _get_engine_task_config() -> tuple[str, str, dict[str, Any] | None] | None:
 
 def _gcp_engine_task_config(cluster: str, task_definition: str) -> tuple[str, str, dict[str, Any] | None] | None:
     """Return the GCP engine task config, or None when it is incomplete."""
-    from engine import ecs as _ecs
-
     if not all([cluster, task_definition]):
-        _ecs.logger.warning(
+        logger.warning(
             "GCP task configuration incomplete, skipping task run. "
             "Set ENGINE_TASK_NAMESPACE/ENGINE_TASK_CLUSTER and "
             "ENGINE_TASK_IMAGE/ENGINE_TASK_DEFINITION in settings."
@@ -58,11 +53,6 @@ def _gcp_engine_task_config(cluster: str, task_definition: str) -> tuple[str, st
 
 def _aws_engine_task_config(cluster: str, task_definition: str) -> tuple[str, str, dict[str, Any] | None] | None:
     """Return the AWS engine task config (cluster, task def, network), or None when incomplete."""
-    from engine import ecs as _ecs
-
-    settings = _ecs.settings
-    logger = _ecs.logger
-
     security_group_id: str = (
         getattr(settings, "ENGINE_TASK_NETWORK_SECURITY_GROUP_ID", None)
         or getattr(settings, "ENGINE_ECS_SECURITY_GROUP_ID", None)

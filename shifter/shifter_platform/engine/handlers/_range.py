@@ -4,28 +4,20 @@ Applies authoritative range state changes from provisioner events and writes
 the accompanying audit records. Split out of ``engine/handlers.py`` (#685).
 Transient DB/audit failures propagate so the worker retries (ADR-025); missing,
 unauthorized, or malformed messages log and return.
-
-``Range``, ``timezone``, and ``audit_log_system_event`` are resolved from the
-live ``engine.handlers`` facade at call time (the same late-bound pattern as
-``engine.services._lifecycle._atomic``), so a test's
-``unittest.mock.patch("engine.handlers.<name>", ...)`` -- the historical patch
-seam from before ``engine/handlers.py`` split into this package -- keeps
-intercepting the collaborator these handlers actually use.
 """
 
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
 
-from shared.audit import AuditEntityType, StateChange
+from django.utils import timezone
+
+from engine.models import Range
+from shared.audit import AuditEntityType, StateChange, audit_log_system_event
 from shared.enums import ResourceStatus
 from shared.messages.payloads import RangeProvisionedPayload, RangeStatusUpdatedPayload
 
 from ._audit import _status_to_action
-
-if TYPE_CHECKING:
-    from engine.models import Range
 
 # Stable "engine.handlers" logger namespace (conftest propagation list, audit
 # source parity) even though this code now lives in a package submodule.
@@ -38,13 +30,6 @@ def _resolve_authorized_range(event: RangeStatusUpdatedPayload) -> Range | None:
     Returns None (after logging) when the event is missing identifiers, the
     range does not exist, or the event's user does not own it.
     """
-    from engine import handlers as _handlers
-
-    # Named distinctly from the ``Range`` type used in the return annotation
-    # above: assigning that name to this runtime value would make mypy treat
-    # every later ``Range`` in this function as the variable, not the type.
-    range_model = _handlers.Range
-
     range_id = event.get("range_id")
     if range_id is None or event.get("new_status") is None:
         logger.warning("Missing range_id or new_status in event")
@@ -52,8 +37,8 @@ def _resolve_authorized_range(event: RangeStatusUpdatedPayload) -> Range | None:
 
     range_obj: Range | None
     try:
-        range_obj = range_model.objects.get(id=range_id)
-    except range_model.DoesNotExist:
+        range_obj = Range.objects.get(id=range_id)
+    except Range.DoesNotExist:
         logger.warning("Range not found: range_id=%s", range_id)
         return None
 
@@ -74,8 +59,6 @@ def _handle_status_updated(event: RangeStatusUpdatedPayload) -> None:
     Args:
         event: Event payload with range_id, user_id, new_status, error_message.
     """
-    from engine import handlers as _handlers
-
     range_obj = _resolve_authorized_range(event)
     if range_obj is None:
         return
@@ -86,7 +69,7 @@ def _handle_status_updated(event: RangeStatusUpdatedPayload) -> None:
     error_message = event.get("error_message")
     event_id = event.get("event_id", "unknown")
 
-    now = _handlers.timezone.now()
+    now = timezone.now()
     previous_status = range_obj.status
     range_obj.status = new_status
     # auto_now on updated_at is bypassed when save(update_fields=...) omits the
@@ -119,7 +102,7 @@ def _handle_status_updated(event: RangeStatusUpdatedPayload) -> None:
         raise
 
     # Audit log the status change
-    _handlers.audit_log_system_event(
+    audit_log_system_event(
         entity_type=AuditEntityType.RANGE,
         entity_id=range_id,
         action=_status_to_action(new_status),

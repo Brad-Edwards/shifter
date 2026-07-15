@@ -7,17 +7,6 @@ live in private submodules (``_range``, ``_ngfw``, ``_audit``) and are wired in
 here (#685). ``engine.handlers.process_event`` remains the SQS worker entry
 point (referenced by dotted path in ``config``); ``parse_sns_message`` is
 re-exported for callers that import it from this package.
-
-``Range``, ``timezone``, and ``audit_log_system_event`` are imported here
-(even though this module never calls them directly) purely so they remain
-resolvable as ``engine.handlers.Range`` / ``engine.handlers.timezone`` /
-``engine.handlers.audit_log_system_event``: before the split, ``_range`` and
-``_ngfw``'s event handlers (now in private submodules) resolved these
-collaborators from this same module's globals, so
-``patch("engine.handlers.<name>", ...)`` intercepted them. Those submodules
-re-resolve each collaborator from this facade at call time (the same
-late-bound pattern as ``engine.services._lifecycle._atomic``) so that
-historical patch seam keeps working.
 """
 
 from __future__ import annotations
@@ -25,12 +14,8 @@ from __future__ import annotations
 import logging
 from typing import cast
 
-from django.utils import timezone as timezone  # re-export for the ._range/._ngfw compat seam (#685)
-
-from engine.models import Range as Range  # re-export for the ._range compat seam (#685)
 from engine.services import record_aces_operation_status, record_aces_runtime_snapshot
 from shared.aces.contracts import EVENT_TYPE_ACES_OPERATION, EVENT_TYPE_ACES_SNAPSHOT
-from shared.audit import audit_log_system_event as audit_log_system_event  # re-export (#685)
 from shared.messages.envelope import parse_sns_message
 from shared.messages.events import (
     EVENT_TYPE_NGFW,

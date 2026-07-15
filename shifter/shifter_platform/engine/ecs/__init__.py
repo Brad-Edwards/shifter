@@ -12,27 +12,15 @@ Local Development:
 
 The implementation is split by responsibility across private submodules
 (``_env`` GCP Job env projection, ``_config`` task-runner config, ``_local``
-local subprocess fallback) and re-exported here (#685) so callers keep using
-``from engine.ecs import X`` and existing ``patch("engine.ecs.<name>")`` seams
-keep resolving. Dispatch/status logging stays in this facade so it retains the
-stable ``engine.ecs`` logger namespace.
-
-``os`` and ``subprocess`` are imported here (even though this module never
-calls them directly) purely so they remain resolvable as ``engine.ecs.os`` /
-``engine.ecs.subprocess``: before the split, ``_run_local_provisioner`` (now
-in ``._local``) and the config helpers (now in ``._config`` / ``._env``)
-resolved these collaborators, ``settings``, and ``logger`` from this same
-module's globals, so ``patch("engine.ecs.<name>", ...)`` intercepted them.
-Those submodules re-resolve each collaborator from this facade at call time
-(the same late-bound pattern as ``engine.services._lifecycle._atomic``) so
-that historical patch seam keeps working.
+local subprocess fallback, ``_status`` task-status projection) and re-exported
+here (#685) so callers keep using ``from engine.ecs import X``. The dispatch
+pipeline and its logging stay in this facade so it retains the stable
+``engine.ecs`` logger namespace.
 """
 
 from __future__ import annotations
 
 import logging
-import os as os  # re-export for the ._local/._config/._env compat seam (#685)
-import subprocess as subprocess  # nosec B404 - re-export only; the local dev Popen call lives in ._local
 from typing import TYPE_CHECKING
 
 from django.conf import settings
@@ -42,9 +30,9 @@ from shared.cloud.exceptions import CloudTaskError
 from shared.enums import ResourceType
 
 from ._config import _get_engine_task_config
-from ._env import _GCP_PROVISIONER_ENV_KEYS as _GCP_PROVISIONER_ENV_KEYS  # re-export for tests
-from ._env import _get_gcp_provisioner_env_overrides
+from ._env import _GCP_PROVISIONER_ENV_KEYS, _get_gcp_provisioner_env_overrides
 from ._local import _is_local_provisioner_enabled, _run_local_provisioner
+from ._status import get_task_status
 
 # SonarCloud S1192: extracted duplicated string literals.
 REQUEST_ID_NONE_MSG = "request_id cannot be None"
@@ -468,36 +456,26 @@ def start_ngfw_operation(request_id: UUID, operation: str) -> str | None:
     return _start_ngfw_ecs_task(request_id, command)
 
 
-def get_task_status(task_arn: str) -> dict | None:
-    """Get the status of an ECS task.
-
-    Args:
-        task_arn: ARN of the ECS task to check
-
-    Returns:
-        Dict with status info, or None if not configured
-    """
-    if not task_arn:
-        return None
-
-    cluster = getattr(settings, "ENGINE_TASK_CLUSTER", None) or getattr(settings, "ENGINE_ECS_CLUSTER_ARN", None)
-    if not cluster:
-        return None
-
-    try:
-        runner = get_task_runner()
-        result = runner.get_task_status(cluster=cluster, task_id=task_arn)
-
-        if result is None:
-            return {"status": "UNKNOWN", "reason": "Task not found"}
-
-        return {
-            "status": result.get("status", "UNKNOWN"),
-            "desired_status": result.get("desired_status"),
-            "started_at": result.get("started_at"),
-            "stopped_at": result.get("stopped_at"),
-            "stopped_reason": result.get("stopped_reason"),
-        }
-    except CloudTaskError as e:
-        logger.exception("Failed to get task status: %s", e)
-        return None
+__all__ = [
+    # Internal seams re-exported for tests, kept stable across the #685 split.
+    "_GCP_PROVISIONER_ENV_KEYS",
+    "_get_engine_task_config",
+    "_get_gcp_provisioner_env_overrides",
+    "_is_local_provisioner_enabled",
+    "_run_local_provisioner",
+    "_start_ecs_task",
+    "_start_ngfw_ecs_task",
+    # Public provisioner dispatch entrypoints.
+    "dispatch_provisioner_command",
+    "get_task_status",
+    "start_aces_range_provisioning",
+    "start_aces_range_teardown",
+    "start_ngfw_operation",
+    "start_ngfw_provisioning",
+    "start_ngfw_teardown",
+    "start_provisioning",
+    "start_range_operation",
+    "start_range_provisioning",
+    "start_range_teardown",
+    "start_teardown",
+]
