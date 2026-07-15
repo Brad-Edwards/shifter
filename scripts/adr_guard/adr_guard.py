@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import glob
 import ipaddress
 import json
 import os
@@ -6297,6 +6298,205 @@ def check_published_contract_snapshots_immutable(repo_root: Path, files: list[st
     return violations
 
 
+_PARITY_INVENTORY_PATH = "docs/architecture/aces-migration-parity-inventory.yaml"
+# The only path-bearing fields for this check. Extend this constant (not the
+# traversal or classifier) when a future evidence field must be validated too.
+_PARITY_INSPECTED_FIELDS: tuple[str, ...] = ("legacy_source", "validation_evidence")
+_PARITY_CHECK = "aces-parity-inventory-path-integrity"
+_PARITY_RULE_ID = "ADR-024-R4"
+_PARITY_GLOB_METACHARS = ("*", "?", "[")
+# A whitespace-bearing clause led by one of these tokens (or carrying a shell
+# operator) is a shell command rather than prose. Both kinds are classify-only
+# and never resolved; the distinction is for diagnostics and the four-kind
+# classifier contract, not for gate behaviour.
+_PARITY_COMMAND_TOKENS = frozenset(
+    {
+        "python3", "python", "cd", "aces", "uv", "bash", "sh", "pytest", "npx",
+        "make", "go", "ruff", "mypy", "pre-commit", "git", "kubeconform",
+        "kube-linter", "tflint", "helm", "terraform", "actionlint",
+    }
+)
+# Shell expansion / substitution / brace characters make a path or glob
+# candidate unsafe to resolve at all. Their presence is a fail-closed violation,
+# never a silent skip.
+_PARITY_UNSAFE_CHARS = ("~", "$", "`", "{", "}", "!", "\\")
+
+
+def _parity_violation(message: str) -> Violation:
+    return Violation(_PARITY_CHECK, _PARITY_RULE_ID, _PARITY_INVENTORY_PATH, message)
+
+
+def _parity_clause_violation(row_id: str, field: str, clause: str, reason: str) -> Violation:
+    return _parity_violation(f"row {row_id!r} field {field!r} clause {clause!r} {reason}")
+
+
+def classify_parity_clause(clause: str) -> str:
+    """Classify one trimmed evidence clause: ``path``, ``glob``, ``command``, or ``prose``.
+
+    Syntax-led on purpose: existence is never consulted. A deleted ``foo/bar.py``
+    stays classified ``path`` (and fails) instead of being reclassified as prose
+    and evading the check. Path-looking substrings inside prose are not extracted.
+    """
+    if any(char.isspace() for char in clause):
+        first = clause.split()[0]
+        if (
+            first in _PARITY_COMMAND_TOKENS
+            or " && " in clause
+            or " || " in clause
+            or " | " in clause
+            or " -" in clause
+        ):
+            return "command"
+        return "prose"
+    if any(char in clause for char in _PARITY_GLOB_METACHARS):
+        return "glob"
+    if "/" in clause or clause.startswith("."):
+        return "path"
+    return "prose"
+
+
+def _parity_glob_base(clause: str) -> str:
+    """Return the leading metacharacter-free directory portion of a glob pattern.
+
+    Used to enforce repository containment *before* the pattern is enumerated, so
+    a symlinked base directory that escapes the repository is rejected without
+    following it. Returns ``""`` when the first path component already contains a
+    glob metacharacter (the pattern is anchored at the repository root).
+    """
+    base_parts: list[str] = []
+    for part in clause.split("/")[:-1]:
+        if any(char in part for char in _PARITY_GLOB_METACHARS):
+            break
+        base_parts.append(part)
+    return "/".join(base_parts)
+
+
+def _validate_parity_path(
+    repo_root: Path, row_id: str, field: str, clause: str, *, is_glob: bool
+) -> list[Violation]:
+    """Validate one ``path``/``glob`` clause: syntactic safety, containment, existence."""
+    if clause.startswith("/") or Path(clause).is_absolute():
+        return [_parity_clause_violation(row_id, field, clause, "must be repository-relative, not an absolute path")]
+    if any(char in clause for char in _PARITY_UNSAFE_CHARS):
+        return [_parity_clause_violation(row_id, field, clause, "contains an unsupported shell/expansion character")]
+    if any(segment == ".." for segment in clause.split("/")):
+        return [_parity_clause_violation(row_id, field, clause, "must not use '..' path traversal")]
+
+    root = repo_root.resolve()
+
+    if is_glob:
+        # Enforce containment BEFORE enumeration: reject a glob whose literal base
+        # directory (the leading metacharacter-free portion) resolves outside the
+        # repository, so `linked/*.txt` where `linked` is an escaping symlink is
+        # never followed or enumerated. Every miss - nothing matched, base
+        # escaped, or all matches external - returns one indistinguishable
+        # diagnostic, so the always-run check cannot become a boolean filename
+        # oracle for the host filesystem. Referenced targets are never read.
+        base = _parity_glob_base(clause)
+        if base:
+            try:
+                base_resolved = (repo_root / base).resolve()
+            except (OSError, RuntimeError):
+                return [_parity_clause_violation(row_id, field, clause, "matches no path under the repository root")]
+            if base_resolved != root and root not in base_resolved.parents:
+                return [_parity_clause_violation(row_id, field, clause, "matches no path under the repository root")]
+        try:
+            matches = glob.glob(clause, root_dir=repo_root)
+        except (OSError, ValueError):
+            matches = []
+        for match in matches:
+            try:
+                resolved = (repo_root / match).resolve()
+            except (OSError, RuntimeError):
+                continue
+            if resolved == root or root in resolved.parents:
+                return []  # at least one match resolves within the repository
+        return [_parity_clause_violation(row_id, field, clause, "matches no path under the repository root")]
+
+    candidate = repo_root / clause
+    try:
+        resolved = candidate.resolve()
+    except (OSError, RuntimeError):
+        return [_parity_clause_violation(row_id, field, clause, "could not be resolved within the repository")]
+    if resolved != root and root not in resolved.parents:
+        # Absolute-path and traversal syntax is already rejected above, so this
+        # only fires on a symlinked component escaping the repository. Fail
+        # closed without reading the target.
+        return [_parity_clause_violation(row_id, field, clause, "resolves outside the repository root")]
+    if not candidate.exists():
+        return [_parity_clause_violation(row_id, field, clause, "does not resolve to an existing path")]
+    return []
+
+
+def check_aces_parity_inventory_path_integrity(repo_root: Path, files: list[str] | None) -> list[Violation]:
+    """Parity-inventory path evidence must resolve (ADR-024-R4).
+
+    Global invariant over ``docs/architecture/aces-migration-parity-inventory.yaml``:
+    every ``legacy_source`` / ``validation_evidence`` clause that is a repository
+    path or glob must resolve to an existing path (glob: at least one match).
+    Shell-command and prose clauses are classified and skipped. Runs regardless of
+    the changed-file set because a referenced file can be moved or deleted without
+    the inventory itself changing. Treats the YAML as untrusted static input: it
+    only inspects path metadata, never reads referenced content, and never lets
+    inventory text reach a shell, subprocess, or command-line argument.
+    """
+    del files  # global repository invariant, not scoped to the changed-file set
+    try:
+        import yaml  # type: ignore[import-not-found]
+    except ImportError:
+        return [
+            _parity_violation(
+                "PyYAML is required to validate the ACES parity inventory; "
+                "install pyyaml in the runtime environment"
+            )
+        ]
+
+    path = repo_root / _PARITY_INVENTORY_PATH
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return [_parity_violation("parity inventory is missing or unreadable")]
+    try:
+        data = yaml.safe_load(text)
+    except yaml.YAMLError:
+        return [_parity_violation("parity inventory is not valid YAML")]
+
+    if not isinstance(data, dict):
+        return [_parity_violation("parity inventory root must be a mapping")]
+    rows = data.get("rows")
+    if not isinstance(rows, list):
+        return [_parity_violation("parity inventory 'rows' must be a list")]
+
+    violations: list[Violation] = []
+    for index, row in enumerate(rows):
+        if not isinstance(row, dict):
+            violations.append(_parity_violation(f"row at index {index} must be a mapping"))
+            continue
+        row_id = row.get("id")
+        if not isinstance(row_id, str) or not row_id:
+            violations.append(_parity_violation(f"row at index {index} must have a non-empty string 'id'"))
+            continue
+        for field in _PARITY_INSPECTED_FIELDS:
+            if field not in row:
+                violations.append(_parity_violation(f"row {row_id!r} is missing field {field!r}"))
+                continue
+            value = row[field]
+            if not isinstance(value, str):
+                violations.append(_parity_violation(f"row {row_id!r} field {field!r} must be a string"))
+                continue
+            for raw_clause in value.split(";"):
+                clause = raw_clause.strip()
+                if not clause:
+                    continue
+                kind = classify_parity_clause(clause)
+                if kind == "path":
+                    violations.extend(_validate_parity_path(repo_root, row_id, field, clause, is_glob=False))
+                elif kind == "glob":
+                    violations.extend(_validate_parity_path(repo_root, row_id, field, clause, is_glob=True))
+                # command / prose clauses are classified only, never resolved.
+    return violations
+
+
 CHECKS = {
     "adr-registry": check_adr_registry,
     "layer-imports": check_layer_imports,
@@ -6326,6 +6526,7 @@ CHECKS = {
     "documentation-coverage": check_documentation_coverage,
     "published-contract-snapshots-immutable": check_published_contract_snapshots_immutable,
     "no-agent-attribution": check_no_agent_attribution,
+    "aces-parity-inventory-path-integrity": check_aces_parity_inventory_path_integrity,
 }
 CHECK_LEVELS = {
     "fast": [
@@ -6384,6 +6585,7 @@ CHECK_LEVELS = {
         "documentation-coverage",
         "published-contract-snapshots-immutable",
         "no-agent-attribution",
+        "aces-parity-inventory-path-integrity",
     ],
     "all": list(CHECKS),
 }
