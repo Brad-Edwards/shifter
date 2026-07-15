@@ -4,6 +4,19 @@ Range guest provisioning on Google Distributed Cloud (GDC). GDC uses KubeVirt fo
 
 On AWS, ranges are EC2 instances in isolated VPC subnets. On GDC, ranges can be KubeVirt VMs or lightweight pods on a GDC cluster, connected via custom L2 networks.
 
+> **Status: development / validation only, not approved for live-fire (ADR-030).**
+> The GDC VM Runtime backend, its scenario Pods, and its L2 Networks are **not** an
+> approved containment boundary for live-fire ranges (participants and agents that
+> run arbitrary activity). The supported GCP live-fire backend is **GCE VM range
+> cells** (`GCP_RANGE_BACKEND=gce`, the default). Normal Mission Control and CTF
+> range provisioning **fails closed** on GDC: the CMS service boundary rejects a
+> live-fire launch whenever `GCP_RANGE_BACKEND=gdc`, and the provisioner
+> independently denies a live-fire GDC apply as defense in depth (issue #1348).
+> GDC provisioning documented here is for operator/development validation of GDC
+> scaling and admission behavior only; that evidence is **not** live-fire
+> containment evidence. A future explicit non-user validation entry point is
+> tracked by #1354.
+
 ## Runtime Primitives
 
 The provisioner supports three GDC runtime primitives:
@@ -16,7 +29,10 @@ The provisioner supports three GDC runtime primitives:
 
 Current direction:
 
-- full Shifter feature parity on GCP is defined against the VM Runtime path
+- live-fire GCP ranges (Mission Control, CTF) run on **GCE VM range cells**, not
+  on the GDC VM Runtime path; see the status note above and ADR-030
+- the GDC VM Runtime path is retained for operator/development validation of GDC
+  scaling and admission behavior only
 - pod execution is an internal optimization/runtime mode, not an author-facing scenario contract
 - mixed ranges are valid when the provisioner determines different runtimes are appropriate for different guests on the same L2 network
 

@@ -75,11 +75,11 @@ else:
         "config.auth.CTFParticipantBackend",
     ]
 
-_DEFAULT_CTF_BOOTSTRAP_VALUE = "ShifterAcesRanges"
-CTF_DEFAULT_PARTICIPANT_PASSWORD = os.environ.get(
-    "CTF_DEFAULT_PARTICIPANT_PASSWORD",
-    _DEFAULT_CTF_BOOTSTRAP_VALUE,
-)
+# Optional platform-wide CTF bootstrap credential. Fails closed: the default is
+# empty, never an authenticating value. When unset, per-event
+# ``participant_password_override`` is the only accepted source and the
+# participant-account service refuses to provision without one (issue #1665).
+CTF_DEFAULT_PARTICIPANT_PASSWORD = os.environ.get("CTF_DEFAULT_PARTICIPANT_PASSWORD", "")
 CTF_PARTICIPANT_ACCOUNT_RETENTION_HOURS = int(os.environ.get("CTF_PARTICIPANT_ACCOUNT_RETENTION_HOURS", "24"))
 CTF_LOGIN_RATE_LIMIT_MAX = int(os.environ.get("CTF_LOGIN_RATE_LIMIT_MAX", "5"))
 CTF_LOGIN_RATE_LIMIT_WINDOW_SECONDS = int(os.environ.get("CTF_LOGIN_RATE_LIMIT_WINDOW_SECONDS", "300"))
