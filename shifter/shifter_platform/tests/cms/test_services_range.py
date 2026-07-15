@@ -457,3 +457,87 @@ class TestActiveRangeConstraintBackstop:
         from cms.services._range_create import _is_active_range_conflict
 
         assert _is_active_range_conflict(IntegrityError("NOT NULL constraint failed: cms_request.user_id")) is False
+
+
+class TestCreateRangeLiveFireGate:
+    """Issue #1348 / ADR-030: normal live-fire ranges may only use the approved
+    GCE VM range-cell backend. GDC VM Runtime is denied before reservation."""
+
+    def test_denies_gdc_backend_before_reservation(self, user, make_agent, hydratable_scenario, settings, monkeypatch):
+        from engine.models import Range as EngineRange
+        from shared.range_instantiation_policy import POLICY_DENIAL_CODE
+
+        settings.CLOUD_PROVIDER = "gcp"
+        monkeypatch.setenv("GCP_RANGE_BACKEND", "gdc")
+        agent = make_agent(user)
+
+        with pytest.raises(CMSError, match=r"not an approved live-fire|GCE VM range-cell") as exc:
+            services.create_range(user, hydratable_scenario.scenario_id, {"windows": agent.id})
+
+        # The stable ADR-039 permanent-denial code rides on CMSError.details (#1348).
+        assert exc.value.details.get("code") == POLICY_DENIAL_CODE
+        # Fail-closed BEFORE reservation: no RangeInstance row, no engine Range.
+        assert not RangeInstance.all_objects.filter(user_id=user.id).exists()
+        assert not EngineRange.objects.filter(user=user).exists()
+
+    def test_denies_unknown_backend_with_prerequisite_code(
+        self, user, make_agent, hydratable_scenario, settings, monkeypatch
+    ):
+        # A malformed selector fails closed with the distinct prerequisite code, not
+        # the permanent policy code -- a config error is not permission to try GDC (#1348).
+        from shared.range_instantiation_policy import PREREQUISITE_DENIAL_CODE
+
+        settings.CLOUD_PROVIDER = "gcp"
+        monkeypatch.setenv("GCP_RANGE_BACKEND", "bogus")
+        agent = make_agent(user)
+
+        with pytest.raises(CMSError) as exc:
+            services.create_range(user, hydratable_scenario.scenario_id, {"windows": agent.id})
+
+        assert exc.value.details.get("code") == PREREQUISITE_DENIAL_CODE
+        assert not RangeInstance.all_objects.filter(user_id=user.id).exists()
+
+    def test_denies_gdc_via_plane_alias(self, user, make_agent, hydratable_scenario, settings, monkeypatch):
+        settings.CLOUD_PROVIDER = "gcp"
+        monkeypatch.delenv("GCP_RANGE_BACKEND", raising=False)
+        monkeypatch.setenv("GCP_RANGE_PLANE", "gdc")
+        agent = make_agent(user)
+
+        with pytest.raises(CMSError, match=r"not an approved live-fire|GCE VM range-cell"):
+            services.create_range(user, hydratable_scenario.scenario_id, {"windows": agent.id})
+
+        assert not RangeInstance.all_objects.filter(user_id=user.id).exists()
+
+    def test_admits_gce_backend(self, user, make_agent, hydratable_scenario, settings, monkeypatch):
+        # gce is the approved live-fire backend; the gate admits and the create
+        # proceeds. Engine dispatch is a no-op in the test posture (no ENGINE_TASK_*
+        # config), so no first-party seam is mocked (ADR-019-R1).
+        settings.CLOUD_PROVIDER = "gcp"
+        monkeypatch.setenv("GCP_RANGE_BACKEND", "gce")
+        agent = make_agent(user)
+
+        services.create_range(user, hydratable_scenario.scenario_id, {"windows": agent.id})
+
+        assert RangeInstance.objects.filter(user_id=user.id).exists()
+
+    def test_admits_gce_by_default_when_selector_unset(
+        self, user, make_agent, hydratable_scenario, settings, monkeypatch
+    ):
+        settings.CLOUD_PROVIDER = "gcp"
+        monkeypatch.delenv("GCP_RANGE_BACKEND", raising=False)
+        monkeypatch.delenv("GCP_RANGE_PLANE", raising=False)
+        agent = make_agent(user)
+
+        services.create_range(user, hydratable_scenario.scenario_id, {"windows": agent.id})
+
+        assert RangeInstance.objects.filter(user_id=user.id).exists()
+
+    def test_no_op_for_non_gcp_provider(self, user, make_agent, hydratable_scenario, settings, monkeypatch):
+        # On AWS the GDC gate is a no-op even if a stale GCP selector lingers.
+        settings.CLOUD_PROVIDER = "aws"
+        monkeypatch.setenv("GCP_RANGE_BACKEND", "gdc")
+        agent = make_agent(user)
+
+        services.create_range(user, hydratable_scenario.scenario_id, {"windows": agent.id})
+
+        assert RangeInstance.objects.filter(user_id=user.id).exists()

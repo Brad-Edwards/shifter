@@ -7,7 +7,15 @@ from typing import Any
 
 
 class CloudError(Exception):
-    """Base exception for all cloud provider operations."""
+    """Base exception for all cloud provider operations.
+
+    ``code`` optionally carries a stable, machine-readable classification (e.g. the
+    ADR-039 ``identity-or-policy`` / ``prerequisite`` classes) so callers can
+    distinguish a permanent policy denial from an operational failure without
+    parsing the human-readable message (issue #1348).
+    """
+
+    code: str = ""
 
 
 class CloudProviderNotImplementedError(CloudError):

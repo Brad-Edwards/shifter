@@ -210,6 +210,46 @@ def _assert_scenario_launchable(scenario: str) -> None:
         raise CMSError(f"Scenario '{scenario}' is not available for launch")
 
 
+def _assert_live_fire_backend_admitted() -> None:
+    """Reject a live-fire range launch on a non-approved GCP backend (ADR-030, #1348).
+
+    The single service-level admission check shared by ``create_range`` and
+    ``create_aces_native_range`` -- and therefore every product path (Mission
+    Control, CTF participant/batch/spare/recovery, ACES, management commands, and
+    direct service callers) that funnels through them. It runs before the DB
+    reservation, Engine persistence, dispatch, subnet allocation, or any cloud
+    mutation, and is a no-op for non-GCP providers. ``RangeSource`` and
+    ``ENVIRONMENT`` are never treated as approval; the closed policy lives in
+    ``shared.range_instantiation_policy``.
+    """
+    import os
+
+    from django.conf import settings
+
+    from shared.range_instantiation_policy import (
+        InstantiationPurpose,
+        evaluate_gcp_backend_admission,
+    )
+
+    if str(getattr(settings, "CLOUD_PROVIDER", "")).strip().lower() != "gcp":
+        return
+    admission = evaluate_gcp_backend_admission(
+        os.environ.get("GCP_RANGE_BACKEND"),
+        os.environ.get("GCP_RANGE_PLANE"),
+        InstantiationPurpose.LIVE_FIRE,
+    )
+    if not admission.admitted:
+        logger.warning(
+            "create_range: live-fire backend denied code=%s backend=%s",
+            admission.code,
+            admission.backend or "<unset>",
+        )
+        # Carry the stable ADR-039 classification (identity-or-policy vs prerequisite)
+        # through CMSError.details so downstream retry/notification paths can treat a
+        # permanent policy denial as non-retryable (issue #1348).
+        raise CMSError(admission.reason, details={"code": admission.code})
+
+
 def _load_scenario_template_or_raise(scenario: str) -> ScenarioTemplate:
     """Return the demo scenario template or raise CMSError if not found."""
     from cms.scenarios.registry import load_demo_scenario_template
@@ -412,6 +452,7 @@ def create_range(
     )
 
     try:
+        _assert_live_fire_backend_admitted()
         _assert_no_active_range(user, range_source)
 
         _assert_scenario_launchable(scenario)
