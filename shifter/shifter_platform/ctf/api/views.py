@@ -182,6 +182,18 @@ api_restart_participant_range = legacy_api_view(
     permission_classes=CTF_ORGANIZER_PERMISSIONS,
     write_scopes=EVENT_WRITE,
 )
+api_recover_participant_range = legacy_api_view(
+    "ParticipantRangeRecoverView",
+    "ctf.views.api.ranges.api_recover_participant_range",
+    permission_classes=CTF_ORGANIZER_PERMISSIONS,
+    write_scopes=EVENT_WRITE,
+)
+api_provision_event_spares = legacy_api_view(
+    "EventRangeSpareProvisionView",
+    "ctf.views.api.ranges.api_provision_event_spares",
+    permission_classes=CTF_ORGANIZER_PERMISSIONS,
+    write_scopes=EVENT_WRITE,
+)
 api_assign_bracket = legacy_api_view(
     "AssignBracketView",
     "ctf.views.admin_brackets.api_assign_bracket",
@@ -341,12 +353,14 @@ __all__ = [
     "api_participant_list",
     "api_participant_resend_invite",
     "api_prerequisite_delete",
+    "api_provision_event_spares",
     "api_provision_participant_range",
     "api_provision_ranges",
     "api_range_access",
     "api_range_list",
     "api_range_status",
     "api_rate_challenge",
+    "api_recover_participant_range",
     "api_remove_flag",
     "api_restart_participant_range",
     "api_scenarios",
