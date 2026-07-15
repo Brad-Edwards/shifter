@@ -93,6 +93,13 @@ configuration, secrets) never appear in authored ACES semantics or in the
 evidence. With the flag off, ACES entries are not launchable and this path is
 inert.
 
+The GCE range-cell substrate is IPv4-only across planning, addressing, firewall
+posture, and outputs. IPv6-only and mixed IPv4/IPv6 topologies are unsupported:
+the provisioner manifest publishes a `network-address-family = ipv4-only`
+constraint and non-IPv4 authored networks are rejected at admission before
+dispatch (issue #1568). See
+[aces-gce-network-address-family-preflight-1568.md](aces-gce-network-address-family-preflight-1568.md).
+
 Image-registry management is a separate operator concern from package-source
 registration and conformance. A registered validation package without an
 enabled `alpine@3.19` mapping must fail loudly during realization rather than
