@@ -37,6 +37,7 @@ import {
   buildGhWorkflowRunArgs,
   ghExec,
   resolveGitRef,
+  resolveProtectedAmiRef,
 } from "./lib.js";
 import { installToolSchemaDialectNormalizer } from "../shared/tool-schema-dialect.js";
 import {
@@ -593,7 +594,10 @@ async function markOrphansDestroyedInDb(client, orphans) {
 }
 
 function triggerAmiWorkflow({ workflow, ami_type, ref, actionsPath }) {
-  const branch = ref ?? resolveGitRef(_REPO_ROOT);
+  // Base/DC AMI builds and prod promotions run only from a protected ref
+  // (dev|main); reject a working-tree feature branch rather than dispatch a
+  // workflow copy that could weaken its own inline protected-ref gate (#1656).
+  const branch = resolveProtectedAmiRef(ref);
   ghExec(
     buildGhWorkflowRunArgs({
       workflow,
@@ -2523,7 +2527,7 @@ registerTool(ctx, {
   schema: {
     ami_type: AmiTypeSchema,
     ref: SafePath.optional().describe(
-      "Branch to build from (default: current git branch, else dev)",
+      "Protected branch to build from (dev or main; default dev). Non-protected refs are rejected (#1656).",
     ),
   },
   handler: async ({ ami_type, ref }) => {

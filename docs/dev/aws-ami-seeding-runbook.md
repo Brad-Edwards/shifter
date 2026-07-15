@@ -134,7 +134,12 @@ aws ssm put-parameter --name /shifter/ami/dc --type String \
 Domain Controller (domain `internal.shifter`, NetBIOS `INTSHIFTER`). The AMI ids
 live in `shifter/packer/dc-amis.json`; no Packer source rebuilds them. Both the
 build workflow (`ami_type=dc`) and `packer-promote.yml` publish the checked-in id
-rather than a fresh build.
+rather than a fresh build. Each reads `dc-amis.json` from a dedicated checkout of
+the protected `dev` ref and resolves it through the shared validator
+`shifter/packer/scripts/bake/resolve-dc-ami.sh`, which fails closed unless the id
+exists, is AMI-shaped, and names an image EC2 reports as `available` and owned by
+the target account; the prod promote job additionally runs only from a protected
+ref (`dev`/`main`). See issue #1656.
 
 When you re-bake the pre-promoted DC (see
 [AMI management](../technical/platform_infrastructure/ami-management.md)), set the
