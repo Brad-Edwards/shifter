@@ -77,10 +77,15 @@ RUN pip install --no-cache-dir --require-hashes --only-binary :all: -r requireme
 COPY cyberscript /opt/shifter-libs/cyberscript
 COPY installation /opt/shifter-libs/installation
 
-# Dependency-light platform contract used by the standalone GCP range-cell
-# runner. Copy only the package initializer and contract module so the image
-# does not pull in Django or the rest of shifter_platform.
-COPY shifter_platform/shared/__init__.py shifter_platform/shared/range_cells.py /opt/shifter-libs/shared/
+# Dependency-light platform contract modules used by the provisioner runtime.
+# Copy the whole `shared` package (same whole-dir pattern as cyberscript and
+# installation above) so imports like `shared.range_instantiation_policy`,
+# `shared.range_escape`, and `shared.log_sanitize` (added by the #1348 refactor)
+# resolve alongside `shared.range_cells`. `shared/__init__.py` re-exports only
+# from cyberscript (already present), and the provisioner never imports the
+# Django modules (models.py, admin.py, migrations, …), so copying the whole
+# package does not pull Django into the provisioner runtime.
+COPY shifter_platform/shared /opt/shifter-libs/shared
 
 # Copy provisioner code as root-owned, immutable image content. The runtime
 # user does NOT own /app — Terraform writes go to TERRAFORM_WORKSPACE_DIR
