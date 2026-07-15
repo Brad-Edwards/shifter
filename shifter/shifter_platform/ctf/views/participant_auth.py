@@ -113,12 +113,13 @@ def _bootstrap_credential_reused(request: HttpRequest, new_password: str) -> boo
     if request.user.check_password(new_password):
         return True
     participant = live_participant_for_user(request.user)
-    if participant is None:
-        return False
-    try:
-        return new_password == effective_bootstrap_password(participant.event)
-    except CTFValidationError:
-        return False
+    reused = False
+    if participant is not None:
+        try:
+            reused = new_password == effective_bootstrap_password(participant.event)
+        except CTFValidationError:
+            reused = False
+    return reused
 
 
 @never_cache
