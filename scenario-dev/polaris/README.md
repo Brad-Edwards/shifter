@@ -1,4 +1,4 @@
-# POLARIS / NORTHSTORM CTF — Scenario Development
+# POLARIS / NORTHSTORM CTF—Scenario Development
 
 Consolidated working directory for the NORTHSTORM CTF range (Operation POLARIS).
 Everything related to designing, building, deploying, and testing the range
@@ -98,13 +98,13 @@ the same `tests/` validation scripts over SSM.
 
 Legacy local-compose flow:
 
-1. **Deploy** — on the range host:
+1. **Deploy**—on the range host:
    ```
    rsync -a scenario-dev/polaris/ ctf-range-builder:/home/atomik/range/
    ssh ctf-range-builder 'bash /home/atomik/range/tests/setup.sh'
    ```
 
-2. **Test** — run the full sweep:
+2. **Test**—run the full sweep:
    ```
    ssh ctf-range-builder 'bash /home/atomik/range/tests/run-all-smoketests.sh'
    ```
@@ -112,7 +112,7 @@ Legacy local-compose flow:
    Infrastructure-level: per-asset connectivity + cross-cutting network
    isolation. Does not verify CTFd challenge content.
 
-3. **Verify scenario content** — in a separate least-privilege operator
+3. **Verify scenario content**—in a separate least-privilege operator
    environment, run the explicitly selected, version-pinned installed
    verification distribution against the staged range. Keep its bindings and
    credentials outside this repository. A cutover-grade redacted report must
@@ -120,7 +120,7 @@ Legacy local-compose flow:
    or missing checks. The core package deliberately supplies no Polaris
    adapter, board reader, answer key, or scenario-specific CLI.
 
-4. **Reset** — before each test or between participant sessions:
+4. **Reset**—before each test or between participant sessions:
    ```
    ssh ctf-range-builder 'bash /home/atomik/range/tests/reset.sh'
    ```
