@@ -192,7 +192,11 @@ export const NAV_GROUPS: readonly NavGroup[] = [
     [
       { surface: "Overview", routeName: "home", ownerApp: "config", purpose: "Role-aware operational dashboard.", routePath: "/", iconKey: "layout-dashboard", external: false },
       { surface: "Ranges", routeName: "mission_control:dashboard", purpose: "Launch and monitor ranges.", routePath: "/mission-control/", iconKey: "server", activeContext: "range", external: false },
-      { surface: "CTF Events", routeName: "ctf:admin_dashboard", ownerApp: "ctf", permissionPolicy: "ctf_organizer", purpose: "Monitor and manage CTF operations.", routePath: "/ctf/admin/", iconKey: "flag", activeContext: "event" },
+      // In-SPA once CTF_WORKSPACE_SPA_ENABLED is on (#1372); the organizer
+      // workspace is client-routed (features/ctf/admin) and feature-flag gated so
+      // the entry stays hidden until the flag flips, matching the participant and
+      // Scenario Editor rollout pattern.
+      { surface: "CTF Events", routeName: "ctf:admin_dashboard", ownerApp: "ctf", permissionPolicy: "ctf_organizer", purpose: "Monitor and manage CTF operations.", routePath: "/ctf/admin/", iconKey: "flag", activeContext: "event", external: false, featureFlag: "ctf_workspace_spa" },
       {
         surface: "Assets",
         routeName: "mission_control:agents",

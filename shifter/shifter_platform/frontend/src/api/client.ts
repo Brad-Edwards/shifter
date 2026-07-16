@@ -54,7 +54,11 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
   const headers: Record<string, string> = { "X-Request-ID": newRequestId() };
 
   let body: BodyInit | undefined;
-  if (options.body !== undefined) {
+  if (options.body instanceof FormData) {
+    // Multipart upload (e.g. challenge file attachments): let the browser set the
+    // Content-Type + boundary; do not JSON-encode.
+    body = options.body;
+  } else if (options.body !== undefined) {
     headers["Content-Type"] = "application/json";
     body = JSON.stringify(options.body);
   }

@@ -17,6 +17,22 @@ export function formatDateTime(value: string | null | undefined): string {
   return Number.isNaN(date.getTime()) ? "—" : date.toLocaleString();
 }
 
+/** Convert an ISO datetime to a value for `<input type="datetime-local">` (local tz), or "". */
+export function toDateTimeLocalValue(value: string | null | undefined): string {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+/** Convert a `datetime-local` input value back to an ISO string, or null when empty/unparseable. */
+export function fromDateTimeLocalValue(value: string): string | null {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
 /**
  * A scoreboard ranking row is an untyped `{[key: string]: unknown}` (the DRF
  * serializer documents it as a `DictField` list). These accessors coerce the
