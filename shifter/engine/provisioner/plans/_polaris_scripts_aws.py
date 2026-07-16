@@ -71,30 +71,28 @@ PROFILE_EOF
 chmod 644 /run/shifter-agent/claude-bedrock.sh
 chown root:root /run/shifter-agent/claude-bedrock.sh
 
-# Resolve the Bedrock VPC-endpoint private IP host-side and publish it to the
-# compose .env so a14-kali's extra_hosts entry resolves the FQDN to the
-# endpoint on every up/recreate -- durable, unlike an /etc/hosts write into the
-# container layer. a14-kali cannot resolve it itself (no IMDS/public egress and
+# Resolve public AWS service FQDNs (Bedrock for agent inference, STS for the
+# per-range agent-role assume/verify) to their VPC-endpoint private IPs host-side
+# and publish them to the compose .env, so a14-kali's extra_hosts entries resolve
+# the FQDNs on every up/recreate -- durable, unlike an /etc/hosts write into the
+# container layer. a14-kali cannot resolve them itself (no IMDS/public egress and
 # its scenario DNS does not serve AWS FQDNs).
-_BEDROCK_FQDN="bedrock-runtime.__AWS_REGION__.amazonaws.com"
-_BEDROCK_IP="$(getent hosts "$_BEDROCK_FQDN" | awk '{print $1; exit}')"
-case "$_BEDROCK_IP" in
-  10.*|172.1[6-9].*|172.2[0-9].*|172.3[0-1].*|192.168.*) : ;;
-  *)
-    if command -v dig >/dev/null 2>&1; then
-      _BEDROCK_IP="$(dig +short @169.254.169.253 "$_BEDROCK_FQDN" | grep -E '^10\.' | head -n1 || true)"
-    fi
-    ;;
-esac
-if [ -z "$_BEDROCK_IP" ]; then
-  echo "polaris bootstrap: could not resolve $_BEDROCK_FQDN to a private IP" >&2
-  exit 1
-fi
 _ENV_FILE="/opt/polaris/scenario-dev/polaris/build/.env"
 touch "$_ENV_FILE"
-grep -v '^SHIFTER_BEDROCK_IP=' "$_ENV_FILE" > "$_ENV_FILE.tmp" 2>/dev/null || true
-echo "SHIFTER_BEDROCK_IP=$_BEDROCK_IP" >> "$_ENV_FILE.tmp"
-mv "$_ENV_FILE.tmp" "$_ENV_FILE"
+_pin_endpoint_ip() {  # $1=FQDN  $2=.env var name
+  _ip="$(getent hosts "$1" | awk '{print $1; exit}')"
+  case "$_ip" in
+    10.*|172.1[6-9].*|172.2[0-9].*|172.3[0-1].*|192.168.*) : ;;
+    *) command -v dig >/dev/null 2>&1 && _ip="$(dig +short @169.254.169.253 "$1" | grep -E '^10\.' | head -n1 || true)"
+      ;;
+  esac
+  [ -n "$_ip" ] || { echo "polaris bootstrap: could not resolve $1 to a private IP" >&2; exit 1; }
+  grep -v "^$2=" "$_ENV_FILE" > "$_ENV_FILE.tmp" 2>/dev/null || true
+  echo "$2=$_ip" >> "$_ENV_FILE.tmp"
+  mv "$_ENV_FILE.tmp" "$_ENV_FILE"
+}
+_pin_endpoint_ip "bedrock-runtime.__AWS_REGION__.amazonaws.com" SHIFTER_BEDROCK_IP
+_pin_endpoint_ip "sts.__AWS_REGION__.amazonaws.com" SHIFTER_STS_IP
 """
 
 # Appended after a14-kali's environment in the compose override: Bedrock/
@@ -112,6 +110,7 @@ _AWS_AGENT_COMPOSE_TEMPLATE = (
     "\n      - /run/shifter-agent/claude-bedrock.sh:/etc/profile.d/claude-bedrock.sh:ro"
     "\n    extra_hosts:"
     '\n      - "bedrock-runtime.__AWS_REGION__.amazonaws.com:\\${SHIFTER_BEDROCK_IP}"'
+    '\n      - "sts.__AWS_REGION__.amazonaws.com:\\${SHIFTER_STS_IP}"'
 )
 
 
