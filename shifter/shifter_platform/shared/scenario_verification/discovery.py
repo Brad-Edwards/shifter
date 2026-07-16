@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import importlib.metadata as metadata
 import re
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
-from typing import Protocol
+from typing import Protocol, cast
 
 from shared.log_sanitize import safe_log_value
 
@@ -225,8 +225,9 @@ def load_plugin(
         raise PluginDiscoveryError(f"failed to load {identity}: {type(exc).__name__}") from None
     if not callable(factory):
         raise PluginDiscoveryError(f"{identity} does not expose a zero-argument factory")
+    plugin_factory = cast(Callable[[], object], factory)
     try:
-        declaration = factory()
+        declaration = plugin_factory()
     except Exception as exc:
         raise PluginDiscoveryError(f"plugin factory failed for {identity}: {type(exc).__name__}") from None
     try:
