@@ -47,10 +47,13 @@ chown root:root /run/shifter-agent/credential-process.sh
 
 # AWS profile pointing at the credential_process reader. a14-kali receives
 # AWS_CONFIG_FILE=/run/shifter-agent/aws-config via the compose environment.
+# sts_regional_endpoints=regional forces sts.<region> (pinned in extra_hosts)
+# over the global sts.amazonaws.com, which a14-kali cannot resolve.
 cat > /run/shifter-agent/aws-config <<'AWSCFG_EOF'
 [default]
 credential_process = /run/shifter-agent/credential-process.sh
 region = __AWS_REGION__
+sts_regional_endpoints = regional
 AWSCFG_EOF
 chmod 644 /run/shifter-agent/aws-config
 chown root:root /run/shifter-agent/aws-config
@@ -457,9 +460,10 @@ if [[ -z "$AGENT_ROLE_NAME" ]]; then
   echo "polaris verify: could not derive the agent role name from role_arn" >&2
   exit 1
 fi
-caller_identity=$(docker exec a14-kali aws sts get-caller-identity --output json 2>/dev/null || true)
+caller_identity=$(docker exec a14-kali aws sts get-caller-identity --output json 2>&1 || true)
 if [[ "$caller_identity" != *"$AGENT_ROLE_NAME"* ]]; then
   echo "polaris verify: a14-kali caller identity does not resolve to the per-range agent role" >&2
+  echo "polaris verify: get-caller-identity output: ${caller_identity:-<empty>}" >&2
   exit 1
 fi
 
