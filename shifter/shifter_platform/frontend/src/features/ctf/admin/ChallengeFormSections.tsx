@@ -195,10 +195,10 @@ export function FlagsSection({ challengeId }: Readonly<{ challengeId: string }>)
   const [added, setAdded] = useState<AddedFlag[]>([]);
   const error = describeMutationError(add.error ?? remove.error, "Could not update flags.");
 
+  const dropAdded = (id: string) => setAdded((prev) => prev.filter((f) => f.id !== id));
+
   function handleRemove(id: string) {
-    remove.mutate(id, {
-      onSuccess: () => setAdded((prev) => prev.filter((f) => f.id !== id)),
-    });
+    remove.mutate(id, { onSuccess: () => dropAdded(id) });
   }
 
   function recordAdded(result: { id: string; flag_type: string; order: number }) {
@@ -255,6 +255,13 @@ export function HintsSection({ challengeId }: Readonly<{ challengeId: string }>)
   const error = describeMutationError(add.error ?? remove.error, "Could not update hints.");
   const hints = query.data?.hints ?? [];
 
+  function handleSubmit(event: React.FormEvent) {
+    event.preventDefault();
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    add.mutate({ text: trimmed, penalty: intOr(penalty, 0), order: hints.length }, { onSuccess: () => setText("") });
+  }
+
   let body: React.ReactNode;
   if (query.isLoading) {
     body = <Skeleton className="h-10 w-full" />;
@@ -287,17 +294,7 @@ export function HintsSection({ challengeId }: Readonly<{ challengeId: string }>)
   return (
     <SectionCard title="Hints">
       {body}
-      <form
-        className="mt-4 flex flex-col gap-3"
-        onSubmit={(event) => {
-          event.preventDefault();
-          if (!text.trim()) return;
-          add.mutate(
-            { text: text.trim(), penalty: intOr(penalty, 0), order: hints.length },
-            { onSuccess: () => setText("") },
-          );
-        }}
-      >
+      <form className="mt-4 flex flex-col gap-3" onSubmit={handleSubmit}>
         <div className="flex flex-col gap-2">
           <Label htmlFor="hint-text">Add a hint</Label>
           <Input id="hint-text" value={text} onChange={(e) => setText(e.target.value)} placeholder="Hint text" />
@@ -329,6 +326,18 @@ export function FilesSection({ challengeId }: Readonly<{ challengeId: string }>)
   const fileRef = useRef<HTMLInputElement>(null);
   const error = describeMutationError(upload.error ?? remove.error, "Could not update files.");
   const files = query.data?.files ?? [];
+
+  function resetUpload() {
+    setDisplayName("");
+    if (fileRef.current) fileRef.current.value = "";
+  }
+
+  function handleSubmit(event: React.FormEvent) {
+    event.preventDefault();
+    const file = fileRef.current?.files?.[0];
+    if (!file) return;
+    upload.mutate({ file, displayName: displayName.trim() || undefined }, { onSuccess: resetUpload });
+  }
 
   let body: React.ReactNode;
   if (query.isLoading) {
@@ -362,23 +371,7 @@ export function FilesSection({ challengeId }: Readonly<{ challengeId: string }>)
   return (
     <SectionCard title="Files">
       {body}
-      <form
-        className="mt-4 flex flex-col gap-3"
-        onSubmit={(event) => {
-          event.preventDefault();
-          const file = fileRef.current?.files?.[0];
-          if (!file) return;
-          upload.mutate(
-            { file, displayName: displayName.trim() || undefined },
-            {
-              onSuccess: () => {
-                setDisplayName("");
-                if (fileRef.current) fileRef.current.value = "";
-              },
-            },
-          );
-        }}
-      >
+      <form className="mt-4 flex flex-col gap-3" onSubmit={handleSubmit}>
         <div className="flex flex-col gap-2">
           <Label htmlFor="file-input">Upload an attachment</Label>
           <Input id="file-input" type="file" ref={fileRef} />
@@ -410,6 +403,13 @@ export function PrerequisitesSection({ challengeId }: Readonly<{ challengeId: st
   const [requiredId, setRequiredId] = useState("");
   const error = describeMutationError(add.error ?? remove.error, "Could not update prerequisites.");
   const prerequisites = query.data?.prerequisites ?? [];
+
+  function handleSubmit(event: React.FormEvent) {
+    event.preventDefault();
+    const trimmed = requiredId.trim();
+    if (!trimmed) return;
+    add.mutate({ required_challenge_id: trimmed }, { onSuccess: () => setRequiredId("") });
+  }
 
   let body: React.ReactNode;
   if (query.isLoading) {
@@ -443,14 +443,7 @@ export function PrerequisitesSection({ challengeId }: Readonly<{ challengeId: st
   return (
     <SectionCard title="Prerequisites">
       {body}
-      <form
-        className="mt-4 flex items-end gap-2"
-        onSubmit={(event) => {
-          event.preventDefault();
-          if (!requiredId.trim()) return;
-          add.mutate({ required_challenge_id: requiredId.trim() }, { onSuccess: () => setRequiredId("") });
-        }}
-      >
+      <form className="mt-4 flex items-end gap-2" onSubmit={handleSubmit}>
         <div className="flex flex-1 flex-col gap-2">
           <Label htmlFor="prereq-id">Required challenge ID</Label>
           <Input id="prereq-id" value={requiredId} onChange={(e) => setRequiredId(e.target.value)} placeholder="UUID" />
