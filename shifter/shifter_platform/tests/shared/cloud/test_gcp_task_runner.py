@@ -445,34 +445,36 @@ class TestGCPTaskRunnerProvisionerContract:
     def test_provisioner_container_name_is_used_at_engine_dispatch_sites(self) -> None:
         """The hardening gate inside `_is_provisioner_task` keys on the cloud-neutral
         ``PROVISIONER_CONTAINER_NAME`` constant, and the engine dispatch sites in
-        `shifter/shifter_platform/engine/ecs.py` MUST pass that exact constant when
-        calling ``run_task``. Otherwise a rename of the constant would silently
-        disable the issue #1103 hardening for production traffic. The engine layer
-        imports from ``shared.cloud`` (cloud-neutral) — NOT from
+        the ``shifter/shifter_platform/engine/ecs`` package MUST pass that exact
+        constant when calling ``run_task``. Otherwise a rename of the constant would
+        silently disable the issue #1103 hardening for production traffic. The engine
+        layer imports from ``shared.cloud`` (cloud-neutral) — NOT from
         ``shared.cloud.gcp.*`` — to keep AWS dispatch decoupled from GCP modules."""
         import re
         from pathlib import Path
 
         from shared.cloud import PROVISIONER_CONTAINER_NAME
 
-        ecs_path = Path(__file__).resolve().parents[3] / "engine" / "ecs.py"
-        source = ecs_path.read_text(encoding="utf-8")
+        # engine.ecs is a package (#685); scan every module in it so the contract
+        # holds regardless of which submodule owns the import / dispatch sites.
+        ecs_dir = Path(__file__).resolve().parents[3] / "engine" / "ecs"
+        source = "\n".join(path.read_text(encoding="utf-8") for path in sorted(ecs_dir.glob("*.py")))
 
-        # The engine module must import the constant from the cloud-neutral layer.
+        # The engine package must import the constant from the cloud-neutral layer.
         assert re.search(
             r"from shared\.cloud import [^\n]*\bPROVISIONER_CONTAINER_NAME\b",
             source,
-        ), "engine/ecs.py must import PROVISIONER_CONTAINER_NAME from cloud-neutral shared.cloud"
+        ), "engine/ecs must import PROVISIONER_CONTAINER_NAME from cloud-neutral shared.cloud"
         # And NOT from shared.cloud.gcp.* (which would break the cloud abstraction).
         assert (
             "from shared.cloud.gcp" not in source
             or "PROVISIONER_CONTAINER_NAME" not in source.split("from shared.cloud.gcp")[1].splitlines()[0]
-        ), "engine/ecs.py must NOT import PROVISIONER_CONTAINER_NAME from shared.cloud.gcp.*"
+        ), "engine/ecs must NOT import PROVISIONER_CONTAINER_NAME from shared.cloud.gcp.*"
 
         # Every run_task call site in the engine must dispatch with the
         # constant — no string literals like `"pulumi-provisioner"` allowed.
         run_task_calls = list(re.finditer(r"runner\.run_task\((.*?)\)", source, flags=re.DOTALL))
-        assert run_task_calls, "engine/ecs.py must contain runner.run_task call sites"
+        assert run_task_calls, "engine/ecs must contain runner.run_task call sites"
         for match in run_task_calls:
             args = match.group(1)
             if "container_name" not in args:
