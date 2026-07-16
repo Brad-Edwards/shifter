@@ -14,9 +14,36 @@ from typing import Any
 
 from django.conf import settings
 
+# Re-exported (see ``__all__``): historical import path for callers and tests
+# that reference the realized-instance projection helpers at
+# ``engine.services._common`` (#685). The implementation lives in the
+# dependency-neutral ``engine._range_state`` so the model compatibility
+# wrappers on ``engine.models.Range`` can consume the same pure functions
+# without importing a private ``engine.services`` submodule (that would make
+# the model depend upward on the service layer, which already depends on the
+# model).
+from engine._range_state import (
+    attacker_instance,
+    attacker_private_ip,
+    find_instance_by_role,
+    find_instance_by_uuid,
+    first_victim_private_ip,
+    victim_instances,
+)
 from engine.secrets import SecretsError
 
 logger = logging.getLogger(__name__)
+
+__all__ = [
+    "EngineError",
+    "SecretsError",
+    "attacker_instance",
+    "attacker_private_ip",
+    "find_instance_by_role",
+    "find_instance_by_uuid",
+    "first_victim_private_ip",
+    "victim_instances",
+]
 
 
 def _get_rdp_password(secret_ref: str) -> str:

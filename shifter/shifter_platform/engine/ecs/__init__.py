@@ -1,28 +1,38 @@
-"""ECS Fargate task orchestration for Shifter Engine.
+"""ECS Fargate / GCP task orchestration for Shifter Engine (package facade).
 
-This module triggers ECS tasks to provision and teardown range infrastructure.
-The Shifter Engine writes directly to RDS, so no callback endpoint is needed.
+This package triggers provisioner tasks to provision and teardown range
+infrastructure. The Shifter Engine writes directly to the database, so no
+callback endpoint is needed.
 
 Local Development:
     Set LOCAL_PROVISIONER=subprocess in settings to run the provisioner locally
-    instead of triggering ECS. This requires:
+    instead of triggering a remote task. This requires:
     - AWS credentials configured
     - PROVISIONER_PATH setting pointing to the provisioner directory
+
+The implementation is split by responsibility across private submodules
+(``_env`` GCP Job env projection, ``_config`` task-runner config, ``_local``
+local subprocess fallback, ``_status`` task-status projection) and re-exported
+here (#685) so callers keep using ``from engine.ecs import X``. The dispatch
+pipeline and its logging stay in this facade so it retains the stable
+``engine.ecs`` logger namespace.
 """
 
 from __future__ import annotations
 
 import logging
-import os
-import subprocess  # nosec B404 - used for local dev provisioner only
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from django.conf import settings
-from django.core.exceptions import ImproperlyConfigured
 
 from shared.cloud import PROVISIONER_CONTAINER_NAME, get_task_runner
 from shared.cloud.exceptions import CloudTaskError
 from shared.enums import ResourceType
+
+from ._config import _get_engine_task_config
+from ._env import _GCP_PROVISIONER_ENV_KEYS, _get_gcp_provisioner_env_overrides
+from ._local import _is_local_provisioner_enabled, _run_local_provisioner
+from ._status import get_task_status
 
 # SonarCloud S1192: extracted duplicated string literals.
 REQUEST_ID_NONE_MSG = "request_id cannot be None"
@@ -31,304 +41,6 @@ if TYPE_CHECKING:
     from uuid import UUID
 
 logger = logging.getLogger(__name__)
-
-_GCP_PROVISIONER_ENV_KEYS = (
-    "CLOUD_PROVIDER",
-    "ENVIRONMENT",
-    "CLOUD_REGION",
-    "AWS_REGION",
-    "GCP_REGION",
-    "GCP_PROJECT_ID",
-    "GOOGLE_CLOUD_PROJECT",
-    "CLOUD_PROJECT_ID",
-    "DB_HOST",
-    "DB_PORT",
-    "DB_NAME",
-    "DB_USER",
-    "DB_PASSWORD",
-    "FIELD_ENCRYPTION_KEY",
-    "RANGE_EVENTS_TOPIC_ID",
-    "SNS_RANGE_EVENTS_ARN",
-    "STORAGE_BUCKET_NAME",
-    "AGENT_STORAGE_BUCKET",
-    "AGENT_S3_BUCKET",
-    "RANGE_NETWORK_ID",
-    "RANGE_NETWORK_CIDR",
-    "RANGE_NETWORK_REGION",
-    "RANGE_NETWORK_ZONE",
-    "PORTAL_NETWORK_CIDRS",
-    "GCP_RANGE_BACKEND",
-    "GCP_RANGE_PLANE",
-    "GCP_RANGE_CELL_NETWORK_MODE",
-    "GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL",
-    "GCP_RANGE_HOST_SERVICE_ACCOUNT_SCOPES",
-    "GCP_RANGE_LINUX_IMAGE",
-    "GCP_RANGE_LINUX_MACHINE_TYPE",
-    "GCP_RANGE_LINUX_DISK_SIZE_GB",
-    "GCP_RANGE_LINUX_DISK_TYPE",
-    "GCP_RANGE_KALI_IMAGE",
-    "GCP_RANGE_KALI_MACHINE_TYPE",
-    "GCP_RANGE_KALI_DISK_SIZE_GB",
-    "GCP_RANGE_KALI_DISK_TYPE",
-    "GCP_RANGE_WINDOWS_IMAGE",
-    "GCP_RANGE_WINDOWS_MACHINE_TYPE",
-    "GCP_RANGE_WINDOWS_DISK_SIZE_GB",
-    "GCP_RANGE_WINDOWS_DISK_TYPE",
-    "GCP_RANGE_DC_IMAGE",
-    "GCP_RANGE_DC_MACHINE_TYPE",
-    "GCP_RANGE_DC_DISK_SIZE_GB",
-    "GCP_RANGE_DC_DISK_TYPE",
-    "GCP_RANGE_EGRESS_ALLOW_CIDRS",
-    "GCP_RANGE_PRIVATE_GOOGLE_ACCESS",
-    "GCP_RANGE_HOST_MGMT_SSH_PORT",
-    "GCP_RANGE_VERTEX_PROJECT_ID",
-    "GCP_RANGE_VERTEX_REGION",
-    "GCP_RANGE_VERTEX_SERVICE_ACCOUNT_EMAIL",
-    "GCP_RANGE_KALI_ANTHROPIC_MODEL",
-    "GCP_RANGE_KALI_ANTHROPIC_SMALL_FAST_MODEL",
-    "POLARIS_TESTS_BUCKET",
-    "POLARIS_TESTS_KEY",
-    "GDC_ACCESS_SECRET_ID",
-    "GDC_RANGE_NAMESPACE_PREFIX",
-    "GDC_NETWORK_INTERFACE",
-    "GDC_NETWORK_DNS_NAMESERVERS",
-    "GDC_STATIC_IP_RESERVATION_COUNT",
-    "GDC_VM_STORAGE_CLASS",
-    "GDC_VM_IMAGE_GCS_SECRET_ID",
-    "GDC_VMSERIES_IMAGE_URL",
-    "GDC_VMSERIES_BOOTSTRAP_BUCKET",
-    "GDC_VMSERIES_STORAGE_CLASS",
-    "GDC_VMSERIES_IMAGE_GCS_SECRET_ID",
-    "GDC_VMSERIES_NAMESPACE_PREFIX",
-    "GDC_VMSERIES_MGMT_NETWORK_NAME",
-    "GDC_VMSERIES_MGMT_IP_CIDR",
-    "GDC_VMSERIES_DATA_NETWORK_NAME",
-    "GDC_VMSERIES_DATA_IP_CIDR",
-    "GDC_VMSERIES_ROUTE_NEXT_HOP_IP",
-    "GDC_VMSERIES_VCPUS",
-    "GDC_VMSERIES_MEMORY",
-    "GDC_VMSERIES_DISK_SIZE_GIB",
-    "GDC_VMSERIES_BOOTSTRAP_DISK_SIZE_GIB",
-    "GDC_VMSERIES_BOOTSTRAP_XML_TEMPLATE_SECRET_ID",
-    # GDC_WINDOWS_ADMIN_PASSWORD / GDC_KALI_PASSWORD / GDC_UBUNTU_PASSWORD
-    # intentionally removed (#762). Guest passwords are now per-instance
-    # GCP Secret Manager secrets created by the provisioner at apply
-    # time and resolved by the portal through shared.cloud at access
-    # time. No shared static credential flows through the provisioner
-    # env any more.
-    "DC_DOMAIN_PASSWORD",
-    "GDC_KALI_IMAGE_URL",
-    "GDC_KALI_VCPUS",
-    "GDC_KALI_MEMORY",
-    "GDC_KALI_DISK_SIZE_GIB",
-    "GDC_UBUNTU_IMAGE_URL",
-    "GDC_UBUNTU_VCPUS",
-    "GDC_UBUNTU_MEMORY",
-    "GDC_UBUNTU_DISK_SIZE_GIB",
-    "GDC_WINDOWS_IMAGE_URL",
-    "GDC_WINDOWS_VCPUS",
-    "GDC_WINDOWS_MEMORY",
-    "GDC_WINDOWS_DISK_SIZE_GIB",
-    "GDC_DC_IMAGE_URL",
-    "GDC_DC_VCPUS",
-    "GDC_DC_MEMORY",
-    "GDC_DC_DISK_SIZE_GIB",
-    "GDC_SCENARIO_POD_IMAGE_PULL_POLICY",
-    "GDC_SCENARIO_POD_KALI_IMAGE",
-    "GDC_SCENARIO_POD_UBUNTU_IMAGE",
-    # Image for the in-range-cluster guest setup-runner pod. GDC range VMs
-    # live on an isolated L2 segment, so guest SSH setup runs from a pod in
-    # the range cluster (RangePodSSHExecutor). GDC_SETUP_RUNNER_IMAGE is an
-    # explicit override; otherwise the provisioner falls back to its own
-    # image via ENGINE_TASK_IMAGE (forwarded here so it is set in the Job).
-    "GDC_SETUP_RUNNER_IMAGE",
-    "ENGINE_TASK_IMAGE",
-    "RANGE_VPC_ID",
-    "RANGE_VPC_CIDR",
-    "RANGE_AVAILABILITY_ZONE",
-    "AVAILABILITY_ZONE",
-)
-
-
-def _run_local_provisioner(command: list[str]) -> str | None:
-    """Run the provisioner locally as a subprocess.
-
-    Args:
-        command: Command arguments
-            (e.g., ["range", "provision", "--request-id", "..."])
-
-    Returns:
-        "local-{pid}" if started successfully, None if not configured
-
-    Raises:
-        RuntimeError: If provisioner fails to start
-    """
-    provisioner_path = getattr(settings, "PROVISIONER_PATH", None)
-    if not provisioner_path:
-        # Default to relative path from Django app
-        base = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-        provisioner_path = os.path.join(base, "engine", "provisioner")
-
-    main_py = os.path.join(provisioner_path, "main.py")
-    if not os.path.exists(main_py):
-        logger.error("Provisioner not found at %s", main_py)
-        return None
-
-    # Build environment for provisioner
-    env = os.environ.copy()
-
-    # Ensure required env vars are set (from Django settings or environment)
-    env.setdefault("ENVIRONMENT", getattr(settings, "ENVIRONMENT", "dev"))
-    env.setdefault("CLOUD_PROVIDER", settings.CLOUD_PROVIDER)
-    env.setdefault("CLOUD_REGION", getattr(settings, "CLOUD_REGION", "us-east-2"))
-    env.setdefault("AWS_REGION", getattr(settings, "AWS_REGION", "us-east-2"))
-    gcp_project_id = getattr(settings, "GCP_PROJECT_ID", "")
-    if gcp_project_id:
-        env.setdefault("GCP_PROJECT_ID", gcp_project_id)
-        env.setdefault("GOOGLE_CLOUD_PROJECT", gcp_project_id)
-
-    # For local dev, use standard DB connection (not IAM auth)
-    # The provisioner will need DB_HOST, DB_USER, DB_PASSWORD, DB_NAME
-    if hasattr(settings, "DATABASES"):
-        db_config = settings.DATABASES.get("default", {})
-        env.setdefault("DB_HOST", str(db_config.get("HOST", "localhost")))
-        env.setdefault("DB_PORT", str(db_config.get("PORT", 5432)))
-        env.setdefault("DB_USER", str(db_config.get("USER", "postgres")))
-        env.setdefault("DB_PASSWORD", str(db_config.get("PASSWORD", "")))
-        env.setdefault("DB_NAME", str(db_config.get("NAME", "shifter")))
-
-    # SNS config (for event publishing - LocalStack support)
-    sns_arn = getattr(settings, "RANGE_EVENTS_TOPIC_ID", "") or getattr(settings, "SNS_RANGE_EVENTS_ARN", "")
-    aws_endpoint = getattr(settings, "AWS_ENDPOINT_URL", "")
-    if sns_arn:
-        env.setdefault("RANGE_EVENTS_TOPIC_ID", sns_arn)
-        env.setdefault("SNS_RANGE_EVENTS_ARN", sns_arn)
-    if aws_endpoint:
-        env.setdefault("AWS_ENDPOINT_URL", aws_endpoint)
-
-    full_command = ["python", main_py, *command]
-    logger.info("Starting local provisioner: %s", " ".join(full_command))
-
-    try:
-        # Run in background (non-blocking)
-        # Security: command is hardcoded path to our provisioner, not user input
-        process = subprocess.Popen(  # noqa: S603  # nosec B603
-            full_command,
-            cwd=provisioner_path,
-            env=env,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        )
-        logger.info("Local provisioner started with PID %s", process.pid)
-        return f"local-{process.pid}"
-
-    except Exception as e:
-        logger.exception("Failed to start local provisioner: %s", e)
-        raise RuntimeError(f"Local provisioner failed: {e}") from e
-
-
-def _is_local_provisioner_enabled() -> bool:
-    """Check if local provisioner mode is enabled."""
-    mode = getattr(settings, "LOCAL_PROVISIONER", None)
-    return mode in ("subprocess", "docker")
-
-
-def _get_gcp_provisioner_env_overrides() -> dict[str, str] | None:
-    """Forward the runtime env contract needed by ephemeral GKE provisioner Jobs."""
-    if settings.CLOUD_PROVIDER != "gcp":
-        return None
-
-    fallback_values = {
-        "CLOUD_PROVIDER": settings.CLOUD_PROVIDER,
-        "ENVIRONMENT": getattr(settings, "ENVIRONMENT", ""),
-        "CLOUD_REGION": getattr(settings, "CLOUD_REGION", ""),
-        "AWS_REGION": getattr(settings, "AWS_REGION", ""),
-        "GCP_REGION": os.environ.get("GCP_REGION") or getattr(settings, "CLOUD_REGION", ""),
-        "GCP_PROJECT_ID": getattr(settings, "GCP_PROJECT_ID", ""),
-        "GOOGLE_CLOUD_PROJECT": getattr(settings, "GCP_PROJECT_ID", ""),
-        "CLOUD_PROJECT_ID": getattr(settings, "GCP_PROJECT_ID", ""),
-    }
-
-    env_overrides: dict[str, str] = {}
-    for key in _GCP_PROVISIONER_ENV_KEYS:
-        value = os.environ.get(key)
-        if value is None or value == "":
-            value = fallback_values.get(key, "")
-        if value is None or value == "":
-            continue
-        env_overrides[key] = str(value)
-
-    return env_overrides or None
-
-
-def _get_engine_task_config() -> tuple[str, str, dict[str, Any] | None] | None:
-    """Read Engine task runner configuration from settings.
-
-    Returns:
-        Tuple of (cluster_or_location, task_definition_or_job, network_config)
-        or None if configuration is incomplete.
-    """
-    provider = settings.CLOUD_PROVIDER
-    cluster: str = (
-        getattr(settings, "ENGINE_TASK_CLUSTER", None) or getattr(settings, "ENGINE_ECS_CLUSTER_ARN", None) or ""
-    )
-    task_definition: str = (
-        getattr(settings, "ENGINE_TASK_DEFINITION", None) or getattr(settings, "ENGINE_TASK_DEFINITION_ARN", None) or ""
-    )
-
-    if provider == "gcp":
-        return _gcp_engine_task_config(cluster, task_definition)
-    if provider == "aws":
-        return _aws_engine_task_config(cluster, task_definition)
-    raise ImproperlyConfigured(f"Unsupported CLOUD_PROVIDER for engine task dispatch: {provider!r}")
-
-
-def _gcp_engine_task_config(cluster: str, task_definition: str) -> tuple[str, str, dict[str, Any] | None] | None:
-    """Return the GCP engine task config, or None when it is incomplete."""
-    if not all([cluster, task_definition]):
-        logger.warning(
-            "GCP task configuration incomplete, skipping task run. "
-            "Set ENGINE_TASK_NAMESPACE/ENGINE_TASK_CLUSTER and "
-            "ENGINE_TASK_IMAGE/ENGINE_TASK_DEFINITION in settings."
-        )
-        return None
-    return cluster, task_definition, None
-
-
-def _aws_engine_task_config(cluster: str, task_definition: str) -> tuple[str, str, dict[str, Any] | None] | None:
-    """Return the AWS engine task config (cluster, task def, network), or None when incomplete."""
-    security_group_id: str = (
-        getattr(settings, "ENGINE_TASK_NETWORK_SECURITY_GROUP_ID", None)
-        or getattr(settings, "ENGINE_ECS_SECURITY_GROUP_ID", None)
-        or ""
-    )
-    subnet_ids_str: str = (
-        getattr(settings, "ENGINE_TASK_NETWORK_SUBNET_IDS", None)
-        or getattr(settings, "ENGINE_PRIVATE_SUBNET_IDS", "")
-        or ""
-    )
-
-    if not all([cluster, task_definition, security_group_id, subnet_ids_str]):
-        logger.warning(
-            "AWS task configuration incomplete, skipping ECS task. "
-            "Set ENGINE_TASK_CLUSTER, ENGINE_TASK_DEFINITION, "
-            "ENGINE_TASK_NETWORK_SECURITY_GROUP_ID, and ENGINE_TASK_NETWORK_SUBNET_IDS in settings."
-        )
-        return None
-
-    subnet_ids = [s.strip() for s in subnet_ids_str.split(",") if s.strip()]
-    if not subnet_ids:
-        logger.error("ENGINE_TASK_NETWORK_SUBNET_IDS is empty or invalid")
-        return None
-
-    network_config = {
-        "awsvpcConfiguration": {
-            "subnets": subnet_ids,
-            "securityGroups": [security_group_id],
-            "assignPublicIp": "DISABLED",
-        }
-    }
-    return cluster, task_definition, network_config
 
 
 def _validate_start_ecs_task_args(range_id: int, user_id: int, command: str) -> None:
@@ -744,36 +456,26 @@ def start_ngfw_operation(request_id: UUID, operation: str) -> str | None:
     return _start_ngfw_ecs_task(request_id, command)
 
 
-def get_task_status(task_arn: str) -> dict | None:
-    """Get the status of an ECS task.
-
-    Args:
-        task_arn: ARN of the ECS task to check
-
-    Returns:
-        Dict with status info, or None if not configured
-    """
-    if not task_arn:
-        return None
-
-    cluster = getattr(settings, "ENGINE_TASK_CLUSTER", None) or getattr(settings, "ENGINE_ECS_CLUSTER_ARN", None)
-    if not cluster:
-        return None
-
-    try:
-        runner = get_task_runner()
-        result = runner.get_task_status(cluster=cluster, task_id=task_arn)
-
-        if result is None:
-            return {"status": "UNKNOWN", "reason": "Task not found"}
-
-        return {
-            "status": result.get("status", "UNKNOWN"),
-            "desired_status": result.get("desired_status"),
-            "started_at": result.get("started_at"),
-            "stopped_at": result.get("stopped_at"),
-            "stopped_reason": result.get("stopped_reason"),
-        }
-    except CloudTaskError as e:
-        logger.exception("Failed to get task status: %s", e)
-        return None
+__all__ = [
+    # Internal seams re-exported for tests, kept stable across the #685 split.
+    "_GCP_PROVISIONER_ENV_KEYS",
+    "_get_engine_task_config",
+    "_get_gcp_provisioner_env_overrides",
+    "_is_local_provisioner_enabled",
+    "_run_local_provisioner",
+    "_start_ecs_task",
+    "_start_ngfw_ecs_task",
+    # Public provisioner dispatch entrypoints.
+    "dispatch_provisioner_command",
+    "get_task_status",
+    "start_aces_range_provisioning",
+    "start_aces_range_teardown",
+    "start_ngfw_operation",
+    "start_ngfw_provisioning",
+    "start_ngfw_teardown",
+    "start_provisioning",
+    "start_range_operation",
+    "start_range_provisioning",
+    "start_range_teardown",
+    "start_teardown",
+]

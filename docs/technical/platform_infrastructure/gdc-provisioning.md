@@ -76,6 +76,33 @@ Provisions Palo Alto Networks VM-Series as KubeVirt VMs with:
 - SSH access via Secret Manager credentials
 - Power operations (start/stop)
 
+## Backend Ownership Binding (destroy-after-selector-flip)
+
+`GCP_RANGE_BACKEND` selects which backend a *new* GCP range is admitted on (`gce`
+range cells by default, or `gdc` VM Runtime for validation). It is a deploy-wide
+selector, not durable ownership. Since #1666 the admitted backend and trusted
+instantiation purpose are persisted as a write-once binding on the Engine `Range`
+(`range_backend`, `instantiation_purpose`) at provision time, sourced from the
+CMS live-fire admission result. Destroy, compensation, retry, and reconciliation
+route from that persisted binding (read through the provisioner's request-scoped
+database projection), never from a re-read of the selector, so flipping the
+deploy selector `gdc -> gce` can no longer route an existing GDC range through the
+GCE path and strand its namespaces, VMs, disks, secrets, L2 Networks, and subnet
+allocations.
+
+Ranges created before #1666 carry no binding. On destroy the provisioner resolves
+their backend only from durable ownership evidence (the `asset_type` discriminant
+persisted on each instance's state: `vm_runtime_vm`/`scenario_pod` for GDC,
+`gce_vm` for GCE range cells). A range whose evidence is ambiguous or absent fails
+closed with a `prerequisite` diagnostic and keeps its cleanup state; back-fill its
+binding explicitly, while the historical selector is still known, before retrying:
+
+```bash
+python manage.py backfill_range_backend_binding --request-id <uuid> --backend gdc
+```
+
+The binding is write-once: the command refuses to overwrite an existing value.
+
 ## Configuration
 
 All GDC config is loaded from environment variables and Secret Manager at runtime. Key config structures in `engine/provisioner/config.py`:

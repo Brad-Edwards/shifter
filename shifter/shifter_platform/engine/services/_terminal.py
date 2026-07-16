@@ -20,6 +20,7 @@ from ._common import (
     _resolve_ngfw_management_ip,
     _resolve_ngfw_ssh_key_secret_ref,
     _resolve_rdp_credentials,
+    find_instance_by_uuid,
 )
 
 
@@ -122,7 +123,7 @@ def get_rdp_connection_info(user: User, instance_uuid: str) -> dict[str, Any]:
     if range_obj.status != Range.Status.READY:
         raise ValueError(f"Range is not ready (status: {range_obj.status})")
 
-    instance = range_obj.get_instance_by_uuid(instance_uuid)
+    instance = find_instance_by_uuid(range_obj.provisioned_instances, instance_uuid)
     if not instance:
         raise ValueError(f"Instance {instance_uuid} not found in range")
 
@@ -183,7 +184,7 @@ def get_ssh_connection_info(user: User, instance_uuid: str) -> dict[str, Any]:
         logger.error("Range not ready: range_id=%s status=%s", range_obj.id, range_obj.status)
         raise ValueError(f"Range is not ready (status: {range_obj.status})")
 
-    instance = range_obj.get_instance_by_uuid(instance_uuid)
+    instance = find_instance_by_uuid(range_obj.provisioned_instances, instance_uuid)
     if instance is None:
         logger.error("Instance not found: range_id=%s instance_uuid=%s", range_obj.id, safe_log_value(instance_uuid))
         raise ValueError(f"Instance {instance_uuid} not found in range")
