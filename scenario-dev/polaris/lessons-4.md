@@ -526,9 +526,12 @@ the campaign content itself.
   private half at `/home/kali/.ssh/splice_relay` on a14-kali (mode
   0600). `~/.ssh/config` aliases `splice-relay` to that IdentityFile
   so the participant verb is still `ssh root@splice-relay`. The
-  scenario_smoketest harness gained a challenge-31 adapter that
-  proves the evidence file, the SSH auth, and the Modbus device-id
-  chain end-to-end from a14-kali.
+  then-current in-tree scenario harness gained a challenge-31 adapter that
+  proved the evidence file, the SSH auth, and the Modbus device-id chain
+  end-to-end from a14-kali. Issue #1293 later removed scenario-specific
+  adapters and answer material from core. That participant-path proof is now
+  owned by a separately installed, explicitly selected verification plugin;
+  the shared core framework contains no Polaris topology or answer data.
 
 (Add as the event continues — fill in further confusions, blockers,
 unexpected issues, and any operator/facilitator notes worth carrying

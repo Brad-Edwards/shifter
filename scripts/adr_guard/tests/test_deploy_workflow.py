@@ -31,6 +31,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import yaml
+
 MODULE_PATH = Path(__file__).resolve().parents[1] / "adr_guard.py"
 SPEC = importlib.util.spec_from_file_location("adr_guard", MODULE_PATH)
 ADR_GUARD = importlib.util.module_from_spec(SPEC)
@@ -304,6 +306,63 @@ class TestChangeFilterCoverage(unittest.TestCase):
     def test_gcp_paths_trigger_gcp_filter(self):
         self.assertPathInFilter("platform/terraform/gcp/main.tf", "gcp")
         self.assertPathInFilter("platform/k8s/gcp/base/deployment.yaml", "gcp")
+
+
+class TestScenarioVerificationQualityRouting(unittest.TestCase):
+    """#1293: neutral verification uses platform CI, not a scenario adapter job."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.quality = _load("_quality.yml")
+        cls.jobs = ADR_GUARD._dw_jobs(cls.quality, "_quality.yml")
+        filter_path = REPO_ROOT / ".github" / "quality-path-filters.yaml"
+        cls.filters = yaml.safe_load(filter_path.read_text(encoding="utf-8"))
+
+    def test_shared_framework_path_uses_normal_platform_quality_jobs(self):
+        framework_path = (
+            "shifter/shifter_platform/shared/scenario_verification/__init__.py"
+        )
+        self.assertTrue(
+            ADR_GUARD._dw_path_matches_any(
+                framework_path, self.filters["shifter_platform"]
+            )
+        )
+        for job_id in (
+            "shifter-platform-lint",
+            "shifter-platform-sast",
+            "shifter-platform-tests",
+        ):
+            self.assertIn(job_id, self.jobs)
+            self.assertIn(
+                "needs.paths.outputs.shifter_platform",
+                ADR_GUARD._dw_job_if(self.jobs[job_id]),
+                f"{job_id} must remain on normal shifter-platform routing",
+            )
+
+    def test_surviving_polaris_tests_keep_neutral_quality_route(self):
+        polaris_test_path = "scenario-dev/polaris/tests/isolation-smoketest.sh"
+        self.assertTrue(
+            ADR_GUARD._dw_path_matches_any(
+                polaris_test_path, self.filters["polaris_tests"]
+            )
+        )
+        path_outputs = self.jobs["paths"].get("outputs", {})
+        self.assertIn("polaris_tests", path_outputs)
+        job = self.jobs["polaris-tests"]
+        self.assertIn(
+            "needs.paths.outputs.polaris_tests", ADR_GUARD._dw_job_if(job)
+        )
+        run_steps = "\n".join(
+            str(step.get("run", "")) for step in job.get("steps", [])
+        )
+        self.assertIn("python3 -m compileall", run_steps)
+        self.assertIn('bash -n "$script"', run_steps)
+
+    def test_adapter_specific_quality_route_is_removed(self):
+        self.assertNotIn("scenario_smoketest", self.filters)
+        path_outputs = self.jobs["paths"].get("outputs", {})
+        self.assertNotIn("scenario_smoketest", path_outputs)
+        self.assertNotIn("scenario-smoketest-tests", self.jobs)
 
 
 class TestGithubEnvironmentBinding(unittest.TestCase):
