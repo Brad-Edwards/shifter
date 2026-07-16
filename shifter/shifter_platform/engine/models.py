@@ -379,13 +379,29 @@ class Range(models.Model):
 
     @property
     def is_usable(self):
-        """Return True if range is in a usable state (operational and connectable)."""
-        return self.status in (self.Status.READY, self.Status.PAUSED)
+        """Return True if range is in a usable state (operational and connectable).
+
+        Delegates to ``engine._range_state.is_range_usable`` (#685); the
+        status vocabulary is canonical ``shared.enums.ResourceStatus``. That
+        module is dependency-neutral (no import of ``engine.models`` or
+        ``engine.services``), so this stays a downward-only dependency even
+        though ``engine.services._lifecycle`` re-exports the same function.
+        """
+        from engine._range_state import is_range_usable
+
+        return is_range_usable(self.status)
 
     @property
     def is_terminal(self):
-        """Return True if range has reached a final state."""
-        return self.status in (self.Status.DESTROYED, self.Status.FAILED)
+        """Return True if range has reached a final state.
+
+        Delegates to ``engine._range_state.is_range_terminal`` (#685); see
+        ``is_usable`` for why the model imports the neutral module directly
+        rather than ``engine.services._lifecycle``.
+        """
+        from engine._range_state import is_range_terminal
+
+        return is_range_terminal(self.status)
 
     @property
     def standup_duration(self):
@@ -519,6 +535,14 @@ class Range(models.Model):
                 "concurrent ranges supported. Destroy some ranges first."
             )
 
+    # The ``provisioned_instances`` traversal below delegates to the pure,
+    # dependency-neutral projection helpers in ``engine._range_state`` (#685).
+    # ``engine.services._common`` re-exports the same functions for its own
+    # callers; the model imports the neutral module directly rather than that
+    # private service submodule so it does not depend upward on the service
+    # layer (which already depends on the model). These thin methods remain as
+    # a compatibility surface for existing callers/tests.
+
     def get_instance_by_role(self, role: str) -> dict | None:
         """Get instance details by role.
 
@@ -528,12 +552,9 @@ class Range(models.Model):
         Returns:
             Dictionary with instance details or None if not found
         """
-        if not self.provisioned_instances:
-            return None
-        for instance in self.provisioned_instances:
-            if instance.get("role") == role:
-                return instance
-        return None
+        from engine._range_state import find_instance_by_role
+
+        return find_instance_by_role(self.provisioned_instances, role)
 
     def get_instance_by_uuid(self, uuid: str) -> dict | None:
         """Get instance details by UUID.
@@ -547,19 +568,16 @@ class Range(models.Model):
         Raises:
             ValueError: If uuid is None or empty string
         """
-        if not uuid:
-            raise ValueError("uuid is required")
-        if not self.provisioned_instances:
-            return None
-        for instance in self.provisioned_instances:
-            if instance.get("uuid") == uuid:
-                return instance
-        return None
+        from engine._range_state import find_instance_by_uuid
+
+        return find_instance_by_uuid(self.provisioned_instances, uuid)
 
     @property
     def attacker_instance(self) -> dict | None:
         """Get the attacker instance details."""
-        return self.get_instance_by_role("attacker")
+        from engine._range_state import attacker_instance
+
+        return attacker_instance(self.provisioned_instances)
 
     @property
     def victim_instances(self) -> list:
@@ -568,9 +586,9 @@ class Range(models.Model):
         Returns:
             List of victim instance dictionaries
         """
-        if not self.provisioned_instances:
-            return []
-        return [i for i in self.provisioned_instances if i.get("role") == "victim"]
+        from engine._range_state import victim_instances
+
+        return victim_instances(self.provisioned_instances)
 
     @property
     def kali_private_ip(self) -> str | None:
@@ -579,10 +597,9 @@ class Range(models.Model):
         Returns:
             The private IP address string or None if not available
         """
-        attacker = self.attacker_instance
-        if not attacker:
-            return None
-        return attacker.get("private_ip")
+        from engine._range_state import attacker_private_ip
+
+        return attacker_private_ip(self.provisioned_instances)
 
     @property
     def victim_private_ip(self) -> str | None:
@@ -591,10 +608,9 @@ class Range(models.Model):
         Returns:
             The private IP address string or None if not available
         """
-        victims = self.victim_instances
-        if not victims:
-            return None
-        return victims[0].get("private_ip")
+        from engine._range_state import first_victim_private_ip
+
+        return first_victim_private_ip(self.provisioned_instances)
 
 
 class Subnet(Instantiation):

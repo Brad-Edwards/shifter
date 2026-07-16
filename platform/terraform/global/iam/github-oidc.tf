@@ -308,10 +308,18 @@ resource "aws_iam_policy" "ci_role_permissions_boundary" {
         # do not populate iam:PassedToService, so StringNotEquals matches on the
         # absent key — all non-PassRole IAM mutation) stays denied. The service
         # list mirrors the deploy role's own IAMPassRole grant above.
-        Sid      = "DenyIamEscalation"
-        Effect   = "Deny"
-        Action   = "iam:*"
-        Resource = "*"
+        Sid    = "DenyIamEscalation"
+        Effect = "Deny"
+        Action = "iam:*"
+        # Carve the per-range polaris agent role namespace (#1377) OUT of this
+        # blanket IAM deny so the provisioner can create those roles at provision
+        # time. Safe: the provisioner identity policy allows iam:CreateRole here
+        # ONLY with this permissions boundary attached (iam:PermissionsBoundary
+        # condition) and grants no boundary-strip action, so every agent role it
+        # creates stays capped by this same boundary (AWS permissions-boundary
+        # delegation pattern). DenyPolarisAgentBoundaryTamper below re-denies
+        # boundary removal on that namespace as defense-in-depth.
+        NotResource = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/shifter-${var.environment}-*-polaris-agent"
         Condition = {
           StringNotEquals = {
             "iam:PassedToService" = [
@@ -327,6 +335,22 @@ resource "aws_iam_policy" "ci_role_permissions_boundary" {
             ]
           }
         }
+      },
+      {
+        # Defense-in-depth for the polaris-agent namespace carve-out above. The
+        # per-range polaris agent role (#1377) is created by the provisioner with
+        # THIS boundary attached (enforced by the provisioner identity policy's
+        # iam:PermissionsBoundary condition), so its effective permissions stay
+        # capped even if its inline policy were broad. Explicitly deny stripping
+        # or swapping that boundary on the agent roles so the cap can never be
+        # removed after creation.
+        Sid    = "DenyPolarisAgentBoundaryTamper"
+        Effect = "Deny"
+        Action = [
+          "iam:PutRolePermissionsBoundary",
+          "iam:DeleteRolePermissionsBoundary"
+        ]
+        Resource = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/shifter-${var.environment}-*-polaris-agent"
       }
     ]
   })

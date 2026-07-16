@@ -485,14 +485,19 @@ class TestPolarisAwsAgentSecurity:
         assert "/run/shifter-agent/claude-bedrock.sh:/etc/profile.d/claude-bedrock.sh:ro" in bootstrap
         assert "extra_hosts:" in bootstrap
         assert "${SHIFTER_BEDROCK_IP}" in bootstrap
+        # STS is pinned the same way so the in-container agent-role verify
+        # (aws sts get-caller-identity) can resolve the regional STS endpoint.
+        assert "${SHIFTER_STS_IP}" in bootstrap
 
         # (b) The host materializes the reader / aws-config / profile.d shim and
-        # publishes the Bedrock VPC-endpoint IP to the compose .env, all before
-        # the container starts (so a bind mount + compose substitution work).
+        # publishes the Bedrock + STS VPC-endpoint IPs to the compose .env (via
+        # _pin_endpoint_ip), all before the container starts (so a bind mount +
+        # compose substitution work).
         assert "cat > /run/shifter-agent/credential-process.sh" in bootstrap
         assert "cat > /run/shifter-agent/aws-config" in bootstrap
         assert "cat > /run/shifter-agent/claude-bedrock.sh" in bootstrap
-        assert "SHIFTER_BEDROCK_IP=" in bootstrap
+        assert '_pin_endpoint_ip "bedrock-runtime' in bootstrap
+        assert '_pin_endpoint_ip "sts.' in bootstrap
         assert "/opt/polaris/scenario-dev/polaris/build/.env" in bootstrap
 
         # (c) The shard must NOT write provider config into the container layer
