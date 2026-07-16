@@ -30,12 +30,14 @@ MAX_ARGV_ITEMS = 128
 MAX_ARG_BYTES = 4_096
 MAX_COMMAND_TIMEOUT_SECONDS = 300.0
 MAX_TARGET_ID_BYTES = 256
+_SUCCESS_STATUS_VALUE = "pass"
 
 _IDENTIFIER_RE = re.compile(r"^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$")
 _VERSION_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+!-]{0,63}$")
 
 
 def _validate_identifier(value: object, field_name: str, *, namespaced: bool = False) -> str:
+    """Return a validated bounded identifier, optionally requiring a namespace."""
     if not isinstance(value, str):
         raise TypeError(f"{field_name} must be a string")
     if not value or len(value) > MAX_IDENTIFIER_LENGTH or not _IDENTIFIER_RE.fullmatch(value):
@@ -46,6 +48,7 @@ def _validate_identifier(value: object, field_name: str, *, namespaced: bool = F
 
 
 def _validate_version(value: object, field_name: str) -> str:
+    """Return a validated bounded version string."""
     if not isinstance(value, str):
         raise TypeError(f"{field_name} must be a string")
     if not _VERSION_RE.fullmatch(value):
@@ -54,6 +57,7 @@ def _validate_version(value: object, field_name: str) -> str:
 
 
 def _validate_summary(value: object) -> str:
+    """Return a validated, log-safe adapter summary."""
     if not isinstance(value, str):
         raise TypeError("summary must be a string")
     if not value or len(value) > MAX_SUMMARY_LENGTH:
@@ -64,6 +68,7 @@ def _validate_summary(value: object) -> str:
 
 
 def _validate_target_id(value: object) -> str:
+    """Return a validated opaque target identifier."""
     if not isinstance(value, str):
         raise TypeError("target_id must be a string")
     if not value or len(value.encode("utf-8")) > MAX_TARGET_ID_BYTES:
@@ -74,6 +79,7 @@ def _validate_target_id(value: object) -> str:
 
 
 def _validated_command(argv: Sequence[str]) -> tuple[str, ...]:
+    """Return a bounded immutable argv sequence after validating each item."""
     if isinstance(argv, (str, bytes)) or not isinstance(argv, Sequence):
         raise TypeError("argv must be a sequence of strings, not a shell string")
     command = tuple(argv)
@@ -88,6 +94,7 @@ def _validated_command(argv: Sequence[str]) -> tuple[str, ...]:
 
 
 def _validate_stdin(stdin: str | None) -> None:
+    """Validate optional standard input against the bounded command contract."""
     if stdin is None:
         return
     if not isinstance(stdin, str):
@@ -97,6 +104,7 @@ def _validate_stdin(stdin: str | None) -> None:
 
 
 def _validated_timeout(timeout_seconds: float) -> float:
+    """Return a finite positive command timeout within the configured maximum."""
     if not isinstance(timeout_seconds, (int, float)) or isinstance(timeout_seconds, bool):
         raise TypeError("timeout_seconds must be numeric")
     if not math.isfinite(timeout_seconds) or timeout_seconds <= 0 or timeout_seconds > MAX_COMMAND_TIMEOUT_SECONDS:
@@ -107,14 +115,14 @@ def _validated_timeout(timeout_seconds: float) -> float:
 class AdapterStatus(StrEnum):
     """The only outcomes an adapter may return directly."""
 
-    PASS = "pass"  # nosec B105 - closed result status, not a credential
+    PASS = _SUCCESS_STATUS_VALUE
     FAIL = "fail"
 
 
 class CheckStatus(StrEnum):
     """Closed per-check statuses produced by the framework."""
 
-    PASS = "pass"  # nosec B105 - closed result status, not a credential
+    PASS = _SUCCESS_STATUS_VALUE
     FAIL = "fail"
     BLOCKED = "blocked"
     ERROR = "error"
@@ -335,7 +343,7 @@ class AdapterContext:
                 stdin=stdin,
                 timeout_seconds=effective_timeout,
             )
-        except (TimeoutError, VerificationCancelled, VerificationDeadlineExceeded):
+        except (TimeoutError, VerificationCancelled):
             raise
         except Exception as exc:
             raise RunnerExecutionError("runner execution failed") from exc

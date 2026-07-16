@@ -172,17 +172,20 @@ def test_ambiguous_empty_and_metadata_collision_fail_closed(monkeypatch) -> None
         "shared.scenario_verification.discovery.metadata.entry_points",
         lambda: _EntryPoints((one, two)),
     )
+    candidates = discover_plugins()
+    missing_selection = PluginSelection("synthetic-tools", "9.0", "one")
     with pytest.raises(PluginDiscoveryError, match="ambiguous"):
-        load_plugin(discover_plugins())
+        load_plugin(candidates)
     with pytest.raises(PluginDiscoveryError, match="did not match"):
-        load_plugin(discover_plugins(), PluginSelection("synthetic-tools", "9.0", "one"))
+        load_plugin(candidates, missing_selection)
 
     monkeypatch.setattr(
         "shared.scenario_verification.discovery.metadata.entry_points",
         lambda: _EntryPoints(()),
     )
+    candidates = discover_plugins()
     with pytest.raises(PluginDiscoveryError, match="no installed"):
-        load_plugin(discover_plugins())
+        load_plugin(candidates)
 
     duplicate = _EntryPoint("synthetic-tools", "1.0", "same", lambda: _plugin())
     monkeypatch.setattr(
@@ -211,8 +214,9 @@ def test_malformed_or_unsupported_declarations_are_rejected(monkeypatch, factory
         "shared.scenario_verification.discovery.metadata.entry_points",
         lambda: _EntryPoints((entry_point,)),
     )
+    candidates = discover_plugins()
     with pytest.raises(PluginDiscoveryError, match=message):
-        load_plugin(discover_plugins())
+        load_plugin(candidates)
 
 
 def test_factory_failures_include_only_metadata_and_exception_class(monkeypatch) -> None:
@@ -226,8 +230,9 @@ def test_factory_failures_include_only_metadata_and_exception_class(monkeypatch)
         "shared.scenario_verification.discovery.metadata.entry_points",
         lambda: _EntryPoints((entry_point,)),
     )
+    candidates = discover_plugins()
     with pytest.raises(PluginDiscoveryError) as caught:
-        load_plugin(discover_plugins())
+        load_plugin(candidates)
     message = str(caught.value)
     assert "synthetic-tools" in message
     assert "only" in message
@@ -249,8 +254,9 @@ def test_unknown_prerequisites_and_cycles_are_rejected(monkeypatch) -> None:
         "shared.scenario_verification.discovery.metadata.entry_points",
         lambda: _EntryPoints((entry_point,)),
     )
+    candidates = discover_plugins()
     with pytest.raises(PluginDiscoveryError, match="unknown prerequisite"):
-        load_plugin(discover_plugins())
+        load_plugin(candidates)
 
     def cycle_factory() -> PluginDeclaration:
         return PluginDeclaration(
@@ -268,5 +274,6 @@ def test_unknown_prerequisites_and_cycles_are_rejected(monkeypatch) -> None:
         "shared.scenario_verification.discovery.metadata.entry_points",
         lambda: _EntryPoints((entry_point,)),
     )
+    candidates = discover_plugins()
     with pytest.raises(PluginDiscoveryError, match="cycle"):
-        load_plugin(discover_plugins())
+        load_plugin(candidates)

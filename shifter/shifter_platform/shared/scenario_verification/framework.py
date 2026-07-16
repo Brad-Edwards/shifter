@@ -116,6 +116,13 @@ class VerificationReport:
 def _validate_and_select(
     plugin: LoadedPlugin, selected_adapter_ids: tuple[str, ...] | None
 ) -> tuple[dict[str, AdapterDeclaration], set[str]]:
+    """Validate a plugin and return its adapter index and selected closure."""
+    adapter_by_id = _validated_adapter_index(plugin)
+    return adapter_by_id, _validated_selection(adapter_by_id, selected_adapter_ids)
+
+
+def _validated_adapter_index(plugin: LoadedPlugin) -> dict[str, AdapterDeclaration]:
+    """Return a validated adapter index for one loaded plugin."""
     if not isinstance(plugin, LoadedPlugin):
         raise TypeError("plugin must be a LoadedPlugin returned by discovery")
     if plugin.declaration.api_version != API_VERSION:
@@ -131,26 +138,33 @@ def _validate_and_select(
     for adapter in adapters:
         if set(adapter.prerequisites) - declared:
             raise VerificationConfigurationError("adapter contains an unknown prerequisite")
+    return adapter_by_id
 
+
+def _validated_selection(
+    adapter_by_id: dict[str, AdapterDeclaration], selected_adapter_ids: tuple[str, ...] | None
+) -> set[str]:
+    """Return a non-empty selected adapter set with prerequisite closure."""
+    declared = set(adapter_by_id)
     if selected_adapter_ids is None:
-        selected = declared
-    else:
-        if not isinstance(selected_adapter_ids, tuple):
-            raise TypeError("selected_adapter_ids must be a tuple or None")
-        if not selected_adapter_ids:
-            raise VerificationConfigurationError("selected adapter set must be non-empty")
-        if len(set(selected_adapter_ids)) != len(selected_adapter_ids):
-            raise VerificationConfigurationError("selected adapter set contains duplicates")
-        selected = set(selected_adapter_ids)
-        if selected - declared:
-            raise VerificationConfigurationError("selected adapter set contains unknown adapters")
-        for adapter_id in selected:
-            if not set(adapter_by_id[adapter_id].prerequisites).issubset(selected):
-                raise VerificationConfigurationError("selected adapter set must include prerequisite closure")
-    return adapter_by_id, selected
+        return declared
+    if not isinstance(selected_adapter_ids, tuple):
+        raise TypeError("selected_adapter_ids must be a tuple or None")
+    if not selected_adapter_ids:
+        raise VerificationConfigurationError("selected adapter set must be non-empty")
+    if len(set(selected_adapter_ids)) != len(selected_adapter_ids):
+        raise VerificationConfigurationError("selected adapter set contains duplicates")
+    selected = set(selected_adapter_ids)
+    if selected - declared:
+        raise VerificationConfigurationError("selected adapter set contains unknown adapters")
+    for adapter_id in selected:
+        if not set(adapter_by_id[adapter_id].prerequisites).issubset(selected):
+            raise VerificationConfigurationError("selected adapter set must include prerequisite closure")
+    return selected
 
 
 def _topological_order(adapter_by_id: dict[str, AdapterDeclaration], selected: set[str]) -> tuple[str, ...]:
+    """Return a deterministic topological order for selected adapters."""
     pending = {adapter_id: set(adapter_by_id[adapter_id].prerequisites) for adapter_id in selected}
     ordered: list[str] = []
     while pending:
@@ -168,6 +182,7 @@ def _topological_order(adapter_by_id: dict[str, AdapterDeclaration], selected: s
 
 
 def _duration_ms(started: float, finished: float) -> int:
+    """Return a non-negative elapsed duration in whole milliseconds."""
     return max(0, int((finished - started) * 1000))
 
 
@@ -179,6 +194,7 @@ def _contained_result(
     started: float,
     monotonic: Callable[[], float],
 ) -> CheckResult:
+    """Build one redacted check result with measured duration."""
     return CheckResult(adapter_id, status, reason, _duration_ms(started, monotonic()))
 
 
@@ -189,6 +205,7 @@ def _prerequisite_short_circuit(
     started: float,
     monotonic: Callable[[], float],
 ) -> CheckResult | None:
+    """Return a closed result when a prerequisite prevents execution."""
     prerequisite_results = [results_by_id[prerequisite] for prerequisite in adapter.prerequisites]
     if any(result.status is CheckStatus.ERROR for result in prerequisite_results):
         return _contained_result(
@@ -216,6 +233,7 @@ def _budget_short_circuit(
     started: float,
     monotonic: Callable[[], float],
 ) -> CheckResult | None:
+    """Return a closed result when cancellation or the run budget prevents work."""
     reason = None
     if context.cancellation.cancelled:
         reason = CheckReason.CANCELLED
@@ -239,6 +257,7 @@ def _execute_adapter(
     started: float,
     monotonic: Callable[[], float],
 ) -> CheckResult:
+    """Execute one adapter and contain every outcome in the closed result model."""
     try:
         outcome = adapter.execute(context)
     except VerificationCancelled:

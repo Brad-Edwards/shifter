@@ -6,7 +6,7 @@ import importlib.metadata as metadata
 import re
 from collections.abc import Iterable
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Protocol
 
 from shared.log_sanitize import safe_log_value
 
@@ -15,6 +15,15 @@ from .contracts import API_VERSION, ENTRY_POINT_GROUP, AdapterDeclaration, Plugi
 _DISTRIBUTION_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,98}[A-Za-z0-9])?$")
 _ENTRY_POINT_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,98}[A-Za-z0-9])?$")
 _VERSION_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+!-]{0,63}$")
+_ENTRY_POINT_FIELD = "entry-point name"
+
+
+class _EntryPointLoader(Protocol):
+    """Minimal load capability retained for an installed entry point."""
+
+    def load(self) -> object:
+        """Load and return the referenced plugin factory."""
+        ...
 
 
 class PluginDiscoveryError(RuntimeError):
@@ -22,6 +31,7 @@ class PluginDiscoveryError(RuntimeError):
 
 
 def _metadata_value(value: object, field_name: str, pattern: re.Pattern[str]) -> str:
+    """Return one bounded, log-safe metadata value."""
     if not isinstance(value, str) or not pattern.fullmatch(value):
         raise PluginDiscoveryError(f"installed entry point has invalid {field_name}")
     if safe_log_value(value, max_len=100) != value:
@@ -34,11 +44,12 @@ def _validate_installed_metadata(distribution: object, version: object, entry_po
     return (
         _metadata_value(distribution, "distribution", _DISTRIBUTION_RE),
         _metadata_value(version, "version", _VERSION_RE),
-        _metadata_value(entry_point, "entry-point name", _ENTRY_POINT_RE),
+        _metadata_value(entry_point, _ENTRY_POINT_FIELD, _ENTRY_POINT_RE),
     )
 
 
 def _normalized_distribution(value: str) -> str:
+    """Return the package-name normalization used for exact selection."""
     return re.sub(r"[-_.]+", "-", value).casefold()
 
 
@@ -53,7 +64,7 @@ class PluginSelection:
     def __post_init__(self) -> None:
         _metadata_value(self.distribution, "distribution", _DISTRIBUTION_RE)
         _metadata_value(self.version, "version", _VERSION_RE)
-        _metadata_value(self.entry_point, "entry-point name", _ENTRY_POINT_RE)
+        _metadata_value(self.entry_point, _ENTRY_POINT_FIELD, _ENTRY_POINT_RE)
 
 
 @dataclass(frozen=True)
@@ -63,7 +74,7 @@ class InstalledPlugin:
     distribution: str
     distribution_version: str
     entry_point: str
-    _entry_point_object: Any = field(repr=False, compare=False)
+    _entry_point_object: _EntryPointLoader = field(repr=False, compare=False)
 
 
 @dataclass(frozen=True)
@@ -93,7 +104,8 @@ class LoadedPlugin:
         return self.declaration.adapters
 
 
-def _distribution_metadata(entry_point: Any) -> tuple[str, str]:
+def _distribution_metadata(entry_point: object) -> tuple[str, str]:
+    """Return validated distribution name and version for an entry point."""
     distribution = getattr(entry_point, "dist", None)
     if distribution is None:
         raise PluginDiscoveryError("installed entry point has no distribution metadata")
@@ -113,7 +125,7 @@ def discover_plugins() -> tuple[InstalledPlugin, ...]:
         if getattr(entry_point, "group", None) != ENTRY_POINT_GROUP:
             continue
         distribution, version = _distribution_metadata(entry_point)
-        name = _metadata_value(getattr(entry_point, "name", None), "entry-point name", _ENTRY_POINT_RE)
+        name = _metadata_value(getattr(entry_point, "name", None), _ENTRY_POINT_FIELD, _ENTRY_POINT_RE)
         discovered.append(InstalledPlugin(distribution, version, name, entry_point))
     discovered.sort(
         key=lambda item: (
@@ -136,6 +148,7 @@ def discover_plugins() -> tuple[InstalledPlugin, ...]:
 
 
 def _select_candidate(candidates: tuple[InstalledPlugin, ...], selection: PluginSelection | None) -> InstalledPlugin:
+    """Select exactly one installed candidate using reviewed metadata."""
     if not candidates:
         raise PluginDiscoveryError("no installed scenario-verification plugins")
     if selection is None:
@@ -157,6 +170,7 @@ def _select_candidate(candidates: tuple[InstalledPlugin, ...], selection: Plugin
 
 
 def _validate_prerequisite_graph(adapters: tuple[AdapterDeclaration, ...]) -> None:
+    """Reject declarations with unknown prerequisites or dependency cycles."""
     declared = {adapter.adapter_id for adapter in adapters}
     for adapter in adapters:
         unknown = set(adapter.prerequisites) - declared
@@ -176,6 +190,7 @@ def _validate_prerequisite_graph(adapters: tuple[AdapterDeclaration, ...]) -> No
 
 
 def _validate_declaration(value: object) -> PluginDeclaration:
+    """Validate and deterministically order one plugin declaration."""
     if not isinstance(value, PluginDeclaration):
         raise PluginDiscoveryError("plugin factory must return PluginDeclaration")
     if value.api_version != API_VERSION:
@@ -218,7 +233,8 @@ def load_plugin(
         validated = _validate_declaration(declaration)
     except PluginDiscoveryError:
         raise
-    except Exception as exc:  # defensive containment for malformed declarations
+    # Defensive containment for malformed declarations from out-of-tree code.
+    except Exception as exc:
         raise PluginDiscoveryError(f"invalid plugin declaration for {identity}: {type(exc).__name__}") from None
     return LoadedPlugin(
         distribution=candidate.distribution,

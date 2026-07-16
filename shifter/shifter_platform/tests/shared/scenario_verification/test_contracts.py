@@ -151,24 +151,29 @@ def test_command_timeout_is_clamped_to_the_remaining_whole_run_budget() -> None:
 
 
 def test_deadline_and_command_timeout_must_be_finite() -> None:
+    runner = _Runner()
+    bindings = (Binding("lab.primary", "target-a"),)
+    cancellation = _Cancellation()
+    invalid_deadline = float("inf")
     with pytest.raises(ValueError, match="deadline"):
         AdapterContext(
-            runner=_Runner(),
-            bindings=(Binding("lab.primary", "target-a"),),
-            deadline=float("inf"),
+            runner=runner,
+            bindings=bindings,
+            deadline=invalid_deadline,
             monotonic=lambda: 10.0,
-            cancellation=_Cancellation(),
+            cancellation=cancellation,
         )
 
     context = AdapterContext(
-        runner=_Runner(),
-        bindings=(Binding("lab.primary", "target-a"),),
+        runner=runner,
+        bindings=bindings,
         deadline=20.0,
         monotonic=lambda: 10.0,
-        cancellation=_Cancellation(),
+        cancellation=cancellation,
     )
+    invalid_timeout = float("nan")
     with pytest.raises(ValueError, match="timeout_seconds"):
-        context.run("lab.primary", ("status",), timeout_seconds=float("nan"))
+        context.run("lab.primary", ("status",), timeout_seconds=invalid_timeout)
 
 
 def test_equality_helper_reveals_only_a_boolean_verdict() -> None:

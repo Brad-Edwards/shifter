@@ -311,12 +311,13 @@ def test_selected_adapter_set_must_be_non_empty_known_and_prerequisite_closed() 
         _adapter("checks.alpha", _pass),
         _adapter("checks.beta", _pass, ("checks.alpha",)),
     )
+    context = _context()
     with pytest.raises(VerificationConfigurationError, match="non-empty"):
-        run_verification(plugin, _context(), selected_adapter_ids=())
+        run_verification(plugin, context, selected_adapter_ids=())
     with pytest.raises(VerificationConfigurationError, match="unknown"):
-        run_verification(plugin, _context(), selected_adapter_ids=("checks.missing",))
+        run_verification(plugin, context, selected_adapter_ids=("checks.missing",))
     with pytest.raises(VerificationConfigurationError, match="prerequisite closure"):
-        run_verification(plugin, _context(), selected_adapter_ids=("checks.beta",))
+        run_verification(plugin, context, selected_adapter_ids=("checks.beta",))
 
     report = run_verification(
         plugin,
@@ -338,6 +339,7 @@ def test_report_dto_rejects_line_forging_even_when_constructed_directly() -> Non
             CheckReason.VERIFIED,
             0,
         )
+    valid_check = CheckResult("checks.alpha", CheckStatus.PASS, CheckReason.VERIFIED, 0)
     with pytest.raises(ValueError, match="distribution"):
         VerificationReport(
             schema_version="1",
@@ -346,7 +348,7 @@ def test_report_dto_rejects_line_forging_even_when_constructed_directly() -> Non
             entry_point="reviewed",
             plugin_id="synthetic.pack",
             plugin_version="1.0",
-            checks=(CheckResult("checks.alpha", CheckStatus.PASS, CheckReason.VERIFIED, 0),),
+            checks=(valid_check,),
             duration_ms=0,
         )
 
