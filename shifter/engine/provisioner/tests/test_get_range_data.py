@@ -26,7 +26,8 @@ def _make_mock_cursor(range_row, ngfw_row=None):
     return mock_conn, mock_cursor
 
 
-# Range query columns: request_id, range_id, user_id, range_config, subnet_index, status
+# Range query columns: request_id, range_id, user_id, range_config, subnet_index,
+# status, range_backend, instantiation_purpose (#1666 ownership binding).
 _RANGE_ROW_WITH_NGFW = (
     "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",  # request_id
     201,  # range_id
@@ -34,6 +35,8 @@ _RANGE_ROW_WITH_NGFW = (
     {"ngfw": True, "subnets": []},  # range_config
     5,  # subnet_index
     "provisioning",  # status
+    None,  # range_backend (legacy/non-GCP)
+    None,  # instantiation_purpose
 )
 
 _RANGE_ROW_NO_NGFW = (
@@ -43,6 +46,8 @@ _RANGE_ROW_NO_NGFW = (
     {"subnets": []},  # ngfw not set
     5,
     "provisioning",
+    None,  # range_backend
+    None,  # instantiation_purpose
 )
 
 

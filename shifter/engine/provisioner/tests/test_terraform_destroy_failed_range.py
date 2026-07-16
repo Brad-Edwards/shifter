@@ -81,7 +81,7 @@ class TestRunTerraformDestroySkipsOnlyDestroyed:
 
         _run_terraform_destroy("req-1", 80, 20, range_spec)
 
-        mock_tf_runner.destroy_range.assert_called_once_with("req-1", variables=fake_vars)
+        mock_tf_runner.destroy_range.assert_called_once_with("req-1", variables=fake_vars, backend=None)
 
 
 class TestAutoCleanupPassesVariables:
@@ -115,8 +115,8 @@ class TestAutoCleanupPassesVariables:
         with pytest.raises(RuntimeError, match="NGFW config failed"):
             run_range_terraform("up", "req-1")
 
-        mock_build_vars.assert_called_once_with("req-1", 80, 20, {"ngfw": False, "subnets": []})
-        mock_tf_runner.destroy_range.assert_called_once_with("req-1", variables=fake_vars)
+        mock_build_vars.assert_called_once_with("req-1", 80, 20, {"ngfw": False, "subnets": []}, backend=None)
+        mock_tf_runner.destroy_range.assert_called_once_with("req-1", variables=fake_vars, backend=None)
 
     def test_cleanup_failure_logged_not_swallowed(self, monkeypatch, caplog):
         """When auto-cleanup fails, error should be logged (not just warned)."""
