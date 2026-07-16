@@ -8458,12 +8458,16 @@
           "scenario_editor_spa": {
             "type": "boolean"
           },
+          "ctf_workspace_spa": {
+            "type": "boolean"
+          },
           "aces_native_provisioning": {
             "type": "boolean"
           }
         },
         "required": [
           "aces_native_provisioning",
+          "ctf_workspace_spa",
           "mission_control_spa",
           "platform_spa",
           "risk_register_spa",

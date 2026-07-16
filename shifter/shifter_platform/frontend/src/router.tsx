@@ -3,6 +3,13 @@ import { createBrowserRouter } from "react-router-dom";
 import { RootLayout, type RouteHandle } from "@/app/RootLayout";
 import { NotFoundPage } from "@/components/not-found";
 import { AcesImageRegistryPage } from "@/features/aces-image-registry/AcesImageRegistryPage";
+import { ChallengeDetailPage } from "@/features/ctf/ChallengeDetailPage";
+import { ChallengesPage } from "@/features/ctf/ChallengesPage";
+import { EventHomePage } from "@/features/ctf/EventHomePage";
+import { HelpPage } from "@/features/ctf/HelpPage";
+import { RangePage } from "@/features/ctf/RangePage";
+import { ScoreboardPage } from "@/features/ctf/ScoreboardPage";
+import { TeamPage } from "@/features/ctf/TeamPage";
 import { HomePage } from "@/features/home/HomePage";
 import { AgentsPage } from "@/features/mission-control/AgentsPage";
 import { CredentialsPage } from "@/features/mission-control/CredentialsPage";
@@ -36,6 +43,10 @@ const scenarioEditorHandle: RouteHandle = { permissionPolicy: "threat_research" 
 // ACES image registry (#1566) shares the "Author" CMS-authoring gate; the API
 // additionally 404s unless SHIFTER_ACES_NATIVE_PROVISIONING is on.
 const acesImageRegistryHandle: RouteHandle = { permissionPolicy: "threat_research" };
+// CTF participant workspace (#1372) is gated on CTF-participant access, the same
+// advisory policy the legacy participant Django views use. Organizer (/ctf/admin/)
+// pages stay Django-served in this slice.
+const ctfHandle: RouteHandle = { permissionPolicy: "ctf_participant" };
 
 export const router = createBrowserRouter(
   [
@@ -94,6 +105,26 @@ export const router = createBrowserRouter(
             { path: ":scenarioId", element: <ScenarioDetailPage /> },
             { path: ":scenarioId/edit", element: <ScenarioFormPage mode="edit" /> },
             { path: ":scenarioId/editor", element: <ScenarioYamlPage mode="edit" /> },
+          ],
+        },
+        {
+          // CTF participant workspace (#1372) rehomed under the unified client
+          // router. Its legacy Django counterpart lives at the same /ctf/
+          // participant page paths (see features/ctf/routes.ts); the static
+          // "challenges" segment outranks the ":id" dynamic route regardless of
+          // declaration order. Organizer (/ctf/admin/) pages are not part of this
+          // slice and stay Django-served.
+          path: "ctf",
+          handle: ctfHandle,
+          children: [
+            { index: true, element: <EventHomePage /> },
+            { path: "event", element: <EventHomePage /> },
+            { path: "challenges", element: <ChallengesPage /> },
+            { path: "challenges/:id", element: <ChallengeDetailPage /> },
+            { path: "range", element: <RangePage /> },
+            { path: "scoreboard", element: <ScoreboardPage /> },
+            { path: "team", element: <TeamPage /> },
+            { path: "help", element: <HelpPage /> },
           ],
         },
         {

@@ -122,3 +122,27 @@ export const ACES_IMAGE_PROVIDERS: ReadonlyArray<{ value: AcesImageProvider; lab
  */
 export const INSTANCE_ROLES: readonly ScenarioInstanceRole[] = ["attacker", "victim", "dc"];
 export const INSTANCE_OS_TYPES: readonly ScenarioInstanceOsType[] = ["kali", "windows", "ubuntu", "from_agent"];
+
+/**
+ * CTF participant workspace domain types (#1372), re-exported from the generated
+ * OpenAPI schema. The participant-safe DRF projections (`ctf.api.projections` +
+ * `ctf.api.serializers`) remain the authoritative shape; do not hand-copy these
+ * — regenerate `schema.d.ts` via `npm run gen:api` instead. The participant
+ * serializers deliberately never declare flag/solution/validator-config fields,
+ * so those values cannot be expressed here.
+ */
+export type CtfCurrentEvent = components["schemas"]["ParticipantCurrentEvent"];
+export type CtfParticipantSelf = components["schemas"]["ParticipantSelf"];
+export type CtfEvent = components["schemas"]["ParticipantEvent"];
+export type CtfChallengeListItem = components["schemas"]["ParticipantChallengeListItem"];
+export type CtfChallengeDetail = components["schemas"]["ParticipantChallengeDetail"];
+export type CtfHint = components["schemas"]["ParticipantHint"];
+export type CtfChallengeFile = components["schemas"]["ParticipantChallengeFile"];
+export type CtfTeam = components["schemas"]["ParticipantTeam"];
+export type CtfTeamMember = components["schemas"]["ParticipantTeamMember"];
+export type CtfSubmitFlagResult = components["schemas"]["SubmitFlagResult"];
+export type CtfUseHintResult = components["schemas"]["UseHintResult"];
+export type CtfSubmissionList = components["schemas"]["SubmissionListResponse"];
+export type CtfRangeStatus = components["schemas"]["RangeStatusResponse"];
+export type CtfRangeAccess = components["schemas"]["RangeAccessResponse"];
+export type CtfScoreboard = components["schemas"]["PublicScoreboardResponse"];

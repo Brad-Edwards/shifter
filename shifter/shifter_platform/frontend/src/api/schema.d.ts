@@ -1936,6 +1936,7 @@ export interface components {
             platform_spa: boolean;
             mission_control_spa: boolean;
             scenario_editor_spa: boolean;
+            ctf_workspace_spa: boolean;
             aces_native_provisioning: boolean;
         };
         /** @description UX mode eligibility (participant/operator). Not an authorization fact. */

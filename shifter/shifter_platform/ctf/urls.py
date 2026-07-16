@@ -10,42 +10,107 @@ callers use the canonical ``/api/v1/ctf/`` DRF routes (see ``ctf.api.urls``).
 The single scoreboard endpoint is intentionally retained on the legacy route
 because the v1 scoreboard (``v1:ctf:api_scoreboard`` -> ``PublicScoreboardView``)
 has different access semantics than the participant scoreboard page requires.
+
+Rollout-flag aware (issue #1372, ADR-013 / ADR-029), mirroring
+``cms.scenario_editor.urls``. When the SPA shell is enabled, the participant GET
+page paths (dashboard, event, challenges, challenge detail, range, scoreboard,
+solve history, team, help) are served by the platform SPA host view (the CTF
+participant workspace rehomed under the unified client router); when off (the
+default), the classic Django template views handle them. The decision is made
+**per request** (not at import) so the flag can be flipped without a restart and
+so tests can toggle it with ``override_settings``. The enable check honours both
+``PLATFORM_SPA_ENABLED`` (the platform-wide control) and
+``CTF_WORKSPACE_SPA_ENABLED`` (the CTF-specific extension of that flag pattern) —
+both must be on. Route *names* are identical in both modes so
+``reverse("ctf:...")`` callers keep working across the cutover.
+
+Deliberately never wrapped (server-owned auth/forms + preflight non-goal for the
+participant workspace slice): the participant login / change-password / team-join
+Django views, the legacy scoreboard JSON endpoint, and every organizer
+(``/ctf/admin/``) page. The participant client-router catch-all is scoped with a
+negative lookahead so those paths are never swallowed by the shell.
 """
 
 from __future__ import annotations
 
-from django.urls import path
+from collections.abc import Callable
+
+from django.conf import settings
+from django.http import Http404, HttpRequest, HttpResponse
+from django.urls import path, re_path
 
 from ctf import views
+from shared.spa_host import platform_spa_host
 
 app_name = "ctf"
+
+
+def _spa_enabled() -> bool:
+    """Return whether the SPA shell should serve the CTF participant pages."""
+    return bool(
+        getattr(settings, "PLATFORM_SPA_ENABLED", False) and getattr(settings, "CTF_WORKSPACE_SPA_ENABLED", False)
+    )
+
+
+_SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
+
+
+def _page(django_view: Callable[..., HttpResponse] | None) -> Callable[..., HttpResponse]:
+    """Return a view that serves the SPA shell for a page path, else the Django page.
+
+    The shell takeover is **method-aware**: several legacy participant page paths
+    are handled by Django views that own BOTH page rendering (GET) AND a form
+    submission (POST) on the same URL. Serving the ``@require_safe`` SPA shell for
+    those unsafe methods would 405 the legacy form POST and break the old-tab /
+    rollback guarantee. So the shell is served only for safe methods when enabled;
+    unsafe methods always fall through to the incumbent Django view (the SPA itself
+    mutates exclusively via the canonical ``/api/v1/ctf/`` routes).
+
+    ``django_view=None`` marks a client-router-only path: it serves the shell for
+    safe methods when the SPA is enabled and 404s otherwise (so the catch-all is
+    inert in the default Django mode and never swallows an unsafe request).
+    """
+
+    def _dispatch(request: HttpRequest, *args, **kwargs) -> HttpResponse:
+        """Serve the SPA shell for safe methods when enabled, else the Django page (or 404)."""
+        if _spa_enabled() and request.method in _SAFE_METHODS:
+            return platform_spa_host(request, *args, **kwargs)
+        if django_view is None:
+            raise Http404
+        return django_view(request, *args, **kwargs)
+
+    return _dispatch
+
 
 # -----------------------------------------------------------------------------
 # Participant URLs (CTF Competitors)
 # -----------------------------------------------------------------------------
 participant_patterns = [
     # Dashboard
-    path("", views.participant_dashboard, name="participant_dashboard"),
+    path("", _page(views.participant_dashboard), name="participant_dashboard"),
+    # Auth pages stay Django-handled: server-owned login/password forms are not a
+    # participant-workspace SPA goal in this slice.
     path("login/", views.ctf_login, name="ctf_login"),
     path("change-password/", views.ctf_change_password, name="ctf_change_password"),
-    path("event/", views.participant_event, name="participant_event"),
+    path("event/", _page(views.participant_event), name="participant_event"),
     # Challenges
-    path("challenges/", views.participant_challenges, name="challenges"),
-    path("challenges/<uuid:challenge_id>/", views.challenge_detail, name="challenge_detail"),
+    path("challenges/", _page(views.participant_challenges), name="challenges"),
+    path("challenges/<uuid:challenge_id>/", _page(views.challenge_detail), name="challenge_detail"),
     # Range
-    path("range/", views.participant_range, name="participant_range"),
+    path("range/", _page(views.participant_range), name="participant_range"),
     # Scoreboard
-    path("scoreboard/", views.scoreboard, name="scoreboard"),
+    path("scoreboard/", _page(views.scoreboard), name="scoreboard"),
     path(
         "participants/<uuid:participant_id>/solves/",
-        views.participant_solve_history,
+        _page(views.participant_solve_history),
         name="participant_solve_history",
     ),
     # Team
-    path("team/", views.participant_team, name="participant_team"),
+    path("team/", _page(views.participant_team), name="participant_team"),
+    # Team join owns a POST form; stays Django-handled.
     path("team/join/", views.team_join, name="team_join"),
     # Help
-    path("help/", views.ctf_help, name="ctf_help"),
+    path("help/", _page(views.ctf_help), name="ctf_help"),
 ]
 
 # -----------------------------------------------------------------------------
@@ -196,5 +261,21 @@ api_patterns = [
     ),
 ]
 
+# -----------------------------------------------------------------------------
+# Participant client-router deep-link catch-all
+# -----------------------------------------------------------------------------
+# Participant and organizer share the ``/ctf/`` prefix, so a broad ``^.*$``
+# catch-all would swallow the organizer (``/ctf/admin/*``) pages and the login /
+# change-password / team-join Django views. Instead this is scoped with a
+# negative lookahead: it serves the participant SPA shell (safe methods, when both
+# flags are on; 404 otherwise) for any ``/ctf/*`` deep link that is NOT one of
+# those Django-owned prefixes. Declared last so every exact participant, organizer,
+# and API route is matched first; the exclusions keep admin/login/etc. from ever
+# being shell-served even for paths that have no exact match.
+_participant_spa_catchall = re_path(
+    r"^(?!admin/|api/|login/|change-password/|team/join/).*$",
+    _page(None),
+)
+
 # Combine all patterns
-urlpatterns = participant_patterns + admin_patterns + api_patterns
+urlpatterns = participant_patterns + admin_patterns + api_patterns + [_participant_spa_catchall]
