@@ -82,12 +82,14 @@ function EventsListBody({ query }: Readonly<{ query: ReturnType<typeof useCtfEve
 export function EventsListPage() {
   const query = useCtfEvents();
   const count = query.data?.events.length ?? 0;
+  const countNoun = count === 1 ? "event" : "events";
+  const description = query.data ? `${count} ${countNoun}` : "CTF events";
 
   return (
     <>
       <PageHeader
         title="Events"
-        description={query.data ? `${count} ${count === 1 ? "event" : "events"}` : "CTF events"}
+        description={description}
         actions={
           <Link to={ctfAdminEventCreatePath()} className={cn(buttonVariants({ size: "sm" }))}>
             <Plus className="size-4" />

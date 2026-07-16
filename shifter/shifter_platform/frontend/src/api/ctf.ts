@@ -53,6 +53,9 @@ import type {
 
 const BASE = "/ctf";
 
+/** Query-key segment for the organizer challenge lists (shared by the read key and its invalidations). */
+const ADMIN_CHALLENGES_KEY = "admin-challenges";
+
 export const ctfKeys = {
   all: ["ctf"] as const,
   currentEvent: () => ["ctf", "current-event"] as const,
@@ -68,7 +71,7 @@ export const ctfKeys = {
   events: () => ["ctf", "events"] as const,
   event: (id: string) => ["ctf", "event", id] as const,
   scenarios: () => ["ctf", "scenarios"] as const,
-  adminChallenges: (eventId: string) => ["ctf", "admin-challenges", eventId] as const,
+  adminChallenges: (eventId: string) => ["ctf", ADMIN_CHALLENGES_KEY, eventId] as const,
   adminChallenge: (id: string) => ["ctf", "admin-challenge", id] as const,
   hints: (challengeId: string) => ["ctf", "hints", challengeId] as const,
   files: (challengeId: string) => ["ctf", "files", challengeId] as const,
@@ -322,7 +325,7 @@ export function useUpdateCtfChallenge(challengeId: string) {
       apiFetch<CtfChallengeMutationResult>(`${BASE}/challenges/${challengeId}/`, { method: "PUT", body }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ctfKeys.adminChallenge(challengeId) });
-      queryClient.invalidateQueries({ queryKey: ["ctf", "admin-challenges"] });
+      queryClient.invalidateQueries({ queryKey: ["ctf", ADMIN_CHALLENGES_KEY] });
     },
   });
 }
@@ -332,7 +335,7 @@ export function useDeleteCtfChallenge() {
   return useMutation({
     mutationFn: (challengeId: string) =>
       apiFetch<void>(`${BASE}/challenges/${challengeId}/`, { method: "DELETE" }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["ctf", "admin-challenges"] }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["ctf", ADMIN_CHALLENGES_KEY] }),
   });
 }
 

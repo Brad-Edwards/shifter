@@ -25,7 +25,7 @@ function ChallengeMeta({ challenge }: Readonly<{ challenge: CtfChallengeDetail }
       {challenge.category ? <Badge variant="secondary">{titleCase(challenge.category)}</Badge> : null}
       {challenge.difficulty ? <span>{titleCase(challenge.difficulty)}</span> : null}
       <span>· {challenge.points} pts</span>
-      {challenge.attempts_remaining !== null ? <span>· {challenge.attempts_remaining} attempts left</span> : null}
+      {challenge.attempts_remaining === null ? null : <span>· {challenge.attempts_remaining} attempts left</span>}
       {challenge.solved ? (
         <Badge variant="secondary" className="gap-1">
           <CheckCircle2 className="size-3" aria-hidden="true" />
@@ -68,12 +68,12 @@ function ConnectionInfoCard({ challenge }: Readonly<{ challenge: CtfChallengeDet
             <dt className="text-xs text-muted-foreground">Host</dt>
             <dd className="font-mono">{info.host}</dd>
           </div>
-          {info.port !== null ? (
+          {info.port === null ? null : (
             <div>
               <dt className="text-xs text-muted-foreground">Port</dt>
               <dd className="font-mono">{info.port}</dd>
             </div>
-          ) : null}
+          )}
           <div>
             <dt className="text-xs text-muted-foreground">Instance</dt>
             <dd>{info.instance_name}</dd>

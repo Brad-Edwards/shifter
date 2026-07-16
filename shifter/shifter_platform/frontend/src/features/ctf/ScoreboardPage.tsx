@@ -63,7 +63,7 @@ function ScoreboardContent({
   }
 
   const brackets = data.brackets ?? [];
-  const rows = bracket !== ALL ? (data.bracket_rankings ?? []) : (data.rankings ?? []);
+  const rows = bracket === ALL ? (data.rankings ?? []) : (data.bracket_rankings ?? []);
 
   return (
     <>
@@ -96,7 +96,7 @@ export function ScoreboardPage() {
   const [bracket, setBracket] = useState<string>(ALL);
   const eventQuery = useCtfCurrentEvent();
   const eventId = eventQuery.data?.event.id ?? "";
-  const scoreboard = useCtfScoreboard(eventId, bracket !== ALL ? bracket : undefined, Boolean(eventId));
+  const scoreboard = useCtfScoreboard(eventId, bracket === ALL ? undefined : bracket, Boolean(eventId));
 
   const loading = eventQuery.isLoading || (Boolean(eventId) && scoreboard.isLoading);
 

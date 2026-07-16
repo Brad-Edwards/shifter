@@ -20,7 +20,7 @@ from ctf.services.challenge import get_available_challenges
 from ctf.services.submission import get_participant_submissions
 
 if TYPE_CHECKING:
-    from ctf.models import CTFParticipant
+    from ctf.models import CTFChallenge, CTFEvent, CTFParticipant
 
 
 def participant_current_event(participant: CTFParticipant) -> dict[str, Any]:
@@ -110,7 +110,7 @@ def participant_team(participant: CTFParticipant) -> dict[str, Any] | None:
     }
 
 
-def participant_challenge_detail(participant: CTFParticipant, challenge: Any) -> dict[str, Any]:
+def participant_challenge_detail(participant: CTFParticipant, challenge: CTFChallenge) -> dict[str, Any]:
     """Return the participant-safe detail projection for one challenge.
 
     Composes the canonical challenge / hint / submission / scoring services and
@@ -192,7 +192,7 @@ def participant_challenge_detail(participant: CTFParticipant, challenge: Any) ->
     }
 
 
-def _participant_rating(event: Any, participant: CTFParticipant, challenge: Any) -> dict[str, Any] | None:
+def _participant_rating(event: CTFEvent, participant: CTFParticipant, challenge: CTFChallenge) -> dict[str, Any] | None:
     """Return the challenge rating projection for the participant, or None.
 
     ``None`` when ratings are disabled for the event. The aggregate average and

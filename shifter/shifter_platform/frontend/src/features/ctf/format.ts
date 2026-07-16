@@ -41,6 +41,9 @@ export function fromDateTimeLocalValue(value: string): string | null {
 export function rankingString(row: Record<string, unknown>, key: string): string {
   const value = row[key];
   if (value === null || value === undefined) return "";
+  // Coerce explicitly: a non-primitive would otherwise stringify to
+  // "[object Object]" via String()'s default Object stringification.
+  if (typeof value === "object") return JSON.stringify(value);
   return String(value);
 }
 

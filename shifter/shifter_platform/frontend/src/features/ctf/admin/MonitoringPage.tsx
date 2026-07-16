@@ -97,6 +97,52 @@ function ScoreboardTab({ eventId }: Readonly<{ eventId: string }>) {
   );
 }
 
+function renderRangesBody(query: ReturnType<typeof useCtfEventRanges>): React.ReactNode {
+  if (query.isLoading) return <Skeleton className="h-48 w-full" />;
+  if (query.isError) {
+    return (
+      <Alert variant="destructive">
+        <AlertTitle>Could not load ranges</AlertTitle>
+        <AlertDescription>Please retry.</AlertDescription>
+      </Alert>
+    );
+  }
+  if ((query.data?.ranges.length ?? 0) === 0) {
+    return (
+      <Card>
+        <CardContent className="grid place-items-center px-6 py-16 text-center">
+          <p className="text-sm font-medium">No participant ranges yet</p>
+          <p className="mt-1 text-sm text-muted-foreground">Provision ranges to give participants access.</p>
+        </CardContent>
+      </Card>
+    );
+  }
+  return (
+    <Card className="overflow-hidden py-0">
+      <Table>
+        <TableHeader>
+          <TableRow className="hover:bg-transparent">
+            <TableHead>Participant</TableHead>
+            <TableHead>Email</TableHead>
+            <TableHead className="w-[140px]">Range status</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {(query.data?.ranges ?? []).map((range) => (
+            <TableRow key={range.participant_id}>
+              <TableCell className="font-medium">{range.name}</TableCell>
+              <TableCell className="text-sm text-muted-foreground">{range.email}</TableCell>
+              <TableCell>
+                <Badge variant="secondary">{titleCase(range.range_status)}</Badge>
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </Card>
+  );
+}
+
 function RangesTab({ eventId }: Readonly<{ eventId: string }>) {
   const query = useCtfEventRanges(eventId, Boolean(eventId));
   const provision = useProvisionCtfEventRanges(eventId);
@@ -137,44 +183,7 @@ function RangesTab({ eventId }: Readonly<{ eventId: string }>) {
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       ) : null}
-      {query.isLoading ? (
-        <Skeleton className="h-48 w-full" />
-      ) : query.isError ? (
-        <Alert variant="destructive">
-          <AlertTitle>Could not load ranges</AlertTitle>
-          <AlertDescription>Please retry.</AlertDescription>
-        </Alert>
-      ) : (query.data?.ranges.length ?? 0) === 0 ? (
-        <Card>
-          <CardContent className="grid place-items-center px-6 py-16 text-center">
-            <p className="text-sm font-medium">No participant ranges yet</p>
-            <p className="mt-1 text-sm text-muted-foreground">Provision ranges to give participants access.</p>
-          </CardContent>
-        </Card>
-      ) : (
-        <Card className="overflow-hidden py-0">
-          <Table>
-            <TableHeader>
-              <TableRow className="hover:bg-transparent">
-                <TableHead>Participant</TableHead>
-                <TableHead>Email</TableHead>
-                <TableHead className="w-[140px]">Range status</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {(query.data?.ranges ?? []).map((range) => (
-                <TableRow key={range.participant_id}>
-                  <TableCell className="font-medium">{range.name}</TableCell>
-                  <TableCell className="text-sm text-muted-foreground">{range.email}</TableCell>
-                  <TableCell>
-                    <Badge variant="secondary">{titleCase(range.range_status)}</Badge>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </Card>
-      )}
+      {renderRangesBody(query)}
     </div>
   );
 }
@@ -257,10 +266,62 @@ function SendButton({ eventId, notificationId, status }: Readonly<{ eventId: str
   );
 }
 
+function renderNotificationsBody(query: ReturnType<typeof useCtfNotifications>, eventId: string): React.ReactNode {
+  if (query.isLoading) return <Skeleton className="h-48 w-full" />;
+  if (query.isError) {
+    return (
+      <Alert variant="destructive">
+        <AlertTitle>Could not load notifications</AlertTitle>
+        <AlertDescription>Please retry.</AlertDescription>
+      </Alert>
+    );
+  }
+  const notifications = query.data?.notifications ?? [];
+  if (notifications.length === 0) {
+    return (
+      <Card>
+        <CardContent className="grid place-items-center px-6 py-16 text-center">
+          <p className="text-sm font-medium">No notifications yet</p>
+          <p className="mt-1 text-sm text-muted-foreground">Create an announcement to notify participants.</p>
+        </CardContent>
+      </Card>
+    );
+  }
+  return (
+    <Card className="overflow-hidden py-0">
+      <Table>
+        <TableHeader>
+          <TableRow className="hover:bg-transparent">
+            <TableHead>Subject</TableHead>
+            <TableHead className="w-[130px]">Type</TableHead>
+            <TableHead className="w-[120px]">Status</TableHead>
+            <TableHead className="w-[90px] text-right">Sent</TableHead>
+            <TableHead className="w-[110px] text-right">Actions</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {notifications.map((notification) => (
+            <TableRow key={notification.id}>
+              <TableCell className="font-medium">{notification.subject}</TableCell>
+              <TableCell className="text-sm text-muted-foreground">{titleCase(notification.notification_type)}</TableCell>
+              <TableCell>
+                <Badge variant="secondary">{titleCase(notification.status)}</Badge>
+              </TableCell>
+              <TableCell className="text-right font-mono text-sm tabular-nums">{notification.sent_count}</TableCell>
+              <TableCell className="text-right">
+                <SendButton eventId={eventId} notificationId={notification.id} status={notification.status} />
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </Card>
+  );
+}
+
 function NotificationsTab({ eventId }: Readonly<{ eventId: string }>) {
   const query = useCtfNotifications(eventId);
   const [announcing, setAnnouncing] = useState(false);
-  const notifications = query.data?.notifications ?? [];
 
   return (
     <div className="space-y-4">
@@ -269,52 +330,61 @@ function NotificationsTab({ eventId }: Readonly<{ eventId: string }>) {
           New announcement
         </Button>
       </div>
-      {query.isLoading ? (
-        <Skeleton className="h-48 w-full" />
-      ) : query.isError ? (
-        <Alert variant="destructive">
-          <AlertTitle>Could not load notifications</AlertTitle>
-          <AlertDescription>Please retry.</AlertDescription>
-        </Alert>
-      ) : notifications.length === 0 ? (
-        <Card>
-          <CardContent className="grid place-items-center px-6 py-16 text-center">
-            <p className="text-sm font-medium">No notifications yet</p>
-            <p className="mt-1 text-sm text-muted-foreground">Create an announcement to notify participants.</p>
-          </CardContent>
-        </Card>
-      ) : (
-        <Card className="overflow-hidden py-0">
-          <Table>
-            <TableHeader>
-              <TableRow className="hover:bg-transparent">
-                <TableHead>Subject</TableHead>
-                <TableHead className="w-[130px]">Type</TableHead>
-                <TableHead className="w-[120px]">Status</TableHead>
-                <TableHead className="w-[90px] text-right">Sent</TableHead>
-                <TableHead className="w-[110px] text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {notifications.map((notification) => (
-                <TableRow key={notification.id}>
-                  <TableCell className="font-medium">{notification.subject}</TableCell>
-                  <TableCell className="text-sm text-muted-foreground">{titleCase(notification.notification_type)}</TableCell>
-                  <TableCell>
-                    <Badge variant="secondary">{titleCase(notification.status)}</Badge>
-                  </TableCell>
-                  <TableCell className="text-right font-mono text-sm tabular-nums">{notification.sent_count}</TableCell>
-                  <TableCell className="text-right">
-                    <SendButton eventId={eventId} notificationId={notification.id} status={notification.status} />
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </Card>
-      )}
+      {renderNotificationsBody(query, eventId)}
       <AnnounceDialog eventId={eventId} open={announcing} onOpenChange={setAnnouncing} />
     </div>
+  );
+}
+
+function renderAnalyticsBody(
+  participantId: string,
+  timeline: ReturnType<typeof useCtfScoreTimeline>,
+): React.ReactNode {
+  if (!participantId) {
+    return <p className="text-sm text-muted-foreground">Select a participant to see their score timeline.</p>;
+  }
+  if (timeline.isLoading) return <Skeleton className="h-48 w-full" />;
+  if (timeline.isError) {
+    return (
+      <Alert variant="destructive">
+        <AlertTitle>Could not load the score timeline</AlertTitle>
+        <AlertDescription>Please retry.</AlertDescription>
+      </Alert>
+    );
+  }
+  const rows = timeline.data?.timeline ?? [];
+  if (rows.length === 0) {
+    return <p className="text-sm text-muted-foreground">No scoring activity yet for this participant.</p>;
+  }
+  return (
+    <Card className="overflow-hidden py-0">
+      <Table>
+        <TableHeader>
+          <TableRow className="hover:bg-transparent">
+            <TableHead>When</TableHead>
+            <TableHead>Challenge</TableHead>
+            <TableHead className="w-[100px] text-right">Points</TableHead>
+            <TableHead className="w-[120px] text-right">Total</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {rows.map((row, index) => (
+            <TableRow key={rankingKey(row, index)}>
+              <TableCell className="text-sm text-muted-foreground">
+                {formatDateTime(rankingString(row, "timestamp") || rankingString(row, "solved_at"))}
+              </TableCell>
+              <TableCell>{rankingString(row, "challenge_name") || "—"}</TableCell>
+              <TableCell className="text-right font-mono text-sm tabular-nums">
+                {rankingNumber(row, "points") ?? 0}
+              </TableCell>
+              <TableCell className="text-right font-mono text-sm tabular-nums">
+                {rankingNumber(row, "cumulative_score") ?? rankingNumber(row, "total_score") ?? 0}
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </Card>
   );
 }
 
@@ -323,7 +393,6 @@ function AnalyticsTab({ eventId }: Readonly<{ eventId: string }>) {
   const [participantId, setParticipantId] = useState("");
   const timeline = useCtfScoreTimeline(participantId, Boolean(participantId));
   const options = participants.data?.participants ?? [];
-  const rows = timeline.data?.timeline ?? [];
 
   return (
     <div className="space-y-4">
@@ -343,47 +412,7 @@ function AnalyticsTab({ eventId }: Readonly<{ eventId: string }>) {
         </Select>
       </div>
 
-      {!participantId ? (
-        <p className="text-sm text-muted-foreground">Select a participant to see their score timeline.</p>
-      ) : timeline.isLoading ? (
-        <Skeleton className="h-48 w-full" />
-      ) : timeline.isError ? (
-        <Alert variant="destructive">
-          <AlertTitle>Could not load the score timeline</AlertTitle>
-          <AlertDescription>Please retry.</AlertDescription>
-        </Alert>
-      ) : rows.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No scoring activity yet for this participant.</p>
-      ) : (
-        <Card className="overflow-hidden py-0">
-          <Table>
-            <TableHeader>
-              <TableRow className="hover:bg-transparent">
-                <TableHead>When</TableHead>
-                <TableHead>Challenge</TableHead>
-                <TableHead className="w-[100px] text-right">Points</TableHead>
-                <TableHead className="w-[120px] text-right">Total</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {rows.map((row, index) => (
-                <TableRow key={rankingKey(row, index)}>
-                  <TableCell className="text-sm text-muted-foreground">
-                    {formatDateTime(rankingString(row, "timestamp") || rankingString(row, "solved_at"))}
-                  </TableCell>
-                  <TableCell>{rankingString(row, "challenge_name") || "—"}</TableCell>
-                  <TableCell className="text-right font-mono text-sm tabular-nums">
-                    {rankingNumber(row, "points") ?? 0}
-                  </TableCell>
-                  <TableCell className="text-right font-mono text-sm tabular-nums">
-                    {rankingNumber(row, "cumulative_score") ?? rankingNumber(row, "total_score") ?? 0}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </Card>
-      )}
+      {renderAnalyticsBody(participantId, timeline)}
     </div>
   );
 }

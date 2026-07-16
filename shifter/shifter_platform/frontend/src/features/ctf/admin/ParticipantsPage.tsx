@@ -176,6 +176,8 @@ export function ParticipantsPage() {
   const query = useCtfParticipants(eventId);
   const [inviting, setInviting] = useState(false);
   const total = query.data?.total ?? query.data?.participants.length ?? 0;
+  const totalNoun = total === 1 ? "participant" : "participants";
+  const description = query.data ? `${total} ${totalNoun}` : "Event participants";
   // Import owns a Django POST form and stays server-rendered; link out to it.
   const importHref = `${ctfAdminEventParticipantsPath(eventId)}import/`;
 
@@ -195,7 +197,7 @@ export function ParticipantsPage() {
 
       <PageHeader
         title="Participants"
-        description={query.data ? `${total} ${total === 1 ? "participant" : "participants"}` : "Event participants"}
+        description={description}
         actions={
           <div className="flex items-center gap-2">
             <a href={importHref} className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>

@@ -86,6 +86,8 @@ export function ChallengesAdminPage() {
   const eventId = params.eventId ?? "";
   const query = useCtfEventChallenges(eventId);
   const count = query.data?.challenges.length ?? 0;
+  const countNoun = count === 1 ? "challenge" : "challenges";
+  const description = query.data ? `${count} ${countNoun}` : "Event challenges";
 
   return (
     <>
@@ -103,7 +105,7 @@ export function ChallengesAdminPage() {
 
       <PageHeader
         title="Challenges"
-        description={query.data ? `${count} ${count === 1 ? "challenge" : "challenges"}` : "Event challenges"}
+        description={description}
         actions={
           <Link to={ctfAdminChallengeCreatePath(eventId)} className={cn(buttonVariants({ size: "sm" }))}>
             <Plus className="size-4" />

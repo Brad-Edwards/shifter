@@ -22,7 +22,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from ctf.api import projections
-from ctf.api._base import CTF_PARTICIPANT_PERMISSIONS, ctf_actor_user
+from ctf.api._base import CTF_PARTICIPANT_PERMISSIONS, _CtfApiError, ctf_actor_user
 from ctf.api.serializers import (
     ParticipantChallengeDetailSerializer,
     ParticipantChallengeListItemSerializer,
@@ -140,48 +140,39 @@ class ParticipantChallengeDetailView(APIView):
     @extend_schema(responses=ParticipantChallengeDetailSerializer)
     def get(self, request: Request, challenge_id: UUID) -> Response:
         """Return the challenge detail, or 404/403 per the read-availability policy."""
+        # Boundary failures raise ``_CtfApiError``, which the single ``except``
+        # renders to the exact legacy status code and message.
         from ctf.exceptions import CTFNotFoundError, CTFStateError, CTFValidationError
         from ctf.services.challenge import assert_challenge_readable_for_participant, get_challenge
         from ctf.services.participant import get_participant_by_user
 
-        actor = ctf_actor_user(request)
-        if actor is None:
-            return api_error_response(
-                code="permission_denied",
-                message=_FORBIDDEN,
-                status_code=status.HTTP_403_FORBIDDEN,
-                request=request,
-            )
         try:
-            challenge = get_challenge(challenge_id)
-        except CTFNotFoundError:
-            return api_error_response(
-                code="not_found",
-                message=_CHALLENGE_NOT_FOUND,
-                status_code=status.HTTP_404_NOT_FOUND,
-                request=request,
+            actor = ctf_actor_user(request)
+            if actor is None:
+                raise _CtfApiError(code="permission_denied", message=_FORBIDDEN, status_code=status.HTTP_403_FORBIDDEN)
+            try:
+                challenge = get_challenge(challenge_id)
+            except CTFNotFoundError as exc:
+                raise _CtfApiError(
+                    code="not_found", message=_CHALLENGE_NOT_FOUND, status_code=status.HTTP_404_NOT_FOUND
+                ) from exc
+            # Event-scoped resolution (codex 765/768/769): a multi-event user must be
+            # looked up against THIS challenge's event, never an arbitrary first row.
+            participant = get_participant_by_user(actor, event_id=challenge.event_id)
+            if participant is None:
+                raise _CtfApiError(code="permission_denied", message=_FORBIDDEN, status_code=status.HTTP_403_FORBIDDEN)
+            # Read-availability policy: blocks hidden/unreleased/prerequisite-gated
+            # content while still allowing locked and ended/archived review.
+            try:
+                assert_challenge_readable_for_participant(participant, challenge)
+            except (CTFStateError, CTFValidationError) as exc:
+                raise _CtfApiError(
+                    code="permission_denied", message=_FORBIDDEN, status_code=status.HTTP_403_FORBIDDEN
+                ) from exc
+            return Response(
+                ParticipantChallengeDetailSerializer(
+                    projections.participant_challenge_detail(participant, challenge)
+                ).data
             )
-        # Event-scoped resolution (codex 765/768/769): a multi-event user must be
-        # looked up against THIS challenge's event, never an arbitrary first row.
-        participant = get_participant_by_user(actor, event_id=challenge.event_id)
-        if participant is None:
-            return api_error_response(
-                code="permission_denied",
-                message=_FORBIDDEN,
-                status_code=status.HTTP_403_FORBIDDEN,
-                request=request,
-            )
-        # Read-availability policy: blocks hidden/unreleased/prerequisite-gated
-        # content while still allowing locked and ended/archived review.
-        try:
-            assert_challenge_readable_for_participant(participant, challenge)
-        except (CTFStateError, CTFValidationError):
-            return api_error_response(
-                code="permission_denied",
-                message=_FORBIDDEN,
-                status_code=status.HTTP_403_FORBIDDEN,
-                request=request,
-            )
-        return Response(
-            ParticipantChallengeDetailSerializer(projections.participant_challenge_detail(participant, challenge)).data
-        )
+        except _CtfApiError as exc:
+            return exc.to_response(request)

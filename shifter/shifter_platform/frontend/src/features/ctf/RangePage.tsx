@@ -83,9 +83,9 @@ export function RangePage() {
             <span className="text-sm text-muted-foreground">Status</span>
             <Badge variant="secondary">{titleCase(status.status)}</Badge>
           </div>
-          {status.range_instance_id !== null ? (
+          {status.range_instance_id === null ? null : (
             <p className="mt-2 text-sm text-muted-foreground">Range instance #{status.range_instance_id}</p>
-          ) : null}
+          )}
           <RangeAccess status={status} />
         </CardContent>
       </Card>

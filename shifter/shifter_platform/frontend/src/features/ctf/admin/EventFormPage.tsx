@@ -101,6 +101,56 @@ function toPayload(state: FormState): CtfEventWrite {
   };
 }
 
+/** Render the edit-mode loading / not-found states, or null when the form itself should render. */
+function renderEditLoadState(
+  mode: "create" | "edit",
+  existing: ReturnType<typeof useCtfEvent>,
+): React.ReactNode {
+  if (mode !== "edit") return null;
+  if (existing.isLoading) {
+    return (
+      <div className="grid place-items-center py-24 text-muted-foreground">
+        <Loader2 className="size-6 animate-spin" aria-label="Loading event" />
+      </div>
+    );
+  }
+  if (existing.isError) {
+    return (
+      <Alert variant="destructive">
+        <AlertTitle>Event not found</AlertTitle>
+        <AlertDescription>
+          This event may have been deleted.{" "}
+          <Link className="underline" to={ctfAdminEventsPath()}>
+            Back to events
+          </Link>
+          .
+        </AlertDescription>
+      </Alert>
+    );
+  }
+  return null;
+}
+
+function submitEventForm(
+  event: React.FormEvent,
+  opts: Readonly<{
+    state: FormState;
+    mode: "create" | "edit";
+    eventId: string;
+    create: ReturnType<typeof useCreateCtfEvent>;
+    update: ReturnType<typeof useUpdateCtfEvent>;
+    navigate: ReturnType<typeof useNavigate>;
+  }>,
+) {
+  event.preventDefault();
+  const payload = toPayload(opts.state);
+  if (opts.mode === "create") {
+    opts.create.mutate(payload, { onSuccess: (result) => opts.navigate(ctfAdminEventPath(result.id)) });
+  } else if (opts.eventId) {
+    opts.update.mutate(payload, { onSuccess: () => opts.navigate(ctfAdminEventPath(opts.eventId)) });
+  }
+}
+
 export function EventFormPage({ mode }: Readonly<{ mode: "create" | "edit" }>) {
   const navigate = useNavigate();
   const params = useParams();
@@ -146,36 +196,11 @@ export function EventFormPage({ mode }: Readonly<{ mode: "create" | "edit" }>) {
   }
 
   function onSubmit(event: React.FormEvent) {
-    event.preventDefault();
-    const payload = toPayload(state);
-    if (mode === "create") {
-      create.mutate(payload, { onSuccess: (result) => navigate(ctfAdminEventPath(result.id)) });
-    } else if (eventId) {
-      update.mutate(payload, { onSuccess: () => navigate(ctfAdminEventPath(eventId)) });
-    }
+    submitEventForm(event, { state, mode, eventId, create, update, navigate });
   }
 
-  if (mode === "edit" && existing.isLoading) {
-    return (
-      <div className="grid place-items-center py-24 text-muted-foreground">
-        <Loader2 className="size-6 animate-spin" aria-label="Loading event" />
-      </div>
-    );
-  }
-  if (mode === "edit" && existing.isError) {
-    return (
-      <Alert variant="destructive">
-        <AlertTitle>Event not found</AlertTitle>
-        <AlertDescription>
-          This event may have been deleted.{" "}
-          <Link className="underline" to={ctfAdminEventsPath()}>
-            Back to events
-          </Link>
-          .
-        </AlertDescription>
-      </Alert>
-    );
-  }
+  const editLoadState = renderEditLoadState(mode, existing);
+  if (editLoadState) return <>{editLoadState}</>;
 
   const cancelHref = mode === "edit" && eventId ? ctfAdminEventPath(eventId) : ctfAdminEventsPath();
   const scenarioOptions = scenarios.data?.scenarios ?? [];
