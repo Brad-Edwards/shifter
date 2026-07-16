@@ -25,7 +25,7 @@ from django.utils import timezone
 from engine.ecs import start_aces_range_provisioning
 from shared.enums import RequestType
 
-from ._range import _backend_binding_fields, _verify_existing_binding
+from ._range_backend_binding import backend_binding_fields, verify_existing_binding
 
 if TYPE_CHECKING:
     from shared.range_instantiation_policy import BackendAdmission
@@ -74,12 +74,12 @@ def create_aces_range(
 
     existing = Range.objects.filter(request__request_id=request_uuid).first()
     if existing is not None:
-        _verify_existing_binding(existing, request_uuid, backend_admission)
+        verify_existing_binding(existing, request_uuid, backend_admission)
         return AcesRangeRef(
             request_id=str(request_uuid), range_id=str(existing.uuid), status=existing.status, accepted=True
         )
 
-    binding_fields = _backend_binding_fields(backend_admission)
+    binding_fields = backend_binding_fields(backend_admission)
     user_model = get_user_model()
     with transaction.atomic():
         user = user_model.objects.get(id=user_id)

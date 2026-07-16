@@ -101,10 +101,10 @@ class TestResolveLegacyRangeBackend:
         ],
     )
     def test_resolution_matrix(self, monkeypatch, states, expected):
-        import provisioner_db
+        import range_backend_evidence
 
-        monkeypatch.setattr(provisioner_db, "get_db_connection", lambda: self._conn_with_states(states))
-        assert provisioner_db.resolve_legacy_range_backend("req-1") == expected
+        monkeypatch.setattr(range_backend_evidence, "get_db_connection", lambda: self._conn_with_states(states))
+        assert range_backend_evidence.resolve_legacy_range_backend("req-1") == expected
 
 
 class TestResolveOperationBackend:

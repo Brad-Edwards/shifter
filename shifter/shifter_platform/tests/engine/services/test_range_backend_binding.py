@@ -78,11 +78,12 @@ class TestCreateBindsOwnershipWriteOnce:
             request_id=request_id, user_id=user.id, compiled_plan=make_compiled_plan(), backend_admission=admission
         )
         conflicting = BackendAdmission(True, "gdc", InstantiationPurpose.NON_USER_VALIDATION, "", "")
+        plan = make_compiled_plan()
         with pytest.raises(EngineError, match="conflict"):
             create_aces_range(
                 request_id=request_id,
                 user_id=user.id,
-                compiled_plan=make_compiled_plan(),
+                compiled_plan=plan,
                 backend_admission=conflicting,
             )
 
@@ -90,18 +91,20 @@ class TestCreateBindsOwnershipWriteOnce:
 class TestOperatorBackfill:
     def test_backfill_sets_binding_then_refuses_overwrite(self, user):
         legacy = Range.objects.create(user=user, status=Range.Status.READY)
+        range_id = str(legacy.id)
         assert legacy.range_backend is None
 
-        call_command("backfill_range_backend_binding", "--range-id", str(legacy.id), "--backend", "gdc")
+        call_command("backfill_range_backend_binding", "--range-id", range_id, "--backend", "gdc")
         legacy.refresh_from_db()
         assert legacy.range_backend == "gdc"
         assert legacy.instantiation_purpose == "live_fire"
 
         # Write-once: a second backfill must refuse rather than overwrite.
         with pytest.raises(CommandError, match="write-once"):
-            call_command("backfill_range_backend_binding", "--range-id", str(legacy.id), "--backend", "gce")
+            call_command("backfill_range_backend_binding", "--range-id", range_id, "--backend", "gce")
 
     def test_backfill_rejects_unknown_backend(self, user):
         legacy = Range.objects.create(user=user, status=Range.Status.READY)
+        range_id = str(legacy.id)
         with pytest.raises(CommandError):
-            call_command("backfill_range_backend_binding", "--range-id", str(legacy.id), "--backend", "bogus")
+            call_command("backfill_range_backend_binding", "--range-id", range_id, "--backend", "bogus")

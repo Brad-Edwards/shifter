@@ -55,6 +55,7 @@ def _resolve_backend(backend: str | None) -> str:
 
 
 def _uses_active_gdc_range_plane(backend: str | None = None) -> bool:
+    """Return whether this operation uses the active GDC VM Runtime backend."""
     return _get_provider() == "gcp" and _resolve_backend(backend) == "gdc"
 
 

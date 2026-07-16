@@ -9,11 +9,11 @@ from uuid import UUID
 
 from shared.enums import CANCELLABLE_STATUSES, ResourceStatus
 from shared.range_cells import build_scenario_artifact
-from shared.range_instantiation_policy import InstantiationPurpose, normalize_gcp_range_backend
 from shared.schemas import RangeRef, RangeSpec, RequestSpec
 from shared.schemas.persistence import wrap_persisted_spec
 
 from ._common import EngineError, _resolve_instance_host
+from ._range_backend_binding import backend_binding_fields, verify_existing_binding
 
 if TYPE_CHECKING:
     from contextlib import AbstractContextManager as ContextManager
@@ -59,50 +59,6 @@ def _atomic() -> ContextManager[None]:
     return _es.transaction.atomic()
 
 
-def _backend_binding_fields(backend_admission: BackendAdmission | None) -> dict[str, str]:
-    """Map an admitted ``BackendAdmission`` to the write-once Range binding columns (#1666).
-
-    Returns ``{}`` for a non-GCP launch (``backend_admission is None``) so the
-    columns stay NULL. The backend and purpose are re-normalized through the single
-    shared policy parser/enum so only closed policy values are ever persisted; the
-    admission already holds normalized values, this is defense in depth.
-    """
-    if backend_admission is None:
-        return {}
-    return {
-        "range_backend": normalize_gcp_range_backend(backend_admission.backend),
-        "instantiation_purpose": InstantiationPurpose(backend_admission.purpose).value,
-    }
-
-
-def _verify_existing_binding(
-    existing_range: Range,
-    request_id: UUID,
-    backend_admission: BackendAdmission | None,
-) -> None:
-    """Enforce write-once binding on an idempotent create reuse (#1666).
-
-    Idempotent create with the same request must carry the same binding; a
-    *different* already-persisted binding is an ADR-039 ``conflict``, never a
-    silent update. A NULL persisted binding (legacy row) is left untouched here --
-    legacy repair is a destroy-time, ownership-evidence concern, not a create-time
-    rewrite.
-    """
-    if backend_admission is None or not existing_range.range_backend:
-        return
-    expected = _backend_binding_fields(backend_admission)
-    current = {
-        "range_backend": existing_range.range_backend,
-        "instantiation_purpose": existing_range.instantiation_purpose,
-    }
-    if current != expected:
-        raise EngineError(
-            f"Range backend binding conflict for request {request_id}: persisted "
-            f"{current['range_backend']}/{current['instantiation_purpose']} differs from admitted "
-            f"{expected['range_backend']}/{expected['instantiation_purpose']} (ADR-039 conflict; write-once)"
-        )
-
-
 def create_range(request_spec: RequestSpec, *, backend_admission: BackendAdmission | None = None) -> RangeRef:
     """Provision infrastructure for range.
 
@@ -144,7 +100,7 @@ def create_range(request_spec: RequestSpec, *, backend_admission: BackendAdmissi
     existing_range = Range.objects.filter(request__request_id=request_spec.request_id).first()
     if existing_range is not None:
         logger.info("create_range: reusing existing range request_id=%s", request_spec.request_id)
-        _verify_existing_binding(existing_range, request_spec.request_id, backend_admission)
+        verify_existing_binding(existing_range, request_spec.request_id, backend_admission)
         return _range_ref_from_range(existing_range, request_spec, range_spec)
 
     range_obj = _persist_range_atomically(request_spec, range_spec, user_model, Range, backend_admission)
@@ -179,7 +135,7 @@ def _persist_range_atomically(
     from engine.interpreter import interpret
     from engine.models import Subnet
 
-    binding_fields = _backend_binding_fields(backend_admission)
+    binding_fields = backend_binding_fields(backend_admission)
 
     with _atomic():
         request = interpret(request_spec)

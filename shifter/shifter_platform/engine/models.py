@@ -260,20 +260,20 @@ class Range(models.Model):
     # pre-#1666 rows and non-GCP ranges; the Engine create seam is the sole
     # writer and validates values via shared.range_instantiation_policy
     # (normalize_gcp_range_backend / InstantiationPurpose) before persisting.
-    # The DJ001 (null on CharField) suppressions below are intentional: NULL is
-    # the load-bearing sentinel for "no persisted binding" (legacy pre-#1666 /
-    # non-GCP), distinct from any real backend value. The usual "" default would
-    # conflate unbound with a value and break the destroy-time legacy-resolution
-    # path (#1666 preflight).
+    # The null=True on these two fields is intentional (DJ001 / Sonar S6552
+    # suppressed): NULL is the load-bearing sentinel for "no persisted binding"
+    # (legacy pre-#1666 / non-GCP), distinct from any real backend value. The
+    # usual "" default would conflate unbound with a value and break the
+    # destroy-time legacy-resolution path (#1666 preflight).
     range_backend = models.CharField(  # noqa: DJ001
         max_length=8,
-        null=True,
+        null=True,  # NOSONAR
         blank=True,
         help_text="Admitted GCP range backend bound at provision (#1666); NULL for legacy/non-GCP",
     )
     instantiation_purpose = models.CharField(  # noqa: DJ001
         max_length=24,
-        null=True,
+        null=True,  # NOSONAR
         blank=True,
         help_text="Trusted instantiation purpose bound at provision (#1666); NULL for legacy/non-GCP",
     )

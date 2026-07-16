@@ -25,9 +25,9 @@ from provisioner_db import (
     _update_range_config,
     get_range_data_by_request_id,
     mark_range_instances_destroyed,
-    resolve_legacy_range_backend,
     write_provisioned_state,
 )
+from range_backend_evidence import resolve_legacy_range_backend
 from state_helpers import _validate_provisioned_outputs
 from terraform_ngfw_range import (
     _configure_ngfw_for_range,
@@ -89,9 +89,10 @@ def _resolve_operation_backend(range_data: dict[str, Any], operation: str) -> st
     persisted = range_data.get("range_backend")
     if persisted:
         return normalize_gcp_range_backend(persisted)
-    if resolve_cloud_provider() != "gcp":
-        return None
-    if operation != "destroy":
+    # No binding: non-GCP ranges and the provision path (a fresh range with no
+    # resources to disambiguate) fall back to the env selector; only a GCP
+    # destroy/reconcile of a legacy range must resolve from durable evidence.
+    if resolve_cloud_provider() != "gcp" or operation != "destroy":
         return None
     return _resolve_legacy_gcp_backend(range_data)
 

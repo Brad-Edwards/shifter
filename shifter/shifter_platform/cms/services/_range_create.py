@@ -10,6 +10,10 @@ from django.db import IntegrityError, transaction
 
 from cms.exceptions import CMSError
 from cms.models import ACTIVE_RANGE_UNIQUE_CONSTRAINT, AgentConfig, RangeInstance
+
+# Re-exported for existing importers (cms.services._aces_range_create, tests); the
+# gate lives in its own module so _range_create stays within its size budget.
+from cms.services._range_backend_admission import _assert_live_fire_backend_admitted
 from shared.audit import (
     AuditAction,
     AuditActorType,
@@ -214,55 +218,6 @@ def _assert_scenario_launchable(scenario: str) -> None:
     if entry is not None and not entry.get("launchable", True):
         logger.warning("create_range: scenario '%s' is not launchable", scenario)
         raise CMSError(f"Scenario '{scenario}' is not available for launch")
-
-
-def _assert_live_fire_backend_admitted() -> BackendAdmission | None:
-    """Reject a live-fire range launch on a non-approved GCP backend (ADR-030, #1348).
-
-    The single service-level admission check shared by ``create_range`` and
-    ``create_aces_native_range`` -- and therefore every product path (Mission
-    Control, CTF participant/batch/spare/recovery, ACES, management commands, and
-    direct service callers) that funnels through them. It runs before the DB
-    reservation, Engine persistence, dispatch, subnet allocation, or any cloud
-    mutation, and is a no-op for non-GCP providers. ``RangeSource`` and
-    ``ENVIRONMENT`` are never treated as approval; the closed policy lives in
-    ``shared.range_instantiation_policy``.
-
-    Returns the admitted :class:`BackendAdmission` on GCP so the caller can carry
-    the trusted (backend, purpose) to Engine persistence beside the spec (#1666);
-    returns ``None`` for non-GCP providers (no binding). Raises ``CMSError`` on a
-    denial, exactly as before.
-    """
-    import os
-
-    from django.conf import settings
-
-    from shared.range_instantiation_policy import (
-        InstantiationPurpose,
-        evaluate_gcp_backend_admission,
-    )
-
-    if str(getattr(settings, "CLOUD_PROVIDER", "")).strip().lower() != "gcp":
-        return None
-    admission = evaluate_gcp_backend_admission(
-        os.environ.get("GCP_RANGE_BACKEND"),
-        os.environ.get("GCP_RANGE_PLANE"),
-        InstantiationPurpose.LIVE_FIRE,
-    )
-    if not admission.admitted:
-        logger.warning(
-            "create_range: live-fire backend denied code=%s backend=%s",
-            admission.code,
-            admission.backend or "<unset>",
-        )
-        # Carry the stable ADR-039 classification (identity-or-policy vs prerequisite)
-        # through CMSError.details so downstream retry/notification paths can treat a
-        # permanent policy denial as non-retryable (issue #1348).
-        raise CMSError(admission.reason, details={"code": admission.code})
-    # Admitted: return the trusted result so the Engine binds backend/purpose from
-    # the SAME evaluated value (never a second env read, which could race a
-    # selector flip -- #1666 / preflight).
-    return admission
 
 
 def _load_scenario_template_or_raise(scenario: str) -> ScenarioTemplate:
