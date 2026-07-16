@@ -40,4 +40,21 @@ describe("MonitoringPage", () => {
     render();
     expect(await screen.findByText("No scores yet")).toBeInTheDocument();
   });
+
+  it("loads the scoreboard from the organizer-scoreboard endpoint", async () => {
+    mockApi.mockImplementation((path: string) =>
+      path === "/ctf/events/e1/organizer-scoreboard/"
+        ? Promise.resolve({
+            team_mode: false,
+            frozen: false,
+            rankings: [{ participant_id: "p1", name: "Ada Lovelace", score: 300, solve_count: 3, rank: 1 }],
+          })
+        : Promise.resolve({}),
+    );
+    render();
+    expect(await screen.findByText("Ada Lovelace")).toBeInTheDocument();
+    // The organizer monitoring board must use the full-visibility organizer read,
+    // not the public `/ctf/events/<id>/scoreboard/` hook (which honors freeze/hide).
+    expect(mockApi).toHaveBeenCalledWith("/ctf/events/e1/organizer-scoreboard/", expect.anything());
+  });
 });

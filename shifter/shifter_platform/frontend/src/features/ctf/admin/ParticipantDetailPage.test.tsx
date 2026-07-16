@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { screen } from "@testing-library/react";
 
 import { renderRoute } from "@/test/utils";
@@ -37,6 +37,13 @@ function render() {
   });
 }
 
+beforeAll(() => {
+  // Radix `Select` needs pointer-capture/scroll APIs jsdom does not implement.
+  window.HTMLElement.prototype.hasPointerCapture = vi.fn();
+  window.HTMLElement.prototype.releasePointerCapture = vi.fn();
+  window.HTMLElement.prototype.scrollIntoView = vi.fn();
+});
+
 beforeEach(() => mockApi.mockReset());
 
 describe("ParticipantDetailPage", () => {
@@ -53,5 +60,27 @@ describe("ParticipantDetailPage", () => {
     expect(await screen.findByText("Ready")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Provision" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Destroy" })).toBeInTheDocument();
+  });
+
+  it("initializes the bracket control from the participant's assigned bracket", async () => {
+    routeApi((path) => {
+      if (path === "/ctf/participants/p1/")
+        return { ...PARTICIPANT, bracket_id: "b2", bracket_name: "Advanced" };
+      if (path === "/ctf/events/e1/ranges/") return { event_id: "e1", ranges: [], progress: {} };
+      if (path === "/ctf/events/e1/organizer-scoreboard/")
+        return {
+          brackets: [
+            { id: "b1", name: "Beginner" },
+            { id: "b2", name: "Advanced" },
+          ],
+          rankings: [],
+        };
+      return {};
+    });
+    render();
+
+    const bracketSelect = await screen.findByRole("combobox", { name: "Bracket" });
+    expect(bracketSelect).toHaveTextContent("Advanced");
+    expect(bracketSelect).not.toHaveTextContent("No bracket");
   });
 });

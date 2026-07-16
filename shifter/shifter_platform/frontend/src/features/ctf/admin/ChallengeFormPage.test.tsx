@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { screen } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 
 import { renderRoute } from "@/test/utils";
 
@@ -65,5 +66,38 @@ describe("ChallengeFormPage (edit)", () => {
     expect(screen.getByRole("heading", { name: "Hints" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Files" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Prerequisites" })).toBeInTheDocument();
+  });
+
+  it("round-trips visibility, target instance, and target port on save", async () => {
+    const detail = {
+      ...CHALLENGE,
+      visibility: "hidden",
+      target_instance_name: "web-target",
+      target_port: 8080,
+    };
+    routeApi((path) => {
+      if (path === "/ctf/challenges/c1/") return detail;
+      if (path === "/ctf/challenges/c1/hints/") return { hints: [] };
+      if (path === "/ctf/challenges/c1/files/") return { files: [] };
+      if (path === "/ctf/challenges/c1/prerequisites/") return { prerequisites: [] };
+      return {};
+    });
+    const user = userEvent.setup();
+    renderRoute(<ChallengeFormPage mode="edit" />, {
+      path: "/ctf/admin/challenges/:challengeId/edit",
+      initialEntries: ["/ctf/admin/challenges/c1/edit"],
+    });
+
+    await screen.findByDisplayValue("SQL Injection");
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() =>
+      expect(mockApi.mock.calls.some(([p, o]) => p === "/ctf/challenges/c1/" && o?.method === "PUT")).toBe(true),
+    );
+    const putCall = mockApi.mock.calls.find(([p, o]) => p === "/ctf/challenges/c1/" && o?.method === "PUT");
+    const body = putCall?.[1]?.body as Record<string, unknown>;
+    expect(body.visibility).toBe("hidden");
+    expect(body.target_instance_name).toBe("web-target");
+    expect(body.target_port).toBe(8080);
   });
 });
