@@ -269,6 +269,8 @@ def test_reloaded_gce_range_can_destroy_without_scenario_cidrs(monkeypatch):
         "status": "ready",
         "spec": deepcopy(artifact["payload"]),
         "spec_envelope": artifact,
+        "range_backend": "gce",
+        "instantiation_purpose": "live_fire",
     }
     destroy = MagicMock()
     monkeypatch.setattr("terraform_ops.get_range_data_by_request_id", MagicMock(return_value=range_data))
