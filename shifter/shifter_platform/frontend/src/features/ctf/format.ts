@@ -41,10 +41,14 @@ export function fromDateTimeLocalValue(value: string): string | null {
 export function rankingString(row: Record<string, unknown>, key: string): string {
   const value = row[key];
   if (value === null || value === undefined) return "";
-  // Coerce explicitly: a non-primitive would otherwise stringify to
-  // "[object Object]" via String()'s default Object stringification.
-  if (typeof value === "object") return JSON.stringify(value);
-  return String(value);
+  // Only stringify genuine primitives with String(); anything else (object,
+  // array, function, symbol) is JSON-encoded so it never falls back to Object's
+  // default "[object Object]" representation.
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") {
+    return String(value);
+  }
+  return JSON.stringify(value);
 }
 
 export function rankingNumber(row: Record<string, unknown>, key: string): number | null {

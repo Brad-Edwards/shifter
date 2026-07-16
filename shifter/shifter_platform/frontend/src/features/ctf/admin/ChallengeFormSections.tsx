@@ -201,24 +201,24 @@ export function FlagsSection({ challengeId }: Readonly<{ challengeId: string }>)
     });
   }
 
+  function recordAdded(result: { id: string; flag_type: string; order: number }) {
+    setAdded((prev) => [...prev, { id: result.id, flag_type: result.flag_type, order: result.order }]);
+    setFlag("");
+  }
+
+  function handleSubmit(event: React.FormEvent) {
+    event.preventDefault();
+    const trimmed = flag.trim();
+    if (!trimmed) return;
+    add.mutate(
+      { flag: trimmed, flag_type: "static", case_sensitive: caseSensitive, order: added.length },
+      { onSuccess: recordAdded },
+    );
+  }
+
   return (
     <SectionCard title="Flags">
-      <form
-        className="flex flex-col gap-3"
-        onSubmit={(event) => {
-          event.preventDefault();
-          if (!flag.trim()) return;
-          add.mutate(
-            { flag: flag.trim(), flag_type: "static", case_sensitive: caseSensitive, order: added.length },
-            {
-              onSuccess: (result) => {
-                setAdded((prev) => [...prev, { id: result.id, flag_type: result.flag_type, order: result.order }]);
-                setFlag("");
-              },
-            },
-          );
-        }}
-      >
+      <form className="flex flex-col gap-3" onSubmit={handleSubmit}>
         <Label htmlFor="flag-add">Add a flag</Label>
         <div className="flex gap-2">
           <Input id="flag-add" value={flag} autoComplete="off" placeholder="FLAG{...}" onChange={(e) => setFlag(e.target.value)} />
