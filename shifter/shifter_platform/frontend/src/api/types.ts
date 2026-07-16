@@ -193,6 +193,7 @@ export type CtfRangeListResponse = components["schemas"]["RangeListResponse"];
 export type CtfRangeProvisionQueued = components["schemas"]["RangeProvisionQueued"];
 export type CtfParticipantRangeActionResult = components["schemas"]["ParticipantRangeActionResult"];
 export type CtfScoreTimelineResponse = components["schemas"]["ScoreTimelineResponse"];
+export type CtfOrganizerScoreboard = components["schemas"]["OrganizerScoreboardResponse"];
 
 /**
  * Runtime option lists for organizer forms/filters. Typed as plain strings (the

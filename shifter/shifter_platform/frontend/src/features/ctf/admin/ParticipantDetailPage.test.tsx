@@ -45,7 +45,7 @@ describe("ParticipantDetailPage", () => {
       if (path === "/ctf/participants/p1/") return PARTICIPANT;
       if (path === "/ctf/events/e1/ranges/")
         return { event_id: "e1", ranges: [{ participant_id: "p1", name: "Ada", email: "ada@example.com", range_instance_id: 5, range_status: "ready" }], progress: {} };
-      if (path === "/ctf/events/e1/scoreboard/") return { brackets: [], rankings: [] };
+      if (path === "/ctf/events/e1/organizer-scoreboard/") return { brackets: [], rankings: [] };
       return {};
     });
     render();

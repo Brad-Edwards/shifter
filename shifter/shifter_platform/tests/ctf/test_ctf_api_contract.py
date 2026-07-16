@@ -59,6 +59,7 @@ def test_ctf_workspace_paths_published(openapi_document: dict) -> None:
         "/api/v1/ctf/events/",
         "/api/v1/ctf/me/challenges/",
         "/api/v1/ctf/me/event/",
+        "/api/v1/ctf/events/{event_id}/organizer-scoreboard/",
     ):
         assert expected in paths, f"missing CTF path {expected!r}"
 

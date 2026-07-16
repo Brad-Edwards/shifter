@@ -63,6 +63,7 @@ from ctf.api.serializers import (
     NotificationListResponseSerializer,
     NotificationSendResultSerializer,
     OrganizerChallengeDetailSerializer,
+    OrganizerScoreboardResponseSerializer,
     ParticipantDeleteResultSerializer,
     ParticipantDetailSerializer,
     ParticipantImportResultSerializer,
@@ -468,6 +469,9 @@ def _challenge_detail_payload(challenge: CTFChallenge) -> dict[str, object]:
         "max_attempts": challenge.max_attempts,
         "order": challenge.order,
         "release_time": challenge.release_time.isoformat() if challenge.release_time else None,
+        "visibility": challenge.visibility,
+        "target_instance_name": challenge.target_instance_name,
+        "target_port": challenge.target_port,
         "tags": list(challenge.tags.values_list("name", flat=True)),
         "topics": list(challenge.topics.values_list("name", flat=True)),
         "solution": challenge.solution,
@@ -1157,6 +1161,8 @@ def _participant_detail_payload(participant: CTFParticipant) -> dict[str, object
         "solved_count": correct_submissions.count(),
         "attempt_count": submissions.count(),
         "event_id": str(participant.event_id),
+        "bracket_id": str(participant.bracket_id) if participant.bracket_id else None,
+        "bracket_name": participant.bracket.name if participant.bracket else None,
     }
 
 
@@ -1998,3 +2004,54 @@ class ScoreTimelineView(APIView):
         if participant.user_id != actor.pk:
             return _forbidden(request)
         return None
+
+
+class OrganizerScoreboardView(APIView):
+    """Full owned-event scoreboard for organizer monitoring.
+
+    Unlike the public :class:`ctf.api.views.PublicScoreboardView`, this endpoint
+    always returns the complete ranking payload: it ignores the event's
+    ``scoreboard_visible`` flag and its freeze window (``freeze_at=None``), so an
+    organizer monitoring a live event always sees real-time rankings. ``frozen``
+    is reported for display only. Mirrors the legacy ``ctf.views.admin_people``
+    ``admin_scoreboard`` build (team_mode + optional bracket filter).
+    """
+
+    permission_classes = CTF_ORGANIZER_PERMISSIONS
+    required_read_scopes = _EVENT_READ
+
+    @extend_schema(operation_id="ctf_organizer_scoreboard", responses=OrganizerScoreboardResponseSerializer)
+    def get(self, request: Request, event_id: UUID) -> Response:
+        """Return the full scoreboard for an owned event, ignoring freeze/visibility."""
+        from ctf.services.scoring import get_scoreboard, get_team_scoreboard
+        from ctf.views import _parsing
+
+        event, error = _resolve_owned_event(request, event_id)
+        if error is not None:
+            return error
+        assert event is not None
+
+        bracket_param = request.query_params.get("bracket")
+        brackets, _selected_bracket, bracket_id = _parsing._resolve_bracket_filter(event.id, bracket_param)
+        rankings = (
+            get_team_scoreboard(event.id, freeze_at=None)
+            if event.team_mode
+            else get_scoreboard(event.id, freeze_at=None)
+        )
+        bracket_rankings = None
+        if bracket_id:
+            bracket_rankings = (
+                get_team_scoreboard(event.id, freeze_at=None, bracket_id=bracket_id)
+                if event.team_mode
+                else get_scoreboard(event.id, freeze_at=None, bracket_id=bracket_id)
+            )
+        return Response(
+            {
+                "event_id": str(event.id),
+                "team_mode": event.team_mode,
+                "frozen": event.is_scoreboard_frozen,
+                "rankings": rankings,
+                "bracket_rankings": bracket_rankings,
+                "brackets": [{"id": str(bracket.id), "name": bracket.name} for bracket in brackets],
+            }
+        )

@@ -4,9 +4,9 @@ import { Link, useParams } from "react-router-dom";
 import {
   useAssignCtfBracket,
   useCtfEventRanges,
+  useCtfOrganizerScoreboard,
   useCtfParticipant,
   useCtfParticipantRangeAction,
-  useCtfScoreboard,
   useResendCtfInvite,
   type CtfRangeAction,
 } from "@/api/ctf";
@@ -107,7 +107,7 @@ function RangeControls({
 
 function BracketControl({ participant }: Readonly<{ participant: CtfOrganizerParticipantDetail }>) {
   const eventId = participant.event_id;
-  const scoreboard = useCtfScoreboard(eventId, undefined, Boolean(eventId));
+  const scoreboard = useCtfOrganizerScoreboard(eventId, undefined, Boolean(eventId));
   const assign = useAssignCtfBracket(participant.id);
   const brackets = scoreboard.data?.brackets ?? [];
   const error = describeMutationError(assign.error, "Could not assign the bracket.");
@@ -120,7 +120,7 @@ function BracketControl({ participant }: Readonly<{ participant: CtfOrganizerPar
         <div className="flex flex-col gap-2">
           <Label htmlFor="bracket-select">Bracket</Label>
           <Select
-            defaultValue={NO_BRACKET}
+            defaultValue={participant.bracket_id ?? NO_BRACKET}
             onValueChange={(value) => assign.mutate(value === NO_BRACKET ? null : value)}
           >
             <SelectTrigger id="bracket-select" size="sm" className="w-[220px]">

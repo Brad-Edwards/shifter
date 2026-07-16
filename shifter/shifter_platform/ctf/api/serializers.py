@@ -356,6 +356,9 @@ class OrganizerChallengeDetailSerializer(serializers.Serializer):
     max_attempts = serializers.IntegerField(read_only=True)
     order = serializers.IntegerField(read_only=True)
     release_time = serializers.DateTimeField(read_only=True, allow_null=True)
+    visibility = serializers.CharField(read_only=True, allow_blank=True)
+    target_instance_name = serializers.CharField(read_only=True, allow_blank=True)
+    target_port = serializers.IntegerField(read_only=True, allow_null=True)
     tags = serializers.ListField(child=serializers.CharField(), read_only=True)
     topics = serializers.ListField(child=serializers.CharField(), read_only=True)
     solution = serializers.CharField(read_only=True, allow_blank=True)
@@ -669,6 +672,8 @@ class ParticipantDetailSerializer(serializers.Serializer):
     solved_count = serializers.IntegerField(read_only=True)
     attempt_count = serializers.IntegerField(read_only=True)
     event_id = serializers.CharField(read_only=True)
+    bracket_id = serializers.CharField(read_only=True, allow_null=True)
+    bracket_name = serializers.CharField(read_only=True, allow_null=True)
 
 
 class ParticipantDeleteResultSerializer(serializers.Serializer):
@@ -926,3 +931,21 @@ class PublicScoreboardResponseSerializer(serializers.Serializer):
         child=serializers.DictField(), read_only=True, required=False, allow_null=True
     )
     brackets = _NamedRefSerializer(many=True, read_only=True, required=False)
+
+
+class OrganizerScoreboardResponseSerializer(serializers.Serializer):
+    """Organizer monitoring scoreboard — always the full ranking payload.
+
+    Unlike :class:`PublicScoreboardResponseSerializer`, this projection never
+    carries the ``scoreboard_hidden`` sentinel and never withholds rows: an
+    organizer sees every ranking regardless of the event's ``scoreboard_visible``
+    flag or freeze window. ``frozen`` is reported for display only; the rankings
+    are computed as of now (``freeze_at=None``).
+    """
+
+    event_id = serializers.CharField(read_only=True)
+    team_mode = serializers.BooleanField(read_only=True)
+    frozen = serializers.BooleanField(read_only=True)
+    rankings = serializers.ListField(child=serializers.DictField(), read_only=True)
+    bracket_rankings = serializers.ListField(child=serializers.DictField(), read_only=True, allow_null=True)
+    brackets = _NamedRefSerializer(many=True, read_only=True)

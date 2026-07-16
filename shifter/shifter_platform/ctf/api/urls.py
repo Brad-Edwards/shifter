@@ -120,6 +120,11 @@ urlpatterns = [
     ),
     path("events/<uuid:event_id>/scoreboard/", views.api_scoreboard, name="api_scoreboard"),
     path(
+        "events/<uuid:event_id>/organizer-scoreboard/",
+        organizer_views.OrganizerScoreboardView.as_view(),
+        name="api_organizer_scoreboard",
+    ),
+    path(
         "participants/<uuid:participant_id>/score-timeline/",
         organizer_views.ScoreTimelineView.as_view(),
         name="api_score_timeline",

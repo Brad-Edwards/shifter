@@ -5,15 +5,15 @@ import {
   useAnnounceCtfNotification,
   useCtfEventRanges,
   useCtfNotifications,
+  useCtfOrganizerScoreboard,
   useCtfParticipants,
-  useCtfScoreboard,
   useCtfScoreTimeline,
   useProvisionCtfEventRanges,
   useProvisionCtfEventSpares,
   useSendCtfNotification,
 } from "@/api/ctf";
 import { describeMutationError } from "@/api/errors";
-import type { CtfScoreboard } from "@/api/types";
+import type { CtfOrganizerScoreboard } from "@/api/types";
 import { PageHeader } from "@/components/page-header";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -41,7 +41,7 @@ import { ctfAdminEventPath, ctfAdminEventsPath } from "../routes";
 export type MonitoringTab = "scoreboard" | "ranges" | "notifications" | "analytics";
 
 function ScoreboardTab({ eventId }: Readonly<{ eventId: string }>) {
-  const query = useCtfScoreboard(eventId, undefined, Boolean(eventId));
+  const query = useCtfOrganizerScoreboard(eventId, undefined, Boolean(eventId));
 
   if (query.isLoading) return <Skeleton className="h-64 w-full" />;
   if (query.isError || !query.data) {
@@ -53,7 +53,7 @@ function ScoreboardTab({ eventId }: Readonly<{ eventId: string }>) {
     );
   }
 
-  const data: CtfScoreboard = query.data;
+  const data: CtfOrganizerScoreboard = query.data;
   const rows = data.rankings ?? [];
   const teamMode = Boolean(data.team_mode);
 

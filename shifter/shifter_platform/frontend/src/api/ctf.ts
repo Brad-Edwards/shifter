@@ -31,6 +31,7 @@ import type {
   CtfNotificationSendResult,
   CtfOrganizerChallengeDetail,
   CtfOrganizerParticipantDetail,
+  CtfOrganizerScoreboard,
   CtfParticipantImportResult,
   CtfParticipantInvite,
   CtfParticipantListResponse,
@@ -61,6 +62,8 @@ export const ctfKeys = {
   submissions: () => ["ctf", "submissions"] as const,
   rangeStatus: () => ["ctf", "range-status"] as const,
   scoreboard: (eventId: string, bracketId?: string) => ["ctf", "scoreboard", eventId, bracketId ?? null] as const,
+  organizerScoreboard: (eventId: string, bracketId?: string) =>
+    ["ctf", "organizer-scoreboard", eventId, bracketId ?? null] as const,
   // Organizer read keys (distinct namespaces from the participant reads above).
   events: () => ["ctf", "events"] as const,
   event: (id: string) => ["ctf", "event", id] as const,
@@ -126,6 +129,26 @@ export function useCtfScoreboard(eventId: string, bracketId?: string, enabled = 
     enabled: enabled && Boolean(eventId),
     queryFn: ({ signal }) =>
       apiFetch<CtfScoreboard>(`${BASE}/events/${eventId}/scoreboard/`, {
+        signal,
+        query: bracketId ? { bracket: bracketId } : undefined,
+      }),
+  });
+}
+
+/**
+ * Organizer monitoring scoreboard. Unlike {@link useCtfScoreboard} (the public,
+ * participant-facing read that honors `scoreboard_visible`/freeze and returns the
+ * `scoreboard_hidden` sentinel), this hits the organizer-authenticated endpoint
+ * that always returns the full ranking payload regardless of visibility/freeze.
+ * Use it only from organizer surfaces; keep the participant scoreboard on the
+ * public hook.
+ */
+export function useCtfOrganizerScoreboard(eventId: string, bracketId?: string, enabled = true) {
+  return useQuery({
+    queryKey: ctfKeys.organizerScoreboard(eventId, bracketId),
+    enabled: enabled && Boolean(eventId),
+    queryFn: ({ signal }) =>
+      apiFetch<CtfOrganizerScoreboard>(`${BASE}/events/${eventId}/organizer-scoreboard/`, {
         signal,
         query: bracketId ? { bracket: bracketId } : undefined,
       }),

@@ -3080,6 +3080,66 @@
         }
       }
     },
+    "/api/v1/ctf/events/{event_id}/organizer-scoreboard/": {
+      "get": {
+        "operationId": "ctf_organizer_scoreboard",
+        "description": "Return the full scoreboard for an owned event, ignoring freeze/visibility.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "ctf"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizerScoreboardResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
     "/api/v1/ctf/events/{event_id}/participants/": {
       "get": {
         "operationId": "ctf_events_participants_retrieve",
@@ -10284,6 +10344,19 @@
             "readOnly": true,
             "nullable": true
           },
+          "visibility": {
+            "type": "string",
+            "readOnly": true
+          },
+          "target_instance_name": {
+            "type": "string",
+            "readOnly": true
+          },
+          "target_port": {
+            "type": "integer",
+            "readOnly": true,
+            "nullable": true
+          },
           "tags": {
             "type": "array",
             "items": {
@@ -10317,7 +10390,60 @@
           "release_time",
           "solution",
           "tags",
-          "topics"
+          "target_instance_name",
+          "target_port",
+          "topics",
+          "visibility"
+        ]
+      },
+      "OrganizerScoreboardResponse": {
+        "type": "object",
+        "description": "Organizer monitoring scoreboard — always the full ranking payload.\n\nUnlike :class:`PublicScoreboardResponseSerializer`, this projection never\ncarries the ``scoreboard_hidden`` sentinel and never withholds rows: an\norganizer sees every ranking regardless of the event's ``scoreboard_visible``\nflag or freeze window. ``frozen`` is reported for display only; the rankings\nare computed as of now (``freeze_at=None``).",
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "readOnly": true
+          },
+          "team_mode": {
+            "type": "boolean",
+            "readOnly": true
+          },
+          "frozen": {
+            "type": "boolean",
+            "readOnly": true
+          },
+          "rankings": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": {}
+            },
+            "readOnly": true
+          },
+          "bracket_rankings": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": {}
+            },
+            "readOnly": true,
+            "nullable": true
+          },
+          "brackets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/_NamedRef"
+            },
+            "readOnly": true
+          }
+        },
+        "required": [
+          "bracket_rankings",
+          "brackets",
+          "event_id",
+          "frozen",
+          "rankings",
+          "team_mode"
         ]
       },
       "PackRegistration": {
@@ -10774,10 +10900,22 @@
           "event_id": {
             "type": "string",
             "readOnly": true
+          },
+          "bracket_id": {
+            "type": "string",
+            "readOnly": true,
+            "nullable": true
+          },
+          "bracket_name": {
+            "type": "string",
+            "readOnly": true,
+            "nullable": true
           }
         },
         "required": [
           "attempt_count",
+          "bracket_id",
+          "bracket_name",
           "email",
           "event_id",
           "id",

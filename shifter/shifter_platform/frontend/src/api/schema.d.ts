@@ -541,6 +541,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/ctf/events/{event_id}/organizer-scoreboard/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Return the full scoreboard for an owned event, ignoring freeze/visibility. */
+        get: operations["ctf_organizer_scoreboard"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/ctf/events/{event_id}/participants/": {
         parameters: {
             query?: never;
@@ -2552,9 +2569,33 @@ export interface components {
             readonly order: number;
             /** Format: date-time */
             readonly release_time: string | null;
+            readonly visibility: string;
+            readonly target_instance_name: string;
+            readonly target_port: number | null;
             readonly tags: string[];
             readonly topics: string[];
             readonly solution: string;
+        };
+        /**
+         * @description Organizer monitoring scoreboard — always the full ranking payload.
+         *
+         *     Unlike :class:`PublicScoreboardResponseSerializer`, this projection never
+         *     carries the ``scoreboard_hidden`` sentinel and never withholds rows: an
+         *     organizer sees every ranking regardless of the event's ``scoreboard_visible``
+         *     flag or freeze window. ``frozen`` is reported for display only; the rankings
+         *     are computed as of now (``freeze_at=None``).
+         */
+        OrganizerScoreboardResponse: {
+            readonly event_id: string;
+            readonly team_mode: boolean;
+            readonly frozen: boolean;
+            readonly rankings: {
+                [key: string]: unknown;
+            }[];
+            readonly bracket_rankings: {
+                [key: string]: unknown;
+            }[] | null;
+            readonly brackets: components["schemas"]["_NamedRef"][];
         };
         /**
          * @description Validate the shape of a uniform pack-registration request body (#1578).
@@ -2694,6 +2735,8 @@ export interface components {
             readonly solved_count: number;
             readonly attempt_count: number;
             readonly event_id: string;
+            readonly bracket_id: string | null;
+            readonly bracket_name: string | null;
         };
         /**
          * @description Read-only participant-facing projection of the current CTF event.
@@ -5273,6 +5316,45 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["NotificationAnnounceResult"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    ctf_organizer_scoreboard: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                event_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrganizerScoreboardResponse"];
                 };
             };
             /** @description Authentication failed. */
