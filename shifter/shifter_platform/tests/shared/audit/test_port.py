@@ -58,8 +58,9 @@ def test_binding_same_instance_twice_is_idempotent():
 
 def test_binding_conflicting_instance_fails_closed():
     bind_audit_writer(_RecordingWriter())
+    recording_writer = _RecordingWriter()
     with pytest.raises(AuditWriterBindingError):
-        bind_audit_writer(_RecordingWriter())
+        bind_audit_writer(recording_writer)
 
 
 def test_reset_clears_binding():

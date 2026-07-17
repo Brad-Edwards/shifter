@@ -180,5 +180,6 @@ class TestGetRangeByRequestId:
     def test_raises_when_not_found(self, user):
         from cms.exceptions import CMSError
 
+        str_ = str(uuid4())
         with pytest.raises(CMSError, match="not found"):
-            get_range_by_request_id(user, str(uuid4()))
+            get_range_by_request_id(user, str_)

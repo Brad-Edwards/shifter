@@ -58,8 +58,9 @@ class TestStartAcesRangeProvisioning:
         client.run_task.side_effect = ClientError(
             {"Error": {"Code": "AccessDenied", "Message": "Task launch failed"}}, "RunTask"
         )
+        range_id = uuid4()
         with pytest.raises(CloudTaskError), _boto3_client(client):
-            start_aces_range_provisioning(uuid4())
+            start_aces_range_provisioning(range_id)
 
 
 class TestStartAcesRangeTeardown:
