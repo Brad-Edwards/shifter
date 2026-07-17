@@ -66,8 +66,9 @@ class TestRegistryResolution:
     def test_pinned_version_with_only_any_version_row_fails_loud(self):
         # Author pinned 9.9; only an any-version row exists. Must NOT substitute it.
         node = _node(image=AcesPlanImage(name="kali", version="9.9"))
+        arg = [_candidate("", "projects/x/global/images/kali-latest")]
         with pytest.raises(AcesGceImageError):
-            resolve_gce_image(node, [_candidate("", "projects/x/global/images/kali-latest")])
+            resolve_gce_image(node, arg)
 
     def test_registry_without_machine_type_derives_custom_from_resources(self):
         node = _node(image=AcesPlanImage(name="kali"), ram_mib=2048, vcpus=2)
@@ -108,10 +109,12 @@ class TestPassthroughAndFailLoud:
         assert profile.source_image == "projects/x/global/images/ubuntu-base"
 
     def test_source_less_node_without_base_os_fails_loud(self):
+        node_2 = _node(image=None)
         with pytest.raises(AcesGceImageError, match="base-OS"):
-            resolve_gce_image(_node(image=None), [])
+            resolve_gce_image(node_2, [])
 
     def test_wrong_version_no_fallback_fails_loud(self):
         node = _node(image=AcesPlanImage(name="kali", version="2024.1"))
+        arg = [_candidate("2023.1", "img")]
         with pytest.raises(AcesGceImageError):
-            resolve_gce_image(node, [_candidate("2023.1", "img")])
+            resolve_gce_image(node, arg)

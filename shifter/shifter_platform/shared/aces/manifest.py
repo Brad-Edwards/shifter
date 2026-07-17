@@ -94,6 +94,10 @@ SHIFTER_PROVISIONER_CAPABILITIES = ProvisionerCapabilities(
     supported_os_families=frozenset({"linux", "windows"}),
     supported_content_types=frozenset({"directory"}),
     supported_account_features=frozenset({"groups", "shell", "home", "disabled", "auth_method"}),
+    # #1606 consumes ACES's public authored topology contract without claiming
+    # realization. #1561 may add active_directory only with genuine DC/join/SPN
+    # effects and cross-boundary evidence.
+    supported_domain_profiles=frozenset(),
     max_total_nodes=None,
     supports_acls=True,
     supports_accounts=True,

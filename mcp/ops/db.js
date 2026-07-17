@@ -30,6 +30,16 @@ const pools = {}; // env -> pg.Pool
 const portalTunnels = {}; // env -> { process, port }
 
 export async function isPortOpen(port) {
+  // Validate the port against the TCP range before it reaches the socket
+  // connect sink. Callers already constrain it (the LOCAL_PORTS constants
+  // and the zod-validated local_port on start_portal_test_tunnel), but
+  // bounding it here means the localhost probe can never act on a
+  // non-integer or out-of-range value, and it closes the tainted-value
+  // path Sonar flags (jssecurity:S5144). The host is always 127.0.0.1.
+  const safePort = Number(port);
+  if (!Number.isInteger(safePort) || safePort < 1 || safePort > 65535) {
+    throw new Error(`Invalid port: ${port}`);
+  }
   return new Promise((resolve) => {
     const sock = new net.Socket();
     sock.setTimeout(1000);
@@ -42,7 +52,7 @@ export async function isPortOpen(port) {
       sock.destroy();
       resolve(false);
     });
-    sock.connect(port, "127.0.0.1");
+    sock.connect(safePort, "127.0.0.1");
   });
 }
 

@@ -149,14 +149,15 @@ class TestAuditLog:
         The role-sync audit path needs fail-closed behavior so a failed audit
         rolls back the role mutation it describes (issue #937 SEC-5).
         """
+        audit_event = AuditEvent(
+            entity_type=AuditEntityType.USER,
+            entity_id=1,
+            action=AuditAction.ROLE_SYNC,
+            new_state={"bad": {1, 2, 3}},
+        )
         with pytest.raises(TypeError):
             audit_log(
-                AuditEvent(
-                    entity_type=AuditEntityType.USER,
-                    entity_id=1,
-                    action=AuditAction.ROLE_SYNC,
-                    new_state={"bad": {1, 2, 3}},
-                ),
+                audit_event,
                 strict=True,
             )
 
@@ -197,14 +198,15 @@ class TestAuditLog:
         assert snapshot.last_failure_reason == "TypeError"
 
     def test_strict_failure_marks_audit_health_degraded_before_reraising(self):
+        audit_event = AuditEvent(
+            entity_type=AuditEntityType.USER,
+            entity_id=1,
+            action=AuditAction.ROLE_SYNC,
+            new_state={"bad": {1, 2, 3}},
+        )
         with pytest.raises(TypeError):
             audit_log(
-                AuditEvent(
-                    entity_type=AuditEntityType.USER,
-                    entity_id=1,
-                    action=AuditAction.ROLE_SYNC,
-                    new_state={"bad": {1, 2, 3}},
-                ),
+                audit_event,
                 strict=True,
             )
 
@@ -241,12 +243,13 @@ class TestAuditRoleSync:
 
     def test_raises_when_row_cannot_be_persisted(self):
         """Fail-closed: a persistence fault propagates so callers can roll back."""
+        state_change = StateChange(previous={"user_type": "standard"}, new={"groups": {1, 2, 3}})
         with pytest.raises(TypeError):
             audit_role_sync(
                 user_id=1,
                 actor_type=AuditActorType.USER,
                 actor_id=1,
-                change=StateChange(previous={"user_type": "standard"}, new={"groups": {1, 2, 3}}),
+                change=state_change,
                 source="oidc",
             )
 

@@ -280,12 +280,11 @@ def conformant_pack_yaml(name: str) -> dict[str, Any]:
 
 def conformant_provenance(name: str) -> dict[str, Any]:
     return {
-        "schema_version": 1,
+        "schema_version": "scenario-pack-provenance/v2",
         "pack": {"name": name},
         "sources": [
             {
                 "source_id": "original-design",
-                "kind": "original",
                 "name": "Original ACES design",
                 "license": "proprietary",
                 "usage": "reused",

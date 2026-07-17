@@ -5,7 +5,7 @@ import type { NGFWListItem } from "@/api/types";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
-import { ConfirmDialog } from "./ConfirmDialog";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 
 /**
  * Shared NGFW deprovision confirmation (#1370), used by both the NGFW list

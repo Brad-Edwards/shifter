@@ -150,15 +150,19 @@ class TestSelectionAndSafety:
     @pytest.mark.parametrize("username", ["a; rm -rf /", "-root", "a" * 33])
     def test_unsafe_username_fails_closed(self, username: str):
         account = AcesPlanAccount(username=username, target_address="node.web")
+        node_2 = _node()
+        plan = _plan(_node(), accounts=(account,))
         with pytest.raises(AcesGceCompositionError, match="unsafe username"):
-            node_bootstrap_script(_node(), _plan(_node(), accounts=(account,)))
+            node_bootstrap_script(node_2, plan)
 
     def test_unsafe_package_fails_closed(self):
         feature = AcesPlanFeature(
             name="f", feature_type="service", target_address="node.web", source_name="pkg && evil"
         )
+        node_2 = _node()
+        plan = _plan(_node(), features=(feature,))
         with pytest.raises(AcesGceCompositionError, match="unsafe package"):
-            node_bootstrap_script(_node(), _plan(_node(), features=(feature,)))
+            node_bootstrap_script(node_2, plan)
 
     def test_path_with_shell_metacharacters_is_quoted(self):
         content = _content(content_type="file", path="/srv/a b;c.txt", text="x")
