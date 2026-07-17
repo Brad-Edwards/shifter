@@ -35,9 +35,9 @@
       "uri": "aces-scenario-pack:/docs/provenance-ledger.yaml",
       "checksum": {
         "algorithm": "sha256",
-        "value": "a7ba15fbeb02b65f6830a57a484db617249236d7a43eae4d2f182836c68309a1"
+        "value": "d6e46f7a1d5a3fc38516ec79a53d8c864dbaef060be07c52c1be70f246439ae5"
       },
-      "size_bytes": 728,
+      "size_bytes": 735,
       "created_at": "2026-07-13T00:00:00Z",
       "source": "Brad-Edwards/shifter",
       "satisfies_refs": [],
@@ -77,5 +77,5 @@
       "description": null
     }
   },
-  "set_digest": "sha256:b3b8e49c626b0cd4592271301feada4eddb2ddfaaf05a6528473adddcb8b73f6"
+  "set_digest": "sha256:28cd643d5084f3054dd09c6bb3217290caa7fcc65f6ca2b754e7de43b41d843a"
 }
