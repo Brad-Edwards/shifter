@@ -3,6 +3,10 @@ import { createBrowserRouter } from "react-router-dom";
 import { RootLayout, type RouteHandle } from "@/app/RootLayout";
 import { NotFoundPage } from "@/components/not-found";
 import { AcesImageRegistryPage } from "@/features/aces-image-registry/AcesImageRegistryPage";
+import { CostPage } from "@/features/administer/CostPage";
+import { PlatformSettingsPage } from "@/features/administer/PlatformSettingsPage";
+import { UserDetailPage } from "@/features/administer/UserDetailPage";
+import { UsersListPage } from "@/features/administer/UsersListPage";
 import { ChallengeDetailPage } from "@/features/ctf/ChallengeDetailPage";
 import { ChallengesPage } from "@/features/ctf/ChallengesPage";
 import { AdminDashboardPage } from "@/features/ctf/admin/AdminDashboardPage";
@@ -53,6 +57,10 @@ const scenarioEditorHandle: RouteHandle = { permissionPolicy: "threat_research" 
 // ACES image registry (#1566) shares the "Author" CMS-authoring gate; the API
 // additionally 404s unless SHIFTER_ACES_NATIVE_PROVISIONING is on.
 const acesImageRegistryHandle: RouteHandle = { permissionPolicy: "threat_research" };
+// Administer workspace (#1373) is gated on staff, the same advisory policy the
+// "Administer" nav group and the /api/v1/administer/ endpoints enforce. The Django
+// host additionally serves these pages only when ADMINISTER_SPA_ENABLED is on.
+const administerHandle: RouteHandle = { permissionPolicy: "staff" };
 // CTF participant workspace (#1372) is gated on CTF-participant access, the same
 // advisory policy the legacy participant Django views use.
 const ctfHandle: RouteHandle = { permissionPolicy: "ctf_participant" };
@@ -183,6 +191,21 @@ export const router = createBrowserRouter(
           path: "aces-image-registry",
           handle: acesImageRegistryHandle,
           children: [{ index: true, element: <AcesImageRegistryPage /> }],
+        },
+        {
+          // Administer workspace (#1373): greenfield SPA surface. The Django host
+          // serves the shell for /administer/* GET paths only when
+          // PLATFORM_SPA_ENABLED and ADMINISTER_SPA_ENABLED are on; Django admin
+          // stays at /admin/ and is never captured here. Users is the index;
+          // static segments (cost, settings) outrank the users/:id dynamic route.
+          path: "administer",
+          handle: administerHandle,
+          children: [
+            { index: true, element: <UsersListPage /> },
+            { path: "users/:id", element: <UserDetailPage /> },
+            { path: "cost", element: <CostPage /> },
+            { path: "settings", element: <PlatformSettingsPage /> },
+          ],
         },
         { path: "*", element: <NotFoundPage /> },
       ],

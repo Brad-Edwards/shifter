@@ -12,6 +12,7 @@ from __future__ import annotations
 import os
 
 __all__ = [
+    "ADMINISTER_SPA_ENABLED",
     "CTF_WORKSPACE_SPA_ENABLED",
     "MISSION_CONTROL_SPA_ENABLED",
     "PLATFORM_SPA_ENABLED",
@@ -79,3 +80,12 @@ SCENARIO_EDITOR_SPA_ENABLED = _env_bool("SCENARIO_EDITOR_SPA_ENABLED", False)
 # /api/v1/ctf/ DRF routes the SPA uses are unaffected either way. Non-secret
 # boolean; absent env means disabled. Flipping it is reversible.
 CTF_WORKSPACE_SPA_ENABLED = _env_bool("CTF_WORKSPACE_SPA_ENABLED", False)
+
+# Administer workspace SPA rollout flag (issue #1373, ADR-013 / ADR-029). When
+# enabled (together with PLATFORM_SPA_ENABLED), the Administer GET page paths
+# under /administer/ (Users, Cost, Platform Settings) are served by the React SPA
+# host view; the canonical /api/v1/administer/ DRF routes are unaffected either
+# way. Django admin at /admin/ stays mapped to admin.site.urls in every rollout
+# state and is never wrapped by the SPA. Non-secret boolean; absent env means
+# disabled. Flipping it is reversible.
+ADMINISTER_SPA_ENABLED = _env_bool("ADMINISTER_SPA_ENABLED", False)

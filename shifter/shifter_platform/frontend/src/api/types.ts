@@ -19,6 +19,17 @@ export type BootstrapPermissions = components["schemas"]["BootstrapPermissions"]
 export type UxMode = BootstrapModes["default"];
 export type DashboardSummary = components["schemas"]["DashboardSummary"];
 
+/**
+ * Administer workspace domain types (#1373), re-exported from the generated
+ * OpenAPI schema. The `management.services` domain seam and the DRF serializers
+ * remain the authoritative validator; do not hand-copy these shapes — regenerate
+ * `schema.d.ts` via `npm run gen:api` instead.
+ */
+export type AdminUserListItem = components["schemas"]["AdminUserListItem"];
+export type AdminUserDetail = components["schemas"]["AdminUserDetail"];
+export type PaginatedAdminUserListItemList = components["schemas"]["PaginatedAdminUserListItemList"];
+export type OrganizerGrantResult = components["schemas"]["OrganizerGrantResult"];
+
 export type Severity = components["schemas"]["SeverityEnum"];
 export type Status = components["schemas"]["StatusEnum"];
 

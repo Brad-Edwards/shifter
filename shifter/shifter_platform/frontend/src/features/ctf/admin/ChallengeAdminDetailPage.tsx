@@ -11,7 +11,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
-import { ConfirmDialog } from "../ConfirmDialog";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { formatDateTime, titleCase } from "../format";
 import { ctfAdminChallengeEditPath, ctfAdminEventsPath } from "../routes";
 
