@@ -97,8 +97,10 @@ class TestEndpointResolution:
 
     def test_unresolvable_endpoint_fails_closed(self):
         acl = _acl(direction="in", from_net="net.ghost")
+        node_2 = _node((acl,))
+        node_tag_2 = node_tag(7, "node.web")
         with pytest.raises(AcesGceFirewallError, match="no resolvable CIDR"):
-            build_acl_firewalls(7, _node((acl,)), node_tag(7, "node.web"), _LOOKUP)
+            build_acl_firewalls(7, node_2, node_tag_2, _LOOKUP)
 
 
 class TestPriorityOrdering:
@@ -180,10 +182,12 @@ class TestServiceFirewalls:
 
     def test_empty_sources_fail_closed(self):
         node = _svc_node((AcesPlanServicePort(port=80, protocol="tcp"),))
+        node_tag_2 = node_tag(7, "node.web")
         with pytest.raises(AcesGceFirewallError, match="source"):
-            build_service_firewalls(7, node, node_tag(7, "node.web"), (), base_priority=1001)
+            build_service_firewalls(7, node, node_tag_2, (), base_priority=1001)
 
     def test_priority_overflow_fails_closed(self):
         node = _svc_node((AcesPlanServicePort(port=80, protocol="tcp"),))
+        node_tag_2 = node_tag(7, "node.web")
         with pytest.raises(AcesGceFirewallError, match="priorit"):
-            build_service_firewalls(7, node, node_tag(7, "node.web"), _SVC_SOURCES, base_priority=10**9)
+            build_service_firewalls(7, node, node_tag_2, _SVC_SOURCES, base_priority=10**9)

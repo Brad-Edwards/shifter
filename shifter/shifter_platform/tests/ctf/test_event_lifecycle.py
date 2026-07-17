@@ -577,8 +577,9 @@ class TestEventServices:
             mock_objects.get.side_effect = CTFEvent.DoesNotExist
             from ctf.services import get_event
 
+            uuid4_2 = uuid4()
             with pytest.raises(CTFNotFoundError):
-                get_event(uuid4())
+                get_event(uuid4_2)
 
     def test_update_event(self, mock_event_draft):
         """update_event should update event fields."""

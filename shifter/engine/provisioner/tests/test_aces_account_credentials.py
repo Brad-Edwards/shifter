@@ -157,13 +157,14 @@ def test_failure_is_coarse_and_execution_is_closed():
         orchestrator_factory=FailingOrchestrator,
     )
 
+    account = _account()
     with pytest.raises(AcesAccountCredentialError) as exc_info:
         install_instance_account_credentials(
             range_id=7,
             instance_key="node.web#0",
             platform="linux",
             instance_output={"private_ip": execution.target},
-            accounts=(_account(),),
+            accounts=(account,),
             secret_ops=ops,
         )
 
@@ -183,13 +184,14 @@ def test_management_channel_failure_is_coarse_and_execution_is_closed():
         orchestrator_factory=_Orchestrator,
     )
 
+    account = _account()
     with pytest.raises(AcesAccountCredentialError) as exc_info:
         install_instance_account_credentials(
             range_id=7,
             instance_key="node.web#0",
             platform="linux",
             instance_output={"private_ip": execution.target},
-            accounts=(_account(),),
+            accounts=(account,),
             secret_ops=ops,
         )
 

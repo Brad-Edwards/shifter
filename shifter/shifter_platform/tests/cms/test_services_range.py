@@ -180,8 +180,9 @@ class TestCreateRangeBehavior:
         ecs_client = MagicMock()
         ecs_client.run_task.return_value = {"tasks": [], "failures": [{"reason": "RESOURCE:CPU"}]}
 
+        agent = make_agent(user)
         with patch("boto3.client", return_value=ecs_client), pytest.raises(CloudTaskError):
-            services.create_range(user, hydratable_scenario.scenario_id, {"windows": make_agent(user).id})
+            services.create_range(user, hydratable_scenario.scenario_id, {"windows": agent.id})
 
         range_instance = RangeInstance.all_objects.get(user_id=user.id)
         assert range_instance.status == ResourceStatus.FAILED.value

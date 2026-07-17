@@ -76,8 +76,9 @@ def test_persist_operation_record_conflicts_when_replay_payload_drifts():
     _persist()
     changed_payload = {"operation_id": "op-12345678", "accepted": False}
 
+    canonical_aces_payload_digest_2 = canonical_aces_payload_digest(changed_payload)
     with pytest.raises(AcesOperationRecordConflict, match="idempotency conflict"):
-        _persist(payload=changed_payload, payload_digest=canonical_aces_payload_digest(changed_payload))
+        _persist(payload=changed_payload, payload_digest=canonical_aces_payload_digest_2)
 
     assert AcesOperationRecord.objects.count() == 1
 
@@ -86,8 +87,9 @@ def test_persist_operation_record_conflicts_when_replay_payload_drifts():
 def test_persist_operation_record_conflicts_when_replay_timestamp_drifts():
     _persist()
 
+    arg = SOURCE_TS + timedelta(seconds=1)
     with pytest.raises(AcesOperationRecordConflict, match="idempotency conflict"):
-        _persist(source_timestamp=SOURCE_TS + timedelta(seconds=1))
+        _persist(source_timestamp=arg)
 
 
 @pytest.mark.django_db

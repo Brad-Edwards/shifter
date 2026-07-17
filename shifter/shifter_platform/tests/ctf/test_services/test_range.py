@@ -92,8 +92,9 @@ class TestProvisionParticipantRange:
     @pytest.mark.django_db
     def test_not_found(self):
         """Raises CTFNotFoundError for nonexistent participant."""
+        uuid4_2 = uuid4()
         with pytest.raises(CTFNotFoundError):
-            range_service.provision_participant_range(uuid4())
+            range_service.provision_participant_range(uuid4_2)
 
     @pytest.mark.django_db
     def test_already_assigned_raises_and_keeps_assignment(self, ctf_participant):
@@ -193,8 +194,9 @@ class TestGetRangeStatus:
 
     def test_not_found(self, _patch_participant_not_found):
         """Raises CTFNotFoundError for nonexistent participant."""
+        uuid4_2 = uuid4()
         with pytest.raises(CTFNotFoundError):
-            range_service.get_range_status(uuid4())
+            range_service.get_range_status(uuid4_2)
 
     @pytest.mark.usefixtures("_patch_participant_get")
     def test_not_assigned(self, mock_participant):
@@ -236,8 +238,9 @@ class TestCleanupEventRanges:
         with patch.object(CTFEvent, "objects") as mock_objects:
             mock_objects.get.side_effect = CTFEvent.DoesNotExist
             mock_objects.DoesNotExist = CTFEvent.DoesNotExist
+            uuid4_2 = uuid4()
             with pytest.raises(CTFNotFoundError):
-                range_service.cleanup_event_ranges(uuid4())
+                range_service.cleanup_event_ranges(uuid4_2)
 
     def test_destroys_ranges(self):
         """Destroys all assigned ranges using participant.user."""
@@ -274,8 +277,9 @@ class TestDestroyParticipantRange:
 
     def test_not_found(self, _patch_participant_not_found):
         """Raises CTFNotFoundError for nonexistent participant."""
+        uuid4_2 = uuid4()
         with pytest.raises(CTFNotFoundError):
-            range_service.destroy_participant_range(uuid4())
+            range_service.destroy_participant_range(uuid4_2)
 
     @pytest.mark.usefixtures("_patch_participant_get")
     def test_no_range(self, mock_participant):
@@ -343,8 +347,9 @@ class TestProvisionEventRangesThrottled:
     @pytest.mark.django_db
     def test_not_found(self):
         """Raises CTFNotFoundError for nonexistent event."""
+        uuid4_2 = uuid4()
         with pytest.raises(CTFNotFoundError):
-            range_service.provision_event_ranges_throttled(uuid4(), 300)
+            range_service.provision_event_ranges_throttled(uuid4_2, 300)
 
     @pytest.mark.django_db
     def test_empty_participants(self, ctf_event):
@@ -585,8 +590,9 @@ class TestRequestEventProvisioning:
         assert self._spin_up_count(ctf_event) == 1
 
     def test_event_not_found_raises(self):
+        uuid4_2 = uuid4()
         with pytest.raises(CTFNotFoundError):
-            range_service.request_event_provisioning(uuid4())
+            range_service.request_event_provisioning(uuid4_2)
 
 
 @pytest.mark.django_db
