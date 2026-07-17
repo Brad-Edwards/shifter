@@ -104,6 +104,10 @@ jobs:
               "bootstrap",
               "check_layer_imports",
               "installation",
+              "mcp_ngfw",
+              "mcp_ops",
+              "mcp_planner",
+              "mcp_shared",
           }
           MCP_LINT_PACKAGES = ["ngfw", "ops", "planner", "shared"]
           MCP_TEST_PACKAGES = ["ngfw", "ops", "planner"]

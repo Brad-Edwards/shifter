@@ -10,6 +10,10 @@ from django.db import IntegrityError, transaction
 
 from cms.exceptions import CMSError
 from cms.models import ACTIVE_RANGE_UNIQUE_CONSTRAINT, AgentConfig, RangeInstance
+
+# Re-exported for existing importers (cms.services._aces_range_create, tests); the
+# gate lives in its own module so _range_create stays within its size budget.
+from cms.services._range_backend_admission import _assert_live_fire_backend_admitted
 from shared.audit import (
     AuditAction,
     AuditActorType,
@@ -27,6 +31,7 @@ if TYPE_CHECKING:
     from cms.models import Request
     from cms.scenarios.schema import ScenarioTemplate
     from shared.enums import RangeSource
+    from shared.range_instantiation_policy import BackendAdmission
     from shared.schemas.range import RangeContext, RangeSpec
 
 logger = logging.getLogger(__name__)
@@ -38,11 +43,16 @@ logger = logging.getLogger(__name__)
 _ACTIVE_RANGE_MESSAGE = "You already have an active range. Please destroy it before creating a new one."
 
 
-def _engine_create_range_call(request_spec: Any) -> Any:  # NOSONAR
-    """Late-bound call to ``cms.services.engine_create_range`` so test patches apply."""
+def _engine_create_range_call(request_spec: Any, backend_admission: BackendAdmission | None = None) -> Any:  # NOSONAR
+    """Late-bound call to ``cms.services.engine_create_range`` so test patches apply.
+
+    ``backend_admission`` is the trusted #1348 admission result carried beside the
+    RequestSpec (never inside it); the Engine persists the backend/purpose binding
+    from it at create (#1666).
+    """
     from cms import services as _cs
 
-    return _cs.engine_create_range(request_spec)
+    return _cs.engine_create_range(request_spec, backend_admission=backend_admission)
 
 
 def _audit_log_call(**kwargs: Any) -> None:  # NOSONAR
@@ -210,46 +220,6 @@ def _assert_scenario_launchable(scenario: str) -> None:
         raise CMSError(f"Scenario '{scenario}' is not available for launch")
 
 
-def _assert_live_fire_backend_admitted() -> None:
-    """Reject a live-fire range launch on a non-approved GCP backend (ADR-030, #1348).
-
-    The single service-level admission check shared by ``create_range`` and
-    ``create_aces_native_range`` -- and therefore every product path (Mission
-    Control, CTF participant/batch/spare/recovery, ACES, management commands, and
-    direct service callers) that funnels through them. It runs before the DB
-    reservation, Engine persistence, dispatch, subnet allocation, or any cloud
-    mutation, and is a no-op for non-GCP providers. ``RangeSource`` and
-    ``ENVIRONMENT`` are never treated as approval; the closed policy lives in
-    ``shared.range_instantiation_policy``.
-    """
-    import os
-
-    from django.conf import settings
-
-    from shared.range_instantiation_policy import (
-        InstantiationPurpose,
-        evaluate_gcp_backend_admission,
-    )
-
-    if str(getattr(settings, "CLOUD_PROVIDER", "")).strip().lower() != "gcp":
-        return
-    admission = evaluate_gcp_backend_admission(
-        os.environ.get("GCP_RANGE_BACKEND"),
-        os.environ.get("GCP_RANGE_PLANE"),
-        InstantiationPurpose.LIVE_FIRE,
-    )
-    if not admission.admitted:
-        logger.warning(
-            "create_range: live-fire backend denied code=%s backend=%s",
-            admission.code,
-            admission.backend or "<unset>",
-        )
-        # Carry the stable ADR-039 classification (identity-or-policy vs prerequisite)
-        # through CMSError.details so downstream retry/notification paths can treat a
-        # permanent policy denial as non-retryable (issue #1348).
-        raise CMSError(admission.reason, details={"code": admission.code})
-
-
 def _load_scenario_template_or_raise(scenario: str) -> ScenarioTemplate:
     """Return the demo scenario template or raise CMSError if not found."""
     from cms.scenarios.registry import load_demo_scenario_template
@@ -299,8 +269,17 @@ def _create_cms_request(user: User) -> tuple[UUID, Request]:
     return request_id, cms_request
 
 
-def _dispatch_engine_range(request_id: UUID, user: User, range_spec: RangeSpec) -> None:
-    """Dispatch range provisioning to engine for an already-owned CMS request."""
+def _dispatch_engine_range(
+    request_id: UUID,
+    user: User,
+    range_spec: RangeSpec,
+    backend_admission: BackendAdmission | None = None,
+) -> None:
+    """Dispatch range provisioning to engine for an already-owned CMS request.
+
+    ``backend_admission`` (the trusted #1348 result) is carried beside the
+    RequestSpec so the Engine persists the #1666 ownership binding at create.
+    """
     from shared.schemas import RequestSpec
 
     request_spec = RequestSpec(
@@ -308,7 +287,7 @@ def _dispatch_engine_range(request_id: UUID, user: User, range_spec: RangeSpec) 
         user_id=user.id,
         items=[range_spec],
     )
-    _engine_create_range_call(request_spec)
+    _engine_create_range_call(request_spec, backend_admission)
 
 
 def _persist_range_instance_record(
@@ -452,7 +431,7 @@ def create_range(
     )
 
     try:
-        _assert_live_fire_backend_admitted()
+        backend_admission = _assert_live_fire_backend_admitted()
         _assert_no_active_range(user, range_source)
 
         _assert_scenario_launchable(scenario)
@@ -469,7 +448,7 @@ def create_range(
 
         request_id, _cms_request, range_instance = _reserve_active_range_slot(user, range_source, _persist)
         try:
-            _dispatch_engine_range(request_id, user, range_spec)
+            _dispatch_engine_range(request_id, user, range_spec, backend_admission)
         except Exception:
             _set_range_instance_status(range_instance, ResourceStatus.FAILED)
             raise
