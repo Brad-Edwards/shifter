@@ -436,6 +436,14 @@ class GCERangeCellConfig:
     windows: GCERangeImageProfile = field(default_factory=GCERangeImageProfile)
     dc: GCERangeImageProfile = field(default_factory=GCERangeImageProfile)
     portal_network_cidrs: tuple[str, ...] = ()
+    # Dedicated participant/operator access-workload source ranges (portal + guacd
+    # pods) that dial range guests for browser SSH and Guacamole SSH/RDP (issue
+    # #1349). When set, the per-range participant ingress (22/3389) is sourced
+    # from these ranges only -- distinct from provisioner/host management ingress,
+    # which stays on ``portal_network_cidrs``. Empty falls back to
+    # ``portal_network_cidrs`` so deployments without a dedicated access node pool
+    # keep their current behavior.
+    access_network_cidrs: tuple[str, ...] = ()
     egress_allow_cidrs: tuple[str, ...] = ()
     # Pre-provisioned Vertex-only service account. When set, the range-cell
     # backend mints a per-range key on this SA (created and destroyed with the
@@ -1104,6 +1112,9 @@ def load_gce_range_cell_config() -> GCERangeCellConfig:
         portal_network_cidrs=_parse_csv_env(
             os.environ.get("PORTAL_NETWORK_CIDRS", "") or os.environ.get("PORTAL_VPC_CIDR", "")
         ),
+        # Dedicated participant/operator access-workload source ranges (#1349);
+        # empty falls back to portal_network_cidrs in the firewall plan.
+        access_network_cidrs=_parse_csv_env(os.environ.get("ACCESS_NETWORK_CIDRS", "")),
         egress_allow_cidrs=_parse_csv_env(os.environ.get("GCP_RANGE_EGRESS_ALLOW_CIDRS", "")),
         vertex_service_account_email=os.environ.get("GCP_RANGE_VERTEX_SERVICE_ACCOUNT_EMAIL", "").strip(),
         private_google_access=_get_bool_env("GCP_RANGE_PRIVATE_GOOGLE_ACCESS", False),
