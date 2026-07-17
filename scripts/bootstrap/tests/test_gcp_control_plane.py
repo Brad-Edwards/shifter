@@ -946,6 +946,7 @@ class TestGdcControlPlaneHelmValues:
             "kubernetesApiCidrs": ["10.48.0.0/20"],
             "rangeClusterApiCidrs": [],
             "rangeClusterApiPort": 6444,
+            "rangeAccessCidrs": ["10.50.0.0/16"],
         }
 
     def test_range_cluster_api_cidrs_from_control_plane_endpoint(self):
@@ -964,6 +965,24 @@ class TestGdcControlPlaneHelmValues:
 
         assert values["networkPolicy"]["rangeClusterApiCidrs"] == ["10.240.0.5/32"]
         assert values["networkPolicy"]["rangeClusterApiPort"] == 6444
+
+    def test_range_access_cidrs_from_range_network_cidr(self):
+        """Participant range access (issue #1349): the portal/guacd egress allowlist
+        is the range network CIDR so those workloads can dial range guests."""
+        config = deploy.GDCBootstrapConfig(project_id="prod-rwctxzl6shxk", cluster_id="cluster1")
+        outputs = _sample_gcp_control_plane_outputs(config.project_id)
+        values = deploy.render_gcp_helm_values(config, outputs, image_tag=PINNED_IMAGE_TAG)
+
+        assert values["networkPolicy"]["rangeAccessCidrs"] == ["10.50.0.0/16"]
+
+    def test_range_access_cidrs_empty_when_range_network_cidr_absent(self):
+        """No range network CIDR -> empty allowlist so the egress policy stays unrendered."""
+        config = deploy.GDCBootstrapConfig(project_id="prod-rwctxzl6shxk", cluster_id="cluster1")
+        outputs = _sample_gcp_control_plane_outputs(config.project_id)
+        outputs["range_network_cidr"] = {"value": ""}
+        values = deploy.render_gcp_helm_values(config, outputs, image_tag=PINNED_IMAGE_TAG)
+
+        assert values["networkPolicy"]["rangeAccessCidrs"] == []
 
     def test_rejects_insecure_public_bootstrap_values(self):
         """The Helm values renderer must refuse public bare-IP debug deployments on GCP."""
