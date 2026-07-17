@@ -688,21 +688,48 @@ class RealRepositoryTests(unittest.TestCase):
         }
         self.assertEqual(emitted, declared)
 
-    def test_guard_verification_has_independent_selfcheck_route(self):
-        # Self-bypass prevention (#1530, ADR-004-R23): the jobs that verify the
-        # contract/classifier must be reachable via an independent trigger the
-        # classifier cannot influence, so a tampered classifier cannot suppress
-        # its own verification.
+    def test_guard_verification_reachable_only_via_independent_selfcheck(self):
+        # Self-bypass prevention (#1530, ADR-004-R24), proven BEHAVIOURALLY via
+        # the routing engine (not substring-matching the if-expression, which the
+        # preflight forbids): with every classifier-controlled output false and
+        # only the independent guard_selfcheck true, the guard's own verification
+        # jobs must still run; with guard_selfcheck also false they must not.
         wf = yaml.safe_load((_REPO_ROOT / ".github" / "workflows" / "_quality.yml").read_text(encoding="utf-8"))
         jobs = wf["jobs"]
-        selfcheck_out = jobs["paths"]["outputs"]["guard_selfcheck"]
-        self.assertIn("steps.selfcheck.outputs", str(selfcheck_out))
+        self.assertIn("steps.selfcheck.outputs", str(jobs["paths"]["outputs"]["guard_selfcheck"]))
+        sentinel_on = {"run_all": "false", "adr_guard": "false", "guard_selfcheck": "true"}
+        sentinel_off = {"run_all": "false", "adr_guard": "false", "guard_selfcheck": "false"}
         for job_id in ("adr-conformance", "adr-guard-tests"):
-            self.assertIn(
-                "needs.paths.outputs.guard_selfcheck",
-                str(jobs[job_id].get("if", "")),
-                f"{job_id} must be reachable via the independent guard_selfcheck route",
+            self.assertTrue(
+                ADR_GUARD._quality_job_reachable(jobs, job_id, sentinel_on),
+                f"{job_id} must run when only the independent sentinel is true",
             )
+            self.assertFalse(
+                ADR_GUARD._quality_job_reachable(jobs, job_id, sentinel_off),
+                f"{job_id} must not run when nothing (incl. sentinel) triggers it",
+            )
+
+    def test_run_all_output_folds_independent_selfcheck(self):
+        # Production jobs read needs.paths.outputs.run_all; that output must fold
+        # in the independent sentinel so a tampered classifier emitting
+        # run_all=false cannot suppress the production lint/SAST/test matrix.
+        # Evaluated with the real expression engine, not a substring check.
+        wf = yaml.safe_load((_REPO_ROOT / ".github" / "workflows" / "_quality.yml").read_text(encoding="utf-8"))
+        expr = ADR_GUARD._quality_strip_if(wf["jobs"]["paths"]["outputs"]["run_all"])
+
+        def evaluate(classifier_run_all: str, sentinel: str) -> bool:
+            def resolve(path: str):
+                if path == "steps.detect.outputs.run_all":
+                    return classifier_run_all
+                if path == "steps.selfcheck.outputs.guard_selfcheck":
+                    return sentinel
+                raise ADR_GUARD._DwExprError(path)
+
+            return ADR_GUARD._dw_truthy(ADR_GUARD._DwParser(ADR_GUARD._dw_tokenize(expr), resolve).evaluate())
+
+        self.assertTrue(evaluate("false", "true"), "sentinel must force the full matrix")
+        self.assertTrue(evaluate("true", "false"), "a normal full run still forces it")
+        self.assertFalse(evaluate("false", "false"), "neither trigger means no full matrix")
 
 
 if __name__ == "__main__":

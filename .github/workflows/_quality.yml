@@ -47,7 +47,7 @@ jobs:
       # change to the ownership contract / classifier / guard forces the FULL
       # matrix, so a tampered classifier cannot emit run_all=false to skip the
       # production lint / SAST / test jobs that would inspect its own payload
-      # (#1530, ADR-004-R23 self-bypass prevention).
+      # (#1530, ADR-004-R24 self-bypass prevention).
       run_all: ${{ steps.detect.outputs.run_all == 'true' || steps.selfcheck.outputs.guard_selfcheck == 'true' }}
       run_sonar: ${{ steps.detect.outputs.run_sonar }}
       ci_workflows: ${{ steps.detect.outputs.ci_workflows }}
@@ -72,7 +72,7 @@ jobs:
       adr_guard: ${{ steps.detect.outputs.adr_guard }}
       # Independent of the classifier (steps.selfcheck, not steps.detect): forces
       # the guard's own verification to run on any contract/classifier/guard-file
-      # change so it cannot self-bypass (#1530, ADR-004-R23).
+      # change so it cannot self-bypass (#1530, ADR-004-R24).
       guard_selfcheck: ${{ steps.selfcheck.outputs.guard_selfcheck }}
       ctfd_workshop: ${{ steps.detect.outputs.ctfd_workshop }}
       polaris_aws_range: ${{ steps.detect.outputs.polaris_aws_range }}
@@ -122,7 +122,7 @@ jobs:
           DIFF_HEAD_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          # Self-bypass prevention (#1530, ADR-004-R23). This detection is
+          # Self-bypass prevention (#1530, ADR-004-R24). This detection is
           # deliberately NOT sourced from scripts/quality_ownership/classify_paths.py:
           # it is a plain git diff in the workflow itself, so a PR that modifies
           # the classifier, the contract module, or the contract file to emit

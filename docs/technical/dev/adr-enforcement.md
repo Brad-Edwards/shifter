@@ -771,7 +771,7 @@ every production path to the blocking lint, security, and test jobs in
 one parser for it. The `_quality.yml` path-detection job runs
 `scripts/quality_ownership/classify_paths.py`, which validates the contract and
 rejects any unclassified changed path before it emits job selection (the
-fail-closed boundary). The `quality-path-ownership` check (ADR-004-R23)
+fail-closed boundary). The `quality-path-ownership` check (ADR-004-R24)
 reconciles the contract against the whole repository for estate completeness,
 per-path ownership completeness across lint, security, and test, and routing
 reachability against the real workflow.
@@ -788,7 +788,7 @@ To add a production path:
    (`docs`, `test`, `generated`, `vendor`, `metadata`, or `config`) with a
    reason. Exclusions never route jobs.
 3. If a unit genuinely has no blocking job for a responsibility, record a
-   time-bounded `docs/adr/exceptions.yaml` entry for rule `ADR-004-R23` whose
+   time-bounded `docs/adr/exceptions.yaml` entry for rule `ADR-004-R24` whose
    `paths` names the
    `.github/quality-path-filters.yaml#<unit>:<responsibility>` anchor. There is
    no in-contract escape hatch for an owned production path.

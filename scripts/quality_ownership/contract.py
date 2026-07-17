@@ -158,7 +158,7 @@ def is_bounded_pattern(pattern: str) -> bool:
     """A pattern narrow enough for ownership: it must be anchored by either a
     literal leading path segment (a bounded directory prefix) OR a literal file
     extension. This rejects catch-all globs like ``*``, ``**``, and ``**/*``
-    that would silently absorb every otherwise-unknown path (ADR-004-R23's
+    that would silently absorb every otherwise-unknown path (ADR-004-R24's
     no-catch-all invariant); ``docs/**`` and ``**/*.md`` remain valid."""
     segments = pattern.split("/")
     if segments and not any(char in segments[0] for char in _WILDCARD_CHARS):

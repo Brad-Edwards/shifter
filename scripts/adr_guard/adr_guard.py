@@ -6498,7 +6498,7 @@ def check_aces_parity_inventory_path_integrity(repo_root: Path, files: list[str]
 
 
 # --------------------------------------------------------------------------- #
-# Production-path quality-ownership conformance (#1530, GEN-002, ADR-004-R23)
+# Production-path quality-ownership conformance (#1530, GEN-002, ADR-004-R24)
 #
 # Reconciles .github/quality-path-filters.yaml (the single versioned
 # quality-ownership contract) against the repository. Three invariants:
@@ -6517,7 +6517,7 @@ def check_aces_parity_inventory_path_integrity(repo_root: Path, files: list[str]
 # --------------------------------------------------------------------------- #
 _QUALITY_CONTRACT_REL = ".github/quality-path-filters.yaml"
 _QUALITY_WORKFLOW_REL = ".github/workflows/_quality.yml"
-_QUALITY_RULE = "ADR-004-R23"
+_QUALITY_RULE = "ADR-004-R24"
 _QUALITY_CHECK = "quality-path-ownership"
 _QUALITY_RESPONSIBILITIES = ("lint", "security", "test")
 # Evidence-only jobs: soft-fail, always-run, or advisory scanners that cannot

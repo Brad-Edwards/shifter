@@ -109,7 +109,7 @@ Inside `_quality.yml`, the always-run path-detection job runs
 quality-ownership contract at `.github/quality-path-filters.yaml` and rejects
 any unclassified changed path before it selects jobs. That contract also maps
 every production path to its blocking lint, security, and test jobs; the
-`quality-path-ownership` ADR guard (ADR-004-R23) enforces that ownership.
+`quality-path-ownership` ADR guard (ADR-004-R24) enforces that ownership.
 See `docs/technical/dev/adr-enforcement.md` for how to add a quality unit or
 record a gap.
 
