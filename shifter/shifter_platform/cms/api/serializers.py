@@ -45,6 +45,14 @@ class PackRegistrationSerializer(serializers.Serializer):
     # trusted conformance process promotes it (see cms.services.register_pack).
 
 
+class PackRegistrationResultSerializer(serializers.Serializer):
+    """Bounded 201 summary returned after a pack is registered (#1578)."""
+
+    scenario_id = serializers.CharField(read_only=True)
+    source_kind = serializers.CharField(read_only=True)
+    conformance_status = serializers.CharField(read_only=True)
+
+
 class AcesCatalogFieldsSerializer(serializers.Serializer):
     """Read-only, allowlisted ACES package-source presentation fields.
 

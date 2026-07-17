@@ -5,10 +5,10 @@ Where secrets live and how to manage them.
 ## Principles
 
 1. **Never in code** - No secrets in source files or environment configs
-2. **GitHub Secrets for CI/CD** - OIDC role ARNs only
+2. **GitHub Secrets for CI/CD** - OIDC role ARNs plus the per-environment deploy payloads (`TF_VARS_*` and `SHIFTER_CONFIG_*`) rendered at deploy time; see [deploy-secrets.md](../../dev/deploy-secrets.md)
 3. **Cloud secret manager for runtime** - AWS Secrets Manager today, GCP Secret Manager for `gcp-dev`
 4. **Explicit, not default** - No silent fallbacks; fail if secret missing
-5. **tfvars are config, not secrets** - Committed to repo, no sensitive values
+5. **Committed tfvars are non-sensitive baselines** - The repo `terraform.tfvars` are fail-loud `example.com` placeholders; real per-environment values live in the `TF_VARS_*` GitHub secrets and render into a gitignored `local.auto.tfvars` at deploy time (since #1250)
 
 ## GitHub Secrets
 
@@ -24,11 +24,20 @@ These must be configured in repository Settings > Secrets and variables > Action
 | `GCP_BOOTSTRAP_ADMIN_PASSWORD` | Optional first GCP operator password for Identity Platform bootstrap |
 | `PLATFORM_BOOTSTRAP_STAFF_EMAILS` | Optional comma-separated runtime staff bootstrap emails for production auth providers |
 | `PLATFORM_BOOTSTRAP_SUPERUSER_EMAILS` | Optional comma-separated runtime superuser bootstrap emails for production auth providers |
+| `TF_INFRA_STATE_BUCKET[_DEV/_PROOF]` | Terraform state bucket the backend render reads (prod is unsuffixed) |
+| `TF_VARS_<ENV>_CORE` / `_RANGE` / `_PORTAL` | Per-environment Terraform `local.auto.tfvars` payloads, rendered to a gitignored `local.auto.tfvars` at deploy time (since #1250) |
+| `SHIFTER_CONFIG_<ENV>_RANGE` / `SHIFTER_CONFIG_GCP_DEV` | Deployment `shifter.yaml` payload that renders the range egress allowlist |
 
 AWS uses IAM role ARNs for OIDC federation. `gcp-dev` uses Google workload
 identity federation. No static access keys are required.
 
-**Note**: Terraform variables (tfvars) are committed to the repository. CI/CD reads them directly from the checked-out code. No `TF_VARS_*` secrets needed.
+**Deploy tfvars (since #1250)**: the committed `terraform.tfvars` are fail-loud
+`example.com` baselines. Each environment's real values live in the
+`TF_VARS_<ENV>_*` secrets and are rendered into a gitignored `local.auto.tfvars`
+at deploy time (`*.auto.tfvars` auto-loads over `terraform.tfvars`). Push them
+from local overlays with `scripts/sync-deploy-secrets.sh`. The single
+authoritative per-environment checklist is
+[deploy-secrets.md](../../dev/deploy-secrets.md).
 
 ## AWS Secrets Manager
 
@@ -102,7 +111,7 @@ Current rollout behavior:
 
 ## What's NOT a Secret
 
-These are configuration, not secrets, and live in committed tfvars:
+These are configuration, not credentials:
 
 - AWS region
 - Instance types
@@ -111,6 +120,12 @@ These are configuration, not secrets, and live in committed tfvars:
 - VPC CIDRs
 - Domain names
 - Feature flags
+
+They do not grant access or authenticate. Since #1250, though, their real
+per-environment values are not committed either: the repo `terraform.tfvars` are
+`example.com` baselines, and the live values (including domains, bucket names,
+and CIDRs) ship in the `TF_VARS_*` secrets rendered to a gitignored
+`local.auto.tfvars` at deploy time (see [deploy-secrets.md](../../dev/deploy-secrets.md)).
 
 **Rule**: If it doesn't grant access or authenticate, it's config, not a secret.
 

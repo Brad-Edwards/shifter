@@ -60,6 +60,7 @@ missing required secret fails the deploy up front rather than mid-run.
 | `PLATFORM_BOOTSTRAP_STAFF_EMAILS` | manual | no | Comma-separated emails elevated to Django `is_staff` on first sign-in. Shared across all environments including prod. |
 | `PLATFORM_BOOTSTRAP_SUPERUSER_EMAILS` | manual | no | Comma-separated emails elevated to `is_superuser`. Shared across all environments including prod. |
 | `SONAR_TOKEN` | manual | no | SonarCloud analysis token for the PR quality gate. Repository-wide, not per-environment. |
+| `AWS_IMAGE_ROLE_ARN_DEV` | manual (from global-IAM output) | no | OIDC role the `packer.yml` base-image `build` job assumes (issue #1656), separate from the deploy `AWS_ROLE_ARN_*`. Least-privilege: its trust is pinned to the `dev`/`main` subjects and its `iam:PassRole` is scoped to the exact range instance role. Not checked by the deploy preflight, but the base build fails closed without it. Prod is `AWS_IMAGE_ROLE_ARN` (base builds target dev/proof); proof is `AWS_IMAGE_ROLE_ARN_PROOF`. Set from `terraform output -raw github_actions_image_role_arn` in `platform/terraform/global/iam`. See the [AWS AMI seeding runbook](aws-ami-seeding-runbook.md). |
 
 "Populated by bootstrap" secrets are set once per account. "Populated by
 `sync-deploy-secrets.sh`" secrets are re-pushed whenever the matching local
@@ -228,7 +229,7 @@ Standup runbooks for the phases referenced below:
 - Tearing an environment down: [`aws-teardown-runbook.md`](aws-teardown-runbook.md)
 
 For a new AWS account, bootstrap the backend and CI identity before trying
-to use the `aws-dev` deploy branch:
+run an AWS dev deploy (`gh workflow run deploy.yml --ref <branch> -f environment=aws-dev`):
 
 If the account was **re-used** (a prior Shifter tenant was torn down here), first run
 `./scripts/bootstrap/deploy.py account-recovery --env dev --profile <profile>` to detect
@@ -267,13 +268,13 @@ bootstrap commands below so their confirmation prompts proceed without a termina
    the range egress allowlist). Bootstrap configures the AWS role secret and
    backend files; the deploy workflows fail loud when the active portal or range
    tfvars secret, or the range `shifter.yaml`, is missing.
-5. For the first deploy in a moved or fresh account, run the `Deploy`
-   workflow manually with `workflow_dispatch` on `aws-dev`. Manual dispatch
-   forces the full AWS chain (Core -> Range -> Engine -> Platform). A plain
-   branch push still obeys path filters, so it can skip Core or image
-   publishing if the pushed commit only touched bootstrap/backend files.
-   After the first full run has created the shared state and images, normal
-   `aws-dev` pushes can use the filtered path.
+5. For the first deploy in a moved or fresh account, run the `Deploy` workflow
+   with `gh workflow run deploy.yml --ref <branch> -f environment=aws-dev`
+   (add `-f aws_first_deploy=true` for the first-ever engine deploy, before the
+   platform Terraform apply has created the provisioner task definition). The
+   dispatch forces the full AWS chain (Core -> Range -> Engine -> Platform).
+   Deployment is always a manual dispatch; pushing to a branch runs validation
+   only.
 
 ### First-run DNS validation
 

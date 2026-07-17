@@ -71,6 +71,10 @@ _EXPLICIT_BINDINGS = (
     # Administer workspace SPA rollout flag (#1373); same `_env_bool` reason as
     # the Scenario Editor flag above.
     EnvBinding(name="ADMINISTER_SPA_ENABLED", default="False", source_file=_SETTINGS_FILE),
+    # Read via `_env_bool(...)` (a helper, not a literal `os.environ.get`), so the
+    # AST walker cannot see it; declared explicitly to keep the CTF workspace SPA
+    # rollout flag in the manifest (#1372).
+    EnvBinding(name="CTF_WORKSPACE_SPA_ENABLED", default="False", source_file=_SETTINGS_FILE),
 )
 
 

@@ -98,7 +98,7 @@
       "source_file": "config/settings.py"
     },
     {
-      "default": "_DEFAULT_CTF_BOOTSTRAP_VALUE",
+      "default": "''",
       "name": "CTF_DEFAULT_PARTICIPANT_PASSWORD",
       "source_file": "config/_oidc_settings.py"
     },
@@ -141,6 +141,11 @@
       "default": "'500'",
       "name": "CTF_REGEX_FLAG_MAX_SUBMISSION_LENGTH",
       "source_file": "config/_ctf_regex_settings.py"
+    },
+    {
+      "default": "False",
+      "name": "CTF_WORKSPACE_SPA_ENABLED",
+      "source_file": "config/settings.py"
     },
     {
       "default": null,

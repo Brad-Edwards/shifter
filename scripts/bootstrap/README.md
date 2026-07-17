@@ -98,12 +98,11 @@ command below.
    GitHub Actions, or in gitignored `local.auto.tfvars` files for local
    Terraform runs.
 6. For the first deploy in the moved account, run the `Deploy` GitHub Actions
-   workflow manually with `workflow_dispatch` on `aws-dev`. Manual dispatch
-   forces the full AWS chain (Core -> Range -> Engine -> Platform). A plain
-   branch push still obeys path filters, so it can skip Core or image
-   publishing when the pushed commit only touched bootstrap/backend files.
-   After the first full run succeeds, normal filtered `aws-dev` pushes are
-   appropriate.
+   workflow with `gh workflow run deploy.yml --ref <branch> -f environment=aws-dev`
+   (add `-f aws_first_deploy=true` for the first-ever engine deploy). The
+   dispatch forces the full AWS chain (Core -> Range -> Engine -> Platform).
+   Deployment is always a manual dispatch selecting the `environment`; pushing to
+   a branch runs validation only.
 7. During that first platform apply, publish DNS records for ACM and SES
    validation in the authoritative DNS zone. ACM records come from the root
    Terraform output `acm_validation_records`. SES records come from
@@ -145,9 +144,10 @@ Deployment section of
    Memorystore, Pub/Sub), builds and pushes the control-plane images, renders
    Helm values from Terraform outputs and Secret Manager, and installs the
    Shifter Helm release.
-6. Subsequent deploys run through CI: push to the `gcp-dev` branch, the only
-   branch that deploys the GCP dev environment (see the CI/CD trigger matrix in
-   `docs/technical/dev/ci-cd.md`).
+6. Subsequent deploys run through CI as a manual dispatch:
+   `gh workflow run deploy.yml --ref <branch> -f environment=gcp-dev` (see the
+   CI/CD trigger matrix in `docs/technical/dev/ci-cd.md`). Branch names no longer
+   trigger deploys.
 7. Point the configured hostname at the reserved global ingress IP so the
    Google-managed TLS certificate can activate.
 

@@ -80,35 +80,51 @@ class TestProviderRouting:
         "range_terraform_runner.gdc_range_networks.apply_range_networks",
         return_value={"subnets": {"attack": {"subnet_id": "range-42-attack"}}, "instances": []},
     )
-    def test_apply_range_dispatches_to_gdc_network_and_asset_runners(
-        self,
-        mock_network_apply,
-        mock_pod_apply,
-        mock_vm_apply,
-    ):
+    def test_apply_range_gdc_purpose_gate(self, mock_network_apply, mock_pod_apply, mock_vm_apply):
+        # Issue #1348 / ADR-030: the retained GDC substrate is reachable only under the
+        # explicit non-user validation purpose. A generic (default live-fire) provision
+        # is denied by the provisioner defense-in-depth check BEFORE any gdc_* apply
+        # call, carrying the stable identity-or-policy code. Both branches share this
+        # single patch set so no first-party seam mock count grows (ADR-019-R1).
+        from shared.range_instantiation_policy import POLICY_DENIAL_CODE, InstantiationPurpose
+
+        from cloud.exceptions import CloudError
         from range_terraform_runner import apply_range
 
+        variables = {"range_id": 42, "subnets": []}
+        subnets = {"attack": {"subnet_id": "range-42-attack"}}
+
+        # Validation purpose: routes through the retained GDC runners.
         with patch.dict(os.environ, {"CLOUD_PROVIDER": "gcp", "GCP_RANGE_BACKEND": "gdc"}, clear=True):
-            result = apply_range("req-123", {"range_id": 42, "subnets": []})
+            result = apply_range("req-123", variables, purpose=InstantiationPurpose.NON_USER_VALIDATION)
 
         assert result == {
-            "subnets": {"attack": {"subnet_id": "range-42-attack"}},
+            "subnets": subnets,
             "instances": [
                 {"instance_id": "range-42-attack-attacker-1234"},
                 {"instance_id": "range-42-attack-victim-5678-pod"},
             ],
         }
-        mock_network_apply.assert_called_once_with("req-123", {"range_id": 42, "subnets": []})
-        mock_vm_apply.assert_called_once_with(
-            "req-123",
-            {"range_id": 42, "subnets": []},
-            {"attack": {"subnet_id": "range-42-attack"}},
-        )
-        mock_pod_apply.assert_called_once_with(
-            "req-123",
-            {"range_id": 42, "subnets": []},
-            {"attack": {"subnet_id": "range-42-attack"}},
-        )
+        mock_network_apply.assert_called_once_with("req-123", variables)
+        mock_vm_apply.assert_called_once_with("req-123", variables, subnets)
+        mock_pod_apply.assert_called_once_with("req-123", variables, subnets)
+
+        mock_network_apply.reset_mock()
+        mock_vm_apply.reset_mock()
+        mock_pod_apply.reset_mock()
+
+        # Default (live-fire) purpose: denied before any gdc_* apply call, and the
+        # CloudError carries the permanent identity-or-policy classification.
+        with (
+            patch.dict(os.environ, {"CLOUD_PROVIDER": "gcp", "GCP_RANGE_BACKEND": "gdc"}, clear=True),
+            pytest.raises(CloudError, match="not an approved live-fire range backend") as denial,
+        ):
+            apply_range("req-123", variables)
+
+        assert denial.value.code == POLICY_DENIAL_CODE
+        mock_network_apply.assert_not_called()
+        mock_vm_apply.assert_not_called()
+        mock_pod_apply.assert_not_called()
 
     @patch("range_terraform_runner.gdc_range_networks.destroy_range_networks")
     @patch("range_terraform_runner.gdc_vmruntime_assets.destroy_range_assets")

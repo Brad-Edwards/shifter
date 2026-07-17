@@ -31,6 +31,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import yaml
+
 MODULE_PATH = Path(__file__).resolve().parents[1] / "adr_guard.py"
 SPEC = importlib.util.spec_from_file_location("adr_guard", MODULE_PATH)
 ADR_GUARD = importlib.util.module_from_spec(SPEC)
@@ -188,78 +190,56 @@ class TestUpstreamGating(unittest.TestCase):
         )
 
 
-class TestBranchEventMatrix(unittest.TestCase):
-    """#892: branch/event routing produces the intended deploy outputs."""
+class TestManualDeployDispatch(unittest.TestCase):
+    """#730: environment deploys are manual (a workflow_dispatch names the
+    environment). push and pull_request run validation only, and no branch name
+    selects a deployment target."""
+
+    ENV_OPTIONS = {"aws-dev", "aws-proof", "gcp-dev"}
 
     @classmethod
     def setUpClass(cls):
-        cls.script = ADR_GUARD._dw_extract_set_environment_script(_load("deploy.yml"))
+        cls.deploy = _load("deploy.yml")
+        cls.script = ADR_GUARD._dw_extract_set_environment_script(cls.deploy)
 
     def env(self, event_name, ref="", base_ref=""):
         return ADR_GUARD._dw_evaluate_env(
             self.script, event_name, ref=ref, base_ref=base_ref
         )
 
-    def test_push_to_dev_and_main_produce_no_deploy(self):
+    def test_push_never_deploys(self):
         for ref in ("refs/heads/dev", "refs/heads/main"):
             out = self.env("push", ref=ref)
-            self.assertEqual(out["run_aws"], "false", ref)
-            self.assertEqual(out["run_gcp"], "false", ref)
-            self.assertEqual(out["apply_aws"], "false", ref)
-            self.assertEqual(out["deploy_gcp"], "false", ref)
+            for key in ("run_aws", "run_gcp", "apply_aws", "deploy_gcp"):
+                self.assertEqual(out[key], "false", f"{ref}:{key}")
 
-    def test_no_pull_request_routes_a_provider_deploy(self):
+    def test_pull_request_never_deploys(self):
         for base in ("dev", "main", "aws-dev", "gcp-dev"):
             out = self.env("pull_request", base_ref=base)
-            self.assertEqual(out["run_aws"], "false", base)
-            self.assertEqual(out["run_gcp"], "false", base)
-            self.assertEqual(out["apply_aws"], "false", base)
-            self.assertEqual(out["deploy_gcp"], "false", base)
+            for key in ("run_aws", "run_gcp", "apply_aws", "deploy_gcp"):
+                self.assertEqual(out[key], "false", f"{base}:{key}")
 
-    def test_push_to_aws_dev_plans_and_applies(self):
-        out = self.env("push", ref="refs/heads/aws-dev")
-        self.assertEqual(out["run_aws"], "true")
-        self.assertEqual(out["apply_aws"], "true")
-        self.assertEqual(out["aws_environment"], "dev")
-        self.assertEqual(out["aws_is_dev"], "true")
+    def test_deploy_is_selected_by_the_environment_input_not_the_branch(self):
+        # The Set environment step keys on the workflow_dispatch `environment`
+        # input; the old branch-name `case` router (and prod path) are gone.
+        self.assertIn('case "$ENVIRONMENT"', self.script)
+        self.assertNotIn("GITHUB_REF#refs/heads/", self.script)
+        self.assertNotIn("aws-prod", self.script)
 
-    def test_push_to_gcp_dev_plans_and_applies(self):
-        out = self.env("push", ref="refs/heads/gcp-dev")
-        self.assertEqual(out["run_gcp"], "true")
-        self.assertEqual(out["deploy_gcp"], "true")
-        self.assertEqual(out["fast_gcp_deploy"], "true")
+    def test_environment_input_is_a_closed_choice_allowlist(self):
+        env_input = self.deploy["on"]["workflow_dispatch"]["inputs"]["environment"]
+        self.assertEqual(env_input["type"], "choice")
+        self.assertEqual(set(env_input["options"]), self.ENV_OPTIONS)
 
-    def test_workflow_dispatch_main_is_the_only_prod_apply_path(self):
-        prod = self.env("workflow_dispatch", ref="refs/heads/main")
-        self.assertEqual(prod["aws_environment"], "prod")
-        self.assertEqual(prod["aws_is_dev"], "false")
-        self.assertEqual(prod["run_aws"], "true")
-        self.assertEqual(prod["apply_aws"], "true")
-        others = [
-            ("push", "refs/heads/dev", ""),
-            ("push", "refs/heads/main", ""),
-            ("push", "refs/heads/aws-dev", ""),
-            ("push", "refs/heads/gcp-dev", ""),
-            ("pull_request", "", "dev"),
-            ("pull_request", "", "aws-dev"),
-            ("workflow_dispatch", "refs/heads/dev", ""),
-            ("workflow_dispatch", "refs/heads/aws-dev", ""),
-            ("workflow_dispatch", "refs/heads/gcp-dev", ""),
-        ]
-        for event, ref, base in others:
-            out = self.env(event, ref=ref, base_ref=base)
-            self.assertNotEqual(
-                out.get("aws_environment"),
-                "prod",
-                f"{event}/{ref or base} must not target prod",
+    def test_deploy_jobs_stay_pull_request_denied(self):
+        # Unchanged trust invariant: no deploy job runs on a pull_request event.
+        jobs = ADR_GUARD._dw_jobs(self.deploy, "deploy.yml")
+        for jid in DEPLOY_JOBS:
+            expr = ADR_GUARD._dw_job_if(jobs[jid])
+            self.assertTrue(
+                ADR_GUARD._dw_job_denied_on_pull_request(expr),
+                f"{jid} must be denied on pull_request",
             )
-
-    def test_workflow_dispatch_dev_runs_both_clouds_without_apply(self):
-        out = self.env("workflow_dispatch", ref="refs/heads/dev")
-        self.assertEqual(out["run_aws"], "true")
-        self.assertEqual(out["run_gcp"], "true")
-        self.assertEqual(out["apply_aws"], "false")
-        self.assertEqual(out["aws_environment"], "dev")
 
 
 class TestChangeFilterCoverage(unittest.TestCase):
@@ -326,6 +306,63 @@ class TestChangeFilterCoverage(unittest.TestCase):
     def test_gcp_paths_trigger_gcp_filter(self):
         self.assertPathInFilter("platform/terraform/gcp/main.tf", "gcp")
         self.assertPathInFilter("platform/k8s/gcp/base/deployment.yaml", "gcp")
+
+
+class TestScenarioVerificationQualityRouting(unittest.TestCase):
+    """#1293: neutral verification uses platform CI, not a scenario adapter job."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.quality = _load("_quality.yml")
+        cls.jobs = ADR_GUARD._dw_jobs(cls.quality, "_quality.yml")
+        filter_path = REPO_ROOT / ".github" / "quality-path-filters.yaml"
+        cls.filters = yaml.safe_load(filter_path.read_text(encoding="utf-8"))
+
+    def test_shared_framework_path_uses_normal_platform_quality_jobs(self):
+        framework_path = (
+            "shifter/shifter_platform/shared/scenario_verification/__init__.py"
+        )
+        self.assertTrue(
+            ADR_GUARD._dw_path_matches_any(
+                framework_path, self.filters["shifter_platform"]
+            )
+        )
+        for job_id in (
+            "shifter-platform-lint",
+            "shifter-platform-sast",
+            "shifter-platform-tests",
+        ):
+            self.assertIn(job_id, self.jobs)
+            self.assertIn(
+                "needs.paths.outputs.shifter_platform",
+                ADR_GUARD._dw_job_if(self.jobs[job_id]),
+                f"{job_id} must remain on normal shifter-platform routing",
+            )
+
+    def test_surviving_polaris_tests_keep_neutral_quality_route(self):
+        polaris_test_path = "scenario-dev/polaris/tests/isolation-smoketest.sh"
+        self.assertTrue(
+            ADR_GUARD._dw_path_matches_any(
+                polaris_test_path, self.filters["polaris_tests"]
+            )
+        )
+        path_outputs = self.jobs["paths"].get("outputs", {})
+        self.assertIn("polaris_tests", path_outputs)
+        job = self.jobs["polaris-tests"]
+        self.assertIn(
+            "needs.paths.outputs.polaris_tests", ADR_GUARD._dw_job_if(job)
+        )
+        run_steps = "\n".join(
+            str(step.get("run", "")) for step in job.get("steps", [])
+        )
+        self.assertIn("python3 -m compileall", run_steps)
+        self.assertIn('bash -n "$script"', run_steps)
+
+    def test_adapter_specific_quality_route_is_removed(self):
+        self.assertNotIn("scenario_smoketest", self.filters)
+        path_outputs = self.jobs["paths"].get("outputs", {})
+        self.assertNotIn("scenario_smoketest", path_outputs)
+        self.assertNotIn("scenario-smoketest-tests", self.jobs)
 
 
 class TestGithubEnvironmentBinding(unittest.TestCase):

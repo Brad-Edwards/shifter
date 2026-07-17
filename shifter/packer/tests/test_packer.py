@@ -8,6 +8,7 @@ import os
 import re
 import shutil
 import subprocess
+import textwrap
 from pathlib import Path
 
 import pytest
@@ -93,6 +94,7 @@ class TestScriptContent:
             "techvault/*.sh",
             "polaris/*.sh",
             "bake/*.sh",
+            "aws/*.sh",
         ]:
             scripts.extend(SCRIPTS_DIR.glob(pattern))
         return scripts
@@ -461,7 +463,7 @@ class TestBuilderLifecycle:
 class TestPackerWorkflowCleanup:
     """Workflow invariants for defensive builder cleanup after Packer runs."""
 
-    CLEANUP_STEP_NAME = "- name: Cleanup Packer builder instances"
+    CLEANUP_STEP_NAME = "- name: Cleanup Packer builder and verify instances"
 
     @staticmethod
     def _cleanup_step_body(workflow_content: str) -> str:
@@ -673,3 +675,421 @@ class TestAmiHelperAlignment:
         content = (REPO_ROOT / "scripts" / "ami.sh").read_text()
         assert "techvault" in content
         assert "polaris-vm" in content
+
+
+class TestAwsGuestDns:
+    """Issue #1633: durable range-guest DNS baked at the AWS packer-build level.
+
+    The guest AMIs run systemd-resolved (Linux) as the stub resolver; on some
+    boots it comes up with no upstream and the SSM agent never registers. The
+    durable fix bakes a deterministic AmazonProvidedDNS fallback into the AWS
+    images at build time. The Linux and Windows base scripts are shared with the
+    GCP templates (../scripts/...) and the pre-promoted polaris-dc build, so the
+    AWS resolver change MUST live in AWS-only scripts and must not leak.
+    """
+
+    AWS_DIR = SCRIPTS_DIR / "aws"
+    LINUX_DNS = AWS_DIR / "linux-resolved-dns.sh"
+    WINDOWS_DNS = AWS_DIR / "windows-ec2launch-dns.ps1"
+
+    # --- Linux (Kali + Ubuntu) ------------------------------------------------
+
+    def test_linux_dns_script_exists(self):
+        assert self.LINUX_DNS.exists(), "missing scripts/aws/linux-resolved-dns.sh"
+
+    def test_linux_dns_uses_amazon_provided_fallback_only(self):
+        c = self.LINUX_DNS.read_text()
+        # Deterministic fallback = link-local AmazonProvidedDNS.
+        assert "FallbackDNS=" in c
+        assert "169.254.169.253" in c
+        # FallbackDNS keeps DHCP per-link DNS precedence: do NOT hard-pin a bare
+        # DNS= directive to the fallback (that would override per-link DNS). The
+        # negative lookbehind excludes the legitimate "FallbackDNS=" occurrence.
+        assert re.search(r"(?<![A-Za-z])DNS=\s*169\.254\.169\.253", c) is None
+        # AmazonProvidedDNS only - never a public resolver.
+        for public in ("8.8.8.8", "8.8.4.4", "1.1.1.1"):
+            assert public not in c, f"public resolver {public} must not be used"
+
+    def test_linux_dns_uses_resolved_dropin_not_static_resolv_conf(self):
+        c = self.LINUX_DNS.read_text()
+        assert "resolved.conf.d" in c
+        # Must not replace the resolved stub with a static /etc/resolv.conf.
+        assert "> /etc/resolv.conf" not in c
+        assert ">/etc/resolv.conf" not in c
+
+    def test_linux_dns_baked_into_aws_kali_and_ubuntu(self):
+        for f in ("kali.pkr.hcl", "ubuntu.pkr.hcl"):
+            assert "scripts/aws/linux-resolved-dns.sh" in (PACKER_DIR / f).read_text(), (
+                f"{f} must provision scripts/aws/linux-resolved-dns.sh"
+            )
+
+    def test_linux_dns_not_leaked_into_gcp_templates(self):
+        for f in (PACKER_DIR / "gcp").glob("*.pkr.hcl"):
+            assert "linux-resolved-dns.sh" not in f.read_text(), (
+                f"AWS resolver change leaked into GCP template {f.name}"
+            )
+
+    def test_linux_dns_not_in_shared_base_scripts(self):
+        # The shared kali/ubuntu base scripts are consumed by GCP too.
+        for shared in ("kali/base.sh", "ubuntu/base.sh"):
+            assert "169.254.169.253" not in (SCRIPTS_DIR / shared).read_text(), (
+                f"resolver pin leaked into shared script {shared}"
+            )
+
+    # --- Windows victim -------------------------------------------------------
+
+    def test_windows_dns_script_exists(self):
+        assert self.WINDOWS_DNS.exists(), "missing scripts/aws/windows-ec2launch-dns.ps1"
+
+    def test_windows_dns_is_first_boot_prready_once(self):
+        c = self.WINDOWS_DNS.read_text()
+        # Runs in EC2Launch v2 preReady, before the default postReady startSsm.
+        assert "preReady" in c
+        # First-boot scoped only - an 'always' task would undo the later
+        # DomainJoinPlan switch of a member's DNS to the DC.
+        assert "frequency: once" in c
+        assert "frequency: always" not in c
+
+    def test_windows_dns_validates_ec2launch_config(self):
+        c = self.WINDOWS_DNS.read_text()
+        assert "EC2Launch.exe" in c
+        assert "validate" in c
+
+    def test_windows_dns_baked_into_aws_windows_before_sysprep(self):
+        c = (PACKER_DIR / "windows.pkr.hcl").read_text()
+        assert "scripts/aws/windows-ec2launch-dns.ps1" in c
+        assert c.index("windows-ec2launch-dns.ps1") < c.index("sysprep.ps1"), (
+            "DNS EC2Launch task must be provisioned before sysprep"
+        )
+
+    def test_windows_dns_not_applied_to_promoted_dc_or_gcp(self):
+        # A promoted DC owns its own DNS (points at itself, forwards); the
+        # reset-to-DHCP task must not touch it.
+        for f in ("dc.pkr.hcl", "polaris-dc.pkr.hcl"):
+            assert "windows-ec2launch-dns.ps1" not in (PACKER_DIR / f).read_text(), (
+                f"victim DNS task must not be applied to {f}"
+            )
+        for f in (PACKER_DIR / "gcp").glob("*.pkr.hcl"):
+            assert "windows-ec2launch-dns.ps1" not in f.read_text()
+
+
+class TestBaseImageValidationGate:
+    """Issue #1633: publish /shifter/ami/* only after the exact candidate AMI
+    fresh-boots, registers with SSM (the DNS proof), reboots, and re-registers.
+    """
+
+    VERIFY = SCRIPTS_DIR / "bake" / "base-image-verify.sh"
+
+    def test_base_image_verify_script_exists(self):
+        assert self.VERIFY.exists(), "missing scripts/bake/base-image-verify.sh"
+
+    def test_base_image_verify_proves_dns_via_ssm_and_reboot(self):
+        c = self.VERIFY.read_text()
+        # SSM registration is the DNS proof; must survive a reboot.
+        assert "describe-instance-information" in c
+        assert "PingStatus" in c
+        assert "reboot-instances" in c
+
+    def test_base_image_verify_uses_imdsv2_and_cleans_up(self):
+        c = self.VERIFY.read_text()
+        assert "HttpTokens=required" in c
+        assert "terminate-instances" in c
+
+    def test_base_image_verify_resolves_regional_ssm_endpoint(self):
+        c = self.VERIFY.read_text()
+        # Assert the resolver proof targets the regional SSM endpoint via
+        # non-hostname-shaped fragments. A bare `"ssm.us-east-2.amazonaws.com"
+        # in c` membership check trips CodeQL's incomplete-url-substring rule,
+        # even though this is a script-content assertion, not URL sanitization.
+        assert "ssm" in c
+        assert "us-east-2" in c
+        assert "amazonaws" in c
+
+    def test_workflow_runs_verify_before_publishing_base_ami(self):
+        wf = PACKER_WORKFLOW.read_text()
+        assert "base-image-verify.sh" in wf
+        assert wf.index("base-image-verify.sh") < wf.index("put-parameter"), (
+            "validation gate must precede the SSM publish"
+        )
+
+    def test_workflow_dc_publishes_prebaked_json_not_generalized_build(self):
+        wf = PACKER_WORKFLOW.read_text()
+        # dc is a pre-promoted contract; dev must publish the checked-in ID,
+        # never the generalized dc.pkr.hcl build.
+        assert "dc-amis.json" in wf
+
+    def test_workflow_dc_skips_generalized_build(self):
+        wf = PACKER_WORKFLOW.read_text()
+        # The generalized dc.pkr.hcl build (and its manifest read) must be guarded
+        # off for dc so a clean runner resolves the prebaked id instead.
+        assert "if: inputs.ami_type != 'dc'" in wf
+        assert "Resolve prebaked DC AMI" in wf
+
+    @staticmethod
+    def _step_run_script(wf: str, step_name: str) -> str:
+        """Extract and dedent the shell of a workflow step's `run: |` block."""
+        marker = f"- name: {step_name}"
+        start = wf.index(marker)
+        nxt = wf.find("\n      - name:", start + 1)
+        block = wf[start : nxt if nxt != -1 else len(wf)]
+        run_body = block[block.index("run: |") + len("run: |") :]
+        return textwrap.dedent(run_body)
+
+    def test_protected_ref_gate_rejects_unreviewed_refs(self):
+        # Behavioral: run the ACTUAL inline gate shell with accept/reject refs.
+        # The gate MUST stay inline (it runs before checkout, so it cannot call a
+        # checked-out script), so we execute the extracted case block directly.
+        # This goes red if the reject arm (`exit 1`) is removed or the allow arm
+        # is widened to accept another ref.
+        gate = self._step_run_script(PACKER_WORKFLOW.read_text(), "Validate build ref")
+        assert "case" in gate and "REF" in gate  # sanity: we extracted the gate
+
+        def run(ref: str) -> int:
+            return subprocess.run(  # noqa: S603
+                ["bash", "-c", gate],  # noqa: S607
+                env={**os.environ, "REF": ref},
+                capture_output=True,
+            ).returncode
+
+        assert run("dev") == 0
+        assert run("main") == 0
+        # Unreviewed / injected refs must be rejected.
+        assert run("attacker-branch") != 0
+        assert run("dev | evil") != 0
+        assert run("main-attacker") != 0
+        assert run("") != 0
+
+    def test_verify_instance_profile_allowlist_rejects_arbitrary_profiles(self):
+        # Behavioral: pull the actual allowlist ERE from the workflow and prove it
+        # accepts only the range instance-profile naming convention, so a
+        # dispatcher cannot pass a more-privileged profile (iam:PassRole exfil).
+        wf = PACKER_WORKFLOW.read_text()
+        m = re.search(
+            r"match verify_instance_profile \"\$VERIFY_INSTANCE_PROFILE\" '([^']+)'",
+            wf,
+        )
+        assert m is not None, "verify_instance_profile allowlist match not found"
+        pattern = m.group(1)
+
+        def accepts(value: str) -> bool:
+            # Mirror the workflow's own `grep -qE` check.
+            return (
+                subprocess.run(  # noqa: S603
+                    ["grep", "-qE", pattern],  # noqa: S607
+                    input=value,
+                    text=True,
+                ).returncode
+                == 0
+            )
+
+        assert accepts("shifter-dev-range-instance")
+        assert accepts("shifter-proof-range-instance")
+        # Arbitrary / more-privileged profiles must be rejected.
+        assert not accepts("AdministratorAccess")
+        assert not accepts("shifter-dev-range-instance-evil")
+        assert not accepts("evil-range-instance-admin")
+        assert not accepts("")
+
+
+class TestDcAmiProvenance:
+    """Issue #1656: the pre-promoted DC AMI id published to /shifter/ami/dc is
+    read from trusted protected provenance (the dev ref) and validated (shape +
+    ownership + available state) by one resolver shared by both publishers,
+    replacing the prior unvalidated `jq -r` reads and adding a protected-ref gate
+    to the prod promote path.
+    """
+
+    RESOLVER = SCRIPTS_DIR / "bake" / "resolve-dc-ami.sh"
+    PROMOTE_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "packer-promote.yml"
+
+    # --- shared resolver script ------------------------------------------------
+
+    def test_resolver_script_exists(self):
+        assert self.RESOLVER.exists(), "missing scripts/bake/resolve-dc-ami.sh"
+
+    def _run_resolver(self, tmp_path, registry, *, env_key, ami_state):
+        """Run resolve-dc-ami.sh with a stub `aws` that reports `ami_state` for
+        the describe-images ownership/state query (real jq resolves the key)."""
+        registry_path = tmp_path / "dc-amis.json"
+        registry_path.write_text(registry)
+        fakebin = tmp_path / "bin"
+        fakebin.mkdir(exist_ok=True)
+        aws = fakebin / "aws"
+        aws.write_text(
+            "#!/bin/bash\n"
+            'if [ "$1" = "ec2" ] && [ "$2" = "describe-images" ]; then\n'
+            "  printf '%s\\n' \"${FAKE_AMI_STATE:-None}\"\n"
+            "  exit 0\n"
+            "fi\n"
+            "exit 0\n"
+        )
+        aws.chmod(0o755)
+        env = {
+            **os.environ,
+            "PATH": f"{fakebin}{os.pathsep}{os.environ['PATH']}",
+            "DC_AMIS_JSON": str(registry_path),
+            "DC_ENV_KEY": env_key,
+            "EXPECTED_ACCOUNT_ID": "123456789012",
+            "FAKE_AMI_STATE": ami_state,
+        }
+        return subprocess.run(  # noqa: S603
+            ["bash", str(self.RESOLVER)],  # noqa: S607
+            env=env,
+            capture_output=True,
+            text=True,
+        )
+
+    def test_resolver_accepts_valid_owned_available_ami(self, tmp_path):
+        r = self._run_resolver(
+            tmp_path,
+            '{"dev": "ami-0123456789abcdef0", "prod": "ami-05ac9c21a6c0f8767"}',
+            env_key="dev",
+            ami_state="available",
+        )
+        assert r.returncode == 0, r.stderr
+        assert r.stdout.strip() == "ami-0123456789abcdef0"
+
+    def test_resolver_fails_closed_on_missing_key(self, tmp_path):
+        r = self._run_resolver(
+            tmp_path,
+            '{"prod": "ami-0123456789abcdef0"}',
+            env_key="dev",
+            ami_state="available",
+        )
+        assert r.returncode != 0
+        assert "ami-" not in r.stdout
+
+    def test_resolver_fails_closed_on_null_value(self, tmp_path):
+        r = self._run_resolver(tmp_path, '{"dev": null}', env_key="dev", ami_state="available")
+        assert r.returncode != 0
+        assert r.stdout.strip() == ""
+
+    def test_resolver_fails_closed_on_malformed_ami_id(self, tmp_path):
+        r = self._run_resolver(tmp_path, '{"dev": "not-an-ami"}', env_key="dev", ami_state="available")
+        assert r.returncode != 0
+        # The rejected value is not echoed on the published (stdout) surface.
+        assert "not-an-ami" not in r.stdout
+
+    def test_resolver_fails_closed_when_not_available_or_not_owned(self, tmp_path):
+        # describe-images --owners returns no matching image => State "None".
+        r = self._run_resolver(
+            tmp_path,
+            '{"dev": "ami-0123456789abcdef0"}',
+            env_key="dev",
+            ami_state="None",
+        )
+        assert r.returncode != 0
+        assert r.stdout.strip() == ""
+
+    # --- workflow wiring -------------------------------------------------------
+
+    def test_both_publishers_use_shared_resolver(self):
+        # One validated resolver contract, two thin call sites (no drift).
+        assert "resolve-dc-ami.sh" in PACKER_WORKFLOW.read_text()
+        assert "resolve-dc-ami.sh" in self.PROMOTE_WORKFLOW.read_text()
+
+    def test_promote_dropped_unvalidated_jq_read(self):
+        # The prod publisher's bare, unvalidated `jq -r '.prod'` is gone.
+        assert "jq -r '.prod'" not in self.PROMOTE_WORKFLOW.read_text()
+
+    def test_base_reads_dc_registry_and_resolver_from_protected_dev_checkout(self):
+        wf = PACKER_WORKFLOW.read_text()
+        assert "Checkout trusted DC registry (protected provenance)" in wf
+        idx = wf.index("Checkout trusted DC registry (protected provenance)")
+        block = wf[idx : idx + 900]
+        # refs/heads/dev (not the short name) so a tag cannot shadow the branch.
+        assert "ref: refs/heads/dev" in block
+        assert "persist-credentials: false" in block
+        # BOTH the registry and the validator come from protected provenance.
+        assert "shifter/packer/dc-amis.json" in block
+        assert "shifter/packer/scripts/bake/resolve-dc-ami.sh" in block
+
+    def test_base_runs_resolver_from_trusted_checkout_not_build_checkout(self):
+        # The validator executable must come from the trusted dev checkout, not
+        # the caller-selected inputs.ref checkout (codex #1656).
+        wf = PACKER_WORKFLOW.read_text()
+        assert "TRUSTED_RESOLVER: ${{ github.workspace }}/trusted-dc/" in wf
+        assert 'bash "$TRUSTED_RESOLVER"' in wf
+
+    def test_base_resolves_before_publishing(self):
+        wf = PACKER_WORKFLOW.read_text()
+        assert wf.index("resolve-dc-ami.sh") < wf.index("put-parameter"), (
+            "DC resolve/validate must precede the SSM publish"
+        )
+
+    def test_promote_reads_from_protected_dev_and_persists_no_creds(self):
+        wf = self.PROMOTE_WORKFLOW.read_text()
+        idx = wf.index("Checkout trusted DC registry (protected provenance)")
+        block = wf[idx : idx + 400]
+        assert "ref: refs/heads/dev" in block
+        assert "persist-credentials: false" in block
+
+    @staticmethod
+    def _step_run_script(wf: str, step_name: str) -> str:
+        marker = f"- name: {step_name}"
+        start = wf.index(marker)
+        nxt = wf.find("\n      - name:", start + 1)
+        block = wf[start : nxt if nxt != -1 else len(wf)]
+        run_body = block[block.index("run: |") + len("run: |") :]
+        return textwrap.dedent(run_body)
+
+    def test_promote_ref_gate_rejects_unreviewed_refs(self):
+        gate = self._step_run_script(self.PROMOTE_WORKFLOW.read_text(), "Validate promote ref")
+        assert "case" in gate and "REF" in gate
+
+        def run(ref: str) -> int:
+            return subprocess.run(  # noqa: S603
+                ["bash", "-c", gate],  # noqa: S607
+                env={**os.environ, "REF": ref},
+                capture_output=True,
+            ).returncode
+
+        assert run("refs/heads/dev") == 0
+        assert run("refs/heads/main") == 0
+        # A tag whose short name collides with a protected branch must fail.
+        assert run("refs/tags/dev") != 0
+        assert run("refs/tags/main") != 0
+        assert run("refs/heads/attacker-branch") != 0
+        assert run("dev") != 0
+        assert run("dev | evil") != 0
+        assert run("") != 0
+
+    def test_ami_helper_dispatches_protected_ref(self):
+        content = (REPO_ROOT / "scripts" / "ami.sh").read_text()
+        assert "WORKFLOW_REF" in content
+        # Dispatch uses the validated protected ref, never the working-tree branch.
+        assert '--ref "$WORKFLOW_REF"' in content
+        assert '--ref "$BRANCH"' not in content
+
+    def test_ami_helper_ref_gate_rejects_non_protected(self, tmp_path):
+        # Behavioral: execute ami.sh's protected-ref gate with a stubbed `gh` so
+        # accept refs reach a (no-op) dispatch and reject refs exit non-zero
+        # before any dispatch. Goes red if the reject arm loses its `exit 1` or
+        # the allow arm is widened (test-quality review #1656).
+        ami_sh = REPO_ROOT / "scripts" / "ami.sh"
+        fakebin = tmp_path / "bin"
+        fakebin.mkdir()
+        gh = fakebin / "gh"
+        gh.write_text("#!/bin/bash\nexit 0\n")
+        gh.chmod(0o755)
+
+        def run(ref_env):
+            env = {**os.environ, "PATH": f"{fakebin}{os.pathsep}{os.environ['PATH']}"}
+            if ref_env is not None:
+                env["AMI_WORKFLOW_REF"] = ref_env
+            return subprocess.run(  # noqa: S603
+                ["bash", str(ami_sh), "-b", "kali"],  # noqa: S607
+                cwd=REPO_ROOT,
+                env=env,
+                capture_output=True,
+                text=True,
+            ).returncode
+
+        # Protected refs pass the gate and reach the stubbed dispatch (rc 0).
+        assert run("dev") == 0
+        assert run("main") == 0
+        assert run(None) == 0  # unset -> defaults to dev
+        # Non-protected refs are refused before any dispatch.
+        assert run("feature-x") != 0
+        assert run("dev | evil") != 0
+        assert run("refs/tags/dev") != 0

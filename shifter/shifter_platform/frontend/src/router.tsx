@@ -7,6 +7,23 @@ import { CostPage } from "@/features/administer/CostPage";
 import { PlatformSettingsPage } from "@/features/administer/PlatformSettingsPage";
 import { UserDetailPage } from "@/features/administer/UserDetailPage";
 import { UsersListPage } from "@/features/administer/UsersListPage";
+import { ChallengeDetailPage } from "@/features/ctf/ChallengeDetailPage";
+import { ChallengesPage } from "@/features/ctf/ChallengesPage";
+import { AdminDashboardPage } from "@/features/ctf/admin/AdminDashboardPage";
+import { ChallengeAdminDetailPage } from "@/features/ctf/admin/ChallengeAdminDetailPage";
+import { ChallengeFormPage } from "@/features/ctf/admin/ChallengeFormPage";
+import { ChallengesAdminPage } from "@/features/ctf/admin/ChallengesAdminPage";
+import { EventDetailPage } from "@/features/ctf/admin/EventDetailPage";
+import { EventFormPage } from "@/features/ctf/admin/EventFormPage";
+import { EventsListPage } from "@/features/ctf/admin/EventsListPage";
+import { MonitoringPage } from "@/features/ctf/admin/MonitoringPage";
+import { ParticipantDetailPage } from "@/features/ctf/admin/ParticipantDetailPage";
+import { ParticipantsPage } from "@/features/ctf/admin/ParticipantsPage";
+import { EventHomePage } from "@/features/ctf/EventHomePage";
+import { HelpPage } from "@/features/ctf/HelpPage";
+import { RangePage } from "@/features/ctf/RangePage";
+import { ScoreboardPage } from "@/features/ctf/ScoreboardPage";
+import { TeamPage } from "@/features/ctf/TeamPage";
 import { HomePage } from "@/features/home/HomePage";
 import { AgentsPage } from "@/features/mission-control/AgentsPage";
 import { CredentialsPage } from "@/features/mission-control/CredentialsPage";
@@ -44,6 +61,15 @@ const acesImageRegistryHandle: RouteHandle = { permissionPolicy: "threat_researc
 // "Administer" nav group and the /api/v1/administer/ endpoints enforce. The Django
 // host additionally serves these pages only when ADMINISTER_SPA_ENABLED is on.
 const administerHandle: RouteHandle = { permissionPolicy: "staff" };
+// CTF participant workspace (#1372) is gated on CTF-participant access, the same
+// advisory policy the legacy participant Django views use.
+const ctfHandle: RouteHandle = { permissionPolicy: "ctf_participant" };
+// CTF organizer workspace (#1372) is gated on CTF-organizer access, the same
+// advisory policy the legacy organizer (/ctf/admin/) Django views use. Declared
+// as its own `ctf/admin` route group (a sibling of the participant `ctf` group)
+// so the more-specific admin paths carry the organizer gate while participant
+// paths keep the participant gate.
+const ctfOrganizerHandle: RouteHandle = { permissionPolicy: "ctf_organizer" };
 
 export const router = createBrowserRouter(
   [
@@ -102,6 +128,60 @@ export const router = createBrowserRouter(
             { path: ":scenarioId", element: <ScenarioDetailPage /> },
             { path: ":scenarioId/edit", element: <ScenarioFormPage mode="edit" /> },
             { path: ":scenarioId/editor", element: <ScenarioYamlPage mode="edit" /> },
+          ],
+        },
+        {
+          // CTF participant workspace (#1372) rehomed under the unified client
+          // router. Its legacy Django counterpart lives at the same /ctf/
+          // participant page paths (see features/ctf/routes.ts); the static
+          // "challenges" segment outranks the ":id" dynamic route regardless of
+          // declaration order. Organizer (/ctf/admin/) pages are not part of this
+          // slice and stay Django-served.
+          path: "ctf",
+          handle: ctfHandle,
+          children: [
+            { index: true, element: <EventHomePage /> },
+            { path: "event", element: <EventHomePage /> },
+            { path: "challenges", element: <ChallengesPage /> },
+            { path: "challenges/:id", element: <ChallengeDetailPage /> },
+            { path: "range", element: <RangePage /> },
+            { path: "scoreboard", element: <ScoreboardPage /> },
+            { path: "team", element: <TeamPage /> },
+            { path: "help", element: <HelpPage /> },
+          ],
+        },
+        {
+          // CTF organizer workspace (#1372). A sibling `ctf/admin` group (not a
+          // child of the `ctf` participant group) so its more-specific paths win
+          // and carry the organizer permission gate. The legacy Django organizer
+          // pages live at the same /ctf/admin/ paths (see features/ctf/routes.ts).
+          // Create/edit client routes intentionally match the legacy Django form
+          // URLs: those exact server routes stay Django-served for rollback, so a
+          // deep-link GET lands on the classic form while in-SPA navigation
+          // renders the client form here. Every wrapped organizer GET page path
+          // resolves to a page below so a refresh never dead-ends at Not Found.
+          path: "ctf/admin",
+          handle: ctfOrganizerHandle,
+          children: [
+            { index: true, element: <AdminDashboardPage /> },
+            { path: "events", element: <EventsListPage /> },
+            { path: "events/create", element: <EventFormPage mode="create" /> },
+            { path: "events/:eventId", element: <EventDetailPage /> },
+            { path: "events/:eventId/edit", element: <EventFormPage mode="edit" /> },
+            { path: "events/:eventId/challenges", element: <ChallengesAdminPage /> },
+            { path: "events/:eventId/challenges/create", element: <ChallengeFormPage mode="create" /> },
+            { path: "challenges/:challengeId", element: <ChallengeAdminDetailPage /> },
+            { path: "challenges/:challengeId/edit", element: <ChallengeFormPage mode="edit" /> },
+            { path: "events/:eventId/participants", element: <ParticipantsPage /> },
+            { path: "events/:eventId/teams", element: <ParticipantsPage /> },
+            { path: "participants/:participantId", element: <ParticipantDetailPage /> },
+            { path: "events/:eventId/scoreboard", element: <MonitoringPage defaultTab="scoreboard" /> },
+            { path: "events/:eventId/monitoring", element: <MonitoringPage defaultTab="scoreboard" /> },
+            { path: "events/:eventId/ranges", element: <MonitoringPage defaultTab="ranges" /> },
+            { path: "events/:eventId/notifications", element: <MonitoringPage defaultTab="notifications" /> },
+            { path: "events/:eventId/analytics", element: <MonitoringPage defaultTab="analytics" /> },
+            { path: "events/:eventId/brackets", element: <MonitoringPage defaultTab="scoreboard" /> },
+            { path: "events/:eventId/email-templates", element: <MonitoringPage defaultTab="notifications" /> },
           ],
         },
         {

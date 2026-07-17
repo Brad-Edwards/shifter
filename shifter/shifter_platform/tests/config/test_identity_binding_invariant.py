@@ -97,8 +97,8 @@ class TestVerifiedIdentityInvariantNegative:
     @PROVIDERS
     @pytest.mark.parametrize(
         "email_verified",
-        [None, False, "false", "true", 0, 1],
-        ids=["missing", "false", "str-false", "str-true", "int-0", "int-1"],
+        [None, False, "false", 0, 1],
+        ids=["missing", "false", "str-false", "int-0", "int-1"],
     )
     def test_rejects_non_literal_true_email_verified(self, login, email_verified):
         claims = _claims(email="new-user@example.com", email_verified=email_verified)

@@ -91,6 +91,10 @@ class BootstrapFeatureFlagsSerializer(serializers.Serializer):
     platform_spa = serializers.BooleanField()
     mission_control_spa = serializers.BooleanField()
     scenario_editor_spa = serializers.BooleanField()
+    # CTF workspace SPA (#1372): gates the in-SPA CTF participant workspace nav
+    # entries. Mirrors CTF_WORKSPACE_SPA_ENABLED (advisory only; the /api/v1/ctf/
+    # endpoints remain the authority).
+    ctf_workspace_spa = serializers.BooleanField()
     # ACES native provisioning (#1566): gates the in-SPA ACES image registry
     # management surface. Mirrors SHIFTER_ACES_NATIVE_PROVISIONING, so the nav
     # entry only shows when the whole native path is enabled (advisory only;
@@ -207,6 +211,7 @@ class BootstrapView(APIView):
                 "platform_spa": bool(getattr(settings, "PLATFORM_SPA_ENABLED", False)),
                 "mission_control_spa": bool(getattr(settings, "MISSION_CONTROL_SPA_ENABLED", False)),
                 "scenario_editor_spa": bool(getattr(settings, "SCENARIO_EDITOR_SPA_ENABLED", False)),
+                "ctf_workspace_spa": bool(getattr(settings, "CTF_WORKSPACE_SPA_ENABLED", False)),
                 "aces_native_provisioning": bool(getattr(settings, "ACES_NATIVE_PROVISIONING_ENABLED", False)),
                 "administer_spa": bool(getattr(settings, "ADMINISTER_SPA_ENABLED", False)),
             },

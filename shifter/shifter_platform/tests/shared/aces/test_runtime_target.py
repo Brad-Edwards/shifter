@@ -292,6 +292,10 @@ def _feature_binding(address: str, *, target: str, source: str = "nginx") -> Pla
             lambda: _plan(_content_placement("provision.content.x", target="provision.node.ghost")),
             "shifter-provisioner.unbound-placement",
         ),
+        (
+            lambda: _plan(_network("provision.network.lan", "lan", cidr="2001:db8:1234::/48")),
+            "shifter-provisioner.unsupported-network-address-family",
+        ),
     ],
 )
 def test_out_of_envelope_terms_fail_closed(plan_factory, expected_code: str) -> None:
