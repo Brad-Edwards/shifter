@@ -8,7 +8,7 @@ boundary. There is no ``ModelViewSet`` and no writable model serializer.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, TypedDict
+from typing import TYPE_CHECKING
 
 from drf_spectacular.utils import extend_schema
 from rest_framework.authentication import SessionAuthentication
@@ -16,7 +16,7 @@ from rest_framework.generics import ListAPIView, RetrieveAPIView
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from management import services
+from management import admin_services, services
 from management.api.serializers import (
     AdminUserDetailSerializer,
     AdminUserListItemSerializer,
@@ -36,29 +36,21 @@ from shared.audit import get_actor_from_request, get_client_ip, get_request_id
 _ADMINISTER_AUTHENTICATION = [ApiTokenAuthentication, SessionAuthentication]
 
 if TYPE_CHECKING:
+    from django.contrib.auth.models import User
+    from django.db.models import QuerySet
     from rest_framework.request import Request
 
 
-class _AuditContext(TypedDict):
-    """Request-attributed audit fields passed to the domain audit services."""
-
-    actor_type: str
-    actor_id: int | None
-    request_id: str
-    source_ip: str | None
-    user_agent: str
-
-
-def _audit_context(request: Request) -> _AuditContext:
+def _audit_context(request: Request) -> services.AuditContext:
     """Build request-attributed audit context to hand to the domain service."""
     actor_type, actor_id = get_actor_from_request(request)
-    return {
-        "actor_type": actor_type,
-        "actor_id": actor_id,
-        "request_id": get_request_id(request),
-        "source_ip": get_client_ip(request),
-        "user_agent": request.META.get("HTTP_USER_AGENT", "")[:255],
-    }
+    return services.AuditContext(
+        actor_type=actor_type,
+        actor_id=actor_id,
+        request_id=get_request_id(request),
+        source_ip=get_client_ip(request),
+        user_agent=request.META.get("HTTP_USER_AGENT", "")[:255],
+    )
 
 
 class AdminUserListView(ListAPIView):
@@ -76,11 +68,11 @@ class AdminUserListView(ListAPIView):
     def get(self, request: Request, *args: object, **kwargs: object) -> Response:
         return super().get(request, *args, **kwargs)
 
-    def get_queryset(self):
+    def get_queryset(self) -> QuerySet[User]:
         query = AdminUserListQuerySerializer(data=self.request.query_params)
         query.is_valid(raise_exception=True)
         data = query.validated_data
-        return services.list_admin_users(
+        return admin_services.list_admin_users(
             search=data.get("search", ""),
             user_type=data.get("user_type", ""),
             is_active=data.get("is_active", None),
@@ -100,8 +92,8 @@ class AdminUserDetailView(RetrieveAPIView):
     def get(self, request: Request, *args: object, **kwargs: object) -> Response:
         return super().get(request, *args, **kwargs)
 
-    def get_queryset(self):
-        return services.list_admin_users(include_deleted=True)
+    def get_queryset(self) -> QuerySet[User]:
+        return admin_services.list_admin_users(include_deleted=True)
 
 
 class AdminUserSetActiveView(APIView):
@@ -132,7 +124,7 @@ class AdminUserSetActiveView(APIView):
                 request=request,
             )
 
-        services.set_user_active(user, active=active, **_audit_context(request))
+        admin_services.set_user_active(user, active=active, audit=_audit_context(request))
         user.refresh_from_db()
         return Response(AdminUserDetailSerializer(user).data)
 
@@ -166,6 +158,6 @@ class AdminUserDeleteView(APIView):
                 request=request,
             )
 
-        services.mark_user_deleted(user, strict=True, **_audit_context(request))
+        services.mark_user_deleted(user, audit=_audit_context(request), strict=True)
         user.refresh_from_db()
         return Response(AdminUserDetailSerializer(user).data)

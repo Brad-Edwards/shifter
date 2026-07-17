@@ -21,15 +21,27 @@ const ALL = "all";
 const USER_TYPES = ["standard", "ctf_organizer", "ctf_participant"] as const;
 const ACCOUNT_ORIGINS = ["provider", "local", "ctf"] as const;
 
+/** Parse a tri-state boolean URL param ("true"/"false"/absent). */
+function parseTristateBool(value: string | null): boolean | undefined {
+  if (value === "true") return true;
+  if (value === "false") return false;
+  return undefined;
+}
+
+/** Map the `isActive` filter to its Select control value. */
+function activeFilterValue(isActive: boolean | undefined): string {
+  if (isActive === undefined) return ALL;
+  return isActive ? "true" : "false";
+}
+
 function parseFilters(params: URLSearchParams): AdminUserFilters {
-  const activeParam = params.get("active");
   const page = Number(params.get("page") ?? "1");
   return {
     search: params.get("q")?.trim() || undefined,
     userType: USER_TYPES.includes(params.get("type") as (typeof USER_TYPES)[number])
       ? (params.get("type") as string)
       : undefined,
-    isActive: activeParam === "true" ? true : activeParam === "false" ? false : undefined,
+    isActive: parseTristateBool(params.get("active")),
     accountOrigin: ACCOUNT_ORIGINS.includes(params.get("origin") as (typeof ACCOUNT_ORIGINS)[number])
       ? (params.get("origin") as string)
       : undefined,
@@ -106,14 +118,14 @@ export function UsersListPage() {
             <SelectItem value={ALL}>All types</SelectItem>
             {USER_TYPES.map((value) => (
               <SelectItem key={value} value={value}>
-                {titleCase(value.replace(/_/g, " "))}
+                {titleCase(value.replaceAll("_", " "))}
               </SelectItem>
             ))}
           </SelectContent>
         </Select>
 
         <Select
-          value={filters.isActive === undefined ? ALL : filters.isActive ? "true" : "false"}
+          value={activeFilterValue(filters.isActive)}
           onValueChange={(value) => updateParam("active", value === ALL ? null : value)}
         >
           <SelectTrigger size="sm" className="w-[150px]" aria-label="Filter by status">
@@ -244,7 +256,7 @@ function UsersListBody({
             <TableCell>
               <AccountOriginBadge origin={user.account_origin} />
             </TableCell>
-            <TableCell className="text-sm text-muted-foreground">{titleCase(user.user_type.replace(/_/g, " "))}</TableCell>
+            <TableCell className="text-sm text-muted-foreground">{titleCase(user.user_type.replaceAll("_", " "))}</TableCell>
             <TableCell>
               <AccountStatusBadge isActive={user.is_active} isDeleted={user.is_deleted} />
             </TableCell>

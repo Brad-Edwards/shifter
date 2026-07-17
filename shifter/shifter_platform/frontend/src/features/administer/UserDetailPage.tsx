@@ -20,6 +20,12 @@ import { usersListPath } from "./routes";
 
 type DialogKind = "set-active" | "delete" | "grant-organizer";
 
+function loadErrorTitle(error: unknown): string {
+  if (error instanceof ApiError && error.status === 403) return "You do not have permission to view this user";
+  if (error instanceof ApiError && error.status === 404) return "User not found";
+  return "Could not load user";
+}
+
 export function UserDetailPage() {
   const params = useParams();
   const id = Number(params.id);
@@ -35,15 +41,11 @@ export function UserDetailPage() {
   }
 
   if (query.isError || !query.data) {
-    const forbidden = query.error instanceof ApiError && query.error.status === 403;
-    const notFound = query.error instanceof ApiError && query.error.status === 404;
     return (
       <div className="space-y-4">
         <PageHeader title="User" />
         <Alert variant="destructive">
-          <AlertTitle>
-            {forbidden ? "You do not have permission to view this user" : notFound ? "User not found" : "Could not load user"}
-          </AlertTitle>
+          <AlertTitle>{loadErrorTitle(query.error)}</AlertTitle>
           <AlertDescription>
             <Link className="underline" to={usersListPath()}>
               Back to users
@@ -65,10 +67,6 @@ function UserDetail({ user }: Readonly<{ user: AdminUserDetail }>) {
   const softDelete = useSoftDeleteUser(user.id);
   const grantOrganizer = useGrantOrganizer(user.id);
 
-  const canChange = bootstrap.permissions.can_change_users;
-  const canDelete = bootstrap.permissions.can_delete_users;
-  const isSelf = bootstrap.principal.id === user.id;
-
   function close() {
     setActive.reset();
     softDelete.reset();
@@ -76,43 +74,19 @@ function UserDetail({ user }: Readonly<{ user: AdminUserDetail }>) {
     setDialog(null);
   }
 
-  const showLifecycle = canChange && !user.is_deleted;
-
   return (
     <>
       <PageHeader
         title={user.display_name}
         description={user.email || user.username}
         actions={
-          <div className="flex flex-wrap items-center gap-2">
-            {showLifecycle ? (
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={isSelf && user.is_active}
-                title={isSelf && user.is_active ? "You cannot deactivate your own account." : undefined}
-                onClick={() => setDialog("set-active")}
-              >
-                {user.is_active ? "Deactivate" : "Activate"}
-              </Button>
-            ) : null}
-            {showLifecycle && !user.is_ctf_organizer ? (
-              <Button variant="outline" size="sm" onClick={() => setDialog("grant-organizer")}>
-                Grant CTF Organizer
-              </Button>
-            ) : null}
-            {canDelete && !user.is_deleted ? (
-              <Button
-                variant="destructive"
-                size="sm"
-                disabled={isSelf}
-                title={isSelf ? "You cannot delete your own account." : undefined}
-                onClick={() => setDialog("delete")}
-              >
-                Delete
-              </Button>
-            ) : null}
-          </div>
+          <UserActions
+            user={user}
+            canChange={bootstrap.permissions.can_change_users}
+            canDelete={bootstrap.permissions.can_delete_users}
+            isSelf={bootstrap.principal.id === user.id}
+            onOpen={setDialog}
+          />
         }
       />
 
@@ -123,48 +97,132 @@ function UserDetail({ user }: Readonly<{ user: AdminUserDetail }>) {
         </Alert>
       ) : null}
 
-      <Card className="p-6">
-        <dl className="grid grid-cols-1 gap-x-8 gap-y-4 sm:grid-cols-2">
-          <Field label="Username">{user.username}</Field>
-          <Field label="Email">{user.email || "—"}</Field>
-          <Field label="Status">
-            <AccountStatusBadge isActive={user.is_active} isDeleted={user.is_deleted} />
-          </Field>
-          <Field label="Account origin">
-            <AccountOriginBadge origin={user.account_origin} />
-          </Field>
-          <Field label="Account type">{titleCase(user.user_type.replace(/_/g, " "))}</Field>
-          <Field label="Roles">
-            <div className="flex flex-wrap gap-1.5">
-              {user.is_superuser ? <RoleBadge label="Superuser" /> : null}
-              {user.is_staff ? <RoleBadge label="Staff" /> : null}
-              {user.is_ctf_organizer ? <RoleBadge label="Organizer" /> : null}
-              {!user.is_superuser && !user.is_staff && !user.is_ctf_organizer ? (
-                <span className="text-sm text-muted-foreground">None</span>
-              ) : null}
-            </div>
-          </Field>
-          <Field label="Groups">
-            {user.groups.length > 0 ? (
-              <div className="flex flex-wrap gap-1.5">
-                {user.groups.map((group) => (
-                  <RoleBadge key={group} label={group} />
-                ))}
-              </div>
-            ) : (
-              <span className="text-sm text-muted-foreground">None</span>
-            )}
-          </Field>
-          {user.is_ctf_organizer ? (
-            <Field label="Organizer grant source">
-              {user.organizer_grant_source ? accountOriginLabel(user.organizer_grant_source) : "—"}
-            </Field>
-          ) : null}
-          <Field label="Joined">{formatTimestamp(user.date_joined)}</Field>
-          <Field label="Last login">{formatTimestamp(user.last_login)}</Field>
-        </dl>
-      </Card>
+      <UserFields user={user} />
 
+      <UserConfirmDialogs
+        user={user}
+        dialog={dialog}
+        setActive={setActive}
+        softDelete={softDelete}
+        grantOrganizer={grantOrganizer}
+        onClose={close}
+        onDone={() => setDialog(null)}
+      />
+    </>
+  );
+}
+
+function UserActions({
+  user,
+  canChange,
+  canDelete,
+  isSelf,
+  onOpen,
+}: Readonly<{
+  user: AdminUserDetail;
+  canChange: boolean;
+  canDelete: boolean;
+  isSelf: boolean;
+  onOpen: (dialog: DialogKind) => void;
+}>) {
+  const showLifecycle = canChange && !user.is_deleted;
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {showLifecycle ? (
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={isSelf && user.is_active}
+          title={isSelf && user.is_active ? "You cannot deactivate your own account." : undefined}
+          onClick={() => onOpen("set-active")}
+        >
+          {user.is_active ? "Deactivate" : "Activate"}
+        </Button>
+      ) : null}
+      {showLifecycle && !user.is_ctf_organizer ? (
+        <Button variant="outline" size="sm" onClick={() => onOpen("grant-organizer")}>
+          Grant CTF Organizer
+        </Button>
+      ) : null}
+      {canDelete && !user.is_deleted ? (
+        <Button
+          variant="destructive"
+          size="sm"
+          disabled={isSelf}
+          title={isSelf ? "You cannot delete your own account." : undefined}
+          onClick={() => onOpen("delete")}
+        >
+          Delete
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
+function UserFields({ user }: Readonly<{ user: AdminUserDetail }>) {
+  const hasRole = user.is_superuser || user.is_staff || user.is_ctf_organizer;
+  return (
+    <Card className="p-6">
+      <dl className="grid grid-cols-1 gap-x-8 gap-y-4 sm:grid-cols-2">
+        <Field label="Username">{user.username}</Field>
+        <Field label="Email">{user.email || "—"}</Field>
+        <Field label="Status">
+          <AccountStatusBadge isActive={user.is_active} isDeleted={user.is_deleted} />
+        </Field>
+        <Field label="Account origin">
+          <AccountOriginBadge origin={user.account_origin} />
+        </Field>
+        <Field label="Account type">{titleCase(user.user_type.replaceAll("_", " "))}</Field>
+        <Field label="Roles">
+          <div className="flex flex-wrap gap-1.5">
+            {user.is_superuser ? <RoleBadge label="Superuser" /> : null}
+            {user.is_staff ? <RoleBadge label="Staff" /> : null}
+            {user.is_ctf_organizer ? <RoleBadge label="Organizer" /> : null}
+            {!hasRole ? <span className="text-sm text-muted-foreground">None</span> : null}
+          </div>
+        </Field>
+        <Field label="Groups">
+          {user.groups.length > 0 ? (
+            <div className="flex flex-wrap gap-1.5">
+              {user.groups.map((group) => (
+                <RoleBadge key={group} label={group} />
+              ))}
+            </div>
+          ) : (
+            <span className="text-sm text-muted-foreground">None</span>
+          )}
+        </Field>
+        {user.is_ctf_organizer ? (
+          <Field label="Organizer grant source">
+            {user.organizer_grant_source ? accountOriginLabel(user.organizer_grant_source) : "—"}
+          </Field>
+        ) : null}
+        <Field label="Joined">{formatTimestamp(user.date_joined)}</Field>
+        <Field label="Last login">{formatTimestamp(user.last_login)}</Field>
+      </dl>
+    </Card>
+  );
+}
+
+function UserConfirmDialogs({
+  user,
+  dialog,
+  setActive,
+  softDelete,
+  grantOrganizer,
+  onClose,
+  onDone,
+}: Readonly<{
+  user: AdminUserDetail;
+  dialog: DialogKind | null;
+  setActive: ReturnType<typeof useSetUserActive>;
+  softDelete: ReturnType<typeof useSoftDeleteUser>;
+  grantOrganizer: ReturnType<typeof useGrantOrganizer>;
+  onClose: () => void;
+  onDone: () => void;
+}>) {
+  return (
+    <>
       <ConfirmDialog
         open={dialog === "set-active"}
         title={user.is_active ? "Deactivate account?" : "Activate account?"}
@@ -172,8 +230,8 @@ function UserDetail({ user }: Readonly<{ user: AdminUserDetail }>) {
         destructive={user.is_active}
         pending={setActive.isPending}
         error={setActive.error}
-        onOpenChange={(open) => !open && close()}
-        onConfirm={() => setActive.mutate(!user.is_active, { onSuccess: () => setDialog(null) })}
+        onOpenChange={(open) => !open && onClose()}
+        onConfirm={() => setActive.mutate(!user.is_active, { onSuccess: onDone })}
       >
         {user.is_active
           ? "The user will be signed out and blocked from signing in until reactivated. This does not delete or anonymize the account."
@@ -186,8 +244,8 @@ function UserDetail({ user }: Readonly<{ user: AdminUserDetail }>) {
         confirmLabel="Grant"
         pending={grantOrganizer.isPending}
         error={grantOrganizer.error}
-        onOpenChange={(open) => !open && close()}
-        onConfirm={() => grantOrganizer.mutate(undefined, { onSuccess: () => setDialog(null) })}
+        onOpenChange={(open) => !open && onClose()}
+        onConfirm={() => grantOrganizer.mutate(undefined, { onSuccess: onDone })}
       >
         This adds the user to CTF Organizer as a local grant. It is additive and audited; provider-managed membership is
         unaffected. Removing organizer access is not available here.
@@ -200,8 +258,8 @@ function UserDetail({ user }: Readonly<{ user: AdminUserDetail }>) {
         destructive
         pending={softDelete.isPending}
         error={softDelete.error}
-        onOpenChange={(open) => !open && close()}
-        onConfirm={() => softDelete.mutate(undefined, { onSuccess: () => setDialog(null) })}
+        onOpenChange={(open) => !open && onClose()}
+        onConfirm={() => softDelete.mutate(undefined, { onSuccess: onDone })}
       >
         The account is soft-deleted and can no longer sign in. This does not permanently erase, anonymize, or unbind the
         provider identity.

@@ -34,7 +34,7 @@ export function PlatformSettingsPage() {
         <dl className="mt-4 grid grid-cols-1 gap-x-8 gap-y-3 sm:grid-cols-2">
           {flags.map(([name, enabled]) => (
             <div key={name} className="flex items-center justify-between gap-4 border-b border-white/5 pb-2">
-              <dt className="text-sm text-muted-foreground">{titleCase(name.replace(/_/g, " "))}</dt>
+              <dt className="text-sm text-muted-foreground">{titleCase(name.replaceAll("_", " "))}</dt>
               <dd>
                 <span
                   className={`inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.05] px-2.5 py-0.5 text-xs font-medium ${

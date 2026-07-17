@@ -12,7 +12,7 @@ from __future__ import annotations
 from django.contrib.auth.models import User
 from rest_framework import serializers
 
-from management import services
+from management import admin_services, services
 from management.models import UserProfile
 from shared.auth import CTF_ORGANIZER_GROUP
 
@@ -46,7 +46,7 @@ class AdminUserListItemSerializer(serializers.Serializer):
         return profile.user_type if profile else "standard"
 
     def get_account_origin(self, user: User) -> str:
-        return services.classify_account_origin(services.safe_user_profile(user))
+        return admin_services.classify_account_origin(services.safe_user_profile(user))
 
     def get_is_ctf_organizer(self, user: User) -> bool:
         # Mirrors shared.auth.is_ctf_organizer semantics (organizer privilege is
@@ -91,7 +91,7 @@ class AdminUserListQuerySerializer(serializers.Serializer):
     search = serializers.CharField(
         required=False,
         allow_blank=True,
-        max_length=services.ADMIN_USER_SEARCH_MAX_LEN,
+        max_length=admin_services.ADMIN_USER_SEARCH_MAX_LEN,
     )
     user_type = serializers.ChoiceField(
         required=False,
@@ -102,7 +102,7 @@ class AdminUserListQuerySerializer(serializers.Serializer):
     account_origin = serializers.ChoiceField(
         required=False,
         allow_blank=True,
-        choices=list(services.ADMIN_ACCOUNT_ORIGINS),
+        choices=list(admin_services.ADMIN_ACCOUNT_ORIGINS),
     )
     include_deleted = serializers.BooleanField(required=False, default=False)
 
