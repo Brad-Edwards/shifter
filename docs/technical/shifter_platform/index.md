@@ -130,6 +130,16 @@ provisioning path.
 
 - [CTF technical documentation](ctf): models, services, scheduling, and per-participant range provisioning.
 
+## Scenario Verification
+
+The shared scenario-verification framework discovers an explicitly selected
+installed plugin and runs its checks through a bounded, transport-neutral
+runner. Core ships no scenario adapters or answer material.
+
+- [Scenario-verification plugin guide](scenario-verification.md): public v1
+  types, plugin factories, operator selection, execution, status/exit behavior,
+  and report redaction.
+
 ## Risk Register
 
 The `risk_register` app owns the Risk Register domain and is the first SPA

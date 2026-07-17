@@ -1896,5 +1896,61 @@
       "docs/architecture/api-versioning-policy.md",
       ".github/workflows/_quality.yml"
     ]
+  },
+  {
+    "id": "ADR-041",
+    "title": "Scenario verification uses an explicitly selected installed plugin seam",
+    "status": "accepted",
+    "scope": "shifter_platform",
+    "decision": "Core owns a provider- and scenario-neutral shared scenario-verification contract and framework, but ships zero scenario adapters, answer material, topology, or runner implementations. Adapters are loaded only from the fixed shifter.scenario_verification.adapters entry-point group after deterministic installed-metadata discovery and explicit distribution/version/entry-point selection (or a sole unambiguous match). The frozen v1 contract exposes bounded declarations, explicit runtime prerequisites, an injected transport-neutral argv-only runner with per-command and whole-run budgets, closed pass/fail/blocked/error reports, and one versioned redacted report DTO. ACES demand/supply/realizability, challenge-board readback, provider topology, persistence, and deployment configuration remain outside the seam.",
+    "rules": [
+      {
+        "id": "ADR-041-R1",
+        "description": "Core MUST ship zero per-scenario adapters, answer material, provider topology, or concrete runner implementations. Discovery MUST use only installed metadata from the fixed shifter.scenario_verification.adapters entry-point group, load only the explicitly selected distribution/version/entry point or a sole unambiguous candidate, validate the zero-argument factory and immutable declaration before execution, and MUST NOT scan files or namespaces, mutate sys.path, accept arbitrary module paths, auto-install code, or run at service startup.",
+        "checks": []
+      },
+      {
+        "id": "ADR-041-R2",
+        "description": "The public verification ABI MUST remain in the shared contracts layer, import-safe and independent of Django and other platform layers. Its versioned declarations and report objects are immutable; identifiers, reason codes, bindings, summaries, callables, API versions, duplicates, and non-empty adapter selections are validated centrally and ordered deterministically before execution.",
+        "checks": ["layer-imports"]
+      },
+      {
+        "id": "ADR-041-R3",
+        "description": "AdapterContext MUST expose only namespaced non-secret bindings, an injected runtime-checkable Runner, and deadline/cancellation budgets. Runner execution accepts an opaque target id, argv sequence, optional stdin, explicit timeout, and bounded structured result; the contract MUST NOT expose shell strings, broad environment maps, credentials, provider/cloud objects, backend manifests, settings, persistence handles, raw evidence, or unbounded output.",
+        "checks": []
+      },
+      {
+        "id": "ADR-041-R4",
+        "description": "Verification report status is closed to pass, fail, blocked, and error. Adapters return only pass or fail; blocked is produced only when a declared runtime prerequisite is unsatisfied; prerequisite-execution, runner, timeout, cancellation, invalid-result, and adapter faults after selection are error. Discovery, selection, declaration, and execution-configuration failures occur before a report and MUST fail closed through bounded safe exceptions mapped to a non-zero operator exit. Every non-pass report produces a non-zero aggregate exit, and blocked MUST NOT mask missing coverage, incompatibility, admission failure, or an exception.",
+        "checks": []
+      },
+      {
+        "id": "ADR-041-R5",
+        "description": "Human and JSON output MUST render from one immutable versioned report DTO bound to the exact installed distribution name/version, entry-point name, and declared plugin id/version, and otherwise contain only allowlisted bounded adapter identifiers, status/reason codes, durations, counts, and aggregate exit; plugin-authored declaration text is not a report field. Reports and logs MUST NOT contain answers or deterministic answer hashes, argv/stdin, command output, environment values, raw evidence, exception messages/tracebacks, credentials, internal network details, or provider payloads; equality helpers return a verdict only.",
+        "checks": []
+      },
+      {
+        "id": "ADR-041-R6",
+        "description": "The scenario-verification seam MUST NOT duplicate or replace scenario SDL demand, backend-manifest supply, runtime-target/ingest/realizability admission, challenge-board or scoring readback, provider topology and transport ownership, platform lifecycle status, persistence, audit, service APIs, or deployment configuration. Runtime verification prerequisites are evidence about one run, not a capability manifest or launchability decision.",
+        "checks": []
+      },
+      {
+        "id": "ADR-041-R7",
+        "description": "Core CI MUST exercise discovery, selection, contract validation, prerequisite ordering, all statuses, deadlines/cancellation, exception containment, deterministic ordering, aggregation, and redaction with synthetic entry points, declarations, sentinel data, and fake runners. It MUST NOT install or fetch an external adapter distribution to prove the core contract.",
+        "checks": []
+      }
+    ],
+    "exceptions": [],
+    "enforcement": ["agent-policy", "ci"],
+    "evidence": [
+      "docs/architecture/scenario-verification-plugin-seam-adr.md",
+      "docs/architecture/aces-polaris-scenario-smoketest-coverage-preflight-1293.md",
+      "docs/technical/shifter_platform/scenario-verification.md",
+      "shifter/shifter_platform/shared/scenario_verification",
+      "shifter/shifter_platform/tests/shared/scenario_verification",
+      ".github/quality-path-filters.yaml",
+      ".github/workflows/_quality.yml",
+      "docs/architecture/aces-migration-parity-inventory.yaml"
+    ]
   }
 ]

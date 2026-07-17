@@ -810,7 +810,7 @@ class DeployWorkflowPlanScopeTests(unittest.TestCase):
             self.assertEqual(len(violations), 1)
             self.assertIn("scripts/polaris-aws-range/**", violations[0].message)
 
-    def test_flags_quality_only_filter_without_scenario_smoketest_glob(self) -> None:
+    def test_flags_quality_only_filter_without_polaris_tests_glob(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo_root = Path(tmp)
             self._write_workflows(
