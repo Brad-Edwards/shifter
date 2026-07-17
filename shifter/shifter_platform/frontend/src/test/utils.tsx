@@ -27,6 +27,7 @@ export const STAFF_BOOTSTRAP: Bootstrap = {
     platform_spa: true,
     mission_control_spa: true,
     scenario_editor_spa: true,
+    ctf_workspace_spa: true,
     aces_native_provisioning: true,
   },
 };

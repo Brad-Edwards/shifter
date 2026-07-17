@@ -261,6 +261,17 @@ MISSION_CONTROL_SPA_ENABLED = _env_bool("MISSION_CONTROL_SPA_ENABLED", False)
 # disabled. Flipping it is reversible.
 SCENARIO_EDITOR_SPA_ENABLED = _env_bool("SCENARIO_EDITOR_SPA_ENABLED", False)
 
+# CTF workspace SPA cutover rollout flag (issue #1372, ADR-013 / ADR-029).
+# When enabled (together with PLATFORM_SPA_ENABLED), the CTF participant GET page
+# paths under /ctf/ (dashboard, event, challenges, challenge detail, range,
+# scoreboard, solve history, team, help) are served by the React SPA host view
+# instead of the legacy Django templates; the participant login / change-password
+# / team-join Django views, the legacy scoreboard JSON endpoint, and ALL organizer
+# (/ctf/admin/) pages stay Django-handled unchanged, and the canonical
+# /api/v1/ctf/ DRF routes the SPA uses are unaffected either way. Non-secret
+# boolean; absent env means disabled. Flipping it is reversible.
+CTF_WORKSPACE_SPA_ENABLED = _env_bool("CTF_WORKSPACE_SPA_ENABLED", False)
+
 # Shared WebSocket notification replay bounds (issue #679).
 WEBSOCKET_NOTIFICATION_MAX_REPLAY = _env_int("WEBSOCKET_NOTIFICATION_MAX_REPLAY", 100)
 WEBSOCKET_NOTIFICATION_RETENTION_DAYS = _env_int("WEBSOCKET_NOTIFICATION_RETENTION_DAYS", 7)
