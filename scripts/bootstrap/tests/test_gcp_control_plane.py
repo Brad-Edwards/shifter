@@ -723,6 +723,7 @@ class TestGdcTerraformInitRetries:
             stderr="Error: unsupported backend configuration",
         )
 
+        bootstrap_path = Path("bootstrap.json")
         with (
             patch("subprocess.run", return_value=invalid_backend) as mock_subprocess,
             patch("deploy.time.sleep") as mock_sleep,
@@ -731,7 +732,7 @@ class TestGdcTerraformInitRetries:
             deploy.run_gcp_terraform_init_with_retry(
                 config,
                 config.terraform_state_bucket_name,
-                Path("bootstrap.json"),
+                bootstrap_path,
                 max_attempts=3,
                 sleep_seconds=0,
             )
@@ -853,6 +854,7 @@ class TestGdcTerraformBootstrapAccess:
             stderr="ERROR: (gcloud.artifacts.repositories.list) INVALID_ARGUMENT: bad request",
         )
 
+        bootstrap_path = Path("bootstrap.json")
         with (
             patch("deploy._run_gcp_bootstrap_probe", return_value=invalid) as mock_probe,
             patch("deploy.time.sleep") as mock_sleep,
@@ -860,7 +862,7 @@ class TestGdcTerraformBootstrapAccess:
         ):
             deploy.wait_for_gcp_terraform_bootstrap_access(
                 config,
-                Path("bootstrap.json"),
+                bootstrap_path,
                 max_attempts=2,
                 sleep_seconds=0,
             )

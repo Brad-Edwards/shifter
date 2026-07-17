@@ -329,8 +329,9 @@ class TestProvisionAndRegister:
         mock_gcp_deploy.run_cmd.side_effect = _fake_run_cmd()
         mock_gcp_deploy.run_cmd_secret_stdin.return_value = 1  # registration handoff failed
 
+        cfg = _cfg()
         with pytest.raises(SystemExit):
-            provision_and_register_gcp_runners(_cfg(), dry_run=False)
+            provision_and_register_gcp_runners(cfg, dry_run=False)
 
     def test_fails_closed_on_offline_runner(self, mock_gcp_deploy, tmp_path):
         from gcp_runner import provision_and_register_gcp_runners
@@ -345,8 +346,9 @@ class TestProvisionAndRegister:
         )
         mock_gcp_deploy.run_cmd_secret_stdin.return_value = 0
 
+        cfg = _cfg()
         with pytest.raises(SystemExit):
-            provision_and_register_gcp_runners(_cfg(), dry_run=False)
+            provision_and_register_gcp_runners(cfg, dry_run=False)
 
     def test_fails_closed_on_missing_label(self, mock_gcp_deploy, tmp_path):
         from gcp_runner import provision_and_register_gcp_runners
@@ -361,8 +363,9 @@ class TestProvisionAndRegister:
         )
         mock_gcp_deploy.run_cmd_secret_stdin.return_value = 0
 
+        cfg = _cfg()
         with pytest.raises(SystemExit):
-            provision_and_register_gcp_runners(_cfg(), dry_run=False)
+            provision_and_register_gcp_runners(cfg, dry_run=False)
 
     def test_no_targets_exits(self, mock_gcp_deploy, tmp_path):
         from gcp_runner import provision_and_register_gcp_runners
@@ -379,8 +382,9 @@ class TestProvisionAndRegister:
 
         mock_gcp_deploy.run_cmd.side_effect = _no_targets
 
+        cfg = _cfg()
         with pytest.raises(SystemExit):
-            provision_and_register_gcp_runners(_cfg(), dry_run=False)
+            provision_and_register_gcp_runners(cfg, dry_run=False)
 
 
 class TestPrerequisites:
@@ -399,8 +403,9 @@ class TestPrerequisites:
 
         mock_gcp_deploy.run_cmd.side_effect = _gh_unauthed
 
+        cfg = _cfg()
         with pytest.raises(SystemExit):
-            provision_and_register_gcp_runners(_cfg(), dry_run=False)
+            provision_and_register_gcp_runners(cfg, dry_run=False)
         # Must fail before Terraform mutation or any registration handoff.
         mock_gcp_deploy.run_cmd_secret_stdin.assert_not_called()
         all_args = [a for call in mock_gcp_deploy.run_cmd.call_args_list for a in call[0][0]]
@@ -419,8 +424,9 @@ class TestPrerequisites:
 
         mock_gcp_deploy.run_cmd.side_effect = _no_adc
 
+        cfg = _cfg()
         with pytest.raises(SystemExit):
-            provision_and_register_gcp_runners(_cfg(), dry_run=False)
+            provision_and_register_gcp_runners(cfg, dry_run=False)
 
 
 class TestWaitForRunnerSsh:
@@ -433,5 +439,6 @@ class TestWaitForRunnerSsh:
         monkeypatch.setattr(gcp_runner.time, "sleep", lambda *_: None)
         mock_gcp_deploy.run_cmd.return_value = MagicMock(returncode=255, stdout="")
 
+        target_2 = _target()
         with pytest.raises(SystemExit):
-            gcp_runner.wait_for_runner_ssh(_target())
+            gcp_runner.wait_for_runner_ssh(target_2)
