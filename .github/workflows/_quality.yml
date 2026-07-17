@@ -265,15 +265,6 @@ jobs:
         uses: terraform-linters/setup-tflint@6e87008f9dd1fe3e34e66aca6c97b4a69f72a7f4 # v4
 
       - name: Init TFLint
-        # Authenticate the ruleset-plugin fetch. `tflint --init` calls the
-        # GitHub API for plugin release metadata; unauthenticated, it uses the
-        # 60/hr shared per-IP limit, which on shared runners is exhausted by
-        # other tenants. The throttled response is mishandled by tflint (nil
-        # panic in VerifyAttestations) and reddens terraform-lint repo-wide.
-        # Passing GITHUB_TOKEN moves the call to the per-token rate limit.
-        # Issue #1691; see tflint docs "Avoiding rate limiting".
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: tflint --init --config "${GITHUB_WORKSPACE}/.tflint.hcl"
 
       - name: Run TFLint
