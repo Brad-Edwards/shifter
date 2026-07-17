@@ -138,6 +138,11 @@
       "source_file": "config/_ctf_regex_settings.py"
     },
     {
+      "default": "False",
+      "name": "CTF_WORKSPACE_SPA_ENABLED",
+      "source_file": "config/settings.py"
+    },
+    {
       "default": null,
       "name": "DB_HOST",
       "source_file": "config/_database_settings.py"
