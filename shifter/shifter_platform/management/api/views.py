@@ -10,8 +10,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from drf_spectacular.utils import extend_schema
+from drf_spectacular.utils import extend_schema, extend_schema_view
 from rest_framework.authentication import SessionAuthentication
+from rest_framework.exceptions import NotFound
 from rest_framework.generics import ListAPIView, RetrieveAPIView
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -53,20 +54,27 @@ def _audit_context(request: Request) -> services.AuditContext:
     )
 
 
+def _require_user(pk: int) -> User:
+    """Resolve the target user for an Administer command, or raise a 404."""
+    user = services.get_admin_user(pk)
+    if user is None:
+        raise NotFound("User not found.")
+    return user
+
+
+@extend_schema_view(
+    get=extend_schema(
+        parameters=[AdminUserListQuerySerializer],
+        responses=AdminUserListItemSerializer(many=True),
+        operation_id="api_v1_administer_users_list",
+    )
+)
 class AdminUserListView(ListAPIView):
     """Paginated, filterable, read-only user list. Requires ``auth.view_user``."""
 
     authentication_classes = _ADMINISTER_AUTHENTICATION
     permission_classes = [IsStaffSession, require_model_permission("auth.view_user")]
     serializer_class = AdminUserListItemSerializer
-
-    @extend_schema(
-        parameters=[AdminUserListQuerySerializer],
-        responses=AdminUserListItemSerializer(many=True),
-        operation_id="api_v1_administer_users_list",
-    )
-    def get(self, request: Request, *args: object, **kwargs: object) -> Response:
-        return super().get(request, *args, **kwargs)
 
     def get_queryset(self) -> QuerySet[User]:
         query = AdminUserListQuerySerializer(data=self.request.query_params)
@@ -81,16 +89,15 @@ class AdminUserListView(ListAPIView):
         )
 
 
+@extend_schema_view(
+    get=extend_schema(responses=AdminUserDetailSerializer, operation_id="api_v1_administer_users_retrieve")
+)
 class AdminUserDetailView(RetrieveAPIView):
     """Read-only user detail. Includes soft-deleted accounts. ``auth.view_user``."""
 
     authentication_classes = _ADMINISTER_AUTHENTICATION
     permission_classes = [IsStaffSession, require_model_permission("auth.view_user")]
     serializer_class = AdminUserDetailSerializer
-
-    @extend_schema(responses=AdminUserDetailSerializer, operation_id="api_v1_administer_users_retrieve")
-    def get(self, request: Request, *args: object, **kwargs: object) -> Response:
-        return super().get(request, *args, **kwargs)
 
     def get_queryset(self) -> QuerySet[User]:
         return admin_services.list_admin_users(include_deleted=True)
@@ -108,9 +115,7 @@ class AdminUserSetActiveView(APIView):
         operation_id="api_v1_administer_users_set_active",
     )
     def post(self, request: Request, pk: int) -> Response:
-        user = services.get_admin_user(pk)
-        if user is None:
-            return api_error_response(code="not_found", message="User not found.", status_code=404, request=request)
+        user = _require_user(pk)
 
         serializer = SetActiveRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -146,9 +151,7 @@ class AdminUserDeleteView(APIView):
         operation_id="api_v1_administer_users_soft_delete",
     )
     def post(self, request: Request, pk: int) -> Response:
-        user = services.get_admin_user(pk)
-        if user is None:
-            return api_error_response(code="not_found", message="User not found.", status_code=404, request=request)
+        user = _require_user(pk)
 
         if user.pk == request.user.pk:
             return api_error_response(
