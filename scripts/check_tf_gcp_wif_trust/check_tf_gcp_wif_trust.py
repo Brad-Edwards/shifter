@@ -50,6 +50,10 @@ CKV_GCP_125_SKIP_RE = re.compile(r"checkov:skip\s*=\s*CKV_GCP_125")
 # written out literally (Checkov cannot render join()), so the guard compares the
 # `assertion.sub == '<sub>'` clauses against the local.federated_subjects list.
 SUBJECT_EQ_RE = re.compile(r"assertion\.sub\s*==\s*'([^']+)'")
+# The ref gate may be inlined in the condition or factored into a `ref_condition`
+# local (ADR-037-R7). Match the equality FORM, not the bare token, so the
+# attribute_mapping (`"attribute.ref" = "assertion.ref"`) cannot false-pass it.
+REF_EQ_RE = re.compile(r"assertion\.ref\s*==")
 FEDERATED_LIST_RE = re.compile(r"federated_subjects\s*=\s*\[(.*?)\]", re.DOTALL)
 DOUBLE_QUOTED_RE = re.compile(r'"([^"]+)"')
 # The invariant checks scope to the attribute_condition VALUE, not the whole
@@ -109,9 +113,14 @@ def _iter_resource_blocks(
     return blocks
 
 
-def check_provider_condition(path: Path, lines: list[str]) -> list[Violation]:
+def check_provider_condition(
+    path: Path, lines: list[str], text: str
+) -> list[Violation]:
     """WIF provider must pin an exact protected assertion.ref, not repo-only."""
     violations: list[Violation] = []
+    # The ref gate may be factored into a `ref_condition` local (ADR-037-R7), so
+    # its `assertion.ref ==` equality can live outside the provider block.
+    file_has_ref_gate = bool(REF_EQ_RE.search(_strip_hcl_comments(text)))
     for line_no, block in _iter_resource_blocks(lines, PROVIDER_RE):
         raw = "\n".join(block)
         stripped = _strip_hcl_comments(raw)
@@ -152,14 +161,20 @@ def check_provider_condition(path: Path, lines: list[str]) -> list[Violation]:
                     "assertion.repository (ADR-004-R23, #1690)",
                 )
             )
-        if "assertion.ref" not in condition:
+        # The condition must WIRE the ref gate (inline assertion.ref or a
+        # ref_condition local) AND that gate must actually be an assertion.ref ==
+        # equality somewhere in the module (ADR-037-R7). Repository-only
+        # federation is forbidden.
+        wires_ref_gate = "assertion.ref" in condition or "ref_condition" in condition
+        if not (wires_ref_gate and file_has_ref_gate):
             violations.append(
                 Violation(
                     path,
                     line_no,
                     "WIF provider attribute_condition must pin an exact protected "
-                    "assertion.ref; repository-only federation is forbidden "
-                    "(ADR-004-R23, #1690)",
+                    "assertion.ref (inline or via a ref_condition local); "
+                    "repository-only federation is forbidden (ADR-004-R23, "
+                    "ADR-037-R7)",
                 )
             )
         # Checkov CKV_GCP_125 and the exact-subject intent both require a literal
@@ -258,7 +273,7 @@ def check_file(path: Path) -> list[Violation]:
         return []
     text = path.read_text(encoding="utf-8")
     lines = text.splitlines()
-    violations = check_provider_condition(path, lines)
+    violations = check_provider_condition(path, lines, text)
     violations.extend(check_sa_wif_members(path, lines, text))
     violations.extend(check_subject_consistency(path, text))
     return violations

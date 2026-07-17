@@ -23,10 +23,11 @@ locals {
     for sub in local.federated_subjects :
     sub => "principal://iam.googleapis.com/pool/subject/${sub}"
   }
+  ref_condition = join(" || ", [for r in var.allowed_workflow_refs : "assertion.ref == '${r}'"])
 }
 
 resource "google_iam_workload_identity_pool_provider" "github" {
-  attribute_condition = "assertion.repository == 'Brad-Edwards/shifter' && assertion.ref in ['refs/heads/dev', 'refs/heads/main'] && (assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-dev' || assertion.sub == 'repo:Brad-Edwards/shifter:ref:refs/heads/dev')"
+  attribute_condition = "assertion.repository == 'Brad-Edwards/shifter' && (${local.ref_condition}) && (assertion.sub == 'repo:Brad-Edwards/shifter:environment:gcp-dev' || assertion.sub == 'repo:Brad-Edwards/shifter:ref:refs/heads/dev')"
 }
 
 resource "google_service_account_iam_member" "packer_build_wif" {
