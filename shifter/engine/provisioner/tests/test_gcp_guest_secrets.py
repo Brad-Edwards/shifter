@@ -8,6 +8,25 @@ import pytest
 import gcp_guest_secrets
 
 
+def test_participant_ssh_secret_is_distinct_from_host_management_secret(monkeypatch):
+    secret_ids: list[str] = []
+
+    def read_or_create(secret_id, _payload_factory):
+        secret_ids.append(secret_id)
+        return f"projects/p/secrets/{secret_id}", "PRIVATE"
+
+    monkeypatch.setattr(gcp_guest_secrets, "_read_or_create_secret", read_or_create)
+    monkeypatch.setattr(gcp_guest_secrets, "derive_ssh_public_key", lambda private: f"public:{private}")
+    instance = {"uuid": "member-a"}
+
+    host_ref, _ = gcp_guest_secrets.ensure_ssh_secret(7, instance)
+    participant_ref, _ = gcp_guest_secrets.ensure_participant_ssh_secret(7, instance)
+
+    assert host_ref != participant_ref
+    assert secret_ids[0].endswith("-ssh")
+    assert secret_ids[1].endswith("-participant-ssh")
+
+
 @pytest.mark.parametrize(("strength", "expected_length"), [("weak", 12), ("medium", 18), ("strong", 24)])
 def test_aces_account_password_strength_drives_generation(monkeypatch, strength: str, expected_length: int):
     generated_lengths: list[int] = []

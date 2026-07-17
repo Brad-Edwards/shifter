@@ -24,6 +24,8 @@ from pathlib import Path
 from typing import Any
 
 from cloud import get_object_storage
+from cloud.exceptions import CloudProviderNotImplementedError
+from config import resolve_cloud_provider
 
 logger = logging.getLogger(__name__)
 
@@ -98,7 +100,7 @@ class TerraformBackendConfig:
 
 
 def _get_provider() -> str:
-    return os.environ.get("CLOUD_PROVIDER", "aws")
+    return resolve_cloud_provider()
 
 
 def _parse_backend_url(bucket_url: str) -> tuple[str, str]:
@@ -120,7 +122,12 @@ def get_backend_type() -> str:
         backend_type, _ = _parse_backend_url(bucket_url)
         return backend_type
 
-    return _GCP_BACKEND if _get_provider() == "gcp" else _AWS_BACKEND
+    provider = _get_provider()
+    if provider == "gcp":
+        return _GCP_BACKEND
+    if provider == "aws":
+        return _AWS_BACKEND
+    raise CloudProviderNotImplementedError(provider)
 
 
 def get_state_bucket() -> str:

@@ -16,6 +16,8 @@ from django.utils import timezone
 from ctf.enums import ParticipantStatus
 from ctf.models import CTFParticipant
 
+from .conftest import TEST_CTF_BOOTSTRAP_PASSWORD
+
 # The team_join error path renders a template that uses {% static %}; force the
 # non-manifest static storage so the render does not require a built manifest.
 _SIMPLE_STORAGES = {
@@ -412,7 +414,7 @@ class TestAPIParticipantList:
             invited_at=timezone.now(),
         )
 
-        url = reverse("ctf:api_participant_list", kwargs={"event_id": ctf_event.id})
+        url = reverse("v1:ctf:api_participant_list", kwargs={"event_id": ctf_event.id})
         response = authenticated_organizer_client.get(url)
 
         assert response.status_code == 200
@@ -423,7 +425,7 @@ class TestAPIParticipantList:
 
     def test_post_creates_participant(self, authenticated_organizer_client, ctf_event):
         """POST creates a new participant."""
-        url = reverse("ctf:api_participant_list", kwargs={"event_id": ctf_event.id})
+        url = reverse("v1:ctf:api_participant_list", kwargs={"event_id": ctf_event.id})
 
         import json
 
@@ -447,7 +449,7 @@ class TestAPIParticipantDetail:
     def test_get_returns_participant_json(self, authenticated_organizer_client, ctf_participant):
         """GET returns participant details as JSON."""
         url = reverse(
-            "ctf:api_participant_detail",
+            "v1:ctf:api_participant_detail",
             kwargs={"participant_id": ctf_participant.id},
         )
         response = authenticated_organizer_client.get(url)
@@ -468,7 +470,7 @@ class TestAPIParticipantDetail:
         )
 
         url = reverse(
-            "ctf:api_participant_detail",
+            "v1:ctf:api_participant_detail",
             kwargs={"participant_id": participant.id},
         )
         response = authenticated_organizer_client.delete(url)
@@ -486,7 +488,7 @@ class TestAPIParticipantImport:
 
     def test_imports_from_json_array(self, authenticated_organizer_client, ctf_event):
         """POST imports participants from JSON array."""
-        url = reverse("ctf:api_participant_import", kwargs={"event_id": ctf_event.id})
+        url = reverse("v1:ctf:api_participant_import", kwargs={"event_id": ctf_event.id})
 
         import json
 
@@ -513,7 +515,7 @@ class TestAPIParticipantImport:
 
     def test_non_object_elements_are_per_item_errors_not_500(self, authenticated_organizer_client, ctf_event):
         """#1149: non-object array elements yield per-item errors, never a 500."""
-        url = reverse("ctf:api_participant_import", kwargs={"event_id": ctf_event.id})
+        url = reverse("v1:ctf:api_participant_import", kwargs={"event_id": ctf_event.id})
 
         import json
 
@@ -548,14 +550,14 @@ class TestAPIParticipantResendInvite:
         participant.user.save(update_fields=["password"])
 
         url = reverse(
-            "ctf:api_participant_resend_invite",
+            "v1:ctf:api_participant_resend_invite",
             kwargs={"participant_id": participant.id},
         )
         response = authenticated_organizer_client.post(url)
 
         assert response.status_code == 200
         participant.user.refresh_from_db()
-        assert participant.user.check_password("ShifterAcesRanges")
+        assert participant.user.check_password(TEST_CTF_BOOTSTRAP_PASSWORD)
 
     def test_resend_works_for_registered_participant(self, authenticated_organizer_client, ctf_event, monkeypatch):
         """Reset works for an already registered isolated account."""
@@ -567,7 +569,7 @@ class TestAPIParticipantResendInvite:
         participant.user.set_password("PreviouslyChangedPassword-42")
         participant.user.save(update_fields=["password"])
         url = reverse(
-            "ctf:api_participant_resend_invite",
+            "v1:ctf:api_participant_resend_invite",
             kwargs={"participant_id": participant.id},
         )
         response = authenticated_organizer_client.post(url)
@@ -576,7 +578,7 @@ class TestAPIParticipantResendInvite:
         data = response.json()
         assert data["success"] is True
         participant.user.refresh_from_db()
-        assert participant.user.check_password("ShifterAcesRanges")
+        assert participant.user.check_password(TEST_CTF_BOOTSTRAP_PASSWORD)
         assert participant.user.profile.must_change_password is True
 
 

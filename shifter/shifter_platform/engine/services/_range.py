@@ -8,10 +8,12 @@ from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 from shared.enums import CANCELLABLE_STATUSES, ResourceStatus
+from shared.range_cells import build_scenario_artifact
 from shared.schemas import RangeRef, RangeSpec, RequestSpec
 from shared.schemas.persistence import wrap_persisted_spec
 
 from ._common import EngineError, _resolve_instance_host
+from ._range_backend_binding import backend_binding_fields, verify_existing_binding
 
 if TYPE_CHECKING:
     from contextlib import AbstractContextManager as ContextManager
@@ -19,6 +21,7 @@ if TYPE_CHECKING:
     from django.contrib.auth.models import User
 
     from engine.models import Range
+    from shared.range_instantiation_policy import BackendAdmission
 
 logger = logging.getLogger(__name__)
 
@@ -56,11 +59,17 @@ def _atomic() -> ContextManager[None]:
     return _es.transaction.atomic()
 
 
-def create_range(request_spec: RequestSpec) -> RangeRef:
+def create_range(request_spec: RequestSpec, *, backend_admission: BackendAdmission | None = None) -> RangeRef:
     """Provision infrastructure for range.
 
     Interprets the RequestSpec into Engine models (Request, Instance),
     creates a Range record for backward compat, and triggers ECS provisioning.
+
+    ``backend_admission`` is the trusted #1348 CMS admission result, carried
+    beside (never inside) the RequestSpec. When present (GCP), the normalized
+    (backend, purpose) is persisted as the write-once #1666 ownership binding in
+    the same transaction as the Range, before dispatch, so destroy/reconcile
+    route from it instead of the mutable process selector. ``None`` on non-GCP.
     """
     from django.contrib.auth import get_user_model
 
@@ -91,9 +100,10 @@ def create_range(request_spec: RequestSpec) -> RangeRef:
     existing_range = Range.objects.filter(request__request_id=request_spec.request_id).first()
     if existing_range is not None:
         logger.info("create_range: reusing existing range request_id=%s", request_spec.request_id)
+        verify_existing_binding(existing_range, request_spec.request_id, backend_admission)
         return _range_ref_from_range(existing_range, request_spec, range_spec)
 
-    range_obj = _persist_range_atomically(request_spec, range_spec, user_model, Range)
+    range_obj = _persist_range_atomically(request_spec, range_spec, user_model, Range, backend_admission)
 
     try:
         task_arn = start_range_provisioning(request_spec.request_id)
@@ -114,10 +124,18 @@ def _persist_range_atomically(
     range_spec: RangeSpec,
     user_model: type[User],
     range_model: type[Range],
+    backend_admission: BackendAdmission | None = None,
 ) -> Range:
-    """Run the interpret + Range + Subnet inserts under a single transaction."""
+    """Run the interpret + Range + Subnet inserts under a single transaction.
+
+    The #1666 backend/purpose ownership binding (when present) is written on the
+    Range in this same transaction, before any launch dispatch, so it is durable
+    ownership from the instant the range exists.
+    """
     from engine.interpreter import interpret
     from engine.models import Subnet
+
+    binding_fields = backend_binding_fields(backend_admission)
 
     with _atomic():
         request = interpret(request_spec)
@@ -125,6 +143,7 @@ def _persist_range_atomically(
 
         user = user_model.objects.get(id=range_spec.user_id)
         subnet_index = range_model.allocate_subnet_index()
+        range_artifact = build_scenario_artifact(wrap_persisted_spec("range_spec", range_spec))
 
         range_uuid = range_spec.uuid
         if range_uuid:
@@ -137,7 +156,8 @@ def _persist_range_atomically(
                 cms_user_id=range_spec.user_id,
                 status=range_model.Status.PROVISIONING,
                 subnet_index=subnet_index,
-                range_config=wrap_persisted_spec("range_spec", range_spec),
+                range_config=range_artifact,
+                **binding_fields,
             )
         else:
             range_obj = range_model.objects.create(
@@ -146,7 +166,8 @@ def _persist_range_atomically(
                 cms_user_id=range_spec.user_id,
                 status=range_model.Status.PROVISIONING,
                 subnet_index=subnet_index,
-                range_config=wrap_persisted_spec("range_spec", range_spec),
+                range_config=range_artifact,
+                **binding_fields,
             )
 
         logger.info(

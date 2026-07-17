@@ -12,9 +12,38 @@ import logging
 import os
 from typing import Any
 
+from django.conf import settings
+
+# Re-exported (see ``__all__``): historical import path for callers and tests
+# that reference the realized-instance projection helpers at
+# ``engine.services._common`` (#685). The implementation lives in the
+# dependency-neutral ``engine._range_state`` so the model compatibility
+# wrappers on ``engine.models.Range`` can consume the same pure functions
+# without importing a private ``engine.services`` submodule (that would make
+# the model depend upward on the service layer, which already depends on the
+# model).
+from engine._range_state import (
+    attacker_instance,
+    attacker_private_ip,
+    find_instance_by_role,
+    find_instance_by_uuid,
+    first_victim_private_ip,
+    victim_instances,
+)
 from engine.secrets import SecretsError
 
 logger = logging.getLogger(__name__)
+
+__all__ = [
+    "EngineError",
+    "SecretsError",
+    "attacker_instance",
+    "attacker_private_ip",
+    "find_instance_by_role",
+    "find_instance_by_uuid",
+    "first_victim_private_ip",
+    "victim_instances",
+]
 
 
 def _get_rdp_password(secret_ref: str) -> str:
@@ -179,8 +208,11 @@ def _resolve_dc_password(instance: dict[str, Any]) -> str | None:
     is intentional only for the DC host itself; non-DC guests use
     per-instance secret references.
     """
+    # The portal's own backend is the validated composition-root selection
+    # (PLAT-2005), not an ad-hoc env read; the persisted instance value keeps its
+    # historical "aws" compatibility default.
     instance_provider = _first_connection_value(instance.get("cloud_provider")).lower() or "aws"
-    portal_provider = os.environ.get("CLOUD_PROVIDER", "aws").lower()
+    portal_provider = settings.CLOUD_PROVIDER
     if instance_provider != portal_provider:
         return None
     return os.environ.get("DC_DOMAIN_PASSWORD")

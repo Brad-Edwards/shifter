@@ -375,15 +375,21 @@ class EffectivePermissionMatrixTest(unittest.TestCase):
         self.assertEqual(
             {workload: roles for workload, roles in self.bucket_roles.items()},
             {
-                "portal": {"roles/storage.objectAdmin"},
+                # portal: objectAdmin on the assets bucket, and read-only
+                # objectViewer on the optional object-backed ACES package bucket
+                # (#1567, gated on aces_package_bucket_name).
+                "portal": {"roles/storage.objectAdmin", "roles/storage.objectViewer"},
                 "workers": {"roles/storage.objectViewer"},
                 "provisioner": {"roles/storage.objectViewer", "roles/storage.objectAdmin"},
             },
         )
         self.assertNotIn("ctf-scheduler", self.bucket_roles)
 
-    def test_named_secret_readers_are_portal_workers_scheduler(self) -> None:
-        self.assertEqual(self.secret_readers, {"portal", "workers", "ctf-scheduler"})
+    def test_named_secret_readers_include_the_launch_worker(self) -> None:
+        self.assertEqual(
+            self.secret_readers,
+            {"portal", "workers", "ctf-scheduler", "provisioner-launcher"},
+        )
         self.assertNotIn("provisioner", self.secret_readers)
 
     def test_named_secret_reader_binding_uses_accessor_not_admin(self) -> None:

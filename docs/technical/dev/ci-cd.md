@@ -15,26 +15,27 @@ which coordinates:
 
 ## Trigger Rules
 
+Environment deploys are **manual**: run the Deploy workflow and pick the
+`environment` input. Push and pull_request run validation only; no branch name
+triggers a deploy (#730).
+
 | Event | What Runs |
 |-------|-----------|
-| PR to `dev` / `main` | Quality only; no deploy or Terraform plan jobs |
-| PR to `aws-dev` | Quality + AWS plan (no apply) |
-| PR to `gcp-dev` | Quality + GCP validate (no apply) |
-| Push to `dev` | Quality only; no deploy or Terraform plan jobs |
-| Push to `aws-dev` | Quality + AWS deploy to dev |
-| Push to `gcp-dev` | Fast GCP validation + GCP deploy |
-| Push to `main` | Code branch update only; no deploy or Terraform plan jobs |
-| Manual dispatch on `main` | AWS prod deploy |
+| Pull request | Quality only; no deploy |
+| Push to `dev` / `main` | Quality only; no deploy |
+| Manual dispatch, `environment: aws-dev` | Quality, then AWS dev deploy |
+| Manual dispatch, `environment: aws-proof` | Quality, then AWS proof deploy |
+| Manual dispatch, `environment: gcp-dev` | Quality, then GCP dev deploy |
 
-Deployment-branch PRs get Terraform plan comments. `dev` is the integration
-branch for Quality only. Dev deployments happen only from `aws-dev` and
-`gcp-dev`.
+Run a deploy from the Actions UI (**Deploy → Run workflow**, pick the branch to
+deploy and the `environment`) or the CLI:
 
-`gcp-dev` pushes skip the global quality fan-out. The fast path still runs the
-provider-local guardrails in `_gcp-dev.yml`: Terraform fmt/init/validate plus
-rendered-manifest schema validation before deploy. Broad lint/test/security
-coverage runs on PRs and `dev`; production deployment is a deliberate manual
-dispatch from `main`.
+```
+gh workflow run deploy.yml --ref <branch> -f environment=aws-dev
+```
+
+The branch you run it from is the code that deploys; the `environment` input
+picks where it goes. `dev` is the integration branch (Quality only).
 
 ## Workflow Files
 
@@ -85,18 +86,18 @@ The orchestrator uses path filters to run only relevant jobs:
 | `shifter_engine` | Shifter Engine code, ECR module |
 | `shifter_platform` | Portal/Guacamole Terraform and platform deploy workflow |
 | `quality_relevant` | Any non-docs change, plus guardrail docs; controls whether Quality runs without launching deploy or Terraform plan jobs |
-| `portal_image` | Portal image build inputs (`shifter/shifter_platform/**`, `cyberscript`, `installation`, `.dockerignore`); triggers the portal image build/deploy on environment branches without running Terraform |
+| `portal_image` | Portal image build inputs (`shifter/shifter_platform/**`, `cyberscript`, `installation`, `.dockerignore`); triggers the portal image build/deploy on a deploy dispatch without running Terraform |
 | `gcp` | GCP Terraform, GCP Kubernetes assets, GCP scripts, GCP cloud adapters |
 | `mcp` | MCP package changes, routed to Quality only |
 | `quality_only` | Non-deploy test-support and guardrail surfaces (`scripts/polaris-aws-range/**`, `scenario-dev/polaris/tests/**`, `_quality.yml`, ADR/guardrail checker paths), routed to Quality only |
 
 ## Quality Gate
 
-Runs on every PR and direct push to `dev` unless the diff is ordinary
-docs-only. Guardrail docs such as `.github/pull_request_template.md`,
+Runs on every PR, direct push to `dev`/`main`, and every manual deploy dispatch
+(the safety gate before an apply) unless the diff is ordinary docs-only.
+Guardrail docs such as `.github/pull_request_template.md`,
 `.github/copilot-instructions.md`, `docs/adr/**`, and the ADR enforcement
-guide are quality-relevant and still run Quality. Manual dispatch is a
-deliberate full-validation path, except for the existing fast GCP deploy route.
+guide are quality-relevant and still run Quality.
 
 The deploy workflow exposes one `quality_relevant` output for this decision:
 non-docs changes make it true, ordinary docs-only changes make it false, and
@@ -105,9 +106,8 @@ a skipped Quality job only when `quality_relevant` is false.
 
 The Shifter Engine reusable workflow has an additional blocking provisioner
 pytest gate before local Docker validation, credentialed image build, and ECS
-deploy. This keeps deploy-triggering AWS branch runs from building or deploying
-the provisioner image when the top-level Quality job is legitimately skipped
-because the SHA was already validated on `dev`.
+deploy. This keeps a deploy dispatch from building or deploying the provisioner
+image when the top-level Quality job is legitimately skipped.
 
 - **ADR conformance**: `python3 scripts/adr_guard/adr_guard.py --all --level ci`
   Includes `adr-registry`, `layer-imports`, `cross-layer-model-imports`, and
@@ -231,6 +231,16 @@ previous):
 **Auto Scaling mode** refreshes `{env}-portal-asg` and verifies the new digest
 and worker health on every in-service instance.
 
+**Refresh scope and timing (issue #1639).** The ASG instance refresh runs only when the
+portal actually changed (the portal image or platform Terraform). An engine-provisioner-only
+deploy no longer triggers a full portal refresh. Refresh readiness tracks the ALB target
+group (`health_check_type = "ELB"`), so a refresh converges once the portal is actually
+serving instead of waiting out the EC2 "insufficient data to evaluate its health" window.
+The ASG timing is environment-owned Terraform (`health_check_type`,
+`health_check_grace_period`, and `instance_refresh_instance_warmup` on the portal root),
+so a dev or proof tenant can shorten the health-grace to speed up the deploy, test, fix
+loop without changing prod.
+
 ### First-run DNS timing
 
 On a fresh account the first Portal apply blocks while AWS validates ACM
@@ -244,41 +254,38 @@ under the first-run DNS validation and routing sections.
 ## Environment Detection
 
 ```
-Branch/Target     → Behavior
-PR to dev         → Quality only
-PR to aws-dev     → AWS dev plan
-PR to gcp-dev     → GCP validate
-PR to main        → Quality only
-Push to dev       → Quality only
-Push to aws-dev   → AWS dev deploy
-Push to gcp-dev   → Fast GCP validate + GCP deploy
-Push to main      → no deploy
-Dispatch on main  → AWS prod deploy
+Event / input                  → Behavior
+Pull request                   → Quality only
+Push to dev / main             → Quality only
+dispatch environment=aws-dev   → AWS dev deploy
+dispatch environment=aws-proof → AWS proof deploy
+dispatch environment=gcp-dev   → GCP dev deploy
 ```
 
 ## Provider Routing
 
-`deploy.yml` resolves branch intent explicitly:
-
-- `dev` is the shared integration branch. It runs the quality gate for shared code changes, but it must not plan/apply infrastructure or deploy workloads.
-- `aws-dev` is the only branch that deploys the AWS dev environment.
-- `gcp-dev` is the only branch that deploys the GCP dev environment, and it uses the narrow GCP fast path on branch pushes.
-- `main` is the production code branch; production deploys run only through deliberate `workflow_dispatch`.
-- Shared Shifter application changes run Quality on `dev`; provider-specific deployment validation runs on the deployment branches before apply.
+- `dev`/`main` are integration branches: they run the quality gate but never plan/apply infrastructure or deploy workloads.
+- A deploy is a manual `workflow_dispatch` that names the `environment`; the branch you run it from is the code that deploys. No branch name selects the target.
 - The GCP control plane is deployed through the Helm chart in `platform/charts/shifter`, with generated values layered on top of environment defaults.
 - The GCP portal auth contract is FirebaseUI/browser-side Identity Platform auth plus server-side verified-token exchange. Do not add Django credential handling to recreate Cognito semantics.
 - Multi-cloud work enters through the shared cloud adapter layers rather than provider-specific calls in domain services.
 
-## Manual Deploy Bootstrap Inputs
+## Manual Deploy Inputs
 
-`deploy.yml` exposes `workflow_dispatch` inputs for rare first-time-bootstrap deploys. They are strict by default and only take effect on a manual dispatch; automatic (push) deploys always fail closed.
+`deploy.yml` runs on `workflow_dispatch`. The `environment` input selects the deployment target; the bootstrap flags are strict by default.
 
+- `environment`: which environment to deploy: `aws-dev`, `aws-proof`, or `gcp-dev`. A closed choice enum. The branch you run the workflow from is the code that deploys.
 - `aws_first_deploy` (default `false`): allow the AWS engine deploy to skip the ECS task-family existence check. Set `true` only for the first-ever deploy to a fresh AWS environment, before the platform Terraform apply has created the provisioner task definition. On any normal deploy a missing or typo'd task family fails the run instead of skipping silently. Clear it (re-run without the flag) once the platform stack has been applied.
 - `gcp_require_active_certificate` (default `true`): require the GKE ManagedCertificate to be Active for the public hostname. Set `false` only for first-time GCP bootstrap, before DNS for the hostname has been pointed at the ingress IP.
 
-## Self-Hosted Runner
+## Runner Policy
 
-All workflows run on `self-hosted` runners (not GitHub-hosted). The runner has:
+Workflows choose one runner class per job. Portable quality jobs run on
+`ubuntu-latest`; trusted deployment, image-build, Packer, and
+environment-mutating jobs run on `self-hosted` runners. GitHub Actions does not
+provide native fallback between those runner classes.
+
+The self-hosted runner has:
 
 - AWS CLI configured
 - gcloud SDK support for GCP workflows
@@ -302,7 +309,7 @@ Terraform plans are also posted as PR comments.
 - Check branch protection rules
 - Verify path filters match your changes
 - Look for `paths-filter` in deploy.yml
-- Confirm you are pushing to the right branch for the intended behavior: `dev` runs Quality only, `aws-dev` deploys AWS dev, `gcp-dev` deploys GCP dev, and prod deploys require manual dispatch on `main`
+- A deploy is a manual dispatch: `gh workflow run deploy.yml --ref <branch> -f environment=<aws-dev|aws-proof|gcp-dev>`. Pushes and PRs run validation only; no branch push deploys.
 
 ### Terraform Plan Fails
 - Check for formatting issues: `terraform fmt -recursive`

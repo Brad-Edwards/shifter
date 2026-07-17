@@ -241,8 +241,6 @@ spec:
         {{- end }}
       ports:
         - protocol: TCP
-          port: 443
-        - protocol: TCP
           port: 5432
         - protocol: TCP
           # Plaintext Redis (AWS ElastiCache + pre-#963 GCP Memorystore).
@@ -254,5 +252,30 @@ spec:
           # able to reach it on egress or channels_redis cannot negotiate
           # TLS to the Memorystore instance.
           port: 6378
+{{- end }}
+{{- if .Values.networkPolicy.kubernetesApiCidrs }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-provisioner-launcher-kubernetes-api-egress
+  namespace: {{ .Values.namespaces.platform }}
+  labels:
+    {{- include "shifter.partOfLabels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: worker-provisioner-launcher
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        {{- range .Values.networkPolicy.kubernetesApiCidrs }}
+        - ipBlock:
+            cidr: {{ . | quote }}
+        {{- end }}
+      ports:
+        - protocol: TCP
+          port: 443
 {{- end }}
 {{- end }}

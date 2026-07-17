@@ -122,17 +122,27 @@ class TestCatchAllExcludesRemovedLegacySurfaces:
             resolve("/mission-control/files/")
 
 
-def test_legacy_action_and_json_api_routes_stay_django():
-    """The SPA uses the canonical /api/v1/ routes exclusively; these legacy
-    Django POST-action and JSON-API paths keep serving their real views
+def test_legacy_delete_action_stays_django():
+    """The remaining legacy POST-action path keeps serving its real Django view
     regardless of the SPA flags (never wrapped by ``_page``)."""
     assert resolve("/mission-control/agents/5/delete/").func is views.delete_agent
-    assert resolve("/mission-control/api/range/").func is views.get_range
-    assert resolve("/mission-control/api/range/launch/").func is views.launch_range
-    assert resolve("/mission-control/api/agents/").func is views.list_agents
-    assert resolve("/mission-control/api/scenarios/").func is views.list_scenarios
-    assert resolve("/mission-control/api/upload/initiate/").func is views.initiate_upload
-    assert resolve("/mission-control/api/guacamole/rdp-url/").func is views.guacamole_rdp_url
-    assert resolve("/mission-control/api/ngfw/").func is views.api_ngfw_create
-    assert resolve("/mission-control/api/ngfw/list/").func is views.api_ngfw_list
-    assert resolve("/mission-control/api/credentials/").func is views.api_credential_create
+
+
+def test_legacy_json_api_routes_are_retired():
+    """The legacy ``/mission-control/api/*`` JSON API was retired (#1328); the SPA
+    and all callers use the canonical ``/api/v1/mission-control/`` DRF routes. The
+    paths are unroutable at the URLconf level (excluded from the client-router
+    catch-all), not merely 404-at-runtime."""
+    for legacy_path in (
+        "/mission-control/api/range/",
+        "/mission-control/api/range/launch/",
+        "/mission-control/api/agents/",
+        "/mission-control/api/scenarios/",
+        "/mission-control/api/upload/initiate/",
+        "/mission-control/api/guacamole/rdp-url/",
+        "/mission-control/api/ngfw/",
+        "/mission-control/api/ngfw/list/",
+        "/mission-control/api/credentials/",
+    ):
+        with pytest.raises(Resolver404):
+            resolve(legacy_path)

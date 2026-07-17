@@ -29,6 +29,11 @@ __all__ = [
     "ACES_OPERATION_RECORD_PRUNE_BATCH_SIZE",
     "ACES_OPERATION_RECORD_PRUNE_INTERVAL_SECONDS",
     "ACES_OPERATION_RECORD_RETENTION_DAYS",
+    "ACES_PACKAGE_BUCKET",
+    "ACES_PACKAGE_MAX_ARCHIVE_BYTES",
+    "ACES_PACKAGE_MAX_ENTRIES",
+    "ACES_PACKAGE_MAX_UNCOMPRESSED_BYTES",
+    "ACES_PACKAGE_PREFIX",
     "ACES_PACKAGE_ROOT",
 ]
 
@@ -42,9 +47,11 @@ __all__ = [
 # form so the generated config/env-manifest.json picks it up automatically.
 ACES_NATIVE_PROVISIONING_ENABLED = os.environ.get("SHIFTER_ACES_NATIVE_PROVISIONING", "False").lower() == "true"
 
-# Filesystem root under which an ACES package_ref is resolved to its SDL entry
-# file by the native launch loader (#1479). Repo-relative package refs are joined
-# to this root with containment enforcement (no traversal escape). Defaults to
+# Filesystem root under which an ACES package_ref is resolved to its pack root by
+# registration and the native launch loader (#1479, #1578). Repo-relative pack
+# roots are joined to this setting with containment enforcement; launch verifies
+# their canonical content digest before selecting the single direct SDL entry.
+# Defaults to
 # the repo root so in-repo scenario packages (e.g. scenario-dev/...) resolve out
 # of the box; override per environment when packages live elsewhere. Read via the
 # literal os.environ.get form so config/env-manifest.json picks it up.
@@ -57,6 +64,25 @@ ACES_NATIVE_PROVISIONING_ENABLED = os.environ.get("SHIFTER_ACES_NATIVE_PROVISION
 _aces_settings_parents = Path(__file__).resolve().parents
 _aces_default_package_root = _aces_settings_parents[3] if len(_aces_settings_parents) > 3 else _aces_settings_parents[1]
 ACES_PACKAGE_ROOT = os.environ.get("SHIFTER_ACES_PACKAGE_ROOT", str(_aces_default_package_root))
+
+# Object-storage location for object-backed ACES packages (#1567, ADR-034-R5).
+# An ``object`` source row's ``package_ref`` names a single immutable archive
+# object; the native launch resolver downloads it from this bucket (optionally
+# under a fixed key prefix), safely extracts it into a private temp dir, and
+# verifies its canonical content digest before SDL resolution or dispatch. An
+# empty bucket keeps object-backed packs non-launchable (fail closed) — object
+# launchability requires this to be configured. Read via the literal
+# os.environ.get form so config/env-manifest.json picks it up.
+ACES_PACKAGE_BUCKET = os.environ.get("SHIFTER_ACES_PACKAGE_BUCKET", "")
+ACES_PACKAGE_PREFIX = os.environ.get("SHIFTER_ACES_PACKAGE_PREFIX", "")
+
+# Fail-closed bounds for object-backed package retrieval and extraction (defense
+# in depth against oversized downloads and archive bombs). Non-secret integers;
+# override per environment. Defaults: 256 MiB archive, 1 GiB total uncompressed,
+# 20000 members.
+ACES_PACKAGE_MAX_ARCHIVE_BYTES = int(os.environ.get("SHIFTER_ACES_PACKAGE_MAX_ARCHIVE_BYTES", "268435456"))
+ACES_PACKAGE_MAX_UNCOMPRESSED_BYTES = int(os.environ.get("SHIFTER_ACES_PACKAGE_MAX_UNCOMPRESSED_BYTES", "1073741824"))
+ACES_PACKAGE_MAX_ENTRIES = int(os.environ.get("SHIFTER_ACES_PACKAGE_MAX_ENTRIES", "20000"))
 
 # Days a runtime snapshot / operation-record row is retained before it becomes
 # eligible for pruning. Measured from the row's source_timestamp so idempotent

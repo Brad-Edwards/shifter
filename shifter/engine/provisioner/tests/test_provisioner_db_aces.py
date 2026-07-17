@@ -31,8 +31,9 @@ def _mock_conn(fetchone=_UNSET, fetchall=_UNSET):
 
 
 _PLAN = {"kind": "aces_provisioning_plan", "aces_sdl_version": "0.19.1", "resources": {"node.a": {}}}
-# columns: request_id, range_id, user_id, range_config(plan), subnet_index, status
-_ACES_RANGE_ROW = ("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", 42, 7, _PLAN, 5, "provisioning")
+# columns: request_id, range_id, user_id, range_config(plan), subnet_index, status,
+# range_backend, instantiation_purpose (#1666 ownership binding)
+_ACES_RANGE_ROW = ("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", 42, 7, _PLAN, 5, "provisioning", "gce", "live_fire")
 
 
 class TestGetAcesRangeData:

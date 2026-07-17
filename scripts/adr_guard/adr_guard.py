@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import glob
 import ipaddress
 import json
 import os
@@ -20,9 +21,13 @@ from fnmatch import fnmatch
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-LAYERS = ("shared", "engine", "cms", "management", "mission_control", "ctf")
+# Every first-party Django app is classified (ADR-001, #1523). Held to
+# set-equality with the canonical classification in layer_imports.yaml by the
+# layer-classification-parity check.
+LAYERS = ("shared", "engine", "cms", "management", "mission_control", "ctf", "config", "risk_register")
 IMPORT_PATTERN = re.compile(
-    r"^\s*(?:from|import)\s+((?:shared|engine|cms|management|mission_control|ctf)(?:\.\w+)*)",
+    r"^\s*(?:from|import)\s+"
+    r"((?:shared|engine|cms|management|mission_control|ctf|config|risk_register)(?:\.\w+)*)",
     re.MULTILINE,
 )
 CYBERSCRIPT_IMPORT_PATTERN = re.compile(
@@ -204,10 +209,17 @@ def filter_excepted_violations(violations: list[Violation], exceptions: list[dic
     return filtered
 
 
-def load_allowed_imports(config_path: Path) -> dict[str, list[str]]:
-    """Load the simple layer import policy without external YAML dependencies."""
-    allowed: dict[str, list[str]] = {}
-    current_layer: str | None = None
+def _iter_yaml_section(config_path: Path, section: str) -> "list[tuple[str, list[str]]]":
+    """Parse one top-level ``section:`` of the layer-policy YAML.
+
+    Minimal, dependency-free reader for the two-level shape used by
+    layer_imports.yaml (``section:`` -> ``key:`` -> ``- item`` list). Only the
+    requested top-level section is parsed; other sections are ignored, so the
+    ``classification`` and ``allowed`` blocks never bleed into each other.
+    """
+    result: dict[str, list[str]] = {}
+    current_section: str | None = None
+    current_key: str | None = None
 
     for raw_line in config_path.read_text(encoding="utf-8").splitlines():
         line = raw_line.split("#", 1)[0].rstrip()
@@ -216,18 +228,30 @@ def load_allowed_imports(config_path: Path) -> dict[str, list[str]]:
         stripped = line.strip()
         indent = len(raw_line) - len(raw_line.lstrip(" "))
 
-        if stripped == "allowed:":
+        if indent == 0 and stripped.endswith(":"):
+            current_section = stripped[:-1]
+            current_key = None
             continue
-
+        if current_section != section:
+            continue
         if indent == 2 and stripped.endswith(":"):
-            current_layer = stripped[:-1]
-            allowed[current_layer] = []
+            current_key = stripped[:-1]
+            result[current_key] = []
             continue
+        if current_key is not None and indent >= 4 and stripped.startswith("- "):
+            result[current_key].append(stripped[2:].strip())
 
-        if current_layer and indent >= 4 and stripped.startswith("- "):
-            allowed[current_layer].append(stripped[2:].strip())
+    return list(result.items())
 
-    return allowed
+
+def load_allowed_imports(config_path: Path) -> dict[str, list[str]]:
+    """Load the simple layer import policy without external YAML dependencies."""
+    return dict(_iter_yaml_section(config_path, "allowed"))
+
+
+def load_classification(config_path: Path) -> dict[str, list[str]]:
+    """Load the canonical package classification without external YAML deps."""
+    return dict(_iter_yaml_section(config_path, "classification"))
 
 
 def is_import_allowed(from_layer: str, module_path: str, allowed: dict[str, list[str]]) -> bool:
@@ -594,6 +618,147 @@ def check_cross_layer_model_imports(repo_root: Path, files: list[str] | None) ->
                         f"{from_layer} imports {module}; prefer a service seam or shared contract",
                     )
                 )
+
+    return violations
+
+
+_PLATFORM_REL = "shifter/shifter_platform"
+_SETTINGS_REL = "shifter/shifter_platform/config/settings.py"
+_LAYER_POLICY_REL = "scripts/check_layer_imports/layer_imports.yaml"
+
+
+def _classified_packages(repo_root: Path) -> set[str]:
+    """Return the union of every canonically classified first-party package."""
+    classification = load_classification(repo_root / _LAYER_POLICY_REL)
+    return {pkg for packages in classification.values() for pkg in packages}
+
+
+def _local_appconfig_packages(repo_root: Path) -> set[str]:
+    """Return local packages under shifter_platform whose apps.py defines an AppConfig.
+
+    A tracked local Django app is a top-level package with an ``apps.py`` that
+    subclasses ``AppConfig``. Directories without an AppConfig (e.g. the retired
+    ``documentation`` package, ADR-038) are not tracked apps and are excluded.
+    """
+    platform = repo_root / _PLATFORM_REL
+    found: set[str] = set()
+    for apps_py in platform.glob("*/apps.py"):
+        try:
+            text = apps_py.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        if re.search(r"class\s+\w+\s*\(\s*[\w.]*AppConfig\b", text):
+            found.add(apps_py.parent.name)
+    return found
+
+
+def _parse_installed_apps(settings_text: str) -> tuple[list[str], list[str]]:
+    """Return (resolved app strings, unresolved dynamic reprs) from INSTALLED_APPS.
+
+    Parses the ``INSTALLED_APPS = [...]`` literal plus ``INSTALLED_APPS.append(...)``
+    calls. Any entry that is not a string constant — a dynamic expression, or an
+    ``extend``/``insert`` mutation — is returned as unresolved so the check fails
+    closed rather than silently skipping it.
+    """
+    resolved: list[str] = []
+    unresolved: list[str] = []
+
+    def _collect_sequence(value: ast.expr, dynamic_detail: str) -> None:
+        """Add string-literal elements of a list/tuple; flag anything else."""
+        if isinstance(value, (ast.List, ast.Tuple)):
+            for elt in value.elts:
+                if isinstance(elt, ast.Constant) and isinstance(elt.value, str):
+                    resolved.append(elt.value)
+                else:
+                    unresolved.append("non-literal INSTALLED_APPS entry")
+        else:
+            unresolved.append(dynamic_detail)
+
+    tree = ast.parse(settings_text)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Name) and target.id == "INSTALLED_APPS":
+                    _collect_sequence(node.value, "INSTALLED_APPS not assigned a list/tuple literal")
+        elif isinstance(node, ast.AugAssign):
+            # INSTALLED_APPS += [...] / += SOME_APPS
+            target = node.target
+            if isinstance(target, ast.Name) and target.id == "INSTALLED_APPS" and isinstance(node.op, ast.Add):
+                _collect_sequence(node.value, "unresolvable INSTALLED_APPS += mutation")
+        elif isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+            func = node.func
+            if isinstance(func.value, ast.Name) and func.value.id == "INSTALLED_APPS":
+                if func.attr == "append":
+                    arg = node.args[0] if node.args else None
+                    if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+                        resolved.append(arg.value)
+                    else:
+                        unresolved.append("non-literal INSTALLED_APPS.append() argument")
+                elif func.attr in {"extend", "insert", "__iadd__", "__add__"}:
+                    unresolved.append(f"unresolvable INSTALLED_APPS.{func.attr}() mutation")
+    return resolved, unresolved
+
+
+def check_installed_apps_classified(repo_root: Path, files: list[str] | None) -> list[Violation]:
+    """Fail closed when a first-party INSTALLED_APPS app is unclassified (#1523).
+
+    Enforces set-equality between the canonical classification
+    (layer_imports.yaml), the tracked local AppConfig packages, and the
+    first-party apps actually installed. Adding a local app to INSTALLED_APPS
+    without classifying it, leaving a stale classification entry, or introducing
+    a dynamic INSTALLED_APPS entry the checker cannot resolve, all fail closed.
+    """
+    del files  # whole-tree invariant; not file-scoped
+    settings_path = repo_root / _SETTINGS_REL
+    policy_path = repo_root / _LAYER_POLICY_REL
+    if not settings_path.exists() or not policy_path.exists():
+        return []
+
+    violations: list[Violation] = []
+    classified = _classified_packages(repo_root)
+    local_apps = _local_appconfig_packages(repo_root)
+    installed, unresolved = _parse_installed_apps(settings_path.read_text(encoding="utf-8"))
+
+    for detail in unresolved:
+        violations.append(
+            Violation(
+                "installed-apps-classified",
+                "ADR-001-R3",
+                _SETTINGS_REL,
+                f"INSTALLED_APPS has an entry the classifier cannot resolve ({detail}); "
+                "use a string literal so first-party apps stay classifiable",
+            )
+        )
+
+    installed_first_party = {entry.split(".")[0] for entry in installed} & local_apps
+
+    for pkg in sorted(installed_first_party - classified):
+        violations.append(
+            Violation(
+                "installed-apps-classified",
+                "ADR-001-R3",
+                _SETTINGS_REL,
+                f"first-party app '{pkg}' is in INSTALLED_APPS but not classified in {_LAYER_POLICY_REL}",
+            )
+        )
+    for pkg in sorted(local_apps - classified):
+        violations.append(
+            Violation(
+                "installed-apps-classified",
+                "ADR-001-R3",
+                _LAYER_POLICY_REL,
+                f"local app '{pkg}' has an AppConfig but is not classified in {_LAYER_POLICY_REL}",
+            )
+        )
+    for pkg in sorted(classified - local_apps):
+        violations.append(
+            Violation(
+                "installed-apps-classified",
+                "ADR-001-R3",
+                _LAYER_POLICY_REL,
+                f"classified package '{pkg}' has no local AppConfig under {_PLATFORM_REL} (stale classification)",
+            )
+        )
 
     return violations
 
@@ -4967,12 +5132,22 @@ def _dw_runs_on(job: dict):
     return job.get("runs-on")
 
 
+# Runner labels the ADR-003-R5 exposure check treats as self-hosted-class. A
+# GCP-native runner (issue #1546) registers with `--no-default-labels` + a custom
+# label, so a job selecting it never carries the literal `self-hosted` label;
+# without this set the exposure check would skip that job and leave a
+# pull_request-reachability blind spot when GCP-dev CI is cut over to its own
+# runner. New self-hosted runner labels (e.g. a future gcp-prod, or a per-account
+# AWS tenant label) MUST be added here so the gate cannot be bypassed.
+_SELF_HOSTED_CLASS_LABELS = frozenset({"self-hosted", "gcp-dev"})
+
+
 def _dw_is_self_hosted(job: dict) -> bool:
     ro = _dw_runs_on(job)
     if isinstance(ro, str):
-        return ro == "self-hosted"
+        return ro in _SELF_HOSTED_CLASS_LABELS
     if isinstance(ro, (list, tuple)):
-        return "self-hosted" in ro
+        return any(label in _SELF_HOSTED_CLASS_LABELS for label in ro)
     return False
 
 
@@ -6019,10 +6194,314 @@ def check_mission_control_no_flag_literals(repo_root: Path, files: list[str] | N
     return violations
 
 
+_PUBLISHED_CONTRACT_DIR = "shifter/installation/published_contract"
+_PUBLISHED_CONTRACT_SNAPSHOT_RE = re.compile(r"^backend-bundle-contract\.v(\d+)\.json$")
+_PUBLISHED_CONTRACT_CHECK = "published-contract-snapshots-immutable"
+_PUBLISHED_CONTRACT_RULE = "ADR-011-R8"
+# CI lanes that fetch base-branch history set this so the check fails CLOSED when it cannot
+# verify immutability. Local/shallow runs (env unset) fail open so dev is not blocked.
+_PUBLISHED_CONTRACT_ENFORCE_ENV = "ADR_GUARD_SNAPSHOT_ENFORCE"
+
+
+def _published_contract_snapshot_names(repo_root: Path, ref: str) -> set[str] | None:
+    """Frozen version-snapshot filenames under the published-contract dir at ``ref``.
+
+    Returns an empty set when the directory does not exist at ``ref`` (a genuine first
+    publication), and ``None`` when the tree could not be read at all (a git read failure) —
+    the two cases are distinct so the caller can fail closed on the unreadable case.
+    """
+    listing = _git_text(repo_root, ["ls-tree", "--name-only", ref, f"{_PUBLISHED_CONTRACT_DIR}/"])
+    if listing is None:
+        return None
+    names = {line.strip().rsplit("/", 1)[-1] for line in listing.splitlines() if line.strip()}
+    return {name for name in names if _PUBLISHED_CONTRACT_SNAPSHOT_RE.match(name)}
+
+
+def _published_contract_enforced() -> bool:
+    return os.environ.get(_PUBLISHED_CONTRACT_ENFORCE_ENV, "").strip().lower() in {"1", "true", "yes"}
+
+
+def _published_contract_violation(path: str, message: str) -> Violation:
+    return Violation(_PUBLISHED_CONTRACT_CHECK, _PUBLISHED_CONTRACT_RULE, path, message)
+
+
+def _published_contract_snapshot_diff(repo_root: Path, ref: str, name: str, enforce: bool) -> list[Violation]:
+    rel = f"{_PUBLISHED_CONTRACT_DIR}/{name}"
+    head_path = repo_root / rel
+    if not head_path.exists():
+        return [
+            _published_contract_violation(
+                rel,
+                "published contract version snapshot was deleted; published versions are immutable "
+                "(append-only). Restore it and ship a new version snapshot instead of removing this one.",
+            )
+        ]
+    base_content = _git_text(repo_root, ["show", f"{ref}:{rel}"])
+    if base_content is None:
+        if enforce:
+            return [_published_contract_violation(rel, "cannot read the published snapshot at the base ref to verify immutability")]
+        return []
+    if head_path.read_text(encoding="utf-8") != base_content:
+        return [
+            _published_contract_violation(
+                rel,
+                "published contract version snapshot was modified; published versions are immutable "
+                "(append-only). Bump contract_version and add a new snapshot instead of changing this one.",
+            )
+        ]
+    return []
+
+
+def check_published_contract_snapshots_immutable(repo_root: Path, files: list[str] | None) -> list[Violation]:
+    """Published backend-bundle contract version snapshots are append-only (ADR-011-R8).
+
+    Each ``backend-bundle-contract.v<N>.json`` records the frozen shape of a published
+    contract version. Once published on the base branch, a snapshot must not be modified or
+    deleted — a contract change ships a *new* version snapshot instead. This is what makes the
+    breaking-change gate's oracle trustworthy, which the working tree alone cannot: the
+    committed snapshot is compared against its content at the base-branch merge base.
+
+    Enforcement is fail-open by default (a shallow clone without base history cannot compare,
+    so local dev is not blocked) and fail-CLOSED when ``ADR_GUARD_SNAPSHOT_ENFORCE`` is set —
+    the CI lane sets it and fetches base history (``fetch-depth: 0``), so an inability to
+    resolve or read the base becomes an enforcement failure rather than a silent pass.
+    """
+    del files  # global repository invariant, not scoped to the changed-file set
+    enforce = _published_contract_enforced()
+    base_refs = _boundary_mock_base_reference_candidates(repo_root)
+    if not base_refs:
+        if enforce:
+            return [
+                _published_contract_violation(
+                    _PUBLISHED_CONTRACT_DIR,
+                    "cannot resolve a base ref to verify published-contract snapshot immutability; "
+                    "the CI lane must fetch base-branch history (fetch-depth: 0)",
+                )
+            ]
+        return []
+    ref = base_refs[0]
+    base_snapshots = _published_contract_snapshot_names(repo_root, ref)
+    if base_snapshots is None:
+        if enforce:
+            return [
+                _published_contract_violation(
+                    _PUBLISHED_CONTRACT_DIR,
+                    "cannot read the published-contract directory at the base ref to verify snapshot immutability",
+                )
+            ]
+        return []
+    if not base_snapshots:
+        return []  # the directory does not exist at the base yet (genuine first publication)
+    violations: list[Violation] = []
+    for name in sorted(base_snapshots):
+        violations.extend(_published_contract_snapshot_diff(repo_root, ref, name, enforce))
+    return violations
+
+
+_PARITY_INVENTORY_PATH = "docs/architecture/aces-migration-parity-inventory.yaml"
+# The only path-bearing fields for this check. Extend this constant (not the
+# traversal or classifier) when a future evidence field must be validated too.
+_PARITY_INSPECTED_FIELDS: tuple[str, ...] = ("legacy_source", "validation_evidence")
+_PARITY_CHECK = "aces-parity-inventory-path-integrity"
+_PARITY_RULE_ID = "ADR-024-R4"
+_PARITY_GLOB_METACHARS = ("*", "?", "[")
+# A whitespace-bearing clause led by one of these tokens (or carrying a shell
+# operator) is a shell command rather than prose. Both kinds are classify-only
+# and never resolved; the distinction is for diagnostics and the four-kind
+# classifier contract, not for gate behaviour.
+_PARITY_COMMAND_TOKENS = frozenset(
+    {
+        "python3", "python", "cd", "aces", "uv", "bash", "sh", "pytest", "npx",
+        "make", "go", "ruff", "mypy", "pre-commit", "git", "kubeconform",
+        "kube-linter", "tflint", "helm", "terraform", "actionlint",
+    }
+)
+# Shell expansion / substitution / brace characters make a path or glob
+# candidate unsafe to resolve at all. Their presence is a fail-closed violation,
+# never a silent skip.
+_PARITY_UNSAFE_CHARS = ("~", "$", "`", "{", "}", "!", "\\")
+
+
+def _parity_violation(message: str) -> Violation:
+    return Violation(_PARITY_CHECK, _PARITY_RULE_ID, _PARITY_INVENTORY_PATH, message)
+
+
+def _parity_clause_violation(row_id: str, field: str, clause: str, reason: str) -> Violation:
+    return _parity_violation(f"row {row_id!r} field {field!r} clause {clause!r} {reason}")
+
+
+def classify_parity_clause(clause: str) -> str:
+    """Classify one trimmed evidence clause: ``path``, ``glob``, ``command``, or ``prose``.
+
+    Syntax-led on purpose: existence is never consulted. A deleted ``foo/bar.py``
+    stays classified ``path`` (and fails) instead of being reclassified as prose
+    and evading the check. Path-looking substrings inside prose are not extracted.
+    """
+    if any(char.isspace() for char in clause):
+        first = clause.split()[0]
+        if (
+            first in _PARITY_COMMAND_TOKENS
+            or " && " in clause
+            or " || " in clause
+            or " | " in clause
+            or " -" in clause
+        ):
+            return "command"
+        return "prose"
+    if any(char in clause for char in _PARITY_GLOB_METACHARS):
+        return "glob"
+    if "/" in clause or clause.startswith("."):
+        return "path"
+    return "prose"
+
+
+def _parity_glob_base(clause: str) -> str:
+    """Return the leading metacharacter-free directory portion of a glob pattern.
+
+    Used to enforce repository containment *before* the pattern is enumerated, so
+    a symlinked base directory that escapes the repository is rejected without
+    following it. Returns ``""`` when the first path component already contains a
+    glob metacharacter (the pattern is anchored at the repository root).
+    """
+    base_parts: list[str] = []
+    for part in clause.split("/")[:-1]:
+        if any(char in part for char in _PARITY_GLOB_METACHARS):
+            break
+        base_parts.append(part)
+    return "/".join(base_parts)
+
+
+def _validate_parity_path(
+    repo_root: Path, row_id: str, field: str, clause: str, *, is_glob: bool
+) -> list[Violation]:
+    """Validate one ``path``/``glob`` clause: syntactic safety, containment, existence."""
+    if clause.startswith("/") or Path(clause).is_absolute():
+        return [_parity_clause_violation(row_id, field, clause, "must be repository-relative, not an absolute path")]
+    if any(char in clause for char in _PARITY_UNSAFE_CHARS):
+        return [_parity_clause_violation(row_id, field, clause, "contains an unsupported shell/expansion character")]
+    if any(segment == ".." for segment in clause.split("/")):
+        return [_parity_clause_violation(row_id, field, clause, "must not use '..' path traversal")]
+
+    root = repo_root.resolve()
+
+    if is_glob:
+        # Enforce containment BEFORE enumeration: reject a glob whose literal base
+        # directory (the leading metacharacter-free portion) resolves outside the
+        # repository, so `linked/*.txt` where `linked` is an escaping symlink is
+        # never followed or enumerated. Every miss - nothing matched, base
+        # escaped, or all matches external - returns one indistinguishable
+        # diagnostic, so the always-run check cannot become a boolean filename
+        # oracle for the host filesystem. Referenced targets are never read.
+        base = _parity_glob_base(clause)
+        if base:
+            try:
+                base_resolved = (repo_root / base).resolve()
+            except (OSError, RuntimeError):
+                return [_parity_clause_violation(row_id, field, clause, "matches no path under the repository root")]
+            if base_resolved != root and root not in base_resolved.parents:
+                return [_parity_clause_violation(row_id, field, clause, "matches no path under the repository root")]
+        try:
+            matches = glob.glob(clause, root_dir=repo_root)
+        except (OSError, ValueError):
+            matches = []
+        for match in matches:
+            try:
+                resolved = (repo_root / match).resolve()
+            except (OSError, RuntimeError):
+                continue
+            if resolved == root or root in resolved.parents:
+                return []  # at least one match resolves within the repository
+        return [_parity_clause_violation(row_id, field, clause, "matches no path under the repository root")]
+
+    candidate = repo_root / clause
+    try:
+        resolved = candidate.resolve()
+    except (OSError, RuntimeError):
+        return [_parity_clause_violation(row_id, field, clause, "could not be resolved within the repository")]
+    if resolved != root and root not in resolved.parents:
+        # Absolute-path and traversal syntax is already rejected above, so this
+        # only fires on a symlinked component escaping the repository. Fail
+        # closed without reading the target.
+        return [_parity_clause_violation(row_id, field, clause, "resolves outside the repository root")]
+    if not candidate.exists():
+        return [_parity_clause_violation(row_id, field, clause, "does not resolve to an existing path")]
+    return []
+
+
+def check_aces_parity_inventory_path_integrity(repo_root: Path, files: list[str] | None) -> list[Violation]:
+    """Parity-inventory path evidence must resolve (ADR-024-R4).
+
+    Global invariant over ``docs/architecture/aces-migration-parity-inventory.yaml``:
+    every ``legacy_source`` / ``validation_evidence`` clause that is a repository
+    path or glob must resolve to an existing path (glob: at least one match).
+    Shell-command and prose clauses are classified and skipped. Runs regardless of
+    the changed-file set because a referenced file can be moved or deleted without
+    the inventory itself changing. Treats the YAML as untrusted static input: it
+    only inspects path metadata, never reads referenced content, and never lets
+    inventory text reach a shell, subprocess, or command-line argument.
+    """
+    del files  # global repository invariant, not scoped to the changed-file set
+    try:
+        import yaml  # type: ignore[import-not-found]
+    except ImportError:
+        return [
+            _parity_violation(
+                "PyYAML is required to validate the ACES parity inventory; "
+                "install pyyaml in the runtime environment"
+            )
+        ]
+
+    path = repo_root / _PARITY_INVENTORY_PATH
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return [_parity_violation("parity inventory is missing or unreadable")]
+    try:
+        data = yaml.safe_load(text)
+    except yaml.YAMLError:
+        return [_parity_violation("parity inventory is not valid YAML")]
+
+    if not isinstance(data, dict):
+        return [_parity_violation("parity inventory root must be a mapping")]
+    rows = data.get("rows")
+    if not isinstance(rows, list):
+        return [_parity_violation("parity inventory 'rows' must be a list")]
+
+    violations: list[Violation] = []
+    for index, row in enumerate(rows):
+        if not isinstance(row, dict):
+            violations.append(_parity_violation(f"row at index {index} must be a mapping"))
+            continue
+        row_id = row.get("id")
+        if not isinstance(row_id, str) or not row_id:
+            violations.append(_parity_violation(f"row at index {index} must have a non-empty string 'id'"))
+            continue
+        for field in _PARITY_INSPECTED_FIELDS:
+            if field not in row:
+                violations.append(_parity_violation(f"row {row_id!r} is missing field {field!r}"))
+                continue
+            value = row[field]
+            if not isinstance(value, str):
+                violations.append(_parity_violation(f"row {row_id!r} field {field!r} must be a string"))
+                continue
+            for raw_clause in value.split(";"):
+                clause = raw_clause.strip()
+                if not clause:
+                    continue
+                kind = classify_parity_clause(clause)
+                if kind == "path":
+                    violations.extend(_validate_parity_path(repo_root, row_id, field, clause, is_glob=False))
+                elif kind == "glob":
+                    violations.extend(_validate_parity_path(repo_root, row_id, field, clause, is_glob=True))
+                # command / prose clauses are classified only, never resolved.
+    return violations
+
+
 CHECKS = {
     "adr-registry": check_adr_registry,
     "layer-imports": check_layer_imports,
     "cross-layer-model-imports": check_cross_layer_model_imports,
+    "installed-apps-classified": check_installed_apps_classified,
     "guardrail-docs": check_guardrail_docs,
     "cloud-factory-seam": check_cloud_factory_seam,
     "mcp-no-shell-exec": check_mcp_no_shell_exec,
@@ -6045,13 +6524,16 @@ CHECKS = {
     "no-terraform-operational-placeholders": check_no_terraform_operational_placeholders,
     "github-oidc-no-admin-access": check_github_oidc_no_admin_access,
     "documentation-coverage": check_documentation_coverage,
+    "published-contract-snapshots-immutable": check_published_contract_snapshots_immutable,
     "no-agent-attribution": check_no_agent_attribution,
+    "aces-parity-inventory-path-integrity": check_aces_parity_inventory_path_integrity,
 }
 CHECK_LEVELS = {
     "fast": [
         "adr-registry",
         "layer-imports",
         "cross-layer-model-imports",
+        "installed-apps-classified",
         "guardrail-docs",
         "cloud-factory-seam",
         "mcp-no-shell-exec",
@@ -6072,12 +6554,14 @@ CHECK_LEVELS = {
         "no-terraform-operational-placeholders",
         "github-oidc-no-admin-access",
         "documentation-coverage",
+        "published-contract-snapshots-immutable",
         "no-agent-attribution",
     ],
     "ci": [
         "adr-registry",
         "layer-imports",
         "cross-layer-model-imports",
+        "installed-apps-classified",
         "cloud-factory-seam",
         "mcp-no-shell-exec",
         "k8s-deployment-security-context",
@@ -6099,7 +6583,9 @@ CHECK_LEVELS = {
         "no-terraform-operational-placeholders",
         "github-oidc-no-admin-access",
         "documentation-coverage",
+        "published-contract-snapshots-immutable",
         "no-agent-attribution",
+        "aces-parity-inventory-path-integrity",
     ],
     "all": list(CHECKS),
 }

@@ -46,6 +46,41 @@ def ctf_actor_user(request: Request) -> Any | None:
     return user if getattr(user, "is_active", False) else None
 
 
+class _CtfApiError(Exception):
+    """Internal control-flow error rendered as the shared CTF API error envelope.
+
+    Boundary helpers (ownership resolution, body validation, service-exception
+    mapping) raise this instead of returning ``(obj, error)`` tuples, so a
+    canonical CTF view method needs only a single ``except _CtfApiError`` to
+    render the exact legacy status code, error code, and message via
+    :func:`api_error_response`. ``headers`` replays any response headers (e.g.
+    ``Retry-After``) that the legacy path set on the error response.
+    """
+
+    def __init__(
+        self,
+        *,
+        code: str,
+        message: str,
+        status_code: int,
+        headers: dict[str, str] | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.code = code
+        self.message = message
+        self.status_code = status_code
+        self.headers = headers or {}
+
+    def to_response(self, request: Request) -> Response:
+        """Render this error as the shared API envelope, replaying any headers."""
+        response = api_error_response(
+            code=self.code, message=self.message, status_code=self.status_code, request=request
+        )
+        for header, value in self.headers.items():
+            response[header] = value
+        return response
+
+
 class HasActiveCTFActor(permissions.BasePermission):
     """Require a session user or an API token owned by an active user."""
 

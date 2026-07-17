@@ -34,10 +34,55 @@ _MAX_GENERATED_ACCOUNTS = 100
 _HANDLE_ATTEMPTS = 8
 
 
+@sensitive_variables()
+def _validate_bootstrap_credential(candidate: str) -> None:
+    """Fail closed when a configured bootstrap source violates password policy.
+
+    The organizer form already validates ``participant_password_override``, but
+    settings, scripts, direct model writes, and pre-existing rows all bypass that
+    form, so the service resolver re-applies the canonical validators. A
+    non-conforming source raises a controlled CTF error instead of surfacing a
+    Django ``ValidationError`` as a 500.
+    """
+    from django.contrib.auth.password_validation import validate_password
+
+    try:
+        validate_password(candidate)
+    except ValidationError as exc:
+        raise CTFValidationError(
+            "Configured CTF participant bootstrap credential does not meet the password policy.",
+            code="CTF_BOOTSTRAP_CREDENTIAL_INVALID",
+        ) from exc
+
+
+@sensitive_variables()
 def effective_bootstrap_password(event: CTFEvent) -> str:
-    """Return the event override or platform bootstrap password."""
-    override = getattr(event, "participant_password_override", "")
-    return override or getattr(settings, "CTF_DEFAULT_PARTICIPANT_PASSWORD", "ShifterAcesRanges")
+    """Resolve the event or platform bootstrap credential, failing closed.
+
+    Accepted sources, in order: the event's encrypted
+    ``participant_password_override`` and an explicitly configured
+    ``CTF_DEFAULT_PARTICIPANT_PASSWORD``. Each non-blank source is validated
+    against the canonical password policy before use. No repository literal,
+    settings constant, or implicit default may ever authenticate an account:
+    when neither source is configured this raises ``CTFValidationError`` so
+    account creation, attachment, reset, reveal, and the bootstrap-reuse check
+    all refuse rather than fall back to a shared, guessable credential.
+    """
+    override = getattr(event, "participant_password_override", "") or ""
+    # Presence is decided on the stripped value so a whitespace-only source is
+    # treated as unconfigured (blank means unavailable, not a valid password);
+    # the original candidate is preserved for validation and use.
+    if override.strip():
+        _validate_bootstrap_credential(override)
+        return override
+    platform_default = getattr(settings, "CTF_DEFAULT_PARTICIPANT_PASSWORD", "") or ""
+    if platform_default.strip():
+        _validate_bootstrap_credential(platform_default)
+        return platform_default
+    raise CTFValidationError(
+        "No secure CTF participant bootstrap credential is configured for this event.",
+        code="CTF_BOOTSTRAP_CREDENTIAL_UNAVAILABLE",
+    )
 
 
 def generate_participant_username() -> str:
@@ -180,15 +225,20 @@ def rename_participant_username(
             participant.user.save(update_fields=["username"])
         except IntegrityError as exc:
             raise CTFValidationError("Username is already in use", code="CTF_DUPLICATE_USERNAME") from exc
-        from risk_register.models import AuditLog
-        from risk_register.services import AuditEvent, audit_log
+        from shared.audit import (
+            AuditAction,
+            AuditActorType,
+            AuditEntityType,
+            AuditEvent,
+            audit_log,
+        )
 
         audit_log(
             AuditEvent(
-                entity_type=AuditLog.EntityType.USER,
+                entity_type=AuditEntityType.USER,
                 entity_id=participant.user.pk,
-                action=AuditLog.Action.UPDATE,
-                actor_type=AuditLog.ActorType.USER,
+                action=AuditAction.UPDATE,
+                actor_type=AuditActorType.USER,
                 actor_id=actor.pk,
                 previous_state={"username": old_username},
                 new_state={"username": normalized},
@@ -238,7 +288,9 @@ def reset_participant_credentials(participant_id: UUID) -> CTFParticipant:
         _send_email(
             recipient=participant.email,
             subject=f"CTF password for {participant.event.name}",
-            html_content=f"<p>Password: {password}</p>",
+            # The credential is operator-controlled (event override or configured
+            # platform value, issue #1665), so escape it before HTML interpolation.
+            html_content=f"<p>Password: {escape(password)}</p>",
             text_content=f"Password: {password}",
         )
     return participant

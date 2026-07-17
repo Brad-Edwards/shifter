@@ -252,6 +252,16 @@ repos:
         language: system
         files: ^platform/terraform/global/github-runner/main\.tf$
 
+      # ADR-008 / issue #1546: the GCP-native self-hosted runner must live in a
+      # dedicated custom-mode VPC (never the project default network) and admit
+      # SSH only from Google's IAP range, mirroring the AWS ADR-004-R20 guard for
+      # GCP so the isolation cannot be silently weakened.
+      - id: check-tf-gcp-runner-network
+        name: GCP runner network isolation (ADR-008)
+        entry: python3 scripts/check_tf_gcp_runner_network/check_tf_gcp_runner_network.py
+        language: system
+        files: ^platform/terraform/gcp/modules/github-runner-network/main\.tf$
+
       # Issue #1178: the shared range *guest* instance role must not grant SSM
       # Parameter Store access on a Resource that wildcards the environment or
       # range segment (parameter/shifter/*/range/*), which would let any range
@@ -264,6 +274,20 @@ repos:
         entry: python3 scripts/check_tf_iam_ssm_range_scope/check_tf_iam_ssm_range_scope.py
         language: system
         files: ^platform/terraform/modules/range/vpc/iam\.tf$
+
+      # Issue #1377: the per-range Polaris Bedrock agent role must keep its
+      # inline policy scoped to exactly bedrock:InvokeModel /
+      # bedrock:InvokeModelWithResponseStream on the two approved inference
+      # profiles and their backing models (conditioned on
+      # bedrock:InferenceProfileArn), and its trust policy scoped to the
+      # shared range-instance role AND the exact Polaris EC2 source instance
+      # (ec2:SourceInstanceARN). Scoped to the engine provisioner range
+      # module IAM file where the role is defined.
+      - id: check-tf-iam-bedrock-agent-scope
+        name: AWS Polaris Bedrock agent IAM scoping (#1377)
+        entry: python3 scripts/check_tf_iam_bedrock_agent_scope/check_tf_iam_bedrock_agent_scope.py
+        language: system
+        files: ^shifter/engine/provisioner/terraform/modules/range/iam\.tf$
 
       # Custom: Secrets Manager kms:Decrypt grant check (issue #52).
       # Ensures every aws_iam_role defined in scoped files that reads
@@ -379,17 +403,19 @@ repos:
           python3 -m unittest scripts.check_tf_iam_elb_scope.test_check_tf_iam_elb_scope &&
           python3 -m unittest scripts.check_tf_iam_ssm_scope.test_check_tf_iam_ssm_scope &&
           python3 -m unittest scripts.check_tf_iam_ssm_range_scope.test_check_tf_iam_ssm_range_scope &&
+          python3 -m unittest scripts.check_tf_iam_bedrock_agent_scope.test_check_tf_iam_bedrock_agent_scope &&
           python3 -m unittest scripts.check_tf_iam_role_naming.test_check_tf_iam_role_naming &&
           python3 -m unittest scripts.check_tf_sg_cidrs.test_check_tf_sg_cidrs &&
           python3 -m unittest scripts.check_tf_kms_secrets_grant.test_check_tf_kms_secrets_grant &&
           python3 -m unittest scripts.check_tf_rds_security.test_check_tf_rds_security &&
           python3 -m unittest scripts.check_portal_target_sg_sources.test_check_portal_target_sg_sources &&
           python3 -m unittest scripts.check_tf_runner_network.test_check_tf_runner_network &&
+          python3 -m unittest scripts.check_tf_gcp_runner_network.test_check_tf_gcp_runner_network &&
           python3 -m unittest scripts.check_tf_gcp_iam_resource_scope.test_check_tf_gcp_iam_resource_scope &&
           python3 -m unittest scripts.check_tf_roots.test_check_tf_roots
           '
         language: system
-        files: ^scripts/(check_tf_(iam_ec2_scope|iam_elb_scope|iam_ssm_scope|iam_ssm_range_scope|sg_cidrs|kms_secrets_grant|rds_security|runner_network|gcp_iam_resource_scope|roots)|check_portal_target_sg_sources)/
+        files: ^scripts/(check_tf_(iam_ec2_scope|iam_elb_scope|iam_ssm_scope|iam_ssm_range_scope|iam_bedrock_agent_scope|sg_cidrs|kms_secrets_grant|rds_security|runner_network|gcp_runner_network|gcp_iam_resource_scope|roots)|check_portal_target_sg_sources)/
         pass_filenames: false
 
   # Kubernetes schema validation
@@ -585,11 +611,29 @@ repos:
         pass_filenames: true
         verbose: true
 
+      # ADR-024-R4 / issue #1313: the ACES parity inventory
+      # (docs/architecture/aces-migration-parity-inventory.yaml) cites repo paths
+      # and globs in its legacy_source / validation_evidence rows. A referenced
+      # file can be moved or deleted anywhere in the repo without the inventory
+      # itself being edited, so this runs on every commit (always_run,
+      # pass_filenames=false, --all) rather than only when the inventory changes.
+      # language: python + pyyaml mirrors the adr-guard-k8s dependency-bearing
+      # pattern so PyYAML is present in the hook environment.
+      - id: adr-guard-parity-inventory
+        name: architecture (adr guard parity inventory path integrity)
+        entry: python3 scripts/adr_guard/adr_guard.py --checks aces-parity-inventory-path-integrity --all
+        language: python
+        additional_dependencies:
+          - pyyaml>=6.0
+        always_run: true
+        pass_filenames: false
+        verbose: true
+
       - id: import-linter-shifter-platform
         name: architecture (import linter)
         entry: bash -c 'cd shifter/shifter_platform && uv run lint-imports --config ../../.importlinter'
         language: system
-        files: ^(shifter/shifter_platform/(cms|engine|management|mission_control|shared|ctf)/.*\.py$|\.importlinter$)
+        files: ^(shifter/shifter_platform/(cms|engine|management|mission_control|shared|ctf|config|risk_register)/.*\.py$|\.importlinter$)
         pass_filenames: false
         verbose: true
 

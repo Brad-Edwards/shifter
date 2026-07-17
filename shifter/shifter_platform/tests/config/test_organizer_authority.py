@@ -24,6 +24,11 @@ from config.organizer_authority import (
 )
 from management.services import get_user_profile
 from risk_register.models import AuditLog
+from shared.audit import (
+    AuditAction,
+    AuditActorType,
+    AuditEntityType,
+)
 from shared.auth import CTF_ORGANIZER_GROUP, CTF_PARTICIPANT_GROUP, THREAT_RESEARCH_GROUP
 
 User = get_user_model()
@@ -46,9 +51,9 @@ def _organizer_source(user) -> str:
 
 def _role_sync_rows(user):
     return AuditLog.objects.filter(
-        entity_type=AuditLog.EntityType.USER,
+        entity_type=AuditEntityType.USER,
         entity_id=user.id,
-        action=AuditLog.Action.ROLE_SYNC,
+        action=AuditAction.ROLE_SYNC,
     )
 
 
@@ -69,7 +74,7 @@ class TestProviderGroupMapping:
         assert CTF_ORGANIZER_GROUP in row.new_state["groups"]
         # System-attributed: it was administrator-controlled provider evidence,
         # not a self-service action by the subject user.
-        assert row.actor_type == AuditLog.ActorType.SYSTEM
+        assert row.actor_type == AuditActorType.SYSTEM
 
     def test_non_allowlisted_provider_group_grants_nothing(self, user):
         reconcile_provider_privileged_groups(user, {"cognito:groups": ["some-other-group"]})

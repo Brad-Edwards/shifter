@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import os
 
-from config._runtime_env import IS_TEST_RUN
+from config._runtime_env import IS_TEST_RUN, resolve_cloud_provider
 
 __all__ = [
     "AWS_ENDPOINT_URL",
@@ -47,8 +47,11 @@ __all__ = [
 # Cloud Provider Configuration
 # ------------------------------------------------------------------------------
 
-# Which cloud provider to use: "aws" (default) or "gcp" (future)
-CLOUD_PROVIDER = os.environ.get("CLOUD_PROVIDER", "aws")
+# The active cloud backend, resolved once at the Django composition root and
+# validated against the installation registry (PLAT-2005). Fails closed on a
+# missing/unsupported value in a deployed process; the "aws" default applies
+# only under runtime_allows_dev_defaults (dev/test/build).
+CLOUD_PROVIDER = resolve_cloud_provider()
 GOOGLE_CLOUD_PROJECT = os.environ.get("GOOGLE_CLOUD_PROJECT", "")
 GCP_PROJECT_ID = os.environ.get("GCP_PROJECT_ID") or GOOGLE_CLOUD_PROJECT
 GCP_REGION = os.environ.get("GCP_REGION") or os.environ.get("CLOUD_REGION", "")

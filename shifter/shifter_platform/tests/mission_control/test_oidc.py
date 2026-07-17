@@ -12,6 +12,11 @@ from config.oidc import ShifterOIDCBackend, provider_logout_url
 from config.username import generate_username
 from management.services import get_user_profile
 from risk_register.models import AuditLog
+from shared.audit import (
+    AuditAction,
+    AuditActorType,
+    AuditEntityType,
+)
 from shared.auth import CTF_ORGANIZER_GROUP
 
 User = get_user_model()
@@ -338,11 +343,11 @@ class TestShifterOIDCBackendBootstrapAdmin:
         assert profile.issuer == TEST_ISSUER
         # New-user audit row written via the real audit service.
         assert AuditLog.objects.filter(
-            entity_type=AuditLog.EntityType.USER, action=AuditLog.Action.CREATE, actor_type=AuditLog.ActorType.COGNITO
+            entity_type=AuditEntityType.USER, action=AuditAction.CREATE, actor_type=AuditActorType.COGNITO
         ).exists()
         # Strict bind/elevate security-mutation audit row (issue #1521).
         assert AuditLog.objects.filter(
-            entity_type=AuditLog.EntityType.USER, action=AuditLog.Action.ROLE_SYNC, entity_id=created_user.id
+            entity_type=AuditEntityType.USER, action=AuditAction.ROLE_SYNC, entity_id=created_user.id
         ).exists()
 
     @override_settings(
@@ -376,8 +381,8 @@ class TestShifterOIDCBackendBootstrapAdmin:
 
     @pytest.mark.parametrize(
         "email_verified",
-        [False, "false", "true", 0, 1],
-        ids=["false", "str-false", "str-true", "int-0", "int-1"],
+        [False, "false", 0, 1],
+        ids=["false", "str-false", "int-0", "int-1"],
     )
     def test_create_user_rejects_non_literal_true_email_verified(self, email_verified):
         backend = _stashed_backend(subject="cognito-sub-malformed")
@@ -387,6 +392,18 @@ class TestShifterOIDCBackendBootstrapAdmin:
             backend.create_user(claims)
 
         assert not User.objects.filter(email="malformed@example.com").exists()
+
+    def test_create_user_accepts_cognito_string_true_email_verified(self):
+        """Cognito UserInfo returns email_verified as the string 'true'; the
+        create/bind path must accept it (issue: proof login rejected)."""
+        backend = _stashed_backend(subject="cognito-sub-strtrue")
+        claims = {"email": "strtrue@example.com", "sub": "cognito-sub-strtrue", "email_verified": "true"}
+
+        created = backend.create_user(claims)
+
+        created.refresh_from_db()
+        assert created.email == "strtrue@example.com"
+        assert User.objects.filter(email="strtrue@example.com").exists()
 
 
 @pytest.mark.django_db
@@ -584,13 +601,22 @@ class TestShifterOIDCBackendVerifyClaims:
 
     @pytest.mark.parametrize(
         "value",
-        [False, "false", "true", 0, 1],
-        ids=["false", "str-false", "str-true", "int-0", "int-1"],
+        [False, "false", 0, 1],
+        ids=["false", "str-false", "int-0", "int-1"],
     )
     def test_rejects_non_literal_true_email_verified(self, value):
         backend = _stashed_backend(subject="sub-1")
         claims = {"sub": "sub-1", "email": "u@example.com", "email_verified": value}
         assert backend.verify_claims(claims) is False
+
+    @pytest.mark.parametrize("value", [True, "true", "True", " TRUE "], ids=["bool", "str", "str-caps", "str-pad"])
+    def test_accepts_verified_boolean_or_cognito_string(self, value):
+        """Cognito's UserInfo returns email_verified as the string 'true'; the
+        ID token returns a boolean. Both must be accepted (the string quirk
+        otherwise blocks all Cognito logins)."""
+        backend = _stashed_backend(subject="sub-1")
+        claims = {"sub": "sub-1", "email": "u@example.com", "email_verified": value}
+        assert backend.verify_claims(claims) is True
 
     def test_rejects_subject_mismatch_with_verified_id_token(self):
         """UserInfo's sub must equal the already-verified ID-token sub."""
@@ -690,7 +716,7 @@ class TestShifterOIDCBackendAuthenticateAudit:
             result = backend.authenticate(_audit_request())
 
         assert result == user
-        row = AuditLog.objects.get(action=AuditLog.Action.LOGIN, entity_type=AuditLog.EntityType.USER)
+        row = AuditLog.objects.get(action=AuditAction.LOGIN, entity_type=AuditEntityType.USER)
         assert row.new_state["email"] == "oidc-ok@example.com"
         assert row.source_ip == "10.0.0.5"
 
@@ -701,7 +727,7 @@ class TestShifterOIDCBackendAuthenticateAudit:
             result = backend.authenticate(_audit_request())
 
         assert result is None
-        row = AuditLog.objects.get(action=AuditLog.Action.LOGIN_FAILED)
+        row = AuditLog.objects.get(action=AuditAction.LOGIN_FAILED)
         assert row.source_ip == "10.0.0.5"
 
     def test_exception_writes_login_failed_with_bounded_reason_and_reraises(self):
@@ -721,7 +747,7 @@ class TestShifterOIDCBackendAuthenticateAudit:
         ):
             backend.authenticate(_audit_request())
 
-        row = AuditLog.objects.get(action=AuditLog.Action.LOGIN_FAILED)
+        row = AuditLog.objects.get(action=AuditAction.LOGIN_FAILED)
         assert "SuspiciousOperation" in row.context
         assert "secret" not in row.context
         assert "abc123" not in row.context

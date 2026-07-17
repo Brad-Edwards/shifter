@@ -38,7 +38,10 @@ from engine.services import get_instance_ips_by_uuid as engine_get_instance_ips_
 from engine.services import pause_range as engine_pause_range
 from engine.services import reassign_range_owner_by_request as engine_reassign_range_owner
 from engine.services import resume_range as engine_resume_range
-from risk_register.services import AuditEvent, audit_log
+from shared.audit import (
+    AuditEvent,
+    audit_log,
+)
 
 from ._aces_range_create import create_aces_native_range, create_range_dispatch
 
@@ -50,6 +53,7 @@ from ._agents import (
     get_allowed_extensions,
     list_agents,
 )
+from ._content_ingestion import PackRegistrationRequest, RegisteredPack, register_pack
 from ._credentials import (
     create_credential,
     delete_credential,
@@ -108,7 +112,9 @@ __all__ = (
     "AgentUploadSpec",
     "AuditEvent",
     "CMSError",
+    "PackRegistrationRequest",
     "RangeInstance",
+    "RegisteredPack",
     "assets_create_agent",
     "assets_delete_agent",
     "audit_log",
@@ -160,6 +166,7 @@ __all__ = (
     "pause_range_by_request_id",
     "range_status_changed",
     "reassign_range_owner",
+    "register_pack",
     "resume_range",
     "resume_range_by_request_id",
     "validate_scenario_requirements",

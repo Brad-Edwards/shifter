@@ -42,15 +42,16 @@ Jobs run only when relevant files change. `deploy.yml` detects changes and trigg
 
 ## Environment Targeting
 
-- Push to `dev` → Quality only; no deploy or Terraform plan jobs
-- Push to `aws-dev` → AWS dev deploy
-- Push to `gcp-dev` → fast GCP validate + GCP dev deploy
-- Push to `main` → code branch update only; no deploy or Terraform plan jobs
-- Manual dispatch on `main` → AWS prod deploy
-- PRs to `dev` → Quality only
-- PRs to `aws-dev` → AWS dev plan
-- PRs to `gcp-dev` → GCP validate
-- PRs to `main` → Quality only
+Environment deploys are manual (`workflow_dispatch` with an `environment` input);
+push and pull_request run validation only (#730).
+
+- Pull request → Quality only
+- Push to `dev` / `main` → Quality only; no deploy
+- Manual dispatch `environment=aws-dev` → AWS dev deploy
+- Manual dispatch `environment=aws-proof` → AWS proof deploy
+- Manual dispatch `environment=gcp-dev` → GCP dev deploy
+
+Run a deploy with `gh workflow run deploy.yml --ref <branch> -f environment=<env>`.
 
 ## Authentication
 
@@ -67,11 +68,9 @@ AWS roles defined in `platform/terraform/global/iam/github-oidc.tf`. GCP WIF con
 
 ## GCP Current State
 
-GCP now deploys through CI/CD on `gcp-dev`. The branch model is:
-
-- `dev`: Quality-only integration branch
-- `aws-dev`: AWS dev deploy branch
-- `gcp-dev`: GCP dev deploy branch
+GCP deploys through CI/CD via a manual `workflow_dispatch` with `environment=gcp-dev`
+(`gh workflow run deploy.yml --ref <branch> -f environment=gcp-dev`). Branch names
+no longer trigger deploys; `dev`/`main` are Quality-only integration branches (#730).
 
 The GCP CI path:
 
@@ -81,7 +80,7 @@ The GCP CI path:
 4. renders secure Helm values from Terraform outputs and Secret Manager
 5. installs or upgrades the Shifter Helm release
 
-On `gcp-dev` pushes, this path now runs as a fast deploy lane. It skips the repo-wide quality workflow and relies on the provider-local validation in `_gcp-dev.yml` so break/fix iteration on GCP does not wait for the full cross-repo lint/test matrix. The full quality gate still runs on PRs and on `dev`; production deploys are manual dispatches from `main`.
+Every deploy dispatch runs the quality gate first as the safety gate before an apply.
 
 The bootstrap path is security-gated and fails closed unless:
 

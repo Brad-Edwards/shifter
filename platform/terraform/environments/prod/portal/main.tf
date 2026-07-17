@@ -513,10 +513,11 @@ module "messaging" {
 module "ssm" {
   source = "../../../modules/portal/ssm"
 
-  environment = var.environment
-  name_prefix = local.name_prefix
-  aws_region  = var.aws_region
-  tags        = var.tags
+  environment    = var.environment
+  cloud_provider = var.cloud_provider
+  name_prefix    = local.name_prefix
+  aws_region     = var.aws_region
+  tags           = var.tags
 
   # ECR configuration
   ecr_registry        = split("/", data.terraform_remote_state.foundation.outputs.portal_ecr_url)[0]
@@ -595,6 +596,7 @@ module "ec2" {
 
   aws_region               = var.aws_region
   environment              = var.environment
+  cloud_provider           = var.cloud_provider
   ec2_ami_id               = var.ec2_ami_id
   name_prefix              = local.name_prefix
   iam_name_prefix          = local.iam_name_prefix
@@ -621,6 +623,8 @@ module "ec2" {
   secrets_manager_kms_key_arn = aws_kms_key.secrets_manager.arn
   db_resource_id              = module.rds.db_resource_id
   s3_bucket_arn               = module.s3.bucket_arn
+  aces_package_bucket_arn     = var.aces_package_bucket_arn
+  aces_package_prefix         = var.aces_package_prefix
   app_port                    = var.app_port
   root_volume_size            = var.ec2_root_volume_size
 
@@ -655,6 +659,9 @@ module "ec2" {
   termination_drain_timeout               = var.termination_drain_timeout
   docker_stop_timeout                     = var.docker_stop_timeout
   instance_refresh_min_healthy_percentage = var.instance_refresh_min_healthy_percentage
+  health_check_type                       = var.health_check_type
+  health_check_grace_period               = var.health_check_grace_period
+  instance_refresh_instance_warmup        = var.instance_refresh_instance_warmup
 
   redis_endpoint     = var.enable_redis ? module.redis.redis_endpoint : ""
   scale_up_threshold = var.scale_up_threshold
@@ -809,6 +816,7 @@ module "engine_provisioner" {
   iam_name_prefix             = local.iam_name_prefix
   permissions_boundary_arn    = local.ci_role_permissions_boundary_arn
   environment                 = var.environment
+  cloud_provider              = var.cloud_provider
   tags                        = var.tags
   log_retention_days          = var.log_retention_days
   secrets_manager_kms_key_arn = aws_kms_key.secrets_manager.arn
@@ -847,6 +855,20 @@ module "engine_provisioner" {
   range_instance_profile_arn  = data.terraform_remote_state.range.outputs.range_instance_profile_arn
   range_instance_profile_name = data.terraform_remote_state.range.outputs.range_instance_profile_name
   range_instance_role_arn     = data.terraform_remote_state.range.outputs.range_instance_role_arn
+
+  # AWS Polaris Bedrock agent credential profile (#1377); off unless populated
+  # via the deploy-secrets tfvars for an environment that runs AWS Polaris. The
+  # engine-provisioner module turns these into the AWS_POLARIS_AGENT_* task env
+  # vars that config.load_aws_polaris_agent_config() consumes.
+  aws_polaris_agent_region                       = var.aws_polaris_agent_region
+  aws_polaris_agent_main_model_id                = var.aws_polaris_agent_main_model_id
+  aws_polaris_agent_small_model_id               = var.aws_polaris_agent_small_model_id
+  aws_polaris_agent_main_inference_profile_arn   = var.aws_polaris_agent_main_inference_profile_arn
+  aws_polaris_agent_small_inference_profile_arn  = var.aws_polaris_agent_small_inference_profile_arn
+  aws_polaris_agent_main_backing_model_arns      = var.aws_polaris_agent_main_backing_model_arns
+  aws_polaris_agent_small_backing_model_arns     = var.aws_polaris_agent_small_backing_model_arns
+  aws_polaris_agent_sts_session_duration_seconds = var.aws_polaris_agent_sts_session_duration_seconds
+  aws_polaris_agent_refresh_window_seconds       = var.aws_polaris_agent_refresh_window_seconds
 
   # AMIs (from SSM Parameter Store)
   kali_ami_id    = data.aws_ssm_parameter.kali_ami.value

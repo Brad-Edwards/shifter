@@ -14,6 +14,8 @@ from ctf.models import CTFChallenge, CTFEvent, CTFFlag, CTFParticipant, CTFSched
 from ctf.services import update_event
 from ctf.services.challenge import add_flag, remove_flag, update_challenge, update_flag, verify_flag
 from risk_register.models import AuditLog
+from shared.audit import AuditAction
+from shared.enums import RangeSource
 
 
 @pytest.mark.django_db
@@ -184,7 +186,7 @@ class TestLiveFlagRepair:
         )
         assert AuditLog.objects.count() == before_count + 1
         entry = AuditLog.objects.latest("timestamp")
-        assert entry.action == AuditLog.Action.UPDATE
+        assert entry.action == AuditAction.UPDATE
         assert entry.new_state["challenge_id"] == str(challenge.pk)
         assert entry.new_state["flag_id"] == str(flag_obj.pk)
         assert set(entry.new_state.keys()) == {
@@ -277,15 +279,22 @@ class TestParticipantAccountEventIsolation:
             event_end=timezone.now() + timedelta(hours=7),
             scenario_id="basic",
         )
+        # Distinct range_source per row: the one-active-range-per-source
+        # constraint (#307) forbids two active same-source ranges for one user.
+        # The sources are incidental here -- this test asserts the CTFParticipant
+        # `unique_active_ctf_participant_user` guard, which is itself why a user
+        # can never legitimately hold two active CTF ranges across events.
         older_range = RangeInstance.objects.create(
             user_id=participant_user.pk,
             scenario_id="basic",
             status="ready",
+            range_source=RangeSource.CTF.value,
         )
         newer_range = RangeInstance.objects.create(
             user_id=participant_user.pk,
             scenario_id="basic",
             status="provisioning",
+            range_source=RangeSource.MISSION_CONTROL.value,
         )
         older_participant = CTFParticipant.objects.create(
             event=older_event,

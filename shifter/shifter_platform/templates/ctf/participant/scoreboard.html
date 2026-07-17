@@ -355,7 +355,7 @@ function rebuildScoreboardTable(rankings, teamMode) {
                 integrity="sha384-cVMg8E3QFwTvGCDuK+ET4PD341jF3W8nO1auiXfuZNQkzbUUiBGLsIQUE+b1mxws"></script>
         <script src="{% static 'js/score-timeline.js' %}"></script>
         <script>
-initScoreTimeline('score-timeline-chart', "{% url 'ctf:api_score_timeline' participant_id=participant.pk %}");
+initScoreTimeline('score-timeline-chart', "{% url 'v1:ctf:api_score_timeline' participant_id=participant.pk %}");
         </script>
     {% endif %}
 {% endblock %}

@@ -8,14 +8,79 @@ import base64
 import json
 import logging
 import os
+import re
+import sys
+from collections.abc import Mapping
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from cryptography.fernet import Fernet
+from shared.range_instantiation_policy import GcpRangeBackendError, normalize_gcp_range_backend
 
 from log_redact import safe_log_fingerprint
 
 logger = logging.getLogger(__name__)
+
+# Invocation names that signal a dev/test/build tooling context (mirrors
+# ``config._runtime_env._TOOLING_INVOKERS`` on the Django side).
+_DEV_DEFAULT_TOOLING_INVOKERS = frozenset({"pytest", "mypy", "dmypy"})
+
+
+def _allow_dev_defaults(source: Mapping[str, str]) -> bool:
+    """Return True when ``CLOUD_PROVIDER`` may fall back to the historical default.
+
+    Mirrors ``config._runtime_env.runtime_allows_dev_defaults`` on the Django
+    side exactly, so the provisioner and Django agree on when a missing
+    backend selection may default rather than fail closed, without importing
+    Django or duplicating a second policy definition here. Note that
+    ``ENVIRONMENT=development``/``dev`` is deliberately NOT one of these
+    signals: a deployed dev provisioner must still receive ``CLOUD_PROVIDER``
+    explicitly (see docs/architecture/root-configured-backend-bundles.md,
+    "Runtime Binding").
+    """
+    if source.get("TESTING") == "1":
+        return True
+    if Path(sys.argv[0]).name in _DEV_DEFAULT_TOOLING_INVOKERS:
+        return True
+    if source.get("ENVIRONMENT", "").strip().lower() == "build":
+        return True
+    return source.get("DJANGO_DEBUG", "").strip().lower() == "true"
+
+
+def resolve_cloud_provider(env: Mapping[str, str] | None = None) -> str:
+    """Return the validated active cloud backend for this process (PLAT-2005).
+
+    ``CLOUD_PROVIDER`` is the deploy-time projection of the selected
+    installation backend, delivered to every consuming process role (see
+    docs/architecture/root-configured-backend-bundles.md, "Runtime Binding").
+    This is the provisioner's single resolution point: normalize to
+    lowercase and validate against the ``installation`` registry -- the
+    single source of truth for supported backends -- rather than re-reading
+    the environment with an implicit ``aws`` default at every call site.
+
+    Fails closed with ``CloudProviderNotImplementedError`` when the value is
+    missing in a deployed process (the historical ``aws`` default is allowed
+    only under ``_allow_dev_defaults``) or names an unsupported backend, so a
+    misconfigured deploy cannot silently behave as AWS.
+    """
+    # Lazy imports: ``installation.registry`` pulls in pydantic, and
+    # ``cloud.exceptions`` would otherwise import this module back (``cloud``
+    # resolves its own provider through this function) -- both stay
+    # function-local to avoid import-time cost and a circular import.
+    from installation.registry import KNOWN_BACKENDS
+
+    from cloud.exceptions import CloudProviderNotImplementedError
+
+    source = env if env is not None else os.environ
+    raw = source.get("CLOUD_PROVIDER", "").strip().lower()
+    if not raw:
+        if not _allow_dev_defaults(source):
+            raise CloudProviderNotImplementedError("")
+        raw = "aws"
+    if raw not in KNOWN_BACKENDS:
+        raise CloudProviderNotImplementedError(raw)
+    return raw
 
 
 class FieldDecryptError(RuntimeError):
@@ -354,7 +419,7 @@ class GCERangeCellConfig:
     # ``vpc-per-range`` mode, where each range mints its own VPC.
     network_id: str = ""
     service_account_email: str = ""
-    # OAuth scope for the range guest's attached service account. Use
+    # OAuth scope for a range host's attached service account. Use
     # cloud-platform and let the host SA's IAM roles be the real access control
     # (the modern GCP recommendation): scopes are a coarse legacy gate, IAM is
     # fine-grained. cloud-platform is REQUIRED, not merely convenient — the
@@ -460,13 +525,17 @@ def get_gcp_range_backend() -> str:
     GDC VM Runtime path remains fully supported and is selected explicitly with
     ``GCP_RANGE_BACKEND=gdc`` (a one-line rollback for any environment).
     """
-    if os.environ.get("CLOUD_PROVIDER", "aws") != "gcp":
+    if resolve_cloud_provider() != "gcp":
         return ""
-    backend = os.environ.get("GCP_RANGE_BACKEND") or os.environ.get("GCP_RANGE_PLANE") or "gce"
-    backend = backend.strip().lower()
-    if backend not in {"gdc", "gce"}:
-        raise RuntimeError(f"GCP_RANGE_BACKEND must be 'gdc' or 'gce', got {backend!r}")
-    return backend
+    # The gce/gdc parse lives once in shared.range_instantiation_policy (#1348);
+    # preserve the historical RuntimeError contract for provisioner callers.
+    try:
+        return normalize_gcp_range_backend(
+            os.environ.get("GCP_RANGE_BACKEND"),
+            os.environ.get("GCP_RANGE_PLANE"),
+        )
+    except GcpRangeBackendError as exc:
+        raise RuntimeError(str(exc)) from exc
 
 
 def _is_active_gdc_range_plane() -> bool:
@@ -550,7 +619,10 @@ def resolve_ngfw_attachment_config(state: dict[str, Any] | None) -> NGFWAttachme
     """Resolve provider-neutral NGFW attachment details from stored state."""
     payload = state if isinstance(state, dict) else {}
     explicit_provider = _first_non_empty_string(payload.get("cloud_provider")).lower()
-    env_default = os.environ.get("CLOUD_PROVIDER", "aws").lower()
+    # Only consult the resolver when the persisted state has no provider tag of
+    # its own -- a persisted value must win outright and must not force a
+    # resolution (and possible fail-closed error) that is not actually needed.
+    env_default = "" if explicit_provider else resolve_cloud_provider()
     cloud_provider = explicit_provider or env_default
     provider_metadata = _get_ngfw_provider_metadata(payload, cloud_provider)
 
@@ -642,19 +714,80 @@ def _load_gdc_scenario_pod_profile(prefix: str, *, default_image: str) -> GDCSce
     )
 
 
+# Disk types the range provisioner accepts. Compute Engine rejects an unknown
+# disk type only after the create call; validate at config load so the operator
+# sees a clear error before a range attempt (#1343 gap 7).
+_VALID_GCE_DISK_TYPES = frozenset({"pd-standard", "pd-balanced", "pd-ssd", "pd-extreme", "hyperdisk-balanced"})
+
+# A Compute Engine resource name segment: lowercase, starts with a letter, and
+# is at most 63 chars (RFC1035, as GCE enforces for image/family names).
+_GCE_NAME = r"[a-z](?:[-a-z0-9]{0,61}[a-z0-9])?"
+# A project id segment permits the domain-scoped ``example.com:project`` legacy
+# form, so allow dots and a single colon in addition to the standard chars.
+_GCE_PROJECT = r"[a-z0-9][-a-z0-9.:]*"
+# Accepted image reference forms:
+#   <name>                                         (bare image or family slug)
+#   family/<name>
+#   [global|projects/<proj>/global]/images[/family]/<name>
+#   an https://…/compute/v1/ prefix on the projects/… form
+_GCE_IMAGE_REFERENCE_RE = re.compile(
+    r"^(?:"
+    rf"{_GCE_NAME}"
+    rf"|family/{_GCE_NAME}"
+    rf"|(?:https://[^/]+/compute/(?:v1|beta)/)?"
+    rf"(?:projects/{_GCE_PROJECT}/)?global/images/(?:family/)?{_GCE_NAME}"
+    r")$"
+)
+
+
+def _validate_gce_image_reference(prefix: str, value: str) -> None:
+    """Reject a malformed GCE image reference before any Compute Engine call."""
+    if not _GCE_IMAGE_REFERENCE_RE.fullmatch(value):
+        raise RuntimeError(
+            f"{prefix}_IMAGE is not a valid Compute Engine image reference: {value!r}. "
+            "Use an image/family name, 'family/<name>', or "
+            "'projects/<project>/global/images[/family]/<name>'."
+        )
+
+
+def _validate_gce_range_profile(prefix: str, profile: GCERangeImageProfile, *, min_disk_size_gb: int) -> None:
+    """Fail fast on a malformed image ref, unknown disk type, or too-small boot disk."""
+    if profile.source_image:
+        _validate_gce_image_reference(prefix, profile.source_image)
+    if profile.disk_type not in _VALID_GCE_DISK_TYPES:
+        raise RuntimeError(
+            f"{prefix}_DISK_TYPE {profile.disk_type!r} is not a supported Compute Engine disk type. "
+            f"Choose one of: {', '.join(sorted(_VALID_GCE_DISK_TYPES))}."
+        )
+    # Role-policy minimum boot-disk size. This is NOT a guarantee that the disk
+    # is >= the actual source image's disk (that would require resolving image
+    # metadata at create time, and the reference may be a mutable family); it
+    # enforces the documented per-role floors (e.g. the Windows/DC images are
+    # 100 GB) so an obviously-undersized disk fails at config load instead of
+    # only at instance creation.
+    if profile.disk_size_gb < min_disk_size_gb:
+        raise RuntimeError(
+            f"{prefix}_DISK_SIZE_GB {profile.disk_size_gb} is smaller than the {min_disk_size_gb} GB "
+            f"role-policy minimum for this guest role."
+        )
+
+
 def _load_gce_range_profile(
     prefix: str,
     *,
     default_machine_type: str,
     default_disk_size_gb: int,
+    min_disk_size_gb: int,
 ) -> GCERangeImageProfile:
     """Load one GCE range guest image/sizing profile."""
-    return GCERangeImageProfile(
+    profile = GCERangeImageProfile(
         source_image=os.environ.get(f"{prefix}_IMAGE", "").strip(),
         machine_type=os.environ.get(f"{prefix}_MACHINE_TYPE", default_machine_type).strip() or default_machine_type,
         disk_size_gb=_get_int_env(f"{prefix}_DISK_SIZE_GB", default_disk_size_gb),
         disk_type=os.environ.get(f"{prefix}_DISK_TYPE", "pd-balanced").strip() or "pd-balanced",
     )
+    _validate_gce_range_profile(prefix, profile, min_disk_size_gb=min_disk_size_gb)
+    return profile
 
 
 def _decode_gdc_access_secret(raw_secret: str) -> tuple[dict[str, Any], str]:
@@ -942,11 +1075,15 @@ def load_gce_range_cell_config() -> GCERangeCellConfig:
             "GCP_RANGE_LINUX",
             default_machine_type="e2-standard-2",
             default_disk_size_gb=50,
+            # debian-12 base is ~10 GB; the Docker host default is 50 GB.
+            min_disk_size_gb=10,
         ),
         kali=_load_gce_range_profile(
             "GCP_RANGE_KALI",
             default_machine_type="e2-standard-4",
             default_disk_size_gb=80,
+            # Kali (converted debian base + tools / polaris stack) needs headroom.
+            min_disk_size_gb=30,
         ),
         windows=_load_gce_range_profile(
             "GCP_RANGE_WINDOWS",
@@ -956,11 +1093,13 @@ def load_gce_range_cell_config() -> GCERangeCellConfig:
             # every Windows guest fails at create. Override via
             # GCP_RANGE_WINDOWS_DISK_SIZE_GB for a larger image.
             default_disk_size_gb=100,
+            min_disk_size_gb=100,
         ),
         dc=_load_gce_range_profile(
             "GCP_RANGE_DC",
             default_machine_type="e2-standard-4",
             default_disk_size_gb=100,
+            min_disk_size_gb=100,
         ),
         portal_network_cidrs=_parse_csv_env(
             os.environ.get("PORTAL_NETWORK_CIDRS", "") or os.environ.get("PORTAL_VPC_CIDR", "")
@@ -1038,6 +1177,246 @@ def get_range_availability_zone(default: str = "us-east-2b") -> str:
         or os.environ.get("RANGE_AVAILABILITY_ZONE")
         or os.environ.get("AVAILABILITY_ZONE")
         or default
+    )
+
+
+@dataclass(frozen=True)
+class AWSPolarisAgentConfig:
+    """Per-range AWS Polaris agent Bedrock role config seam (#1377).
+
+    One validated profile for the AWS Polaris a14-kali agent: the STS/Bedrock
+    region, the approved main and small/fast Bedrock model ids, the exact
+    inference-profile ARNs those model ids resolve through, the backing
+    foundation-model ARNs the profiles invoke (potentially across regions
+    for cross-region inference), and the STS session lifecycle used to
+    refresh the per-range agent role's short-lived credentials.
+
+    Both the per-range Terraform agent-role policy and
+    ``PolarisRangeBootstrapPlan`` are meant to consume this seam so model and
+    ARN defaults live in exactly one place instead of independently in IAM,
+    Python, embedded shell, and deployment Terraform. Holds only non-secret
+    references (region, model ids, ARNs, durations) -- never a credential,
+    session token, or access key. The per-range target role ARN itself is
+    not part of this static config; Terraform supplies it at apply time.
+    """
+
+    region: str
+    main_model_id: str
+    small_model_id: str
+    main_inference_profile_arn: str
+    small_inference_profile_arn: str
+    main_backing_model_arns: tuple[str, ...]
+    small_backing_model_arns: tuple[str, ...]
+    # REQUIRED (non-empty) whenever this config is present. The seam's
+    # enablement signal is main_inference_profile_arn: once that is set, an
+    # enabled per-range Bedrock agent role must always carry a permissions
+    # boundary (ADR-004-R21) -- there is no "enabled but no boundary" state.
+    permissions_boundary_arn: str
+    sts_session_duration_seconds: int = 900
+    refresh_window_seconds: int = 300
+
+
+# Bedrock model ids for the a14-kali agent's default Bedrock plane. Reused
+# verbatim from the values PolarisRangeBootstrapPlan previously carried as
+# its own independent module-level defaults, so the two stop drifting apart
+# (#1377 seam consolidation).
+_AWS_POLARIS_AGENT_DEFAULT_MAIN_MODEL_ID = "us.anthropic.claude-sonnet-4-6"
+_AWS_POLARIS_AGENT_DEFAULT_SMALL_MODEL_ID = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
+
+# arn:aws:bedrock:<region>:<account-or-empty>:inference-profile/<id> or
+# arn:aws:bedrock:<region>:<account-or-empty>:foundation-model/<id>. Account
+# is empty for foundation-model ARNs.
+_BEDROCK_ARN_PATTERN = re.compile(
+    r"^arn:aws:bedrock:[a-z0-9-]+:\d*:(?:inference-profile|foundation-model)/[A-Za-z0-9._:/-]+$"
+)
+# arn:aws:iam::<account>:policy/<name>. The permissions boundary must be an
+# IAM *policy* ARN specifically -- a role/user/group ARN is not a valid
+# permissions-boundary target even though it would match a generic IAM ARN
+# shape.
+_IAM_ARN_PATTERN = re.compile(r"^arn:aws:iam::\d{12}:policy/[A-Za-z0-9._/-]+$")
+
+# Plain AWS region shape (e.g. "us-east-2", "ap-southeast-1"). region is
+# substituted verbatim into a double-quoted shell variable assignment in the
+# root-executed SSM range bootstrap scripts (PolarisRangeBootstrapPlan); a
+# value carrying a quote, `$()`, backtick, or other shell metacharacter would
+# escape that assignment and run as root at next provision, so this
+# allowlists the exact region shape instead of merely checking presence
+# (#1377 codex pre-push finding: command injection into root-executed shell).
+_AWS_REGION_PATTERN = re.compile(r"^[a-z]{2}-[a-z]+-\d+$")
+
+# Bedrock model / inference-profile id shape (e.g.
+# "us.anthropic.claude-sonnet-4-6", "anthropic.claude-haiku-4-5-v1:0").
+# main_model_id/small_model_id have the same root-executed-shell substitution
+# exposure as region above; only blankness was previously checked.
+_BEDROCK_MODEL_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]*$")
+
+
+def _missing_aws_polaris_agent_env(
+    *,
+    region: str,
+    small_inference_profile_arn: str,
+    main_backing_model_arns: tuple[str, ...],
+    small_backing_model_arns: tuple[str, ...],
+    permissions_boundary_arn: str,
+) -> list[str]:
+    """Return display names for missing required AWS Polaris agent settings."""
+    return [
+        name
+        for name, value in (
+            ("AWS_POLARIS_AGENT_REGION", region),
+            ("AWS_POLARIS_AGENT_SMALL_INFERENCE_PROFILE_ARN", small_inference_profile_arn),
+            ("AWS_POLARIS_AGENT_MAIN_BACKING_MODEL_ARNS", main_backing_model_arns),
+            ("AWS_POLARIS_AGENT_SMALL_BACKING_MODEL_ARNS", small_backing_model_arns),
+            ("AWS_POLARIS_AGENT_PERMISSIONS_BOUNDARY_ARN", permissions_boundary_arn),
+        )
+        if not value
+    ]
+
+
+def _validate_aws_polaris_agent_region(region: str) -> None:
+    """Fail closed on a region that is not a plain AWS region string."""
+    if not _AWS_REGION_PATTERN.match(region):
+        raise RuntimeError(
+            f"AWS_POLARIS_AGENT_REGION is not a valid AWS region (expected e.g. 'us-east-2'): {region!r}"
+        )
+
+
+def _validate_aws_polaris_agent_model_id(env_name: str, model_id: str) -> None:
+    """Fail closed on a Bedrock model/inference id containing shell metacharacters."""
+    if not _BEDROCK_MODEL_ID_PATTERN.match(model_id):
+        raise RuntimeError(
+            f"{env_name} is not a valid Bedrock model id (expected e.g. 'us.anthropic.claude-sonnet-4-6'): {model_id!r}"
+        )
+
+
+def _validate_aws_polaris_agent_arns(
+    *,
+    main_inference_profile_arn: str,
+    small_inference_profile_arn: str,
+    main_backing_model_arns: tuple[str, ...],
+    small_backing_model_arns: tuple[str, ...],
+    permissions_boundary_arn: str,
+) -> None:
+    """Fail closed on any ARN that does not look like a real Bedrock/IAM ARN."""
+    for env_name, arn in (
+        ("AWS_POLARIS_AGENT_MAIN_INFERENCE_PROFILE_ARN", main_inference_profile_arn),
+        ("AWS_POLARIS_AGENT_SMALL_INFERENCE_PROFILE_ARN", small_inference_profile_arn),
+        *(("AWS_POLARIS_AGENT_MAIN_BACKING_MODEL_ARNS", arn) for arn in main_backing_model_arns),
+        *(("AWS_POLARIS_AGENT_SMALL_BACKING_MODEL_ARNS", arn) for arn in small_backing_model_arns),
+    ):
+        if not _BEDROCK_ARN_PATTERN.match(arn):
+            raise RuntimeError(f"{env_name} is not a valid Bedrock ARN (expected arn:aws:bedrock:...): {arn!r}")
+
+    if not _IAM_ARN_PATTERN.match(permissions_boundary_arn):
+        raise RuntimeError(
+            "AWS_POLARIS_AGENT_PERMISSIONS_BOUNDARY_ARN is not a valid IAM policy ARN "
+            f"(expected arn:aws:iam::<account>:policy/...): {permissions_boundary_arn!r}"
+        )
+
+
+def _validate_aws_polaris_agent_sts_timing(*, sts_session_duration_seconds: int, refresh_window_seconds: int) -> None:
+    """Fail closed on an STS session/refresh pairing that can't refresh before expiry."""
+    if sts_session_duration_seconds < 900:
+        raise RuntimeError(
+            "AWS_POLARIS_AGENT_STS_SESSION_DURATION_SECONDS must be >= 900 (AWS AssumeRole minimum session duration)"
+        )
+    if refresh_window_seconds >= sts_session_duration_seconds:
+        raise RuntimeError(
+            "AWS_POLARIS_AGENT_REFRESH_WINDOW_SECONDS must be less than "
+            "AWS_POLARIS_AGENT_STS_SESSION_DURATION_SECONDS so the host refreshes before expiry"
+        )
+
+
+def load_aws_polaris_agent_config() -> AWSPolarisAgentConfig | None:
+    """Load the per-range AWS Polaris agent Bedrock role config, when configured.
+
+    Single seam (#1377) for the AWS Polaris a14-kali agent's region, approved
+    main/small Bedrock model ids, their exact inference-profile and backing
+    foundation-model ARNs, and STS session lifecycle. The per-range Terraform
+    agent-role policy and ``PolarisRangeBootstrapPlan`` are meant to consume
+    this instead of keeping independent model/ARN defaults.
+
+    Returns:
+        The validated config, or ``None`` when
+        ``AWS_POLARIS_AGENT_MAIN_INFERENCE_PROFILE_ARN`` is unset -- this
+        environment has not enabled the per-range Bedrock agent role yet.
+
+    Raises:
+        RuntimeError: The seam is enabled (main inference-profile ARN set)
+            but a required field is missing (including the permissions
+            boundary ARN -- ADR-004-R21 requires an enabled agent role to
+            always carry one), a model id is blank or contains a shell
+            metacharacter, the region is not a plain AWS region string, an
+            ARN does not look like a Bedrock/IAM policy ARN, the STS session
+            duration is below AWS's 900-second ``AssumeRole`` floor, or the
+            refresh window would not leave time to refresh before expiry.
+    """
+    main_inference_profile_arn = os.environ.get("AWS_POLARIS_AGENT_MAIN_INFERENCE_PROFILE_ARN", "").strip()
+    if not main_inference_profile_arn:
+        return None
+
+    region = os.environ.get("AWS_POLARIS_AGENT_REGION", "").strip()
+    small_inference_profile_arn = os.environ.get("AWS_POLARIS_AGENT_SMALL_INFERENCE_PROFILE_ARN", "").strip()
+    main_backing_model_arns = _parse_csv_env(os.environ.get("AWS_POLARIS_AGENT_MAIN_BACKING_MODEL_ARNS", ""))
+    small_backing_model_arns = _parse_csv_env(os.environ.get("AWS_POLARIS_AGENT_SMALL_BACKING_MODEL_ARNS", ""))
+    # REQUIRED whenever the seam is enabled (ADR-004-R21): an enabled
+    # per-range Bedrock agent role must always carry a permissions boundary,
+    # not fall back to a conditional/null boundary downstream in Terraform.
+    permissions_boundary_arn = os.environ.get("AWS_POLARIS_AGENT_PERMISSIONS_BOUNDARY_ARN", "").strip()
+
+    missing = _missing_aws_polaris_agent_env(
+        region=region,
+        small_inference_profile_arn=small_inference_profile_arn,
+        main_backing_model_arns=main_backing_model_arns,
+        small_backing_model_arns=small_backing_model_arns,
+        permissions_boundary_arn=permissions_boundary_arn,
+    )
+    if missing:
+        raise RuntimeError("Missing required AWS Polaris agent configuration: " + ", ".join(missing))
+
+    _validate_aws_polaris_agent_region(region)
+
+    # Absent env var -> reuse the existing hardcoded default (previously
+    # duplicated as a PolarisRangeBootstrapPlan module constant). Present but
+    # blank -> an explicit misconfiguration; fail closed rather than silently
+    # falling back to the default.
+    main_model_id_raw = os.environ.get("AWS_POLARIS_AGENT_MAIN_MODEL_ID")
+    main_model_id = main_model_id_raw if main_model_id_raw is not None else _AWS_POLARIS_AGENT_DEFAULT_MAIN_MODEL_ID
+    small_model_id_raw = os.environ.get("AWS_POLARIS_AGENT_SMALL_MODEL_ID")
+    small_model_id = small_model_id_raw if small_model_id_raw is not None else _AWS_POLARIS_AGENT_DEFAULT_SMALL_MODEL_ID
+    if not main_model_id.strip():
+        raise RuntimeError("AWS_POLARIS_AGENT_MAIN_MODEL_ID must not be blank")
+    if not small_model_id.strip():
+        raise RuntimeError("AWS_POLARIS_AGENT_SMALL_MODEL_ID must not be blank")
+    _validate_aws_polaris_agent_model_id("AWS_POLARIS_AGENT_MAIN_MODEL_ID", main_model_id)
+    _validate_aws_polaris_agent_model_id("AWS_POLARIS_AGENT_SMALL_MODEL_ID", small_model_id)
+
+    _validate_aws_polaris_agent_arns(
+        main_inference_profile_arn=main_inference_profile_arn,
+        small_inference_profile_arn=small_inference_profile_arn,
+        main_backing_model_arns=main_backing_model_arns,
+        small_backing_model_arns=small_backing_model_arns,
+        permissions_boundary_arn=permissions_boundary_arn,
+    )
+
+    sts_session_duration_seconds = _get_int_env("AWS_POLARIS_AGENT_STS_SESSION_DURATION_SECONDS", 900)
+    refresh_window_seconds = _get_int_env("AWS_POLARIS_AGENT_REFRESH_WINDOW_SECONDS", 300)
+    _validate_aws_polaris_agent_sts_timing(
+        sts_session_duration_seconds=sts_session_duration_seconds,
+        refresh_window_seconds=refresh_window_seconds,
+    )
+
+    return AWSPolarisAgentConfig(
+        region=region,
+        main_model_id=main_model_id,
+        small_model_id=small_model_id,
+        main_inference_profile_arn=main_inference_profile_arn,
+        small_inference_profile_arn=small_inference_profile_arn,
+        main_backing_model_arns=main_backing_model_arns,
+        small_backing_model_arns=small_backing_model_arns,
+        permissions_boundary_arn=permissions_boundary_arn,
+        sts_session_duration_seconds=sts_session_duration_seconds,
+        refresh_window_seconds=refresh_window_seconds,
     )
 
 

@@ -54,7 +54,7 @@ class TestEventApi:
         assert resp.status_code == 201
 
     def test_create_post_invalid_json(self, authenticated_organizer_client: Client):
-        url = reverse("ctf:api_event_list")
+        url = reverse("v1:ctf:api_event_list")
         resp = authenticated_organizer_client.post(url, data="not-json", content_type=JSON)
         assert resp.status_code == 400
 
@@ -238,7 +238,7 @@ class TestFlagHintFileApi:
         assert "files" in resp.json()
 
     def test_files_post_no_file(self, authenticated_organizer_client: Client, ctf_challenge: CTFChallenge):
-        url = reverse("ctf:api_challenge_files", kwargs={"challenge_id": ctf_challenge.id})
+        url = reverse("v1:ctf:api_challenge_files", kwargs={"challenge_id": ctf_challenge.id})
         resp = authenticated_organizer_client.post(url, data={})
         assert resp.status_code == 400
 
@@ -446,11 +446,11 @@ class TestParticipantManagementApi:
 
 class TestScoreboardApi:
     def test_scoreboard_get(self, authenticated_organizer_client: Client, ctf_event: CTFEvent):
-        resp = _json(authenticated_organizer_client, "get", "api_scoreboard", kwargs={"event_id": ctf_event.id})
+        resp = _json(authenticated_organizer_client, "get", "ctf:api_scoreboard", kwargs={"event_id": ctf_event.id})
         assert resp.status_code == 200
 
     def test_scoreboard_not_found(self, authenticated_organizer_client: Client):
-        resp = _json(authenticated_organizer_client, "get", "api_scoreboard", kwargs={"event_id": uuid4()})
+        resp = _json(authenticated_organizer_client, "get", "ctf:api_scoreboard", kwargs={"event_id": uuid4()})
         assert resp.status_code == 404
 
     def test_timeline_get(self, authenticated_organizer_client: Client, ctf_participant: CTFParticipant):

@@ -4,12 +4,20 @@ from __future__ import annotations
 
 import dataclasses
 import sys
+from copy import deepcopy
 from types import ModuleType, SimpleNamespace
 from unittest.mock import MagicMock, call
 
 import pytest
+from shared.range_cells import (
+    RangeCellContractError,
+    build_gcp_vm_range_cell_request,
+    build_scenario_artifact,
+    validate_gcp_vm_range_cell_result,
+)
 
 from config import GCERangeCellConfig, GCERangeImageProfile
+from gcp_range_cell_outputs import InstanceCredentials, instance_output
 from gcp_range_cells import (
     GCEGuestSecretOps,
     GCEVertexCredentialOps,
@@ -54,15 +62,14 @@ def _sample_config() -> GCERangeCellConfig:
     )
 
 
-def _variables() -> dict:
+def _scenario_payload() -> dict:
     return {
-        "range_id": 42,
-        "request_uuid": "req-123",
+        "scenario_id": "scenario-a",
+        "user_id": 7,
         "subnets": [
             {
                 "name": "polaris",
                 "uuid": "subnet-uuid",
-                "cidr": "10.50.2.0/28",
                 "instances": [
                     {
                         "uuid": "linux-uuid",
@@ -79,7 +86,32 @@ def _variables() -> dict:
                 ],
             }
         ],
+        "participant_access": [
+            {"target_ref": "linux-uuid", "channel": "ssh"},
+            {"target_ref": "linux-uuid", "channel": "rdp"},
+        ],
     }
+
+
+def _variables(*, payload: dict | None = None, bindings: list[dict] | None = None) -> dict:
+    scenario_payload = deepcopy(payload if payload is not None else _scenario_payload())
+    if bindings is None:
+        bindings = [
+            {
+                "subnet_ref": subnet.get("uuid") or f"missing-{index}",
+                "cidr": f"10.50.{index + 2}.0/28",
+            }
+            for index, subnet in enumerate(scenario_payload.get("subnets", []))
+        ]
+    return build_gcp_vm_range_cell_request(
+        request_id="req-123",
+        range_id=42,
+        scenario_artifact=build_scenario_artifact(
+            {"spec_schema": "range_spec", "spec_version": "1", "payload": scenario_payload}
+        ),
+        network_bindings=bindings,
+        access_declarations=scenario_payload.get("participant_access", []),
+    )
 
 
 def _mock_clients(*, exists: bool = False) -> SimpleNamespace:
@@ -112,16 +144,22 @@ def _mock_clients(*, exists: bool = False) -> SimpleNamespace:
 
 def _mock_secret_ops(mocker) -> tuple[GCEGuestSecretOps, SimpleNamespace]:
     mocks = SimpleNamespace(
-        ensure_ssh=mocker.Mock(return_value=("projects/test/secrets/ssh", "ssh-ed25519 AAAA")),
+        ensure_ssh=mocker.Mock(return_value=("projects/test/secrets/host-ssh", "ssh-ed25519 HOST")),
+        ensure_participant_ssh=mocker.Mock(
+            return_value=("projects/test/secrets/participant-ssh", "ssh-ed25519 PARTICIPANT")
+        ),
         ensure_rdp_password=mocker.Mock(return_value=("projects/test/secrets/rdp", "Password-1")),
         delete_ssh=mocker.Mock(),
+        delete_participant_ssh=mocker.Mock(),
         delete_rdp_password=mocker.Mock(),
     )
     return (
         GCEGuestSecretOps(
             ensure_ssh=mocks.ensure_ssh,
+            ensure_participant_ssh=mocks.ensure_participant_ssh,
             ensure_rdp_password=mocks.ensure_rdp_password,
             delete_ssh=mocks.delete_ssh,
+            delete_participant_ssh=mocks.delete_participant_ssh,
             delete_rdp_password=mocks.delete_rdp_password,
         ),
         mocks,
@@ -195,17 +233,21 @@ def test_render_range_cell_plan_private_google_access_adds_egress_hole():
 
 
 def test_render_range_cell_plan_rejects_subnet_without_uuid():
-    variables = {"range_id": 42, "subnets": [{"name": "polaris", "cidr": "10.50.2.0/28"}]}
+    payload = _scenario_payload()
+    del payload["subnets"][0]["uuid"]
+    variables = _variables(payload=payload)
+    config = _sample_config()
 
     with pytest.raises(RuntimeError, match="requires name and uuid"):
-        render_range_cell_plan("req-123", variables, _sample_config())
+        render_range_cell_plan("req-123", variables, config)
 
 
 def test_render_range_cell_plan_rejects_subnet_without_cidr_when_images_required():
-    variables = {"range_id": 42, "subnets": [{"name": "polaris", "uuid": "subnet-uuid"}]}
+    variables = _variables(bindings=[])
+    config = _sample_config()
 
-    with pytest.raises(RuntimeError, match="requires a cidr"):
-        render_range_cell_plan("req-123", variables, _sample_config())
+    with pytest.raises(RuntimeError, match="requires a network binding"):
+        render_range_cell_plan("req-123", variables, config)
 
 
 def test_apply_shared_vpc_skips_network_create(mocker):
@@ -318,12 +360,139 @@ def test_render_range_cell_plan_uses_vpc_per_range_and_deterministic_ips():
     }
 
 
+def test_range_cell_firewalls_do_not_allow_cross_range_private_traffic():
+    first_variables = _variables()
+    second_variables = deepcopy(first_variables)
+    second_variables["operation"]["range_id"] = 43
+    second_variables["network_bindings"][0]["cidr"] = "10.50.3.0/28"
+
+    first = render_range_cell_plan("req-123", first_variables, _sample_config())
+    second = render_range_cell_plan("req-123", second_variables, _sample_config())
+
+    first_allowed = [rule for rule in first["firewalls"] if "allowed" in rule]
+    second_cidr = second["subnets"][0]["cidr"]
+    assert all(second_cidr not in rule.get("source_ranges", []) for rule in first_allowed)
+    assert all(second_cidr not in rule.get("destination_ranges", []) for rule in first_allowed)
+    assert {tag for rule in first["firewalls"] for tag in rule["target_tags"]}.isdisjoint(
+        {tag for rule in second["firewalls"] for tag in rule["target_tags"]}
+    )
+
+
+def test_range_cell_firewalls_are_deterministic_from_cell_identity():
+    variables = _variables()
+    config = dataclasses.replace(_sample_config(), egress_allow_cidrs=("10.60.0.10/32",))
+
+    first = render_range_cell_plan("req-123", variables, config)
+    second = render_range_cell_plan("req-123", deepcopy(variables), config)
+
+    assert first["firewalls"] == second["firewalls"]
+    assert all(rule["target_tags"][0].startswith("shifter-range-42") for rule in first["firewalls"])
+
+
+@pytest.mark.parametrize("field", ["portal_network_cidrs", "egress_allow_cidrs"])
+def test_range_cell_firewalls_reject_universal_allow_cidrs(field):
+    config = dataclasses.replace(_sample_config(), **{field: ("0.0.0.0/0",)})
+    variables = _variables()
+
+    with pytest.raises(RuntimeError, match=r"must not include 0\.0\.0\.0/0"):
+        render_range_cell_plan("req-123", variables, config)
+
+
+@pytest.mark.parametrize(
+    ("field", "cidr", "message"),
+    [
+        ("portal_network_cidrs", "10.40.0.1/20", "invalid network"),
+        ("egress_allow_cidrs", "2001:db8::/64", "only IPv4"),
+    ],
+)
+def test_range_cell_firewalls_reject_malformed_boundary_cidrs(field, cidr, message):
+    config = dataclasses.replace(_sample_config(), **{field: (cidr,)})
+    variables = _variables()
+
+    with pytest.raises(RuntimeError, match=message):
+        render_range_cell_plan("req-123", variables, config)
+
+
+def test_range_cell_firewalls_deduplicate_explicit_egress_cidrs():
+    config = dataclasses.replace(_sample_config(), egress_allow_cidrs=("10.60.0.0/24", "10.60.0.0/24"))
+
+    plan = render_range_cell_plan("req-123", _variables(), config)
+    egress = next(rule for rule in plan["firewalls"] if rule["name"].endswith("-egress-allow"))
+
+    assert egress["destination_ranges"] == ["10.60.0.0/24"]
+
+
+def test_range_cell_rule_count_is_bounded_per_cell_not_per_instance():
+    payload = _scenario_payload()
+    base_instances = payload["subnets"][0]["instances"]
+    payload["subnets"][0]["instances"] = [deepcopy(base_instances[index % 2]) for index in range(50)]
+    for index, instance in enumerate(payload["subnets"][0]["instances"]):
+        instance["uuid"] = f"instance-{index}"
+        instance["name"] = f"guest-{index}"
+    payload["participant_access"] = []
+
+    plan = render_range_cell_plan(
+        "req-123",
+        _variables(payload=payload, bindings=[{"subnet_ref": "subnet-uuid", "cidr": "10.50.2.0/24"}]),
+        _sample_config(),
+    )
+
+    assert len(plan["instances"]) == 50
+    assert len(plan["firewalls"]) == len(plan["subnets"]) + 3
+
+
+def test_base_firewall_templates_stay_at_three_rules_for_101_single_subnet_cells():
+    config = dataclasses.replace(_shared_vpc_config(), portal_network_cidrs=())
+    names: set[str] = set()
+    rule_count = 0
+    for offset in range(101):
+        variables = _variables()
+        variables["operation"]["range_id"] = offset + 1
+        variables["network_bindings"][0]["cidr"] = f"10.50.{offset // 16}.{(offset % 16) * 16}/28"
+        firewalls = render_range_cell_plan("req-123", variables, config)["firewalls"]
+        rule_count += len(firewalls)
+        names.update(rule["name"] for rule in firewalls)
+
+    assert rule_count == 303
+    assert len(names) == rule_count
+
+
+def test_only_polaris_docker_host_requires_the_host_service_account():
+    payload = _scenario_payload()
+    payload["subnets"][0]["instances"][0]["ami_key"] = "polaris-vm"
+
+    plan = render_range_cell_plan("req-123", _variables(payload=payload), _sample_config())
+    by_name = {instance["name"]: instance for instance in plan["instances"]}
+
+    assert by_name["kali"]["attach_service_account"] is True
+    assert by_name["dc01"]["attach_service_account"] is False
+
+
+def test_instance_output_reports_service_account_only_for_polaris_host():
+    payload = _scenario_payload()
+    payload["subnets"][0]["instances"][0]["ami_key"] = "polaris-vm"
+    config = _sample_config()
+    plan = render_range_cell_plan("req-123", _variables(payload=payload), config)
+    by_name = {instance["name"]: instance for instance in plan["instances"]}
+    credentials = InstanceCredentials(
+        host_ssh_secret_ref="projects/test/secrets/host-ssh",
+        participant_ssh_secret_ref=None,
+        rdp_password_secret_ref=None,
+        ssh_public_key="ssh-ed25519 HOST",
+    )
+
+    host_output = instance_output(plan, by_name["kali"], credentials, config)
+    native_output = instance_output(plan, by_name["dc01"], credentials, config)
+
+    assert host_output["gcp_service_account_email"] == config.service_account_email
+    assert native_output["gcp_service_account_email"] == ""
+
+
 def test_render_plan_destroy_tolerates_missing_subnet_cidr():
     # Auto-cleanup after a provision that failed before CIDR allocation renders
     # the destroy plan with require_images=False; the subnet is deleted by
     # resource name, so an empty CIDR must not raise.
-    variables = _variables()
-    variables["subnets"][0]["cidr"] = ""
+    variables = _variables(bindings=[])
     plan = render_range_cell_plan("req-123", variables, _sample_config(), require_images=False)
     subnet = plan["subnets"][0]
     assert subnet["cidr"] == ""
@@ -332,19 +501,21 @@ def test_render_plan_destroy_tolerates_missing_subnet_cidr():
 
 
 def test_render_plan_provision_requires_subnet_cidr():
-    variables = _variables()
-    variables["subnets"][0]["cidr"] = ""
-    with pytest.raises(RuntimeError, match="requires a cidr"):
-        render_range_cell_plan("req-123", variables, _sample_config())
+    variables = _variables(bindings=[])
+    config = _sample_config()
+    with pytest.raises(RuntimeError, match="requires a network binding"):
+        render_range_cell_plan("req-123", variables, config)
 
 
 def test_render_plan_requires_subnet_name_and_uuid():
     # name/uuid identify the subnet for both provision and destroy, so they are
     # required in either mode.
-    variables = _variables()
-    variables["subnets"][0]["uuid"] = ""
+    payload = _scenario_payload()
+    payload["subnets"][0]["uuid"] = ""
+    variables = _variables(payload=payload, bindings=[])
+    config = _sample_config()
     with pytest.raises(RuntimeError, match="requires name and uuid"):
-        render_range_cell_plan("req-123", variables, _sample_config(), require_images=False)
+        render_range_cell_plan("req-123", variables, config, require_images=False)
 
 
 def test_render_plan_translates_polaris_vm_to_docker_host_access():
@@ -354,10 +525,11 @@ def test_render_plan_translates_polaris_vm_to_docker_host_access():
     provisioner must drive the host sshd on the management port as the host
     login user, not the participant "kali" user.
     """
-    variables = _variables()
-    kali = variables["subnets"][0]["instances"][0]
+    payload = _scenario_payload()
+    kali = payload["subnets"][0]["instances"][0]
     kali["ami_key"] = "polaris-vm"
     kali["instance_type"] = "m5.2xlarge"  # AWS shape; must NOT reach GCE.
+    variables = _variables(payload=payload)
 
     config = GCERangeCellConfig(
         project_id="test-project",
@@ -419,8 +591,9 @@ def test_instance_resource_installs_key_for_host_login_user():
     """
     from gcp_range_cell_resources import instance_resource
 
-    variables = _variables()
-    variables["subnets"][0]["instances"][0]["ami_key"] = "polaris-vm"
+    payload = _scenario_payload()
+    payload["subnets"][0]["instances"][0]["ami_key"] = "polaris-vm"
+    variables = _variables(payload=payload)
     plan = render_range_cell_plan("req-123", variables, _vertex_config())
     host = plan["instances"][0]
 
@@ -510,6 +683,156 @@ def test_apply_emits_gcp_host_public_key(mocker):
         assert instance["gcp_host_public_key"].startswith("ssh-ed25519 ")
 
 
+def test_apply_emits_closed_lifecycle_membership_and_access_result(mocker):
+    clients = _mock_clients(exists=False)
+    secret_ops, _ = _mock_secret_ops(mocker)
+    vertex_ops, _ = _mock_vertex_ops(mocker)
+
+    output = apply_range_cell(
+        "req-123",
+        _variables(),
+        config=_sample_config(),
+        clients=clients,
+        secret_ops=secret_ops,
+        vertex_ops=vertex_ops,
+    )
+
+    result = validate_gcp_vm_range_cell_result(output["range_cell"])
+    assert result["cell"] == {
+        "cell_id": "gcp:test-project:us-central1:42",
+        "provider": "gcp",
+        "backend": "gce",
+        "lifecycle_state": "ready",
+        "subnet_refs": ["subnet-uuid"],
+    }
+    assert {member["authored_ref"] for member in result["members"]} == {"linux-uuid", "dc-uuid"}
+    assert {(record["target_ref"], record["channel"]) for record in result["access"]} == {
+        ("linux-uuid", "ssh"),
+        ("linux-uuid", "rdp"),
+    }
+    assert result["access"][0]["credential_ref"] == "projects/test/secrets/participant-ssh"
+    assert "host-ssh" not in repr(result)
+    assert "Password-1" not in repr(result)
+
+
+def test_generated_host_credentials_do_not_authorize_participant_access(mocker):
+    clients = _mock_clients(exists=False)
+    secret_ops, secret_mocks = _mock_secret_ops(mocker)
+    payload = _scenario_payload()
+    payload["participant_access"] = []
+
+    output = apply_range_cell(
+        "req-123",
+        _variables(payload=payload),
+        config=_sample_config(),
+        clients=clients,
+        secret_ops=secret_ops,
+    )
+
+    result = validate_gcp_vm_range_cell_result(output["range_cell"])
+    assert result["access"] == []
+    assert all(instance["ssh_key_secret_arn"] == "" for instance in output["instances"])
+    assert all(instance["gcp_host_ssh_key_secret_ref"] for instance in output["instances"])
+    secret_mocks.ensure_participant_ssh.assert_not_called()
+
+
+def test_contract_validation_precedes_every_gce_client_mutation(mocker):
+    clients = _mock_clients(exists=False)
+    secret_ops, secret_mocks = _mock_secret_ops(mocker)
+    vertex_ops, vertex_mocks = _mock_vertex_ops(mocker)
+    malformed = _variables() | {"unexpected": True}
+    config = _sample_config()
+
+    with pytest.raises(RangeCellContractError, match="unexpected field"):
+        apply_range_cell(
+            "req-123",
+            malformed,
+            config=config,
+            clients=clients,
+            secret_ops=secret_ops,
+            vertex_ops=vertex_ops,
+        )
+
+    clients.networks.insert.assert_not_called()
+    clients.subnetworks.insert.assert_not_called()
+    clients.firewalls.insert.assert_not_called()
+    clients.addresses.insert.assert_not_called()
+    clients.instances.insert.assert_not_called()
+    secret_mocks.ensure_ssh.assert_not_called()
+    secret_mocks.ensure_participant_ssh.assert_not_called()
+    secret_mocks.ensure_rdp_password.assert_not_called()
+    vertex_mocks.ensure.assert_not_called()
+
+
+def test_outer_access_cannot_expand_digest_bound_scenario_authorization(mocker):
+    clients = _mock_clients(exists=False)
+    secret_ops, secret_mocks = _mock_secret_ops(mocker)
+    variables = _variables()
+    variables["access_declarations"] = [{"target_ref": "dc-uuid", "channel": "ssh"}]
+    config = _sample_config()
+
+    with pytest.raises(RangeCellContractError, match="do not match the digest-bound scenario artifact"):
+        apply_range_cell(
+            "req-123",
+            variables,
+            config=config,
+            clients=clients,
+            secret_ops=secret_ops,
+        )
+
+    clients.instances.insert.assert_not_called()
+    secret_mocks.ensure_ssh.assert_not_called()
+    secret_mocks.ensure_participant_ssh.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("instances", "message"),
+    [
+        (["not-an-object"], "canonical validation"),
+        ([{"name": "missing-ref", "role": "victim", "os_type": "ubuntu"}], "requires a uuid"),
+        (
+            [
+                {"name": "first", "uuid": "duplicate", "role": "victim", "os_type": "ubuntu"},
+                {"name": "second", "uuid": "duplicate", "role": "victim", "os_type": "ubuntu"},
+            ],
+            "duplicate authored instance uuid",
+        ),
+    ],
+)
+def test_scenario_adapter_rejects_invalid_membership_before_provider_mutation(mocker, instances, message):
+    clients = _mock_clients(exists=False)
+    secret_ops, secret_mocks = _mock_secret_ops(mocker)
+    vertex_ops, vertex_mocks = _mock_vertex_ops(mocker)
+    payload = _scenario_payload()
+    payload["subnets"][0]["instances"] = instances
+    payload["participant_access"] = []
+    config = _sample_config()
+
+    def apply_invalid_payload():
+        variables = _variables(payload=payload)
+        apply_range_cell(
+            "req-123",
+            variables,
+            config=config,
+            clients=clients,
+            secret_ops=secret_ops,
+            vertex_ops=vertex_ops,
+        )
+
+    with pytest.raises(RangeCellContractError, match=message):
+        apply_invalid_payload()
+
+    clients.networks.insert.assert_not_called()
+    clients.subnetworks.insert.assert_not_called()
+    clients.firewalls.insert.assert_not_called()
+    clients.addresses.insert.assert_not_called()
+    clients.instances.insert.assert_not_called()
+    secret_mocks.ensure_ssh.assert_not_called()
+    secret_mocks.ensure_participant_ssh.assert_not_called()
+    secret_mocks.ensure_rdp_password.assert_not_called()
+    vertex_mocks.ensure.assert_not_called()
+
+
 def test_render_plan_carries_private_google_access_flag():
     """Private Google Access flows from config into the subnet resource body."""
     from gcp_range_cell_resources import subnetwork_resource
@@ -595,6 +918,8 @@ def test_apply_range_cell_is_idempotent_when_resources_exist(mocker):
         secret_ops=secret_ops,
     )
 
+    validate_gcp_vm_range_cell_result(output.pop("range_cell"))
+
     assert output == {
         "subnets": {
             "polaris": {
@@ -623,10 +948,11 @@ def test_apply_range_cell_is_idempotent_when_resources_exist(mocker):
                 "subnet_name": "polaris",
                 "instance_id": "shifter-r-42-polaris-kali",
                 "private_ip": "10.50.2.3",
-                "ssh_key_secret_arn": "projects/test/secrets/ssh",
+                "ssh_key_secret_arn": "projects/test/secrets/participant-ssh",
                 "ssh_username": "kali",
-                "public_key": "ssh-ed25519 AAAA",
+                "public_key": "ssh-ed25519 HOST\nssh-ed25519 PARTICIPANT",
                 "gcp_host_public_key": "",
+                "gcp_host_ssh_key_secret_ref": "projects/test/secrets/host-ssh",
                 "gcp_host_ssh_username": "kali",
                 "gcp_host_ssh_port": 22,
                 "gcp_project_id": "test-project",
@@ -639,9 +965,9 @@ def test_apply_range_cell_is_idempotent_when_resources_exist(mocker):
                 "gcp_instance_name": "shifter-r-42-polaris-kali",
                 "gcp_address_name": "shifter-r-42-polaris-kali-ip",
                 "gcp_network_tags": ["shifter-range-42", "shifter-range-42-polaris", "shifter-role-attacker"],
-                "gcp_service_account_email": "range-host@test-project.iam.gserviceaccount.com",
+                "gcp_service_account_email": "",
                 "rdp_password_secret_arn": "projects/test/secrets/rdp",
-                "gcp_rdp_password_secret_ref": "projects/test/secrets/rdp",
+                "gcp_bootstrap_rdp_password_secret_ref": "projects/test/secrets/rdp",
             },
             {
                 "uuid": "dc-uuid",
@@ -652,10 +978,11 @@ def test_apply_range_cell_is_idempotent_when_resources_exist(mocker):
                 "subnet_name": "polaris",
                 "instance_id": "shifter-r-42-polaris-dc01",
                 "private_ip": "10.50.2.4",
-                "ssh_key_secret_arn": "projects/test/secrets/ssh",
+                "ssh_key_secret_arn": "",
                 "ssh_username": "Administrator",
-                "public_key": "ssh-ed25519 AAAA",
+                "public_key": "ssh-ed25519 HOST",
                 "gcp_host_public_key": "",
+                "gcp_host_ssh_key_secret_ref": "projects/test/secrets/host-ssh",
                 "gcp_host_ssh_username": "Administrator",
                 "gcp_host_ssh_port": 22,
                 "gcp_project_id": "test-project",
@@ -668,7 +995,7 @@ def test_apply_range_cell_is_idempotent_when_resources_exist(mocker):
                 "gcp_instance_name": "shifter-r-42-polaris-dc01",
                 "gcp_address_name": "shifter-r-42-polaris-dc01-ip",
                 "gcp_network_tags": ["shifter-range-42", "shifter-range-42-polaris", "shifter-role-dc"],
-                "gcp_service_account_email": "range-host@test-project.iam.gserviceaccount.com",
+                "gcp_service_account_email": "",
             },
         ],
     }
@@ -684,18 +1011,41 @@ def test_apply_range_cell_cleans_up_on_failure(mocker):
     clients.instances.insert.side_effect = RuntimeError("insert failed")
     secret_ops, _mocks = _mock_secret_ops(mocker)
     cleanup = mocker.Mock()
+    variables = _variables()
+    config = _sample_config()
 
     with pytest.raises(RuntimeError, match="insert failed"):
         apply_range_cell(
             "req-123",
-            _variables(),
-            config=_sample_config(),
+            variables,
+            config=config,
             clients=clients,
             secret_ops=secret_ops,
             cleanup_range_cell=cleanup,
         )
 
-    cleanup.assert_called_once_with("req-123", _variables())
+    cleanup.assert_called_once_with("req-123", variables)
+
+
+def test_apply_range_cell_cleans_up_when_access_output_contains_a_secret_value(mocker):
+    clients = _mock_clients(exists=False)
+    secret_ops, secret_mocks = _mock_secret_ops(mocker)
+    secret_mocks.ensure_participant_ssh.return_value = ("inline-secret-value", "ssh-ed25519 AAAA")
+    cleanup = mocker.Mock()
+    variables = _variables()
+    config = _sample_config()
+
+    with pytest.raises(RangeCellContractError, match="GCP Secret Manager reference"):
+        apply_range_cell(
+            "req-123",
+            variables,
+            config=config,
+            clients=clients,
+            secret_ops=secret_ops,
+            cleanup_range_cell=cleanup,
+        )
+
+    cleanup.assert_called_once_with("req-123", variables)
 
 
 def test_build_clients_uses_google_compute_default_classes(mocker, monkeypatch):
@@ -744,18 +1094,20 @@ def test_apply_range_cell_raises_on_completed_operation_error(mocker):
     }
     secret_ops, _mocks = _mock_secret_ops(mocker)
     cleanup = mocker.Mock()
+    variables = _variables()
+    config = _sample_config()
 
     with pytest.raises(RuntimeError, match="QUOTA_EXCEEDED: too many networks"):
         apply_range_cell(
             "req-123",
-            _variables(),
-            config=_sample_config(),
+            variables,
+            config=config,
             clients=clients,
             secret_ops=secret_ops,
             cleanup_range_cell=cleanup,
         )
 
-    cleanup.assert_called_once_with("req-123", _variables())
+    cleanup.assert_called_once_with("req-123", variables)
 
 
 def test_destroy_range_cell_deletes_every_resource(mocker):
@@ -784,6 +1136,7 @@ def test_destroy_range_cell_deletes_every_resource(mocker):
     assert clients.subnetworks.delete.call_count == 1
     clients.networks.delete.assert_called_once()
     assert mocks.delete_ssh.call_count == 2
+    assert mocks.delete_participant_ssh.call_count == 2
     assert mocks.delete_rdp_password.call_count == 2
     assert order.mock_calls == [
         call.delete_instance(project="test-project", zone="us-central1-b", instance="shifter-r-42-polaris-dc01"),

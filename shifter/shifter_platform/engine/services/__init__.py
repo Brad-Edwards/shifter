@@ -18,7 +18,14 @@ from engine.secrets import SecretsError, get_rdp_password, get_ssh_key
 from engine.ssh import SSHConnection
 
 from ._aces_evidence import record_aces_operation_status, record_aces_runtime_snapshot
-from ._aces_image import AcesImageMappingError, AcesImageMappingOptions, upsert_aces_image_mapping
+from ._aces_image import (
+    AcesImageMappingError,
+    AcesImageMappingOptions,
+    AcesImageMappingView,
+    disable_aces_image_mapping,
+    list_aces_image_mappings,
+    upsert_aces_image_mapping,
+)
 from ._aces_range import AcesRangeRef, create_aces_range
 from ._aces_status import project_aces_operation_status
 from ._common import EngineError
@@ -35,6 +42,7 @@ from ._range import (
     get_range_status,
     reassign_range_owner_by_request,
 )
+from ._range_escape import GuestProbeError, GuestProbeRequest, RangeMembership, get_range_membership, run_guest_probe
 from ._terminal import (
     connect_ngfw_terminal,
     connect_terminal,
@@ -45,8 +53,12 @@ from ._terminal import (
 __all__ = (
     "AcesImageMappingError",
     "AcesImageMappingOptions",
+    "AcesImageMappingView",
     "AcesRangeRef",
     "EngineError",
+    "GuestProbeError",
+    "GuestProbeRequest",
+    "RangeMembership",
     "SSHConnection",
     "SecretsError",
     "cancel_range",
@@ -59,8 +71,10 @@ __all__ = (
     "destroy_ngfw",
     "destroy_range",
     "destroy_range_by_request",
+    "disable_aces_image_mapping",
     "get_authoritative_range_status",
     "get_instance_ips_by_uuid",
+    "get_range_membership",
     "get_range_status",
     "get_ranges_for_ngfw",
     "get_rdp_connection_info",
@@ -68,12 +82,14 @@ __all__ = (
     "get_ssh_connection_info",
     "get_ssh_key",
     "get_user_ready_range_instances",
+    "list_aces_image_mappings",
     "pause_range",
     "project_aces_operation_status",
     "reassign_range_owner_by_request",
     "record_aces_operation_status",
     "record_aces_runtime_snapshot",
     "resume_range",
+    "run_guest_probe",
     "start_ngfw",
     "stop_ngfw",
     "transaction",

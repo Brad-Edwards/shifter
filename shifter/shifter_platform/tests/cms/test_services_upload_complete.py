@@ -22,6 +22,10 @@ from cms.assets.upload_token import generate_upload_token
 from cms.exceptions import CMSError
 from cms.models import AgentConfig
 from risk_register.models import AuditLog
+from shared.audit import (
+    AuditAction,
+    AuditEntityType,
+)
 from shared.constants import USER_CANNOT_BE_NONE
 
 pytestmark = pytest.mark.django_db
@@ -89,9 +93,7 @@ class TestCompleteUploadSuccess:
 
     def test_audit_records_presigned_upload_method(self, user, windows_os, s3_complete):
         agent = services.complete_upload(user, _token(user))
-        row = AuditLog.objects.get(
-            entity_type=AuditLog.EntityType.AGENT, entity_id=agent.id, action=AuditLog.Action.CREATE
-        )
+        row = AuditLog.objects.get(entity_type=AuditEntityType.AGENT, entity_id=agent.id, action=AuditAction.CREATE)
         assert row.new_state["upload_method"] == "presigned"
 
     def test_tags_install_key_completed_not_staging_key(self, user, windows_os, s3_complete):

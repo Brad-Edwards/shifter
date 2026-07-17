@@ -45,10 +45,17 @@ class ScenarioWorkflow(enum.StrEnum):
 
 
 # Data-driven launchability allowlists. Widen these constants (not the call
-# sites) when a new supported ACES source / contract / profile lands.
+# sites) when a new supported ACES source / contract / profile lands. Both
+# ``repo`` and ``object`` are launchable (object via the #1567 launch resolver,
+# ADR-034-R5); object launchability also requires a configured package bucket
+# (see :func:`_source_kind_launchable`), so an object-backed row with none set
+# stays registrable and visible but non-launchable (fail closed).
 LAUNCHABLE_SOURCE_KINDS = frozenset({"repo", "object"})
 LAUNCHABLE_CONTRACT_KINDS = frozenset({"aces"})
 LAUNCHABLE_CONTRACT_PROFILES = frozenset({"shifter"})
+
+# Resolved at launch by the #1567 object resolver, not under ACES_PACKAGE_ROOT.
+_OBJECT_SOURCE_KIND = "object"
 
 # (contract_kind, contract_profile) pairs that have a wired runtime launch
 # adapter — i.e. a launchable entry of that kind/profile can actually be turned
@@ -164,10 +171,20 @@ def _aces_launchable(source: AcesPackageSource, *, known_legacy_ids: set[str]) -
         and source.scenario_id not in known_legacy_ids
         and source.contract_kind in LAUNCHABLE_CONTRACT_KINDS
         and source.contract_profile in LAUNCHABLE_CONTRACT_PROFILES
-        and source.source_kind in LAUNCHABLE_SOURCE_KINDS
+        and _source_kind_launchable(source.source_kind)
         and source.conformance_status == _AcesPackageSource.ConformanceStatus.PASSED
         and _aces_source_refs_valid(source)
     )
+
+
+def _source_kind_launchable(source_kind: str) -> bool:
+    """Whether a source kind is launchable; ``object`` also requires a configured
+    package bucket (config readiness, not a catalog-time network probe)."""
+    if source_kind not in LAUNCHABLE_SOURCE_KINDS:
+        return False
+    if source_kind == _OBJECT_SOURCE_KIND:
+        return bool(str(getattr(settings, "ACES_PACKAGE_BUCKET", "") or "").strip())
+    return True
 
 
 def _aces_source_to_dict(

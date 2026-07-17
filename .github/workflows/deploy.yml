@@ -4,9 +4,18 @@ name: Deploy
 on:
   pull_request:
   push:
-    branches: [main, dev, aws-dev, aws-proof, gcp-dev]
+    # Validation only. Env deploys are now manual (workflow_dispatch below);
+    # pushing dev/main runs quality/pre-commit but never a provider deploy.
+    branches: [main, dev]
   workflow_dispatch:
     inputs:
+      environment:
+        description: Which environment to deploy (the branch you run this from is the code that deploys).
+        type: choice
+        options:
+          - aws-dev
+          - aws-proof
+          - gcp-dev
       gcp_require_active_certificate:
         description: >-
           Fail the GCP deploy if the GKE ManagedCertificate is not Active for the
@@ -26,10 +35,12 @@ on:
         default: false
 
 concurrency:
-  group: deploy-${{ github.ref }}
-  # PR runs may be superseded safely, but env-branch deploys can be mid-apply.
-  # Queue branch/manual deploy runs so Terraform is not killed after mutating
-  # remote state or while holding the backend lock.
+  # Dispatch deploys queue per environment so two deploys to the same env cannot
+  # race on Terraform state or the backend lock; PR/push validation keys on the ref.
+  group: deploy-${{ github.event.inputs.environment || github.ref }}
+  # PR runs may be superseded safely, but a dispatch deploy can be mid-apply.
+  # Queue manual deploy runs so Terraform is not killed after mutating remote
+  # state or while holding the backend lock.
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
@@ -67,7 +78,6 @@ jobs:
       run_gcp: ${{ steps.env.outputs.run_gcp }}
       apply_aws: ${{ steps.env.outputs.apply_aws }}
       deploy_gcp: ${{ steps.env.outputs.deploy_gcp }}
-      fast_gcp_deploy: ${{ steps.env.outputs.fast_gcp_deploy }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
@@ -165,6 +175,10 @@ jobs:
               - 'shifter/shifter_platform/shared/cloud/gcp/**'
               - 'shifter/shifter_platform/shared/cloud/types.py'
               - 'shifter/engine/provisioner/cloud/gcp/**'
+              # The GCP portal and provisioner images consume the installation
+              # package to resolve/validate the backend at runtime (PLAT-2005),
+              # so an installation change must rebuild both GCP consumers.
+              - 'shifter/installation/**'
               - 'shifter/shifter_platform/config/settings.py'
               - 'shifter/shifter_platform/engine/ecs.py'
               - 'shifter/shifter_platform/entrypoint.sh'
@@ -208,6 +222,10 @@ jobs:
 
       - name: Set environment
         id: env
+        env:
+          # Which environment to deploy, from the workflow_dispatch input (a
+          # closed choice enum). Empty on push / pull_request, which never deploy.
+          ENVIRONMENT: ${{ github.event.inputs.environment }}
         run: |
           AWS_ENV="dev"
           AWS_IS_DEV="true"
@@ -218,22 +236,12 @@ jobs:
           RUN_GCP="false"
           APPLY_AWS="false"
           DEPLOY_GCP="false"
-          FAST_GCP_DEPLOY="false"
 
-          if [ "${{ github.event_name }}" == "pull_request" ]; then
-            # PR-triggered deploy workflow runs are hosted-only quality gates.
-            # Never route provider deploy jobs from untrusted PR code.
-            :
-          elif [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-            BRANCH="${GITHUB_REF#refs/heads/}"
-            case "$BRANCH" in
-              main)
-                AWS_ENV="prod"
-                AWS_IS_DEV="false"
-                AWS_GITHUB_ENV="aws-prod"
-                RUN_AWS="true"
-                APPLY_AWS="true"
-                ;;
+          # Deployment is manual only: a workflow_dispatch that names the target
+          # environment. The branch names no longer select the target, and push /
+          # pull_request run validation only (all deploy flags stay false).
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            case "$ENVIRONMENT" in
               aws-dev)
                 RUN_AWS="true"
                 APPLY_AWS="true"
@@ -248,31 +256,6 @@ jobs:
               gcp-dev)
                 RUN_GCP="true"
                 DEPLOY_GCP="true"
-                FAST_GCP_DEPLOY="true"
-                ;;
-              dev)
-                RUN_AWS="true"
-                RUN_GCP="true"
-                ;;
-            esac
-          elif [ "${{ github.event_name }}" == "push" ]; then
-            BRANCH="${GITHUB_REF#refs/heads/}"
-            case "$BRANCH" in
-              aws-dev)
-                RUN_AWS="true"
-                APPLY_AWS="true"
-                ;;
-              aws-proof)
-                AWS_ENV="proof"
-                AWS_IS_DEV="false"
-                AWS_GITHUB_ENV="aws-proof"
-                RUN_AWS="true"
-                APPLY_AWS="true"
-                ;;
-              gcp-dev)
-                RUN_GCP="true"
-                DEPLOY_GCP="true"
-                FAST_GCP_DEPLOY="true"
                 ;;
             esac
           fi
@@ -286,7 +269,6 @@ jobs:
             echo "run_gcp=$RUN_GCP"
             echo "apply_aws=$APPLY_AWS"
             echo "deploy_gcp=$DEPLOY_GCP"
-            echo "fast_gcp_deploy=$FAST_GCP_DEPLOY"
           } >> "$GITHUB_OUTPUT"
 
   # Always-present CI enforcement for the fast local pre-commit baseline that
@@ -303,7 +285,7 @@ jobs:
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
-      - name: Run file hygiene and secret scan hooks
+      - name: Run file hygiene, secret scan, and always-on guardrail hooks
         run: |
           set -euo pipefail
           export PRE_COMMIT_HOME="${RUNNER_TEMP}/pre-commit-cache"
@@ -312,6 +294,10 @@ jobs:
           . "${RUNNER_TEMP}/precommit-venv/bin/activate"
           python -m pip install --upgrade pip
           python -m pip install 'pre-commit==4.3.0'
+          # adr-guard-parity-inventory (ADR-024-R4 / #1313) is a global invariant
+          # that must run even when the Quality workflow's adr_guard path filter is
+          # false (e.g. a docs-only change that deletes an inventory-referenced
+          # file), so it rides this always-present pre-commit job.
           hooks=(
             trailing-whitespace
             end-of-file-fixer
@@ -321,6 +307,7 @@ jobs:
             check-merge-conflict
             detect-private-key
             gitleaks
+            adr-guard-parity-inventory
           )
           for hook in "${hooks[@]}"; do
             pre-commit run "$hook" --all-files --show-diff-on-failure
@@ -334,22 +321,14 @@ jobs:
   quality:
     name: Quality
     needs: changes
-    # Run Quality on PRs and direct pushes to `dev` unless the diff is
-    # provably ordinary docs-only. Manual dispatch remains a deliberate
-    # full-validation path, except for the existing fast GCP deploy route.
-    # Pushes to deployment branches (aws-dev, gcp-dev) only happen via merge
-    # from `dev` (per repo rule: deploy branches must never be ahead of dev),
-    # so the same SHA already passed Quality on its dev push and re-running
-    # here is pure duplicate work. Deploy jobs already tolerate skipped
-    # Quality via `(needs.quality.result == 'success' || ... == 'skipped')`.
-    # The proof tenant standup path (manual dispatch on aws-proof) also skips
-    # Quality: it redeploys a SHA already validated on dev.
+    # Run Quality on PRs, direct pushes (dev/main), and every manual deploy
+    # dispatch (the safety gate before an apply) unless the diff is provably
+    # ordinary docs-only. Deploy jobs tolerate a skipped Quality via
+    # `(needs.quality.result == 'success' || ... == 'skipped')`.
     if: |
-      !(github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/aws-proof') &&
       (github.event_name == 'pull_request' ||
-       github.event_name == 'workflow_dispatch' ||
-       github.ref == 'refs/heads/dev') &&
-      needs.changes.outputs.fast_gcp_deploy != 'true' &&
+       github.event_name == 'push' ||
+       github.event_name == 'workflow_dispatch') &&
       (needs.changes.outputs.quality_relevant == 'true' ||
        github.event_name == 'workflow_dispatch')
     uses: ./.github/workflows/_quality.yml
@@ -610,6 +589,7 @@ jobs:
       TF_INFRA_STATE_BUCKET_DEV: ${{ secrets.TF_INFRA_STATE_BUCKET_DEV }}
       TF_INFRA_STATE_BUCKET_PROOF: ${{ secrets.TF_INFRA_STATE_BUCKET_PROOF }}
       TF_VARS_PROOF_PORTAL: ${{ secrets.TF_VARS_PROOF_PORTAL }}
+      SHIFTER_CONFIG_DEV_RANGE: ${{ secrets.SHIFTER_CONFIG_DEV_RANGE }}
+      SHIFTER_CONFIG_PROOF_RANGE: ${{ secrets.SHIFTER_CONFIG_PROOF_RANGE }}
+      SHIFTER_CONFIG_PROD_RANGE: ${{ secrets.SHIFTER_CONFIG_PROD_RANGE }}
       SMOKE_TEST_USER_EMAIL: ${{ secrets.SMOKE_TEST_USER_EMAIL }}
-      SMOKE_LINUX_AGENT_ID: ${{ secrets.SMOKE_LINUX_AGENT_ID }}
-      SMOKE_WINDOWS_AGENT_ID: ${{ secrets.SMOKE_WINDOWS_AGENT_ID }}

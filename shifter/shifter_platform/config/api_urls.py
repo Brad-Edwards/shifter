@@ -5,8 +5,8 @@ from __future__ import annotations
 from django.urls import include, path
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 
+from config.api_bootstrap import BootstrapView
 from config.api_dashboard import DashboardSummaryView
-from shared.api.bootstrap import BootstrapView
 
 app_name = "api"
 

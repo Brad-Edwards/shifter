@@ -419,6 +419,39 @@ resource "aws_iam_role_policy" "s3_access" {
   })
 }
 
+# Least-privilege, read-only access to the object-backed ACES package bucket
+# (#1567, ADR-034-R5). The portal pulls the single immutable pack archive at
+# launch and nothing else: GetObject is scoped to the optional key prefix, and
+# ListBucket is constrained by an s3:prefix condition. Created only when a
+# package bucket is configured, so deployments not using object-backed packs get
+# no additional grant.
+resource "aws_iam_role_policy" "aces_package_read" {
+  count = var.aces_package_bucket_arn != "" ? 1 : 0
+  name  = "aces-package-read"
+  role  = aws_iam_role.this.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["s3:GetObject"]
+        Resource = "${var.aces_package_bucket_arn}/${var.aces_package_prefix}*"
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["s3:ListBucket"]
+        Resource = var.aces_package_bucket_arn
+        Condition = {
+          StringLike = {
+            "s3:prefix" = ["${var.aces_package_prefix}*"]
+          }
+        }
+      }
+    ]
+  })
+}
+
 resource "aws_iam_role_policy" "ecs_run_task" {
   name = "ecs-run-task"
   role = aws_iam_role.this.id
@@ -707,6 +740,7 @@ resource "aws_launch_template" "this" {
   user_data = base64gzip(templatefile("${path.module}/user_data.sh", {
     aws_region                 = var.aws_region
     django_environment         = local.django_environment
+    cloud_provider             = var.cloud_provider
     ecr_repository_url         = var.ecr_repository_url
     log_group_name             = local.log_group_name
     ssm_parameter_store_prefix = var.ssm_parameter_store_prefix
@@ -773,8 +807,8 @@ resource "aws_autoscaling_group" "this" {
   name_prefix               = "${var.name_prefix}-asg-"
   vpc_zone_identifier       = var.subnet_ids
   target_group_arns         = [var.target_group_arn]
-  health_check_type         = "EC2"
-  health_check_grace_period = 900
+  health_check_type         = var.health_check_type
+  health_check_grace_period = var.health_check_grace_period
 
   # Do not block `terraform apply` on the ASG reaching capacity. New instances
   # sit in Pending:Wait until user_data finishes and calls
@@ -799,6 +833,7 @@ resource "aws_autoscaling_group" "this" {
     strategy = "Rolling"
     preferences {
       min_healthy_percentage = var.instance_refresh_min_healthy_percentage
+      instance_warmup        = var.instance_refresh_instance_warmup
     }
   }
 
@@ -873,6 +908,7 @@ resource "aws_instance" "this" {
   user_data_base64 = base64gzip(templatefile("${path.module}/user_data.sh", {
     aws_region                 = var.aws_region
     django_environment         = local.django_environment
+    cloud_provider             = var.cloud_provider
     ecr_repository_url         = var.ecr_repository_url
     log_group_name             = local.log_group_name
     ssm_parameter_store_prefix = var.ssm_parameter_store_prefix

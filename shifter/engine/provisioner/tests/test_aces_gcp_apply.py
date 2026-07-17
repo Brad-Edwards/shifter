@@ -24,8 +24,17 @@ from aces_gcp_apply import (
     apply_aces_range_cell,
     destroy_aces_range_cell,
 )
-from aces_gcp_plan import AcesGcePlanError
-from aces_plan import AcesPlan, AcesPlanAccount, AcesPlanContent, AcesPlanImage, AcesPlanNetwork, AcesPlanNode
+from aces_gcp_firewall import node_tag
+from aces_gcp_plan import AcesGcePlanError, build_aces_range_cell_plan
+from aces_plan import (
+    AcesPlan,
+    AcesPlanAccount,
+    AcesPlanContent,
+    AcesPlanImage,
+    AcesPlanNetwork,
+    AcesPlanNode,
+    AcesPlanServicePort,
+)
 from config import GCERangeCellConfig, GCERangeImageProfile
 from executors.base import CommandResult
 from executors.factory import GuestExecutionContext
@@ -180,10 +189,13 @@ class TestApply:
         secret_ops, secret_mocks = _secret_ops()
         with pytest.raises(RuntimeError, match="boom"):
             apply_aces_range_cell("req-1", 7, _plan(), _resolver, _apply_options(_config(), clients, secret_ops))
-        # Cleanup ran: the reconstructive destroy sweeps every instance's SSH
-        # secret unconditionally (nothing exists yet to GCE-delete since the first
-        # insert failed, so instances.delete is legitimately not reached).
-        assert secret_mocks.delete_ssh.called
+        # Cleanup ran: the reconstructive destroy sweeps EVERY instance's SSH secret
+        # unconditionally. The plan has count=2, so a regression that swept only one
+        # instance (early return/break, swallowed exception, off-by-one) would leave
+        # orphaned credential residue -- assert the exact count, not just `.called`.
+        # instances.delete is legitimately not reached (the first insert failed, so
+        # nothing exists yet to GCE-delete).
+        assert secret_mocks.delete_ssh.call_count == 2
         assert clients.instances.get.called
 
 
@@ -434,6 +446,46 @@ class TestAccountCredentialIntegration:
         assert ssh_mocks.delete_ssh.call_count == 2
         assert account_mocks.delete.call_count == 2
         assert [call.args[1] for call in account_mocks.delete.call_args_list] == ["node.web#1", "node.web#0"]
+
+
+def _plan_with_service() -> AcesPlan:
+    plan = _plan()  # count=2 node
+    node = replace(plan.nodes[0], services=(AcesPlanServicePort(port=80, protocol="tcp", name="http"),))
+    return AcesPlan(aces_sdl_version=plan.aces_sdl_version, nodes=(node,), networks=plan.networks)
+
+
+class TestServiceFirewallLifecycle:
+    def _inserted_service_firewalls(self, clients) -> list[dict]:
+        tag = node_tag(7, "node.web")
+        return [
+            call.kwargs["firewall_resource"]
+            for call in clients.firewalls.insert.call_args_list
+            if call.kwargs["firewall_resource"].get("target_tags") == [tag]
+            and "allowed" in call.kwargs["firewall_resource"]
+        ]
+
+    def test_service_firewall_rendered_via_compute_renderer_once_regardless_of_count(self):
+        clients = _clients()
+        secret_ops, _ = _secret_ops()
+        apply_aces_range_cell(
+            "req-1", 7, _plan_with_service(), _resolver, _apply_options(_config(), clients, secret_ops)
+        )
+        bodies = self._inserted_service_firewalls(clients)
+        # one shared node-tag rule for the count=2 node (no per-instance duplication)
+        assert len(bodies) == 1
+        assert bodies[0]["allowed"] == [{"I_p_protocol": "tcp", "ports": ["80"]}]
+
+    def test_destroy_reconstructively_deletes_service_firewall_by_same_name(self):
+        built = build_aces_range_cell_plan("req-1", 7, _plan_with_service(), _resolver, _config())
+        tag = node_tag(7, "node.web")
+        service_names = [fw["name"] for fw in built["firewalls"] if fw.get("target_tags") == [tag] and "allowed" in fw]
+        assert len(service_names) == 1
+
+        clients = _clients(exists=True)
+        secret_ops, _ = _secret_ops()
+        destroy_aces_range_cell("req-1", 7, _plan_with_service(), _config(), clients, secret_ops)
+        deleted = {call.kwargs.get("firewall") for call in clients.firewalls.delete.call_args_list}
+        assert service_names[0] in deleted
 
 
 class TestDestroy:

@@ -75,11 +75,38 @@ def code_block(text: str) -> None:
     print(f"{Colors.DIM}└{'─' * 58}┘{Colors.END}")
 
 
+# Non-interactive "proceed" state for confirm() (issue #1639). A module-level
+# holder (rather than a bare `global`) keeps ruff's global-statement rule happy.
+# Set once from the CLI via the --yes flag; authorizes routine proceed prompts
+# ONLY. Destructive actions (the leftover sweep) are gated behind their own
+# explicit flag and are never keyed off assume-yes or non-TTY alone.
+_ASSUME_YES = {"enabled": False}
+
+
+def set_assume_yes(value: bool) -> None:
+    """Enable non-interactive 'proceed' for :func:`confirm` prompts (issue #1639).
+
+    Lets a fresh tenant be bootstrapped headlessly without the confirm prompts
+    auto-aborting. Does NOT authorize destructive cleanup: the leftover sweep
+    requires its own explicit opt-in.
+    """
+    _ASSUME_YES["enabled"] = bool(value)
+
+
+def assume_yes_enabled() -> bool:
+    """Return whether non-interactive proceed is enabled."""
+    return _ASSUME_YES["enabled"]
+
+
 def confirm(msg: str, default_yes: bool = False) -> bool:
-    """Prompt for yes/no confirmation. Returns default_yes if not interactive."""
+    """Prompt for yes/no confirmation.
+
+    Non-interactive: returns True when --yes/assume-yes was set (issue #1639),
+    otherwise the caller's ``default_yes`` fallback.
+    """
     # Check if we're in a non-interactive environment
     if not sys.stdin.isatty():
-        return default_yes
+        return True if _ASSUME_YES["enabled"] else default_yes
 
     while True:
         response = input(f"{Colors.YELLOW}{msg} [y/N]: {Colors.END}").strip().lower()
@@ -218,12 +245,25 @@ def _redact_argv_for_log(cmd: list[str]) -> str:
     return " ".join(redacted)
 
 
+def _subprocess_env() -> dict[str, str]:
+    """Child environment for bootstrap subprocess calls.
+
+    Forces ``AWS_PAGER=""`` so AWS CLI v2 never blocks on its pager when the
+    bootstrap runs without a TTY / under a PTY (issue #1639); an interactive
+    ``aws iam create-role`` otherwise hangs waiting for the operator to page
+    through output that no terminal is reading. Harmless for non-``aws``
+    commands. Everything else is inherited from the parent so ``AWS_PROFILE``,
+    ``TF_*``, and the rest of the operator environment still flow through.
+    """
+    return {**os.environ, "AWS_PAGER": ""}
+
+
 def run_cmd(
     cmd: list[str],
     dry_run: bool = False,
     check: bool = True,
     capture: bool = False,
-    profile: str = None,
+    profile: str | None = None,
 ) -> subprocess.CompletedProcess | None:
     """Run a command, optionally in dry-run mode."""
     # Insert --profile flag for AWS CLI commands
@@ -239,9 +279,11 @@ def run_cmd(
     info(f"Running: {cmd_str}")
     try:
         if capture:
-            result = subprocess.run(cmd, check=check, capture_output=True, text=True)  # nosec B603 B607
+            result = subprocess.run(  # nosec B603 B607
+                cmd, check=check, capture_output=True, text=True, env=_subprocess_env()
+            )
         else:
-            result = subprocess.run(cmd, check=check, text=True)  # nosec B603 B607
+            result = subprocess.run(cmd, check=check, text=True, env=_subprocess_env())  # nosec B603 B607
         return result
     except subprocess.CalledProcessError as e:
         error(f"Command failed: {e}")
@@ -250,6 +292,54 @@ def run_cmd(
         if check:
             sys.exit(1)
         return None
+
+
+def run_cmd_secret_stdin(
+    cmd: list[str],
+    *,
+    secret_stdin: str,
+    dry_run: bool = False,
+) -> int:
+    """Run ``cmd`` feeding ``secret_stdin`` to the child's stdin; return the exit code.
+
+    The secret-input path for the GCP runner registration handoff (issue #1546):
+    the single-use GitHub registration token is piped to an interactive
+    ``config.sh`` over the ``gcloud compute ssh`` stdin stream. Unlike
+    :func:`run_cmd`, this path is built so the token cannot leak:
+
+    - ``secret_stdin`` is never rendered. The argv must carry no secret (the
+      caller uses a static remote command); this asserts the secret is absent
+      from argv so a caller cannot accidentally place the token on the command
+      line (where it would be visible via ``/proc/<pid>/cmdline``).
+    - The child's stdout/stderr are captured and discarded instead of being
+      streamed or dumped verbatim on failure (as :func:`run_cmd` does), so a
+      token echoed by the remote command cannot reach the operator log.
+    - Only the integer exit code is returned — never a ``CompletedProcess``
+      carrying captured output — so the result itself cannot leak the secret.
+
+    The (non-secret) argv is logged through the same redactor as :func:`run_cmd`.
+    """
+    _validate_argv(cmd)
+    needle = secret_stdin.strip()
+    if needle and any(needle in arg for arg in cmd):
+        raise ValueError("secret_stdin must not appear in argv; the token must travel over stdin only")
+    cmd_str = _redact_argv_for_log(cmd)
+    if dry_run:
+        _emit_line(f"{Colors.BLUE}[DRY-RUN] Would run (secret stdin): {cmd_str}{Colors.END}")
+        return 0
+
+    info(f"Running (secret stdin): {cmd_str}")
+    result = subprocess.run(  # nosec B603 B607
+        cmd,
+        input=secret_stdin,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_subprocess_env(),
+    )
+    if result.returncode != 0:
+        error(f"Command failed (exit {result.returncode}); child output suppressed to avoid secret leakage")
+    return result.returncode
 
 
 def get_aws_account_id(profile: str = None) -> str:

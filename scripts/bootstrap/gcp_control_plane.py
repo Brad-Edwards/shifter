@@ -149,7 +149,11 @@ def render_gcp_platform_runtime_env(
         [bootstrap_operator_email or ""],
     )
     lines = [
-        "CLOUD_PROVIDER=gcp",
+        # CLOUD_PROVIDER is not rendered here: _render_gcp_runtime_env merges this
+        # bootstrap-owned contract with scripts/gcp/render_runtime_env.py's output,
+        # which is the renderer-owned source of the backend identity (PLAT-2005).
+        # A second hardcoded literal here would be redundant and could silently
+        # drift from that renderer-owned value.
         f"ENVIRONMENT={config.environment}",
         f"CLOUD_REGION={config.region}",
         f"GCP_REGION={config.region}",
@@ -516,7 +520,6 @@ def _gcp_private_service_cidrs(outputs: dict[str, dict[str, object]]) -> list[st
             _host_as_single_address_cidr(control_plane_database.get("private_ip")),
             _host_as_single_address_cidr(control_plane_cache.get("host")),
             _host_as_single_address_cidr(guacamole_database.get("host")),
-            str(_get_output_value(outputs, "gke_services_cidr")).strip(),
         ]
     )
 
@@ -527,6 +530,10 @@ def _helm_service_account_values(service_accounts: dict[str, str]) -> dict[str, 
         "portal": {"annotations": {_GKE_WORKLOAD_IDENTITY_ANNOTATION: service_accounts["portal"]}},
         "workers": {"annotations": {_GKE_WORKLOAD_IDENTITY_ANNOTATION: service_accounts["workers"]}},
         "ctfScheduler": {"annotations": {_GKE_WORKLOAD_IDENTITY_ANNOTATION: service_accounts["ctf-scheduler"]}},
+        "provisionerLauncher": {
+            "name": "provisioner-launcher",
+            "annotations": {_GKE_WORKLOAD_IDENTITY_ANNOTATION: service_accounts["provisioner-launcher"]},
+        },
         "provisioner": {"annotations": {_GKE_WORKLOAD_IDENTITY_ANNOTATION: service_accounts["provisioner"]}},
     }
 
@@ -575,6 +582,7 @@ def _helm_backend_config_values(edge_policy_name: str) -> dict[str, object]:
 
 def _helm_network_policy_values(
     private_service_cidrs: list[str],
+    kubernetes_api_cidrs: list[str],
     range_cluster_api_cidrs: list[str],
     range_cluster_api_port: int,
 ) -> dict[str, object]:
@@ -590,6 +598,7 @@ def _helm_network_policy_values(
             "199.36.153.8/30",  # NOSONAR - private.googleapis.com VIP range.
         ],
         "privateServiceCidrs": private_service_cidrs,
+        "kubernetesApiCidrs": kubernetes_api_cidrs,
         "rangeClusterApiCidrs": range_cluster_api_cidrs,
         "rangeClusterApiPort": range_cluster_api_port,
     }
@@ -638,6 +647,7 @@ def render_gcp_helm_values(
         "services": _helm_backend_config_values(edge_policy_name),
         "networkPolicy": _helm_network_policy_values(
             _gcp_private_service_cidrs(outputs),
+            [str(_get_output_value(outputs, "gke_services_cidr")).strip()],
             range_cluster_api_cidrs,
             int(range_cluster_port or _GDC_APISERVER_BACKEND_PORT),
         ),

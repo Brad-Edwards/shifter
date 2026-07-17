@@ -6,7 +6,6 @@ from typing import Any, cast
 
 from django.contrib.auth.models import User
 from drf_spectacular.utils import extend_schema, extend_schema_view
-from rest_framework import status
 from rest_framework.request import Request
 from rest_framework.response import Response
 
@@ -14,7 +13,6 @@ from cms.services import list_mission_control_range_history
 from mission_control.api._base import (
     MissionControlAPIView,
     MissionControlReadAPIView,
-    _is_empty_legacy_body,
     _range_write_permission,
     _raw_request,
     _validated,
@@ -34,9 +32,9 @@ from mission_control.api.serializers import (
 )
 from mission_control.utils import build_connection_urls
 from mission_control.views._common import _audit_range_lifecycle, _logger, _pkg
-from risk_register.models import AuditLog
 from shared.aces.presentation import build_range_aces_projection, build_range_participant_runtime_projection
 from shared.api.permissions import IsAuthenticatedSessionOrApiToken
+from shared.audit import AuditAction
 from shared.auth import is_ctf_participant_only
 from shared.errors import classify_user_message
 from shared.exceptions import CMSError
@@ -93,12 +91,13 @@ class LaunchRangeView(MissionControlAPIView):
     # Backpressure (#322): per-actor + fleet admission budget, before CMS.
     throttle_classes = [RangeLaunchRateThrottle]
 
-    @extend_schema(responses=LaunchRangeResponseSerializer, operation_id="api_v1_mission_control_range_launch")
+    @extend_schema(
+        request=LaunchRangeSerializer,
+        responses=LaunchRangeResponseSerializer,
+        operation_id="api_v1_mission_control_range_launch",
+    )
     def post(self, request: Request) -> Response:
         """Validate input and create a range for the authenticated actor."""
-        if _is_empty_legacy_body(request):
-            return Response({"error": "Invalid JSON"}, status=status.HTTP_400_BAD_REQUEST)
-
         data, error = _validated(self, LaunchRangeSerializer, request.data)
         if error is not None:
             return error
@@ -166,7 +165,7 @@ class LaunchRangeView(MissionControlAPIView):
         )
         _audit_range_lifecycle(
             _raw_request(request),
-            AuditLog.Action.PROVISION,
+            AuditAction.PROVISION,
             range_request_id=str(range_ctx.request_id),
             extra_state={"scenario": scenario, "agents": agents_by_os},
         )
@@ -237,52 +236,68 @@ class RangeLifecycleView(MissionControlAPIView):
 
 
 @extend_schema_view(
-    post=extend_schema(responses=SuccessResponseSerializer, operation_id="api_v1_mission_control_range_cancel")
+    post=extend_schema(
+        request=RangeLifecycleSerializer,
+        responses=SuccessResponseSerializer,
+        operation_id="api_v1_mission_control_range_cancel",
+    )
 )
 class CancelRangeView(RangeLifecycleView):
     """Cancel a pending or active range."""
 
     log_verb = "cancelled"
-    audit_action = AuditLog.Action.CANCEL
+    audit_action = AuditAction.CANCEL
     by_request_attr = "cancel_range_by_request_id"
     by_id_attr = "cancel_range"
     lifecycle_verb = "cancel"
 
 
 @extend_schema_view(
-    post=extend_schema(responses=SuccessResponseSerializer, operation_id="api_v1_mission_control_range_destroy")
+    post=extend_schema(
+        request=RangeLifecycleSerializer,
+        responses=SuccessResponseSerializer,
+        operation_id="api_v1_mission_control_range_destroy",
+    )
 )
 class DestroyRangeView(RangeLifecycleView):
     """Destroy a range."""
 
     log_verb = "destroyed"
-    audit_action = AuditLog.Action.DEPROVISION
+    audit_action = AuditAction.DEPROVISION
     by_request_attr = "destroy_range_by_request_id"
     by_id_attr = "destroy_range"
     lifecycle_verb = "destroy"
 
 
 @extend_schema_view(
-    post=extend_schema(responses=SuccessResponseSerializer, operation_id="api_v1_mission_control_range_pause")
+    post=extend_schema(
+        request=RangeLifecycleSerializer,
+        responses=SuccessResponseSerializer,
+        operation_id="api_v1_mission_control_range_pause",
+    )
 )
 class PauseRangeView(RangeLifecycleView):
     """Pause a range."""
 
     log_verb = "paused"
-    audit_action = AuditLog.Action.PAUSE
+    audit_action = AuditAction.PAUSE
     by_request_attr = "pause_range_by_request_id"
     by_id_attr = "pause_range"
     lifecycle_verb = "pause"
 
 
 @extend_schema_view(
-    post=extend_schema(responses=SuccessResponseSerializer, operation_id="api_v1_mission_control_range_resume")
+    post=extend_schema(
+        request=RangeLifecycleSerializer,
+        responses=SuccessResponseSerializer,
+        operation_id="api_v1_mission_control_range_resume",
+    )
 )
 class ResumeRangeView(RangeLifecycleView):
     """Resume a paused range."""
 
     log_verb = "resumed"
-    audit_action = AuditLog.Action.RESUME
+    audit_action = AuditAction.RESUME
     by_request_attr = "resume_range_by_request_id"
     by_id_attr = "resume_range"
     lifecycle_verb = "resume"

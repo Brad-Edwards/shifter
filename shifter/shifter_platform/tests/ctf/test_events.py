@@ -177,7 +177,7 @@ def _mock_auth_organizer(mock_user):
         patch("django.contrib.auth.middleware.get_user", return_value=mock_user),
         patch("ctf.context_processors.ctf_navigation", return_value=ctx_proc_defaults),
         patch("mission_control.context_processors.active_range", return_value=range_ctx_defaults),
-        patch("shared.context_processors.user_permissions", return_value={"can_access_threat_research": False}),
+        patch("config.context_processors.user_permissions", return_value={"can_access_threat_research": False}),
     ):
         yield
 

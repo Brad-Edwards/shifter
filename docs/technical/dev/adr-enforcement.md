@@ -78,15 +78,29 @@ The first slice intentionally stays small:
 
 - `layer-imports`
   Enforces the existing cross-layer import policy from `scripts/check_layer_imports/layer_imports.yaml`.
-  Service-package imports may use only the public facade (for example
-  `cms.services`); private split-package submodules such as
+  Every first-party Django app is classified there (ADR-001-R3, #1523) as a
+  domain (`engine`, `cms`, `management`, `ctf`, `risk_register`), presentation
+  (`mission_control`), support/contracts (`shared`), or support/composition
+  (`config`) layer. Service-package imports may use only the public facade (for
+  example `cms.services`); private split-package submodules such as
   `cms.services._range_pause` are not cross-layer seams. This covers both the
   dotted form (`import cms.services._range_pause`) and the
   `from cms.services import _range_pause` form, the latter detected via an AST
   pass since the regex scan only sees the facade module path. The rule is
-  mirrored in `scripts/adr_guard/adr_guard.py` and the standalone
-  `scripts/check_layer_imports/check_layer_imports.py` so local and CI
-  enforcement agree; `shared` remains the freely importable contracts layer.
+  mirrored in `scripts/adr_guard/adr_guard.py`, the standalone
+  `scripts/check_layer_imports/check_layer_imports.py`, and
+  `management check_model_fks`; the hard-coded package lists are held to
+  set-equality with the canonical classification by tests, and `.importlinter`
+  adds a coarser package-level net. `shared` remains the freely importable
+  contracts layer.
+
+- `installed-apps-classified`
+  Fails closed when a first-party Django app is added to `INSTALLED_APPS`
+  without a classification in `layer_imports.yaml`, when a classification entry
+  is stale (no local `AppConfig`), or when an `INSTALLED_APPS` entry is a
+  dynamic expression the checker cannot statically resolve (ADR-001-R3, #1523).
+  The retired `documentation` package (ADR-038) has no `AppConfig` and is not
+  classified.
 
 - `guardrail-docs`
   Requires guardrail changes to update ADR or developer docs in the same change.
@@ -163,6 +177,46 @@ The first slice intentionally stays small:
   feature's doc is removed but its index link is left dangling). Adding a major
   feature means adding a manifest entry pointing at its user and technical docs.
 
+- `published-contract-snapshots-immutable`
+  Enforces ADR-011-R8: the published backend-bundle contract's per-version
+  snapshots (`shifter/installation/published_contract/backend-bundle-contract.v<N>.json`)
+  are append-only. Each snapshot records the frozen shape of a published contract
+  version; a contract change ships a *new* version snapshot instead of editing an
+  existing one. The check compares every snapshot present at the base-branch merge
+  base against the working tree and fails when one was modified or deleted, so the
+  breaking-change gate's compatibility oracle cannot be silently rebased. Like
+  `boundary-mock-policy` it resolves the base ref from `GITHUB_BASE_REF` /
+  `ADR_GUARD_BASE_REF` (falling back to `origin/dev`/`origin/main`). It fails **open**
+  locally (a shallow clone with no base history cannot compare, so dev is not blocked)
+  and fails **closed** when `ADR_GUARD_SNAPSHOT_ENFORCE` is set: the `adr-conformance`
+  CI job checks out with `fetch-depth: 0` and sets that variable, so an inability to
+  resolve or read the base becomes an enforcement failure rather than a silent pass. A
+  genuinely absent directory at the base (a real first publication) is distinguished
+  from an unreadable tree and still passes.
+
+- `aces-parity-inventory-path-integrity`
+  Enforces ADR-024-R4: every `legacy_source` / `validation_evidence` clause in
+  `docs/architecture/aces-migration-parity-inventory.yaml` that is a
+  repository-relative path or glob must resolve to an existing path (a glob must
+  match at least one path). Each field's `;`-separated clauses are classified
+  syntactically into `path`, `glob`, `command`, or `prose`; command clauses
+  (`python3 … --level ci`, `cd … && uv run …`, `aces conformance … --profile …`)
+  and prose clauses (removal statements, dotted references like
+  `engine.Range.provisioned_instances`, annotated summaries) are skipped, and
+  path-looking substrings are never extracted from prose. Classification is never
+  existence-led, so a deleted path stays a `path` and fails instead of
+  self-exempting as prose. Like `adr-registry` it validates the whole inventory on
+  every run and ignores the changed-file list, because a referenced file can be
+  moved or deleted without the inventory itself being edited. It treats the YAML
+  as untrusted static input: `yaml.safe_load` only; absolute paths, `..`
+  traversal, symlink escape, and shell-expansion characters are rejected
+  fail-closed; referenced content is never read and inventory text never reaches a
+  shell or subprocess. Missing PyYAML or a malformed/wrong-shape inventory is a
+  bounded violation, not a crash. It runs at the `ci` level and via a dedicated
+  `adr-guard-parity-inventory` pre-commit hook (also registered in the
+  always-present `deploy.yml` pre-commit job) so a referenced-file deletion in a
+  docs-only change cannot evade it.
+
 - `import-linter`
   Adds package-level forbidden-import contracts across the main Django app layers.
 
@@ -195,8 +249,8 @@ The first slice intentionally stays small:
   `portal_image` filter covering `shifter/shifter_platform/**`, exposed as a
   `changes`-job output, included in the `shifter_platform` job's trigger
   condition, and consumed by the platform `build` job through the
-  `portal_image_changes` input so an app-only push to an environment branch
-  builds and converges the portal image without running Terraform. The check
+  `portal_image_changes` input so an app-only deploy dispatch builds and
+  converges the portal image without running Terraform. The check
   also requires `.github/workflows/deploy.yml` to pass `skip_tests: false`
   literally into `_quality.yml` (no commit-message parsing or dynamic outputs)
   and requires lint, architecture, and security jobs in `_quality.yml` to stay
@@ -204,8 +258,8 @@ The first slice intentionally stays small:
   when a caller opts in; the deploy router never opts in (#760). Negative
   fixtures in `scripts/adr_guard/tests/test_adr_guard.py` include a minimal
   `_quality.yml` stub so plan-scope tests isolate one violation at a time. The check
-  requires deploy concurrency to queue branch/manual runs rather than cancel
-  in-flight applies; PR cancellation may remain enabled. It also requires every
+  requires deploy concurrency to queue dispatch deploys (keyed per environment)
+  rather than cancel in-flight applies; PR cancellation may remain enabled. It also requires every
   core, range, and platform `terraform plan` / saved-plan `terraform apply`
   command to include `-lock-timeout=5m`, and requires each apply job to create
   and execute a local saved `tfplan` instead of uploading raw binary plans as
@@ -226,8 +280,21 @@ The first slice intentionally stays small:
   `scripts/adr_guard/tests/test_deploy_workflow.py` also assert the engine
   reusable workflow carries its own hosted provisioner pytest gate and that
   `_shifter-engine.yml` image validation, image build, and deploy jobs all need
-  that gate. This keeps deploy-branch Quality skips from bypassing provisioner
-  tests on the image that is pushed and deployed.
+  that gate. This keeps a deploy dispatch's Quality skip from bypassing
+  provisioner tests on the image that is pushed and deployed. The same suite pins the engine
+  `validate` image-shape job's runner placement (#1474): it runs on the trusted
+  self-hosted deploy runner class rather than `ubuntu-latest`, so a
+  GitHub-hosted runner-acquisition stall can no longer cancel it before steps
+  start and skip the whole Platform stage. Because it is self-hosted it is
+  fail-closed on `pull_request` under the `deploy-workflow-runner-exposure`
+  (ADR-003-R5) invariant, keeps `contents: read` only, and carries a
+  `timeout-minutes` backstop (#1220).
+
+  The manual-deploy invariant (`TestManualDeployDispatch`, #730) asserts that
+  environment deploys are a `workflow_dispatch` naming the `environment` input
+  (a closed `choice` of `aws-dev` / `aws-proof` / `gcp-dev`), that the `Set
+  environment` step keys on that input rather than a branch-name `case` router,
+  and that `push` / `pull_request` run validation only (no run/apply flags).
 
 - `portal-deploy-mode-source-of-truth`
   Enforces ADR-003-R4 for the AWS portal deploy path. `_shifter-platform.yml`

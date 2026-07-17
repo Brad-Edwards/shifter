@@ -33,14 +33,15 @@ from engine.models import Range
 from risk_register.models import AuditLog
 from shared.api_tokens import scopes
 from shared.api_tokens.models import ApiToken
+from shared.audit import AuditAction
 
 pytestmark = pytest.mark.django_db
 
-LEGACY_LAUNCH_URL = reverse("mission_control:launch_range")
+LEGACY_LAUNCH_URL = reverse("v1:mission_control:range-launch")
 CANONICAL_LAUNCH_URL = "/api/v1/mission-control/range/launch/"
 CANONICAL_NGFW_URL = "/api/v1/mission-control/ngfw/"
-LEGACY_DESTROY_URL = reverse("mission_control:destroy_range")
-LEGACY_GET_RANGE_URL = reverse("mission_control:get_range")
+LEGACY_DESTROY_URL = reverse("v1:mission_control:range-destroy")
+LEGACY_GET_RANGE_URL = reverse("v1:mission_control:range-current")
 
 # Small deterministic budgets so exhaustion is reachable in a handful of POSTs.
 SMALL_LIMITS = {
@@ -92,7 +93,7 @@ class TestActorBudget:
         # Second POST exceeds the actor budget and is throttled before the view.
         assert second.status_code == 429
         # Legacy route flattens the throttle envelope to a plain string.
-        assert "throttl" in _json(second)["error"].lower()
+        assert "throttl" in _json(second)["error"]["message"].lower()
         assert second.headers.get("Retry-After") is not None
 
     def test_second_launch_by_same_actor_is_throttled_canonical(self, authenticated_client):
@@ -165,7 +166,7 @@ class TestRejectedRequestSideEffects:
         with _enabled():
             first = _post_launch(client, body=body)
             assert first.status_code == 200
-            provisions_after_first = AuditLog.objects.filter(action=AuditLog.Action.PROVISION).count()
+            provisions_after_first = AuditLog.objects.filter(action=AuditAction.PROVISION).count()
             second = _post_launch(client, body=body)
 
         # 429 (NOT the 400 "active range" that only cms_create_range raises)
@@ -173,7 +174,7 @@ class TestRejectedRequestSideEffects:
         # no new provision audit confirm the rejected request had no side effects.
         assert second.status_code == 429
         assert Range.objects.count() == 1
-        assert AuditLog.objects.filter(action=AuditLog.Action.PROVISION).count() == provisions_after_first
+        assert AuditLog.objects.filter(action=AuditAction.PROVISION).count() == provisions_after_first
 
 
 class TestBackendFailureFailsClosed:

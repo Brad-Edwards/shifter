@@ -67,6 +67,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/cms/aces-image-mappings/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Return registry rows as allowlisted DTOs (disabled rows included by default). */
+        get: operations["cms_aces_image_mappings_list"];
+        put?: never;
+        /** @description Register (create or update) a mapping through the single validated write path. */
+        post: operations["cms_aces_image_mappings_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cms/aces-image-mappings/disable/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Disable an existing mapping without deleting it (preserves audit). */
+        post: operations["cms_aces_image_mappings_disable_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/cms/catalog/": {
         parameters: {
             query?: never;
@@ -75,7 +110,7 @@ export interface paths {
             cookie?: never;
         };
         /** @description Return all catalog entries as read-only presentation DTOs. */
-        get: operations["cms_catalog_retrieve"];
+        get: operations["cms_catalog_list"];
         put?: never;
         post?: never;
         delete?: never;
@@ -92,13 +127,117 @@ export interface paths {
             cookie?: never;
         };
         /** @description Return one catalog entry's read-only presentation DTO. */
-        get: operations["cms_catalog_retrieve_2"];
+        get: operations["cms_catalog_retrieve"];
         put?: never;
         post?: never;
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cms/catalog/packs/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Validate and register a pack, returning a bounded 201 summary. */
+        post: operations["cms_catalog_packs_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cms/scenario-editor/scenarios/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Create a custom scenario through the scenario-editor service layer. */
+        post: operations["cms_scenario_editor_scenarios_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cms/scenario-editor/scenarios/{scenario_id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Return full structural detail (or a read-only ACES projection). */
+        get: operations["cms_scenario_editor_scenarios_retrieve"];
+        put?: never;
+        post?: never;
+        /** @description Soft-delete a custom scenario through the service layer. */
+        delete: operations["cms_scenario_editor_scenarios_destroy"];
+        options?: never;
+        head?: never;
+        /** @description Replace a custom scenario's definition through the service layer. */
+        patch: operations["cms_scenario_editor_scenarios_partial_update"];
+        trace?: never;
+    };
+    "/api/v1/cms/scenario-editor/scenarios/{scenario_id}/clone/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Clone the source scenario through the service layer. */
+        post: operations["cms_scenario_editor_scenarios_clone_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cms/scenario-editor/scenarios/{scenario_id}/export/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Return the scenario's YAML rendering (metadata overlay stripped). */
+        get: operations["cms_scenario_editor_scenarios_export_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cms/scenario-editor/scenarios/{scenario_id}/metadata/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** @description Apply an explicit desired-state metadata update through the service layer. */
+        patch: operations["cms_scenario_editor_scenarios_metadata_partial_update"];
         trace?: never;
     };
     "/api/v1/cms/scenario-editor/scenarios/from-yaml/": {
@@ -142,13 +281,12 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description DRF wrapper for ctf.views.api.challenges.api_challenge_detail. */
+        /** @description Return the full organizer challenge detail projection. */
         get: operations["ctf_challenges_retrieve"];
-        /** @description DRF wrapper for ctf.views.api.challenges.api_challenge_detail. */
+        /** @description Update mutable fields of an owned challenge. */
         put: operations["ctf_challenges_update"];
-        /** @description DRF wrapper for ctf.views.api.challenges.api_challenge_detail. */
-        post: operations["ctf_challenges_create"];
-        /** @description DRF wrapper for ctf.views.api.challenges.api_challenge_detail. */
+        post?: never;
+        /** @description Delete an owned challenge. */
         delete: operations["ctf_challenges_destroy"];
         options?: never;
         head?: never;
@@ -162,14 +300,12 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description DRF wrapper for ctf.views.api.files.api_challenge_files. */
+        /** @description Return the file attachments for an owned challenge. */
         get: operations["ctf_challenges_files_retrieve"];
-        /** @description DRF wrapper for ctf.views.api.files.api_challenge_files. */
-        put: operations["ctf_challenges_files_update"];
-        /** @description DRF wrapper for ctf.views.api.files.api_challenge_files. */
+        put?: never;
+        /** @description Upload a multipart file attachment to an owned challenge. */
         post: operations["ctf_challenges_files_create"];
-        /** @description DRF wrapper for ctf.views.api.files.api_challenge_files. */
-        delete: operations["ctf_challenges_files_destroy"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -182,14 +318,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description DRF wrapper for ctf.views.api.flags.api_add_flag. */
-        get: operations["ctf_challenges_flags_add_retrieve"];
-        /** @description DRF wrapper for ctf.views.api.flags.api_add_flag. */
-        put: operations["ctf_challenges_flags_add_update"];
-        /** @description DRF wrapper for ctf.views.api.flags.api_add_flag. */
+        get?: never;
+        put?: never;
+        /** @description Validate the flag body and create the flag record. */
         post: operations["ctf_challenges_flags_add_create"];
-        /** @description DRF wrapper for ctf.views.api.flags.api_add_flag. */
-        delete: operations["ctf_challenges_flags_add_destroy"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -202,14 +335,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description DRF wrapper for ctf.views.api.play.api_use_hint. */
-        get: operations["ctf_challenges_hint_retrieve"];
-        /** @description DRF wrapper for ctf.views.api.play.api_use_hint. */
-        put: operations["ctf_challenges_hint_update"];
-        /** @description DRF wrapper for ctf.views.api.play.api_use_hint. */
+        get?: never;
+        put?: never;
+        /** @description Resolve which hint to unlock, then unlock it for the resolved participant. */
         post: operations["ctf_challenges_hint_create"];
-        /** @description DRF wrapper for ctf.views.api.play.api_use_hint. */
-        delete: operations["ctf_challenges_hint_destroy"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -222,14 +352,12 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description DRF wrapper for ctf.views.api.hints.api_challenge_hints. */
+        /** @description Return the hints for an owned challenge. */
         get: operations["ctf_challenges_hints_retrieve"];
-        /** @description DRF wrapper for ctf.views.api.hints.api_challenge_hints. */
-        put: operations["ctf_challenges_hints_update"];
-        /** @description DRF wrapper for ctf.views.api.hints.api_challenge_hints. */
+        put?: never;
+        /** @description Add a hint to an owned challenge. */
         post: operations["ctf_challenges_hints_create"];
-        /** @description DRF wrapper for ctf.views.api.hints.api_challenge_hints. */
-        delete: operations["ctf_challenges_hints_destroy"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -242,14 +370,12 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description DRF wrapper for ctf.views.api.prerequisites.api_challenge_prerequisites. */
+        /** @description Return the prerequisites for an owned challenge. */
         get: operations["ctf_challenges_prerequisites_retrieve"];
-        /** @description DRF wrapper for ctf.views.api.prerequisites.api_challenge_prerequisites. */
-        put: operations["ctf_challenges_prerequisites_update"];
-        /** @description DRF wrapper for ctf.views.api.prerequisites.api_challenge_prerequisites. */
+        put?: never;
+        /** @description Add a prerequisite to an owned challenge. */
         post: operations["ctf_challenges_prerequisites_create"];
-        /** @description DRF wrapper for ctf.views.api.prerequisites.api_challenge_prerequisites. */
-        delete: operations["ctf_challenges_prerequisites_destroy"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -262,14 +388,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description DRF wrapper for ctf.views.api.play.api_rate_challenge. */
-        get: operations["ctf_challenges_rate_retrieve"];
-        /** @description DRF wrapper for ctf.views.api.play.api_rate_challenge. */
-        put: operations["ctf_challenges_rate_update"];
-        /** @description DRF wrapper for ctf.views.api.play.api_rate_challenge. */
+        get?: never;
+        put?: never;
+        /** @description Validate the rating and record it for the resolved participant. */
         post: operations["ctf_challenges_rate_create"];
-        /** @description DRF wrapper for ctf.views.api.play.api_rate_challenge. */
-        delete: operations["ctf_challenges_rate_destroy"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -282,14 +405,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description DRF wrapper for ctf.views.api.play.api_submit_flag. */
-        get: operations["ctf_challenges_submit_retrieve"];
-        /** @description DRF wrapper for ctf.views.api.play.api_submit_flag. */
-        put: operations["ctf_challenges_submit_update"];
-        /** @description DRF wrapper for ctf.views.api.play.api_submit_flag. */
+        get?: never;
+        put?: never;
+        /** @description Validate the flag body and submit it for the resolved participant. */
         post: operations["ctf_challenges_submit_create"];
-        /** @description DRF wrapper for ctf.views.api.play.api_submit_flag. */
-        delete: operations["ctf_challenges_submit_destroy"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -302,14 +422,12 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description DRF wrapper for ctf.views.api.events.api_event_list. */
-        get: operations["ctf_events_retrieve"];
-        /** @description DRF wrapper for ctf.views.api.events.api_event_list. */
-        put: operations["ctf_events_update"];
-        /** @description DRF wrapper for ctf.views.api.events.api_event_list. */
+        /** @description Return the organizer's events. */
+        get: operations["ctf_events_list"];
+        put?: never;
+        /** @description Create an event from the request body. */
         post: operations["ctf_events_create"];
-        /** @description DRF wrapper for ctf.views.api.events.api_event_list. */
-        delete: operations["ctf_events_destroy"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -322,14 +440,13 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description DRF wrapper for ctf.views.api.events.api_event_detail. */
-        get: operations["ctf_events_retrieve_2"];
-        /** @description DRF wrapper for ctf.views.api.events.api_event_detail. */
-        put: operations["ctf_events_update_2"];
-        /** @description DRF wrapper for ctf.views.api.events.api_event_detail. */
-        post: operations["ctf_events_create_2"];
-        /** @description DRF wrapper for ctf.views.api.events.api_event_detail. */
-        delete: operations["ctf_events_destroy_2"];
+        /** @description Return the full event detail projection. */
+        get: operations["ctf_events_retrieve"];
+        /** @description Update mutable fields of an owned event. */
+        put: operations["ctf_events_update"];
+        post?: never;
+        /** @description Soft-delete an owned event. */
+        delete: operations["ctf_events_destroy"];
         options?: never;
         head?: never;
         patch?: never;
@@ -342,14 +459,12 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description DRF wrapper for ctf.views.api.challenges.api_challenge_list. */
+        /** @description Return the challenges belonging to an owned event. */
         get: operations["ctf_events_challenges_retrieve"];
-        /** @description DRF wrapper for ctf.views.api.challenges.api_challenge_list. */
-        put: operations["ctf_events_challenges_update"];
-        /** @description DRF wrapper for ctf.views.api.challenges.api_challenge_list. */
+        put?: never;
+        /** @description Create a challenge under an owned event. */
         post: operations["ctf_events_challenges_create"];
-        /** @description DRF wrapper for ctf.views.api.challenges.api_challenge_list. */
-        delete: operations["ctf_events_challenges_destroy"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -362,13 +477,12 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description DRF wrapper for ctf.views.api.notifications.api_event_email_template. */
+        /** @description Return the per-event custom template, or 404 when using the default. */
         get: operations["ctf_events_email_templates_retrieve"];
-        /** @description DRF wrapper for ctf.views.api.notifications.api_event_email_template. */
+        /** @description Create or update the per-event custom template from the request body. */
         put: operations["ctf_events_email_templates_update"];
-        /** @description DRF wrapper for ctf.views.api.notifications.api_event_email_template. */
-        post: operations["ctf_events_email_templates_create"];
-        /** @description DRF wrapper for ctf.views.api.notifications.api_event_email_template. */
+        post?: never;
+        /** @description Soft-delete the per-event template, reverting to the platform default. */
         delete: operations["ctf_events_email_templates_destroy"];
         options?: never;
         head?: never;
@@ -382,14 +496,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description DRF wrapper for ctf.views.api.events.api_force_delete_event. */
-        get: operations["ctf_events_force_delete_retrieve"];
-        /** @description DRF wrapper for ctf.views.api.events.api_force_delete_event. */
-        put: operations["ctf_events_force_delete_update"];
-        /** @description DRF wrapper for ctf.views.api.events.api_force_delete_event. */
+        get?: never;
+        put?: never;
+        /** @description Validate the confirmation name and force-delete the event. */
         post: operations["ctf_events_force_delete_create"];
-        /** @description DRF wrapper for ctf.views.api.events.api_force_delete_event. */
-        delete: operations["ctf_events_force_delete_destroy"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -402,14 +513,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description DRF wrapper for ctf.views.api.ranges.api_send_invitations. */
-        get: operations["ctf_events_invitations_send_retrieve"];
-        /** @description DRF wrapper for ctf.views.api.ranges.api_send_invitations. */
-        put: operations["ctf_events_invitations_send_update"];
-        /** @description DRF wrapper for ctf.views.api.ranges.api_send_invitations. */
+        get?: never;
+        put?: never;
+        /** @description Rate-limit, enforce ownership, then queue the invitation emails. */
         post: operations["ctf_events_invitations_send_create"];
-        /** @description DRF wrapper for ctf.views.api.ranges.api_send_invitations. */
-        delete: operations["ctf_events_invitations_send_destroy"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -422,14 +530,29 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description DRF wrapper for ctf.views.api.notifications.api_notification_list. */
+        /** @description Return the notifications for an owned event, newest first. */
         get: operations["ctf_events_notifications_retrieve"];
-        /** @description DRF wrapper for ctf.views.api.notifications.api_notification_list. */
-        put: operations["ctf_events_notifications_update"];
-        /** @description DRF wrapper for ctf.views.api.notifications.api_notification_list. */
+        put?: never;
+        /** @description Send an announcement to an owned event from the request body. */
         post: operations["ctf_events_notifications_create"];
-        /** @description DRF wrapper for ctf.views.api.notifications.api_notification_list. */
-        delete: operations["ctf_events_notifications_destroy"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ctf/events/{event_id}/organizer-scoreboard/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Return the full scoreboard for an owned event, ignoring freeze/visibility. */
+        get: operations["ctf_organizer_scoreboard"];
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -442,14 +565,12 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description DRF wrapper for ctf.views.api.participants.api_participant_list. */
+        /** @description Return the participants of an owned event, optionally filtered by status. */
         get: operations["ctf_events_participants_retrieve"];
-        /** @description DRF wrapper for ctf.views.api.participants.api_participant_list. */
-        put: operations["ctf_events_participants_update"];
-        /** @description DRF wrapper for ctf.views.api.participants.api_participant_list. */
+        put?: never;
+        /** @description Invite a single participant to an owned event. */
         post: operations["ctf_events_participants_create"];
-        /** @description DRF wrapper for ctf.views.api.participants.api_participant_list. */
-        delete: operations["ctf_events_participants_destroy"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -462,14 +583,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description DRF wrapper for ctf.views.api.participants.api_participant_import. */
-        get: operations["ctf_events_participants_import_retrieve"];
-        /** @description DRF wrapper for ctf.views.api.participants.api_participant_import. */
-        put: operations["ctf_events_participants_import_update"];
-        /** @description DRF wrapper for ctf.views.api.participants.api_participant_import. */
+        get?: never;
+        put?: never;
+        /** @description Validate the import body and invite each row, collecting per-row errors. */
         post: operations["ctf_events_participants_import_create"];
-        /** @description DRF wrapper for ctf.views.api.participants.api_participant_import. */
-        delete: operations["ctf_events_participants_import_destroy"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -482,14 +600,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description DRF wrapper for ctf.views.api.ranges.api_range_list. */
+        /** @description Return per-participant range rows and the provisioning-progress projection. */
         get: operations["ctf_events_ranges_retrieve"];
-        /** @description DRF wrapper for ctf.views.api.ranges.api_range_list. */
-        put: operations["ctf_events_ranges_update"];
-        /** @description DRF wrapper for ctf.views.api.ranges.api_range_list. */
-        post: operations["ctf_events_ranges_create"];
-        /** @description DRF wrapper for ctf.views.api.ranges.api_range_list. */
-        delete: operations["ctf_events_ranges_destroy"];
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -502,14 +617,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description DRF wrapper for ctf.views.api.ranges.api_provision_ranges. */
-        get: operations["ctf_events_ranges_provision_retrieve"];
-        /** @description DRF wrapper for ctf.views.api.ranges.api_provision_ranges. */
-        put: operations["ctf_events_ranges_provision_update"];
-        /** @description DRF wrapper for ctf.views.api.ranges.api_provision_ranges. */
+        get?: never;
+        put?: never;
+        /** @description Enqueue (or coalesce onto) a background spin-up task and return 202 immediately. */
         post: operations["ctf_events_ranges_provision_create"];
-        /** @description DRF wrapper for ctf.views.api.ranges.api_provision_ranges. */
-        delete: operations["ctf_events_ranges_provision_destroy"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -532,6 +644,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/ctf/events/{event_id}/spares/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Enforce ownership, then parse ``count`` and top the spare pool up to it. */
+        post: operations["ctf_events_spares_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/ctf/files/{file_id}/delete/": {
         parameters: {
             query?: never;
@@ -539,14 +668,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description DRF wrapper for ctf.views.api.files.api_challenge_file_delete. */
-        get: operations["ctf_files_delete_retrieve"];
-        /** @description DRF wrapper for ctf.views.api.files.api_challenge_file_delete. */
-        put: operations["ctf_files_delete_update"];
-        /** @description DRF wrapper for ctf.views.api.files.api_challenge_file_delete. */
+        get?: never;
+        put?: never;
+        /** @description Resolve the file, enforce ownership, and delete via the service. */
         post: operations["ctf_files_delete_create"];
-        /** @description DRF wrapper for ctf.views.api.files.api_challenge_file_delete. */
-        delete: operations["ctf_files_delete_destroy"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -559,14 +685,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description DRF wrapper for ctf.views.api.files.api_file_download. */
+        /** @description Resolve the file, apply the fine-grained access policy, and issue a URL. */
         get: operations["ctf_files_download_retrieve"];
-        /** @description DRF wrapper for ctf.views.api.files.api_file_download. */
-        put: operations["ctf_files_download_update"];
-        /** @description DRF wrapper for ctf.views.api.files.api_file_download. */
-        post: operations["ctf_files_download_create"];
-        /** @description DRF wrapper for ctf.views.api.files.api_file_download. */
-        delete: operations["ctf_files_download_destroy"];
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -579,14 +702,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description DRF wrapper for ctf.views.api.flags.api_remove_flag. */
-        get: operations["ctf_flags_remove_retrieve"];
-        /** @description DRF wrapper for ctf.views.api.flags.api_remove_flag. */
-        put: operations["ctf_flags_remove_update"];
-        /** @description DRF wrapper for ctf.views.api.flags.api_remove_flag. */
+        get?: never;
+        put?: never;
+        /** @description Resolve the flag, enforce ownership, and delete via the service. */
         post: operations["ctf_flags_remove_create"];
-        /** @description DRF wrapper for ctf.views.api.flags.api_remove_flag. */
-        delete: operations["ctf_flags_remove_destroy"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -599,14 +719,79 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description DRF wrapper for ctf.views.api.hints.api_hint_delete. */
-        get: operations["ctf_hints_delete_retrieve"];
-        /** @description DRF wrapper for ctf.views.api.hints.api_hint_delete. */
-        put: operations["ctf_hints_delete_update"];
-        /** @description DRF wrapper for ctf.views.api.hints.api_hint_delete. */
+        get?: never;
+        put?: never;
+        /** @description Delete a hint, mapping service exceptions to the shared envelope. */
         post: operations["ctf_hints_delete_create"];
-        /** @description DRF wrapper for ctf.views.api.hints.api_hint_delete. */
-        delete: operations["ctf_hints_delete_destroy"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ctf/me/challenges/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Return available challenges with this participant's solve state. */
+        get: operations["ctf_me_challenges_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ctf/me/challenges/{challenge_id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Return the challenge detail, or 404/403 per the read-availability policy. */
+        get: operations["ctf_me_challenges_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ctf/me/event/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Return the current-event projection, or 404 when there is none. */
+        get: operations["ctf_me_event_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ctf/me/team/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Return the participant's team projection, or 404 for solo/unteamed. */
+        get: operations["ctf_me_team_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -619,14 +804,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description DRF wrapper for ctf.views.api.notifications.api_notification_send. */
-        get: operations["ctf_notifications_send_retrieve"];
-        /** @description DRF wrapper for ctf.views.api.notifications.api_notification_send. */
-        put: operations["ctf_notifications_send_update"];
-        /** @description DRF wrapper for ctf.views.api.notifications.api_notification_send. */
+        get?: never;
+        put?: never;
+        /** @description Resolve the notification, enforce ownership, then send it. */
         post: operations["ctf_notifications_send_create"];
-        /** @description DRF wrapper for ctf.views.api.notifications.api_notification_send. */
-        delete: operations["ctf_notifications_send_destroy"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -639,13 +821,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description DRF wrapper for ctf.views.api.participants.api_participant_detail. */
+        /** @description Return the full organizer participant detail projection. */
         get: operations["ctf_participants_retrieve"];
-        /** @description DRF wrapper for ctf.views.api.participants.api_participant_detail. */
-        put: operations["ctf_participants_update"];
-        /** @description DRF wrapper for ctf.views.api.participants.api_participant_detail. */
-        post: operations["ctf_participants_create"];
-        /** @description DRF wrapper for ctf.views.api.participants.api_participant_detail. */
+        put?: never;
+        post?: never;
+        /** @description Soft-delete an owned participant. */
         delete: operations["ctf_participants_destroy"];
         options?: never;
         head?: never;
@@ -659,14 +839,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description DRF wrapper for ctf.views.admin_brackets.api_assign_bracket. */
-        get: operations["ctf_participants_bracket_retrieve"];
-        /** @description DRF wrapper for ctf.views.admin_brackets.api_assign_bracket. */
-        put: operations["ctf_participants_bracket_update"];
-        /** @description DRF wrapper for ctf.views.admin_brackets.api_assign_bracket. */
+        get?: never;
+        put?: never;
+        /** @description Enforce ownership, then assign (bracket_id given) or remove (null) the bracket. */
         post: operations["ctf_participants_bracket_create"];
-        /** @description DRF wrapper for ctf.views.admin_brackets.api_assign_bracket. */
-        delete: operations["ctf_participants_bracket_destroy"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -679,14 +856,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description DRF wrapper for ctf.views.api.ranges.api_destroy_participant_range. */
-        get: operations["ctf_participants_range_destroy_retrieve"];
-        /** @description DRF wrapper for ctf.views.api.ranges.api_destroy_participant_range. */
-        put: operations["ctf_participants_range_destroy_update"];
-        /** @description DRF wrapper for ctf.views.api.ranges.api_destroy_participant_range. */
+        get?: never;
+        put?: never;
+        /** @description Destroy the participant's range via the range service. */
         post: operations["ctf_participants_range_destroy_create"];
-        /** @description DRF wrapper for ctf.views.api.ranges.api_destroy_participant_range. */
-        delete: operations["ctf_participants_range_destroy_destroy"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -699,14 +873,28 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description DRF wrapper for ctf.views.api.ranges.api_provision_participant_range. */
-        get: operations["ctf_participants_range_provision_retrieve"];
-        /** @description DRF wrapper for ctf.views.api.ranges.api_provision_participant_range. */
-        put: operations["ctf_participants_range_provision_update"];
-        /** @description DRF wrapper for ctf.views.api.ranges.api_provision_participant_range. */
+        get?: never;
+        put?: never;
+        /** @description Provision the participant's range via the range service. */
         post: operations["ctf_participants_range_provision_create"];
-        /** @description DRF wrapper for ctf.views.api.ranges.api_provision_participant_range. */
-        delete: operations["ctf_participants_range_provision_destroy"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ctf/participants/{participant_id}/range/recover/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Enforce ownership, then parse the recovery body and run the recovery service. */
+        post: operations["ctf_participants_range_recover_create"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -719,14 +907,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description DRF wrapper for ctf.views.api.ranges.api_restart_participant_range. */
-        get: operations["ctf_participants_range_restart_retrieve"];
-        /** @description DRF wrapper for ctf.views.api.ranges.api_restart_participant_range. */
-        put: operations["ctf_participants_range_restart_update"];
-        /** @description DRF wrapper for ctf.views.api.ranges.api_restart_participant_range. */
+        get?: never;
+        put?: never;
+        /** @description Restart the participant's range via the range service. */
         post: operations["ctf_participants_range_restart_create"];
-        /** @description DRF wrapper for ctf.views.api.ranges.api_restart_participant_range. */
-        delete: operations["ctf_participants_range_restart_destroy"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -739,14 +924,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description DRF wrapper for ctf.views.api.ranges.api_start_participant_range. */
-        get: operations["ctf_participants_range_start_retrieve"];
-        /** @description DRF wrapper for ctf.views.api.ranges.api_start_participant_range. */
-        put: operations["ctf_participants_range_start_update"];
-        /** @description DRF wrapper for ctf.views.api.ranges.api_start_participant_range. */
+        get?: never;
+        put?: never;
+        /** @description Start the participant's range via the range service. */
         post: operations["ctf_participants_range_start_create"];
-        /** @description DRF wrapper for ctf.views.api.ranges.api_start_participant_range. */
-        delete: operations["ctf_participants_range_start_destroy"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -759,14 +941,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description DRF wrapper for ctf.views.api.ranges.api_stop_participant_range. */
-        get: operations["ctf_participants_range_stop_retrieve"];
-        /** @description DRF wrapper for ctf.views.api.ranges.api_stop_participant_range. */
-        put: operations["ctf_participants_range_stop_update"];
-        /** @description DRF wrapper for ctf.views.api.ranges.api_stop_participant_range. */
+        get?: never;
+        put?: never;
+        /** @description Stop the participant's range via the range service. */
         post: operations["ctf_participants_range_stop_create"];
-        /** @description DRF wrapper for ctf.views.api.ranges.api_stop_participant_range. */
-        delete: operations["ctf_participants_range_stop_destroy"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -779,14 +958,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description DRF wrapper for ctf.views.api.participants.api_participant_resend_invite. */
-        get: operations["ctf_participants_resend_invite_retrieve"];
-        /** @description DRF wrapper for ctf.views.api.participants.api_participant_resend_invite. */
-        put: operations["ctf_participants_resend_invite_update"];
-        /** @description DRF wrapper for ctf.views.api.participants.api_participant_resend_invite. */
+        get?: never;
+        put?: never;
+        /** @description Rate-limit, enforce ownership, then reset and resend the invite. */
         post: operations["ctf_participants_resend_invite_create"];
-        /** @description DRF wrapper for ctf.views.api.participants.api_participant_resend_invite. */
-        delete: operations["ctf_participants_resend_invite_destroy"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -799,14 +975,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description DRF wrapper for ctf.views.api.scoreboard.api_score_timeline. */
+        /** @description Resolve the participant, authorize access, and return the timeline. */
         get: operations["ctf_participants_score_timeline_retrieve"];
-        /** @description DRF wrapper for ctf.views.api.scoreboard.api_score_timeline. */
-        put: operations["ctf_participants_score_timeline_update"];
-        /** @description DRF wrapper for ctf.views.api.scoreboard.api_score_timeline. */
-        post: operations["ctf_participants_score_timeline_create"];
-        /** @description DRF wrapper for ctf.views.api.scoreboard.api_score_timeline. */
-        delete: operations["ctf_participants_score_timeline_destroy"];
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -819,14 +992,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description DRF wrapper for ctf.views.api.prerequisites.api_prerequisite_delete. */
-        get: operations["ctf_prerequisites_delete_retrieve"];
-        /** @description DRF wrapper for ctf.views.api.prerequisites.api_prerequisite_delete. */
-        put: operations["ctf_prerequisites_delete_update"];
-        /** @description DRF wrapper for ctf.views.api.prerequisites.api_prerequisite_delete. */
+        get?: never;
+        put?: never;
+        /** @description Resolve the prerequisite, enforce ownership, and delete via the service. */
         post: operations["ctf_prerequisites_delete_create"];
-        /** @description DRF wrapper for ctf.views.api.prerequisites.api_prerequisite_delete. */
-        delete: operations["ctf_prerequisites_delete_destroy"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -839,14 +1009,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description DRF wrapper for ctf.views.api.ranges.api_range_access. */
-        get: operations["ctf_range_access_retrieve"];
-        /** @description DRF wrapper for ctf.views.api.ranges.api_range_access. */
-        put: operations["ctf_range_access_update"];
-        /** @description DRF wrapper for ctf.views.api.ranges.api_range_access. */
+        get?: never;
+        put?: never;
+        /** @description Return the mission_control RDP endpoint redirect (participants are standard users). */
         post: operations["ctf_range_access_create"];
-        /** @description DRF wrapper for ctf.views.api.ranges.api_range_access. */
-        delete: operations["ctf_range_access_destroy"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -859,14 +1026,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description DRF wrapper for ctf.views.api.ranges.api_range_status. */
+        /** @description Return the participant's range status, or the not-assigned sentinel. */
         get: operations["ctf_range_status_retrieve"];
-        /** @description DRF wrapper for ctf.views.api.ranges.api_range_status. */
-        put: operations["ctf_range_status_update"];
-        /** @description DRF wrapper for ctf.views.api.ranges.api_range_status. */
-        post: operations["ctf_range_status_create"];
-        /** @description DRF wrapper for ctf.views.api.ranges.api_range_status. */
-        delete: operations["ctf_range_status_destroy"];
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -879,14 +1043,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description DRF wrapper for ctf.views.api.events.api_scenarios. */
+        /** @description Return scenario id/name pairs from the CMS registry. */
         get: operations["ctf_scenarios_retrieve"];
-        /** @description DRF wrapper for ctf.views.api.events.api_scenarios. */
-        put: operations["ctf_scenarios_update"];
-        /** @description DRF wrapper for ctf.views.api.events.api_scenarios. */
-        post: operations["ctf_scenarios_create"];
-        /** @description DRF wrapper for ctf.views.api.events.api_scenarios. */
-        delete: operations["ctf_scenarios_destroy"];
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -899,14 +1060,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description DRF wrapper for ctf.views.api.play.api_submissions. */
+        /** @description Return the active participant's own submission history. */
         get: operations["ctf_submissions_retrieve"];
-        /** @description DRF wrapper for ctf.views.api.play.api_submissions. */
-        put: operations["ctf_submissions_update"];
-        /** @description DRF wrapper for ctf.views.api.play.api_submissions. */
-        post: operations["ctf_submissions_create"];
-        /** @description DRF wrapper for ctf.views.api.play.api_submissions. */
-        delete: operations["ctf_submissions_destroy"];
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -1005,7 +1163,7 @@ export interface paths {
             cookie?: never;
         };
         /** @description Render an opener page that polls until the bootstrap URL is ready. */
-        get: operations["mission_control_guacamole_bootstrap_open_retrieve"];
+        get: operations["api_v1_mission_control_guacamole_bootstrap_open_retrieve"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1310,7 +1468,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Return the authenticated actor's range history, newest first. */
+        /** @description Return the authenticated actor's Mission Control range history, newest first. */
         get: operations["api_v1_mission_control_ranges_list"];
         put?: never;
         post?: never;
@@ -1514,6 +1672,81 @@ export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         /**
+         * @description Read-only, allowlisted ACES package-source presentation fields.
+         *
+         *     Every field is bounded provenance/identity metadata. This serializer never
+         *     exposes raw ACES SDL, imported module bodies, generated content, flags,
+         *     credentials, presigned URLs, provider payloads, or runtime config.
+         */
+        AcesCatalogFields: {
+            readonly source_kind: string;
+            readonly contract_kind: string;
+            readonly contract_profile: string;
+            readonly package_ref: string;
+            readonly package_version: string;
+            readonly package_digest: string;
+            readonly lock_ref: string;
+            readonly lock_digest: string;
+            readonly conformance_status: string;
+            readonly conformance_report_ref: string;
+            readonly provenance_summary: {
+                [key: string]: unknown;
+            };
+        };
+        /** @description Shape validation for a disable request (natural key only). */
+        AcesImageMappingDisable: {
+            provider: string;
+            source_name: string;
+            /** @default  */
+            source_version: string;
+        };
+        /**
+         * @description Shape validation for a register/upsert request; the service is final validator.
+         *
+         *     Provider-choice validity, natural-key rules, and soft-disable semantics stay
+         *     in ``engine.services`` so the API and management command cannot drift; this
+         *     serializer only enforces HTTP shape (required fields, max lengths, positive
+         *     disk size, boolean).
+         */
+        AcesImageMappingRegister: {
+            provider: string;
+            source_name: string;
+            image_ref: string;
+            /** @default  */
+            source_version: string;
+            /** @default  */
+            machine_type: string;
+            disk_size_gb?: number | null;
+            /** @default  */
+            disk_type: string;
+            /** @default true */
+            enabled: boolean;
+            /** @default  */
+            notes: string;
+        };
+        /**
+         * @description Allowlisted read projection shared by the register, list, and disable responses.
+         *
+         *     Field-for-field with ``engine.services.AcesImageMappingView`` so it renders
+         *     either that DTO (list/disable) or the model instance the upsert returns.
+         */
+        AcesImageMappingView: {
+            readonly id: number;
+            readonly provider: string;
+            readonly source_name: string;
+            readonly source_version: string;
+            readonly image_ref: string;
+            readonly machine_type: string;
+            readonly disk_size_gb: number | null;
+            readonly disk_type: string;
+            readonly enabled: boolean;
+            readonly notes: string;
+            /** Format: date-time */
+            readonly created_at: string;
+            /** Format: date-time */
+            readonly updated_at: string;
+        };
+        /**
          * @description Read-only projection of one ACES operation sidecar record (#1275).
          *
          *     Serializes an ``AcesOperationRecordProjection`` (already redacted by the
@@ -1652,6 +1885,43 @@ export interface components {
          * @enum {string}
          */
         AgentTypeEnum: "xdr" | "xdr_collector" | "cloud_identity_engine";
+        /**
+         * @description Schema-only component for the canonical platform API error envelope.
+         *
+         *     Mirrors :func:`shared.api.errors.api_exception_handler` /
+         *     :func:`shared.api.errors.api_error_response` output. It describes the wire
+         *     contract; it never runs at request time.
+         */
+        ApiError: {
+            error: components["schemas"]["ApiErrorBody"];
+        };
+        /** @description Schema-only description of the ``shared.api.errors`` envelope body. */
+        ApiErrorBody: {
+            /** @description Stable machine-readable error code. */
+            code: string;
+            /** @description Safe, user-facing error message. */
+            message: string;
+            /** @description Optional structured field-level detail (present on validation errors). */
+            details?: unknown;
+            /** @description Correlation id echoed from the X-Request-ID request header, when present. */
+            request_id?: string;
+        };
+        /**
+         * @description Request body for assigning or removing a participant's bracket.
+         *
+         *     ``bracket_id`` is typed loosely (nullable string) so the view keeps the
+         *     legacy branch mapping: a malformed value 400s as ``Invalid bracket ID
+         *     format``, a same-event violation 400s, an unknown bracket 404s, and ``null``
+         *     removes the current bracket.
+         */
+        AssignBracketRequest: {
+            bracket_id?: string | null;
+        };
+        /** @description Result returned after assigning or removing a participant's bracket. */
+        AssignBracketResult: {
+            readonly status: string;
+            readonly bracket: components["schemas"]["_NamedRef"] | null;
+        };
         /** @description Serializer for AuditLog model (read-only). */
         AuditLog: {
             readonly id: number;
@@ -1682,6 +1952,9 @@ export interface components {
             risk_register_spa: boolean;
             platform_spa: boolean;
             mission_control_spa: boolean;
+            scenario_editor_spa: boolean;
+            ctf_workspace_spa: boolean;
+            aces_native_provisioning: boolean;
         };
         /** @description UX mode eligibility (participant/operator). Not an authorization fact. */
         BootstrapModes: {
@@ -1705,26 +1978,179 @@ export interface components {
             is_staff: boolean;
             is_superuser: boolean;
         };
+        /**
+         * @description Read-only catalog entry projection for the CMS catalog API.
+         *
+         *     Serializes the presentation DTO from ``cms.scenarios.catalog_presentation``.
+         *     ``aces`` is present only for ACES package-backed entries; legacy YAML/DB
+         *     entries serialize it as ``null``.
+         */
+        CatalogEntry: {
+            readonly id: string;
+            readonly name: string;
+            readonly scenario_type: string;
+            readonly source: string;
+            readonly is_default: boolean;
+            readonly enabled: boolean;
+            readonly staff_only: boolean;
+            readonly launchable: boolean;
+            readonly aces: components["schemas"]["AcesCatalogFields"] | null;
+        };
+        /** @description Target-instance connection info, surfaced only when the range is ready. */
+        ChallengeConnectionInfo: {
+            readonly host: string;
+            readonly port: number | null;
+            readonly instance_name: string;
+            readonly os_type: string;
+        };
+        /** @description Envelope returned by the challenge file list. */
+        ChallengeFileListResponse: {
+            readonly files: components["schemas"]["ChallengeFileMeta"][];
+        };
+        /** @description Metadata projection of one challenge attachment (organizer list view). */
+        ChallengeFileMeta: {
+            readonly id: string;
+            readonly filename: string;
+            readonly display_name: string;
+            readonly file_size_bytes: number;
+            readonly file_size_display: string;
+            readonly content_type: string;
+            readonly sha256_hash: string;
+            readonly order: number;
+            /** Format: date-time */
+            readonly created_at: string;
+        };
+        /** @description Multipart request body for uploading a challenge attachment. */
+        ChallengeFileUpload: {
+            /** Format: uri */
+            file: string;
+            display_name?: string;
+        };
+        /** @description Result returned after uploading a challenge attachment. */
+        ChallengeFileUploadResult: {
+            readonly id: string;
+            readonly filename: string;
+            readonly display_name: string;
+            readonly file_size_bytes: number;
+            readonly file_size_display: string;
+        };
+        /** @description Organizer-facing hint projection (full text is exposed). */
+        ChallengeHint: {
+            readonly id: string;
+            readonly text: string;
+            readonly penalty: number;
+            readonly order: number;
+        };
+        /** @description Envelope returned by the event challenge list. */
+        ChallengeListResponse: {
+            readonly challenges: components["schemas"]["ChallengeSummary"][];
+        };
+        /** @description Compact result returned after creating or updating a challenge. */
+        ChallengeMutationResult: {
+            readonly id: string;
+            readonly name: string;
+            readonly category: string;
+            readonly points: number;
+        };
+        /** @description Challenge rating projection (aggregate visible only when public). */
+        ChallengeRating: {
+            /** Format: double */
+            readonly average: number | null;
+            readonly count: number;
+            readonly own_rating: number | null;
+            readonly public: boolean;
+        };
+        /** @description List projection of one challenge for an event. */
+        ChallengeSummary: {
+            readonly id: string;
+            readonly name: string;
+            readonly category: string;
+            readonly points: number;
+            readonly difficulty: string;
+            readonly order: number;
+            readonly tags: string[];
+            readonly topics: string[];
+        };
+        /**
+         * @description Create/update request body for a challenge.
+         *
+         *     Declares every field the ``ctf.services.create_challenge`` /
+         *     ``update_challenge`` facade consumes so nothing is silently dropped: the
+         *     mass-assignable challenge fields plus the write-only ``flag`` (plaintext),
+         *     ``flags`` (multi-flag records), ``tags``, ``topics``, and ``next_challenge``.
+         *     ``flag`` is intentionally optional at this layer; the service enforces the
+         *     flag-or-flags rule and raises ``CTFValidationError`` (mapped to 400).
+         *     Updates are validated ``partial=True`` by the view.
+         */
+        ChallengeWrite: {
+            name: string;
+            description?: string;
+            category?: string;
+            points?: number;
+            difficulty?: string;
+            flag_format?: string;
+            solution?: string;
+            max_attempts?: number;
+            /** Format: date-time */
+            release_time?: string | null;
+            order?: number;
+            visibility?: string;
+            target_instance_name?: string;
+            target_port?: number | null;
+            flag?: string;
+            flags?: {
+                [key: string]: unknown;
+            }[];
+            tags?: string[];
+            topics?: string[];
+            next_challenge?: string | null;
+        };
         /** @description Serializer for Comment model. */
         Comment: {
             readonly id: number;
             readonly risk_id: number;
             content: string;
-            readonly author: string;
+            readonly author: components["schemas"]["CommentAuthor"];
             readonly parent_comment_id: number | null;
             /** Format: date-time */
             readonly created_at: string;
+        };
+        /** @description Serializer for comment author info. */
+        CommentAuthor: {
+            type: string;
+            id: number;
+            name: string;
         };
         /** @description One entry from ``mission_control.utils.build_connection_urls``. */
         ConnectionUrl: {
             uuid: string | null;
             terminal_url: string;
         };
+        /** @description Validate credential creation requests before schema-specific validation. */
+        CredentialCreate: {
+            credential_type: string;
+            name?: string;
+            expires_at?: string | null;
+            scm_folder_name?: string;
+            scm_pin_id?: string;
+            scm_pin_value?: string;
+            sls_region?: string;
+            authcode?: string;
+        };
         /** @description Response body for ``CredentialCreateView.post`` (HTTP 201). */
         CredentialCreateResponse: {
             id: number;
             name: string;
             credential_type: string;
+        };
+        /** @description Envelope returned by the scenario list. */
+        CtfScenarioListResponse: {
+            readonly scenarios: components["schemas"]["CtfScenarioRef"][];
+        };
+        /** @description A CMS scenario id/name pair available for a CTF event. */
+        CtfScenarioRef: {
+            readonly id: string;
+            readonly name: string;
         };
         /** @description Response body for ``CurrentRangeView.get``. */
         CurrentRangeResponse: {
@@ -1737,6 +2163,11 @@ export interface components {
             aces_participant_runtime: {
                 [key: string]: unknown;
             } | null;
+        };
+        /** @description Domain-controller configuration, mirroring ``schema.DCConfig``. */
+        DCConfig: {
+            domain_name: string;
+            netbios_name: string;
         };
         /** @description Bounded active-event summary. */
         DashboardEvent: {
@@ -1765,6 +2196,35 @@ export interface components {
          * @enum {string}
          */
         DefaultEnum: "participant" | "operator";
+        /** @description The ``{"success": true}`` envelope returned by service-backed deletes. */
+        DeleteSuccess: {
+            readonly success: boolean;
+        };
+        /** @description Per-event email-template override projection. */
+        EmailTemplateResponse: {
+            readonly id: string;
+            readonly notification_type: string;
+            readonly subject: string;
+            readonly html_body: string;
+            readonly text_body: string;
+        };
+        /**
+         * @description Request body for creating/updating a per-event email-template override.
+         *
+         *     Fields are blank-tolerant so the view keeps the legacy validation: a missing
+         *     or empty ``html_body`` / ``text_body`` and any disallowed template syntax
+         *     both surface as a controlled 400. Organizer templates are restricted to the
+         *     flat ``{{ name }}`` placeholder grammar over the per-notification-type
+         *     allowlist enforced by ``ctf.services.email_template`` (CWE-1336, issue #1095).
+         */
+        EmailTemplateWrite: {
+            /** @default  */
+            subject: string;
+            /** @default  */
+            html_body: string;
+            /** @default  */
+            text_body: string;
+        };
         /**
          * @description * `risk` - Risk
          *     * `comment` - Comment
@@ -1782,6 +2242,140 @@ export interface components {
          * @enum {string}
          */
         EntityTypeEnum: "risk" | "comment" | "apikey" | "range" | "credential" | "agent" | "user" | "session" | "ngfw" | "config" | "experiment" | "scenario" | "script";
+        /** @description Full organizer-facing event detail projection. */
+        EventDetail: {
+            readonly id: string;
+            readonly name: string;
+            readonly description: string;
+            readonly status: string;
+            /** Format: date-time */
+            readonly event_start: string;
+            /** Format: date-time */
+            readonly event_end: string;
+            /** Format: date-time */
+            readonly registration_deadline: string | null;
+            readonly scenario_id: string;
+            readonly auto_cleanup: boolean;
+            readonly cleanup_delay_hours: number;
+            readonly max_participants: number | null;
+            readonly team_mode: boolean;
+            readonly team_size_limit: number | null;
+            readonly range_config: {
+                [key: string]: unknown;
+            };
+            readonly range_spinup_minutes: number;
+            readonly submission_cooldown_seconds: number;
+            readonly attempt_limit_mode: string;
+            readonly attempt_limit_cooldown_seconds: number;
+            readonly rating_visibility: string;
+            readonly scoring_mode: string;
+            readonly scoreboard_visible: boolean;
+            /** Format: date-time */
+            readonly scoreboard_freeze_at: string | null;
+        };
+        /** @description Envelope returned by the organizer event list. */
+        EventListResponse: {
+            readonly events: components["schemas"]["EventSummary"][];
+        };
+        /** @description Compact result returned after creating or updating an event. */
+        EventMutationResult: {
+            readonly id: string;
+            readonly name: string;
+            readonly status: string;
+        };
+        /** @description List projection of one of an organizer's events. */
+        EventSummary: {
+            readonly id: string;
+            readonly name: string;
+            readonly status: string;
+            /** Format: date-time */
+            readonly event_start: string;
+            /** Format: date-time */
+            readonly event_end: string;
+            readonly team_mode: boolean;
+        };
+        /**
+         * @description Create/update request body: the mutable event fields only.
+         *
+         *     ``status``, ``created_by``, ``id``, and timestamps are intentionally absent;
+         *     the service layer also filters to mutable fields, so mass assignment is
+         *     prevented at two layers. Updates are validated ``partial=True`` by the view.
+         */
+        EventWrite: {
+            name: string;
+            description?: string;
+            /** Format: date-time */
+            event_start: string;
+            /** Format: date-time */
+            event_end: string;
+            /** Format: date-time */
+            registration_deadline?: string | null;
+            scenario_id?: string;
+            auto_cleanup?: boolean;
+            cleanup_delay_hours?: number;
+            max_participants?: number | null;
+            team_mode?: boolean;
+            team_size_limit?: number | null;
+            range_spinup_minutes?: number;
+            range_config?: {
+                [key: string]: unknown;
+            };
+            submission_cooldown_seconds?: number;
+            attempt_limit_mode?: string;
+            attempt_limit_cooldown_seconds?: number;
+            rating_visibility?: string;
+            scoring_mode?: string;
+            scoreboard_visible?: boolean;
+            /** Format: date-time */
+            scoreboard_freeze_at?: string | null;
+        };
+        /** @description Presigned download URL for a challenge attachment. */
+        FileDownloadResponse: {
+            readonly url: string;
+            readonly filename: string;
+        };
+        /** @description Result returned after adding a flag (validator_config only when set). */
+        FlagCreateResult: {
+            readonly id: string;
+            readonly flag_type: string;
+            readonly case_sensitive: boolean;
+            readonly order: number;
+            readonly validator_config: {
+                [key: string]: unknown;
+            };
+        };
+        /**
+         * @description Request body for adding a flag to a challenge.
+         *
+         *     Mirrors the legacy view's ``flag_data`` construction: ``flag`` is optional
+         *     here (the view enforces that a value is present for static/regex types), and
+         *     ``case_sensitive`` / ``order`` / ``validator_config`` carry the same defaults
+         *     the service consumes.
+         */
+        FlagWrite: {
+            /** @default  */
+            flag: string;
+            /** @default static */
+            flag_type: string;
+            /** @default true */
+            case_sensitive: boolean;
+            /** @default 0 */
+            order: number;
+            validator_config?: {
+                [key: string]: unknown;
+            } | null;
+        };
+        /** @description Force-delete confirmation body. */
+        ForceDeleteEventRequest: {
+            confirmation_name: string;
+        };
+        /** @description Summary returned by a force-delete (range teardown counts). */
+        ForceDeleteEventResult: {
+            readonly event_id: string;
+            readonly event_name: string;
+            readonly ranges_destroyed: number;
+            readonly ranges_failed: number;
+        };
         /**
          * @description Response body for a queued Guacamole bootstrap (RDP/SSH/NGFW-SSH POST, HTTP 202).
          *
@@ -1811,26 +2405,97 @@ export interface components {
             error?: string;
             url?: string;
         };
+        /** @description Validate range Guacamole URL bootstrap requests. */
+        GuacamoleInstance: {
+            instance_uuid: string;
+        };
+        /** @description Envelope returned by the challenge hint list. */
+        HintListResponse: {
+            readonly hints: components["schemas"]["ChallengeHint"][];
+        };
+        /**
+         * @description Request body for adding a hint. ``penalty`` / ``order`` are optional so the
+         *     service applies its own defaults (order defaults to the current hint count).
+         */
+        HintWrite: {
+            text: string;
+            penalty?: number;
+            order?: number;
+        };
         /** @description Response-only projection of ``shared.schemas.InstanceContext``. */
         InstancePresentation: {
             uuid: string | null;
             name: string;
-            role: components["schemas"]["RoleEnum"];
-            os_type: components["schemas"]["OsTypeEnum"];
+            role: components["schemas"]["InstancePresentationRoleEnum"];
+            os_type: components["schemas"]["InstancePresentationOsTypeEnum"];
             join_domain: boolean;
             ami_key: string | null;
             private_ip: string | null;
+        };
+        /**
+         * @description * `kali` - kali
+         *     * `ubuntu` - ubuntu
+         *     * `windows` - windows
+         *     * `panos` - panos
+         * @enum {string}
+         */
+        InstancePresentationOsTypeEnum: "kali" | "ubuntu" | "windows" | "panos";
+        /**
+         * @description * `attacker` - attacker
+         *     * `victim` - victim
+         *     * `dc` - dc
+         *     * `ngfw` - ngfw
+         * @enum {string}
+         */
+        InstancePresentationRoleEnum: "attacker" | "victim" | "dc" | "ngfw";
+        /** @description Validate range launch requests. */
+        LaunchRange: {
+            agents?: {
+                [key: string]: number;
+            };
+            agent_id?: number | null;
+            /** @default basic */
+            scenario: string;
         };
         /** @description Response body for ``LaunchRangeView.post``. */
         LaunchRangeResponse: {
             success: boolean;
             range: components["schemas"]["RangePresentation"];
         };
+        /**
+         * @description Schema-only description of the flat ``{"error": "<message>"}`` body some
+         *     legacy Mission Control endpoints return (e.g. Guacamole bootstrap 503/404).
+         *
+         *     This is NOT the canonical :class:`ApiErrorSerializer` envelope. It exists so
+         *     the contract describes those endpoints' real wire shape truthfully rather
+         *     than pretending they use the structured envelope. New endpoints must use the
+         *     canonical envelope; this documents existing behavior, it does not endorse it.
+         */
+        LegacyError: {
+            /** @description Human-readable error message. */
+            error: string;
+        };
+        /** @description Validate NGFW creation requests. */
+        NGFWCreate: {
+            /** @default  */
+            name: string;
+            deployment_profile_id?: number | null;
+            /** @default  */
+            registration_method: string;
+            scm_credential_id?: number | null;
+            otp_value?: string | null;
+            otp_folder?: string | null;
+        };
         /** @description Response body for ``NGFWCreateView.post`` (HTTP 201). */
         NGFWCreateResponse: {
             id: string;
             name: string;
             status: string;
+        };
+        /** @description Validate NGFW destroy requests. */
+        NGFWDestroy: {
+            /** @default  */
+            confirm_name: string;
         };
         /** @description Response body for ``NGFWDestroyView.post``. */
         NGFWDestroyResponse: {
@@ -1850,13 +2515,119 @@ export interface components {
             ngfws: components["schemas"]["NGFWListItem"][];
         };
         /**
-         * @description * `kali` - kali
-         *     * `ubuntu` - ubuntu
-         *     * `windows` - windows
-         *     * `panos` - panos
-         * @enum {string}
+         * @description Request body for sending an announcement notification.
+         *
+         *     ``subject`` and ``body`` are blank-tolerant at this layer so the view can
+         *     apply the legacy strip-then-reject rule and return the exact ``Invalid
+         *     notification request.`` 400 envelope for an empty or whitespace-only value.
          */
-        OsTypeEnum: "kali" | "ubuntu" | "windows" | "panos";
+        NotificationAnnounceRequest: {
+            /** @default  */
+            subject: string;
+            /** @default  */
+            body: string;
+        };
+        /** @description Result returned after creating and sending an announcement (201). */
+        NotificationAnnounceResult: {
+            readonly id: string;
+            readonly subject: string;
+            readonly status: string;
+            readonly sent_count: number;
+        };
+        /** @description List projection of one notification for an event. */
+        NotificationListItem: {
+            readonly id: string;
+            readonly notification_type: string;
+            readonly subject: string;
+            readonly status: string;
+            readonly sent_count: number;
+            /** Format: date-time */
+            readonly created_at: string;
+            /** Format: date-time */
+            readonly sent_at: string | null;
+        };
+        /** @description Envelope returned by the event notification list. */
+        NotificationListResponse: {
+            readonly notifications: components["schemas"]["NotificationListItem"][];
+        };
+        /** @description Result returned after dispatching a notification to its recipients. */
+        NotificationSendResult: {
+            readonly notification_id: string;
+            readonly status: string;
+        };
+        /** @description Full organizer-facing challenge detail projection. */
+        OrganizerChallengeDetail: {
+            readonly id: string;
+            readonly name: string;
+            readonly description: string;
+            readonly category: string;
+            readonly points: number;
+            readonly difficulty: string;
+            readonly flag_format: string;
+            readonly hints: components["schemas"]["ChallengeHint"][];
+            readonly max_attempts: number;
+            readonly order: number;
+            /** Format: date-time */
+            readonly release_time: string | null;
+            readonly visibility: string;
+            readonly target_instance_name: string;
+            readonly target_port: number | null;
+            readonly tags: string[];
+            readonly topics: string[];
+            readonly solution: string;
+        };
+        /**
+         * @description Organizer monitoring scoreboard — always the full ranking payload.
+         *
+         *     Unlike :class:`PublicScoreboardResponseSerializer`, this projection never
+         *     carries the ``scoreboard_hidden`` sentinel and never withholds rows: an
+         *     organizer sees every ranking regardless of the event's ``scoreboard_visible``
+         *     flag or freeze window. ``frozen`` is reported for display only; the rankings
+         *     are computed as of now (``freeze_at=None``).
+         */
+        OrganizerScoreboardResponse: {
+            readonly event_id: string;
+            readonly team_mode: boolean;
+            readonly frozen: boolean;
+            readonly rankings: {
+                [key: string]: unknown;
+            }[];
+            readonly bracket_rankings: {
+                [key: string]: unknown;
+            }[] | null;
+            readonly brackets: components["schemas"]["_NamedRef"][];
+        };
+        /**
+         * @description Validate the shape of a uniform pack-registration request body (#1578).
+         *
+         *     This is a thin boundary check: it rejects missing/oversized/wrong-typed
+         *     fields so the service and the reference-record validator receive a
+         *     well-formed request. Domain validation (source-kind allowlist, digest shape,
+         *     bounded provenance, pack conformance, no-shadow) remains authoritative in the
+         *     service and model — this serializer does not restate it.
+         */
+        PackRegistration: {
+            scenario_id: string;
+            source_kind: string;
+            contract_kind: string;
+            contract_profile: string;
+            package_ref: string;
+            package_version: string;
+            package_digest: string;
+            /** @default  */
+            lock_ref: string;
+            /** @default  */
+            lock_digest: string;
+            provenance?: {
+                [key: string]: unknown;
+            };
+        };
+        /** @description Bounded 201 summary returned after a pack is registered (#1578). */
+        PackRegistrationResult: {
+            readonly scenario_id: string;
+            readonly source_kind: string;
+            readonly conformance_status: string;
+        };
         PaginatedAuditLogList: {
             /** @example 123 */
             count: number;
@@ -1887,6 +2658,208 @@ export interface components {
             previous?: string | null;
             results: components["schemas"]["Risk"][];
         };
+        /**
+         * @description Participant-safe challenge detail for the solve view.
+         *
+         *     Never declares flag, flag-format, or validator-config fields. ``solution`` is
+         *     non-null only after the event has ended/archived.
+         */
+        ParticipantChallengeDetail: {
+            readonly id: string;
+            readonly name: string;
+            readonly description: string;
+            readonly category: string;
+            readonly points: number;
+            readonly difficulty: string;
+            readonly max_attempts: number;
+            readonly attempt_limit_mode: string;
+            readonly solved: boolean;
+            readonly attempt_count: number;
+            readonly attempts_remaining: number | null;
+            readonly timeout_retry_after: number | null;
+            readonly hints: components["schemas"]["ParticipantHint"][];
+            readonly next_hint_id: string | null;
+            readonly next_hint_cost: number;
+            readonly points_after_next_hint: number;
+            readonly total_hint_penalty: number;
+            readonly files: components["schemas"]["ParticipantChallengeFile"][];
+            readonly prerequisites_met: boolean;
+            readonly unmet_prerequisites: components["schemas"]["_NamedRef"][];
+            readonly connection_info: components["schemas"]["ChallengeConnectionInfo"] | null;
+            readonly show_solution: boolean;
+            readonly solution: string | null;
+            readonly rating: components["schemas"]["ChallengeRating"] | null;
+        };
+        /** @description A participant-visible challenge attachment (metadata only). */
+        ParticipantChallengeFile: {
+            readonly id: string;
+            readonly filename: string;
+            readonly display_name: string;
+            readonly size_bytes: number;
+            readonly content_type: string;
+        };
+        /**
+         * @description A participant-safe browse entry for one available challenge.
+         *
+         *     Carries only what the browse list renders. No flag hash, flag format,
+         *     solution, or validator configuration is exposed.
+         */
+        ParticipantChallengeListItem: {
+            readonly id: string;
+            readonly name: string;
+            readonly category: string;
+            readonly points: number;
+            readonly difficulty: string;
+            readonly order: number;
+            readonly solved: boolean;
+        };
+        /** @description The participant's current event plus their own participant state. */
+        ParticipantCurrentEvent: {
+            readonly event: components["schemas"]["ParticipantEvent"];
+            readonly participant: components["schemas"]["ParticipantSelf"];
+        };
+        /** @description Full organizer-facing participant detail projection. */
+        ParticipantDetail: {
+            readonly id: string;
+            readonly name: string;
+            readonly email: string;
+            readonly status: string;
+            readonly team_name: string | null;
+            /** Format: date-time */
+            readonly registered_at: string | null;
+            /** Format: date-time */
+            readonly invited_at: string | null;
+            /** Format: date-time */
+            readonly last_active_at: string | null;
+            readonly total_score: number;
+            readonly solved_count: number;
+            readonly attempt_count: number;
+            readonly event_id: string;
+            readonly bracket_id: string | null;
+            readonly bracket_name: string | null;
+        };
+        /**
+         * @description Read-only participant-facing projection of the current CTF event.
+         *
+         *     Organizer-only configuration (range config, reminder schedule, spare counts,
+         *     email templates, cleanup policy) is deliberately omitted.
+         */
+        ParticipantEvent: {
+            readonly id: string;
+            readonly name: string;
+            readonly description: string;
+            readonly status: string;
+            readonly team_mode: boolean;
+            readonly scoring_mode: string;
+            readonly rating_visibility: string;
+            readonly attempt_limit_mode: string;
+            readonly scoreboard_visible: boolean;
+            /** Format: date-time */
+            readonly event_start: string | null;
+            /** Format: date-time */
+            readonly event_end: string | null;
+        };
+        /** @description A progressive hint. ``text`` is populated only when unlocked. */
+        ParticipantHint: {
+            readonly id: string;
+            readonly order: number;
+            readonly penalty: number;
+            readonly unlocked: boolean;
+            readonly text: string | null;
+        };
+        /**
+         * @description Request body for bulk-importing participants.
+         *
+         *     ``participants`` is typed as a bare list (each element validated per-item in
+         *     the view, mirroring the legacy #1149 handling) rather than a strict
+         *     ``ListField(child=DictField())``: a non-list still 400s at this layer, but a
+         *     list carrying non-object elements must yield per-item errors, not a
+         *     top-level 400.
+         */
+        ParticipantImport: {
+            participants?: unknown[];
+        };
+        /** @description One per-row import error (``email`` present only for service failures). */
+        ParticipantImportError: {
+            readonly index: number;
+            readonly email: string;
+            readonly error: string;
+        };
+        /** @description Summary returned by a bulk import. */
+        ParticipantImportResult: {
+            readonly imported: number;
+            readonly participants: components["schemas"]["ParticipantImportedItem"][];
+            readonly errors: components["schemas"]["ParticipantImportError"][];
+        };
+        /** @description One successfully imported participant. */
+        ParticipantImportedItem: {
+            readonly id: string;
+            readonly name: string;
+            readonly email: string;
+        };
+        /**
+         * @description Request body for inviting a single participant.
+         *
+         *     ``name`` and ``email`` are both required and non-blank (mirroring the legacy
+         *     truthiness check). ``email`` is a plain ``CharField`` rather than an
+         *     ``EmailField`` because the service layer owns email validation.
+         */
+        ParticipantInvite: {
+            name: string;
+            email: string;
+        };
+        /** @description Result returned after inviting a single participant. */
+        ParticipantInviteResult: {
+            readonly id: string;
+            readonly name: string;
+            readonly email: string;
+            readonly status: string;
+            readonly invited: boolean;
+        };
+        /** @description Envelope returned by the event participant list. */
+        ParticipantListResponse: {
+            readonly participants: components["schemas"]["ParticipantSummary"][];
+            readonly total: number;
+        };
+        /** @description Pass-through result of a single-participant range lifecycle action. */
+        ParticipantRangeActionResult: {
+            readonly participant_id: string;
+            readonly range_instance_id: number | null;
+            readonly status: string;
+        };
+        /** @description The requesting participant's own state (never another participant's). */
+        ParticipantSelf: {
+            readonly id: string;
+            readonly name: string;
+            readonly status: string;
+            readonly range_status: string;
+            readonly cached_score: number;
+            readonly cached_solve_count: number;
+            readonly team: components["schemas"]["_NamedRef"] | null;
+            readonly bracket: components["schemas"]["_NamedRef"] | null;
+        };
+        /** @description List projection of one participant for an event. */
+        ParticipantSummary: {
+            readonly id: string;
+            readonly name: string;
+            readonly email: string;
+            readonly status: string;
+            readonly team_name: string | null;
+            /** Format: date-time */
+            readonly registered_at: string | null;
+            readonly total_score: number;
+        };
+        /** @description The participant's own team and its members. */
+        ParticipantTeam: {
+            readonly id: string;
+            readonly name: string;
+            readonly members: components["schemas"]["ParticipantTeamMember"][];
+        };
+        /** @description A teammate's display identity (no score or account fields). */
+        ParticipantTeamMember: {
+            readonly id: string;
+            readonly name: string;
+        };
         /** @description Serializer for updating risks. */
         PatchedRiskUpdate: {
             title?: string;
@@ -1909,6 +2882,70 @@ export interface components {
             affected_assets?: string;
             mitigation_status?: string;
             resolution_reason?: string;
+        };
+        /** @description Metadata (availability/audience) update; both fields optional for PATCH. */
+        PatchedScenarioMetadataUpdate: {
+            enabled?: boolean;
+            staff_only?: boolean;
+        };
+        /** @description Structured update request: full definition replacement (no identity change). */
+        PatchedScenarioUpdate: {
+            name?: string;
+            description?: string;
+            /** @default false */
+            ngfw: boolean;
+            instances?: components["schemas"]["ScenarioInstance"][];
+            subnets?: components["schemas"]["ScenarioSubnet"][];
+        };
+        /** @description List projection of one challenge prerequisite. */
+        Prerequisite: {
+            readonly id: string;
+            readonly required_challenge_id: string;
+            readonly required_challenge_name: string;
+            readonly required_challenge_category: string;
+            readonly required_challenge_points: number;
+        };
+        /** @description Result returned after adding a prerequisite. */
+        PrerequisiteCreateResult: {
+            readonly id: string;
+            readonly required_challenge_id: string;
+            readonly required_challenge_name: string;
+        };
+        /** @description Envelope returned by the challenge prerequisite list. */
+        PrerequisiteListResponse: {
+            readonly prerequisites: components["schemas"]["Prerequisite"][];
+        };
+        /** @description Request body for adding a challenge prerequisite. */
+        PrerequisiteWrite: {
+            /** Format: uuid */
+            required_challenge_id: string;
+        };
+        /**
+         * @description Public scoreboard read surface.
+         *
+         *     The runtime returns one of two shapes: the ``{"scoreboard_hidden": true}``
+         *     sentinel when the event hides its scoreboard, or the full ranking payload
+         *     (``event_id``, ``team_mode``, ``frozen``, ``rankings``, ``bracket_rankings``,
+         *     ``brackets``). Every field is optional so this one serializer documents the
+         *     union without changing the view's runtime ``JsonResponse``.
+         */
+        PublicScoreboardResponse: {
+            readonly scoreboard_hidden: boolean;
+            readonly event_id: string;
+            readonly team_mode: boolean;
+            readonly frozen: boolean;
+            readonly rankings: {
+                [key: string]: unknown;
+            }[];
+            readonly bracket_rankings: {
+                [key: string]: unknown;
+            }[] | null;
+            readonly brackets: components["schemas"]["_NamedRef"][];
+        };
+        /** @description Redirect pointer to the mission_control Guacamole RDP endpoint. */
+        RangeAccessResponse: {
+            readonly redirect: string;
+            readonly message: string;
         };
         /**
          * @description One entry in the range-history list (``GET .../ranges/``, #1370).
@@ -1936,6 +2973,28 @@ export interface components {
         RangeHistoryResponse: {
             ranges: components["schemas"]["RangeHistory"][];
         };
+        /** @description Validate range cancel/destroy/pause/resume requests. */
+        RangeLifecycle: {
+            /** Format: uuid */
+            request_id?: string;
+            range_id?: number;
+        };
+        /** @description A single participant's range row in the organizer range list. */
+        RangeListItem: {
+            readonly participant_id: string;
+            readonly name: string;
+            readonly email: string;
+            readonly range_instance_id: number | null;
+            readonly range_status: string;
+        };
+        /** @description Organizer range list plus the provisioning-progress projection. */
+        RangeListResponse: {
+            readonly event_id: string;
+            readonly ranges: components["schemas"]["RangeListItem"][];
+            readonly progress: {
+                [key: string]: unknown;
+            };
+        };
         /**
          * @description Response-only projection of ``shared.schemas.RangeContext``.
          *
@@ -1956,11 +3015,63 @@ export interface components {
             is_terminal: boolean;
             is_active: boolean;
         };
+        /** @description Acknowledgement returned when bulk range provisioning is enqueued. */
+        RangeProvisionQueued: {
+            readonly event_id: string;
+            readonly status: string;
+            readonly task_id: string;
+            readonly task_status: string;
+        };
+        /**
+         * @description Organizer range-recovery request body (issue #1018).
+         *
+         *     ``strategy`` and ``spare_range_instance_id`` are typed loosely so the view
+         *     keeps the legacy boundary validation (a non-string strategy or a
+         *     non-positive-int spare id both 400) while the service validates ``strategy``
+         *     against ``ctf.enums`` and resolves/validates the spare range itself.
+         */
+        RangeRecoveryRequest: {
+            strategy: string;
+            spare_range_instance_id?: number | null;
+        };
+        /** @description Result returned after a range recovery attempt. */
+        RangeRecoveryResult: {
+            readonly recovery_id: string;
+            readonly participant_id: string;
+            readonly event_id: string;
+            readonly old_range_instance_id: number | null;
+            readonly replacement_range_instance_id: number | null;
+            readonly replacement_request_id: string | null;
+            readonly strategy: string;
+            readonly phase: string;
+            readonly failure_category: string | null;
+        };
+        /** @description Participant range status projection (or the not-assigned sentinel). */
+        RangeStatusResponse: {
+            readonly participant_id: string;
+            readonly status: string;
+            readonly range_instance_id: number | null;
+        };
         /**
          * @description * `demo` - demo
          * @enum {string}
          */
         RangeTypeEnum: "demo";
+        /** @description Participant request body for rating a challenge (1-5). */
+        RateChallengeRequest: {
+            value: number;
+        };
+        /** @description Result returned after recording a challenge rating. */
+        RateChallengeResult: {
+            readonly value: number;
+            readonly challenge_id: string;
+        };
+        /** @description Confirmation returned after resetting and resending a participant invite. */
+        ResendInviteResult: {
+            readonly success: boolean;
+            readonly id: string;
+            readonly invited: boolean;
+        };
         /**
          * @description * `pending` - pending
          *     * `provisioning` - provisioning
@@ -2050,14 +3161,94 @@ export interface components {
             mitigation_status?: string;
             resolution_reason?: string;
         };
+        /** @description Clone request body. */
+        ScenarioClone: {
+            new_scenario_id: string;
+            /** @default  */
+            new_name: string;
+        };
+        /** @description Structured create request: identity plus definition. */
+        ScenarioCreate: {
+            name: string;
+            description: string;
+            /** @default false */
+            ngfw: boolean;
+            instances: components["schemas"]["ScenarioInstance"][];
+            subnets?: components["schemas"]["ScenarioSubnet"][];
+            scenario_id: string;
+        };
+        /** @description Response for a create/clone: the new scenario's identity. */
+        ScenarioCreated: {
+            readonly scenario_id: string;
+            readonly name: string;
+        };
+        /**
+         * @description Full scenario detail with source-capability flags for the editor.
+         *
+         *     ``source`` classifies the entry (``builtin`` / ``custom`` / ``aces`` /
+         *     ``ctf``) and the capability booleans tell the SPA which actions to offer.
+         *     ``instances`` / ``subnets`` are populated for structural (demo) scenarios;
+         *     ``aces`` carries the read-only provenance block for ACES entries.
+         */
+        ScenarioDetail: {
+            readonly id: string;
+            readonly name: string;
+            readonly description: string;
+            readonly scenario_type: string;
+            readonly source: string;
+            readonly is_default: boolean;
+            readonly enabled: boolean;
+            readonly staff_only: boolean;
+            readonly launchable: boolean;
+            readonly editable: boolean;
+            readonly deletable: boolean;
+            readonly exportable: boolean;
+            readonly ngfw: boolean;
+            readonly instances: components["schemas"]["ScenarioInstance"][];
+            readonly subnets: components["schemas"]["ScenarioSubnet"][];
+            readonly aces: components["schemas"]["AcesCatalogFields"] | null;
+        };
+        /** @description Response for an export: the scenario id and its YAML rendering. */
+        ScenarioExport: {
+            readonly scenario_id: string;
+            readonly yaml: string;
+        };
+        /**
+         * @description A single scenario instance, mirroring ``schema.InstanceConfig``.
+         *
+         *     Kept field-complete against the Pydantic schema so a round-trip through the
+         *     editor never silently drops instance fields (the legacy form hardcoded a
+         *     partial list). The service layer re-validates the full definition.
+         */
+        ScenarioInstance: {
+            name: string;
+            role: components["schemas"]["ScenarioInstanceRoleEnum"];
+            os_type: components["schemas"]["ScenarioInstanceOsTypeEnum"];
+            /** @default false */
+            xdr_agent: boolean;
+            /** @default false */
+            domain_controller: boolean;
+            /** @default false */
+            join_domain: boolean;
+            dc_config?: components["schemas"]["DCConfig"] | null;
+            ami_key?: string | null;
+            instance_type?: string | null;
+        };
+        /**
+         * @description * `kali` - kali
+         *     * `windows` - windows
+         *     * `ubuntu` - ubuntu
+         *     * `from_agent` - from_agent
+         * @enum {string}
+         */
+        ScenarioInstanceOsTypeEnum: "kali" | "windows" | "ubuntu" | "from_agent";
         /**
          * @description * `attacker` - attacker
          *     * `victim` - victim
          *     * `dc` - dc
-         *     * `ngfw` - ngfw
          * @enum {string}
          */
-        RoleEnum: "attacker" | "victim" | "dc" | "ngfw";
+        ScenarioInstanceRoleEnum: "attacker" | "victim" | "dc";
         /**
          * @description One entry from ``cms.services.list_launchable_scenarios``.
          *
@@ -2089,6 +3280,34 @@ export interface components {
         ScenarioListResponse: {
             scenarios: components["schemas"]["ScenarioListItem"][];
         };
+        /** @description Response for a metadata update: the resolved overlay state. */
+        ScenarioMetadataState: {
+            readonly scenario_id: string;
+            readonly enabled: boolean;
+            readonly staff_only: boolean;
+        };
+        /** @description A single scenario subnet, mirroring ``schema.SubnetConfig``. */
+        ScenarioSubnet: {
+            name: string;
+            instances: string[];
+            connected_to?: string[];
+        };
+        /** @description Per-participant chronological score progression for a step chart. */
+        ScoreTimelineResponse: {
+            readonly participant_id: string;
+            readonly participant_name: string;
+            readonly timeline: {
+                [key: string]: unknown;
+            }[];
+        };
+        /** @description Result returned after queuing invitation emails for an event. */
+        SendInvitationsResult: {
+            readonly success: boolean;
+            readonly event_id: string;
+            readonly total: number;
+            readonly sent: number;
+            readonly failed: number;
+        };
         /**
          * @description * `critical` - Critical
          *     * `high` - High
@@ -2097,6 +3316,17 @@ export interface components {
          * @enum {string}
          */
         SeverityEnum: "critical" | "high" | "medium" | "low";
+        /** @description Organizer spare-pool top-up request body (``count`` bounded non-negative). */
+        SparePoolRequest: {
+            count: number;
+        };
+        /** @description Summary returned after topping up an event's spare-range pool. */
+        SpareProvisionResult: {
+            readonly event_id: string;
+            readonly target_count: number;
+            readonly existing: number;
+            readonly created: number;
+        };
         /**
          * @description * `open` - Open
          *     * `acknowledged` - Acknowledged
@@ -2106,6 +3336,41 @@ export interface components {
          * @enum {string}
          */
         StatusEnum: "open" | "acknowledged" | "mitigating" | "resolved" | "closed";
+        /** @description One of the requesting participant's own submissions. */
+        SubmissionListItem: {
+            readonly id: string;
+            readonly challenge_id: string;
+            readonly challenge_name: string;
+            readonly is_correct: boolean;
+            readonly points_awarded: number;
+            readonly attempt_number: number;
+            /** Format: date-time */
+            readonly submitted_at: string | null;
+        };
+        /** @description Envelope returned by the participant submission history. */
+        SubmissionListResponse: {
+            readonly submissions: components["schemas"]["SubmissionListItem"][];
+            readonly total: number;
+        };
+        /**
+         * @description Participant request body for submitting a flag.
+         *
+         *     ``flag`` is blank-tolerant at this layer so the view can apply the legacy
+         *     strip-then-reject rule and return the exact ``Could not process challenge
+         *     action.`` 400 envelope for an empty or whitespace-only flag.
+         */
+        SubmitFlagRequest: {
+            flag?: string | null;
+        };
+        /** @description Scored result returned after a flag submission. */
+        SubmitFlagResult: {
+            readonly correct: boolean;
+            readonly points_awarded: number;
+            readonly attempt_number: number;
+            readonly score: number;
+            readonly rank: number | null;
+            readonly message: string;
+        };
         /**
          * @description Generic ``{"success": true}`` response body.
          *
@@ -2116,11 +3381,28 @@ export interface components {
         SuccessResponse: {
             success: boolean;
         };
+        /** @description Validate agent-upload cancel requests. */
+        UploadCancel: {
+            upload_token: string;
+        };
+        /** @description Validate agent-upload completion requests. */
+        UploadComplete: {
+            /** @default  */
+            upload_token: string;
+        };
         /** @description Response body for ``UploadCompleteView.post``. */
         UploadCompleteResponse: {
             success: boolean;
             agent_id: number;
             message: string;
+        };
+        /** @description Validate agent-upload initiation requests. */
+        UploadInitiate: {
+            name?: string;
+            filename?: string;
+            file_size?: unknown;
+            /** @default xdr */
+            agent_type: string;
         };
         /**
          * @description Response body for ``UploadInitiateView.post`` (``cms.services.initiate_upload``).
@@ -2133,6 +3415,41 @@ export interface components {
             s3_key: string;
             upload_token: string;
             expected_os: string | null;
+        };
+        /**
+         * @description Optional body for unlocking a hint.
+         *
+         *     Omit the body (or send ``{}``) to unlock the next hint in order; pass
+         *     ``hint_id`` to unlock a specific hint.
+         */
+        UseHintRequest: {
+            /** Format: uuid */
+            hint_id?: string;
+        };
+        /** @description Result returned after unlocking a hint. */
+        UseHintResult: {
+            readonly text: string;
+            readonly penalty: number;
+            readonly order: number;
+            readonly total_penalty: number;
+            readonly already_unlocked: boolean;
+        };
+        /** @description Validate a YAML-content request body. */
+        YAMLContent: {
+            yaml_content: string;
+        };
+        /** @description Response for the YAML validate endpoint. */
+        YAMLValidationResult: {
+            readonly valid: boolean;
+            readonly errors: string[];
+            readonly definition: {
+                [key: string]: unknown;
+            } | null;
+        };
+        /** @description A minimal ``{id, name}`` reference to a related entity. */
+        _NamedRef: {
+            readonly id: string;
+            readonly name: string;
         };
     };
     responses: never;
@@ -2167,6 +3484,24 @@ export interface operations {
                     "application/json": components["schemas"]["PaginatedAuditLogList"];
                 };
             };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
         };
     };
     audit_retrieve: {
@@ -2189,6 +3524,24 @@ export interface operations {
                     "application/json": components["schemas"]["AuditLog"];
                 };
             };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
         };
     };
     api_v1_bootstrap_retrieve: {
@@ -2208,9 +3561,153 @@ export interface operations {
                     "application/json": components["schemas"]["Bootstrap"];
                 };
             };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
         };
     };
-    cms_catalog_retrieve: {
+    cms_aces_image_mappings_list: {
+        parameters: {
+            query?: {
+                include_disabled?: boolean;
+                provider?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AcesImageMappingView"][];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    cms_aces_image_mappings_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AcesImageMappingRegister"];
+                "application/x-www-form-urlencoded": components["schemas"]["AcesImageMappingRegister"];
+                "multipart/form-data": components["schemas"]["AcesImageMappingRegister"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AcesImageMappingView"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    cms_aces_image_mappings_disable_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AcesImageMappingDisable"];
+                "application/x-www-form-urlencoded": components["schemas"]["AcesImageMappingDisable"];
+                "multipart/form-data": components["schemas"]["AcesImageMappingDisable"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AcesImageMappingView"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    cms_catalog_list: {
         parameters: {
             query?: never;
             header?: never;
@@ -2219,16 +3716,199 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["CatalogEntry"][];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
             };
         };
     };
-    cms_catalog_retrieve_2: {
+    cms_catalog_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                scenario_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CatalogEntry"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    cms_catalog_packs_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PackRegistration"];
+                "application/x-www-form-urlencoded": components["schemas"]["PackRegistration"];
+                "multipart/form-data": components["schemas"]["PackRegistration"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PackRegistrationResult"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    cms_scenario_editor_scenarios_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ScenarioCreate"];
+                "application/x-www-form-urlencoded": components["schemas"]["ScenarioCreate"];
+                "multipart/form-data": components["schemas"]["ScenarioCreate"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScenarioCreated"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    cms_scenario_editor_scenarios_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                scenario_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScenarioDetail"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    cms_scenario_editor_scenarios_destroy: {
         parameters: {
             query?: never;
             header?: never;
@@ -2240,11 +3920,203 @@ export interface operations {
         requestBody?: never;
         responses: {
             /** @description No response body */
-            200: {
+            204: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    cms_scenario_editor_scenarios_partial_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                scenario_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PatchedScenarioUpdate"];
+                "application/x-www-form-urlencoded": components["schemas"]["PatchedScenarioUpdate"];
+                "multipart/form-data": components["schemas"]["PatchedScenarioUpdate"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScenarioDetail"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    cms_scenario_editor_scenarios_clone_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                scenario_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ScenarioClone"];
+                "application/x-www-form-urlencoded": components["schemas"]["ScenarioClone"];
+                "multipart/form-data": components["schemas"]["ScenarioClone"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScenarioCreated"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    cms_scenario_editor_scenarios_export_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                scenario_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScenarioExport"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    cms_scenario_editor_scenarios_metadata_partial_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                scenario_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PatchedScenarioMetadataUpdate"];
+                "application/x-www-form-urlencoded": components["schemas"]["PatchedScenarioMetadataUpdate"];
+                "multipart/form-data": components["schemas"]["PatchedScenarioMetadataUpdate"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScenarioMetadataState"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
             };
         };
     };
@@ -2255,14 +4127,39 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["YAMLContent"];
+                "application/x-www-form-urlencoded": components["schemas"]["YAMLContent"];
+                "multipart/form-data": components["schemas"]["YAMLContent"];
+            };
+        };
         responses: {
-            /** @description No response body */
-            200: {
+            201: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ScenarioCreated"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
             };
         };
     };
@@ -2273,14 +4170,39 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["YAMLContent"];
+                "application/x-www-form-urlencoded": components["schemas"]["YAMLContent"];
+                "multipart/form-data": components["schemas"]["YAMLContent"];
+            };
+        };
         responses: {
-            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["YAMLValidationResult"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
             };
         };
     };
@@ -2295,12 +4217,31 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["OrganizerChallengeDetail"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
             };
         };
     };
@@ -2313,34 +4254,39 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChallengeWrite"];
+                "application/x-www-form-urlencoded": components["schemas"]["ChallengeWrite"];
+                "multipart/form-data": components["schemas"]["ChallengeWrite"];
+            };
+        };
         responses: {
-            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ChallengeMutationResult"];
+                };
             };
-        };
-    };
-    ctf_challenges_create: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                challenge_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            200: {
+            /** @description Authentication failed. */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
             };
         };
     };
@@ -2362,6 +4308,24 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
         };
     };
     ctf_challenges_files_retrieve: {
@@ -2375,32 +4339,31 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ChallengeFileListResponse"];
+                };
             };
-        };
-    };
-    ctf_challenges_files_update: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                challenge_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            200: {
+            /** @description Authentication failed. */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
             };
         };
     };
@@ -2413,74 +4376,38 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["ChallengeFileUpload"];
+                "application/x-www-form-urlencoded": components["schemas"]["ChallengeFileUpload"];
+            };
+        };
         responses: {
-            /** @description No response body */
-            200: {
+            201: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ChallengeFileUploadResult"];
+                };
             };
-        };
-    };
-    ctf_challenges_files_destroy: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                challenge_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            204: {
+            /** @description Authentication failed. */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
             };
-        };
-    };
-    ctf_challenges_flags_add_retrieve: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                challenge_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            200: {
+            /** @description Permission denied. */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
-            };
-        };
-    };
-    ctf_challenges_flags_add_update: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                challenge_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            200: {
-                headers: {
-                    [name: string]: unknown;
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
                 };
-                content?: never;
             };
         };
     };
@@ -2493,74 +4420,39 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["FlagWrite"];
+                "application/x-www-form-urlencoded": components["schemas"]["FlagWrite"];
+                "multipart/form-data": components["schemas"]["FlagWrite"];
+            };
+        };
         responses: {
-            /** @description No response body */
-            200: {
+            201: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["FlagCreateResult"];
+                };
             };
-        };
-    };
-    ctf_challenges_flags_add_destroy: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                challenge_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            204: {
+            /** @description Authentication failed. */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
             };
-        };
-    };
-    ctf_challenges_hint_retrieve: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                challenge_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            200: {
+            /** @description Permission denied. */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
-            };
-        };
-    };
-    ctf_challenges_hint_update: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                challenge_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            200: {
-                headers: {
-                    [name: string]: unknown;
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
                 };
-                content?: never;
             };
         };
     };
@@ -2573,34 +4465,39 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["UseHintRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["UseHintRequest"];
+                "multipart/form-data": components["schemas"]["UseHintRequest"];
+            };
+        };
         responses: {
-            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["UseHintResult"];
+                };
             };
-        };
-    };
-    ctf_challenges_hint_destroy: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                challenge_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            204: {
+            /** @description Authentication failed. */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
             };
         };
     };
@@ -2615,32 +4512,31 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["HintListResponse"];
+                };
             };
-        };
-    };
-    ctf_challenges_hints_update: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                challenge_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            200: {
+            /** @description Authentication failed. */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
             };
         };
     };
@@ -2653,34 +4549,39 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HintWrite"];
+                "application/x-www-form-urlencoded": components["schemas"]["HintWrite"];
+                "multipart/form-data": components["schemas"]["HintWrite"];
+            };
+        };
         responses: {
-            /** @description No response body */
-            200: {
+            201: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ChallengeHint"];
+                };
             };
-        };
-    };
-    ctf_challenges_hints_destroy: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                challenge_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            204: {
+            /** @description Authentication failed. */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
             };
         };
     };
@@ -2695,32 +4596,31 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["PrerequisiteListResponse"];
+                };
             };
-        };
-    };
-    ctf_challenges_prerequisites_update: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                challenge_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            200: {
+            /** @description Authentication failed. */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
             };
         };
     };
@@ -2733,74 +4633,39 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PrerequisiteWrite"];
+                "application/x-www-form-urlencoded": components["schemas"]["PrerequisiteWrite"];
+                "multipart/form-data": components["schemas"]["PrerequisiteWrite"];
+            };
+        };
         responses: {
-            /** @description No response body */
-            200: {
+            201: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["PrerequisiteCreateResult"];
+                };
             };
-        };
-    };
-    ctf_challenges_prerequisites_destroy: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                challenge_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            204: {
+            /** @description Authentication failed. */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
             };
-        };
-    };
-    ctf_challenges_rate_retrieve: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                challenge_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            200: {
+            /** @description Permission denied. */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
-            };
-        };
-    };
-    ctf_challenges_rate_update: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                challenge_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            200: {
-                headers: {
-                    [name: string]: unknown;
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
                 };
-                content?: never;
             };
         };
     };
@@ -2813,74 +4678,39 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RateChallengeRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["RateChallengeRequest"];
+                "multipart/form-data": components["schemas"]["RateChallengeRequest"];
+            };
+        };
         responses: {
-            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["RateChallengeResult"];
+                };
             };
-        };
-    };
-    ctf_challenges_rate_destroy: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                challenge_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            204: {
+            /** @description Authentication failed. */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
             };
-        };
-    };
-    ctf_challenges_submit_retrieve: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                challenge_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            200: {
+            /** @description Permission denied. */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
-            };
-        };
-    };
-    ctf_challenges_submit_update: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                challenge_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            200: {
-                headers: {
-                    [name: string]: unknown;
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
                 };
-                content?: never;
             };
         };
     };
@@ -2893,56 +4723,43 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["SubmitFlagRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["SubmitFlagRequest"];
+                "multipart/form-data": components["schemas"]["SubmitFlagRequest"];
+            };
+        };
         responses: {
-            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["SubmitFlagResult"];
+                };
             };
-        };
-    };
-    ctf_challenges_submit_destroy: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                challenge_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            204: {
+            /** @description Authentication failed. */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
             };
-        };
-    };
-    ctf_events_retrieve: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            200: {
+            /** @description Permission denied. */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
             };
         };
     };
-    ctf_events_update: {
+    ctf_events_list: {
         parameters: {
             query?: never;
             header?: never;
@@ -2951,12 +4768,31 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["EventListResponse"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
             };
         };
     };
@@ -2967,14 +4803,123 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EventWrite"];
+                "application/x-www-form-urlencoded": components["schemas"]["EventWrite"];
+                "multipart/form-data": components["schemas"]["EventWrite"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EventMutationResult"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    ctf_events_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                event_id: string;
+            };
+            cookie?: never;
+        };
         requestBody?: never;
         responses: {
-            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["EventDetail"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    ctf_events_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                event_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EventWrite"];
+                "application/x-www-form-urlencoded": components["schemas"]["EventWrite"];
+                "multipart/form-data": components["schemas"]["EventWrite"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EventMutationResult"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
             };
         };
     };
@@ -2982,84 +4927,6 @@ export interface operations {
         parameters: {
             query?: never;
             header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    ctf_events_retrieve_2: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                event_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    ctf_events_update_2: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                event_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    ctf_events_create_2: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                event_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    ctf_events_destroy_2: {
-        parameters: {
-            query?: never;
-            header?: never;
             path: {
                 event_id: string;
             };
@@ -3073,6 +4940,24 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
             };
         };
     };
@@ -3087,32 +4972,31 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ChallengeListResponse"];
+                };
             };
-        };
-    };
-    ctf_events_challenges_update: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                event_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            200: {
+            /** @description Authentication failed. */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
             };
         };
     };
@@ -3125,34 +5009,39 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChallengeWrite"];
+                "application/x-www-form-urlencoded": components["schemas"]["ChallengeWrite"];
+                "multipart/form-data": components["schemas"]["ChallengeWrite"];
+            };
+        };
         responses: {
-            /** @description No response body */
-            200: {
+            201: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ChallengeMutationResult"];
+                };
             };
-        };
-    };
-    ctf_events_challenges_destroy: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                event_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            204: {
+            /** @description Authentication failed. */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
             };
         };
     };
@@ -3168,12 +5057,31 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["EmailTemplateResponse"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
             };
         };
     };
@@ -3187,35 +5095,39 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["EmailTemplateWrite"];
+                "application/x-www-form-urlencoded": components["schemas"]["EmailTemplateWrite"];
+                "multipart/form-data": components["schemas"]["EmailTemplateWrite"];
+            };
+        };
         responses: {
-            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["EmailTemplateResponse"];
+                };
             };
-        };
-    };
-    ctf_events_email_templates_create: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                event_id: string;
-                notification_type: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            200: {
+            /** @description Authentication failed. */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
             };
         };
     };
@@ -3238,45 +5150,23 @@ export interface operations {
                 };
                 content?: never;
             };
-        };
-    };
-    ctf_events_force_delete_retrieve: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                event_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            200: {
+            /** @description Authentication failed. */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
             };
-        };
-    };
-    ctf_events_force_delete_update: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                event_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            200: {
+            /** @description Permission denied. */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
             };
         };
     };
@@ -3289,74 +5179,39 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ForceDeleteEventRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["ForceDeleteEventRequest"];
+                "multipart/form-data": components["schemas"]["ForceDeleteEventRequest"];
+            };
+        };
         responses: {
-            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ForceDeleteEventResult"];
+                };
             };
-        };
-    };
-    ctf_events_force_delete_destroy: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                event_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            204: {
+            /** @description Authentication failed. */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
             };
-        };
-    };
-    ctf_events_invitations_send_retrieve: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                event_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            200: {
+            /** @description Permission denied. */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
-            };
-        };
-    };
-    ctf_events_invitations_send_update: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                event_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            200: {
-                headers: {
-                    [name: string]: unknown;
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
                 };
-                content?: never;
             };
         };
     };
@@ -3371,32 +5226,31 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["SendInvitationsResult"];
+                };
             };
-        };
-    };
-    ctf_events_invitations_send_destroy: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                event_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            204: {
+            /** @description Authentication failed. */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
             };
         };
     };
@@ -3411,32 +5265,31 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["NotificationListResponse"];
+                };
             };
-        };
-    };
-    ctf_events_notifications_update: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                event_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            200: {
+            /** @description Authentication failed. */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
             };
         };
     };
@@ -3449,18 +5302,43 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["NotificationAnnounceRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["NotificationAnnounceRequest"];
+                "multipart/form-data": components["schemas"]["NotificationAnnounceRequest"];
+            };
+        };
         responses: {
-            /** @description No response body */
-            200: {
+            201: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["NotificationAnnounceResult"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
             };
         };
     };
-    ctf_events_notifications_destroy: {
+    ctf_organizer_scoreboard: {
         parameters: {
             query?: never;
             header?: never;
@@ -3471,12 +5349,31 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description No response body */
-            204: {
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["OrganizerScoreboardResponse"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
             };
         };
     };
@@ -3491,32 +5388,31 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ParticipantListResponse"];
+                };
             };
-        };
-    };
-    ctf_events_participants_update: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                event_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            200: {
+            /** @description Authentication failed. */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
             };
         };
     };
@@ -3529,74 +5425,39 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ParticipantInvite"];
+                "application/x-www-form-urlencoded": components["schemas"]["ParticipantInvite"];
+                "multipart/form-data": components["schemas"]["ParticipantInvite"];
+            };
+        };
         responses: {
-            /** @description No response body */
-            200: {
+            201: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ParticipantInviteResult"];
+                };
             };
-        };
-    };
-    ctf_events_participants_destroy: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                event_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            204: {
+            /** @description Authentication failed. */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
             };
-        };
-    };
-    ctf_events_participants_import_retrieve: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                event_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            200: {
+            /** @description Permission denied. */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
-            };
-        };
-    };
-    ctf_events_participants_import_update: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                event_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            200: {
-                headers: {
-                    [name: string]: unknown;
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
                 };
-                content?: never;
             };
         };
     };
@@ -3609,34 +5470,39 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["ParticipantImport"];
+                "application/x-www-form-urlencoded": components["schemas"]["ParticipantImport"];
+                "multipart/form-data": components["schemas"]["ParticipantImport"];
+            };
+        };
         responses: {
-            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ParticipantImportResult"];
+                };
             };
-        };
-    };
-    ctf_events_participants_import_destroy: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                event_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            204: {
+            /** @description Authentication failed. */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
             };
         };
     };
@@ -3651,112 +5517,31 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["RangeListResponse"];
+                };
             };
-        };
-    };
-    ctf_events_ranges_update: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                event_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            200: {
+            /** @description Authentication failed. */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
             };
-        };
-    };
-    ctf_events_ranges_create: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                event_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            200: {
+            /** @description Permission denied. */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
-            };
-        };
-    };
-    ctf_events_ranges_destroy: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                event_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            204: {
-                headers: {
-                    [name: string]: unknown;
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
                 };
-                content?: never;
-            };
-        };
-    };
-    ctf_events_ranges_provision_retrieve: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                event_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    ctf_events_ranges_provision_update: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                event_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
             };
         };
     };
@@ -3771,32 +5556,31 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description No response body */
-            200: {
+            202: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["RangeProvisionQueued"];
+                };
             };
-        };
-    };
-    ctf_events_ranges_provision_destroy: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                event_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            204: {
+            /** @description Authentication failed. */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
             };
         };
     };
@@ -3811,52 +5595,76 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["PublicScoreboardResponse"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
             };
         };
     };
-    ctf_files_delete_retrieve: {
+    ctf_events_spares_create: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                file_id: string;
+                event_id: string;
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SparePoolRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["SparePoolRequest"];
+                "multipart/form-data": components["schemas"]["SparePoolRequest"];
+            };
+        };
         responses: {
-            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["SpareProvisionResult"];
+                };
             };
-        };
-    };
-    ctf_files_delete_update: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                file_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            200: {
+            /** @description Authentication failed. */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
             };
         };
     };
@@ -3871,32 +5679,31 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["DeleteSuccess"];
+                };
             };
-        };
-    };
-    ctf_files_delete_destroy: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                file_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            204: {
+            /** @description Authentication failed. */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
             };
         };
     };
@@ -3911,112 +5718,31 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["FileDownloadResponse"];
+                };
             };
-        };
-    };
-    ctf_files_download_update: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                file_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            200: {
+            /** @description Authentication failed. */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
             };
-        };
-    };
-    ctf_files_download_create: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                file_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            200: {
+            /** @description Permission denied. */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
-            };
-        };
-    };
-    ctf_files_download_destroy: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                file_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            204: {
-                headers: {
-                    [name: string]: unknown;
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
                 };
-                content?: never;
-            };
-        };
-    };
-    ctf_flags_remove_retrieve: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                flag_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    ctf_flags_remove_update: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                flag_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
             };
         };
     };
@@ -4031,72 +5757,31 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["DeleteSuccess"];
+                };
             };
-        };
-    };
-    ctf_flags_remove_destroy: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                flag_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            204: {
+            /** @description Authentication failed. */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
             };
-        };
-    };
-    ctf_hints_delete_retrieve: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                hint_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            200: {
+            /** @description Permission denied. */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
-            };
-        };
-    };
-    ctf_hints_delete_update: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                hint_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            200: {
-                headers: {
-                    [name: string]: unknown;
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
                 };
-                content?: never;
             };
         };
     };
@@ -4112,71 +5797,179 @@ export interface operations {
         requestBody?: never;
         responses: {
             /** @description No response body */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    ctf_hints_delete_destroy: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                hint_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
             204: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content?: never;
             };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
         };
     };
-    ctf_notifications_send_retrieve: {
+    ctf_me_challenges_list: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ParticipantChallengeListItem"][];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    ctf_me_challenges_retrieve: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                notification_id: string;
+                challenge_id: string;
             };
             cookie?: never;
         };
         requestBody?: never;
         responses: {
-            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ParticipantChallengeDetail"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
             };
         };
     };
-    ctf_notifications_send_update: {
+    ctf_me_event_retrieve: {
         parameters: {
             query?: never;
             header?: never;
-            path: {
-                notification_id: string;
-            };
+            path?: never;
             cookie?: never;
         };
         requestBody?: never;
         responses: {
-            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ParticipantCurrentEvent"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    ctf_me_team_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ParticipantTeam"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
             };
         };
     };
@@ -4191,32 +5984,31 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["NotificationSendResult"];
+                };
             };
-        };
-    };
-    ctf_notifications_send_destroy: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                notification_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            204: {
+            /** @description Authentication failed. */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
             };
         };
     };
@@ -4231,52 +6023,31 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ParticipantDetail"];
+                };
             };
-        };
-    };
-    ctf_participants_update: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                participant_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            200: {
+            /** @description Authentication failed. */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
             };
-        };
-    };
-    ctf_participants_create: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                participant_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            200: {
+            /** @description Permission denied. */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
             };
         };
     };
@@ -4298,45 +6069,23 @@ export interface operations {
                 };
                 content?: never;
             };
-        };
-    };
-    ctf_participants_bracket_retrieve: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                participant_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            200: {
+            /** @description Authentication failed. */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
             };
-        };
-    };
-    ctf_participants_bracket_update: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                participant_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            200: {
+            /** @description Permission denied. */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
             };
         };
     };
@@ -4349,74 +6098,39 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["AssignBracketRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["AssignBracketRequest"];
+                "multipart/form-data": components["schemas"]["AssignBracketRequest"];
+            };
+        };
         responses: {
-            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["AssignBracketResult"];
+                };
             };
-        };
-    };
-    ctf_participants_bracket_destroy: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                participant_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            204: {
+            /** @description Authentication failed. */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
             };
-        };
-    };
-    ctf_participants_range_destroy_retrieve: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                participant_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            200: {
+            /** @description Permission denied. */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
-            };
-        };
-    };
-    ctf_participants_range_destroy_update: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                participant_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            200: {
-                headers: {
-                    [name: string]: unknown;
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
                 };
-                content?: never;
             };
         };
     };
@@ -4431,72 +6145,31 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ParticipantRangeActionResult"];
+                };
             };
-        };
-    };
-    ctf_participants_range_destroy_destroy: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                participant_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            204: {
+            /** @description Authentication failed. */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
             };
-        };
-    };
-    ctf_participants_range_provision_retrieve: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                participant_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            200: {
+            /** @description Permission denied. */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
-            };
-        };
-    };
-    ctf_participants_range_provision_update: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                participant_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            200: {
-                headers: {
-                    [name: string]: unknown;
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
                 };
-                content?: never;
             };
         };
     };
@@ -4511,16 +6184,35 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ParticipantRangeActionResult"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
             };
         };
     };
-    ctf_participants_range_provision_destroy: {
+    ctf_participants_range_recover_create: {
         parameters: {
             query?: never;
             header?: never;
@@ -4529,54 +6221,39 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RangeRecoveryRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["RangeRecoveryRequest"];
+                "multipart/form-data": components["schemas"]["RangeRecoveryRequest"];
             };
         };
-    };
-    ctf_participants_range_restart_retrieve: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                participant_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
         responses: {
-            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["RangeRecoveryResult"];
+                };
             };
-        };
-    };
-    ctf_participants_range_restart_update: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                participant_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            200: {
+            /** @description Authentication failed. */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
             };
         };
     };
@@ -4591,72 +6268,31 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ParticipantRangeActionResult"];
+                };
             };
-        };
-    };
-    ctf_participants_range_restart_destroy: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                participant_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            204: {
+            /** @description Authentication failed. */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
             };
-        };
-    };
-    ctf_participants_range_start_retrieve: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                participant_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            200: {
+            /** @description Permission denied. */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
-            };
-        };
-    };
-    ctf_participants_range_start_update: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                participant_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            200: {
-                headers: {
-                    [name: string]: unknown;
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
                 };
-                content?: never;
             };
         };
     };
@@ -4671,72 +6307,31 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ParticipantRangeActionResult"];
+                };
             };
-        };
-    };
-    ctf_participants_range_start_destroy: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                participant_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            204: {
+            /** @description Authentication failed. */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
             };
-        };
-    };
-    ctf_participants_range_stop_retrieve: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                participant_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            200: {
+            /** @description Permission denied. */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
-            };
-        };
-    };
-    ctf_participants_range_stop_update: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                participant_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            200: {
-                headers: {
-                    [name: string]: unknown;
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
                 };
-                content?: never;
             };
         };
     };
@@ -4751,72 +6346,31 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ParticipantRangeActionResult"];
+                };
             };
-        };
-    };
-    ctf_participants_range_stop_destroy: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                participant_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            204: {
+            /** @description Authentication failed. */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
             };
-        };
-    };
-    ctf_participants_resend_invite_retrieve: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                participant_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            200: {
+            /** @description Permission denied. */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
-            };
-        };
-    };
-    ctf_participants_resend_invite_update: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                participant_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            200: {
-                headers: {
-                    [name: string]: unknown;
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
                 };
-                content?: never;
             };
         };
     };
@@ -4831,32 +6385,31 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ResendInviteResult"];
+                };
             };
-        };
-    };
-    ctf_participants_resend_invite_destroy: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                participant_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            204: {
+            /** @description Authentication failed. */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
             };
         };
     };
@@ -4871,112 +6424,31 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ScoreTimelineResponse"];
+                };
             };
-        };
-    };
-    ctf_participants_score_timeline_update: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                participant_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            200: {
+            /** @description Authentication failed. */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
             };
-        };
-    };
-    ctf_participants_score_timeline_create: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                participant_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            200: {
+            /** @description Permission denied. */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
-            };
-        };
-    };
-    ctf_participants_score_timeline_destroy: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                participant_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            204: {
-                headers: {
-                    [name: string]: unknown;
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
                 };
-                content?: never;
-            };
-        };
-    };
-    ctf_prerequisites_delete_retrieve: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                prerequisite_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    ctf_prerequisites_delete_update: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                prerequisite_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
             };
         };
     };
@@ -4991,68 +6463,31 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["DeleteSuccess"];
+                };
             };
-        };
-    };
-    ctf_prerequisites_delete_destroy: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                prerequisite_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            204: {
+            /** @description Authentication failed. */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
             };
-        };
-    };
-    ctf_range_access_retrieve: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            200: {
+            /** @description Permission denied. */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
-            };
-        };
-    };
-    ctf_range_access_update: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            200: {
-                headers: {
-                    [name: string]: unknown;
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
                 };
-                content?: never;
             };
         };
     };
@@ -5065,30 +6500,31 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["RangeAccessResponse"];
+                };
             };
-        };
-    };
-    ctf_range_access_destroy: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            204: {
+            /** @description Authentication failed. */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
             };
         };
     };
@@ -5101,66 +6537,31 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["RangeStatusResponse"];
+                };
             };
-        };
-    };
-    ctf_range_status_update: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            200: {
+            /** @description Authentication failed. */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
             };
-        };
-    };
-    ctf_range_status_create: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            200: {
+            /** @description Permission denied. */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
-            };
-        };
-    };
-    ctf_range_status_destroy: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            204: {
-                headers: {
-                    [name: string]: unknown;
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
                 };
-                content?: never;
             };
         };
     };
@@ -5173,66 +6574,31 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["CtfScenarioListResponse"];
+                };
             };
-        };
-    };
-    ctf_scenarios_update: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            200: {
+            /** @description Authentication failed. */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
             };
-        };
-    };
-    ctf_scenarios_create: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            200: {
+            /** @description Permission denied. */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
-            };
-        };
-    };
-    ctf_scenarios_destroy: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            204: {
-                headers: {
-                    [name: string]: unknown;
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
                 };
-                content?: never;
             };
         };
     };
@@ -5245,66 +6611,31 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["SubmissionListResponse"];
+                };
             };
-        };
-    };
-    ctf_submissions_update: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            200: {
+            /** @description Authentication failed. */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
             };
-        };
-    };
-    ctf_submissions_create: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            200: {
+            /** @description Permission denied. */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
-            };
-        };
-    };
-    ctf_submissions_destroy: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            204: {
-                headers: {
-                    [name: string]: unknown;
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
                 };
-                content?: never;
             };
         };
     };
@@ -5323,6 +6654,24 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DashboardSummary"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
                 };
             };
         };
@@ -5344,6 +6693,24 @@ export interface operations {
                     "application/json": components["schemas"]["AgentListResponse"];
                 };
             };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
         };
     };
     api_v1_mission_control_credentials_create: {
@@ -5353,14 +6720,46 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CredentialCreate"];
+                "application/x-www-form-urlencoded": components["schemas"]["CredentialCreate"];
+                "multipart/form-data": components["schemas"]["CredentialCreate"];
+            };
+        };
         responses: {
-            200: {
+            201: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
                     "application/json": components["schemas"]["CredentialCreateResponse"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
                 };
             };
         };
@@ -5384,6 +6783,24 @@ export interface operations {
                     "application/json": components["schemas"]["SuccessResponse"];
                 };
             };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
         };
     };
     api_v1_mission_control_guacamole_bootstrap_status_retrieve: {
@@ -5405,9 +6822,67 @@ export interface operations {
                     "application/json": components["schemas"]["GuacamoleBootstrapStatus"];
                 };
             };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GuacamoleBootstrapStatus"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LegacyError"];
+                };
+            };
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GuacamoleBootstrapStatus"];
+                };
+            };
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GuacamoleBootstrapStatus"];
+                };
+            };
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GuacamoleBootstrapStatus"];
+                };
+            };
         };
     };
-    mission_control_guacamole_bootstrap_open_retrieve: {
+    api_v1_mission_control_guacamole_bootstrap_open_retrieve: {
         parameters: {
             query?: never;
             header?: never;
@@ -5418,12 +6893,39 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "text/html": string;
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/plain": string;
+                };
             };
         };
     };
@@ -5434,14 +6936,54 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GuacamoleInstance"];
+                "application/x-www-form-urlencoded": components["schemas"]["GuacamoleInstance"];
+                "multipart/form-data": components["schemas"]["GuacamoleInstance"];
+            };
+        };
         responses: {
-            200: {
+            202: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
                     "application/json": components["schemas"]["GuacamoleBootstrapQueued"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LegacyError"];
                 };
             };
         };
@@ -5453,14 +6995,54 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GuacamoleInstance"];
+                "application/x-www-form-urlencoded": components["schemas"]["GuacamoleInstance"];
+                "multipart/form-data": components["schemas"]["GuacamoleInstance"];
+            };
+        };
         responses: {
-            200: {
+            202: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
                     "application/json": components["schemas"]["GuacamoleBootstrapQueued"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LegacyError"];
                 };
             };
         };
@@ -5472,14 +7054,55 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["NGFWCreate"];
+                "application/x-www-form-urlencoded": components["schemas"]["NGFWCreate"];
+                "multipart/form-data": components["schemas"]["NGFWCreate"];
+            };
+        };
         responses: {
-            200: {
+            201: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
                     "application/json": components["schemas"]["NGFWCreateResponse"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request was throttled. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
                 };
             };
         };
@@ -5493,7 +7116,13 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["NGFWDestroy"];
+                "application/x-www-form-urlencoded": components["schemas"]["NGFWDestroy"];
+                "multipart/form-data": components["schemas"]["NGFWDestroy"];
+            };
+        };
         responses: {
             200: {
                 headers: {
@@ -5501,6 +7130,24 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["NGFWDestroyResponse"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
                 };
             };
         };
@@ -5516,12 +7163,38 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            200: {
+            202: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
                     "application/json": components["schemas"]["GuacamoleBootstrapQueued"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LegacyError"];
                 };
             };
         };
@@ -5543,6 +7216,24 @@ export interface operations {
                     "application/json": components["schemas"]["NGFWListResponse"];
                 };
             };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
         };
     };
     api_v1_mission_control_range_retrieve: {
@@ -5560,6 +7251,24 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CurrentRangeResponse"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
                 };
             };
         };
@@ -5583,6 +7292,24 @@ export interface operations {
                     "application/json": components["schemas"]["AcesOperationRecordListResponse"];
                 };
             };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
         };
     };
     api_v1_mission_control_aces_operation_status_list: {
@@ -5602,6 +7329,24 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AcesOperationRecordListResponse"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
                 };
             };
         };
@@ -5625,6 +7370,24 @@ export interface operations {
                     "application/json": components["schemas"]["AcesParticipantRuntimeRecordListResponse"];
                 };
             };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
         };
     };
     api_v1_mission_control_aces_participant_runtimes_list: {
@@ -5644,6 +7407,24 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AcesParticipantRuntimeRecordListResponse"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
                 };
             };
         };
@@ -5667,6 +7448,24 @@ export interface operations {
                     "application/json": components["schemas"]["AcesOperationRecordListResponse"];
                 };
             };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
         };
     };
     api_v1_mission_control_range_cancel: {
@@ -5676,7 +7475,13 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["RangeLifecycle"];
+                "application/x-www-form-urlencoded": components["schemas"]["RangeLifecycle"];
+                "multipart/form-data": components["schemas"]["RangeLifecycle"];
+            };
+        };
         responses: {
             200: {
                 headers: {
@@ -5684,6 +7489,24 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SuccessResponse"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
                 };
             };
         };
@@ -5695,7 +7518,13 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["RangeLifecycle"];
+                "application/x-www-form-urlencoded": components["schemas"]["RangeLifecycle"];
+                "multipart/form-data": components["schemas"]["RangeLifecycle"];
+            };
+        };
         responses: {
             200: {
                 headers: {
@@ -5703,6 +7532,24 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SuccessResponse"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
                 };
             };
         };
@@ -5714,7 +7561,13 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["LaunchRange"];
+                "application/x-www-form-urlencoded": components["schemas"]["LaunchRange"];
+                "multipart/form-data": components["schemas"]["LaunchRange"];
+            };
+        };
         responses: {
             200: {
                 headers: {
@@ -5722,6 +7575,33 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["LaunchRangeResponse"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request was throttled. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
                 };
             };
         };
@@ -5733,7 +7613,13 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["RangeLifecycle"];
+                "application/x-www-form-urlencoded": components["schemas"]["RangeLifecycle"];
+                "multipart/form-data": components["schemas"]["RangeLifecycle"];
+            };
+        };
         responses: {
             200: {
                 headers: {
@@ -5741,6 +7627,24 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SuccessResponse"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
                 };
             };
         };
@@ -5752,7 +7656,13 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["RangeLifecycle"];
+                "application/x-www-form-urlencoded": components["schemas"]["RangeLifecycle"];
+                "multipart/form-data": components["schemas"]["RangeLifecycle"];
+            };
+        };
         responses: {
             200: {
                 headers: {
@@ -5760,6 +7670,24 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SuccessResponse"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
                 };
             };
         };
@@ -5781,6 +7709,24 @@ export interface operations {
                     "application/json": components["schemas"]["RangeHistoryResponse"];
                 };
             };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
         };
     };
     api_v1_mission_control_scenarios_list: {
@@ -5800,6 +7746,24 @@ export interface operations {
                     "application/json": components["schemas"]["ScenarioListResponse"];
                 };
             };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
         };
     };
     api_v1_mission_control_upload_cancel: {
@@ -5809,7 +7773,13 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UploadCancel"];
+                "application/x-www-form-urlencoded": components["schemas"]["UploadCancel"];
+                "multipart/form-data": components["schemas"]["UploadCancel"];
+            };
+        };
         responses: {
             200: {
                 headers: {
@@ -5817,6 +7787,24 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SuccessResponse"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
                 };
             };
         };
@@ -5828,7 +7816,13 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["UploadComplete"];
+                "application/x-www-form-urlencoded": components["schemas"]["UploadComplete"];
+                "multipart/form-data": components["schemas"]["UploadComplete"];
+            };
+        };
         responses: {
             200: {
                 headers: {
@@ -5836,6 +7830,24 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["UploadCompleteResponse"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
                 };
             };
         };
@@ -5847,7 +7859,13 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["UploadInitiate"];
+                "application/x-www-form-urlencoded": components["schemas"]["UploadInitiate"];
+                "multipart/form-data": components["schemas"]["UploadInitiate"];
+            };
+        };
         responses: {
             200: {
                 headers: {
@@ -5855,6 +7873,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["UploadInitiateResponse"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
                 };
             };
         };
@@ -5883,6 +7935,24 @@ export interface operations {
                     "application/json": components["schemas"]["PaginatedRiskList"];
                 };
             };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
         };
     };
     risks_create: {
@@ -5908,6 +7978,24 @@ export interface operations {
                     "application/json": components["schemas"]["RiskCreate"];
                 };
             };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
         };
     };
     risks_retrieve: {
@@ -5928,6 +8016,24 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Risk"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
                 };
             };
         };
@@ -5958,6 +8064,24 @@ export interface operations {
                     "application/json": components["schemas"]["RiskUpdate"];
                 };
             };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
         };
     };
     risks_destroy: {
@@ -5978,6 +8102,24 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
             };
         };
     };
@@ -6005,6 +8147,24 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RiskUpdate"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
                 };
             };
         };
@@ -6035,6 +8195,24 @@ export interface operations {
                     "application/json": components["schemas"]["Risk"];
                 };
             };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
         };
     };
     risks_comments_list: {
@@ -6054,6 +8232,24 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Comment"][];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
                 };
             };
         };
@@ -6083,6 +8279,24 @@ export interface operations {
                     "application/json": components["schemas"]["Comment"];
                 };
             };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
         };
     };
     risks_comments_destroy: {
@@ -6103,6 +8317,24 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
             };
         };
     };

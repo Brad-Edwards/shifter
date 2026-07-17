@@ -26,7 +26,7 @@ def _ctf_login_rate_limited(request: HttpRequest, username: str) -> tuple[bool, 
     from django.conf import settings
     from django.core.cache import caches
 
-    from risk_register.services import get_client_ip
+    from shared.audit import get_client_ip
 
     window = int(getattr(settings, "CTF_LOGIN_RATE_LIMIT_WINDOW_SECONDS", 300))
     maximum = int(getattr(settings, "CTF_LOGIN_RATE_LIMIT_MAX", 5))
@@ -74,7 +74,7 @@ def ctf_login(request: HttpRequest) -> HttpResponse:
     from django.contrib.auth import login
     from django.urls import reverse
 
-    from config.auth import CTFParticipantBackend
+    from ctf.services import authenticate_ctf_participant
 
     response = None
     error = None
@@ -83,12 +83,7 @@ def ctf_login(request: HttpRequest) -> HttpResponse:
         password = request.POST.get("password", "")
         response = _login_throttle_response(request, username)
         if response is None:
-            user = CTFParticipantBackend().authenticate(
-                request,
-                username=username,
-                password=password,
-                ctf_participant=True,
-            )
+            user = authenticate_ctf_participant(username=username, password=password)
             if user is None:
                 error = "Invalid username or password."
             else:
@@ -100,6 +95,31 @@ def ctf_login(request: HttpRequest) -> HttpResponse:
     if response is None:
         response = render(request, _CTF_LOGIN_TEMPLATE, {"error": error})
     return response
+
+
+def _bootstrap_credential_reused(request: HttpRequest, new_password: str) -> bool:
+    """Return whether ``new_password`` reuses the account's bootstrap credential.
+
+    The stored password hash is authoritative even when the configured bootstrap
+    source is later removed or rotated (issue #1665): rejecting a match closes the
+    quarantine escape where a participant submits the known bootstrap value as both
+    old and new password (``PasswordChangeForm`` does not itself require the new
+    password to differ from the current one). The effective-bootstrap comparison is
+    an additional guard for when the source still resolves.
+    """
+    from ctf.exceptions import CTFValidationError
+    from ctf.services.participant.accounts import effective_bootstrap_password, live_participant_for_user
+
+    if request.user.check_password(new_password):
+        return True
+    participant = live_participant_for_user(request.user)
+    reused = False
+    if participant is not None:
+        try:
+            reused = new_password == effective_bootstrap_password(participant.event)
+        except CTFValidationError:
+            reused = False
+    return reused
 
 
 @never_cache
@@ -119,13 +139,7 @@ def ctf_change_password(request: HttpRequest) -> HttpResponse:
         form = PasswordChangeForm(request.user, request.POST or None)
         response = None
         if request.method == "POST" and form.is_valid():
-            from ctf.services.participant.accounts import effective_bootstrap_password, live_participant_for_user
-
-            participant = live_participant_for_user(request.user)
-            bootstrap_reused = participant is not None and form.cleaned_data[
-                "new_password1"
-            ] == effective_bootstrap_password(participant.event)
-            if bootstrap_reused:
+            if _bootstrap_credential_reused(request, form.cleaned_data["new_password1"]):
                 form.add_error("new_password1", "Choose a password different from the event bootstrap password.")
             else:
                 user = form.save()

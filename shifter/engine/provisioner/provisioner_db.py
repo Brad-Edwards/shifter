@@ -362,7 +362,9 @@ def get_range_data_by_request_id(request_id: str) -> dict[str, Any]:
                 rng.user_id,
                 rng.range_config,
                 rng.subnet_index,
-                rng.status
+                rng.status,
+                rng.range_backend,
+                rng.instantiation_purpose
             FROM engine_request r
             JOIN mission_control_range rng ON rng.request_id = r.id
             WHERE r.request_id = %s
@@ -403,9 +405,15 @@ def get_range_data_by_request_id(request_id: str) -> dict[str, Any]:
             "range_id": row[1],
             "user_id": user_id,
             "spec": range_config,
+            "spec_envelope": range_config_raw,
             "subnet_index": row[4],
             "status": row[5],
             "ngfw_instance_id": ngfw_instance_id,
+            # #1666 write-once ownership binding (NULL for legacy/non-GCP rows).
+            # Destroy/reconcile route from these persisted facts, never the
+            # deploy-wide GCP_RANGE_BACKEND selector.
+            "range_backend": row[6],
+            "instantiation_purpose": row[7],
         }
 
 
@@ -426,7 +434,9 @@ def get_aces_range_data_by_request_id(request_id: str) -> dict[str, Any]:
                 rng.user_id,
                 rng.range_config,
                 rng.subnet_index,
-                rng.status
+                rng.status,
+                rng.range_backend,
+                rng.instantiation_purpose
             FROM engine_request r
             JOIN mission_control_range rng ON rng.request_id = r.id
             WHERE r.request_id = %s
@@ -444,6 +454,9 @@ def get_aces_range_data_by_request_id(request_id: str) -> dict[str, Any]:
         "plan": row[3] if row[3] else {},
         "subnet_index": row[4],
         "status": row[5],
+        # #1666 write-once ownership binding (NULL for legacy/non-GCP rows).
+        "range_backend": row[6],
+        "instantiation_purpose": row[7],
     }
 
 

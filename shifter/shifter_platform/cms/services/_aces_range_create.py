@@ -28,28 +28,35 @@ from django.conf import settings
 from cms.exceptions import CMSError
 from cms.models import RangeInstance
 from cms.services._range_create import (
+    _assert_live_fire_backend_admitted,
     _assert_no_active_range,
     _assert_scenario_launchable,
     _audit_log_call,
-    _create_cms_request,
+    _reserve_active_range_slot,
     _set_range_instance_status,
     _validate_create_range_scenario,
     _validate_create_range_user,
     create_range,
 )
-from risk_register.models import AuditLog
+from shared.audit import (
+    AuditAction,
+    AuditActorType,
+    AuditEntityType,
+)
 from shared.enums import ResourceStatus
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import User
 
-    from cms.models import AcesPackageSource
+    from cms.models import AcesPackageSource, Request
     from shared.enums import RangeSource
+    from shared.range_instantiation_policy import BackendAdmission
     from shared.schemas.range import RangeContext
 
 logger = logging.getLogger(__name__)
 
 _NATIVE_DISABLED = "ACES-native provisioning is not enabled"
+_OBJECT_SOURCE_KIND = "object"
 
 
 def _is_aces_scenario(scenario: str) -> bool:
@@ -69,21 +76,134 @@ def _load_aces_source_or_raise(scenario: str) -> AcesPackageSource:
         raise CMSError(f"No ACES package registered for scenario '{scenario}'") from None
 
 
-def _dispatch_aces_package(request_id: UUID, user: User, package_ref: str) -> None:
-    """Resolve, load, plan, and dispatch the ACES package; raise CMSError on failure."""
-    from cms.aces.dispatch import CmsAcesDispatchPort
-    from shared.aces.package_loader import (
-        AcesPackageError,
-        launch_aces_package,
-        resolve_scenario_path,
-    )
+def _dispatch_aces_package(
+    request_id: UUID,
+    user: User,
+    source: AcesPackageSource,
+    backend_admission: BackendAdmission | None = None,
+) -> None:
+    """Resolve, verify, load, plan, and dispatch one registered ACES pack.
+
+    Routes on ``source.source_kind``: a ``repo`` pack resolves under
+    ``ACES_PACKAGE_ROOT``; an ``object`` pack resolves through the object-storage
+    launch resolver (#1567). Both paths end in the same digest-verified,
+    canonical-launch tail (:func:`_launch_pack`). ``backend_admission`` (the
+    trusted #1348 result) is threaded to the dispatch port so the Engine binds
+    the #1666 ownership fields at create.
+    """
+    if source.source_kind == _OBJECT_SOURCE_KIND:
+        _dispatch_object_aces_package(request_id, user, source, backend_admission)
+    else:
+        _dispatch_repo_aces_package(request_id, user, source, backend_admission)
+
+
+def _dispatch_repo_aces_package(
+    request_id: UUID,
+    user: User,
+    source: AcesPackageSource,
+    backend_admission: BackendAdmission | None = None,
+) -> None:
+    """Resolve a repo pack under ``ACES_PACKAGE_ROOT``, verify its digest, launch."""
+    from cms.scenarios.pack_validation import PackDigestError, verify_pack_digest
+    from shared.aces.package_loader import AcesPackageError, resolve_pack_root
 
     try:
-        scenario_path = resolve_scenario_path(package_ref, package_root=Path(settings.ACES_PACKAGE_ROOT))
+        pack_root = resolve_pack_root(source.package_ref, package_root=Path(settings.ACES_PACKAGE_ROOT))
+    except AcesPackageError as exc:
+        raise CMSError(f"ACES package could not be resolved: {exc}") from exc
+    try:
+        digest_matches = verify_pack_digest(pack_root, source.package_digest)
+    except PackDigestError as exc:
+        raise CMSError("ACES pack content identity could not be verified") from exc
+    if not digest_matches:
+        raise CMSError("ACES pack content digest no longer matches registration")
+    _launch_pack(request_id, user, pack_root, backend_admission)
+
+
+def _dispatch_object_aces_package(
+    request_id: UUID,
+    user: User,
+    source: AcesPackageSource,
+    backend_admission: BackendAdmission | None = None,
+) -> None:
+    """Stage an object-backed pack, bind its identity + digest, then launch.
+
+    Object rows are registered without content validation or digest binding
+    (#1578), so this resolver provides the equivalent identity guarantees repo
+    packs get (ADR-034-R5): it downloads the single immutable archive named by
+    ``package_ref`` into a private temp dir, safely extracts it, re-runs the
+    upstream pack contract validation, asserts the pack identity matches the
+    registered ``scenario_id``, and verifies the canonical ``package_digest`` --
+    all before SDL resolution, planning, or dispatch. The staged directory is
+    always cleaned up by the resolver context manager.
+    """
+    from cms.scenarios.pack_validation import (
+        PackDigestError,
+        PackValidationError,
+        validate_pack,
+        verify_pack_digest,
+    )
+    from shared.aces.object_source import stage_object_pack
+    from shared.aces.package_loader import AcesPackageError
+    from shared.cloud import get_object_storage
+
+    bucket = str(getattr(settings, "ACES_PACKAGE_BUCKET", "") or "").strip()
+    if not bucket:
+        raise CMSError("Object-backed ACES packages are not available: no package bucket is configured")
+
+    try:
+        with stage_object_pack(
+            storage=get_object_storage(),
+            bucket=bucket,
+            key=_object_package_key(source.package_ref),
+            max_archive_bytes=settings.ACES_PACKAGE_MAX_ARCHIVE_BYTES,
+            max_uncompressed_bytes=settings.ACES_PACKAGE_MAX_UNCOMPRESSED_BYTES,
+            max_entries=settings.ACES_PACKAGE_MAX_ENTRIES,
+        ) as pack_root:
+            try:
+                validated_name = validate_pack(pack_root)
+            except PackValidationError as exc:
+                raise CMSError("ACES pack failed validation") from exc
+            if validated_name != source.scenario_id:
+                raise CMSError("ACES pack identity does not match the registered scenario")
+            try:
+                digest_matches = verify_pack_digest(pack_root, source.package_digest)
+            except PackDigestError as exc:
+                raise CMSError("ACES pack content identity could not be verified") from exc
+            if not digest_matches:
+                raise CMSError("ACES pack content digest no longer matches registration")
+            _launch_pack(request_id, user, pack_root, backend_admission)
+    except AcesPackageError as exc:
+        raise CMSError(f"ACES object package could not be resolved: {exc}") from exc
+
+
+def _object_package_key(package_ref: str) -> str:
+    """Join the configured object-package prefix with the row's ``package_ref``."""
+    prefix = str(getattr(settings, "ACES_PACKAGE_PREFIX", "") or "").strip().strip("/")
+    ref = package_ref.strip().lstrip("/")
+    return f"{prefix}/{ref}" if prefix else ref
+
+
+def _launch_pack(
+    request_id: UUID,
+    user: User,
+    pack_root: Path,
+    backend_admission: BackendAdmission | None = None,
+) -> None:
+    """Select the single SDL entry, dispatch through the port, assert acceptance."""
+    from cms.aces.dispatch import CmsAcesDispatchPort
+    from shared.aces.package_loader import AcesPackageError, launch_aces_package, resolve_pack_scenario_path
+
+    try:
+        scenario_path = resolve_pack_scenario_path(pack_root)
     except AcesPackageError as exc:
         raise CMSError(f"ACES package could not be resolved: {exc}") from exc
 
-    port = CmsAcesDispatchPort(user_id=user.id, request_id=str(request_id))
+    port = CmsAcesDispatchPort(
+        user_id=user.id,
+        request_id=str(request_id),
+        backend_admission=backend_admission,
+    )
     try:
         result = launch_aces_package(scenario_path=scenario_path, port=port)
     except AcesPackageError as exc:
@@ -96,10 +216,10 @@ def _dispatch_aces_package(request_id: UUID, user: User, package_ref: str) -> No
 def _audit_aces_range_provision(request_id: UUID, scenario: str, user: User, range_source: RangeSource) -> None:
     """Write the audit-log entry for a successful ACES-native launch."""
     _audit_log_call(
-        entity_type=AuditLog.EntityType.RANGE,
+        entity_type=AuditEntityType.RANGE,
         entity_id=0,
-        action=AuditLog.Action.PROVISION,
-        actor_type=AuditLog.ActorType.USER,
+        action=AuditAction.PROVISION,
+        actor_type=AuditActorType.USER,
         actor_id=user.id,
         new_state={
             "request_id": str(request_id),
@@ -145,22 +265,25 @@ def create_aces_native_range(user: User, scenario: str, *, range_source: RangeSo
     if range_source is None:
         range_source = RangeSource.MISSION_CONTROL
 
+    backend_admission = _assert_live_fire_backend_admitted()
     _assert_no_active_range(user, range_source)
     _assert_scenario_launchable(scenario)
     source = _load_aces_source_or_raise(scenario)
 
-    request_id, cms_request = _create_cms_request(user)
-    range_instance = RangeInstance.objects.create(
-        request=cms_request,
-        scenario_id=scenario,
-        user_id=user.id,
-        range_source=range_source.value,
-        range_spec=None,
-    )
-    _set_range_instance_status(range_instance, ResourceStatus.PROVISIONING)
+    def _persist(cms_request: Request) -> RangeInstance:
+        """Build the ACES RangeInstance (range_spec=None) for the reservation."""
+        return RangeInstance.objects.create(
+            request=cms_request,
+            scenario_id=scenario,
+            user_id=user.id,
+            range_source=range_source.value,
+            range_spec=None,
+        )
+
+    request_id, _cms_request, range_instance = _reserve_active_range_slot(user, range_source, _persist)
 
     try:
-        _dispatch_aces_package(request_id, user, source.package_ref)
+        _dispatch_aces_package(request_id, user, source, backend_admission)
     except Exception:
         _set_range_instance_status(range_instance, ResourceStatus.FAILED)
         raise

@@ -59,7 +59,14 @@ describe("isNavEntryVisible", () => {
   it("hides an entry when its feature flag is off", () => {
     const gated: NavEntry = { ...RR_ENTRY, featureFlag: "risk_register_spa" };
     const bs = bootstrap({
-      feature_flags: { risk_register_spa: false, platform_spa: true, mission_control_spa: true },
+      feature_flags: {
+        risk_register_spa: false,
+        platform_spa: true,
+        mission_control_spa: true,
+        scenario_editor_spa: false,
+        ctf_workspace_spa: false,
+        aces_native_provisioning: false,
+      },
     });
     expect(isNavEntryVisible(gated, bs)).toBe(false);
   });
@@ -104,5 +111,23 @@ describe("visibleNavGroups", () => {
     const operate = visibleNavGroups("operator", bs).find((g) => g.group === "Operate");
     const assets = operate?.entries.find((e) => e.surface === "Assets");
     expect(assets?.children?.map((c) => c.surface)).toEqual(["Agents", "NGFW", "Credentials"]);
+  });
+
+  it("exposes CTF participant entries as internal, flag-gated SPA routes (#1372)", () => {
+    const bs = bootstrap({ permissions: { ...STAFF_BOOTSTRAP.permissions, is_ctf_participant: true } });
+    const [participate] = visibleNavGroups("participant", bs);
+    const eventHome = participate.entries.find((e) => e.surface === "Event Home");
+    expect(eventHome?.external).toBeFalsy();
+    expect(eventHome?.featureFlag).toBe("ctf_workspace_spa");
+    expect(eventHome?.routePath).toBe("/ctf/");
+    expect(participate.entries.every((e) => e.featureFlag === "ctf_workspace_spa" && !e.external)).toBe(true);
+  });
+
+  it("hides the Participate group until the CTF workspace flag flips on (#1372)", () => {
+    const bs = bootstrap({
+      permissions: { ...STAFF_BOOTSTRAP.permissions, is_ctf_participant: true },
+      feature_flags: { ...STAFF_BOOTSTRAP.feature_flags, ctf_workspace_spa: false },
+    });
+    expect(visibleNavGroups("participant", bs)).toEqual([]);
   });
 });

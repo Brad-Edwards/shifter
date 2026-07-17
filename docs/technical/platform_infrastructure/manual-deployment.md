@@ -8,99 +8,64 @@ Located in `platform/terraform/global/`. These stacks manage cross-cutting infra
 
 | Stack | Purpose |
 |-------|---------|
-| `iam/` | GitHub OIDC provider, CI/CD IAM roles, Cursor Bedrock access |
+| `iam/` | GitHub OIDC provider, CI/CD IAM roles |
 | `github-runner/` | Self-hosted GitHub Actions runner infrastructure |
 | `dev-box/` | Windows development workstation |
 
 ## IAM Stack
 
-GitHub OIDC authentication and IAM roles for CI/CD pipelines.
+GitHub OIDC authentication and IAM roles for CI/CD pipelines live in `platform/terraform/global/iam`. This stack is now applied by the bootstrap CLI, not by a manual `terraform apply`.
 
 **What it creates:**
 
 - GitHub OIDC identity provider
 - IAM roles for GitHub Actions (`github-actions-shifter-dev`, `github-actions-shifter-prod`)
 - Scoped IAM policies for infrastructure management
-- Cursor Bedrock IAM user for IDE access
 
 **Deploy:**
 
-```bash
-cd platform/terraform/global/iam
+`scripts/bootstrap/deploy.py bootstrap` creates the S3 state backend (with native locking) and applies the `global/iam` stack (OIDC provider plus CI/CD roles) in one step:
 
+```bash
 # Dev environment
-AWS_PROFILE=<dev account profile> terraform init -backend-config=dev.s3.tfbackend
-AWS_PROFILE=<dev account profile> terraform apply -var-file=dev.tfvars
+./scripts/bootstrap/deploy.py bootstrap --env dev --profile <dev account profile>
 
 # Prod environment
-AWS_PROFILE=<prod account profile> terraform init -backend-config=prod.s3.tfbackend
-AWS_PROFILE=<prod account profile> terraform apply -var-file=prod.tfvars
+./scripts/bootstrap/deploy.py bootstrap --env prod --profile <prod account profile>
 ```
 
 **After deployment:**
 
-Add the role ARN to GitHub repository secrets:
+Add the role ARN to GitHub repository secrets. Read it with `terraform output -raw github_actions_role_arn` in `platform/terraform/global/iam`:
 
-- `AWS_ROLE_ARN_DEV` - Output from dev deployment
-- `AWS_ROLE_ARN` - Output from prod deployment
-
-Get Cursor Bedrock credentials:
-
-```bash
-terraform output cursor_bedrock_access_key_id
-terraform output -raw cursor_bedrock_secret_access_key
-```
+- `AWS_ROLE_ARN_DEV` - Output from the dev bootstrap
+- `AWS_ROLE_ARN` - Output from the prod bootstrap
 
 ## GitHub Runner Stack
 
-Auto-scaling self-hosted GitHub Actions runners using the `terraform-aws-github-runner` module.
+Self-hosted GitHub Actions runners. The current architecture is the `github-runner-network` module plus a persistent `aws_instance` runner fleet in `platform/terraform/global/github-runner`, provisioned and registered by the bootstrap CLI. The older `terraform-aws-github-runner` Lambda and webhook module is no longer used.
 
 **What it creates:**
 
-- Lambda functions for webhook handling and runner management
-- API Gateway webhook endpoint
-- EC2 spot instances (ephemeral, scale-from-zero)
+- A dedicated, isolated runner VPC (`github-runner-network` module)
+- Persistent EC2 runner instances
 - IAM roles and security groups
 
-**Prerequisites:**
+**Prerequisite:**
 
-1. Create a GitHub App:
-   - Set "Where can this GitHub App be installed?" to **Only on this account**
-   - Repository permissions: Actions (read), Checks (read), Metadata (read)
-   - Organization permissions: Self-hosted runners (read/write)
-   - Disable webhook initially (configure after deploy)
-2. Store secrets in AWS SSM Parameter Store:
-   - `/shifter/github-runner/key-base64` - Base64-encoded private key
-   - `/shifter/github-runner/webhook-secret` - Webhook secret
-
-See `.env.example` for secret format:
-
-```bash
-# Generate base64 key
-base64 -w 0 app.private-key.pem
-
-# Store in SSM (do this manually in AWS Console or CLI)
-aws ssm put-parameter --name "/shifter/github-runner/key-base64" --value "..." --type SecureString
-aws ssm put-parameter --name "/shifter/github-runner/webhook-secret" --value "..." --type SecureString
-```
+Run `scripts/bootstrap/deploy.py bootstrap --env <env>` first so the shared S3 state backend that the runner root reuses exists.
 
 **Deploy:**
 
 ```bash
-cd platform/terraform/global/github-runner
-
-# Dev environment
-AWS_PROFILE=<dev account profile> terraform init -backend-config=dev.s3.tfbackend
-AWS_PROFILE=<dev account profile> terraform apply -var-file=dev.tfvars
+./scripts/bootstrap/deploy.py runners --env dev --profile <dev account profile>
 ```
 
-**After deployment:**
+This provisions the runner network and instances, mints a single-use registration token per runner, registers each runner over SSM, and verifies each one online through the GitHub API.
 
-1. Go to your GitHub App settings → Webhook
-2. Enable webhook and paste the URL from terraform output
-3. Enter the webhook secret (same value stored in SSM)
-4. Subscribe to events: check **Workflow Job** only
-5. Install the app on your repository
+**Reference:**
+
+The authoritative runbook for standup, network isolation, health monitoring, removal, and gotchas is [`aws-runner-provisioning-runbook.md`](../../dev/aws-runner-provisioning-runbook.md).
 
 ## Dev Box Stack
 
@@ -143,11 +108,11 @@ See `platform/terraform/global/dev-box/README.md` for full documentation.
 
 For a fresh environment:
 
-1. **IAM** - Must be first. Creates OIDC provider and CI/CD roles.
-2. **GitHub Runner** - Optional. Only needed for self-hosted runners.
+1. **Bootstrap (IAM + state backend)** - Must be first. `deploy.py bootstrap` creates the OIDC provider, CI/CD roles, and shared S3 state backend.
+2. **GitHub Runner** - Optional. Only needed for self-hosted runners (`deploy.py runners`).
 3. **Dev Box** - Optional. Only needed for Windows development.
 
-After IAM is deployed, CI/CD can manage all other infrastructure automatically.
+After bootstrap, CI/CD can manage all other infrastructure automatically.
 
 ## GCP
 

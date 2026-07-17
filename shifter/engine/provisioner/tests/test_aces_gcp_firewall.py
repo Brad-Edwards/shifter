@@ -17,9 +17,10 @@ from aces_gcp_firewall import (
     AcesGceFirewallError,
     acl_cidr_lookup,
     build_acl_firewalls,
+    build_service_firewalls,
     node_tag,
 )
-from aces_plan import AcesPlanAcl, AcesPlanNetwork, AcesPlanNode
+from aces_plan import AcesPlanAcl, AcesPlanNetwork, AcesPlanNode, AcesPlanServicePort
 
 
 def _node(acls: tuple[AcesPlanAcl, ...], *, address: str = "node.web") -> AcesPlanNode:
@@ -108,3 +109,81 @@ class TestPriorityOrdering:
         )
         firewalls = build_acl_firewalls(7, _node(acls), node_tag(7, "node.web"), _LOOKUP)
         assert [fw["priority"] for fw in firewalls] == [1000, 1001]
+
+
+def _svc_node(services: tuple[AcesPlanServicePort, ...], *, address: str = "node.web") -> AcesPlanNode:
+    return AcesPlanNode(
+        address=address,
+        name=address.rsplit(".", 1)[-1],
+        os_family="linux",
+        count=1,
+        network_addresses=("net.lan",),
+        services=services,
+    )
+
+
+_SVC_SOURCES = ("10.9.0.0/24", "10.9.1.0/24")
+
+
+class TestServiceFirewalls:
+    def test_no_services_yields_no_firewalls(self):
+        assert (
+            build_service_firewalls(7, _svc_node(()), node_tag(7, "node.web"), _SVC_SOURCES, base_priority=1001) == []
+        )
+
+    def test_tcp_service_opens_ingress_from_same_range_sources(self):
+        node = _svc_node((AcesPlanServicePort(port=80, protocol="tcp", name="http"),))
+        fws = build_service_firewalls(7, node, node_tag(7, "node.web"), _SVC_SOURCES, base_priority=1001)
+        assert len(fws) == 1
+        fw = fws[0]
+        assert fw["direction"] == "INGRESS"
+        assert fw["allowed"] == [{"IPProtocol": "tcp", "ports": ["80"]}]
+        assert fw["target_tags"] == [node_tag(7, "node.web")]
+        # sourced only from same-range CIDRs (deduped + deterministic), never 0.0.0.0/0
+        assert fw["source_ranges"] == ["10.9.0.0/24", "10.9.1.0/24"]
+        assert "0.0.0.0/0" not in fw["source_ranges"]
+        assert fw["priority"] == 1001
+
+    def test_udp_protocol_is_preserved(self):
+        node = _svc_node((AcesPlanServicePort(port=53, protocol="udp", name="dns"),))
+        fw = build_service_firewalls(7, node, node_tag(7, "node.web"), _SVC_SOURCES, base_priority=1001)[0]
+        assert fw["allowed"] == [{"IPProtocol": "udp", "ports": ["53"]}]
+
+    def test_ports_aggregated_per_protocol_sorted(self):
+        node = _svc_node(
+            (
+                AcesPlanServicePort(port=443, protocol="tcp"),
+                AcesPlanServicePort(port=80, protocol="tcp"),
+            )
+        )
+        fws = build_service_firewalls(7, node, node_tag(7, "node.web"), _SVC_SOURCES, base_priority=1001)
+        assert len(fws) == 1
+        assert fws[0]["allowed"] == [{"IPProtocol": "tcp", "ports": ["80", "443"]}]
+
+    def test_tcp_and_udp_yield_two_rules_deterministic_order(self):
+        node = _svc_node(
+            (
+                AcesPlanServicePort(port=53, protocol="udp"),
+                AcesPlanServicePort(port=80, protocol="tcp"),
+            )
+        )
+        fws = build_service_firewalls(7, node, node_tag(7, "node.web"), _SVC_SOURCES, base_priority=1001)
+        assert [fw["allowed"][0]["IPProtocol"] for fw in fws] == ["tcp", "udp"]
+        assert [fw["priority"] for fw in fws] == [1001, 1002]
+
+    def test_source_cidrs_deduped_and_sorted(self):
+        node = _svc_node((AcesPlanServicePort(port=80, protocol="tcp"),))
+        fw = build_service_firewalls(
+            7, node, node_tag(7, "node.web"), ("10.9.1.0/24", "10.9.0.0/24", "10.9.1.0/24"), base_priority=1001
+        )[0]
+        assert fw["source_ranges"] == ["10.9.0.0/24", "10.9.1.0/24"]
+
+    def test_empty_sources_fail_closed(self):
+        node = _svc_node((AcesPlanServicePort(port=80, protocol="tcp"),))
+        with pytest.raises(AcesGceFirewallError, match="source"):
+            build_service_firewalls(7, node, node_tag(7, "node.web"), (), base_priority=1001)
+
+    def test_priority_overflow_fails_closed(self):
+        node = _svc_node((AcesPlanServicePort(port=80, protocol="tcp"),))
+        with pytest.raises(AcesGceFirewallError, match="priorit"):
+            build_service_firewalls(7, node, node_tag(7, "node.web"), _SVC_SOURCES, base_priority=10**9)
