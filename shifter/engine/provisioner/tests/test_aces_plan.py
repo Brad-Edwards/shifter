@@ -127,8 +127,9 @@ class TestParseValid:
         # ADR-032-R7: a node referencing an undeclared network aborts rather than
         # silently dropping the ref (which would provision a wrong topology).
         payload = {"os_family": "linux", "spec": {"infrastructure": {"networks": ["ghost"]}}}
+        serialized = _serialized(_resource("node.a", "node", payload))
         with pytest.raises(AcesPlanError, match="unknown network"):
-            parse_plan(_serialized(_resource("node.a", "node", payload)))
+            parse_plan(serialized)
 
 
 class TestAclExtraction:
@@ -297,8 +298,9 @@ class TestCompositionExtraction:
             },
         )
 
+        serialized = _serialized(account_resource, self._target_node())
         with pytest.raises(AcesPlanError, match="unsupported account auth_method"):
-            parse_plan(_serialized(account_resource, self._target_node()))
+            parse_plan(serialized)
 
     @pytest.mark.parametrize("auth_method", [None, 1, [], {}])
     def test_rejects_malformed_explicit_account_auth_method(self, auth_method: object):
@@ -312,8 +314,9 @@ class TestCompositionExtraction:
             },
         )
 
+        serialized = _serialized(account_resource, self._target_node())
         with pytest.raises(AcesPlanError, match="auth_method must be a canonical string"):
-            parse_plan(_serialized(account_resource, self._target_node()))
+            parse_plan(serialized)
 
     @pytest.mark.parametrize("password_strength", ["none", "extreme", "MEDIUM"])
     def test_rejects_unsafe_password_strength(self, password_strength: str):
@@ -331,8 +334,9 @@ class TestCompositionExtraction:
             },
         )
 
+        serialized = _serialized(account_resource, self._target_node())
         with pytest.raises(AcesPlanError, match="unsupported password_strength"):
-            parse_plan(_serialized(account_resource, self._target_node()))
+            parse_plan(serialized)
 
     @pytest.mark.parametrize("password_strength", [None, 1, [], {}])
     def test_rejects_malformed_explicit_password_strength(self, password_strength: object):
@@ -346,8 +350,9 @@ class TestCompositionExtraction:
             },
         )
 
+        serialized = _serialized(account_resource, self._target_node())
         with pytest.raises(AcesPlanError, match="password_strength must be a canonical string"):
-            parse_plan(_serialized(account_resource, self._target_node()))
+            parse_plan(serialized)
 
     @pytest.mark.parametrize("username", ["a;id", "a'lice", "a lice", "-root", "a" * 33])
     def test_rejects_username_unsafe_for_supported_guest_dialects(self, username: str):
@@ -361,8 +366,9 @@ class TestCompositionExtraction:
             },
         )
 
+        serialized = _serialized(account_resource, self._target_node())
         with pytest.raises(AcesPlanError, match="account username is not portable"):
-            parse_plan(_serialized(account_resource, self._target_node()))
+            parse_plan(serialized)
 
     @pytest.mark.parametrize("username", ["aces", "ACES"])
     def test_rejects_provisioner_management_username(self, username: str):
@@ -376,8 +382,9 @@ class TestCompositionExtraction:
             },
         )
 
+        serialized = _serialized(account_resource, self._target_node())
         with pytest.raises(AcesPlanError, match="reserved for provisioner management"):
-            parse_plan(_serialized(account_resource, self._target_node()))
+            parse_plan(serialized)
 
     def test_disabled_account_accepts_explicit_no_password_without_generating_blank_login(self):
         account_resource = _resource(
@@ -411,8 +418,9 @@ class TestCompositionExtraction:
             },
         )
 
+        serialized = _serialized(account_resource, self._target_node())
         with pytest.raises(AcesPlanError, match="account mail is not realized"):
-            parse_plan(_serialized(account_resource, self._target_node()))
+            parse_plan(serialized)
 
     def test_rejects_spn_in_separate_provisioner_consumer_without_leaking_value(self):
         authored_spn = "HTTP/member.corp.example"
@@ -476,8 +484,9 @@ class TestCompositionExtraction:
     def test_malformed_composition_fails_closed(self):
         # ADR-032-R7: a content resource missing its type is a malformed payload
         # and aborts rather than being silently skipped.
+        serialized = _serialized(self._content_resource(path="/srv/x"))
         with pytest.raises(AcesPlanError, match="malformed content-placement"):
-            parse_plan(_serialized(self._content_resource(path="/srv/x")))
+            parse_plan(serialized)
 
     def test_no_composition_is_empty(self):
         plan = parse_plan(_serialized(_resource("node.a", "node", {"os_family": "linux", "spec": {"node": {}}})))
@@ -512,47 +521,57 @@ class TestVersionValidation:
         assert isinstance(parsed, AcesPlan)
 
     def test_missing_contract_version_fails_closed(self):
+        serialized = _serialized(self._node(), contract_version=None)
         with pytest.raises(AcesPlanError, match="contract_version"):
-            parse_plan(_serialized(self._node(), contract_version=None))
+            parse_plan(serialized)
 
     def test_unknown_contract_version_fails_closed(self):
+        serialized = _serialized(self._node(), contract_version="aces-provisioning-plan-v99")
         with pytest.raises(AcesPlanError, match="contract_version"):
-            parse_plan(_serialized(self._node(), contract_version="aces-provisioning-plan-v99"))
+            parse_plan(serialized)
 
     def test_missing_aces_sdl_version_fails_closed(self):
+        serialized = _serialized(self._node(), version=None)
         with pytest.raises(AcesPlanError, match="aces_sdl_version"):
-            parse_plan(_serialized(self._node(), version=None))
+            parse_plan(serialized)
 
     def test_empty_aces_sdl_version_fails_closed(self):
+        serialized = _serialized(self._node(), version="   ")
         with pytest.raises(AcesPlanError, match="aces_sdl_version"):
-            parse_plan(_serialized(self._node(), version="   "))
+            parse_plan(serialized)
 
     def test_below_minimum_aces_sdl_version_fails_closed(self):
+        serialized = _serialized(self._node(), version="0.18.9")
         with pytest.raises(AcesPlanError, match="outside the supported range"):
-            parse_plan(_serialized(self._node(), version="0.18.9"))
+            parse_plan(serialized)
 
     def test_future_series_aces_sdl_version_fails_closed(self):
         # A future major/minor outside the bounded series is rejected, not assumed
         # compatible -- an independently upgraded producer cannot slip changed
         # semantics past the older consumer.
+        serialized = _serialized(self._node(), version="1.4.0")
         with pytest.raises(AcesPlanError, match="outside the supported range"):
-            parse_plan(_serialized(self._node(), version="1.4.0"))
+            parse_plan(serialized)
 
     def test_exclusive_maximum_aces_sdl_version_fails_closed(self):
+        serialized = _serialized(self._node(), version=MAXIMUM_ACES_SDL_VERSION_EXCLUSIVE)
         with pytest.raises(AcesPlanError, match="outside the supported range"):
-            parse_plan(_serialized(self._node(), version=MAXIMUM_ACES_SDL_VERSION_EXCLUSIVE))
+            parse_plan(serialized)
 
     def test_prerelease_aces_sdl_version_fails_closed(self):
+        serialized = _serialized(self._node(), version="0.19.1rc1")
         with pytest.raises(AcesPlanError, match="not a valid release version"):
-            parse_plan(_serialized(self._node(), version="0.19.1rc1"))
+            parse_plan(serialized)
 
     def test_trailing_garbage_aces_sdl_version_fails_closed(self):
+        serialized = _serialized(self._node(), version="0.19.1garbage")
         with pytest.raises(AcesPlanError, match="not a valid release version"):
-            parse_plan(_serialized(self._node(), version="0.19.1garbage"))
+            parse_plan(serialized)
 
     def test_unparseable_aces_sdl_version_fails_closed(self):
+        serialized = _serialized(self._node(), version="not-a-version")
         with pytest.raises(AcesPlanError, match="not a valid release version"):
-            parse_plan(_serialized(self._node(), version="not-a-version"))
+            parse_plan(serialized)
 
     def test_minimum_aces_sdl_version_accepted(self):
         parsed = parse_plan(_serialized(self._node(), version=MINIMUM_ACES_SDL_VERSION))
@@ -569,8 +588,9 @@ class TestFailClosed:
 
     def test_unknown_resource_type_fails_closed(self):
         bad = _resource("lb.edge", "loadbalancer", {"spec": {}})
+        serialized = _serialized(bad)
         with pytest.raises(AcesPlanError, match="resource_type"):
-            parse_plan(_serialized(bad))
+            parse_plan(serialized)
 
     def test_duplicate_resource_address_fails_closed(self):
         node = _resource("node.a", "node", {"os_family": "linux", "spec": {"node": {}}})
@@ -584,14 +604,16 @@ class TestFailClosed:
     def test_duplicate_network_alias_fails_closed(self):
         net_a = _resource("net.a", "network", {"name": "shared", "spec": {"infrastructure": {"properties": {}}}})
         net_b = _resource("net.b", "network", {"name": "shared", "spec": {"infrastructure": {"properties": {}}}})
+        serialized = _serialized(net_a, net_b)
         with pytest.raises(AcesPlanError, match="duplicate network alias"):
-            parse_plan(_serialized(net_a, net_b))
+            parse_plan(serialized)
 
     def test_duplicate_node_alias_fails_closed(self):
         node_a = _resource("node.a", "node", {"name": "web", "spec": {"node": {}}})
         node_b = _resource("node.b", "node", {"name": "web", "spec": {"node": {}}})
+        serialized = _serialized(node_a, node_b)
         with pytest.raises(AcesPlanError, match="duplicate node alias"):
-            parse_plan(_serialized(node_a, node_b))
+            parse_plan(serialized)
 
     def test_dangling_acl_endpoint_fails_closed(self):
         node = _resource(
@@ -602,8 +624,9 @@ class TestFailClosed:
                 "spec": {"infrastructure": {"acls": [{"action": "allow", "from_net": "net.ghost"}]}},
             },
         )
+        serialized = _serialized(node)
         with pytest.raises(AcesPlanError, match=r"ACL .* references unknown network"):
-            parse_plan(_serialized(node))
+            parse_plan(serialized)
 
     def test_dangling_composition_target_fails_closed(self):
         content = _resource(
@@ -611,16 +634,19 @@ class TestFailClosed:
             "content-placement",
             {"content_name": "doc", "target_address": "provision.node.ghost", "spec": {"type": "file"}},
         )
+        serialized = _serialized(content)
         with pytest.raises(AcesPlanError, match="targets unknown node"):
-            parse_plan(_serialized(content))
+            parse_plan(serialized)
 
     def test_unhashable_contract_version_fails_closed(self):
         # A malformed envelope whose discriminator is unhashable must fail closed as
         # AcesPlanError, not raise TypeError from set membership.
+        serialized = _serialized(contract_version=[])
         with pytest.raises(AcesPlanError, match="contract_version"):
-            parse_plan(_serialized(contract_version=[]))  # type: ignore[arg-type]
+            parse_plan(serialized)  # type: ignore[arg-type]
 
     def test_unhashable_resource_type_fails_closed(self):
         bad = _resource("x.a", {}, {"spec": {}})  # type: ignore[arg-type]
+        serialized = _serialized(bad)
         with pytest.raises(AcesPlanError, match="resource_type"):
-            parse_plan(_serialized(bad))
+            parse_plan(serialized)

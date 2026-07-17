@@ -107,5 +107,6 @@ def test_collect_evidence_rejects_forbidden_substring(monkeypatch):
     # contract: a projected payload leaking realization detail is a hard failure.
     leaked = SimpleNamespace(payload={"operation_id": _OP, "resources": [{"address": "cidr-10.0.0.0/24"}]})
     monkeypatch.setattr("cms.aces.validation.list_operation_records", lambda *a, **k: [leaked])
+    str_ = str(uuid4())
     with pytest.raises(AcesEvidenceError):
-        collect_evidence(str(uuid4()))
+        collect_evidence(str_)

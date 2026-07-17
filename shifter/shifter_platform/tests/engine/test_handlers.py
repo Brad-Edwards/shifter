@@ -191,8 +191,9 @@ class TestProcessRangeEventTransientErrors:
 
         pre_save.connect(_fail_if_target, sender=Range)
         try:
+            status_event = _status_event(range_obj, new_status=ResourceStatus.READY.value)
             with pytest.raises(Exception, match="DB connection error"):
-                process_range_event(_status_event(range_obj, new_status=ResourceStatus.READY.value))
+                process_range_event(status_event)
         finally:
             pre_save.disconnect(_fail_if_target, sender=Range)
 

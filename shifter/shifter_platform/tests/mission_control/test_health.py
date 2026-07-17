@@ -302,8 +302,9 @@ async def test_channel_layer_probe_fails_on_unexpected_round_trip_response():
         async def receive(self, channel: str) -> dict[str, str]:
             return {"type": "health.check", "id": "different"}
 
+    layer = MismatchedChannelLayer()
     with pytest.raises(ServiceUnavailable):
-        await _round_trip(MismatchedChannelLayer())
+        await _round_trip(layer)
 
 
 # ---------------------------------------------------------------------------

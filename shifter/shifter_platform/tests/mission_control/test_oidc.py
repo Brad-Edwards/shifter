@@ -741,11 +741,12 @@ class TestShifterOIDCBackendAuthenticateAudit:
         backend = ShifterOIDCBackend()
         leaky = SuspiciousOperation("JWT signature invalid token=eyJraWQ-secret code=abc123")
 
+        request = _audit_request()
         with (
             patch.object(OIDCAuthenticationBackend, "authenticate", side_effect=leaky),
             pytest.raises(SuspiciousOperation),
         ):
-            backend.authenticate(_audit_request())
+            backend.authenticate(request)
 
         row = AuditLog.objects.get(action=AuditAction.LOGIN_FAILED)
         assert "SuspiciousOperation" in row.context

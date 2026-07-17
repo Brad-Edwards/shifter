@@ -119,11 +119,12 @@ class TestVerifiedIdentityInvariantNegative:
         first.refresh_from_db()
         assert first.is_superuser is True
 
+        claims = _claims(iss=ISSUER_B, sub="sub-drift", email=email)
         with (
             override_settings(PLATFORM_BOOTSTRAP_SUPERUSER_EMAILS=[email]),
             pytest.raises(AUTH_REJECTIONS),
         ):
-            login(_claims(iss=ISSUER_B, sub="sub-drift", email=email))
+            login(claims)
 
         first.refresh_from_db()
         profile = get_user_profile(first)
@@ -138,8 +139,9 @@ class TestVerifiedIdentityInvariantNegative:
         email = "subjectdrift@example.com"
         first = login(_claims(iss=ISSUER_A, sub="sub-orig", email=email))
 
+        claims_2 = _claims(iss=ISSUER_A, sub="sub-new", email=email)
         with pytest.raises(AUTH_REJECTIONS):
-            login(_claims(iss=ISSUER_A, sub="sub-new", email=email))
+            login(claims_2)
 
         assert User.objects.filter(email=email).count() == 1
         profile = get_user_profile(first)
@@ -152,8 +154,9 @@ class TestVerifiedIdentityInvariantNegative:
         email = "federated@example.com"
         login(_claims(iss=ISSUER_A, sub="sub-primary", email=email))
 
+        claims_2 = _claims(iss=ISSUER_A, sub="sub-federated", email=email)
         with pytest.raises(AUTH_REJECTIONS):
-            login(_claims(iss=ISSUER_A, sub="sub-federated", email=email))
+            login(claims_2)
 
         assert User.objects.filter(email=email).count() == 1
 
@@ -248,8 +251,9 @@ class TestVerifiedIdentityInvariantAtomicity:
         # (issuer, subject) match, so a new user is created and the bind then hits
         # the unique-subject collision (IntegrityError -> BindingConflictError).
         # The freshly created user must roll back with the failed bind.
+        claims_2 = _claims(iss=ISSUER_B, sub="sub-shared", email="intruder@example.com")
         with pytest.raises(AUTH_REJECTIONS):
-            login(_claims(iss=ISSUER_B, sub="sub-shared", email="intruder@example.com"))
+            login(claims_2)
 
         assert not User.objects.filter(email="intruder@example.com").exists()
         assert User.objects.count() == 1
@@ -268,10 +272,11 @@ class TestVerifiedIdentityInvariantAtomicity:
 
         monkeypatch.setattr(target, _boom)
 
+        claims = _claims(iss=ISSUER_A, sub="sub-auditfail", email=email)
         with (
             override_settings(PLATFORM_BOOTSTRAP_SUPERUSER_EMAILS=[email]),
             pytest.raises(RuntimeError),
         ):
-            login(_claims(iss=ISSUER_A, sub="sub-auditfail", email=email))
+            login(claims)
 
         assert not User.objects.filter(email=email).exists()

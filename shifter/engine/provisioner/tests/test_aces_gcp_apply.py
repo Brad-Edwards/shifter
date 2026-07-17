@@ -187,8 +187,10 @@ class TestApply:
     def test_apply_failure_triggers_cleanup_and_reraises(self):
         clients = _clients(instance_insert_error=RuntimeError("boom"))
         secret_ops, secret_mocks = _secret_ops()
+        plan_2 = _plan()
+        apply_options = _apply_options(_config(), clients, secret_ops)
         with pytest.raises(RuntimeError, match="boom"):
-            apply_aces_range_cell("req-1", 7, _plan(), _resolver, _apply_options(_config(), clients, secret_ops))
+            apply_aces_range_cell("req-1", 7, plan_2, _resolver, apply_options)
         # Cleanup ran: the reconstructive destroy sweeps EVERY instance's SSH secret
         # unconditionally. The plan has count=2, so a regression that swept only one
         # instance (early return/break, swallowed exception, off-by-one) would leave
@@ -241,13 +243,15 @@ class TestCompositionIntegration:
         content = AcesPlanContent(name="doc", content_type="file", target_address="node.ghost", path="/srv/x", text="h")
         clients = _clients()
         secret_ops, _ = _secret_ops()
+        plan_with_content = _plan_with_content(content)
+        apply_options = _apply_options(_config(), clients, secret_ops)
         with pytest.raises(AcesGcePlanError, match="not present in this plan"):
             apply_aces_range_cell(
                 "req-1",
                 7,
-                _plan_with_content(content),
+                plan_with_content,
                 _resolver,
-                _apply_options(_config(), clients, secret_ops),
+                apply_options,
             )
 
 
@@ -380,19 +384,21 @@ class TestAccountCredentialIntegration:
         account_ops, _ = _account_secret_ops()
         installer = MagicMock()
 
+        plan_with_accounts = _plan_with_accounts(account)
+        apply_options = _apply_options(
+            _config(),
+            clients,
+            ssh_ops,
+            account_secret_ops=account_ops,
+            credential_installer=installer,
+        )
         with pytest.raises(AcesGcePlanError, match="not present in this plan"):
             apply_aces_range_cell(
                 "req-1",
                 7,
-                _plan_with_accounts(account),
+                plan_with_accounts,
                 _resolver,
-                _apply_options(
-                    _config(),
-                    clients,
-                    ssh_ops,
-                    account_secret_ops=account_ops,
-                    credential_installer=installer,
-                ),
+                apply_options,
             )
 
         installer.assert_not_called()
@@ -428,19 +434,21 @@ class TestAccountCredentialIntegration:
         account_ops, account_mocks = _account_secret_ops()
         installer = MagicMock(side_effect=RuntimeError("credential setup failed"))
 
+        plan_with_accounts = _plan_with_accounts(account)
+        apply_options = _apply_options(
+            _config(),
+            clients,
+            ssh_ops,
+            account_secret_ops=account_ops,
+            credential_installer=installer,
+        )
         with pytest.raises(RuntimeError, match="credential setup failed"):
             apply_aces_range_cell(
                 "req-1",
                 7,
-                _plan_with_accounts(account),
+                plan_with_accounts,
                 _resolver,
-                _apply_options(
-                    _config(),
-                    clients,
-                    ssh_ops,
-                    account_secret_ops=account_ops,
-                    credential_installer=installer,
-                ),
+                apply_options,
             )
 
         assert ssh_mocks.delete_ssh.call_count == 2
