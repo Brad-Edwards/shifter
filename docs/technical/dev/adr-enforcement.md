@@ -763,6 +763,36 @@ Optional narrowing fields:
 
 Expired exceptions fail `adr_guard`, so they cannot linger unnoticed.
 
+## Production-Path Quality Ownership
+
+`.github/quality-path-filters.yaml` is the single versioned contract that maps
+every production path to the blocking lint, security, and test jobs in
+`.github/workflows/_quality.yml`. `scripts/quality_ownership/contract.py` is the
+one parser for it. The `_quality.yml` path-detection job runs
+`scripts/quality_ownership/classify_paths.py`, which validates the contract and
+rejects any unclassified changed path before it emits job selection (the
+fail-closed boundary). The `quality-path-ownership` check (ADR-004-R23)
+reconciles the contract against the whole repository for estate completeness,
+per-path ownership completeness across lint, security, and test, and routing
+reachability against the real workflow.
+
+To add a production path:
+
+1. Add a quality unit to `quality_units` with its `paths` and the real
+   `_quality.yml` jobs under `responsibilities.lint`,
+   `responsibilities.security`, and `responsibilities.test`. Use a
+   `{job, matrix}` entry where one job serves several packages, and set
+   `packages` to the matching first-party package identifiers so they reconcile
+   against `scripts/check_layer_imports/layer_imports.yaml`.
+2. If the path is not production source, add a typed `exclusions` entry instead
+   (`docs`, `test`, `generated`, `vendor`, `metadata`, or `config`) with a
+   reason. Exclusions never route jobs.
+3. If a unit genuinely has no blocking job for a responsibility, record a
+   time-bounded `docs/adr/exceptions.yaml` entry for rule `ADR-004-R23` whose
+   `paths` names the
+   `.github/quality-path-filters.yaml#<unit>:<responsibility>` anchor. There is
+   no in-contract escape hatch for an owned production path.
+
 ## Design Constraints
 
 - Keep the default local gate fast.

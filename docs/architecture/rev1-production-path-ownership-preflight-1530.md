@@ -4,11 +4,14 @@ Status: pre-implementation guidance
 
 Tracking issue: <https://github.com/Brad-Edwards/shifter/issues/1530>
 
+Revalidated against `dev`: 2026-07-17
+
 ## Decision
 
 Evolve `.github/quality-path-filters.yaml` into the single versioned,
-machine-readable quality-ownership contract. Each production owner must map its
-source paths to at least one effective lint, security, and test/validation job
+machine-readable quality-ownership contract. Each production quality unit must
+map its source paths to at least one effective lint, security, and
+test/validation job
 in `.github/workflows/_quality.yml`. The same contract must drive changed-path
 classification and the repository conformance check; do not add a second
 source-to-job registry or preserve the current inline classifier as a separate
@@ -17,39 +20,57 @@ implementation of the schema.
 The conformance check has three independent obligations:
 
 1. **Estate completeness:** every git-tracked path is either covered by a
-   production owner or a narrow, typed exclusion. An unknown path fails closed.
-2. **Ownership completeness:** every production owner declares lint, security,
-   and test/validation responsibility. Advisory-only jobs do not satisfy a
-   required responsibility.
+   production quality unit or a narrow, typed exclusion. An unknown path fails
+   closed.
+2. **Ownership completeness:** every production quality unit declares lint,
+   security, and test/validation responsibility. Advisory-only jobs do not
+   satisfy a required responsibility.
 3. **Routing reachability:** for a representative changed path, the real
-   workflow selects the declared owner jobs (including matrix members), while a
+   workflow selects the declared quality-unit jobs (including matrix members), while a
    docs-only or other excluded path does not accidentally select production
    jobs. Merely naming an existing job in YAML is not proof of routing.
+
+Changed-path classification is the fail-closed execution boundary. The helper
+that reads this contract must validate the changed paths before it emits any
+job-selection output from `_quality.yml`'s always-present `paths` job. The
+unknown-path check must not live only in the currently path-gated
+`adr-conformance` job: an unowned path would otherwise skip the check designed
+to reject it. Full-estate reconciliation can additionally run through ADR
+conformance when the contract or guard changes, but changed-path rejection may
+not depend on already having an owner.
 
 This is repository quality-control architecture. It adds no application model,
 DTO, API schema, service, repository, persistence table, runtime exception
 hierarchy, or application logging surface.
 
-## Dependency On #1523
+## Landed Dependency On #1523
 
 Issue #1523 owns the whole-platform classification of first-party Django/Python
-packages as domain, presentation, or support packages. That classification is
-not present on `dev` at this preflight. #1530 must consume its landed identifiers
-and paths, or be reconciled with them in the same change, instead of creating a
-parallel package taxonomy.
+packages as domain, presentation, or support packages. It has now landed on
+`dev`; the canonical classification is the `classification` section of
+`scripts/check_layer_imports/layer_imports.yaml`. It names `engine`, `cms`,
+`management`, `ctf`, and `risk_register` as domain packages,
+`mission_control` as presentation, `shared` as support/contracts, and `config`
+as support/composition. `scripts/adr_guard/adr_guard.py`
+`check_installed_apps_classified` and
+`scripts/adr_guard/tests/test_installed_apps_classified.py` already reconcile
+that policy with tracked local `AppConfig` packages and `INSTALLED_APPS`.
+#1530 must consume those identifiers instead of creating a parallel package
+taxonomy.
 
 For `shifter/shifter_platform`, package membership comes from #1523 and quality
 ownership adds lint/security/test responsibility to those classified packages.
 It must not restate `INSTALLED_APPS` or maintain a second hand-written app list.
 The cross-check must reject both directions of drift: a #1523 first-party
-package without quality ownership and a quality entry that references a missing
+package without quality ownership and a quality-unit entry that references a missing
 or unclassified first-party package. Non-package platform assets such as the
-SPA, templates, static assets, and image inputs remain explicit quality-owner
+SPA, templates, static assets, and image inputs remain explicit quality-unit
 entries rather than being mislabeled as domain packages.
 
-If #1523 has not landed when implementation begins, that is a sequencing
-blocker for claiming the alignment acceptance criterion; a placeholder schema
-or duplicated interim classification is not an acceptable substitute.
+Implementation must begin from a branch containing the landed #1523 changes.
+The dependency is no longer blocked on `dev`, but a placeholder schema,
+hard-coded eight-package copy, or implementation against this branch's older
+pre-#1523 tree is not an acceptable substitute for syncing the dependency.
 
 ## Keep These Concepts Separate
 
@@ -58,11 +79,14 @@ or duplicated interim classification is not an acceptable substitute.
 - **Quality ownership** answers which blocking jobs must run when production
   source changes. This issue owns it.
 - **Deploy routing** answers which environment plan/build/deploy may run.
-  `.github/workflows/deploy.yml` remains authoritative; a quality owner must not
+  `.github/workflows/deploy.yml` remains authoritative; a quality unit must not
   be placed in a deploy bucket merely to make Quality run.
 - **Coverage ownership** answers which production source contributes to a
   package coverage floor. Package configuration and #1529 own it; a path may
   require tests without publishing coverage.
+- **Review ownership** answers which humans approve a path. `.github/CODEOWNERS`
+  owns it. A quality-unit id or job responsibility is not a team/user owner and
+  must not silently become a second review-owner registry.
 - **Tool discovery** (for example, finding `pyproject.toml`, `package.json`,
   Terraform directories, charts, Dockerfiles, or Packer templates) is a drift
   signal, not automatic proof that the nearest package owns the right jobs.
@@ -71,24 +95,26 @@ or duplicated interim classification is not an acceptable substitute.
 
 | Concern | Canonical incumbent | Guardrail |
 | --- | --- | --- |
-| Quality path data | `.github/quality-path-filters.yaml` | Evolve this artifact in place with `schema_version`, production owners, job responsibilities, and typed exclusions. Do not add a sibling ownership matrix that can drift from it. |
-| Changed-path execution | `.github/workflows/_quality.yml` `paths` job and its fixed outputs | Replace or reuse the current classifier through one repository helper that reads the canonical contract. `run_full_matrix`, Sonar selection, and MCP package matrices remain derived outputs, not second policy tables. |
+| Quality path data | `.github/quality-path-filters.yaml` | Evolve this artifact in place with `schema_version`, production quality units, job responsibilities, and typed exclusions. Do not add a sibling ownership matrix that can drift from it. |
+| Changed-path execution | `.github/workflows/_quality.yml` `paths` job and its fixed outputs | Replace the current inline classifier with one repository helper that reads and validates the canonical contract before emitting outputs. This job is the always-present rejection point for an unknown changed path. `run_full_matrix`, Sonar selection, and MCP package matrices remain derived outputs, not second policy tables. |
 | Outer Quality gate | `.github/workflows/deploy.yml` `quality_relevant`, `quality_only`, guardrail-doc handling, and `pr-gate` | Preserve ordinary docs-only skipping and fail-closed PR Gate behavior. Quality ownership must not widen Terraform/deploy filters. Reuse the same classification semantics or assert exact reconciliation. |
-| Workflow-as-data validation | `scripts/adr_guard/adr_guard.py` `_dw_*` safe YAML loader, constrained condition evaluator, path matcher, `Violation` reporting, and deploy-routing checks | Extend the repo-native semantic model; do not use grep/substrings, execute GitHub Actions, or create a second workflow parser/exception hierarchy. |
-| Guardrail tests | `scripts/adr_guard/tests/test_adr_guard.py` and `test_deploy_workflow.py` | Put schema, estate, rename, new-package, exclusion, and semantic-routing mutations beside the existing guardrail tests. |
+| Workflow-as-data validation | `scripts/adr_guard/adr_guard.py` `_dw_*` safe YAML loader, `_DwShapeError`, constrained condition evaluator, path matcher, `Violation` reporting, and deploy-routing checks | Extend the repo-native semantic model; do not use grep/substrings, execute GitHub Actions, or create a second workflow parser/exception hierarchy. |
+| Guardrail tests | `scripts/adr_guard/tests/test_adr_guard.py`, `test_deploy_workflow.py`, and `test_installed_apps_classified.py` from #1523 | Put schema, estate, rename, new-package, exclusion, and semantic-routing mutations beside the existing guardrail tests; reuse the package-classification helpers instead of copying their fixtures into a second parser. |
 | Estate-classification precedent | `platform/terraform/validation-inventory.yaml` and `scripts/check_tf_roots/` | Reuse its fail-closed principles: closed keys/enums, contained paths, unique identifiers, tracked-estate reconciliation, missing-path rejection, and negative mutation tests. Do not copy its Terraform-specific model. |
-| First-party package taxonomy | The contract delivered by #1523 plus `.importlinter`, `scripts/check_layer_imports/layer_imports.yaml`, and Django `INSTALLED_APPS` | Reference and reconcile it. Never infer architectural layer from a quality job name. |
-| Stack-native policy | Package `pyproject.toml`/`package.json`, `.importlinter`, `.tflint.hcl`, `.kube-linter.yaml`, `platform/terraform/.checkov.yaml`, and Terraform validation inventory | Matrix ownership points at jobs that already consume these policies; it does not duplicate lint, security, warning, coverage, or validation settings. |
+| First-party package taxonomy | `scripts/check_layer_imports/layer_imports.yaml` `classification`, `.importlinter`, `check_installed_apps_classified`, and Django `INSTALLED_APPS` | Reference and reconcile the landed #1523 identifiers. Never infer architectural layer from a quality job name or restate the eight-package set. |
+| Stack-native policy | Package `pyproject.toml`/`package.json`, `.importlinter`, `.tflint.hcl`, `.kube-linter.yaml`, `platform/terraform/.checkov.yaml`, `.gitleaks.toml`, Sonar configuration, and Terraform validation inventory | Matrix ownership points at jobs that already consume these policies; it does not duplicate lint, security, warning, coverage, secret-detection, or validation settings. |
+| Generated/vendor hygiene | `.gitignore`, ADR-004-R8 `no-tracked-generated-artifacts`, generated-contract drift gates, dependency lockfiles, and existing vendored-browser-asset integrity policy | Reuse provenance-specific controls. A narrow ownership exclusion may classify non-shipped material, but it must not override an incumbent guard or exempt a tracked build/runtime input. |
 | ADR enforcement | ADR-003 quality/deploy routing, ADR-004 quality tooling, `docs/adr/index.yaml`, `docs/adr/exceptions.yaml`, and `docs/technical/dev/{adr-enforcement,ci-cd}.md` | When the executable rule lands, add a named ADR-004 rule/check and update enforcement docs in the same change. Do not amend the registry now to claim an unimplemented guard. |
 
 ## Ownership And Exclusion Semantics
 
-The schema must be closed and versioned. Owner identifiers, paths, optional
-#1523 classification references, and job ids must be unique and
-repository-relative. Job responsibility is a closed vocabulary of `lint`,
-`security`, and `test`; an explicit workflow matrix selector is required where
-one GitHub job serves multiple packages (currently the MCP jobs). Referenced
-jobs and matrix members must exist.
+The schema must be closed and versioned. A quality unit is a stable logical
+component id, not a person or CODEOWNERS entry. Quality-unit ids, paths,
+optional #1523 package identifiers, and job ids must be unique and
+repository-relative where applicable. Job responsibility is a closed
+vocabulary of `lint`, `security`, and `test`; an explicit workflow matrix
+selector is required where one GitHub job serves multiple packages (currently
+the MCP jobs). Referenced jobs and matrix members must exist.
 
 One blocking job may satisfy more than one responsibility only when its command
 actually enforces both policies. For example, an ESLint job may own lint and
@@ -156,21 +182,22 @@ untyped matrix escape hatch.
 
 | Layer | Required behavior |
 | --- | --- |
-| GitHub auth/event surface | Run classification and conformance on GitHub-hosted runners with `contents: read`. Request no `id-token: write`, write scopes, environments, cloud credentials, repository secrets, or self-hosted runner. PRs from untrusted code must not reach privileged jobs through this change. |
-| Secret-handling surface | Read repository paths, workflow/config structure, and fixed Git metadata only. Never source dotenv/deploy config, print workflow secret values or environment dumps, or upload parsed workflow bodies. Diagnostics may name a path, owner, responsibility, and job id. |
+| GitHub auth/event surface | Run classification and conformance on GitHub-hosted runners with `contents: read`. The classifier receives no secret, environment, `id-token: write`, write scope, cloud credential, or self-hosted runner. The reusable workflow's existing `SONAR_TOKEN` remains scoped to the Sonar step and is not classifier input. PRs from untrusted code must not reach privileged jobs through this change. |
+| Secret-handling surface | Read repository paths, workflow/config structure, and fixed Git metadata only. Never source dotenv/deploy config, print workflow secret values or environment dumps, or upload parsed workflow bodies. Diagnostics may name a path, quality-unit id, responsibility, and job id. |
 | Configuration shape | Parse YAML with `yaml.safe_load`; enforce schema version, closed keys/enums, contained relative paths, unique ids, valid classification/job references, nonempty responsibility sets, deterministic overlap, and explicit exclusion reasons. Missing or malformed structure fails, never means “not applicable.” |
-| Workflow policy | `actionlint` owns syntax. The semantic guard proves that representative changed paths make the declared `_quality.yml` job conditions and matrix selectors reachable and that skipped tests cannot satisfy production test ownership. ADR-003 remains the outer Quality/deploy gate. |
+| Workflow policy | `actionlint` owns syntax. The `paths` job invokes the canonical helper and fails before outputs on an unknown path or invalid contract. The semantic guard proves that representative changed paths make the declared `_quality.yml` job conditions and matrix selectors reachable and that skipped tests cannot satisfy production test ownership. ADR-003 remains the outer Quality/deploy gate. |
 | Git/path boundary | Reconcile against git-tracked files and include staged/untracked non-ignored files for local checks, following `adr_guard` precedent. Use NUL-delimited Git output so whitespace/newlines in a filename cannot corrupt classification. Normalize repository-relative POSIX paths and reject absolute paths, `..`, empty components, control characters, and ambiguous duplicates. |
 | OS/process exposure | Invoke Git and helpers with fixed argv; never `eval` a path, interpolate a path into a shell command, or emit untrusted path text as a GitHub output key. Fixed output keys and single-line JSON values are safe; changed paths are data. No secret belongs in argv, logs, cache keys, artifacts, or summaries. |
-| Error envelope | This is a CLI/CI guard, not an HTTP endpoint. Reuse `adr_guard.Violation` and its ordinary nonzero exit. Errors name the violated rule and safe repository metadata, not file contents, DSNs, tokens, environment values, or swallowed subprocess output. |
-| Logging/observability | Existing test assertions, ADR-guard diagnostics, job results, and PR Gate are sufficient. Emit selected owner/job ids when useful; add no runtime logger, audit model, telemetry service, database, or durable result store. |
+| Error envelope | This is a CLI/CI guard, not an HTTP endpoint. Reuse `_DwShapeError` for fail-closed workflow-shape parsing and adapt failures to `adr_guard.Violation` plus the ordinary nonzero CLI exit; do not add an application exception family. Errors name the violated rule and safe repository metadata, not file contents, DSNs, tokens, environment values, or swallowed subprocess output. |
+| Logging/observability | Existing test assertions, ADR-guard diagnostics, job results, and PR Gate are sufficient. Emit selected quality-unit/job ids when useful; add no runtime logger, audit model, telemetry service, database, or durable result store. |
 | Persistence | None. The canonical YAML and workflow are source-controlled policy; temporary diff/matrix data stays in runner memory or `RUNNER_TEMP`. |
 
 ## Required Verification Shape
 
 Negative fixtures are the load-bearing evidence. They must prove that:
 
-- an unknown production directory/file fails estate completeness;
+- an unknown production directory/file makes the always-executed classifier
+  fail before it can emit an empty/no-op job matrix;
 - adding a first-party package marker or #1523 classification without quality
   ownership fails;
 - renaming an owned package/path while leaving the old glob fails both missing
@@ -192,13 +219,14 @@ and checked-in `_quality.yml`.
 
 ## Extensibility Seam
 
-The seam is an explicit **quality owner record** plus optional **workflow matrix
-selector** and **#1523 classification reference**. Adding the next Python/Node
-package, chart, image input, or infrastructure family should require one owner
-record and its real jobs, without editing hard-coded category sets such as the
-current `SONAR_CATEGORIES`, `MCP_LINT_PACKAGES`, or `MCP_TEST_PACKAGES` in
-multiple places. Derived concerns such as Sonar participation should be owner
-metadata or package policy, not another path list.
+The seam is an explicit **quality-unit record** plus optional **workflow matrix
+selector** and **#1523 package identifier**. Adding the next Python/Node
+package, chart, image input, or infrastructure family should require one
+quality-unit record and its real jobs, without editing hard-coded category sets
+such as the current `SONAR_CATEGORIES`, `MCP_LINT_PACKAGES`, or
+`MCP_TEST_PACKAGES` in multiple places. Derived concerns such as Sonar
+participation should be quality-unit metadata or package policy, not another
+path list.
 
 Do not make arbitrary commands, shell fragments, or tool arguments part of the
 data seam. The workflow owns fixed commands; the matrix selects reviewed jobs
@@ -208,8 +236,9 @@ and fixed parameters only.
 
 The implementation's control-plane scope is `.github/quality-path-filters.yaml`,
 `.github/workflows/_quality.yml`, the Quality invocation and docs-only routing
-in `.github/workflows/deploy.yml`, `scripts/adr_guard/**`, the #1523 package
-classification artifact, `docs/adr/{index,exceptions}.yaml`, and
+in `.github/workflows/deploy.yml`, `scripts/adr_guard/**`, #1523's
+`scripts/check_layer_imports/layer_imports.yaml` classification and
+`check_installed_apps_classified` guard, `docs/adr/{index,exceptions}.yaml`, and
 `docs/technical/dev/{adr-enforcement,ci-cd}.md`. Package manifests,
 `.importlinter`, `scripts/check_layer_imports/layer_imports.yaml`,
 `platform/terraform/validation-inventory.yaml`, `.tflint.hcl`,
@@ -222,6 +251,9 @@ only when closing a real ownership gap.
 
 - Do not validate only the ownership YAML. Prove route reachability against the
   parsed workflow and matrix outputs.
+- Do not gate unknown-path detection on `paths.outputs.adr_guard`, a declared
+  quality-unit category, or any output produced by the policy being checked. That is a
+  self-bypass for every new unowned path.
 - Do not use substring/regex checks for job `if:` expressions or duplicate the
   current inline Python classifier in a new checker.
 - Do not make one broad `shifter/**`, `scripts/**`, or `platform/**` owner; it
@@ -251,6 +283,8 @@ only when closing a real ownership gap.
   hierarchy.
 - No automatic creation of jobs from discovered files and no claim that a
   manifest alone defines production ownership.
+- No CODEOWNERS generation or review-owner registry. Human review ownership and
+  quality-job responsibility remain distinct contracts.
 - No unification of deploy routing and quality ownership; they share changed
   paths but answer different questions and must be reconciled without letting
   quality data authorize a deployment.
