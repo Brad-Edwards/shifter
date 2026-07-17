@@ -153,16 +153,19 @@ class TestCreateAgent:
         assert row.new_state["upload_method"] == "presigned"
 
     def test_raises_for_invalid_os_slug(self, user):
+        spec = _spec(os_slug="nonexistent-os")
         with pytest.raises(AssetError, match="not found"):
-            create_agent(user, _spec(os_slug="nonexistent-os"))
+            create_agent(user, spec)
 
     def test_raises_for_invalid_agent_type(self, user, windows_os):
+        spec = _spec(agent_type="bogus-type")
         with pytest.raises(AssetError, match="Invalid agent type"):
-            create_agent(user, _spec(agent_type="bogus-type"))
+            create_agent(user, spec)
 
     def test_no_record_persisted_on_invalid_os(self, user):
+        spec = _spec(name="Orphan", os_slug="nonexistent-os")
         with pytest.raises(AssetError):
-            create_agent(user, _spec(name="Orphan", os_slug="nonexistent-os"))
+            create_agent(user, spec)
         assert not AgentConfig.objects.filter(name="Orphan").exists()
 
     def test_returns_agent_object(self, user, windows_os):

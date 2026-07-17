@@ -2,11 +2,11 @@
 Django settings for Shifter platform.
 
 Sub-sections (Channels layer, cloud/AWS task-runner + queue config,
-``LOGGING`` dict, terminal CDN assets) are split into ``config/_*.py``
-modules and re-imported here. The split keeps this module under Sonar
-S104's 500-line cap without changing the public ``config.settings``
-surface — ``from config.settings import X`` continues to resolve every
-name it always has.
+``LOGGING`` dict, terminal CDN assets, SPA cutover rollout flags, terminal
+WebSocket capacity controls) are split into ``config/_*.py`` modules and
+re-imported here. The split keeps this module under Sonar S104's 500-line
+cap without changing the public ``config.settings`` surface — ``from
+config.settings import X`` continues to resolve every name it always has.
 """
 
 from __future__ import annotations
@@ -222,55 +222,10 @@ CHANNEL_LAYERS = _build_channel_layers(os.environ)
 # exist. Non-secret boolean; absent env means disabled.
 WEBSOCKET_NOTIFICATIONS_ENABLED = _env_bool("WEBSOCKET_NOTIFICATIONS_ENABLED", False)
 
-# SPA cutover rollout flag (issue #1302, ADR-029). When enabled, the Risk
-# Register GET page paths under /risk-register/ are served by the React SPA
-# host view instead of the Django templates; the legacy POST action URLs stay
-# Django-handled for old tabs and rollback. When disabled (the default), the
-# portal renders the existing Django Risk Register templates unchanged.
-# Non-secret boolean; absent env means disabled. Flipping it is reversible.
-RISK_REGISTER_SPA_ENABLED = _env_bool("RISK_REGISTER_SPA_ENABLED", False)
-
-# Platform SPA cutover rollout flag (issue #1369, ADR-013 / ADR-029). When
-# enabled, the platform-wide React shell (home/dashboard, global navigation, and
-# the Risk Register routes rehomed under the unified router) is served by the
-# SPA host view instead of the legacy Django pages; the legacy routes/templates
-# stay in place for rollback. When disabled (the default), the portal renders
-# the existing Django pages unchanged. Non-secret boolean; flipping it is
-# reversible. This is the single control for the SPA shell; the older
-# RISK_REGISTER_SPA_ENABLED flag is still honoured for the Risk Register paths
-# so an in-flight deploy toggled on it keeps working during the transition.
-PLATFORM_SPA_ENABLED = _env_bool("PLATFORM_SPA_ENABLED", False)
-
-# Mission Control SPA cutover rollout flag (issue #1370, ADR-013 / ADR-029).
-# When enabled (together with PLATFORM_SPA_ENABLED), the Mission Control GET
-# page paths under /mission-control/ (dashboard, agents, terminal, settings,
-# help, walkthrough, NGFW, credentials) are served by the React SPA host view
-# instead of the legacy Django templates; the legacy POST action URLs and JSON
-# API endpoints under /mission-control/api/ stay Django-handled unchanged, and
-# the canonical /api/v1/mission-control/ DRF routes are unaffected either way.
-# Non-secret boolean; absent env means disabled. Flipping it is reversible.
-MISSION_CONTROL_SPA_ENABLED = _env_bool("MISSION_CONTROL_SPA_ENABLED", False)
-
-# Scenario Editor SPA cutover rollout flag (issue #1371, ADR-013 / ADR-029).
-# When enabled (together with PLATFORM_SPA_ENABLED), the Scenario Editor GET page
-# paths under /scenario-editor/ (list, create, YAML create, detail, edit, YAML
-# editor) are served by the React SPA host view instead of the legacy Django
-# templates; the legacy POST action URLs and the legacy validate-yaml endpoint
-# stay Django-handled unchanged, and the canonical /api/v1/cms/ DRF routes the
-# SPA uses are unaffected either way. Non-secret boolean; absent env means
-# disabled. Flipping it is reversible.
-SCENARIO_EDITOR_SPA_ENABLED = _env_bool("SCENARIO_EDITOR_SPA_ENABLED", False)
-
-# CTF workspace SPA cutover rollout flag (issue #1372, ADR-013 / ADR-029).
-# When enabled (together with PLATFORM_SPA_ENABLED), the CTF participant GET page
-# paths under /ctf/ (dashboard, event, challenges, challenge detail, range,
-# scoreboard, solve history, team, help) are served by the React SPA host view
-# instead of the legacy Django templates; the participant login / change-password
-# / team-join Django views, the legacy scoreboard JSON endpoint, and ALL organizer
-# (/ctf/admin/) pages stay Django-handled unchanged, and the canonical
-# /api/v1/ctf/ DRF routes the SPA uses are unaffected either way. Non-secret
-# boolean; absent env means disabled. Flipping it is reversible.
-CTF_WORKSPACE_SPA_ENABLED = _env_bool("CTF_WORKSPACE_SPA_ENABLED", False)
+# SPA cutover rollout flags (issues #1302 / #1369 / #1370 / #1371 / #1372 / #1373,
+# ADR-013 / ADR-029) live in config/_spa_flags_settings.py to keep this module
+# under the Sonar S104 500-line cap; re-exported via star-import.
+from config._spa_flags_settings import *  # noqa: E402  # NOSONAR
 
 # Shared WebSocket notification replay bounds (issue #679).
 WEBSOCKET_NOTIFICATION_MAX_REPLAY = _env_int("WEBSOCKET_NOTIFICATION_MAX_REPLAY", 100)
@@ -279,45 +234,10 @@ WEBSOCKET_NOTIFICATION_RETENTION_DAYS = _env_int("WEBSOCKET_NOTIFICATION_RETENTI
 # ------------------------------------------------------------------------------
 # Terminal WebSocket capacity controls (issue #847)
 # ------------------------------------------------------------------------------
-# Browser SSH terminals run inside the portal ASGI process: each active session
-# holds a websocket FD, an SSH socket, asyncssh connection/process state, and a
-# read task. During a live event a burst of sessions (or a reconnect storm) can
-# saturate the event loop and exhaust file descriptors, making the whole portal
-# look unreliable. These bounds cap concurrency and reclaim idle/abandoned
-# sessions. A value <= 0 disables that individual limit.
-#
-# The caps are PER WORKER PROCESS. The production portal runs Gunicorn with
-# PORTAL_WEB_WORKERS Uvicorn workers (entrypoint.sh, #174), and the
-# TerminalSessionRegistry is process-local (one registry per worker), so the
-# real per-instance ceiling is PORTAL_WEB_WORKERS * TERMINAL_MAX_SESSIONS and the
-# per-user worst case is PORTAL_WEB_WORKERS * TERMINAL_MAX_SESSIONS_PER_USER.
-# These knobs and PORTAL_WEB_WORKERS are wired through SSM/tfvars (#930), so an
-# operator can retune them on a running instance without an image rebuild
-# (update the parameter, then converge/restart the container).
-#
-# TERMINAL_READ_POLL_SECONDS is how often an idle session's read loop wakes to
-# enforce the timeouts; it does NOT add latency to terminal output (output is
-# delivered as soon as it arrives). The previous hard-coded 0.1s poll woke every
-# idle terminal ~10x/second; a multi-second interval cuts idle CPU by orders of
-# magnitude. See docs/architecture/terminal-websocket-capacity-847.md.
-TERMINAL_MAX_SESSIONS = _env_int("TERMINAL_MAX_SESSIONS", 200)
-TERMINAL_MAX_SESSIONS_PER_USER = _env_int("TERMINAL_MAX_SESSIONS_PER_USER", 10)
-TERMINAL_IDLE_TIMEOUT_SECONDS = _env_int("TERMINAL_IDLE_TIMEOUT_SECONDS", 1800)
-TERMINAL_MAX_SESSION_SECONDS = _env_int("TERMINAL_MAX_SESSION_SECONDS", 28800)
-TERMINAL_READ_POLL_SECONDS = _env_int("TERMINAL_READ_POLL_SECONDS", 30)
-# Bounded executor that runs blocking terminal-connect work (SSH connect, audit
-# writes, ownership lookups) off the default thread-sensitive sync_to_async lane
-# that serves HTTP page renders, so a terminal connect storm cannot head-of-line
-# block page renders on the same ASGI worker (#929). Per-process, like the caps
-# above.
-TERMINAL_CONNECT_EXECUTOR_WORKERS = _env_int("TERMINAL_CONNECT_EXECUTOR_WORKERS", 8)
-# Bounded admission gate on top of the terminal executor. ThreadPoolExecutor
-# caps concurrent workers but has an unbounded submission queue, so a connect
-# storm could still pile arbitrary blocking work in-process. Admission capacity
-# is workers + this slack; once it is exhausted run_terminal_sync rejects with
-# TerminalExecutorSaturated and the connect is closed with SERVICE_UNAVAILABLE
-# (4503, retryable) instead of being queued without limit (#929).
-TERMINAL_CONNECT_EXECUTOR_QUEUE_SLACK = _env_int("TERMINAL_CONNECT_EXECUTOR_QUEUE_SLACK", 16)
+# The TERMINAL_* capacity knobs live in config/_terminal_settings.py to keep
+# this module under the Sonar S104 500-line cap; re-exported via star-import.
+# See docs/architecture/terminal-websocket-capacity-847.md.
+from config._terminal_settings import *  # noqa: E402  # NOSONAR
 
 # Launch-endpoint rate limiting (LAUNCH_RATE_LIMIT_ENABLED, LAUNCH_RATE_LIMITS)
 # lives in config/_rate_limit_settings.py (star-imported above) to keep this

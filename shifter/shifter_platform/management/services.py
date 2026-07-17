@@ -6,6 +6,7 @@ Platform administration for Shifter platform.
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 
@@ -100,14 +101,39 @@ def get_user_profile(user: User) -> UserProfile:
         raise
 
 
-def mark_user_deleted(user: User, admin_user: User | None = None) -> None:
-    """Soft delete a user by setting deleted_at timestamp.
+@dataclass(frozen=True)
+class AuditContext:
+    """Request-attributed audit fields bundled for the account-mutation services.
 
-    Creates profile if it doesn't exist.
+    Bundling the attribution fields keeps the mutation service signatures small
+    and lets the HTTP layer build one object from the request (see
+    ``management.api.views._audit_context``).
+    """
 
-    Args:
-        user: The user to mark as deleted
-        admin_user: The admin user performing the deletion (for audit)
+    actor_type: str
+    actor_id: int | None
+    request_id: str = ""
+    source_ip: str | None = None
+    user_agent: str = ""
+
+
+def mark_user_deleted(
+    user: User,
+    admin_user: User | None = None,
+    *,
+    audit: AuditContext | None = None,
+    strict: bool = False,
+) -> None:
+    """Soft delete a user by setting the profile ``deleted_at`` timestamp.
+
+    Creates the profile if it does not exist. The soft delete and its audit row
+    are written inside one atomic block; with ``strict=True`` an audit-write
+    failure re-raises and rolls the deletion back, so a destructive change is
+    never left unaudited (the Administer API path passes ``strict=True``).
+
+    Actor attribution resolves in order: an explicit ``audit`` context (the
+    request-attributed API path), else ``admin_user`` (a staff-attributed call),
+    else the system actor.
 
     Raises:
         TypeError: If user is None
@@ -118,26 +144,61 @@ def mark_user_deleted(user: User, admin_user: User | None = None) -> None:
     if profile.is_deleted:
         logger.warning("User %s is already deleted, updating timestamp", safe_log_value(user.email))
 
-    try:
-        profile.deleted_at = timezone.now()
-        profile.save(update_fields=["deleted_at"])
-
-        # Audit log user deletion
-        audit_log(
-            AuditEvent(
-                entity_type=AuditEntityType.USER,
-                entity_id=user.id,
-                action=AuditAction.DELETE,
-                actor_type=AuditActorType.USER if admin_user else AuditActorType.SYSTEM,
-                actor_id=admin_user.id if admin_user else None,
-                previous_state={"email": user.email},
-            )
+    if audit is None:
+        audit = AuditContext(
+            actor_type=AuditActorType.USER if admin_user else AuditActorType.SYSTEM,
+            actor_id=admin_user.id if admin_user else None,
         )
+
+    try:
+        with transaction.atomic():
+            profile.deleted_at = timezone.now()
+            profile.save(update_fields=["deleted_at"])
+
+            # Audit log user deletion inside the atomic boundary.
+            audit_log(
+                AuditEvent(
+                    entity_type=AuditEntityType.USER,
+                    entity_id=user.id,
+                    action=AuditAction.DELETE,
+                    actor_type=audit.actor_type,
+                    actor_id=audit.actor_id,
+                    previous_state={"email": user.email},
+                    request_id=audit.request_id,
+                    source_ip=audit.source_ip,
+                    user_agent=audit.user_agent,
+                ),
+                strict=strict,
+            )
 
         logger.debug("Marked user %s as deleted", safe_log_value(user.email))
     except Exception:
         logger.exception("Failed to mark user %s as deleted", safe_log_value(user.email))
         raise
+
+
+def safe_user_profile(user: User) -> UserProfile | None:
+    """Return the user's profile, or ``None`` when the row does not exist.
+
+    Reads without creating (unlike :func:`get_user_profile`) and tolerates the
+    reverse one-to-one being absent, so read serializers stay robust for the rare
+    profile-less account.
+    """
+    try:
+        return user.profile
+    except UserProfile.DoesNotExist:
+        return None
+
+
+def get_admin_user(pk: int) -> User | None:
+    """Resolve a single user (with profile) for an Administer operation.
+
+    Returns ``None`` when no user matches, letting the HTTP layer map that to a
+    404 without importing the model. Used by the composition-root organizer-grant
+    view, which cannot import ``management.models`` (ADR-001).
+    """
+    user_model = get_user_model()
+    return user_model.objects.select_related("profile").filter(pk=pk).first()
 
 
 def create_user_profile(user: User) -> None:

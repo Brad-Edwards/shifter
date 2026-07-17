@@ -81,8 +81,9 @@ class TestListAgents:
     def test_raises_on_invalid_user(self):
         with pytest.raises((TypeError, ValueError)):
             services.list_agents(None)
+        user_2 = User(username="unsaved")
         with pytest.raises((TypeError, ValueError)):
-            services.list_agents(User(username="unsaved"))
+            services.list_agents(user_2)
 
 
 class TestGetAgent:
@@ -111,8 +112,9 @@ class TestGetAgent:
     def test_validates_user(self):
         with pytest.raises((TypeError, ValueError)):
             services.get_agent(None, 42)
+        user_2 = User(username="unsaved")
         with pytest.raises((TypeError, ValueError)):
-            services.get_agent(User(username="unsaved"), 42)
+            services.get_agent(user_2, 42)
 
     @pytest.mark.parametrize("agent_id", [None, "not-an-id", -1])
     def test_validates_agent_id(self, user, agent_id):
@@ -177,8 +179,9 @@ class TestCreateAgent:
         }
         with pytest.raises((TypeError, ValueError)):
             services.create_agent(None, **kwargs)
+        user_2 = User(username="unsaved")
         with pytest.raises((TypeError, ValueError)):
-            services.create_agent(User(username="unsaved"), **kwargs)
+            services.create_agent(user_2, **kwargs)
 
 
 class TestDeleteAgent:
@@ -210,8 +213,9 @@ class TestDeleteAgent:
     def test_validates_user(self):
         with pytest.raises((TypeError, ValueError)):
             services.delete_agent(None, 42)
+        user_2 = User(username="unsaved")
         with pytest.raises((TypeError, ValueError)):
-            services.delete_agent(User(username="unsaved"), 42)
+            services.delete_agent(user_2, 42)
 
     @pytest.mark.parametrize("agent_id", [None, "not-an-id", -1])
     def test_validates_agent_id(self, user, agent_id):

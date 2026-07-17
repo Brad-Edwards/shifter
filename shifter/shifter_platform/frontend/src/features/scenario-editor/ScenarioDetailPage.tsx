@@ -23,7 +23,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { cn } from "@/lib/utils";
 
 import { EnabledBadge, SourceBadge, StaffOnlyBadge } from "./badges";
-import { ConfirmDialog } from "./ConfirmDialog";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { downloadTextFile } from "./format";
 import { scenarioEditPath, scenarioListPath, scenarioYamlEditPath } from "./routes";
 

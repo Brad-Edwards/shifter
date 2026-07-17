@@ -4,6 +4,7 @@ import { Link, useLocation } from "react-router-dom";
 import {
   Bot,
   Boxes,
+  CircleDollarSign,
   FileCode,
   Flag,
   HelpCircle,
@@ -49,6 +50,7 @@ const ICONS: Record<NavIconKey, ComponentType<{ className?: string }>> = {
   "file-code": FileCode,
   "shield-alert": ShieldAlert,
   "user-cog": UserCog,
+  "circle-dollar-sign": CircleDollarSign,
 };
 
 const MODE_LABELS: Record<UxMode, string> = {

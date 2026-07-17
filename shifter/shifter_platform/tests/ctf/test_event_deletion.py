@@ -272,8 +272,9 @@ class TestForceDeleteEvent:
             mock_all.get.side_effect = CTFEvent.DoesNotExist
             from ctf.services.event import force_delete_event
 
+            uuid4_2 = uuid4()
             with pytest.raises(CTFNotFoundError):
-                force_delete_event(uuid4(), mock_user, "Whatever")
+                force_delete_event(uuid4_2, mock_user, "Whatever")
 
     @pytest.mark.django_db
     def test_force_delete_range_cleanup_partial_failure(self, ctf_event, organizer_user, participant_user):
