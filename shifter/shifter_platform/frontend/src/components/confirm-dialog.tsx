@@ -15,12 +15,18 @@ import {
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
+/**
+ * Shared confirmation dialog wrapping the shadcn AlertDialog (#1373). Promoted
+ * from the previously per-feature copies so every SPA workspace shares one
+ * implementation instead of drifting apart.
+ */
 export function ConfirmDialog({
   open,
   title,
   confirmLabel,
   destructive,
   pending,
+  confirmDisabled,
   error,
   onConfirm,
   onOpenChange,
@@ -31,6 +37,8 @@ export function ConfirmDialog({
   confirmLabel: string;
   destructive?: boolean;
   pending?: boolean;
+  /** Extra condition (e.g. a type-to-confirm match) beyond `pending` that gates the confirm action. */
+  confirmDisabled?: boolean;
   error?: unknown;
   onConfirm: () => void;
   onOpenChange: (open: boolean) => void;
@@ -59,7 +67,7 @@ export function ConfirmDialog({
           <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
           <AlertDialogAction
             className={destructive ? cn(buttonVariants({ variant: "destructive" })) : undefined}
-            disabled={pending}
+            disabled={pending || confirmDisabled}
             onClick={(event) => {
               event.preventDefault();
               onConfirm();

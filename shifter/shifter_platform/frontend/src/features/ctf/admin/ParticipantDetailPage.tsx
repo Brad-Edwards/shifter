@@ -21,7 +21,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 
-import { ConfirmDialog } from "../ConfirmDialog";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { formatDateTime, titleCase } from "../format";
 import { ctfAdminEventParticipantsPath, ctfAdminEventsPath } from "../routes";
 

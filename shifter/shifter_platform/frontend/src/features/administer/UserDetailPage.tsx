@@ -14,7 +14,7 @@ import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 
 import { AccountOriginBadge, AccountStatusBadge, RoleBadge } from "./badges";
-import { ConfirmDialog } from "./ConfirmDialog";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { accountOriginLabel, formatTimestamp, titleCase } from "./format";
 import { usersListPath } from "./routes";
 

@@ -1,8 +1,8 @@
+import { titleCase } from "@/lib/format";
+
 import type { ScenarioSource } from "@/api/types";
 
-export function titleCase(value: string): string {
-  return value ? value.charAt(0).toUpperCase() + value.slice(1) : value;
-}
+export { titleCase };
 
 /** Human label for a scenario `source` classification. */
 export const SOURCE_LABELS: Record<ScenarioSource, string> = {

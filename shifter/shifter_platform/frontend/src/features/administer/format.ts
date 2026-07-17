@@ -1,12 +1,6 @@
-export function titleCase(value: string): string {
-  return value ? value.charAt(0).toUpperCase() + value.slice(1) : value;
-}
+import { formatTimestamp, titleCase } from "@/lib/format";
 
-export function formatTimestamp(value: string | null | undefined): string {
-  if (!value) return "—";
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
-}
+export { formatTimestamp, titleCase };
 
 /** Human label for the account-origin classification returned by the API. */
 export function accountOriginLabel(origin: string): string {

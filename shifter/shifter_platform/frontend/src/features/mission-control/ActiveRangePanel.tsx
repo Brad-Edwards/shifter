@@ -15,7 +15,7 @@ import { Card } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
 
-import { ConfirmDialog } from "./ConfirmDialog";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { InstanceTable } from "./InstanceTable";
 import { useRangeStatusSocket } from "./useRangeStatusSocket";
 

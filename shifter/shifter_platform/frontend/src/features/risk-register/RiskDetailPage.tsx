@@ -25,7 +25,7 @@ import { cn } from "@/lib/utils";
 
 import { SeverityBadge, StatusBadge } from "./badges";
 import { CommentsPanel } from "./CommentsPanel";
-import { ConfirmDialog } from "./ConfirmDialog";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { HistoryPanel } from "./HistoryPanel";
 import { formatTimestamp } from "./format";
 
