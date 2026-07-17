@@ -3,38 +3,20 @@ import { screen, within } from "@testing-library/react";
 import { axe } from "vitest-axe";
 
 import { ApiError } from "@/api/errors";
+import type { AdminUserDetail } from "@/api/types";
 import { renderRoute } from "@/test/utils";
 
 vi.mock("@/api/client", () => ({ apiFetch: vi.fn() }));
 
 import { apiFetch } from "@/api/client";
 
+import { adminUser, pageOf } from "./test-fixtures";
 import { UsersListPage } from "./UsersListPage";
 
 const mockApi = vi.mocked(apiFetch);
 
-function userRow(overrides: Record<string, unknown> = {}) {
-  return {
-    id: 1,
-    username: "alice",
-    email: "alice@example.com",
-    display_name: "Alice Example",
-    is_active: true,
-    is_staff: true,
-    is_superuser: false,
-    user_type: "standard",
-    account_origin: "provider",
-    is_ctf_organizer: false,
-    is_deleted: false,
-    date_joined: "2026-01-01T00:00:00Z",
-    last_login: "2026-07-01T00:00:00Z",
-    ...overrides,
-  };
-}
-
-function pageOf(results: unknown[]) {
-  return { count: results.length, next: null, previous: null, results };
-}
+const userRow = (overrides: Partial<AdminUserDetail> = {}) =>
+  adminUser({ account_origin: "provider", is_staff: true, ...overrides });
 
 beforeEach(() => {
   mockApi.mockReset();

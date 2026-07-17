@@ -20,31 +20,10 @@ vi.mock("@/api/client", () => ({ apiFetch: vi.fn() }));
 
 import { apiFetch } from "@/api/client";
 
+import { adminUser as detail } from "./test-fixtures";
 import { UserDetailPage } from "./UserDetailPage";
 
 const mockApi = vi.mocked(apiFetch);
-
-function detail(overrides: Record<string, unknown> = {}) {
-  return {
-    id: 1,
-    username: "alice",
-    email: "alice@example.com",
-    display_name: "Alice Example",
-    is_active: true,
-    is_staff: false,
-    is_superuser: false,
-    user_type: "standard",
-    account_origin: "local",
-    is_ctf_organizer: false,
-    is_deleted: false,
-    date_joined: "2026-01-01T00:00:00Z",
-    last_login: null,
-    organizer_grant_source: "",
-    must_change_password: false,
-    groups: [],
-    ...overrides,
-  };
-}
 
 function renderDetail() {
   return renderRoute(<UserDetailPage />, {

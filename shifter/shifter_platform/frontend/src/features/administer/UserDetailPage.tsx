@@ -178,7 +178,7 @@ function UserFields({ user }: Readonly<{ user: AdminUserDetail }>) {
             {user.is_superuser ? <RoleBadge label="Superuser" /> : null}
             {user.is_staff ? <RoleBadge label="Staff" /> : null}
             {user.is_ctf_organizer ? <RoleBadge label="Organizer" /> : null}
-            {!hasRole ? <span className="text-sm text-muted-foreground">None</span> : null}
+            {hasRole ? null : <span className="text-sm text-muted-foreground">None</span>}
           </div>
         </Field>
         <Field label="Groups">
@@ -221,49 +221,60 @@ function UserConfirmDialogs({
   onClose: () => void;
   onDone: () => void;
 }>) {
+  const specs = [
+    {
+      kind: "set-active",
+      title: user.is_active ? "Deactivate account?" : "Activate account?",
+      confirmLabel: user.is_active ? "Deactivate" : "Activate",
+      destructive: user.is_active,
+      pending: setActive.isPending,
+      error: setActive.error,
+      confirm: () => setActive.mutate(!user.is_active, { onSuccess: onDone }),
+      body: user.is_active
+        ? "The user will be signed out and blocked from signing in until reactivated. This does not delete or anonymize the account."
+        : "The user will be able to sign in again.",
+    },
+    {
+      kind: "grant-organizer",
+      title: "Grant CTF Organizer?",
+      confirmLabel: "Grant",
+      destructive: false,
+      pending: grantOrganizer.isPending,
+      error: grantOrganizer.error,
+      confirm: () => grantOrganizer.mutate(undefined, { onSuccess: onDone }),
+      body: "This adds the user to CTF Organizer as a local grant. It is additive and audited; provider-managed membership is unaffected. Removing organizer access is not available here.",
+    },
+    {
+      kind: "delete",
+      title: "Delete account?",
+      confirmLabel: "Delete",
+      destructive: true,
+      pending: softDelete.isPending,
+      error: softDelete.error,
+      confirm: () => softDelete.mutate(undefined, { onSuccess: onDone }),
+      body: "The account is soft-deleted and can no longer sign in. This does not permanently erase, anonymize, or unbind the provider identity.",
+    },
+  ] as const;
+
   return (
     <>
-      <ConfirmDialog
-        open={dialog === "set-active"}
-        title={user.is_active ? "Deactivate account?" : "Activate account?"}
-        confirmLabel={user.is_active ? "Deactivate" : "Activate"}
-        destructive={user.is_active}
-        pending={setActive.isPending}
-        error={setActive.error}
-        onOpenChange={(open) => !open && onClose()}
-        onConfirm={() => setActive.mutate(!user.is_active, { onSuccess: onDone })}
-      >
-        {user.is_active
-          ? "The user will be signed out and blocked from signing in until reactivated. This does not delete or anonymize the account."
-          : "The user will be able to sign in again."}
-      </ConfirmDialog>
-
-      <ConfirmDialog
-        open={dialog === "grant-organizer"}
-        title="Grant CTF Organizer?"
-        confirmLabel="Grant"
-        pending={grantOrganizer.isPending}
-        error={grantOrganizer.error}
-        onOpenChange={(open) => !open && onClose()}
-        onConfirm={() => grantOrganizer.mutate(undefined, { onSuccess: onDone })}
-      >
-        This adds the user to CTF Organizer as a local grant. It is additive and audited; provider-managed membership is
-        unaffected. Removing organizer access is not available here.
-      </ConfirmDialog>
-
-      <ConfirmDialog
-        open={dialog === "delete"}
-        title="Delete account?"
-        confirmLabel="Delete"
-        destructive
-        pending={softDelete.isPending}
-        error={softDelete.error}
-        onOpenChange={(open) => !open && onClose()}
-        onConfirm={() => softDelete.mutate(undefined, { onSuccess: onDone })}
-      >
-        The account is soft-deleted and can no longer sign in. This does not permanently erase, anonymize, or unbind the
-        provider identity.
-      </ConfirmDialog>
+      {specs.map((spec) => (
+        <ConfirmDialog
+          key={spec.kind}
+          open={dialog === spec.kind}
+          title={spec.title}
+          confirmLabel={spec.confirmLabel}
+          destructive={spec.destructive}
+          pending={spec.pending}
+          error={spec.error}
+          onOpenChange={(open) => {
+            if (!open) onClose();
+          }}
+          onConfirm={spec.confirm}
+        >
+          {spec.body}
+        </ConfirmDialog>
+      ))}
     </>
   );
 }
