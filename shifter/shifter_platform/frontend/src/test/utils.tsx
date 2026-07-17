@@ -20,6 +20,9 @@ export const STAFF_BOOTSTRAP: Bootstrap = {
     can_access_threat_research: false,
     is_ctf_organizer: false,
     is_ctf_participant: false,
+    can_view_users: true,
+    can_change_users: true,
+    can_delete_users: true,
   },
   modes: { participant: false, operator: true, default: "operator" },
   feature_flags: {
@@ -28,6 +31,7 @@ export const STAFF_BOOTSTRAP: Bootstrap = {
     mission_control_spa: true,
     scenario_editor_spa: true,
     aces_native_provisioning: true,
+    administer_spa: true,
   },
 };
 

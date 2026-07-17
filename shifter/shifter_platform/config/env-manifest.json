@@ -18,6 +18,11 @@
       "source_file": "config/_aces_settings.py"
     },
     {
+      "default": "False",
+      "name": "ADMINISTER_SPA_ENABLED",
+      "source_file": "config/settings.py"
+    },
+    {
       "default": "300",
       "name": "API_TOKEN_LAST_USED_COALESCE_SECONDS",
       "source_file": "config/_api_token_settings.py"

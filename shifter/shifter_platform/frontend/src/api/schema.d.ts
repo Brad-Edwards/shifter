@@ -4,6 +4,104 @@
  */
 
 export interface paths {
+    "/api/v1/administer/users/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Paginated, filterable, read-only user list. Requires ``auth.view_user``. */
+        get: operations["api_v1_administer_users_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/administer/users/{id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Read-only user detail. Includes soft-deleted accounts. ``auth.view_user``. */
+        get: operations["api_v1_administer_users_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/administer/users/{id}/delete/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * @description Soft-delete (disable) a user account. Requires ``auth.delete_user``.
+         *
+         *     Sets the profile ``deleted_at`` marker; it never hard-deletes the row, never
+         *     anonymizes, and never unbinds a provider identity — those are distinct
+         *     lifecycle actions with their own contracts.
+         */
+        post: operations["api_v1_administer_users_soft_delete"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/administer/users/{id}/grant-organizer/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * @description Grant local CTF Organizer to a user (grant-only). Requires ``auth.change_user``.
+         *
+         *     Additive and audited with ``local`` provenance by
+         *     ``config.organizer_authority`` (its own strict ROLE_SYNC audit), so provider
+         *     reconciliation never auto-revokes it. Local revocation has no complete
+         *     service contract and is intentionally not offered here.
+         */
+        post: operations["api_v1_administer_users_grant_organizer"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/administer/users/{id}/set-active/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Activate or deactivate a user's login. Requires ``auth.change_user``. */
+        post: operations["api_v1_administer_users_set_active"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/audit/": {
         parameters: {
             query?: never;
@@ -130,6 +228,23 @@ export interface paths {
         get: operations["cms_catalog_retrieve"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cms/catalog/packs/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Validate and register a pack, returning a bounded 201 summary. */
+        post: operations["cms_catalog_packs_create"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1824,6 +1939,57 @@ export interface components {
          * @enum {string}
          */
         ActorTypeEnum: "user" | "apikey" | "system" | "cognito";
+        /**
+         * @description Read-only detail view: list fields plus role provenance and group names.
+         *
+         *     ``groups`` are Django role group names (e.g. "CTF Organizer"), never the
+         *     provider group claims captured on the profile.
+         */
+        AdminUserDetail: {
+            readonly id: number;
+            readonly username: string;
+            /** Format: email */
+            readonly email: string;
+            readonly display_name: string;
+            readonly is_active: boolean;
+            readonly is_staff: boolean;
+            readonly is_superuser: boolean;
+            readonly user_type: string;
+            readonly account_origin: string;
+            readonly is_ctf_organizer: boolean;
+            readonly is_deleted: boolean;
+            /** Format: date-time */
+            readonly date_joined: string;
+            /** Format: date-time */
+            readonly last_login: string | null;
+            readonly organizer_grant_source: string;
+            readonly must_change_password: boolean;
+            readonly groups: string[];
+        };
+        /**
+         * @description Read-only summary of a user for the Administer list.
+         *
+         *     Roles, account type, and origin are surfaced read-only; identity-binding
+         *     fields are intentionally absent.
+         */
+        AdminUserListItem: {
+            readonly id: number;
+            readonly username: string;
+            /** Format: email */
+            readonly email: string;
+            readonly display_name: string;
+            readonly is_active: boolean;
+            readonly is_staff: boolean;
+            readonly is_superuser: boolean;
+            readonly user_type: string;
+            readonly account_origin: string;
+            readonly is_ctf_organizer: boolean;
+            readonly is_deleted: boolean;
+            /** Format: date-time */
+            readonly date_joined: string;
+            /** Format: date-time */
+            readonly last_login: string | null;
+        };
         /** @description One entry from ``cms.services.list_agents`` (``_agent_projection_dict``). */
         AgentListItem: {
             id: number;
@@ -1881,6 +2047,7 @@ export interface components {
             mission_control_spa: boolean;
             scenario_editor_spa: boolean;
             aces_native_provisioning: boolean;
+            administer_spa: boolean;
         };
         /** @description UX mode eligibility (participant/operator). Not an authorization fact. */
         BootstrapModes: {
@@ -1894,6 +2061,9 @@ export interface components {
             can_access_threat_research: boolean;
             is_ctf_organizer: boolean;
             is_ctf_participant: boolean;
+            can_view_users: boolean;
+            can_change_users: boolean;
+            can_delete_users: boolean;
         };
         /** @description Authenticated principal summary for the SPA shell. */
         BootstrapPrincipal: {
@@ -2086,6 +2256,27 @@ export interface components {
         /** @description Response body for ``NGFWListView.get``. */
         NGFWListResponse: {
             ngfws: components["schemas"]["NGFWListItem"][];
+        };
+        /** @description Minimal confirmation payload for a local-organizer grant. */
+        OrganizerGrantResult: {
+            id: number;
+            is_ctf_organizer: boolean;
+            organizer_grant_source: string;
+        };
+        PaginatedAdminUserListItemList: {
+            /** @example 123 */
+            count: number;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=4
+             */
+            next?: string | null;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=2
+             */
+            previous?: string | null;
+            results: components["schemas"]["AdminUserListItem"][];
         };
         PaginatedAuditLogList: {
             /** @example 123 */
@@ -2425,6 +2616,10 @@ export interface components {
             instances: string[];
             connected_to?: string[];
         };
+        /** @description Explicit request body for the activate/deactivate operation. */
+        SetActiveRequest: {
+            is_active: boolean;
+        };
         /**
          * @description * `critical` - Critical
          *     * `high` - High
@@ -2491,6 +2686,135 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    api_v1_administer_users_list: {
+        parameters: {
+            query?: {
+                /**
+                 * @description * `provider` - provider
+                 *     * `local` - local
+                 *     * `ctf` - ctf
+                 */
+                account_origin?: "provider" | "local" | "ctf" | "";
+                include_deleted?: boolean;
+                is_active?: boolean | null;
+                /** @description Which field to use when ordering the results. */
+                ordering?: string;
+                /** @description A page number within the paginated result set. */
+                page?: number;
+                search?: string;
+                /**
+                 * @description * `standard` - standard
+                 *     * `ctf_organizer` - ctf_organizer
+                 *     * `ctf_participant` - ctf_participant
+                 */
+                user_type?: "standard" | "ctf_organizer" | "ctf_participant" | "";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedAdminUserListItemList"];
+                };
+            };
+        };
+    };
+    api_v1_administer_users_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminUserDetail"];
+                };
+            };
+        };
+    };
+    api_v1_administer_users_soft_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminUserDetail"];
+                };
+            };
+        };
+    };
+    api_v1_administer_users_grant_organizer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrganizerGrantResult"];
+                };
+            };
+        };
+    };
+    api_v1_administer_users_set_active: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetActiveRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["SetActiveRequest"];
+                "multipart/form-data": components["schemas"]["SetActiveRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminUserDetail"];
+                };
+            };
+        };
+    };
     audit_list: {
         parameters: {
             query?: {
@@ -2667,6 +2991,24 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["CatalogEntry"];
                 };
+            };
+        };
+    };
+    cms_catalog_packs_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
