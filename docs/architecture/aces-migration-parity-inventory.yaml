@@ -164,10 +164,10 @@ rows:
     category: ACES SDL
     aces_target: ACES content declarations plus provenance references
     shifter_owner: scenario-dev/polaris/content-packages
-    validation_evidence: scenario-dev/polaris/tests/scenario_smoketest/README.md
+    validation_evidence: scenario-dev/polaris/tests/run-all-smoketests.sh
     next_issue_kind: design-only
     candidate_issue_title: Classify Polaris content packages against ACES content/provenance contracts
-    notes: Package manifests carry scenario meaning, while generated runtime material stays out of the inventory.
+    notes: Package manifests carry scenario meaning, while generated runtime material stays out of the inventory. The surviving range sweep is in-repository evidence; scenario-specific participant-path verification is owned by a separately installed plugin and is not represented by an external checkout path here.
 
   - id: polaris.portal-template
     surface: Polaris
@@ -184,14 +184,14 @@ rows:
   - id: polaris.smoketests
     surface: Polaris
     legacy_source: scenario-dev/polaris/tests/
-    legacy_field: run-all-smoketests, scenario_smoketest, asset smoketests
+    legacy_field: run-all-smoketests, isolation checks, and asset smoketests
     category: validation gate
     aces_target: ACES/Shifter parity validation evidence
     shifter_owner: scenario-dev/polaris/tests
-    validation_evidence: scenario-dev/polaris/tests/run-all-smoketests.sh
+    validation_evidence: scenario-dev/polaris/tests/run-all-smoketests.sh; shifter/shifter_platform/tests/shared/scenario_verification
     next_issue_kind: implementation-candidate
     candidate_issue_title: Promote Polaris ACES parity smoke checks into the cutover gate
-    notes: Existing smoke tests are required evidence for any ACES cutover claim.
+    notes: The in-repository range smoke remains required infrastructure evidence, and the shared synthetic suite proves the neutral verification framework. Scenario-specific adapters and answer material are owned out of tree; their versioned redacted operator report is cutover evidence but no external checkout is part of this inventory.
 
   - id: ctf.event-lifecycle
     surface: CTF
@@ -452,10 +452,10 @@ rows:
     category: ACES SDL
     aces_target: ACES content/provenance declarations
     shifter_owner: scenario-dev/polaris/content-packages
-    validation_evidence: scenario-dev/polaris/tests/scenario_smoketest/README.md
+    validation_evidence: scenario-dev/polaris/tests/run-all-smoketests.sh
     next_issue_kind: design-only
     candidate_issue_title: Bind Polaris content packages to ACES provenance terms
-    notes: Content inputs are scenario meaning; generated outputs remain runtime evidence.
+    notes: Content inputs are scenario meaning; generated outputs remain runtime evidence. The surviving range sweep is the checked in-repository path, while scenario-specific verification adapters and answer material are owned by a separately installed plugin.
 
   - id: status.engine-range
     surface: status
