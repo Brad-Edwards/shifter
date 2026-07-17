@@ -414,6 +414,41 @@ class TestCompositionExtraction:
         with pytest.raises(AcesPlanError, match="account mail is not realized"):
             parse_plan(_serialized(account_resource, self._target_node()))
 
+    def test_rejects_spn_in_separate_provisioner_consumer_without_leaking_value(self):
+        authored_spn = "HTTP/member.corp.example"
+        account_resource = _resource(
+            "account.alice",
+            "account-placement",
+            {
+                "account_name": "alice",
+                "target_address": "provision.node.web",
+                "spec": {"username": "alice", "spn": authored_spn},
+            },
+        )
+
+        with pytest.raises(AcesPlanError, match="account spn is not realized") as error:
+            parse_plan(_serialized(account_resource, self._target_node()))
+
+        assert authored_spn not in str(error.value)
+
+    def test_rejects_domain_topology_in_separate_provisioner_without_leaking_identity(self):
+        dns_name = "corp.example"
+        node = self._target_node()
+        node["payload"]["domain_topology"] = {
+            "domain_id": "corp",
+            "profile": "active_directory",
+            "dns_name": dns_name,
+            "netbios_name": "CORP",
+            "authority_account_address": "provision.account.domain-admin",
+            "role": "controller",
+            "controller_addresses": ["provision.node.web"],
+        }
+
+        with pytest.raises(AcesPlanError, match="domain topology is not supported") as error:
+            parse_plan(_serialized(node))
+
+        assert dns_name not in str(error.value)
+
     def test_extracts_service_feature(self):
         feature_resource = _resource(
             "feature.web-app",
@@ -521,9 +556,10 @@ class TestVersionValidation:
         parsed = parse_plan(_serialized(self._node(), version=MINIMUM_ACES_SDL_VERSION))
         assert parsed.aces_sdl_version == MINIMUM_ACES_SDL_VERSION
 
-    def test_patch_within_series_accepted(self):
-        parsed = parse_plan(_serialized(self._node(), version="0.19.9"))
-        assert parsed.aces_sdl_version == "0.19.9"
+    @pytest.mark.parametrize("version", ["0.19.9", "0.20.0", "0.21.0", "0.22.0", "0.23.0"])
+    def test_release_within_declared_window_accepted(self, version: str):
+        parsed = parse_plan(_serialized(self._node(), version=version))
+        assert parsed.aces_sdl_version == version
 
 
 class TestFailClosed:

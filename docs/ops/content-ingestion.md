@@ -10,7 +10,7 @@ A pack is registered as a provenance-only reference: Shifter records where the
 pack lives (`package_ref`), its version and digest, its contract and profile, and
 bounded provenance. It does not copy the pack body into the catalog. Pack content
 is defined by the `aces-scenario-packs` contract. Shifter pins
-`aces-scenario-packs==1.2.0` with its required `aces-sdl==0.20.0`, and delegates
+`aces-scenario-packs==2.0.1` with its required `aces-sdl==0.23.0`, and delegates
 validation and canonical content identity to those released libraries. A
 broken, malformed, or non-conformant pack is rejected.
 

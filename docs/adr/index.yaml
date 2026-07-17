@@ -1479,7 +1479,7 @@
       },
       {
         "id": "ADR-032-R4",
-        "description": "Shifter depends on released PyPI artifacts pinned as one compatible pair (currently aces-scenario-packs 1.2.0 and its exact aces-sdl 0.20.0 dependency); it must not pin either contract to a git ref or non-released build. The provisioner consumer retains a bounded rolling-read window for persisted producer plans (currently [0.19.1, 0.21.0)). aces_* SDL packages are imported only within shared.aces (ADR-024, ADR-031-R1); the engine, provisioner, and other layers consume the serialized plan as plain data without importing aces_*.",
+        "description": "Shifter depends on released PyPI artifacts pinned as one compatible pair (currently aces-scenario-packs 2.0.1 and its exact aces-sdl 0.23.0 dependency); it must not pin either contract to a git ref or non-released build. The provisioner consumer retains a bounded rolling-read window for persisted producer plans (currently [0.19.1, 0.24.0)). aces_* SDL packages are imported only within shared.aces (ADR-024, ADR-031-R1); the engine, provisioner, and other layers consume the serialized plan as plain data without importing aces_*.",
         "checks": []
       },
       {
@@ -1494,7 +1494,7 @@
       },
       {
         "id": "ADR-032-R7",
-        "description": "The serialized ProvisioningPlan transport must declare and validate supported contract and producer versions before realization. The consumer must reject unknown resource types, malformed payloads, duplicate identities, duplicate aliases, dangling node/network/composition references, and unsupported topology terms before any cloud, Terraform, SSH, SSM, or guest mutation. Compatibility tests must use public ACES APIs, public fixtures, or Shifter-owned serialized fixtures; private reference-backend helpers are not a compatibility contract.",
+        "description": "The serialized ProvisioningPlan transport must declare and validate supported contract and producer versions before realization. Shared admission must invoke the public ACES domain-topology diagnostics against the provisioner's explicitly declared supported_domain_profiles, including the current runtime snapshot for incremental apply. The separate plain-data consumer must reject unknown resource types, malformed payloads, duplicate identities, duplicate aliases, dangling node/network/composition references, domain-topology carriers outside Shifter's supported profiles, and unsupported domain-scoped account terms before any cloud, Terraform, SSH, SSM, or guest mutation. Compatibility tests must use public ACES APIs, public fixtures, or Shifter-owned serialized fixtures; private reference-backend helpers are not a compatibility contract.",
         "checks": []
       },
       {
@@ -1509,11 +1509,13 @@
       "https://github.com/Brad-Edwards/shifter/issues/1264",
       "https://github.com/Brad-Edwards/shifter/issues/1562",
       "https://github.com/Brad-Edwards/shifter/issues/1563",
+      "https://github.com/Brad-Edwards/shifter/issues/1606",
       "docs/architecture/aces-runtime-target-backend-manifest-preflight-1233.md",
       "docs/architecture/aces-provisioning-plan-transport-preflight-1522.md",
       "docs/architecture/aces-backend-manifest-realizability-preflight-1563.md",
       "docs/architecture/aces-service-reachability-preflight-1562.md",
       "docs/architecture/aces-account-credentials-preflight-1560.md",
+      "docs/architecture/aces-domain-topology-preflight-1606.md",
       ".importlinter",
       "shifter/shifter_platform/pyproject.toml",
       "shifter/shifter_platform/shared/aces/runtime_target.py"

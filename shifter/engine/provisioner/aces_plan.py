@@ -100,12 +100,12 @@ SUPPORTED_CONTRACT_VERSIONS: frozenset[str] = frozenset({ACES_PROVISIONING_PLAN_
 #: half-open range ``[MINIMUM, MAXIMUM_EXCLUSIVE)`` (ADR-032-R7 fail-closed: an
 #: unknown future release is rejected, not assumed compatible). The 0.19.1 floor
 #: remains readable for already-persisted plans during rolling deployment, while
-#: the platform producer is pinned exactly to 0.20.0. A platform-side test asserts
+#: the platform producer is pinned exactly to 0.23.0. A platform-side test asserts
 #: that exact producer pin equals the installed version and lies in this window.
 #: Adopting a new series requires raising this window and passing the ACES
 #: conformance gate.
 MINIMUM_ACES_SDL_VERSION = "0.19.1"
-MAXIMUM_ACES_SDL_VERSION_EXCLUSIVE = "0.21.0"
+MAXIMUM_ACES_SDL_VERSION_EXCLUSIVE = "0.24.0"
 
 #: Duplicated intentionally across the separate deployable boundary and pinned
 #: to ``shared.aces.composition_envelope`` by a producer/consumer parity test.
@@ -326,6 +326,8 @@ def _validate_account_credentials(account: AcesPlanAccount) -> None:
         raise AcesPlanError("unsupported password_strength for account credential")
     if account.mail is not None:
         raise AcesPlanError("account mail is not realized consistently across supported guest operating systems")
+    if account.spn is not None:
+        raise AcesPlanError("account spn is not realized by this provisioner")
 
 
 def parse_plan(range_config: dict[str, Any] | None) -> AcesPlan:
@@ -362,6 +364,11 @@ def parse_plan(range_config: dict[str, Any] | None) -> AcesPlan:
             raise AcesPlanError(f"duplicate resource address {address!r}")
         seen_addresses.add(address)
         payload = _require_mapping(entry_map.get("payload"), where="resource.payload")
+        # Shifter currently advertises no supported identity-domain profile. This
+        # plain-data backstop protects persisted/replayed plans at the separate
+        # deployable boundary without copying ACES's topology model or values.
+        if payload.get("domain_topology") is not None:
+            raise AcesPlanError("domain topology is not supported by this provisioner")
         resource_type = entry_map.get("resource_type")
         # Type-check the JSON discriminator before any membership test so an
         # unhashable/non-string value fails closed as AcesPlanError, not TypeError.

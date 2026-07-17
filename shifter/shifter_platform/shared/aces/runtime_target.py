@@ -33,6 +33,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from aces_backend_protocols.capabilities import BackendManifest, ProvisionerCapabilities
+from aces_backend_protocols.domain_topology import domain_topology_plan_diagnostics
 from aces_contracts.diagnostics import Diagnostic, Severity
 from aces_contracts.planning import PlannedResource, ProvisioningPlan, RuntimeDomain
 from aces_contracts.runtime_state import ApplyResult, RuntimeSnapshot, SnapshotEntry
@@ -322,6 +323,7 @@ def interpret_provisioning_plan(
     plan: ProvisioningPlan,
     *,
     capabilities: ProvisionerCapabilities | None = None,
+    snapshot: RuntimeSnapshot | None = None,
 ) -> tuple[dict[str, Any] | None, list[Diagnostic]]:
     """Validate a compiled ACES provisioning plan and return its serialized form.
 
@@ -337,6 +339,23 @@ def interpret_provisioning_plan(
         if resource.domain == RuntimeDomain.PROVISIONING
     ]
     diagnostics = _capability_envelope_diagnostics(provisioning, capabilities)
+
+    # ACES owns the authored identity-domain vocabulary and its cross-resource /
+    # incremental-state consistency rules. Preserve the public diagnostic codes,
+    # but replace value-bearing upstream messages with one bounded generic message:
+    # domain DNS/NetBIOS/account values must not enter Shifter operational output.
+    diagnostics.extend(
+        _diagnostic(
+            diagnostic.code,
+            diagnostic.address or "plan",
+            "authored identity-domain topology is invalid or unsupported by this backend",
+        )
+        for diagnostic in domain_topology_plan_diagnostics(
+            plan,
+            snapshot=snapshot,
+            supported_domain_profiles=capabilities.supported_domain_profiles,
+        )
+    )
 
     network_resources = [
         (r, r.payload)
@@ -364,11 +383,15 @@ def interpret_provisioning_plan(
     return serialize_provisioning_plan(plan), diagnostics
 
 
-def _serialized_for_apply(plan: ProvisioningPlan) -> tuple[dict[str, Any] | None, list[Diagnostic]]:
+def _serialized_for_apply(
+    plan: ProvisioningPlan,
+    *,
+    snapshot: RuntimeSnapshot | None = None,
+) -> tuple[dict[str, Any] | None, list[Diagnostic]]:
     """Validate + serialize ``plan`` for validate/apply; (None, diagnostics) if unusable."""
     if not isinstance(plan, ProvisioningPlan):
         return None, [_diagnostic("shifter-provisioner.invalid-plan", "plan", "expected an ACES ProvisioningPlan")]
-    return interpret_provisioning_plan(plan)
+    return interpret_provisioning_plan(plan, snapshot=snapshot)
 
 
 class ShifterProvisioner:
@@ -385,7 +408,7 @@ class ShifterProvisioner:
 
     def apply(self, plan: ProvisioningPlan, snapshot: RuntimeSnapshot) -> ApplyResult:
         """Validate + dispatch the serialized ``plan``; never dispatch on error."""
-        serialized, diagnostics = _serialized_for_apply(plan)
+        serialized, diagnostics = _serialized_for_apply(plan, snapshot=snapshot)
         if serialized is None:
             return ApplyResult(success=False, snapshot=snapshot, diagnostics=diagnostics)
 
