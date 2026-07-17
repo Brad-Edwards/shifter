@@ -1,6 +1,7 @@
-import { formatTimestamp, titleCase } from "@/lib/format";
+import { titleCase } from "@/lib/format";
 
-export { formatTimestamp, titleCase };
+export { formatTimestamp } from "@/lib/format";
+export { titleCase };
 
 /** Human label for the account-origin classification returned by the API. */
 export function accountOriginLabel(origin: string): string {
