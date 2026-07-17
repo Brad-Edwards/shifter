@@ -226,8 +226,8 @@ The implementation must evaluate changes against:
   and `uv.lock`, including the public topology model, planner capability
   relation, and topology diagnostics;
 - `shared/aces/manifest.py`, `backend-manifest.json`, `runtime_target.py`,
-  `composition_envelope.py`, `realization_ledger.py`, `sdl_validation.py`, and
-  `package_loader.py`;
+  `domain_topology.py`, `composition_envelope.py`, `realization_ledger.py`,
+  `sdl_validation.py`, and `package_loader.py`;
 - manifest publication, backend conformance, RuntimeTarget, package loader,
   real-plan, and producer/consumer parity tests under
   `shifter/shifter_platform/tests/shared/aces/`;

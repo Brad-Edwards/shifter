@@ -103,7 +103,7 @@ def test_domain_topology_diagnostic_messages_are_replaced_without_changing_code(
         severity=Severity.ERROR,
     )
     monkeypatch.setattr(
-        "shared.aces.runtime_target.domain_topology_plan_diagnostics",
+        "shared.aces.domain_topology.domain_topology_plan_diagnostics",
         lambda *_args, **_kwargs: [upstream],
     )
 

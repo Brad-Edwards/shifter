@@ -116,7 +116,7 @@ rows:
     category: ACES schema/profile gap
     aces_target: aces-sdl 0.23 public domain identity, DC binding, domain-join relation, account-domain anchor, semantic validation, supported_domain_profiles capability, and domain_topology_plan_diagnostics gate
     shifter_owner: upstream ACES contract; shared.aces admission and separate provisioner backstop
-    validation_evidence: docs/architecture/aces-domain-topology-preflight-1606.md; shifter/shifter_platform/tests/shared/aces/test_runtime_target.py; shifter/engine/provisioner/tests/test_aces_plan.py
+    validation_evidence: docs/architecture/aces-domain-topology-preflight-1606.md; shifter/shifter_platform/tests/shared/aces/test_domain_topology_admission.py; shifter/engine/provisioner/tests/test_aces_plan.py
     next_issue_kind: none
     candidate_issue_title: "#1606: Consume released ACES domain topology without a Shifter dialect"
     notes: >-

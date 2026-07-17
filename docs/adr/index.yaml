@@ -1446,6 +1446,7 @@
       "docs/architecture/aces-account-credentials-preflight-1560.md",
       "docs/architecture/aces-migration-parity-inventory.yaml",
       ".importlinter",
+      "shifter/shifter_platform/shared/aces/domain_topology.py",
       "shifter/shifter_platform/shared/aces/runtime_target.py",
       "shifter/shifter_platform/shared/aces/dispatch_port.py",
       "shifter/shifter_platform/shared/aces/package_loader.py",
@@ -1518,6 +1519,7 @@
       "docs/architecture/aces-domain-topology-preflight-1606.md",
       ".importlinter",
       "shifter/shifter_platform/pyproject.toml",
+      "shifter/shifter_platform/shared/aces/domain_topology.py",
       "shifter/shifter_platform/shared/aces/runtime_target.py"
     ]
   },

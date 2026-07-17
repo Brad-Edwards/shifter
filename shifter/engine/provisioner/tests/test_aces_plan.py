@@ -425,9 +425,10 @@ class TestCompositionExtraction:
                 "spec": {"username": "alice", "spn": authored_spn},
             },
         )
+        serialized = _serialized(account_resource, self._target_node())
 
         with pytest.raises(AcesPlanError, match="account spn is not realized") as error:
-            parse_plan(_serialized(account_resource, self._target_node()))
+            parse_plan(serialized)
 
         assert authored_spn not in str(error.value)
 
@@ -443,9 +444,10 @@ class TestCompositionExtraction:
             "role": "controller",
             "controller_addresses": ["provision.node.web"],
         }
+        serialized = _serialized(node)
 
         with pytest.raises(AcesPlanError, match="domain topology is not supported") as error:
-            parse_plan(_serialized(node))
+            parse_plan(serialized)
 
         assert dns_name not in str(error.value)
 

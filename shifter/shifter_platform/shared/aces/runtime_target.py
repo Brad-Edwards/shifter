@@ -20,9 +20,9 @@ It mirrors the ``aces_backend_libvirt`` / APTL reference backend pattern:
   ``ApplyResult`` with non-empty ``changed_addresses`` and a PROVISIONING
   ``RuntimeSnapshot`` reflecting the accepted realization.
 
-This module and :mod:`shared.aces.manifest` are the only modules allowed to
-import the ``aces-sdl`` tooling (ADR-031-R1 / ADR-024); the realization side
-consumes the serialized plan as plain data via the injected dispatch port.
+Only modules under :mod:`shared.aces` may import the ``aces-sdl`` tooling
+(ADR-031-R1 / ADR-024); the realization side consumes the serialized plan as
+plain data via the injected dispatch port.
 """
 
 from __future__ import annotations
@@ -33,7 +33,6 @@ from collections.abc import Mapping
 from typing import Any
 
 from aces_backend_protocols.capabilities import BackendManifest, ProvisionerCapabilities
-from aces_backend_protocols.domain_topology import domain_topology_plan_diagnostics
 from aces_contracts.diagnostics import Diagnostic, Severity
 from aces_contracts.planning import PlannedResource, ProvisioningPlan, RuntimeDomain
 from aces_contracts.runtime_state import ApplyResult, RuntimeSnapshot, SnapshotEntry
@@ -47,6 +46,7 @@ from shared.aces.composition_envelope import (
 )
 from shared.aces.contracts import ACES_PROVISIONING_PLAN_CONTRACT_VERSION, SHIFTER_BACKEND_NAME
 from shared.aces.dispatch_port import ShifterDispatchResult, ShifterProvisioningDispatchPort
+from shared.aces.domain_topology import sanitized_domain_topology_diagnostics
 from shared.aces.manifest import SHIFTER_PROVISIONER_CAPABILITIES, create_shifter_backend_manifest
 from shared.aces.network_family import network_address_family_diagnostics
 from shared.log_sanitize import safe_log_value
@@ -340,22 +340,7 @@ def interpret_provisioning_plan(
     ]
     diagnostics = _capability_envelope_diagnostics(provisioning, capabilities)
 
-    # ACES owns the authored identity-domain vocabulary and its cross-resource /
-    # incremental-state consistency rules. Preserve the public diagnostic codes,
-    # but replace value-bearing upstream messages with one bounded generic message:
-    # domain DNS/NetBIOS/account values must not enter Shifter operational output.
-    diagnostics.extend(
-        _diagnostic(
-            diagnostic.code,
-            diagnostic.address or "plan",
-            "authored identity-domain topology is invalid or unsupported by this backend",
-        )
-        for diagnostic in domain_topology_plan_diagnostics(
-            plan,
-            snapshot=snapshot,
-            supported_domain_profiles=capabilities.supported_domain_profiles,
-        )
-    )
+    diagnostics.extend(sanitized_domain_topology_diagnostics(plan, capabilities, snapshot))
 
     network_resources = [
         (r, r.payload)
