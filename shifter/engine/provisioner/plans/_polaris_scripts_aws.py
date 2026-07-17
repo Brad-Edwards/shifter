@@ -47,10 +47,13 @@ chown root:root /run/shifter-agent/credential-process.sh
 
 # AWS profile pointing at the credential_process reader. a14-kali receives
 # AWS_CONFIG_FILE=/run/shifter-agent/aws-config via the compose environment.
+# sts_regional_endpoints=regional forces sts.<region> (pinned in extra_hosts)
+# over the global sts.amazonaws.com, which a14-kali cannot resolve.
 cat > /run/shifter-agent/aws-config <<'AWSCFG_EOF'
 [default]
 credential_process = /run/shifter-agent/credential-process.sh
 region = __AWS_REGION__
+sts_regional_endpoints = regional
 AWSCFG_EOF
 chmod 644 /run/shifter-agent/aws-config
 chown root:root /run/shifter-agent/aws-config
@@ -448,29 +451,30 @@ if ! docker exec a14-kali test -s /run/shifter-agent/credentials.json; then
   exit 1
 fi
 
-# 9. AWS-only: from inside a14-kali, the assumed-role identity resolves to
-#    THIS range's per-range agent role -- not the shared host operations
-#    role, and not another range's agent role.
+# 9. AWS-only: the per-range agent credentials resolve to THIS range's agent role,
+#    checked host-side with the mounted credential_process config (no container aws CLI).
 ROLE_ARN="{{ role_arn }}"
 AGENT_ROLE_NAME="${ROLE_ARN##*/}"
 if [[ -z "$AGENT_ROLE_NAME" ]]; then
   echo "polaris verify: could not derive the agent role name from role_arn" >&2
   exit 1
 fi
-caller_identity=$(docker exec a14-kali aws sts get-caller-identity --output json 2>/dev/null || true)
+caller_identity=$(AWS_CONFIG_FILE=/run/shifter-agent/aws-config AWS_SDK_LOAD_CONFIG=1 \\
+  aws sts get-caller-identity --output json 2>&1 || true)
 if [[ "$caller_identity" != *"$AGENT_ROLE_NAME"* ]]; then
-  echo "polaris verify: a14-kali caller identity does not resolve to the per-range agent role" >&2
+  echo "polaris verify: agent credentials do not resolve to the per-range agent role: ${caller_identity:-<empty>}" >&2
   exit 1
 fi
 
-# 10. AWS-only: a minimal Bedrock invocation succeeds through that identity.
-if ! docker exec a14-kali aws bedrock-runtime invoke-model \\
+# 10. AWS-only: a minimal Bedrock invocation succeeds through those agent creds.
+if ! AWS_CONFIG_FILE=/run/shifter-agent/aws-config AWS_SDK_LOAD_CONFIG=1 \\
+    aws bedrock-runtime invoke-model \\
     --model-id "{{ small_model_id }}" \\
     --body '{"anthropic_version":"bedrock-2023-05-31","max_tokens":8,"messages":[{"role":"user","content":"ok"}]}' \\
     --cli-binary-format raw-in-base64-out \\
     --region "{{ region }}" \\
     /tmp/polaris-bedrock-smoke.json >/dev/null 2>&1; then
-  echo "polaris verify: Bedrock smoke invocation from a14-kali failed" >&2
+  echo "polaris verify: Bedrock smoke invocation via agent credentials failed" >&2
   exit 1
 fi
 
