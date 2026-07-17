@@ -1136,6 +1136,15 @@ class TestGdcControlPlaneHelmChart:
         assert "name: default-deny-jobs" in output
         assert "199.36.153.4/30" in output
         assert "10.40.0.10/32" in output
+        # Participant/operator range access egress (issue #1349): the Helm path
+        # must render the policy from networkPolicy.rangeAccessCidrs (fed by the
+        # range_network_cidr Terraform output), scoped to the participant channel
+        # ports -- asserted at the rendered-manifest level so values->template
+        # wiring drift is caught, mirroring the Kustomize renderer's own test.
+        assert "name: allow-platform-range-access-egress" in output
+        assert "10.50.0.0/16" in output  # range_network_cidr from the sample outputs
+        assert "port: 22" in output
+        assert "port: 3389" in output
         assert 'requestPath: "/health/"' in output
         assert "securityPolicy:" in output
         assert "name: shifter-gcp-dev-edge" in output
