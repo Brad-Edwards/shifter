@@ -99,7 +99,7 @@ ctfd_workshop:
 polaris_aws_range:
   - 'scripts/polaris-aws-range/**'
 
-scenario_smoketest:
+polaris_tests:
   - 'scenario-dev/polaris/tests/**'
 
 stack_smoke:
