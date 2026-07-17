@@ -20,7 +20,7 @@ export function registerImagesTools(ctx, deps) {
     schema: {
       ami_type: AmiTypeSchema,
       ref: SafePath.optional().describe(
-        "Branch to build from (default: current git branch, else dev)",
+        "Protected branch to build from (dev or main; default dev). Non-protected refs are rejected (#1656).",
       ),
     },
     handler: async ({ ami_type, ref }) => {

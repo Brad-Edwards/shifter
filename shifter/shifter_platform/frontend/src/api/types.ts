@@ -122,3 +122,102 @@ export const ACES_IMAGE_PROVIDERS: ReadonlyArray<{ value: AcesImageProvider; lab
  */
 export const INSTANCE_ROLES: readonly ScenarioInstanceRole[] = ["attacker", "victim", "dc"];
 export const INSTANCE_OS_TYPES: readonly ScenarioInstanceOsType[] = ["kali", "windows", "ubuntu", "from_agent"];
+
+/**
+ * CTF participant workspace domain types (#1372), re-exported from the generated
+ * OpenAPI schema. The participant-safe DRF projections (`ctf.api.projections` +
+ * `ctf.api.serializers`) remain the authoritative shape; do not hand-copy these
+ * — regenerate `schema.d.ts` via `npm run gen:api` instead. The participant
+ * serializers deliberately never declare flag/solution/validator-config fields,
+ * so those values cannot be expressed here.
+ */
+export type CtfCurrentEvent = components["schemas"]["ParticipantCurrentEvent"];
+export type CtfParticipantSelf = components["schemas"]["ParticipantSelf"];
+export type CtfEvent = components["schemas"]["ParticipantEvent"];
+export type CtfChallengeListItem = components["schemas"]["ParticipantChallengeListItem"];
+export type CtfChallengeDetail = components["schemas"]["ParticipantChallengeDetail"];
+export type CtfHint = components["schemas"]["ParticipantHint"];
+export type CtfChallengeFile = components["schemas"]["ParticipantChallengeFile"];
+export type CtfTeam = components["schemas"]["ParticipantTeam"];
+export type CtfTeamMember = components["schemas"]["ParticipantTeamMember"];
+export type CtfSubmitFlagResult = components["schemas"]["SubmitFlagResult"];
+export type CtfUseHintResult = components["schemas"]["UseHintResult"];
+export type CtfSubmissionList = components["schemas"]["SubmissionListResponse"];
+export type CtfRangeStatus = components["schemas"]["RangeStatusResponse"];
+export type CtfRangeAccess = components["schemas"]["RangeAccessResponse"];
+export type CtfScoreboard = components["schemas"]["PublicScoreboardResponse"];
+
+/**
+ * CTF organizer workspace domain types (#1372), re-exported from the generated
+ * OpenAPI schema. The organizer DRF serializers (`ctf.api.serializers` +
+ * `ctf.api.organizer_views`) remain the authoritative shape; do not hand-copy
+ * these — regenerate `schema.d.ts` via `npm run gen:api` instead.
+ */
+export type CtfEventSummary = components["schemas"]["EventSummary"];
+export type CtfEventDetail = components["schemas"]["EventDetail"];
+export type CtfEventWrite = components["schemas"]["EventWrite"];
+export type CtfEventListResponse = components["schemas"]["EventListResponse"];
+export type CtfEventMutationResult = components["schemas"]["EventMutationResult"];
+export type CtfForceDeleteEventResult = components["schemas"]["ForceDeleteEventResult"];
+export type CtfScenarioRef = components["schemas"]["CtfScenarioRef"];
+export type CtfScenarioListResponse = components["schemas"]["CtfScenarioListResponse"];
+export type CtfChallengeSummary = components["schemas"]["ChallengeSummary"];
+export type CtfChallengeListResponse = components["schemas"]["ChallengeListResponse"];
+export type CtfOrganizerChallengeDetail = components["schemas"]["OrganizerChallengeDetail"];
+export type CtfChallengeWrite = components["schemas"]["ChallengeWrite"];
+export type CtfChallengeMutationResult = components["schemas"]["ChallengeMutationResult"];
+export type CtfChallengeHint = components["schemas"]["ChallengeHint"];
+export type CtfHintWrite = components["schemas"]["HintWrite"];
+export type CtfHintListResponse = components["schemas"]["HintListResponse"];
+export type CtfFlagWrite = components["schemas"]["FlagWrite"];
+export type CtfFlagCreateResult = components["schemas"]["FlagCreateResult"];
+export type CtfChallengeFileMeta = components["schemas"]["ChallengeFileMeta"];
+export type CtfChallengeFileListResponse = components["schemas"]["ChallengeFileListResponse"];
+export type CtfChallengeFileUploadResult = components["schemas"]["ChallengeFileUploadResult"];
+export type CtfPrerequisite = components["schemas"]["Prerequisite"];
+export type CtfPrerequisiteWrite = components["schemas"]["PrerequisiteWrite"];
+export type CtfPrerequisiteListResponse = components["schemas"]["PrerequisiteListResponse"];
+export type CtfParticipantSummary = components["schemas"]["ParticipantSummary"];
+export type CtfOrganizerParticipantDetail = components["schemas"]["ParticipantDetail"];
+export type CtfParticipantListResponse = components["schemas"]["ParticipantListResponse"];
+export type CtfParticipantInvite = components["schemas"]["ParticipantInvite"];
+export type CtfParticipantImportResult = components["schemas"]["ParticipantImportResult"];
+export type CtfAssignBracketRequest = components["schemas"]["AssignBracketRequest"];
+export type CtfAssignBracketResult = components["schemas"]["AssignBracketResult"];
+export type CtfNotificationListItem = components["schemas"]["NotificationListItem"];
+export type CtfNotificationListResponse = components["schemas"]["NotificationListResponse"];
+export type CtfNotificationAnnounceRequest = components["schemas"]["NotificationAnnounceRequest"];
+export type CtfNotificationSendResult = components["schemas"]["NotificationSendResult"];
+export type CtfRangeListItem = components["schemas"]["RangeListItem"];
+export type CtfRangeListResponse = components["schemas"]["RangeListResponse"];
+export type CtfRangeProvisionQueued = components["schemas"]["RangeProvisionQueued"];
+export type CtfParticipantRangeActionResult = components["schemas"]["ParticipantRangeActionResult"];
+export type CtfScoreTimelineResponse = components["schemas"]["ScoreTimelineResponse"];
+export type CtfOrganizerScoreboard = components["schemas"]["OrganizerScoreboardResponse"];
+
+/**
+ * Runtime option lists for organizer forms/filters. Typed as plain strings (the
+ * write serializers accept strings); the backend enums (`ctf.enums`) stay the
+ * authoritative validator. These are UI affordances only.
+ */
+export const CTF_CHALLENGE_CATEGORIES: readonly string[] = [
+  "web",
+  "forensics",
+  "crypto",
+  "reverse",
+  "pwn",
+  "misc",
+  "osint",
+  "hardware",
+  "network",
+];
+export const CTF_CHALLENGE_DIFFICULTIES: readonly string[] = ["easy", "medium", "hard", "expert"];
+export const CTF_EVENT_STATUSES: readonly string[] = [
+  "draft",
+  "registration",
+  "active",
+  "paused",
+  "ended",
+  "cancelled",
+  "archived",
+];

@@ -517,10 +517,11 @@ module "messaging" {
 module "ssm" {
   source = "../../../modules/portal/ssm"
 
-  environment = var.environment
-  name_prefix = local.name_prefix
-  aws_region  = var.aws_region
-  tags        = var.tags
+  environment    = var.environment
+  cloud_provider = var.cloud_provider
+  name_prefix    = local.name_prefix
+  aws_region     = var.aws_region
+  tags           = var.tags
 
   # ECR configuration
   ecr_registry        = split("/", data.terraform_remote_state.foundation.outputs.portal_ecr_url)[0]

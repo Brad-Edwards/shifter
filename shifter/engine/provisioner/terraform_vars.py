@@ -339,6 +339,7 @@ def build_range_variables(
     range_spec: dict[str, Any],
     *,
     scenario_artifact: dict[str, Any] | None = None,
+    backend: str | None = None,
 ) -> dict[str, Any]:
     """Return backend-appropriate range variables.
 
@@ -346,7 +347,13 @@ def build_range_variables(
     active, otherwise the AWS Terraform variables. This is the single seam the
     range provision/destroy paths call so the GCE backend never receives
     AWS-translated instance shapes.
+
+    ``backend`` is the per-operation ownership binding (#1666). When supplied it
+    selects the shape from the persisted binding (so a bound destroy builds the
+    right variables even after the deploy selector flips); ``None`` falls back to
+    the deploy-wide env selector for the provision path and non-GCP callers.
     """
-    if is_gce_range_cell_backend():
+    use_gce = backend == "gce" if backend else is_gce_range_cell_backend()
+    if use_gce:
         return _build_gce_range_cell_variables(request_id, range_id, range_spec, scenario_artifact)
     return _build_range_terraform_variables(request_id, range_id, user_id, range_spec)

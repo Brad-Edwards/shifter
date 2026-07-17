@@ -1,0 +1,264 @@
+"""Shared helpers for the canonical CTF organizer views.
+
+Constants, the actor accessor, the ownership/resolution helpers, the raise-based
+error helpers, and the organizer detail payload builders shared across the
+``ctf.api.organizer`` view modules.
+
+The resolution / ownership / validation helpers RAISE
+:class:`ctf.api._base._CtfApiError` instead of returning ``(obj, error)`` tuples,
+so each view method wraps its body in a single ``except _CtfApiError`` that
+renders the exact legacy status code and message via
+:func:`shared.api.errors.api_error_response`. Service and bridge calls are
+imported lazily inside the helpers so the existing ``patch("ctf.services...")`` /
+``patch("ctf.bridges...")`` test seams continue to intercept them at call time.
+"""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+from rest_framework import status
+from rest_framework.request import Request
+
+from ctf.api._base import _CtfApiError, ctf_actor_user
+from shared.api_tokens import scopes
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+    from typing import Any, NoReturn
+    from uuid import UUID
+
+    from django.contrib.auth.models import User
+    from rest_framework.response import Response
+
+    from ctf.models import CTFChallenge, CTFEvent, CTFParticipant
+
+_EVENT_READ = (scopes.CTF_EVENT_READ,)
+_EVENT_WRITE = (scopes.CTF_EVENT_WRITE,)
+_PLAY_READ = (scopes.CTF_PLAY_READ,)
+_PLAY_WRITE = (scopes.CTF_PLAY_WRITE,)
+_EVENT_OR_PLAY_READ = (scopes.CTF_EVENT_READ, scopes.CTF_PLAY_READ)
+_INVALID_EVENT = "Invalid event request."
+_EVENT_NOT_FOUND = "Event not found"
+_FORBIDDEN = "Forbidden"
+_CHALLENGE_NOT_FOUND = "Challenge not found"
+_INVALID_CHALLENGE = "Invalid challenge request."
+_CHALLENGE_ACTION_FAILED = "Could not process challenge action."
+_CHALLENGE_OR_PARTICIPANT_NOT_FOUND = "Challenge or participant not found."
+_NO_MORE_HINTS = "No more hints available"
+_PARTICIPANT_NOT_FOUND = "Participant not found"
+_INVALID_PARTICIPANT_REQUEST = "Invalid participant request."
+_BRACKET_NOT_FOUND = "Bracket not found"
+_RANGE_REQUEST_FAILED = "Could not process range request."
+_RECOVERY_REQUEST_FAILED = "Could not process range recovery request."
+_SPARE_POOL_REQUEST_FAILED = "Could not process spare pool request."
+_NOTIFICATION_NOT_FOUND = "Notification not found"
+_INVALID_NOTIFICATION = "Invalid notification request."
+# Sane operator-facing upper bound on a single spare-pool top-up request: large
+# enough for any real event's recovery pool, small enough to block a
+# fat-fingered or malicious request from queuing unbounded provisioning work.
+_MAX_SPARE_POOL_COUNT = 25
+
+
+def _actor(request: Request) -> User:
+    """Return the organizer actor (guaranteed non-None after permission checks)."""
+    actor = ctf_actor_user(request)
+    if actor is None:
+        # Permission classes already admitted the request, so this is defensive.
+        raise AssertionError("CTF organizer actor unavailable after permission check")
+    return actor
+
+
+def _raise_invalid_event() -> NoReturn:
+    """Raise the shared 400 envelope for an invalid event request."""
+    raise _CtfApiError(code="invalid", message=_INVALID_EVENT, status_code=status.HTTP_400_BAD_REQUEST)
+
+
+def _raise_forbidden() -> NoReturn:
+    """Raise the shared 403 envelope with the legacy ``Forbidden`` message."""
+    raise _CtfApiError(code="permission_denied", message=_FORBIDDEN, status_code=status.HTTP_403_FORBIDDEN)
+
+
+def _raise_not_found(message: str) -> NoReturn:
+    """Raise the shared 404 envelope carrying a controlled message."""
+    raise _CtfApiError(code="not_found", message=message, status_code=status.HTTP_404_NOT_FOUND)
+
+
+def _raise_bad_request(message: str) -> NoReturn:
+    """Raise the shared 400 envelope carrying a controlled message."""
+    raise _CtfApiError(code="invalid", message=message, status_code=status.HTTP_400_BAD_REQUEST)
+
+
+def _raise_throttled(message: str) -> NoReturn:
+    """Raise the shared 429 envelope carrying a controlled message."""
+    raise _CtfApiError(code="throttled", message=message, status_code=status.HTTP_429_TOO_MANY_REQUESTS)
+
+
+def _resolve_owned_event(request: Request, event_id: UUID) -> CTFEvent:
+    """Resolve an event and enforce ownership, or raise ``_CtfApiError``.
+
+    Mirrors ``ctf.views.api._common._resolve_owned_event_json``: 404 when the
+    event does not exist, 403 when the actor does not own it.
+    """
+    from ctf.exceptions import CTFNotFoundError
+    from ctf.services import get_event
+
+    try:
+        event = get_event(event_id)
+    except CTFNotFoundError:
+        _raise_not_found(_EVENT_NOT_FOUND)
+    if event.created_by_id != _actor(request).pk:
+        _raise_forbidden()
+    return event
+
+
+def _resolve_owned_challenge(request: Request, challenge_id: UUID) -> CTFChallenge:
+    """Resolve a challenge and enforce event ownership, or raise ``_CtfApiError``.
+
+    Mirrors ``ctf.views.api._common._resolve_owned_challenge_json``: 404 when the
+    challenge does not exist, 403 when the actor does not own its event.
+    """
+    from ctf.exceptions import CTFNotFoundError
+    from ctf.services import get_challenge
+
+    try:
+        challenge = get_challenge(challenge_id)
+    except CTFNotFoundError:
+        _raise_not_found(_CHALLENGE_NOT_FOUND)
+    if challenge.event.created_by_id != _actor(request).pk:
+        _raise_forbidden()
+    return challenge
+
+
+def _resolve_owned_participant(request: Request, participant_id: UUID) -> CTFParticipant:
+    """Resolve a participant and enforce event ownership, or raise ``_CtfApiError``.
+
+    Mirrors ``ctf.views._access._resolve_owned_participant``: 404 when the
+    participant does not exist, 403 when the actor does not own its event.
+    """
+    from ctf.exceptions import CTFNotFoundError
+    from ctf.services import get_participant
+
+    try:
+        participant = get_participant(participant_id)
+    except CTFNotFoundError:
+        _raise_not_found(_PARTICIPANT_NOT_FOUND)
+    if participant.event.created_by_id != _actor(request).pk:
+        _raise_forbidden()
+    return participant
+
+
+def _resolve_challenge_participant(request: Request, challenge_id: UUID) -> CTFParticipant:
+    """Resolve a challenge (404) then the actor's participant scoped to its event (403).
+
+    Mirrors ``ctf.views.api.play._resolve_challenge_participant``.
+    """
+    from ctf.exceptions import CTFNotFoundError
+    from ctf.services.challenge import get_challenge
+    from ctf.services.participant import get_participant_by_user
+
+    try:
+        challenge = get_challenge(challenge_id)
+    except CTFNotFoundError:
+        _raise_not_found(_CHALLENGE_NOT_FOUND)
+    participant = get_participant_by_user(_actor(request), event_id=challenge.event_id)
+    if not participant:
+        _raise_forbidden()
+    return participant
+
+
+def _resolve_active_participant(request: Request) -> CTFParticipant | None:
+    """Resolve the participant for the actor's active event, or ``None``.
+
+    Mirrors ``ctf.views._access._get_active_participant``: the participant is
+    scoped to ``get_user_role(actor).active_ctf_event`` rather than an unscoped
+    first-row pick, so a user enrolled in several events acts as the right one.
+    """
+    from ctf.bridges import get_user_role
+    from ctf.services.participant import get_participant_by_user
+
+    actor = ctf_actor_user(request)
+    if actor is None:
+        return None
+    role = get_user_role(actor)
+    if role.active_ctf_event is None:
+        return None
+    return get_participant_by_user(actor, event_id=role.active_ctf_event.id)
+
+
+def _delete_via_service(request: Request, action_fn: Callable[..., Any], target_id: UUID) -> Response:
+    """Run a delete-style service action, returning ``{"success": True}`` or raising an error.
+
+    Mirrors ``ctf.views.api._common._delete_via_service_response``:
+    ``CTFPermissionError`` -> 403, ``CTFNotFoundError`` -> 404,
+    ``CTFStateError`` -> 400, each raised as ``_CtfApiError`` for the caller's
+    ``except`` to render.
+    """
+    from rest_framework.response import Response
+
+    from ctf.exceptions import CTFNotFoundError, CTFPermissionError, CTFStateError
+
+    try:
+        action_fn(target_id, actor_id=_actor(request).pk)
+    except CTFPermissionError:
+        _raise_forbidden()
+    except CTFNotFoundError:
+        _raise_not_found("Resource not found.")
+    except CTFStateError:
+        _raise_bad_request("Invalid request.")
+    return Response({"success": True})
+
+
+def _challenge_detail_payload(challenge: CTFChallenge) -> dict[str, object]:
+    """Render the organizer GET-challenge JSON payload.
+
+    Mirrors ``ctf.views.api.challenges._challenge_detail_payload`` key-for-key.
+    """
+    return {
+        "id": str(challenge.id),
+        "name": challenge.name,
+        "description": challenge.description,
+        "category": challenge.category,
+        "points": challenge.points,
+        "difficulty": challenge.difficulty,
+        "flag_format": challenge.flag_format,
+        "hints": [
+            {"id": str(h.id), "text": h.text, "penalty": h.penalty, "order": h.order} for h in challenge.hints.all()
+        ],
+        "max_attempts": challenge.max_attempts,
+        "order": challenge.order,
+        "release_time": challenge.release_time.isoformat() if challenge.release_time else None,
+        "visibility": challenge.visibility,
+        "target_instance_name": challenge.target_instance_name,
+        "target_port": challenge.target_port,
+        "tags": list(challenge.tags.values_list("name", flat=True)),
+        "topics": list(challenge.topics.values_list("name", flat=True)),
+        "solution": challenge.solution,
+    }
+
+
+def _participant_detail_payload(participant: CTFParticipant) -> dict[str, object]:
+    """Render the organizer GET-participant JSON payload.
+
+    Mirrors ``ctf.views.api.participants._participant_detail_payload`` key-for-key.
+    """
+    from ctf.models import CTFSubmission
+
+    submissions = CTFSubmission.objects.filter(participant=participant)
+    correct_submissions = submissions.filter(is_correct=True)
+    return {
+        "id": str(participant.id),
+        "name": participant.name,
+        "email": participant.email,
+        "status": participant.status,
+        "team_name": participant.team.name if participant.team else None,
+        "registered_at": participant.registered_at.isoformat() if participant.registered_at else None,
+        "invited_at": participant.invited_at.isoformat() if participant.invited_at else None,
+        "last_active_at": participant.last_active_at.isoformat() if participant.last_active_at else None,
+        "total_score": participant.total_score,
+        "solved_count": correct_submissions.count(),
+        "attempt_count": submissions.count(),
+        "event_id": str(participant.event_id),
+        "bracket_id": str(participant.bracket_id) if participant.bracket_id else None,
+        "bracket_name": participant.bracket.name if participant.bracket else None,
+    }
