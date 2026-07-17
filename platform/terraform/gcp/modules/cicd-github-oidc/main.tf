@@ -5,13 +5,39 @@
 # service-account keys are issued.
 
 locals {
-  # Restrict federation to this repository's workflows only.
-  repo_principal = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.github.name}/attribute.repository/${var.github_org}/${var.github_repo}"
+  # Exact-subject WIF federation (ADR-004-R23, #1690) layered on the ADR-037-R7
+  # ref-allowlist (#1685). `federated_subjects` is the single source of truth for
+  # the exact GitHub Actions subjects trusted to impersonate the shared CI build
+  # SA: it drives BOTH the exact-subject WIF bindings below AND the static
+  # `assertion.sub ==` allow-list in the provider condition, which MUST stay in
+  # sync. Checkov CKV_GCP_125 needs a LITERAL `assertion.sub ==` and does not
+  # render `join()`, so those clauses are written out statically; the
+  # check-tf-gcp-wif-trust guard fails the build if they diverge from this list.
+  # Each subject impersonates the SA by its EXACT `sub`
+  # (principal://.../subject/<sub>), never a repository-wide principalSet, which
+  # would trust every workflow, ref, and actor in the repo. An `environment:`
+  # subject does not carry the source branch, so the ref allowlist (below) is what
+  # denies a feature-branch/tag dispatch that reuses an environment subject. The
+  # default is the current single-pool caller union; a future per-purpose pool
+  # narrows it (#1699).
+  federated_subjects = [
+    "repo:${var.github_org}/${var.github_repo}:environment:gcp-dev", # _gcp-dev.yml deploy
+    "repo:${var.github_org}/${var.github_repo}:environment:dev",     # packer-gcp build/validate (dev)
+    "repo:${var.github_org}/${var.github_repo}:environment:proof",   # packer-gcp build/validate (proof)
+    "repo:${var.github_org}/${var.github_repo}:environment:prod",    # packer-gcp-promote
+    "repo:${var.github_org}/${var.github_repo}:ref:refs/heads/dev",  # gcp-dev-destroy (no environment:)
+    "repo:${var.github_org}/${var.github_repo}:ref:refs/heads/main", # gcp-dev-destroy (no environment:)
+  ]
+  wif_subject_principals = {
+    for sub in local.federated_subjects :
+    sub => "principal://iam.googleapis.com/${google_iam_workload_identity_pool.github.name}/subject/${sub}"
+  }
 
-  # CEL condition fragment: assertion.ref must be one of the allowed protected
-  # integration branches (ADR-037-R7). Extracted as a local so the composite
-  # attribute_condition below remains readable and auditable.
-  ref_condition = join(" || ", [for r in var.allowed_workflow_refs : "assertion.ref == \"${r}\""])
+  # CEL fragment: assertion.ref must be one of the allowed protected integration
+  # branches (ADR-037-R7, #1685). Single quotes so the composite condition needs
+  # no HCL escaping and Checkov's CKV_GCP_125 `assertion.sub ==` regex still
+  # matches the static sub clauses below.
+  ref_condition = join(" || ", [for r in var.allowed_workflow_refs : "assertion.ref == '${r}'"])
 }
 
 resource "google_iam_workload_identity_pool" "github" {
@@ -22,13 +48,9 @@ resource "google_iam_workload_identity_pool" "github" {
 }
 
 resource "google_iam_workload_identity_pool_provider" "github" {
-  # CKV_GCP_125 wants an exact `assertion.sub ==` pin to a single identity
-  # (branch+workflow+env). We enforce the same security intent at the
-  # attribute_condition level by restricting assertion.ref to the protected
-  # integration branches (ADR-037-R7), which is more maintainable and still
-  # rejects tokens from any other branch or fork. The SA's principalSet binding
-  # provides the second layer; together they satisfy the spirit of CKV_GCP_125.
-  # checkov:skip=CKV_GCP_125:ref-allowlist in attribute_condition + principalSet SA binding achieves equivalent protection without locking to a single sub string; see ADR-037-R7.
+  # No CKV_GCP_125 waiver: the attribute_condition below pins an exact
+  # `assertion.sub ==` allow-list (ADR-004-R23, #1690), which satisfies the check
+  # for real - superseding the ADR-037-R7 ref-only justification for the skip.
   project                            = var.project_id
   workload_identity_pool_id          = google_iam_workload_identity_pool.github.workload_identity_pool_id
   workload_identity_pool_provider_id = "github"
@@ -40,14 +62,20 @@ resource "google_iam_workload_identity_pool_provider" "github" {
     "attribute.ref"        = "assertion.ref"
   }
 
-  # Two-layer hard gate (ADR-037-R7):
-  #   1. Repository: tokens from any other repository are rejected before the SA
-  #      binding is consulted.
-  #   2. Ref: tokens from branches outside the protected integration allowlist
-  #      (allowed_workflow_refs) are rejected at the provider. This prevents a
-  #      repository collaborator from obtaining cloud credentials by dispatching
-  #      a credentialed workflow against a mutable feature branch.
-  attribute_condition = "assertion.repository == \"${var.github_org}/${var.github_repo}\" && (${local.ref_condition})"
+  # Three-layer external trust boundary; a token is accepted only when ALL hold:
+  #   1. Repository (ADR-037-R7): tokens from any other repository are rejected
+  #      before the SA binding is consulted.
+  #   2. Ref (ADR-037-R7, #1685): the source ref must be in allowed_workflow_refs
+  #      (the protected integration branches), via local.ref_condition. An
+  #      `environment:` subject does not carry the branch, so THIS layer is what
+  #      denies a feature-branch/tag dispatch that reuses an environment subject.
+  #   3. Subject (ADR-004-R23, #1690): assertion.sub must be one of the exact
+  #      allow-listed subjects. These clauses are written out statically (Checkov
+  #      cannot render join()) and MUST equal local.federated_subjects
+  #      (check-tf-gcp-wif-trust enforces it). Single-quoted CEL literals so the
+  #      HCL string needs no escaping and the exact `assertion.sub ==` pin
+  #      satisfies CKV_GCP_125 - no waiver needed.
+  attribute_condition = "assertion.repository == '${var.github_org}/${var.github_repo}' && (${local.ref_condition}) && (assertion.sub == 'repo:${var.github_org}/${var.github_repo}:environment:gcp-dev' || assertion.sub == 'repo:${var.github_org}/${var.github_repo}:environment:dev' || assertion.sub == 'repo:${var.github_org}/${var.github_repo}:environment:proof' || assertion.sub == 'repo:${var.github_org}/${var.github_repo}:environment:prod' || assertion.sub == 'repo:${var.github_org}/${var.github_repo}:ref:refs/heads/dev' || assertion.sub == 'repo:${var.github_org}/${var.github_repo}:ref:refs/heads/main')"
 
   oidc {
     issuer_uri = "https://token.actions.githubusercontent.com"
@@ -60,11 +88,14 @@ resource "google_service_account" "packer_build" {
   display_name = "Shifter ${var.environment} packer GCE image builder"
 }
 
-# Allow the repo's workflows to impersonate the build SA via the pool.
+# Allow only the exact allow-listed GitHub Actions subjects to impersonate the
+# build SA via the pool - one binding per subject, never a repository-wide
+# principalSet (ADR-004-R23, #1690).
 resource "google_service_account_iam_member" "packer_build_wif" {
+  for_each           = local.wif_subject_principals
   service_account_id = google_service_account.packer_build.name
   role               = "roles/iam.workloadIdentityUser"
-  member             = local.repo_principal
+  member             = each.value
 }
 
 # The builder VM runs as this same service account, so the build SA needs

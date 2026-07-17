@@ -344,6 +344,16 @@ jobs:
         run: |
           python3 scripts/check_tf_gcp_runner_network/check_tf_gcp_runner_network.py
 
+      # ADR-004-R23 / issue #1690: the GCP GitHub-Actions WIF trust must pin an
+      # exact protected assertion.ref + literal assertion.sub allow-list (no
+      # repository-only condition, no repository-wide principalSet, no CKV_GCP_125
+      # waiver), with the static condition consistent with local.federated_subjects.
+      # Mirrors the check-tf-gcp-wif-trust pre-commit hook so a commit that skipped
+      # pre-commit cannot re-widen the credentialed-CI federation.
+      - name: Run check-tf-gcp-wif-trust
+        run: |
+          python3 scripts/check_tf_gcp_wif_trust/check_tf_gcp_wif_trust.py
+
       # Issue #1178: the shared range guest instance role must not grant SSM
       # Parameter Store access on a Resource that wildcards the environment or
       # range segment (parameter/shifter/*/range/*). Mirrors the
@@ -417,6 +427,7 @@ jobs:
           python3 -m unittest scripts.check_tf_runner_network.test_check_tf_runner_network
           python3 -m unittest scripts.check_tf_gcp_runner_network.test_check_tf_gcp_runner_network
           python3 -m unittest scripts.check_tf_gcp_iam_resource_scope.test_check_tf_gcp_iam_resource_scope
+          python3 -m unittest scripts.check_tf_gcp_wif_trust.test_check_tf_gcp_wif_trust
 
   # ===========================================================================
   # Terraform root validation (issue #1528)
