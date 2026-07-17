@@ -42,7 +42,13 @@ jobs:
     name: Detect quality paths
     runs-on: ubuntu-latest
     outputs:
-      run_all: ${{ steps.detect.outputs.run_all }}
+      # run_all folds in the independent guard_selfcheck sentinel (a
+      # workflow-owned expression the PR's classifier cannot influence): any
+      # change to the ownership contract / classifier / guard forces the FULL
+      # matrix, so a tampered classifier cannot emit run_all=false to skip the
+      # production lint / SAST / test jobs that would inspect its own payload
+      # (#1530, ADR-004-R24 self-bypass prevention).
+      run_all: ${{ steps.detect.outputs.run_all == 'true' || steps.selfcheck.outputs.guard_selfcheck == 'true' }}
       run_sonar: ${{ steps.detect.outputs.run_sonar }}
       ci_workflows: ${{ steps.detect.outputs.ci_workflows }}
       shifter_platform: ${{ steps.detect.outputs.shifter_platform }}
@@ -64,10 +70,21 @@ jobs:
       mcp_planner: ${{ steps.detect.outputs.mcp_planner }}
       mcp_shared: ${{ steps.detect.outputs.mcp_shared }}
       adr_guard: ${{ steps.detect.outputs.adr_guard }}
+      # Independent of the classifier (steps.selfcheck, not steps.detect): forces
+      # the guard's own verification to run on any contract/classifier/guard-file
+      # change so it cannot self-bypass (#1530, ADR-004-R24).
+      guard_selfcheck: ${{ steps.selfcheck.outputs.guard_selfcheck }}
       ctfd_workshop: ${{ steps.detect.outputs.ctfd_workshop }}
       polaris_aws_range: ${{ steps.detect.outputs.polaris_aws_range }}
       polaris_tests: ${{ steps.detect.outputs.polaris_tests }}
       stack_smoke: ${{ steps.detect.outputs.stack_smoke }}
+      # Build / deployment / runtime image owners (#1530). Reserved routing
+      # outputs: no blocking job consumes them yet (gaps tracked by #1698), but
+      # they are declared so the contract and workflow stay in sync.
+      container_images: ${{ steps.detect.outputs.container_images }}
+      charts: ${{ steps.detect.outputs.charts }}
+      cloudformation: ${{ steps.detect.outputs.cloudformation }}
+      branding_assets: ${{ steps.detect.outputs.branding_assets }}
       mcp_lint_any: ${{ steps.detect.outputs.mcp_lint_any }}
       mcp_test_any: ${{ steps.detect.outputs.mcp_test_any }}
       mcp_lint_packages: ${{ steps.detect.outputs.mcp_lint_packages }}
@@ -87,102 +104,47 @@ jobs:
           DIFF_HEAD_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          uv run --python 3.11 --with 'pyyaml==6.0.2' python3 <<'PY'
-          import fnmatch
-          import json
-          import os
-          import subprocess
-          from pathlib import Path
+          # Fail-closed changed-path classification (#1530). The helper
+          # validates the .github/quality-path-filters.yaml quality-ownership
+          # contract and REJECTS an unclassified changed path before emitting
+          # any job-selection output, so an unowned path can no longer slip
+          # through with an empty matrix. It emits the same GITHUB_OUTPUT keys
+          # the downstream jobs consume. Ownership completeness and routing
+          # reachability of this contract are enforced by the
+          # `quality-path-ownership` adr_guard check.
+          uv run --python 3.11 --with 'pyyaml==6.0.2' \
+            python3 scripts/quality_ownership/classify_paths.py
 
-          import yaml
-
-          CONFIG = Path(".github/quality-path-filters.yaml")
-          SONAR_CATEGORIES = {
-              "shifter_platform",
-              "provisioner",
-              "packer",
-              "bootstrap",
-              "check_layer_imports",
-              "installation",
-              "mcp_ngfw",
-              "mcp_ops",
-              "mcp_planner",
-              "mcp_shared",
-          }
-          MCP_LINT_PACKAGES = ["ngfw", "ops", "planner", "shared"]
-          MCP_TEST_PACKAGES = ["ngfw", "ops", "planner"]
-
-          def matches(path: str, pattern: str) -> bool:
-              if pattern.endswith("/**"):
-                  prefix = pattern[:-3].rstrip("/")
-                  return path == prefix or path.startswith(prefix + "/")
-              return fnmatch.fnmatchcase(path, pattern)
-
-          def load_filters() -> dict[str, list[str]]:
-              with CONFIG.open(encoding="utf-8") as handle:
-                  data = yaml.safe_load(handle)
-              return {name: list(globs) for name, globs in data.items()}
-
-          def changed_files() -> list[str] | None:
-              if os.environ.get("RUN_FULL_MATRIX", "false").lower() == "true":
-                  return None
-              head = os.environ.get("DIFF_HEAD_SHA") or os.environ.get("GITHUB_SHA", "")
-              base = os.environ.get("DIFF_BASE_SHA", "")
-              if base and base != ("0" * 40):
-                  cmd = ["git", "diff", "--name-only", f"{base}...{head}"]
-              else:
-                  cmd = ["git", "diff", "--name-only", "HEAD~1", "HEAD"]
-              out = subprocess.check_output(cmd, text=True)
-              return [line.strip() for line in out.splitlines() if line.strip()]
-
-          filters = load_filters()
-          files = changed_files()
-          outputs: dict[str, str] = {}
-
-          if files is None:
-              run_all = "true"
-              for name in filters:
-                  outputs[name] = "true"
-          else:
-              for name, globs in filters.items():
-                  hit = any(
-                      matches(path, glob)
-                      for path in files
-                      for glob in globs
-                  )
-                  outputs[name] = "true" if hit else "false"
-              run_all = "true" if outputs.get("ci_workflows") == "true" else "false"
-
-          outputs["run_all"] = run_all
-          outputs["run_sonar"] = (
-              "true"
-              if run_all == "true"
-              or any(outputs.get(name) == "true" for name in SONAR_CATEGORIES)
-              else "false"
-          )
-
-          if run_all == "true" or outputs.get("mcp_shared") == "true":
-              lint_packages = list(MCP_LINT_PACKAGES)
-              test_packages = list(MCP_TEST_PACKAGES)
-          else:
-              lint_packages = [
-                  pkg
-                  for pkg in MCP_LINT_PACKAGES
-                  if outputs.get(f"mcp_{pkg}") == "true"
-              ]
-              test_packages = [
-                  pkg for pkg in MCP_TEST_PACKAGES if pkg in lint_packages
-              ]
-          outputs["mcp_lint_any"] = "true" if lint_packages else "false"
-          outputs["mcp_test_any"] = "true" if test_packages else "false"
-          outputs["mcp_lint_packages"] = json.dumps(lint_packages)
-          outputs["mcp_test_packages"] = json.dumps(test_packages)
-
-          github_output = Path(os.environ["GITHUB_OUTPUT"])
-          with github_output.open("a", encoding="utf-8") as handle:
-              for key, value in outputs.items():
-                  handle.write(f"{key}={value}\n")
-          PY
+      - name: Detect quality-guard changes (independent of the classifier)
+        id: selfcheck
+        env:
+          DIFF_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before || '' }}
+          DIFF_HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          # Self-bypass prevention (#1530, ADR-004-R24). This detection is
+          # deliberately NOT sourced from scripts/quality_ownership/classify_paths.py:
+          # it is a plain git diff in the workflow itself, so a PR that modifies
+          # the classifier, the contract module, or the contract file to emit
+          # adr_guard=false / run_all=false cannot suppress the very jobs that
+          # verify those files. adr-conformance and adr-guard-tests OR this
+          # output into their gate.
+          base="${DIFF_BASE_SHA}"
+          head="${DIFF_HEAD_SHA:-$GITHUB_SHA}"
+          if [ -n "${base}" ] && [ "${base}" != "0000000000000000000000000000000000000000" ]; then
+            changed="$(git diff --name-only "${base}...${head}")"
+          else
+            changed="$(git diff --name-only HEAD~1 HEAD)"
+          fi
+          selfcheck=false
+          while IFS= read -r file; do
+            case "${file}" in
+              .github/quality-path-filters.yaml | scripts/quality_ownership/* | scripts/adr_guard/*)
+                selfcheck=true
+                ;;
+            esac
+          done <<< "${changed}"
+          echo "guard_selfcheck=${selfcheck}" >> "${GITHUB_OUTPUT}"
 
   # ===========================================================================
   # Linting
@@ -193,7 +155,9 @@ jobs:
       contents: read
     name: Architecture (adr conformance)
     needs: [paths]
-    if: ${{ (needs.paths.outputs.run_all == 'true' || needs.paths.outputs.adr_guard == 'true') }}
+    # guard_selfcheck is an independent (non-classifier) trigger so a contract or
+    # classifier edit cannot suppress its own conformance run (#1530).
+    if: ${{ (needs.paths.outputs.run_all == 'true' || needs.paths.outputs.adr_guard == 'true' || needs.paths.outputs.guard_selfcheck == 'true') }}
     runs-on: ubuntu-latest
     steps:
       # fetch-depth: 0 fetches base-branch history so git-reference guards
@@ -1884,7 +1848,9 @@ jobs:
       contents: read
     name: Tests (adr_guard)
     needs: [paths, adr-conformance]
-    if: ${{ !inputs.skip_tests && ((needs.paths.outputs.run_all == 'true' || needs.paths.outputs.adr_guard == 'true')) }}
+    # guard_selfcheck (independent of the classifier) forces the guard's own
+    # tests to run on any contract/classifier/guard-file change (#1530).
+    if: ${{ !inputs.skip_tests && ((needs.paths.outputs.run_all == 'true' || needs.paths.outputs.adr_guard == 'true' || needs.paths.outputs.guard_selfcheck == 'true')) }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
