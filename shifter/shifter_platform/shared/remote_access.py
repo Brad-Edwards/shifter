@@ -100,10 +100,24 @@ class OpenVpnProfile:
 
 
 def _require_uuid(value: object, field: str) -> UUID:
+    """Parse a UUID field or reject the payload."""
     try:
         return UUID(str(value))
     except (TypeError, ValueError, AttributeError) as exc:
         raise OpenVpnBindingError(f"{field} must be a UUID") from exc
+
+
+def _require_exact_keys(value: object, expected: set[str], label: str) -> dict[str, object]:
+    """Require a dict with exactly the expected keys; reject extensions."""
+    if not isinstance(value, dict):
+        raise OpenVpnBindingError(f"{label} must be an object")
+    keys = set(value)
+    if keys != expected:
+        unknown = sorted(keys - expected)
+        missing = sorted(expected - keys)
+        detail = f"unknown fields {unknown}" if unknown else f"missing fields {missing}"
+        raise OpenVpnBindingError(f"{label} has {detail}")
+    return value
 
 
 def _require_utc_datetime(value: object, field: str) -> datetime:
@@ -121,14 +135,7 @@ def _require_utc_datetime(value: object, field: str) -> datetime:
 
 def parse_openvpn_capability(value: object) -> OpenVpnCapability:
     """Parse the exact server-issued provisioning authorization shape."""
-    if not isinstance(value, dict):
-        raise OpenVpnBindingError("capability must be an object")
-    keys = set(value)
-    if keys != _CAPABILITY_KEYS:
-        unknown = sorted(keys - _CAPABILITY_KEYS)
-        missing = sorted(_CAPABILITY_KEYS - keys)
-        detail = f"unknown fields {unknown}" if unknown else f"missing fields {missing}"
-        raise OpenVpnBindingError(f"capability has {detail}")
+    value = _require_exact_keys(value, _CAPABILITY_KEYS, "capability")
     if value["version"] != OPENVPN_CAPABILITY_VERSION:
         raise OpenVpnBindingError("unsupported capability version")
     if value["channel"] != "openvpn":
@@ -169,66 +176,134 @@ def validate_openvpn_capability_window(
         )
 
 
-def parse_openvpn_binding(value: object) -> OpenVpnBinding:
-    """Parse the exact non-secret OpenVPN binding shape; reject extensions."""
-    if not isinstance(value, dict):
-        raise OpenVpnBindingError("binding must be an object")
-    keys = set(value)
-    if keys != _BINDING_KEYS:
-        unknown = sorted(keys - _BINDING_KEYS)
-        missing = sorted(_BINDING_KEYS - keys)
-        detail = f"unknown fields {unknown}" if unknown else f"missing fields {missing}"
-        raise OpenVpnBindingError(f"binding has {detail}")
+def _require_owner_user_id(value: object) -> int:
+    """Require a positive integer owner id."""
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        raise OpenVpnBindingError("owner_user_id must be a positive integer")
+    return value
+
+
+def _require_port(value: object) -> int:
+    """Require a valid TCP/UDP port number."""
+    if isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= 65535:
+        raise OpenVpnBindingError("port must be between 1 and 65535")
+    return value
+
+
+def _require_ready(value: object) -> bool:
+    """Require a boolean readiness flag."""
+    if not isinstance(value, bool):
+        raise OpenVpnBindingError("ready must be a boolean")
+    return value
+
+
+def _require_endpoint(value: object) -> str:
+    """Require a bounded hostname or address endpoint."""
+    if not isinstance(value, str) or not _HOST_RE.fullmatch(value):
+        raise OpenVpnBindingError("endpoint must be a bounded hostname or address")
+    return value
+
+
+def _require_secret_ref(value: object) -> str:
+    """Require a bounded single-line provider secret reference."""
+    if (
+        not isinstance(value, str)
+        or not value
+        or len(value) > 500
+        or value != value.strip()
+        or "\n" in value
+        or "\r" in value
+    ):
+        raise OpenVpnBindingError("secret_ref must be a bounded single-line provider reference")
+    return value
+
+
+def _require_binding_versions(value: dict[str, object]) -> None:
+    """Reject bindings whose version, channel, or profile version differ."""
     if value["version"] != OPENVPN_BINDING_VERSION:
         raise OpenVpnBindingError("unsupported binding version")
     if value["channel"] != "openvpn":
         raise OpenVpnBindingError("channel must be openvpn")
     if value["profile_version"] != OPENVPN_PROFILE_VERSION:
         raise OpenVpnBindingError("unsupported profile_version")
-    if isinstance(value["owner_user_id"], bool) or not isinstance(value["owner_user_id"], int):
-        raise OpenVpnBindingError("owner_user_id must be a positive integer")
-    if value["owner_user_id"] <= 0:
-        raise OpenVpnBindingError("owner_user_id must be a positive integer")
-    if isinstance(value["port"], bool) or not isinstance(value["port"], int) or not 1 <= value["port"] <= 65535:
-        raise OpenVpnBindingError("port must be between 1 and 65535")
-    if not isinstance(value["ready"], bool):
-        raise OpenVpnBindingError("ready must be a boolean")
-    endpoint = value["endpoint"]
-    if not isinstance(endpoint, str) or not _HOST_RE.fullmatch(endpoint):
-        raise OpenVpnBindingError("endpoint must be a bounded hostname or address")
-    secret_ref = value["secret_ref"]
-    if (
-        not isinstance(secret_ref, str)
-        or not secret_ref
-        or len(secret_ref) > 500
-        or secret_ref != secret_ref.strip()
-        or "\n" in secret_ref
-        or "\r" in secret_ref
-    ):
-        raise OpenVpnBindingError("secret_ref must be a bounded single-line provider reference")
+
+
+def parse_openvpn_binding(value: object) -> OpenVpnBinding:
+    """Parse the exact non-secret OpenVPN binding shape; reject extensions."""
+    value = _require_exact_keys(value, _BINDING_KEYS, "binding")
+    _require_binding_versions(value)
     return OpenVpnBinding(
         generation=_require_uuid(value["generation"], "generation"),
-        owner_user_id=value["owner_user_id"],
+        owner_user_id=_require_owner_user_id(value["owner_user_id"]),
         target_ref=_require_uuid(value["target_ref"], "target_ref"),
-        endpoint=endpoint,
-        port=value["port"],
-        secret_ref=secret_ref,
-        ready=value["ready"],
+        endpoint=_require_endpoint(value["endpoint"]),
+        port=_require_port(value["port"]),
+        secret_ref=_require_secret_ref(value["secret_ref"]),
+        ready=_require_ready(value["ready"]),
     )
 
 
-def _validate_directive(parts: list[str], binding: OpenVpnBinding) -> None:
-    name = parts[0]
-    if name in _NO_ARGUMENT_DIRECTIVES and len(parts) == 1:
-        return
-    allowed = _ONE_ARGUMENT_DIRECTIVES.get(name)
-    if allowed is not None and len(parts) == 2 and parts[1] in allowed:
-        return
-    if name == "remote" and parts == ["remote", binding.endpoint, str(binding.port)]:
-        return
-    if name == "data-ciphers" and parts == ["data-ciphers", "AES-256-GCM:AES-128-GCM"]:
-        return
-    raise OpenVpnBindingError(f"profile contains forbidden or malformed directive {name!r}")
+def _allowed_directive_forms(binding: OpenVpnBinding) -> dict[str, set[tuple[str, ...]]]:
+    """Closed map of directive name to the argument tuples allowed for it."""
+    forms: dict[str, set[tuple[str, ...]]] = {name: {()} for name in _NO_ARGUMENT_DIRECTIVES}
+    forms.update(
+        {name: {(argument,) for argument in arguments} for name, arguments in _ONE_ARGUMENT_DIRECTIVES.items()}
+    )
+    forms["remote"] = {(binding.endpoint, str(binding.port))}
+    forms["data-ciphers"] = {("AES-256-GCM:AES-128-GCM",)}
+    return forms
+
+
+def _validate_directive(parts: list[str], allowed_forms: dict[str, set[tuple[str, ...]]]) -> None:
+    """Reject any directive outside the closed allow-list for this binding."""
+    allowed = allowed_forms.get(parts[0])
+    if allowed is None or tuple(parts[1:]) not in allowed:
+        raise OpenVpnBindingError(f"profile contains forbidden or malformed directive {parts[0]!r}")
+
+
+def _consume_block_line(line: str, open_block: str, seen_blocks: set[str]) -> str | None:
+    """Advance the inline-block state machine while inside an open block."""
+    if line == f"</{open_block}>":
+        seen_blocks.add(open_block)
+        return None
+    if line.startswith("<"):
+        raise OpenVpnBindingError("profile contains a malformed inline credential block")
+    return open_block
+
+
+def _opened_block(line: str, seen_blocks: set[str]) -> str | None:
+    """Return the block name when the line opens a new inline credential block."""
+    if not (line.startswith("<") and line.endswith(">") and not line.startswith("</")):
+        return None
+    block = line[1:-1]
+    if block not in _INLINE_BLOCKS or block in seen_blocks:
+        raise OpenVpnBindingError("profile contains an unsupported inline credential block")
+    return block
+
+
+def _scan_profile(profile: str, binding: OpenVpnBinding) -> tuple[set[str], set[str]]:
+    """Walk profile lines; return the inline blocks and directive names seen."""
+    allowed_forms = _allowed_directive_forms(binding)
+    open_block: str | None = None
+    seen_blocks: set[str] = set()
+    seen_directives: set[str] = set()
+    for raw_line in profile.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        if open_block is not None:
+            open_block = _consume_block_line(line, open_block, seen_blocks)
+            continue
+        opened = _opened_block(line, seen_blocks)
+        if opened is not None:
+            open_block = opened
+            continue
+        parts = line.split()
+        _validate_directive(parts, allowed_forms)
+        seen_directives.add(parts[0])
+    if open_block is not None:
+        raise OpenVpnBindingError("profile has an unterminated inline credential block")
+    return seen_blocks, seen_directives
 
 
 def validate_openvpn_profile(profile: str, binding: OpenVpnBinding) -> bytes:
@@ -238,32 +313,7 @@ def validate_openvpn_profile(profile: str, binding: OpenVpnBinding) -> bytes:
     encoded = profile.encode("utf-8")
     if len(encoded) > OPENVPN_PROFILE_MAX_BYTES:
         raise OpenVpnBindingError("profile exceeds the maximum size")
-
-    open_block: str | None = None
-    seen_blocks: set[str] = set()
-    seen_directives: set[str] = set()
-    for raw_line in profile.splitlines():
-        line = raw_line.strip()
-        if not line:
-            continue
-        if open_block is not None:
-            if line == f"</{open_block}>":
-                seen_blocks.add(open_block)
-                open_block = None
-            elif line.startswith("<"):
-                raise OpenVpnBindingError("profile contains a malformed inline credential block")
-            continue
-        if line.startswith("<") and line.endswith(">") and not line.startswith("</"):
-            block = line[1:-1]
-            if block not in _INLINE_BLOCKS or block in seen_blocks:
-                raise OpenVpnBindingError("profile contains an unsupported inline credential block")
-            open_block = block
-            continue
-        parts = line.split()
-        _validate_directive(parts, binding)
-        seen_directives.add(parts[0])
-    if open_block is not None:
-        raise OpenVpnBindingError("profile has an unterminated inline credential block")
+    seen_blocks, seen_directives = _scan_profile(profile, binding)
     required_directives = {"client", "dev", "proto", "remote", "nobind", "remote-cert-tls", "auth-nocache"}
     if not required_directives.issubset(seen_directives) or seen_blocks != _INLINE_BLOCKS:
         raise OpenVpnBindingError("profile is missing required directives or inline credentials")

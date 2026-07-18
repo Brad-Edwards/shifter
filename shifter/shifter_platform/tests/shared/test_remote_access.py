@@ -25,8 +25,10 @@ def test_capability_builder_binds_one_target_to_a_bounded_teardown_deadline():
 
 
 def test_capability_builder_rejects_an_unbounded_credential_window():
+    target = uuid4()
+    unbounded_teardown = datetime.now(UTC) + timedelta(days=398)
     with pytest.raises(OpenVpnBindingError, match="397-day maximum"):
-        build_openvpn_capability(uuid4(), datetime.now(UTC) + timedelta(days=398))
+        build_openvpn_capability(target, unbounded_teardown)
 
 
 def _binding(**overrides):
@@ -82,8 +84,9 @@ def test_binding_parser_accepts_only_the_closed_generation_bound_shape():
     ],
 )
 def test_binding_parser_rejects_open_or_unsafe_shapes(overrides, match):
+    value = _binding(**overrides)
     with pytest.raises(OpenVpnBindingError, match=match):
-        parse_openvpn_binding(_binding(**overrides))
+        parse_openvpn_binding(value)
 
 
 def test_profile_validator_accepts_a_bounded_inline_credential_for_the_binding():
@@ -104,11 +107,13 @@ def test_profile_validator_accepts_a_bounded_inline_credential_for_the_binding()
 )
 def test_profile_validator_rejects_client_code_execution_and_route_expansion(unsafe_line):
     binding = parse_openvpn_binding(_binding())
+    profile = _profile() + f"{unsafe_line}\n"
     with pytest.raises(OpenVpnBindingError, match="directive"):
-        validate_openvpn_profile(_profile() + f"{unsafe_line}\n", binding)
+        validate_openvpn_profile(profile, binding)
 
 
 def test_profile_validator_rejects_an_endpoint_that_does_not_match_the_binding():
     binding = parse_openvpn_binding(_binding())
+    profile = _profile(endpoint="other.example.test")
     with pytest.raises(OpenVpnBindingError, match="remote"):
-        validate_openvpn_profile(_profile(endpoint="other.example.test"), binding)
+        validate_openvpn_profile(profile, binding)

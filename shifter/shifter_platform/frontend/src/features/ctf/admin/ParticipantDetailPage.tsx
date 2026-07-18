@@ -1,15 +1,8 @@
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
-import {
-  useAssignCtfBracket,
-  useCtfEventRanges,
-  useCtfOrganizerScoreboard,
-  useCtfParticipant,
-  useCtfParticipantRangeAction,
-  useResendCtfInvite,
-  type CtfRangeAction,
-} from "@/api/ctf";
+import { useCtfOrganizerScoreboard } from "@/api/ctf";
+import { useAssignCtfBracket, useCtfEventRanges, useCtfParticipant, useCtfParticipantRangeAction, useResendCtfInvite, type CtfRangeAction } from "@/api/ctfAdmin";
 import { describeMutationError } from "@/api/errors";
 import type { CtfOrganizerParticipantDetail } from "@/api/types";
 import { PageHeader } from "@/components/page-header";

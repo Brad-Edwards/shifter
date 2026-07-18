@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Callable
 from contextlib import suppress
 from typing import Protocol
 from uuid import UUID
@@ -19,6 +20,8 @@ from vpn_access import VpnSecretOps
 
 
 class _AWSSecretsClient(Protocol):
+    """Subset of the boto3 Secrets Manager client used by the adapter."""
+
     def get_secret_value(self, **kwargs: object) -> dict[str, object]: ...
 
     def create_secret(self, **kwargs: object) -> dict[str, object]: ...
@@ -31,6 +34,7 @@ class _AWSSecretsClient(Protocol):
 
 
 def _aws_secret_names(range_id: int, generation: UUID) -> dict[str, str]:
+    """Return the deterministic AWS secret names for one range generation."""
     environment = os.environ.get("ENVIRONMENT", "dev").strip() or "dev"
     base = f"shifter/{environment}/range/{range_id}/vpn-{generation}"
     return {
@@ -83,7 +87,7 @@ class AWSVpnSecretOps(VpnSecretOps):
         described = self._client.describe_secret(SecretId=name)
         return str(described.get("ARN") or name)
 
-    def read_or_create_issuer(self, range_id: int, generation: UUID, payload_factory) -> str:
+    def read_or_create_issuer(self, range_id: int, generation: UUID, payload_factory: Callable[[], str]) -> str:
         name = _aws_secret_names(range_id, generation)["issuer"]
         try:
             response = self._client.get_secret_value(SecretId=name)
@@ -121,11 +125,15 @@ class AWSVpnSecretOps(VpnSecretOps):
 
 
 class _GCPExceptions(Protocol):
+    """Subset of google.api_core.exceptions used by the adapter."""
+
     NotFound: type[Exception]
     AlreadyExists: type[Exception]
 
 
 class _GCPSecretsClient(Protocol):
+    """Subset of the GCP Secret Manager client used by the adapter."""
+
     def access_secret_version(self, *, request: dict[str, object]) -> _GCPAccessResponse: ...
 
     def create_secret(self, *, request: dict[str, object]) -> object: ...
@@ -138,20 +146,27 @@ class _GCPSecretsClient(Protocol):
 
 
 class _GCPIamClient(Protocol):
+    """Subset of the GCP IAM admin client used by the adapter."""
+
     def create_service_account(self, *, request: dict[str, object]) -> object: ...
 
     def delete_service_account(self, *, request: dict[str, object]) -> object: ...
 
 
 class _GCPPayload(Protocol):
+    """Secret version payload shape returned by the GCP client."""
+
     data: bytes
 
 
 class _GCPAccessResponse(Protocol):
+    """access_secret_version response shape returned by the GCP client."""
+
     payload: _GCPPayload
 
 
 def _gcp_secret_ids(range_id: int, generation: UUID) -> dict[str, str]:
+    """Return the deterministic GCP secret ids for one range generation."""
     suffix = str(generation).replace("-", "")
     return {kind: f"shifter-range-{range_id}-vpn-{suffix}-{kind}" for kind in ("issuer", "server", "profile")}
 
@@ -230,7 +245,7 @@ class GCPVpnSecretOps(VpnSecretOps):
             )
         return name
 
-    def read_or_create_issuer(self, range_id: int, generation: UUID, payload_factory) -> str:
+    def read_or_create_issuer(self, range_id: int, generation: UUID, payload_factory: Callable[[], str]) -> str:
         secret_id = _gcp_secret_ids(range_id, generation)["issuer"]
         name = self._name(secret_id)
         try:
@@ -274,6 +289,47 @@ def get_vpn_secret_ops() -> VpnSecretOps:
     raise RuntimeError("The selected provider does not support OpenVPN secrets")
 
 
+def _env(name: str, default: str = "") -> str:
+    """Return a stripped environment value."""
+    return os.environ.get(name, default).strip()
+
+
+def _portal_cidrs_configured() -> bool:
+    """Return whether portal-side network CIDRs are declared."""
+    return bool(_env("PORTAL_NETWORK_CIDRS") or _env("PORTAL_VPC_CIDR"))
+
+
+def _aws_openvpn_prerequisites() -> bool:
+    """Return whether the AWS substrate for the VPN gateway is configured."""
+    return bool(
+        _env("RANGE_VPN_EDGE_SUBNET_ID")
+        and _env("RANGE_VPN_GATEWAY_PERMISSIONS_BOUNDARY_ARN")
+        and _env("RANGE_VPN_PROVIDER_ENDPOINT_SECURITY_GROUP_ID")
+        and _portal_cidrs_configured()
+    )
+
+
+def _gcp_openvpn_prerequisites() -> bool:
+    """Return whether the GCE range-cell substrate for the VPN gateway is configured."""
+    scopes = {
+        value.strip()
+        for value in os.environ.get(
+            "GCP_RANGE_HOST_SERVICE_ACCOUNT_SCOPES",
+            "https://www.googleapis.com/auth/cloud-platform",
+        ).split(",")
+        if value.strip()
+    }
+    return bool(
+        is_gce_range_cell_backend()
+        and _env("GCP_RANGE_CELL_NETWORK_MODE", "shared-vpc").lower() == "shared-vpc"
+        and _env("GCP_RANGE_PRIVATE_GOOGLE_ACCESS").lower() in {"1", "true", "yes", "on"}
+        and _env("GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL")
+        and _env("GCP_RANGE_LINUX_IMAGE")
+        and _portal_cidrs_configured()
+        and "https://www.googleapis.com/auth/cloud-platform" in scopes
+    )
+
+
 def openvpn_access_enabled() -> bool:
     """Return whether this installation has the selected adapter prerequisites.
 
@@ -285,30 +341,9 @@ def openvpn_access_enabled() -> bool:
     """
     provider = resolve_cloud_provider()
     if provider == "aws":
-        return bool(
-            os.environ.get("RANGE_VPN_EDGE_SUBNET_ID", "").strip()
-            and os.environ.get("RANGE_VPN_GATEWAY_PERMISSIONS_BOUNDARY_ARN", "").strip()
-            and os.environ.get("RANGE_VPN_PROVIDER_ENDPOINT_SECURITY_GROUP_ID", "").strip()
-            and (os.environ.get("PORTAL_NETWORK_CIDRS", "").strip() or os.environ.get("PORTAL_VPC_CIDR", "").strip())
-        )
+        return _aws_openvpn_prerequisites()
     if provider == "gcp":
-        scopes = {
-            value.strip()
-            for value in os.environ.get(
-                "GCP_RANGE_HOST_SERVICE_ACCOUNT_SCOPES",
-                "https://www.googleapis.com/auth/cloud-platform",
-            ).split(",")
-            if value.strip()
-        }
-        return bool(
-            is_gce_range_cell_backend()
-            and os.environ.get("GCP_RANGE_CELL_NETWORK_MODE", "shared-vpc").strip().lower() == "shared-vpc"
-            and os.environ.get("GCP_RANGE_PRIVATE_GOOGLE_ACCESS", "").strip().lower() in {"1", "true", "yes", "on"}
-            and os.environ.get("GCP_RANGE_HOST_SERVICE_ACCOUNT_EMAIL", "").strip()
-            and os.environ.get("GCP_RANGE_LINUX_IMAGE", "").strip()
-            and (os.environ.get("PORTAL_NETWORK_CIDRS", "").strip() or os.environ.get("PORTAL_VPC_CIDR", "").strip())
-            and "https://www.googleapis.com/auth/cloud-platform" in scopes
-        )
+        return _gcp_openvpn_prerequisites()
     return False
 
 

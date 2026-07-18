@@ -12,7 +12,11 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from datetime import datetime
+
     from django.contrib.auth.models import User
+
+    from shared.remote_access import OpenVpnProfile
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +62,13 @@ class RangeProvisionResult:
     request_id: Any  # UUID
 
 
-def cms_create_range(user, scenario, agents_by_os, ngfw_enabled, remote_access_teardown_at) -> RangeProvisionResult:
+def cms_create_range(
+    user: User,
+    scenario: str,
+    agents_by_os: dict[str, int],
+    ngfw_enabled: bool,
+    remote_access_teardown_at: datetime | None,
+) -> RangeProvisionResult:
     """Create a CTF range via CMS.
 
     Passes range_source=RangeSource.CTF so the CMS admission check is scoped
@@ -122,7 +132,7 @@ def cms_get_range_spec(range_instance_id: int) -> dict | None:
     return cms_services.get_range_spec_by_id(range_instance_id)
 
 
-def cms_get_openvpn_profile(user: User, range_instance_id: int):
+def cms_get_openvpn_profile(user: User, range_instance_id: int) -> OpenVpnProfile:
     """Resolve a participant profile through the public CMS service boundary."""
     import cms.services as cms_services
     from ctf.exceptions import CTFNotFoundError, CTFRangeError, CTFStateError

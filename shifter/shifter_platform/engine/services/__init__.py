@@ -33,14 +33,16 @@ from ._lifecycle import pause_range, resume_range
 from ._ngfw import create_ngfw, destroy_ngfw, start_ngfw, stop_ngfw
 from ._queries import get_authoritative_range_status, get_ranges_for_ngfw, get_user_ready_range_instances
 from ._range import (
-    RangeOwnershipTransferBlocked,
     cancel_range,
-    cancel_range_by_request,
     create_range,
     destroy_range,
-    destroy_range_by_request,
     get_instance_ips_by_uuid,
     get_range_status,
+)
+from ._range_by_request import (
+    RangeOwnershipTransferBlocked,
+    cancel_range_by_request,
+    destroy_range_by_request,
     range_owner_reassignment_available_by_request,
     reassign_range_owner_by_request,
 )

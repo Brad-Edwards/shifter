@@ -5,29 +5,19 @@ from __future__ import annotations
 import base64
 import logging
 from collections.abc import Callable
-from dataclasses import dataclass
 
 from config import GCERangeCellConfig, load_gce_range_cell_config
-from gcp_guest_secrets import (
-    delete_participant_ssh_secret,
-    delete_rdp_password_secret,
-    delete_ssh_secret,
-    ensure_participant_ssh_secret,
-    ensure_rdp_password_secret,
-    ensure_ssh_secret,
+from gcp_range_cell_clients import GCEClients, _build_clients
+from gcp_range_cell_credentials import (
+    GCEGuestSecretOps,
+    GCEVertexCredentialOps,
+    _default_secret_ops,
+    _default_vertex_ops,
 )
-from gcp_range_cell_clients import GCEClients, GoogleExceptions, _build_clients
-from gcp_range_cell_ops import _wait_for_operation
+from gcp_range_cell_destroy import destroy_range_cell
+from gcp_range_cell_ops import _get_or_none, _wait_for_operation
 from gcp_range_cell_outputs import InstanceCredentials, instance_output, range_cell_result, subnet_outputs
-from gcp_range_cell_plan import (
-    FirewallPlan,
-    InstancePlan,
-    RangeCellPlan,
-    ResourceDict,
-    ScenarioInstance,
-    SubnetPlan,
-    render_range_cell_plan,
-)
+from gcp_range_cell_plan import render_range_cell_plan
 from gcp_range_cell_resources import (
     HOST_PUBLIC_KEY_METADATA_KEY,
     address_resource,
@@ -38,70 +28,24 @@ from gcp_range_cell_resources import (
     openvpn_gateway_instance_resource,
     subnetwork_resource,
 )
-from gcp_range_vertex_creds import delete_range_vertex_key, ensure_range_vertex_key
+from gcp_range_cell_types import (
+    FirewallPlan,
+    InstancePlan,
+    RangeCellPlan,
+    ResourceDict,
+    SubnetPlan,
+)
 from log_redact import safe_log_fingerprint
 from utils.crypto import generate_ssh_host_keypair
 
+__all__ = [
+    "GCEGuestSecretOps",
+    "GCEVertexCredentialOps",
+    "apply_range_cell",
+    "destroy_range_cell",
+]
+
 logger = logging.getLogger(__name__)
-
-
-@dataclass(frozen=True)
-class GCEGuestSecretOps:
-    """Guest credential operations used by the GCE range-cell backend."""
-
-    ensure_ssh: Callable[[int, ScenarioInstance], tuple[str, str]]
-    ensure_participant_ssh: Callable[[int, ScenarioInstance], tuple[str, str]]
-    ensure_rdp_password: Callable[[int, ScenarioInstance], tuple[str, str]]
-    delete_ssh: Callable[[int, ScenarioInstance], None]
-    delete_participant_ssh: Callable[[int, ScenarioInstance], None]
-    delete_rdp_password: Callable[[int, ScenarioInstance], None]
-
-
-def _default_secret_ops() -> GCEGuestSecretOps:
-    """Return the production guest-secret operation bindings."""
-    return GCEGuestSecretOps(
-        ensure_ssh=ensure_ssh_secret,
-        ensure_participant_ssh=ensure_participant_ssh_secret,
-        ensure_rdp_password=ensure_rdp_password_secret,
-        delete_ssh=delete_ssh_secret,
-        delete_participant_ssh=delete_participant_ssh_secret,
-        delete_rdp_password=delete_rdp_password_secret,
-    )
-
-
-@dataclass(frozen=True)
-class GCEVertexCredentialOps:
-    """Per-range Vertex agent-credential operations used by the GCE backend.
-
-    ``ensure``/``delete`` take the range project id so the SA key and Secret
-    Manager secret are managed in the range project, not the control-plane
-    project (which may be a deploy-overlay placeholder).
-    """
-
-    ensure: Callable[[int, str, str, str], str]
-    delete: Callable[[int, str], None]
-
-
-def _default_vertex_ops() -> GCEVertexCredentialOps:
-    """Return the production per-range Vertex credential bindings."""
-    return GCEVertexCredentialOps(
-        ensure=lambda range_id, sa_email, project_id, host_sa_email: ensure_range_vertex_key(
-            range_id, sa_email, project_id=project_id, host_service_account_email=host_sa_email
-        ),
-        delete=lambda range_id, project_id: delete_range_vertex_key(range_id, project_id=project_id),
-    )
-
-
-def _get_or_none(
-    callable_obj: Callable[..., object],
-    exceptions: GoogleExceptions,
-    **kwargs: object,
-) -> object | None:
-    """Return a Compute resource or None when the provider reports NotFound."""
-    try:
-        return callable_obj(**kwargs)
-    except exceptions.NotFound:
-        return None
 
 
 def _ensure_network(plan: RangeCellPlan, clients: GCEClients) -> None:
@@ -304,6 +248,7 @@ def _provision_range_resources(
 
 
 def _external_ip(instance: object) -> str:
+    """Return the instance's first NAT external IP, or empty when absent."""
     interfaces = getattr(instance, "network_interfaces", None) or []
     if not interfaces:
         return ""
@@ -414,130 +359,3 @@ def apply_range_cell(
     if vpn_gateway is not None:
         result["vpn_gateway"] = vpn_gateway
     return result
-
-
-def _delete_resource(
-    plan: RangeCellPlan,
-    clients: GCEClients,
-    getter: Callable[..., object],
-    deleter: Callable[..., object],
-    scope: str,
-    **kwargs: object,
-) -> None:
-    """Delete a Compute resource when it exists."""
-    name = str(next(reversed(kwargs.values())))
-    existing = _get_or_none(getter, clients.google_exceptions, **kwargs)
-    if existing is None:
-        return
-    operation = deleter(**kwargs)
-    _wait_for_operation(plan, clients, operation, scope)
-    logger.info("Deleted GCE range resource name_fp=%s", safe_log_fingerprint(name))
-
-
-def destroy_range_cell(
-    request_uuid: str,
-    variables: ResourceDict | None,
-    *,
-    config: GCERangeCellConfig | None = None,
-    clients: GCEClients | None = None,
-    secret_ops: GCEGuestSecretOps | None = None,
-    vertex_ops: GCEVertexCredentialOps | None = None,
-) -> None:
-    """Destroy every GCE resource owned by one range cell."""
-    if not variables:
-        logger.info("No GCE range variables provided for request %s; nothing to destroy", request_uuid)
-        return
-    resolved_config = config or load_gce_range_cell_config()
-    plan = render_range_cell_plan(request_uuid, variables, resolved_config, require_images=False)
-    resolved_clients = clients or _build_clients()
-    resolved_secret_ops = secret_ops or _default_secret_ops()
-    resolved_vertex_ops = vertex_ops or _default_vertex_ops()
-
-    # Delete the per-range Vertex agent key first; it is independent of the
-    # Compute resources and idempotent, so it converges even on repeated destroy.
-    resolved_vertex_ops.delete(plan["range_id"], plan["project_id"])
-
-    gateway = plan.get("vpn_gateway")
-    if gateway is not None:
-        _delete_resource(
-            plan,
-            resolved_clients,
-            resolved_clients.instances.get,
-            resolved_clients.instances.delete,
-            "zone",
-            project=plan["project_id"],
-            zone=plan["zone"],
-            instance=gateway["resource_name"],
-        )
-        _delete_resource(
-            plan,
-            resolved_clients,
-            resolved_clients.addresses.get,
-            resolved_clients.addresses.delete,
-            "region",
-            project=plan["project_id"],
-            region=plan["region"],
-            address=gateway["address_name"],
-        )
-
-    for instance in reversed(plan["instances"]):
-        _delete_resource(
-            plan,
-            resolved_clients,
-            resolved_clients.instances.get,
-            resolved_clients.instances.delete,
-            "zone",
-            project=plan["project_id"],
-            zone=plan["zone"],
-            instance=instance["resource_name"],
-        )
-        _delete_resource(
-            plan,
-            resolved_clients,
-            resolved_clients.addresses.get,
-            resolved_clients.addresses.delete,
-            "region",
-            project=plan["project_id"],
-            region=plan["region"],
-            address=instance["address_name"],
-        )
-        resolved_secret_ops.delete_ssh(plan["range_id"], instance["source"])
-        resolved_secret_ops.delete_participant_ssh(plan["range_id"], instance["source"])
-        resolved_secret_ops.delete_rdp_password(plan["range_id"], instance["source"])
-
-    for firewall in reversed(plan["firewalls"]):
-        _delete_resource(
-            plan,
-            resolved_clients,
-            resolved_clients.firewalls.get,
-            resolved_clients.firewalls.delete,
-            "global",
-            project=plan["project_id"],
-            firewall=firewall["name"],
-        )
-
-    for subnet in reversed(plan["subnets"]):
-        _delete_resource(
-            plan,
-            resolved_clients,
-            resolved_clients.subnetworks.get,
-            resolved_clients.subnetworks.delete,
-            "region",
-            project=plan["project_id"],
-            region=plan["region"],
-            subnetwork=subnet["resource_name"],
-        )
-
-    # In shared-vpc mode the range VPC is the pre-existing, platform-peered
-    # network and must never be deleted; only per-range subnets/firewalls are torn
-    # down above.
-    if plan["manage_network"]:
-        _delete_resource(
-            plan,
-            resolved_clients,
-            resolved_clients.networks.get,
-            resolved_clients.networks.delete,
-            "global",
-            project=plan["project_id"],
-            network=plan["network"]["name"],
-        )

@@ -135,12 +135,14 @@ def test_prepare_is_idempotent_for_one_range_generation():
 def test_prepare_rejects_a_capability_without_exactly_one_matching_target():
     ops = MemorySecretOps()
     variables = _variables(target_count=0)
+    zero_generation = uuid4()
     with pytest.raises(ValueError, match="exactly one"):
-        _prepare(uuid4(), variables, ops)
+        _prepare(zero_generation, variables, ops)
     duplicated = _variables(target_count=1)
     duplicated["subnets"][0]["instances"].append(dict(duplicated["subnets"][0]["instances"][0]))
+    duplicate_generation = uuid4()
     with pytest.raises(ValueError, match="exactly one"):
-        _prepare(uuid4(), duplicated, ops)
+        _prepare(duplicate_generation, duplicated, ops)
     assert ops.values == {}
 
 
@@ -151,23 +153,22 @@ def test_finalize_rejects_wrong_target_or_unready_gateway():
     ops = MemorySecretOps()
     preparation = _prepare(uuid4(), variables, ops)
 
+    wrong_target_gateway = {
+        "endpoint": "vpn.example.test",
+        "port": 1194,
+        "target_ref": str(uuid4()),
+        "ready": True,
+    }
     with pytest.raises(ValueError, match="target"):
-        finalize_openvpn_access(
-            preparation,
-            {"endpoint": "vpn.example.test", "port": 1194, "target_ref": str(uuid4()), "ready": True},
-            ops,
-        )
+        finalize_openvpn_access(preparation, wrong_target_gateway, ops)
+    unready_gateway = {
+        "endpoint": "vpn.example.test",
+        "port": 1194,
+        "target_ref": variables["subnets"][0]["instances"][0]["uuid"],
+        "ready": False,
+    }
     with pytest.raises(ValueError, match="ready"):
-        finalize_openvpn_access(
-            preparation,
-            {
-                "endpoint": "vpn.example.test",
-                "port": 1194,
-                "target_ref": variables["subnets"][0]["instances"][0]["uuid"],
-                "ready": False,
-            },
-            ops,
-        )
+        finalize_openvpn_access(preparation, unready_gateway, ops)
 
 
 def test_gateway_verification_fails_closed_when_service_probe_does_not_pass():
@@ -250,10 +251,17 @@ def test_server_payload_excludes_client_and_ca_signing_keys():
 def test_prepare_rejects_an_unbounded_deadline_before_writing_secrets():
     variables = _variables()
     ops = MemorySecretOps()
+    generation = uuid4()
+    unbounded_teardown = (datetime.now(UTC) + timedelta(days=398)).isoformat().replace("+00:00", "Z")
+    capability = {
+        "version": "openvpn-capability-v1",
+        "channel": "openvpn",
+        "target_ref": variables["subnets"][0]["instances"][0]["uuid"],
+        "teardown_at": unbounded_teardown,
+    }
 
     with pytest.raises(ValueError, match="397-day maximum"):
-        capability = _capability(variables, teardown_at=datetime.now(UTC) + timedelta(days=398))
-        _prepare(uuid4(), variables, ops, capability=capability)
+        _prepare(generation, variables, ops, capability=capability)
 
     assert ops.values == {}
 

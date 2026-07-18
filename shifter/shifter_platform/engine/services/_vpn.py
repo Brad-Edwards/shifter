@@ -7,6 +7,7 @@ from uuid import UUID
 
 from engine.secrets import SecretsError, get_openvpn_profile_secret
 from shared.remote_access import (
+    OpenVpnBinding,
     OpenVpnBindingError,
     OpenVpnProfile,
     parse_openvpn_binding,
@@ -15,6 +16,8 @@ from shared.remote_access import (
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import User
+
+    from engine.models import Range
 
 
 class VpnProfileNotFound(ValueError):
@@ -29,7 +32,8 @@ class VpnProfileUnavailable(ValueError):
     """The provider binding or secret is unavailable or invalid."""
 
 
-def _owned_range(user: User, request_id: UUID):
+def _owned_range(user: User, request_id: UUID) -> Range:
+    """Return the caller-owned range for this correlation id or raise."""
     from engine.models import Range
 
     range_obj = Range.objects.select_related("request").filter(request__request_id=request_id, user=user).first()
@@ -52,7 +56,7 @@ def has_openvpn_profile(user: User, request_id: UUID) -> bool:
     return True
 
 
-def _validate_current_binding(range_obj, user: User, request_id: UUID):
+def _validate_current_binding(range_obj: Range, user: User, request_id: UUID) -> OpenVpnBinding:
     """Return the binding only when it names this owner, request, and Kali."""
     from engine.models import Instance
 

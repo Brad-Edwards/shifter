@@ -229,12 +229,13 @@ resource "aws_security_group_rule" "vpn_gateway_dns_udp" {
 resource "aws_instance" "vpn_gateway" {
   count = local.vpn_enabled ? 1 : 0
 
-  ami                    = var.victim_ami_id
-  instance_type          = "t3.small"
-  subnet_id              = aws_subnet.range[local.instance_map[local.vpn_target_key].subnet_name].id
-  vpc_security_group_ids = [aws_security_group.vpn_gateway[0].id]
-  iam_instance_profile   = aws_iam_instance_profile.vpn_gateway[0].name
-  source_dest_check      = false
+  ami                         = var.victim_ami_id
+  instance_type               = "t3.small"
+  subnet_id                   = aws_subnet.range[local.instance_map[local.vpn_target_key].subnet_name].id
+  vpc_security_group_ids      = [aws_security_group.vpn_gateway[0].id]
+  iam_instance_profile        = aws_iam_instance_profile.vpn_gateway[0].name
+  source_dest_check           = false
+  associate_public_ip_address = false
   user_data_base64 = base64encode(templatefile("${path.module}/templates/openvpn_gateway_aws.py.tpl", {
     environment  = var.environment
     range_id     = var.range_id
@@ -265,7 +266,10 @@ resource "aws_instance" "vpn_gateway" {
   ]
 }
 
-resource "aws_lb" "vpn" {
+# NLB access logs only record TLS-listener traffic; this NLB fronts a UDP/1194
+# OpenVPN listener, so enabling them would produce an empty log bucket.
+# Connection-level visibility comes from VPC Flow Logs on the edge subnet.
+resource "aws_lb" "vpn" { # NOSONAR — S6258: access logs are a TLS-only NLB feature, listener is UDP-only
   count = local.vpn_enabled ? 1 : 0
 
   name                             = substr("shifter-vpn-${var.range_id}-${substr(var.request_uuid, 0, 8)}", 0, 32)

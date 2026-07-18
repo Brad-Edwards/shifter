@@ -477,7 +477,7 @@ class TestReassignSpareRecovery:
         re-claims cleanly rather than orphaning the first spare."""
         from django.db import transaction
 
-        from ctf.services.range.recovery import _claim_spare
+        from ctf.services.range.recovery_steps import _claim_spare
 
         participant = CTFParticipant.objects.create(
             event=event_with_scenario,

@@ -602,10 +602,10 @@ class TestGdcProvisioning:
         mock_write_state = MagicMock()
         monkeypatch.setattr("terraform_ops.publish_status_update", MagicMock())
         monkeypatch.setattr(
-            "terraform_ops.load_range_network_config",
+            "range_subnet_allocation.load_range_network_config",
             MagicMock(return_value=RangeNetworkConfig("cluster1", "10.200.0.0/24", "us-central1")),
         )
-        monkeypatch.setattr("terraform_ops._update_range_config", MagicMock())
+        monkeypatch.setattr("range_subnet_allocation._update_range_config", MagicMock())
         monkeypatch.setattr(
             "terraform_ops.build_range_variables",
             MagicMock(return_value={"range_id": 42, "subnets": range_spec["subnets"]}),
@@ -686,10 +686,10 @@ class TestGdcProvisioning:
         mock_setup = MagicMock()
         monkeypatch.setattr("terraform_ops.publish_status_update", MagicMock())
         monkeypatch.setattr(
-            "terraform_ops.load_range_network_config",
+            "range_subnet_allocation.load_range_network_config",
             MagicMock(return_value=RangeNetworkConfig("vpc-9", "10.9.0.0/16", "us-east-2")),
         )
-        monkeypatch.setattr("terraform_ops._update_range_config", MagicMock())
+        monkeypatch.setattr("range_subnet_allocation._update_range_config", MagicMock())
         monkeypatch.setattr(
             "terraform_ops.build_range_variables",
             MagicMock(return_value={"range_id": 9, "subnets": range_spec["subnets"]}),
@@ -773,10 +773,10 @@ class TestGdcProvisioning:
         mock_write_state = MagicMock()
         monkeypatch.setattr("terraform_ops.publish_status_update", MagicMock())
         monkeypatch.setattr(
-            "terraform_ops.load_range_network_config",
+            "range_subnet_allocation.load_range_network_config",
             MagicMock(return_value=RangeNetworkConfig("vpc-vpn", "10.9.0.0/16", "us-east-2")),
         )
-        monkeypatch.setattr("terraform_ops._update_range_config", MagicMock())
+        monkeypatch.setattr("range_subnet_allocation._update_range_config", MagicMock())
         monkeypatch.setattr(
             "terraform_ops.build_range_variables",
             MagicMock(return_value={"range_id": 42, "subnets": range_spec["subnets"]}),

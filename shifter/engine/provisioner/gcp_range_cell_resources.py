@@ -253,10 +253,7 @@ def openvpn_gateway_address_resource(gateway: OpenVpnGatewayPlan) -> ComputeReso
     }
 
 
-def _openvpn_gateway_startup(plan: RangeCellPlan, gateway: OpenVpnGatewayPlan) -> str:
-    """Return a fixed bootstrap that resolves only the server identity secret."""
-    secret_id = f"shifter-range-{plan['range_id']}-vpn-{plan['request_uuid'].replace('-', '')}-server"
-    return f'''#!/bin/bash
+_OPENVPN_GATEWAY_STARTUP_TEMPLATE = '''#!/bin/bash
 set -euo pipefail
 install -d -m 700 /etc/openvpn/server
 python3 - <<'PY'
@@ -273,7 +270,7 @@ metadata = urllib.request.Request(
 )
 with urllib.request.urlopen(metadata, timeout=10) as response:
     token = json.load(response)["access_token"]
-name = urllib.parse.quote("projects/{plan["project_id"]}/secrets/{secret_id}/versions/latest", safe="")
+name = urllib.parse.quote("projects/{project_id}/secrets/{secret_id}/versions/latest", safe="")
 request = urllib.request.Request(
     f"https://secretmanager.googleapis.com/v1/{{name}}:access",
     headers={{"Authorization": f"Bearer {{token}}"}},
@@ -303,7 +300,7 @@ key /etc/openvpn/server/server.key
 tls-crypt /etc/openvpn/server/tls-crypt.key
 verify-client-cert require
 remote-cert-eku "TLS Web Client Authentication"
-push "route {gateway["target_ip"]} 255.255.255.255"
+push "route {target_ip} 255.255.255.255"
 keepalive 10 60
 persist-key
 persist-tun
@@ -322,14 +319,14 @@ pathlib.Path("/etc/sysctl.d/90-shifter-openvpn.conf").write_text("net.ipv4.ip_fo
 subprocess.run(["sysctl", "--system"], check=True, stdout=subprocess.DEVNULL)
 for rule in (
     ["iptables", "-P", "FORWARD", "DROP"],
-    ["iptables", "-A", "FORWARD", "-i", "tun0", "-d", "{gateway["target_ip"]}/32", "-j", "ACCEPT"],
+    ["iptables", "-A", "FORWARD", "-i", "tun0", "-d", "{target_ip}/32", "-j", "ACCEPT"],
     [
-        "iptables", "-A", "FORWARD", "-o", "tun0", "-s", "{gateway["target_ip"]}/32",
+        "iptables", "-A", "FORWARD", "-o", "tun0", "-s", "{target_ip}/32",
         "-m", "conntrack", "--ctstate", "ESTABLISHED,RELATED", "-j", "ACCEPT",
     ],
     [
         "iptables", "-t", "nat", "-A", "POSTROUTING", "-s", "172.30.0.0/24",
-        "-d", "{gateway["target_ip"]}/32", "-j", "MASQUERADE",
+        "-d", "{target_ip}/32", "-j", "MASQUERADE",
     ],
 ):
     subprocess.run(rule, check=True)
@@ -338,7 +335,7 @@ health_script = """#!/usr/bin/env python3
 import socketserver
 import subprocess
 
-TARGET = "{gateway["target_ip"]}/32"
+TARGET = "{target_ip}/32"
 
 def healthy():
     active = subprocess.run(
@@ -400,6 +397,16 @@ subprocess.run(["systemctl", "daemon-reload"], check=True)
 subprocess.run(["systemctl", "enable", "--now", "shifter-openvpn-health"], check=True)
 PY
 '''
+
+
+def _openvpn_gateway_startup(plan: RangeCellPlan, gateway: OpenVpnGatewayPlan) -> str:
+    """Return a fixed bootstrap that resolves only the server identity secret."""
+    secret_id = f"shifter-range-{plan['range_id']}-vpn-{plan['request_uuid'].replace('-', '')}-server"
+    return _OPENVPN_GATEWAY_STARTUP_TEMPLATE.format(
+        project_id=plan["project_id"],
+        secret_id=secret_id,
+        target_ip=gateway["target_ip"],
+    )
 
 
 def openvpn_gateway_instance_resource(

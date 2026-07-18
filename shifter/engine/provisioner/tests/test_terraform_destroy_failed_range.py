@@ -26,7 +26,7 @@ def _install_destroy_fakes(monkeypatch, *, status="ready", variables=None):
     monkeypatch.setattr("terraform_ops.range_terraform_runner", mock_tf_runner)
     monkeypatch.setattr("terraform_ops.build_range_variables", mock_build_vars)
     monkeypatch.setattr("terraform_ops.publish_destroyed", mock_publish)
-    monkeypatch.setattr("terraform_ops.mark_range_instances_destroyed", mock_mark)
+    monkeypatch.setattr("range_subnet_allocation.mark_range_instances_destroyed", mock_mark)
     monkeypatch.setattr("terraform_ops.get_vpn_secret_ops", MagicMock())
     monkeypatch.setattr("terraform_ops.cleanup_openvpn_access", MagicMock())
     return mock_get_data, mock_tf_runner, mock_build_vars, mock_publish, mock_mark

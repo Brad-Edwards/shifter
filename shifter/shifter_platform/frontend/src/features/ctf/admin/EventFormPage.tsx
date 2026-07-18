@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 
 import { Loader2 } from "lucide-react";
 
-import { useCreateCtfEvent, useCtfEvent, useCtfScenarios, useUpdateCtfEvent } from "@/api/ctf";
+import { useCreateCtfEvent, useCtfEvent, useCtfScenarios, useUpdateCtfEvent } from "@/api/ctfAdmin";
 import { ApiError } from "@/api/errors";
 import type { CtfEventDetail, CtfEventWrite } from "@/api/types";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";

@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 
 import { Flag, Radar, Users } from "lucide-react";
 
-import { useCtfEvent, useDeleteCtfEvent, useForceDeleteCtfEvent } from "@/api/ctf";
+import { useCtfEvent, useDeleteCtfEvent, useForceDeleteCtfEvent } from "@/api/ctfAdmin";
 import { describeMutationError } from "@/api/errors";
 import type { CtfEventDetail } from "@/api/types";
 import { PageHeader } from "@/components/page-header";

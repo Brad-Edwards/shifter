@@ -36,7 +36,7 @@ _TLS_CRYPT_BYTES = 256
 class VpnSecretOps(Protocol):
     """Small provider-secret port used by the credential lifecycle."""
 
-    def read_or_create_issuer(self, range_id: int, generation: UUID, payload_factory) -> str:
+    def read_or_create_issuer(self, range_id: int, generation: UUID, payload_factory: Callable[[], str]) -> str:
         """Return the existing issuer payload or atomically store the factory result."""
 
     def put_server(self, range_id: int, generation: UUID, payload: str) -> None:
@@ -76,6 +76,7 @@ class OpenVpnPreparation:
 
 
 def _pem_private_key(key: ec.EllipticCurvePrivateKey) -> str:
+    """Serialize a private key to unencrypted PKCS8 PEM."""
     return key.private_bytes(
         serialization.Encoding.PEM,
         serialization.PrivateFormat.PKCS8,
@@ -84,19 +85,21 @@ def _pem_private_key(key: ec.EllipticCurvePrivateKey) -> str:
 
 
 def _pem_certificate(certificate: x509.Certificate) -> str:
+    """Serialize a certificate to PEM."""
     return certificate.public_bytes(serialization.Encoding.PEM).decode("ascii")
 
 
 def _certificate(
     *,
     subject: str,
-    public_key,
+    public_key: ec.EllipticCurvePublicKey,
     issuer_name: x509.Name,
     issuer_key: ec.EllipticCurvePrivateKey,
     extended_usage: ObjectIdentifier,
     is_ca: bool = False,
     not_after: datetime,
 ) -> x509.Certificate:
+    """Sign a leaf or CA certificate scoped to this range generation."""
     now = datetime.now(UTC)
     builder = (
         x509.CertificateBuilder()
@@ -128,6 +131,7 @@ def _certificate(
 
 
 def _static_key() -> str:
+    """Generate an OpenVPN tls-crypt static key block."""
     encoded = os.urandom(_TLS_CRYPT_BYTES).hex()
     body = "\n".join(encoded[index : index + 32] for index in range(0, len(encoded), 32))
     begin_marker = "-----BE" + "GIN OpenVPN Static key V1-----\n"
@@ -136,6 +140,7 @@ def _static_key() -> str:
 
 
 def _generate_material(generation: UUID, teardown_at: datetime) -> OpenVpnIssuerMaterial:
+    """Mint a fresh CA, server, and client identity expiring at teardown."""
     ca_key = ec.generate_private_key(ec.SECP256R1())
     ca_name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, f"shifter-range-{generation}")])
     ca_cert = _certificate(
@@ -178,10 +183,11 @@ def _generate_material(generation: UUID, teardown_at: datetime) -> OpenVpnIssuer
 
 
 def _load_material(payload: str, generation: UUID, teardown_at: datetime) -> OpenVpnIssuerMaterial:
+    """Parse stored issuer material and reject stale or foreign generations."""
     try:
         value = json.loads(payload)
         material = OpenVpnIssuerMaterial(**value)
-    except (TypeError, ValueError, json.JSONDecodeError) as exc:
+    except (TypeError, ValueError) as exc:
         raise ValueError("OpenVPN issuer secret has an invalid shape") from exc
     if material.generation != str(generation) or set(value) != set(asdict(material)):
         raise ValueError("OpenVPN issuer secret belongs to another generation")
@@ -199,6 +205,7 @@ def _load_material(payload: str, generation: UUID, teardown_at: datetime) -> Ope
 
 
 def _target_instances(range_spec: dict[str, object], target_ref: UUID) -> list[dict[str, object]]:
+    """Return the range-spec instances matching the authorized target ref."""
     subnets = range_spec.get("subnets")
     if not isinstance(subnets, list):
         return []
@@ -256,6 +263,7 @@ def prepare_openvpn_access(
 
 
 def _render_profile(preparation: OpenVpnPreparation, endpoint: str, port: int) -> str:
+    """Render the participant .ovpn profile with inlined credentials."""
     material = preparation.material
     return (
         "client\n"
