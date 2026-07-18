@@ -195,6 +195,50 @@ assumptions by name:
   and safe for operator logs. Request/range correlation uses existing structured fields
   or fingerprint helpers; raw exception strings do not cross API/event boundaries.
 
+### CTF participant client VPN specialization
+
+A participant-held OpenVPN profile is a specialization of the existing
+remote-access resource, not a fifth lifecycle operation or scenario service. For a
+CTF profile that requires it, the selected live-fire adapter must provide a
+request-owned logical gateway inside the range containment boundary, one
+generation-scoped participant identity/profile reference, and a server-enforced path
+only to the authoritative Kali/attacker member target. The gateway may be a dedicated
+resource or share another request-owned edge resource; it must not be shared across
+ranges and must not run on the participant-controlled target.
+
+The profile is created during `provision`, so `READY` includes gateway, credential,
+and target-policy readiness. Infrastructure creation returns pending metadata; the
+provisioner publishes the binding only after a bounded gateway service-and-policy
+probe succeeds. A download resolves the existing secret at the Engine access boundary
+after CTF/CMS ownership and state checks; it does not mint a new certificate per click.
+Pause makes the tunnel unavailable and resume restores the same generation. Destroy
+deletes the gateway, immutable issuer, and client/server material. Because a downloaded
+credential cannot be recalled, an in-place ownership transfer or spare adoption is
+refused while a VPN binding exists. Spare selection applies that compatibility check
+before old-range teardown, and the write boundary rechecks it. Recovery for a new owner
+must destroy the old generation and provision a new one before `READY`. The
+provisioner-only issuer remains immutable until teardown so a completed-generation
+retry reuses the exact runtime material. Certificate expiry is bounded by the
+trusted event teardown deadline; stale or greater-than-397-day capability
+windows fail before provider mutation rather than being shortened underneath an
+active range. Expiry does not replace lifecycle deletion. GCE uses a distinct
+no-role gateway service account per range generation and grants it read access
+only to that generation's server-identity secret.
+
+The common network contract permits only the resolved target, normally with a
+server-enforced `/32`, and denies client-to-client, other-range/member, platform,
+management, metadata/API, and default-route access. Client profile content is not an
+authorization oracle. Client profiles/private keys and CA signing material do not
+enter portal/application state, adapter/Terraform state, public results, events,
+task payloads, environment, argv, logs, metrics, or errors; the substrate returns
+one provider secret reference. Every CTF-eligible live-fire adapter must pass the
+same real-client handshake, target reachability, negative isolation, lifecycle,
+and secret-deletion tests before the capability is advertised.
+
+The full HTTP, identity, secret-delivery, profile-shape, parity, and extensibility
+guardrails are recorded in
+[`ctf-openvpn-participant-access-preflight-1695.md`](ctf-openvpn-participant-access-preflight-1695.md).
+
 ## Conformance obligations
 
 An adapter is trusted by executable evidence, not by registry declaration or review.

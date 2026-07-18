@@ -347,6 +347,16 @@ class Range(models.Model):
         blank=True,
         help_text="JSON array of provisioned instance details from Pulumi",
     )
+    vpn_access_binding = models.JSONField(
+        null=True,
+        blank=True,
+        help_text="Non-secret generation-bound OpenVPN access binding; profile material stays in provider secrets",
+    )
+    remote_access_capability = models.JSONField(
+        null=True,
+        blank=True,
+        help_text="Server-issued non-secret authorization for optional range remote access",
+    )
     pulumi_stack = models.CharField(
         max_length=255,
         blank=True,

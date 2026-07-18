@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
-import { useCtfOrganizerChallenge, useDeleteCtfChallenge } from "@/api/ctf";
+import { useCtfOrganizerChallenge, useDeleteCtfChallenge } from "@/api/ctfAdmin";
 import type { CtfOrganizerChallengeDetail } from "@/api/types";
 import { PageHeader } from "@/components/page-header";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";

@@ -39,6 +39,7 @@ def get_range_status(participant_id: UUID) -> dict[str, Any]:
             "participant_id": str(participant_id),
             "status": "not_assigned",
             "range_instance_id": None,
+            "vpn_profile_available": False,
         }
 
     # Query CMS for fresh status via bridge
@@ -51,10 +52,19 @@ def get_range_status(participant_id: UUID) -> dict[str, Any]:
         participant.range_status = fresh_status
         participant.save(update_fields=["range_status", "updated_at"])
 
+    vpn_profile_available = False
+    if participant.user_id:
+        from ctf.bridges import cms_has_openvpn_profile
+
+        user = participant.user
+        if user is not None:
+            vpn_profile_available = cms_has_openvpn_profile(user, participant.range_instance_id)
+
     return {
         "participant_id": str(participant_id),
         "status": participant.range_status,
         "range_instance_id": participant.range_instance_id,
+        "vpn_profile_available": vpn_profile_available,
     }
 
 

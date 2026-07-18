@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from django.conf import settings
 
@@ -31,6 +31,9 @@ from engine._range_state import (
     victim_instances,
 )
 from engine.secrets import SecretsError
+
+if TYPE_CHECKING:
+    from engine.models import Range
 
 logger = logging.getLogger(__name__)
 
@@ -319,3 +322,20 @@ def _resolve_ngfw_ssh_key_secret_ref(state: dict[str, Any]) -> str:
         provider_metadata.get("ssh_secret_ref"),
         provider_metadata.get("ssh_secret_id"),
     )
+
+
+_TASK_ARN_FIELDS = {
+    "provision": "provisioning_task_arn",
+    "destroy": "teardown_task_arn",
+}
+
+
+def _persist_task_arn(range_obj: Range, operation: str, task_arn: str | None) -> None:
+    """Store an ECS task identifier on the operation-specific Range field."""
+    if not task_arn:
+        return
+    field_name = _TASK_ARN_FIELDS.get(operation)
+    if field_name is None:
+        raise ValueError(f"Unknown range task operation: {operation}")
+    setattr(range_obj, field_name, task_arn)
+    range_obj.save(update_fields=[field_name])
