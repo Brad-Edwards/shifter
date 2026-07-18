@@ -8,7 +8,8 @@ Two suites:
 * EffectivePermissionMatrixTest is the ADR-008-R7 effective-permission oracle: it
   reads the live portal/iam module and asserts each workload identity's resource
   set (project roles, named-secret readers, per-bucket roles, and the two tracked
-  #1586 residuals), plus explicit denied examples.
+  #1586 residuals), the prefix-conditioned VPN gateway actAs grant, plus explicit
+  denied examples.
 """
 
 from __future__ import annotations
@@ -20,6 +21,7 @@ import textwrap
 import unittest
 from collections import defaultdict
 from pathlib import Path
+from unittest.mock import patch
 
 from .check_tf_gcp_iam_resource_scope import (
     ALLOWLIST,
@@ -292,6 +294,22 @@ class CheckTfGcpIamResourceScopeTest(unittest.TestCase):
                 f"ALLOWLIST residual {workload}:{role} expired on {residual.expires_on}",
             )
 
+    def test_expired_allowlist_residual_is_reported_by_the_checker(self) -> None:
+        pair, residual = next(iter(ALLOWLIST.items()))
+        expired = type(residual)(
+            reason=residual.reason,
+            expires_on=datetime.date.today() - datetime.timedelta(days=1),
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tf = _write(Path(tmp), _CLEAN_MODULE)
+            with patch.dict(ALLOWLIST, {pair: expired}):
+                violations = check_file(tf)
+
+        self.assertEqual(len(violations), 1)
+        self.assertIn(pair[0], violations[0].reason)
+        self.assertIn(pair[1], violations[0].reason)
+        self.assertIn("ALLOWLIST residual that expired", violations[0].reason)
+
     def test_live_iam_module_passes(self) -> None:
         # Live-state regression: the refactored module must hold only the two
         # allowlisted residual project grants; every static grant is per-resource.
@@ -413,10 +431,22 @@ class EffectivePermissionMatrixTest(unittest.TestCase):
         self.assertIsNotNone(match)
         self.assertEqual(match.group(1).strip(), 'key != "guacamole-db"')
 
-    def test_literal_project_grants_are_exactly_the_two_residuals(self) -> None:
-        # The only project-level literal grants to a workload identity are the two
-        # ALLOWLIST residuals; everything else is per named secret / bucket.
-        self.assertEqual(self.literal_project_grants, set(ALLOWLIST.keys()))
+    def test_literal_project_grants_are_exactly_the_residuals_and_scoped_vpn_act_as(self) -> None:
+        # Secret/storage literals remain exactly the two ALLOWLIST residuals.
+        # The only additional literal is actAs, condition-scoped to generation
+        # OpenVPN identities rather than all project service accounts.
+        expected = set(ALLOWLIST.keys()) | {("provisioner", "roles/iam.serviceAccountUser")}
+        self.assertEqual(self.literal_project_grants, expected)
+        vpn_blocks = [
+            body
+            for name, _line, body in _extract_resource_blocks(self.lines, _PROJECT_IAM_MEMBER_RE)
+            if name == "provisioner_vpn_gateway_user"
+        ]
+        self.assertEqual(len(vpn_blocks), 1)
+        self.assertIn(
+            "resource.name.startsWith('projects/${var.project_id}/serviceAccounts/sh-vpn-')",
+            vpn_blocks[0],
+        )
         self.assertEqual(check_paths(sorted(LIVE_IAM_DIR.glob("*.tf"))), [])
 
 

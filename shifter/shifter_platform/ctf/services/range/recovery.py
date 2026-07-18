@@ -168,6 +168,7 @@ def _rebuild_replacement(participant: CTFParticipant) -> tuple[int, UUID]:
             scenario=event.scenario_id,
             agents_by_os=agents_by_os,
             ngfw_enabled=ngfw_enabled,
+            remote_access_teardown_at=event.get_cleanup_time(),
         )
     except Exception as e:
         raise _range_error(
@@ -201,7 +202,7 @@ def _claim_spare(participant: CTFParticipant, spare_range_instance_id: int | Non
     MUST run inside the caller's transaction (``select_for_update``);
     :func:`_ensure_spare_reserved` wraps this claim and the pointer write atomically.
     """
-    from ctf.bridges import cms_get_range_status
+    from ctf.bridges import cms_get_range_status, cms_range_owner_reassignment_available
 
     event = participant.event
     candidates = (
@@ -219,6 +220,8 @@ def _claim_spare(participant: CTFParticipant, spare_range_instance_id: int | Non
             cms_get_range_status(candidate.range_instance_id) == ResourceStatus.READY.value
         )
         if not live_ready:
+            continue
+        if not cms_range_owner_reassignment_available(candidate.range_instance_id):
             continue
         candidate.consumed_by = participant
         candidate.consumed_at = timezone.now()

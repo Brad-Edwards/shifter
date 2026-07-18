@@ -58,7 +58,7 @@ class RangeProvisionResult:
     request_id: Any  # UUID
 
 
-def cms_create_range(user, scenario, agents_by_os, ngfw_enabled) -> RangeProvisionResult:
+def cms_create_range(user, scenario, agents_by_os, ngfw_enabled, remote_access_teardown_at) -> RangeProvisionResult:
     """Create a CTF range via CMS.
 
     Passes range_source=RangeSource.CTF so the CMS admission check is scoped
@@ -75,6 +75,7 @@ def cms_create_range(user, scenario, agents_by_os, ngfw_enabled) -> RangeProvisi
         agents_by_os=agents_by_os,
         ngfw_enabled=ngfw_enabled,
         range_source=RangeSource.CTF,
+        remote_access_teardown_at=remote_access_teardown_at,
     )
     return RangeProvisionResult(request_id=result.request_id)
 
@@ -121,11 +122,40 @@ def cms_get_range_spec(range_instance_id: int) -> dict | None:
     return cms_services.get_range_spec_by_id(range_instance_id)
 
 
+def cms_get_openvpn_profile(user: User, range_instance_id: int):
+    """Resolve a participant profile through the public CMS service boundary."""
+    import cms.services as cms_services
+    from ctf.exceptions import CTFNotFoundError, CTFRangeError, CTFStateError
+
+    try:
+        return cms_services.get_ctf_openvpn_profile(user, range_instance_id)
+    except cms_services.CtfOpenVpnProfileNotFound as exc:
+        raise CTFNotFoundError("VPN profile is not available") from exc
+    except cms_services.CtfOpenVpnProfileConflict as exc:
+        raise CTFStateError("VPN profile is not ready") from exc
+    except cms_services.CtfOpenVpnProfileUnavailable as exc:
+        raise CTFRangeError("VPN profile is unavailable") from exc
+
+
+def cms_has_openvpn_profile(user: User, range_instance_id: int) -> bool:
+    """Project only safe OpenVPN readiness through CMS."""
+    import cms.services as cms_services
+
+    return cms_services.has_ctf_openvpn_profile(user, range_instance_id)
+
+
 def cms_reassign_range_owner(range_instance_id: int, new_user: User) -> None:
     """Reassign an existing range's ownership via CMS (#1018 spare recovery)."""
     import cms.services as cms_services
 
     cms_services.reassign_range_owner(range_instance_id, new_user)
+
+
+def cms_range_owner_reassignment_available(range_instance_id: int) -> bool:
+    """Check spare-transfer safety through the public CMS boundary."""
+    import cms.services as cms_services
+
+    return cms_services.range_owner_reassignment_available(range_instance_id)
 
 
 def cms_list_scenarios(user: User) -> list[tuple[str, str]]:

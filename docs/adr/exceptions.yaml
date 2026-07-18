@@ -308,5 +308,24 @@
     "paths": [
       "scripts/adr_guard/boundary_mock_baseline.json"
     ]
+  },
+  {
+    "rule_id": "ADR-039-R9",
+    "owner": "@Brad-Edwards",
+    "reason": "The per-range OpenVPN network edge must accept participant clients whose public source addresses are not known before an event. The audited var.vpn_public_client_cidr exception is confined by the CIDR checker to shifter/engine/provisioner/terraform/modules/range/vpn.tf, aws_security_group.vpn_nlb, mutual-TLS UDP, and from/to port 1194. The gateway readiness responder remains private to the portal VPC, Kali has no public address, and server forwarding remains limited to the authoritative target /32.",
+    "expires_on": "2027-07-17",
+    "paths": [
+      "scripts/check_tf_sg_cidrs/check_tf_sg_cidrs.py",
+      "shifter/engine/provisioner/terraform/modules/range/vpn.tf"
+    ]
+  },
+  {
+    "rule_id": "ADR-004-R11",
+    "owner": "@Brad-Edwards",
+    "reason": "CKV_GCP_41 / CKV_GCP_49 on google_project_iam_member.provisioner_vpn_gateway_user: GCE requires iam.serviceAccounts.actAs when attaching the generation-owned gateway identity. The grant is condition-scoped to resource names under projects/${var.project_id}/serviceAccounts/sh-vpn-, while a custom role separately limits the provisioner to create/delete service accounts and grants no key or policy administration. This prevents impersonation of the shared range-host, Vertex, workload, or any other project service account. Effective-permission tests pin the exact role, workload, resource, and condition (#1695).",
+    "expires_on": "2027-07-17",
+    "paths": [
+      "platform/terraform/gcp/modules/portal/iam/main.tf"
+    ]
   }
 ]

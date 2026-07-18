@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
@@ -43,7 +44,11 @@ logger = logging.getLogger(__name__)
 _ACTIVE_RANGE_MESSAGE = "You already have an active range. Please destroy it before creating a new one."
 
 
-def _engine_create_range_call(request_spec: Any, backend_admission: BackendAdmission | None = None) -> Any:  # NOSONAR
+def _engine_create_range_call(
+    request_spec: Any,
+    backend_admission: BackendAdmission | None = None,
+    remote_access_capability: dict[str, object] | None = None,
+) -> Any:  # NOSONAR
     """Late-bound call to ``cms.services.engine_create_range`` so test patches apply.
 
     ``backend_admission`` is the trusted #1348 admission result carried beside the
@@ -52,7 +57,13 @@ def _engine_create_range_call(request_spec: Any, backend_admission: BackendAdmis
     """
     from cms import services as _cs
 
-    return _cs.engine_create_range(request_spec, backend_admission=backend_admission)
+    if remote_access_capability is None:
+        return _cs.engine_create_range(request_spec, backend_admission=backend_admission)
+    return _cs.engine_create_range(
+        request_spec,
+        backend_admission=backend_admission,
+        remote_access_capability=remote_access_capability,
+    )
 
 
 def _audit_log_call(**kwargs: Any) -> None:  # NOSONAR
@@ -274,6 +285,7 @@ def _dispatch_engine_range(
     user: User,
     range_spec: RangeSpec,
     backend_admission: BackendAdmission | None = None,
+    remote_access_capability: dict[str, object] | None = None,
 ) -> None:
     """Dispatch range provisioning to engine for an already-owned CMS request.
 
@@ -287,7 +299,30 @@ def _dispatch_engine_range(
         user_id=user.id,
         items=[range_spec],
     )
-    _engine_create_range_call(request_spec, backend_admission)
+    _engine_create_range_call(request_spec, backend_admission, remote_access_capability)
+
+
+def _build_ctf_remote_access_capability(
+    range_spec: RangeSpec,
+    teardown_at: datetime | None,
+) -> dict[str, object] | None:
+    """Mint CTF-only OpenVPN authority from trusted lifecycle and target facts."""
+    if teardown_at is None:
+        return None
+    from shared.remote_access import build_openvpn_capability
+
+    participant_targets = {binding.target_ref for binding in range_spec.participant_access}
+    kali_targets = [
+        instance for instance in range_spec.all_instances if instance.role == "attacker" and instance.os_type == "kali"
+    ]
+    targets = (
+        [instance for instance in kali_targets if str(instance.uuid) in participant_targets]
+        if participant_targets
+        else kali_targets
+    )
+    if len(targets) != 1 or not targets[0].uuid:
+        raise CMSError("CTF OpenVPN access requires exactly one identified Kali attacker target")
+    return build_openvpn_capability(targets[0].uuid, teardown_at)
 
 
 def _persist_range_instance_record(
@@ -385,6 +420,7 @@ def create_range(
     agents_by_os: dict[str, int],
     ngfw_enabled: bool = False,
     range_source: RangeSource | None = None,
+    remote_access_teardown_at: datetime | None = None,
 ) -> RangeContext:
     """Validate, hydrate, and trigger range provisioning.
 
@@ -399,6 +435,9 @@ def create_range(
         range_source: Server-derived provenance label (RangeSource enum). Defaults to
             MISSION_CONTROL. Must be set by the product entry point (e.g. the CTF bridge
             passes RangeSource.CTF). Never user-supplied from a request body.
+        remote_access_teardown_at: Trusted CTF event cleanup deadline used to
+            mint the optional remote-access capability. Rejected for non-CTF
+            launch paths and never accepted from an HTTP request body.
 
     Returns:
         RangeContext: Template-safe projection of the created range
@@ -416,6 +455,8 @@ def create_range(
 
     if range_source is None:
         range_source = RangeSource.MISSION_CONTROL
+    if remote_access_teardown_at is not None and range_source is not RangeSource.CTF:
+        raise CMSError("Remote-access capability may only be issued by the CTF launch path")
 
     _validate_create_range_user(user)
     _validate_create_range_scenario(user, scenario)
@@ -441,6 +482,7 @@ def create_range(
 
         agents = _lookup_agents_by_os(user, agents_by_os)
         range_spec = hydrate_scenario(scenario, user.id, agents)
+        remote_access_capability = _build_ctf_remote_access_capability(range_spec, remote_access_teardown_at)
 
         def _persist(cms_request: Request) -> RangeInstance:
             """Build the RangeInstance for the reservation from the hydrated spec."""
@@ -448,7 +490,13 @@ def create_range(
 
         request_id, _cms_request, range_instance = _reserve_active_range_slot(user, range_source, _persist)
         try:
-            _dispatch_engine_range(request_id, user, range_spec, backend_admission)
+            _dispatch_engine_range(
+                request_id,
+                user,
+                range_spec,
+                backend_admission,
+                remote_access_capability,
+            )
         except Exception:
             _set_range_instance_status(range_instance, ResourceStatus.FAILED)
             raise

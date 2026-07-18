@@ -18,6 +18,7 @@ from gcp_range_cell_naming import (
     _subnetwork_self_link,
 )
 from gcp_range_cell_scenario import build_instance_plans, realize_range_spec
+from gcp_vpn_identity import gcp_vpn_gateway_service_account_email
 
 _MANAGED_BY_LABEL = "shifter-provisioner"
 
@@ -28,6 +29,41 @@ _MANAGED_BY_LABEL = "shifter-provisioner"
 # private_google_access is set, so guests reach Vertex AI / Cloud Storage /
 # Secret Manager while staying off the general internet.
 _GOOGLE_PRIVATE_API_VIP_CIDR = "199.36.153.8/30"  # NOSONAR
+_NON_PUBLIC_IPV4_CIDRS: tuple[ipaddress.IPv4Network, ...] = tuple(
+    ipaddress.IPv4Network(cidr)
+    for cidr in (
+        "0.0.0.0/8",
+        "10.0.0.0/8",
+        "100.64.0.0/10",
+        "127.0.0.0/8",
+        "169.254.0.0/16",
+        "172.16.0.0/12",
+        "192.0.0.0/24",
+        "192.0.2.0/24",
+        "192.88.99.0/24",
+        "192.168.0.0/16",
+        "198.18.0.0/15",
+        "198.51.100.0/24",
+        "203.0.113.0/24",
+        "224.0.0.0/4",
+        "240.0.0.0/4",
+    )
+)
+
+
+def _public_ipv4_source_ranges() -> list[str]:
+    """Return routable public IPv4 space without private/reserved sources."""
+    allowed: list[ipaddress.IPv4Network] = [ipaddress.IPv4Network("0.0.0.0/0")]
+    for excluded in _NON_PUBLIC_IPV4_CIDRS:
+        next_allowed: list[ipaddress.IPv4Network] = []
+        for network in allowed:
+            if excluded.subnet_of(network):
+                next_allowed.extend(network.address_exclude(excluded))
+            else:
+                next_allowed.append(network)
+        allowed = next_allowed
+    return [str(network) for network in sorted(allowed, key=lambda item: (int(item.network_address), item.prefixlen))]
+
 
 ResourceDict = dict[str, object]
 ComputeResource = dict[str, object]
@@ -102,6 +138,21 @@ class InstancePlan(TypedDict):
     attach_service_account: bool
 
 
+class OpenVpnGatewayPlan(TypedDict):
+    """Request-owned OpenVPN gateway adjacent to one Kali member."""
+
+    resource_name: str
+    address_name: str
+    private_ip: str
+    subnet_resource_name: str
+    subnetwork_link: str
+    target_ref: str
+    target_ip: str
+    tag: str
+    profile: GCERangeImageProfile
+    service_account_email: str
+
+
 class RangeCellPlan(TypedDict):
     """Complete resource plan for a single GCE range cell."""
 
@@ -120,6 +171,7 @@ class RangeCellPlan(TypedDict):
     subnets: list[SubnetPlan]
     instances: list[InstancePlan]
     firewalls: list[FirewallPlan]
+    vpn_gateway: NotRequired[OpenVpnGatewayPlan]
 
 
 def _resource_dicts(value: object) -> list[ResourceDict]:
@@ -229,6 +281,7 @@ def _firewall_plan(
     range_id: int,
     subnet_plans: list[SubnetPlan],
     config: GCERangeCellConfig,
+    vpn_gateway: OpenVpnGatewayPlan | None = None,
 ) -> list[FirewallPlan]:
     """Render the firewall plan for internal range traffic and management."""
     range_tag = _network_tag(range_id)
@@ -311,7 +364,98 @@ def _firewall_plan(
                 "allowed": [{"IPProtocol": "tcp", "ports": ["443"]}],
             }
         )
+    if vpn_gateway is not None:
+        firewalls.extend(
+            [
+                {
+                    "name": _short_resource_name("shifter-r", range_id, "vpn-in"),
+                    "direction": "INGRESS",
+                    "priority": 800,
+                    "target_tags": [vpn_gateway["tag"]],
+                    "source_ranges": _public_ipv4_source_ranges(),
+                    "allowed": [{"IPProtocol": "udp", "ports": ["1194"]}],
+                },
+                {
+                    "name": _short_resource_name("shifter-r", range_id, "vpn-health"),
+                    "direction": "INGRESS",
+                    "priority": 800,
+                    "target_tags": [vpn_gateway["tag"]],
+                    "source_ranges": portal_network_cidrs,
+                    "allowed": [{"IPProtocol": "tcp", "ports": ["1195"]}],
+                },
+                {
+                    "name": _short_resource_name("shifter-r", range_id, "vpn-target"),
+                    "direction": "EGRESS",
+                    "priority": 800,
+                    "target_tags": [vpn_gateway["tag"]],
+                    "destination_ranges": [f"{vpn_gateway['target_ip']}/32"],
+                    "allowed": [{"IPProtocol": "all"}],
+                },
+                {
+                    "name": _short_resource_name("shifter-r", range_id, "vpn-api"),
+                    "direction": "EGRESS",
+                    "priority": 800,
+                    "target_tags": [vpn_gateway["tag"]],
+                    "destination_ranges": [_GOOGLE_PRIVATE_API_VIP_CIDR],
+                    "allowed": [{"IPProtocol": "tcp", "ports": ["443"]}],
+                },
+                {
+                    "name": _short_resource_name("shifter-r", range_id, "vpn-deny"),
+                    "direction": "EGRESS",
+                    "priority": 900,
+                    "target_tags": [vpn_gateway["tag"]],
+                    "destination_ranges": ["0.0.0.0/0"],
+                    "denied": [{"IPProtocol": "all"}],
+                },
+            ]
+        )
     return firewalls
+
+
+def _openvpn_gateway_plan(
+    range_id: int,
+    generation: str,
+    instance_plans: list[InstancePlan],
+    subnet_plans: list[SubnetPlan],
+    config: GCERangeCellConfig,
+    remote_access: dict[str, object] | None,
+) -> OpenVpnGatewayPlan | None:
+    if remote_access is None:
+        return None
+    targets = [instance for instance in instance_plans if instance["uuid"] == remote_access["target_ref"]]
+    if (
+        config.network_mode != "shared-vpc"
+        or not config.private_google_access
+        or not config.linux.source_image
+        or not config.portal_network_cidrs
+        or "https://www.googleapis.com/auth/cloud-platform" not in config.service_account_scopes
+    ):
+        raise RuntimeError("The authorized OpenVPN capability cannot be realized by this GCE adapter")
+    if len(targets) != 1:
+        raise RuntimeError("OpenVPN capability must identify exactly one GCE range member")
+    target = targets[0]
+    subnet = next(item for item in subnet_plans if item["name"] == target["subnet_name"])
+    network = ipaddress.ip_network(subnet["cidr"])
+    used = set(subnet["ip_assignments"].values())
+    available = [str(address) for address in list(network.hosts())[2:-2] if str(address) not in used]
+    if not available:
+        raise RuntimeError("The Kali subnet has no address available for its OpenVPN gateway")
+    return {
+        "resource_name": _short_resource_name("shifter-r", range_id, "vpn-gateway"),
+        "address_name": _short_resource_name("shifter-r", range_id, "vpn-gateway-ip"),
+        "private_ip": available[0],
+        "subnet_resource_name": subnet["resource_name"],
+        "subnetwork_link": subnet["self_link"],
+        "target_ref": target["uuid"],
+        "target_ip": target["private_ip"],
+        "tag": _short_resource_name("shifter-r", range_id, "vpn-gateway"),
+        "profile": config.get_profile(role="victim", os_type="ubuntu"),
+        "service_account_email": gcp_vpn_gateway_service_account_email(
+            config.project_id,
+            range_id,
+            generation,
+        ),
+    }
 
 
 def _validated_boundary_cidrs(field: str, values: tuple[str, ...]) -> list[str]:
@@ -377,7 +521,16 @@ def render_range_cell_plan(
             require_images=require_images,
         ),
     )
-    return {
+    remote_access = validated_request["remote_access"]
+    vpn_gateway = _openvpn_gateway_plan(
+        range_id,
+        request_uuid,
+        instance_plans,
+        subnet_plans,
+        resolved_config,
+        remote_access,
+    )
+    plan: RangeCellPlan = {
         "project_id": resolved_config.project_id,
         "region": resolved_config.region,
         "zone": resolved_config.zone,
@@ -392,5 +545,8 @@ def render_range_cell_plan(
         "manage_network": manage_network,
         "subnets": subnet_plans,
         "instances": instance_plans,
-        "firewalls": _firewall_plan(range_id, subnet_plans, resolved_config),
+        "firewalls": _firewall_plan(range_id, subnet_plans, resolved_config, vpn_gateway),
     }
+    if vpn_gateway is not None:
+        plan["vpn_gateway"] = vpn_gateway
+    return plan

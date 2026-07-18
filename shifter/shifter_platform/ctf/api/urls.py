@@ -72,6 +72,11 @@ urlpatterns = [
     ),
     path("range/status/", organizer.ParticipantRangeStatusView.as_view(), name="api_range_status"),
     path("range/access/", organizer.ParticipantRangeAccessView.as_view(), name="api_range_access"),
+    path(
+        "range/vpn-profile/",
+        organizer.ParticipantVpnProfileView.as_view(),
+        name="api_range_vpn_profile",
+    ),
     path("events/<uuid:event_id>/ranges/", organizer.EventRangeListView.as_view(), name="api_range_list"),
     path(
         "events/<uuid:event_id>/ranges/provision/",

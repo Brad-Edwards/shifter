@@ -6,7 +6,7 @@
  */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { apiFetch } from "./client";
+import { apiDownload, apiFetch } from "./client";
 import type {
   CtfAssignBracketResult,
   CtfChallengeDetail,
@@ -201,6 +201,30 @@ export function useRangeAccess() {
   return useMutation({
     mutationFn: () => apiFetch<CtfRangeAccess>(`${BASE}/range/access/`, { method: "POST" }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ctfKeys.rangeStatus() }),
+  });
+}
+
+const VPN_PROFILE_MEDIA_TYPE = "application/x-openvpn-profile";
+const VPN_PROFILE_FILENAME = "shifter-ctf-range.ovpn";
+
+export function useVpnProfileDownload() {
+  return useMutation({
+    mutationFn: async () => {
+      const blob = await apiDownload(`${BASE}/range/vpn-profile/`, {
+        method: "POST",
+        expectedMediaType: VPN_PROFILE_MEDIA_TYPE,
+        maxBytes: 64 * 1024,
+      });
+      const url = URL.createObjectURL(blob);
+      try {
+        const anchor = document.createElement("a");
+        anchor.href = url;
+        anchor.download = VPN_PROFILE_FILENAME;
+        anchor.click();
+      } finally {
+        URL.revokeObjectURL(url);
+      }
+    },
   });
 }
 

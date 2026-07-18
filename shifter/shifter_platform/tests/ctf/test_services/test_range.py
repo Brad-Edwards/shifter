@@ -13,12 +13,17 @@ from uuid import uuid4
 import pytest
 from django.utils import timezone
 
+from cms.models import RangeInstance
+from cms.models import Request as CMSRequest
 from ctf.bridges import RangeProvisionResult
 from ctf.enums import ParticipantStatus, ScheduledTaskStatus, ScheduledTaskType
 from ctf.exceptions import CTFNotFoundError, CTFRangeError
 from ctf.models import CTFParticipant, CTFScheduledTask
 from ctf.services import range as range_service
 from ctf.services.range import batch, provision
+from engine.models import Instance, Range
+from engine.models import Request as EngineRequest
+from shared.enums import RangeSource, RequestType, ResourceStatus
 
 
 def _make_unregistered_participant(event, idx):
@@ -48,6 +53,7 @@ def mock_participant():
     p.pk = uuid4()
     p.range_instance_id = None
     p.range_status = ""
+    p.user_id = None
     p.user = Mock(email="participant@test.com")
     p.event = Mock(scenario_id="basic", range_config=None)
     return p
@@ -219,11 +225,70 @@ class TestGetRangeStatus:
             result = range_service.get_range_status(mock_participant.pk)
 
         assert result["status"] == "ready"
+        assert result["vpn_profile_available"] is False
         assert mock_participant.range_status == "ready"
         if expect_save:
             mock_participant.save.assert_called_once()
         else:
             mock_participant.save.assert_not_called()
+
+    @pytest.mark.django_db
+    def test_projects_vpn_profile_availability_from_cms(self, ctf_participant):
+        """Project readiness through the real CTF -> CMS -> Engine boundary."""
+        user = ctf_participant.user
+        request_id = uuid4()
+        cms_request = CMSRequest.objects.create(
+            request_id=request_id,
+            request_type=RequestType.RANGE.value,
+            user=user,
+        )
+        cms_range = RangeInstance.objects.create(
+            request=cms_request,
+            scenario_id="basic",
+            user_id=user.id,
+            status=ResourceStatus.READY.value,
+            range_source=RangeSource.CTF.value,
+        )
+        engine_request = EngineRequest.objects.create(
+            request_id=request_id,
+            request_type=RequestType.RANGE.value,
+            user=user,
+        )
+        target_ref = uuid4()
+        Instance.objects.create(
+            uuid=target_ref,
+            request=engine_request,
+            role=Instance.Role.ATTACKER,
+            os_type=Instance.OSType.KALI,
+            status=Range.Status.READY,
+        )
+        Range.objects.create(
+            request=engine_request,
+            user=user,
+            status=Range.Status.READY,
+            vpn_access_binding={
+                "version": "openvpn-binding-v1",
+                "channel": "openvpn",
+                "generation": str(request_id),
+                "owner_user_id": user.id,
+                "target_ref": str(target_ref),
+                "endpoint": "vpn.example.test",
+                "port": 1194,
+                "profile_version": "openvpn-profile-v1",
+                "secret_ref": "arn:aws:secretsmanager:eu-central-1:123:secret:range-vpn",
+                "ready": True,
+            },
+        )
+        ctf_participant.range_instance_id = cms_range.pk
+        ctf_participant.range_status = "provisioning"
+        ctf_participant.save(update_fields=["range_instance_id", "range_status", "updated_at"])
+
+        result = range_service.get_range_status(ctf_participant.pk)
+
+        assert result["status"] == "ready"
+        assert result["vpn_profile_available"] is True
+        ctf_participant.refresh_from_db()
+        assert ctf_participant.range_status == "ready"
 
 
 class TestCleanupEventRanges:
@@ -649,6 +714,7 @@ class TestCmsBridgeRangeSource:
             {"name": "Target", "role": "victim", "os_type": "windows", "xdr_agent": True},
         ],
         "subnets": [{"name": "core", "instances": ["Attacker", "Target"]}],
+        "participant_access": [{"target": "Attacker", "channel": "ssh"}],
         "ngfw": False,
     }
 
@@ -682,18 +748,26 @@ class TestCmsBridgeRangeSource:
         """ctf.bridges.cms_create_range stores the range with CTF provenance."""
         from cms.models import RangeInstance
         from ctf.bridges import cms_create_range
+        from engine.models import Range as EngineRange
         from shared.enums import RangeSource
+        from shared.remote_access import parse_openvpn_capability
 
         scenario, agent = _ctf_scenario_and_agent
 
+        teardown_at = timezone.now() + timedelta(days=5)
         result = cms_create_range(
             user=participant_user,
             scenario=scenario.scenario_id,
             agents_by_os={"windows": agent.id},
             ngfw_enabled=False,
+            remote_access_teardown_at=teardown_at,
         )
 
         assert isinstance(result, RangeProvisionResult)
         instance = RangeInstance.objects.get(request__request_id=result.request_id)
         assert instance.range_source == RangeSource.CTF.value
         assert instance.user_id == participant_user.id
+        capability = parse_openvpn_capability(
+            EngineRange.objects.get(request__request_id=result.request_id).remote_access_capability
+        )
+        assert capability.teardown_at >= teardown_at

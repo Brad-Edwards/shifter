@@ -34,6 +34,7 @@ class TestKnownScopes:
             "ctf:event:write",
             "ctf:play:read",
             "ctf:play:write",
+            "ctf:vpn-profile:read",
             "cms:authoring:read",
             "cms:authoring:write",
         ):

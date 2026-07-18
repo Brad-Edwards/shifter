@@ -20,6 +20,7 @@ from typing import Any
 
 import psycopg
 from psycopg import sql
+from shared.remote_access import parse_openvpn_binding
 
 from config import has_ngfw_attachment_state
 from log_redact import safe_log_fingerprint
@@ -195,6 +196,7 @@ def write_provisioned_state(
     subnets: dict[str, dict[str, Any]],
     instances: list[dict[str, Any]],
     ngfw_instance_id: int | None = None,
+    vpn_access_binding: dict[str, object] | None = None,
     outbox_event: dict | None = None,
 ) -> None:
     """Write provisioned infrastructure state directly to database.
@@ -204,9 +206,15 @@ def write_provisioned_state(
         subnets:         Mapping of subnet name → subnet data dict.
         instances:       List of instance data dicts.
         ngfw_instance_id: FK to the NGFW Instance, if any.
+        vpn_access_binding: Closed non-secret OpenVPN result, if supported.
         outbox_event:    Optional event dict to insert into the outbox
                          atomically with the state writes.
     """
+    if vpn_access_binding is not None:
+        # Reject extensions (especially accidental credential/profile fields)
+        # before opening a DB transaction. Only the closed ref-only contract is
+        # eligible for persistence.
+        parse_openvpn_binding(vpn_access_binding)
     provider = _get_cloud_provider()
     with get_db_connection() as conn:
         with conn.cursor() as cur:
@@ -262,10 +270,18 @@ def write_provisioned_state(
             cur.execute(
                 """
                 UPDATE mission_control_range
-                SET provisioned_instances = %s, ngfw_instance_id = %s, updated_at = NOW()
+                SET provisioned_instances = %s,
+                    vpn_access_binding = %s,
+                    ngfw_instance_id = %s,
+                    updated_at = NOW()
                 WHERE id = %s
                 """,
-                (json.dumps(provisioned_instances), ngfw_instance_id, range_id),
+                (
+                    json.dumps(provisioned_instances),
+                    json.dumps(vpn_access_binding) if vpn_access_binding is not None else None,
+                    ngfw_instance_id,
+                    range_id,
+                ),
             )
             if cur.rowcount == 0:
                 raise ValueError(f"No mission_control_range record found for id={range_id}")
@@ -327,6 +343,17 @@ def mark_range_instances_destroyed(range_id: int) -> tuple[int, int]:
                 range_id,
             )
 
+            cur.execute(
+                """
+                UPDATE mission_control_range
+                SET vpn_access_binding = NULL, updated_at = NOW()
+                WHERE id = %s
+                """,
+                (range_id,),
+            )
+            if cur.rowcount == 0:
+                raise ValueError(f"No mission_control_range record found for id={range_id}")
+
         conn.commit()
     logger.info(
         "Marked engine records as destroyed: range_id=%s instances=%d subnets=%d",
@@ -364,7 +391,8 @@ def get_range_data_by_request_id(request_id: str) -> dict[str, Any]:
                 rng.subnet_index,
                 rng.status,
                 rng.range_backend,
-                rng.instantiation_purpose
+                rng.instantiation_purpose,
+                rng.remote_access_capability
             FROM engine_request r
             JOIN mission_control_range rng ON rng.request_id = r.id
             WHERE r.request_id = %s
@@ -414,6 +442,7 @@ def get_range_data_by_request_id(request_id: str) -> dict[str, Any]:
             # deploy-wide GCP_RANGE_BACKEND selector.
             "range_backend": row[6],
             "instantiation_purpose": row[7],
+            "remote_access_capability": row[8],
         }
 
 

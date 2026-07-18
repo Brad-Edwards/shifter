@@ -14,6 +14,17 @@ variable "request_uuid" {
   type        = string
 }
 
+variable "openvpn_access" {
+  description = "Server-issued OpenVPN capability; null means this range is not authorized for a VPN edge"
+  type = object({
+    version     = string
+    channel     = string
+    target_ref  = string
+    teardown_at = string
+  })
+  default = null
+}
+
 variable "environment" {
   description = "Environment name (dev, staging, prod)"
   type        = string
@@ -23,6 +34,35 @@ variable "environment" {
 variable "secrets_kms_key_arn" {
   description = "ARN of the portal Secrets Manager CMK used to encrypt range instance SSH-key secrets at runtime (CKV_AWS_149). Sourced from the engine-provisioner ECS task env (SECRETS_KMS_KEY_ARN) which is wired from the platform env root."
   type        = string
+}
+
+variable "vpn_edge_subnet_id" {
+  description = "Public edge subnet used only by the per-range OpenVPN network load balancer"
+  type        = string
+  default     = ""
+}
+
+variable "vpn_gateway_permissions_boundary_arn" {
+  description = "Permissions boundary for the request-owned OpenVPN gateway role"
+  type        = string
+  default     = ""
+}
+
+variable "vpn_provider_endpoint_security_group_id" {
+  description = "Destination security group for private provider API endpoints"
+  type        = string
+  default     = ""
+}
+
+variable "vpn_public_client_cidr" {
+  description = "Audited public client source for the per-range mutual-TLS OpenVPN UDP listener (ADR-039-R9)"
+  type        = string
+  default     = "0.0.0.0/0"
+
+  validation {
+    condition     = can(cidrnetmask(var.vpn_public_client_cidr))
+    error_message = "vpn_public_client_cidr must be a valid IPv4 CIDR."
+  }
 }
 
 # VPC configuration

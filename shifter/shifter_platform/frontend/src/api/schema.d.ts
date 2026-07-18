@@ -1036,6 +1036,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/ctf/range/vpn-profile/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Return a no-store credential after role, ownership, state and rate gates. */
+        post: operations["ctf_range_vpn_profile_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/ctf/scenarios/": {
         parameters: {
             query?: never;
@@ -1840,6 +1857,7 @@ export interface components {
          *     * `role_sync` - Role Sync
          *     * `connect` - Connect
          *     * `disconnect` - Disconnect
+         *     * `download` - Download
          *     * `provision` - Provision
          *     * `deprovision` - Deprovision
          *     * `ready` - Ready
@@ -1851,7 +1869,7 @@ export interface components {
          *     * `spare_provision` - Spare Provision
          * @enum {string}
          */
-        ActionEnum: "create" | "update" | "delete" | "restore" | "close" | "reopen" | "login" | "logout" | "login_failed" | "access_denied" | "role_sync" | "connect" | "disconnect" | "provision" | "deprovision" | "ready" | "failed" | "pause" | "resume" | "cancel" | "recover" | "spare_provision";
+        ActionEnum: "create" | "update" | "delete" | "restore" | "close" | "reopen" | "login" | "logout" | "login_failed" | "access_denied" | "role_sync" | "connect" | "disconnect" | "download" | "provision" | "deprovision" | "ready" | "failed" | "pause" | "resume" | "cancel" | "recover" | "spare_provision";
         /**
          * @description * `user` - User
          *     * `apikey` - API Key
@@ -3051,6 +3069,8 @@ export interface components {
             readonly participant_id: string;
             readonly status: string;
             readonly range_instance_id: number | null;
+            /** @default false */
+            readonly vpn_profile_available: boolean;
         };
         /**
          * @description * `demo` - demo
@@ -6556,6 +6576,83 @@ export interface operations {
             };
             /** @description Permission denied. */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    ctf_range_vpn_profile_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/x-openvpn-profile": string;
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };

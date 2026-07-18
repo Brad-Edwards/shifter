@@ -1823,13 +1823,20 @@
         "id": "ADR-039-R8",
         "description": "Existing workflow/security/persistence incumbents remain authoritative: Mission Control/CTF/CMS own auth and audit; ResourceStatus owns public lifecycle state; installation owns config validation; Engine owns orchestration/state; ADR-025 owns durable events/reconciliation; provider secret stores plus Engine/Mission Control own remote-access secret resolution and Guacamole; and #478 owns replacement of the provisioner's direct Django-table integration. Substrate work must reuse rather than duplicate these layers.",
         "checks": []
+      },
+      {
+        "id": "ADR-039-R9",
+        "description": "Participant client VPN is an ADR-039 remote-access specialization, not a fifth operation, browser-workspace transport, or scenario-authored service. Only the trusted CTF launch path may mint the closed capability beside scenario intent; it binds one participant-access target and the event teardown deadline, and topology alone must never activate a VPN. A CTF-required profile terminates on a request-owned logical gateway inside the range containment boundary (never a cross-range shared gateway or the participant target), creates one participant/generation-scoped profile secret reference during provision, and enforces server-side reachability only to the authoritative member target. The only public range ingress exception is the audited per-range mutual-TLS OpenVPN UDP/1194 listener in the request-owned NLB resource; the CIDR guard must match that exact path/resource/protocol/port tuple and its readiness responder is private to the portal network. Infrastructure creation returns pending metadata, and a bounded service-and-policy probe must pass before the binding is published as ready. Download resolves the existing secret after product ownership/state checks; pause disables access, resume restores the current generation, and destroy deletes all generation material. Because a downloaded credential cannot be recalled from a former participant, in-place reassignment is refused while a VPN binding exists; recovery for a new owner must destroy the old generation and provision a new one before readiness. The immutable provisioner-only issuer is retained until generation teardown so retries reuse the exact server/profile material. Certificate `notAfter` is derived from the trusted teardown deadline; stale or greater-than-397-day windows fail before provider mutation. GCE uses a distinct no-role gateway service account per range generation with secretAccessor only on its own server secret. Profile/private-key/CA signing values are prohibited from public contracts, Django/adapter/Terraform state, events, task payloads, environment, argv, logs, metrics, and errors. Every CTF-eligible live-fire adapter must pass the same real-client handshake, isolation, lifecycle, and secret-deletion conformance before advertising the capability; no product or SPA provider branch may compensate for a missing adapter capability.",
+        "checks": []
       }
     ],
     "exceptions": [],
     "enforcement": ["agent-policy", "ci"],
     "evidence": [
       "https://github.com/Brad-Edwards/shifter/issues/1322",
+      "https://github.com/Brad-Edwards/shifter/issues/1695",
       "docs/architecture/provider-neutral-range-substrate.md",
+      "docs/architecture/ctf-openvpn-participant-access-preflight-1695.md",
       "docs/architecture/branch-routing-provider-coupling-inventory.md",
       "docs/architecture/root-configured-backend-bundles.md",
       "docs/architecture/range-isolation-model.md",

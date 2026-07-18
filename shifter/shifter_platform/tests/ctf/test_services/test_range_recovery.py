@@ -349,6 +349,33 @@ class TestReassignSpareRecovery:
         assert recovery.replacement_request_id is None
 
     @pytest.mark.django_db
+    def test_vpn_bound_spare_is_rejected_before_old_range_teardown(
+        self, event_with_scenario, rich_participant, organizer_user
+    ):
+        participant, old_range = rich_participant
+        spare_user = create_managed_spare_user()
+        spare, spare_range = _make_pooled_spare(event_with_scenario, owner=spare_user)
+        spare_engine_range = EngineRange.objects.get(pk=spare_range.engine_range.pk)
+        spare_engine_range.vpn_access_binding = {"generation": str(spare_range.request.request_id)}
+        spare_engine_range.save(update_fields=["vpn_access_binding"])
+
+        with pytest.raises(CTFRangeError, match="No compatible spare"):
+            recover_participant_range(
+                participant.pk,
+                strategy=RecoveryStrategy.REASSIGN_SPARE.value,
+                operator=organizer_user,
+                spare_range_instance_id=spare_range.pk,
+            )
+
+        old_range.refresh_from_db()
+        spare.refresh_from_db()
+        assert old_range.deleted_at is None
+        assert old_range.status == ResourceStatus.READY.value
+        assert EngineRange.resolve_active_for_instance(participant.user, old_range.instance_uuid) is not None
+        assert spare.status == SpareRangeStatus.READY.value
+        assert spare.consumed_by_id is None
+
+    @pytest.mark.django_db
     def test_reassign_spare_uses_live_status_when_local_status_stale(
         self, event_with_scenario, rich_participant, second_participant_user, organizer_user
     ):

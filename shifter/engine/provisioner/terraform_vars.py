@@ -184,6 +184,9 @@ def _build_aws_extra_tf_variables() -> dict[str, Any]:
         "dc_ami_id": get_ami_id("dc"),
         "instance_profile_name": os.environ.get("RANGE_INSTANCE_PROFILE_NAME", ""),
         "secrets_kms_key_arn": os.environ["SECRETS_KMS_KEY_ARN"],
+        "vpn_edge_subnet_id": os.environ.get("RANGE_VPN_EDGE_SUBNET_ID", ""),
+        "vpn_provider_endpoint_security_group_id": os.environ.get("RANGE_VPN_PROVIDER_ENDPOINT_SECURITY_GROUP_ID", ""),
+        "vpn_gateway_permissions_boundary_arn": os.environ.get("RANGE_VPN_GATEWAY_PERMISSIONS_BOUNDARY_ARN", ""),
     }
 
 
@@ -262,6 +265,7 @@ def _build_range_terraform_variables(
     range_id: int,
     user_id: int,
     range_spec: dict[str, Any],
+    remote_access_capability: dict[str, object] | None = None,
 ) -> dict[str, Any]:
     """Build Terraform variables dict from range spec and environment."""
     tf_subnets = _build_tf_subnets(range_spec.get("subnets", []))
@@ -297,6 +301,8 @@ def _build_range_terraform_variables(
         return variables
 
     if provider == "aws":
+        if remote_access_capability is not None:
+            variables["openvpn_access"] = remote_access_capability
         variables.update(_build_aws_extra_tf_variables())
         variables.update(_build_aws_polaris_agent_tf_variables(_range_has_polaris_vm_instance(range_spec)))
         return variables
@@ -309,6 +315,7 @@ def _build_gce_range_cell_variables(
     range_id: int,
     range_spec: dict[str, Any],
     scenario_artifact: dict[str, Any] | None,
+    remote_access_capability: dict[str, object] | None,
 ) -> dict[str, Any]:
     """Build the closed GCE VM-cell request around an opaque scenario artifact."""
     if scenario_artifact is None:
@@ -329,6 +336,7 @@ def _build_gce_range_cell_variables(
         scenario_artifact=scenario_artifact,
         network_bindings=bindings,
         access_declarations=access_declarations,
+        remote_access=remote_access_capability,
     )
 
 
@@ -340,6 +348,7 @@ def build_range_variables(
     *,
     scenario_artifact: dict[str, Any] | None = None,
     backend: str | None = None,
+    remote_access_capability: dict[str, object] | None = None,
 ) -> dict[str, Any]:
     """Return backend-appropriate range variables.
 
@@ -355,5 +364,17 @@ def build_range_variables(
     """
     use_gce = backend == "gce" if backend else is_gce_range_cell_backend()
     if use_gce:
-        return _build_gce_range_cell_variables(request_id, range_id, range_spec, scenario_artifact)
-    return _build_range_terraform_variables(request_id, range_id, user_id, range_spec)
+        return _build_gce_range_cell_variables(
+            request_id,
+            range_id,
+            range_spec,
+            scenario_artifact,
+            remote_access_capability,
+        )
+    return _build_range_terraform_variables(
+        request_id,
+        range_id,
+        user_id,
+        range_spec,
+        remote_access_capability,
+    )

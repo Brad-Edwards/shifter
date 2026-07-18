@@ -15,6 +15,7 @@ from typing import Any
 
 from shared.range_cells import RangeCellContractError, validate_scenario_artifact
 from shared.range_instantiation_policy import PREREQUISITE_DENIAL_CODE, normalize_gcp_range_backend
+from shared.remote_access import parse_openvpn_capability, validate_openvpn_capability_window
 
 import range_terraform_runner
 from cloud.exceptions import CloudError
@@ -37,8 +38,26 @@ from terraform_ngfw_range import (
     _validate_ngfw_range_attachment,
 )
 from terraform_vars import build_range_variables
+from vpn_access import (
+    cleanup_openvpn_access,
+    finalize_openvpn_access,
+    prepare_openvpn_access,
+    verify_openvpn_gateway,
+)
+from vpn_secrets import get_vpn_secret_ops, openvpn_access_enabled
 
 logger = logging.getLogger(__name__)
+
+
+def _cleanup_openvpn_if_enabled(range_id: int, request_id: str, *, delete_identity: bool = True) -> None:
+    """Delete a generation only when this installation could have created it."""
+    if openvpn_access_enabled():
+        cleanup_openvpn_access(
+            range_id,
+            request_id,
+            get_vpn_secret_ops(),
+            delete_identity=delete_identity,
+        )
 
 
 def _prerequisite_error(message: str) -> CloudError:
@@ -114,6 +133,7 @@ def _build_operation_variables(
     range_spec: dict[str, Any],
     scenario_artifact: dict[str, Any] | None,
     backend: str | None = None,
+    remote_access_capability: dict[str, object] | None = None,
 ) -> dict[str, Any]:
     """Build backend variables while preserving legacy call behavior.
 
@@ -121,15 +141,18 @@ def _build_operation_variables(
     persisted ownership for destroy/compensation; ``None`` keeps the env-selector
     behavior for provision and non-GCP callers.
     """
+    kwargs: dict[str, Any] = {"backend": backend}
+    if remote_access_capability is not None:
+        kwargs["remote_access_capability"] = remote_access_capability
     if scenario_artifact is None:
-        return build_range_variables(request_id, range_id, user_id, range_spec, backend=backend)
+        return build_range_variables(request_id, range_id, user_id, range_spec, **kwargs)
+    kwargs["scenario_artifact"] = scenario_artifact
     return build_range_variables(
         request_id,
         range_id,
         user_id,
         range_spec,
-        scenario_artifact=scenario_artifact,
-        backend=backend,
+        **kwargs,
     )
 
 
@@ -141,6 +164,7 @@ def _attempt_terraform_auto_cleanup(
     *,
     scenario_artifact: dict[str, Any] | None = None,
     backend: str | None = None,
+    remote_access_capability: dict[str, object] | None = None,
 ) -> None:
     """Best-effort `terraform destroy` after a failed provision.
 
@@ -160,6 +184,7 @@ def _attempt_terraform_auto_cleanup(
             range_spec,
             scenario_artifact,
             backend,
+            remote_access_capability,
         )
         range_terraform_runner.destroy_range(request_id, variables=cleanup_variables, backend=backend)
         range_terraform_runner.cleanup_range_state(request_id, backend)
@@ -171,6 +196,15 @@ def _attempt_terraform_auto_cleanup(
             range_id,
             request_id,
         )
+    finally:
+        if remote_access_capability is not None:
+            try:
+                # Preserve the deterministic GCE principal across retry. A
+                # terminal range destroy deletes it; compensation revokes all
+                # secrets but avoids GCP's 30-day service-account tombstone.
+                _cleanup_openvpn_if_enabled(range_id, request_id, delete_identity=False)
+            except Exception:
+                logger.exception("Failed to revoke OpenVPN generation during provision compensation")
     _release_subnet_allocations_best_effort(request_id)
 
 
@@ -183,6 +217,7 @@ def _dispatch_terraform_operation(
     *,
     scenario_artifact: dict[str, Any] | None = None,
     backend: str | None = None,
+    remote_access_capability: dict[str, object] | None = None,
 ) -> None:
     """Run the requested Terraform operation; raise ValueError for unknown ops.
 
@@ -190,7 +225,14 @@ def _dispatch_terraform_operation(
     persisted ownership; provision keeps its #1348 env-gated routing unchanged.
     """
     if operation == "up":
-        _run_terraform_provision(request_id, range_id, user_id, range_spec, scenario_artifact=scenario_artifact)
+        _run_terraform_provision(
+            request_id,
+            range_id,
+            user_id,
+            range_spec,
+            scenario_artifact=scenario_artifact,
+            remote_access_capability=remote_access_capability,
+        )
     elif operation == "destroy":
         _run_terraform_destroy(
             request_id,
@@ -199,6 +241,7 @@ def _dispatch_terraform_operation(
             range_spec,
             scenario_artifact=scenario_artifact,
             backend=backend,
+            remote_access_capability=remote_access_capability,
         )
     else:
         raise ValueError(f"Unknown operation: {operation}")
@@ -209,6 +252,24 @@ def _safe_failure_message(exc: Exception) -> str:
     if isinstance(exc, RangeCellContractError):
         return "Range-cell contract validation failed"
     return str(exc)[:1000]
+
+
+def _resolve_remote_access_capability(
+    range_data: dict[str, Any],
+    operation: str,
+) -> dict[str, object] | None:
+    """Validate persisted remote-access authority before any operation mutation."""
+    raw_capability = range_data.get("remote_access_capability")
+    if raw_capability is None:
+        return None
+    capability = parse_openvpn_capability(raw_capability)
+    if operation == "up":
+        validate_openvpn_capability_window(capability)
+        if not openvpn_access_enabled():
+            raise _prerequisite_error(
+                "This range requests OpenVPN access, but the selected provider adapter is not configured to realize it"
+            )
+    return capability.as_dict()
 
 
 def run_range_terraform(operation: str, request_id: str) -> None:
@@ -228,6 +289,7 @@ def run_range_terraform(operation: str, request_id: str) -> None:
     scenario_artifact = None
     operation_dispatched = False
     try:
+        remote_access_capability = _resolve_remote_access_capability(range_data, operation)
         # Verify the producer-minted artifact before any NGFW or provider
         # operation. Other backends retain their existing legacy payload path.
         if is_gce_range_cell_backend():
@@ -245,6 +307,7 @@ def run_range_terraform(operation: str, request_id: str) -> None:
             range_spec,
             scenario_artifact=scenario_artifact,
             backend=operation_backend,
+            remote_access_capability=remote_access_capability,
         )
     except Exception as e:
         error_msg = _safe_failure_message(e)
@@ -257,6 +320,7 @@ def run_range_terraform(operation: str, request_id: str) -> None:
                 range_spec,
                 scenario_artifact=scenario_artifact,
                 backend=operation_backend,
+                remote_access_capability=remote_access_capability,
             )
         publish_failed(
             request_id=request_id,
@@ -274,6 +338,7 @@ def _run_terraform_provision(
     range_spec: dict[str, Any],
     *,
     scenario_artifact: dict[str, Any] | None = None,
+    remote_access_capability: dict[str, object] | None = None,
 ) -> None:
     """Run Terraform apply for range, then run instance setup."""
     publish_status_update(
@@ -284,6 +349,20 @@ def _run_terraform_provision(
     )
 
     logger.info("Running terraform apply for range...")
+
+    vpn_secret_ops = get_vpn_secret_ops() if remote_access_capability is not None else None
+    vpn_preparation = (
+        prepare_openvpn_access(
+            request_id,
+            range_id,
+            user_id,
+            range_spec,
+            remote_access_capability,
+            vpn_secret_ops,
+        )
+        if remote_access_capability is not None and vpn_secret_ops is not None
+        else None
+    )
 
     spec_subnets = _allocate_range_subnet_cidrs(
         request_id,
@@ -301,10 +380,20 @@ def _run_terraform_provision(
         user_id,
         range_spec,
         scenario_artifact,
+        remote_access_capability=remote_access_capability,
     )
 
     # Run the provider-routed apply
     output_data = range_terraform_runner.apply_range(request_id, provision_variables)
+    vpn_access_binding = (
+        finalize_openvpn_access(
+            vpn_preparation,
+            verify_openvpn_gateway(output_data.get("vpn_gateway")),
+            vpn_secret_ops,
+        )
+        if vpn_preparation is not None and vpn_secret_ops is not None
+        else None
+    )
 
     subnets_output = output_data.get("subnets", {})
     instances_output = output_data.get("instances", [])
@@ -353,6 +442,7 @@ def _run_terraform_provision(
         subnets=subnets_output,
         instances=instances_output,
         ngfw_instance_id=range_data.get("ngfw_instance_id"),
+        vpn_access_binding=vpn_access_binding,
     )
 
     publish_ready(request_id=request_id, range_id=range_id, user_id=user_id)
@@ -448,6 +538,7 @@ def _run_terraform_destroy(
     *,
     scenario_artifact: dict[str, Any] | None = None,
     backend: str | None = None,
+    remote_access_capability: dict[str, object] | None = None,
 ) -> None:
     """Run Terraform destroy for range.
 
@@ -471,8 +562,10 @@ def _run_terraform_destroy(
             range_spec,
             scenario_artifact,
             backend,
+            remote_access_capability,
         )
         range_terraform_runner.destroy_range(request_id, variables=destroy_variables, backend=backend)
+        _cleanup_openvpn_if_enabled(range_id, request_id)
         terraform_succeeded = True
         logger.info("Cleaning up Terraform state...")
         range_terraform_runner.cleanup_range_state(request_id, backend)

@@ -38,6 +38,7 @@ class AuditAction(models.TextChoices):
     # Sessions
     CONNECT = "connect", "Connect"
     DISCONNECT = "disconnect", "Disconnect"
+    DOWNLOAD = "download", "Download"
     # Resource lifecycle
     PROVISION = "provision", "Provision"
     DEPROVISION = "deprovision", "Deprovision"

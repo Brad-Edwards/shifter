@@ -9,6 +9,7 @@ from uuid import UUID
 
 from shared.enums import CANCELLABLE_STATUSES, ResourceStatus
 from shared.range_cells import build_scenario_artifact
+from shared.remote_access import parse_openvpn_capability
 from shared.schemas import RangeRef, RangeSpec, RequestSpec
 from shared.schemas.persistence import wrap_persisted_spec
 
@@ -29,6 +30,17 @@ _TASK_ARN_FIELDS = {
     "provision": "provisioning_task_arn",
     "destroy": "teardown_task_arn",
 }
+
+
+class RangeOwnershipTransferBlocked(EngineError):
+    """An active participant credential prevents safe in-place ownership transfer."""
+
+
+def range_owner_reassignment_available_by_request(request_id: UUID) -> bool:
+    """Return whether ownership can move without leaving a client credential live."""
+    from engine.models import Range
+
+    return Range.objects.filter(request__request_id=request_id, vpn_access_binding__isnull=True).exists()
 
 
 def _persist_task_arn(range_obj: Range, operation: str, task_arn: str | None) -> None:
@@ -59,7 +71,12 @@ def _atomic() -> ContextManager[None]:
     return _es.transaction.atomic()
 
 
-def create_range(request_spec: RequestSpec, *, backend_admission: BackendAdmission | None = None) -> RangeRef:
+def create_range(
+    request_spec: RequestSpec,
+    *,
+    backend_admission: BackendAdmission | None = None,
+    remote_access_capability: dict[str, object] | None = None,
+) -> RangeRef:
     """Provision infrastructure for range.
 
     Interprets the RequestSpec into Engine models (Request, Instance),
@@ -97,13 +114,25 @@ def create_range(request_spec: RequestSpec, *, backend_admission: BackendAdmissi
         len(range_spec.all_instances),
     )
 
+    normalized_remote_access = (
+        parse_openvpn_capability(remote_access_capability).as_dict() if remote_access_capability is not None else None
+    )
     existing_range = Range.objects.filter(request__request_id=request_spec.request_id).first()
     if existing_range is not None:
         logger.info("create_range: reusing existing range request_id=%s", request_spec.request_id)
         verify_existing_binding(existing_range, request_spec.request_id, backend_admission)
+        if existing_range.remote_access_capability != normalized_remote_access:
+            raise EngineError("Existing range remote-access capability does not match the create request")
         return _range_ref_from_range(existing_range, request_spec, range_spec)
 
-    range_obj = _persist_range_atomically(request_spec, range_spec, user_model, Range, backend_admission)
+    range_obj = _persist_range_atomically(
+        request_spec,
+        range_spec,
+        user_model,
+        Range,
+        backend_admission,
+        normalized_remote_access,
+    )
 
     try:
         task_arn = start_range_provisioning(request_spec.request_id)
@@ -125,6 +154,7 @@ def _persist_range_atomically(
     user_model: type[User],
     range_model: type[Range],
     backend_admission: BackendAdmission | None = None,
+    remote_access_capability: dict[str, object] | None = None,
 ) -> Range:
     """Run the interpret + Range + Subnet inserts under a single transaction.
 
@@ -136,6 +166,9 @@ def _persist_range_atomically(
     from engine.models import Subnet
 
     binding_fields = backend_binding_fields(backend_admission)
+    remote_access_fields = (
+        {"remote_access_capability": remote_access_capability} if remote_access_capability is not None else {}
+    )
 
     with _atomic():
         request = interpret(request_spec)
@@ -157,6 +190,7 @@ def _persist_range_atomically(
                 status=range_model.Status.PROVISIONING,
                 subnet_index=subnet_index,
                 range_config=range_artifact,
+                **remote_access_fields,
                 **binding_fields,
             )
         else:
@@ -167,6 +201,7 @@ def _persist_range_atomically(
                 status=range_model.Status.PROVISIONING,
                 subnet_index=subnet_index,
                 range_config=range_artifact,
+                **remote_access_fields,
                 **binding_fields,
             )
 
@@ -451,6 +486,13 @@ def reassign_range_owner_by_request(request_id: UUID, new_user: User) -> bool:
             request_id,
         )
         return True
+
+    if range_obj.vpn_access_binding is not None:
+        # The downloaded client credential is already outside platform custody.
+        # Refuse the ownership change rather than leave it valid for a former
+        # participant. Callers must destroy the generation (which removes the
+        # gateway and all secrets) and provision a replacement for the new owner.
+        raise RangeOwnershipTransferBlocked("Range ownership cannot change while participant VPN access is active")
 
     range_obj.user = new_user
     range_obj.cms_user_id = new_user.id

@@ -405,12 +405,14 @@ class TestRangeSourceAdmission:
 
     def test_create_range_default_persists_mc_source(self, user, make_agent, hydratable_scenario):
         """create_range() with no range_source persists 'mission_control' on the row."""
+        from engine.models import Range as EngineRange
         from shared.enums import RangeSource
 
         agent = make_agent(user)
         services.create_range(user, hydratable_scenario.scenario_id, {"windows": agent.id})
         ri = RangeInstance.objects.get(user_id=user.id)
         assert ri.range_source == RangeSource.MISSION_CONTROL.value
+        assert EngineRange.objects.get(request__request_id=ri.request.request_id).remote_access_capability is None
 
 
 class TestActiveRangeConstraintBackstop:

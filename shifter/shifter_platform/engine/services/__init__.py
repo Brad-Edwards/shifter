@@ -33,6 +33,7 @@ from ._lifecycle import pause_range, resume_range
 from ._ngfw import create_ngfw, destroy_ngfw, start_ngfw, stop_ngfw
 from ._queries import get_authoritative_range_status, get_ranges_for_ngfw, get_user_ready_range_instances
 from ._range import (
+    RangeOwnershipTransferBlocked,
     cancel_range,
     cancel_range_by_request,
     create_range,
@@ -40,6 +41,7 @@ from ._range import (
     destroy_range_by_request,
     get_instance_ips_by_uuid,
     get_range_status,
+    range_owner_reassignment_available_by_request,
     reassign_range_owner_by_request,
 )
 from ._range_escape import GuestProbeError, GuestProbeRequest, RangeMembership, get_range_membership, run_guest_probe
@@ -48,6 +50,13 @@ from ._terminal import (
     connect_terminal,
     get_rdp_connection_info,
     get_ssh_connection_info,
+)
+from ._vpn import (
+    VpnProfileConflict,
+    VpnProfileNotFound,
+    VpnProfileUnavailable,
+    get_openvpn_profile,
+    has_openvpn_profile,
 )
 
 __all__ = (
@@ -59,8 +68,12 @@ __all__ = (
     "GuestProbeError",
     "GuestProbeRequest",
     "RangeMembership",
+    "RangeOwnershipTransferBlocked",
     "SSHConnection",
     "SecretsError",
+    "VpnProfileConflict",
+    "VpnProfileNotFound",
+    "VpnProfileUnavailable",
     "cancel_range",
     "cancel_range_by_request",
     "connect_ngfw_terminal",
@@ -74,6 +87,7 @@ __all__ = (
     "disable_aces_image_mapping",
     "get_authoritative_range_status",
     "get_instance_ips_by_uuid",
+    "get_openvpn_profile",
     "get_range_membership",
     "get_range_status",
     "get_ranges_for_ngfw",
@@ -82,9 +96,11 @@ __all__ = (
     "get_ssh_connection_info",
     "get_ssh_key",
     "get_user_ready_range_instances",
+    "has_openvpn_profile",
     "list_aces_image_mappings",
     "pause_range",
     "project_aces_operation_status",
+    "range_owner_reassignment_available_by_request",
     "reassign_range_owner_by_request",
     "record_aces_operation_status",
     "record_aces_runtime_snapshot",

@@ -1,4 +1,4 @@
-import { useCtfRangeStatus, useRangeAccess } from "@/api/ctf";
+import { useCtfRangeStatus, useRangeAccess, useVpnProfileDownload } from "@/api/ctf";
 import { describeMutationError } from "@/api/errors";
 import type { CtfRangeStatus } from "@/api/types";
 import { PageHeader } from "@/components/page-header";
@@ -48,6 +48,29 @@ function RangeAccess({ status }: Readonly<{ status: CtfRangeStatus }>) {
   );
 }
 
+function VpnProfileDownload({ status }: Readonly<{ status: CtfRangeStatus }>) {
+  const download = useVpnProfileDownload();
+  const error = describeMutationError(download.error, "Could not download the VPN profile.");
+
+  if (status.status !== READY || !status.vpn_profile_available) return null;
+
+  return (
+    <div className="mt-3">
+      <Button variant="secondary" onClick={() => download.mutate()} disabled={download.isPending}>
+        {download.isPending ? "Downloading…" : "Download VPN profile"}
+      </Button>
+      <p className="mt-2 text-sm text-muted-foreground">
+        This file is a private credential. Import it into a standard OpenVPN client and store it securely.
+      </p>
+      {error ? (
+        <Alert variant="destructive" className="mt-3">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      ) : null}
+    </div>
+  );
+}
+
 export function RangePage() {
   const query = useCtfRangeStatus();
 
@@ -87,6 +110,7 @@ export function RangePage() {
             <p className="mt-2 text-sm text-muted-foreground">Range instance #{status.range_instance_id}</p>
           )}
           <RangeAccess status={status} />
+          <VpnProfileDownload status={status} />
         </CardContent>
       </Card>
     </>
