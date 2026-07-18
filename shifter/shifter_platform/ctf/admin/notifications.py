@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 from django.contrib import admin
 from django.utils.html import format_html
 
@@ -15,9 +13,6 @@ from ctf.models import (
     CTFNotification,
     CTFScheduledTask,
 )
-
-if TYPE_CHECKING:
-    pass
 
 
 @admin.register(CTFNotification)

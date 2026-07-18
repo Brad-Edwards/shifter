@@ -3,15 +3,12 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import Any, cast
 
 from django import forms
 
 from ctf.forms._shared import DATETIME_LOCAL_FORMAT, DATETIME_SECONDS_FORMAT
-from ctf.models import CTFNotification
-
-if TYPE_CHECKING:
-    pass
+from ctf.models import CTFEvent, CTFNotification
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +33,7 @@ class CTFNotificationForm(forms.ModelForm):
             ),
         }
 
-    def __init__(self, *args, event=None, **kwargs):
+    def __init__(self, *args: Any, event: CTFEvent | None = None, **kwargs: Any) -> None:
         """Initialize form with event context.
 
         Args:
@@ -47,7 +44,7 @@ class CTFNotificationForm(forms.ModelForm):
 
         # Set input formats for datetime fields
         if "scheduled_at" in self.fields:
-            self.fields["scheduled_at"].input_formats = [
+            cast(forms.DateTimeField, self.fields["scheduled_at"]).input_formats = [
                 DATETIME_LOCAL_FORMAT,
                 DATETIME_SECONDS_FORMAT,
                 "%Y-%m-%d %H:%M:%S",

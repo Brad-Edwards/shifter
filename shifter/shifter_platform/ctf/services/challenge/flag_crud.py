@@ -40,28 +40,7 @@ def _flag_hash_for_payload(
         )
 
     if flag_type in ("static", "regex"):
-        plaintext_flag = flag_data.get("flag", "").strip()
-        if not plaintext_flag:
-            raise CTFValidationError(
-                "Flag value is required",
-                details={"missing_fields": ["flag"]},
-            )
-        if flag_type == "regex":
-            # Reject unsafe patterns at creation time (over-long or
-            # uncompilable) so organizers get immediate feedback and the
-            # request-worker verifier never stores a ReDoS-prone pattern
-            # (issue #1183). The pattern is not echoed back to avoid leaking it.
-            from ctf.services.regex_policy import UnsafeRegexError, validate_pattern
-
-            try:
-                validate_pattern(plaintext_flag)
-            except UnsafeRegexError as e:
-                raise CTFValidationError(
-                    str(e),
-                    details={"pattern_length": len(plaintext_flag)},
-                ) from None
-            return plaintext_flag
-        return hash_flag(plaintext_flag, case_sensitive=case_sensitive)
+        return _plaintext_flag_hash(flag_type, flag_data, case_sensitive=case_sensitive)
 
     if flag_type == "programmable":
         _validate_programmable_config(validator_config)
@@ -69,6 +48,32 @@ def _flag_hash_for_payload(
 
     _validate_http_config(validator_config)
     return "http"
+
+
+def _plaintext_flag_hash(flag_type: str, flag_data: dict[str, Any], *, case_sensitive: bool) -> str:
+    """Validate a static/regex flag payload and return its stored value."""
+    plaintext_flag = flag_data.get("flag", "").strip()
+    if not plaintext_flag:
+        raise CTFValidationError(
+            "Flag value is required",
+            details={"missing_fields": ["flag"]},
+        )
+    if flag_type == "regex":
+        # Reject unsafe patterns at creation time (over-long or
+        # uncompilable) so organizers get immediate feedback and the
+        # request-worker verifier never stores a ReDoS-prone pattern
+        # (issue #1183). The pattern is not echoed back to avoid leaking it.
+        from ctf.services.regex_policy import UnsafeRegexError, validate_pattern
+
+        try:
+            validate_pattern(plaintext_flag)
+        except UnsafeRegexError as e:
+            raise CTFValidationError(
+                str(e),
+                details={"pattern_length": len(plaintext_flag)},
+            ) from None
+        return plaintext_flag
+    return hash_flag(plaintext_flag, case_sensitive=case_sensitive)
 
 
 def add_flag(

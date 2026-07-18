@@ -3,14 +3,11 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import Any
 
 from django import forms
 
-from ctf.models import CTFBracket
-
-if TYPE_CHECKING:
-    pass
+from ctf.models import CTFBracket, CTFEvent
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +26,7 @@ class CTFBracketForm(forms.ModelForm):
             "description": forms.Textarea(attrs={"rows": 3}),
         }
 
-    def __init__(self, *args, event=None, **kwargs):
+    def __init__(self, *args: Any, event: CTFEvent | None = None, **kwargs: Any) -> None:
         """Initialize form with event context.
 
         Args:

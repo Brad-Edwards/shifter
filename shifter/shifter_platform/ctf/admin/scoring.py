@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 from django.contrib import admin
 
 from ctf.admin._shared import (
@@ -13,9 +11,6 @@ from ctf.models import (
     CTFAward,
     CTFSubmission,
 )
-
-if TYPE_CHECKING:
-    pass
 
 
 @admin.register(CTFSubmission)

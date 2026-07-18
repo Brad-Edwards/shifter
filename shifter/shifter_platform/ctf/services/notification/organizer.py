@@ -3,15 +3,11 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
 from uuid import UUID
 
 from ctf.enums import NotificationStatus, NotificationType
 from ctf.models import CTFEvent, CTFNotification
 from ctf.services.notification._email import _render_email, _send_email
-
-if TYPE_CHECKING:
-    pass
 
 logger = logging.getLogger(__name__)
 

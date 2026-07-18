@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from ctf.models import CTFEvent
@@ -52,7 +52,7 @@ def _send_email(
 
 def _render_email(
     template_name: str,
-    context: dict,
+    context: dict[str, Any],
     event: CTFEvent | None = None,
 ) -> tuple[str, str, str]:
     """Render email templates.

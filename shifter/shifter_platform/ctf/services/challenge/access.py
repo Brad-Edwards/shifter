@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
 from uuid import UUID
 
 from django.db.models import QuerySet
@@ -23,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 
 def _resolve_next_challenge(
-    raw: Any,
+    raw: str | UUID | CTFChallenge | None,
     *,
     event: CTFEvent,
     self_id: UUID | None = None,

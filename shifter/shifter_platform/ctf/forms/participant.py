@@ -3,15 +3,13 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import Any, cast
 
 from django import forms
 from django.core.exceptions import ValidationError
+from django.core.files.uploadedfile import UploadedFile
 
-from ctf.models import CTFBracket, CTFParticipant
-
-if TYPE_CHECKING:
-    pass
+from ctf.models import CTFBracket, CTFEvent, CTFParticipant
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +25,7 @@ class CTFParticipantForm(forms.ModelForm):
             "bracket",
         ]
 
-    def __init__(self, *args, event=None, **kwargs):
+    def __init__(self, *args: Any, event: CTFEvent | None = None, **kwargs: Any) -> None:
         """Initialize form with event context.
 
         Args:
@@ -37,10 +35,11 @@ class CTFParticipantForm(forms.ModelForm):
         self.event = event
 
         # Filter bracket choices to this event's brackets
+        bracket_field = cast(forms.ModelChoiceField, self.fields["bracket"])
         if event:
-            self.fields["bracket"].queryset = CTFBracket.objects.filter(event=event)
+            bracket_field.queryset = CTFBracket.objects.filter(event=event)
         else:
-            self.fields["bracket"].queryset = CTFBracket.objects.none()
+            bracket_field.queryset = CTFBracket.objects.none()
 
         # Add CSS classes
         for _field_name, field in self.fields.items():
@@ -75,7 +74,7 @@ class CTFParticipantImportForm(forms.Form):
         widget=forms.FileInput(attrs={"accept": ".csv"}),
     )
 
-    def clean_csv_file(self):
+    def clean_csv_file(self) -> UploadedFile | None:
         """Validate CSV file format."""
         csv_file = self.cleaned_data.get("csv_file")
 

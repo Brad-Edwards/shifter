@@ -240,8 +240,9 @@ class TestSendCredentials:
     """Behavioral tests for send_credentials (real ORM + SMTP boundary)."""
 
     def test_not_found(self):
+        missing_id = uuid4()
         with pytest.raises(CTFNotFoundError):
-            notification.send_credentials(uuid4())
+            notification.send_credentials(missing_id)
 
     def test_sends_to_ready_ranges(self, db_event, db_participant, recorded_email):
         """Dispatches credentials to participants with ready ranges."""
@@ -310,8 +311,9 @@ class TestSendReminder:
         return result, contexts
 
     def test_not_found(self):
+        missing_id = uuid4()
         with pytest.raises(CTFNotFoundError):
-            notification.send_reminder(uuid4())
+            notification.send_reminder(missing_id)
 
     def test_sends_to_registered(self, db_event, db_participant, recorded_email):
         """Sends reminders to registered participants and records the batch."""
@@ -377,8 +379,9 @@ class TestSendAnnouncement:
         user = django_user_model.objects.create_user(
             username="announcement-nf@test.com", email="announcement-nf@test.com"
         )
+        missing_id = uuid4()
         with pytest.raises(CTFNotFoundError):
-            notification.send_announcement(uuid4(), "Test", "Body", user)
+            notification.send_announcement(missing_id, "Test", "Body", user)
 
     def test_creates_and_sends(self, db_event, db_participant, recorded_email):
         """Creates the notification record and sends to participants."""
@@ -411,8 +414,10 @@ class TestScheduleNotification:
     def test_not_found(self):
         from django.utils import timezone
 
+        missing_id = uuid4()
+        now = timezone.now()
         with pytest.raises(CTFNotFoundError):
-            notification.schedule_notification(uuid4(), timezone.now())
+            notification.schedule_notification(missing_id, now)
 
     def test_schedules_notification(self, db_event):
         """Sets SCHEDULED status and creates the scheduled task row."""
