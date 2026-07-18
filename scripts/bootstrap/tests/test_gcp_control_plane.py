@@ -311,6 +311,58 @@ gke_master_authorized_cidrs = ["198.51.100.10/32"]
         assert mock_apply.call_args.args[0] is config
         assert outputs["gke_cluster_name"]["value"] == "shifter-gcp-dev-platform"
 
+    def test_operator_adc_identity_skips_tf_bootstrap_service_account(self, mock_repo_root):
+        """operator-adc runs terraform under ADC and never provisions the privileged tf-bootstrap SA (#1718)."""
+        config = deploy.GDCBootstrapConfig(
+            project_id="prod-rwctxzl6shxk", cluster_id="cluster1", terraform_identity="operator-adc"
+        )
+        tf_dir = mock_repo_root / "platform" / "terraform" / "gcp" / "environments" / "gcp-dev"
+        tf_dir.mkdir(parents=True)
+        (tf_dir / "terraform.tfvars").write_text(
+            'project_id = "shifter-gcp-dev"\n'
+            'region = "us-central1"\n'
+            'public_hostname = "portal.example.test"\n'
+            "enable_managed_tls = true\n"
+            'gke_master_authorized_cidrs = ["198.51.100.10/32"]\n'
+        )
+        (mock_repo_root / "shifter.yaml").write_text("version: 1\nbackend: gcp\n")
+
+        class _FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self) -> bytes:
+                return b'{"name":"operations/artifactregistry-service-identity"}'
+
+        terraform_output = json.dumps(_sample_gcp_control_plane_outputs(config.project_id))
+
+        with (
+            patch("deploy.get_repo_root", return_value=mock_repo_root),
+            patch("deploy.gcloud_resource_exists", return_value=False),
+            patch("deploy.gcp_terraform_bootstrap_credentials") as mock_creds,
+            patch("deploy.run_gcp_terraform_init_with_retry") as mock_init,
+            patch("deploy.wait_for_gcp_terraform_bootstrap_access") as mock_wait,
+            patch("deploy.run_gcp_terraform_apply_with_retry") as mock_apply,
+            patch("deploy.run_cmd"),
+            patch("deploy._gcp_identity_access_token", return_value="test-access-token"),
+            patch("deploy.urllib_request.urlopen", return_value=_FakeResponse()),
+            patch("os.chdir"),
+            patch(
+                "subprocess.run",
+                return_value=subprocess.CompletedProcess(["terraform"], 0, stdout=terraform_output),
+            ),
+        ):
+            outputs = deploy.apply_gcp_control_plane_terraform(config)
+
+        mock_creds.assert_not_called()
+        mock_wait.assert_not_called()
+        mock_init.assert_called_once_with(config, config.terraform_state_bucket_name, None)
+        mock_apply.assert_called_once_with(config)
+        assert outputs["gke_cluster_name"]["value"] == "shifter-gcp-dev-platform"
+
 
 class TestRenderRangeEgressTfvars:
     """render_range_egress_tfvars shells out to `shifter-config render` at the process boundary (#1015)."""

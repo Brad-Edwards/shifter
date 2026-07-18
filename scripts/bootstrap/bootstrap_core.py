@@ -505,11 +505,24 @@ class GDCBootstrapConfig:
     # default deploys the keyless GKE control plane straight through, so a tenant on
     # an org that enforces iam.managed.disableServiceAccountKeyCreation is not blocked.
     range_backend: str = "gce"
+    # Terraform identity for the control-plane apply (#1718). "bootstrap-sa" (default)
+    # impersonates a dedicated shifter-<env>-tf-bootstrap service account granted
+    # roles/owner (ADR-008 least-standing-privilege). "operator-adc" runs terraform
+    # directly under the caller's Application Default Credentials, skipping the
+    # bootstrap SA + key entirely — required on orgs that enforce
+    # custom.preventPrivilegedBasicRolesForServAccounts (no owner-on-SA) or
+    # iam.managed.disableServiceAccountKeyCreation (no SA keys).
+    terraform_identity: str = "bootstrap-sa"
 
     @property
     def builds_gdc_substrate(self) -> bool:
         """Whether this bootstrap builds the ABM/GDC VM Runtime substrate."""
         return self.range_backend == "gdc"
+
+    @property
+    def terraform_uses_operator_adc(self) -> bool:
+        """Whether terraform runs under the caller's ADC instead of the tf-bootstrap SA."""
+        return self.terraform_identity == "operator-adc"
 
     @property
     def resolved_network_name(self) -> str:

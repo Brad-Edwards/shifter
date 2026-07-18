@@ -730,20 +730,26 @@ def _is_retryable_gcp_terraform_apply_error(message: str) -> bool:
 def run_gcp_terraform_init_with_retry(
     config: GDCBootstrapConfig,
     tf_state_bucket: str,
-    credentials_path: Path,
+    credentials_path: Path | None,
     *,
     max_attempts: int = 12,
     sleep_seconds: int = 5,
 ) -> None:
-    """Run terraform init and retry only documented GCS backend IAM propagation failures."""
+    """Run terraform init and retry only documented GCS backend IAM propagation failures.
+
+    credentials_path=None runs against the caller's ambient ADC (the operator-adc
+    terraform identity, #1718); the GCS backend then authenticates with ADC and no
+    -backend-config=credentials is passed.
+    """
     init_cmd = [
         "terraform",
         "init",
         "-reconfigure",
         f"-backend-config=bucket={tf_state_bucket}",
         f"-backend-config=prefix=shifter/{config.environment}/platform-core",
-        f"-backend-config=credentials={credentials_path}",
     ]
+    if credentials_path is not None:
+        init_cmd.append(f"-backend-config=credentials={credentials_path}")
     info(f"Running: {' '.join(init_cmd)}")
 
     for attempt in range(1, max_attempts + 1):
@@ -1243,11 +1249,7 @@ def apply_gcp_control_plane_terraform(
             )
             return {}
 
-        with gcp_terraform_bootstrap_credentials(config) as credentials_path:
-            run_gcp_terraform_init_with_retry(config, tf_state_bucket, credentials_path)
-            wait_for_gcp_terraform_bootstrap_access(config, credentials_path)
-            run_gcp_terraform_apply_with_retry(config)
-
+        def _capture_terraform_outputs() -> dict[str, dict[str, object]]:
             output_result = subprocess.run(  # nosec B603 B607
                 ["terraform", "output", "-json"],
                 capture_output=True,
@@ -1258,6 +1260,24 @@ def apply_gcp_control_plane_terraform(
                 stderr = output_result.stderr.strip() if output_result.stderr else _UNKNOWN_ERROR
                 raise RuntimeError(f"Failed to capture Terraform outputs: {stderr}")
             return json.loads(output_result.stdout)
+
+        if config.terraform_uses_operator_adc:
+            # Operator-ADC identity (#1718): run terraform directly under the caller's
+            # Application Default Credentials, skipping the privileged tf-bootstrap SA
+            # (no owner-on-SA grant, no SA key) for hardened orgs.
+            info(
+                "Terraform identity: operator ADC — running terraform as the caller's "
+                "Application Default Credentials; skipping the tf-bootstrap service account."
+            )
+            run_gcp_terraform_init_with_retry(config, tf_state_bucket, None)
+            run_gcp_terraform_apply_with_retry(config)
+            return _capture_terraform_outputs()
+
+        with gcp_terraform_bootstrap_credentials(config) as credentials_path:
+            run_gcp_terraform_init_with_retry(config, tf_state_bucket, credentials_path)
+            wait_for_gcp_terraform_bootstrap_access(config, credentials_path)
+            run_gcp_terraform_apply_with_retry(config)
+            return _capture_terraform_outputs()
     finally:
         os.chdir(original_dir)
 

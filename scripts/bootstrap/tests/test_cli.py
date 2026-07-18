@@ -477,6 +477,31 @@ class TestMainCLI:
             assert config.range_backend == "gdc"
             assert config.builds_gdc_substrate is True
 
+    def test_gdc_bootstrap_terraform_identity_operator_adc(self):
+        """--terraform-identity operator-adc threads through to the config (#1718)."""
+        with (
+            patch(
+                "sys.argv",
+                [
+                    "deploy.py",
+                    "gdc-bootstrap",
+                    "--project-id",
+                    "prod-rwctxzl6shxk",
+                    "--cluster-id",
+                    "cluster1",
+                    "--terraform-identity",
+                    "operator-adc",
+                ],
+            ),
+            patch("deploy.check_dependencies"),
+            patch("deploy.gdc_bootstrap_cluster") as mock_gdc_bootstrap,
+        ):
+            deploy.main()
+
+            config = mock_gdc_bootstrap.call_args[0][0]
+            assert config.terraform_identity == "operator-adc"
+            assert config.terraform_uses_operator_adc is True
+
     # ---------------------------------------------------------------------
     # preflight subcommand (shared deploy prerequisite gate)
     #

@@ -433,6 +433,18 @@ Examples:
             "for the KubeVirt VM Runtime range plane."
         ),
     )
+    gdc_parser.add_argument(
+        "--terraform-identity",
+        choices=["bootstrap-sa", "operator-adc"],
+        default=(os.environ.get("SHIFTER_GCP_TERRAFORM_IDENTITY", "bootstrap-sa").strip() or "bootstrap-sa"),
+        help=(
+            "Identity the control-plane Terraform runs as (#1718; default from "
+            "SHIFTER_GCP_TERRAFORM_IDENTITY, else bootstrap-sa). 'bootstrap-sa' impersonates a "
+            "dedicated tf-bootstrap service account granted roles/owner (ADR-008). 'operator-adc' "
+            "runs terraform under the caller's Application Default Credentials, skipping that SA + "
+            "key entirely — required on orgs that forbid owner-on-SA or SA-key creation."
+        ),
+    )
     gdc_parser.add_argument("--dry-run", action="store_true", help=HELP_DRY_RUN)
 
     return parser
@@ -533,6 +545,7 @@ def main() -> None:
                 google_account_email=args.google_account_email,
                 shifter_config_path=args.shifter_config,
                 range_backend=args.range_backend,
+                terraform_identity=args.terraform_identity,
             ),
             dry_run=args.dry_run,
         )
