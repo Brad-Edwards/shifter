@@ -2861,6 +2861,8 @@ export interface components {
             readonly name: string;
             readonly description: string;
             readonly category: string;
+            readonly tags: string[];
+            readonly topics: string[];
             readonly points: number;
             readonly difficulty: string;
             readonly max_attempts: number;
@@ -2905,6 +2907,8 @@ export interface components {
             readonly difficulty: string;
             readonly order: number;
             readonly solved: boolean;
+            readonly tags: string[];
+            readonly topics: string[];
         };
         /** @description The participant's current event plus their own participant state. */
         ParticipantCurrentEvent: {

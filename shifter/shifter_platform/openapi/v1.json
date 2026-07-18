@@ -11326,6 +11326,20 @@
             "type": "string",
             "readOnly": true
           },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "readOnly": true
+          },
+          "topics": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "readOnly": true
+          },
           "points": {
             "type": "integer",
             "readOnly": true
@@ -11457,7 +11471,9 @@
           "show_solution",
           "solution",
           "solved",
+          "tags",
           "timeout_retry_after",
+          "topics",
           "total_hint_penalty",
           "unmet_prerequisites"
         ]
@@ -11526,6 +11542,20 @@
           "solved": {
             "type": "boolean",
             "readOnly": true
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "readOnly": true
+          },
+          "topics": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "readOnly": true
           }
         },
         "required": [
@@ -11535,7 +11565,9 @@
           "name",
           "order",
           "points",
-          "solved"
+          "solved",
+          "tags",
+          "topics"
         ]
       },
       "ParticipantCurrentEvent": {

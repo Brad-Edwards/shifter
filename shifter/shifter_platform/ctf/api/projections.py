@@ -74,7 +74,9 @@ def participant_challenge_list(participant: CTFParticipant) -> list[dict[str, An
     participant) and overlays this participant's own solve state. Flag hashes,
     flag formats, solutions, and validator config are never included.
     """
-    challenges = get_available_challenges(participant.event_id, participant_id=participant.id)
+    challenges = get_available_challenges(participant.event_id, participant_id=participant.id).prefetch_related(
+        "tags", "topics"
+    )
     solved_ids = set(
         get_participant_submissions(participant.id).filter(is_correct=True).values_list("challenge_id", flat=True)
     )
@@ -87,6 +89,8 @@ def participant_challenge_list(participant: CTFParticipant) -> list[dict[str, An
             "difficulty": challenge.difficulty,
             "order": challenge.order,
             "solved": challenge.id in solved_ids,
+            "tags": [tag.name for tag in challenge.tags.all()],
+            "topics": [topic.name for topic in challenge.topics.all()],
         }
         for challenge in challenges
     ]
@@ -151,6 +155,8 @@ def participant_challenge_detail(participant: CTFParticipant, challenge: CTFChal
         "name": challenge.name,
         "description": challenge.description,
         "category": challenge.category,
+        "tags": [tag.name for tag in challenge.tags.all()],
+        "topics": [topic.name for topic in challenge.topics.all()],
         "points": challenge.points,
         "difficulty": challenge.difficulty,
         "max_attempts": challenge.max_attempts,

@@ -69,6 +69,8 @@ class ParticipantChallengeListItemSerializer(serializers.Serializer):
     difficulty = serializers.CharField(read_only=True, allow_blank=True)
     order = serializers.IntegerField(read_only=True)
     solved = serializers.BooleanField(read_only=True)
+    tags = serializers.ListField(child=serializers.CharField(), read_only=True)
+    topics = serializers.ListField(child=serializers.CharField(), read_only=True)
 
 
 class ParticipantTeamMemberSerializer(serializers.Serializer):
@@ -135,6 +137,8 @@ class ParticipantChallengeDetailSerializer(serializers.Serializer):
     name = serializers.CharField(read_only=True)
     description = serializers.CharField(read_only=True, allow_blank=True)
     category = serializers.CharField(read_only=True, allow_blank=True)
+    tags = serializers.ListField(child=serializers.CharField(), read_only=True)
+    topics = serializers.ListField(child=serializers.CharField(), read_only=True)
     points = serializers.IntegerField(read_only=True)
     difficulty = serializers.CharField(read_only=True, allow_blank=True)
     max_attempts = serializers.IntegerField(read_only=True)
