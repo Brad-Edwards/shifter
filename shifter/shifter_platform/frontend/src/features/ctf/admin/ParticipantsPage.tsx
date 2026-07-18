@@ -3,7 +3,7 @@ import { Link, useParams } from "react-router-dom";
 
 import { UserPlus } from "lucide-react";
 
-import { useCtfParticipants, useInviteCtfParticipant, useResendCtfInvite } from "@/api/ctf";
+import { useCtfParticipants, useInviteCtfParticipant, useResendCtfInvite } from "@/api/ctfAdmin";
 import { describeMutationError } from "@/api/errors";
 import { PageHeader } from "@/components/page-header";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";

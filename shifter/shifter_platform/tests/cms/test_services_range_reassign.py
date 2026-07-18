@@ -141,6 +141,34 @@ class TestReassignRangeOwnerHappyPath:
         assert engine_range.cms_user_id == user_b.id
         assert EngineRequest.objects.get(request_id=request_id).user_id == user_b.id
 
+    def test_reassignment_is_rejected_while_the_previous_participant_vpn_is_live(self, user_a, user_b):
+        ri = _make_owned_range(owner=user_a)
+        engine_range = EngineRange.objects.get(request__request_id=ri.request.request_id)
+        engine_range.vpn_access_binding = {
+            "version": "openvpn-binding-v1",
+            "channel": "openvpn",
+            "generation": str(ri.request.request_id),
+            "owner_user_id": user_a.id,
+            "target_ref": str(uuid4()),
+            "endpoint": "vpn.example.test",
+            "port": 1194,
+            "profile_version": "openvpn-profile-v1",
+            "secret_ref": "provider-secret-reference",
+            "ready": True,
+        }
+        engine_range.save(update_fields=["vpn_access_binding"])
+
+        assert services.range_owner_reassignment_available(ri.pk) is False
+
+        with pytest.raises(CMSError, match="destroy its participant VPN generation first"):
+            services.reassign_range_owner(ri.pk, user_b)
+
+        engine_range.refresh_from_db()
+        assert engine_range.user_id == user_a.id
+        assert engine_range.vpn_access_binding is not None
+        assert RangeInstance.objects.get(pk=ri.pk).user_id == user_a.id
+        assert CmsRequest.objects.get(request_id=ri.request.request_id).user_id == user_a.id
+
 
 class TestReassignRangeOwnerNoOp:
     def test_noop_when_already_owned_by_new_user(self, user_b):

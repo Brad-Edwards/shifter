@@ -11,8 +11,9 @@ resolved against the tenant registry (``resolve_gce_image``), sizing from
 placed on their authored network; each ``count`` yields a distinct instance.
 
 Base range firewalls (intra-subnet allow, management, egress posture) are reused
-from ``gcp_range_cell_plan._firewall_plan``; authored node ACLs are realized as
-additional firewall rules by :mod:`aces_gcp_firewall` (layered on top).
+from ``gcp_range_cell_firewall.build_firewall_plan``; authored node ACLs are
+realized as additional firewall rules by :mod:`aces_gcp_firewall` (layered on
+top).
 """
 
 from __future__ import annotations
@@ -29,19 +30,21 @@ from aces_gcp_firewall import (
 )
 from aces_plan import AcesPlan, AcesPlanNetwork, AcesPlanNode
 from config import GCERangeCellConfig, GCERangeImageProfile, load_gce_range_cell_config
-from gcp_range_cell_plan import (
+from gcp_range_cell_firewall import build_firewall_plan
+from gcp_range_cell_naming import (
+    _network_name_from_id,
+    _network_self_link,
+    _network_tag,
+    _short_resource_name,
+    _subnet_tag,
+    _subnetwork_self_link,
+)
+from gcp_range_cell_plan import _range_labels
+from gcp_range_cell_types import (
     FirewallPlan,
     InstancePlan,
     RangeCellPlan,
     SubnetPlan,
-    _firewall_plan,
-    _network_name_from_id,
-    _network_self_link,
-    _network_tag,
-    _range_labels,
-    _short_resource_name,
-    _subnet_tag,
-    _subnetwork_self_link,
 )
 
 #: Default guest login user the provisioner injects (management reachability). The
@@ -118,7 +121,7 @@ def _all_firewalls(
     (ADR-032-R8): admitted only from the concrete CIDRs of networks in *this* compiled
     range, at a priority strictly above the node's ACL band so authored ACL denies win.
     """
-    firewalls = _firewall_plan(range_id, subnet_plans, config)
+    firewalls = build_firewall_plan(range_id, subnet_plans, config)
     cidr_lookup = acl_cidr_lookup(aces_plan.networks)
     # Validate the range-scoped service source set once, up front, only when needed --
     # so a universal or portal-overlapping CIDR fails the whole plan before mutation.

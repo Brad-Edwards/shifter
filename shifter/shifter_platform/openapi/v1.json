@@ -5346,6 +5346,106 @@
         }
       }
     },
+    "/api/v1/ctf/range/vpn-profile/": {
+      "post": {
+        "operationId": "ctf_range_vpn_profile_create",
+        "description": "Return a no-store credential after role, ownership, state and rate gates.",
+        "tags": [
+          "ctf"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/x-openvpn-profile": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
     "/api/v1/ctf/scenarios/": {
       "get": {
         "operationId": "ctf_scenarios_retrieve",
@@ -8603,6 +8703,7 @@
           "role_sync",
           "connect",
           "disconnect",
+          "download",
           "provision",
           "deprovision",
           "ready",
@@ -8614,7 +8715,7 @@
           "spare_provision"
         ],
         "type": "string",
-        "description": "* `create` - Create\n* `update` - Update\n* `delete` - Delete\n* `restore` - Restore\n* `close` - Close\n* `reopen` - Reopen\n* `login` - Login\n* `logout` - Logout\n* `login_failed` - Login Failed\n* `access_denied` - Access Denied\n* `role_sync` - Role Sync\n* `connect` - Connect\n* `disconnect` - Disconnect\n* `provision` - Provision\n* `deprovision` - Deprovision\n* `ready` - Ready\n* `failed` - Failed\n* `pause` - Pause\n* `resume` - Resume\n* `cancel` - Cancel\n* `recover` - Recover\n* `spare_provision` - Spare Provision"
+        "description": "* `create` - Create\n* `update` - Update\n* `delete` - Delete\n* `restore` - Restore\n* `close` - Close\n* `reopen` - Reopen\n* `login` - Login\n* `logout` - Logout\n* `login_failed` - Login Failed\n* `access_denied` - Access Denied\n* `role_sync` - Role Sync\n* `connect` - Connect\n* `disconnect` - Disconnect\n* `download` - Download\n* `provision` - Provision\n* `deprovision` - Deprovision\n* `ready` - Ready\n* `failed` - Failed\n* `pause` - Pause\n* `resume` - Resume\n* `cancel` - Cancel\n* `recover` - Recover\n* `spare_provision` - Spare Provision"
       },
       "ActorTypeEnum": {
         "enum": [
@@ -12533,12 +12634,18 @@
             "type": "integer",
             "readOnly": true,
             "nullable": true
+          },
+          "vpn_profile_available": {
+            "type": "boolean",
+            "readOnly": true,
+            "default": false
           }
         },
         "required": [
           "participant_id",
           "range_instance_id",
-          "status"
+          "status",
+          "vpn_profile_available"
         ]
       },
       "RangeTypeEnum": {
