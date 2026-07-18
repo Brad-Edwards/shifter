@@ -1056,34 +1056,9 @@
       "target": "ctf.context_processors.ctf_navigation"
     },
     {
-      "count": 1,
-      "path": "shifter/shifter_platform/tests/ctf/test_event_deletion.py",
-      "target": "ctf.models.CTFChallengeFile.all_objects"
-    },
-    {
       "count": 8,
       "path": "shifter/shifter_platform/tests/ctf/test_event_deletion.py",
       "target": "ctf.models.CTFEvent.all_objects"
-    },
-    {
-      "count": 1,
-      "path": "shifter/shifter_platform/tests/ctf/test_event_deletion.py",
-      "target": "ctf.models.CTFParticipant.all_objects"
-    },
-    {
-      "count": 3,
-      "path": "shifter/shifter_platform/tests/ctf/test_event_deletion.py",
-      "target": "ctf.services.event.CTFEvent.all_objects"
-    },
-    {
-      "count": 1,
-      "path": "shifter/shifter_platform/tests/ctf/test_event_deletion.py",
-      "target": "ctf.services.event._cancel_event_tasks"
-    },
-    {
-      "count": 1,
-      "path": "shifter/shifter_platform/tests/ctf/test_event_deletion.py",
-      "target": "ctf.services.event.transaction.atomic"
     },
     {
       "count": 4,
@@ -1109,26 +1084,6 @@
       "count": 1,
       "path": "shifter/shifter_platform/tests/ctf/test_event_lifecycle.py",
       "target": "ctf.context_processors.ctf_navigation"
-    },
-    {
-      "count": 4,
-      "path": "shifter/shifter_platform/tests/ctf/test_event_lifecycle.py",
-      "target": "ctf.services.event.CTFEvent.objects"
-    },
-    {
-      "count": 4,
-      "path": "shifter/shifter_platform/tests/ctf/test_event_lifecycle.py",
-      "target": "ctf.services.event._cancel_event_tasks"
-    },
-    {
-      "count": 1,
-      "path": "shifter/shifter_platform/tests/ctf/test_event_lifecycle.py",
-      "target": "ctf.services.event._schedule_event_tasks"
-    },
-    {
-      "count": 5,
-      "path": "shifter/shifter_platform/tests/ctf/test_event_lifecycle.py",
-      "target": "ctf.services.event.transaction.atomic"
     },
     {
       "count": 4,
@@ -1314,41 +1269,6 @@
       "count": 2,
       "path": "shifter/shifter_platform/tests/ctf/test_services/test_notification.py",
       "target": "ctf.models.CTFEmailTemplate.objects"
-    },
-    {
-      "count": 1,
-      "path": "shifter/shifter_platform/tests/ctf/test_services/test_notification.py",
-      "target": "ctf.models.CTFScheduledTask"
-    },
-    {
-      "count": 21,
-      "path": "shifter/shifter_platform/tests/ctf/test_services/test_notification.py",
-      "target": "ctf.services.notification.CTFEvent"
-    },
-    {
-      "count": 15,
-      "path": "shifter/shifter_platform/tests/ctf/test_services/test_notification.py",
-      "target": "ctf.services.notification.CTFNotification"
-    },
-    {
-      "count": 15,
-      "path": "shifter/shifter_platform/tests/ctf/test_services/test_notification.py",
-      "target": "ctf.services.notification.CTFParticipant"
-    },
-    {
-      "count": 4,
-      "path": "shifter/shifter_platform/tests/ctf/test_services/test_notification.py",
-      "target": "ctf.services.notification._build_registration_url"
-    },
-    {
-      "count": 12,
-      "path": "shifter/shifter_platform/tests/ctf/test_services/test_notification.py",
-      "target": "ctf.services.notification._render_email"
-    },
-    {
-      "count": 14,
-      "path": "shifter/shifter_platform/tests/ctf/test_services/test_notification.py",
-      "target": "ctf.services.notification._send_email"
     },
     {
       "count": 2,
