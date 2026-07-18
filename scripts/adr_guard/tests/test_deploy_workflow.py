@@ -316,7 +316,11 @@ class TestScenarioVerificationQualityRouting(unittest.TestCase):
         cls.quality = _load("_quality.yml")
         cls.jobs = ADR_GUARD._dw_jobs(cls.quality, "_quality.yml")
         filter_path = REPO_ROOT / ".github" / "quality-path-filters.yaml"
-        cls.filters = yaml.safe_load(filter_path.read_text(encoding="utf-8"))
+        raw = yaml.safe_load(filter_path.read_text(encoding="utf-8"))
+        # #1530 evolved this file from a flat category->globs map into a
+        # versioned quality-ownership contract. Derive the category->paths map
+        # these routing assertions expect from the quality_units.
+        cls.filters = {unit["id"]: unit["paths"] for unit in raw["quality_units"]}
 
     def test_shared_framework_path_uses_normal_platform_quality_jobs(self):
         framework_path = (

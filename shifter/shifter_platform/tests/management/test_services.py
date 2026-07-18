@@ -61,17 +61,20 @@ class TestLogActivity:
 
     @pytest.mark.parametrize("action", [None, 123])
     def test_rejects_non_string_action(self, action):
+        user_2 = _user("badaction")
         with pytest.raises(TypeError, match="action must be a string"):
-            services.log_activity(action, _user("badaction"))
+            services.log_activity(action, user_2)
 
     @pytest.mark.parametrize("action", ["", "   "])
     def test_rejects_empty_action(self, action):
+        user_2 = _user("emptyaction")
         with pytest.raises(ValueError, match="action cannot be empty"):
-            services.log_activity(action, _user("emptyaction"))
+            services.log_activity(action, user_2)
 
     def test_rejects_unsaved_user(self):
+        unsaved_user = _unsaved_user()
         with pytest.raises(ValueError, match="user must have a primary key"):
-            services.log_activity("a", _unsaved_user())
+            services.log_activity("a", unsaved_user)
 
     def test_logs_debug_on_success(self, caplog):
         user = _user("logdbg")
@@ -110,8 +113,9 @@ class TestGetUserProfile:
             services.get_user_profile(None)
 
     def test_raises_valueerror_for_unsaved_user(self):
+        unsaved_user = _unsaved_user()
         with pytest.raises(ValueError, match="user must have a primary key"):
-            services.get_user_profile(_unsaved_user())
+            services.get_user_profile(unsaved_user)
 
 
 # ---------------------------------------------------------------------------
@@ -154,8 +158,9 @@ class TestMarkUserDeleted:
             services.mark_user_deleted(None)
 
     def test_raises_valueerror_for_unsaved_user(self):
+        unsaved_user = _unsaved_user()
         with pytest.raises(ValueError, match="user must have a primary key"):
-            services.mark_user_deleted(_unsaved_user())
+            services.mark_user_deleted(unsaved_user)
 
 
 # ---------------------------------------------------------------------------
@@ -181,8 +186,9 @@ class TestCreateUserProfile:
             services.create_user_profile(None)
 
     def test_raises_valueerror_for_unsaved_user(self):
+        unsaved_user = _unsaved_user()
         with pytest.raises(ValueError, match="user must have a primary key"):
-            services.create_user_profile(_unsaved_user())
+            services.create_user_profile(unsaved_user)
 
 
 # ---------------------------------------------------------------------------
@@ -202,8 +208,9 @@ class TestSaveUserProfile:
             services.save_user_profile(None)
 
     def test_raises_valueerror_for_unsaved_user(self):
+        unsaved_user = _unsaved_user()
         with pytest.raises(ValueError, match="user must have a primary key"):
-            services.save_user_profile(_unsaved_user())
+            services.save_user_profile(unsaved_user)
 
 
 # ---------------------------------------------------------------------------
@@ -298,15 +305,18 @@ class TestBindProviderIdentity:
             services.bind_provider_identity(None, ISSUER_A, "sub")
 
     def test_raises_valueerror_for_unsaved_user(self):
+        unsaved_user = _unsaved_user()
         with pytest.raises(ValueError, match="user must have a primary key"):
-            services.bind_provider_identity(_unsaved_user(), ISSUER_A, "sub")
+            services.bind_provider_identity(unsaved_user, ISSUER_A, "sub")
 
     @pytest.mark.parametrize("value", ["", "   ", None])
     def test_raises_valueerror_for_blank_issuer(self, value):
+        user_2 = _user("bind-blank-iss")
         with pytest.raises(ValueError, match="issuer cannot be empty"):
-            services.bind_provider_identity(_user("bind-blank-iss"), value, "sub")
+            services.bind_provider_identity(user_2, value, "sub")
 
     @pytest.mark.parametrize("value", ["", "   ", None])
     def test_raises_valueerror_for_blank_subject(self, value):
+        user_2 = _user("bind-blank-sub")
         with pytest.raises(ValueError, match="subject cannot be empty"):
-            services.bind_provider_identity(_user("bind-blank-sub"), ISSUER_A, value)
+            services.bind_provider_identity(user_2, ISSUER_A, value)

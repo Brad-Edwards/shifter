@@ -306,6 +306,7 @@ class TestParticipantAccountEventIsolation:
             range_instance_id=older_range.pk,
             range_status="ready",
         )
+        now = timezone.now()
         with pytest.raises(ValidationError, match="unique_active_ctf_participant_user"):
             CTFParticipant.objects.create(
                 event=newer_event,
@@ -313,7 +314,7 @@ class TestParticipantAccountEventIsolation:
                 email=participant_user.email,
                 name="Newer Participant",
                 status="active",
-                registered_at=timezone.now(),
+                registered_at=now,
                 range_instance_id=newer_range.pk,
                 range_status="provisioning",
             )
@@ -346,6 +347,7 @@ class TestDisqualifyIsolatedAccount:
             status="active",
             registered_at=timezone.now(),
         )
+        now = timezone.now()
         with pytest.raises(ValidationError, match="unique_active_ctf_participant_user"):
             CTFParticipant.objects.create(
                 event=event_b,
@@ -353,7 +355,7 @@ class TestDisqualifyIsolatedAccount:
                 email=participant_user.email,
                 name="P",
                 status="active",
-                registered_at=timezone.now(),
+                registered_at=now,
             )
 
     def test_disqualify_clears_group_when_no_other_participation(self, participant_user, organizer_user):

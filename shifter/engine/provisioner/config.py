@@ -39,13 +39,12 @@ def _allow_dev_defaults(source: Mapping[str, str]) -> bool:
     explicitly (see docs/architecture/root-configured-backend-bundles.md,
     "Runtime Binding").
     """
-    if source.get("TESTING") == "1":
-        return True
-    if Path(sys.argv[0]).name in _DEV_DEFAULT_TOOLING_INVOKERS:
-        return True
-    if source.get("ENVIRONMENT", "").strip().lower() == "build":
-        return True
-    return source.get("DJANGO_DEBUG", "").strip().lower() == "true"
+    return (
+        source.get("TESTING") == "1"
+        or Path(sys.argv[0]).name in _DEV_DEFAULT_TOOLING_INVOKERS
+        or source.get("ENVIRONMENT", "").strip().lower() == "build"
+        or source.get("DJANGO_DEBUG", "").strip().lower() == "true"
+    )
 
 
 def resolve_cloud_provider(env: Mapping[str, str] | None = None) -> str:

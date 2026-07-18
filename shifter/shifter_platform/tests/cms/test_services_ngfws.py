@@ -124,8 +124,9 @@ class TestValidateNgfwUser:
             _validate_ngfw_user(None)
 
     def test_raises_valueerror_for_unsaved_user(self):
+        user_2 = User(username="unsaved")
         with pytest.raises(ValueError):
-            _validate_ngfw_user(User(username="unsaved"))
+            _validate_ngfw_user(user_2)
 
 
 class TestValidateNgfwName:
@@ -267,8 +268,9 @@ class TestGetNgfw:
         assert result.serial_number == "SER-9"
 
     def test_raises_cms_error_when_missing(self, user):
+        uuid4_2 = uuid4()
         with pytest.raises(CMSError, match="NGFW not found"):
-            get_ngfw(user, uuid4())
+            get_ngfw(user, uuid4_2)
 
     def test_raises_cms_error_for_other_users_ngfw(self, user, django_user_model):
         other = django_user_model.objects.create_user(username="ngfw-other2@e.com", email="ngfw-other2@e.com")
@@ -439,8 +441,9 @@ class TestDestroyNgfw:
         ).exists()
 
     def test_raises_when_not_found(self, user):
+        uuid4_2 = uuid4()
         with pytest.raises(CMSError, match="NGFW not found"):
-            destroy_ngfw(user, uuid4(), "anything")
+            destroy_ngfw(user, uuid4_2, "anything")
 
     def test_raises_on_name_mismatch(self, user):
         app = _cms_ngfw(user, name="ToKill")

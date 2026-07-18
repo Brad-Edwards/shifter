@@ -20,9 +20,9 @@ It mirrors the ``aces_backend_libvirt`` / APTL reference backend pattern:
   ``ApplyResult`` with non-empty ``changed_addresses`` and a PROVISIONING
   ``RuntimeSnapshot`` reflecting the accepted realization.
 
-This module and :mod:`shared.aces.manifest` are the only modules allowed to
-import the ``aces-sdl`` tooling (ADR-031-R1 / ADR-024); the realization side
-consumes the serialized plan as plain data via the injected dispatch port.
+Only modules under :mod:`shared.aces` may import the ``aces-sdl`` tooling
+(ADR-031-R1 / ADR-024); the realization side consumes the serialized plan as
+plain data via the injected dispatch port.
 """
 
 from __future__ import annotations
@@ -46,6 +46,7 @@ from shared.aces.composition_envelope import (
 )
 from shared.aces.contracts import ACES_PROVISIONING_PLAN_CONTRACT_VERSION, SHIFTER_BACKEND_NAME
 from shared.aces.dispatch_port import ShifterDispatchResult, ShifterProvisioningDispatchPort
+from shared.aces.domain_topology import sanitized_domain_topology_diagnostics
 from shared.aces.manifest import SHIFTER_PROVISIONER_CAPABILITIES, create_shifter_backend_manifest
 from shared.aces.network_family import network_address_family_diagnostics
 from shared.log_sanitize import safe_log_value
@@ -322,6 +323,7 @@ def interpret_provisioning_plan(
     plan: ProvisioningPlan,
     *,
     capabilities: ProvisionerCapabilities | None = None,
+    snapshot: RuntimeSnapshot | None = None,
 ) -> tuple[dict[str, Any] | None, list[Diagnostic]]:
     """Validate a compiled ACES provisioning plan and return its serialized form.
 
@@ -337,6 +339,8 @@ def interpret_provisioning_plan(
         if resource.domain == RuntimeDomain.PROVISIONING
     ]
     diagnostics = _capability_envelope_diagnostics(provisioning, capabilities)
+
+    diagnostics.extend(sanitized_domain_topology_diagnostics(plan, capabilities, snapshot))
 
     network_resources = [
         (r, r.payload)
@@ -364,11 +368,15 @@ def interpret_provisioning_plan(
     return serialize_provisioning_plan(plan), diagnostics
 
 
-def _serialized_for_apply(plan: ProvisioningPlan) -> tuple[dict[str, Any] | None, list[Diagnostic]]:
+def _serialized_for_apply(
+    plan: ProvisioningPlan,
+    *,
+    snapshot: RuntimeSnapshot | None = None,
+) -> tuple[dict[str, Any] | None, list[Diagnostic]]:
     """Validate + serialize ``plan`` for validate/apply; (None, diagnostics) if unusable."""
     if not isinstance(plan, ProvisioningPlan):
         return None, [_diagnostic("shifter-provisioner.invalid-plan", "plan", "expected an ACES ProvisioningPlan")]
-    return interpret_provisioning_plan(plan)
+    return interpret_provisioning_plan(plan, snapshot=snapshot)
 
 
 class ShifterProvisioner:
@@ -385,7 +393,7 @@ class ShifterProvisioner:
 
     def apply(self, plan: ProvisioningPlan, snapshot: RuntimeSnapshot) -> ApplyResult:
         """Validate + dispatch the serialized ``plan``; never dispatch on error."""
-        serialized, diagnostics = _serialized_for_apply(plan)
+        serialized, diagnostics = _serialized_for_apply(plan, snapshot=snapshot)
         if serialized is None:
             return ApplyResult(success=False, snapshot=snapshot, diagnostics=diagnostics)
 

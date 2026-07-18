@@ -9,9 +9,7 @@ import { ok, err } from "../respond.js";
 import { PROMOTE_AMI_REF, PROMOTE_GCE_IMAGE_REF } from "../lib.js";
 import { AmiTypeSchema, GceImageTypeSchema, SafePath } from "../schemas.js";
 
-export function registerImagesTools(ctx, deps) {
-  const { triggerAmiWorkflow, triggerGceImageWorkflow } = deps;
-
+function registerBuildAmi(ctx, { triggerAmiWorkflow }) {
   registerTool(ctx, {
     name: "build_ami",
     klass: "infra_mutation",
@@ -38,7 +36,9 @@ export function registerImagesTools(ctx, deps) {
       }
     },
   });
+}
 
+function registerPromoteAmi(ctx, { triggerAmiWorkflow }) {
   registerTool(ctx, {
     name: "promote_ami",
     klass: "infra_mutation",
@@ -65,7 +65,9 @@ export function registerImagesTools(ctx, deps) {
       }
     },
   });
+}
 
+function registerBuildGceImage(ctx, { triggerGceImageWorkflow }) {
   registerTool(ctx, {
     name: "build_gce_image",
     klass: "infra_mutation",
@@ -92,7 +94,9 @@ export function registerImagesTools(ctx, deps) {
       }
     },
   });
+}
 
+function registerPromoteGceImage(ctx, { triggerGceImageWorkflow }) {
   registerTool(ctx, {
     name: "promote_gce_image",
     klass: "infra_mutation",
@@ -119,4 +123,11 @@ export function registerImagesTools(ctx, deps) {
       }
     },
   });
+}
+
+export function registerImagesTools(ctx, deps) {
+  registerBuildAmi(ctx, deps);
+  registerPromoteAmi(ctx, deps);
+  registerBuildGceImage(ctx, deps);
+  registerPromoteGceImage(ctx, deps);
 }

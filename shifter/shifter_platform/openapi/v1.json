@@ -6,6 +6,383 @@
     "description": "Authenticated HTTP/JSON API for Shifter platform integrations."
   },
   "paths": {
+    "/api/v1/administer/users/": {
+      "get": {
+        "operationId": "api_v1_administer_users_list",
+        "description": "Paginated, filterable, read-only user list. Requires ``auth.view_user``.",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "account_origin",
+            "schema": {
+              "enum": [
+                "provider",
+                "local",
+                "ctf",
+                ""
+              ],
+              "type": "string"
+            },
+            "description": "* `provider` - provider\n* `local` - local\n* `ctf` - ctf"
+          },
+          {
+            "in": "query",
+            "name": "include_deleted",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
+          },
+          {
+            "in": "query",
+            "name": "is_active",
+            "schema": {
+              "type": "boolean",
+              "nullable": true
+            }
+          },
+          {
+            "name": "ordering",
+            "required": false,
+            "in": "query",
+            "description": "Which field to use when ordering the results.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "A page number within the paginated result set.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "search",
+            "schema": {
+              "type": "string",
+              "maxLength": 100
+            }
+          },
+          {
+            "in": "query",
+            "name": "user_type",
+            "schema": {
+              "enum": [
+                "standard",
+                "ctf_organizer",
+                "ctf_participant",
+                ""
+              ],
+              "type": "string"
+            },
+            "description": "* `standard` - standard\n* `ctf_organizer` - ctf_organizer\n* `ctf_participant` - ctf_participant"
+          }
+        ],
+        "tags": [
+          "administer"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedAdminUserListItemList"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
+    "/api/v1/administer/users/{id}/": {
+      "get": {
+        "operationId": "api_v1_administer_users_retrieve",
+        "description": "Read-only user detail. Includes soft-deleted accounts. ``auth.view_user``.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "schema": {
+              "type": "integer"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "administer"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminUserDetail"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
+    "/api/v1/administer/users/{id}/delete/": {
+      "post": {
+        "operationId": "api_v1_administer_users_soft_delete",
+        "description": "Soft-delete (disable) a user account. Requires ``auth.delete_user``.\n\nSets the profile ``deleted_at`` marker; it never hard-deletes the row, never\nanonymizes, and never unbinds a provider identity — those are distinct\nlifecycle actions with their own contracts.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "schema": {
+              "type": "integer"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "administer"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminUserDetail"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
+    "/api/v1/administer/users/{id}/grant-organizer/": {
+      "post": {
+        "operationId": "api_v1_administer_users_grant_organizer",
+        "description": "Grant local CTF Organizer to a user (grant-only). Requires ``auth.change_user``.\n\nAdditive and audited with ``local`` provenance by\n``config.organizer_authority`` (its own strict ROLE_SYNC audit), so provider\nreconciliation never auto-revokes it. Local revocation has no complete\nservice contract and is intentionally not offered here.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "schema": {
+              "type": "integer"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "administer"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizerGrantResult"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
+    "/api/v1/administer/users/{id}/set-active/": {
+      "post": {
+        "operationId": "api_v1_administer_users_set_active",
+        "description": "Activate or deactivate a user's login. Requires ``auth.change_user``.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "schema": {
+              "type": "integer"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "administer"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetActiveRequest"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/SetActiveRequest"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/SetActiveRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminUserDetail"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
     "/api/v1/audit/": {
       "get": {
         "operationId": "audit_list",
@@ -8249,6 +8626,178 @@
         "type": "string",
         "description": "* `user` - User\n* `apikey` - API Key\n* `system` - System\n* `cognito` - Cognito"
       },
+      "AdminUserDetail": {
+        "type": "object",
+        "description": "Read-only detail view: list fields plus role provenance and group names.\n\n``groups`` are Django role group names (e.g. \"CTF Organizer\"), never the\nprovider group claims captured on the profile.",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "readOnly": true
+          },
+          "username": {
+            "type": "string",
+            "readOnly": true
+          },
+          "email": {
+            "type": "string",
+            "format": "email",
+            "readOnly": true
+          },
+          "display_name": {
+            "type": "string",
+            "readOnly": true
+          },
+          "is_active": {
+            "type": "boolean",
+            "readOnly": true
+          },
+          "is_staff": {
+            "type": "boolean",
+            "readOnly": true
+          },
+          "is_superuser": {
+            "type": "boolean",
+            "readOnly": true
+          },
+          "user_type": {
+            "type": "string",
+            "readOnly": true
+          },
+          "account_origin": {
+            "type": "string",
+            "readOnly": true
+          },
+          "is_ctf_organizer": {
+            "type": "boolean",
+            "readOnly": true
+          },
+          "is_deleted": {
+            "type": "boolean",
+            "readOnly": true
+          },
+          "date_joined": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true
+          },
+          "last_login": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true,
+            "nullable": true
+          },
+          "organizer_grant_source": {
+            "type": "string",
+            "readOnly": true
+          },
+          "must_change_password": {
+            "type": "boolean",
+            "readOnly": true
+          },
+          "groups": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "readOnly": true
+          }
+        },
+        "required": [
+          "account_origin",
+          "date_joined",
+          "display_name",
+          "email",
+          "groups",
+          "id",
+          "is_active",
+          "is_ctf_organizer",
+          "is_deleted",
+          "is_staff",
+          "is_superuser",
+          "last_login",
+          "must_change_password",
+          "organizer_grant_source",
+          "user_type",
+          "username"
+        ]
+      },
+      "AdminUserListItem": {
+        "type": "object",
+        "description": "Read-only summary of a user for the Administer list.\n\nRoles, account type, and origin are surfaced read-only; identity-binding\nfields are intentionally absent.",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "readOnly": true
+          },
+          "username": {
+            "type": "string",
+            "readOnly": true
+          },
+          "email": {
+            "type": "string",
+            "format": "email",
+            "readOnly": true
+          },
+          "display_name": {
+            "type": "string",
+            "readOnly": true
+          },
+          "is_active": {
+            "type": "boolean",
+            "readOnly": true
+          },
+          "is_staff": {
+            "type": "boolean",
+            "readOnly": true
+          },
+          "is_superuser": {
+            "type": "boolean",
+            "readOnly": true
+          },
+          "user_type": {
+            "type": "string",
+            "readOnly": true
+          },
+          "account_origin": {
+            "type": "string",
+            "readOnly": true
+          },
+          "is_ctf_organizer": {
+            "type": "boolean",
+            "readOnly": true
+          },
+          "is_deleted": {
+            "type": "boolean",
+            "readOnly": true
+          },
+          "date_joined": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true
+          },
+          "last_login": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true,
+            "nullable": true
+          }
+        },
+        "required": [
+          "account_origin",
+          "date_joined",
+          "display_name",
+          "email",
+          "id",
+          "is_active",
+          "is_ctf_organizer",
+          "is_deleted",
+          "is_staff",
+          "is_superuser",
+          "last_login",
+          "user_type",
+          "username"
+        ]
+      },
       "AgentListItem": {
         "type": "object",
         "description": "One entry from ``cms.services.list_agents`` (``_agent_projection_dict``).",
@@ -8523,10 +9072,14 @@
           },
           "aces_native_provisioning": {
             "type": "boolean"
+          },
+          "administer_spa": {
+            "type": "boolean"
           }
         },
         "required": [
           "aces_native_provisioning",
+          "administer_spa",
           "ctf_workspace_spa",
           "mission_control_spa",
           "platform_spa",
@@ -8569,11 +9122,23 @@
           },
           "is_ctf_participant": {
             "type": "boolean"
+          },
+          "can_view_users": {
+            "type": "boolean"
+          },
+          "can_change_users": {
+            "type": "boolean"
+          },
+          "can_delete_users": {
+            "type": "boolean"
           }
         },
         "required": [
           "can_access_risk_register",
           "can_access_threat_research",
+          "can_change_users",
+          "can_delete_users",
+          "can_view_users",
           "is_ctf_organizer",
           "is_ctf_participant"
         ]
@@ -10396,6 +10961,26 @@
           "visibility"
         ]
       },
+      "OrganizerGrantResult": {
+        "type": "object",
+        "description": "Minimal confirmation payload for a local-organizer grant.",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "is_ctf_organizer": {
+            "type": "boolean"
+          },
+          "organizer_grant_source": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "is_ctf_organizer",
+          "organizer_grant_source"
+        ]
+      },
       "OrganizerScoreboardResponse": {
         "type": "object",
         "description": "Organizer monitoring scoreboard — always the full ranking payload.\n\nUnlike :class:`PublicScoreboardResponseSerializer`, this projection never\ncarries the ``scoreboard_hidden`` sentinel and never withholds rows: an\norganizer sees every ranking regardless of the event's ``scoreboard_visible``\nflag or freeze window. ``frozen`` is reported for display only; the rankings\nare computed as of now (``freeze_at=None``).",
@@ -10526,6 +11111,37 @@
           "scenario_id",
           "source_kind"
         ]
+      },
+      "PaginatedAdminUserListItemList": {
+        "type": "object",
+        "required": [
+          "count",
+          "results"
+        ],
+        "properties": {
+          "count": {
+            "type": "integer",
+            "example": 123
+          },
+          "next": {
+            "type": "string",
+            "nullable": true,
+            "format": "uri",
+            "example": "http://api.example.org/accounts/?page=4"
+          },
+          "previous": {
+            "type": "string",
+            "nullable": true,
+            "format": "uri",
+            "example": "http://api.example.org/accounts/?page=2"
+          },
+          "results": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminUserListItem"
+            }
+          }
+        }
       },
       "PaginatedAuditLogList": {
         "type": "object",
@@ -12624,6 +13240,18 @@
           "sent",
           "success",
           "total"
+        ]
+      },
+      "SetActiveRequest": {
+        "type": "object",
+        "description": "Explicit request body for the activate/deactivate operation.",
+        "properties": {
+          "is_active": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "is_active"
         ]
       },
       "SeverityEnum": {

@@ -153,12 +153,16 @@ def test_provisioner_capabilities_are_the_narrowed_ledger():
 
     assert provisioner.supported_account_features == frozenset({"groups", "shell", "home", "disabled", "auth_method"})
     assert provisioner.supported_content_types == frozenset({"directory"})
+    assert provisioner.supported_domain_profiles == frozenset()
     # Removed over-claims stay out until their sibling issue lands genuine realization
     # (auth_method -> #1560, spn -> #1561, source-backed file/dataset -> #1564).
     for dropped in ("spn", "mail"):
         assert dropped not in provisioner.supported_account_features
     for dropped in ("file", "dataset"):
         assert dropped not in provisioner.supported_content_types
+
+    checked_in = json.loads(PUBLISHED_MANIFEST_PATH.read_text())
+    assert checked_in["capabilities"]["provisioner"]["supported_domain_profiles"] == []
 
 
 def test_provisioner_declares_ipv4_only_network_address_family(tmp_path):

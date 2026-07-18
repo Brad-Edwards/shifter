@@ -262,6 +262,19 @@ repos:
         language: system
         files: ^platform/terraform/gcp/modules/github-runner-network/main\.tf$
 
+      # ADR-004-R23 / issue #1690: the GCP GitHub-Actions WIF trust must pin an
+      # exact protected assertion.ref + literal assertion.sub allow-list (no
+      # repository-only condition, no repository-wide principalSet binding, no
+      # CKV_GCP_125 waiver), and the static condition must not drift from
+      # local.federated_subjects. pass_filenames:false so the whole module is
+      # scanned (the condition/binding consistency check spans main.tf).
+      - id: check-tf-gcp-wif-trust
+        name: GCP WIF exact-subject trust (ADR-004-R23)
+        entry: python3 scripts/check_tf_gcp_wif_trust/check_tf_gcp_wif_trust.py
+        language: system
+        pass_filenames: false
+        files: ^platform/terraform/gcp/modules/cicd-github-oidc/.*\.tf$
+
       # Issue #1178: the shared range *guest* instance role must not grant SSM
       # Parameter Store access on a Resource that wildcards the environment or
       # range segment (parameter/shifter/*/range/*), which would let any range

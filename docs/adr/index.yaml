@@ -225,8 +225,18 @@
       },
       {
         "id": "ADR-004-R22",
-        "description": "The packer.yml base-image `build` job MUST assume a dedicated least-privilege image-pipeline role (`aws_iam_role.github_actions_image` in `platform/terraform/global/iam/github-oidc.tf`), never the broad `github_actions` deploy role: the deploy role legitimately passes portal EC2, ECS, Lambda, RDS-monitoring, and every range role to AWS services, so it cannot simultaneously prove that a base-image verification instance may receive ONLY the range instance role. This dedicated principal IS the IAM boundary the workflow's inline `dev|main` ref gate is not (a feature-branch copy of the workflow could weaken that gate before it runs). Its OIDC `assume_role_policy` MUST pin the trust `sub` to the EXACT protected-branch subjects (`repo:${var.github_org}/${var.github_repo}:ref:refs/heads/dev` and `.../main`), never a `repo:...:*` wildcard, so a pull-request or feature-branch subject receives no AWS role. Its inline policy (`aws_iam_role_policy.image_pipeline`) MUST scope `iam:PassRole` to EXACTLY `role/shifter-${var.environment}-range-range-instance` with an `iam:PassedToService = ec2.amazonaws.com` condition - never `shifter-*`, `*-range-instance`, `role/*`, role tags, or profile-name validation (AWS warns role tags are not a PassRole boundary) - so the fresh-boot verifier can launch a range-profile instance while the role cannot exfiltrate a more-privileged profile. EC2 is scoped by action to the amazon-ebs builder + verifier + `always()` cleanup set (never `ec2:*`); SSM is the verifier (`DescribeInstanceInformation` / `SendCommand` / `GetCommandInvocation`) plus publication of the `/shifter/ami/*` base pointers only. No IAM mutation, Secrets Manager, arbitrary Parameter Store, or scenario-artifact access is granted, and `bake-scenario` keeps its own separate role/boundary. The exact-subject and exact-range-role invariants are enforced by `scripts/check_tf_iam_role_naming/check_tf_iam_role_naming.py` (`check_github_oidc_image_role_trust`, `check_github_oidc_image_passrole_scope`), wired as the `check-tf-iam-role-naming` pre-commit hook and the matching `_quality.yml` CI step, with its unittest suite included in the `check_tf_*` checker tests; the checks no-op when the role is absent so deploy-only fixtures are unaffected. The role ARN is published as the `github_actions_image_role_arn` global-IAM output and wired to the `AWS_IMAGE_ROLE_ARN_<ENV>` GitHub secret; the actual global-IAM `terraform apply` + secret creation + OIDC-subject verification is a post-merge operator cutover, not part of the implementation PR. Binding design note: `docs/architecture/packer-base-build-privilege-boundary-preflight-1656.md`. Established by #1656.",
+        "description": "The packer.yml base-image `build` job MUST assume a dedicated least-privilege image-pipeline role (`aws_iam_role.github_actions_image` in `platform/terraform/global/iam/github-oidc.tf`), never the broad `github_actions` deploy role: the deploy role legitimately passes portal EC2, ECS, Lambda, RDS-monitoring, and every range role to AWS services, so it cannot simultaneously prove that a base-image verification instance may receive ONLY the range instance role. This dedicated principal IS the IAM boundary the workflow's inline `dev|main` ref gate is not (a feature-branch copy of the workflow could weaken that gate before it runs). Its OIDC `assume_role_policy` MUST pin the trust `sub` to the EXACT protected-branch subjects (`repo:${var.github_org}/${var.github_repo}:ref:refs/heads/dev` and `.../main`), never a `repo:...:*` wildcard, so a pull-request or feature-branch subject receives no AWS role. Its inline policy (`aws_iam_role_policy.image_pipeline`) MUST scope `iam:PassRole` to EXACTLY `role/shifter-${var.environment}-range-range-instance` with an `iam:PassedToService = ec2.amazonaws.com` condition - never `shifter-*`, `*-range-instance`, `role/*`, role tags, or profile-name validation (AWS warns role tags are not a PassRole boundary) - so the fresh-boot verifier can launch a range-profile instance while the role cannot exfiltrate a more-privileged profile. EC2 is scoped by action to the amazon-ebs builder + verifier + `always()` cleanup set (never `ec2:*`); SSM is the verifier (`DescribeInstanceInformation` / `SendCommand` / `GetCommandInvocation`) plus publication of the `/shifter/ami/*` base pointers only. No IAM mutation, Secrets Manager, arbitrary Parameter Store, or scenario-artifact access is granted, and `bake-scenario` MUST NOT use this base-image role; its separate principal/trust boundary is governed by ADR-004-R23. The exact-subject and exact-range-role invariants are enforced by `scripts/check_tf_iam_role_naming/check_tf_iam_role_naming.py` (`check_github_oidc_image_role_trust`, `check_github_oidc_image_passrole_scope`), wired as the `check-tf-iam-role-naming` pre-commit hook and the matching `_quality.yml` CI step, with its unittest suite included in the `check_tf_*` checker tests; the checks no-op when the role is absent so deploy-only fixtures are unaffected. The role ARN is published as the `github_actions_image_role_arn` global-IAM output and wired to the `AWS_IMAGE_ROLE_ARN_<ENV>` GitHub secret; the actual global-IAM `terraform apply` + secret creation + OIDC-subject verification is a post-merge operator cutover, not part of the implementation PR. Binding design note: `docs/architecture/packer-base-build-privilege-boundary-preflight-1656.md`. Established by #1656.",
         "checks": []
+      },
+      {
+        "id": "ADR-004-R23",
+        "description": "Credentialed `workflow_dispatch` jobs MUST establish reviewed-code provenance at the external cloud trust boundary before dispatched workflow code can obtain an identity. After verifying the repository's live default GitHub OIDC subject contract (`use_default: true`, `use_immutable_subject: false`), the general AWS deploy role in `platform/terraform/global/iam/github-oidc.tf` MUST trust only the exact protected-branch subjects needed by non-Environment callers and the exact environment-derived subjects needed by Environment-bound callers; `repo:${var.github_org}/${var.github_repo}:*` is forbidden. Every trusted GitHub Environment MUST restrict deployment branches to the protected branches because an Environment `sub` does not contain the source ref. GCP WIF used by deploy/image workflows MUST require the exact repository, an exact protected `assertion.ref`, and exact allowed `assertion.sub` values, and each service-account binding MUST name exact subject principals rather than a repository-wide `principalSet` binding; the CKV_GCP_125 repository-scope waiver is not permitted. Credentialed logic MUST execute from the authorized event commit (`github.sha`) or another immutable protected commit, never a caller-selected or re-resolved mutable ref. The GCP build, validate, and promote capabilities and the AWS scenario-image path use purpose-specific least-privilege identities instead of inheriting the general deploy/build identity. A bare mutable `validated=passed` image label is not authoritative promotion evidence: promotion binds the exact candidate to the successful protected validation run, revision, and existing evidence artifact and fails closed on missing, stale, malformed, or mismatched evidence. Implementation MUST extend the existing AWS IAM checker for the general role and add an equivalent focused GCP WIF semantic guard, with positive/negative tests and pre-commit/CI parity; workflow tests MUST inventory every credentialed caller, including shared-provider callers not named in a local edit. Live OIDC/IAM/WIF and GitHub Environment policy activation is a documented post-merge operator cutover with readback, not an effect of merging Terraform. Binding design note: `docs/architecture/credentialed-workflow-dispatch-trust-preflight-1690.md`. Established by the architecture preflight for #1690.",
+        "checks": []
+      },
+      {
+        "id": "ADR-004-R24",
+        "description": "Production-path quality ownership is a single versioned, machine-readable contract at `.github/quality-path-filters.yaml` (schema parsed by `scripts/quality_ownership/contract.py`), enforced fail-closed. The always-run `paths` job in `.github/workflows/_quality.yml` invokes `scripts/quality_ownership/classify_paths.py`, which validates the contract and REJECTS any changed path that is neither a declared quality unit nor a typed exclusion BEFORE emitting any job-selection output, so an unowned path can no longer skip the checks designed to gate it. The `quality-path-ownership` adr_guard check (this rule) reconciles the contract against the whole repository and enforces three invariants: (1) estate completeness - every git-tracked path is a production owner or a narrow typed exclusion (closed enum: docs/test/generated/vendor/metadata/config; no catch-all, no unowned remainder); (2) ownership completeness - every production PATH is covered, across the union of its matching units, by a BLOCKING lint AND security AND test job (an advisory / `continue-on-error` / always-run / missing job never satisfies a responsibility), and unit `packages` reconcile both directions against the #1523 first-party classification in `scripts/check_layer_imports/layer_imports.yaml`; (3) routing reachability - a representative change to each unit makes its declared jobs (and matrix members) run in the real `_quality.yml` (proven by semantic `if:` evaluation, not substring match), while a docs-only change selects no production job. Genuine ownership gaps are recorded ONLY as time-bounded `docs/adr/exceptions.yaml` entries keyed to the `.github/quality-path-filters.yaml#<unit>:<responsibility>` anchor - there is no `not_applicable`, advisory, or permanent grandfather escape hatch in the contract schema. The contract and its classifier route their own guard tests and adr-conformance (self-bypass prevention). Anchored on GEN-002 (Executable Architecture Governance). Established by #1530; gap-closure tracked by #1698.",
+        "checks": ["quality-path-ownership"]
       }
     ],
     "exceptions": [],
@@ -245,10 +255,12 @@
       "scripts/check_tf_iam_bedrock_agent_scope/check_tf_iam_bedrock_agent_scope.py",
       "scripts/check_portal_target_sg_sources/check_portal_target_sg_sources.py",
       "scripts/check_tf_iam_role_naming/check_tf_iam_role_naming.py",
+      "scripts/check_tf_gcp_wif_trust/check_tf_gcp_wif_trust.py",
       "scripts/check_tf_runner_network/check_tf_runner_network.py",
       "scripts/check_checkov_invocation_parity/check_checkov_invocation_parity.py",
       "platform/terraform/.checkov.yaml",
       "docs/adr/exceptions.yaml",
+      "docs/architecture/credentialed-workflow-dispatch-trust-preflight-1690.md",
       "docs/architecture/checkov-soft-fail-preflight-757.md",
       "docs/technical/dev/adr-enforcement.md",
       "docs/technical/dev/ci-cd.md"
@@ -1446,6 +1458,7 @@
       "docs/architecture/aces-account-credentials-preflight-1560.md",
       "docs/architecture/aces-migration-parity-inventory.yaml",
       ".importlinter",
+      "shifter/shifter_platform/shared/aces/domain_topology.py",
       "shifter/shifter_platform/shared/aces/runtime_target.py",
       "shifter/shifter_platform/shared/aces/dispatch_port.py",
       "shifter/shifter_platform/shared/aces/package_loader.py",
@@ -1479,7 +1492,7 @@
       },
       {
         "id": "ADR-032-R4",
-        "description": "Shifter depends on released PyPI artifacts pinned as one compatible pair (currently aces-scenario-packs 1.2.0 and its exact aces-sdl 0.20.0 dependency); it must not pin either contract to a git ref or non-released build. The provisioner consumer retains a bounded rolling-read window for persisted producer plans (currently [0.19.1, 0.21.0)). aces_* SDL packages are imported only within shared.aces (ADR-024, ADR-031-R1); the engine, provisioner, and other layers consume the serialized plan as plain data without importing aces_*.",
+        "description": "Shifter depends on released PyPI artifacts pinned as one compatible pair (currently aces-scenario-packs 2.0.1 and its exact aces-sdl 0.23.0 dependency); it must not pin either contract to a git ref or non-released build. The provisioner consumer retains a bounded rolling-read window for persisted producer plans (currently [0.19.1, 0.24.0)). aces_* SDL packages are imported only within shared.aces (ADR-024, ADR-031-R1); the engine, provisioner, and other layers consume the serialized plan as plain data without importing aces_*.",
         "checks": []
       },
       {
@@ -1494,7 +1507,7 @@
       },
       {
         "id": "ADR-032-R7",
-        "description": "The serialized ProvisioningPlan transport must declare and validate supported contract and producer versions before realization. The consumer must reject unknown resource types, malformed payloads, duplicate identities, duplicate aliases, dangling node/network/composition references, and unsupported topology terms before any cloud, Terraform, SSH, SSM, or guest mutation. Compatibility tests must use public ACES APIs, public fixtures, or Shifter-owned serialized fixtures; private reference-backend helpers are not a compatibility contract.",
+        "description": "The serialized ProvisioningPlan transport must declare and validate supported contract and producer versions before realization. Shared admission must invoke the public ACES domain-topology diagnostics against the provisioner's explicitly declared supported_domain_profiles, including the current runtime snapshot for incremental apply. The separate plain-data consumer must reject unknown resource types, malformed payloads, duplicate identities, duplicate aliases, dangling node/network/composition references, domain-topology carriers outside Shifter's supported profiles, and unsupported domain-scoped account terms before any cloud, Terraform, SSH, SSM, or guest mutation. Compatibility tests must use public ACES APIs, public fixtures, or Shifter-owned serialized fixtures; private reference-backend helpers are not a compatibility contract.",
         "checks": []
       },
       {
@@ -1509,13 +1522,16 @@
       "https://github.com/Brad-Edwards/shifter/issues/1264",
       "https://github.com/Brad-Edwards/shifter/issues/1562",
       "https://github.com/Brad-Edwards/shifter/issues/1563",
+      "https://github.com/Brad-Edwards/shifter/issues/1606",
       "docs/architecture/aces-runtime-target-backend-manifest-preflight-1233.md",
       "docs/architecture/aces-provisioning-plan-transport-preflight-1522.md",
       "docs/architecture/aces-backend-manifest-realizability-preflight-1563.md",
       "docs/architecture/aces-service-reachability-preflight-1562.md",
       "docs/architecture/aces-account-credentials-preflight-1560.md",
+      "docs/architecture/aces-domain-topology-preflight-1606.md",
       ".importlinter",
       "shifter/shifter_platform/pyproject.toml",
+      "shifter/shifter_platform/shared/aces/domain_topology.py",
       "shifter/shifter_platform/shared/aces/runtime_target.py"
     ]
   },
@@ -1705,6 +1721,11 @@
       {
         "id": "ADR-037-R6",
         "description": "Before mutating ECS/portal or Kubernetes rollout, deployment MUST verify the GitHub attestation for the fixed Brad-Edwards/shifter repository identity and the exact fully-qualified image@sha256 it will deploy. A valid signature for another repository, a tag resolving to a digest, or a digest merely matching the expected shape is insufficient. Any verifier failure, missing attestation, subject/repository mismatch, or digest mismatch is a hard ::error:: and non-zero exit; there is no first-deploy, continue-on-error, or other bypass.",
+        "checks": []
+      },
+      {
+        "id": "ADR-037-R7",
+        "description": "Cloud-credentialed validation workflows that mint trusted labels (e.g. validated=passed) MUST be restricted to protected integration branches at two independent enforcement layers: (1) a ref-allowlist in the workflow job that rejects non-protected refs before cloud auth is attempted (defense-in-depth), and (2) a ref condition in the OIDC/WIF attribute_condition that rejects tokens from any ref outside the allowlist at the provider level — outside any branch-controlled workflow code. The GCP WIF module enforces this via the allowed_workflow_refs variable (platform/terraform/gcp/modules/cicd-github-oidc). GitHub environment deployment-branch protection MUST also be configured for the target environments so that GitHub rejects runs from non-protected refs before the job starts. Any exception requires a docs/adr/exceptions.yaml entry with owner, justification, and expiry.",
         "checks": []
       }
     ],

@@ -103,8 +103,9 @@ class TestSendInvitationsAsyncDispatchEndToEnd:
     """
 
     def test_not_found(self):
+        uuid4_2 = uuid4()
         with pytest.raises(CTFNotFoundError):
-            notification.send_invitations(uuid4())
+            notification.send_invitations(uuid4_2)
 
     @pytest.fixture
     def invited_event_participant(self):
@@ -172,8 +173,9 @@ class TestSendCredentials:
         """Raises CTFNotFoundError for nonexistent event."""
         mock_event_cls.DoesNotExist = type("DoesNotExist", (Exception,), {})
         mock_event_cls.objects.get.side_effect = mock_event_cls.DoesNotExist
+        uuid4_2 = uuid4()
         with pytest.raises(CTFNotFoundError):
-            notification.send_credentials(uuid4())
+            notification.send_credentials(uuid4_2)
 
     @patch("ctf.services.notification.CTFNotification")
     @patch("ctf.services.notification.CTFParticipant")
@@ -259,8 +261,9 @@ class TestSendReminder:
         """Raises CTFNotFoundError for nonexistent event."""
         mock_event_cls.DoesNotExist = type("DoesNotExist", (Exception,), {})
         mock_event_cls.objects.get.side_effect = mock_event_cls.DoesNotExist
+        uuid4_2 = uuid4()
         with pytest.raises(CTFNotFoundError):
-            notification.send_reminder(uuid4())
+            notification.send_reminder(uuid4_2)
 
     @patch("ctf.services.notification.CTFNotification")
     @patch("ctf.services.notification.CTFParticipant")
@@ -375,8 +378,9 @@ class TestSendAnnouncement:
         mock_event_cls.DoesNotExist = type("DoesNotExist", (Exception,), {})
         mock_event_cls.objects.get.side_effect = mock_event_cls.DoesNotExist
         user = Mock(pk=1)
+        uuid4_2 = uuid4()
         with pytest.raises(CTFNotFoundError):
-            notification.send_announcement(uuid4(), "Test", "Body", user)
+            notification.send_announcement(uuid4_2, "Test", "Body", user)
 
     @patch("ctf.services.notification.CTFParticipant")
     @patch("ctf.services.notification.CTFNotification")
@@ -430,8 +434,10 @@ class TestScheduleNotification:
         mock_notif_cls.objects.get.side_effect = mock_notif_cls.DoesNotExist
         from django.utils import timezone
 
+        uuid4_2 = uuid4()
+        now = timezone.now()
         with pytest.raises(CTFNotFoundError):
-            notification.schedule_notification(uuid4(), timezone.now())
+            notification.schedule_notification(uuid4_2, now)
 
     @patch("ctf.models.CTFScheduledTask")
     @patch("ctf.services.notification.CTFNotification")
