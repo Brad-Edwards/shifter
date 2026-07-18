@@ -50,10 +50,22 @@ def validate_account_credentials(account: AcesPlanAccount) -> None:
     """Repeat account credential policy at the separate provisioner boundary."""
     if account.auth_method not in SUPPORTED_ACCOUNT_AUTH_METHODS:
         raise AcesPlanError("unsupported account auth_method")
+    _validate_password_credential(account)
+    _validate_optional_account_fields(account)
+
+
+def _validate_password_credential(account: AcesPlanAccount) -> None:
+    """Validate password strength and disabled-state compatibility."""
+    if account.auth_method != "password":
+        return
     invalid_password = account.password_strength not in SUPPORTED_PASSWORD_STRENGTHS
     enabled_without_password = account.password_strength == _NO_CREDENTIAL_STRENGTH and not account.disabled
-    if account.auth_method == "password" and (invalid_password or enabled_without_password):
+    if invalid_password or enabled_without_password:
         raise AcesPlanError("unsupported password_strength for account credential")
+
+
+def _validate_optional_account_fields(account: AcesPlanAccount) -> None:
+    """Validate mail, domain binding, policy, and optional SPN fields."""
     if account.mail is not None:
         raise AcesPlanError("account mail is not realized consistently across supported guest operating systems")
     if account.spn is not None and account.domain_ref is None:
@@ -201,27 +213,67 @@ def _validate_domain_accounts(
     nodes_by_address: Mapping[str, AcesPlanNode],
 ) -> None:
     """Validate account binding, uniqueness, and target membership for one domain."""
-    domain_accounts = tuple(account for account in accounts if account.domain_ref == domain_id)
-    unbound = any(
-        account.domain_id == domain_id and account.address != authority_address and account.domain_ref is None
-        for account in accounts
+    domain_accounts = _bound_domain_accounts(domain_id, authority_address, accounts)
+    _validate_unique_domain_identities(authority, domain_accounts)
+    _validate_domain_account_targets(domain_id, domain_accounts, nodes_by_address)
+
+
+def _is_unbound_domain_account(account: AcesPlanAccount, domain_id: str, authority_address: str) -> bool:
+    """Return whether an account carries domain identity without a binding."""
+    return all(
+        (
+            account.domain_id == domain_id,
+            account.address != authority_address,
+            account.domain_ref is None,
+        )
     )
+
+
+def _bound_domain_accounts(
+    domain_id: str,
+    authority_address: str,
+    accounts: tuple[AcesPlanAccount, ...],
+) -> tuple[AcesPlanAccount, ...]:
+    """Return bound accounts after rejecting missing or inconsistent bindings."""
+    domain_accounts = tuple(account for account in accounts if account.domain_ref == domain_id)
+    unbound = any(_is_unbound_domain_account(account, domain_id, authority_address) for account in accounts)
     if unbound:
         raise AcesPlanError("domain topology account binding is invalid")
     if any(account.domain_id != domain_id for account in domain_accounts):
         raise AcesPlanError("domain account binding is invalid")
+    return domain_accounts
+
+
+def _validate_unique_domain_identities(
+    authority: AcesPlanAccount,
+    domain_accounts: tuple[AcesPlanAccount, ...],
+) -> None:
+    """Reject duplicate case-insensitive usernames and SPNs."""
     usernames = [authority.username.casefold(), *(account.username.casefold() for account in domain_accounts)]
     spns = [account.spn.casefold() for account in domain_accounts if account.spn]
     if len(usernames) != len(set(usernames)):
         raise AcesPlanError("duplicate domain account identity")
     if len(spns) != len(set(spns)):
         raise AcesPlanError("duplicate account spn")
-    invalid_target = any(
-        account.target_address not in nodes_by_address
-        or nodes_by_address[account.target_address].domain_id != domain_id
-        for account in domain_accounts
-    )
-    if invalid_target:
+
+
+def _account_target_outside_domain(
+    account: AcesPlanAccount,
+    domain_id: str,
+    nodes_by_address: Mapping[str, AcesPlanNode],
+) -> bool:
+    """Return whether an account target is absent or outside its domain."""
+    node = nodes_by_address.get(account.target_address)
+    return node is None or node.domain_id != domain_id
+
+
+def _validate_domain_account_targets(
+    domain_id: str,
+    domain_accounts: tuple[AcesPlanAccount, ...],
+    nodes_by_address: Mapping[str, AcesPlanNode],
+) -> None:
+    """Reject domain accounts targeting absent or foreign nodes."""
+    if any(_account_target_outside_domain(account, domain_id, nodes_by_address) for account in domain_accounts):
         raise AcesPlanError("domain account target is invalid")
 
 
