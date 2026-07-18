@@ -29,6 +29,10 @@ isolated from other participants' ranges.
   become ready (the organizer sets a spin-up window).
 - Connect to range instances with the same SSH/RDP terminal flow used elsewhere in
   the portal. See [Terminal](terminal).
+- When the range is ready and supports direct VPN access, select **Download VPN
+  profile**. Import the `.ovpn` file into a standard OpenVPN client to reach your
+  assigned Kali target. The profile is a private credential: do not share it, and
+  delete your local copy after the event.
 
 You do not launch or destroy your CTF range yourself—the platform provisions it for
 you and cleans it up after the event.

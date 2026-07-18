@@ -8,19 +8,7 @@ import { useRef, useState } from "react";
 
 import { Loader2, Trash2 } from "lucide-react";
 
-import {
-  useAddCtfFlag,
-  useAddCtfHint,
-  useAddCtfPrerequisite,
-  useCtfChallengeFiles,
-  useCtfChallengeHints,
-  useCtfChallengePrerequisites,
-  useDeleteCtfChallengeFile,
-  useDeleteCtfHint,
-  useDeleteCtfPrerequisite,
-  useRemoveCtfFlag,
-  useUploadCtfChallengeFile,
-} from "@/api/ctf";
+import { useAddCtfFlag, useAddCtfHint, useAddCtfPrerequisite, useCtfChallengeFiles, useCtfChallengeHints, useCtfChallengePrerequisites, useDeleteCtfChallengeFile, useDeleteCtfHint, useDeleteCtfPrerequisite, useRemoveCtfFlag, useUploadCtfChallengeFile } from "@/api/ctfAdmin";
 import { describeMutationError } from "@/api/errors";
 import { CTF_CHALLENGE_CATEGORIES, CTF_CHALLENGE_DIFFICULTIES } from "@/api/types";
 import { Alert, AlertDescription } from "@/components/ui/alert";

@@ -31,7 +31,7 @@ from events import (
     publish_status_update,
 )
 from log_redact import safe_log_value
-from provisioner_db import get_aces_image_candidates, get_aces_range_data_by_request_id
+from provisioner_db_aces import get_aces_image_candidates, get_aces_range_data_by_request_id
 
 logger = logging.getLogger(__name__)
 
