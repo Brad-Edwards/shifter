@@ -2194,3 +2194,61 @@ class TestGcpBootstrapDnsTlsFlow:
         mock_wait_for_user.assert_called_once()
         mock_wait_for_tls.assert_called_once_with()
         mock_verify_portal.assert_called_once_with("portal.example.test")
+
+
+class TestGdcBootstrapRangeBackend:
+    """gdc_bootstrap_cluster gates the ABM/GDC substrate on the range backend (#1716)."""
+
+    def test_gce_backend_skips_substrate_and_deploys_control_plane(self):
+        """The gce backend never touches the substrate (no SA-key creation) and deploys the control plane."""
+        config = deploy.GDCBootstrapConfig(project_id="prod-rwctxzl6shxk", cluster_id="cluster1", range_backend="gce")
+        with (
+            patch("gcp_control_plane.confirm", return_value=True),
+            patch("gcp_control_plane.ensure_gdc_apis") as mock_apis,
+            patch("gcp_control_plane.ensure_gdc_service_account") as mock_sa,
+            patch("gcp_control_plane.stage_gdc_bootstrap_assets") as mock_stage,
+            patch("gcp_control_plane.sync_gdc_vm_image_secret") as mock_vm_image,
+            patch(
+                "gcp_control_plane.bootstrap_gcp_control_plane",
+                return_value={"gke_cluster_name": {"value": "shifter-gcp-dev-platform"}},
+            ) as mock_platform,
+        ):
+            result = gcp_control_plane.gdc_bootstrap_cluster(config, dry_run=False)
+
+        mock_apis.assert_not_called()
+        mock_sa.assert_not_called()
+        mock_stage.assert_not_called()
+        mock_vm_image.assert_not_called()
+        mock_platform.assert_called_once_with(config, dry_run=False)
+        assert result["gke_cluster_name"] == "shifter-gcp-dev-platform"
+        assert result["workstation"] == ""
+        assert result["gdc_vm_image_gcs_secret_id"] == ""
+
+    def test_gdc_backend_builds_substrate_before_control_plane(self, tmp_path):
+        """The gdc backend still builds the substrate (including the vm-image secret) before the control plane."""
+        config = deploy.GDCBootstrapConfig(project_id="prod-rwctxzl6shxk", cluster_id="cluster1", range_backend="gdc")
+        staged = {
+            "ssh_metadata": tmp_path / "ssh-metadata",
+            "assets_dir": tmp_path / "assets",
+            "service_account_key": tmp_path / "bm-gcr.json",
+        }
+        with (
+            patch("gcp_control_plane.confirm", return_value=True),
+            patch("gcp_control_plane.ensure_gdc_apis") as mock_apis,
+            patch("gcp_control_plane.ensure_gdc_service_account"),
+            patch("gcp_control_plane.stage_gdc_bootstrap_assets", return_value=staged),
+            patch("gcp_control_plane.ensure_gdc_network"),
+            patch("gcp_control_plane.ensure_gdc_instances"),
+            patch("gcp_control_plane.sync_gdc_instance_ssh_metadata"),
+            patch("gcp_control_plane.wait_for_gdc_ssh"),
+            patch("gcp_control_plane.upload_gdc_assets"),
+            patch("gcp_control_plane.run_gdc_workstation_script"),
+            patch("gcp_control_plane.sync_gdc_access_secret"),
+            patch("gcp_control_plane.sync_gdc_vm_image_secret") as mock_vm_image,
+            patch("gcp_control_plane.bootstrap_gcp_control_plane", return_value={}),
+        ):
+            result = gcp_control_plane.gdc_bootstrap_cluster(config, dry_run=False)
+
+        mock_apis.assert_called_once()
+        mock_vm_image.assert_called_once()
+        assert result["workstation"] == config.workstation.name

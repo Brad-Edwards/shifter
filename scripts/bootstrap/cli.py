@@ -1,6 +1,7 @@
 """Command-line wiring for the bootstrap deployment CLI."""
 
 import argparse
+import os
 import shutil
 import sys
 
@@ -421,6 +422,17 @@ Examples:
             "$SHIFTER_CONFIG or ./shifter.yaml; a missing config fails the deploy."
         ),
     )
+    gdc_parser.add_argument(
+        "--range-backend",
+        choices=["gce", "gdc"],
+        default=(os.environ.get("GCP_RANGE_BACKEND", "gce").strip() or "gce"),
+        help=(
+            "GCP range plane backend (#1716; default from GCP_RANGE_BACKEND, else gce). "
+            "'gce' provisions plain GCE range instances and skips the ABM/GDC VM Runtime "
+            "substrate (no service-account JSON key required). 'gdc' builds the substrate "
+            "for the KubeVirt VM Runtime range plane."
+        ),
+    )
     gdc_parser.add_argument("--dry-run", action="store_true", help=HELP_DRY_RUN)
 
     return parser
@@ -520,6 +532,7 @@ def main() -> None:
                 zone=args.zone,
                 google_account_email=args.google_account_email,
                 shifter_config_path=args.shifter_config,
+                range_backend=args.range_backend,
             ),
             dry_run=args.dry_run,
         )

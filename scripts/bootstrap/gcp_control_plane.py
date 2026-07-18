@@ -1889,63 +1889,81 @@ def gdc_bootstrap_cluster(config: GDCBootstrapConfig, dry_run: bool = False) -> 
         error("GDC bootstrap requires a GCP project ID. Set PANW_GCP_DEV or pass --project-id.")
         sys.exit(1)
 
-    header(f"Bootstrapping {config.cluster_id} GDC Cluster")
+    builds_substrate = config.builds_gdc_substrate
+
+    if builds_substrate:
+        header(f"Bootstrapping {config.cluster_id} GDC Cluster")
+    else:
+        header(f"Bootstrapping {config.environment} Shifter GCP deployment")
 
     info(f"GCP Project: {config.project_id}")
     info(f"Region / Zone: {config.region} / {config.zone}")
-    info(f"Network: {config.resolved_network_name} ({config.subnet_cidr})")
-    info(f"Service Account: {config.service_account_email}")
-    info(f"VM Runtime VIPs: control-plane={config.control_plane_vip}, ingress={config.ingress_vip}")
+    if builds_substrate:
+        info(f"Network: {config.resolved_network_name} ({config.subnet_cidr})")
+        info(f"Service Account: {config.service_account_email}")
+        info(f"VM Runtime VIPs: control-plane={config.control_plane_vip}, ingress={config.ingress_vip}")
+        confirm_prompt = "Create or reconcile these GDC bootstrap resources?"
+    else:
+        info(
+            "Range backend 'gce': skipping the ABM/GDC VM Runtime substrate "
+            "(only required for GCP_RANGE_BACKEND=gdc). Deploying the keyless GKE control "
+            "plane and the GCE range plane; no service-account JSON key is created."
+        )
+        confirm_prompt = "Create or reconcile these Shifter GCP control-plane resources?"
 
-    if not dry_run and not confirm("Create or reconcile these GDC bootstrap resources?"):
+    if not dry_run and not confirm(confirm_prompt):
         warn("Aborted by user")
         sys.exit(0)
 
-    ensure_gdc_apis(config, dry_run=dry_run)
-    ensure_gdc_service_account(config, dry_run=dry_run)
+    if builds_substrate:
+        ensure_gdc_apis(config, dry_run=dry_run)
+        ensure_gdc_service_account(config, dry_run=dry_run)
 
-    with tempfile.TemporaryDirectory(prefix="shifter-gdc-bootstrap-") as staging_dir_name:
-        staged_assets = stage_gdc_bootstrap_assets(config, Path(staging_dir_name), dry_run=dry_run)
-        ensure_gdc_network(config, dry_run=dry_run)
-        ensure_gdc_instances(config, staged_assets["ssh_metadata"], dry_run=dry_run)
-        sync_gdc_instance_ssh_metadata(config, staged_assets["ssh_metadata"], dry_run=dry_run)
+        with tempfile.TemporaryDirectory(prefix="shifter-gdc-bootstrap-") as staging_dir_name:
+            staged_assets = stage_gdc_bootstrap_assets(config, Path(staging_dir_name), dry_run=dry_run)
+            ensure_gdc_network(config, dry_run=dry_run)
+            ensure_gdc_instances(config, staged_assets["ssh_metadata"], dry_run=dry_run)
+            sync_gdc_instance_ssh_metadata(config, staged_assets["ssh_metadata"], dry_run=dry_run)
 
-        for host in config.all_hosts:
-            wait_for_gdc_ssh(config, host, dry_run=dry_run)
+            for host in config.all_hosts:
+                wait_for_gdc_ssh(config, host, dry_run=dry_run)
 
-        upload_gdc_assets(config, staged_assets["assets_dir"], dry_run=dry_run)
-        run_gdc_workstation_script(config, "prepare-workstation.sh", dry_run=dry_run)
-        run_gdc_workstation_script(config, "prepare-hosts.sh", dry_run=dry_run)
-        run_gdc_workstation_script(config, "create-cluster.sh", dry_run=dry_run)
-        run_gdc_workstation_script(config, "install-helper.sh", dry_run=dry_run)
-        sync_gdc_access_secret(config, dry_run=dry_run)
-        sync_gdc_vm_image_secret(config, staged_assets["service_account_key"], dry_run=dry_run)
+            upload_gdc_assets(config, staged_assets["assets_dir"], dry_run=dry_run)
+            run_gdc_workstation_script(config, "prepare-workstation.sh", dry_run=dry_run)
+            run_gdc_workstation_script(config, "prepare-hosts.sh", dry_run=dry_run)
+            run_gdc_workstation_script(config, "create-cluster.sh", dry_run=dry_run)
+            run_gdc_workstation_script(config, "install-helper.sh", dry_run=dry_run)
+            sync_gdc_access_secret(config, dry_run=dry_run)
+            sync_gdc_vm_image_secret(config, staged_assets["service_account_key"], dry_run=dry_run)
 
     control_plane_outputs = bootstrap_gcp_control_plane(config, dry_run=dry_run)
 
-    success("GDC bootstrap complete")
-    print("\nNext commands:")
-    ssh_command = (
-        f"gcloud compute ssh root@{config.workstation.name} --tunnel-through-iap "
-        f"--project {config.project_id} --zone {config.zone}"
-    )
-    code_block(
-        f"""{ssh_command}
+    if builds_substrate:
+        success("GDC bootstrap complete")
+        print("\nNext commands:")
+        ssh_command = (
+            f"gcloud compute ssh root@{config.workstation.name} --tunnel-through-iap "
+            f"--project {config.project_id} --zone {config.zone}"
+        )
+        code_block(
+            f"""{ssh_command}
 shifter-gdc-kubectl get nodes
 shifter-gdc-kubeconfig"""
-    )
+        )
+    else:
+        success("Shifter GCP control-plane bootstrap complete")
 
     return {
         "project_id": config.project_id,
         "cluster_id": config.cluster_id,
         "region": config.region,
         "zone": config.zone,
-        "network_name": config.resolved_network_name,
-        "subnetwork_name": config.resolved_subnetwork_name,
-        "workstation": config.workstation.name,
-        "kubeconfig_path": config.kubeconfig_path,
-        "gdc_access_secret_id": config.gdc_access_secret_id,
-        "gdc_vm_image_gcs_secret_id": config.gdc_vm_image_gcs_secret_id,
+        "network_name": config.resolved_network_name if builds_substrate else "",
+        "subnetwork_name": config.resolved_subnetwork_name if builds_substrate else "",
+        "workstation": config.workstation.name if builds_substrate else "",
+        "kubeconfig_path": config.kubeconfig_path if builds_substrate else "",
+        "gdc_access_secret_id": config.gdc_access_secret_id if builds_substrate else "",
+        "gdc_vm_image_gcs_secret_id": config.gdc_vm_image_gcs_secret_id if builds_substrate else "",
         "gke_cluster_name": (
             str(_get_output_value(control_plane_outputs, "gke_cluster_name")) if control_plane_outputs else ""
         ),

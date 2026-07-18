@@ -435,6 +435,48 @@ class TestMainCLI:
 
             assert mock_gdc_bootstrap.call_args[1]["dry_run"] is True
 
+    def test_gdc_bootstrap_defaults_to_gce_range_backend(self):
+        """gdc-bootstrap defaults to the gce range backend so no ABM substrate / SA key is built (#1716)."""
+        with (
+            patch.dict("os.environ", {"GCP_RANGE_BACKEND": ""}, clear=False),
+            patch(
+                "sys.argv",
+                ["deploy.py", "gdc-bootstrap", "--project-id", "prod-rwctxzl6shxk", "--cluster-id", "cluster1"],
+            ),
+            patch("deploy.check_dependencies"),
+            patch("deploy.gdc_bootstrap_cluster") as mock_gdc_bootstrap,
+        ):
+            deploy.main()
+
+            config = mock_gdc_bootstrap.call_args[0][0]
+            assert config.range_backend == "gce"
+            assert config.builds_gdc_substrate is False
+
+    def test_gdc_bootstrap_range_backend_gdc_selects_substrate(self):
+        """--range-backend gdc selects the ABM/GDC substrate-building path (#1716)."""
+        with (
+            patch(
+                "sys.argv",
+                [
+                    "deploy.py",
+                    "gdc-bootstrap",
+                    "--project-id",
+                    "prod-rwctxzl6shxk",
+                    "--cluster-id",
+                    "cluster1",
+                    "--range-backend",
+                    "gdc",
+                ],
+            ),
+            patch("deploy.check_dependencies"),
+            patch("deploy.gdc_bootstrap_cluster") as mock_gdc_bootstrap,
+        ):
+            deploy.main()
+
+            config = mock_gdc_bootstrap.call_args[0][0]
+            assert config.range_backend == "gdc"
+            assert config.builds_gdc_substrate is True
+
     # ---------------------------------------------------------------------
     # preflight subcommand (shared deploy prerequisite gate)
     #

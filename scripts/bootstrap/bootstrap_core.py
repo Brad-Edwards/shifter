@@ -498,6 +498,18 @@ class GDCBootstrapConfig:
     # Root installation config (shifter.yaml) that feeds the range egress render
     # (#1015). None falls back to SHIFTER_CONFIG / repo-root shifter.yaml.
     shifter_config_path: str | None = None
+    # GCP range plane backend (#1716). "gce" (default) provisions plain GCE range
+    # instances and needs no substrate; "gdc" runs the KubeVirt VM Runtime on the
+    # ABM/GDC substrate, which requires the baremetal-gcr service-account JSON key.
+    # gdc_bootstrap_cluster only builds the substrate when this is "gdc"; the "gce"
+    # default deploys the keyless GKE control plane straight through, so a tenant on
+    # an org that enforces iam.managed.disableServiceAccountKeyCreation is not blocked.
+    range_backend: str = "gce"
+
+    @property
+    def builds_gdc_substrate(self) -> bool:
+        """Whether this bootstrap builds the ABM/GDC VM Runtime substrate."""
+        return self.range_backend == "gdc"
 
     @property
     def resolved_network_name(self) -> str:
