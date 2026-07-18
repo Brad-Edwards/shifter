@@ -215,6 +215,48 @@ class TestLiveFlagRepair:
                 actor_id=ctf_event_active.created_by_id,
             )
 
+    def test_update_challenge_allows_visibility_toggle_on_active(self, ctf_event_active):
+        """CTF-110: organizers may hide/stage a challenge at any time during a live event."""
+        from ctf.enums import ChallengeVisibility
+
+        challenge = CTFChallenge.objects.create(
+            event=ctf_event_active,
+            name="Breakable Challenge",
+            description="Desc",
+            category=ChallengeCategory.WEB.value,
+            points=100,
+            difficulty=ChallengeDifficulty.EASY.value,
+            flag_hash="placeholder",
+        )
+        update_challenge(
+            challenge.pk,
+            {"visibility": ChallengeVisibility.HIDDEN.value},
+            actor_id=ctf_event_active.created_by_id,
+        )
+        challenge.refresh_from_db()
+        assert challenge.visibility == ChallengeVisibility.HIDDEN.value
+
+    def test_update_challenge_rejects_visibility_with_content_edits_on_active(self, ctf_event_active):
+        from ctf.exceptions import CTFStateError
+
+        challenge = CTFChallenge.objects.create(
+            event=ctf_event_active,
+            name="Guarded Challenge",
+            description="Desc",
+            category=ChallengeCategory.WEB.value,
+            points=100,
+            difficulty=ChallengeDifficulty.EASY.value,
+            flag_hash="placeholder",
+        )
+        from ctf.enums import ChallengeVisibility
+
+        with pytest.raises(CTFStateError):
+            update_challenge(
+                challenge.pk,
+                {"visibility": ChallengeVisibility.HIDDEN.value, "name": "Renamed"},
+                actor_id=ctf_event_active.created_by_id,
+            )
+
     def test_update_challenge_allows_flag_only_on_active(self, ctf_event_active):
         challenge = CTFChallenge.objects.create(
             event=ctf_event_active,

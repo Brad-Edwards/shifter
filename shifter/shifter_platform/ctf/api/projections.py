@@ -186,6 +186,9 @@ def participant_challenge_detail(participant: CTFParticipant, challenge: CTFChal
         "prerequisites_met": prereqs_met,
         "unmet_prerequisites": [{"id": str(required.id), "name": required.name} for required in unmet],
         "connection_info": resolve_target_connection_info(challenge, participant),
+        # CTF-110: a LOCKED challenge is readable but not submittable; the SPA
+        # uses this to replace the submit form with a locked notice.
+        "locked": challenge.is_visibility_locked,
         "show_solution": show_solution,
         "solution": challenge.solution if show_solution else None,
         "rating": _participant_rating(event, participant, challenge),

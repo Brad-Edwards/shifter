@@ -37,6 +37,10 @@ function ChallengeBody({ challenge }: Readonly<{ challenge: CtfOrganizerChalleng
               <dt className="text-xs text-muted-foreground">Release time</dt>
               <dd className="mt-0.5 text-sm">{formatDateTime(challenge.release_time)}</dd>
             </div>
+            <div>
+              <dt className="text-xs text-muted-foreground">Visibility</dt>
+              <dd className="mt-0.5 text-sm">{titleCase(challenge.visibility)}</dd>
+            </div>
           </dl>
           {challenge.tags.length > 0 || challenge.topics.length > 0 ? (
             <div className="mt-4 flex flex-wrap gap-1.5">

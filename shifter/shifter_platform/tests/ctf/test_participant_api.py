@@ -193,6 +193,40 @@ class TestParticipantChallengeDetail:
         assert body["hints"][0]["unlocked"] is False
         assert body["hints"][0]["text"] is None
 
+    def test_locked_challenge_is_readable_and_flagged_locked(
+        self, authenticated_participant_client, ctf_participant, ctf_event
+    ):
+        """CTF-110: a LOCKED challenge stays readable and carries locked=True."""
+        from ctf.enums import ChallengeVisibility
+
+        challenge = self._challenge_with_solution(ctf_event)
+        challenge.visibility = ChallengeVisibility.LOCKED.value
+        challenge.save(update_fields=["visibility"])
+
+        response = call_json(
+            authenticated_participant_client,
+            "get",
+            "api_participant_challenge_detail",
+            kwargs={"challenge_id": challenge.id},
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["locked"] is True
+
+    def test_visible_challenge_is_not_locked(self, authenticated_participant_client, ctf_participant, ctf_event):
+        challenge = self._challenge_with_solution(ctf_event)
+
+        response = call_json(
+            authenticated_participant_client,
+            "get",
+            "api_participant_challenge_detail",
+            kwargs={"challenge_id": challenge.id},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["locked"] is False
+
     def test_solution_revealed_after_event_ends(self, authenticated_participant_client, ctf_participant, ctf_event):
         """Once the event has ended the solution is surfaced for review."""
         challenge = self._challenge_with_solution(ctf_event)

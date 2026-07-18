@@ -152,6 +152,7 @@ class ParticipantChallengeDetailSerializer(serializers.Serializer):
     prerequisites_met = serializers.BooleanField(read_only=True)
     unmet_prerequisites = _NamedRefSerializer(many=True, read_only=True)
     connection_info = ChallengeConnectionInfoSerializer(read_only=True, allow_null=True)
+    locked = serializers.BooleanField(read_only=True)
     show_solution = serializers.BooleanField(read_only=True)
     solution = serializers.CharField(read_only=True, allow_null=True)
     rating = ChallengeRatingSerializer(read_only=True, allow_null=True)

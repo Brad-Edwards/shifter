@@ -30,6 +30,8 @@ interface FormState {
   max_participants: string;
   range_spinup_minutes: string;
   submission_cooldown_seconds: string;
+  attempt_limit_mode: string;
+  attempt_limit_cooldown_seconds: string;
   auto_cleanup: boolean;
   cleanup_delay_hours: string;
   scoreboard_visible: boolean;
@@ -47,6 +49,8 @@ const EMPTY: FormState = {
   max_participants: "",
   range_spinup_minutes: "30",
   submission_cooldown_seconds: "0",
+  attempt_limit_mode: "lockout",
+  attempt_limit_cooldown_seconds: "300",
   auto_cleanup: true,
   cleanup_delay_hours: "24",
   scoreboard_visible: true,
@@ -65,6 +69,8 @@ function fromEvent(event: CtfEventDetail): FormState {
     max_participants: event.max_participants == null ? "" : String(event.max_participants),
     range_spinup_minutes: String(event.range_spinup_minutes ?? 30),
     submission_cooldown_seconds: String(event.submission_cooldown_seconds ?? 0),
+    attempt_limit_mode: event.attempt_limit_mode || "lockout",
+    attempt_limit_cooldown_seconds: String(event.attempt_limit_cooldown_seconds ?? 300),
     auto_cleanup: Boolean(event.auto_cleanup),
     cleanup_delay_hours: String(event.cleanup_delay_hours ?? 24),
     scoreboard_visible: Boolean(event.scoreboard_visible),
@@ -95,6 +101,8 @@ function toPayload(state: FormState): CtfEventWrite {
     max_participants: intOrNull(state.max_participants),
     range_spinup_minutes: intOr(state.range_spinup_minutes, 30),
     submission_cooldown_seconds: intOr(state.submission_cooldown_seconds, 0),
+    attempt_limit_mode: state.attempt_limit_mode,
+    attempt_limit_cooldown_seconds: intOr(state.attempt_limit_cooldown_seconds, 300),
     auto_cleanup: state.auto_cleanup,
     cleanup_delay_hours: intOr(state.cleanup_delay_hours, 24),
     scoreboard_visible: state.scoreboard_visible,
@@ -311,6 +319,45 @@ export function EventFormPage({ mode }: Readonly<{ mode: "create" | "edit" }>) {
                 onChange={(v) => set("range_spinup_minutes", v)}
               />
             </div>
+
+            <fieldset className="flex flex-col gap-3">
+              <legend className="mb-1 text-sm font-medium">Submission limits</legend>
+              <div className="grid gap-5 sm:grid-cols-2">
+                <TextField
+                  id="e-subcooldown"
+                  label="Cooldown between submissions (seconds)"
+                  type="number"
+                  min={0}
+                  value={state.submission_cooldown_seconds}
+                  error={firstError("submission_cooldown_seconds")}
+                  onChange={(v) => set("submission_cooldown_seconds", v)}
+                />
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="e-attemptmode">When max attempts is reached</Label>
+                  <Select value={state.attempt_limit_mode} onValueChange={(v) => set("attempt_limit_mode", v)}>
+                    <SelectTrigger id="e-attemptmode" className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="lockout">Lock out permanently</SelectItem>
+                      <SelectItem value="timeout">Time out, then allow retries</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FieldError id="e-attemptmode-e" error={firstError("attempt_limit_mode")} />
+                </div>
+              </div>
+              {state.attempt_limit_mode === "timeout" ? (
+                <TextField
+                  id="e-attemptcooldown"
+                  label="Attempt-limit timeout (seconds)"
+                  type="number"
+                  min={1}
+                  value={state.attempt_limit_cooldown_seconds}
+                  error={firstError("attempt_limit_cooldown_seconds")}
+                  onChange={(v) => set("attempt_limit_cooldown_seconds", v)}
+                />
+              ) : null}
+            </fieldset>
 
             <fieldset className="flex flex-col gap-3">
               <legend className="mb-1 text-sm font-medium">Options</legend>
