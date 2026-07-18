@@ -34,7 +34,8 @@ def _allocate_range_subnet_cidrs(
     # Fallback CIDR used only when the network config has no explicit network_cidr;
     # matches the dev environment's default range VPC. Production callers always
     # populate range_network.network_cidr from environment terraform.
-    _DEFAULT_RANGE_VPC_CIDR = "10.1.0.0/16"  # NOSONAR — documented fallback CIDR, prod overrides via terraform
+    # Documented fallback CIDR; production always overrides via terraform.
+    _DEFAULT_RANGE_VPC_CIDR = "10.1.0.0/16"  # NOSONAR(S1313)
     range_network = load_range_network_config()
     vpc_id = range_network.network_id
     vpc_cidr = range_network.network_cidr or _DEFAULT_RANGE_VPC_CIDR

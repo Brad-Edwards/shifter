@@ -30,20 +30,20 @@ _NON_PUBLIC_IPV4_CIDRS: tuple[ipaddress.IPv4Network, ...] = tuple(
         # address space (RFC 6598), link-local, IETF protocol assignments,
         # 6to4 anycast, benchmarking, multicast, and reserved.
         "0.0.0.0/8",
-        "10.0.0.0/8",  # NOSONAR — RFC 1918 private
-        "100.64.0.0/10",  # NOSONAR — RFC 6598 shared address space
+        "10.0.0.0/8",  # NOSONAR(S1313)
+        "100.64.0.0/10",  # NOSONAR(S1313)
         "127.0.0.0/8",
-        "169.254.0.0/16",  # NOSONAR — link-local
-        "172.16.0.0/12",  # NOSONAR — RFC 1918 private
-        "192.0.0.0/24",  # NOSONAR — IETF protocol assignments
+        "169.254.0.0/16",  # NOSONAR(S1313)
+        "172.16.0.0/12",  # NOSONAR(S1313)
+        "192.0.0.0/24",  # NOSONAR(S1313)
         "192.0.2.0/24",
-        "192.88.99.0/24",  # NOSONAR — deprecated 6to4 anycast
-        "192.168.0.0/16",  # NOSONAR — RFC 1918 private
-        "198.18.0.0/15",  # NOSONAR — benchmarking
+        "192.88.99.0/24",  # NOSONAR(S1313)
+        "192.168.0.0/16",  # NOSONAR(S1313)
+        "198.18.0.0/15",  # NOSONAR(S1313)
         "198.51.100.0/24",
         "203.0.113.0/24",
-        "224.0.0.0/4",  # NOSONAR — multicast
-        "240.0.0.0/4",  # NOSONAR — reserved
+        "224.0.0.0/4",  # NOSONAR(S1313)
+        "240.0.0.0/4",  # NOSONAR(S1313)
     )
 )
 
