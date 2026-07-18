@@ -5,6 +5,8 @@
  */
 import type { CtfChallengeWrite, CtfOrganizerChallengeDetail } from "@/api/types";
 
+import { fromDateTimeLocalValue, toDateTimeLocalValue } from "../format";
+
 export interface FormState {
   name: string;
   description: string;
@@ -16,6 +18,7 @@ export interface FormState {
   flag_format: string;
   solution: string;
   visibility: string;
+  release_time: string;
   target_instance_name: string;
   target_port: string;
   tags: string;
@@ -34,6 +37,7 @@ export const EMPTY: FormState = {
   flag_format: "",
   solution: "",
   visibility: "visible",
+  release_time: "",
   target_instance_name: "",
   target_port: "",
   tags: "",
@@ -53,6 +57,7 @@ export function fromChallenge(challenge: CtfOrganizerChallengeDetail): FormState
     flag_format: challenge.flag_format ?? "",
     solution: challenge.solution ?? "",
     visibility: challenge.visibility || "visible",
+    release_time: toDateTimeLocalValue(challenge.release_time),
     target_instance_name: challenge.target_instance_name ?? "",
     target_port: challenge.target_port == null ? "" : String(challenge.target_port),
     tags: (challenge.tags ?? []).join(", "),
@@ -86,6 +91,7 @@ export function toPayload(state: FormState, mode: "create" | "edit"): CtfChallen
     flag_format: state.flag_format,
     solution: state.solution,
     visibility: state.visibility,
+    release_time: fromDateTimeLocalValue(state.release_time),
     target_instance_name: state.target_instance_name,
     target_port: port === "" ? null : intOr(port, 0),
     tags: csvToList(state.tags),

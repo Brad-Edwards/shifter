@@ -25,6 +25,7 @@ function detail(overrides: Record<string, unknown> = {}) {
     max_attempts: 0,
     attempt_limit_mode: "unlimited",
     solved: false,
+    locked: false,
     attempt_count: 0,
     attempts_remaining: null,
     timeout_retry_after: null,
@@ -94,5 +95,12 @@ describe("ChallengeDetailPage", () => {
     await screen.findByRole("heading", { name: "SQL Injection" });
     const results = await axe(container);
     expect(results.violations).toEqual([]);
+  });
+
+  it("shows a locked notice instead of the submit form for a locked challenge", async () => {
+    mockApi.mockResolvedValue(detail({ locked: true }));
+    renderRoute(<ChallengeDetailPage />, ROUTE);
+    expect(await screen.findByText("Locked")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Submit flag")).not.toBeInTheDocument();
   });
 });

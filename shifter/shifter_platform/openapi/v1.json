@@ -11411,6 +11411,10 @@
             "readOnly": true,
             "nullable": true
           },
+          "locked": {
+            "type": "boolean",
+            "readOnly": true
+          },
           "show_solution": {
             "type": "boolean",
             "readOnly": true
@@ -11441,6 +11445,7 @@
           "files",
           "hints",
           "id",
+          "locked",
           "max_attempts",
           "name",
           "next_hint_cost",

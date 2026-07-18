@@ -2878,6 +2878,7 @@ export interface components {
             readonly prerequisites_met: boolean;
             readonly unmet_prerequisites: components["schemas"]["_NamedRef"][];
             readonly connection_info: components["schemas"]["ChallengeConnectionInfo"] | null;
+            readonly locked: boolean;
             readonly show_solution: boolean;
             readonly solution: string | null;
             readonly rating: components["schemas"]["ChallengeRating"] | null;

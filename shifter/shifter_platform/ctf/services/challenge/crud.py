@@ -85,6 +85,13 @@ _CHALLENGE_MUTABLE_FIELDS = frozenset(
 )
 
 
+# Fields an organizer may change while an event is live. Flag fields cover
+# mid-event flag repair; ``visibility`` is operational control — CTF-110
+# requires organizers to be able to stage or hide (e.g. broken) challenges at
+# any time during an event, which mutates no content participants have solved.
+_LIVE_EDITABLE_FIELDS = frozenset({"flag", "flags", "visibility"})
+
+
 def _reject_non_flag_live_edits(challenge: CTFChallenge, challenge_data: dict[str, Any]) -> None:
     """Refuse broad challenge edits during ACTIVE/PAUSED live events."""
     if challenge.event.is_content_modifiable:
@@ -97,19 +104,18 @@ def _reject_non_flag_live_edits(challenge: CTFChallenge, challenge_data: dict[st
                 "event_status": challenge.event.status,
             },
         )
-    allowed_keys = {"flag", "flags"}
-    if not allowed_keys.intersection(challenge_data.keys()):
+    if not _LIVE_EDITABLE_FIELDS.intersection(challenge_data.keys()):
         raise CTFStateError(
-            f"Only flag fields may be changed during a live event (status {challenge.event.status})",
+            f"Only flag and visibility fields may be changed during a live event (status {challenge.event.status})",
             details={
                 "challenge_id": str(challenge.pk),
                 "event_status": challenge.event.status,
             },
         )
-    extra_keys = set(challenge_data.keys()) - allowed_keys
+    extra_keys = set(challenge_data.keys()) - _LIVE_EDITABLE_FIELDS
     if extra_keys:
         raise CTFStateError(
-            f"Only flag fields may be changed during a live event (status {challenge.event.status})",
+            f"Only flag and visibility fields may be changed during a live event (status {challenge.event.status})",
             details={
                 "challenge_id": str(challenge.pk),
                 "event_status": challenge.event.status,

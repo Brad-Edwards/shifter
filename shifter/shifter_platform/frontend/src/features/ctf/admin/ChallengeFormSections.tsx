@@ -116,15 +116,25 @@ export function BasicFields({
             onChange={(v) => set("target_port", v)}
           />
         </div>
-        <SelectField
-          id="c-vis"
-          label="Visibility"
-          value={state.visibility}
-          error={firstError("visibility")}
-          options={VISIBILITY_OPTIONS}
-          labelFor={titleCase}
-          onChange={(v) => set("visibility", v)}
-        />
+        <div className="grid gap-5 sm:grid-cols-2">
+          <SelectField
+            id="c-vis"
+            label="Visibility"
+            value={state.visibility}
+            error={firstError("visibility")}
+            options={VISIBILITY_OPTIONS}
+            labelFor={titleCase}
+            onChange={(v) => set("visibility", v)}
+          />
+          <TextField
+            id="c-release"
+            label="Release time (optional, auto-reveals a hidden challenge)"
+            type="datetime-local"
+            value={state.release_time}
+            error={firstError("release_time")}
+            onChange={(v) => set("release_time", v)}
+          />
+        </div>
         <div className="grid gap-5 sm:grid-cols-2">
           <TextField id="c-tags" label="Tags (comma separated)" value={state.tags} onChange={(v) => set("tags", v)} />
           <TextField id="c-topics" label="Topics (comma separated)" value={state.topics} onChange={(v) => set("topics", v)} />

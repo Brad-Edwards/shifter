@@ -234,6 +234,17 @@ function FlagSubmission({ challenge }: Readonly<{ challenge: CtfChallengeDetail 
     );
   }
 
+  if (challenge.locked) {
+    return (
+      <Alert className="mt-6">
+        <AlertTitle>Locked</AlertTitle>
+        <AlertDescription>
+          This challenge is visible but not yet open for submissions.
+        </AlertDescription>
+      </Alert>
+    );
+  }
+
   const disabled = submit.isPending || !flag.trim();
 
   return (
