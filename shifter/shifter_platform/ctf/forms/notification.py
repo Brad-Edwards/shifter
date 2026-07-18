@@ -17,6 +17,8 @@ class CTFNotificationForm(forms.ModelForm):
     """Form for creating notifications."""
 
     class Meta:
+        """Model-form field and widget binding."""
+
         model = CTFNotification
         fields = [
             "notification_type",

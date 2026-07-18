@@ -16,6 +16,8 @@ class CTFBracketForm(forms.ModelForm):
     """Form for creating and editing brackets."""
 
     class Meta:
+        """Model-form field and widget binding."""
+
         model = CTFBracket
         fields = [
             "name",

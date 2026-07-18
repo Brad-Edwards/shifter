@@ -48,6 +48,8 @@ class CTFChallengeForm(forms.ModelForm):
     )
 
     class Meta:
+        """Model-form field and widget binding."""
+
         model = CTFChallenge
         fields = [
             "name",
