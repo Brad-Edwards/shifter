@@ -929,11 +929,16 @@ module "engine_provisioner" {
   victim_instance_type = var.victim_instance_type
 
   # S3
-  agent_s3_bucket           = module.s3.bucket_name
-  agent_s3_bucket_arn       = module.s3.bucket_arn
-  s3_endpoint_id            = try(data.terraform_remote_state.range.outputs.s3_endpoint_id, "")
-  firewall_endpoint_id      = data.terraform_remote_state.range.outputs.firewall_endpoint_id != null ? data.terraform_remote_state.range.outputs.firewall_endpoint_id : ""
-  range_egress_mode         = try(data.terraform_remote_state.range.outputs.range_egress_mode, "allowlist")
+  agent_s3_bucket          = module.s3.bucket_name
+  agent_s3_bucket_arn      = module.s3.bucket_arn
+  s3_endpoint_id           = try(data.terraform_remote_state.range.outputs.s3_endpoint_id, "")
+  firewall_endpoint_id     = data.terraform_remote_state.range.outputs.firewall_endpoint_id != null ? data.terraform_remote_state.range.outputs.firewall_endpoint_id : ""
+  range_egress_mode        = try(data.terraform_remote_state.range.outputs.range_egress_mode, "allowlist")
+  range_vpn_edge_subnet_id = try(data.terraform_remote_state.range.outputs.vpn_edge_subnet_id, "")
+  range_vpn_provider_endpoint_security_group_id = try(
+    data.terraform_remote_state.range.outputs.provider_api_endpoint_security_group_id,
+    "",
+  )
   ssm_endpoints_subnet_cidr = try(data.terraform_remote_state.range.outputs.ssm_endpoints_subnet_cidr, "")
 
   # Portal VPC configuration (for terminal SSH routing)

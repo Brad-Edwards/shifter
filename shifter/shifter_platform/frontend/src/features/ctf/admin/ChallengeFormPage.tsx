@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 
 import { Loader2 } from "lucide-react";
 
-import { useCreateCtfChallenge, useCtfOrganizerChallenge, useUpdateCtfChallenge } from "@/api/ctf";
+import { useCreateCtfChallenge, useCtfOrganizerChallenge, useUpdateCtfChallenge } from "@/api/ctfAdmin";
 import { ApiError } from "@/api/errors";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";

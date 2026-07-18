@@ -2,7 +2,7 @@ import { Link } from "react-router-dom";
 
 import { Plus } from "lucide-react";
 
-import { useCtfEvents } from "@/api/ctf";
+import { useCtfEvents } from "@/api/ctfAdmin";
 import { PageHeader } from "@/components/page-header";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";

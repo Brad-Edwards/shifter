@@ -19,7 +19,8 @@ keeps its management rule authoritative.
 from __future__ import annotations
 
 from aces_plan import AcesPlanAcl, AcesPlanNetwork, AcesPlanNode
-from gcp_range_cell_plan import FirewallEntry, FirewallPlan, _short_resource_name
+from gcp_range_cell_naming import _short_resource_name
+from gcp_range_cell_types import FirewallEntry, FirewallPlan
 
 #: Authored-ACL firewalls sit at 1000+index: below the priority-900 management
 #: rule (so provisioner reachability is never blocked) but authoritative over the

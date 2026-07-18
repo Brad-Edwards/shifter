@@ -19,6 +19,7 @@ body is never modified (ADR-031-R2); this module only adds parallel functions.
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 from uuid import UUID
@@ -298,6 +299,7 @@ def create_range_dispatch(
     agents_by_os: dict[str, int],
     ngfw_enabled: bool = False,
     range_source: RangeSource | None = None,
+    remote_access_teardown_at: datetime | None = None,
 ) -> RangeContext:
     """Route a launch to the ACES-native or cyberscript path.
 
@@ -308,6 +310,8 @@ def create_range_dispatch(
     on the cyberscript path.
     """
     if settings.ACES_NATIVE_PROVISIONING_ENABLED and _is_aces_scenario(scenario):
+        if remote_access_teardown_at is not None:
+            raise CMSError("The ACES-native range adapter does not support CTF OpenVPN access")
         return create_aces_native_range(user, scenario, range_source=range_source)
     return create_range(
         user,
@@ -315,4 +319,5 @@ def create_range_dispatch(
         agents_by_os,
         ngfw_enabled=ngfw_enabled,
         range_source=range_source,
+        remote_access_teardown_at=remote_access_teardown_at,
     )

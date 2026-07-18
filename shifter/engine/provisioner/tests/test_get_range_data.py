@@ -27,7 +27,8 @@ def _make_mock_cursor(range_row, ngfw_row=None):
 
 
 # Range query columns: request_id, range_id, user_id, range_config, subnet_index,
-# status, range_backend, instantiation_purpose (#1666 ownership binding).
+# status, range_backend, instantiation_purpose (#1666 ownership binding),
+# remote_access_capability (#1695 trusted OpenVPN activation contract).
 _RANGE_ROW_WITH_NGFW = (
     "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",  # request_id
     201,  # range_id
@@ -37,6 +38,7 @@ _RANGE_ROW_WITH_NGFW = (
     "provisioning",  # status
     None,  # range_backend (legacy/non-GCP)
     None,  # instantiation_purpose
+    None,  # remote_access_capability
 )
 
 _RANGE_ROW_NO_NGFW = (
@@ -48,6 +50,7 @@ _RANGE_ROW_NO_NGFW = (
     "provisioning",
     None,  # range_backend
     None,  # instantiation_purpose
+    None,  # remote_access_capability
 )
 
 
@@ -203,3 +206,21 @@ class TestGetRangeDataNGFWLookup:
 
         assert result["spec"] == envelope["payload"]
         assert result["spec_envelope"] == envelope
+
+    def test_preserves_remote_access_capability(self, monkeypatch):
+        """The provisioner receives the server-owned OpenVPN capability unchanged."""
+        from provisioner_db import get_range_data_by_request_id
+
+        capability = {
+            "version": "openvpn-capability-v1",
+            "channel": "openvpn",
+            "target_ref": "11111111-2222-3333-4444-555555555555",
+            "teardown_at": "2026-07-20T12:00:00Z",
+        }
+        row = (*_RANGE_ROW_NO_NGFW[:-1], capability)
+        mock_conn, _mock_cursor = _make_mock_cursor(row)
+        monkeypatch.setattr("provisioner_db.get_db_connection", MagicMock(return_value=mock_conn))
+
+        result = get_range_data_by_request_id("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
+
+        assert result["remote_access_capability"] == capability

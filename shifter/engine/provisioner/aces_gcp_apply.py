@@ -41,17 +41,15 @@ from aces_plan import AcesPlan, AcesPlanAccount, AcesPlanNode
 from config import GCERangeCellConfig, GCERangeImageProfile, load_gce_range_cell_config
 from gcp_guest_secrets import delete_aces_ssh_secret, ensure_aces_ssh_secret
 from gcp_range_cell_clients import GCEClients, _build_clients
-from gcp_range_cell_ops import _wait_for_operation
+from gcp_range_cell_ops import _delete_resource, _get_or_none, _wait_for_operation
 from gcp_range_cell_outputs import InstanceCredentials, instance_output, subnet_outputs
-from gcp_range_cell_plan import InstancePlan, RangeCellPlan, ResourceDict
 from gcp_range_cell_resources import instance_resource
+from gcp_range_cell_types import InstancePlan, RangeCellPlan, ResourceDict
 from gcp_range_cells import (
-    _delete_resource,
     _ensure_address,
     _ensure_firewall,
     _ensure_network,
     _ensure_subnetwork,
-    _get_or_none,
     _host_public_key_from_instance,
 )
 from utils.crypto import generate_ssh_host_keypair
