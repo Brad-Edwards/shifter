@@ -32,6 +32,7 @@ from shared.audit import (
     AuditEntityType,
 )
 from shared.enums import ResourceStatus
+from shared.schemas import RangeRef
 from shared.schemas.persistence import wrap_persisted_spec
 
 if TYPE_CHECKING:
@@ -58,7 +59,7 @@ def _engine_create_range_call(
     request_spec: RequestSpec,
     backend_admission: BackendAdmission | None = None,
     remote_access_capability: dict[str, object] | None = None,
-) -> Any:  # NOSONAR
+) -> RangeRef:
     """Late-bound call to ``cms.services.engine_create_range`` so test patches apply.
 
     ``backend_admission`` is the trusted #1348 admission result carried beside the
