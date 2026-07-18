@@ -4,7 +4,7 @@
 
 ``GET /api/v1/ctf/events/<event_id>/organizer-scoreboard/`` is the organizer's
 full-visibility read used by the monitoring workspace. Unlike the public
-scoreboard it must ignore the event's ``scoreboard_visible`` flag and its freeze
+scoreboard it must ignore the event's ``scoreboard_visibility`` mode and its freeze
 window (``freeze_at=None``), so an organizer always sees real-time rankings. It
 still enforces event ownership (403 for a non-owner, 404 for an unknown event).
 """
@@ -41,11 +41,11 @@ class TestOrganizerScoreboardApi:
         ctf_challenge,
     ):
         """The owning organizer gets full rankings even when the board is hidden
-        from participants (``scoreboard_visible=False``)."""
+        from participants (``scoreboard_visibility=hidden``)."""
         from ctf.services.scoring import recompute_participant_score
 
-        ctf_event.scoreboard_visible = False
-        ctf_event.save(update_fields=["scoreboard_visible"])
+        ctf_event.scoreboard_visibility = "hidden"
+        ctf_event.save(update_fields=["scoreboard_visibility"])
 
         CTFSubmission.objects.create(
             participant=ctf_participant,

@@ -66,6 +66,16 @@ urlpatterns = [
         name="api_participant_detail",
     ),
     path(
+        "participants/<uuid:participant_id>/awards/",
+        organizer.ParticipantAwardsView.as_view(),
+        name="api_participant_awards",
+    ),
+    path(
+        "awards/<uuid:award_id>/delete/",
+        organizer.AwardRevokeView.as_view(),
+        name="api_award_delete",
+    ),
+    path(
         "participants/<uuid:participant_id>/resend-invite/",
         organizer.ParticipantResendInviteView.as_view(),
         name="api_participant_resend_invite",

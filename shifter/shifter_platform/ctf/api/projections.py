@@ -43,6 +43,7 @@ def participant_current_event(participant: CTFParticipant) -> dict[str, Any]:
             "rating_visibility": event.rating_visibility,
             "attempt_limit_mode": event.attempt_limit_mode,
             "scoreboard_visible": event.scoreboard_visible,
+            "scoreboard_visibility": event.scoreboard_visibility,
             "event_start": event.event_start,
             "event_end": event.event_end,
         },

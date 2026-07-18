@@ -9,6 +9,7 @@ from __future__ import annotations
 from rest_framework import serializers
 
 from ctf.api.serializers._common import _NamedRefSerializer
+from ctf.api.serializers.organizer import AwardSerializer
 
 # ---------------------------------------------------------------------------
 # Organizer serializers (participant management)
@@ -110,6 +111,7 @@ class ParticipantDetailSerializer(serializers.Serializer):
     event_id = serializers.CharField(read_only=True)
     bracket_id = serializers.CharField(read_only=True, allow_null=True)
     bracket_name = serializers.CharField(read_only=True, allow_null=True)
+    awards = AwardSerializer(many=True, read_only=True)
 
 
 class ParticipantDeleteResultSerializer(serializers.Serializer):

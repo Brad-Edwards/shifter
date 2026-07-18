@@ -15,6 +15,9 @@ export interface FormState {
   points: string;
   order: string;
   max_attempts: string;
+  minimum_points: string;
+  decay_function: string;
+  decay_solve_count: string;
   flag_format: string;
   solution: string;
   visibility: string;
@@ -34,6 +37,9 @@ export const EMPTY: FormState = {
   points: "100",
   order: "0",
   max_attempts: "0",
+  minimum_points: "0",
+  decay_function: "linear",
+  decay_solve_count: "0",
   flag_format: "",
   solution: "",
   visibility: "visible",
@@ -54,6 +60,9 @@ export function fromChallenge(challenge: CtfOrganizerChallengeDetail): FormState
     points: String(challenge.points ?? 0),
     order: String(challenge.order ?? 0),
     max_attempts: String(challenge.max_attempts ?? 0),
+    minimum_points: String(challenge.minimum_points ?? 0),
+    decay_function: challenge.decay_function || "linear",
+    decay_solve_count: String(challenge.decay_solve_count ?? 0),
     flag_format: challenge.flag_format ?? "",
     solution: challenge.solution ?? "",
     visibility: challenge.visibility || "visible",
@@ -88,6 +97,9 @@ export function toPayload(state: FormState, mode: "create" | "edit"): CtfChallen
     points: intOr(state.points, 0),
     order: intOr(state.order, 0),
     max_attempts: intOr(state.max_attempts, 0),
+    minimum_points: intOr(state.minimum_points, 0),
+    decay_function: state.decay_function,
+    decay_solve_count: intOr(state.decay_solve_count, 0),
     flag_format: state.flag_format,
     solution: state.solution,
     visibility: state.visibility,

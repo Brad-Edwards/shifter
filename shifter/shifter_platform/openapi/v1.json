@@ -1610,6 +1610,66 @@
         ]
       }
     },
+    "/api/v1/ctf/awards/{award_id}/delete/": {
+      "post": {
+        "operationId": "ctf_awards_delete_create",
+        "description": "Delete the award and recompute the affected scores.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "award_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "ctf"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ParticipantDeleteResult"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
     "/api/v1/ctf/challenges/{challenge_id}/": {
       "get": {
         "operationId": "ctf_challenges_retrieve",
@@ -4585,6 +4645,144 @@
         "responses": {
           "204": {
             "description": "No response body"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
+    "/api/v1/ctf/participants/{participant_id}/awards/": {
+      "get": {
+        "operationId": "ctf_participants_awards_retrieve",
+        "description": "Return the participant's awards, newest first.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "participant_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "ctf"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AwardListResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      },
+      "post": {
+        "operationId": "ctf_participants_awards_create",
+        "description": "Grant a bonus or deduction to the participant and recompute scores.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "participant_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "ctf"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AwardWrite"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/AwardWrite"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/AwardWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Award"
+                }
+              }
+            },
+            "description": ""
           },
           "401": {
             "content": {
@@ -9128,6 +9326,76 @@
           "user_agent"
         ]
       },
+      "Award": {
+        "type": "object",
+        "description": "One organizer-granted award row (CTF-204).",
+        "properties": {
+          "id": {
+            "type": "string",
+            "readOnly": true
+          },
+          "points": {
+            "type": "integer",
+            "readOnly": true
+          },
+          "reason": {
+            "type": "string",
+            "readOnly": true
+          },
+          "granted_by": {
+            "type": "string",
+            "readOnly": true,
+            "nullable": true
+          },
+          "created_at": {
+            "type": "string",
+            "readOnly": true,
+            "nullable": true
+          }
+        },
+        "required": [
+          "created_at",
+          "granted_by",
+          "id",
+          "points",
+          "reason"
+        ]
+      },
+      "AwardListResponse": {
+        "type": "object",
+        "description": "Envelope for a participant's award list.",
+        "properties": {
+          "awards": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Award"
+            },
+            "readOnly": true
+          }
+        },
+        "required": [
+          "awards"
+        ]
+      },
+      "AwardWrite": {
+        "type": "object",
+        "description": "Request body for granting an award (positive or negative points).",
+        "properties": {
+          "points": {
+            "type": "integer",
+            "maximum": 100000,
+            "minimum": -100000
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 2000
+          }
+        },
+        "required": [
+          "points",
+          "reason"
+        ]
+      },
       "Bootstrap": {
         "type": "object",
         "description": "Top-level SPA bootstrap payload.",
@@ -9669,6 +9937,17 @@
           "max_attempts": {
             "type": "integer"
           },
+          "minimum_points": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "decay_function": {
+            "type": "string"
+          },
+          "decay_solve_count": {
+            "type": "integer",
+            "minimum": 0
+          },
           "release_time": {
             "type": "string",
             "format": "date-time",
@@ -10200,6 +10479,10 @@
             "type": "boolean",
             "readOnly": true
           },
+          "scoreboard_visibility": {
+            "type": "string",
+            "readOnly": true
+          },
           "scoreboard_freeze_at": {
             "type": "string",
             "format": "date-time",
@@ -10224,6 +10507,7 @@
           "registration_deadline",
           "scenario_id",
           "scoreboard_freeze_at",
+          "scoreboard_visibility",
           "scoreboard_visible",
           "scoring_mode",
           "status",
@@ -10378,8 +10662,8 @@
           "scoring_mode": {
             "type": "string"
           },
-          "scoreboard_visible": {
-            "type": "boolean"
+          "scoreboard_visibility": {
+            "type": "string"
           },
           "scoreboard_freeze_at": {
             "type": "string",
@@ -11000,6 +11284,18 @@
             "type": "integer",
             "readOnly": true
           },
+          "minimum_points": {
+            "type": "integer",
+            "readOnly": true
+          },
+          "decay_function": {
+            "type": "string",
+            "readOnly": true
+          },
+          "decay_solve_count": {
+            "type": "integer",
+            "readOnly": true
+          },
           "order": {
             "type": "integer",
             "readOnly": true
@@ -11053,12 +11349,15 @@
         },
         "required": [
           "category",
+          "decay_function",
+          "decay_solve_count",
           "description",
           "difficulty",
           "flag_format",
           "hints",
           "id",
           "max_attempts",
+          "minimum_points",
           "name",
           "order",
           "points",
@@ -11626,6 +11925,24 @@
           "participant"
         ]
       },
+      "ParticipantDeleteResult": {
+        "type": "object",
+        "description": "Confirmation returned after soft-deleting a participant.",
+        "properties": {
+          "deleted": {
+            "type": "boolean",
+            "readOnly": true
+          },
+          "id": {
+            "type": "string",
+            "readOnly": true
+          }
+        },
+        "required": [
+          "deleted",
+          "id"
+        ]
+      },
       "ParticipantDetail": {
         "type": "object",
         "description": "Full organizer-facing participant detail projection.",
@@ -11694,10 +12011,18 @@
             "type": "string",
             "readOnly": true,
             "nullable": true
+          },
+          "awards": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Award"
+            },
+            "readOnly": true
           }
         },
         "required": [
           "attempt_count",
+          "awards",
           "bracket_id",
           "bracket_name",
           "email",
@@ -11753,6 +12078,10 @@
             "type": "boolean",
             "readOnly": true
           },
+          "scoreboard_visibility": {
+            "type": "string",
+            "readOnly": true
+          },
           "event_start": {
             "type": "string",
             "format": "date-time",
@@ -11774,6 +12103,7 @@
           "id",
           "name",
           "rating_visibility",
+          "scoreboard_visibility",
           "scoreboard_visible",
           "scoring_mode",
           "status",

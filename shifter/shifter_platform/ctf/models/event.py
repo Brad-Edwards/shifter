@@ -21,6 +21,7 @@ from ctf.enums import (
     AttemptLimitMode,
     EventStatus,
     RatingVisibility,
+    ScoreboardVisibility,
     ScoringMode,
 )
 from shared.field_encryption import EncryptedStringField
@@ -167,9 +168,13 @@ class CTFEvent(CTFBaseModel):
             "fixed point value (less hint penalties), independent of solve count."
         ),
     )
-    scoreboard_visible = models.BooleanField(
-        default=True,
-        help_text="Whether the scoreboard is visible to participants. When False, participants see a hidden message.",
+    scoreboard_visibility = models.CharField(
+        max_length=20,
+        choices=ScoreboardVisibility.choices(),
+        default=ScoreboardVisibility.PUBLIC.value,
+        help_text=(
+            "Who can view the scoreboard: public (anyone), participants (registered only), or hidden (organizers only)."
+        ),
     )
     scoreboard_freeze_at = models.DateTimeField(
         null=True,
@@ -255,6 +260,15 @@ class CTFEvent(CTFBaseModel):
     def is_paused(self) -> bool:
         """Return True if event is currently paused."""
         return self.status == EventStatus.PAUSED.value
+
+    @property
+    def scoreboard_visible(self) -> bool:
+        """Compatibility bit for pre-CTF-404 callers: True unless hidden.
+
+        Participant-facing templates and projections keep working unchanged;
+        the three-mode policy itself is enforced at the API boundary.
+        """
+        return self.scoreboard_visibility != ScoreboardVisibility.HIDDEN.value
 
     @property
     def is_scoreboard_frozen(self) -> bool:

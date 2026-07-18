@@ -226,6 +226,9 @@ def _challenge_detail_payload(challenge: CTFChallenge) -> dict[str, object]:
             {"id": str(h.id), "text": h.text, "penalty": h.penalty, "order": h.order} for h in challenge.hints.all()
         ],
         "max_attempts": challenge.max_attempts,
+        "minimum_points": challenge.minimum_points,
+        "decay_function": challenge.decay_function,
+        "decay_solve_count": challenge.decay_solve_count,
         "order": challenge.order,
         "release_time": challenge.release_time.isoformat() if challenge.release_time else None,
         "visibility": challenge.visibility,
@@ -275,4 +278,15 @@ def _participant_detail_payload(participant: CTFParticipant) -> dict[str, object
         "event_id": str(participant.event_id),
         "bracket_id": str(participant.bracket_id) if participant.bracket_id else None,
         "bracket_name": participant.bracket.name if participant.bracket else None,
+        # CTF-204: organizer-granted bonuses/deductions in the score breakdown.
+        "awards": [
+            {
+                "id": str(award.id),
+                "points": award.points,
+                "reason": award.reason,
+                "granted_by": award.granted_by.get_username() if award.granted_by else None,
+                "created_at": award.created_at.isoformat() if award.created_at else None,
+            }
+            for award in participant.awards.all()
+        ],
     }

@@ -55,6 +55,7 @@ class EventDetailSerializer(serializers.Serializer):
     rating_visibility = serializers.CharField(read_only=True)
     scoring_mode = serializers.CharField(read_only=True)
     scoreboard_visible = serializers.BooleanField(read_only=True)
+    scoreboard_visibility = serializers.CharField(read_only=True)
     scoreboard_freeze_at = serializers.DateTimeField(read_only=True, allow_null=True)
 
 
@@ -84,7 +85,7 @@ class EventWriteSerializer(serializers.Serializer):
     attempt_limit_cooldown_seconds = serializers.IntegerField(required=False)
     rating_visibility = serializers.CharField(required=False)
     scoring_mode = serializers.CharField(required=False)
-    scoreboard_visible = serializers.BooleanField(required=False)
+    scoreboard_visibility = serializers.CharField(required=False)
     scoreboard_freeze_at = serializers.DateTimeField(required=False, allow_null=True)
 
 
@@ -149,6 +150,9 @@ class ChallengeWriteSerializer(serializers.Serializer):
     flag_format = serializers.CharField(required=False, allow_blank=True)
     solution = serializers.CharField(required=False, allow_blank=True)
     max_attempts = serializers.IntegerField(required=False)
+    minimum_points = serializers.IntegerField(required=False, min_value=0)
+    decay_function = serializers.CharField(required=False)
+    decay_solve_count = serializers.IntegerField(required=False, min_value=0)
     release_time = serializers.DateTimeField(required=False, allow_null=True)
     order = serializers.IntegerField(required=False)
     visibility = serializers.CharField(required=False, allow_blank=True)
@@ -208,6 +212,9 @@ class OrganizerChallengeDetailSerializer(serializers.Serializer):
     flag_format = serializers.CharField(read_only=True, allow_blank=True)
     hints = ChallengeHintSerializer(many=True, read_only=True)
     max_attempts = serializers.IntegerField(read_only=True)
+    minimum_points = serializers.IntegerField(read_only=True)
+    decay_function = serializers.CharField(read_only=True)
+    decay_solve_count = serializers.IntegerField(read_only=True)
     order = serializers.IntegerField(read_only=True)
     release_time = serializers.DateTimeField(read_only=True, allow_null=True)
     visibility = serializers.CharField(read_only=True, allow_blank=True)
@@ -217,6 +224,29 @@ class OrganizerChallengeDetailSerializer(serializers.Serializer):
     topics = serializers.ListField(child=serializers.CharField(), read_only=True)
     solution = serializers.CharField(read_only=True, allow_blank=True)
     rating = OrganizerChallengeRatingSerializer(read_only=True, allow_null=True)
+
+
+class AwardSerializer(serializers.Serializer):
+    """One organizer-granted award row (CTF-204)."""
+
+    id = serializers.CharField(read_only=True)
+    points = serializers.IntegerField(read_only=True)
+    reason = serializers.CharField(read_only=True, allow_blank=True)
+    granted_by = serializers.CharField(read_only=True, allow_null=True)
+    created_at = serializers.CharField(read_only=True, allow_null=True)
+
+
+class AwardListResponseSerializer(serializers.Serializer):
+    """Envelope for a participant's award list."""
+
+    awards = AwardSerializer(many=True, read_only=True)
+
+
+class AwardWriteSerializer(serializers.Serializer):
+    """Request body for granting an award (positive or negative points)."""
+
+    points = serializers.IntegerField(min_value=-100000, max_value=100000)
+    reason = serializers.CharField(max_length=2000)
 
 
 class ChallengeMutationResultSerializer(serializers.Serializer):

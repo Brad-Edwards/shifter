@@ -176,10 +176,10 @@ def test_create_event_rejects_invalid_scoring_mode(organizer_user):
                 "name": "Bad Mode",
                 "event_start": now + timedelta(days=1),
                 "event_end": now + timedelta(days=1, hours=8),
-                "scoring_mode": "dynamic",
+                "scoring_mode": "unsupported-mode",
             },
         )
-    assert exc.value.details["scoring_mode"] == "dynamic"
+    assert exc.value.details["scoring_mode"] == "unsupported-mode"
 
 
 @pytest.mark.django_db

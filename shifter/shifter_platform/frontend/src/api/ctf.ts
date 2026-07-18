@@ -50,6 +50,7 @@ export const ctfKeys = {
   prerequisites: (challengeId: string) => ["ctf", "prerequisites", challengeId] as const,
   participants: (eventId: string) => ["ctf", "participants", eventId] as const,
   participant: (id: string) => ["ctf", "participant", id] as const,
+  awards: (participantId: string) => ["ctf", "awards", participantId] as const,
   ranges: (eventId: string) => ["ctf", "ranges", eventId] as const,
   notifications: (eventId: string) => ["ctf", "notifications", eventId] as const,
   scoreTimeline: (participantId: string) => ["ctf", "score-timeline", participantId] as const,

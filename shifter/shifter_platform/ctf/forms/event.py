@@ -61,7 +61,7 @@ class CTFEventForm(forms.ModelForm):
             "attempt_limit_cooldown_seconds",
             "rating_visibility",
             "scoring_mode",
-            "scoreboard_visible",
+            "scoreboard_visibility",
             "scoreboard_freeze_at",
         ]
         widgets = {
