@@ -7,6 +7,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { apiDownload, apiFetch } from "./client";
+import { ApiError } from "./errors";
 import type {
   CtfChallengeDetail,
   CtfChallengeListItem,
@@ -81,7 +82,16 @@ export function useCtfChallenge(challengeId: string, enabled = true) {
 export function useCtfTeam() {
   return useQuery({
     queryKey: ctfKeys.team(),
-    queryFn: ({ signal }) => apiFetch<CtfTeam>(`${BASE}/me/team/`, { signal }),
+    // A 404 is the server's ordinary "not on a team" answer (solo events /
+    // unassigned), so it resolves to null rather than an error state.
+    queryFn: async ({ signal }): Promise<CtfTeam | null> => {
+      try {
+        return await apiFetch<CtfTeam>(`${BASE}/me/team/`, { signal });
+      } catch (error) {
+        if (error instanceof ApiError && error.status === 404) return null;
+        throw error;
+      }
+    },
   });
 }
 
@@ -167,6 +177,49 @@ export function useUseHint(challengeId: string) {
       }),
     onSuccess: () => invalidatePlay(queryClient, challengeId),
   });
+}
+
+function useTeamMutation<TBody>(path: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body: TBody) => apiFetch<CtfTeam>(`${BASE}/me/team/${path}/`, { method: "POST", body }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ctfKeys.team() });
+      queryClient.invalidateQueries({ queryKey: ctfKeys.currentEvent() });
+    },
+  });
+}
+
+export function useCreateTeam() {
+  return useTeamMutation<{ name: string }>("create");
+}
+
+export function useJoinTeam() {
+  return useTeamMutation<{ invite_code: string }>("join");
+}
+
+export function useRenameTeam() {
+  return useTeamMutation<{ name: string }>("rename");
+}
+
+export function useRegenerateTeamCode() {
+  return useTeamMutation<Record<string, never>>("regenerate-code");
+}
+
+export function useTransferCaptaincy() {
+  return useTeamMutation<{ participant_id: string }>("transfer-captaincy");
+}
+
+export function useRemoveTeamMember() {
+  return useTeamMutation<{ participant_id: string }>("remove-member");
+}
+
+export function useLeaveTeam() {
+  return useTeamMutation<Record<string, never>>("leave");
+}
+
+export function useDisbandTeam() {
+  return useTeamMutation<Record<string, never>>("disband");
 }
 
 export function useRateChallenge(challengeId: string) {

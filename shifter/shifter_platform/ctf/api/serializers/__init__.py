@@ -98,6 +98,9 @@ from ctf.api.serializers.participant import (
     SubmissionListResponseSerializer,
     SubmitFlagRequestSerializer,
     SubmitFlagResultSerializer,
+    TeamCreateRequestSerializer,
+    TeamJoinRequestSerializer,
+    TeamMemberRequestSerializer,
     UseHintRequestSerializer,
     UseHintResultSerializer,
 )
@@ -187,6 +190,9 @@ __all__ = [
     "SubmissionListResponseSerializer",
     "SubmitFlagRequestSerializer",
     "SubmitFlagResultSerializer",
+    "TeamCreateRequestSerializer",
+    "TeamJoinRequestSerializer",
+    "TeamMemberRequestSerializer",
     "UseHintRequestSerializer",
     "UseHintResultSerializer",
 ]

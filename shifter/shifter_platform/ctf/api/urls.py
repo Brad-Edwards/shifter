@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from django.urls import path
 
-from ctf.api import organizer, participant_views, views
+from ctf.api import organizer, participant_views, team_views, views
 
 app_name = "ctf"
 
@@ -18,6 +18,18 @@ urlpatterns = [
         name="api_participant_challenge_detail",
     ),
     path("me/team/", participant_views.ParticipantTeamView.as_view(), name="api_participant_team"),
+    path("me/team/create/", team_views.TeamCreateView.as_view(), name="api_team_create"),
+    path("me/team/join/", team_views.TeamJoinView.as_view(), name="api_team_join"),
+    path("me/team/leave/", team_views.TeamLeaveView.as_view(), name="api_team_leave"),
+    path("me/team/rename/", team_views.TeamRenameView.as_view(), name="api_team_rename"),
+    path("me/team/regenerate-code/", team_views.TeamRegenerateCodeView.as_view(), name="api_team_regenerate_code"),
+    path(
+        "me/team/transfer-captaincy/",
+        team_views.TeamTransferCaptaincyView.as_view(),
+        name="api_team_transfer_captaincy",
+    ),
+    path("me/team/remove-member/", team_views.TeamRemoveMemberView.as_view(), name="api_team_remove_member"),
+    path("me/team/disband/", team_views.TeamDisbandView.as_view(), name="api_team_disband"),
     path("events/", organizer.EventListView.as_view(), name="api_event_list"),
     path("events/<uuid:event_id>/", organizer.EventDetailView.as_view(), name="api_event_detail"),
     path(

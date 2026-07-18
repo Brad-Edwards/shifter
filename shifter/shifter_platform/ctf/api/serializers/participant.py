@@ -79,6 +79,7 @@ class ParticipantTeamMemberSerializer(serializers.Serializer):
 
     id = serializers.CharField(read_only=True)
     name = serializers.CharField(read_only=True)
+    is_captain = serializers.BooleanField(read_only=True)
 
 
 class ParticipantTeamSerializer(serializers.Serializer):
@@ -87,6 +88,27 @@ class ParticipantTeamSerializer(serializers.Serializer):
     id = serializers.CharField(read_only=True)
     name = serializers.CharField(read_only=True)
     members = ParticipantTeamMemberSerializer(many=True, read_only=True)
+    is_captain = serializers.BooleanField(read_only=True)
+    team_size_limit = serializers.IntegerField(read_only=True, allow_null=True)
+    invite_code = serializers.CharField(read_only=True, allow_null=True)
+
+
+class TeamCreateRequestSerializer(serializers.Serializer):
+    """Request body for creating a team."""
+
+    name = serializers.CharField(max_length=100)
+
+
+class TeamJoinRequestSerializer(serializers.Serializer):
+    """Request body for joining a team by invite code."""
+
+    invite_code = serializers.CharField(max_length=64)
+
+
+class TeamMemberRequestSerializer(serializers.Serializer):
+    """Request body naming a teammate (transfer captaincy, remove member)."""
+
+    participant_id = serializers.UUIDField()
 
 
 class ParticipantHintSerializer(serializers.Serializer):
