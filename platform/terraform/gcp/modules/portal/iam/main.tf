@@ -7,6 +7,18 @@ locals {
     "provisioner",
   ])
 
+  # GCP service-account account_id is capped at 30 chars. The account_id is
+  # "${replace(name_prefix, "-", "")}-${key}"; for name_prefix "shifter-gcp-dev"
+  # the prefix collapses to "shiftergcpdev-" (14), leaving a 16-char budget for
+  # the key. "provisioner-launcher" (20) overflows (34 chars); it also overflows
+  # in prod ("shifterprod-provisioner-launcher", 32). Map long keys to a bounded
+  # account_id suffix (#1719). The logical key stays the GKE KSA name / output
+  # key; only the GCP SA email localpart is shortened, and every downstream
+  # reference resolves through google_service_account.workload[key].email.
+  workload_account_id_suffix = {
+    "provisioner-launcher" = "prov-launcher"
+  }
+
   workload_identity_members = {
     portal               = "serviceAccount:${var.project_id}.svc.id.goog[shifter-platform/portal]"
     workers              = "serviceAccount:${var.project_id}.svc.id.goog[shifter-platform/workers]"
@@ -118,7 +130,7 @@ resource "google_service_account" "workload" {
   for_each = local.workload_service_accounts
 
   project      = var.project_id
-  account_id   = "${replace(var.name_prefix, "-", "")}-${each.key}"
+  account_id   = "${replace(var.name_prefix, "-", "")}-${lookup(local.workload_account_id_suffix, each.key, each.key)}"
   display_name = "Shifter ${var.environment} ${each.key}"
 }
 
