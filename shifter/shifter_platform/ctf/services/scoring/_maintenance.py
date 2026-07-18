@@ -76,15 +76,13 @@ def apply_dynamic_decay(challenge: CTFChallenge) -> None:
     if changed:
         CTFSubmission.objects.bulk_update(changed, ["points_awarded"])
 
-    team_ids: set[UUID] = set()
     for participant_id in participant_ids:
         recompute_participant_score(participant_id)
-    for team_id in (
+    team_ids: set[UUID] = set(
         CTFParticipant.objects.filter(pk__in=participant_ids, team_id__isnull=False)
         .values_list("team_id", flat=True)
         .distinct()
-    ):
-        team_ids.add(team_id)
+    )
     for team_id in team_ids:
         recompute_team_score(team_id)
 
