@@ -400,8 +400,9 @@ class TestDisqualifyIsolatedAccount:
                 registered_at=now,
             )
 
-    def test_disqualify_clears_group_when_no_other_participation(self, participant_user, organizer_user):
-        from ctf.services.participant import disqualify_participant
+    def test_disqualify_keeps_account_but_delete_anonymizes(self, participant_user, organizer_user):
+        """CTF-609: disqualify keeps the account live; removal still anonymizes it."""
+        from ctf.services.participant import delete_participant, disqualify_participant
         from management.services import configure_temporary_ctf_account, get_user_profile
         from shared.auth import is_ctf_participant
 
@@ -417,6 +418,12 @@ class TestDisqualifyIsolatedAccount:
         configure_temporary_ctf_account(participant_user, event_a.pk)
 
         disqualify_participant(part_a.id)
+
+        participant_user.refresh_from_db()
+        assert is_ctf_participant(participant_user) is True
+        assert participant_user.is_active is True
+
+        delete_participant(part_a.id)
 
         participant_user.refresh_from_db()
         assert is_ctf_participant(participant_user) is False

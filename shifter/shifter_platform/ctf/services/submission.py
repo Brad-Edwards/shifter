@@ -305,6 +305,12 @@ def submit_flag(
 
     participant, challenge = _load_submission_entities(participant_id, challenge_id)
 
+    # Compete gate before any flag verification work: refuses unregistered,
+    # disqualified, and banned rows plus observers (CTF-604/605/609).
+    from ctf.services.participant.queries import assert_participant_can_compete
+
+    assert_participant_can_compete(participant)
+
     # Issue #769: shared participant→challenge availability policy. Same
     # contract as use_hint(), so hints can never be easier to obtain than
     # flag submission. Covers event match, ACTIVE status, competition
@@ -456,16 +462,11 @@ def rate_challenge(
     # Codex review (#765 cycle 6): an internal caller passing a raw
     # participant_id for an INVITED or DISQUALIFIED row would otherwise
     # bypass the access predicate the views apply via
-    # `is_active_participant`. Mirror that here.
-    from ctf.services.participant.queries import _PLAYING_PARTICIPANT_STATUSES
+    # `is_active_participant`. The shared compete assert also enforces the
+    # CTF-604 observer rule at this choke point.
+    from ctf.services.participant.queries import assert_participant_can_compete
 
-    if participant.registered_at is None or participant.status not in _PLAYING_PARTICIPANT_STATUSES:
-        from ctf.exceptions import CTFStateError as _CTFStateError
-
-        raise _CTFStateError(
-            "Participant is not eligible",
-            details={"participant_id": str(participant.id), "status": participant.status},
-        )
+    assert_participant_can_compete(participant)
 
     try:
         challenge = CTFChallenge.objects.get(pk=challenge_id)

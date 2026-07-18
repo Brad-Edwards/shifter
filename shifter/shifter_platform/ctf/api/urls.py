@@ -23,6 +23,8 @@ urlpatterns = [
     path("me/team/leave/", team_views.TeamLeaveView.as_view(), name="api_team_leave"),
     path("me/team/rename/", team_views.TeamRenameView.as_view(), name="api_team_rename"),
     path("me/team/regenerate-code/", team_views.TeamRegenerateCodeView.as_view(), name="api_team_regenerate_code"),
+    path("me/profile/", participant_views.ParticipantProfileView.as_view(), name="api_me_profile"),
+    path("me/username/", participant_views.ParticipantUsernameSelfView.as_view(), name="api_me_username"),
     path(
         "me/team/transfer-captaincy/",
         team_views.TeamTransferCaptaincyView.as_view(),
@@ -91,6 +93,51 @@ urlpatterns = [
         "participants/<uuid:participant_id>/resend-invite/",
         organizer.ParticipantResendInviteView.as_view(),
         name="api_participant_resend_invite",
+    ),
+    path(
+        "participants/<uuid:participant_id>/ban/",
+        organizer.ParticipantBanView.as_view(),
+        name="api_participant_ban",
+    ),
+    path(
+        "participants/<uuid:participant_id>/unban/",
+        organizer.ParticipantUnbanView.as_view(),
+        name="api_participant_unban",
+    ),
+    path(
+        "participants/<uuid:participant_id>/disqualify/",
+        organizer.ParticipantDisqualifyView.as_view(),
+        name="api_participant_disqualify",
+    ),
+    path(
+        "participants/<uuid:participant_id>/requalify/",
+        organizer.ParticipantRequalifyView.as_view(),
+        name="api_participant_requalify",
+    ),
+    path(
+        "participants/<uuid:participant_id>/role/",
+        organizer.ParticipantRoleView.as_view(),
+        name="api_participant_role",
+    ),
+    path(
+        "participants/<uuid:participant_id>/hidden/",
+        organizer.ParticipantHiddenView.as_view(),
+        name="api_participant_hidden",
+    ),
+    path(
+        "participants/<uuid:participant_id>/username/",
+        organizer.ParticipantUsernameView.as_view(),
+        name="api_participant_username",
+    ),
+    path(
+        "events/<uuid:event_id>/staff/",
+        organizer.EventStaffView.as_view(),
+        name="api_event_staff",
+    ),
+    path(
+        "events/<uuid:event_id>/staff/<int:user_id>/",
+        organizer.EventStaffMemberView.as_view(),
+        name="api_event_staff_member",
     ),
     path("range/status/", organizer.ParticipantRangeStatusView.as_view(), name="api_range_status"),
     path("range/access/", organizer.ParticipantRangeAccessView.as_view(), name="api_range_access"),

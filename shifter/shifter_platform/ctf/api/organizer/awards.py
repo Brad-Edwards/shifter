@@ -14,6 +14,7 @@ from ctf.api._base import CTF_ORGANIZER_PERMISSIONS, _CtfApiError
 from ctf.api.organizer._base import (
     _EVENT_READ,
     _EVENT_WRITE,
+    _actor_may_manage,
     _raise_not_found,
     _resolve_owned_participant,
 )
@@ -56,7 +57,7 @@ class ParticipantAwardsView(APIView):
         from ctf.services.award import get_participant_awards
 
         try:
-            _resolve_owned_participant(request, participant_id)
+            _resolve_owned_participant(request, participant_id, capability="awards")
         except _CtfApiError as exc:
             return exc.to_response(request)
         awards = [_award_payload(award) for award in get_participant_awards(participant_id)]
@@ -68,7 +69,7 @@ class ParticipantAwardsView(APIView):
         from ctf.services.award import grant_award
 
         try:
-            participant = _resolve_owned_participant(request, participant_id)
+            participant = _resolve_owned_participant(request, participant_id, capability="awards")
         except _CtfApiError as exc:
             return exc.to_response(request)
         serializer = AwardWriteSerializer(data=request.data)
@@ -97,7 +98,7 @@ class AwardRevokeView(APIView):
         from ctf.services.award import revoke_award
 
         award = CTFAward.objects.filter(pk=award_id).select_related("event").first()
-        if award is None or award.event.created_by_id != request.user.pk:
+        if award is None or not _actor_may_manage(request, award.event, "awards"):
             # One not-found shape for missing and unowned rows (non-enumerating).
             try:
                 _raise_not_found(_AWARD_NOT_FOUND)

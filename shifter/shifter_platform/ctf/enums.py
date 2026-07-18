@@ -48,7 +48,11 @@ class ParticipantStatus(StrEnum):
         invited -> registered -> active -> completed
                        |
                        v
-                 disqualified
+            disqualified / banned
+
+    ``disqualified`` (CTF-609) removes competitive standing but keeps
+    view access; ``banned`` (CTF-605) blocks all event access. Both are
+    reversible by the organizer and preserve submission history.
     """
 
     INVITED = "invited"
@@ -56,6 +60,7 @@ class ParticipantStatus(StrEnum):
     ACTIVE = "active"
     COMPLETED = "completed"
     DISQUALIFIED = "disqualified"
+    BANNED = "banned"
 
     def __str__(self) -> str:
         """Return the string value for database storage."""
@@ -65,6 +70,47 @@ class ParticipantStatus(StrEnum):
     def choices(cls) -> list[tuple[str, str]]:
         """Return choices for Django model field."""
         return [(status.value, status.name.replace("_", " ").title()) for status in cls]
+
+
+class ParticipantRole(StrEnum):
+    """Event-scoped participation role (CTF-604).
+
+    ``player`` competes normally; ``observer`` may watch the event
+    (scoreboard, content) but cannot submit flags and never ranks.
+    """
+
+    PLAYER = "player"
+    OBSERVER = "observer"
+
+    def __str__(self) -> str:
+        """Return the string value for database storage."""
+        return self.value
+
+    @classmethod
+    def choices(cls) -> list[tuple[str, str]]:
+        """Return choices for Django model field."""
+        return [(role.value, role.name.title()) for role in cls]
+
+
+class EventStaffRole(StrEnum):
+    """Delegated event-staff roles beyond the owning organizer (CTF-607).
+
+    ``moderator`` manages participants and announcements; ``judge`` reviews
+    submissions and grants awards. Neither can modify event configuration,
+    challenges, or scoring settings.
+    """
+
+    MODERATOR = "moderator"
+    JUDGE = "judge"
+
+    def __str__(self) -> str:
+        """Return the string value for database storage."""
+        return self.value
+
+    @classmethod
+    def choices(cls) -> list[tuple[str, str]]:
+        """Return choices for Django model field."""
+        return [(role.value, role.name.title()) for role in cls]
 
 
 class ChallengeDifficulty(StrEnum):
@@ -344,7 +390,8 @@ class UserType(StrEnum):
 # Terminal statuses — no further transitions possible
 EVENT_TERMINAL_STATUSES = frozenset({EventStatus.ENDED, EventStatus.CANCELLED, EventStatus.ARCHIVED})
 
-PARTICIPANT_TERMINAL_STATUSES = frozenset({ParticipantStatus.COMPLETED, ParticipantStatus.DISQUALIFIED})
+# Moderation statuses an organizer can lift again (CTF-605 / CTF-609)
+PARTICIPANT_MODERATED_STATUSES = frozenset({ParticipantStatus.DISQUALIFIED, ParticipantStatus.BANNED})
 
 # Statuses that allow content modifications (challenges, files, etc.)
 EVENT_MODIFIABLE_STATUSES = frozenset({EventStatus.DRAFT, EventStatus.REGISTRATION})

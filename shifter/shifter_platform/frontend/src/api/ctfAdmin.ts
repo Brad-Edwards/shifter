@@ -24,6 +24,9 @@ import type {
   CtfEventDetail,
   CtfEventListResponse,
   CtfEventMutationResult,
+  CtfEventStaffAssignRequest,
+  CtfEventStaffListResponse,
+  CtfEventStaffMember,
   CtfEventWrite,
   CtfFlagCreateResult,
   CtfFlagWrite,
@@ -374,6 +377,77 @@ export function useAssignCtfBracket(participantId: string) {
         body: { bracket_id: bracketId },
       }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ctfKeys.participant(participantId) }),
+  });
+}
+
+function useParticipantAction<TBody = Record<string, never>>(participantId: string, path: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body: TBody) =>
+      apiFetch<CtfOrganizerParticipantDetail>(`${BASE}/participants/${participantId}/${path}/`, {
+        method: "POST",
+        body,
+      }),
+    onSuccess: (detail) => {
+      queryClient.invalidateQueries({ queryKey: ctfKeys.participant(participantId) });
+      queryClient.invalidateQueries({ queryKey: ctfKeys.participants(detail.event_id) });
+    },
+  });
+}
+
+export function useBanCtfParticipant(participantId: string) {
+  return useParticipantAction<{ reason?: string }>(participantId, "ban");
+}
+
+export function useUnbanCtfParticipant(participantId: string) {
+  return useParticipantAction(participantId, "unban");
+}
+
+export function useDisqualifyCtfParticipant(participantId: string) {
+  return useParticipantAction<{ reason?: string }>(participantId, "disqualify");
+}
+
+export function useRequalifyCtfParticipant(participantId: string) {
+  return useParticipantAction(participantId, "requalify");
+}
+
+export function useSetCtfParticipantRole(participantId: string) {
+  return useParticipantAction<{ role: string }>(participantId, "role");
+}
+
+export function useSetCtfParticipantHidden(participantId: string) {
+  return useParticipantAction<{ hidden: boolean }>(participantId, "hidden");
+}
+
+export function useRenameCtfParticipant(participantId: string) {
+  return useParticipantAction<{ username: string }>(participantId, "username");
+}
+
+// --- Event staff (CTF-607) ------------------------------------------------
+
+export function useCtfEventStaff(eventId: string, enabled = true) {
+  return useQuery({
+    queryKey: ctfKeys.eventStaff(eventId),
+    enabled: enabled && Boolean(eventId),
+    queryFn: ({ signal }) => apiFetch<CtfEventStaffListResponse>(`${BASE}/events/${eventId}/staff/`, { signal }),
+  });
+}
+
+export function useAssignCtfEventStaff(eventId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body: CtfEventStaffAssignRequest) =>
+      apiFetch<CtfEventStaffMember>(`${BASE}/events/${eventId}/staff/`, { method: "POST", body }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ctfKeys.eventStaff(eventId) }),
+  });
+}
+
+export function useRevokeCtfEventStaff(eventId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (userId: number) =>
+      apiFetch<unknown>(`${BASE}/events/${eventId}/staff/${userId}/`, { method: "DELETE" }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ctfKeys.eventStaff(eventId) }),
   });
 }
 

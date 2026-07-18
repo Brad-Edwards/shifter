@@ -16,6 +16,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@/components/ui/skeleton";
 
 import { ConfirmDialog } from "@/components/confirm-dialog";
+
+import { ParticipantModerationCard } from "./ParticipantModerationCard";
 import { formatDateTime, titleCase } from "../format";
 import { ctfAdminEventParticipantsPath, ctfAdminEventsPath } from "../routes";
 
@@ -293,6 +295,7 @@ export function ParticipantDetailPage() {
         </Card>
 
         <AwardsCard participant={participant} />
+        <ParticipantModerationCard participant={participant} />
         <BracketControl participant={participant} />
         <RangeControls participant={participant} />
       </div>

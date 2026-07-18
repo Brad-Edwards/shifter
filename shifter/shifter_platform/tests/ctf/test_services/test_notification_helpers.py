@@ -221,8 +221,8 @@ class TestInvitedAtNotSetAtCreation:
         from ctf.services import participant as participant_service
 
         csv_content = "Alice,alice@test.com\nBob,bob@test.com"
-        created = participant_service.bulk_import_participants(importable_event.pk, csv_content)
+        result = participant_service.bulk_import_participants(importable_event.pk, csv_content)
 
-        assert len(created) == 2
-        for participant in created:
+        assert len(result["created"]) == 2
+        for participant in result["created"]:
             assert participant.invited_at is None

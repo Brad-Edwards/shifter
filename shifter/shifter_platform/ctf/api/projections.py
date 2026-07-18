@@ -59,6 +59,8 @@ def _participant_self(participant: CTFParticipant) -> dict[str, Any]:
         "id": str(participant.id),
         "name": participant.name,
         "status": participant.status,
+        "role": participant.role,
+        "affiliation": participant.affiliation,
         "range_status": participant.range_status,
         "cached_score": participant.cached_score,
         "cached_solve_count": participant.cached_solve_count,
@@ -234,4 +236,26 @@ def _participant_rating(event: CTFEvent, participant: CTFParticipant, challenge:
         "count": aggregate["count"],
         "own_rating": own.value if own is not None else None,
         "public": public,
+    }
+
+
+def participant_profile(participant: CTFParticipant) -> dict[str, Any]:
+    """Event-scoped profile for the me-surface (CTF-610).
+
+    Platform identity (username) appears only for isolated CTF accounts; the
+    solve history itself lives on the submissions endpoint.
+    """
+    from ctf.api.organizer._base import _participant_username
+
+    return {
+        "id": str(participant.id),
+        "name": participant.name,
+        "affiliation": participant.affiliation,
+        "email": participant.email,
+        "username": _participant_username(participant),
+        "role": participant.role,
+        "status": participant.status,
+        "event": {"id": str(participant.event.id), "name": participant.event.name},
+        "score": participant.cached_score,
+        "solve_count": participant.cached_solve_count,
     }

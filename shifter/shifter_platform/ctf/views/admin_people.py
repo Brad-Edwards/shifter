@@ -148,16 +148,22 @@ def admin_participant_import(request: HttpRequest, event_id: UUID) -> HttpRespon
             csv_file = request.FILES["csv_file"]
             try:
                 csv_content = csv_file.read().decode("utf-8")  # type: ignore[union-attr]
-                participants = bulk_import_participants(event_id, csv_content)
-                imported_count = len(participants)
-                logger.info(
-                    "User %s imported %d participants to event %s",
-                    request.user.email,
-                    imported_count,
-                    safe_log_value(event_id),
-                )
-                messages.success(request, f"Successfully imported {imported_count} participants.")
-                return redirect(_PARTICIPANT_LIST_ROUTE, event_id=event_id)
+                result = bulk_import_participants(event_id, csv_content)
+                imported_count = len(result["created"])
+                if imported_count == 0 and result["errors"]:
+                    # Nothing importable: stay on the form and show every row error.
+                    errors = result["errors"]
+                else:
+                    logger.info(
+                        "User %s imported %d participants to event %s",
+                        request.user.email,
+                        imported_count,
+                        safe_log_value(event_id),
+                    )
+                    messages.success(request, f"Successfully imported {imported_count} participants.")
+                    for row_error in result["errors"]:
+                        messages.warning(request, f"Skipped: {row_error}")
+                    return redirect(_PARTICIPANT_LIST_ROUTE, event_id=event_id)
             except CTFValidationError as e:
                 errors = _participant_import_error_messages(e)
     else:

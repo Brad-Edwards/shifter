@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 
-import { Flag, Server, Trophy, Users } from "lucide-react";
+import { Flag, Server, Trophy, UserCog, Users } from "lucide-react";
 
 import { useCtfCurrentEvent } from "@/api/ctf";
 import { ApiError } from "@/api/errors";
@@ -14,13 +14,14 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
 import { titleCase } from "./format";
-import { ctfChallengesPath, ctfRangePath, ctfScoreboardPath, ctfTeamPath } from "./routes";
+import { ctfAccountPath, ctfChallengesPath, ctfRangePath, ctfScoreboardPath, ctfTeamPath } from "./routes";
 
 const QUICK_LINKS = [
   { to: ctfChallengesPath(), label: "Challenges", icon: Flag },
   { to: ctfScoreboardPath(), label: "Scoreboard", icon: Trophy },
   { to: ctfTeamPath(), label: "Team", icon: Users },
   { to: ctfRangePath(), label: "Range", icon: Server },
+  { to: ctfAccountPath(), label: "Account", icon: UserCog },
 ] as const;
 
 function Stat({ label, value }: Readonly<{ label: string; value: string | number }>) {
