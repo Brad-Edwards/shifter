@@ -23,14 +23,17 @@ _SPN = re.compile(r"^[A-Za-z][A-Za-z0-9._-]{0,63}/[A-Za-z0-9][A-Za-z0-9._:-]{0,2
 
 
 def _mapping(value: object) -> Mapping[str, Any]:
+    """Return mapping values and normalize every other shape to empty."""
     return value if isinstance(value, Mapping) else {}
 
 
 def _text(value: object) -> str:
+    """Return string values and normalize every other shape to empty."""
     return value if isinstance(value, str) else ""
 
 
 def _diagnostic(code: str, address: str) -> Diagnostic:
+    """Build one sanitized backend-effect diagnostic."""
     return Diagnostic(
         code=code,
         domain="provisioning",
@@ -56,6 +59,7 @@ def _policy_resources(plan: ProvisioningPlan, snapshot: RuntimeSnapshot | None) 
 
 
 def _network_refs(payload: Mapping[str, Any]) -> frozenset[str]:
+    """Return authored network addresses from either supported payload field."""
     infrastructure = _mapping(_mapping(payload.get("spec")).get("infrastructure"))
     for field in ("networks", "links"):
         raw = infrastructure.get(field)
@@ -65,6 +69,7 @@ def _network_refs(payload: Mapping[str, Any]) -> frozenset[str]:
 
 
 def _node_os(payload: Mapping[str, Any]) -> str:
+    """Return the normalized node operating-system family."""
     direct = _text(payload.get("os_family"))
     if direct:
         return direct.lower()
@@ -72,11 +77,34 @@ def _node_os(payload: Mapping[str, Any]) -> str:
 
 
 def _node_count(payload: Mapping[str, Any]) -> int:
+    """Return a positive node count, defaulting malformed or omitted values to one."""
     value = payload.get("count")
     return value if isinstance(value, int) and not isinstance(value, bool) and value > 0 else 1
 
 
+def _unsupported_domain_account(spec: Mapping[str, Any]) -> bool:
+    """Return whether a domain account requests any unsupported effect."""
+    unsupported_fields = (
+        spec.get("groups"),
+        _text(spec.get("shell")),
+        _text(spec.get("home")),
+        _text(spec.get("mail")),
+        spec.get("disabled") is True,
+    )
+    identity_supported = _DOMAIN_ACCOUNT_NAME.fullmatch(_text(spec.get("username"))) is not None
+    credential_supported = _text(spec.get("auth_method") or "password") == "password" and _text(
+        spec.get("password_strength") or "medium"
+    ) in {"weak", "medium", "strong"}
+    return not identity_supported or not credential_supported or any(unsupported_fields)
+
+
+def _invalid_spn(spn: str) -> bool:
+    """Return whether an authored SPN is not a canonical bounded single line."""
+    return _SPN.fullmatch(spn) is None or spn.strip() != spn or "\n" in spn or "\r" in spn
+
+
 def _account_policy_diagnostics(address: str, payload: Mapping[str, Any]) -> list[Diagnostic]:
+    """Validate the bounded account effects implemented by the AD realizer."""
     spec = _mapping(payload.get("spec"))
     domain_ref = _text(spec.get("domain_ref"))
     spn = _text(spec.get("spn"))
@@ -87,24 +115,9 @@ def _account_policy_diagnostics(address: str, payload: Mapping[str, Any]) -> lis
     if not domain_ref:
         return diagnostics
 
-    username = _text(spec.get("username"))
-    unsupported_fields = any(
-        (
-            spec.get("groups"),
-            _text(spec.get("shell")),
-            _text(spec.get("home")),
-            _text(spec.get("mail")),
-            spec.get("disabled") is True,
-        )
-    )
-    if (
-        not _DOMAIN_ACCOUNT_NAME.fullmatch(username)
-        or _text(spec.get("auth_method") or "password") != "password"
-        or _text(spec.get("password_strength") or "medium") not in {"weak", "medium", "strong"}
-        or unsupported_fields
-    ):
+    if _unsupported_domain_account(spec):
         diagnostics.append(_diagnostic("shifter-provisioner.domain-account-policy-unsupported", address))
-    if spn and (_SPN.fullmatch(spn) is None or spn.strip() != spn or "\n" in spn or "\r" in spn):
+    if spn and _invalid_spn(spn):
         diagnostics.append(_diagnostic("shifter-provisioner.account-spn-invalid", address))
     return diagnostics
 
@@ -117,6 +130,7 @@ def _collect_policy_view(
     dict[str, dict[str, list[str]]],
     list[Diagnostic],
 ]:
+    """Collect domain nodes, accounts, roles, and standalone account diagnostics."""
     nodes: dict[str, tuple[Mapping[str, Any], Mapping[str, Any]]] = {}
     accounts: dict[str, tuple[Mapping[str, Any], Mapping[str, Any]]] = {}
     domains: dict[str, dict[str, list[str]]] = {}
@@ -142,6 +156,7 @@ def _authority_diagnostics(
     controller_topology: Mapping[str, Any],
     accounts: Mapping[str, tuple[Mapping[str, Any], Mapping[str, Any]]],
 ) -> list[Diagnostic]:
+    """Validate the exact bounded RID-500 authority account shape."""
     authority_address = _text(controller_topology.get("authority_account_address"))
     authority = accounts.get(authority_address)
     if authority is None:
@@ -174,6 +189,7 @@ def _member_diagnostics(
     nodes: Mapping[str, tuple[Mapping[str, Any], Mapping[str, Any]]],
     controller_networks: frozenset[str],
 ) -> list[Diagnostic]:
+    """Validate member operating systems and controller reachability."""
     diagnostics: list[Diagnostic] = []
     for member_address in member_addresses:
         member_payload, _member_topology = nodes[member_address]
@@ -190,6 +206,7 @@ def _domain_account_diagnostics(
     accounts: Mapping[str, tuple[Mapping[str, Any], Mapping[str, Any]]],
     authority_address: str,
 ) -> list[Diagnostic]:
+    """Validate domain account bindings and case-insensitive uniqueness."""
     diagnostics: list[Diagnostic] = []
     seen_spns: set[str] = set()
     seen_users: set[str] = set()

@@ -61,19 +61,30 @@ def node_bootstrap_script(node: AcesPlanNode, plan: AcesPlan) -> str:
     Selects the Linux or Windows dialect from the node's ``os_family``. Returns an
     empty string when the node has no content/accounts/features.
     """
-    content = [c for c in plan.content if c.target_address == node.address]
-    # Domain-bound placements (including the authority account) are directory
-    # principals and are realized only after the controller/member topology is
-    # live. They must never also become local guest users.
-    accounts = [
-        a for a in plan.accounts if a.target_address == node.address and a.domain_ref is None and a.domain_id is None
-    ]
-    features = [f for f in plan.features if f.target_address == node.address]
+    content, accounts, features = _node_composition(node, plan)
     if not (content or accounts or features):
         return ""
     if (node.os_family or "linux").lower() == "windows":
         return _windows_script(content, accounts, features)
     return _linux_script(content, accounts, features)
+
+
+def _node_composition(
+    node: AcesPlanNode,
+    plan: AcesPlan,
+) -> tuple[list[AcesPlanContent], list[AcesPlanAccount], list[AcesPlanFeature]]:
+    """Return local-only composition placements targeting one node."""
+    content = [item for item in plan.content if item.target_address == node.address]
+    # Domain-bound placements (including the authority account) are directory
+    # principals and are realized only after the controller/member topology is
+    # live. They must never also become local guest users.
+    accounts = [
+        account
+        for account in plan.accounts
+        if account.target_address == node.address and account.domain_ref is None and account.domain_id is None
+    ]
+    features = [feature for feature in plan.features if feature.target_address == node.address]
+    return content, accounts, features
 
 
 # --- Linux (bash) ---------------------------------------------------------------

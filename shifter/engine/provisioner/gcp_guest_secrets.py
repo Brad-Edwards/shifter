@@ -201,6 +201,7 @@ def _aces_directory_secret_id(range_id: int, domain_id: str, subject_address: st
 
 
 def _password_length(strength: str) -> int:
+    """Resolve an admitted password-strength label to its generated length."""
     length = _ACES_PASSWORD_LENGTHS.get(strength)
     if length is None:
         raise ValueError(f"unsupported password strength {strength!r}")
@@ -257,6 +258,7 @@ def ensure_aces_domain_account_password_secret(
 
 
 def _delete_aces_directory_secret(range_id: int, domain_id: str, subject_address: str, purpose: str) -> None:
+    """Delete one deterministic directory secret when Secret Manager is configured."""
     try:
         client, google_exceptions, project_id = _secret_client()
     except RuntimeError:
@@ -271,14 +273,17 @@ def _delete_aces_directory_secret(range_id: int, domain_id: str, subject_address
 
 
 def delete_aces_domain_dsrm_secret(range_id: int, domain_id: str) -> None:
+    """Delete the DSRM secret for one range-local domain."""
     _delete_aces_directory_secret(range_id, domain_id, "dsrm", "dsrm-password")
 
 
 def delete_aces_domain_authority_secret(range_id: int, domain_id: str) -> None:
+    """Delete the RID-500 authority secret for one range-local domain."""
     _delete_aces_directory_secret(range_id, domain_id, "authority", "authority-password")
 
 
 def delete_aces_domain_account_secret(range_id: int, domain_id: str, account_address: str) -> None:
+    """Delete one domain-account password secret by stable account address."""
     _delete_aces_directory_secret(range_id, domain_id, account_address, "account-password")
 
 

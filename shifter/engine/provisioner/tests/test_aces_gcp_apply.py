@@ -21,6 +21,7 @@ from aces_account_credentials import AcesAccountCredentialOps, install_instance_
 from aces_active_directory import AcesDirectorySecretOps
 from aces_gcp_apply import (
     AcesGceApplyOptions,
+    AcesGceDestroyOptions,
     AcesGceSecretOps,
     apply_aces_range_cell,
     destroy_aces_range_cell,
@@ -335,21 +336,17 @@ class TestApply:
         secret_ops, _ = _secret_ops()
         directory_secret_ops, directory_mocks = _directory_secret_ops()
         directory_realizer = MagicMock(side_effect=RuntimeError("directory failed"))
+        plan = _plan_with_domain()
+        options = _apply_options(
+            _config(),
+            clients,
+            secret_ops,
+            directory_secret_ops=directory_secret_ops,
+            directory_realizer=directory_realizer,
+        )
 
         with pytest.raises(RuntimeError, match="directory failed"):
-            apply_aces_range_cell(
-                "req-1",
-                7,
-                _plan_with_domain(),
-                _resolver,
-                _apply_options(
-                    _config(),
-                    clients,
-                    secret_ops,
-                    directory_secret_ops=directory_secret_ops,
-                    directory_realizer=directory_realizer,
-                ),
-            )
+            apply_aces_range_cell("req-1", 7, plan, _resolver, options)
 
         directory_mocks.delete_account.assert_called_once_with(7, "corp", "account.service")
         directory_mocks.delete_authority.assert_called_once_with(7, "corp")
@@ -683,7 +680,7 @@ class TestDestroy:
             _config(),
             clients,
             ssh_ops,
-            account_secret_ops=account_ops,
+            AcesGceDestroyOptions(account_secret_ops=account_ops),
         )
 
         assert account_mocks.delete.call_count == 2

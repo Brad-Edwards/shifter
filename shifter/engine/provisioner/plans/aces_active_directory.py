@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import base64
-from typing import Any
 
 from .base import SetupStep
 
@@ -247,10 +246,12 @@ finally { $PasswordText = $null; $Password = $null }
 
 
 def _b64(value: str) -> str:
+    """Encode one UTF-8 runtime value for line-oriented PowerShell stdin."""
     return base64.b64encode(value.encode("utf-8")).decode("ascii")
 
 
 def _context(**values: str) -> dict[str, str]:
+    """Return raw and base64 forms for each setup-plan runtime value."""
     context = dict(values)
     context.update({f"{key}_b64": _b64(value) for key, value in values.items()})
     return context
@@ -288,7 +289,7 @@ class AcesDomainControllerPlan:
     def verify_step(self) -> None:
         return None
 
-    def get_context(self, _instance: Any) -> dict[str, str]:
+    def get_context(self, _instance: object) -> dict[str, str]:
         return {
             "dns_name": self._context["dns_name"],
             "dns_name_b64": self._context["dns_name_b64"],
@@ -338,7 +339,7 @@ class AcesDomainControllerVerificationPlan:
             is_verification=True,
         )
 
-    def get_context(self, _instance: Any) -> dict[str, str]:
+    def get_context(self, _instance: object) -> dict[str, str]:
         return {
             "dns_name": self._context["dns_name"],
             "dns_name_b64": self._context["dns_name_b64"],
@@ -372,7 +373,7 @@ class AcesDomainMemberStatePlan:
     def verify_step(self) -> None:
         return None
 
-    def get_context(self, _instance: Any) -> dict[str, str]:
+    def get_context(self, _instance: object) -> dict[str, str]:
         return {
             "dns_name": self._context["dns_name"],
             "dns_name_b64": self._context["dns_name_b64"],
@@ -402,7 +403,7 @@ class AcesDomainOfflineJoinProvisionPlan:
     def verify_step(self) -> None:
         return None
 
-    def get_context(self, _instance: Any) -> dict[str, str]:
+    def get_context(self, _instance: object) -> dict[str, str]:
         return {
             "dns_name": self._context["dns_name"],
             "dns_name_b64": self._context["dns_name_b64"],
@@ -443,7 +444,7 @@ class AcesDomainMemberPlan:
             is_verification=True,
         )
 
-    def get_context(self, _instance: Any) -> dict[str, str]:
+    def get_context(self, _instance: object) -> dict[str, str]:
         return {
             "dns_name": self._context["dns_name"],
             "dns_name_b64": self._context["dns_name_b64"],
@@ -475,7 +476,7 @@ class AcesDomainAccountPlan:
     def verify_step(self) -> None:
         return None
 
-    def get_context(self, _instance: Any) -> dict[str, str]:
+    def get_context(self, _instance: object) -> dict[str, str]:
         return {
             "dns_name": self._context["dns_name"],
             "dns_name_b64": self._context["dns_name_b64"],

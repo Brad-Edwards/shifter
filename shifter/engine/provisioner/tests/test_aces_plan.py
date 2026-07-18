@@ -551,11 +551,13 @@ class TestCompositionExtraction:
                     "spec": {**authority["payload"]["spec"], field: value},
                 },
             )
+            serialized = _serialized(network, controller, member, unsupported_authority, service, version="0.23.0")
             with pytest.raises(AcesPlanError, match="domain authority account is unsupported"):
-                parse_plan(_serialized(network, controller, member, unsupported_authority, service, version="0.23.0"))
+                parse_plan(serialized)
 
+        serialized = _serialized(network, controller, member, authority, service, local_operator, version="0.23.0")
         with pytest.raises(AcesPlanError, match="domain topology account binding is invalid"):
-            parse_plan(_serialized(network, controller, member, authority, service, local_operator, version="0.23.0"))
+            parse_plan(serialized)
 
         inconsistent_member = _resource(
             member["address"],
@@ -566,16 +568,18 @@ class TestCompositionExtraction:
             },
         )
         inconsistent_member["ordering_dependencies"] = member["ordering_dependencies"]
+        serialized = _serialized(network, controller, inconsistent_member, authority, service, version="0.23.0")
         with pytest.raises(AcesPlanError, match="domain topology identity is inconsistent"):
-            parse_plan(_serialized(network, controller, inconsistent_member, authority, service, version="0.23.0"))
+            parse_plan(serialized)
 
         malformed_controller = _resource(
             controller["address"],
             controller["resource_type"],
             {**controller["payload"], "domain_topology": "active_directory"},
         )
+        serialized = _serialized(network, malformed_controller, member, authority, service, version="0.23.0")
         with pytest.raises(AcesPlanError, match="domain topology must be an object"):
-            parse_plan(_serialized(network, malformed_controller, member, authority, service, version="0.23.0"))
+            parse_plan(serialized)
 
         colliding_service = _resource(
             service["address"],
@@ -586,8 +590,9 @@ class TestCompositionExtraction:
             },
         )
         colliding_service["ordering_dependencies"] = service["ordering_dependencies"]
+        serialized = _serialized(network, controller, member, authority, colliding_service, version="0.23.0")
         with pytest.raises(AcesPlanError, match="duplicate domain account identity"):
-            parse_plan(_serialized(network, controller, member, authority, colliding_service, version="0.23.0"))
+            parse_plan(serialized)
 
     @pytest.mark.parametrize(
         "spec_overrides",
@@ -605,8 +610,9 @@ class TestCompositionExtraction:
         network, controller, member, authority, service, _local_operator = _domain_resources()
         service["payload"]["spec"] = {**service["payload"]["spec"], **spec_overrides}
 
+        serialized = _serialized(network, controller, member, authority, service, version="0.23.0")
         with pytest.raises(AcesPlanError, match="domain account policy is unsupported"):
-            parse_plan(_serialized(network, controller, member, authority, service, version="0.23.0"))
+            parse_plan(serialized)
 
     @pytest.mark.parametrize(
         "spn",
@@ -620,8 +626,9 @@ class TestCompositionExtraction:
         network, controller, member, authority, service, _local_operator = _domain_resources()
         service["payload"]["spec"] = {**service["payload"]["spec"], "spn": spn}
 
+        serialized = _serialized(network, controller, member, authority, service, version="0.23.0")
         with pytest.raises(AcesPlanError, match="account spn is invalid") as error:
-            parse_plan(_serialized(network, controller, member, authority, service, version="0.23.0"))
+            parse_plan(serialized)
 
         assert spn not in str(error.value)
 
@@ -629,15 +636,17 @@ class TestCompositionExtraction:
         network, controller, member, authority, service, _local_operator = _domain_resources()
         controller["payload"]["count"] = 2
 
+        serialized = _serialized(network, controller, member, authority, service, version="0.23.0")
         with pytest.raises(AcesPlanError, match="domain controller cardinality or operating system is unsupported"):
-            parse_plan(_serialized(network, controller, member, authority, service, version="0.23.0"))
+            parse_plan(serialized)
 
     def test_rejects_non_windows_domain_member(self) -> None:
         network, controller, member, authority, service, _local_operator = _domain_resources()
         member["payload"]["os_family"] = "linux"
 
+        serialized = _serialized(network, controller, member, authority, service, version="0.23.0")
         with pytest.raises(AcesPlanError, match="domain member operating system is unsupported"):
-            parse_plan(_serialized(network, controller, member, authority, service, version="0.23.0"))
+            parse_plan(serialized)
 
     def test_rejects_unreachable_domain_member(self) -> None:
         network, controller, member, authority, service, _local_operator = _domain_resources()
@@ -651,25 +660,25 @@ class TestCompositionExtraction:
             "infrastructure": {"networks": ["provision.network.isolated"]},
         }
 
+        serialized = _serialized(
+            network,
+            isolated_network,
+            controller,
+            member,
+            authority,
+            service,
+            version="0.23.0",
+        )
         with pytest.raises(AcesPlanError, match="domain member is not reachable from its controller"):
-            parse_plan(
-                _serialized(
-                    network,
-                    isolated_network,
-                    controller,
-                    member,
-                    authority,
-                    service,
-                    version="0.23.0",
-                )
-            )
+            parse_plan(serialized)
 
     def test_rejects_member_without_controller_ordering_dependency(self) -> None:
         network, controller, member, authority, service, _local_operator = _domain_resources()
         member["ordering_dependencies"] = []
 
+        serialized = _serialized(network, controller, member, authority, service, version="0.23.0")
         with pytest.raises(AcesPlanError, match="domain member ordering dependency is missing"):
-            parse_plan(_serialized(network, controller, member, authority, service, version="0.23.0"))
+            parse_plan(serialized)
 
     def test_rejects_duplicate_case_folded_spn(self) -> None:
         network, controller, member, authority, service, _local_operator = _domain_resources()
@@ -688,8 +697,9 @@ class TestCompositionExtraction:
         )
         duplicate["ordering_dependencies"] = ["provision.node.member"]
 
+        serialized = _serialized(network, controller, member, authority, service, duplicate, version="0.23.0")
         with pytest.raises(AcesPlanError, match="duplicate account spn"):
-            parse_plan(_serialized(network, controller, member, authority, service, duplicate, version="0.23.0"))
+            parse_plan(serialized)
 
     def test_rejects_domain_account_topology_identity_mismatch(self) -> None:
         network, controller, member, authority, service, _local_operator = _domain_resources()
@@ -698,8 +708,9 @@ class TestCompositionExtraction:
             "domain_id": "other",
         }
 
+        serialized = _serialized(network, controller, member, authority, service, version="0.23.0")
         with pytest.raises(AcesPlanError, match="domain account binding is invalid"):
-            parse_plan(_serialized(network, controller, member, authority, service, version="0.23.0"))
+            parse_plan(serialized)
 
     def test_rejects_domain_account_target_outside_domain(self) -> None:
         network, controller, member, authority, service, _local_operator = _domain_resources()
@@ -710,15 +721,17 @@ class TestCompositionExtraction:
         )
         service["payload"]["target_address"] = outsider["address"]
 
+        serialized = _serialized(network, controller, member, outsider, authority, service, version="0.23.0")
         with pytest.raises(AcesPlanError, match="domain account target is invalid"):
-            parse_plan(_serialized(network, controller, member, outsider, authority, service, version="0.23.0"))
+            parse_plan(serialized)
 
     def test_rejects_domain_reference_without_realized_domain(self) -> None:
         network, controller, member, authority, service, _local_operator = _domain_resources()
         service["payload"]["spec"] = {**service["payload"]["spec"], "domain_ref": "ghost"}
 
+        serialized = _serialized(network, controller, member, authority, service, version="0.23.0")
         with pytest.raises(AcesPlanError, match="domain account references an unsupported domain"):
-            parse_plan(_serialized(network, controller, member, authority, service, version="0.23.0"))
+            parse_plan(serialized)
 
     def test_extracts_service_feature(self):
         feature_resource = _resource(
