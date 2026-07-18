@@ -109,6 +109,58 @@ function toPayload(state: FormState): CtfEventWrite {
   };
 }
 
+
+function SubmissionLimitsFields({
+  state,
+  set,
+  firstError,
+}: Readonly<{
+  state: FormState;
+  set: <K extends keyof FormState>(key: K, value: FormState[K]) => void;
+  firstError: (field: string) => string | undefined;
+}>) {
+  return (
+      <fieldset className="flex flex-col gap-3">
+        <legend className="mb-1 text-sm font-medium">Submission limits</legend>
+        <div className="grid gap-5 sm:grid-cols-2">
+          <TextField
+            id="e-subcooldown"
+            label="Cooldown between submissions (seconds)"
+            type="number"
+            min={0}
+            value={state.submission_cooldown_seconds}
+            error={firstError("submission_cooldown_seconds")}
+            onChange={(v) => set("submission_cooldown_seconds", v)}
+          />
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="e-attemptmode">When max attempts is reached</Label>
+            <Select value={state.attempt_limit_mode} onValueChange={(v) => set("attempt_limit_mode", v)}>
+              <SelectTrigger id="e-attemptmode" className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="lockout">Lock out permanently</SelectItem>
+                <SelectItem value="timeout">Time out, then allow retries</SelectItem>
+              </SelectContent>
+            </Select>
+            <FieldError id="e-attemptmode-e" error={firstError("attempt_limit_mode")} />
+          </div>
+        </div>
+        {state.attempt_limit_mode === "timeout" ? (
+          <TextField
+            id="e-attemptcooldown"
+            label="Attempt-limit timeout (seconds)"
+            type="number"
+            min={1}
+            value={state.attempt_limit_cooldown_seconds}
+            error={firstError("attempt_limit_cooldown_seconds")}
+            onChange={(v) => set("attempt_limit_cooldown_seconds", v)}
+          />
+        ) : null}
+      </fieldset>
+  );
+}
+
 /** Render the edit-mode loading / not-found states, or null when the form itself should render. */
 function renderEditLoadState(
   mode: "create" | "edit",
@@ -320,44 +372,7 @@ export function EventFormPage({ mode }: Readonly<{ mode: "create" | "edit" }>) {
               />
             </div>
 
-            <fieldset className="flex flex-col gap-3">
-              <legend className="mb-1 text-sm font-medium">Submission limits</legend>
-              <div className="grid gap-5 sm:grid-cols-2">
-                <TextField
-                  id="e-subcooldown"
-                  label="Cooldown between submissions (seconds)"
-                  type="number"
-                  min={0}
-                  value={state.submission_cooldown_seconds}
-                  error={firstError("submission_cooldown_seconds")}
-                  onChange={(v) => set("submission_cooldown_seconds", v)}
-                />
-                <div className="flex flex-col gap-2">
-                  <Label htmlFor="e-attemptmode">When max attempts is reached</Label>
-                  <Select value={state.attempt_limit_mode} onValueChange={(v) => set("attempt_limit_mode", v)}>
-                    <SelectTrigger id="e-attemptmode" className="w-full">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="lockout">Lock out permanently</SelectItem>
-                      <SelectItem value="timeout">Time out, then allow retries</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <FieldError id="e-attemptmode-e" error={firstError("attempt_limit_mode")} />
-                </div>
-              </div>
-              {state.attempt_limit_mode === "timeout" ? (
-                <TextField
-                  id="e-attemptcooldown"
-                  label="Attempt-limit timeout (seconds)"
-                  type="number"
-                  min={1}
-                  value={state.attempt_limit_cooldown_seconds}
-                  error={firstError("attempt_limit_cooldown_seconds")}
-                  onChange={(v) => set("attempt_limit_cooldown_seconds", v)}
-                />
-              ) : null}
-            </fieldset>
+            <SubmissionLimitsFields state={state} set={set} firstError={firstError} />
 
             <fieldset className="flex flex-col gap-3">
               <legend className="mb-1 text-sm font-medium">Options</legend>
