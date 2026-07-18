@@ -133,6 +133,7 @@ def test_different_scenario_compositions_cross_the_same_outer_contract(scenario_
         "scenario_artifact",
         "network_bindings",
         "access_declarations",
+        "remote_access",
     }
     assert request["scenario_artifact"]["payload"]["scenario_id"] == scenario_payload["scenario_id"]
     assert request["access_declarations"] == scenario_payload["participant_access"]
@@ -254,8 +255,8 @@ def test_valid_persisted_artifact_is_bound_before_operation_dispatch(monkeypatch
     with patch.dict("os.environ", {"CLOUD_PROVIDER": "gcp", "GCP_RANGE_BACKEND": "gce"}, clear=True):
         run_range_terraform("up", "request-a")
 
-    dispatched_artifact = dispatch.call_args.kwargs["scenario_artifact"]
-    assert validate_scenario_artifact(dispatched_artifact) == artifact
+    dispatched_operation = dispatch.call_args.args[1]
+    assert validate_scenario_artifact(dispatched_operation.scenario_artifact) == artifact
 
 
 def test_reloaded_gce_range_can_destroy_without_scenario_cidrs(monkeypatch):
@@ -296,9 +297,9 @@ def test_gce_cidr_allocation_does_not_rewrite_scenario_content(monkeypatch):
 
     range_spec = {"scenario_id": "scenario-a", "subnets": [{"name": "attack", "uuid": "subnet-a"}]}
     persist = MagicMock()
-    monkeypatch.setattr("terraform_ops._update_range_config", persist)
+    monkeypatch.setattr("range_subnet_allocation._update_range_config", persist)
     monkeypatch.setattr(
-        "terraform_ops.load_range_network_config",
+        "range_subnet_allocation.load_range_network_config",
         MagicMock(return_value=RangeNetworkConfig("range-vpc", "10.50.0.0/16", "us-central1")),
     )
     monkeypatch.setattr("components.network.allocate_subnets", MagicMock(return_value=["10.50.2.0/28"]))

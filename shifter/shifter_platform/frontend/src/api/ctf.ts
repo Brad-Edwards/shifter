@@ -6,45 +6,15 @@
  */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { apiFetch } from "./client";
+import { apiDownload, apiFetch } from "./client";
 import type {
-  CtfAssignBracketResult,
   CtfChallengeDetail,
-  CtfChallengeFileListResponse,
-  CtfChallengeFileUploadResult,
   CtfChallengeListItem,
-  CtfChallengeListResponse,
-  CtfChallengeMutationResult,
-  CtfChallengeWrite,
   CtfCurrentEvent,
-  CtfEventDetail,
-  CtfEventListResponse,
-  CtfEventMutationResult,
-  CtfEventWrite,
-  CtfFlagCreateResult,
-  CtfFlagWrite,
-  CtfForceDeleteEventResult,
-  CtfHintListResponse,
-  CtfHintWrite,
-  CtfNotificationAnnounceRequest,
-  CtfNotificationListResponse,
-  CtfNotificationSendResult,
-  CtfOrganizerChallengeDetail,
-  CtfOrganizerParticipantDetail,
   CtfOrganizerScoreboard,
-  CtfParticipantImportResult,
-  CtfParticipantInvite,
-  CtfParticipantListResponse,
-  CtfParticipantRangeActionResult,
-  CtfPrerequisiteListResponse,
-  CtfPrerequisiteWrite,
   CtfRangeAccess,
-  CtfRangeListResponse,
-  CtfRangeProvisionQueued,
   CtfRangeStatus,
-  CtfScenarioListResponse,
   CtfScoreboard,
-  CtfScoreTimelineResponse,
   CtfSubmissionList,
   CtfSubmitFlagResult,
   CtfTeam,
@@ -72,6 +42,7 @@ export const ctfKeys = {
   event: (id: string) => ["ctf", "event", id] as const,
   scenarios: () => ["ctf", "scenarios"] as const,
   adminChallenges: (eventId: string) => ["ctf", ADMIN_CHALLENGES_KEY, eventId] as const,
+  adminChallengesAll: () => ["ctf", ADMIN_CHALLENGES_KEY] as const,
   adminChallenge: (id: string) => ["ctf", "admin-challenge", id] as const,
   hints: (challengeId: string) => ["ctf", "hints", challengeId] as const,
   files: (challengeId: string) => ["ctf", "files", challengeId] as const,
@@ -204,6 +175,30 @@ export function useRangeAccess() {
   });
 }
 
+const VPN_PROFILE_MEDIA_TYPE = "application/x-openvpn-profile";
+const VPN_PROFILE_FILENAME = "shifter-ctf-range.ovpn";
+
+export function useVpnProfileDownload() {
+  return useMutation({
+    mutationFn: async () => {
+      const blob = await apiDownload(`${BASE}/range/vpn-profile/`, {
+        method: "POST",
+        expectedMediaType: VPN_PROFILE_MEDIA_TYPE,
+        maxBytes: 64 * 1024,
+      });
+      const url = URL.createObjectURL(blob);
+      try {
+        const anchor = document.createElement("a");
+        anchor.href = url;
+        anchor.download = VPN_PROFILE_FILENAME;
+        anchor.click();
+      } finally {
+        URL.revokeObjectURL(url);
+      }
+    },
+  });
+}
+
 /**
  * Resolve a presigned download URL for a challenge attachment (used by the
  * imperative download action on the challenge detail page). The endpoint returns
@@ -212,394 +207,4 @@ export function useRangeAccess() {
  */
 export function fetchCtfFileDownload(fileId: string): Promise<{ url: string; filename: string }> {
   return apiFetch<{ url: string; filename: string }>(`${BASE}/files/${fileId}/download/`);
-}
-
-// ---------------------------------------------------------------------------
-// Organizer (admin) hooks (#1372).
-//
-// The organizer workspace mutates through the same canonical `/api/v1/ctf/`
-// routes; caching, invalidation, and retry policy live here. Reads use the
-// organizer key namespaces declared above; mutations invalidate the affected
-// list/detail reads. All calls go through the shared typed `apiFetch` client.
-// ---------------------------------------------------------------------------
-
-// --- Events ---------------------------------------------------------------
-
-export function useCtfEvents() {
-  return useQuery({
-    queryKey: ctfKeys.events(),
-    queryFn: ({ signal }) => apiFetch<CtfEventListResponse>(`${BASE}/events/`, { signal }),
-  });
-}
-
-export function useCtfEvent(eventId: string, enabled = true) {
-  return useQuery({
-    queryKey: ctfKeys.event(eventId),
-    enabled: enabled && Boolean(eventId),
-    queryFn: ({ signal }) => apiFetch<CtfEventDetail>(`${BASE}/events/${eventId}/`, { signal }),
-  });
-}
-
-export function useCtfScenarios(enabled = true) {
-  return useQuery({
-    queryKey: ctfKeys.scenarios(),
-    enabled,
-    queryFn: ({ signal }) => apiFetch<CtfScenarioListResponse>(`${BASE}/scenarios/`, { signal }),
-  });
-}
-
-export function useCreateCtfEvent() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (body: CtfEventWrite) =>
-      apiFetch<CtfEventMutationResult>(`${BASE}/events/`, { method: "POST", body }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ctfKeys.events() }),
-  });
-}
-
-export function useUpdateCtfEvent(eventId: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (body: CtfEventWrite) =>
-      apiFetch<CtfEventMutationResult>(`${BASE}/events/${eventId}/`, { method: "PUT", body }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ctfKeys.event(eventId) });
-      queryClient.invalidateQueries({ queryKey: ctfKeys.events() });
-    },
-  });
-}
-
-export function useDeleteCtfEvent() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (eventId: string) => apiFetch<void>(`${BASE}/events/${eventId}/`, { method: "DELETE" }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ctfKeys.events() }),
-  });
-}
-
-export function useForceDeleteCtfEvent(eventId: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (confirmationName: string) =>
-      apiFetch<CtfForceDeleteEventResult>(`${BASE}/events/${eventId}/force-delete/`, {
-        method: "POST",
-        body: { confirmation_name: confirmationName },
-      }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ctfKeys.events() }),
-  });
-}
-
-// --- Challenges -----------------------------------------------------------
-
-export function useCtfEventChallenges(eventId: string, enabled = true) {
-  return useQuery({
-    queryKey: ctfKeys.adminChallenges(eventId),
-    enabled: enabled && Boolean(eventId),
-    queryFn: ({ signal }) =>
-      apiFetch<CtfChallengeListResponse>(`${BASE}/events/${eventId}/challenges/`, { signal }),
-  });
-}
-
-export function useCtfOrganizerChallenge(challengeId: string, enabled = true) {
-  return useQuery({
-    queryKey: ctfKeys.adminChallenge(challengeId),
-    enabled: enabled && Boolean(challengeId),
-    queryFn: ({ signal }) =>
-      apiFetch<CtfOrganizerChallengeDetail>(`${BASE}/challenges/${challengeId}/`, { signal }),
-  });
-}
-
-export function useCreateCtfChallenge(eventId: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (body: CtfChallengeWrite) =>
-      apiFetch<CtfChallengeMutationResult>(`${BASE}/events/${eventId}/challenges/`, { method: "POST", body }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ctfKeys.adminChallenges(eventId) }),
-  });
-}
-
-export function useUpdateCtfChallenge(challengeId: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (body: CtfChallengeWrite) =>
-      apiFetch<CtfChallengeMutationResult>(`${BASE}/challenges/${challengeId}/`, { method: "PUT", body }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ctfKeys.adminChallenge(challengeId) });
-      queryClient.invalidateQueries({ queryKey: ["ctf", ADMIN_CHALLENGES_KEY] });
-    },
-  });
-}
-
-export function useDeleteCtfChallenge() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (challengeId: string) =>
-      apiFetch<void>(`${BASE}/challenges/${challengeId}/`, { method: "DELETE" }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["ctf", ADMIN_CHALLENGES_KEY] }),
-  });
-}
-
-// --- Flags (write-only from the organizer UI) -----------------------------
-
-export function useAddCtfFlag(challengeId: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (body: CtfFlagWrite) =>
-      apiFetch<CtfFlagCreateResult>(`${BASE}/challenges/${challengeId}/flags/add/`, { method: "POST", body }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ctfKeys.adminChallenge(challengeId) }),
-  });
-}
-
-export function useRemoveCtfFlag(challengeId: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (flagId: string) => apiFetch<void>(`${BASE}/flags/${flagId}/remove/`, { method: "POST" }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ctfKeys.adminChallenge(challengeId) }),
-  });
-}
-
-// --- Hints ----------------------------------------------------------------
-
-export function useCtfChallengeHints(challengeId: string, enabled = true) {
-  return useQuery({
-    queryKey: ctfKeys.hints(challengeId),
-    enabled: enabled && Boolean(challengeId),
-    queryFn: ({ signal }) => apiFetch<CtfHintListResponse>(`${BASE}/challenges/${challengeId}/hints/`, { signal }),
-  });
-}
-
-export function useAddCtfHint(challengeId: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (body: CtfHintWrite) =>
-      apiFetch<CtfHintListResponse>(`${BASE}/challenges/${challengeId}/hints/`, { method: "POST", body }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ctfKeys.hints(challengeId) });
-      queryClient.invalidateQueries({ queryKey: ctfKeys.adminChallenge(challengeId) });
-    },
-  });
-}
-
-export function useDeleteCtfHint(challengeId: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (hintId: string) => apiFetch<void>(`${BASE}/hints/${hintId}/delete/`, { method: "POST" }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ctfKeys.hints(challengeId) });
-      queryClient.invalidateQueries({ queryKey: ctfKeys.adminChallenge(challengeId) });
-    },
-  });
-}
-
-// --- Files ----------------------------------------------------------------
-
-export function useCtfChallengeFiles(challengeId: string, enabled = true) {
-  return useQuery({
-    queryKey: ctfKeys.files(challengeId),
-    enabled: enabled && Boolean(challengeId),
-    queryFn: ({ signal }) =>
-      apiFetch<CtfChallengeFileListResponse>(`${BASE}/challenges/${challengeId}/files/`, { signal }),
-  });
-}
-
-export function useUploadCtfChallengeFile(challengeId: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: ({ file, displayName }: { file: File; displayName?: string }) => {
-      const form = new FormData();
-      form.append("file", file);
-      if (displayName) form.append("display_name", displayName);
-      return apiFetch<CtfChallengeFileUploadResult>(`${BASE}/challenges/${challengeId}/files/`, {
-        method: "POST",
-        body: form,
-      });
-    },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ctfKeys.files(challengeId) }),
-  });
-}
-
-export function useDeleteCtfChallengeFile(challengeId: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (fileId: string) => apiFetch<void>(`${BASE}/files/${fileId}/delete/`, { method: "POST" }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ctfKeys.files(challengeId) }),
-  });
-}
-
-// --- Prerequisites --------------------------------------------------------
-
-export function useCtfChallengePrerequisites(challengeId: string, enabled = true) {
-  return useQuery({
-    queryKey: ctfKeys.prerequisites(challengeId),
-    enabled: enabled && Boolean(challengeId),
-    queryFn: ({ signal }) =>
-      apiFetch<CtfPrerequisiteListResponse>(`${BASE}/challenges/${challengeId}/prerequisites/`, { signal }),
-  });
-}
-
-export function useAddCtfPrerequisite(challengeId: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (body: CtfPrerequisiteWrite) =>
-      apiFetch<CtfPrerequisiteListResponse>(`${BASE}/challenges/${challengeId}/prerequisites/`, {
-        method: "POST",
-        body,
-      }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ctfKeys.prerequisites(challengeId) }),
-  });
-}
-
-export function useDeleteCtfPrerequisite(challengeId: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (prerequisiteId: string) =>
-      apiFetch<void>(`${BASE}/prerequisites/${prerequisiteId}/delete/`, { method: "POST" }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ctfKeys.prerequisites(challengeId) }),
-  });
-}
-
-// --- Participants ---------------------------------------------------------
-
-export function useCtfParticipants(eventId: string, enabled = true) {
-  return useQuery({
-    queryKey: ctfKeys.participants(eventId),
-    enabled: enabled && Boolean(eventId),
-    queryFn: ({ signal }) =>
-      apiFetch<CtfParticipantListResponse>(`${BASE}/events/${eventId}/participants/`, { signal }),
-  });
-}
-
-export function useCtfParticipant(participantId: string, enabled = true) {
-  return useQuery({
-    queryKey: ctfKeys.participant(participantId),
-    enabled: enabled && Boolean(participantId),
-    queryFn: ({ signal }) =>
-      apiFetch<CtfOrganizerParticipantDetail>(`${BASE}/participants/${participantId}/`, { signal }),
-  });
-}
-
-export function useInviteCtfParticipant(eventId: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (body: CtfParticipantInvite) =>
-      apiFetch<unknown>(`${BASE}/events/${eventId}/participants/`, { method: "POST", body }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ctfKeys.participants(eventId) }),
-  });
-}
-
-export function useImportCtfParticipants(eventId: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (participants: unknown[]) =>
-      apiFetch<CtfParticipantImportResult>(`${BASE}/events/${eventId}/participants/import/`, {
-        method: "POST",
-        body: { participants },
-      }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ctfKeys.participants(eventId) }),
-  });
-}
-
-export function useResendCtfInvite(participantId: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: () => apiFetch<unknown>(`${BASE}/participants/${participantId}/resend-invite/`, { method: "POST" }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ctfKeys.participant(participantId) }),
-  });
-}
-
-export function useAssignCtfBracket(participantId: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (bracketId: string | null) =>
-      apiFetch<CtfAssignBracketResult>(`${BASE}/participants/${participantId}/bracket/`, {
-        method: "POST",
-        body: { bracket_id: bracketId },
-      }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ctfKeys.participant(participantId) }),
-  });
-}
-
-// --- Ranges ---------------------------------------------------------------
-
-export function useCtfEventRanges(eventId: string, enabled = true) {
-  return useQuery({
-    queryKey: ctfKeys.ranges(eventId),
-    enabled: enabled && Boolean(eventId),
-    queryFn: ({ signal }) => apiFetch<CtfRangeListResponse>(`${BASE}/events/${eventId}/ranges/`, { signal }),
-  });
-}
-
-export function useProvisionCtfEventRanges(eventId: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: () =>
-      apiFetch<CtfRangeProvisionQueued>(`${BASE}/events/${eventId}/ranges/provision/`, { method: "POST" }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ctfKeys.ranges(eventId) }),
-  });
-}
-
-export function useProvisionCtfEventSpares(eventId: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (count: number) =>
-      apiFetch<unknown>(`${BASE}/events/${eventId}/spares/`, { method: "POST", body: { count } }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ctfKeys.ranges(eventId) }),
-  });
-}
-
-/** Participant range lifecycle action (provision/destroy/stop/start/restart). */
-export type CtfRangeAction = "provision" | "destroy" | "stop" | "start" | "restart";
-
-export function useCtfParticipantRangeAction(participantId: string, eventId?: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (action: CtfRangeAction) =>
-      apiFetch<CtfParticipantRangeActionResult>(`${BASE}/participants/${participantId}/range/${action}/`, {
-        method: "POST",
-      }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ctfKeys.participant(participantId) });
-      if (eventId) queryClient.invalidateQueries({ queryKey: ctfKeys.ranges(eventId) });
-    },
-  });
-}
-
-// --- Notifications --------------------------------------------------------
-
-export function useCtfNotifications(eventId: string, enabled = true) {
-  return useQuery({
-    queryKey: ctfKeys.notifications(eventId),
-    enabled: enabled && Boolean(eventId),
-    queryFn: ({ signal }) =>
-      apiFetch<CtfNotificationListResponse>(`${BASE}/events/${eventId}/notifications/`, { signal }),
-  });
-}
-
-export function useAnnounceCtfNotification(eventId: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (body: CtfNotificationAnnounceRequest) =>
-      apiFetch<unknown>(`${BASE}/events/${eventId}/notifications/`, { method: "POST", body }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ctfKeys.notifications(eventId) }),
-  });
-}
-
-export function useSendCtfNotification(eventId: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (notificationId: string) =>
-      apiFetch<CtfNotificationSendResult>(`${BASE}/notifications/${notificationId}/send/`, { method: "POST" }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ctfKeys.notifications(eventId) }),
-  });
-}
-
-// --- Score timeline (analytics) -------------------------------------------
-
-export function useCtfScoreTimeline(participantId: string, enabled = true) {
-  return useQuery({
-    queryKey: ctfKeys.scoreTimeline(participantId),
-    enabled: enabled && Boolean(participantId),
-    queryFn: ({ signal }) =>
-      apiFetch<CtfScoreTimelineResponse>(`${BASE}/participants/${participantId}/score-timeline/`, { signal }),
-  });
 }

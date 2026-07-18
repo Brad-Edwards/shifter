@@ -157,6 +157,7 @@ class RangeStatusResponseSerializer(serializers.Serializer):
     participant_id = serializers.CharField(read_only=True, required=False)
     status = serializers.CharField(read_only=True)
     range_instance_id = serializers.IntegerField(read_only=True, allow_null=True)
+    vpn_profile_available = serializers.BooleanField(read_only=True, default=False)
 
 
 class RangeAccessResponseSerializer(serializers.Serializer):

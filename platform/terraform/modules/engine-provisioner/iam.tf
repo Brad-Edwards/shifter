@@ -504,6 +504,7 @@ resource "aws_iam_role_policy" "secrets_manager" {
       ]
       Resource = [
         "arn:aws:secretsmanager:${local.region}:${local.account_id}:secret:shifter/${var.environment}/range/*",
+        "arn:aws:secretsmanager:${local.region}:${local.account_id}:secret:shifter/${var.environment}/vpn-issuer/*",
         "arn:aws:secretsmanager:${local.region}:${local.account_id}:secret:shifter/${var.environment}/ngfw/*"
       ]
     }]
@@ -596,7 +597,9 @@ resource "aws_iam_role_policy" "gwlb" {
         ]
         Resource = [
           "arn:aws:elasticloadbalancing:${local.region}:${local.account_id}:loadbalancer/gwy/*",
+          "arn:aws:elasticloadbalancing:${local.region}:${local.account_id}:loadbalancer/net/shifter-vpn-*/*",
           "arn:aws:elasticloadbalancing:${local.region}:${local.account_id}:listener/gwy/*/*/*",
+          "arn:aws:elasticloadbalancing:${local.region}:${local.account_id}:listener/net/shifter-vpn-*/*/*",
           "arn:aws:elasticloadbalancing:${local.region}:${local.account_id}:targetgroup/*"
         ]
         Condition = {
@@ -621,11 +624,14 @@ resource "aws_iam_role_policy" "gwlb" {
           "elasticloadbalancing:ModifyLoadBalancerAttributes",
           "elasticloadbalancing:ModifyTargetGroup",
           "elasticloadbalancing:ModifyTargetGroupAttributes",
+          "elasticloadbalancing:SetSecurityGroups",
           "elasticloadbalancing:RemoveTags"
         ]
         Resource = [
           "arn:aws:elasticloadbalancing:${local.region}:${local.account_id}:loadbalancer/gwy/*",
+          "arn:aws:elasticloadbalancing:${local.region}:${local.account_id}:loadbalancer/net/shifter-vpn-*/*",
           "arn:aws:elasticloadbalancing:${local.region}:${local.account_id}:listener/gwy/*/*/*",
+          "arn:aws:elasticloadbalancing:${local.region}:${local.account_id}:listener/net/shifter-vpn-*/*/*",
           "arn:aws:elasticloadbalancing:${local.region}:${local.account_id}:targetgroup/*"
         ]
         Condition = {
@@ -646,7 +652,9 @@ resource "aws_iam_role_policy" "gwlb" {
         ]
         Resource = [
           "arn:aws:elasticloadbalancing:${local.region}:${local.account_id}:loadbalancer/gwy/*",
+          "arn:aws:elasticloadbalancing:${local.region}:${local.account_id}:loadbalancer/net/shifter-vpn-*/*",
           "arn:aws:elasticloadbalancing:${local.region}:${local.account_id}:listener/gwy/*/*/*",
+          "arn:aws:elasticloadbalancing:${local.region}:${local.account_id}:listener/net/shifter-vpn-*/*/*",
           "arn:aws:elasticloadbalancing:${local.region}:${local.account_id}:targetgroup/*"
         ]
         Condition = {
@@ -1031,6 +1039,86 @@ resource "aws_iam_role_policy" "polaris_agent_role_management" {
           "iam:ListRoleTags"
         ]
         Resource = "arn:aws:iam::${local.account_id}:role/shifter-${var.environment}-*-polaris-agent"
+      }
+    ]
+  })
+}
+
+# Request-owned OpenVPN gateway roles are separate from participant hosts and
+# can read exactly one generation-specific server identity. The provisioner may
+# create them only with the installation permissions boundary and may pass them
+# only to EC2.
+resource "aws_iam_role_policy" "vpn_gateway_role_management" {
+  name = "vpn-gateway-role-management"
+  role = aws_iam_role.ecs_task.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid      = "CreateVpnGatewayRoleWithBoundary"
+        Effect   = "Allow"
+        Action   = "iam:CreateRole"
+        Resource = "arn:aws:iam::${local.account_id}:role/shifter-${var.environment}-*-vpn-gateway"
+        Condition = {
+          StringEquals = {
+            "iam:PermissionsBoundary" = var.permissions_boundary_arn
+          }
+        }
+      },
+      {
+        Sid    = "ManageVpnGatewayRole"
+        Effect = "Allow"
+        Action = [
+          "iam:DeleteRole",
+          "iam:PutRolePolicy",
+          "iam:DeleteRolePolicy",
+          "iam:TagRole",
+          "iam:UntagRole",
+          "iam:GetRole",
+          "iam:GetRolePolicy",
+          "iam:ListRolePolicies",
+          "iam:ListAttachedRolePolicies",
+          "iam:ListInstanceProfilesForRole",
+          "iam:ListRoleTags"
+        ]
+        Resource = "arn:aws:iam::${local.account_id}:role/shifter-${var.environment}-*-vpn-gateway"
+      },
+      {
+        Sid      = "UseOnlySsmCorePolicy"
+        Effect   = "Allow"
+        Action   = ["iam:AttachRolePolicy", "iam:DetachRolePolicy"]
+        Resource = "arn:aws:iam::${local.account_id}:role/shifter-${var.environment}-*-vpn-gateway"
+        Condition = {
+          ArnEquals = {
+            "iam:PolicyARN" = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+          }
+        }
+      },
+      {
+        Sid    = "ManageVpnGatewayInstanceProfile"
+        Effect = "Allow"
+        Action = [
+          "iam:CreateInstanceProfile",
+          "iam:DeleteInstanceProfile",
+          "iam:AddRoleToInstanceProfile",
+          "iam:RemoveRoleFromInstanceProfile",
+          "iam:GetInstanceProfile",
+          "iam:TagInstanceProfile",
+          "iam:UntagInstanceProfile"
+        ]
+        Resource = "arn:aws:iam::${local.account_id}:instance-profile/shifter-${var.environment}-*-vpn-gateway"
+      },
+      {
+        Sid      = "PassVpnGatewayRoleOnlyToEc2"
+        Effect   = "Allow"
+        Action   = "iam:PassRole"
+        Resource = "arn:aws:iam::${local.account_id}:role/shifter-${var.environment}-*-vpn-gateway"
+        Condition = {
+          StringEquals = {
+            "iam:PassedToService" = "ec2.amazonaws.com"
+          }
+        }
       }
     ]
   })

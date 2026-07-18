@@ -42,3 +42,15 @@ output "polaris_agent_role_arn" {
   description = "ARN of the per-range Polaris Bedrock agent role (empty string when polaris_agent_enabled is false)"
   value       = try(aws_iam_role.polaris_agent[0].arn, "")
 }
+
+output "vpn_gateway" {
+  description = "Non-secret OpenVPN infrastructure endpoint awaiting a service-level readiness probe"
+  value = local.vpn_enabled ? {
+    endpoint        = aws_lb.vpn[0].dns_name
+    port            = 1194
+    health_endpoint = aws_instance.vpn_gateway[0].private_ip
+    health_port     = 1195
+    target_ref      = local.instance_map[local.vpn_target_key].instance_uuid
+    ready           = false
+  } : null
+}

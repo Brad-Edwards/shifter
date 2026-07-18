@@ -371,6 +371,7 @@ def _add_gdc_bootstrap_subparser(subparsers: argparse._SubParsersAction) -> None
         ),
     )
     gdc_parser.add_argument("--dry-run", action="store_true", help=HELP_DRY_RUN)
+    gdc_parser.add_argument("--yes", action="store_true", help=HELP_YES)
 
 
 def _build_parser() -> argparse.ArgumentParser:

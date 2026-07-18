@@ -180,6 +180,18 @@ variable "range_availability_zone" {
   type        = string
 }
 
+variable "range_vpn_edge_subnet_id" {
+  description = "Public Range VPC subnet used by per-range OpenVPN NLBs"
+  type        = string
+  default     = ""
+}
+
+variable "range_vpn_provider_endpoint_security_group_id" {
+  description = "Destination security group for Range VPC private provider API endpoints"
+  type        = string
+  default     = ""
+}
+
 variable "range_instance_profile_arn" {
   description = "IAM instance profile ARN for range instances"
   type        = string

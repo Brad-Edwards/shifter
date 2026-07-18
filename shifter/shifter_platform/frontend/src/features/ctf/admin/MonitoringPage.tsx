@@ -1,17 +1,8 @@
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
-import {
-  useAnnounceCtfNotification,
-  useCtfEventRanges,
-  useCtfNotifications,
-  useCtfOrganizerScoreboard,
-  useCtfParticipants,
-  useCtfScoreTimeline,
-  useProvisionCtfEventRanges,
-  useProvisionCtfEventSpares,
-  useSendCtfNotification,
-} from "@/api/ctf";
+import { useCtfOrganizerScoreboard } from "@/api/ctf";
+import { useAnnounceCtfNotification, useCtfEventRanges, useCtfNotifications, useCtfParticipants, useCtfScoreTimeline, useProvisionCtfEventRanges, useProvisionCtfEventSpares, useSendCtfNotification } from "@/api/ctfAdmin";
 import { describeMutationError } from "@/api/errors";
 import type { CtfOrganizerScoreboard } from "@/api/types";
 import { PageHeader } from "@/components/page-header";
