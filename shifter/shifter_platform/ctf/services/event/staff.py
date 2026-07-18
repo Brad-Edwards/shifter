@@ -53,9 +53,7 @@ def actor_has_event_capability(actor: User | AnonymousUser, event: CTFEvent, cap
         .values_list("role", flat=True)
         .first()
     )
-    if role is None:
-        return False
-    return capability in _ROLE_CAPABILITIES.get(role, frozenset())
+    return role is not None and capability in _ROLE_CAPABILITIES.get(role, frozenset())
 
 
 def _resolve_owned_event_for_staff(event_id: UUID, actor: User | AnonymousUser) -> CTFEvent:

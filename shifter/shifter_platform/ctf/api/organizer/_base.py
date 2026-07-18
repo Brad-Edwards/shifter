@@ -295,11 +295,10 @@ def _participant_username(participant: CTFParticipant) -> str | None:
     if user is None:
         return None
     try:
-        if not user.profile.is_ctf_account:
-            return None
+        is_ctf_account = user.profile.is_ctf_account
     except ObjectDoesNotExist:
-        return None
-    return user.username
+        is_ctf_account = False
+    return user.username if is_ctf_account else None
 
 
 def _participant_detail_payload(participant: CTFParticipant) -> dict[str, object]:
