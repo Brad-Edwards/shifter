@@ -26,9 +26,9 @@ _NON_PUBLIC_IPV4_CIDRS: tuple[ipaddress.IPv4Network, ...] = tuple(
     ipaddress.IPv4Network(cidr)
     for cidr in (
         # "this network", loopback, and the three TEST-NET documentation ranges
-        # sit between the NOSONAR-annotated entries: RFC 1918 private, shared
-        # address space (RFC 6598), link-local, IETF protocol assignments,
-        # 6to4 anycast, benchmarking, multicast, and reserved.
+        # sit between the suppression-annotated entries: RFC 1918 private,
+        # shared address space (RFC 6598), link-local, IETF protocol
+        # assignments, 6to4 anycast, benchmarking, multicast, and reserved.
         "0.0.0.0/8",
         "10.0.0.0/8",  # NOSONAR(S1313)
         "100.64.0.0/10",  # NOSONAR(S1313)
