@@ -435,6 +435,29 @@ class TestMainCLI:
 
             assert mock_gdc_bootstrap.call_args[1]["dry_run"] is True
 
+    def test_passes_yes_flag_to_gdc_bootstrap(self):
+        """CLI enables non-interactive proceed when --yes given to gdc-bootstrap (issue #1713)."""
+        with (
+            patch(
+                "sys.argv",
+                [
+                    "deploy.py",
+                    "gdc-bootstrap",
+                    "--project-id",
+                    "prod-rwctxzl6shxk",
+                    "--cluster-id",
+                    "cluster1",
+                    "--yes",
+                ],
+            ),
+            patch("deploy.check_dependencies"),
+            patch("deploy.set_assume_yes") as mock_set_assume_yes,
+            patch("deploy.gdc_bootstrap_cluster"),
+        ):
+            deploy.main()
+
+            mock_set_assume_yes.assert_called_once_with(True)
+
     # ---------------------------------------------------------------------
     # preflight subcommand (shared deploy prerequisite gate)
     #

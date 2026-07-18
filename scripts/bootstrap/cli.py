@@ -422,6 +422,7 @@ Examples:
         ),
     )
     gdc_parser.add_argument("--dry-run", action="store_true", help=HELP_DRY_RUN)
+    gdc_parser.add_argument("--yes", action="store_true", help=HELP_YES)
 
     return parser
 
