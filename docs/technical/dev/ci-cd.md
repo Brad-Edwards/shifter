@@ -104,6 +104,15 @@ non-docs changes make it true, ordinary docs-only changes make it false, and
 guardrail docs make it true even though they are documentation. PR Gate accepts
 a skipped Quality job only when `quality_relevant` is false.
 
+Inside `_quality.yml`, the always-run path-detection job runs
+`scripts/quality_ownership/classify_paths.py`, which reads the versioned
+quality-ownership contract at `.github/quality-path-filters.yaml` and rejects
+any unclassified changed path before it selects jobs. That contract also maps
+every production path to its blocking lint, security, and test jobs; the
+`quality-path-ownership` ADR guard (ADR-004-R24) enforces that ownership.
+See `docs/technical/dev/adr-enforcement.md` for how to add a quality unit or
+record a gap.
+
 The Shifter Engine reusable workflow has an additional blocking provisioner
 pytest gate before local Docker validation, credentialed image build, and ECS
 deploy. This keeps a deploy dispatch from building or deploying the provisioner

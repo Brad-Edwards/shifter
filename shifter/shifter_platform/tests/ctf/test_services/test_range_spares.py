@@ -187,8 +187,9 @@ class TestProvisionEventSpares:
     def test_event_not_found_raises(self):
         import uuid
 
+        uuid4 = uuid.uuid4()
         with pytest.raises(CTFNotFoundError):
-            provision_event_spares(uuid.uuid4(), 1)
+            provision_event_spares(uuid4, 1)
 
     @pytest.mark.django_db
     def test_a_spares_provisioning_failure_is_recorded_failed_and_topup_continues(self, ctf_event, organizer_user):
@@ -244,8 +245,9 @@ class TestGetEventSpareSummary:
     def test_event_not_found_raises(self):
         import uuid
 
+        uuid4 = uuid.uuid4()
         with pytest.raises(CTFNotFoundError):
-            get_event_spare_summary(uuid.uuid4())
+            get_event_spare_summary(uuid4)
 
 
 class TestSpareStatusSignalSync:
@@ -413,8 +415,9 @@ class TestCleanupEventSpares:
     def test_event_not_found_raises(self):
         import uuid
 
+        uuid4 = uuid.uuid4()
         with pytest.raises(CTFNotFoundError):
-            cleanup_event_spares(uuid.uuid4())
+            cleanup_event_spares(uuid4)
 
 
 class TestCleanupEventRangesWiresSpares:

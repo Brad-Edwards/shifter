@@ -723,6 +723,7 @@ class TestGdcTerraformInitRetries:
             stderr="Error: unsupported backend configuration",
         )
 
+        bootstrap_path = Path("bootstrap.json")
         with (
             patch("subprocess.run", return_value=invalid_backend) as mock_subprocess,
             patch("deploy.time.sleep") as mock_sleep,
@@ -731,7 +732,7 @@ class TestGdcTerraformInitRetries:
             deploy.run_gcp_terraform_init_with_retry(
                 config,
                 config.terraform_state_bucket_name,
-                Path("bootstrap.json"),
+                bootstrap_path,
                 max_attempts=3,
                 sleep_seconds=0,
             )
@@ -853,6 +854,7 @@ class TestGdcTerraformBootstrapAccess:
             stderr="ERROR: (gcloud.artifacts.repositories.list) INVALID_ARGUMENT: bad request",
         )
 
+        bootstrap_path = Path("bootstrap.json")
         with (
             patch("deploy._run_gcp_bootstrap_probe", return_value=invalid) as mock_probe,
             patch("deploy.time.sleep") as mock_sleep,
@@ -860,7 +862,7 @@ class TestGdcTerraformBootstrapAccess:
         ):
             deploy.wait_for_gcp_terraform_bootstrap_access(
                 config,
-                Path("bootstrap.json"),
+                bootstrap_path,
                 max_attempts=2,
                 sleep_seconds=0,
             )
@@ -946,6 +948,7 @@ class TestGdcControlPlaneHelmValues:
             "kubernetesApiCidrs": ["10.48.0.0/20"],
             "rangeClusterApiCidrs": [],
             "rangeClusterApiPort": 6444,
+            "rangeAccessCidrs": ["10.50.0.0/16"],
         }
 
     def test_range_cluster_api_cidrs_from_control_plane_endpoint(self):
@@ -964,6 +967,24 @@ class TestGdcControlPlaneHelmValues:
 
         assert values["networkPolicy"]["rangeClusterApiCidrs"] == ["10.240.0.5/32"]
         assert values["networkPolicy"]["rangeClusterApiPort"] == 6444
+
+    def test_range_access_cidrs_from_range_network_cidr(self):
+        """Participant range access (issue #1349): the portal/guacd egress allowlist
+        is the range network CIDR so those workloads can dial range guests."""
+        config = deploy.GDCBootstrapConfig(project_id="prod-rwctxzl6shxk", cluster_id="cluster1")
+        outputs = _sample_gcp_control_plane_outputs(config.project_id)
+        values = deploy.render_gcp_helm_values(config, outputs, image_tag=PINNED_IMAGE_TAG)
+
+        assert values["networkPolicy"]["rangeAccessCidrs"] == ["10.50.0.0/16"]
+
+    def test_range_access_cidrs_empty_when_range_network_cidr_absent(self):
+        """No range network CIDR -> empty allowlist so the egress policy stays unrendered."""
+        config = deploy.GDCBootstrapConfig(project_id="prod-rwctxzl6shxk", cluster_id="cluster1")
+        outputs = _sample_gcp_control_plane_outputs(config.project_id)
+        outputs["range_network_cidr"] = {"value": ""}
+        values = deploy.render_gcp_helm_values(config, outputs, image_tag=PINNED_IMAGE_TAG)
+
+        assert values["networkPolicy"]["rangeAccessCidrs"] == []
 
     def test_rejects_insecure_public_bootstrap_values(self):
         """The Helm values renderer must refuse public bare-IP debug deployments on GCP."""
@@ -1117,6 +1138,15 @@ class TestGdcControlPlaneHelmChart:
         assert "name: default-deny-jobs" in output
         assert "199.36.153.4/30" in output
         assert "10.40.0.10/32" in output
+        # Participant/operator range access egress (issue #1349): the Helm path
+        # must render the policy from networkPolicy.rangeAccessCidrs (fed by the
+        # range_network_cidr Terraform output), scoped to the participant channel
+        # ports -- asserted at the rendered-manifest level so values->template
+        # wiring drift is caught, mirroring the Kustomize renderer's own test.
+        assert "name: allow-platform-range-access-egress" in output
+        assert "10.50.0.0/16" in output  # range_network_cidr from the sample outputs
+        assert "port: 22" in output
+        assert "port: 3389" in output
         assert 'requestPath: "/health/"' in output
         assert "securityPolicy:" in output
         assert "name: shifter-gcp-dev-edge" in output

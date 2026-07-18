@@ -226,6 +226,11 @@ def _build_provisioned_instance_payload(instance_data: dict[str, Any], provider:
         "subnet_name": instance_data.get("subnet_name"),
         "instance_id": instance_data.get("instance_id"),
         "private_ip": instance_data.get("private_ip"),
+        # Scenario-declared participant access channels: the closed realized
+        # access binding the portal authorizes against (issue #1349). Absent on
+        # providers that expose every instance (AWS), where credential presence
+        # remains the gate.
+        "participant_access_channels": instance_data.get("participant_access_channels"),
         "ssh_key_secret_arn": instance_data.get("ssh_key_secret_arn"),
         # Per-instance RDP password secret reference (#762).
         "rdp_password_secret_arn": instance_data.get("rdp_password_secret_arn"),

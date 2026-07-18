@@ -287,6 +287,7 @@ def _firewall_plan(
     range_tag = _network_tag(range_id)
     subnet_cidrs = [subnet["cidr"] for subnet in subnet_plans]
     portal_network_cidrs = _validated_boundary_cidrs("portal_network_cidrs", config.portal_network_cidrs)
+    access_network_cidrs = _validated_boundary_cidrs("access_network_cidrs", config.access_network_cidrs)
     egress_allow_cidrs = _validated_boundary_cidrs("egress_allow_cidrs", config.egress_allow_cidrs)
     firewalls: list[FirewallPlan] = []
     for subnet in subnet_plans:
@@ -300,9 +301,43 @@ def _firewall_plan(
                 "allowed": [{"IPProtocol": "all"}],
             }
         )
-    if portal_network_cidrs:
-        # SSH (participant + native-guest host), RDP, and the Docker-host
-        # management sshd port (Polaris host, whose Kali container binds :22).
+    if access_network_cidrs:
+        # Dedicated access-workload source identity (issue #1349): participant/
+        # operator access (SSH 22, RDP 3389) is a rule of its own, sourced only
+        # from the access-workload ranges (portal + guacd), so it is never a
+        # provisioner/management wildcard. Provisioner + native/Docker-host
+        # management ingress is the separate rule below on portal_network_cidrs.
+        firewalls.append(
+            {
+                "name": _short_resource_name("shifter-r", range_id, "access"),
+                "direction": "INGRESS",
+                "priority": 900,
+                "target_tags": [range_tag],
+                "source_ranges": access_network_cidrs,
+                "allowed": [{"IPProtocol": "tcp", "ports": ["22", "3389"]}],
+            }
+        )
+        if portal_network_cidrs:
+            # Management-only ingress: native-guest host SSH (:22) and the
+            # Docker-host management sshd port (Polaris host, whose Kali container
+            # binds :22). No RDP: participant RDP is the access rule above.
+            mgmt_ports = ["22"]
+            if str(config.host_mgmt_ssh_port) not in mgmt_ports:
+                mgmt_ports.append(str(config.host_mgmt_ssh_port))
+            firewalls.append(
+                {
+                    "name": _short_resource_name("shifter-r", range_id, "mgmt"),
+                    "direction": "INGRESS",
+                    "priority": 900,
+                    "target_tags": [range_tag],
+                    "source_ranges": portal_network_cidrs,
+                    "allowed": [{"IPProtocol": "tcp", "ports": mgmt_ports}],
+                }
+            )
+    elif portal_network_cidrs:
+        # No dedicated access-workload range configured: keep the legacy combined
+        # rule (SSH participant + native-guest host, RDP, Docker-host sshd) so
+        # deployments without an access node pool are unchanged.
         mgmt_ports = ["22", "3389"]
         if str(config.host_mgmt_ssh_port) not in mgmt_ports:
             mgmt_ports.append(str(config.host_mgmt_ssh_port))

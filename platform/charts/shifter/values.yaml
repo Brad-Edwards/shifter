@@ -244,6 +244,18 @@ networkPolicy:
   # Jobs can reach the range cluster apiserver. See deploy.py gdc-bootstrap.
   rangeClusterApiCidrs: []
   rangeClusterApiPort: 6444
+  # CIDR(s) covering the GCP range network's VM private IPs. Scoped to the
+  # portal (browser SSH terminal) and guacd (Guacamole SSH/RDP) workloads so
+  # they can dial range guests for participant/operator access. Empty on AWS
+  # (that path authorizes guacd egress via terraform security groups); set by
+  # the GCP bootstrap from the range network CIDR so GCP user range access
+  # reaches parity with AWS. The AWS analogue is the guacd egress rule in
+  # platform/terraform/modules/guacamole/security.tf.
+  rangeAccessCidrs: []
+  # Ports the portal/guacd dial for participant access (SSH 22, RDP 3389).
+  rangeAccessPorts:
+    - 22
+    - 3389
 
 ingress:
   enabled: true

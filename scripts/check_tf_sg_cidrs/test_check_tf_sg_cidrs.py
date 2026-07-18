@@ -85,7 +85,7 @@ class CheckTfSgCidrsTest(unittest.TestCase):
             self.assertEqual(check_file(tf), [])
 
     def test_audited_public_openvpn_client_variable_passes(self) -> None:
-        # ADR-039-R9 permits only the request-owned mutual-TLS UDP edge to use
+        # ADR-039-R10 permits only the request-owned mutual-TLS UDP edge to use
         # this source. The private readiness port uses portal_vpc_cidr instead.
         with tempfile.TemporaryDirectory() as tmp:
             tf = _write(

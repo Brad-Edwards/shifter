@@ -14,7 +14,7 @@ Rules enforced (per file, per ingress rule, per CIDR):
       ingress. /24 or narrower is allowed; per-range deployments should
       be using a /28 anyway.
     - `var.portal_vpc_cidr` is a generally trusted control-plane source.
-      The ADR-039-R9 public VPN source is allowed only on the audited
+      The ADR-039-R10 public VPN source is allowed only on the audited
       `range/vpn.tf` `vpn_nlb` UDP/1194 ingress tuple.
       Add new entries to ALLOWED_VAR_REFS below if a future trusted
       source needs the same exemption.
@@ -174,7 +174,7 @@ def _enter_resource_if_match(state: _ParserState, raw: str) -> bool:
 
 
 def _vpn_tuple_is_audited(path: Path, state: _ParserState) -> bool:
-    """Return whether the current inline rule is the exact ADR-039-R9 edge."""
+    """Return whether the current inline rule is the exact ADR-039-R10 edge."""
     attrs = state.inline_ingress_attributes
     return (
         path.as_posix().endswith(_VPN_EXCEPTION_PATH)

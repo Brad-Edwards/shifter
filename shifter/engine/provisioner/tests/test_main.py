@@ -1310,12 +1310,13 @@ class TestGdcProvisioning:
             mp.delenv("AWS_POLARIS_AGENT_MAIN_INFERENCE_PROFILE_ARN", raising=False)
             self._patch_aws_range_terraform_helpers(mp)
 
+            polaris_vm_range_spec = self._polaris_vm_range_spec()
             with pytest.raises(RuntimeError, match="AWS Polaris agent"):
                 _build_range_terraform_variables(
                     request_id="req-polaris-2",
                     range_id=9,
                     user_id=2,
-                    range_spec=self._polaris_vm_range_spec(),
+                    range_spec=polaris_vm_range_spec,
                 )
 
     def test_build_range_terraform_variables_aws_polaris_vm_without_role_arn_raises(self, aws_polaris_agent_env):
@@ -1330,12 +1331,13 @@ class TestGdcProvisioning:
             mp.delenv("RANGE_INSTANCE_ROLE_ARN", raising=False)
             self._patch_aws_range_terraform_helpers(mp)
 
+            polaris_vm_range_spec = self._polaris_vm_range_spec()
             with pytest.raises(RuntimeError, match="RANGE_INSTANCE_ROLE_ARN"):
                 _build_range_terraform_variables(
                     request_id="req-polaris-3",
                     range_id=9,
                     user_id=2,
-                    range_spec=self._polaris_vm_range_spec(),
+                    range_spec=polaris_vm_range_spec,
                 )
 
     def test_build_range_terraform_variables_aws_non_polaris_range_disables_agent(self):

@@ -17,8 +17,9 @@ def _load_module(module_filename: str, module_name: str):
     return module
 
 
-def _outputs(*, gke_services_cidr: str = "10.48.0.0/20") -> dict[str, object]:
+def _outputs(*, gke_services_cidr: str = "10.48.0.0/20", range_network_cidr: str = "10.50.0.0/16") -> dict[str, object]:
     return {
+        "range_network_cidr": {"value": range_network_cidr},
         "control_plane_database": {
             "value": {
                 "private_ip": "10.40.0.10",
@@ -114,3 +115,43 @@ def test_render_rejects_invalid_host():
 
     with pytest.raises(ValueError):
         module.render_netpol(outputs)
+
+
+def test_render_emits_range_access_egress_scoped_to_portal_and_guacd():
+    """Participant/operator range access (issue #1349): the generated manifest
+    authorizes the portal + guacd workloads to dial range guests on the range
+    network CIDR over SSH (22) and RDP (3389), scoped to those two components."""
+    module = _load_module("render_private_service_netpol.py", "render_private_service_netpol")
+
+    rendered = module.render_netpol(_outputs())
+
+    assert "name: allow-platform-range-access-egress-generated" in rendered
+    # Scoped to the two dialer workloads, not all platform pods.
+    assert "app.kubernetes.io/component" in rendered
+    assert "- portal" in rendered
+    assert "- guacd" in rendered
+    # Egress to the range network CIDR on the participant channel ports only.
+    assert "cidr: 10.50.0.0/16" in rendered
+    assert "port: 22" in rendered
+    assert "port: 3389" in rendered
+
+
+def test_render_omits_range_access_when_range_network_cidr_absent():
+    """No range network CIDR -> the range-access policy is omitted entirely
+    rather than rendered with an empty/broad destination."""
+    module = _load_module("render_private_service_netpol.py", "render_private_service_netpol")
+
+    rendered = module.render_netpol(_outputs(range_network_cidr="   "))
+
+    assert "allow-platform-range-access-egress-generated" not in rendered
+    # The private-service policy is still rendered.
+    assert "name: allow-platform-private-service-egress-generated" in rendered
+
+
+def test_render_rejects_invalid_range_network_cidr():
+    """A malformed range network CIDR fails the render step rather than
+    shipping a broken NetworkPolicy manifest."""
+    module = _load_module("render_private_service_netpol.py", "render_private_service_netpol")
+
+    with pytest.raises(ValueError):
+        module.render_netpol(_outputs(range_network_cidr="not-a-cidr"))

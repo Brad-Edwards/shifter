@@ -67,6 +67,13 @@ class BootstrapPermissionsSerializer(serializers.Serializer):
     can_access_threat_research = serializers.BooleanField()
     is_ctf_organizer = serializers.BooleanField()
     is_ctf_participant = serializers.BooleanField()
+    # Administer user-administration advisory capabilities (#1373). Mirror the
+    # Django model permissions the Administer API enforces; rendering hints only,
+    # the endpoints repeat the authoritative check. Always False for token
+    # principals (management endpoints are session-only).
+    can_view_users = serializers.BooleanField()
+    can_change_users = serializers.BooleanField()
+    can_delete_users = serializers.BooleanField()
 
 
 class BootstrapModesSerializer(serializers.Serializer):
@@ -93,6 +100,10 @@ class BootstrapFeatureFlagsSerializer(serializers.Serializer):
     # entry only shows when the whole native path is enabled (advisory only;
     # the /api/v1/cms/aces-image-mappings/ endpoints remain the authority).
     aces_native_provisioning = serializers.BooleanField()
+    # Administer workspace SPA rollout (#1373): gates the in-SPA Administer nav
+    # entries and route visibility. Mirrors ADMINISTER_SPA_ENABLED; advisory
+    # only, the /api/v1/administer/ endpoints remain the authority.
+    administer_spa = serializers.BooleanField()
 
 
 class BootstrapSerializer(serializers.Serializer):
@@ -190,6 +201,9 @@ class BootstrapView(APIView):
                 "can_access_threat_research": can_threat,
                 "is_ctf_organizer": bool(session_user is not None and is_ctf_organizer(session_user)),
                 "is_ctf_participant": bool(session_user is not None and is_ctf_participant(session_user)),
+                "can_view_users": bool(session_user is not None and session_user.has_perm("auth.view_user")),
+                "can_change_users": bool(session_user is not None and session_user.has_perm("auth.change_user")),
+                "can_delete_users": bool(session_user is not None and session_user.has_perm("auth.delete_user")),
             },
             "modes": _modes_for_user(session_user),
             "feature_flags": {
@@ -199,6 +213,7 @@ class BootstrapView(APIView):
                 "scenario_editor_spa": bool(getattr(settings, "SCENARIO_EDITOR_SPA_ENABLED", False)),
                 "ctf_workspace_spa": bool(getattr(settings, "CTF_WORKSPACE_SPA_ENABLED", False)),
                 "aces_native_provisioning": bool(getattr(settings, "ACES_NATIVE_PROVISIONING_ENABLED", False)),
+                "administer_spa": bool(getattr(settings, "ADMINISTER_SPA_ENABLED", False)),
             },
         }
         return Response(BootstrapSerializer(payload).data)

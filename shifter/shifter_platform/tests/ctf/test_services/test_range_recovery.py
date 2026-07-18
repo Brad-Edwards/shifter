@@ -495,11 +495,16 @@ class TestReassignSpareRecovery:
 
         # _claim_spare must run inside the caller's transaction; _ensure_spare_reserved
         # wraps the claim + pointer write together, so a crash in that window rolls
-        # the claim back. Simulate the crash right after the claim.
-        with pytest.raises(_SimulatedCrash), transaction.atomic():
+        # the claim back. Simulate the crash right after the claim. The claim and the
+        # crash live in a nested helper so the raises-block holds a single invocation
+        # (Sonar S5778) while both still run inside transaction.atomic().
+        def _claim_then_crash():
             claimed = _claim_spare(participant, spare.range_instance_id)
             assert claimed is not None
             raise _SimulatedCrash()
+
+        with pytest.raises(_SimulatedCrash), transaction.atomic():
+            _claim_then_crash()
 
         spare.refresh_from_db()
         assert spare.consumed_by_id is None
@@ -657,9 +662,10 @@ class TestIdempotentRetry:
 class TestValidationAndFailures:
     @pytest.mark.django_db
     def test_participant_not_found(self, organizer_user):
+        uuid4_2 = uuid4()
         with pytest.raises(CTFNotFoundError):
             recover_participant_range(
-                uuid4(),
+                uuid4_2,
                 strategy=RecoveryStrategy.REBUILD.value,
                 operator=organizer_user,
             )

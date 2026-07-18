@@ -128,6 +128,8 @@ class TestProvisionerReaderContract:
     def test_supported_aces_sdl_range_agrees_with_pin_and_lock(self, reader):
         # AC5 / ADR-032-R4+R7: the installed producer equals the exact metadata
         # pin and sits inside the consumer's rolling-compatibility window.
+        assert reader.MINIMUM_ACES_SDL_VERSION == "0.19.1"
+        assert reader.MAXIMUM_ACES_SDL_VERSION_EXCLUSIVE == "0.24.0"
         low = reader._release_tuple(reader.MINIMUM_ACES_SDL_VERSION)
         high = reader._release_tuple(reader.MAXIMUM_ACES_SDL_VERSION_EXCLUSIVE)
         installed = reader._release_tuple(importlib.metadata.version("aces-sdl"))
@@ -138,7 +140,7 @@ class TestProvisionerReaderContract:
         assert importlib.metadata.version("aces-scenario-packs") == _exact_dependency_pin("aces-scenario-packs")
         requirements = importlib.metadata.requires("aces-scenario-packs") or []
         normalized = {requirement.replace(" ", "").lower() for requirement in requirements}
-        assert "aces-sdl==0.20.0" in normalized
+        assert "aces-sdl==0.23.0" in normalized
 
     def test_extraction_matches_expected_shifter_fixture(self, reader):
         parsed = reader.parse_plan(serialize_provisioning_plan(_plan()))

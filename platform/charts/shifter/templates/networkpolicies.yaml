@@ -278,4 +278,43 @@ spec:
         - protocol: TCP
           port: 443
 {{- end }}
+{{- if .Values.networkPolicy.rangeAccessCidrs }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-platform-range-access-egress
+  namespace: {{ .Values.namespaces.platform }}
+  labels:
+    {{- include "shifter.partOfLabels" . | nindent 4 }}
+spec:
+  # Participant/operator range access (issue #1349): the portal ASGI pod dials
+  # range guests for the browser SSH terminal, and guacd dials them for
+  # Guacamole SSH/RDP. Range VMs are private-only, so without this egress the
+  # GKE default-deny blocks the portal/guacd -> range path even though the
+  # per-range GCE ingress firewall permits it. Scoped to just those two
+  # workloads (not all platform pods; guacd, not guacamole-client, is the
+  # dialer) and to the participant channel ports. AWS parity: the guacd egress
+  # rule in platform/terraform/modules/guacamole/security.tf.
+  podSelector:
+    matchExpressions:
+      - key: app.kubernetes.io/component
+        operator: In
+        values:
+          - portal
+          - guacd
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        {{- range .Values.networkPolicy.rangeAccessCidrs }}
+        - ipBlock:
+            cidr: {{ . | quote }}
+        {{- end }}
+      ports:
+        {{- range .Values.networkPolicy.rangeAccessPorts }}
+        - protocol: TCP
+          port: {{ . }}
+        {{- end }}
+{{- end }}
 {{- end }}

@@ -55,7 +55,7 @@ variable "vpn_provider_endpoint_security_group_id" {
 }
 
 variable "vpn_public_client_cidr" {
-  description = "Audited public client source for the per-range mutual-TLS OpenVPN UDP listener (ADR-039-R9)"
+  description = "Audited public client source for the per-range mutual-TLS OpenVPN UDP listener (ADR-039-R10)"
   type        = string
   default     = "0.0.0.0/0"
 

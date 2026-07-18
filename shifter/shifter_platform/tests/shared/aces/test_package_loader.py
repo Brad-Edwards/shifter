@@ -117,5 +117,6 @@ def test_launch_aces_package_rejected_dispatch_is_not_accepted():
 def test_launch_aces_package_bad_sdl_raises_sanitized(tmp_path):
     bad = tmp_path / "broken.sdl.yaml"
     bad.write_text("name: broken\nnodes: {web: {type: NotARealType}}\n", encoding="utf-8")
+    recording_port = _RecordingPort()
     with pytest.raises(AcesPackageError):
-        launch_aces_package(scenario_path=bad, port=_RecordingPort())
+        launch_aces_package(scenario_path=bad, port=recording_port)

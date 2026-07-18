@@ -220,8 +220,8 @@ resource "google_project_iam_member" "provisioner_vpn_gateway_identity_admin" {
 # Compute requires iam.serviceAccounts.actAs when attaching an identity. Scope
 # that permission to the deterministic sh-vpn-* principals only.
 resource "google_project_iam_member" "provisioner_vpn_gateway_user" {
-  # checkov:skip=CKV_GCP_41:The conditional grant permits Service Account User only for deterministic sh-vpn-* gateway identities; see ADR-039-R9 exception registry.
-  # checkov:skip=CKV_GCP_49:The provisioner cannot impersonate other project service accounts because resource.name is restricted to sh-vpn-*; see ADR-039-R9 exception registry.
+  # checkov:skip=CKV_GCP_41:The conditional grant permits Service Account User only for deterministic sh-vpn-* gateway identities; see ADR-039-R10 exception registry.
+  # checkov:skip=CKV_GCP_49:The provisioner cannot impersonate other project service accounts because resource.name is restricted to sh-vpn-*; see ADR-039-R10 exception registry.
   project = var.project_id
   role    = "roles/iam.serviceAccountUser"
   member  = "serviceAccount:${google_service_account.workload["provisioner"].email}"

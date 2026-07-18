@@ -62,6 +62,31 @@ def _aces_image_registry_page(request: HttpRequest, *args: object, **kwargs: obj
     raise Http404
 
 
+def _administer_spa_enabled() -> bool:
+    """Return whether the SPA shell should serve the Administer workspace pages.
+
+    Administer (#1373) is a greenfield SPA surface: there is no legacy Django page
+    at ``/administer/``, so the pages exist only inside the flag-gated SPA. Gated
+    on the platform SPA shell AND ``ADMINISTER_SPA_ENABLED`` so the surface is
+    inert unless both are on. Django admin at ``/admin/`` is independent and stays
+    mapped to ``admin.site.urls`` in every rollout state.
+    """
+    return bool(platform_spa_enabled() and getattr(settings, "ADMINISTER_SPA_ENABLED", False))
+
+
+@require_safe
+def _administer_page(request: HttpRequest, *args: object, **kwargs: object) -> HttpResponse:
+    """Serve the SPA shell for the Administer workspace pages, else 404.
+
+    GET/HEAD only. When the surface is disabled the path 404s (there is no legacy
+    ``/administer/`` page — Django admin lives at ``/admin/``), so the route is
+    inert in the default configuration and never swallows a request.
+    """
+    if _administer_spa_enabled():
+        return platform_spa_host(request, *args, **kwargs)
+    raise Http404
+
+
 urlpatterns = [
     path("", _root_page, name="home"),
     path("privacy/", privacy_notice, name="privacy_notice"),
@@ -81,6 +106,13 @@ urlpatterns = [
     # refresh resolve; both 404 when the surface is disabled.
     path("aces-image-registry/", _aces_image_registry_page, name="aces_image_registry"),
     re_path(r"^aces-image-registry/.*$", _aces_image_registry_page),
+    # Administer workspace SPA pages (#1373): greenfield, SPA-only, gated on the
+    # platform SPA shell + ADMINISTER_SPA_ENABLED. The base path plus a catch-all
+    # under the prefix serve the shell so client-router deep links and refresh
+    # resolve; both 404 when the surface is disabled. Django admin at /admin/ is
+    # untouched.
+    path("administer/", _administer_page, name="administer"),
+    re_path(r"^administer/.*$", _administer_page),
     path("api/v1/", include((api_urls.urlpatterns, api_urls.app_name), namespace="v1")),
     path("ctf/", include("ctf.urls")),
     path("admin/", admin.site.urls),

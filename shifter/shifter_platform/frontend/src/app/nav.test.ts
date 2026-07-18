@@ -33,6 +33,7 @@ describe("permissionAllows", () => {
   it("maps each policy to the right bootstrap flag", () => {
     const bs = bootstrap({
       permissions: {
+        ...STAFF_BOOTSTRAP.permissions,
         can_access_risk_register: true,
         can_access_threat_research: false,
         is_ctf_organizer: true,
@@ -60,6 +61,7 @@ describe("isNavEntryVisible", () => {
     const gated: NavEntry = { ...RR_ENTRY, featureFlag: "risk_register_spa" };
     const bs = bootstrap({
       feature_flags: {
+        ...STAFF_BOOTSTRAP.feature_flags,
         risk_register_spa: false,
         platform_spa: true,
         mission_control_spa: true,
@@ -76,6 +78,7 @@ describe("visibleNavGroups", () => {
   it("returns operator groups filtered by advisory permissions", () => {
     const bs = bootstrap({
       permissions: {
+        ...STAFF_BOOTSTRAP.permissions,
         can_access_risk_register: true,
         can_access_threat_research: false,
         is_ctf_organizer: false,
@@ -95,6 +98,7 @@ describe("visibleNavGroups", () => {
   it("returns participant groups only for participant mode", () => {
     const bs = bootstrap({
       permissions: {
+        ...STAFF_BOOTSTRAP.permissions,
         can_access_risk_register: false,
         can_access_threat_research: false,
         is_ctf_organizer: false,

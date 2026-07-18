@@ -131,6 +131,41 @@ operator email against the Terraform output `identity_allowed_email_domain`.
 When Terraform outputs are not available yet, it uses
 `SHIFTER_GCP_OPERATOR_EMAIL_DOMAIN` from the process environment.
 
+### GitHub Actions WIF trust cutover (ADR-004-R23, #1690)
+
+The `cicd-github-oidc` module federates GitHub Actions into GCP with an
+**exact-subject** trust: the Workload Identity provider `attribute_condition`
+admits only this repository, an exact protected `assertion.ref`
+(`refs/heads/dev` / `refs/heads/main`), and an allow-listed `assertion.sub`; the
+build service account is bound to those exact `principal://.../subject/<sub>`
+members (never a repository-wide `principalSet`). Applying the Terraform text is
+not the whole cutover - the live activation is a **fail-closed operator step with
+readback**:
+
+1. **Verify the OIDC subject format first.** `gh api
+   repos/Brad-Edwards/shifter/actions/oidc/customization/sub` must return
+   `use_default: true`, `use_immutable_subject: false`. A different result means
+   the subjects in `local.federated_subjects` and the provider condition must be
+   redesigned before applying - do not change the customization to fit the code.
+2. **Set GitHub Environment deployment-branch policies.** An `environment:`
+   subject does not carry the source branch, so every trusted Environment
+   (`gcp-dev`, `dev`, `proof`, `prod`) must restrict deployment branches to the
+   protected branches. Environment approval is deployment authorization, not
+   code provenance.
+3. **Apply the `gcp-dev` root**, then read back: `gcloud iam
+   workload-identity-pools providers describe` (confirm the exact
+   `attributeCondition`) and the build SA's `get-iam-policy` (confirm the exact
+   `principal://.../subject/<sub>` members, no `principalSet`).
+4. **Smoke it.** A protected-ref dispatch (from `dev`/`main`) federates; a
+   feature-branch or tag dispatch is denied at the pool. There is no repository
+   wildcard rollback path - an unlisted subject fails closed.
+
+Adding or removing a trusted subject is a single edit to
+`local.federated_subjects` **and** the matching `assertion.sub ==` clause in the
+provider `attribute_condition`; the `check-tf-gcp-wif-trust` guard fails the
+build if the two diverge. Splitting the shared build SA into per-purpose
+identities is tracked in #1699.
+
 ## GCP Packer image builds
 
 Consumed by `.github/workflows/packer-gcp.yml` (build) and
