@@ -35,6 +35,7 @@ interface FormState {
   auto_cleanup: boolean;
   cleanup_delay_hours: string;
   scoreboard_visible: boolean;
+  rating_visibility: string;
 }
 
 const EMPTY: FormState = {
@@ -54,6 +55,7 @@ const EMPTY: FormState = {
   auto_cleanup: true,
   cleanup_delay_hours: "24",
   scoreboard_visible: true,
+  rating_visibility: "public",
 };
 
 function fromEvent(event: CtfEventDetail): FormState {
@@ -74,6 +76,7 @@ function fromEvent(event: CtfEventDetail): FormState {
     auto_cleanup: Boolean(event.auto_cleanup),
     cleanup_delay_hours: String(event.cleanup_delay_hours ?? 24),
     scoreboard_visible: Boolean(event.scoreboard_visible),
+    rating_visibility: event.rating_visibility || "public",
   };
 }
 
@@ -106,6 +109,7 @@ function toPayload(state: FormState): CtfEventWrite {
     auto_cleanup: state.auto_cleanup,
     cleanup_delay_hours: intOr(state.cleanup_delay_hours, 24),
     scoreboard_visible: state.scoreboard_visible,
+    rating_visibility: state.rating_visibility,
   };
 }
 
@@ -385,6 +389,20 @@ export function EventFormPage({ mode }: Readonly<{ mode: "create" | "edit" }>) {
                 checked={state.auto_cleanup}
                 onChange={(c) => set("auto_cleanup", c)}
               />
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="e-ratingvis">Challenge ratings</Label>
+                <Select value={state.rating_visibility} onValueChange={(v) => set("rating_visibility", v)}>
+                  <SelectTrigger id="e-ratingvis" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="public">Public (participants see averages)</SelectItem>
+                    <SelectItem value="organizer">Organizer-only</SelectItem>
+                    <SelectItem value="disabled">Disabled</SelectItem>
+                  </SelectContent>
+                </Select>
+                <FieldError id="e-ratingvis-e" error={firstError("rating_visibility")} />
+              </div>
             </fieldset>
           </CardContent>
           <CardFooter className="justify-end gap-2">

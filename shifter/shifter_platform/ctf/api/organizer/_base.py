@@ -234,7 +234,21 @@ def _challenge_detail_payload(challenge: CTFChallenge) -> dict[str, object]:
         "tags": list(challenge.tags.values_list("name", flat=True)),
         "topics": list(challenge.topics.values_list("name", flat=True)),
         "solution": challenge.solution,
+        "rating": _organizer_rating(challenge),
     }
+
+
+def _organizer_rating(challenge: CTFChallenge) -> dict[str, float | int | None] | None:
+    """Aggregate challenge rating for the organizer view (CTF-120).
+
+    Organizers see the aggregate for both ``public`` and ``organizer``
+    visibility; ``None`` only when ratings are disabled for the event.
+    """
+    if challenge.event.rating_visibility == "disabled":
+        return None
+    from ctf.services.submission import get_challenge_rating
+
+    return get_challenge_rating(challenge.id)
 
 
 def _participant_detail_payload(participant: CTFParticipant) -> dict[str, object]:

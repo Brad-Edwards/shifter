@@ -189,6 +189,13 @@ class ChallengeHintSerializer(serializers.Serializer):
     order = serializers.IntegerField(read_only=True)
 
 
+class OrganizerChallengeRatingSerializer(serializers.Serializer):
+    """Aggregate participant rating shown to organizers (CTF-120)."""
+
+    average = serializers.FloatField(read_only=True, allow_null=True)
+    count = serializers.IntegerField(read_only=True)
+
+
 class OrganizerChallengeDetailSerializer(serializers.Serializer):
     """Full organizer-facing challenge detail projection."""
 
@@ -209,6 +216,7 @@ class OrganizerChallengeDetailSerializer(serializers.Serializer):
     tags = serializers.ListField(child=serializers.CharField(), read_only=True)
     topics = serializers.ListField(child=serializers.CharField(), read_only=True)
     solution = serializers.CharField(read_only=True, allow_blank=True)
+    rating = OrganizerChallengeRatingSerializer(read_only=True, allow_null=True)
 
 
 class ChallengeMutationResultSerializer(serializers.Serializer):

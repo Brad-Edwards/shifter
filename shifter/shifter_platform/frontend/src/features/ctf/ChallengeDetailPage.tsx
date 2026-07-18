@@ -4,7 +4,7 @@ import { Link, useParams } from "react-router-dom";
 import { useMutation } from "@tanstack/react-query";
 import { CheckCircle2, Download, Loader2 } from "lucide-react";
 
-import { fetchCtfFileDownload, useCtfChallenge, useSubmitFlag, useUseHint } from "@/api/ctf";
+import { fetchCtfFileDownload, useCtfChallenge, useRateChallenge, useSubmitFlag, useUseHint } from "@/api/ctf";
 import { ApiError } from "@/api/errors";
 import type { CtfChallengeDetail, CtfChallengeFile, CtfHint } from "@/api/types";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -17,6 +17,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { titleCase } from "./format";
+import { MarkdownContent } from "./MarkdownContent";
 import { ctfChallengeDetailPath, ctfChallengesPath } from "./routes";
 
 function ChallengeMeta({ challenge }: Readonly<{ challenge: CtfChallengeDetail }>) {
@@ -221,6 +222,45 @@ function submissionFeedback(submit: ReturnType<typeof useSubmitFlag>) {
   return null;
 }
 
+
+const RATING_VALUES = [1, 2, 3, 4, 5] as const;
+
+function RatingCard({ challenge }: Readonly<{ challenge: CtfChallengeDetail }>) {
+  const rate = useRateChallenge(challenge.id);
+  const rating = challenge.rating;
+  // The service only accepts ratings from participants who solved the
+  // challenge, so the card renders after a solve (and never when disabled).
+  if (!rating || !challenge.solved) return null;
+  return (
+    <Card className="mt-6">
+      <CardContent>
+        <h2 className="text-sm font-semibold">Rate this challenge</h2>
+        <div className="mt-2 flex items-center gap-1.5" role="group" aria-label="Rate this challenge from 1 to 5">
+          {RATING_VALUES.map((value) => (
+            <Button
+              key={value}
+              type="button"
+              size="sm"
+              variant={rating.own_rating === value ? "default" : "outline"}
+              aria-pressed={rating.own_rating === value}
+              disabled={rate.isPending}
+              onClick={() => rate.mutate(value)}
+            >
+              {value}
+            </Button>
+          ))}
+          {rating.public && rating.count > 0 ? (
+            <span className="ml-2 text-xs text-muted-foreground">
+              Average {rating.average ?? "—"} from {rating.count} rating{rating.count === 1 ? "" : "s"}
+            </span>
+          ) : null}
+        </div>
+        {rate.isError ? <p className="mt-2 text-xs text-destructive">Could not save your rating. Try again.</p> : null}
+      </CardContent>
+    </Card>
+  );
+}
+
 function FlagSubmission({ challenge }: Readonly<{ challenge: CtfChallengeDetail }>) {
   const submit = useSubmitFlag(challenge.id);
   const [flag, setFlag] = useState("");
@@ -329,7 +369,11 @@ export function ChallengeDetailPage() {
         <PrereqAlert challenge={challenge} />
         <Card>
           <CardContent>
-            <p className="text-sm whitespace-pre-wrap">{challenge.description || "No description provided."}</p>
+            {challenge.description ? (
+              <MarkdownContent text={challenge.description} />
+            ) : (
+              <p className="text-sm">No description provided.</p>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -338,12 +382,13 @@ export function ChallengeDetailPage() {
       <AttachmentsCard challenge={challenge} />
       <HintsSection challenge={challenge} />
       <FlagSubmission challenge={challenge} />
+      <RatingCard challenge={challenge} />
 
       {challenge.show_solution && challenge.solution ? (
         <Card className="mt-6">
           <CardContent>
             <h2 className="mb-2 text-sm font-semibold">Solution</h2>
-            <p className="text-sm whitespace-pre-wrap">{challenge.solution}</p>
+            <MarkdownContent text={challenge.solution} />
           </CardContent>
         </Card>
       ) : null}

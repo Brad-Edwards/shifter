@@ -14,6 +14,7 @@ import type {
   CtfOrganizerScoreboard,
   CtfRangeAccess,
   CtfRangeStatus,
+  CtfRateChallengeResult,
   CtfScoreboard,
   CtfSubmissionList,
   CtfSubmitFlagResult,
@@ -164,6 +165,18 @@ export function useUseHint(challengeId: string) {
         body: hintId ? { hint_id: hintId } : {},
       }),
     onSuccess: () => invalidatePlay(queryClient, challengeId),
+  });
+}
+
+export function useRateChallenge(challengeId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (value: number) =>
+      apiFetch<CtfRateChallengeResult>(`${BASE}/challenges/${challengeId}/rate/`, {
+        method: "POST",
+        body: { value },
+      }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ctfKeys.challenge(challengeId) }),
   });
 }
 

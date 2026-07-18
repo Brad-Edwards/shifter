@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils";
 
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { formatDateTime, titleCase } from "../format";
+import { MarkdownContent } from "../MarkdownContent";
 import { ctfAdminChallengeEditPath, ctfAdminEventsPath } from "../routes";
 
 function ChallengeBody({ challenge }: Readonly<{ challenge: CtfOrganizerChallengeDetail }>) {
@@ -40,6 +41,24 @@ function ChallengeBody({ challenge }: Readonly<{ challenge: CtfOrganizerChalleng
             <div>
               <dt className="text-xs text-muted-foreground">Visibility</dt>
               <dd className="mt-0.5 text-sm">{titleCase(challenge.visibility)}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-muted-foreground">Target</dt>
+              <dd className="mt-0.5 text-sm">
+                {challenge.target_instance_name
+                  ? `${challenge.target_instance_name}${challenge.target_port == null ? "" : `:${challenge.target_port}`}`
+                  : "—"}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs text-muted-foreground">Participant rating</dt>
+              <dd className="mt-0.5 text-sm">
+                {challenge.rating
+                  ? challenge.rating.count > 0
+                    ? `${challenge.rating.average} average from ${challenge.rating.count} rating${challenge.rating.count === 1 ? "" : "s"}`
+                    : "No ratings yet"
+                  : "Ratings disabled for this event"}
+              </dd>
             </div>
           </dl>
           {challenge.tags.length > 0 || challenge.topics.length > 0 ? (
@@ -79,7 +98,7 @@ function ChallengeBody({ challenge }: Readonly<{ challenge: CtfOrganizerChalleng
         <Card>
           <CardContent>
             <h2 className="mb-2 text-sm font-semibold">Solution (organizer-only)</h2>
-            <p className="text-sm whitespace-pre-wrap">{challenge.solution}</p>
+            <MarkdownContent text={challenge.solution} />
           </CardContent>
         </Card>
       ) : null}

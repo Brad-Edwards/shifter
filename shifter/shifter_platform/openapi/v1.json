@@ -11040,6 +11040,15 @@
           "solution": {
             "type": "string",
             "readOnly": true
+          },
+          "rating": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OrganizerChallengeRating"
+              }
+            ],
+            "readOnly": true,
+            "nullable": true
           }
         },
         "required": [
@@ -11053,6 +11062,7 @@
           "name",
           "order",
           "points",
+          "rating",
           "release_time",
           "solution",
           "tags",
@@ -11060,6 +11070,26 @@
           "target_port",
           "topics",
           "visibility"
+        ]
+      },
+      "OrganizerChallengeRating": {
+        "type": "object",
+        "description": "Aggregate participant rating shown to organizers (CTF-120).",
+        "properties": {
+          "average": {
+            "type": "number",
+            "format": "double",
+            "readOnly": true,
+            "nullable": true
+          },
+          "count": {
+            "type": "integer",
+            "readOnly": true
+          }
+        },
+        "required": [
+          "average",
+          "count"
         ]
       },
       "OrganizerGrantResult": {

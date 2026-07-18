@@ -2746,6 +2746,13 @@ export interface components {
             readonly tags: string[];
             readonly topics: string[];
             readonly solution: string;
+            readonly rating: components["schemas"]["OrganizerChallengeRating"] | null;
+        };
+        /** @description Aggregate participant rating shown to organizers (CTF-120). */
+        OrganizerChallengeRating: {
+            /** Format: double */
+            readonly average: number | null;
+            readonly count: number;
         };
         /** @description Minimal confirmation payload for a local-organizer grant. */
         OrganizerGrantResult: {
