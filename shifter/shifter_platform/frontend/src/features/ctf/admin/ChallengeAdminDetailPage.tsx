@@ -44,21 +44,11 @@ function ChallengeBody({ challenge }: Readonly<{ challenge: CtfOrganizerChalleng
             </div>
             <div>
               <dt className="text-xs text-muted-foreground">Target</dt>
-              <dd className="mt-0.5 text-sm">
-                {challenge.target_instance_name
-                  ? `${challenge.target_instance_name}${challenge.target_port == null ? "" : `:${challenge.target_port}`}`
-                  : "—"}
-              </dd>
+              <dd className="mt-0.5 text-sm">{formatTarget(challenge)}</dd>
             </div>
             <div>
               <dt className="text-xs text-muted-foreground">Participant rating</dt>
-              <dd className="mt-0.5 text-sm">
-                {challenge.rating
-                  ? challenge.rating.count > 0
-                    ? `${challenge.rating.average} average from ${challenge.rating.count} rating${challenge.rating.count === 1 ? "" : "s"}`
-                    : "No ratings yet"
-                  : "Ratings disabled for this event"}
-              </dd>
+              <dd className="mt-0.5 text-sm">{formatRatingSummary(challenge.rating)}</dd>
             </div>
           </dl>
           {challenge.tags.length > 0 || challenge.topics.length > 0 ? (
@@ -104,6 +94,20 @@ function ChallengeBody({ challenge }: Readonly<{ challenge: CtfOrganizerChalleng
       ) : null}
     </div>
   );
+}
+
+
+function formatTarget(challenge: CtfOrganizerChallengeDetail): string {
+  if (!challenge.target_instance_name) return "—";
+  const port = challenge.target_port == null ? "" : `:${challenge.target_port}`;
+  return `${challenge.target_instance_name}${port}`;
+}
+
+function formatRatingSummary(rating: CtfOrganizerChallengeDetail["rating"]): string {
+  if (!rating) return "Ratings disabled for this event";
+  if (rating.count === 0) return "No ratings yet";
+  const plural = rating.count === 1 ? "" : "s";
+  return `${rating.average} average from ${rating.count} rating${plural}`;
 }
 
 export function ChallengeAdminDetailPage() {

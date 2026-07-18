@@ -235,7 +235,8 @@ function RatingCard({ challenge }: Readonly<{ challenge: CtfChallengeDetail }>) 
     <Card className="mt-6">
       <CardContent>
         <h2 className="text-sm font-semibold">Rate this challenge</h2>
-        <div className="mt-2 flex items-center gap-1.5" role="group" aria-label="Rate this challenge from 1 to 5">
+        <fieldset className="mt-2 flex items-center gap-1.5 border-0 p-0">
+          <legend className="sr-only">Rate this challenge from 1 to 5</legend>
           {RATING_VALUES.map((value) => (
             <Button
               key={value}
@@ -254,7 +255,7 @@ function RatingCard({ challenge }: Readonly<{ challenge: CtfChallengeDetail }>) 
               Average {rating.average ?? "—"} from {rating.count} rating{rating.count === 1 ? "" : "s"}
             </span>
           ) : null}
-        </div>
+        </fieldset>
         {rate.isError ? <p className="mt-2 text-xs text-destructive">Could not save your rating. Try again.</p> : null}
       </CardContent>
     </Card>
