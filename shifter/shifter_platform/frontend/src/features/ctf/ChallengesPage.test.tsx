@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { screen } from "@testing-library/react";
+import { fireEvent, screen } from "@testing-library/react";
 import { axe } from "vitest-axe";
 
 import { renderRoute } from "@/test/utils";
@@ -58,5 +58,21 @@ describe("ChallengesPage", () => {
     await screen.findByRole("link", { name: /SQL Injection/ });
     const results = await axe(container);
     expect(results.violations).toEqual([]);
+  });
+
+  it("filters challenges by tag and clears on second click", async () => {
+    mockApi.mockResolvedValue([
+      challenge({ tags: ["xdr"], topics: ["sql-injection"] }),
+      challenge({ id: "c2", name: "Buffer Overflow", category: "pwn", tags: ["linux"] }),
+    ]);
+    renderRoute(<ChallengesPage />);
+    await screen.findByRole("link", { name: /SQL Injection/ });
+
+    fireEvent.click(screen.getByRole("button", { name: "xdr" }));
+    expect(screen.getByRole("link", { name: /SQL Injection/ })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /Buffer Overflow/ })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "xdr" }));
+    expect(screen.getByRole("link", { name: /Buffer Overflow/ })).toBeInTheDocument();
   });
 });

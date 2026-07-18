@@ -85,6 +85,29 @@ class TestParticipantChallengeList:
         assert "flag_hash" not in item
         assert "flag_format" not in item
         assert "solution" not in item
+        # CTF-113 / CTF-119: browse entries carry tag and topic labels for
+        # client-side filtering.
+        assert item["tags"] == []
+        assert item["topics"] == []
+
+    def test_list_includes_tag_and_topic_labels(
+        self, authenticated_participant_client, ctf_participant, participant_user, ctf_event, ctf_challenge
+    ):
+        from ctf.services.challenge import update_challenge
+
+        _activate(participant_user, ctf_event)
+        update_challenge(
+            ctf_challenge.pk,
+            {"tags": ["XDR", "linux"], "topics": ["SQL Injection"]},
+            actor_id=ctf_challenge.event.created_by_id,
+        )
+
+        response = call_json(authenticated_participant_client, "get", "api_participant_challenges")
+
+        assert response.status_code == 200
+        item = response.json()[0]
+        assert sorted(item["tags"]) == ["linux", "xdr"]
+        assert item["topics"] == ["sql injection"]
 
     def test_excludes_hidden_and_unreleased(
         self, authenticated_participant_client, ctf_participant, participant_user, ctf_event, ctf_challenge
