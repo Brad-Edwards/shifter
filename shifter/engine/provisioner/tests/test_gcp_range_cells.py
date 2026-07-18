@@ -360,6 +360,41 @@ def test_render_range_cell_plan_uses_vpc_per_range_and_deterministic_ips():
     }
 
 
+def _firewall_by_name(plan: dict, suffix: str) -> dict:
+    return next(fw for fw in plan["firewalls"] if fw["name"] == f"shifter-r-42-{suffix}")
+
+
+def test_dedicated_access_cidrs_split_participant_ingress_from_management():
+    # Issue #1349: with a dedicated access-workload source, participant ingress
+    # (SSH/RDP) is its own rule sourced only from the access ranges, and range
+    # management ingress is a separate rule on portal_network_cidrs -- participant
+    # access is never a management wildcard.
+    config = dataclasses.replace(
+        _sample_config(),
+        portal_network_cidrs=("10.40.0.0/20",),
+        access_network_cidrs=("10.41.0.0/24",),
+    )
+    plan = render_range_cell_plan("req-123", _variables(), config)
+
+    access = _firewall_by_name(plan, "access")
+    assert access["source_ranges"] == ["10.41.0.0/24"]
+    assert access["allowed"] == [{"IPProtocol": "tcp", "ports": ["22", "3389"]}]
+
+    mgmt = _firewall_by_name(plan, "mgmt")
+    assert mgmt["source_ranges"] == ["10.40.0.0/20"]
+    # Management ingress carries host SSH + the Docker-host mgmt port, never RDP.
+    assert "3389" not in mgmt["allowed"][0]["ports"]
+    assert "22" in mgmt["allowed"][0]["ports"]
+    assert str(config.host_mgmt_ssh_port) in mgmt["allowed"][0]["ports"]
+
+    # Participant RDP is not reachable from the broad management source range.
+    assert all(
+        "10.40.0.0/20" not in fw["source_ranges"]
+        for fw in plan["firewalls"]
+        if "3389" in fw.get("allowed", [{}])[0].get("ports", [])
+    )
+
+
 def test_range_cell_firewalls_do_not_allow_cross_range_private_traffic():
     first_variables = _variables()
     second_variables = deepcopy(first_variables)
@@ -389,7 +424,7 @@ def test_range_cell_firewalls_are_deterministic_from_cell_identity():
     assert all(rule["target_tags"][0].startswith("shifter-range-42") for rule in first["firewalls"])
 
 
-@pytest.mark.parametrize("field", ["portal_network_cidrs", "egress_allow_cidrs"])
+@pytest.mark.parametrize("field", ["portal_network_cidrs", "access_network_cidrs", "egress_allow_cidrs"])
 def test_range_cell_firewalls_reject_universal_allow_cidrs(field):
     config = dataclasses.replace(_sample_config(), **{field: ("0.0.0.0/0",)})
     variables = _variables()
@@ -402,6 +437,7 @@ def test_range_cell_firewalls_reject_universal_allow_cidrs(field):
     ("field", "cidr", "message"),
     [
         ("portal_network_cidrs", "10.40.0.1/20", "invalid network"),
+        ("access_network_cidrs", "10.40.0.1/20", "invalid network"),
         ("egress_allow_cidrs", "2001:db8::/64", "only IPv4"),
     ],
 )
@@ -948,6 +984,7 @@ def test_apply_range_cell_is_idempotent_when_resources_exist(mocker):
                 "subnet_name": "polaris",
                 "instance_id": "shifter-r-42-polaris-kali",
                 "private_ip": "10.50.2.3",
+                "participant_access_channels": ["ssh", "rdp"],
                 "ssh_key_secret_arn": "projects/test/secrets/participant-ssh",
                 "ssh_username": "kali",
                 "public_key": "ssh-ed25519 HOST\nssh-ed25519 PARTICIPANT",
@@ -978,6 +1015,7 @@ def test_apply_range_cell_is_idempotent_when_resources_exist(mocker):
                 "subnet_name": "polaris",
                 "instance_id": "shifter-r-42-polaris-dc01",
                 "private_ip": "10.50.2.4",
+                "participant_access_channels": [],
                 "ssh_key_secret_arn": "",
                 "ssh_username": "Administrator",
                 "public_key": "ssh-ed25519 HOST",

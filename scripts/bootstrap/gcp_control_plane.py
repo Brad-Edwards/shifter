@@ -585,6 +585,7 @@ def _helm_network_policy_values(
     kubernetes_api_cidrs: list[str],
     range_cluster_api_cidrs: list[str],
     range_cluster_api_port: int,
+    range_access_cidrs: list[str],
 ) -> dict[str, object]:
     """Return network-policy CIDR values for the Helm release."""
     return {
@@ -601,6 +602,11 @@ def _helm_network_policy_values(
         "kubernetesApiCidrs": kubernetes_api_cidrs,
         "rangeClusterApiCidrs": range_cluster_api_cidrs,
         "rangeClusterApiPort": range_cluster_api_port,
+        # Participant/operator range access (issue #1349): the portal and guacd
+        # workloads dial range guests on the range network for browser SSH and
+        # Guacamole SSH/RDP. Scope egress to the range network CIDR; the chart
+        # defaults the ports (22/3389). Empty list -> no policy rendered.
+        "rangeAccessCidrs": range_access_cidrs,
     }
 
 
@@ -629,6 +635,10 @@ def render_gcp_helm_values(
     # exactly that endpoint host/port; empty until the endpoint is wired.
     range_cluster_host, _, range_cluster_port = (config.control_plane_platform_endpoint or "").partition(":")
     range_cluster_api_cidrs = _unique_nonempty_strings([_host_as_single_address_cidr(range_cluster_host)])
+    # Range network CIDR the portal/guacd workloads reach for participant SSH/RDP
+    # (issue #1349). Empty until the range network is provisioned, which leaves
+    # the range-access egress policy unrendered.
+    range_access_cidrs = _unique_nonempty_strings([str(_get_output_value(outputs, "range_network_cidr")).strip()])
 
     return {
         "releaseNamespace": "shifter-system",
@@ -650,6 +660,7 @@ def render_gcp_helm_values(
             [str(_get_output_value(outputs, "gke_services_cidr")).strip()],
             range_cluster_api_cidrs,
             int(range_cluster_port or _GDC_APISERVER_BACKEND_PORT),
+            range_access_cidrs,
         ),
     }
 

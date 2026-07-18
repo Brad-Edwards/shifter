@@ -37,6 +37,12 @@ def instance_output(
         "subnet_name": instance["subnet_name"],
         "instance_id": instance["resource_name"],
         "private_ip": instance["private_ip"],
+        # The scenario-declared participant access channels for this member: the
+        # closed realized access binding the portal authorizes against (issue
+        # #1349), so participant access is granted from the declared target/channel
+        # binding rather than mere credential presence. Empty when the scenario
+        # authorized none.
+        "participant_access_channels": list(instance["participant_access_channels"]),
         # Participant-facing fields are populated only when the scenario
         # explicitly authorized the corresponding channel.
         "ssh_key_secret_arn": credentials.participant_ssh_secret_ref or "",
