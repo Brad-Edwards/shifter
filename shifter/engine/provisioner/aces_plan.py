@@ -31,7 +31,8 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable, Mapping
-from typing import Any
+from dataclasses import replace
+from typing import Any, cast
 
 from aces_acl import build_node_acls
 from aces_composition import (
@@ -45,6 +46,7 @@ from aces_composition import (
 from aces_plan_types import (
     AcesPlan,
     AcesPlanAcl,
+    AcesPlanDomain,
     AcesPlanError,
     AcesPlanImage,
     AcesPlanNetwork,
@@ -64,6 +66,7 @@ __all__ = [
     "AcesPlanAccount",
     "AcesPlanAcl",
     "AcesPlanContent",
+    "AcesPlanDomain",
     "AcesPlanError",
     "AcesPlanFeature",
     "AcesPlanImage",
@@ -112,6 +115,13 @@ MAXIMUM_ACES_SDL_VERSION_EXCLUSIVE = "0.24.0"
 SUPPORTED_ACCOUNT_AUTH_METHODS: frozenset[str] = frozenset({"password", "publickey"})
 SUPPORTED_PASSWORD_STRENGTHS: frozenset[str] = frozenset({"weak", "medium", "strong", "none"})
 _NO_CREDENTIAL_STRENGTH = "none"
+_DOMAIN_ACCOUNT_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9._-]{0,19}$")
+_SPN = re.compile(r"^[A-Za-z][A-Za-z0-9._-]{0,63}/[A-Za-z0-9][A-Za-z0-9._:-]{0,254}$")
+_DNS_NAME = re.compile(
+    r"(?=^.{1,253}$)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+"
+    r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$"
+)
+_NETBIOS_NAME = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,13}[A-Za-z0-9])?$")
 
 _MIB = 1024 * 1024
 
@@ -293,6 +303,7 @@ def _build_composition[CompositionValue: (AcesPlanContent, AcesPlanAccount, Aces
     resource_type: str,
     pairs: list[tuple[str, Mapping[str, Any]]],
     node_lookup: dict[str, str],
+    ordering_dependencies: Mapping[str, tuple[str, ...]],
 ) -> tuple[CompositionValue, ...]:
     """Build every composition value object of one kind, failing closed (ADR-032-R7).
 
@@ -309,6 +320,15 @@ def _build_composition[CompositionValue: (AcesPlanContent, AcesPlanAccount, Aces
             raise AcesPlanError(str(exc)) from None
         if value is None:
             raise AcesPlanError(f"malformed {resource_type} resource at {address}")
+        if isinstance(value, AcesPlanAccount):
+            value = cast(
+                CompositionValue,
+                replace(
+                    cast(AcesPlanAccount, value),
+                    address=address,
+                    ordering_dependencies=ordering_dependencies.get(address, ()),
+                ),
+            )
         if value.target_address not in node_lookup:
             raise AcesPlanError(f"{resource_type} resource at {address} targets unknown node {value.target_address!r}")
         built.append(value)
@@ -326,8 +346,187 @@ def _validate_account_credentials(account: AcesPlanAccount) -> None:
         raise AcesPlanError("unsupported password_strength for account credential")
     if account.mail is not None:
         raise AcesPlanError("account mail is not realized consistently across supported guest operating systems")
-    if account.spn is not None:
-        raise AcesPlanError("account spn is not realized by this provisioner")
+    if account.spn is not None and account.domain_ref is None:
+        raise AcesPlanError("account spn requires a supported domain binding")
+    if account.domain_ref is not None and (
+        not _DOMAIN_ACCOUNT_NAME.fullmatch(account.username)
+        or account.auth_method != "password"
+        or account.password_strength not in {"weak", "medium", "strong"}
+        or account.disabled
+        or account.groups
+        or account.login_shell is not None
+        or account.home is not None
+    ):
+        raise AcesPlanError("domain account policy is unsupported by this provisioner")
+    if account.spn is not None and (
+        _SPN.fullmatch(account.spn) is None
+        or account.spn.strip() != account.spn
+        or "\n" in account.spn
+        or "\r" in account.spn
+    ):
+        raise AcesPlanError("account spn is invalid for this provisioner")
+
+
+def _dependencies(entry: Mapping[str, Any]) -> tuple[str, ...]:
+    raw = entry.get("ordering_dependencies")
+    if raw is None:
+        return ()
+    if not isinstance(raw, list | tuple) or any(not isinstance(item, str) or not item for item in raw):
+        raise AcesPlanError("resource ordering_dependencies must be a list of non-empty strings")
+    return tuple(dict.fromkeys(raw))
+
+
+def _topology(payload: Mapping[str, Any]) -> Mapping[str, Any]:
+    raw = payload.get("domain_topology")
+    if raw is None:
+        return {}
+    if not isinstance(raw, Mapping):
+        raise AcesPlanError("domain topology must be an object")
+    topology = dict(raw)
+    required = (
+        "domain_id",
+        "profile",
+        "dns_name",
+        "netbios_name",
+        "authority_account_address",
+        "role",
+    )
+    if any(
+        not _topology_text(topology, field) or _topology_text(topology, field).strip() != topology[field]
+        for field in required
+    ):
+        raise AcesPlanError("domain topology identity is malformed")
+    if topology["profile"] != "active_directory" or topology["role"] not in {"controller", "member"}:
+        raise AcesPlanError("domain topology profile or role is unsupported")
+    if _DNS_NAME.fullmatch(topology["dns_name"]) is None or _NETBIOS_NAME.fullmatch(topology["netbios_name"]) is None:
+        raise AcesPlanError("domain topology naming is malformed")
+    _topology_addresses(topology, "controller_addresses")
+    return topology
+
+
+def _topology_text(topology: Mapping[str, Any], field: str) -> str:
+    value = topology.get(field)
+    return value if isinstance(value, str) else ""
+
+
+def _topology_addresses(topology: Mapping[str, Any], field: str) -> tuple[str, ...]:
+    value = topology.get(field)
+    if not isinstance(value, list | tuple) or any(not isinstance(item, str) or not item for item in value):
+        raise AcesPlanError("domain topology address list is malformed")
+    addresses = tuple(value)
+    if not addresses or len(addresses) != len(set(addresses)):
+        raise AcesPlanError("domain topology address list is malformed")
+    return addresses
+
+
+def _topology_signature(topology: Mapping[str, Any]) -> tuple[object, ...]:
+    return (
+        topology["profile"],
+        topology["dns_name"],
+        topology["netbios_name"],
+        topology["authority_account_address"],
+        _topology_addresses(topology, "controller_addresses"),
+    )
+
+
+def _build_domains(
+    nodes: tuple[AcesPlanNode, ...], accounts: tuple[AcesPlanAccount, ...]
+) -> tuple[AcesPlanDomain, ...]:
+    """Build and revalidate the bounded process-local domain realization view."""
+    nodes_by_address = {node.address: node for node in nodes}
+    accounts_by_address = {account.address: account for account in accounts}
+    domain_ids = sorted({node.domain_id for node in nodes if node.domain_id is not None})
+    domains: list[AcesPlanDomain] = []
+    for domain_id in domain_ids:
+        domain_nodes = tuple(node for node in nodes if node.domain_id == domain_id)
+        controllers = tuple(node for node in domain_nodes if node.domain_role == "controller")
+        members = tuple(node for node in domain_nodes if node.domain_role == "member")
+        if len(controllers) != 1 or controllers[0].count != 1 or controllers[0].os_family.lower() != "windows":
+            raise AcesPlanError("domain controller cardinality or operating system is unsupported")
+        controller = controllers[0]
+        if any(member.os_family.lower() != "windows" for member in members):
+            raise AcesPlanError("domain member operating system is unsupported")
+        if any(
+            controller.network_addresses
+            and member.network_addresses
+            and set(controller.network_addresses).isdisjoint(member.network_addresses)
+            for member in members
+        ):
+            raise AcesPlanError("domain member is not reachable from its controller")
+        if any(controller.address not in member.ordering_dependencies for member in members):
+            raise AcesPlanError("domain member ordering dependency is missing")
+
+        topology = _topology_for_node_payload(controller)
+        profile = _topology_text(topology, "profile")
+        controller_addresses = _topology_addresses(topology, "controller_addresses")
+        authority_address = _topology_text(topology, "authority_account_address")
+        if profile != "active_directory" or controller_addresses != (controller.address,):
+            raise AcesPlanError("domain topology profile or controller binding is unsupported")
+        authority = accounts_by_address.get(authority_address)
+        if (
+            authority is None
+            or authority.domain_id != domain_id
+            or authority.username.casefold() != "administrator"
+            or authority.target_address != controller.address
+            or authority.auth_method != "password"
+            or authority.password_strength not in {"weak", "medium", "strong"}
+            or authority.disabled
+            or authority.groups
+            or authority.login_shell is not None
+            or authority.home is not None
+            or authority.mail is not None
+            or authority.spn is not None
+            or authority.domain_ref is not None
+        ):
+            raise AcesPlanError("domain authority account is unsupported")
+
+        domain_accounts = tuple(account for account in accounts if account.domain_ref == domain_id)
+        if any(
+            account.domain_id == domain_id and account.address != authority_address and account.domain_ref is None
+            for account in accounts
+        ):
+            raise AcesPlanError("domain topology account binding is invalid")
+        if any(account.domain_id != domain_id for account in domain_accounts):
+            raise AcesPlanError("domain account binding is invalid")
+        usernames = [authority.username.casefold(), *(account.username.casefold() for account in domain_accounts)]
+        spns = [account.spn.casefold() for account in domain_accounts if account.spn]
+        if len(usernames) != len(set(usernames)):
+            raise AcesPlanError("duplicate domain account identity")
+        if len(spns) != len(set(spns)):
+            raise AcesPlanError("duplicate account spn")
+        if any(
+            account.target_address not in nodes_by_address
+            or nodes_by_address[account.target_address].domain_id != domain_id
+            for account in domain_accounts
+        ):
+            raise AcesPlanError("domain account target is invalid")
+
+        domains.append(
+            AcesPlanDomain(
+                domain_id=domain_id,
+                profile=profile,
+                dns_name=_topology_text(topology, "dns_name"),
+                netbios_name=_topology_text(topology, "netbios_name"),
+                authority_account_address=authority_address,
+                controller_addresses=controller_addresses,
+                member_addresses=tuple(member.address for member in members),
+            )
+        )
+    if any(account.domain_ref is not None and account.domain_ref not in domain_ids for account in accounts):
+        raise AcesPlanError("domain account references an unsupported domain")
+    return tuple(domains)
+
+
+def _topology_for_node_payload(node: AcesPlanNode) -> Mapping[str, Any]:
+    """Return the validated topology carrier retained on a parsed node."""
+    return {
+        "domain_id": node.domain_id or "",
+        "profile": getattr(node, "domain_profile", None) or "active_directory",
+        "dns_name": getattr(node, "domain_dns_name", None) or "",
+        "netbios_name": getattr(node, "domain_netbios_name", None) or "",
+        "authority_account_address": getattr(node, "authority_account_address", None) or "",
+        "controller_addresses": list(node.controller_addresses),
+    }
 
 
 def parse_plan(range_config: dict[str, Any] | None) -> AcesPlan:
@@ -357,6 +556,8 @@ def parse_plan(range_config: dict[str, Any] | None) -> AcesPlan:
         ACCOUNT_RESOURCE_TYPE: [],
     }
     seen_addresses: set[str] = set()
+    ordering_dependencies: dict[str, tuple[str, ...]] = {}
+    topology_signatures: dict[str, tuple[object, ...]] = {}
     for entry in resources.values():
         entry_map = _require_mapping(entry, where="resource")
         address = _string(entry_map.get("address"), where="resource.address")
@@ -364,11 +565,14 @@ def parse_plan(range_config: dict[str, Any] | None) -> AcesPlan:
             raise AcesPlanError(f"duplicate resource address {address!r}")
         seen_addresses.add(address)
         payload = _require_mapping(entry_map.get("payload"), where="resource.payload")
-        # Shifter currently advertises no supported identity-domain profile. This
-        # plain-data backstop protects persisted/replayed plans at the separate
-        # deployable boundary without copying ACES's topology model or values.
-        if payload.get("domain_topology") is not None:
-            raise AcesPlanError("domain topology is not supported by this provisioner")
+        ordering_dependencies[address] = _dependencies(entry_map)
+        topology = _topology(payload)
+        if topology:
+            domain_id = _topology_text(topology, "domain_id")
+            signature = _topology_signature(topology)
+            if domain_id in topology_signatures and topology_signatures[domain_id] != signature:
+                raise AcesPlanError("domain topology identity is inconsistent")
+            topology_signatures[domain_id] = signature
         resource_type = entry_map.get("resource_type")
         # Type-check the JSON discriminator before any membership test so an
         # unhashable/non-string value fails closed as AcesPlanError, not TypeError.
@@ -387,12 +591,22 @@ def parse_plan(range_config: dict[str, Any] | None) -> AcesPlan:
     network_lookup = _identity_lookup(network_pairs, NETWORK_RESOURCE_TYPE)
     node_lookup = _identity_lookup(node_pairs, NODE_RESOURCE_TYPE)
     networks = tuple(_network(address, payload) for address, payload in sorted(network_pairs))
-    nodes = tuple(_node(address, payload, network_lookup) for address, payload in sorted(node_pairs))
-    content = _build_composition(build_content, CONTENT_RESOURCE_TYPE, composition[CONTENT_RESOURCE_TYPE], node_lookup)
-    accounts = _build_composition(build_account, ACCOUNT_RESOURCE_TYPE, composition[ACCOUNT_RESOURCE_TYPE], node_lookup)
+    nodes = tuple(
+        _node(address, payload, network_lookup, ordering_dependencies.get(address, ()))
+        for address, payload in sorted(node_pairs)
+    )
+    content = _build_composition(
+        build_content, CONTENT_RESOURCE_TYPE, composition[CONTENT_RESOURCE_TYPE], node_lookup, ordering_dependencies
+    )
+    accounts = _build_composition(
+        build_account, ACCOUNT_RESOURCE_TYPE, composition[ACCOUNT_RESOURCE_TYPE], node_lookup, ordering_dependencies
+    )
     for account in accounts:
         _validate_account_credentials(account)
-    features = _build_composition(build_feature, FEATURE_RESOURCE_TYPE, composition[FEATURE_RESOURCE_TYPE], node_lookup)
+    features = _build_composition(
+        build_feature, FEATURE_RESOURCE_TYPE, composition[FEATURE_RESOURCE_TYPE], node_lookup, ordering_dependencies
+    )
+    domains = _build_domains(nodes, accounts)
 
     return AcesPlan(
         aces_sdl_version=aces_sdl_version,
@@ -401,10 +615,16 @@ def parse_plan(range_config: dict[str, Any] | None) -> AcesPlan:
         content=content,
         accounts=accounts,
         features=features,
+        domains=domains,
     )
 
 
-def _node(address: str, payload: Mapping[str, Any], network_lookup: dict[str, str]) -> AcesPlanNode:
+def _node(
+    address: str,
+    payload: Mapping[str, Any],
+    network_lookup: dict[str, str],
+    ordering_dependencies: tuple[str, ...],
+) -> AcesPlanNode:
     """Build an AcesPlanNode, resolving network membership and ACL endpoints.
 
     Fails closed (ADR-032-R7) on a network-membership ref or an ACL ``from_net`` /
@@ -422,6 +642,7 @@ def _node(address: str, payload: Mapping[str, Any], network_lookup: dict[str, st
         for endpoint in (acl.from_net, acl.to_net):
             if endpoint is not None and endpoint not in network_lookup:
                 raise AcesPlanError(f"node {address} ACL {acl.name!r} references unknown network {endpoint!r}")
+    topology = _topology(payload)
     return AcesPlanNode(
         address=address,
         name=_resource_name(address, payload),
@@ -433,6 +654,14 @@ def _node(address: str, payload: Mapping[str, Any], network_lookup: dict[str, st
         image=_image(payload),
         acls=acls,
         services=build_node_services(_node_spec(payload).get("services")),
+        ordering_dependencies=ordering_dependencies,
+        domain_id=_topology_text(topology, "domain_id") or None,
+        domain_role=_topology_text(topology, "role") or None,
+        controller_addresses=_topology_addresses(topology, "controller_addresses") if topology else (),
+        domain_profile=_topology_text(topology, "profile") or None,
+        domain_dns_name=_topology_text(topology, "dns_name") or None,
+        domain_netbios_name=_topology_text(topology, "netbios_name") or None,
+        authority_account_address=_topology_text(topology, "authority_account_address") or None,
     )
 
 

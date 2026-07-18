@@ -35,6 +35,12 @@ from aces_account_credentials import (
     delete_instance_account_credentials,
     install_instance_account_credentials,
 )
+from aces_active_directory import (
+    AcesDirectorySecretOps,
+    default_directory_secret_ops,
+    delete_aces_directory_secrets,
+    realize_aces_active_directory,
+)
 from aces_gcp_composition import node_bootstrap_script
 from aces_gcp_plan import AcesGcePlanError, build_aces_range_cell_plan
 from aces_plan import AcesPlan, AcesPlanAccount, AcesPlanNode
@@ -81,6 +87,8 @@ class AcesGceApplyOptions:
     secret_ops: AcesGceSecretOps | None = None
     account_secret_ops: AcesAccountCredentialOps | None = None
     credential_installer: Callable[..., None] = install_instance_account_credentials
+    directory_secret_ops: AcesDirectorySecretOps | None = None
+    directory_realizer: Callable[..., None] = realize_aces_active_directory
 
 
 @dataclass(frozen=True)
@@ -92,6 +100,8 @@ class _AcesGceApplyRuntime:
     secret_ops: AcesGceSecretOps
     account_secret_ops: AcesAccountCredentialOps
     credential_installer: Callable[..., None]
+    directory_secret_ops: AcesDirectorySecretOps
+    directory_realizer: Callable[..., None]
 
 
 def _default_secret_ops() -> AcesGceSecretOps:
@@ -236,6 +246,8 @@ def apply_aces_range_cell(
         secret_ops=options.secret_ops or _default_secret_ops(),
         account_secret_ops=options.account_secret_ops or default_account_credential_ops(),
         credential_installer=options.credential_installer,
+        directory_secret_ops=options.directory_secret_ops or default_directory_secret_ops(),
+        directory_realizer=options.directory_realizer,
     )
     _assert_composition_targets_resolve(aces_plan)
     plan = build_aces_range_cell_plan(request_uuid, range_id, aces_plan, resolve_image, runtime.config)
@@ -243,7 +255,11 @@ def apply_aces_range_cell(
         node.address: script for node in aces_plan.nodes if (script := node_bootstrap_script(node, aces_plan))
     }
     accounts_by_node = {
-        node.address: tuple(account for account in aces_plan.accounts if account.target_address == node.address)
+        node.address: tuple(
+            account
+            for account in aces_plan.accounts
+            if account.target_address == node.address and account.domain_ref is None and account.domain_id is None
+        )
         for node in aces_plan.nodes
     }
     try:
@@ -253,6 +269,13 @@ def apply_aces_range_cell(
             bootstrap_by_node,
             accounts_by_node,
         )
+        if aces_plan.domains:
+            runtime.directory_realizer(
+                range_id=plan["range_id"],
+                aces_plan=aces_plan,
+                instance_outputs=instance_outputs,
+                secret_ops=runtime.directory_secret_ops,
+            )
     except Exception:
         logger.exception("ACES GCE range-cell apply failed; attempting cleanup request_id=%s", request_uuid)
         destroy_aces_range_cell(
@@ -263,6 +286,7 @@ def apply_aces_range_cell(
             clients=runtime.clients,
             secret_ops=runtime.secret_ops,
             account_secret_ops=runtime.account_secret_ops,
+            directory_secret_ops=runtime.directory_secret_ops,
         )
         raise
     return {"subnets": subnet_outputs(plan), "instances": instance_outputs}
@@ -277,12 +301,14 @@ def destroy_aces_range_cell(
     secret_ops: AcesGceSecretOps | None = None,
     *,
     account_secret_ops: AcesAccountCredentialOps | None = None,
+    directory_secret_ops: AcesDirectorySecretOps | None = None,
 ) -> None:
     """Destroy every GCE resource owned by one ACES range cell."""
     resolved_config = config or load_gce_range_cell_config()
     resolved_clients = clients or _build_clients()
     resolved_secret_ops = secret_ops or _default_secret_ops()
     resolved_account_secret_ops = account_secret_ops or default_account_credential_ops()
+    resolved_directory_secret_ops = directory_secret_ops or default_directory_secret_ops()
     plan = build_aces_range_cell_plan(request_uuid, range_id, aces_plan, _default_destroy_profile, resolved_config)
 
     for instance in reversed(plan["instances"]):
@@ -308,9 +334,15 @@ def destroy_aces_range_cell(
         )
         resolved_secret_ops.delete_ssh(plan["range_id"], instance["uuid"])
         accounts = tuple(
-            account for account in aces_plan.accounts if account.target_address == _node_address_of(instance)
+            account
+            for account in aces_plan.accounts
+            if account.target_address == _node_address_of(instance)
+            and account.domain_ref is None
+            and account.domain_id is None
         )
         delete_instance_account_credentials(plan["range_id"], instance["uuid"], accounts, resolved_account_secret_ops)
+
+    delete_aces_directory_secrets(plan["range_id"], aces_plan, resolved_directory_secret_ops)
 
     for firewall in reversed(plan["firewalls"]):
         _delete_resource(
