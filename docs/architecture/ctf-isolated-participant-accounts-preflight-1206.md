@@ -84,6 +84,12 @@ surfaces and is rejected by platform authentication.
   (`blank=True`, `default=""`) rather than introducing both null and empty-string
   representations. Remove email uniqueness: duplicate or absent delivery
   addresses are legitimate and never imply shared identity.
+- Integrations that require a non-empty session identity must not reinterpret
+  delivery email as the login key or backfill `User.email`. Preserve ordinary
+  account behavior while admitting email-less CTF accounts with Django's
+  canonical handle fallback (`user.email or user.get_username()`), and name
+  downstream parameters for an identity/username rather than falsely promising
+  an email address.
 - Do not mark existing linked users as CTF accounts. Legacy rows may point at
   organizers, staff, or ordinary provider users—the exact takeover condition
   being removed. Cutover must either create/relink fresh temporary accounts or
@@ -160,10 +166,18 @@ surfaces and is rejected by platform authentication.
 
 - Add one CTF-account HTTP policy boundary after Django authentication. A
   marked account may reach the participant portion of `/ctf/`, the canonical
-  participant CTF API under `/api/v1/ctf/`, change-password, and logout; all
-  other HTTP surfaces return a fixed 403. Existing CTF organizer/participant
-  decorators and DRF permissions still decide which operations inside the CTF
-  namespace are valid. Navigation hiding is not enforcement (ADR-013).
+  participant CTF API under `/api/v1/ctf/`, change-password, logout, and the
+  exact `/api/v1/mission-control/guacamole/` broker prefix needed to open its
+  own ready range (#1740); all other HTTP surfaces return a fixed 403. The
+  Guacamole exception is admission only: the live-participant and forced-
+  password-change gates still run first, and Mission Control's session/CSRF,
+  actor/scope, request-shape, ready-range ownership, declared-channel, and
+  owner-scoped bootstrap-delivery checks remain authoritative. In particular,
+  `/api/v1/mission-control/ngfw/`, `range/`, `ranges/`, `credentials/`,
+  `upload/`, `agents/`, and `scenarios/` remain outside the exception. Existing
+  CTF organizer/participant decorators and DRF permissions still decide which
+  operations inside the CTF namespace are valid. Navigation hiding is not
+  enforcement (ADR-013).
 - The marker check must win over `is_staff`, `is_superuser`, `Threat Research`,
   `CTF Organizer`, or any other accidental group. Evolve
   `shared.auth.is_ctf_participant_only` (or add one clearly named marker
