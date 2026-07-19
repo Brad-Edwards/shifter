@@ -83,6 +83,10 @@ def publish_event_notification(
     try:
         if not notifications_enabled():
             return
+        # Idempotent re-registration: registration normally happens in
+        # apps.ready, but test isolation (and any future registry reset)
+        # must not silently drop CTF publishes.
+        register_ctf_notifications()
         if recipient_ids is None:
             from ctf.models import CTFParticipant
             from ctf.services.participant import viewing_participant_q
