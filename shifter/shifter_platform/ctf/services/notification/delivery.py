@@ -431,7 +431,7 @@ def cancel_scheduled_notification(notification_id: UUID) -> CTFNotification:
         metadata__notification_id=str(notification_id),
     ):
         task.mark_cancelled()
-    logger.info("Cancelled scheduled notification %s", notification_id)
+    logger.info("Cancelled scheduled notification %s", safe_log_value(notification_id))
     return notification
 
 
