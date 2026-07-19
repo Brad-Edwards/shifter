@@ -48,6 +48,7 @@ _EVENT_MUTABLE_FIELDS = frozenset(
         "rules",
         "reminder_hours",
         "event_timezone",
+        "capacity_hints",
     }
 )
 

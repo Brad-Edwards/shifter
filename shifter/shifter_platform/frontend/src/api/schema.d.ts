@@ -2906,6 +2906,9 @@ export interface components {
             readonly rules: string;
             readonly reminder_hours: number[];
             readonly event_timezone: string;
+            readonly capacity_hints: {
+                [key: string]: unknown;
+            };
         };
         /** @description One lifecycle transition to apply to an owned event (CTF-007). */
         EventLifecycleRequest: {
@@ -2997,6 +3000,9 @@ export interface components {
             rules?: string;
             reminder_hours?: number[];
             event_timezone?: string;
+            capacity_hints?: {
+                [key: string]: unknown;
+            };
         };
         /** @description Presigned download URL for a challenge attachment. */
         FileDownloadResponse: {
