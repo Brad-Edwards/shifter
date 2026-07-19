@@ -407,9 +407,9 @@ class CheckTfIamElbScopeTest(unittest.TestCase):
         # would make check_file return [] (resource not found) and this test
         # would pass vacuously, defeating the regression coverage.
         self.assertIn(
-            'resource "aws_iam_role_policy" "gwlb"',
+            'resource "aws_iam_policy" "gwlb"',
             path.read_text(),
-            "iam.tf must contain aws_iam_role_policy.gwlb for this check to be meaningful",
+            "iam.tf must contain aws_iam_policy.gwlb for this check to be meaningful",
         )
         self.assertEqual(check_file(path), [])
 

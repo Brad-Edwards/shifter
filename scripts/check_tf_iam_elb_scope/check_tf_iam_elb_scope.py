@@ -69,7 +69,11 @@ REQUEST_TAG_KEYS: tuple[str, ...] = (
 )
 CREATE_ACTION_CONDITION_KEY: str = "elasticloadbalancing:CreateAction"
 
-_RESOURCE_RE = re.compile(r'^\s*resource\s+"aws_iam_role_policy"\s+"([^"]+)"\s*\{')
+# Match both the inline (aws_iam_role_policy) and customer-managed (aws_iam_policy)
+# forms: the gwlb policy was moved to a managed policy to keep the task role under
+# AWS's inline-policy-size limit (issue #1749), and the same ELB scoping rules
+# must apply regardless of the container. The check keys on the resource name.
+_RESOURCE_RE = re.compile(r'^\s*resource\s+"aws_iam_(?:role_)?policy"\s+"([^"]+)"\s*\{')
 _ACTION_RE = re.compile(r'"(elasticloadbalancing:[^"]+)"')
 
 
