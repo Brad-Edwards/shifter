@@ -21,7 +21,7 @@ from ctf.models import CTFEvent, CTFNotification, CTFParticipant
 from shared.log_sanitize import safe_log_value
 
 if TYPE_CHECKING:
-    from django.contrib.auth.models import AbstractBaseUser as User
+    from django.contrib.auth.models import User
 
 logger = logging.getLogger(__name__)
 
