@@ -23,6 +23,7 @@ from django.db import transaction
 
 from ctf.exceptions import CTFNotFoundError, CTFValidationError
 from ctf.models import CTFChallenge, CTFEvent, CTFFlag, CTFHint
+from shared.log_sanitize import safe_log_value
 
 if TYPE_CHECKING:
     from uuid import UUID
@@ -146,7 +147,7 @@ def import_challenges(event_id: UUID, payload: dict[str, Any], *, actor_id: int)
             existing_names.add(name)
             created.append(name)
 
-    logger.info("Imported %d challenges into event %s (%d errors)", len(created), event_id, len(errors))
+    logger.info("Imported %d challenges into event %s (%d errors)", len(created), safe_log_value(event_id), len(errors))
     return {"created": created, "errors": errors}
 
 

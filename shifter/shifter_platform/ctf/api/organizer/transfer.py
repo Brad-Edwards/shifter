@@ -77,8 +77,8 @@ class ChallengeImportView(APIView):
             serializer.is_valid(raise_exception=True)
             try:
                 result = import_challenges(event_id, serializer.validated_data["payload"], actor_id=_actor(request).pk)
-            except CTFValidationError as exc:
-                _raise_bad_request(str(exc))
+            except CTFValidationError:
+                _raise_bad_request("Import payload has no challenges list.")
             return Response(result)
         except _CtfApiError as exc:
             return exc.to_response(request)
