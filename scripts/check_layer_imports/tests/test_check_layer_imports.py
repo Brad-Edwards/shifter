@@ -8,6 +8,12 @@ from typing import ClassVar
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from _symbol_facade import (
+    analyze_symbol_facade_imports,
+    compute_symbol_facade_violations,
+    get_facade_symbol_imports,
+    load_allowed_symbols,
+)
 from check_layer_imports import (
     ALL_LAYERS,
     CYBERSCRIPT_IMPORT_PATTERN,
@@ -15,19 +21,15 @@ from check_layer_imports import (
     analyze_cyberscript_imports,
     analyze_imports,
     analyze_private_facade_imports,
-    analyze_symbol_facade_imports,
     classified_packages,
     compute_cyberscript_violations,
     compute_private_facade_violations,
     compute_stats,
-    compute_symbol_facade_violations,
     get_cyberscript_imports,
-    get_facade_symbol_imports,
     get_imports,
     get_private_facade_imports,
     is_import_allowed,
     load_allowed_imports,
-    load_allowed_symbols,
     print_summary,
 )
 
@@ -505,7 +507,7 @@ class TestSymbolFacadeImports:
         for layer in ALL_LAYERS:
             (tmp_path / layer).mkdir()
         (tmp_path / "cms" / "svc.py").write_text("from engine.services import create_range\n")
-        assert analyze_symbol_facade_imports(tmp_path, self.ALLOWED) == {}
+        assert analyze_symbol_facade_imports(tmp_path, self.ALLOWED, ALL_LAYERS) == {}
 
     def test_analyze_rolls_up_violations_per_layer(self, tmp_path):
         for layer in ALL_LAYERS:
@@ -513,7 +515,7 @@ class TestSymbolFacadeImports:
         (tmp_path / "mission_control" / "views.py").write_text(
             "from engine.services import connect_terminal, create_range\n"
         )
-        assert analyze_symbol_facade_imports(tmp_path, self.ALLOWED) == {
+        assert analyze_symbol_facade_imports(tmp_path, self.ALLOWED, ALL_LAYERS) == {
             "mission_control": ["engine.services.create_range"]
         }
 
@@ -523,7 +525,7 @@ class TestSymbolFacadeImports:
         (tmp_path / "mission_control" / "views.py").write_text(
             "from engine.services import connect_terminal\nfrom engine.services import SSHConnection\n"
         )
-        assert analyze_symbol_facade_imports(tmp_path, self.ALLOWED) == {}
+        assert analyze_symbol_facade_imports(tmp_path, self.ALLOWED, ALL_LAYERS) == {}
 
     def test_symbol_violations_counted_in_stats(self):
         stats = compute_stats(
@@ -684,6 +686,8 @@ class TestMain:
                 f'base_path = Path("{platform}")',
             )
         )
+        # The CLI imports its sibling _symbol_facade module, so copy it alongside.
+        (checker_dir / "_symbol_facade.py").write_text((SCRIPT_PATH.parent / "_symbol_facade.py").read_text())
 
         result = subprocess.run(
             [sys.executable, str(script), "-q"],
