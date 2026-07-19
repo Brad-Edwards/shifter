@@ -2110,6 +2110,23 @@ class TestGcpBootstrapIdentityPlatform:
         assert "GDC_KALI_DISK_SIZE_GIB=40\n" in rendered
         assert "GDC_UBUNTU_IMAGE_URL=\n" not in rendered
 
+    def test_render_gcp_platform_runtime_env_emits_aws_region_for_provisioner_policy(self):
+        """AWS_REGION rides the ConfigMap so the range-Job admission policy passes (#1742).
+
+        Django settings alias AWS_REGION to CLOUD_REGION, so the provisioner-launcher
+        always emits a non-empty AWS_REGION even on GCP; restrict-provisioner-jobs then
+        requires it to exist in platform-runtime with a matching value.
+        """
+        config = deploy.GDCBootstrapConfig(
+            project_id="prod-rwctxzl6shxk", cluster_id="cluster1", environment="gcp-dev", region="us-central1"
+        )
+
+        with patch("deploy.load_bootstrap_env_values", return_value={}):
+            rendered = deploy.render_gcp_platform_runtime_env(config)
+
+        assert "AWS_REGION=us-central1\n" in rendered
+        assert "CLOUD_REGION=us-central1\n" in rendered
+
 
 class TestArtifactRegistryServiceIdentity:
     """Tests for pre-provisioning the Artifact Registry service identity."""
