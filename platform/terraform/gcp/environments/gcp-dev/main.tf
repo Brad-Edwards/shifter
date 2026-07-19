@@ -36,6 +36,7 @@ locals {
 # and GCP_SERVICE_ACCOUNT values consumed as GitHub secrets.
 module "cicd_github_oidc" {
   source = "../../modules/cicd-github-oidc"
+  count  = var.enable_cicd_github_oidc ? 1 : 0
 
   project_id       = var.project_id
   environment      = var.environment

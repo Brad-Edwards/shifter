@@ -1710,7 +1710,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Return the mission_control RDP endpoint redirect (participants are standard users). */
+        /**
+         * @deprecated
+         * @description Return the Guacamole RDP endpoint pointer (deprecated; see class docstring).
+         */
         post: operations["ctf_range_access_create"];
         delete?: never;
         options?: never;
@@ -4091,6 +4094,20 @@ export interface components {
             readonly range_instance_id: number | null;
             /** @default false */
             readonly vpn_profile_available: boolean;
+            readonly target_instances: components["schemas"]["RangeTargetInstance"][];
+        };
+        /**
+         * @description A participant-safe target box in a ready range (issue #1740).
+         *
+         *     Documents the projected {uuid, name, private_ip, os_type} allowlist. The
+         *     ``ctf.bridges.cms_get_range_target_instances`` projection is what enforces the
+         *     allowlist at runtime; this serializer only publishes the contract.
+         */
+        RangeTargetInstance: {
+            readonly uuid: string;
+            readonly name: string;
+            readonly private_ip: string;
+            readonly os_type: string;
         };
         /**
          * @description * `demo` - demo
