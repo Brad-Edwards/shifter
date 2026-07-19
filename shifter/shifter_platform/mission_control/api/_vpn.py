@@ -1,21 +1,27 @@
-"""OpenVPN delivery helpers for the Mission Control API."""
+"""Mission Control OpenVPN profile delivery view, split from ranges (python:S104)."""
 
 from __future__ import annotations
 
 from django.contrib.auth.models import User
 from django.http import HttpResponse
 from django.utils.cache import patch_vary_headers
+from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import extend_schema
 from rest_framework import status
+from rest_framework.request import Request
 from rest_framework.response import Response
 
-from mission_control.api._base import MissionControlAPIView
+from mission_control.api._base import MissionControlAPIView, _vpn_profile_read_permission
+from mission_control.api.permissions import HasMissionControlActor
 from mission_control.views._common import _pkg
+from shared.api.permissions import IsAuthenticatedSessionOrApiToken
+from shared.api.schema import ApiErrorSerializer
 from shared.remote_access import OPENVPN_PROFILE_MEDIA_TYPE, OpenVpnProfile
 
 _VPN_PROFILE_FILENAME = "shifter-range.ovpn"
 
 
-def credential_delivery_error(view: MissionControlAPIView, actor: User) -> Response | None:
+def _credential_delivery_error(view: MissionControlAPIView, actor: User) -> Response | None:
     """Return a fail-closed delivery response, or None when delivery may proceed."""
     from shared.credential_delivery import credential_delivery_allowed
 
@@ -39,7 +45,7 @@ def credential_delivery_error(view: MissionControlAPIView, actor: User) -> Respo
     return response
 
 
-def mission_control_profile_result(
+def _mission_control_profile_result(
     view: MissionControlAPIView,
     actor: User,
 ) -> tuple[OpenVpnProfile, int] | Response:
@@ -66,7 +72,7 @@ def mission_control_profile_result(
     return result
 
 
-def vpn_profile_download_response(actor: User, profile: OpenVpnProfile, range_instance_id: int) -> HttpResponse:
+def _vpn_profile_download_response(actor: User, profile: OpenVpnProfile, range_instance_id: int) -> HttpResponse:
     """Audit and build the non-cacheable OpenVPN credential response."""
     from shared.credential_delivery import audit_openvpn_profile_download
 
@@ -83,3 +89,45 @@ def vpn_profile_download_response(actor: User, profile: OpenVpnProfile, range_in
     response["Content-Length"] = str(len(profile.content))
     patch_vary_headers(response, ("Cookie", "Authorization"))
     return response
+
+
+class MissionControlVpnProfileView(MissionControlAPIView):
+    """Deliver the current Mission Control range's generation-bound OpenVPN profile."""
+
+    permission_classes = [
+        IsAuthenticatedSessionOrApiToken,
+        HasMissionControlActor,
+        _vpn_profile_read_permission(),
+    ]
+
+    @extend_schema(
+        request=None,
+        responses={
+            (200, OPENVPN_PROFILE_MEDIA_TYPE): OpenApiTypes.BINARY,
+            400: ApiErrorSerializer,
+            404: ApiErrorSerializer,
+            409: ApiErrorSerializer,
+            429: ApiErrorSerializer,
+            503: ApiErrorSerializer,
+        },
+    )
+    def post(self, request: Request) -> HttpResponse | Response:
+        if request.body or request.query_params:
+            response: HttpResponse | Response = self.error_response(
+                code="invalid",
+                message="VPN profile requests must not include a body or query parameters.",
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+        else:
+            actor = self.actor_user()
+            delivery_error = _credential_delivery_error(self, actor)
+            if delivery_error is not None:
+                response = delivery_error
+            else:
+                profile_result = _mission_control_profile_result(self, actor)
+                if isinstance(profile_result, Response):
+                    response = profile_result
+                else:
+                    profile, range_instance_id = profile_result
+                    response = _vpn_profile_download_response(actor, profile, range_instance_id)
+        return response

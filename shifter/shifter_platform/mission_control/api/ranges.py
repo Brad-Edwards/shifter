@@ -5,10 +5,7 @@ from __future__ import annotations
 from typing import Any, cast
 
 from django.contrib.auth.models import User
-from django.http import HttpResponse
-from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import extend_schema, extend_schema_view
-from rest_framework import status
 from rest_framework.request import Request
 from rest_framework.response import Response
 
@@ -19,12 +16,6 @@ from mission_control.api._base import (
     _range_write_permission,
     _raw_request,
     _validated,
-    _vpn_profile_read_permission,
-)
-from mission_control.api._range_vpn import (
-    credential_delivery_error,
-    mission_control_profile_result,
-    vpn_profile_download_response,
 )
 from mission_control.api.permissions import HasMissionControlActor, block_participant_lifecycle_permission
 from mission_control.api.rate_limit import RangeLaunchRateThrottle
@@ -50,7 +41,6 @@ from shared.auth import is_ctf_participant_only
 from shared.errors import classify_user_message
 from shared.exceptions import CMSError
 from shared.log_sanitize import safe_log_value
-from shared.remote_access import OPENVPN_PROFILE_MEDIA_TYPE
 
 
 class CurrentRangeView(MissionControlReadAPIView):
@@ -138,48 +128,6 @@ class ExtendRangeLeaseView(MissionControlAPIView):
                 )
             else:
                 response = Response({"lifecycle": lease.to_payload()})
-        return response
-
-
-class MissionControlVpnProfileView(MissionControlAPIView):
-    """Deliver the current Mission Control range's generation-bound OpenVPN profile."""
-
-    permission_classes = [
-        IsAuthenticatedSessionOrApiToken,
-        HasMissionControlActor,
-        _vpn_profile_read_permission(),
-    ]
-
-    @extend_schema(
-        request=None,
-        responses={
-            (200, OPENVPN_PROFILE_MEDIA_TYPE): OpenApiTypes.BINARY,
-            400: ApiErrorSerializer,
-            404: ApiErrorSerializer,
-            409: ApiErrorSerializer,
-            429: ApiErrorSerializer,
-            503: ApiErrorSerializer,
-        },
-    )
-    def post(self, request: Request) -> HttpResponse | Response:
-        if request.body or request.query_params:
-            response: HttpResponse | Response = self.error_response(
-                code="invalid",
-                message="VPN profile requests must not include a body or query parameters.",
-                status_code=status.HTTP_400_BAD_REQUEST,
-            )
-        else:
-            actor = self.actor_user()
-            delivery_error = credential_delivery_error(self, actor)
-            if delivery_error is not None:
-                response = delivery_error
-            else:
-                profile_result = mission_control_profile_result(self, actor)
-                if isinstance(profile_result, Response):
-                    response = profile_result
-                else:
-                    profile, range_instance_id = profile_result
-                    response = vpn_profile_download_response(actor, profile, range_instance_id)
         return response
 
 
