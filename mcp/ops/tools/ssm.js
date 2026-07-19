@@ -1,5 +1,8 @@
 // SSM command tools, the dev portal test tunnel, and the Django
 // manage.py wrapper for the shifter-ops MCP server.
+//
+// Each tool descriptor is built by its own module-level factory so the
+// registrar stays a thin wiring function.
 
 import { z } from "zod";
 import { registerTool } from "../policy.js";
@@ -20,17 +23,8 @@ import {
   DESC_EC2_INSTANCE_ID,
 } from "../schemas.js";
 
-export function registerSsmTools(ctx, deps) {
-  const {
-    getProfile,
-    aws,
-    awsText,
-    getInstancePlatform,
-    startPortalTestTunnel,
-    stopPortalTestTunnel,
-  } = deps;
-
-  registerTool(ctx, {
+function ssmSendCommandTool({ getProfile, aws, getInstancePlatform }) {
+  return {
     name: "ssm_send_command",
     klass: "ssm_arbitrary",
     untrusted_inputs: ["command"],
@@ -64,9 +58,11 @@ export function registerSsmTools(ctx, deps) {
         return err(e);
       }
     },
-  });
+  };
+}
 
-  registerTool(ctx, {
+function ssmGetCommandOutputTool({ getProfile, aws }) {
+  return {
     name: "ssm_get_command_output",
     klass: "ssm_arbitrary",
     untrusted_source: "ssm_stdout",
@@ -94,9 +90,11 @@ export function registerSsmTools(ctx, deps) {
         return err(e);
       }
     },
-  });
+  };
+}
 
-  registerTool(ctx, {
+function startPortalTestTunnelTool({ startPortalTestTunnel }) {
+  return {
     name: "start_portal_test_tunnel",
     klass: "dev_bypass_tunnel",
     description:
@@ -132,9 +130,11 @@ export function registerSsmTools(ctx, deps) {
         return err(e);
       }
     },
-  });
+  };
+}
 
-  registerTool(ctx, {
+function stopPortalTestTunnelTool({ stopPortalTestTunnel }) {
+  return {
     name: "stop_portal_test_tunnel",
     klass: "dev_bypass_tunnel",
     description: "Stop SSM tunnel to dev portal",
@@ -152,9 +152,11 @@ export function registerSsmTools(ctx, deps) {
         return err(e);
       }
     },
-  });
+  };
+}
 
-  registerTool(ctx, {
+function runManageCommandTool({ getProfile, aws, awsText }) {
+  return {
     name: "run_manage_command",
     klass: "ssm_named",
     untrusted_inputs: ["command"],
@@ -207,5 +209,13 @@ export function registerSsmTools(ctx, deps) {
         return err(e);
       }
     },
-  });
+  };
+}
+
+export function registerSsmTools(ctx, deps) {
+  registerTool(ctx, ssmSendCommandTool(deps));
+  registerTool(ctx, ssmGetCommandOutputTool(deps));
+  registerTool(ctx, startPortalTestTunnelTool(deps));
+  registerTool(ctx, stopPortalTestTunnelTool(deps));
+  registerTool(ctx, runManageCommandTool(deps));
 }
