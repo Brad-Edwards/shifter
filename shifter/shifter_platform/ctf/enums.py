@@ -196,7 +196,9 @@ class NotificationType(StrEnum):
     ANNOUNCEMENT = "announcement"
     EVENT_START = "event_start"
     EVENT_END = "event_end"
+    EVENT_RESULTS = "event_results"
     PROVISION_FAILURE = "provision_failure"
+    RANGE_READY = "range_ready"
 
     def __str__(self) -> str:
         """Return the string value for database storage."""
@@ -234,6 +236,7 @@ class ScheduledTaskType(StrEnum):
     CLEANUP_RANGES = "cleanup_ranges"
     CLEANUP_WARNING = "cleanup_warning"
     SEND_REMINDER = "send_reminder"
+    SEND_NOTIFICATION = "send_notification"
     EVENT_START = "event_start"
     EVENT_END = "event_end"
     RELEASE_CHALLENGE = "release_challenge"

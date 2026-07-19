@@ -336,6 +336,21 @@ def _handle_cleanup_warning(
     )
 
 
+def _handle_send_notification(
+    task: CTFScheduledTask,
+    shutdown_check: ShutdownCheck | None = None,
+    heartbeat: Heartbeat | None = None,
+) -> None:
+    """Deliver a scheduled notification's drafted content (#667)."""
+    from ctf.services.notification import deliver_scheduled_notification
+
+    notification_id = (task.metadata or {}).get("notification_id")
+    if not notification_id:
+        raise ValueError(f"SEND_NOTIFICATION task {task.pk} has no notification_id")
+    sent = deliver_scheduled_notification(notification_id)
+    logger.info("SEND_NOTIFICATION %s delivered to %d recipients", notification_id, sent)
+
+
 def _handle_send_reminder(
     task: CTFScheduledTask,
     shutdown_check: ShutdownCheck | None = None,
@@ -383,5 +398,6 @@ TASK_HANDLERS: dict[str, Any] = {
     ScheduledTaskType.EVENT_START.value: _handle_event_start,
     ScheduledTaskType.EVENT_END.value: _handle_event_end,
     ScheduledTaskType.SEND_REMINDER.value: _handle_send_reminder,
+    ScheduledTaskType.SEND_NOTIFICATION.value: _handle_send_notification,
     ScheduledTaskType.RELEASE_CHALLENGE.value: _handle_release_challenge,
 }

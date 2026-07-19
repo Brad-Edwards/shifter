@@ -389,6 +389,15 @@ def release_challenge(challenge_id: UUID) -> CTFChallenge:
     challenge.visibility = ChallengeVisibility.VISIBLE.value
     challenge.save(update_fields=["visibility", "updated_at"])
     logger.info("Released challenge %s: HIDDEN -> VISIBLE", challenge_id)
+
+    # CTF-802: tell connected participants a new challenge just dropped.
+    from ctf.services.notification import publish_event_notification
+
+    publish_event_notification(
+        challenge.event,
+        "challenge_released",
+        {"challenge_id": str(challenge.pk), "challenge_name": challenge.name},
+    )
     return challenge
 
 

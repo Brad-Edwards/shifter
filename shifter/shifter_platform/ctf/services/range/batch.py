@@ -185,11 +185,20 @@ def provision_event_ranges_throttled(
         if i < count - 1 and not (shutdown_check and shutdown_check()):
             _interruptible_sleep(delay, heartbeat=heartbeat, shutdown_check=shutdown_check)
 
-    # Notify organizer of failures
+    # Notify organizer of failures, and each affected participant (CTF-801)
     if errors:
-        from ctf.services.notification import notify_organizer_provision_failure
+        from ctf.services.notification import (
+            notify_organizer_provision_failure,
+            notify_participant_provision_failure,
+        )
 
         notify_organizer_provision_failure(event_id, errors)
+        from uuid import UUID as _UUID
+
+        for error in errors:
+            participant_id = error.get("participant_id") if isinstance(error, dict) else None
+            if participant_id:
+                notify_participant_provision_failure(_UUID(str(participant_id)))
 
     return {
         "event_id": str(event_id),

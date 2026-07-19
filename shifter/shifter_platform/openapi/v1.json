@@ -4776,6 +4776,55 @@
         }
       }
     },
+    "/api/v1/ctf/me/announcements/": {
+      "get": {
+        "operationId": "ctf_me_announcements_retrieve",
+        "description": "Return sent announcements, newest first.",
+        "tags": [
+          "ctf"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ParticipantAnnouncementList"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
     "/api/v1/ctf/me/challenges/": {
       "get": {
         "operationId": "ctf_me_challenges_list",
@@ -5620,6 +5669,66 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ParticipantProfile"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
+    "/api/v1/ctf/notifications/{notification_id}/cancel-schedule/": {
+      "post": {
+        "operationId": "ctf_notifications_cancel_schedule_create",
+        "description": "Revert the notification to draft and cancel its scheduler task.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "notification_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "ctf"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationSendResult"
                 }
               }
             },
@@ -12955,6 +13064,11 @@
           "body": {
             "type": "string",
             "default": ""
+          },
+          "scheduled_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
           }
         }
       },
@@ -13020,12 +13134,19 @@
             "format": "date-time",
             "readOnly": true,
             "nullable": true
+          },
+          "scheduled_at": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true,
+            "nullable": true
           }
         },
         "required": [
           "created_at",
           "id",
           "notification_type",
+          "scheduled_at",
           "sent_at",
           "sent_count",
           "status",
@@ -13459,6 +13580,52 @@
             }
           }
         }
+      },
+      "ParticipantAnnouncement": {
+        "type": "object",
+        "description": "One sent announcement on the participant surface (CTF-803).",
+        "properties": {
+          "id": {
+            "type": "string",
+            "readOnly": true
+          },
+          "subject": {
+            "type": "string",
+            "readOnly": true
+          },
+          "body": {
+            "type": "string",
+            "readOnly": true
+          },
+          "sent_at": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true,
+            "nullable": true
+          }
+        },
+        "required": [
+          "body",
+          "id",
+          "sent_at",
+          "subject"
+        ]
+      },
+      "ParticipantAnnouncementList": {
+        "type": "object",
+        "description": "Envelope for the participant announcement feed.",
+        "properties": {
+          "announcements": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ParticipantAnnouncement"
+            },
+            "readOnly": true
+          }
+        },
+        "required": [
+          "announcements"
+        ]
       },
       "ParticipantChallengeDetail": {
         "type": "object",

@@ -49,8 +49,11 @@ def get_range_status(participant_id: UUID) -> dict[str, Any]:
 
     # Update cached status if changed
     if fresh_status != participant.range_status:
+        became_ready = fresh_status == "ready" and participant.range_status != "ready"
         participant.range_status = fresh_status
         participant.save(update_fields=["range_status", "updated_at"])
+        if became_ready:
+            _notify_range_ready(participant)
 
     vpn_profile_available = False
     if participant.user_id:
@@ -106,3 +109,22 @@ def _get_participant_with_range(participant_id: UUID) -> CTFParticipant:
         )
 
     return participant
+
+
+def _notify_range_ready(participant: CTFParticipant) -> None:
+    """Range-ready milestone (CTF-801/CTF-802): email + realtime, best-effort."""
+    try:
+        from ctf.services.notification import publish_event_notification, send_range_ready
+
+        send_range_ready(participant.pk)
+        if participant.user_id:
+            publish_event_notification(
+                participant.event,
+                "range_ready",
+                {"participant_id": str(participant.pk)},
+                recipient_ids=[participant.user_id],
+            )
+    except Exception:  # pragma: no cover - defensive; notification must never break status reads
+        import logging
+
+        logging.getLogger(__name__).exception("Range-ready notification failed for %s", participant.pk)

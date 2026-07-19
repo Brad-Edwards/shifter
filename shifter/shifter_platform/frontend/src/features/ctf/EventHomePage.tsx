@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 
 import { Flag, Server, Trophy, UserCog, Users } from "lucide-react";
 
-import { useCtfCurrentEvent } from "@/api/ctf";
+import { useCtfAnnouncements, useCtfCurrentEvent } from "@/api/ctf";
 import { ApiError } from "@/api/errors";
 import type { CtfCurrentEvent } from "@/api/types";
 import { PageHeader } from "@/components/page-header";
@@ -90,6 +90,33 @@ function EventSchedule({ event }: Readonly<{ event: CtfCurrentEvent["event"] }>)
   );
 }
 
+/** Past announcements feed for the current event (CTF-803). */
+function AnnouncementsCard() {
+  const query = useCtfAnnouncements();
+  const announcements = query.data?.announcements ?? [];
+  if (!announcements.length) return null;
+  return (
+    <Card className="mb-6">
+      <CardContent>
+        <h2 className="text-sm font-semibold">Announcements</h2>
+        <ul className="mt-2 space-y-4">
+          {announcements.map((announcement) => (
+            <li key={announcement.id}>
+              <p className="text-sm font-medium">{announcement.subject}</p>
+              {announcement.sent_at ? (
+                <p className="text-xs text-muted-foreground">{formatDateTime(announcement.sent_at)}</p>
+              ) : null}
+              <div className="mt-1 text-sm">
+                <MarkdownContent text={announcement.body} />
+              </div>
+            </li>
+          ))}
+        </ul>
+      </CardContent>
+    </Card>
+  );
+}
+
 function EventOverview({ data }: Readonly<{ data: CtfCurrentEvent }>) {
   const { event, participant } = data;
   return (
@@ -106,6 +133,8 @@ function EventOverview({ data }: Readonly<{ data: CtfCurrentEvent }>) {
       />
 
       <EventSchedule event={event} />
+
+      <AnnouncementsCard />
 
       {event.description ? (
         <Card className="mb-6">

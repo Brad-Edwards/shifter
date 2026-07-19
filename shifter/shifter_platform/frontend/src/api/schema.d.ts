@@ -947,6 +947,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/ctf/me/announcements/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Return sent announcements, newest first. */
+        get: operations["ctf_me_announcements_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/ctf/me/challenges/": {
         parameters: {
             query?: never;
@@ -1180,6 +1197,23 @@ export interface paths {
         put?: never;
         /** @description Validate, apply, and audit the self-rename; return the fresh profile. */
         post: operations["ctf_me_username_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ctf/notifications/{notification_id}/cancel-schedule/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Revert the notification to draft and cancel its scheduler task. */
+        post: operations["ctf_notifications_cancel_schedule_create"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3201,6 +3235,8 @@ export interface components {
             subject: string;
             /** @default  */
             body: string;
+            /** Format: date-time */
+            scheduled_at?: string | null;
         };
         /** @description Result returned after creating and sending an announcement (201). */
         NotificationAnnounceResult: {
@@ -3220,6 +3256,8 @@ export interface components {
             readonly created_at: string;
             /** Format: date-time */
             readonly sent_at: string | null;
+            /** Format: date-time */
+            readonly scheduled_at: string | null;
         };
         /** @description Envelope returned by the event notification list. */
         NotificationListResponse: {
@@ -3363,6 +3401,18 @@ export interface components {
              */
             previous?: string | null;
             results: components["schemas"]["Risk"][];
+        };
+        /** @description One sent announcement on the participant surface (CTF-803). */
+        ParticipantAnnouncement: {
+            readonly id: string;
+            readonly subject: string;
+            readonly body: string;
+            /** Format: date-time */
+            readonly sent_at: string | null;
+        };
+        /** @description Envelope for the participant announcement feed. */
+        ParticipantAnnouncementList: {
+            readonly announcements: components["schemas"]["ParticipantAnnouncement"][];
         };
         /**
          * @description Participant-safe challenge detail for the solve view.
@@ -7185,6 +7235,43 @@ export interface operations {
             };
         };
     };
+    ctf_me_announcements_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ParticipantAnnouncementList"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
     ctf_me_challenges_list: {
         parameters: {
             query?: never;
@@ -7760,6 +7847,45 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ParticipantProfile"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    ctf_notifications_cancel_schedule_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                notification_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationSendResult"];
                 };
             };
             /** @description Authentication failed. */

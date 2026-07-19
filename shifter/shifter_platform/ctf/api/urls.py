@@ -23,6 +23,7 @@ urlpatterns = [
     path("me/team/leave/", team_views.TeamLeaveView.as_view(), name="api_team_leave"),
     path("me/team/rename/", team_views.TeamRenameView.as_view(), name="api_team_rename"),
     path("me/team/regenerate-code/", team_views.TeamRegenerateCodeView.as_view(), name="api_team_regenerate_code"),
+    path("me/announcements/", participant_views.ParticipantAnnouncementsView.as_view(), name="api_me_announcements"),
     path("me/profile/", participant_views.ParticipantProfileView.as_view(), name="api_me_profile"),
     path("me/username/", participant_views.ParticipantUsernameSelfView.as_view(), name="api_me_username"),
     path(
@@ -232,6 +233,11 @@ urlpatterns = [
         "notifications/<uuid:notification_id>/send/",
         organizer.NotificationSendView.as_view(),
         name="api_notification_send",
+    ),
+    path(
+        "notifications/<uuid:notification_id>/cancel-schedule/",
+        organizer.NotificationCancelScheduleView.as_view(),
+        name="api_notification_cancel_schedule",
     ),
     path(
         "events/<uuid:event_id>/email-templates/<str:notification_type>/",
