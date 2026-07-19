@@ -3,6 +3,7 @@ import { useState } from "react";
 import {
   useCancelRange,
   useDestroyRange,
+  useMissionControlVpnDownload,
   usePauseRange,
   useResumeRange,
 } from "@/api/mission-control";
@@ -10,7 +11,6 @@ import type { RangePresentation, RangeStatus } from "@/api/types";
 import { rangeStatusMapping } from "@/app/state-map";
 import { PageHeader } from "@/components/page-header";
 import { StatusChip } from "@/components/status-chip";
-import { useMissionControlVpnDownload } from "@/api/mission-control";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";

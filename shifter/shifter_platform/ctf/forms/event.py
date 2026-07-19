@@ -41,6 +41,8 @@ class CTFEventForm(forms.ModelForm):
     )
 
     class Meta:
+        """Model binding and field selection."""
+
         model = CTFEvent
         fields = [
             "name",

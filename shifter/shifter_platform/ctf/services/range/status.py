@@ -124,7 +124,8 @@ def _notify_range_ready(participant: CTFParticipant) -> None:
                 {"participant_id": str(participant.pk)},
                 recipient_ids=[participant.user_id],
             )
-    except Exception:  # pragma: no cover - defensive; notification must never break status reads
+    # pragma: no cover — defensive; notification must never break status reads
+    except Exception:
         import logging
 
         logging.getLogger(__name__).exception("Range-ready notification failed for %s", participant.pk)

@@ -150,16 +150,8 @@ def import_challenges(event_id: UUID, payload: dict[str, Any], *, actor_id: int)
     return {"created": created, "errors": errors}
 
 
-def _import_entry(
-    event: CTFEvent,
-    entry: Any,
-    index: int,
-    existing_names: set[str],
-    *,
-    is_ctfd: bool,
-    actor_id: int,
-) -> tuple[str, dict[str, Any] | None]:
-    """Import one entry; return ``(name, None)`` on success or ``(name, error)``."""
+def _entry_precheck(entry: object, index: int, existing_names: set[str]) -> tuple[str, dict[str, Any] | None]:
+    """Validate shape/name/duplication before attempting a create."""
     if not isinstance(entry, dict):
         return "", {"index": index, "error": "entry must be an object"}
     name = str(entry.get("name") or "").strip()
@@ -167,18 +159,33 @@ def _import_entry(
         return "", {"index": index, "error": "name is required"}
     if name in existing_names:
         return name, {"index": index, "name": name, "error": "already exists in this event"}
-    try:
-        with transaction.atomic():
-            if is_ctfd:
-                _create_from_ctfd(event, entry, actor_id=actor_id)
-            else:
-                _create_from_shifter(event, entry)
-    except (CTFValidationError, ValueError) as exc:
-        return name, {"index": index, "name": name, "error": str(exc)}
-    except Exception:
-        logger.exception("Challenge import entry %d failed", index)
-        return name, {"index": index, "name": name, "error": "Could not import challenge."}
     return name, None
+
+
+def _import_entry(
+    event: CTFEvent,
+    entry: object,
+    index: int,
+    existing_names: set[str],
+    *,
+    is_ctfd: bool,
+    actor_id: int,
+) -> tuple[str, dict[str, Any] | None]:
+    """Import one entry; return ``(name, None)`` on success or ``(name, error)``."""
+    name, error = _entry_precheck(entry, index, existing_names)
+    if error is None and isinstance(entry, dict):
+        try:
+            with transaction.atomic():
+                if is_ctfd:
+                    _create_from_ctfd(event, entry, actor_id=actor_id)
+                else:
+                    _create_from_shifter(event, entry)
+        except (CTFValidationError, ValueError) as exc:
+            error = {"index": index, "name": name, "error": str(exc)}
+        except Exception:
+            logger.exception("Challenge import entry %d failed", index)
+            error = {"index": index, "name": name, "error": "Could not import challenge."}
+    return name, error
 
 
 def _create_from_ctfd(event: CTFEvent, entry: dict[str, Any], *, actor_id: int) -> CTFChallenge:
