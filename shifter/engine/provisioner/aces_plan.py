@@ -31,8 +31,11 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable, Mapping
-from typing import Any
+from dataclasses import replace
+from typing import Any, cast
 
+import aces_plan_domain
+import aces_plan_resources
 from aces_acl import build_node_acls
 from aces_composition import (
     AcesPlanAccount,
@@ -42,9 +45,18 @@ from aces_composition import (
     build_content,
     build_feature,
 )
+from aces_plan_resources import (
+    ACCOUNT_RESOURCE_TYPE,
+    CONTENT_RESOURCE_TYPE,
+    FEATURE_RESOURCE_TYPE,
+    NETWORK_RESOURCE_TYPE,
+    NODE_RESOURCE_TYPE,
+    SUPPORTED_RESOURCE_TYPES,
+)
 from aces_plan_types import (
     AcesPlan,
     AcesPlanAcl,
+    AcesPlanDomain,
     AcesPlanError,
     AcesPlanImage,
     AcesPlanNetwork,
@@ -52,6 +64,8 @@ from aces_plan_types import (
     AcesPlanServicePort,
 )
 from aces_service import build_node_services
+
+SUPPORTED_ACCOUNT_AUTH_METHODS = aces_plan_domain.SUPPORTED_ACCOUNT_AUTH_METHODS
 
 __all__ = [
     "ACES_PROVISIONING_PLAN_CONTRACT_VERSION",
@@ -64,6 +78,7 @@ __all__ = [
     "AcesPlanAccount",
     "AcesPlanAcl",
     "AcesPlanContent",
+    "AcesPlanDomain",
     "AcesPlanError",
     "AcesPlanFeature",
     "AcesPlanImage",
@@ -75,17 +90,6 @@ __all__ = [
 
 #: Must equal ``shared.aces.runtime_target.ACES_PROVISIONING_PLAN_KIND``.
 ACES_PROVISIONING_PLAN_KIND = "aces_provisioning_plan"
-NODE_RESOURCE_TYPE = "node"
-NETWORK_RESOURCE_TYPE = "network"
-CONTENT_RESOURCE_TYPE = "content-placement"
-FEATURE_RESOURCE_TYPE = "feature-binding"
-ACCOUNT_RESOURCE_TYPE = "account-placement"
-
-#: Resource types this consumer realizes; any other type in the plan fails closed
-#: (ADR-032-R7). Mirrors ``shared.aces.runtime_target.SUPPORTED_RESOURCE_TYPES``.
-SUPPORTED_RESOURCE_TYPES: frozenset[str] = frozenset(
-    {NODE_RESOURCE_TYPE, NETWORK_RESOURCE_TYPE, CONTENT_RESOURCE_TYPE, FEATURE_RESOURCE_TYPE, ACCOUNT_RESOURCE_TYPE}
-)
 
 #: Serialized-plan transport contract version this consumer accepts (ADR-032-R7).
 #: The provisioner image ships without ``shared`` and must not import ``aces_*``
@@ -106,12 +110,6 @@ SUPPORTED_CONTRACT_VERSIONS: frozenset[str] = frozenset({ACES_PROVISIONING_PLAN_
 #: conformance gate.
 MINIMUM_ACES_SDL_VERSION = "0.19.1"
 MAXIMUM_ACES_SDL_VERSION_EXCLUSIVE = "0.24.0"
-
-#: Duplicated intentionally across the separate deployable boundary and pinned
-#: to ``shared.aces.composition_envelope`` by a producer/consumer parity test.
-SUPPORTED_ACCOUNT_AUTH_METHODS: frozenset[str] = frozenset({"password", "publickey"})
-SUPPORTED_PASSWORD_STRENGTHS: frozenset[str] = frozenset({"weak", "medium", "strong", "none"})
-_NO_CREDENTIAL_STRENGTH = "none"
 
 _MIB = 1024 * 1024
 
@@ -293,6 +291,7 @@ def _build_composition[CompositionValue: (AcesPlanContent, AcesPlanAccount, Aces
     resource_type: str,
     pairs: list[tuple[str, Mapping[str, Any]]],
     node_lookup: dict[str, str],
+    ordering_dependencies: Mapping[str, tuple[str, ...]],
 ) -> tuple[CompositionValue, ...]:
     """Build every composition value object of one kind, failing closed (ADR-032-R7).
 
@@ -301,33 +300,46 @@ def _build_composition[CompositionValue: (AcesPlanContent, AcesPlanAccount, Aces
     node is a dangling composition reference. Both abort before an ``AcesPlan`` is
     returned, so credential/content bootstrap can never bind to an absent node.
     """
-    built: list[CompositionValue] = []
-    for address, payload in pairs:
-        try:
-            value = builder(payload)
-        except ValueError as exc:
-            raise AcesPlanError(str(exc)) from None
-        if value is None:
-            raise AcesPlanError(f"malformed {resource_type} resource at {address}")
-        if value.target_address not in node_lookup:
-            raise AcesPlanError(f"{resource_type} resource at {address} targets unknown node {value.target_address!r}")
-        built.append(value)
-    return tuple(built)
+    return tuple(
+        _build_composition_value(
+            builder,
+            resource_type,
+            address,
+            payload,
+            node_lookup,
+            ordering_dependencies,
+        )
+        for address, payload in pairs
+    )
 
 
-def _validate_account_credentials(account: AcesPlanAccount) -> None:
-    """Repeat account credential policy at the separate provisioner boundary."""
-    if account.auth_method not in SUPPORTED_ACCOUNT_AUTH_METHODS:
-        raise AcesPlanError("unsupported account auth_method")
-    if account.auth_method == "password" and (
-        account.password_strength not in SUPPORTED_PASSWORD_STRENGTHS
-        or (account.password_strength == _NO_CREDENTIAL_STRENGTH and not account.disabled)
-    ):
-        raise AcesPlanError("unsupported password_strength for account credential")
-    if account.mail is not None:
-        raise AcesPlanError("account mail is not realized consistently across supported guest operating systems")
-    if account.spn is not None:
-        raise AcesPlanError("account spn is not realized by this provisioner")
+def _build_composition_value[CompositionValue: (AcesPlanContent, AcesPlanAccount, AcesPlanFeature)](
+    builder: Callable[[Mapping[str, Any]], CompositionValue | None],
+    resource_type: str,
+    address: str,
+    payload: Mapping[str, Any],
+    node_lookup: Mapping[str, str],
+    ordering_dependencies: Mapping[str, tuple[str, ...]],
+) -> CompositionValue:
+    """Build and validate one composition resource."""
+    try:
+        value = builder(payload)
+    except ValueError as exc:
+        raise AcesPlanError(str(exc)) from None
+    if value is None:
+        raise AcesPlanError(f"malformed {resource_type} resource at {address}")
+    if isinstance(value, AcesPlanAccount):
+        value = cast(
+            CompositionValue,
+            replace(
+                cast(AcesPlanAccount, value),
+                address=address,
+                ordering_dependencies=ordering_dependencies.get(address, ()),
+            ),
+        )
+    if value.target_address not in node_lookup:
+        raise AcesPlanError(f"{resource_type} resource at {address} targets unknown node {value.target_address!r}")
+    return value
 
 
 def parse_plan(range_config: dict[str, Any] | None) -> AcesPlan:
@@ -349,50 +361,38 @@ def parse_plan(range_config: dict[str, Any] | None) -> AcesPlan:
     aces_sdl_version = _validate_versions(envelope)
 
     resources = _require_mapping(envelope.get("resources"), where="resources")
-    network_pairs: list[tuple[str, Mapping[str, Any]]] = []
-    node_pairs: list[tuple[str, Mapping[str, Any]]] = []
-    composition: dict[str, list[tuple[str, Mapping[str, Any]]]] = {
-        CONTENT_RESOURCE_TYPE: [],
-        FEATURE_RESOURCE_TYPE: [],
-        ACCOUNT_RESOURCE_TYPE: [],
-    }
-    seen_addresses: set[str] = set()
-    for entry in resources.values():
-        entry_map = _require_mapping(entry, where="resource")
-        address = _string(entry_map.get("address"), where="resource.address")
-        if address in seen_addresses:
-            raise AcesPlanError(f"duplicate resource address {address!r}")
-        seen_addresses.add(address)
-        payload = _require_mapping(entry_map.get("payload"), where="resource.payload")
-        # Shifter currently advertises no supported identity-domain profile. This
-        # plain-data backstop protects persisted/replayed plans at the separate
-        # deployable boundary without copying ACES's topology model or values.
-        if payload.get("domain_topology") is not None:
-            raise AcesPlanError("domain topology is not supported by this provisioner")
-        resource_type = entry_map.get("resource_type")
-        # Type-check the JSON discriminator before any membership test so an
-        # unhashable/non-string value fails closed as AcesPlanError, not TypeError.
-        if not isinstance(resource_type, str) or resource_type not in SUPPORTED_RESOURCE_TYPES:
-            raise AcesPlanError(
-                f"unsupported resource_type {resource_type!r} at {address} "
-                f"(supported: {sorted(SUPPORTED_RESOURCE_TYPES)})"
-            )
-        if resource_type == NETWORK_RESOURCE_TYPE:
-            network_pairs.append((address, payload))
-        elif resource_type == NODE_RESOURCE_TYPE:
-            node_pairs.append((address, payload))
-        else:
-            composition[resource_type].append((address, payload))
-
-    network_lookup = _identity_lookup(network_pairs, NETWORK_RESOURCE_TYPE)
-    node_lookup = _identity_lookup(node_pairs, NODE_RESOURCE_TYPE)
-    networks = tuple(_network(address, payload) for address, payload in sorted(network_pairs))
-    nodes = tuple(_node(address, payload, network_lookup) for address, payload in sorted(node_pairs))
-    content = _build_composition(build_content, CONTENT_RESOURCE_TYPE, composition[CONTENT_RESOURCE_TYPE], node_lookup)
-    accounts = _build_composition(build_account, ACCOUNT_RESOURCE_TYPE, composition[ACCOUNT_RESOURCE_TYPE], node_lookup)
+    collected = aces_plan_resources.collect_resources(resources)
+    network_lookup = _identity_lookup(collected.network_pairs, NETWORK_RESOURCE_TYPE)
+    node_lookup = _identity_lookup(collected.node_pairs, NODE_RESOURCE_TYPE)
+    networks = tuple(_network(address, payload) for address, payload in sorted(collected.network_pairs))
+    nodes = tuple(
+        _node(address, payload, network_lookup, collected.ordering_dependencies.get(address, ()))
+        for address, payload in sorted(collected.node_pairs)
+    )
+    content = _build_composition(
+        build_content,
+        CONTENT_RESOURCE_TYPE,
+        collected.composition[CONTENT_RESOURCE_TYPE],
+        node_lookup,
+        collected.ordering_dependencies,
+    )
+    accounts = _build_composition(
+        build_account,
+        ACCOUNT_RESOURCE_TYPE,
+        collected.composition[ACCOUNT_RESOURCE_TYPE],
+        node_lookup,
+        collected.ordering_dependencies,
+    )
     for account in accounts:
-        _validate_account_credentials(account)
-    features = _build_composition(build_feature, FEATURE_RESOURCE_TYPE, composition[FEATURE_RESOURCE_TYPE], node_lookup)
+        aces_plan_domain.validate_account_credentials(account)
+    features = _build_composition(
+        build_feature,
+        FEATURE_RESOURCE_TYPE,
+        collected.composition[FEATURE_RESOURCE_TYPE],
+        node_lookup,
+        collected.ordering_dependencies,
+    )
+    domains = aces_plan_domain.build_domains(nodes, accounts)
 
     return AcesPlan(
         aces_sdl_version=aces_sdl_version,
@@ -401,39 +401,74 @@ def parse_plan(range_config: dict[str, Any] | None) -> AcesPlan:
         content=content,
         accounts=accounts,
         features=features,
+        domains=domains,
     )
 
 
-def _node(address: str, payload: Mapping[str, Any], network_lookup: dict[str, str]) -> AcesPlanNode:
+def _node(
+    address: str,
+    payload: Mapping[str, Any],
+    network_lookup: dict[str, str],
+    ordering_dependencies: tuple[str, ...],
+) -> AcesPlanNode:
     """Build an AcesPlanNode, resolving network membership and ACL endpoints.
 
     Fails closed (ADR-032-R7) on a network-membership ref or an ACL ``from_net`` /
     ``to_net`` endpoint that no declared network resolves, rather than silently
     dropping it (which would provision a wrong topology or an unintended ACL).
     """
+    resolved = _resolved_networks(address, payload, network_lookup)
+    acls = _validated_node_acls(address, payload, network_lookup)
+    topology = aces_plan_domain.topology(payload)
+    return AcesPlanNode(
+        address=address,
+        name=_resource_name(address, payload),
+        os_family=_os_family(payload),
+        count=_node_count(payload),
+        network_addresses=resolved,
+        ram_mib=_memory_mib(payload),
+        vcpus=_vcpus(payload),
+        image=_image(payload),
+        acls=acls,
+        services=build_node_services(_node_spec(payload).get("services")),
+        ordering_dependencies=ordering_dependencies,
+        domain_id=aces_plan_domain.topology_text(topology, "domain_id") or None,
+        domain_role=aces_plan_domain.topology_text(topology, "role") or None,
+        controller_addresses=aces_plan_domain.topology_addresses(topology, "controller_addresses") if topology else (),
+        domain_profile=aces_plan_domain.topology_text(topology, "profile") or None,
+        domain_dns_name=aces_plan_domain.topology_text(topology, "dns_name") or None,
+        domain_netbios_name=aces_plan_domain.topology_text(topology, "netbios_name") or None,
+        authority_account_address=aces_plan_domain.topology_text(topology, "authority_account_address") or None,
+    )
+
+
+def _resolved_networks(
+    address: str,
+    payload: Mapping[str, Any],
+    network_lookup: Mapping[str, str],
+) -> tuple[str, ...]:
+    """Resolve a node's network aliases, failing closed on dangling refs."""
     resolved: list[str] = []
     for ref in _network_refs(payload):
         target = network_lookup.get(ref)
         if target is None:
             raise AcesPlanError(f"node {address} references unknown network {ref!r}")
         resolved.append(target)
+    return tuple(dict.fromkeys(resolved))
+
+
+def _validated_node_acls(
+    address: str,
+    payload: Mapping[str, Any],
+    network_lookup: Mapping[str, str],
+) -> tuple[AcesPlanAcl, ...]:
+    """Build node ACLs, failing closed on dangling network endpoints."""
     acls = build_node_acls(_infrastructure_spec(payload).get("acls"))
     for acl in acls:
         for endpoint in (acl.from_net, acl.to_net):
             if endpoint is not None and endpoint not in network_lookup:
                 raise AcesPlanError(f"node {address} ACL {acl.name!r} references unknown network {endpoint!r}")
-    return AcesPlanNode(
-        address=address,
-        name=_resource_name(address, payload),
-        os_family=_os_family(payload),
-        count=_node_count(payload),
-        network_addresses=tuple(dict.fromkeys(resolved)),
-        ram_mib=_memory_mib(payload),
-        vcpus=_vcpus(payload),
-        image=_image(payload),
-        acls=acls,
-        services=build_node_services(_node_spec(payload).get("services")),
-    )
+    return acls
 
 
 def _require_mapping(value: object, *, where: str) -> Mapping[str, Any]:

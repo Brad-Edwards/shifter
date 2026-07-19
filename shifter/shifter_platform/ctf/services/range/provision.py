@@ -167,6 +167,7 @@ def provision_participant_range(participant_id: UUID) -> dict[str, Any]:
                 scenario=event.scenario_id,
                 agents_by_os=agents_by_os,
                 ngfw_enabled=ngfw_enabled,
+                remote_access_teardown_at=event.get_cleanup_time(),
             )
         except Exception as e:
             logger.exception("Range provisioning failed for participant %s", safe_log_value(participant_id))

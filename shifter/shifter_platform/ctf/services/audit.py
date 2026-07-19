@@ -123,3 +123,31 @@ def audit_spare_provisioning(
             context="ctf_spare_provisioning",
         )
     )
+
+
+def audit_vpn_profile_download(
+    *,
+    actor_id: int,
+    participant_id: UUID,
+    range_instance_id: int,
+    generation: UUID,
+    profile_version: str,
+) -> None:
+    """Record profile delivery without credential, topology, or provider data."""
+    audit_log(
+        AuditEvent(
+            entity_type=AuditEntityType.CREDENTIAL,
+            entity_id=range_instance_id,
+            action=AuditAction.DOWNLOAD,
+            actor_type=AuditActorType.USER,
+            actor_id=actor_id,
+            new_state={
+                "participant_id": str(participant_id),
+                "range_generation": str(generation),
+                "channel": "openvpn",
+                "profile_version": profile_version,
+                "outcome": "delivered",
+            },
+            context="ctf_vpn_profile_download",
+        )
+    )

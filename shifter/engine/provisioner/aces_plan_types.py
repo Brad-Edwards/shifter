@@ -17,6 +17,7 @@ from aces_composition import AcesPlanAccount, AcesPlanContent, AcesPlanFeature
 __all__ = [
     "AcesPlan",
     "AcesPlanAcl",
+    "AcesPlanDomain",
     "AcesPlanError",
     "AcesPlanImage",
     "AcesPlanNetwork",
@@ -86,6 +87,27 @@ class AcesPlanNode:
     image: AcesPlanImage | None = None
     acls: tuple[AcesPlanAcl, ...] = ()
     services: tuple[AcesPlanServicePort, ...] = ()
+    ordering_dependencies: tuple[str, ...] = ()
+    domain_id: str | None = None
+    domain_role: str | None = None
+    controller_addresses: tuple[str, ...] = ()
+    domain_profile: str | None = None
+    domain_dns_name: str | None = None
+    domain_netbios_name: str | None = None
+    authority_account_address: str | None = None
+
+
+@dataclass(frozen=True)
+class AcesPlanDomain:
+    """Process-local projection of one public compiled identity-domain binding."""
+
+    domain_id: str
+    profile: str
+    dns_name: str
+    netbios_name: str
+    authority_account_address: str
+    controller_addresses: tuple[str, ...]
+    member_addresses: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -109,3 +131,4 @@ class AcesPlan:
     content: tuple[AcesPlanContent, ...] = ()
     accounts: tuple[AcesPlanAccount, ...] = ()
     features: tuple[AcesPlanFeature, ...] = ()
+    domains: tuple[AcesPlanDomain, ...] = ()

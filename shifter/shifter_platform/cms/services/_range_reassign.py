@@ -9,6 +9,7 @@ from django.db import IntegrityError, transaction
 
 from cms.exceptions import CMSError
 from cms.models import RangeInstance
+from engine.services import RangeOwnershipTransferBlocked
 
 from ._common import _validate_caller_user
 from ._range_create import _is_active_range_conflict
@@ -25,6 +26,18 @@ def _engine_reassign_range_owner_call(request_id: Any, new_user: User) -> bool: 
 
     result: bool = _cs.engine_reassign_range_owner(request_id, new_user)
     return result
+
+
+def range_owner_reassignment_available(range_instance_pk: int) -> bool:
+    """Return whether a spare can be claimed without stranding a live VPN client."""
+    if not isinstance(range_instance_pk, int) or range_instance_pk < 0:
+        return False
+    instance = RangeInstance.objects.select_related("request").filter(pk=range_instance_pk).first()
+    if instance is None or instance.request is None:
+        return False
+    from cms import services as _cs
+
+    return _cs.engine_range_owner_reassignment_available(instance.request.request_id)
 
 
 def reassign_range_owner(range_instance_pk: int, new_user: User) -> None:
@@ -104,7 +117,12 @@ def reassign_range_owner(range_instance_pk: int, new_user: User) -> None:
             instance.request.user = new_user
             instance.request.save(update_fields=["user"])
 
-            accepted = _engine_reassign_range_owner_call(request_id, new_user)
+            try:
+                accepted = _engine_reassign_range_owner_call(request_id, new_user)
+            except RangeOwnershipTransferBlocked as exc:
+                raise CMSError(
+                    f"Cannot reassign range {range_instance_pk}: destroy its participant VPN generation first."
+                ) from exc
             if not accepted:
                 logger.warning(
                     "reassign_range_owner: no engine range for request_id=%s (range_instance_pk=%s)",

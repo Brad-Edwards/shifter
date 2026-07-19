@@ -15,14 +15,19 @@ from gcp_range_cell_resources import (
     firewall_resource,
     instance_resource,
     network_resource,
+    openvpn_gateway_address_resource,
+    openvpn_gateway_instance_resource,
     subnetwork_resource,
 )
 
 
 def _plan() -> dict:
     return {
+        "project_id": "test-project",
         "region": "us-central1",
         "zone": "us-central1-b",
+        "range_id": 42,
+        "request_uuid": "87a99f87-5af2-46e6-a459-0e5eb1ab1bf2",
         "private_google_access": True,
         "labels": {"range": "shifter-range-42", "managed-by": "shifter"},
         "network": {"name": "shifter-range-42", "self_link": "projects/p/global/networks/shifter-range-42"},
@@ -127,6 +132,40 @@ class TestAddressResource:
             "address": "10.50.2.4",
             "subnetwork": "projects/p/regions/us-central1/subnetworks/sn",
         }
+
+
+class TestOpenVpnGatewayResource:
+    def test_gateway_has_public_udp_edge_and_target_only_forwarding_bootstrap(self):
+        gateway = {
+            "resource_name": "shifter-r-42-vpn-gateway",
+            "address_name": "shifter-r-42-vpn-gateway-ip",
+            "private_ip": "10.50.2.5",
+            "subnetwork_link": "projects/p/regions/us-central1/subnetworks/sn",
+            "target_ip": "10.50.2.4",
+            "tag": "shifter-r-42-vpn-gateway",
+            "service_account_email": "sh-vpn-generation@test-project.iam.gserviceaccount.com",
+            "profile": GCERangeImageProfile(
+                source_image="projects/debian-cloud/global/images/family/debian-12",
+                machine_type="e2-standard-2",
+                disk_size_gb=50,
+            ),
+        }
+        config = _config(service_account_email="range-host@test-project.iam.gserviceaccount.com")
+
+        address = openvpn_gateway_address_resource(gateway)
+        body = openvpn_gateway_instance_resource(_plan(), gateway, config)
+
+        assert address["address"] == "10.50.2.5"
+        assert body["can_ip_forward"] is True
+        assert body["network_interfaces"][0]["access_configs"] == [{"name": "External NAT", "type_": "ONE_TO_ONE_NAT"}]
+        assert body["service_accounts"][0]["email"] == "sh-vpn-generation@test-project.iam.gserviceaccount.com"
+        startup = body["metadata"]["items"][0]["value"]
+        assert "shifter-range-42-vpn-87a99f875af246e6a4590e5eb1ab1bf2-server" in startup
+        assert '"10.50.2.4/32"' in startup
+        assert "shifter-openvpn-health.service" in startup
+        assert '("0.0.0.0", 1195)' in startup
+        assert 'b"ready\\n"' in startup
+        assert "ca_private_key" not in startup
 
 
 def _metadata_map(body: dict) -> dict[str, str]:

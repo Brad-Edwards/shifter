@@ -18,8 +18,10 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from aces_account_credentials import AcesAccountCredentialOps, install_instance_account_credentials
+from aces_active_directory import AcesDirectorySecretOps
 from aces_gcp_apply import (
     AcesGceApplyOptions,
+    AcesGceDestroyOptions,
     AcesGceSecretOps,
     apply_aces_range_cell,
     destroy_aces_range_cell,
@@ -30,6 +32,7 @@ from aces_plan import (
     AcesPlan,
     AcesPlanAccount,
     AcesPlanContent,
+    AcesPlanDomain,
     AcesPlanImage,
     AcesPlanNetwork,
     AcesPlanNode,
@@ -143,6 +146,90 @@ def _account_secret_ops() -> tuple[AcesAccountCredentialOps, SimpleNamespace]:
     )
 
 
+def _directory_secret_ops() -> tuple[AcesDirectorySecretOps, SimpleNamespace]:
+    mocks = SimpleNamespace(
+        ensure_dsrm=MagicMock(return_value=("secret/dsrm", "DSRM")),
+        ensure_authority=MagicMock(return_value=("secret/authority", "AUTHORITY")),
+        ensure_account=MagicMock(return_value=("secret/account", "ACCOUNT")),
+        delete_dsrm=MagicMock(),
+        delete_authority=MagicMock(),
+        delete_account=MagicMock(),
+    )
+    return (
+        AcesDirectorySecretOps(
+            ensure_dsrm=mocks.ensure_dsrm,
+            ensure_authority=mocks.ensure_authority,
+            ensure_account=mocks.ensure_account,
+            delete_dsrm=mocks.delete_dsrm,
+            delete_authority=mocks.delete_authority,
+            delete_account=mocks.delete_account,
+        ),
+        mocks,
+    )
+
+
+def _plan_with_domain(*, include_local: bool = False) -> AcesPlan:
+    controller = AcesPlanNode(
+        address="node.dc",
+        name="dc",
+        os_family="windows",
+        count=1,
+        network_addresses=("net.lan",),
+        domain_id="corp",
+        domain_role="controller",
+        controller_addresses=("node.dc",),
+    )
+    member = AcesPlanNode(
+        address="node.member",
+        name="member",
+        os_family="windows",
+        count=1,
+        network_addresses=("net.lan",),
+        ordering_dependencies=("node.dc",),
+        domain_id="corp",
+        domain_role="member",
+        controller_addresses=("node.dc",),
+    )
+    authority = AcesPlanAccount(
+        address="account.admin",
+        username="Administrator",
+        target_address="node.dc",
+        password_strength="strong",
+        domain_id="corp",
+    )
+    service = AcesPlanAccount(
+        address="account.service",
+        username="svc-web",
+        target_address="node.member",
+        password_strength="strong",
+        spn="HTTP/member.corp.example",
+        domain_ref="corp",
+        domain_id="corp",
+    )
+    local_operator = AcesPlanAccount(
+        address="account.local-operator",
+        username="local-operator",
+        target_address="node.member",
+        password_strength="strong",
+    )
+    domain = AcesPlanDomain(
+        domain_id="corp",
+        profile="active_directory",
+        dns_name="corp.example",
+        netbios_name="CORP",
+        authority_account_address=authority.address,
+        controller_addresses=(controller.address,),
+        member_addresses=(member.address,),
+    )
+    return AcesPlan(
+        aces_sdl_version="0.23.0",
+        nodes=(controller, member),
+        networks=(AcesPlanNetwork(address="net.lan", name="lan", cidr="10.9.0.0/24"),),
+        accounts=(authority, service, *((local_operator,) if include_local else ())),
+        domains=(domain,),
+    )
+
+
 class TestApply:
     def test_provisions_network_subnet_firewall_and_instances(self):
         clients = _clients()
@@ -199,6 +286,71 @@ class TestApply:
         # nothing exists yet to GCE-delete).
         assert secret_mocks.delete_ssh.call_count == 2
         assert clients.instances.get.called
+
+    def test_domain_realization_gates_success_and_domain_accounts_bypass_local_credentials(self):
+        clients = _clients()
+        secret_ops, _ = _secret_ops()
+        account_secret_ops, _ = _account_secret_ops()
+        directory_secret_ops, _ = _directory_secret_ops()
+        credential_installer = MagicMock()
+        directory_realizer = MagicMock()
+
+        output = apply_aces_range_cell(
+            "req-1",
+            7,
+            _plan_with_domain(include_local=True),
+            _resolver,
+            _apply_options(
+                _config(),
+                clients,
+                secret_ops,
+                account_secret_ops=account_secret_ops,
+                credential_installer=credential_installer,
+                directory_secret_ops=directory_secret_ops,
+                directory_realizer=directory_realizer,
+            ),
+        )
+
+        credential_installer.assert_called_once()
+        assert tuple(account.username for account in credential_installer.call_args.kwargs["accounts"]) == (
+            "local-operator",
+        )
+        directory_realizer.assert_called_once()
+        assert len(directory_realizer.call_args.kwargs["instance_outputs"]) == 2
+        assert len(output["instances"]) == 2
+        startup_scripts = [
+            next(
+                item["value"]
+                for item in call.kwargs["instance_resource"]["metadata"]["items"]
+                if item["key"] == "windows-startup-script-ps1"
+            )
+            for call in clients.instances.insert.call_args_list
+        ]
+        assert sum("New-LocalUser" in script for script in startup_scripts) == 1
+        assert any("local-operator" in script for script in startup_scripts)
+        assert all("New-LocalUser -Name 'Administrator'" not in script for script in startup_scripts)
+        assert all("svc-web" not in script for script in startup_scripts)
+
+    def test_directory_failure_runs_reconstructive_secret_cleanup_and_never_returns_success(self):
+        clients = _clients()
+        secret_ops, _ = _secret_ops()
+        directory_secret_ops, directory_mocks = _directory_secret_ops()
+        directory_realizer = MagicMock(side_effect=RuntimeError("directory failed"))
+        plan = _plan_with_domain()
+        options = _apply_options(
+            _config(),
+            clients,
+            secret_ops,
+            directory_secret_ops=directory_secret_ops,
+            directory_realizer=directory_realizer,
+        )
+
+        with pytest.raises(RuntimeError, match="directory failed"):
+            apply_aces_range_cell("req-1", 7, plan, _resolver, options)
+
+        directory_mocks.delete_account.assert_called_once_with(7, "corp", "account.service")
+        directory_mocks.delete_authority.assert_called_once_with(7, "corp")
+        directory_mocks.delete_dsrm.assert_called_once_with(7, "corp")
 
 
 def _plan_with_content(*content: AcesPlanContent) -> AcesPlan:
@@ -528,7 +680,7 @@ class TestDestroy:
             _config(),
             clients,
             ssh_ops,
-            account_secret_ops=account_ops,
+            AcesGceDestroyOptions(account_secret_ops=account_ops),
         )
 
         assert account_mocks.delete.call_count == 2

@@ -127,6 +127,7 @@ def _provision_one_spare(event: CTFEvent) -> CTFSpareRange:
             scenario=event.scenario_id,
             agents_by_os=agents_by_os,
             ngfw_enabled=ngfw_enabled,
+            remote_access_teardown_at=event.get_cleanup_time(),
         )
     except Exception:
         logger.exception(
