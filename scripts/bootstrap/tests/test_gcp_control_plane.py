@@ -110,7 +110,9 @@ def _sample_gcp_control_plane_outputs(project_id: str = "prod-rwctxzl6shxk") -> 
                 "portal": f"shiftergcpdev-portal@{project_id}.iam.gserviceaccount.com",
                 "workers": f"shiftergcpdev-workers@{project_id}.iam.gserviceaccount.com",
                 "ctf-scheduler": f"shiftergcpdev-ctf-scheduler@{project_id}.iam.gserviceaccount.com",
-                "provisioner-launcher": (f"shiftergcpdev-provisioner-launcher@{project_id}.iam.gserviceaccount.com"),
+                # account_id is bounded to <=30 chars, so provisioner-launcher's SA
+                # localpart is shortened to prov-launcher (#1719).
+                "provisioner-launcher": (f"shiftergcpdev-prov-launcher@{project_id}.iam.gserviceaccount.com"),
                 "provisioner": f"shiftergcpdev-provisioner@{project_id}.iam.gserviceaccount.com",
             }
         },
