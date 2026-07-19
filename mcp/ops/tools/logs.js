@@ -1,4 +1,7 @@
 // CloudWatch Logs tools for the shifter-ops MCP server.
+//
+// Each tool descriptor is built by its own module-level factory so the
+// registrar stays a thin wiring function.
 
 import { z } from "zod";
 import { registerTool } from "../policy.js";
@@ -11,10 +14,8 @@ import {
   DESC_COMPONENT,
 } from "../schemas.js";
 
-export function registerLogsTools(ctx, deps) {
-  const { getProfile, aws } = deps;
-
-  registerTool(ctx, {
+function describeLogStreamsTool({ getProfile, aws }) {
+  return {
     name: "describe_log_streams",
     klass: "observability",
     description:
@@ -58,9 +59,11 @@ export function registerLogsTools(ctx, deps) {
         return err(e);
       }
     },
-  });
+  };
+}
 
-  registerTool(ctx, {
+function getLogEventsTool({ getProfile, aws }) {
+  return {
     name: "get_log_events",
     klass: "observability",
     untrusted_source: "logs",
@@ -99,9 +102,11 @@ export function registerLogsTools(ctx, deps) {
         return err(e);
       }
     },
-  });
+  };
+}
 
-  registerTool(ctx, {
+function filterLogEventsTool({ getProfile, aws }) {
+  return {
     name: "filter_log_events",
     klass: "observability",
     untrusted_source: "logs",
@@ -146,9 +151,11 @@ export function registerLogsTools(ctx, deps) {
         return err(e);
       }
     },
-  });
+  };
+}
 
-  registerTool(ctx, {
+function tailLogsTool({ getProfile, aws }) {
+  return {
     name: "tail_logs",
     klass: "observability",
     untrusted_source: "logs",
@@ -204,5 +211,12 @@ export function registerLogsTools(ctx, deps) {
         return err(e);
       }
     },
-  });
+  };
+}
+
+export function registerLogsTools(ctx, deps) {
+  registerTool(ctx, describeLogStreamsTool(deps));
+  registerTool(ctx, getLogEventsTool(deps));
+  registerTool(ctx, filterLogEventsTool(deps));
+  registerTool(ctx, tailLogsTool(deps));
 }
