@@ -19,10 +19,9 @@ pytestmark = pytest.mark.django_db
 def outbox(monkeypatch):
     """Capture every rendered email send as (recipient, subject)."""
     sent: list[tuple[str, str]] = []
-    monkeypatch.setattr(
-        "ctf.services.notification.delivery._send_email",
-        lambda **kwargs: sent.append((kwargs["recipient"], kwargs["subject"])),
-    )
+    capture = lambda **kwargs: sent.append((kwargs["recipient"], kwargs["subject"]))  # noqa: E731
+    monkeypatch.setattr("ctf.services.notification.delivery._send_email", capture)
+    monkeypatch.setattr("ctf.services.notification.delivery_milestones._send_email", capture)
     return sent
 
 

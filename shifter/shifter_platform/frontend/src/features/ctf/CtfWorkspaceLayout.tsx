@@ -99,21 +99,33 @@ export function CtfWorkspaceLayout() {
 
   useEventNotifications(data?.event.id, push);
 
+  const dismiss = useCallback((id: number) => {
+    setToasts((current) => current.filter((t) => t.id !== id));
+  }, []);
+
   return (
     <ToastProvider>
       <Outlet />
       {toasts.map((toast) => (
-        <Toast
-          key={toast.id}
-          onOpenChange={(open) => {
-            if (!open) setToasts((current) => current.filter((t) => t.id !== toast.id));
-          }}
-        >
-          <ToastTitle>{toast.title}</ToastTitle>
-          <ToastDescription>{toast.description}</ToastDescription>
-        </Toast>
+        <LiveToast key={toast.id} toast={toast} onDismiss={dismiss} />
       ))}
       <ToastViewport />
     </ToastProvider>
+  );
+}
+
+function LiveToast({
+  toast,
+  onDismiss,
+}: Readonly<{ toast: LiveNotification; onDismiss: (id: number) => void }>) {
+  return (
+    <Toast
+      onOpenChange={(open) => {
+        if (!open) onDismiss(toast.id);
+      }}
+    >
+      <ToastTitle>{toast.title}</ToastTitle>
+      <ToastDescription>{toast.description}</ToastDescription>
+    </Toast>
   );
 }

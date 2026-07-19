@@ -43,7 +43,10 @@ from ctf.api.serializers import (
 from shared.log_sanitize import safe_log_value
 
 if TYPE_CHECKING:
+    from datetime import datetime
     from uuid import UUID
+
+    from django.contrib.auth.models import User
 
     from ctf.models import CTFEmailTemplate, CTFEvent, CTFNotification
 
@@ -196,7 +199,13 @@ class NotificationListView(APIView):
             return exc.to_response(request)
 
     @staticmethod
-    def _schedule(event, subject, body, actor, scheduled_at):
+    def _schedule(
+        event: CTFEvent,
+        subject: str,
+        body: str,
+        actor: User,
+        scheduled_at: datetime,
+    ) -> CTFNotification:
         """Create a draft announcement and schedule it for future delivery (CTF-804)."""
         from django.utils import timezone as dj_timezone
 
