@@ -19,6 +19,8 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from uuid import UUID
+
     from ctf.models import CTFEvent
 
 logger = logging.getLogger(__name__)
@@ -67,7 +69,7 @@ def emit_webhook(event: CTFEvent, event_type: str, data: dict[str, Any]) -> int:
         return 0
 
 
-def _deliver_with_retries(webhook_pk: Any, url: str, secret: str, body: bytes) -> None:
+def _deliver_with_retries(webhook_pk: UUID, url: str, secret: str, body: bytes) -> None:
     """POST with exponential backoff (5s, 25s) and record the final status."""
     import requests
 
@@ -91,7 +93,7 @@ def _deliver_with_retries(webhook_pk: Any, url: str, secret: str, body: bytes) -
     _record_delivery(webhook_pk, status)
 
 
-def _record_delivery(webhook_pk: Any, status: str) -> None:
+def _record_delivery(webhook_pk: UUID, status: str) -> None:
     """Persist the delivery outcome; best-effort (worker thread)."""
     from django.utils import timezone
 
