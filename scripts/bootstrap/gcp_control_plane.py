@@ -1730,11 +1730,16 @@ def deploy_gcp_control_plane_with_helm(
 
     ensure_gke_gcloud_auth_plugin(dry_run=dry_run)
 
+    # The control plane is private with no public IP endpoint and no Google DNS
+    # endpoint (org policy); reach it via Connect Gateway, which is IAM-authenticated
+    # and works for operator and CI without a bastion (#1723). The fleet membership
+    # id equals the cluster name (registered via the cluster's fleet{} block).
     run_cmd(
         [
             "gcloud",
             "container",
-            "clusters",
+            "fleet",
+            "memberships",
             "get-credentials",
             cluster_name,
             "--location",
