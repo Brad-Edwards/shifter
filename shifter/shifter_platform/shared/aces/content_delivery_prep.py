@@ -199,14 +199,16 @@ def _content_ref_from_resource(address: object, resource: object) -> _ContentRef
     (realized by the existing guest bootstrap, not delivered here). A malformed
     source (present but with no name) fails closed.
     """
-    if not isinstance(resource, Mapping) or resource.get("resource_type") != _CONTENT_PLACEMENT_RESOURCE_TYPE:
+    if not isinstance(resource, Mapping):
         return None
     payload = resource.get("payload")
     spec = payload.get("spec") if isinstance(payload, Mapping) else None
-    if not isinstance(spec, Mapping):
-        return None
-    source = spec.get("source")
-    if source is None:
+    source = spec.get("source") if isinstance(spec, Mapping) else None
+    if (
+        resource.get("resource_type") != _CONTENT_PLACEMENT_RESOURCE_TYPE
+        or not isinstance(spec, Mapping)
+        or source is None
+    ):
         return None
     name, version = _parse_source(source)
     if not name:
