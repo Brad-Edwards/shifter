@@ -35,7 +35,6 @@ from mission_control.views._common import _audit_range_lifecycle, _logger, _pkg
 from shared.aces.presentation import build_range_aces_projection, build_range_participant_runtime_projection
 from shared.api.permissions import IsAuthenticatedSessionOrApiToken
 from shared.audit import AuditAction
-from shared.auth import is_ctf_participant_only
 from shared.errors import classify_user_message
 from shared.exceptions import CMSError
 from shared.log_sanitize import safe_log_value
@@ -59,11 +58,15 @@ class CurrentRangeView(MissionControlReadAPIView):
                     "aces_participant_runtime": None,
                 }
             )
-        # CTF participants only see Kali (attacker) instances — mirrors the
-        # ``mission_control.context_processors.active_range`` filter so this
-        # canonical DRF read matches the legacy template-rendered behavior.
-        if is_ctf_participant_only(actor):
-            active_range.instances = [inst for inst in active_range.instances if inst.os_type == "kali"]
+        # Instance visibility is a domain policy (#483): the registered
+        # per-event filter mirrors the context-processor path so this
+        # canonical DRF read matches the template-rendered behavior.
+        from shared.range_visibility import filter_visible_instances
+
+        active_range.instances = filter_visible_instances(actor, active_range.instances)
+        from cms.services import has_own_mission_control_openvpn_profile
+
+        vpn_available = has_own_mission_control_openvpn_profile(cast(User, actor))
         projection = build_range_aces_projection(active_range.request_id)
         participant_runtime = build_range_participant_runtime_projection(
             active_range.request_id, active_range.instances
@@ -75,6 +78,7 @@ class CurrentRangeView(MissionControlReadAPIView):
                 "connection_urls": build_connection_urls(active_range.instances),
                 "aces_projection": projection.to_payload() if projection else None,
                 "aces_participant_runtime": participant_runtime.to_payload() if participant_runtime else None,
+                "vpn_profile_available": vpn_available,
             }
         )
 
@@ -362,3 +366,44 @@ class RangeHistoryView(MissionControlReadAPIView):
             many=True,
         )
         return Response({"ranges": serializer.data})
+
+
+OPENVPN_PROFILE_MEDIA_TYPE = "application/x-openvpn-profile"
+
+
+class RangeVpnProfileView(MissionControlAPIView):
+    """Deliver the caller's active-range OpenVPN profile (#1696).
+
+    Extends the CTF participant mechanism (#1695) to mission-control range
+    users: same engine profile source, same no-store delivery, gated on
+    ownership and READY state inside CMS.
+    """
+
+    permission_classes = [IsAuthenticatedSessionOrApiToken, HasMissionControlActor]
+
+    @extend_schema(request=None, responses={(200, OPENVPN_PROFILE_MEDIA_TYPE): {"type": "string", "format": "binary"}})
+    def post(self, request: Request) -> Response:
+        """Return the profile, mapping CMS gate errors onto API statuses."""
+        from django.http import HttpResponse
+
+        from cms.services import (
+            CtfOpenVpnProfileConflict,
+            CtfOpenVpnProfileNotFound,
+            CtfOpenVpnProfileUnavailable,
+            get_own_mission_control_openvpn_profile,
+        )
+
+        actor = self.actor_user()
+        try:
+            profile = get_own_mission_control_openvpn_profile(cast(User, actor))
+        except CtfOpenVpnProfileNotFound:
+            return Response({"detail": "No VPN profile available."}, status=404)
+        except CtfOpenVpnProfileConflict:
+            return Response({"detail": "Range is not ready."}, status=409)
+        except CtfOpenVpnProfileUnavailable:
+            return Response({"detail": "VPN profile is unavailable."}, status=503)
+        response = HttpResponse(profile.content, content_type=OPENVPN_PROFILE_MEDIA_TYPE)
+        response["Content-Disposition"] = 'attachment; filename="range.ovpn"'
+        response["Cache-Control"] = "private, no-store"
+        response["Content-Length"] = str(len(profile.content))
+        return response

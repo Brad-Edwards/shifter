@@ -2194,6 +2194,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/mission-control/range/vpn-profile/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Return the profile, mapping CMS gate errors onto API statuses. */
+        post: operations["mission_control_range_vpn_profile_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/mission-control/ranges/": {
         parameters: {
             query?: never;
@@ -3000,6 +3017,8 @@ export interface components {
             aces_participant_runtime: {
                 [key: string]: unknown;
             } | null;
+            /** @default false */
+            readonly vpn_profile_available: boolean;
         };
         /** @description Domain-controller configuration, mirroring ``schema.DCConfig``. */
         DCConfig: {
@@ -10786,6 +10805,43 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SuccessResponse"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    mission_control_range_vpn_profile_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/x-openvpn-profile": string;
                 };
             };
             /** @description Authentication failed. */

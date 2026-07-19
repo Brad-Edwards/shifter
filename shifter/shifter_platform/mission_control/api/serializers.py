@@ -213,6 +213,7 @@ class CurrentRangeResponseSerializer(serializers.Serializer):
     connection_urls = ConnectionUrlSerializer(many=True)
     aces_projection = serializers.DictField(allow_null=True)
     aces_participant_runtime = serializers.DictField(allow_null=True)
+    vpn_profile_available = serializers.BooleanField(read_only=True, default=False)
 
 
 class LaunchRangeResponseSerializer(serializers.Serializer):

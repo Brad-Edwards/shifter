@@ -64,6 +64,7 @@ export function RangeDashboardPage() {
 
   return (
     <ActiveRangePanel
+      vpnProfileAvailable={Boolean(data?.vpn_profile_available)}
       range={data.range}
       isFetching={query.isFetching}
       title="Ranges"

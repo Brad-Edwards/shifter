@@ -10,6 +10,8 @@ import type { RangePresentation, RangeStatus } from "@/api/types";
 import { rangeStatusMapping } from "@/app/state-map";
 import { PageHeader } from "@/components/page-header";
 import { StatusChip } from "@/components/status-chip";
+import { useMissionControlVpnDownload } from "@/api/mission-control";
+
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
@@ -92,6 +94,17 @@ function lifecycleActionsFor(range: RangePresentation): Array<{ dialog: Lifecycl
   return actions;
 }
 
+/** OpenVPN profile download for the active range (#1696). */
+function VpnDownloadButton({ available }: Readonly<{ available: boolean }>) {
+  const download = useMissionControlVpnDownload();
+  if (!available) return null;
+  return (
+    <Button type="button" variant="outline" size="sm" disabled={download.isPending} onClick={() => download.mutate()}>
+      VPN profile
+    </Button>
+  );
+}
+
 function LifecycleActions({
   range,
   onAction,
@@ -127,7 +140,14 @@ export function ActiveRangePanel({
   isFetching,
   title,
   description,
-}: Readonly<{ range: RangePresentation; isFetching: boolean; title: string; description: string }>) {
+  vpnProfileAvailable = false,
+}: Readonly<{
+  range: RangePresentation;
+  isFetching: boolean;
+  title: string;
+  description: string;
+  vpnProfileAvailable?: boolean;
+}>) {
   const [dialog, setDialog] = useState<LifecycleDialog>(null);
   const rangeStatusSocket = useRangeStatusSocket(range.request_id);
 
@@ -180,7 +200,10 @@ export function ActiveRangePanel({
             <dd>{range.scenario_id}</dd>
           </div>
         </dl>
-        <LifecycleActions range={range} onAction={setDialog} />
+        <div className="flex items-center gap-2">
+          <VpnDownloadButton available={vpnProfileAvailable} />
+          <LifecycleActions range={range} onAction={setDialog} />
+        </div>
       </div>
 
       {(Object.keys(DIALOG_COPY) as Array<Exclude<LifecycleDialog, null>>).map((key) => (

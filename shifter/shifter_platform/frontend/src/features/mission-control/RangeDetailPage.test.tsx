@@ -44,6 +44,7 @@ const CURRENT_RANGE: CurrentRangeResponse = {
   connection_urls: [],
   aces_projection: null,
   aces_participant_runtime: null,
+  vpn_profile_available: false,
 };
 
 const EMPTY_CURRENT_RANGE: CurrentRangeResponse = {
@@ -52,6 +53,7 @@ const EMPTY_CURRENT_RANGE: CurrentRangeResponse = {
   connection_urls: [],
   aces_projection: null,
   aces_participant_runtime: null,
+  vpn_profile_available: false,
 };
 
 function historyEntry(overrides: Partial<RangeHistory> = {}): RangeHistory {

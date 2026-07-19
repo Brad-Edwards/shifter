@@ -12,7 +12,7 @@
  */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { apiFetch } from "./client";
+import { apiDownload, apiFetch } from "./client";
 import type {
   AgentListResponse,
   CredentialCreateResponse,
@@ -68,6 +68,27 @@ export function useCurrentRange() {
     refetchInterval: (query) => {
       const status = query.state.data?.range?.status;
       return status && TRANSIENT_RANGE_STATUSES.has(status) ? RANGE_POLL_INTERVAL_MS : false;
+    },
+  });
+}
+
+const OPENVPN_PROFILE_MEDIA_TYPE = "application/x-openvpn-profile";
+
+/** Download the active range's OpenVPN profile (#1696). */
+export function useMissionControlVpnDownload() {
+  return useMutation({
+    mutationFn: async () => {
+      const blob = await apiDownload("/mission-control/range/vpn-profile/", {
+        method: "POST",
+        expectedMediaType: OPENVPN_PROFILE_MEDIA_TYPE,
+        maxBytes: 64 * 1024,
+      });
+      const href = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = href;
+      anchor.download = "range.ovpn";
+      anchor.click();
+      URL.revokeObjectURL(href);
     },
   });
 }

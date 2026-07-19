@@ -43,7 +43,14 @@ function currentRange(overrides: Partial<RangePresentation> = {}): CurrentRangeR
     is_active: true,
     ...overrides,
   };
-  return { has_range: true, range, connection_urls: [], aces_projection: null, aces_participant_runtime: null };
+  return {
+    has_range: true,
+    range,
+    connection_urls: [],
+    aces_projection: null,
+    aces_participant_runtime: null,
+    vpn_profile_available: false,
+  };
 }
 
 const EMPTY_RANGE: CurrentRangeResponse = {
@@ -52,6 +59,7 @@ const EMPTY_RANGE: CurrentRangeResponse = {
   connection_urls: [],
   aces_projection: null,
   aces_participant_runtime: null,
+  vpn_profile_available: false,
 };
 
 beforeEach(() => {

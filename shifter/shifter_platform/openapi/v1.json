@@ -9936,6 +9936,56 @@
         ]
       }
     },
+    "/api/v1/mission-control/range/vpn-profile/": {
+      "post": {
+        "operationId": "mission_control_range_vpn_profile_create",
+        "description": "Return the profile, mapping CMS gate errors onto API statuses.",
+        "tags": [
+          "mission-control"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/x-openvpn-profile": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
     "/api/v1/mission-control/ranges/": {
       "get": {
         "operationId": "api_v1_mission_control_ranges_list",
@@ -12830,6 +12880,11 @@
             "type": "object",
             "additionalProperties": {},
             "nullable": true
+          },
+          "vpn_profile_available": {
+            "type": "boolean",
+            "readOnly": true,
+            "default": false
           }
         },
         "required": [
@@ -12837,7 +12892,8 @@
           "aces_projection",
           "connection_urls",
           "has_range",
-          "range"
+          "range",
+          "vpn_profile_available"
         ]
       },
       "DCConfig": {

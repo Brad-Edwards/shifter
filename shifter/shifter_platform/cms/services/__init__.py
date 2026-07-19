@@ -104,7 +104,9 @@ from ._range_vpn import (
     CtfOpenVpnProfileNotFound,
     CtfOpenVpnProfileUnavailable,
     get_ctf_openvpn_profile,
+    get_own_mission_control_openvpn_profile,
     has_ctf_openvpn_profile,
+    has_own_mission_control_openvpn_profile,
 )
 from ._scenarios import (
     get_scenario,
@@ -171,6 +173,7 @@ __all__ = (
     "get_credential",
     "get_ctf_openvpn_profile",
     "get_ngfw",
+    "get_own_mission_control_openvpn_profile",
     "get_range",
     "get_range_by_request_id",
     "get_range_spec_by_id",
@@ -179,6 +182,7 @@ __all__ = (
     "get_scenario",
     "get_storage_used",
     "has_ctf_openvpn_profile",
+    "has_own_mission_control_openvpn_profile",
     "has_ready_active_range",
     "initiate_upload",
     "list_agents",
