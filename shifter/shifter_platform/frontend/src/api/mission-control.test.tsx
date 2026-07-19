@@ -42,6 +42,8 @@ describe("useCurrentRange", () => {
       connection_urls: [],
       aces_projection: null,
       aces_participant_runtime: null,
+      lifecycle: null,
+      vpn_profile_available: false,
     });
 
     const { wrapper } = makeClientWrapper();

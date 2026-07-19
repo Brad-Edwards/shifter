@@ -84,9 +84,11 @@ def _transition_then_dispatch(
     *,
     instance: RangeInstance,
     request_id: UUID,
-    user: User,
+    user: User | None,
     audit_entity_id: int,
     transition: _TransitionSpec,
+    audit_actor_type: AuditActorType = AuditActorType.USER,
+    audit_context: str | None = None,
 ) -> None:
     """Apply a CMS lifecycle transition, dispatch engine cleanup, and revert on rejection."""
     target_status, engine_call, audit_action, failure_message, label, soft_delete = transition
@@ -118,14 +120,15 @@ def _transition_then_dispatch(
             entity_type=AuditEntityType.RANGE,
             entity_id=audit_entity_id,
             action=audit_action,
-            actor_type=AuditActorType.USER,
-            actor_id=user.id,
+            actor_type=audit_actor_type,
+            actor_id=user.id if user is not None and audit_actor_type == AuditActorType.USER else None,
             previous_state={
                 "status": previous_status,
                 "scenario": instance.scenario_id,
             },
             new_state={"status": target_status},
             request_id=str(request_id),
+            context=audit_context or "",
         )
 
 
@@ -246,6 +249,22 @@ def destroy_range(user: User, range_instance_pk: int) -> None:
             range_instance_pk,
         )
         raise
+
+
+def destroy_expired_range(instance: RangeInstance) -> None:
+    """Destroy a server-expired range through the canonical Engine lifecycle."""
+    request_id = instance.request.request_id if instance.request else None
+    if request_id is None:
+        raise CMSError("Range has no associated request")
+    _transition_then_dispatch(
+        instance=instance,
+        request_id=request_id,
+        user=None,
+        audit_entity_id=instance.pk,
+        transition=_DESTROY_TRANSITION,
+        audit_actor_type=AuditActorType.SYSTEM,
+        audit_context="range_lease_expired",
+    )
 
 
 def cancel_range(user: User, range_id: int) -> None:

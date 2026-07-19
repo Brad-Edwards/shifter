@@ -5,7 +5,11 @@ from __future__ import annotations
 from typing import Any, cast
 
 from django.contrib.auth.models import User
+from django.http import HttpResponse
+from django.utils.cache import patch_vary_headers
+from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import extend_schema, extend_schema_view
+from rest_framework import status
 from rest_framework.request import Request
 from rest_framework.response import Response
 
@@ -16,6 +20,7 @@ from mission_control.api._base import (
     _range_write_permission,
     _raw_request,
     _validated,
+    _vpn_profile_read_permission,
 )
 from mission_control.api.permissions import HasMissionControlActor, block_participant_lifecycle_permission
 from mission_control.api.rate_limit import RangeLaunchRateThrottle
@@ -26,6 +31,7 @@ from mission_control.api.serializers import (
     LaunchRangeSerializer,
     RangeHistoryResponseSerializer,
     RangeHistorySerializer,
+    RangeLeaseResponseSerializer,
     RangeLifecycleSerializer,
     ScenarioListResponseSerializer,
     SuccessResponseSerializer,
@@ -34,11 +40,15 @@ from mission_control.utils import build_connection_urls
 from mission_control.views._common import _audit_range_lifecycle, _logger, _pkg
 from shared.aces.presentation import build_range_aces_projection, build_range_participant_runtime_projection
 from shared.api.permissions import IsAuthenticatedSessionOrApiToken
+from shared.api.schema import ApiErrorSerializer
 from shared.audit import AuditAction
 from shared.auth import is_ctf_participant_only
 from shared.errors import classify_user_message
 from shared.exceptions import CMSError
 from shared.log_sanitize import safe_log_value
+from shared.remote_access import OPENVPN_PROFILE_MEDIA_TYPE
+
+_VPN_PROFILE_FILENAME = "shifter-range.ovpn"
 
 
 class CurrentRangeView(MissionControlReadAPIView):
@@ -57,6 +67,8 @@ class CurrentRangeView(MissionControlReadAPIView):
                     "connection_urls": [],
                     "aces_projection": None,
                     "aces_participant_runtime": None,
+                    "lifecycle": None,
+                    "vpn_profile_available": False,
                 }
             )
         # CTF participants only see Kali (attacker) instances — mirrors the
@@ -68,6 +80,7 @@ class CurrentRangeView(MissionControlReadAPIView):
         participant_runtime = build_range_participant_runtime_projection(
             active_range.request_id, active_range.instances
         )
+        lease = _pkg().get_mission_control_range_lease(actor)
         return Response(
             {
                 "has_range": True,
@@ -75,8 +88,130 @@ class CurrentRangeView(MissionControlReadAPIView):
                 "connection_urls": build_connection_urls(active_range.instances),
                 "aces_projection": projection.to_payload() if projection else None,
                 "aces_participant_runtime": participant_runtime.to_payload() if participant_runtime else None,
+                "lifecycle": lease.to_payload() if lease else None,
+                "vpn_profile_available": _pkg().has_mission_control_openvpn_profile(actor),
             }
         )
+
+
+class ExtendRangeLeaseView(MissionControlAPIView):
+    """Extend the authenticated actor's Mission Control range by one fixed increment."""
+
+    permission_classes = [
+        IsAuthenticatedSessionOrApiToken,
+        HasMissionControlActor,
+        _range_write_permission(),
+        block_participant_lifecycle_permission("extend"),
+    ]
+
+    @extend_schema(
+        request=None,
+        responses={
+            200: RangeLeaseResponseSerializer,
+            400: ApiErrorSerializer,
+            404: ApiErrorSerializer,
+            409: ApiErrorSerializer,
+        },
+    )
+    def post(self, request: Request) -> Response:
+        """Extend only the server-owned lease; caller timestamps are forbidden."""
+        if request.body or request.query_params:
+            return self.error_response(
+                code="invalid",
+                message="Range extension requests must not include a body or query parameters.",
+                status_code=400,
+            )
+        from cms.services import RangeLeaseConflict, RangeLeaseNotFound
+
+        try:
+            lease = _pkg().cms_extend_mission_control_range(self.actor_user())
+        except RangeLeaseNotFound:
+            return self.not_found("Range not found")
+        except RangeLeaseConflict:
+            return self.error_response(
+                code="range_extension_unavailable",
+                message="Range cannot be extended.",
+                status_code=409,
+            )
+        return Response({"lifecycle": lease.to_payload()})
+
+
+class MissionControlVpnProfileView(MissionControlAPIView):
+    """Deliver the current Mission Control range's generation-bound OpenVPN profile."""
+
+    permission_classes = [
+        IsAuthenticatedSessionOrApiToken,
+        HasMissionControlActor,
+        _vpn_profile_read_permission(),
+    ]
+
+    @extend_schema(
+        request=None,
+        responses={
+            (200, OPENVPN_PROFILE_MEDIA_TYPE): OpenApiTypes.BINARY,
+            400: ApiErrorSerializer,
+            404: ApiErrorSerializer,
+            409: ApiErrorSerializer,
+            429: ApiErrorSerializer,
+            503: ApiErrorSerializer,
+        },
+    )
+    def post(self, request: Request) -> HttpResponse | Response:
+        if request.body or request.query_params:
+            return self.error_response(
+                code="invalid",
+                message="VPN profile requests must not include a body or query parameters.",
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+        actor = self.actor_user()
+        from cms.services import OpenVpnProfileConflict, OpenVpnProfileNotFound, OpenVpnProfileUnavailable
+        from shared.credential_delivery import audit_openvpn_profile_download, credential_delivery_allowed
+
+        try:
+            try:
+                allowed = credential_delivery_allowed(actor.pk)
+            except Exception:
+                return self.error_response(
+                    code="vpn_profile_unavailable",
+                    message="VPN profile is unavailable.",
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                )
+            if not allowed:
+                response = self.error_response(
+                    code="throttled",
+                    message="Too many VPN profile requests. Try again later.",
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                )
+                response["Retry-After"] = "3600"
+                return response
+            profile, range_instance_id = _pkg().get_mission_control_openvpn_profile(actor)
+        except OpenVpnProfileNotFound:
+            return self.not_found("VPN profile is not available.")
+        except OpenVpnProfileConflict:
+            return self.error_response(
+                code="vpn_not_ready",
+                message="VPN profile is not ready.",
+                status_code=status.HTTP_409_CONFLICT,
+            )
+        except OpenVpnProfileUnavailable:
+            return self.error_response(
+                code="vpn_profile_unavailable",
+                message="VPN profile is unavailable.",
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+        audit_openvpn_profile_download(
+            actor_id=actor.pk,
+            range_instance_id=range_instance_id,
+            generation=profile.generation,
+            profile_version=profile.profile_version,
+            product="mission_control",
+        )
+        response = HttpResponse(profile.content, content_type=OPENVPN_PROFILE_MEDIA_TYPE)
+        response["Content-Disposition"] = f'attachment; filename="{_VPN_PROFILE_FILENAME}"'
+        response["Cache-Control"] = "private, no-store"
+        response["Content-Length"] = str(len(profile.content))
+        patch_vary_headers(response, ("Cookie", "Authorization"))
+        return response
 
 
 class LaunchRangeView(MissionControlAPIView):

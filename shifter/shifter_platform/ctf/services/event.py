@@ -139,11 +139,13 @@ def _reschedule_event_if_schedule_changed(
     event: CTFEvent,
     safe_data: dict[str, Any],
     *,
+    old_event_start: Any,
     old_event_end: Any,
+    old_cleanup_time: Any | None,
 ) -> None:
     """Reschedule pending tasks when event times change."""
-    schedule_changed = ("event_start" in safe_data and safe_data["event_start"] != event.event_start) or (
-        "event_end" in safe_data and safe_data["event_end"] != event.event_end
+    schedule_changed = ("event_start" in safe_data and safe_data["event_start"] != old_event_start) or (
+        "event_end" in safe_data and safe_data["event_end"] != old_event_end
     )
     event_end_changed = "event_end" in safe_data and safe_data["event_end"] != old_event_end
     if schedule_changed and event.status == EventStatus.REGISTRATION.value:
@@ -153,6 +155,10 @@ def _reschedule_event_if_schedule_changed(
         EventStatus.PAUSED.value,
     ):
         _reschedule_live_event_schedule(event)
+    if old_cleanup_time is not None and event.get_cleanup_time() != old_cleanup_time:
+        from ctf.services._event_range_lease import reconcile_event_range_leases
+
+        reconcile_event_range_leases(event)
 
 
 def update_event(event_id: UUID, event_data: dict[str, Any]) -> CTFEvent:
@@ -193,7 +199,10 @@ def update_event(event_id: UUID, event_data: dict[str, Any]) -> CTFEvent:
     _validate_scoring_mode(event_data)
 
     safe_data = {k: v for k, v in event_data.items() if k in _EVENT_MUTABLE_FIELDS}
+    old_event_start = event.event_start
     old_event_end = event.event_end
+    cleanup_may_change = bool({"event_end", "cleanup_delay_hours"} & safe_data.keys())
+    old_cleanup_time = event.get_cleanup_time() if cleanup_may_change else None
 
     with transaction.atomic():
         for key, value in safe_data.items():
@@ -201,7 +210,13 @@ def update_event(event_id: UUID, event_data: dict[str, Any]) -> CTFEvent:
         event.save()
 
         logger.info("Updated CTF event %s", event.id)
-        _reschedule_event_if_schedule_changed(event, safe_data, old_event_end=old_event_end)
+        _reschedule_event_if_schedule_changed(
+            event,
+            safe_data,
+            old_event_start=old_event_start,
+            old_event_end=old_event_end,
+            old_cleanup_time=old_cleanup_time,
+        )
 
     return event
 
@@ -528,8 +543,8 @@ def activate_event(event: CTFEvent) -> bool:
 def complete_event(event: CTFEvent) -> bool:
     """End an active event (transition to ended).
 
-    If ``auto_cleanup`` is enabled, destroys all participant ranges
-    to prevent orphaned cloud resources.
+    Range teardown is enforced independently by each range's server-owned
+    lease at ``event.get_cleanup_time()``.
 
     Args:
         event: The CTFEvent to end.
@@ -555,12 +570,6 @@ def complete_event(event: CTFEvent) -> bool:
     from ctf.services.scoring import recompute_event_leaderboard
 
     recompute_event_leaderboard(event.pk)
-
-    if event.auto_cleanup:
-        from ctf.services.range import cleanup_event_ranges
-
-        result = cleanup_event_ranges(event.pk)
-        logger.info("Auto-cleanup on event end %s: %s", event.id, result)
 
     logger.info("Ended CTF event %s", event.id)
     return True
@@ -793,14 +802,6 @@ def _schedule_event_tasks(event: CTFEvent) -> None:
         scheduled_for=event.event_end,
     )
 
-    # Cleanup ranges after event (if auto_cleanup)
-    if event.auto_cleanup:
-        CTFScheduledTask.objects.create(
-            event=event,
-            task_type=ScheduledTaskType.CLEANUP_RANGES.value,
-            scheduled_for=event.get_cleanup_time(),
-        )
-
     # Schedule reminders at configurable intervals before event start
     reminder_intervals = [h for h in (event.reminder_hours or [24, 1]) if isinstance(h, int) and h > 0]
     for hours in reminder_intervals:
@@ -840,13 +841,6 @@ def _reschedule_live_event_schedule(event: CTFEvent) -> None:
         status=ScheduledTaskStatus.PENDING.value,
     ):
         task.mark_cancelled()
-
-    if event.auto_cleanup:
-        CTFScheduledTask.objects.create(
-            event=event,
-            task_type=ScheduledTaskType.CLEANUP_RANGES.value,
-            scheduled_for=event.get_cleanup_time(),
-        )
 
     logger.info("Rescheduled live end tasks for event %s", event.id)
 

@@ -89,6 +89,17 @@ class RangeInstance(SoftDeleteMixin, models.Model):
         help_text="Server-derived provenance: which product path created this range.",
     )
     range_spec = models.JSONField(null=True, blank=True)
+    expires_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text="Server-enforced deadline after which the range is automatically destroyed.",
+    )
+    maximum_expires_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Immutable generation lifetime ceiling; VPN credentials cannot outlive it.",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     deleted_at = models.DateTimeField(null=True, blank=True)
@@ -116,6 +127,17 @@ class RangeInstance(SoftDeleteMixin, models.Model):
                 fields=["user_id", "range_source"],
                 condition=models.Q(deleted_at__isnull=True) & ~models.Q(status=ResourceStatus.DESTROYING.value),
                 name=ACTIVE_RANGE_UNIQUE_CONSTRAINT,
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(expires_at__isnull=True, maximum_expires_at__isnull=True)
+                    | models.Q(
+                        expires_at__isnull=False,
+                        maximum_expires_at__isnull=False,
+                        expires_at__lte=models.F("maximum_expires_at"),
+                    )
+                ),
+                name="ck_rangeinstance_lease_bounds",
             ),
         ]
 

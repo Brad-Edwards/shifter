@@ -14,7 +14,10 @@ from cms.models import ACTIVE_RANGE_UNIQUE_CONSTRAINT, AgentConfig, RangeInstanc
 
 # Re-exported for existing importers (cms.services._aces_range_create, tests); the
 # gate lives in its own module so _range_create stays within its size budget.
-from cms.services._range_backend_admission import _assert_live_fire_backend_admitted
+from cms.services._range_backend_admission import (
+    _assert_live_fire_backend_admitted,
+    _openvpn_backend_admitted,
+)
 
 # Re-exported for existing importers (cms.services._aces_range_create): the
 # argument-shape and scenario admission validators live in their own module.
@@ -222,12 +225,19 @@ def _dispatch_engine_range(
     _engine_create_range_call(request_spec, backend_admission, remote_access_capability)
 
 
-def _build_ctf_remote_access_capability(
+def _build_remote_access_capability(
     range_spec: RangeSpec,
     teardown_at: datetime | None,
+    *,
+    backend_admitted: bool = True,
+    required: bool,
 ) -> dict[str, object] | None:
-    """Mint CTF-only OpenVPN authority from trusted lifecycle and target facts."""
+    """Mint OpenVPN authority when the product and scenario support it."""
     if teardown_at is None:
+        return None
+    if not backend_admitted:
+        if required:
+            raise CMSError("OpenVPN access is unavailable on the selected range backend")
         return None
     from shared.remote_access import build_openvpn_capability
 
@@ -241,7 +251,9 @@ def _build_ctf_remote_access_capability(
         else kali_targets
     )
     if len(targets) != 1 or not targets[0].uuid:
-        raise CMSError("CTF OpenVPN access requires exactly one identified Kali attacker target")
+        if required:
+            raise CMSError("OpenVPN access requires exactly one identified Kali attacker target")
+        return None
     return build_openvpn_capability(targets[0].uuid, teardown_at)
 
 
@@ -251,6 +263,8 @@ def _persist_range_instance_record(
     user: User,
     agents: dict[str, AgentConfig],
     range_spec: RangeSpec,
+    expires_at: datetime,
+    maximum_expires_at: datetime,
     range_source: RangeSource | None = None,
 ) -> RangeInstance:
     """Persist the RangeInstance row tying the CMS Request to the hydrated spec."""
@@ -267,6 +281,8 @@ def _persist_range_instance_record(
         agent=first_agent,
         range_source=range_source.value,
         range_spec=wrap_persisted_spec("range_spec", range_spec),
+        expires_at=expires_at,
+        maximum_expires_at=maximum_expires_at,
     )
 
 
@@ -356,8 +372,8 @@ def create_range(
             MISSION_CONTROL. Must be set by the product entry point (e.g. the CTF bridge
             passes RangeSource.CTF). Never user-supplied from a request body.
         remote_access_teardown_at: Trusted CTF event cleanup deadline used to
-            mint the optional remote-access capability. Rejected for non-CTF
-            launch paths and never accepted from an HTTP request body.
+            build the CTF lease. Never accepted from an HTTP request body;
+            Mission Control derives its lease entirely inside CMS.
 
     Returns:
         RangeContext: Template-safe projection of the created range
@@ -375,12 +391,17 @@ def create_range(
 
     if range_source is None:
         range_source = RangeSource.MISSION_CONTROL
-    if remote_access_teardown_at is not None and range_source is not RangeSource.CTF:
-        raise CMSError("Remote-access capability may only be issued by the CTF launch path")
 
     _validate_create_range_user(user)
     _validate_create_range_scenario(user, scenario)
     _validate_create_range_agents_by_os(user, agents_by_os)
+
+    from cms.services._range_lease import build_range_lease
+
+    lease = build_range_lease(
+        range_source,
+        enforced_deadline=remote_access_teardown_at,
+    )
 
     logger.debug(
         "create_range called for user_id=%s, scenario=%s, agents_by_os=%s, ngfw_enabled=%s, range_source=%s",
@@ -402,11 +423,25 @@ def create_range(
 
         agents = _lookup_agents_by_os(user, agents_by_os)
         range_spec = hydrate_scenario(scenario, user.id, agents)
-        remote_access_capability = _build_ctf_remote_access_capability(range_spec, remote_access_teardown_at)
+        remote_access_capability = _build_remote_access_capability(
+            range_spec,
+            lease.maximum_expires_at,
+            backend_admitted=_openvpn_backend_admitted(backend_admission),
+            required=range_source is RangeSource.CTF,
+        )
 
         def _persist(cms_request: Request) -> RangeInstance:
             """Build the RangeInstance for the reservation from the hydrated spec."""
-            return _persist_range_instance_record(cms_request, scenario, user, agents, range_spec, range_source)
+            return _persist_range_instance_record(
+                cms_request,
+                scenario,
+                user,
+                agents,
+                range_spec,
+                lease.expires_at,
+                lease.maximum_expires_at,
+                range_source,
+            )
 
         request_id, _cms_request, range_instance = _reserve_active_range_slot(user, range_source, _persist)
         try:

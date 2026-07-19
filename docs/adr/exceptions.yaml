@@ -312,7 +312,7 @@
   {
     "rule_id": "ADR-039-R10",
     "owner": "@Brad-Edwards",
-    "reason": "The per-range OpenVPN network edge must accept participant clients whose public source addresses are not known before an event. The audited var.vpn_public_client_cidr exception is confined by the CIDR checker to shifter/engine/provisioner/terraform/modules/range/vpn.tf, aws_security_group.vpn_nlb, mutual-TLS UDP, and from/to port 1194. The gateway readiness responder remains private to the portal VPC, Kali has no public address, and server forwarding remains limited to the authoritative target /32.",
+    "reason": "The per-range OpenVPN network edge must accept authorized user clients whose public source addresses are not known at range provision or profile download time. The audited var.vpn_public_client_cidr exception is confined by the CIDR checker to shifter/engine/provisioner/terraform/modules/range/vpn.tf, aws_security_group.vpn_nlb, mutual-TLS UDP, and from/to port 1194. The gateway readiness responder remains private to the portal VPC, the target has no public address, and server forwarding remains limited to the authoritative target /32.",
     "expires_on": "2027-07-17",
     "paths": [
       "scripts/check_tf_sg_cidrs/check_tf_sg_cidrs.py",

@@ -6,10 +6,12 @@ settings, so provisioning is a no-op and no cloud mock is needed), instead of
 patching ``RangeInstance.objects`` / the engine call / the scenario loader.
 """
 
+from datetime import timedelta
 from unittest.mock import MagicMock, patch
 
 import pytest
 from django.contrib.auth import get_user_model
+from django.utils import timezone
 
 from cms import services
 from cms.exceptions import CMSError
@@ -316,6 +318,7 @@ class TestRangeSourceAdmission:
             hydratable_scenario.scenario_id,
             {"windows": agent.id},
             range_source=RangeSource.CTF,
+            remote_access_teardown_at=timezone.now() + timedelta(days=1),
         )
         assert result is not None
 
@@ -336,6 +339,7 @@ class TestRangeSourceAdmission:
             hydratable_scenario.scenario_id,
             {"windows": agent.id},
             range_source=RangeSource.CTF,
+            remote_access_teardown_at=timezone.now() + timedelta(days=1),
         )
         with pytest.raises(CMSError, match="already have an active range"):
             services.create_range(
@@ -343,6 +347,7 @@ class TestRangeSourceAdmission:
                 hydratable_scenario.scenario_id,
                 {"windows": agent.id},
                 range_source=RangeSource.CTF,
+                remote_access_teardown_at=timezone.now() + timedelta(days=1),
             )
 
     def test_get_active_range_bare_call_returns_mc_range(self, user):
@@ -400,6 +405,7 @@ class TestRangeSourceAdmission:
             hydratable_scenario.scenario_id,
             {"windows": agent.id},
             range_source=RangeSource.CTF,
+            remote_access_teardown_at=timezone.now() + timedelta(days=1),
         )
         ri = RangeInstance.objects.get(user_id=user.id)
         assert ri.range_source == RangeSource.CTF.value
@@ -408,12 +414,71 @@ class TestRangeSourceAdmission:
         """create_range() with no range_source persists 'mission_control' on the row."""
         from engine.models import Range as EngineRange
         from shared.enums import RangeSource
+        from shared.remote_access import parse_openvpn_capability
 
         agent = make_agent(user)
         services.create_range(user, hydratable_scenario.scenario_id, {"windows": agent.id})
         ri = RangeInstance.objects.get(user_id=user.id)
         assert ri.range_source == RangeSource.MISSION_CONTROL.value
-        assert EngineRange.objects.get(request__request_id=ri.request.request_id).remote_access_capability is None
+        capability = parse_openvpn_capability(
+            EngineRange.objects.get(request__request_id=ri.request.request_id).remote_access_capability
+        )
+        assert capability.target_ref
+        assert ri.maximum_expires_at <= capability.teardown_at
+        assert capability.teardown_at - ri.maximum_expires_at <= timedelta(seconds=1)
+
+    def test_mission_control_unsupported_backend_stays_capability_false(
+        self, user, make_agent, hydratable_scenario, settings, tmp_path
+    ):
+        """A unique Kali target does not authorize an unsupported backend."""
+        from engine.models import Range as EngineRange
+
+        provisioner_dir = tmp_path / "provisioner"
+        provisioner_dir.mkdir()
+        (provisioner_dir / "main.py").write_text("# test process boundary")
+        settings.CLOUD_PROVIDER = "aws"
+        settings.LOCAL_PROVISIONER = "subprocess"
+        settings.PROVISIONER_PATH = str(provisioner_dir)
+
+        process = MagicMock(pid=12345)
+        with patch("subprocess.Popen", return_value=process) as popen:
+            services.create_range(user, hydratable_scenario.scenario_id, {"windows": make_agent(user).id})
+
+        popen.assert_called_once()
+        engine_range = EngineRange.objects.get(user=user)
+        assert engine_range.remote_access_capability is None
+
+    def test_mission_control_scenario_without_unique_vpn_target_remains_launchable(self):
+        """An unsupported topology stays capability-false instead of breaking range launch."""
+        from types import SimpleNamespace
+
+        from cms.services._range_create import _build_remote_access_capability
+
+        range_spec = SimpleNamespace(participant_access=[], all_instances=[])
+
+        assert (
+            _build_remote_access_capability(
+                range_spec,
+                timezone.now() + timedelta(days=365),
+                required=False,
+            )
+            is None
+        )
+
+    def test_ctf_scenario_without_unique_vpn_target_fails_closed(self):
+        """CTF requires the participant VPN capability established by #1695."""
+        from types import SimpleNamespace
+
+        from cms.services._range_create import _build_remote_access_capability
+
+        range_spec = SimpleNamespace(participant_access=[], all_instances=[])
+
+        with pytest.raises(CMSError, match="exactly one identified Kali"):
+            _build_remote_access_capability(
+                range_spec,
+                timezone.now() + timedelta(days=1),
+                required=True,
+            )
 
 
 class TestActiveRangeConstraintBackstop:
