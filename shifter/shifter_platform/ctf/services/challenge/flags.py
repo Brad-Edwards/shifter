@@ -176,6 +176,12 @@ def verify_single_flag(flag_obj: CTFFlag, submitted_flag: str) -> bool:
     Returns:
         True if the flag matches.
     """
+    # CTF-1401: extension-registered validators win over built-in dispatch.
+    from ctf.extensions import get_flag_validator
+
+    custom = get_flag_validator(flag_obj.flag_type)
+    if custom is not None:
+        return bool(custom(flag_obj, submitted_flag))
     if flag_obj.flag_type == "regex":
         return _verify_regex_flag(flag_obj, submitted_flag)
     if flag_obj.flag_type in ("programmable", "http"):

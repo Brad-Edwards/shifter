@@ -38,6 +38,8 @@ interface FormState {
   reminder_hours: string;
   event_timezone: string;
   capacity_hints: string;
+  logo_url: string;
+  theme_color: string;
   scoreboard_visibility: string;
   rating_visibility: string;
   scoring_mode: string;
@@ -63,6 +65,8 @@ const EMPTY: FormState = {
   reminder_hours: "24, 1",
   event_timezone: "UTC",
   capacity_hints: "",
+  logo_url: "",
+  theme_color: "",
   scoreboard_visibility: "public",
   rating_visibility: "public",
   scoring_mode: "standard",
@@ -91,6 +95,8 @@ function fromEvent(event: CtfEventDetail): FormState {
     capacity_hints: Object.keys(event.capacity_hints ?? {}).length
       ? JSON.stringify(event.capacity_hints, null, 2)
       : "",
+    logo_url: event.logo_url ?? "",
+    theme_color: event.theme_color ?? "",
     scoreboard_visibility: event.scoreboard_visibility || "public",
     rating_visibility: event.rating_visibility || "public",
     scoring_mode: event.scoring_mode || "standard",
@@ -150,6 +156,8 @@ function toPayload(state: FormState): CtfEventWrite {
     reminder_hours: parseReminderHours(state.reminder_hours),
     event_timezone: state.event_timezone.trim() || "UTC",
     capacity_hints: parseCapacityHints(state.capacity_hints),
+    logo_url: state.logo_url.trim(),
+    theme_color: state.theme_color.trim(),
     scoreboard_visibility: state.scoreboard_visibility,
     rating_visibility: state.rating_visibility,
     scoring_mode: state.scoring_mode,
@@ -469,6 +477,20 @@ export function EventFormPage({ mode }: Readonly<{ mode: "create" | "edit" }>) {
                 value={state.event_timezone}
                 error={firstError("event_timezone")}
                 onChange={(v) => set("event_timezone", v)}
+              />
+              <TextField
+                id="e-logo"
+                label="Logo URL (branding)"
+                value={state.logo_url}
+                error={firstError("logo_url")}
+                onChange={(v) => set("logo_url", v)}
+              />
+              <TextField
+                id="e-themecolor"
+                label="Accent color (hex, like #22d3ee)"
+                value={state.theme_color}
+                error={firstError("theme_color")}
+                onChange={(v) => set("theme_color", v)}
               />
               <TextAreaField
                 id="e-capacity"

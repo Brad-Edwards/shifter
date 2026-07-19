@@ -24,6 +24,7 @@ urlpatterns = [
     path("me/team/rename/", team_views.TeamRenameView.as_view(), name="api_team_rename"),
     path("me/team/regenerate-code/", team_views.TeamRegenerateCodeView.as_view(), name="api_team_regenerate_code"),
     path("me/announcements/", participant_views.ParticipantAnnouncementsView.as_view(), name="api_me_announcements"),
+    path("me/pages/", participant_views.ParticipantPagesView.as_view(), name="api_me_pages"),
     path("me/profile/", participant_views.ParticipantProfileView.as_view(), name="api_me_profile"),
     path("me/username/", participant_views.ParticipantUsernameSelfView.as_view(), name="api_me_username"),
     path(
@@ -144,6 +145,21 @@ urlpatterns = [
         "events/<uuid:event_id>/results/export/",
         organizer.EventResultsExportView.as_view(),
         name="api_results_export",
+    ),
+    path(
+        "events/<uuid:event_id>/analytics/",
+        organizer.EventAnalyticsView.as_view(),
+        name="api_event_analytics",
+    ),
+    path(
+        "events/<uuid:event_id>/pages/",
+        organizer.EventPagesView.as_view(),
+        name="api_event_pages",
+    ),
+    path(
+        "pages/<uuid:page_id>/",
+        organizer.EventPageDetailView.as_view(),
+        name="api_event_page_detail",
     ),
     path(
         "events/<uuid:event_id>/webhooks/",
