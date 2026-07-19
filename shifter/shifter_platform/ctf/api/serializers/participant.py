@@ -49,6 +49,8 @@ class ParticipantEventSerializer(serializers.Serializer):
     scoreboard_visibility = serializers.CharField(read_only=True)
     event_start = serializers.DateTimeField(read_only=True, allow_null=True)
     event_end = serializers.DateTimeField(read_only=True, allow_null=True)
+    registration_deadline = serializers.DateTimeField(read_only=True, allow_null=True)
+    rules = serializers.CharField(read_only=True, allow_blank=True)
 
 
 class ParticipantCurrentEventSerializer(serializers.Serializer):

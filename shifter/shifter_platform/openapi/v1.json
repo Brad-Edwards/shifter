@@ -3028,6 +3028,86 @@
         }
       }
     },
+    "/api/v1/ctf/events/{event_id}/cleanup/": {
+      "post": {
+        "operationId": "ctf_events_cleanup_create",
+        "description": "Apply the control and return the refreshed task listing.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "ctf"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CleanupControlRequest"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/CleanupControlRequest"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/CleanupControlRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduledTaskListResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
     "/api/v1/ctf/events/{event_id}/email-templates/{notification_type}/": {
       "get": {
         "operationId": "ctf_events_email_templates_retrieve",
@@ -3352,6 +3432,86 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/SendInvitationsResult"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
+    "/api/v1/ctf/events/{event_id}/lifecycle/": {
+      "post": {
+        "operationId": "ctf_events_lifecycle_create",
+        "description": "Validate the action, run the state machine, and return the new status.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "ctf"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EventLifecycleRequest"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/EventLifecycleRequest"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/EventLifecycleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventMutationResult"
                 }
               }
             },
@@ -4230,6 +4390,135 @@
         "responses": {
           "204": {
             "description": "No response body"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
+    "/api/v1/ctf/events/{event_id}/tasks/": {
+      "get": {
+        "operationId": "ctf_events_tasks_retrieve",
+        "description": "Return the event's task history, soonest first.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "ctf"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduledTaskListResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
+    "/api/v1/ctf/events/{event_id}/tasks/{task_id}/run/": {
+      "post": {
+        "operationId": "ctf_events_tasks_run_create",
+        "description": "Reschedule the task to now; the scheduler executes it on its next poll.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "task_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "ctf"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduledTask"
+                }
+              }
+            },
+            "description": ""
           },
           "401": {
             "content": {
@@ -10265,35 +10554,6 @@
           "results"
         ]
       },
-      "ActionEnum": {
-        "enum": [
-          "create",
-          "update",
-          "delete",
-          "restore",
-          "close",
-          "reopen",
-          "login",
-          "logout",
-          "login_failed",
-          "access_denied",
-          "role_sync",
-          "connect",
-          "disconnect",
-          "download",
-          "provision",
-          "deprovision",
-          "ready",
-          "failed",
-          "pause",
-          "resume",
-          "cancel",
-          "recover",
-          "spare_provision"
-        ],
-        "type": "string",
-        "description": "* `create` - Create\n* `update` - Update\n* `delete` - Delete\n* `restore` - Restore\n* `close` - Close\n* `reopen` - Reopen\n* `login` - Login\n* `logout` - Logout\n* `login_failed` - Login Failed\n* `access_denied` - Access Denied\n* `role_sync` - Role Sync\n* `connect` - Connect\n* `disconnect` - Disconnect\n* `download` - Download\n* `provision` - Provision\n* `deprovision` - Deprovision\n* `ready` - Ready\n* `failed` - Failed\n* `pause` - Pause\n* `resume` - Resume\n* `cancel` - Cancel\n* `recover` - Recover\n* `spare_provision` - Spare Provision"
-      },
       "ActorTypeEnum": {
         "enum": [
           "user",
@@ -10639,7 +10899,7 @@
           "action": {
             "allOf": [
               {
-                "$ref": "#/components/schemas/ActionEnum"
+                "$ref": "#/components/schemas/AuditLogActionEnum"
               }
             ],
             "readOnly": true
@@ -10704,6 +10964,35 @@
           "timestamp",
           "user_agent"
         ]
+      },
+      "AuditLogActionEnum": {
+        "enum": [
+          "create",
+          "update",
+          "delete",
+          "restore",
+          "close",
+          "reopen",
+          "login",
+          "logout",
+          "login_failed",
+          "access_denied",
+          "role_sync",
+          "connect",
+          "disconnect",
+          "download",
+          "provision",
+          "deprovision",
+          "ready",
+          "failed",
+          "pause",
+          "resume",
+          "cancel",
+          "recover",
+          "spare_provision"
+        ],
+        "type": "string",
+        "description": "* `create` - Create\n* `update` - Update\n* `delete` - Delete\n* `restore` - Restore\n* `close` - Close\n* `reopen` - Reopen\n* `login` - Login\n* `logout` - Logout\n* `login_failed` - Login Failed\n* `access_denied` - Access Denied\n* `role_sync` - Role Sync\n* `connect` - Connect\n* `disconnect` - Disconnect\n* `download` - Download\n* `provision` - Provision\n* `deprovision` - Deprovision\n* `ready` - Ready\n* `failed` - Failed\n* `pause` - Pause\n* `resume` - Resume\n* `cancel` - Cancel\n* `recover` - Recover\n* `spare_provision` - Spare Provision"
       },
       "Award": {
         "type": "object",
@@ -11377,6 +11666,31 @@
           "name"
         ]
       },
+      "CleanupControlRequest": {
+        "type": "object",
+        "description": "Defer or cancel the pending automated range cleanup (CTF-1003).",
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/CleanupControlRequestActionEnum"
+          },
+          "hours": {
+            "type": "integer",
+            "maximum": 168,
+            "minimum": 1
+          }
+        },
+        "required": [
+          "action"
+        ]
+      },
+      "CleanupControlRequestActionEnum": {
+        "enum": [
+          "defer",
+          "cancel"
+        ],
+        "type": "string",
+        "description": "* `defer` - defer\n* `cancel` - cancel"
+      },
       "Comment": {
         "type": "object",
         "description": "Serializer for Comment model.",
@@ -11867,6 +12181,21 @@
             "format": "date-time",
             "readOnly": true,
             "nullable": true
+          },
+          "rules": {
+            "type": "string",
+            "readOnly": true
+          },
+          "reminder_hours": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "readOnly": true
+          },
+          "event_timezone": {
+            "type": "string",
+            "readOnly": true
           }
         },
         "required": [
@@ -11877,6 +12206,7 @@
           "description",
           "event_end",
           "event_start",
+          "event_timezone",
           "id",
           "max_participants",
           "name",
@@ -11884,6 +12214,8 @@
           "range_spinup_minutes",
           "rating_visibility",
           "registration_deadline",
+          "reminder_hours",
+          "rules",
           "scenario_id",
           "scoreboard_freeze_at",
           "scoreboard_visibility",
@@ -11894,6 +12226,30 @@
           "team_mode",
           "team_size_limit"
         ]
+      },
+      "EventLifecycleRequest": {
+        "type": "object",
+        "description": "One lifecycle transition to apply to an owned event (CTF-007).",
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/EventLifecycleRequestActionEnum"
+          }
+        },
+        "required": [
+          "action"
+        ]
+      },
+      "EventLifecycleRequestActionEnum": {
+        "enum": [
+          "open_registration",
+          "activate",
+          "pause",
+          "resume",
+          "end",
+          "cancel"
+        ],
+        "type": "string",
+        "description": "* `open_registration` - open_registration\n* `activate` - activate\n* `pause` - pause\n* `resume` - resume\n* `end` - end\n* `cancel` - cancel"
       },
       "EventListResponse": {
         "type": "object",
@@ -12112,6 +12468,22 @@
             "type": "string",
             "format": "date-time",
             "nullable": true
+          },
+          "rules": {
+            "type": "string"
+          },
+          "reminder_hours": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "maximum": 720,
+              "minimum": 1
+            },
+            "maxItems": 10
+          },
+          "event_timezone": {
+            "type": "string",
+            "maxLength": 64
           }
         },
         "required": [
@@ -13562,6 +13934,16 @@
             "format": "date-time",
             "readOnly": true,
             "nullable": true
+          },
+          "registration_deadline": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true,
+            "nullable": true
+          },
+          "rules": {
+            "type": "string",
+            "readOnly": true
           }
         },
         "required": [
@@ -13572,6 +13954,8 @@
           "id",
           "name",
           "rating_visibility",
+          "registration_deadline",
+          "rules",
           "scoreboard_visibility",
           "scoreboard_visible",
           "scoring_mode",
@@ -15320,6 +15704,68 @@
         "required": [
           "instances",
           "name"
+        ]
+      },
+      "ScheduledTask": {
+        "type": "object",
+        "description": "One scheduler row in the organizer task history (#526).",
+        "properties": {
+          "id": {
+            "type": "string",
+            "readOnly": true
+          },
+          "task_type": {
+            "type": "string",
+            "readOnly": true
+          },
+          "status": {
+            "type": "string",
+            "readOnly": true
+          },
+          "scheduled_for": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true
+          },
+          "executed_at": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true,
+            "nullable": true
+          },
+          "error_message": {
+            "type": "string",
+            "readOnly": true
+          },
+          "retry_count": {
+            "type": "integer",
+            "readOnly": true
+          }
+        },
+        "required": [
+          "error_message",
+          "executed_at",
+          "id",
+          "retry_count",
+          "scheduled_for",
+          "status",
+          "task_type"
+        ]
+      },
+      "ScheduledTaskListResponse": {
+        "type": "object",
+        "description": "Envelope for the organizer scheduled-task listing.",
+        "properties": {
+          "tasks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ScheduledTask"
+            },
+            "readOnly": true
+          }
+        },
+        "required": [
+          "tasks"
         ]
       },
       "ScoreTimelineResponse": {

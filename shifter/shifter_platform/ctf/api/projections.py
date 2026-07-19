@@ -46,6 +46,8 @@ def participant_current_event(participant: CTFParticipant) -> dict[str, Any]:
             "scoreboard_visibility": event.scoreboard_visibility,
             "event_start": event.event_start,
             "event_end": event.event_end,
+            "registration_deadline": event.effective_registration_deadline,
+            "rules": event.rules,
         },
         "participant": _participant_self(participant),
     }

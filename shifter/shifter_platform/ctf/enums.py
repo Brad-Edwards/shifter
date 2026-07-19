@@ -232,6 +232,7 @@ class ScheduledTaskType(StrEnum):
 
     SPIN_UP_RANGES = "spin_up_ranges"
     CLEANUP_RANGES = "cleanup_ranges"
+    CLEANUP_WARNING = "cleanup_warning"
     SEND_REMINDER = "send_reminder"
     EVENT_START = "event_start"
     EVENT_END = "event_end"

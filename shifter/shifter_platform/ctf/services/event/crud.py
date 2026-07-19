@@ -45,6 +45,9 @@ _EVENT_MUTABLE_FIELDS = frozenset(
         "scoreboard_visibility",
         "scoreboard_freeze_at",
         "scoring_mode",
+        "rules",
+        "reminder_hours",
+        "event_timezone",
     }
 )
 

@@ -8,6 +8,7 @@ so ``from ctf.models import X`` keeps working unchanged.
 from __future__ import annotations
 
 import logging
+from datetime import timedelta
 
 from django.conf import settings
 from django.db import models
@@ -266,6 +267,14 @@ class CTFScheduledTask(CTFBaseModel):
         blank=True,
         help_text="Additional task-specific data",
     )
+    retry_count = models.PositiveSmallIntegerField(
+        default=0,
+        help_text="Retries already consumed by this task (#526)",
+    )
+    max_retries = models.PositiveSmallIntegerField(
+        default=3,
+        help_text="Transient-failure retries allowed before the task is marked failed (#526)",
+    )
 
     class Meta:
         """Django model metadata."""
@@ -312,6 +321,38 @@ class CTFScheduledTask(CTFBaseModel):
         self.error_message = error
         self.save(update_fields=["status", "executed_at", "error_message", "updated_at"])
         logger.error("Task %s failed: %s - %s", self.task_type, self.pk, error)
+
+    def retry_or_fail(self, error: str) -> bool:
+        """Requeue after a failure with exponential backoff, or mark failed (#526).
+
+        Handlers are idempotent (destroy skips destroyed ranges, transitions
+        guard on state, notification sends are per-recipient best-effort), so a
+        transient failure — mail outage, provider throttle, deadlock — is
+        retried up to ``max_retries`` times at 5 · 2^n minute intervals before
+        the task is recorded as failed.
+
+        Returns:
+            True when the task was requeued, False when it was marked failed.
+        """
+        if self.retry_count >= self.max_retries:
+            self.mark_failed(error)
+            return False
+        self.retry_count += 1
+        delay_minutes = 5 * (2 ** (self.retry_count - 1))
+        self.status = ScheduledTaskStatus.PENDING.value
+        self.scheduled_for = timezone.now() + timedelta(minutes=delay_minutes)
+        self.error_message = error
+        self.save(update_fields=["status", "scheduled_for", "retry_count", "error_message", "updated_at"])
+        logger.warning(
+            "Task %s failed (attempt %d/%d), retrying in %d min: %s - %s",
+            self.task_type,
+            self.retry_count,
+            self.max_retries,
+            delay_minutes,
+            self.pk,
+            error,
+        )
+        return True
 
     def mark_cancelled(self) -> None:
         """Mark task as cancelled."""

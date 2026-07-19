@@ -63,6 +63,11 @@ class CTFEvent(CTFBaseModel):
         max_length=200,
         help_text="Event display name",
     )
+    rules = models.TextField(
+        blank=True,
+        default="",
+        help_text="Rules text shown to participants before and during the event (CTF-707, markdown)",
+    )
     description = models.TextField(
         blank=True,
         default="",
@@ -319,6 +324,16 @@ class CTFEvent(CTFBaseModel):
         """Return event duration in hours."""
         delta = self.event_end - self.event_start
         return delta.total_seconds() / 3600
+
+    @property
+    def effective_registration_deadline(self) -> datetime:
+        """Deadline shown to prospective participants (CTF-705).
+
+        Defaults to ``event_start`` when no explicit deadline is set. This is
+        the display/self-registration boundary; organizer manual additions are
+        not gated by it.
+        """
+        return self.registration_deadline or self.event_start
 
     @property
     def participant_count(self) -> int:

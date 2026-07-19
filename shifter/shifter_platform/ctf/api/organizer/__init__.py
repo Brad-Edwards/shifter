@@ -39,6 +39,12 @@ from ctf.api.organizer.events import (
     ForceDeleteEventView,
     ScenarioListView,
 )
+from ctf.api.organizer.lifecycle import (
+    EventCleanupControlView,
+    EventLifecycleView,
+    EventTasksView,
+    TaskRunNowView,
+)
 from ctf.api.organizer.moderation import (
     ParticipantBanView,
     ParticipantDisqualifyView,
@@ -97,14 +103,17 @@ __all__ = [
     "ChallengeHintsView",
     "ChallengeListView",
     "ChallengePrerequisitesView",
+    "EventCleanupControlView",
     "EventDetailView",
     "EventEmailTemplateView",
+    "EventLifecycleView",
     "EventListView",
     "EventRangeListView",
     "EventRangeProvisionView",
     "EventSpareProvisionView",
     "EventStaffMemberView",
     "EventStaffView",
+    "EventTasksView",
     "FileDownloadView",
     "ForceDeleteEventView",
     "HintDeleteView",
@@ -140,5 +149,6 @@ __all__ = [
     "SendInvitationsView",
     "SubmissionListView",
     "SubmitFlagView",
+    "TaskRunNowView",
     "UseHintView",
 ]

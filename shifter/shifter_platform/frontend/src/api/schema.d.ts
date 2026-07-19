@@ -585,6 +585,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/ctf/events/{event_id}/cleanup/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Apply the control and return the refreshed task listing. */
+        post: operations["ctf_events_cleanup_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/ctf/events/{event_id}/email-templates/{notification_type}/": {
         parameters: {
             query?: never;
@@ -632,6 +649,23 @@ export interface paths {
         put?: never;
         /** @description Rate-limit, enforce ownership, then queue the invitation emails. */
         post: operations["ctf_events_invitations_send_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ctf/events/{event_id}/lifecycle/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Validate the action, run the state machine, and return the new status. */
+        post: operations["ctf_events_lifecycle_create"];
         delete?: never;
         options?: never;
         head?: never;
@@ -806,6 +840,40 @@ export interface paths {
         post?: never;
         /** @description Remove the assignment; the user keeps their platform account. */
         delete: operations["ctf_events_staff_destroy"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ctf/events/{event_id}/tasks/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Return the event's task history, soonest first. */
+        get: operations["ctf_events_tasks_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ctf/events/{event_id}/tasks/{task_id}/run/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Reschedule the task to now; the scheduler executes it on its next poll. */
+        post: operations["ctf_events_tasks_run_create"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -2302,33 +2370,6 @@ export interface components {
             results: components["schemas"]["AcesParticipantRuntimeRecord"][];
         };
         /**
-         * @description * `create` - Create
-         *     * `update` - Update
-         *     * `delete` - Delete
-         *     * `restore` - Restore
-         *     * `close` - Close
-         *     * `reopen` - Reopen
-         *     * `login` - Login
-         *     * `logout` - Logout
-         *     * `login_failed` - Login Failed
-         *     * `access_denied` - Access Denied
-         *     * `role_sync` - Role Sync
-         *     * `connect` - Connect
-         *     * `disconnect` - Disconnect
-         *     * `download` - Download
-         *     * `provision` - Provision
-         *     * `deprovision` - Deprovision
-         *     * `ready` - Ready
-         *     * `failed` - Failed
-         *     * `pause` - Pause
-         *     * `resume` - Resume
-         *     * `cancel` - Cancel
-         *     * `recover` - Recover
-         *     * `spare_provision` - Spare Provision
-         * @enum {string}
-         */
-        ActionEnum: "create" | "update" | "delete" | "restore" | "close" | "reopen" | "login" | "logout" | "login_failed" | "access_denied" | "role_sync" | "connect" | "disconnect" | "download" | "provision" | "deprovision" | "ready" | "failed" | "pause" | "resume" | "cancel" | "recover" | "spare_provision";
-        /**
          * @description * `user` - User
          *     * `apikey` - API Key
          *     * `system` - System
@@ -2454,7 +2495,7 @@ export interface components {
             readonly id: number;
             readonly entity_type: components["schemas"]["EntityTypeEnum"];
             readonly entity_id: number;
-            readonly action: components["schemas"]["ActionEnum"];
+            readonly action: components["schemas"]["AuditLogActionEnum"];
             readonly actor_type: components["schemas"]["ActorTypeEnum"];
             readonly actor_id: number | null;
             /** Format: date-time */
@@ -2467,6 +2508,33 @@ export interface components {
             readonly user_agent: string;
             readonly request_id: string;
         };
+        /**
+         * @description * `create` - Create
+         *     * `update` - Update
+         *     * `delete` - Delete
+         *     * `restore` - Restore
+         *     * `close` - Close
+         *     * `reopen` - Reopen
+         *     * `login` - Login
+         *     * `logout` - Logout
+         *     * `login_failed` - Login Failed
+         *     * `access_denied` - Access Denied
+         *     * `role_sync` - Role Sync
+         *     * `connect` - Connect
+         *     * `disconnect` - Disconnect
+         *     * `download` - Download
+         *     * `provision` - Provision
+         *     * `deprovision` - Deprovision
+         *     * `ready` - Ready
+         *     * `failed` - Failed
+         *     * `pause` - Pause
+         *     * `resume` - Resume
+         *     * `cancel` - Cancel
+         *     * `recover` - Recover
+         *     * `spare_provision` - Spare Provision
+         * @enum {string}
+         */
+        AuditLogActionEnum: "create" | "update" | "delete" | "restore" | "close" | "reopen" | "login" | "logout" | "login_failed" | "access_denied" | "role_sync" | "connect" | "disconnect" | "download" | "provision" | "deprovision" | "ready" | "failed" | "pause" | "resume" | "cancel" | "recover" | "spare_provision";
         /** @description One organizer-granted award row (CTF-204). */
         Award: {
             readonly id: string;
@@ -2656,6 +2724,17 @@ export interface components {
             topics?: string[];
             next_challenge?: string | null;
         };
+        /** @description Defer or cancel the pending automated range cleanup (CTF-1003). */
+        CleanupControlRequest: {
+            action: components["schemas"]["CleanupControlRequestActionEnum"];
+            hours?: number;
+        };
+        /**
+         * @description * `defer` - defer
+         *     * `cancel` - cancel
+         * @enum {string}
+         */
+        CleanupControlRequestActionEnum: "defer" | "cancel";
         /** @description Serializer for Comment model. */
         Comment: {
             readonly id: number;
@@ -2824,7 +2903,24 @@ export interface components {
             readonly scoreboard_visibility: string;
             /** Format: date-time */
             readonly scoreboard_freeze_at: string | null;
+            readonly rules: string;
+            readonly reminder_hours: number[];
+            readonly event_timezone: string;
         };
+        /** @description One lifecycle transition to apply to an owned event (CTF-007). */
+        EventLifecycleRequest: {
+            action: components["schemas"]["EventLifecycleRequestActionEnum"];
+        };
+        /**
+         * @description * `open_registration` - open_registration
+         *     * `activate` - activate
+         *     * `pause` - pause
+         *     * `resume` - resume
+         *     * `end` - end
+         *     * `cancel` - cancel
+         * @enum {string}
+         */
+        EventLifecycleRequestActionEnum: "open_registration" | "activate" | "pause" | "resume" | "end" | "cancel";
         /** @description Envelope returned by the organizer event list. */
         EventListResponse: {
             readonly events: components["schemas"]["EventSummary"][];
@@ -2898,6 +2994,9 @@ export interface components {
             scoreboard_visibility?: string;
             /** Format: date-time */
             scoreboard_freeze_at?: string | null;
+            rules?: string;
+            reminder_hours?: number[];
+            event_timezone?: string;
         };
         /** @description Presigned download URL for a challenge attachment. */
         FileDownloadResponse: {
@@ -3376,6 +3475,9 @@ export interface components {
             readonly event_start: string | null;
             /** Format: date-time */
             readonly event_end: string | null;
+            /** Format: date-time */
+            readonly registration_deadline: string | null;
+            readonly rules: string;
         };
         /** @description Target scoreboard visibility for the hidden endpoint (CTF-606). */
         ParticipantHiddenRequest: {
@@ -3953,6 +4055,22 @@ export interface components {
             name: string;
             instances: string[];
             connected_to?: string[];
+        };
+        /** @description One scheduler row in the organizer task history (#526). */
+        ScheduledTask: {
+            readonly id: string;
+            readonly task_type: string;
+            readonly status: string;
+            /** Format: date-time */
+            readonly scheduled_for: string;
+            /** Format: date-time */
+            readonly executed_at: string | null;
+            readonly error_message: string;
+            readonly retry_count: number;
+        };
+        /** @description Envelope for the organizer scheduled-task listing. */
+        ScheduledTaskListResponse: {
+            readonly tasks: components["schemas"]["ScheduledTask"][];
         };
         /** @description Per-participant chronological score progression for a step chart. */
         ScoreTimelineResponse: {
@@ -5991,6 +6109,51 @@ export interface operations {
             };
         };
     };
+    ctf_events_cleanup_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                event_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CleanupControlRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["CleanupControlRequest"];
+                "multipart/form-data": components["schemas"]["CleanupControlRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScheduledTaskListResponse"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
     ctf_events_email_templates_retrieve: {
         parameters: {
             query?: never;
@@ -6178,6 +6341,51 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SendInvitationsResult"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    ctf_events_lifecycle_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                event_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EventLifecycleRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["EventLifecycleRequest"];
+                "multipart/form-data": components["schemas"]["EventLifecycleRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EventMutationResult"];
                 };
             };
             /** @description Authentication failed. */
@@ -6716,6 +6924,85 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    ctf_events_tasks_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                event_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScheduledTaskListResponse"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    ctf_events_tasks_run_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                event_id: string;
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScheduledTask"];
+                };
             };
             /** @description Authentication failed. */
             401: {

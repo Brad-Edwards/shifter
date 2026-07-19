@@ -21,7 +21,9 @@ import type {
   CtfChallengeListResponse,
   CtfChallengeMutationResult,
   CtfChallengeWrite,
+  CtfCleanupControlRequest,
   CtfEventDetail,
+  CtfEventLifecycleAction,
   CtfEventListResponse,
   CtfEventMutationResult,
   CtfEventStaffAssignRequest,
@@ -47,6 +49,8 @@ import type {
   CtfRangeListResponse,
   CtfRangeProvisionQueued,
   CtfScenarioListResponse,
+  CtfScheduledTask,
+  CtfScheduledTaskListResponse,
   CtfScoreTimelineResponse,
 } from "./types";
 
@@ -421,6 +425,47 @@ export function useSetCtfParticipantHidden(participantId: string) {
 
 export function useRenameCtfParticipant(participantId: string) {
   return useParticipantAction<{ username: string }>(participantId, "username");
+}
+
+// --- Event lifecycle + scheduler controls (CTF-007, #526, CTF-1003) -------
+
+export function useCtfEventLifecycle(eventId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (action: CtfEventLifecycleAction) =>
+      apiFetch<CtfEventMutationResult>(`${BASE}/events/${eventId}/lifecycle/`, { method: "POST", body: { action } }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ctfKeys.event(eventId) });
+      queryClient.invalidateQueries({ queryKey: ctfKeys.events() });
+      queryClient.invalidateQueries({ queryKey: ctfKeys.eventTasks(eventId) });
+    },
+  });
+}
+
+export function useCtfEventTasks(eventId: string, enabled = true) {
+  return useQuery({
+    queryKey: ctfKeys.eventTasks(eventId),
+    enabled: enabled && Boolean(eventId),
+    queryFn: ({ signal }) => apiFetch<CtfScheduledTaskListResponse>(`${BASE}/events/${eventId}/tasks/`, { signal }),
+  });
+}
+
+export function useRunCtfTaskNow(eventId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (taskId: string) =>
+      apiFetch<CtfScheduledTask>(`${BASE}/events/${eventId}/tasks/${taskId}/run/`, { method: "POST" }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ctfKeys.eventTasks(eventId) }),
+  });
+}
+
+export function useCtfCleanupControl(eventId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body: CtfCleanupControlRequest) =>
+      apiFetch<CtfScheduledTaskListResponse>(`${BASE}/events/${eventId}/cleanup/`, { method: "POST", body }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ctfKeys.eventTasks(eventId) }),
+  });
 }
 
 // --- Event staff (CTF-607) ------------------------------------------------
