@@ -527,46 +527,43 @@ class TestMainCLI:
             assert config.terraform_uses_operator_adc is True
 
     def test_gdc_bootstrap_defaults_to_operator_adc_terraform_identity(self):
-        """gdc-bootstrap defaults to operator-adc (keyless, no owner-on-SA) terraform identity (#1738)."""
-        with (
-            patch.dict("os.environ", {"SHIFTER_GCP_TERRAFORM_IDENTITY": ""}, clear=False),
-            patch(
-                "sys.argv",
-                ["deploy.py", "gdc-bootstrap", "--project-id", "prod-rwctxzl6shxk", "--cluster-id", "cluster1"],
-            ),
-            patch("deploy.check_dependencies"),
-            patch("deploy.gdc_bootstrap_cluster") as mock_gdc_bootstrap,
-        ):
-            deploy.main()
+        """gdc-bootstrap defaults to operator-adc (keyless, no owner-on-SA) terraform identity (#1738).
 
-            config = mock_gdc_bootstrap.call_args[0][0]
-            assert config.terraform_identity == "operator-adc"
-            assert config.terraform_uses_operator_adc is True
+        Asserts the config built directly from parsed CLI args/env, rather than routing
+        through deploy.main() + gdc_bootstrap_cluster, so this stays a focused unit test
+        of the config-building seam (ADR-019 boundary-mock policy).
+        """
+        with patch.dict("os.environ", {"SHIFTER_GCP_TERRAFORM_IDENTITY": ""}, clear=False):
+            parser = deploy._build_parser()
+            args = parser.parse_args(["gdc-bootstrap", "--project-id", "prod-rwctxzl6shxk", "--cluster-id", "cluster1"])
+            config = deploy._build_gdc_bootstrap_config(args)
+
+        assert config.terraform_identity == "operator-adc"
+        assert config.terraform_uses_operator_adc is True
 
     def test_gdc_bootstrap_terraform_identity_bootstrap_sa_optout(self):
-        """--terraform-identity bootstrap-sa opts back into the tf-bootstrap SA path (#1738)."""
-        with (
-            patch(
-                "sys.argv",
-                [
-                    "deploy.py",
-                    "gdc-bootstrap",
-                    "--project-id",
-                    "prod-rwctxzl6shxk",
-                    "--cluster-id",
-                    "cluster1",
-                    "--terraform-identity",
-                    "bootstrap-sa",
-                ],
-            ),
-            patch("deploy.check_dependencies"),
-            patch("deploy.gdc_bootstrap_cluster") as mock_gdc_bootstrap,
-        ):
-            deploy.main()
+        """--terraform-identity bootstrap-sa opts back into the tf-bootstrap SA path (#1738).
 
-            config = mock_gdc_bootstrap.call_args[0][0]
-            assert config.terraform_identity == "bootstrap-sa"
-            assert config.terraform_uses_operator_adc is False
+        Asserts the config built directly from parsed CLI args, rather than routing through
+        deploy.main() + gdc_bootstrap_cluster, so this stays a focused unit test of the
+        config-building seam (ADR-019 boundary-mock policy).
+        """
+        parser = deploy._build_parser()
+        args = parser.parse_args(
+            [
+                "gdc-bootstrap",
+                "--project-id",
+                "prod-rwctxzl6shxk",
+                "--cluster-id",
+                "cluster1",
+                "--terraform-identity",
+                "bootstrap-sa",
+            ]
+        )
+        config = deploy._build_gdc_bootstrap_config(args)
+
+        assert config.terraform_identity == "bootstrap-sa"
+        assert config.terraform_uses_operator_adc is False
 
     def test_passes_yes_flag_to_gdc_bootstrap(self):
         """--yes makes later non-interactive confirmation prompts proceed."""

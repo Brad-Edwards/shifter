@@ -499,6 +499,6 @@ class TestScoreboardVisibility:
 
     def test_scoreboard_visibility_in_mutable_fields(self):
         """scoreboard_visibility is in the event mutable fields whitelist."""
-        from ctf.services.event.crud import _EVENT_MUTABLE_FIELDS
+        from ctf.services.event import _EVENT_MUTABLE_FIELDS
 
         assert "scoreboard_visibility" in _EVENT_MUTABLE_FIELDS
