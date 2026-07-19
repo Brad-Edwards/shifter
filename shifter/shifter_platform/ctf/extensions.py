@@ -26,17 +26,26 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
-    from ctf.models import CTFFlag
+    from ctf.models import CTFChallenge, CTFFlag
 
 logger = logging.getLogger(__name__)
+
+
+class ScoringStrategyLike(Protocol):
+    """Structural contract for scoring strategies (see ctf.services.scoring._strategy)."""
+
+    def points_for_solve(self, challenge: CTFChallenge, total_hint_penalty: int) -> int:
+        """Points to award for a correct solve."""
+        ...
+
 
 FlagValidator = Callable[["CTFFlag", str], bool]
 
 _flag_validators: dict[str, FlagValidator] = {}
-_scoring_strategies: dict[str, Any] = {}
+_scoring_strategies: dict[str, ScoringStrategyLike] = {}
 
 
 def register_flag_validator(flag_type: str, validator: FlagValidator) -> None:
@@ -52,7 +61,7 @@ def get_flag_validator(flag_type: str) -> FlagValidator | None:
     return _flag_validators.get(flag_type)
 
 
-def register_scoring_strategy(mode: str, strategy: Any) -> None:
+def register_scoring_strategy(mode: str, strategy: ScoringStrategyLike) -> None:
     """Register (or replace) the scoring strategy for a custom mode."""
     if not hasattr(strategy, "points_for_solve"):
         raise TypeError("strategy must implement points_for_solve")
@@ -60,7 +69,7 @@ def register_scoring_strategy(mode: str, strategy: Any) -> None:
     logger.info("Registered CTF scoring strategy for mode %r", mode)
 
 
-def get_registered_scoring_strategy(mode: str) -> Any | None:
+def get_registered_scoring_strategy(mode: str) -> ScoringStrategyLike | None:
     """Return the registered strategy for a mode, if any."""
     return _scoring_strategies.get(mode)
 
