@@ -124,9 +124,10 @@ def test_prepare_is_idempotent_for_one_range_generation():
     generation = uuid4()
     variables = _variables()
     ops = MemorySecretOps()
+    capability = _capability(variables)
 
-    first = _prepare(generation, variables, ops)
-    second = _prepare(generation, variables, ops)
+    first = _prepare(generation, variables, ops, capability=capability)
+    second = _prepare(generation, variables, ops, capability=capability)
 
     assert first == second
     assert len(ops.values) == 2
@@ -285,7 +286,8 @@ def test_completed_generation_replay_keeps_the_same_issuer_and_runtime_material(
     generation = uuid4()
     variables = _variables()
     ops = MemorySecretOps()
-    preparation = _prepare(generation, variables, ops)
+    capability = _capability(variables)
+    preparation = _prepare(generation, variables, ops, capability=capability)
     first_binding = finalize_openvpn_access(
         preparation,
         {
@@ -298,7 +300,7 @@ def test_completed_generation_replay_keeps_the_same_issuer_and_runtime_material(
     )
     first_profile = ops.values[f"profile:42:{generation}"]
 
-    replay = _prepare(generation, variables, ops)
+    replay = _prepare(generation, variables, ops, capability=capability)
     replay_binding = finalize_openvpn_access(
         replay,
         {

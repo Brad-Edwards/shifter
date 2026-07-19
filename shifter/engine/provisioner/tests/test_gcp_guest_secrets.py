@@ -87,6 +87,53 @@ def test_account_secret_identity_distinguishes_case_sensitive_usernames():
     assert lower != upper
 
 
+def test_domain_secret_identity_is_deterministic_opaque_and_purpose_scoped():
+    first = gcp_guest_secrets._aces_directory_secret_id(
+        7, "corp.example", "provision.account.web-service", "account-password"
+    )
+    again = gcp_guest_secrets._aces_directory_secret_id(
+        7, "corp.example", "provision.account.web-service", "account-password"
+    )
+    authority = gcp_guest_secrets._aces_directory_secret_id(7, "corp.example", "authority", "authority-password")
+
+    assert first == again
+    assert first != authority
+    assert "corp" not in first
+    assert "web-service" not in first
+    assert "account-password" in first
+
+
+@pytest.mark.parametrize(
+    ("ensure_name", "args", "expected_length"),
+    [
+        ("ensure_aces_domain_dsrm_secret", (7, "corp"), 24),
+        ("ensure_aces_domain_authority_secret", (7, "corp", "medium"), 18),
+        (
+            "ensure_aces_domain_account_password_secret",
+            (7, "corp", "provision.account.web-service", "strong"),
+            24,
+        ),
+    ],
+)
+def test_domain_password_secrets_reuse_read_or_create(
+    monkeypatch, ensure_name: str, args: tuple[object, ...], expected_length: int
+) -> None:
+    captured: dict[str, object] = {}
+
+    def read_or_create(secret_id, payload_factory):
+        captured["secret_id"] = secret_id
+        captured["value"] = payload_factory()
+        return f"projects/p/secrets/{secret_id}", captured["value"]
+
+    monkeypatch.setattr(gcp_guest_secrets, "generate_rdp_password", lambda length: "x" * length)
+    monkeypatch.setattr(gcp_guest_secrets, "_read_or_create_secret", read_or_create)
+
+    _secret_ref, value = getattr(gcp_guest_secrets, ensure_name)(*args)
+
+    assert value == "x" * expected_length
+    assert "corp" not in str(captured["secret_id"])
+
+
 def test_delete_aces_account_secret_is_idempotent(monkeypatch):
     client = SimpleNamespace(delete_secret=MagicMock())
     exceptions = SimpleNamespace(NotFound=type("NotFound", (Exception,), {}))

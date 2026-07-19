@@ -46,6 +46,7 @@ class AcesPlanAccount:
 
     username: str
     target_address: str
+    address: str = ""
     groups: tuple[str, ...] = ()
     login_shell: str | None = None
     home: str | None = None
@@ -55,6 +56,9 @@ class AcesPlanAccount:
     # Policy label, not a credential.
     password_strength: str = "medium"  # noqa: S105
     disabled: bool = False
+    domain_ref: str | None = None
+    domain_id: str | None = None
+    ordering_dependencies: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -161,6 +165,8 @@ def build_account(payload: Mapping[str, Any]) -> AcesPlanAccount | None:
         auth_method=_credential_policy_string(spec, "auth_method", "password"),
         password_strength=_credential_policy_string(spec, "password_strength", "medium"),
         disabled=spec.get("disabled") is True,
+        domain_ref=_opt_str(spec.get("domain_ref")),
+        domain_id=_opt_str(_mapping(payload.get("domain_topology")).get("domain_id")),
     )
 
 

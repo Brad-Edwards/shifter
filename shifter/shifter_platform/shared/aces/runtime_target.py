@@ -46,7 +46,10 @@ from shared.aces.composition_envelope import (
 )
 from shared.aces.contracts import ACES_PROVISIONING_PLAN_CONTRACT_VERSION, SHIFTER_BACKEND_NAME
 from shared.aces.dispatch_port import ShifterDispatchResult, ShifterProvisioningDispatchPort
-from shared.aces.domain_topology import sanitized_domain_topology_diagnostics
+from shared.aces.domain_topology import (
+    backend_effect_domain_topology_diagnostics,
+    sanitized_domain_topology_diagnostics,
+)
 from shared.aces.manifest import SHIFTER_PROVISIONER_CAPABILITIES, create_shifter_backend_manifest
 from shared.aces.network_family import network_address_family_diagnostics
 from shared.log_sanitize import safe_log_value
@@ -341,6 +344,7 @@ def interpret_provisioning_plan(
     diagnostics = _capability_envelope_diagnostics(provisioning, capabilities)
 
     diagnostics.extend(sanitized_domain_topology_diagnostics(plan, capabilities, snapshot))
+    diagnostics.extend(backend_effect_domain_topology_diagnostics(plan, snapshot))
 
     network_resources = [
         (r, r.payload)
