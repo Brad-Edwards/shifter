@@ -382,13 +382,11 @@ def test_account_feature_outside_envelope_fails_closed() -> None:
 @pytest.mark.parametrize(
     ("spec", "feature", "authored_value"),
     [
-        ({"spn": "host/dc1.example.com"}, "spn", "host/dc1.example.com"),
         ({"mail": "alice@example.com"}, "mail", "alice@example.com"),
     ],
 )
 def test_dropped_account_features_fail_closed(spec: dict, feature: str, authored_value: str) -> None:
-    # spn / mail are absent from the honest manifest until cross-OS realization exists:
-    # a plan requesting either fails closed against the real narrowed capability envelope.
+    # mail remains absent from the honest manifest until genuine realization exists.
     plan = _plan(
         _node("provision.node.a", "a"),
         _account_placement("provision.account.a", target="provision.node.a", **spec),
@@ -401,6 +399,19 @@ def test_dropped_account_features_fail_closed(spec: dict, feature: str, authored
     )
     # the authored value never leaks into a diagnostic (governed feature term only)
     assert all(authored_value not in d.message for d in diagnostics)
+
+
+def test_spn_requires_an_explicit_supported_domain_binding() -> None:
+    plan = _plan(
+        _node("provision.node.a", "a"),
+        _account_placement("provision.account.a", target="provision.node.a", spn="host/dc1.example.com"),
+    )
+
+    serialized, diagnostics = _interpret(plan)
+
+    assert serialized is None
+    assert any(d.code == "shifter-provisioner.account-spn-domain-required" for d in diagnostics)
+    assert all("host/dc1.example.com" not in d.message for d in diagnostics)
 
 
 @pytest.mark.parametrize("auth_method", ["kerberos", "PASSWORD", "public-key"])
@@ -532,31 +543,31 @@ def test_dropped_content_types_fail_closed(content_type: str) -> None:
     assert any(d.is_error and d.code == "shifter-provisioner.unsupported-content-type" for d in diagnostics)
 
 
-def _spn_overclaimed_capabilities() -> ProvisionerCapabilities:
-    # Manifest over-claim: spn re-declared without genuine realization evidence.
+def _mail_overclaimed_capabilities() -> ProvisionerCapabilities:
+    # Manifest over-claim: mail re-declared without genuine realization evidence.
     return ProvisionerCapabilities(
         name="overclaimed",
         supported_node_types=frozenset({"vm", "switch"}),
         supported_os_families=frozenset({"linux", "windows"}),
-        supported_account_features=frozenset({"groups", "spn"}),
+        supported_account_features=frozenset({"groups", "mail"}),
         supports_accounts=True,
     )
 
 
 def test_evidence_policy_is_independent_of_manifest_declaration() -> None:
-    # Widening the manifest (spn re-declared) must NOT widen realization: the
-    # independent evidence gate rejects spn even though the declaration now allows it.
+    # Widening the manifest must NOT widen realization: the independent evidence
+    # gate rejects mail even though the declaration now allows it.
     plan = _plan(
         _node("provision.node.a", "a"),
-        _account_placement("provision.account.a", target="provision.node.a", spn="host/dc1.example.com"),
+        _account_placement("provision.account.a", target="provision.node.a", mail="alice@example.com"),
     )
-    serialized, diagnostics = _interpret(plan, capabilities=_spn_overclaimed_capabilities())
+    serialized, diagnostics = _interpret(plan, capabilities=_mail_overclaimed_capabilities())
     assert serialized is None
-    # the declaration check passes (spn IS in the over-claimed envelope) ...
+    # the declaration check passes (mail IS in the over-claimed envelope) ...
     assert not any(d.code == "shifter-provisioner.unsupported-account-feature" for d in diagnostics)
     # ... but the independent evidence gate fails closed.
     assert any(
-        d.is_error and d.code == "shifter-provisioner.account-feature-not-realized" and "spn" in d.message
+        d.is_error and d.code == "shifter-provisioner.account-feature-not-realized" and "mail" in d.message
         for d in diagnostics
     )
 
@@ -564,11 +575,11 @@ def test_evidence_policy_is_independent_of_manifest_declaration() -> None:
 def test_declared_but_unrealized_account_feature_fails_validate_and_apply(monkeypatch: pytest.MonkeyPatch) -> None:
     # The same evidence gate serves validate() and apply() on the one pure path,
     # and apply() never dispatches an unrealized-feature plan.
-    monkeypatch.setattr("shared.aces.runtime_target.SHIFTER_PROVISIONER_CAPABILITIES", _spn_overclaimed_capabilities())
+    monkeypatch.setattr("shared.aces.runtime_target.SHIFTER_PROVISIONER_CAPABILITIES", _mail_overclaimed_capabilities())
     port = FakeDispatchPort()
     plan = _plan(
         _node("provision.node.a", "a"),
-        _account_placement("provision.account.a", target="provision.node.a", spn="host/dc1.example.com"),
+        _account_placement("provision.account.a", target="provision.node.a", mail="alice@example.com"),
     )
     provisioner = ShifterProvisioner(port)
     assert any(d.code == "shifter-provisioner.account-feature-not-realized" for d in provisioner.validate(plan))
@@ -576,7 +587,7 @@ def test_declared_but_unrealized_account_feature_fails_validate_and_apply(monkey
     assert result.success is False
     assert port.plans == []  # fail closed: no dispatch
     assert any(d.code == "shifter-provisioner.account-feature-not-realized" for d in result.diagnostics)
-    assert all("host/dc1.example.com" not in d.message for d in result.diagnostics)
+    assert all("alice@example.com" not in d.message for d in result.diagnostics)
 
 
 def _account_op(address: str, *, action: ChangeAction, target: str = "provision.node.a", **spec: object) -> ProvisionOp:
@@ -597,11 +608,11 @@ def test_operation_only_account_overclaim_fails_and_does_not_dispatch(monkeypatc
     # An over-claimed feature carried ONLY by a materializing operation (no matching
     # resource) must still fail closed before dispatch -- an operation-only payload
     # cannot bypass the realization ledger.
-    monkeypatch.setattr("shared.aces.runtime_target.SHIFTER_PROVISIONER_CAPABILITIES", _spn_overclaimed_capabilities())
+    monkeypatch.setattr("shared.aces.runtime_target.SHIFTER_PROVISIONER_CAPABILITIES", _mail_overclaimed_capabilities())
     port = FakeDispatchPort()
     plan = _plan_ops(
         [_node("provision.node.a", "a")],
-        [_account_op("provision.account.op", action=ChangeAction.CREATE, spn="host/dc1.example.com")],
+        [_account_op("provision.account.op", action=ChangeAction.CREATE, mail="alice@example.com")],
     )
     provisioner = ShifterProvisioner(port)
     assert any(
@@ -632,13 +643,13 @@ def test_delete_account_operation_is_exempt() -> None:
 def test_account_resource_and_create_operation_do_not_double_report(monkeypatch: pytest.MonkeyPatch) -> None:
     # A resource and its own CREATE operation for the same over-claimed feature yield
     # a single diagnostic, not two.
-    monkeypatch.setattr("shared.aces.runtime_target.SHIFTER_PROVISIONER_CAPABILITIES", _spn_overclaimed_capabilities())
+    monkeypatch.setattr("shared.aces.runtime_target.SHIFTER_PROVISIONER_CAPABILITIES", _mail_overclaimed_capabilities())
     plan = _plan_ops(
         [
             _node("provision.node.a", "a"),
-            _account_placement("provision.account.a", target="provision.node.a", spn="host/dc1.example.com"),
+            _account_placement("provision.account.a", target="provision.node.a", mail="alice@example.com"),
         ],
-        [_account_op("provision.account.a", action=ChangeAction.CREATE, spn="host/dc1.example.com")],
+        [_account_op("provision.account.a", action=ChangeAction.CREATE, mail="alice@example.com")],
     )
     serialized, diagnostics = _interpret(plan)
     assert serialized is None

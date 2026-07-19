@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 
 import pytest
 from aces_contracts.diagnostics import Diagnostic, Severity
@@ -33,19 +33,34 @@ class RecordingPort:
         )
 
 
-def _compiled_domain_plan() -> ProvisioningPlan:
+def _compiled_domain_plan(
+    *,
+    member_os: str = "windows",
+    controller_count: int = 1,
+    service_auth_method: str = "password",
+    service_username: str = "svc-web",
+    service_spn: str = "HTTP/member.corp.example",
+    authority_effect: str = "",
+) -> ProvisioningPlan:
+    authority_effect_yaml = f"            {authority_effect}" if authority_effect else ""
     scenario = parse_sdl(
         """
         name: domain-topology-probe
         nodes:
+          lan: {type: switch}
           dc: {type: vm, os: windows}
-          member: {type: vm, os: windows}
+          member: {type: vm, os: __MEMBER_OS__}
         accounts:
-          domain-admin: {username: Administrator, node: dc}
+          domain-admin:
+            username: Administrator
+            node: dc
+__AUTHORITY_EFFECT__
+          local-operator: {username: local-operator, node: member}
           web-service:
-            username: svc-web
+            username: __SERVICE_USERNAME__
             node: member
-            spn: HTTP/member.corp.example
+            auth_method: __SERVICE_AUTH_METHOD__
+            spn: __SERVICE_SPN__
             domain_ref: corp
         identity_domains:
           corp:
@@ -64,29 +79,71 @@ def _compiled_domain_plan() -> ProvisioningPlan:
             source: member
             target: corp
             domain_join: {controller_refs: [dc]}
-        """
+        infrastructure:
+          lan:
+            count: 1
+            properties: {cidr: 10.70.0.0/24, gateway: 10.70.0.1}
+          dc:
+            count: __CONTROLLER_COUNT__
+            links: [lan]
+          member:
+            count: 1
+            links: [lan]
+        """.replace("__MEMBER_OS__", member_os)
+        .replace("__CONTROLLER_COUNT__", str(controller_count))
+        .replace("__SERVICE_AUTH_METHOD__", service_auth_method)
+        .replace("__SERVICE_USERNAME__", service_username)
+        .replace("__SERVICE_SPN__", service_spn)
+        .replace("__AUTHORITY_EFFECT__", authority_effect_yaml)
     )
     manifest = create_shifter_backend_manifest()
-    topology_capabilities = replace(
-        manifest.provisioner,
-        supported_domain_profiles=frozenset({"active_directory"}),
-        supported_account_features=manifest.provisioner.supported_account_features | {"spn"},
-    )
-    compilation_manifest = replace(
-        manifest,
-        capabilities=replace(manifest.capabilities, provisioner=topology_capabilities),
-    )
-    return compile_plan(compile_runtime_model(scenario), compilation_manifest).provisioning
+    return compile_plan(compile_runtime_model(scenario), manifest).provisioning
 
 
-def test_real_compiled_domain_topology_is_rejected_by_honest_manifest_before_dispatch() -> None:
+def test_real_compiled_domain_topology_is_admitted_and_dispatched() -> None:
     port = RecordingPort()
 
     result = ShifterProvisioner(port).apply(_compiled_domain_plan(), RuntimeSnapshot())
 
+    assert result.success is True
+    assert result.diagnostics == []
+    assert len(port.plans) == 1
+
+
+@pytest.mark.parametrize(
+    ("overrides", "expected_code"),
+    [
+        ({"member_os": "linux"}, "shifter-provisioner.domain-member-os-unsupported"),
+        ({"controller_count": 2}, "shifter-provisioner.domain-controller-cardinality-unsupported"),
+        ({"service_auth_method": "publickey"}, "shifter-provisioner.domain-account-policy-unsupported"),
+        ({"service_username": "Administrator"}, "shifter-provisioner.domain-account-duplicate"),
+        ({"service_spn": "not-a-service-principal"}, "shifter-provisioner.account-spn-invalid"),
+    ],
+)
+def test_backend_effect_policy_rejects_unsupported_domain_combinations_before_dispatch(
+    overrides: dict[str, object], expected_code: str
+) -> None:
+    port = RecordingPort()
+
+    result = ShifterProvisioner(port).apply(_compiled_domain_plan(**overrides), RuntimeSnapshot())
+
     assert result.success is False
     assert port.plans == []
-    assert any(d.code == "provisioner.unsupported-domain-profile" for d in result.diagnostics)
+    assert any(d.code == expected_code for d in result.diagnostics)
+
+
+@pytest.mark.parametrize("authority_effect", ["groups: [ops]", "shell: /bin/bash", "home: /home/Administrator"])
+def test_authority_local_account_effects_are_rejected_before_dispatch(authority_effect: str) -> None:
+    port = RecordingPort()
+
+    result = ShifterProvisioner(port).apply(
+        _compiled_domain_plan(authority_effect=authority_effect),
+        RuntimeSnapshot(),
+    )
+
+    assert result.success is False
+    assert port.plans == []
+    assert any(d.code == "shifter-provisioner.domain-authority-unsupported" for d in result.diagnostics)
 
 
 def test_domain_topology_diagnostic_messages_are_replaced_without_changing_code(
@@ -137,7 +194,7 @@ def test_malformed_domain_topology_fails_before_serialization() -> None:
     assert any(d.code == "provisioning.domain-topology.binding-invalid" for d in diagnostics)
 
 
-def test_apply_uses_snapshot_for_incremental_domain_topology(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_apply_uses_snapshot_for_incremental_domain_topology() -> None:
     full_plan = _compiled_domain_plan()
     operations = {operation.address: operation for operation in full_plan.operations}
     snapshot = RuntimeSnapshot(
@@ -155,11 +212,6 @@ def test_apply_uses_snapshot_for_incremental_domain_topology(monkeypatch: pytest
         }
     )
     incremental = ProvisioningPlan(operations=[operations["provision.node.member"]])
-    supported = replace(
-        create_shifter_backend_manifest().provisioner,
-        supported_domain_profiles=frozenset({"active_directory"}),
-    )
-    monkeypatch.setattr("shared.aces.runtime_target.SHIFTER_PROVISIONER_CAPABILITIES", supported)
     port = RecordingPort()
 
     assert any(

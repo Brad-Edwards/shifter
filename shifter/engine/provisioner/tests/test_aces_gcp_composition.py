@@ -64,10 +64,11 @@ class TestLinux:
         assert "carol@example.com" not in script
         assert "newaliases" not in script
 
-    def test_account_spn_writes_spn_file(self):
+    def test_account_spn_is_never_approximated_by_a_linux_marker_file(self):
         account = AcesPlanAccount(username="svc", target_address="node.web", spn="HTTP/host.example.com")
         script = node_bootstrap_script(_node(), _plan(_node(), accounts=(account,)))
-        assert "/etc/aces/spn/svc" in script and "HTTP/host.example.com" in script
+        assert "/etc/aces/spn" not in script
+        assert "HTTP/host.example.com" not in script
 
     def test_inline_file_written_with_base64_and_mode(self):
         content = _content(content_type="file", path="/srv/x.txt", text="hello world")
@@ -129,6 +130,13 @@ class TestWindows:
         script = node_bootstrap_script(node, _plan(node, accounts=(account,)))
         assert "aces\\mail" not in script
         assert "dave@corp.local" not in script
+
+    def test_account_spn_is_never_approximated_by_a_windows_marker_file(self):
+        node = _node(os_family="windows", address="node.dc")
+        account = AcesPlanAccount(username="svc", target_address="node.dc", spn="HTTP/host.example.com")
+        script = node_bootstrap_script(node, _plan(node, accounts=(account,)))
+        assert "aces\\spn" not in script
+        assert "HTTP/host.example.com" not in script
 
     def test_service_feature_uses_choco(self):
         node = _node(os_family="windows", address="node.dc")
