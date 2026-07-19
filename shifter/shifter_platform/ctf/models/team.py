@@ -17,6 +17,7 @@ from django.db.models import Q, Sum
 from django.utils import timezone
 
 from ctf.enums import (
+    ParticipantRole,
     ParticipantStatus,
 )
 
@@ -295,6 +296,27 @@ class CTFParticipant(CTFBaseModel):
         db_index=True,
         help_text="Current participant lifecycle status",
     )
+    status_reason = models.TextField(
+        blank=True,
+        default="",
+        help_text="Organizer-recorded reason for a ban or disqualification (CTF-605/CTF-609)",
+    )
+    role = models.CharField(
+        max_length=16,
+        choices=ParticipantRole.choices(),
+        default=ParticipantRole.PLAYER.value,
+        help_text="Event-scoped participation role (CTF-604): players compete, observers watch",
+    )
+    hidden = models.BooleanField(
+        default=False,
+        help_text="Hidden participants (CTF-606) play normally but never appear in rankings",
+    )
+    affiliation = models.CharField(
+        max_length=120,
+        blank=True,
+        default="",
+        help_text="Optional organization or region shown on the event profile (CTF-610)",
+    )
     range_instance_id = models.PositiveIntegerField(
         null=True,
         blank=True,
@@ -352,6 +374,13 @@ class CTFParticipant(CTFBaseModel):
                 fields=["user"],
                 condition=Q(deleted_at__isnull=True, user__isnull=False),
                 name="unique_active_ctf_participant_user",
+            ),
+            # CTF-601: a delivery email may appear at most once per event.
+            # Blank emails (count-provisioned isolated accounts) are exempt.
+            models.UniqueConstraint(
+                fields=["event", "email"],
+                condition=Q(deleted_at__isnull=True) & ~Q(email=""),
+                name="unique_active_ctf_participant_event_email",
             ),
         ]
         indexes = [

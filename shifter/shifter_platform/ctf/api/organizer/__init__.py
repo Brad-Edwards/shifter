@@ -9,8 +9,8 @@ layer; these views own only HTTP shape, permission/scope enforcement, and
 per-event ownership resolution.
 
 The views are split across cohesive modules (``events``, ``challenges``,
-``attachments``, ``play``, ``participants``, ``ranges``, ``notifications``,
-``scoreboard``) over the shared helpers in :mod:`ctf.api.organizer._base`. This
+``attachments``, ``play``, ``participants``, ``moderation``, ``staff``, ``ranges``,
+``notifications``, ``scoreboard``) over the shared helpers in :mod:`ctf.api.organizer._base`. This
 package re-exports every view class so ``ctf.api.urls`` and any other importer
 can reference them as ``organizer.<View>``.
 """
@@ -38,6 +38,15 @@ from ctf.api.organizer.events import (
     EventListView,
     ForceDeleteEventView,
     ScenarioListView,
+)
+from ctf.api.organizer.moderation import (
+    ParticipantBanView,
+    ParticipantDisqualifyView,
+    ParticipantHiddenView,
+    ParticipantRequalifyView,
+    ParticipantRoleView,
+    ParticipantUnbanView,
+    ParticipantUsernameView,
 )
 from ctf.api.organizer.notifications import (
     EventEmailTemplateView,
@@ -76,6 +85,7 @@ from ctf.api.organizer.scoreboard import (
     OrganizerScoreboardView,
     ScoreTimelineView,
 )
+from ctf.api.organizer.staff import EventStaffMemberView, EventStaffView
 
 __all__ = [
     "AddFlagView",
@@ -93,6 +103,8 @@ __all__ = [
     "EventRangeListView",
     "EventRangeProvisionView",
     "EventSpareProvisionView",
+    "EventStaffMemberView",
+    "EventStaffView",
     "FileDownloadView",
     "ForceDeleteEventView",
     "HintDeleteView",
@@ -100,7 +112,10 @@ __all__ = [
     "NotificationSendView",
     "OrganizerScoreboardView",
     "ParticipantAwardsView",
+    "ParticipantBanView",
     "ParticipantDetailView",
+    "ParticipantDisqualifyView",
+    "ParticipantHiddenView",
     "ParticipantImportView",
     "ParticipantListView",
     "ParticipantRangeAccessView",
@@ -111,7 +126,11 @@ __all__ = [
     "ParticipantRangeStartView",
     "ParticipantRangeStatusView",
     "ParticipantRangeStopView",
+    "ParticipantRequalifyView",
     "ParticipantResendInviteView",
+    "ParticipantRoleView",
+    "ParticipantUnbanView",
+    "ParticipantUsernameView",
     "ParticipantVpnProfileView",
     "PrerequisiteDeleteView",
     "RateChallengeView",

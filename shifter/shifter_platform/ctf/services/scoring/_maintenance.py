@@ -28,7 +28,7 @@ from django.db.models import Count, Max, Sum
 from django.db.models.functions import Coalesce
 
 from ctf.models import CTFAward, CTFChallenge, CTFParticipant, CTFSubmission, CTFTeam
-from ctf.services.participant import eligible_participant_q
+from ctf.services.participant import ranked_participant_q
 
 if TYPE_CHECKING:
     from uuid import UUID
@@ -132,7 +132,8 @@ def recompute_team_score(team_id: UUID | None) -> None:
     """Rebuild a team's materialized score columns from eligible members' rows.
 
     Score, distinct-challenge solve count, last-solve time, and member count are
-    computed over the team's eligible (registered, non-disqualified) members,
+    computed over the team's ranked members (registered, not disqualified or
+    banned, not hidden, not observers),
     mirroring the per-team aggregation in ``get_team_scoreboard`` (no freeze, no
     bracket). A ``None`` team id is a no-op so callers can pass
     ``participant.team_id`` unconditionally.
@@ -150,7 +151,7 @@ def recompute_team_score(team_id: UUID | None) -> None:
             return
 
         member_ids = list(
-            CTFParticipant.objects.filter(team_id=team_id).filter(eligible_participant_q()).values_list("id", flat=True)
+            CTFParticipant.objects.filter(team_id=team_id).filter(ranked_participant_q()).values_list("id", flat=True)
         )
 
         if member_ids:

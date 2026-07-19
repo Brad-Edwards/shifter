@@ -209,8 +209,8 @@ class TestAdminParticipantImportView:
             "Line 2: Expected name,email format",
         ]
 
-    def test_allows_duplicate_delivery_emails_in_csv(self, authenticated_organizer_client, ctf_event):
-        """Delivery email is optional metadata, not an identity key."""
+    def test_dedupes_delivery_emails_in_csv(self, authenticated_organizer_client, ctf_event):
+        """CTF-601: one delivery email per event; the duplicate row is skipped."""
         url = reverse("ctf:admin_participant_import", kwargs={"event_id": ctf_event.id})
 
         csv_content = "Alice,alice@example.com\nAlice Copy,alice@example.com"
@@ -226,10 +226,10 @@ class TestAdminParticipantImportView:
         response = authenticated_organizer_client.post(url, {"csv_file": csv_file})
 
         assert response.status_code == 302
-        assert CTFParticipant.objects.filter(event=ctf_event, email="alice@example.com").count() == 2
+        assert CTFParticipant.objects.filter(event=ctf_event, email="alice@example.com").count() == 1
 
-    def test_allows_existing_delivery_email(self, authenticated_organizer_client, ctf_event):
-        """A delivery address may serve multiple isolated accounts."""
+    def test_skips_existing_delivery_email(self, authenticated_organizer_client, ctf_event):
+        """CTF-601: an already-registered email is a per-row skip, not a failure."""
         # Create existing participant
         CTFParticipant.objects.create(
             event=ctf_event,
@@ -254,8 +254,8 @@ class TestAdminParticipantImportView:
         response = authenticated_organizer_client.post(url, {"csv_file": csv_file})
 
         assert response.status_code == 302
-        assert CTFParticipant.objects.filter(event=ctf_event, email="existing@example.com").count() == 2
-        assert CTFParticipant.objects.filter(event=ctf_event, email="new@example.com").exists()
+        assert CTFParticipant.objects.filter(event=ctf_event, email="existing@example.com").count() == 1
+        assert CTFParticipant.objects.filter(event=ctf_event, email="new@example.com").count() == 1
 
     def test_denies_access_to_other_organizer_event(self, client, ctf_event, second_organizer_user):
         """View denies access to events owned by other organizers."""
@@ -376,8 +376,8 @@ class TestAdminParticipantAddView:
         assert participant.status == ParticipantStatus.REGISTERED.value
         assert participant.user is not None
 
-    def test_allows_duplicate_delivery_email(self, authenticated_organizer_client, ctf_event):
-        """Single-add also treats email as delivery-only metadata."""
+    def test_rejects_duplicate_delivery_email(self, authenticated_organizer_client, ctf_event):
+        """CTF-601: single-add refuses an email already registered for the event."""
         # Create existing participant
         CTFParticipant.objects.create(
             event=ctf_event,
@@ -397,8 +397,8 @@ class TestAdminParticipantAddView:
             },
         )
 
-        assert response.status_code == 302
-        assert CTFParticipant.objects.filter(event=ctf_event, email="existing@example.com").count() == 2
+        assert response.status_code == 200
+        assert CTFParticipant.objects.filter(event=ctf_event, email="existing@example.com").count() == 1
 
 
 class TestAPIParticipantList:

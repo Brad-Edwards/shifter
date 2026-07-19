@@ -27,13 +27,21 @@ _TEAM_NAME_MAX_LENGTH = 100
 
 
 def _load_participant(participant_id: UUID) -> CTFParticipant:
-    """Load a registered participant with their event, or raise not-found."""
+    """Load a compete-eligible participant with their event, or raise.
+
+    Team membership shapes scoring, so every team action is a competitive
+    action: the shared compete assert refuses disqualified/banned rows and
+    observers (CTF-604/605/609) even though the read surface admits them.
+    """
+    from ctf.services.participant import assert_participant_can_compete
+
     participant = CTFParticipant.objects.select_related("event", "team").filter(pk=participant_id).first()
     if participant is None or participant.registered_at is None:
         raise CTFNotFoundError(
             "Participant not found",
             details={"participant_id": str(participant_id)},
         )
+    assert_participant_can_compete(participant)
     return participant
 
 

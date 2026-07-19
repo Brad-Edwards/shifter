@@ -21,6 +21,8 @@ class ParticipantSelfSerializer(serializers.Serializer):
     id = serializers.CharField(read_only=True)
     name = serializers.CharField(read_only=True)
     status = serializers.CharField(read_only=True)
+    role = serializers.CharField(read_only=True)
+    affiliation = serializers.CharField(read_only=True, allow_blank=True)
     range_status = serializers.CharField(read_only=True, allow_blank=True)
     cached_score = serializers.IntegerField(read_only=True)
     cached_solve_count = serializers.IntegerField(read_only=True)
@@ -262,3 +264,38 @@ class SubmissionListResponseSerializer(serializers.Serializer):
 
     submissions = SubmissionListItemSerializer(many=True, read_only=True)
     total = serializers.IntegerField(read_only=True)
+
+
+class _ProfileEventRefSerializer(serializers.Serializer):
+    """Minimal event reference on the profile payload."""
+
+    id = serializers.CharField(read_only=True)
+    name = serializers.CharField(read_only=True)
+
+
+class ParticipantProfileSerializer(serializers.Serializer):
+    """Event-scoped self profile (CTF-610)."""
+
+    id = serializers.CharField(read_only=True)
+    name = serializers.CharField(read_only=True)
+    affiliation = serializers.CharField(read_only=True, allow_blank=True)
+    email = serializers.CharField(read_only=True, allow_blank=True)
+    username = serializers.CharField(read_only=True, allow_null=True)
+    role = serializers.CharField(read_only=True)
+    status = serializers.CharField(read_only=True)
+    event = _ProfileEventRefSerializer(read_only=True)
+    score = serializers.IntegerField(read_only=True)
+    solve_count = serializers.IntegerField(read_only=True)
+
+
+class ProfileUpdateRequestSerializer(serializers.Serializer):
+    """Partial self-profile update: any omitted field is left unchanged."""
+
+    name = serializers.CharField(required=False, max_length=100)
+    affiliation = serializers.CharField(required=False, allow_blank=True, max_length=120)
+
+
+class UsernameChangeRequestSerializer(serializers.Serializer):
+    """Self-service username change request (#1593)."""
+
+    username = serializers.CharField(max_length=49)

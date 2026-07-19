@@ -23,6 +23,9 @@ from rest_framework.request import Request
 from ctf.api._base import _CtfApiError, ctf_actor_user
 from shared.api_tokens import scopes
 
+# Staff-delegable capability selector: one noun, several, or None (owner-only).
+Capability = str | tuple[str, ...] | None
+
 if TYPE_CHECKING:
     from collections.abc import Callable
     from typing import Any, NoReturn
@@ -89,16 +92,24 @@ def _raise_bad_request(message: str) -> NoReturn:
     raise _CtfApiError(code="invalid", message=message, status_code=status.HTTP_400_BAD_REQUEST)
 
 
+def _raise_conflict(message: str) -> NoReturn:
+    """Raise the shared 409 envelope carrying a controlled message."""
+    raise _CtfApiError(code="conflict", message=message, status_code=status.HTTP_409_CONFLICT)
+
+
 def _raise_throttled(message: str) -> NoReturn:
     """Raise the shared 429 envelope carrying a controlled message."""
     raise _CtfApiError(code="throttled", message=message, status_code=status.HTTP_429_TOO_MANY_REQUESTS)
 
 
-def _resolve_owned_event(request: Request, event_id: UUID) -> CTFEvent:
+def _resolve_owned_event(request: Request, event_id: UUID, *, capability: Capability = None) -> CTFEvent:
     """Resolve an event and enforce ownership, or raise ``_CtfApiError``.
 
     Mirrors ``ctf.views.api._common._resolve_owned_event_json``: 404 when the
-    event does not exist, 403 when the actor does not own it.
+    event does not exist, 403 when the actor does not own it. When
+    ``capability`` is given, delegated event staff whose role grants that
+    capability are admitted too (CTF-607); config surfaces pass no
+    capability and stay organizer-only.
     """
     from ctf.exceptions import CTFNotFoundError
     from ctf.services import get_event
@@ -107,9 +118,22 @@ def _resolve_owned_event(request: Request, event_id: UUID) -> CTFEvent:
         event = get_event(event_id)
     except CTFNotFoundError:
         _raise_not_found(_EVENT_NOT_FOUND)
-    if event.created_by_id != _actor(request).pk:
+    if not _actor_may_manage(request, event, capability):
         _raise_forbidden()
     return event
+
+
+def _actor_may_manage(request: Request, event: CTFEvent, capability: Capability) -> bool:
+    """Owner always; delegated staff only for an explicitly named capability."""
+    actor = _actor(request)
+    if event.created_by_id == actor.pk:
+        return True
+    if capability is None:
+        return False
+    from ctf.services.event import actor_has_event_capability
+
+    wanted = (capability,) if isinstance(capability, str) else capability
+    return any(actor_has_event_capability(actor, event, item) for item in wanted)
 
 
 def _resolve_owned_challenge(request: Request, challenge_id: UUID) -> CTFChallenge:
@@ -125,16 +149,20 @@ def _resolve_owned_challenge(request: Request, challenge_id: UUID) -> CTFChallen
         challenge = get_challenge(challenge_id)
     except CTFNotFoundError:
         _raise_not_found(_CHALLENGE_NOT_FOUND)
-    if challenge.event.created_by_id != _actor(request).pk:
+    if not _actor_may_manage(request, challenge.event, None):
         _raise_forbidden()
     return challenge
 
 
-def _resolve_owned_participant(request: Request, participant_id: UUID) -> CTFParticipant:
+def _resolve_owned_participant(
+    request: Request, participant_id: UUID, *, capability: Capability = None
+) -> CTFParticipant:
     """Resolve a participant and enforce event ownership, or raise ``_CtfApiError``.
 
     Mirrors ``ctf.views._access._resolve_owned_participant``: 404 when the
     participant does not exist, 403 when the actor does not own its event.
+    ``capability`` admits delegated staff exactly as in
+    :func:`_resolve_owned_event`.
     """
     from ctf.exceptions import CTFNotFoundError
     from ctf.services import get_participant
@@ -143,7 +171,7 @@ def _resolve_owned_participant(request: Request, participant_id: UUID) -> CTFPar
         participant = get_participant(participant_id)
     except CTFNotFoundError:
         _raise_not_found(_PARTICIPANT_NOT_FOUND)
-    if participant.event.created_by_id != _actor(request).pk:
+    if not _actor_may_manage(request, participant.event, capability):
         _raise_forbidden()
     return participant
 
@@ -254,6 +282,25 @@ def _organizer_rating(challenge: CTFChallenge) -> dict[str, float | int | None] 
     return get_challenge_rating(challenge.id)
 
 
+def _participant_username(participant: CTFParticipant) -> str | None:
+    """Return the isolated CTF account's login handle, or None.
+
+    Only isolated (#1206) accounts expose their username to organizers; a
+    linked platform account's handle is not CTF-surface data. Guarded because
+    ``user.profile`` raises (not returns None) when the profile row is absent.
+    """
+    from django.core.exceptions import ObjectDoesNotExist
+
+    user = participant.user
+    if user is None:
+        return None
+    try:
+        is_ctf_account = user.profile.is_ctf_account
+    except ObjectDoesNotExist:
+        is_ctf_account = False
+    return user.username if is_ctf_account else None
+
+
 def _participant_detail_payload(participant: CTFParticipant) -> dict[str, object]:
     """Render the organizer GET-participant JSON payload.
 
@@ -268,6 +315,11 @@ def _participant_detail_payload(participant: CTFParticipant) -> dict[str, object
         "name": participant.name,
         "email": participant.email,
         "status": participant.status,
+        "status_reason": participant.status_reason,
+        "role": participant.role,
+        "hidden": participant.hidden,
+        "affiliation": participant.affiliation,
+        "username": _participant_username(participant),
         "team_name": participant.team.name if participant.team else None,
         "registered_at": participant.registered_at.isoformat() if participant.registered_at else None,
         "invited_at": participant.invited_at.isoformat() if participant.invited_at else None,

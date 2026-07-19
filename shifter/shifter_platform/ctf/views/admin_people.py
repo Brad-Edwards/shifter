@@ -111,6 +111,39 @@ def _participant_import_error_messages(exc: CTFValidationError) -> list[str]:
     return errors
 
 
+def _run_participant_import(request: HttpRequest, event_id: UUID) -> tuple[list[str] | None, int, HttpResponse | None]:
+    """Run one CSV import POST; return (form errors, imported count, redirect).
+
+    A redirect response means the import took (fully or partially) and row
+    skips were flashed as warnings; errors mean the form re-renders.
+    """
+    from django.contrib import messages
+
+    from ctf.exceptions import CTFValidationError
+    from ctf.services import bulk_import_participants
+
+    csv_file = request.FILES["csv_file"]
+    try:
+        csv_content = csv_file.read().decode("utf-8")  # type: ignore[union-attr]
+        result = bulk_import_participants(event_id, csv_content)
+    except CTFValidationError as e:
+        return _participant_import_error_messages(e), 0, None
+    imported_count = len(result["created"])
+    if imported_count == 0 and result["errors"]:
+        # Nothing importable: stay on the form and show every row error.
+        return result["errors"], 0, None
+    logger.info(
+        "User %s imported %d participants to event %s",
+        getattr(request.user, "email", ""),
+        imported_count,
+        safe_log_value(event_id),
+    )
+    messages.success(request, f"Successfully imported {imported_count} participants.")
+    for row_error in result["errors"]:
+        messages.warning(request, f"Skipped: {row_error}")
+    return None, imported_count, redirect(_PARTICIPANT_LIST_ROUTE, event_id=event_id)
+
+
 @login_required
 @ctf_organizer_required
 @require_http_methods(["GET", "POST"])
@@ -123,12 +156,11 @@ def admin_participant_import(request: HttpRequest, event_id: UUID) -> HttpRespon
     Args:
         event_id: UUID of the event.
     """
-    from django.contrib import messages
     from django.http import Http404
 
-    from ctf.exceptions import CTFNotFoundError, CTFValidationError
+    from ctf.exceptions import CTFNotFoundError
     from ctf.forms import CTFParticipantImportForm
-    from ctf.services import bulk_import_participants, get_event
+    from ctf.services import get_event
 
     try:
         event = get_event(event_id)
@@ -145,21 +177,9 @@ def admin_participant_import(request: HttpRequest, event_id: UUID) -> HttpRespon
     if request.method == "POST":
         form = CTFParticipantImportForm(request.POST, request.FILES)
         if form.is_valid():
-            csv_file = request.FILES["csv_file"]
-            try:
-                csv_content = csv_file.read().decode("utf-8")  # type: ignore[union-attr]
-                participants = bulk_import_participants(event_id, csv_content)
-                imported_count = len(participants)
-                logger.info(
-                    "User %s imported %d participants to event %s",
-                    request.user.email,
-                    imported_count,
-                    safe_log_value(event_id),
-                )
-                messages.success(request, f"Successfully imported {imported_count} participants.")
-                return redirect(_PARTICIPANT_LIST_ROUTE, event_id=event_id)
-            except CTFValidationError as e:
-                errors = _participant_import_error_messages(e)
+            errors, imported_count, response = _run_participant_import(request, event_id)
+            if response is not None:
+                return response
     else:
         form = CTFParticipantImportForm()
 

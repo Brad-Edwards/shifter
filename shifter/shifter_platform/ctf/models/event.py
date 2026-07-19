@@ -19,6 +19,7 @@ from django.utils import timezone
 from ctf.enums import (
     EVENT_TERMINAL_STATUSES,
     AttemptLimitMode,
+    EventStaffRole,
     EventStatus,
     RatingVisibility,
     ScoreboardVisibility,
@@ -340,3 +341,51 @@ class CTFEvent(CTFBaseModel):
         from datetime import timedelta
 
         return self.event_start - timedelta(minutes=self.range_spinup_minutes)
+
+
+class CTFEventStaff(CTFBaseModel):
+    """A delegated staff assignment on one event (CTF-607).
+
+    Grants a second organizer-tier user a bounded slice of event
+    management: moderators handle participants and announcements, judges
+    handle submissions review and awards. The owning organizer
+    (``CTFEvent.created_by``) always retains every capability; staff rows
+    never widen access to event configuration, challenges, or scoring.
+    """
+
+    event = models.ForeignKey(
+        CTFEvent,
+        on_delete=models.CASCADE,
+        related_name="staff",
+        help_text="Event this staff assignment is scoped to",
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="ctf_staff_roles",
+        help_text="Platform user holding the staff role",
+    )
+    role = models.CharField(
+        max_length=16,
+        choices=EventStaffRole.choices(),
+        help_text="Delegated role: moderator (participants, announcements) or judge (submissions, awards)",
+    )
+
+    class Meta:
+        """Django model metadata."""
+
+        db_table = "ctf_event_staff"
+        ordering = ["created_at"]
+        verbose_name = "CTF Event Staff"
+        verbose_name_plural = "CTF Event Staff"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["event", "user"],
+                condition=models.Q(deleted_at__isnull=True),
+                name="unique_active_ctf_event_staff_user",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        """Return the assignment as user@event with role."""
+        return f"{self.user_id}@{self.event_id}: {self.role}"

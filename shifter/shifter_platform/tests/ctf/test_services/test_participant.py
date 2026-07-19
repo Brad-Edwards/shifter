@@ -54,8 +54,9 @@ class TestRegistrationDeadlineEnforcement:
         ctf_event.save(update_fields=["registration_deadline"])
 
         csv_content = "Alice,alice@test.com"
-        participants = bulk_import_participants(ctf_event.pk, csv_content)
-        assert len(participants) == 1
+        result = bulk_import_participants(ctf_event.pk, csv_content)
+        assert len(result["created"]) == 1
+        assert result["errors"] == []
 
 
 @pytest.mark.django_db

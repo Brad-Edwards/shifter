@@ -22,6 +22,7 @@ from ctf.api.organizer._base import (
     _INVALID_NOTIFICATION,
     _NOTIFICATION_NOT_FOUND,
     _actor,
+    _actor_may_manage,
     _raise_bad_request,
     _raise_forbidden,
     _raise_not_found,
@@ -120,7 +121,7 @@ class SendInvitationsView(APIView):
         try:
             if not _check_credential_delivery_rate_limit(_actor(request).pk):
                 _raise_throttled("Too many invitations. Try again later.")
-            _resolve_owned_event(request, event_id)
+            _resolve_owned_event(request, event_id, capability="notifications")
             result = send_invitations(event_id)
             return Response({"success": True, **result})
         except _CtfApiError as exc:
@@ -140,7 +141,7 @@ class NotificationListView(APIView):
         from ctf.models import CTFNotification
 
         try:
-            event = _resolve_owned_event(request, event_id)
+            event = _resolve_owned_event(request, event_id, capability="notifications")
         except _CtfApiError as exc:
             return exc.to_response(request)
         data = [
@@ -163,7 +164,7 @@ class NotificationListView(APIView):
         from ctf.services import notification
 
         try:
-            event = _resolve_owned_event(request, event_id)
+            event = _resolve_owned_event(request, event_id, capability="notifications")
             serializer = NotificationAnnounceRequestSerializer(data=request.data)
             serializer.is_valid(raise_exception=True)
             subject = serializer.validated_data["subject"].strip()
@@ -204,7 +205,7 @@ class NotificationSendView(APIView):
             notif = CTFNotification.objects.select_related("event").filter(pk=notification_id).first()
             if not notif:
                 _raise_not_found(_NOTIFICATION_NOT_FOUND)
-            if notif.event.created_by_id != _actor(request).pk:
+            if not _actor_may_manage(request, notif.event, "notifications"):
                 _raise_forbidden()
             _dispatch_notification_send(notif)
             return Response({"notification_id": str(notif.id), "status": "sent"})
@@ -226,7 +227,7 @@ class EventEmailTemplateView(APIView):
         valid_types = {nt.value for nt in NotificationType}
         if notification_type not in valid_types:
             _raise_bad_request(f"Invalid notification type: {notification_type}")
-        return _resolve_owned_event(request, event_id)
+        return _resolve_owned_event(request, event_id, capability="notifications")
 
     @extend_schema(responses=EmailTemplateResponseSerializer)
     def get(self, request: Request, event_id: UUID, notification_type: str) -> Response:

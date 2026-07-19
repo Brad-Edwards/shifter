@@ -13,6 +13,8 @@ import type {
   CtfChallengeListItem,
   CtfCurrentEvent,
   CtfOrganizerScoreboard,
+  CtfParticipantProfile,
+  CtfProfileUpdateRequest,
   CtfRangeAccess,
   CtfRangeStatus,
   CtfRateChallengeResult,
@@ -34,6 +36,7 @@ export const ctfKeys = {
   challenges: () => ["ctf", "challenges"] as const,
   challenge: (id: string) => ["ctf", "challenge", id] as const,
   team: () => ["ctf", "team"] as const,
+  profile: () => ["ctf", "profile"] as const,
   submissions: () => ["ctf", "submissions"] as const,
   rangeStatus: () => ["ctf", "range-status"] as const,
   scoreboard: (eventId: string, bracketId?: string) => ["ctf", "scoreboard", eventId, bracketId ?? null] as const,
@@ -55,6 +58,7 @@ export const ctfKeys = {
   ranges: (eventId: string) => ["ctf", "ranges", eventId] as const,
   notifications: (eventId: string) => ["ctf", "notifications", eventId] as const,
   scoreTimeline: (participantId: string) => ["ctf", "score-timeline", participantId] as const,
+  eventStaff: (eventId: string) => ["ctf", "event-staff", eventId] as const,
 };
 
 export function useCtfCurrentEvent() {
@@ -220,6 +224,34 @@ export function useLeaveTeam() {
 
 export function useDisbandTeam() {
   return useTeamMutation<Record<string, never>>("disband");
+}
+
+export function useCtfProfile() {
+  return useQuery({
+    queryKey: ctfKeys.profile(),
+    queryFn: ({ signal }) => apiFetch<CtfParticipantProfile>(`${BASE}/me/profile/`, { signal }),
+  });
+}
+
+export function useUpdateCtfProfile() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body: CtfProfileUpdateRequest) =>
+      apiFetch<CtfParticipantProfile>(`${BASE}/me/profile/`, { method: "PATCH", body }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ctfKeys.profile() });
+      queryClient.invalidateQueries({ queryKey: ctfKeys.currentEvent() });
+    },
+  });
+}
+
+export function useChangeCtfUsername() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { username: string }) =>
+      apiFetch<CtfParticipantProfile>(`${BASE}/me/username/`, { method: "POST", body }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ctfKeys.profile() }),
+  });
 }
 
 export function useRateChallenge(challengeId: string) {
