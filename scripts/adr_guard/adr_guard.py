@@ -249,6 +249,47 @@ def load_allowed_imports(config_path: Path) -> dict[str, list[str]]:
     return dict(_iter_yaml_section(config_path, "allowed"))
 
 
+def load_allowed_symbols(config_path: Path) -> dict[str, dict[str, list[str]]]:
+    """Parse the 3-level ``allowed_symbols:`` block (layer -> facade -> [symbols]).
+
+    Dependency-free reader mirroring ``_iter_yaml_section`` one level deeper, for
+    the per-symbol facade allowlists (ADR-001-R4). Only the ``allowed_symbols``
+    top-level section is parsed; other sections are ignored.
+    """
+    result: dict[str, dict[str, list[str]]] = {}
+    in_section = False
+    current_layer: str | None = None
+    current_facade: str | None = None
+
+    for raw_line in config_path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.split("#", 1)[0].rstrip()
+        if not line.strip():
+            continue
+        stripped = line.strip()
+        indent = len(raw_line) - len(raw_line.lstrip(" "))
+
+        if indent == 0 and stripped.endswith(":"):
+            in_section = stripped[:-1] == "allowed_symbols"
+            current_layer = None
+            current_facade = None
+            continue
+        if not in_section:
+            continue
+        if indent == 2 and stripped.endswith(":"):
+            current_layer = stripped[:-1]
+            result[current_layer] = {}
+            current_facade = None
+            continue
+        if indent == 4 and stripped.endswith(":") and current_layer is not None:
+            current_facade = stripped[:-1]
+            result[current_layer][current_facade] = []
+            continue
+        if current_layer is not None and current_facade is not None and indent >= 6 and stripped.startswith("- "):
+            result[current_layer][current_facade].append(stripped[2:].strip())
+
+    return result
+
+
 def load_classification(config_path: Path) -> dict[str, list[str]]:
     """Load the canonical package classification without external YAML deps."""
     return dict(_iter_yaml_section(config_path, "classification"))
@@ -559,11 +600,106 @@ def iter_private_facade_imports(text: str) -> set[str]:
     return targets
 
 
+def _is_public_facade_descendant(module: str, facade: str) -> bool:
+    """True when ``module`` is a PUBLIC descendant module of ``facade``.
+
+    ``engine.services.runtime`` is a descendant of ``engine.services``. A private
+    component anywhere in the remainder (``engine.services._x``) is not, because
+    private split-package modules are already rejected by ADR-001-R1; this keeps
+    the two rules from double-reporting the same import.
+    """
+    if not module.startswith(facade + "."):
+        return False
+    remainder = module[len(facade) + 1 :]
+    return not any(part.startswith("_") for part in remainder.split("."))
+
+
+def iter_facade_symbol_imports(text: str, restricted_facades: set[str]) -> "tuple[dict[str, set[str]], set[str]]":
+    """Return (public symbols imported per restricted facade, non-facade bypasses).
+
+    The only sanctioned shape for a symbol-restricted facade (ADR-001-R4) is an
+    absolute ``from <facade> import <name>``; its public names feed the allowlist
+    check. Every other shape that reaches the facade or one of its public
+    descendants is a bypass: a relative ``from ..<facade> import name``, a
+    descendant ``from <facade>.sub import name``, a bare ``import <facade>``, or
+    ``import <facade>.sub``. Private ``_``-prefixed targets are left to the
+    public-facade rule (ADR-001-R1) so the two rules do not double-report.
+    """
+    from_symbols: dict[str, set[str]] = {}
+    module_bypass: set[str] = set()
+    if not restricted_facades:
+        return from_symbols, module_bypass
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return from_symbols, module_bypass
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom):
+            module = node.module
+            if not module:
+                continue
+            for facade in restricted_facades:
+                if node.level == 0 and module == facade:
+                    for alias in node.names:
+                        if not alias.name.startswith("_"):
+                            from_symbols.setdefault(facade, set()).add(alias.name)
+                elif module == facade or _is_public_facade_descendant(module, facade):
+                    # Relative facade import (level > 0) or a facade descendant.
+                    module_bypass.add(module)
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                for facade in restricted_facades:
+                    if alias.name == facade or _is_public_facade_descendant(alias.name, facade):
+                        module_bypass.add(alias.name)
+    return from_symbols, module_bypass
+
+
+def _symbol_facade_violations(
+    rel: str,
+    from_layer: str,
+    text: str,
+    allowed_symbols: dict[str, dict[str, list[str]]],
+) -> list[Violation]:
+    """Return ADR-001-R4 per-symbol facade-allowlist violations for one file."""
+    restrictions = allowed_symbols.get(from_layer, {})
+    if not restrictions:
+        return []
+
+    violations: list[Violation] = []
+    from_symbols, module_bypass = iter_facade_symbol_imports(text, set(restrictions))
+    for facade, names in sorted(from_symbols.items()):
+        allowed_names = set(restrictions.get(facade, []))
+        for name in sorted(names):
+            if name not in allowed_names:
+                violations.append(
+                    Violation(
+                        "layer-imports",
+                        "ADR-001-R4",
+                        rel,
+                        f"{from_layer} may import only sanctioned symbols from {facade}; "
+                        f"'{name}' is not allowed (front control-plane operations through cms.services)",
+                    )
+                )
+    for module in sorted(module_bypass):
+        violations.append(
+            Violation(
+                "layer-imports",
+                "ADR-001-R4",
+                rel,
+                f"{from_layer} may not reach {module} except via 'from <facade> import <sanctioned symbol>' "
+                "(no relative, descendant, or bare-module imports of the restricted facade)",
+            )
+        )
+    return violations
+
+
 def check_layer_imports(repo_root: Path, files: list[str] | None) -> list[Violation]:
     """Check the layer import policy against selected files."""
     violations: list[Violation] = []
     config_path = repo_root / "scripts" / "check_layer_imports" / "layer_imports.yaml"
     allowed = load_allowed_imports(config_path)
+    allowed_symbols = load_allowed_symbols(config_path)
 
     for rel, from_layer in iter_layer_files(repo_root, files):
         text = (repo_root / rel).read_text(encoding="utf-8")
@@ -584,6 +720,9 @@ def check_layer_imports(repo_root: Path, files: list[str] | None) -> list[Violat
                         f"{from_layer} may not import {module}",
                     )
                 )
+        # ADR-001-R4: symbol-restricted facade seams (e.g. mission_control ->
+        # engine.services) permit only the enumerated data-plane symbols.
+        violations.extend(_symbol_facade_violations(rel, from_layer, text, allowed_symbols))
         if from_layer != CYBERSCRIPT_ALLOWED_LAYER:
             for module in sorted(set(CYBERSCRIPT_IMPORT_PATTERN.findall(text))):
                 violations.append(
