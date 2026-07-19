@@ -50,6 +50,7 @@ _EVENT_MUTABLE_FIELDS = frozenset(
         "event_timezone",
         "capacity_hints",
         "logo_url",
+        "visible_os_types",
         "theme_color",
     }
 )

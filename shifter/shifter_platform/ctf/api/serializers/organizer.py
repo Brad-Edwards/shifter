@@ -62,6 +62,7 @@ class EventDetailSerializer(serializers.Serializer):
     event_timezone = serializers.CharField(read_only=True, allow_blank=True)
     capacity_hints = serializers.DictField(read_only=True)
     logo_url = serializers.CharField(read_only=True, allow_blank=True)
+    visible_os_types = serializers.ListField(child=serializers.CharField(), read_only=True)
     theme_color = serializers.CharField(read_only=True, allow_blank=True)
 
 
@@ -100,6 +101,7 @@ class EventWriteSerializer(serializers.Serializer):
     event_timezone = serializers.CharField(required=False, allow_blank=True, max_length=64)
     capacity_hints = serializers.DictField(required=False)
     logo_url = serializers.URLField(required=False, allow_blank=True, max_length=500)
+    visible_os_types = serializers.ListField(child=serializers.CharField(max_length=32), required=False, max_length=16)
     theme_color = serializers.RegexField(r"^(#[0-9a-fA-F]{6})?$", required=False, allow_blank=True)
 
 

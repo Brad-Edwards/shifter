@@ -35,6 +35,11 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _default_visible_os_types() -> list[str]:
+    """Participants see attacker boxes only unless the organizer widens it (#483)."""
+    return ["kali"]
+
+
 def _scoring_mode_choices() -> list[tuple[str, str]]:
     """Built-in scoring modes plus extension-registered ones (CTF-1401)."""
     from ctf.extensions import registered_scoring_modes
@@ -69,6 +74,11 @@ class CTFEvent(CTFBaseModel):
     name = models.CharField(
         max_length=200,
         help_text="Event display name",
+    )
+    visible_os_types = models.JSONField(
+        default=_default_visible_os_types,
+        blank=True,
+        help_text="Instance OS types participants may see in the terminal (#483); empty list shows all",
     )
     logo_url = models.URLField(
         max_length=500,
