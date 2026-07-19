@@ -201,7 +201,7 @@ class Command(BaseCommand):
                 task.mark_completed()
         except Exception as exc:
             logger.exception("Task %s failed: %s", task.pk, exc)
-            task.retry_or_fail(str(exc)[:1000])
+            task.retry_or_fail("Task execution failed; see server logs for details.")
 
     def _touch_heartbeat(self) -> None:
         try:
