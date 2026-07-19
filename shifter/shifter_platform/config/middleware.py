@@ -34,6 +34,21 @@ _CTF_ACCOUNT_ALWAYS_ALLOWED = frozenset(
     }
 )
 
+# Mission Control range-access endpoints a live participant legitimately needs to
+# reach their OWN range box: the Guacamole RDP/SSH URL bootstrap plus its
+# status/open polling (issue #1740). These self-authorize per user — the
+# underlying resolvers (engine.services.get_rdp_connection_info /
+# get_ssh_connection_info via Range.resolve_active_for_instance) only return a
+# box in the requester's own active, ready range, and the bootstrap
+# status/open lookups are owner-scoped — so admitting the path is safe. This is
+# ADMISSION ONLY: the endpoints still enforce authentication, CSRF, actor/scope,
+# request-shape, ready-range ownership, declared participant channel, and
+# owner-scoped bootstrap delivery. The prefix is deliberately narrow: NGFW,
+# range lifecycle/history, credentials, uploads, agents, and scenarios stay
+# blocked. Any NEW route added under this prefix becomes reachable by temporary
+# accounts and therefore requires its own security review.
+_PARTICIPANT_MISSION_CONTROL_PREFIXES = ("/api/v1/mission-control/guacamole/",)
+
 
 class RequestIDMiddleware:
     """Add request ID to all requests for trace correlation.
@@ -84,8 +99,10 @@ class CTFAccountBoundaryMiddleware:
             path = request.path
             from ctf.services.participant.accounts import live_participant_for_user
 
-            participant_surface = (path.startswith("/ctf/") and not path.startswith("/ctf/admin/")) or path.startswith(
-                "/api/v1/ctf/"
+            participant_surface = (
+                (path.startswith("/ctf/") and not path.startswith("/ctf/admin/"))
+                or path.startswith("/api/v1/ctf/")
+                or path.startswith(_PARTICIPANT_MISSION_CONTROL_PREFIXES)
             )
             forbidden = (path != "/logout/" and live_participant_for_user(user) is None) or (
                 path not in _CTF_ACCOUNT_ALWAYS_ALLOWED and not participant_surface

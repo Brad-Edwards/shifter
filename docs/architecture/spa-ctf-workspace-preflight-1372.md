@@ -133,7 +133,7 @@ These are contract gaps, not permission to create ad hoc endpoints:
 | Event/challenge lifecycle | `ctf.services.event`; `ctf.services.challenge`; `ctf.enums`; CTF models' `clean()`/`full_clean()` | Services/models remain authoritative for transitions, timing, release, visibility, prerequisites, validation, and persistence. |
 | Play and scoring | `ctf.services.submission`; `hint`; `scoring/*`; `assert_challenge_available_for_participant`; DB constraints | Reuse availability, attempt/cooldown, hint penalty, team/bracket/freeze, row-lock, and unique-correct-submission behavior. |
 | Participant accounts | `ctf.services.participant.accounts`; `lifecycle`; `bulk_import`; `management.services`; `config.auth`; `CTFAccountBoundaryMiddleware` | Keep isolated-account creation, password policy, group/profile marking, login, password change, capacity, and cleanup server-owned. |
-| Ranges/live state | `ctf.services.range/*`; `cms.services`; `shared.enums.RangeSource`; existing range API and Channels projection | Keep CTF provenance and lifecycle server-side; live state is advisory and reconciles through canonical reads. |
+| Ranges/live state | `ctf.services.range/*`; `ctf.bridges`; `cms.services.get_range_target_instances`; `shared.enums.RangeSource`; existing range API and Channels projection; `frontend/src/features/mission-control/guacamole.ts` | Keep CTF provenance and lifecycle server-side; live state is advisory and reconciles through canonical reads. Adapt CMS through the CTF bridge and return an explicit participant-safe target projection (`uuid`, `name`, `private_ip`, `os_type`) rather than forwarding raw provisioned-instance dictionaries. Reuse the existing protocol-parameterized Guacamole session hook; do not create a CTF access workflow. |
 | Files | `ctf.services.attachment`; `ctf.s3`; `ctf.inspection`; `shared.uploads.inspection` | Preserve extension, size, bounded header, streaming text, hash, storage, ownership, and participant availability gates. |
 | Flags/validators | `ctf.services.challenge`; `ctf.validators`; `ctf.services.regex_policy`; HTTP-validator DNS-rebinding guardrails | Never validate flags in React, expose stored/submitted flags, or bypass regex/HTTP/programmable validator policy. |
 | Audit/logging | `shared.audit`; `ctf.services.audit`; `config.middleware.RequestIDMiddleware`; `shared.log_sanitize`; ECS logging config | Keep audit at service/workflow boundaries; log safe ids and request ids, never credentials, flags, invite material, signed URLs, or content. |
@@ -153,9 +153,12 @@ These are contract gaps, not permission to create ad hoc endpoints:
   code never stores or sends `shf_` tokens.
 - **Account boundary:** `CTFAccountBoundaryMiddleware` continues to confine
   marked temporary accounts to participant-owned `/ctf/` and `/api/v1/ctf/`
-  surfaces and forces password change. SPA catch-alls must not swallow
-  `/ctf/change-password/`, `/ctf/login/`, `/logout/`, unsafe legacy handlers,
-  or unrelated platform paths.
+  surfaces, plus the exact `/api/v1/mission-control/guacamole/` broker prefix
+  needed for owner-authorized range sessions (#1740), and forces password
+  change before any of them. The exception must not widen to Mission Control
+  NGFW, range lifecycle/history, credentials, uploads, agents, or scenarios.
+  SPA catch-alls must not swallow `/ctf/change-password/`, `/ctf/login/`,
+  `/logout/`, unsafe legacy handlers, or unrelated platform paths.
 - **Object/privacy authorization:** event ownership, event-scoped eligible
   participant resolution, disqualification, challenge availability, file
   access, solve-history ownership, scoreboard visibility/freeze, and organizer
@@ -207,6 +210,19 @@ These are contract gaps, not permission to create ad hoc endpoints:
   2.1 AA: semantic landmarks/headings, keyboard access, visible focus, labels
   and descriptions, non-color status, announced async results, focus recovery,
   reduced motion, and usable reflow/zoom.
+
+### Range-access contract amendment (#1740)
+
+The function named `ctf.views.api.ranges.api_range_access` is legacy dead code:
+the runtime `/api/v1/ctf/range/access/` route is actually implemented by
+`ParticipantRangeAccessView`, and that operation is already committed in
+`openapi/v1.json`. Retire the SPA consumer and the dead legacy callable, but do
+not silently delete the published v1 operation or its response component.
+ADR-040 classifies route/response removal as a breaking change; the v1
+compatibility operation must be marked deprecated and retained until a parallel
+major plus migration window authorizes removal. If #1740 is interpreted as
+requiring the HTTP operation itself to disappear immediately, that scope must
+first be reconciled with ADR-040 rather than bypassing the breaking-change gate.
 
 ## Extensibility Seams
 

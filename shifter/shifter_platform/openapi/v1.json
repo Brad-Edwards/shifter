@@ -7566,7 +7566,7 @@
     "/api/v1/ctf/range/access/": {
       "post": {
         "operationId": "ctf_range_access_create",
-        "description": "Return the mission_control RDP endpoint redirect (participants are standard users).",
+        "description": "Return the Guacamole RDP endpoint pointer (deprecated; see class docstring).",
         "tags": [
           "ctf"
         ],
@@ -7578,6 +7578,7 @@
             "cookieAuth": []
           }
         ],
+        "deprecated": true,
         "responses": {
           "200": {
             "content": {
@@ -15686,13 +15687,49 @@
             "type": "boolean",
             "readOnly": true,
             "default": false
+          },
+          "target_instances": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RangeTargetInstance"
+            },
+            "readOnly": true
           }
         },
         "required": [
           "participant_id",
           "range_instance_id",
           "status",
+          "target_instances",
           "vpn_profile_available"
+        ]
+      },
+      "RangeTargetInstance": {
+        "type": "object",
+        "description": "A participant-safe target box in a ready range (issue #1740).\n\nDocuments the projected {uuid, name, private_ip, os_type} allowlist. The\n``ctf.bridges.cms_get_range_target_instances`` projection is what enforces the\nallowlist at runtime; this serializer only publishes the contract.",
+        "properties": {
+          "uuid": {
+            "type": "string",
+            "readOnly": true
+          },
+          "name": {
+            "type": "string",
+            "readOnly": true
+          },
+          "private_ip": {
+            "type": "string",
+            "readOnly": true
+          },
+          "os_type": {
+            "type": "string",
+            "readOnly": true
+          }
+        },
+        "required": [
+          "name",
+          "os_type",
+          "private_ip",
+          "uuid"
         ]
       },
       "RangeTypeEnum": {

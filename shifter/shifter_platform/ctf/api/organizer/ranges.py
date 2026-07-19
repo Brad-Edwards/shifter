@@ -152,21 +152,34 @@ class ParticipantRangeStatusView(APIView):
 
 
 class ParticipantRangeAccessView(APIView):
-    """Point participants at the mission_control Guacamole RDP access flow."""
+    """Deprecated single-endpoint range-access pointer (issue #1740).
+
+    Superseded by the per-box flow: the SPA reads ``target_instances`` from
+    ``ParticipantRangeStatusView`` and opens each box through the Mission Control
+    Guacamole bootstrap (``/api/v1/mission-control/guacamole/*``), which is now
+    admitted for live participants by ``CTFAccountBoundaryMiddleware``. This
+    route never carried an ``instance_uuid``, so a client could not actually
+    reach a box through it. It is retained only for backward compatibility —
+    ADR-040 forbids removing a published operation without a major/migration —
+    and is no longer called by any first-party client.
+    """
 
     permission_classes = CTF_PARTICIPANT_PERMISSIONS
     required_read_scopes = _PLAY_READ
     required_write_scopes = _PLAY_READ
 
-    @extend_schema(request=None, responses=RangeAccessResponseSerializer)
+    @extend_schema(request=None, responses=RangeAccessResponseSerializer, deprecated=True)
     def post(self, request: Request) -> Response:
-        """Return the mission_control RDP endpoint redirect (participants are standard users)."""
+        """Return the Guacamole RDP endpoint pointer (deprecated; see class docstring)."""
         from django.urls import reverse
 
         return Response(
             {
                 "redirect": reverse("v1:mission_control:guacamole-rdp-url"),
-                "message": "Use the mission_control RDP endpoint directly.",
+                "message": (
+                    "Deprecated: open each target box via the range-status "
+                    "target_instances and the Mission Control Guacamole flow."
+                ),
             }
         )
 
