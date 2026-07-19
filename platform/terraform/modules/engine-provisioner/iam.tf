@@ -161,9 +161,15 @@ resource "aws_iam_role_policy" "engine_state" {
 # Task Role Policy - EC2 Provisioning
 # ------------------------------------------------------------------------------
 
-resource "aws_iam_role_policy" "ec2_provisioning" {
-  name = "ec2-provisioning"
-  role = aws_iam_role.ecs_task.id
+# Moved off an inline role policy to a customer-managed policy (issue #1749):
+# the task role's aggregate inline-policy size exceeded AWS's 10,240-byte
+# ceiling once the GWLB and OpenVPN-gateway policies were added, failing the
+# portal Terraform apply. Managed policies attached to the role do not count
+# toward the inline aggregate. Permissions are unchanged from the prior inline
+# policy.
+resource "aws_iam_policy" "ec2_provisioning" {
+  name        = "${var.name_prefix}-pulumi-ec2-provisioning-managed"
+  description = "Shifter provisioner EC2 lifecycle and networking permissions (moved off inline to stay under the role inline-policy size limit)."
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -361,6 +367,13 @@ resource "aws_iam_role_policy" "ec2_provisioning" {
       }
     ]
   })
+
+  tags = local.common_tags
+}
+
+resource "aws_iam_role_policy_attachment" "ec2_provisioning" {
+  role       = aws_iam_role.ecs_task.name
+  policy_arn = aws_iam_policy.ec2_provisioning.arn
 }
 
 # Keep EC2 launch authorization in a customer-managed policy rather than an
@@ -561,9 +574,12 @@ resource "aws_iam_role_policy" "s3_agent" {
 # - Target groups with GENEVE protocol
 # - Listeners
 
-resource "aws_iam_role_policy" "gwlb" {
-  name = "gwlb-provisioning"
-  role = aws_iam_role.ecs_task.id
+# Moved off an inline role policy to a customer-managed policy (issue #1749) for
+# the same aggregate inline-policy-size reason as ec2_provisioning above.
+# Permissions are unchanged from the prior inline policy.
+resource "aws_iam_policy" "gwlb" {
+  name        = "${var.name_prefix}-pulumi-gwlb-provisioning-managed"
+  description = "Shifter provisioner Gateway Load Balancer permissions (moved off inline to stay under the role inline-policy size limit)."
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -672,6 +688,13 @@ resource "aws_iam_role_policy" "gwlb" {
       }
     ]
   })
+
+  tags = local.common_tags
+}
+
+resource "aws_iam_role_policy_attachment" "gwlb" {
+  role       = aws_iam_role.ecs_task.name
+  policy_arn = aws_iam_policy.gwlb.arn
 }
 
 # ------------------------------------------------------------------------------

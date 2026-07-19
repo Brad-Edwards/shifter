@@ -361,13 +361,14 @@ def _add_gdc_bootstrap_subparser(subparsers: argparse._SubParsersAction) -> None
     gdc_parser.add_argument(
         "--terraform-identity",
         choices=["bootstrap-sa", "operator-adc"],
-        default=(os.environ.get("SHIFTER_GCP_TERRAFORM_IDENTITY", "bootstrap-sa").strip() or "bootstrap-sa"),
+        default=(os.environ.get("SHIFTER_GCP_TERRAFORM_IDENTITY", "operator-adc").strip() or "operator-adc"),
         help=(
             "Identity the control-plane Terraform runs as (#1718; default from "
-            "SHIFTER_GCP_TERRAFORM_IDENTITY, else bootstrap-sa). 'bootstrap-sa' impersonates a "
-            "dedicated tf-bootstrap service account granted roles/owner (ADR-008). 'operator-adc' "
-            "runs terraform under the caller's Application Default Credentials, skipping that SA + "
-            "key entirely — required on orgs that forbid owner-on-SA or SA-key creation."
+            "SHIFTER_GCP_TERRAFORM_IDENTITY, else operator-adc). 'operator-adc' (default) runs "
+            "terraform under the caller's Application Default Credentials, minting no service "
+            "account or key (secure-by-default; the only path on orgs that forbid owner-on-SA or "
+            "SA-key creation). 'bootstrap-sa' impersonates a dedicated tf-bootstrap service account "
+            "granted roles/owner (ADR-008), for operators who cannot run terraform under their own ADC."
         ),
     )
     gdc_parser.add_argument("--dry-run", action="store_true", help=HELP_DRY_RUN)
@@ -460,6 +461,20 @@ Examples:
     return parser
 
 
+def _build_gdc_bootstrap_config(args: argparse.Namespace) -> GDCBootstrapConfig:
+    """Build the GDCBootstrapConfig for the `gdc-bootstrap` subcommand from parsed args."""
+    return GDCBootstrapConfig(
+        project_id=args.project_id,
+        cluster_id=args.cluster_id,
+        region=args.region,
+        zone=args.zone,
+        google_account_email=args.google_account_email,
+        shifter_config_path=args.shifter_config,
+        range_backend=args.range_backend,
+        terraform_identity=args.terraform_identity,
+    )
+
+
 def _dispatch_runners(args: argparse.Namespace) -> None:
     """Dispatch the `runners` subcommand to the AWS or GCP provisioning path."""
     if args.cloud == Cloud.GCP.value:
@@ -547,15 +562,6 @@ def main() -> None:
 
     elif args.command == "gdc-bootstrap":
         gdc_bootstrap_cluster(
-            GDCBootstrapConfig(
-                project_id=args.project_id,
-                cluster_id=args.cluster_id,
-                region=args.region,
-                zone=args.zone,
-                google_account_email=args.google_account_email,
-                shifter_config_path=args.shifter_config,
-                range_backend=args.range_backend,
-                terraform_identity=args.terraform_identity,
-            ),
+            _build_gdc_bootstrap_config(args),
             dry_run=args.dry_run,
         )

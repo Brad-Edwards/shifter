@@ -293,21 +293,23 @@ class TestMainCLI:
     # Dependency checking
     # ---------------------------------------------------------------------
 
-    def test_checks_dependencies_before_running_commands(self):
-        """CLI checks dependencies before executing any command."""
+    def test_checks_gdc_dependencies_before_running_command(self, capsys):
+        """A missing GDC dependency stops the command before any work starts."""
         with (
-            patch("sys.argv", ["deploy.py", "bootstrap", "--env", "dev", "--profile", "test"]),
-            patch("deploy.check_dependencies") as mock_check,
-            patch("shutil.which", return_value="/usr/bin/tool"),
-            patch("deploy.bootstrap_account"),
-            patch("deploy.walkthrough_github_secrets"),
-            patch("deploy.walkthrough_backend_config"),
+            patch(
+                "sys.argv",
+                ["deploy.py", "gdc-bootstrap", "--project-id", "prod-rwctxzl6shxk", "--cluster-id", "cluster1"],
+            ),
+            patch("shutil.which", side_effect=lambda tool: None if tool == "gcloud" else f"/usr/bin/{tool}"),
+            pytest.raises(SystemExit) as exc,
         ):
-            mock_check.return_value = None
-
             deploy.main()
 
-            mock_check.assert_called_once_with("bootstrap", cloud=None)
+        assert exc.value.code == 1
+        output = capsys.readouterr().out
+        assert "Missing required dependencies" in output
+        assert "gcloud" in output
+        assert "Bootstrapping cluster1 GDC Cluster" not in output
 
     # ---------------------------------------------------------------------
     # Command execution
@@ -329,13 +331,12 @@ class TestMainCLI:
 
             mock_bootstrap.assert_called_once_with(deploy.BootstrapConfig(env="dev"), "test", dry_run=False)
 
-    def test_executes_terraform_command(self, mock_repo_root):
+    def test_executes_terraform_command(self):
         """CLI executes terraform_deploy when terraform command given."""
         with (
             patch("sys.argv", ["deploy.py", "terraform", "--env", "dev", "--profile", "test"]),
             patch("deploy.check_dependencies"),
             patch("shutil.which", return_value="/usr/bin/tool"),
-            patch("deploy.get_repo_root", return_value=mock_repo_root),
             patch("deploy.terraform_deploy") as mock_terraform,
             patch("deploy.walkthrough_acm_validation"),
             patch("deploy.walkthrough_dns_setup"),
@@ -360,22 +361,46 @@ class TestMainCLI:
 
             mock_full.assert_called_once_with("dev", "test", dry_run=False)
 
-    def test_executes_gdc_bootstrap_command(self):
-        """CLI executes gdc_bootstrap_cluster when gdc-bootstrap command given."""
+    def test_executes_gdc_bootstrap_dry_run(self, capsys, mock_subprocess, mock_repo_root):
+        """gdc-bootstrap parses its configuration and completes a safe dry run."""
+        tf_dir = mock_repo_root / "platform" / "terraform" / "gcp" / "environments" / "gcp-dev"
+        tf_dir.mkdir(parents=True)
+        (tf_dir / "terraform.tfvars").write_text(
+            'project_id = "shifter-gcp-dev"\n'
+            'public_hostname = "portal.example.test"\n'
+            "enable_managed_tls = true\n"
+            "gke_master_authorized_cidrs = []\n"
+        )
+        security_override = tf_dir / "security.auto.tfvars"
+        security_override.write_text('gke_master_authorized_cidrs = ["203.0.113.10/32"]\n')
+        shifter_config = mock_repo_root / "shifter.yaml"
+        shifter_config.write_text("version: 1\nbackend: gcp\n")
         with (
             patch(
                 "sys.argv",
-                ["deploy.py", "gdc-bootstrap", "--project-id", "prod-rwctxzl6shxk", "--cluster-id", "cluster1"],
+                [
+                    "deploy.py",
+                    "gdc-bootstrap",
+                    "--project-id",
+                    "prod-rwctxzl6shxk",
+                    "--cluster-id",
+                    "cluster1",
+                    "--range-backend",
+                    "gdc",
+                    "--shifter-config",
+                    str(shifter_config),
+                    "--dry-run",
+                ],
             ),
-            patch("deploy.check_dependencies"),
-            patch("deploy.gdc_bootstrap_cluster") as mock_gdc_bootstrap,
+            patch("shutil.which", return_value="/usr/bin/tool"),
+            patch("deploy.get_repo_root", return_value=mock_repo_root),
         ):
             deploy.main()
 
-            mock_gdc_bootstrap.assert_called_once_with(
-                deploy.GDCBootstrapConfig(project_id="prod-rwctxzl6shxk", cluster_id="cluster1"),
-                dry_run=False,
-            )
+        output = capsys.readouterr().out
+        assert "Bootstrapping cluster1 GDC Cluster" in output
+        assert "GCP Project: prod-rwctxzl6shxk" in output
+        assert "GDC bootstrap complete" in output
 
     # ---------------------------------------------------------------------
     # Dry-run mode
@@ -398,13 +423,12 @@ class TestMainCLI:
             # Should be called with dry_run=True
             assert mock_bootstrap.call_args[1]["dry_run"] is True
 
-    def test_passes_dry_run_flag_to_terraform(self, mock_repo_root):
+    def test_passes_dry_run_flag_to_terraform(self):
         """CLI passes --dry-run flag to terraform_deploy."""
         with (
             patch("sys.argv", ["deploy.py", "terraform", "--env", "dev", "--profile", "test", "--dry-run"]),
             patch("deploy.check_dependencies"),
             patch("shutil.which", return_value="/usr/bin/tool"),
-            patch("deploy.get_repo_root", return_value=mock_repo_root),
             patch("deploy.terraform_deploy") as mock_terraform,
         ):
             mock_terraform.return_value = None
@@ -502,28 +526,72 @@ class TestMainCLI:
             assert config.terraform_identity == "operator-adc"
             assert config.terraform_uses_operator_adc is True
 
-    def test_passes_yes_flag_to_gdc_bootstrap(self):
-        """CLI enables non-interactive proceed when --yes given to gdc-bootstrap (issue #1713)."""
-        with (
-            patch(
-                "sys.argv",
-                [
-                    "deploy.py",
-                    "gdc-bootstrap",
-                    "--project-id",
-                    "prod-rwctxzl6shxk",
-                    "--cluster-id",
-                    "cluster1",
-                    "--yes",
-                ],
-            ),
-            patch("deploy.check_dependencies"),
-            patch("deploy.set_assume_yes") as mock_set_assume_yes,
-            patch("deploy.gdc_bootstrap_cluster"),
-        ):
-            deploy.main()
+    def test_gdc_bootstrap_defaults_to_operator_adc_terraform_identity(self):
+        """gdc-bootstrap defaults to operator-adc (keyless, no owner-on-SA) terraform identity (#1738).
 
-            mock_set_assume_yes.assert_called_once_with(True)
+        Asserts the config built directly from parsed CLI args/env, rather than routing
+        through deploy.main() + gdc_bootstrap_cluster, so this stays a focused unit test
+        of the config-building seam (ADR-019 boundary-mock policy).
+        """
+        with patch.dict("os.environ", {"SHIFTER_GCP_TERRAFORM_IDENTITY": ""}, clear=False):
+            parser = deploy._build_parser()
+            args = parser.parse_args(["gdc-bootstrap", "--project-id", "prod-rwctxzl6shxk", "--cluster-id", "cluster1"])
+            config = deploy._build_gdc_bootstrap_config(args)
+
+        assert config.terraform_identity == "operator-adc"
+        assert config.terraform_uses_operator_adc is True
+
+    def test_gdc_bootstrap_terraform_identity_bootstrap_sa_optout(self):
+        """--terraform-identity bootstrap-sa opts back into the tf-bootstrap SA path (#1738).
+
+        Asserts the config built directly from parsed CLI args, rather than routing through
+        deploy.main() + gdc_bootstrap_cluster, so this stays a focused unit test of the
+        config-building seam (ADR-019 boundary-mock policy).
+        """
+        parser = deploy._build_parser()
+        args = parser.parse_args(
+            [
+                "gdc-bootstrap",
+                "--project-id",
+                "prod-rwctxzl6shxk",
+                "--cluster-id",
+                "cluster1",
+                "--terraform-identity",
+                "bootstrap-sa",
+            ]
+        )
+        config = deploy._build_gdc_bootstrap_config(args)
+
+        assert config.terraform_identity == "bootstrap-sa"
+        assert config.terraform_uses_operator_adc is False
+
+    def test_passes_yes_flag_to_gdc_bootstrap(self):
+        """--yes makes later non-interactive confirmation prompts proceed."""
+        deploy.set_assume_yes(False)
+        try:
+            with (
+                patch(
+                    "sys.argv",
+                    [
+                        "deploy.py",
+                        "gdc-bootstrap",
+                        "--project-id",
+                        "prod-rwctxzl6shxk",
+                        "--cluster-id",
+                        "cluster1",
+                        "--yes",
+                    ],
+                ),
+                patch("shutil.which", return_value=None),
+                pytest.raises(SystemExit) as exc,
+            ):
+                deploy.main()
+
+            assert exc.value.code == 1
+            with patch("sys.stdin.isatty", return_value=False):
+                assert deploy.confirm("Proceed?") is True
+        finally:
+            deploy.set_assume_yes(False)
 
     # ---------------------------------------------------------------------
     # preflight subcommand (shared deploy prerequisite gate)

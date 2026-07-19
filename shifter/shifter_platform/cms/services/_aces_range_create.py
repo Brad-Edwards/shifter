@@ -266,6 +266,9 @@ def create_aces_native_range(user: User, scenario: str, *, range_source: RangeSo
     _validate_create_range_scenario(user, scenario)
     if range_source is None:
         range_source = RangeSource.MISSION_CONTROL
+    from cms.services._range_lease import build_range_lease
+
+    lease = build_range_lease(range_source)
 
     backend_admission = _assert_live_fire_backend_admitted()
     _assert_no_active_range(user, range_source)
@@ -280,6 +283,8 @@ def create_aces_native_range(user: User, scenario: str, *, range_source: RangeSo
             user_id=user.id,
             range_source=range_source.value,
             range_spec=None,
+            expires_at=lease.expires_at,
+            maximum_expires_at=lease.maximum_expires_at,
         )
 
     request_id, _cms_request, range_instance = _reserve_active_range_slot(user, range_source, _persist)

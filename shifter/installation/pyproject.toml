@@ -26,7 +26,7 @@ dev = [
 ]
 
 [tool.setuptools]
-packages = ["installation"]
+packages = ["installation", "installation.contract"]
 package-dir = {"installation" = "."}
 
 [tool.pytest.ini_options]

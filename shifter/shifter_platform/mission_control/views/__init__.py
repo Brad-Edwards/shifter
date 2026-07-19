@@ -38,9 +38,13 @@ from cms.services import (
 from cms.services import (
     destroy_ngfw as cms_destroy_ngfw,
 )
+from cms.services import extend_mission_control_range as cms_extend_mission_control_range
 from cms.services import (
     get_active_range,
     get_allowed_extensions,
+    get_mission_control_openvpn_profile,
+    get_mission_control_range_lease,
+    has_mission_control_openvpn_profile,
 )
 from cms.services import (
     get_agent as cms_get_agent,
@@ -108,6 +112,7 @@ __all__ = (
     "cms_delete_agent",
     "cms_delete_credential",
     "cms_destroy_ngfw",
+    "cms_extend_mission_control_range",
     "cms_get_agent",
     "cms_get_credential",
     "cms_get_ngfw",
@@ -123,6 +128,9 @@ __all__ = (
     "delete_agent",
     "get_active_range",
     "get_allowed_extensions",
+    "get_mission_control_openvpn_profile",
+    "get_mission_control_range_lease",
+    "has_mission_control_openvpn_profile",
     "help_page",
     "logger",
     "ngfw_deprovision",
