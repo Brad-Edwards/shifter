@@ -264,6 +264,12 @@ variable "aces_package_bucket_name" {
   default     = ""
 }
 
+variable "enable_cicd_github_oidc" {
+  description = "Create the GitHub Actions -> GCP Workload Identity federation (pool, provider, packer build SA). Default true. Set false for tenants whose org blocks the GitHub OIDC issuer (constraints on iam.workloadIdentityPoolProviders) or that do not use GitHub Actions CI; the platform itself does not depend on it (#1723)."
+  type        = bool
+  default     = true
+}
+
 variable "github_org" {
   description = "GitHub organization allowed to federate into the packer build service account."
   type        = string

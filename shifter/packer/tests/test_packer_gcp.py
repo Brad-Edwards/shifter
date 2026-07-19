@@ -170,6 +170,16 @@ class TestGcpKaliSourceImage:
         assert "google-guest-agent" in script
         assert "--force-overwrite" in script
 
+    def test_kali_conversion_script_regenerates_ssh_host_keys(self):
+        script = (PACKER_DIR / "scripts" / "kali" / "gce-debian-to-kali.sh").read_text()
+        # cleanup.sh strips host keys; Kali (unlike Ubuntu) does not regenerate
+        # them on first boot, so sshd never binds :22 and the range provisioner's
+        # SSH-wait times out (#1745). The conversion must install a first-boot
+        # oneshot that runs `ssh-keygen -A` before sshd.
+        assert "regenerate-ssh-host-keys.service" in script
+        assert "ssh-keygen -A" in script
+        assert "systemctl enable regenerate-ssh-host-keys.service" in script
+
 
 class TestGcpPackerValidate:
     """`packer validate` passes against the GCE templates (when packer is present)."""

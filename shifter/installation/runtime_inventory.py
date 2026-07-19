@@ -28,11 +28,14 @@ GCP_GENERATED_RUNTIME_ENV_KEYS: frozenset[str] = frozenset(
         # Renderer-owned selected-backend identity (PLAT-2005): the GCP backend
         # runtime-env renderer (scripts/gcp/render_runtime_env.py) IS this backend's
         # identity source, so CLOUD_PROVIDER is generated, not a static overlay literal.
+        "CLOUD_PROJECT_ID",
         "CLOUD_PROVIDER",
         "CSRF_COOKIE_SECURE",
         "DB_HOST",
+        "DB_NAME",
         "DB_PORT",
         "DB_SECRET_ID",
+        "DB_USER",
         "DJANGO_ALLOWED_HOSTS",
         "DJANGO_CSRF_TRUSTED_ORIGINS",
         "DJANGO_DEBUG",
@@ -146,9 +149,12 @@ GCP_SECRET_RUNTIME_ENV_KEYS: frozenset[str] = frozenset()
 GCP_PROVISIONER_FORWARDED_RUNTIME_ENV_KEYS: frozenset[str] = frozenset(
     {
         "AGENT_STORAGE_BUCKET",
+        "CLOUD_PROJECT_ID",
         "CLOUD_PROVIDER",
         "DB_HOST",
+        "DB_NAME",
         "DB_PORT",
+        "DB_USER",
         "ENGINE_TASK_IMAGE",
         "GCP_PROJECT_ID",
         "GCP_RANGE_BACKEND",

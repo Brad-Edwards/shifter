@@ -505,14 +505,18 @@ class GDCBootstrapConfig:
     # default deploys the keyless GKE control plane straight through, so a tenant on
     # an org that enforces iam.managed.disableServiceAccountKeyCreation is not blocked.
     range_backend: str = "gce"
-    # Terraform identity for the control-plane apply (#1718). "bootstrap-sa" (default)
-    # impersonates a dedicated shifter-<env>-tf-bootstrap service account granted
-    # roles/owner (ADR-008 least-standing-privilege). "operator-adc" runs terraform
-    # directly under the caller's Application Default Credentials, skipping the
-    # bootstrap SA + key entirely — required on orgs that enforce
-    # custom.preventPrivilegedBasicRolesForServAccounts (no owner-on-SA) or
-    # iam.managed.disableServiceAccountKeyCreation (no SA keys).
-    terraform_identity: str = "bootstrap-sa"
+    # Terraform identity for the control-plane apply (#1718). "operator-adc"
+    # (default) runs terraform directly under the caller's Application Default
+    # Credentials, minting no service account and no key. It is secure-by-default:
+    # the operator running gdc-bootstrap already holds the project roles terraform
+    # needs, so a dedicated roles/owner SA adds standing privilege and (on the
+    # bootstrap-sa path) a JSON key with no capability gain. It is also the only
+    # path that works on orgs enforcing custom.preventPrivilegedBasicRolesForServAccounts
+    # (no owner-on-SA) or iam.managed.disableServiceAccountKeyCreation (no SA keys).
+    # "bootstrap-sa" (opt-out) impersonates a dedicated shifter-<env>-tf-bootstrap
+    # service account granted roles/owner, for operators who cannot run terraform
+    # under their own ADC.
+    terraform_identity: str = "operator-adc"
 
     @property
     def builds_gdc_substrate(self) -> bool:
@@ -697,18 +701,17 @@ def validate_gcp_control_plane_security_inputs(tf_dir: Path) -> None:
             "GCP bootstrap requires managed TLS for the public ingress. "
             "Set enable_managed_tls = true in terraform.tfvars."
         )
-    authorized_cidrs = settings["gke_master_authorized_cidrs"]
-    if not authorized_cidrs:
-        raise ValueError(
-            "GCP bootstrap requires gke_master_authorized_cidrs so the public GKE control-plane endpoint "
-            "is restricted to admin networks."
-        )
-    # Same contract the Terraform variable validation enforces (see
+    # The GKE control-plane endpoint is private (enable_private_endpoint = true);
+    # operator/CI reach it over the IAM-authenticated DNS endpoint, so
+    # gke_master_authorized_cidrs is optional and defaults to empty (#1723). An
+    # empty list is the secure default and is allowed. Same per-entry contract the
+    # Terraform variable validation enforces for any supplied entries (see
     # platform/terraform/gcp/modules/platform-core/variables.tf::gke_master_authorized_cidrs):
     #   1. an explicit "/N" suffix is present (rejects bare IPs).
     #   2. the entry parses as a CIDR (rejects garbage / bad octets / bad prefixes).
     #   3. the parsed prefix length is > 0 (rejects /0 from the parsed prefix
     #      number, not from a string-suffix check).
+    authorized_cidrs = settings["gke_master_authorized_cidrs"]
     for cidr in authorized_cidrs:
         if "/" not in cidr:
             raise ValueError(
@@ -723,8 +726,9 @@ def validate_gcp_control_plane_security_inputs(tf_dir: Path) -> None:
             ) from exc
         if network.prefixlen == 0:
             raise ValueError(
-                f"GCP bootstrap rejected gke_master_authorized_cidrs entry {cidr!r}: a /0 range opens the "
-                "public GKE control-plane endpoint to the entire internet. List specific admin networks instead."
+                f"GCP bootstrap rejected gke_master_authorized_cidrs entry {cidr!r}: a /0 range is world-open. "
+                "List specific RFC1918 admin networks instead, or leave the list empty and rely on the "
+                "IAM-authenticated DNS control-plane endpoint."
             )
 
 
