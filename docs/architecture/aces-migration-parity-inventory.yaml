@@ -130,7 +130,7 @@ rows:
 
   - id: cyberscript.script-context
     surface: CyberScript
-    legacy_source: shifter/cyberscript/script_context.py
+    legacy_source: shifter/cyberscript/script_context/
     legacy_field: ScriptExecutionContext
     category: Shifter backend responsibility
     aces_target: ACES participant/runtime contracts only after equal prompt and artifact boundaries exist
@@ -310,7 +310,7 @@ rows:
 
   - id: aces.participant-runtime-sidecars
     surface: participant-runtime
-    legacy_source: removed legacy cms.experiments models; shifter/shifter_platform/engine/models.py; shifter/shifter_platform/ctf/models/
+    legacy_source: removed legacy cms.experiments models; shifter/shifter_platform/engine/models/; shifter/shifter_platform/ctf/models/
     legacy_field: removed ExperimentRun, Range, CTFParticipant, and runtime participant/access correlation fields
     category: ACES schema/profile gap
     aces_target: ACES participant implementation and participant runtime records with profile/version discriminators
@@ -322,7 +322,7 @@ rows:
 
   - id: aces.participant-history-evidence
     surface: artifact
-    legacy_source: removed legacy cms.experiments execution/model code; shifter/cyberscript/script_context.py
+    legacy_source: removed legacy cms.experiments execution/model code; shifter/cyberscript/script_context/
     legacy_field: ScriptExecutionContext, ScriptCommand, RunArtifact, ExperimentArtifact, Claude transcript artifacts, and behavior-history evidence references
     category: ACES schema/profile gap
     aces_target: ACES behavior-history and evidence records carrying artifact refs, digests, provenance, capture profile, retention class, and redaction status
@@ -418,7 +418,7 @@ rows:
 
   - id: aces.operation-sidecar-persistence
     surface: provisioner
-    legacy_source: shifter/shifter_platform/engine/models.py
+    legacy_source: shifter/shifter_platform/engine/models/
     legacy_field: Request, Range, range_config, provisioned_instances, and lifecycle timestamps
     category: Shifter backend responsibility
     aces_target: operation-receipt-v1, operation-status-v1, runtime-snapshot-v1, and execution-plan reference sidecar records
@@ -478,7 +478,7 @@ rows:
 
   - id: status.engine-range
     surface: status
-    legacy_source: shifter/shifter_platform/engine/models.py
+    legacy_source: shifter/shifter_platform/engine/models/
     legacy_field: Range.Status and Instantiation.status
     category: Shifter backend responsibility
     aces_target: ACES operation-status-v1 adapter view
