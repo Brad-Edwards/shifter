@@ -331,7 +331,7 @@ class CTFEvent(CTFBaseModel):
         return delta.total_seconds() / 3600
 
     @property
-    def effective_registration_deadline(self):
+    def effective_registration_deadline(self) -> datetime:
         """Deadline shown to prospective participants (CTF-705).
 
         Defaults to ``event_start`` when no explicit deadline is set. This is
