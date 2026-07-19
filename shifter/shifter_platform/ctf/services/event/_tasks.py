@@ -55,14 +55,6 @@ def _schedule_event_tasks(event: CTFEvent) -> None:
         scheduled_for=event.event_end,
     )
 
-    # Cleanup ranges after event (if auto_cleanup)
-    if event.auto_cleanup:
-        CTFScheduledTask.objects.create(
-            event=event,
-            task_type=ScheduledTaskType.CLEANUP_RANGES.value,
-            scheduled_for=event.get_cleanup_time(),
-        )
-
     # Schedule reminders at configurable intervals before event start
     reminder_intervals = [h for h in (event.reminder_hours or [24, 1]) if isinstance(h, int) and h > 0]
     for hours in reminder_intervals:
@@ -102,13 +94,6 @@ def _reschedule_live_event_schedule(event: CTFEvent) -> None:
         status=ScheduledTaskStatus.PENDING.value,
     ):
         task.mark_cancelled()
-
-    if event.auto_cleanup:
-        CTFScheduledTask.objects.create(
-            event=event,
-            task_type=ScheduledTaskType.CLEANUP_RANGES.value,
-            scheduled_for=event.get_cleanup_time(),
-        )
 
     logger.info("Rescheduled live end tasks for event %s", event.id)
 

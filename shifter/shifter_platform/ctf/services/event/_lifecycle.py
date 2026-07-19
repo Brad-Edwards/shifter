@@ -153,8 +153,8 @@ def activate_event(event: CTFEvent) -> bool:
 def complete_event(event: CTFEvent) -> bool:
     """End an active event (transition to ended).
 
-    If ``auto_cleanup`` is enabled, destroys all participant ranges
-    to prevent orphaned cloud resources.
+    Range teardown is enforced independently by each range's server-owned
+    lease at ``event.get_cleanup_time()``.
 
     Args:
         event: The CTFEvent to end.
@@ -180,12 +180,6 @@ def complete_event(event: CTFEvent) -> bool:
     from ctf.services.scoring import recompute_event_leaderboard
 
     recompute_event_leaderboard(event.pk)
-
-    if event.auto_cleanup:
-        from ctf.services.range import cleanup_event_ranges
-
-        result = cleanup_event_ranges(event.pk)
-        logger.info("Auto-cleanup on event end %s: %s", event.id, result)
 
     logger.info("Ended CTF event %s", event.id)
     return True

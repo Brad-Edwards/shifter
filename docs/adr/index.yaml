@@ -20,6 +20,11 @@
         "id": "ADR-001-R3",
         "description": "Every first-party Django app is classified in scripts/check_layer_imports/layer_imports.yaml as a domain, presentation, support/contracts, or support/composition layer. An unclassified first-party app in INSTALLED_APPS, a stale classification entry with no local AppConfig, or a dynamic INSTALLED_APPS entry the checker cannot resolve fails closed. The retired documentation package (ADR-038) is not classified.",
         "checks": ["installed-apps-classified"]
+      },
+      {
+        "id": "ADR-001-R4",
+        "description": "Mission Control calls the public service facade of the domain that owns the operation: cms.services for catalog, desired-state lifecycle, and control-plane orchestration; engine.services directly only for realized runtime/data-plane access such as terminal creation, SSH/RDP connection resolution, and NGFW terminal access. The mission_control -> engine.services seam is narrowed to a per-symbol allowlist in the allowed_symbols block of scripts/check_layer_imports/layer_imports.yaml (SSHConnection, connect_terminal, connect_ngfw_terminal, get_ssh_connection_info, get_rdp_connection_info, get_ranges_for_ngfw); importing any other engine.services symbol, or a bare engine.services module import that hides the symbol, is a violation, so control-plane engine operations still front through cms.services. A CMS pass-through must not be added solely to give presentation one downstream dependency; both paths remain limited to their public service facades.",
+        "checks": ["layer-imports"]
       }
     ],
     "exceptions": [],
@@ -29,7 +34,8 @@
       "scripts/check_layer_imports/check_layer_imports.py",
       "scripts/adr_guard/adr_guard.py",
       ".importlinter",
-      "shifter/shifter_platform/management/management/commands/check_model_fks.py"
+      "shifter/shifter_platform/management/management/commands/check_model_fks.py",
+      "docs/architecture/mission-control-runtime-service-boundary-preflight-994.md"
     ]
   },
   {
@@ -1847,7 +1853,7 @@
       },
       {
         "id": "ADR-039-R10",
-        "description": "Participant client VPN is an ADR-039 remote-access specialization, not a fifth operation, browser-workspace transport, or scenario-authored service. Only the trusted CTF launch path may mint the closed capability beside scenario intent; it binds one participant-access target and the event teardown deadline, and topology alone must never activate a VPN. A CTF-required profile terminates on a request-owned logical gateway inside the range containment boundary (never a cross-range shared gateway or the participant target), creates one participant/generation-scoped profile secret reference during provision, and enforces server-side reachability only to the authoritative member target. The only public range ingress exception is the audited per-range mutual-TLS OpenVPN UDP/1194 listener in the request-owned NLB resource; the CIDR guard must match that exact path/resource/protocol/port tuple and its readiness responder is private to the portal network. Infrastructure creation returns pending metadata, and a bounded service-and-policy probe must pass before the binding is published as ready. Download resolves the existing secret after product ownership/state checks; pause disables access, resume restores the current generation, and destroy deletes all generation material. Because a downloaded credential cannot be recalled from a former participant, in-place reassignment is refused while a VPN binding exists; recovery for a new owner must destroy the old generation and provision a new one before readiness. The immutable provisioner-only issuer is retained until generation teardown so retries reuse the exact server/profile material. Certificate `notAfter` is derived from the trusted teardown deadline; stale or greater-than-397-day windows fail before provider mutation. GCE uses a distinct no-role gateway service account per range generation with secretAccessor only on its own server secret. Profile/private-key/CA signing values are prohibited from public contracts, Django/adapter/Terraform state, events, task payloads, environment, argv, logs, metrics, and errors. Every CTF-eligible live-fire adapter must pass the same real-client handshake, isolation, lifecycle, and secret-deletion conformance before advertising the capability; no product or SPA provider branch may compensate for a missing adapter capability.",
+        "description": "User-held client VPN is an ADR-039 remote-access specialization, not a fifth operation, browser-workspace transport, or scenario-authored service. Only a trusted product launch path may mint the closed capability beside scenario intent; product provenance and ownership stay at the product/CMS boundary, while the capability binds one authoritative participant-access target and an enforced server-owned access deadline. CMS persists one lease for every new CTF and Mission Control range: the current deadline is the sole automatic-cleanup authority and the immutable generation ceiling bounds certificate `notAfter`. CTF derives both from event cleanup. Mission Control starts at 30 days, extends only through server-selected 30-day increments, and cannot exceed 365 days from creation; HTTP callers cannot select a deadline or increment. The DB-authoritative reconciler locks due rows and reuses canonical system-attributed destroy and existing product projections rather than a CTF- or Mission-Control-specific cleanup workflow. Any future product must supply the same enforced lease semantics or introduce an explicitly versioned renewal/revocation lifecycle; caller-supplied, silently expiring, and unbounded deadlines are prohibited, and topology alone never activates a VPN. A required profile terminates on a request-owned logical gateway inside the range containment boundary (never a cross-range shared gateway or the user-controlled target), creates one owner/generation-scoped profile secret reference during provision, and enforces server-side reachability only to the authoritative member target. The only public range ingress exception is the audited per-range mutual-TLS OpenVPN UDP/1194 listener in the request-owned NLB resource; the CIDR guard must match that exact path/resource/protocol/port tuple and its readiness responder is private to the portal network. Infrastructure creation returns pending metadata, and a bounded service-and-policy probe must pass before the binding is published as ready. Download resolves the existing secret after product ownership/state checks; pause disables access, resume restores the current generation, and destroy deletes all generation material. Because a downloaded credential cannot be recalled from a former owner, in-place reassignment is refused while a VPN binding exists; recovery for a new owner must destroy the old generation and provision a new one before readiness. The immutable provisioner-only issuer is retained until generation teardown so retries reuse the exact server/profile material. GCE uses a distinct no-role gateway service account per range generation with secretAccessor only on its own server secret. Profile/private-key/CA signing values are prohibited from public contracts, Django/adapter/Terraform state, events, task payloads, environment, argv, logs, metrics, and errors. Every live-fire adapter eligible for an enabled product profile must pass the same real-client handshake, isolation, lifecycle, secret-deletion, and capacity conformance before advertising the capability; no product or SPA provider branch may compensate for a missing adapter capability.",
         "checks": []
       }
     ],
@@ -1856,8 +1862,10 @@
     "evidence": [
       "https://github.com/Brad-Edwards/shifter/issues/1322",
       "https://github.com/Brad-Edwards/shifter/issues/1695",
+      "https://github.com/Brad-Edwards/shifter/issues/1696",
       "docs/architecture/provider-neutral-range-substrate.md",
       "docs/architecture/ctf-openvpn-participant-access-preflight-1695.md",
+      "docs/architecture/non-ctf-openvpn-range-access-preflight-1696.md",
       "docs/architecture/branch-routing-provider-coupling-inventory.md",
       "docs/architecture/root-configured-backend-bundles.md",
       "docs/architecture/range-isolation-model.md",

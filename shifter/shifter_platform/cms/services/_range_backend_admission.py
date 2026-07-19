@@ -63,3 +63,27 @@ def _assert_live_fire_backend_admitted() -> BackendAdmission | None:
     # the SAME evaluated value (never a second env read, which could race a
     # selector flip -- #1666 / preflight).
     return admission
+
+
+def _openvpn_backend_admitted(backend_admission: BackendAdmission | None) -> bool:
+    """Return whether the selected realization path implements OpenVPN v1.
+
+    This is the trusted backend-capability admission seam for product launch
+    code.  AWS and the admitted GCE range-cell backend implement the existing
+    OpenVPN conformance contract.  Local provisioners and any other provider or
+    backend remain capability-false even when they are otherwise allowed to
+    launch a range.
+    """
+    from django.conf import settings
+
+    if str(getattr(settings, "LOCAL_PROVISIONER", "")).strip():
+        return False
+    provider = str(getattr(settings, "CLOUD_PROVIDER", "")).strip().lower()
+    if provider == "aws":
+        return True
+    return bool(
+        provider == "gcp"
+        and backend_admission is not None
+        and backend_admission.admitted
+        and backend_admission.backend == "gce"
+    )

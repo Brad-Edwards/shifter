@@ -122,3 +122,61 @@ def test_ctf_capability_projection_hides_non_ctf_and_stale_bindings():
     engine_range.vpn_access_binding["owner_user_id"] = user.id + 1
     engine_range.save(update_fields=["vpn_access_binding"])
     assert has_ctf_openvpn_profile(user, ctf_range.pk) is False
+
+
+def test_profile_access_rejects_unsaved_users_and_missing_requests():
+    from cms.exceptions import CMSError
+    from cms.services import get_mission_control_openvpn_profile
+
+    unsaved_user = User()
+    with pytest.raises(CMSError):
+        get_mission_control_openvpn_profile(unsaved_user)
+
+    user = User.objects.create_user(username="cms-vpn-missing-request@example.test")
+    RangeInstance.objects.create(
+        request=None,
+        scenario_id="basic",
+        user_id=user.id,
+        status=ResourceStatus.READY.value,
+        range_source=RangeSource.MISSION_CONTROL.value,
+    )
+    with pytest.raises(CMSError):
+        get_mission_control_openvpn_profile(user)
+
+
+def test_profile_access_rejects_a_binding_that_is_not_ready():
+    from cms.exceptions import CMSError
+    from cms.services import get_ctf_openvpn_profile
+
+    user = User.objects.create_user(username="cms-vpn-binding-not-ready@example.test")
+    cms_range, engine_range = _range_pair(user)
+    engine_range.vpn_access_binding["ready"] = False
+    engine_range.save(update_fields=["vpn_access_binding"])
+
+    with pytest.raises(CMSError):
+        get_ctf_openvpn_profile(user, cms_range.pk)
+
+
+def test_profile_access_rejects_invalid_secret_material(settings):
+    from cms.exceptions import CMSError
+    from cms.services import get_ctf_openvpn_profile
+
+    settings.CLOUD_PROVIDER = "aws"
+    user = User.objects.create_user(username="cms-vpn-invalid-profile@example.test")
+    cms_range, _engine_range = _range_pair(user)
+
+    with boto3_secrets(make_secrets_client("not-an-openvpn-profile")), pytest.raises(CMSError):
+        get_ctf_openvpn_profile(user, cms_range.pk)
+
+
+def test_profile_helpers_fail_closed_if_a_loaded_range_loses_its_request():
+    from types import SimpleNamespace
+
+    from cms.services._range_vpn import OpenVpnProfileUnavailable, _has_profile, _resolve_profile
+
+    user = User.objects.create_user(username="cms-vpn-request-race@example.test")
+    instance = SimpleNamespace(request=None)
+
+    assert _has_profile(user, instance) is False
+    with pytest.raises(OpenVpnProfileUnavailable):
+        _resolve_profile(user, instance)

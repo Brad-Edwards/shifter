@@ -5251,7 +5251,7 @@
     "/api/v1/ctf/range/access/": {
       "post": {
         "operationId": "ctf_range_access_create",
-        "description": "Return the mission_control RDP endpoint redirect (participants are standard users).",
+        "description": "Return the Guacamole RDP endpoint pointer (deprecated; see class docstring).",
         "tags": [
           "ctf"
         ],
@@ -5263,6 +5263,7 @@
             "cookieAuth": []
           }
         ],
+        "deprecated": true,
         "responses": {
           "200": {
             "content": {
@@ -6966,6 +6967,88 @@
         ]
       }
     },
+    "/api/v1/mission-control/range/extend/": {
+      "post": {
+        "operationId": "mission_control_range_extend_create",
+        "description": "Extend only the server-owned lease; caller timestamps are forbidden.",
+        "tags": [
+          "mission-control"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RangeLeaseResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        },
+        "x-required-scopes": [
+          "mission_control:range:write"
+        ]
+      }
+    },
     "/api/v1/mission-control/range/launch/": {
       "post": {
         "operationId": "api_v1_mission_control_range_launch",
@@ -7186,6 +7269,109 @@
         },
         "x-required-scopes": [
           "mission_control:range:write"
+        ]
+      }
+    },
+    "/api/v1/mission-control/range/vpn-profile/": {
+      "post": {
+        "operationId": "mission_control_range_vpn_profile_create",
+        "description": "Deliver the current Mission Control range's generation-bound OpenVPN profile.",
+        "tags": [
+          "mission-control"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/x-openvpn-profile": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        },
+        "x-required-scopes": [
+          "mission_control:vpn-profile:read"
         ]
       }
     },
@@ -9917,6 +10103,17 @@
             "type": "object",
             "additionalProperties": {},
             "nullable": true
+          },
+          "lifecycle": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RangeLease"
+              }
+            ],
+            "nullable": true
+          },
+          "vpn_profile_available": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -9924,7 +10121,9 @@
           "aces_projection",
           "connection_urls",
           "has_range",
-          "range"
+          "lifecycle",
+          "range",
+          "vpn_profile_available"
         ]
       },
       "DCConfig": {
@@ -12384,6 +12583,45 @@
           "ranges"
         ]
       },
+      "RangeLease": {
+        "type": "object",
+        "description": "Safe, server-owned lease projection for one Mission Control range.",
+        "properties": {
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "maximum_expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "extension_days": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "can_extend": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "can_extend",
+          "expires_at",
+          "extension_days",
+          "maximum_expires_at"
+        ]
+      },
+      "RangeLeaseResponse": {
+        "type": "object",
+        "description": "Response body for one bounded Mission Control lease extension.",
+        "properties": {
+          "lifecycle": {
+            "$ref": "#/components/schemas/RangeLease"
+          }
+        },
+        "required": [
+          "lifecycle"
+        ]
+      },
       "RangeLifecycle": {
         "type": "object",
         "description": "Validate range cancel/destroy/pause/resume requests.",
@@ -12639,13 +12877,49 @@
             "type": "boolean",
             "readOnly": true,
             "default": false
+          },
+          "target_instances": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RangeTargetInstance"
+            },
+            "readOnly": true
           }
         },
         "required": [
           "participant_id",
           "range_instance_id",
           "status",
+          "target_instances",
           "vpn_profile_available"
+        ]
+      },
+      "RangeTargetInstance": {
+        "type": "object",
+        "description": "A participant-safe target box in a ready range (issue #1740).\n\nDocuments the projected {uuid, name, private_ip, os_type} allowlist. The\n``ctf.bridges.cms_get_range_target_instances`` projection is what enforces the\nallowlist at runtime; this serializer only publishes the contract.",
+        "properties": {
+          "uuid": {
+            "type": "string",
+            "readOnly": true
+          },
+          "name": {
+            "type": "string",
+            "readOnly": true
+          },
+          "private_ip": {
+            "type": "string",
+            "readOnly": true
+          },
+          "os_type": {
+            "type": "string",
+            "readOnly": true
+          }
+        },
+        "required": [
+          "name",
+          "os_type",
+          "private_ip",
+          "uuid"
         ]
       },
       "RangeTypeEnum": {

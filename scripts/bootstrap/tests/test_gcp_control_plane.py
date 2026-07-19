@@ -2061,7 +2061,7 @@ class TestGcpBootstrapIdentityPlatform:
         rendered = deploy.render_gcp_platform_runtime_env(
             config,
             bootstrap_operator_email="admin@example.com",
-            env_values={},
+            bootstrap_env_values={},
         )
 
         assert "PLATFORM_BOOTSTRAP_STAFF_EMAILS=admin@example.com\n" in rendered
@@ -2082,7 +2082,7 @@ class TestGcpBootstrapIdentityPlatform:
         rendered = deploy.render_gcp_platform_runtime_env(
             config,
             bootstrap_operator_email="admin@example.com",
-            env_values={},
+            bootstrap_env_values={},
         )
 
         # Issue #762: per-instance guest passwords replace shared env
@@ -2099,7 +2099,7 @@ class TestGcpBootstrapIdentityPlatform:
         """Guest boot images resolve to the packer-gcp export bucket per environment."""
         config = deploy.GDCBootstrapConfig(project_id="prod-rwctxzl6shxk", cluster_id="cluster1", environment="gcp-dev")
 
-        rendered = deploy.render_gcp_platform_runtime_env(config, env_values={})
+        rendered = deploy.render_gcp_platform_runtime_env(config, bootstrap_env_values={})
 
         bucket = "shifter-gcp-dev-gdc-vm-images"
         assert f"GDC_UBUNTU_IMAGE_URL=gs://{bucket}/ubuntu.qcow2\n" in rendered
@@ -2120,7 +2120,7 @@ class TestGcpBootstrapIdentityPlatform:
             project_id="prod-rwctxzl6shxk", cluster_id="cluster1", environment="gcp-dev", region="us-central1"
         )
 
-        rendered = deploy.render_gcp_platform_runtime_env(config, env_values={})
+        rendered = deploy.render_gcp_platform_runtime_env(config, bootstrap_env_values={})
 
         assert "AWS_REGION=us-central1\n" in rendered
         assert "CLOUD_REGION=us-central1\n" in rendered

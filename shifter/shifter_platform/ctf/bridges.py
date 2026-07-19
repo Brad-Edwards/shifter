@@ -125,6 +125,31 @@ def cms_get_range_status(range_instance_id: int) -> str:
     return cms_services.get_range_status_by_id(range_instance_id)
 
 
+def cms_get_range_target_instances(user: User) -> list[dict[str, str]]:
+    """Return the participant-safe target-box projection for a user's ready range.
+
+    Wraps ``cms.services.get_range_target_instances`` and projects each instance
+    down to the participant-safe field allowlist (``uuid``, ``name``,
+    ``private_ip``, ``os_type``). The projection is enforced here at the CTF/CMS
+    boundary — not in a DRF serializer, which documents but does not filter a
+    runtime ``Response`` dict — so range-internal metadata (roles, provider
+    details, channel bindings, secret references) never crosses into the CTF
+    participant surface (#1740). ``uuid`` is the identifier the Guacamole flow
+    needs; the CMS range PK (``range_instance_id``) must never be sent instead.
+    """
+    import cms.services as cms_services
+
+    return [
+        {
+            "uuid": str(instance.get("uuid") or ""),
+            "name": str(instance.get("name") or ""),
+            "private_ip": str(instance.get("private_ip") or ""),
+            "os_type": str(instance.get("os_type") or ""),
+        }
+        for instance in cms_services.get_range_target_instances(user.pk)
+    ]
+
+
 def cms_get_range_spec(range_instance_id: int) -> dict | None:
     """Get range_spec dict from CMS RangeInstance."""
     import cms.services as cms_services
@@ -152,6 +177,20 @@ def cms_has_openvpn_profile(user: User, range_instance_id: int) -> bool:
     import cms.services as cms_services
 
     return cms_services.has_ctf_openvpn_profile(user, range_instance_id)
+
+
+def cms_reconcile_ctf_range_leases(range_instance_ids: list[int], enforced_deadline: datetime) -> int:
+    """Reconcile event-derived cleanup leases through the CMS boundary."""
+    import cms.services as cms_services
+    from ctf.exceptions import CTFValidationError
+
+    try:
+        return cms_services.reconcile_ctf_range_leases(range_instance_ids, enforced_deadline)
+    except cms_services.RangeLeaseConflict as exc:
+        raise CTFValidationError(
+            "The requested cleanup time exceeds an existing range generation lifetime",
+            code="CTF_RANGE_LEASE_CEILING",
+        ) from exc
 
 
 def cms_reassign_range_owner(range_instance_id: int, new_user: User) -> None:

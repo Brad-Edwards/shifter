@@ -21,6 +21,7 @@ from tests.engine.services.conftest import boto3_secrets, make_secrets_client
 pytestmark = pytest.mark.django_db
 
 URL = "/api/v1/ctf/range/vpn-profile/"
+STATUS_URL = "/api/v1/ctf/range/status/"
 PROFILE = (
     "client\n"
     "dev tun\n"
@@ -190,7 +191,7 @@ def test_rate_limit_failure_returns_retry_after_without_resolving_profile(settin
     raw = _token(participant_user, scopes.CTF_VPN_PROFILE_READ)
     client = APIClient()
     client.credentials(HTTP_AUTHORIZATION=f"Bearer {raw}")
-    caches["launch_rate_limit"].set(f"ctf-credential-delivery:{participant_user.pk}", 50, 3600)
+    caches["launch_rate_limit"].set(f"credential-delivery:{participant_user.pk}", 50, 3600)
     secrets_client = make_secrets_client(PROFILE)
 
     with boto3_secrets(secrets_client):
@@ -199,3 +200,80 @@ def test_rate_limit_failure_returns_retry_after_without_resolving_profile(settin
     assert response.status_code == 429
     assert response["Retry-After"] == "3600"
     secrets_client.get_secret_value.assert_not_called()
+
+
+def test_rate_limit_backend_failure_fails_closed(monkeypatch, participant_user, ctf_participant):
+    _active_range_participant(participant_user, ctf_participant)
+    raw = _token(participant_user, scopes.CTF_VPN_PROFILE_READ)
+    client = APIClient()
+    client.credentials(HTTP_AUTHORIZATION=f"Bearer {raw}")
+
+    def fail_add(*args, **kwargs):
+        raise RuntimeError("cache unavailable")
+
+    monkeypatch.setattr(caches["launch_rate_limit"], "add", fail_add)
+
+    response = client.post(URL)
+
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "vpn_profile_unavailable"
+
+
+def test_range_status_projects_vpn_availability_without_delivering_a_secret(participant_user, ctf_participant):
+    _active_range_participant(participant_user, ctf_participant)
+    raw = _token(participant_user, scopes.CTF_PLAY_READ)
+    client = APIClient()
+    client.credentials(HTTP_AUTHORIZATION=f"Bearer {raw}")
+
+    response = client.get(STATUS_URL)
+
+    assert response.status_code == 200
+    assert response.json()["status"] == ResourceStatus.READY.value
+    assert response.json()["vpn_profile_available"] is True
+
+
+def test_ctf_bridge_reads_the_owned_range_spec_without_crossing_layers(participant_user, ctf_participant):
+    from ctf.bridges import cms_get_range_spec
+
+    cms_range = _active_range_participant(participant_user, ctf_participant)
+
+    assert cms_get_range_spec(cms_range.pk) is None
+
+
+def test_missing_engine_range_is_non_enumerating(participant_user, ctf_participant):
+    _active_range_participant(participant_user, ctf_participant)
+    Range.objects.filter(user=participant_user).delete()
+    raw = _token(participant_user, scopes.CTF_VPN_PROFILE_READ)
+    client = APIClient()
+    client.credentials(HTTP_AUTHORIZATION=f"Bearer {raw}")
+
+    response = client.post(URL)
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "not_found"
+
+
+def test_non_ready_engine_range_returns_conflict(participant_user, ctf_participant):
+    _active_range_participant(participant_user, ctf_participant)
+    Range.objects.filter(user=participant_user).update(status=Range.Status.PROVISIONING)
+    raw = _token(participant_user, scopes.CTF_VPN_PROFILE_READ)
+    client = APIClient()
+    client.credentials(HTTP_AUTHORIZATION=f"Bearer {raw}")
+
+    response = client.post(URL)
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "vpn_not_ready"
+
+
+def test_invalid_engine_binding_returns_unavailable(participant_user, ctf_participant):
+    _active_range_participant(participant_user, ctf_participant)
+    Range.objects.filter(user=participant_user).update(vpn_access_binding={})
+    raw = _token(participant_user, scopes.CTF_VPN_PROFILE_READ)
+    client = APIClient()
+    client.credentials(HTTP_AUTHORIZATION=f"Bearer {raw}")
+
+    response = client.post(URL)
+
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "vpn_profile_unavailable"
