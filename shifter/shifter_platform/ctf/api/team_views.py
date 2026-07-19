@@ -33,6 +33,8 @@ from shared.api.errors import api_error_response
 from shared.api_tokens import scopes
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from ctf.models import CTFParticipant
 
 _NO_ACTIVE_EVENT = "No active CTF event for this participant."
@@ -86,7 +88,7 @@ class _TeamActionView(APIView):
     permission_classes = CTF_PARTICIPANT_PERMISSIONS
     required_write_scopes = _PLAY_WRITE
 
-    def _act(self, request: Request, action) -> Response:
+    def _act(self, request: Request, action: Callable[[CTFParticipant], object]) -> Response:
         """Resolve the participant, run ``action(participant)``, shape the response."""
         participant = _resolve_active_participant(request)
         if participant is None:

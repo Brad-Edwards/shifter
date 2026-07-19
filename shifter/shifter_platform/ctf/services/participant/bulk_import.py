@@ -31,13 +31,14 @@ def _validate_row(row: list[str], line_num: int, seen_emails: set[str]) -> tuple
         return f"Line {line_num}: Expected name,email format"
     name = row[0].strip()
     email = row[1].strip().lower()
+    error = None
     if not name:
-        return f"Line {line_num}: Name is required"
-    if email and "@" not in email:
-        return f"Line {line_num}: Invalid email format"
-    if email and email in seen_emails:
-        return f"Line {line_num}: Duplicate email within file ({email})"
-    return name, email
+        error = f"Line {line_num}: Name is required"
+    elif email and "@" not in email:
+        error = f"Line {line_num}: Invalid email format"
+    elif email and email in seen_emails:
+        error = f"Line {line_num}: Duplicate email within file ({email})"
+    return error if error is not None else (name, email)
 
 
 def _parse_participants_csv(csv_content: str) -> tuple[list[tuple[str, str]], list[str]]:
