@@ -2,7 +2,7 @@
 
 import uuid
 from datetime import timedelta
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from django.conf import settings
 from django.db import models, transaction
@@ -417,7 +417,7 @@ class Range(models.Model):
         return attacker_instance(self.provisioned_instances)
 
     @property
-    def victim_instances(self) -> list[dict]:
+    def victim_instances(self) -> list[dict[str, Any]]:
         """Get all victim instance details.
 
         Returns:

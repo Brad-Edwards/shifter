@@ -100,7 +100,7 @@ class _PinnedHTTPSConnection(http.client.HTTPSConnection):
 
     def connect(
         self,
-    ) -> None:  # pragma: no cover - exercised in dedicated unit test  # NOSONAR: pragma must stay inline
+    ) -> None:  # pragma: no cover  # NOSONAR
         sock = socket.create_connection(
             (self._pinned_ip, self.port),
             timeout=self.timeout,

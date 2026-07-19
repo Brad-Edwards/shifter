@@ -63,30 +63,37 @@ def _apply_pod(core_api: CoreV1Api, namespace: str, body: dict[str, Any], api_ex
         logger.info("Updated scenario Pod %s/%s", namespace, name)
 
 
+def _parse_network_status(raw_status: str | None) -> Any:
+    """Parse the raw network-status annotation JSON; return None if absent or invalid."""
+    if not raw_status:
+        return None
+    try:
+        return json.loads(raw_status)
+    except json.JSONDecodeError:
+        return None
+
+
+def _ip_from_network_status(network_status: Any, expected_names: set[str]) -> str:
+    """Return the first matching attachment's IP (without CIDR suffix), or "" if none match."""
+    for attachment in network_status:
+        if not isinstance(attachment, dict):
+            continue
+        if attachment.get("name") not in expected_names and attachment.get("interface") != "net1":
+            continue
+        ips = attachment.get("ips") or []
+        if ips:
+            return str(ips[0]).split("/", 1)[0]
+    return ""
+
+
 def _extract_network_status_ip(pod: dict[str, Any], network_name: str, namespace: str) -> str:
     """Return the Pod's assigned IP from its network-status annotation, or "" if unavailable."""
-    result = ""
     annotations = pod.get("metadata", {}).get("annotations") or {}
-    raw_status = annotations.get(_NETWORK_STATUS_ANNOTATION)
-    if raw_status:
-        try:
-            network_status = json.loads(raw_status)
-        except json.JSONDecodeError:
-            network_status = None
-
-        if network_status is not None:
-            expected_names = {network_name, f"{namespace}/{network_name}"}
-            for attachment in network_status:
-                if not isinstance(attachment, dict):
-                    continue
-                if attachment.get("name") not in expected_names and attachment.get("interface") != "net1":
-                    continue
-                ips = attachment.get("ips") or []
-                if ips:
-                    result = str(ips[0]).split("/", 1)[0]
-                    break
-
-    return result
+    network_status = _parse_network_status(annotations.get(_NETWORK_STATUS_ANNOTATION))
+    if network_status is None:
+        return ""
+    expected_names = {network_name, f"{namespace}/{network_name}"}
+    return _ip_from_network_status(network_status, expected_names)
 
 
 def _wait_for_pod_ready(

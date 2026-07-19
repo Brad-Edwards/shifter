@@ -136,7 +136,7 @@ def _create_scenario_pod_asset(
         "subnet_name": subnet_name,
         "instance_id": pod_name,
         "private_ip": static_ip,
-        "ssh_key_secret_arn": _EMPTY,  # scenario pods are not SSH-backed assets
+        "ssh_key_secret_arn": _EMPTY,
         "ssh_username": "",
         "gdc_pod_name": pod_name,
         "gdc_namespace": namespace,

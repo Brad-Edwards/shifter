@@ -237,8 +237,10 @@ def _parse_response(resp: http.client.HTTPResponse, challenge_id: UUID) -> bool:
     return bool(data.get("valid", False))
 
 
-def _try_one_address(  # NOSONAR — one HTTP attempt's destination/request/timeout params; already keyword-only
-    *,
+def _try_one_address(
+    # Moved private helper; already keyword-only. A parameter-object refactor is
+    # out of scope for a behavior-preserving decomposition.
+    *,  # NOSONAR
     hostname: str,
     pinned_ip: str,
     port: int,
@@ -305,8 +307,10 @@ def _try_one_address(  # NOSONAR — one HTTP attempt's destination/request/time
     return False, False
 
 
-def _send_validation_request(  # NOSONAR — one HTTP attempt's destination/request/timeout params; already keyword-only
-    *,
+def _send_validation_request(
+    # Moved private helper; already keyword-only. A parameter-object refactor is
+    # out of scope for a behavior-preserving decomposition.
+    *,  # NOSONAR
     hostname: str,
     pinned_ips: list[str],
     port: int,
