@@ -197,11 +197,13 @@ function DangerActions({ team }: Readonly<{ team: CtfTeam }>) {
 
 function TeamDetail({ team }: Readonly<{ team: CtfTeam }>) {
   const count = team.members.length;
+  const memberNoun = count === 1 ? "member" : "members";
+  const limitSuffix = team.team_size_limit ? ` · limit ${team.team_size_limit}` : "";
   return (
     <>
       <PageHeader
         title={team.name}
-        description={`${count} ${count === 1 ? "member" : "members"}${team.team_size_limit ? ` · limit ${team.team_size_limit}` : ""}`}
+        description={`${count} ${memberNoun}${limitSuffix}`}
       />
       <div className="space-y-4">
         {team.is_captain ? (

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING
 
 from django.http import JsonResponse
 from drf_spectacular.utils import extend_schema
@@ -13,8 +13,13 @@ from rest_framework.views import APIView
 from ctf.api._base import _canonical_error_response
 from ctf.api.serializers import PublicScoreboardResponseSerializer
 
+if TYPE_CHECKING:
+    from uuid import UUID
 
-def _scoreboard_access_allowed(event: Any, request: Request) -> bool:
+    from ctf.models import CTFEvent
+
+
+def _scoreboard_access_allowed(event: CTFEvent, request: Request) -> bool:
     """CTF-404 three-mode scoreboard access policy for the public surface.
 
     ``public`` serves anyone (unauthenticated projector screens included),
@@ -25,18 +30,14 @@ def _scoreboard_access_allowed(event: Any, request: Request) -> bool:
     from ctf.enums import ScoreboardVisibility
 
     visibility = event.scoreboard_visibility
-    if visibility == ScoreboardVisibility.PUBLIC.value:
-        return True
-    if visibility == ScoreboardVisibility.HIDDEN.value:
-        return False
+    if visibility != ScoreboardVisibility.PARTICIPANTS.value:
+        return visibility == ScoreboardVisibility.PUBLIC.value
     user = request.user
     if not user.is_authenticated:
         return False
-    if event.created_by_id == user.pk:
-        return True
     from ctf.models import CTFParticipant
 
-    return CTFParticipant.objects.filter(event=event, user=user).exists()
+    return event.created_by_id == user.pk or CTFParticipant.objects.filter(event=event, user=user).exists()
 
 
 class PublicScoreboardView(APIView):
@@ -46,7 +47,7 @@ class PublicScoreboardView(APIView):
     permission_classes = [permissions.AllowAny]
 
     @extend_schema(responses=PublicScoreboardResponseSerializer)
-    def get(self, request: Request, event_id: Any) -> JsonResponse:
+    def get(self, request: Request, event_id: UUID) -> JsonResponse:
         """Return the public scoreboard payload for an event."""
         from ctf.exceptions import CTFNotFoundError
         from ctf.services import get_event
