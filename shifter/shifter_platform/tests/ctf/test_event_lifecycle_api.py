@@ -194,7 +194,7 @@ class TestCleanupWarning:
         )
         sent = []
         monkeypatch.setattr(
-            "ctf.services.notification.delivery._send_email",
+            "ctf.services.notification.delivery_milestones._send_email",
             lambda **kwargs: sent.append(kwargs["recipient"]),
         )
         result = send_cleanup_warning(ctf_event_active.pk)

@@ -11,15 +11,17 @@ from ctf.services.notification._email import _build_ctf_login_url, _render_email
 from ctf.services.notification.delivery import (
     cancel_scheduled_notification,
     deliver_scheduled_notification,
-    notify_participant_provision_failure,
     schedule_notification,
     send_announcement,
-    send_cleanup_warning,
     send_credentials,
-    send_event_results,
     send_invitations,
-    send_range_ready,
     send_reminder,
+)
+from ctf.services.notification.delivery_milestones import (
+    notify_participant_provision_failure,
+    send_cleanup_warning,
+    send_event_results,
+    send_range_ready,
 )
 from ctf.services.notification.organizer import (
     EVENT_NOT_FOUND_LOG,
