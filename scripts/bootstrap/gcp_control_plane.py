@@ -1270,6 +1270,16 @@ def apply_gcp_control_plane_terraform(
                 "Terraform identity: operator ADC — running terraform as the caller's "
                 "Application Default Credentials; skipping the tf-bootstrap service account."
             )
+            # Under a user's ADC, Google APIs that bill/quota against a project
+            # (identitytoolkit / Identity Platform) reject requests that carry no
+            # quota project ("... requires a quota project ... 403"). Point the
+            # provider at this project as the quota project so those resources
+            # apply. A service-account credential carries its own project, so the
+            # bootstrap-sa path does not need this. The subprocess terraform calls
+            # inherit os.environ, matching how the bootstrap-sa path exports its
+            # credentials (#1738).
+            os.environ["USER_PROJECT_OVERRIDE"] = "true"
+            os.environ["GOOGLE_BILLING_PROJECT"] = config.project_id
             run_gcp_terraform_init_with_retry(config, tf_state_bucket, None)
             run_gcp_terraform_apply_with_retry(config)
             return _capture_terraform_outputs()
