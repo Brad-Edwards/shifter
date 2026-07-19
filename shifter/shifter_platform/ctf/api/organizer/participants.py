@@ -19,6 +19,7 @@ from ctf.api.organizer._base import (
     _INVALID_PARTICIPANT_REQUEST,
     _PARTICIPANT_NOT_FOUND,
     _actor,
+    _pagination_window,
     _participant_detail_payload,
     _raise_bad_request,
     _raise_not_found,
@@ -66,6 +67,10 @@ class ParticipantListView(APIView):
         status_filter = request.query_params.get("status")
         if status_filter:
             participants = participants.filter(status=status_filter)
+        total = participants.count()
+        offset, limit = _pagination_window(request)
+        if limit is not None:
+            participants = participants[offset : offset + limit]
         data = [
             {
                 "id": str(p.id),
@@ -80,7 +85,7 @@ class ParticipantListView(APIView):
             }
             for p in participants
         ]
-        return Response({"participants": data, "total": len(data)})
+        return Response({"participants": data, "total": total})
 
     @extend_schema(request=ParticipantInviteSerializer, responses={201: ParticipantInviteResultSerializer})
     def post(self, request: Request, event_id: UUID) -> Response:

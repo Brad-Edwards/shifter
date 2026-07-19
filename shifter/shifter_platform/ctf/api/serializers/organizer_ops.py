@@ -443,3 +443,50 @@ class EventStaffAssignRequestSerializer(serializers.Serializer):
 
     email = serializers.EmailField()
     role = serializers.CharField(max_length=16)
+
+
+class ChallengeImportRequestSerializer(serializers.Serializer):
+    """Challenge import request: the export document itself (CTF-1101/1104)."""
+
+    payload = serializers.DictField()
+
+
+class ChallengeImportErrorSerializer(serializers.Serializer):
+    """One skipped import entry with its reason."""
+
+    index = serializers.IntegerField(read_only=True)
+    name = serializers.CharField(read_only=True, required=False)
+    error = serializers.CharField(read_only=True)
+
+
+class ChallengeImportResultSerializer(serializers.Serializer):
+    """Partial-success import outcome."""
+
+    created = serializers.ListField(child=serializers.CharField(), read_only=True)
+    errors = ChallengeImportErrorSerializer(many=True, read_only=True)
+
+
+class WebhookSerializer(serializers.Serializer):
+    """One registered webhook endpoint (CTF-1203); secrets never round-trip."""
+
+    id = serializers.CharField(read_only=True)
+    url = serializers.CharField(read_only=True)
+    subscribed_events = serializers.ListField(child=serializers.CharField(), read_only=True)
+    active = serializers.BooleanField(read_only=True)
+    has_secret = serializers.BooleanField(read_only=True)
+    last_status = serializers.CharField(read_only=True, allow_blank=True)
+    last_delivery_at = serializers.DateTimeField(read_only=True, allow_null=True)
+
+
+class WebhookListResponseSerializer(serializers.Serializer):
+    """Envelope for the event webhook listing."""
+
+    webhooks = WebhookSerializer(many=True, read_only=True)
+
+
+class WebhookWriteSerializer(serializers.Serializer):
+    """Webhook registration request."""
+
+    url = serializers.URLField(max_length=500)
+    secret = serializers.CharField(required=False, allow_blank=True, max_length=128)
+    subscribed_events = serializers.ListField(child=serializers.CharField(), required=False, max_length=10)
