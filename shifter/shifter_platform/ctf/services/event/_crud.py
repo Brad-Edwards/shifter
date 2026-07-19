@@ -96,7 +96,7 @@ def create_event(user: User, event_data: dict[str, Any]) -> CTFEvent:
     Raises:
         CTFValidationError: If event data is invalid.
     """
-    logger.info("Creating CTF event for user %s", user.email)
+    logger.info("Creating CTF event for user %s", safe_log_value(user.email))
 
     # Validate required fields
     required_fields = ["name", "event_start", "event_end"]
@@ -178,7 +178,7 @@ def update_event(event_id: UUID, event_data: dict[str, Any]) -> CTFEvent:
         CTFStateError: If event is not modifiable.
         CTFValidationError: If event data is invalid.
     """
-    logger.info("Updating CTF event %s", event_id)
+    logger.info("Updating CTF event %s", safe_log_value(event_id))
 
     try:
         event = CTFEvent.objects.get(pk=event_id)
@@ -223,7 +223,7 @@ def delete_event(event_id: UUID) -> None:
     Raises:
         CTFNotFoundError: If event doesn't exist.
     """
-    logger.info("Deleting CTF event %s", event_id)
+    logger.info("Deleting CTF event %s", safe_log_value(event_id))
 
     from ctf.services import event as _e
 
@@ -242,7 +242,7 @@ def delete_event(event_id: UUID) -> None:
         # Soft delete
         event.delete(soft=True)
 
-        logger.info("Deleted CTF event %s", event_id)
+        logger.info("Deleted CTF event %s", safe_log_value(event_id))
 
 
 def force_delete_event(
@@ -333,7 +333,7 @@ def force_delete_event(
 
     logger.warning(
         "FORCE DELETE: Event %s (%s) permanently deleted by %s (pk=%s). Ranges destroyed: %d, ranges failed: %d.",
-        event_id,
+        safe_log_value(event_id),
         safe_log_value(event_name),
         safe_log_value(actor.email),
         actor.pk,
