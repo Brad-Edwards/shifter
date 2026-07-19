@@ -50,9 +50,6 @@ from ctf.api.serializers.organizer import (
 from ctf.api.serializers.organizer_ops import (
     AssignBracketRequestSerializer,
     AssignBracketResultSerializer,
-    ChallengeImportErrorSerializer,
-    ChallengeImportRequestSerializer,
-    ChallengeImportResultSerializer,
     EmailTemplateResponseSerializer,
     EmailTemplateRevertResultSerializer,
     EmailTemplateWriteSerializer,
@@ -93,9 +90,6 @@ from ctf.api.serializers.organizer_ops import (
     SendInvitationsResultSerializer,
     SparePoolRequestSerializer,
     SpareProvisionResultSerializer,
-    WebhookListResponseSerializer,
-    WebhookSerializer,
-    WebhookWriteSerializer,
 )
 from ctf.api.serializers.participant import (
     ChallengeConnectionInfoSerializer,
@@ -139,9 +133,6 @@ __all__ = [
     "ChallengeFileUploadResultSerializer",
     "ChallengeFileUploadSerializer",
     "ChallengeHintSerializer",
-    "ChallengeImportErrorSerializer",
-    "ChallengeImportRequestSerializer",
-    "ChallengeImportResultSerializer",
     "ChallengeListResponseSerializer",
     "ChallengeMutationResultSerializer",
     "ChallengeRatingSerializer",
@@ -236,7 +227,4 @@ __all__ = [
     "UseHintRequestSerializer",
     "UseHintResultSerializer",
     "UsernameChangeRequestSerializer",
-    "WebhookListResponseSerializer",
-    "WebhookSerializer",
-    "WebhookWriteSerializer",
 ]

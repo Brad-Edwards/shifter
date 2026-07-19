@@ -118,15 +118,6 @@ def invite_participant(
             participant.id,
         )
 
-    # CTF-1203: new-registration webhook, post-commit and best-effort.
-    from ctf.services.webhook import emit_webhook
-
-    emit_webhook(
-        event,
-        "participant_registered",
-        {"participant_id": str(participant.pk), "name": participant.name},
-    )
-
     return participant
 
 

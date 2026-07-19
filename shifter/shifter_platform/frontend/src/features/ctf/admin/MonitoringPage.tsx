@@ -29,7 +29,6 @@ import { Textarea } from "@/components/ui/textarea";
 
 import { formatDateTime, rankingKey, rankingNumber, rankingString, titleCase } from "../format";
 import { EventTasksCard } from "./EventTasksCard";
-import { ResultsExportButton } from "./ResultsExportButton";
 import { ctfAdminEventPath, ctfAdminEventsPath } from "../routes";
 
 export type MonitoringTab = "scoreboard" | "ranges" | "notifications" | "analytics";
@@ -477,9 +476,6 @@ export function MonitoringPage({ defaultTab = "scoreboard" }: Readonly<{ default
           <NotificationsTab eventId={eventId} />
         </TabsContent>
         <TabsContent value="analytics" className="mt-4">
-          <div className="mb-3 flex justify-end">
-            <ResultsExportButton eventId={eventId} />
-          </div>
           <AnalyticsTab eventId={eventId} />
         </TabsContent>
         <TabsContent value="tasks" className="mt-4">

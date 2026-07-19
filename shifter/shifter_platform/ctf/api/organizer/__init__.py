@@ -93,24 +93,15 @@ from ctf.api.organizer.scoreboard import (
     ScoreTimelineView,
 )
 from ctf.api.organizer.staff import EventStaffMemberView, EventStaffView
-from ctf.api.organizer.transfer import (
-    ChallengeExportView,
-    ChallengeImportView,
-    EventResultsExportView,
-    EventWebhooksView,
-    WebhookDetailView,
-)
 
 __all__ = [
     "AddFlagView",
     "AssignBracketView",
     "AwardRevokeView",
     "ChallengeDetailView",
-    "ChallengeExportView",
     "ChallengeFileDeleteView",
     "ChallengeFilesView",
     "ChallengeHintsView",
-    "ChallengeImportView",
     "ChallengeListView",
     "ChallengePrerequisitesView",
     "EventCleanupControlView",
@@ -120,12 +111,10 @@ __all__ = [
     "EventListView",
     "EventRangeListView",
     "EventRangeProvisionView",
-    "EventResultsExportView",
     "EventSpareProvisionView",
     "EventStaffMemberView",
     "EventStaffView",
     "EventTasksView",
-    "EventWebhooksView",
     "FileDownloadView",
     "ForceDeleteEventView",
     "HintDeleteView",
@@ -164,5 +153,4 @@ __all__ = [
     "SubmitFlagView",
     "TaskRunNowView",
     "UseHintView",
-    "WebhookDetailView",
 ]

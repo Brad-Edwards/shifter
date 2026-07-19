@@ -282,26 +282,6 @@ def _organizer_rating(challenge: CTFChallenge) -> dict[str, float | int | None] 
     return get_challenge_rating(challenge.id)
 
 
-def _pagination_window(request: Request, *, max_limit: int = 500) -> tuple[int, int | None]:
-    """Parse optional ``offset``/``limit`` query params for list endpoints (CTF-1201).
-
-    Returns ``(offset, limit)``; limit is None when the caller did not ask to
-    paginate, preserving the historical full-list responses.
-    """
-    try:
-        offset = max(0, int(request.query_params.get("offset", 0)))
-    except (TypeError, ValueError):
-        offset = 0
-    raw_limit = request.query_params.get("limit")
-    if raw_limit is None:
-        return offset, None
-    try:
-        limit = min(max(1, int(raw_limit)), max_limit)
-    except (TypeError, ValueError):
-        return offset, None
-    return offset, limit
-
-
 def _participant_username(participant: CTFParticipant) -> str | None:
     """Return the isolated CTF account's login handle, or None.
 

@@ -23,7 +23,6 @@ from ctf.api.organizer._base import (
     _NOTIFICATION_NOT_FOUND,
     _actor,
     _actor_may_manage,
-    _pagination_window,
     _raise_bad_request,
     _raise_conflict,
     _raise_forbidden,
@@ -146,10 +145,6 @@ class NotificationListView(APIView):
             event = _resolve_owned_event(request, event_id, capability="notifications")
         except _CtfApiError as exc:
             return exc.to_response(request)
-        queryset = CTFNotification.objects.filter(event=event).order_by("-created_at")
-        total = queryset.count()
-        offset, limit = _pagination_window(request)
-        notifications = queryset[offset : offset + limit] if limit is not None else queryset
         data = [
             {
                 "id": str(n.id),
@@ -161,9 +156,9 @@ class NotificationListView(APIView):
                 "sent_at": n.sent_at.isoformat() if n.sent_at else None,
                 "scheduled_at": n.scheduled_at.isoformat() if n.scheduled_at else None,
             }
-            for n in notifications
+            for n in CTFNotification.objects.filter(event=event).order_by("-created_at")
         ]
-        return Response({"notifications": data, "total": total})
+        return Response({"notifications": data})
 
     @extend_schema(request=NotificationAnnounceRequestSerializer, responses={201: NotificationAnnounceResultSerializer})
     def post(self, request: Request, event_id: UUID) -> Response:

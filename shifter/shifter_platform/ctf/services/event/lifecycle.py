@@ -463,11 +463,5 @@ def _transition_event(event: CTFEvent, target: EventStatus) -> None:
             },
         )
 
-    previous = current.value
     event.status = target.value
     event.save(update_fields=["status", "updated_at"])
-
-    # CTF-1203: every validated state change fans out to registered webhooks.
-    from ctf.services.webhook import emit_webhook
-
-    emit_webhook(event, "event_state_change", {"from": previous, "to": target.value})

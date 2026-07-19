@@ -18,7 +18,6 @@ import type {
   CtfAwardListResponse,
   CtfChallengeFileListResponse,
   CtfChallengeFileUploadResult,
-  CtfChallengeImportResult,
   CtfChallengeListResponse,
   CtfChallengeMutationResult,
   CtfChallengeWrite,
@@ -53,9 +52,6 @@ import type {
   CtfScheduledTask,
   CtfScheduledTaskListResponse,
   CtfScoreTimelineResponse,
-  CtfWebhook,
-  CtfWebhookListResponse,
-  CtfWebhookWrite,
 } from "./types";
 
 const BASE = "/ctf";
@@ -580,53 +576,6 @@ export function useCancelCtfScheduledNotification(eventId: string) {
     mutationFn: (notificationId: string) =>
       apiFetch<unknown>(`${BASE}/notifications/${notificationId}/cancel-schedule/`, { method: "POST" }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ctfKeys.notifications(eventId) }),
-  });
-}
-
-// --- Import/export + webhooks (CTF-1101..1104, CTF-1203) -------------------
-
-export function exportCtfChallenges(eventId: string, fmt: "shifter" | "ctfd") {
-  return apiFetch<Record<string, unknown>>(`${BASE}/events/${eventId}/challenges/export/?fmt=${fmt}`);
-}
-
-export function useImportCtfChallenges(eventId: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (payload: Record<string, unknown>) =>
-      apiFetch<CtfChallengeImportResult>(`${BASE}/events/${eventId}/challenges/import-pack/`, {
-        method: "POST",
-        body: { payload },
-      }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ctfKeys.adminChallenges(eventId) }),
-  });
-}
-
-export function exportCtfResults(eventId: string) {
-  return apiFetch<Record<string, unknown>>(`${BASE}/events/${eventId}/results/export/`);
-}
-
-export function useCtfWebhooks(eventId: string, enabled = true) {
-  return useQuery({
-    queryKey: ctfKeys.webhooks(eventId),
-    enabled: enabled && Boolean(eventId),
-    queryFn: ({ signal }) => apiFetch<CtfWebhookListResponse>(`${BASE}/events/${eventId}/webhooks/`, { signal }),
-  });
-}
-
-export function useCreateCtfWebhook(eventId: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (body: CtfWebhookWrite) =>
-      apiFetch<CtfWebhook>(`${BASE}/events/${eventId}/webhooks/`, { method: "POST", body }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ctfKeys.webhooks(eventId) }),
-  });
-}
-
-export function useDeleteCtfWebhook(eventId: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (webhookId: string) => apiFetch<unknown>(`${BASE}/webhooks/${webhookId}/`, { method: "DELETE" }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ctfKeys.webhooks(eventId) }),
   });
 }
 
