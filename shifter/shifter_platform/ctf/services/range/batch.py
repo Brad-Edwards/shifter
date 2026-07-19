@@ -113,6 +113,10 @@ def provision_event_ranges_throttled(
     Raises:
         CTFNotFoundError: If event doesn't exist.
     """
+    from ctf.services.range.capacity import declare_event_capacity
+
+    # CTF-908: declare the wave size before the first range spins up.
+    declare_event_capacity(event_id, source="spin_up_ranges")
     logger.info(
         "Throttled provisioning for event %s (window=%ds)",
         event_id,

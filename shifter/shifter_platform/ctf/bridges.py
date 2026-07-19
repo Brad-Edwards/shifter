@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from datetime import datetime
+    from uuid import UUID
 
     from django.contrib.auth.models import User
 
@@ -60,6 +61,36 @@ class RangeProvisionResult:
     """Result of a range provisioning request."""
 
     request_id: Any  # UUID
+
+
+def cms_declare_event_capacity(
+    *,
+    event_ref: UUID,
+    event_name: str,
+    expected_concurrent_ranges: int,
+    cohort_size: int,
+    window_start: datetime | None,
+    window_end: datetime | None,
+    resource_hints: dict[str, Any],
+) -> None:
+    """Declare event capacity to the provisioning engine (CTF-908).
+
+    Best-effort producer contract: the declaration is recorded before spinup
+    so capacity-aware provisioning works from declared intent (#621); range
+    provisioning itself never depends on this call succeeding.
+    """
+    import cms.services as cms_services
+
+    signal = cms_services.EngineEventCapacitySignal(
+        event_ref=event_ref,
+        event_name=event_name,
+        expected_concurrent_ranges=expected_concurrent_ranges,
+        cohort_size=cohort_size,
+        window_start=window_start,
+        window_end=window_end,
+        resource_hints=resource_hints,
+    )
+    cms_services.engine_record_capacity_declaration(signal)
 
 
 def cms_create_range(

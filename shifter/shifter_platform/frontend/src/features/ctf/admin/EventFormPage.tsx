@@ -37,6 +37,7 @@ interface FormState {
   rules: string;
   reminder_hours: string;
   event_timezone: string;
+  capacity_hints: string;
   scoreboard_visibility: string;
   rating_visibility: string;
   scoring_mode: string;
@@ -61,6 +62,7 @@ const EMPTY: FormState = {
   rules: "",
   reminder_hours: "24, 1",
   event_timezone: "UTC",
+  capacity_hints: "",
   scoreboard_visibility: "public",
   rating_visibility: "public",
   scoring_mode: "standard",
@@ -86,6 +88,9 @@ function fromEvent(event: CtfEventDetail): FormState {
     rules: event.rules ?? "",
     reminder_hours: (event.reminder_hours ?? [24, 1]).join(", "),
     event_timezone: event.event_timezone || "UTC",
+    capacity_hints: Object.keys(event.capacity_hints ?? {}).length
+      ? JSON.stringify(event.capacity_hints, null, 2)
+      : "",
     scoreboard_visibility: event.scoreboard_visibility || "public",
     rating_visibility: event.rating_visibility || "public",
     scoring_mode: event.scoring_mode || "standard",
@@ -111,6 +116,19 @@ function parseReminderHours(text: string): number[] {
     .filter((n) => Number.isFinite(n) && n > 0 && n <= 720);
 }
 
+/** Parse the organizer's capacity-hints JSON; invalid or empty input becomes {}. */
+function parseCapacityHints(text: string): Record<string, unknown> {
+  if (!text.trim()) return {};
+  try {
+    const parsed: unknown = JSON.parse(text);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : {};
+  } catch {
+    return {};
+  }
+}
+
 function toPayload(state: FormState): CtfEventWrite {
   return {
     name: state.name,
@@ -131,6 +149,7 @@ function toPayload(state: FormState): CtfEventWrite {
     rules: state.rules,
     reminder_hours: parseReminderHours(state.reminder_hours),
     event_timezone: state.event_timezone.trim() || "UTC",
+    capacity_hints: parseCapacityHints(state.capacity_hints),
     scoreboard_visibility: state.scoreboard_visibility,
     rating_visibility: state.rating_visibility,
     scoring_mode: state.scoring_mode,
@@ -450,6 +469,14 @@ export function EventFormPage({ mode }: Readonly<{ mode: "create" | "edit" }>) {
                 value={state.event_timezone}
                 error={firstError("event_timezone")}
                 onChange={(v) => set("event_timezone", v)}
+              />
+              <TextAreaField
+                id="e-capacity"
+                label="Capacity hints (JSON, declared to the provisioning engine)"
+                rows={3}
+                value={state.capacity_hints}
+                error={firstError("capacity_hints")}
+                onChange={(v) => set("capacity_hints", v)}
               />
               <div className="flex flex-col gap-2">
                 <Label htmlFor="e-scoringmode">Scoring mode</Label>

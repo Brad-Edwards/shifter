@@ -12196,12 +12196,18 @@
           "event_timezone": {
             "type": "string",
             "readOnly": true
+          },
+          "capacity_hints": {
+            "type": "object",
+            "additionalProperties": {},
+            "readOnly": true
           }
         },
         "required": [
           "attempt_limit_cooldown_seconds",
           "attempt_limit_mode",
           "auto_cleanup",
+          "capacity_hints",
           "cleanup_delay_hours",
           "description",
           "event_end",
@@ -12484,6 +12490,10 @@
           "event_timezone": {
             "type": "string",
             "maxLength": 64
+          },
+          "capacity_hints": {
+            "type": "object",
+            "additionalProperties": {}
           }
         },
         "required": [

@@ -31,6 +31,7 @@ from cms.assets.services import delete_agent as assets_delete_agent
 from cms.exceptions import CMSError
 from cms.models import AgentConfig, RangeInstance
 from cms.signals import range_status_changed as range_status_changed
+from engine.services import EventCapacitySignal as EngineEventCapacitySignal
 from engine.services import cancel_range_by_request as engine_cancel_range_by_request
 from engine.services import create_range as engine_create_range
 from engine.services import destroy_range_by_request as engine_destroy_range_by_request
@@ -42,6 +43,9 @@ from engine.services import (
     range_owner_reassignment_available_by_request as engine_range_owner_reassignment_available,
 )
 from engine.services import reassign_range_owner_by_request as engine_reassign_range_owner
+from engine.services import (
+    record_capacity_declaration as engine_record_capacity_declaration,
+)
 from engine.services import resume_range as engine_resume_range
 from shared.audit import (
     AuditEvent,
@@ -127,6 +131,7 @@ __all__ = (
     "CtfOpenVpnProfileConflict",
     "CtfOpenVpnProfileNotFound",
     "CtfOpenVpnProfileUnavailable",
+    "EngineEventCapacitySignal",
     "PackRegistrationRequest",
     "RangeInstance",
     "RegisteredPack",
@@ -157,6 +162,7 @@ __all__ = (
     "engine_pause_range",
     "engine_range_owner_reassignment_available",
     "engine_reassign_range_owner",
+    "engine_record_capacity_declaration",
     "engine_resume_range",
     "find_range_instance_id_by_request",
     "get_active_range",

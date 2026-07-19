@@ -63,6 +63,11 @@ class CTFEvent(CTFBaseModel):
         max_length=200,
         help_text="Event display name",
     )
+    capacity_hints = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Organizer-authored shared-resource demand hints declared to the engine (CTF-908)",
+    )
     rules = models.TextField(
         blank=True,
         default="",
