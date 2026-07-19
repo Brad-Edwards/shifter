@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from mission_control.api._vpn import MissionControlVpnProfileView
 from mission_control.api.aces import (
     AcesOperationReceiptListView,
     AcesOperationStatusListView,
@@ -25,7 +26,6 @@ from mission_control.api.ranges import (
     DestroyRangeView,
     ExtendRangeLeaseView,
     LaunchRangeView,
-    MissionControlVpnProfileView,
     PauseRangeView,
     RangeHistoryView,
     ResumeRangeView,
