@@ -83,7 +83,11 @@ class CmsAcesDispatchPort:
         ``ContentDeliveryError``, which the RuntimeTarget apply boundary turns into
         a non-accepted dispatch so the range reservation is marked FAILED.
         """
-        from shared.aces.content_delivery_prep import has_source_backed_content, prepare_content_delivery
+        from shared.aces.content_delivery_prep import (
+            DeliveryTarget,
+            has_source_backed_content,
+            prepare_content_delivery,
+        )
 
         # Cheap precheck: skip object-storage / pack resolution entirely for the
         # common plan with no source-backed content.
@@ -92,11 +96,10 @@ class CmsAcesDispatchPort:
 
         from shared.cloud import get_object_storage
 
-        return prepare_content_delivery(
-            pack_root=self.pack_root,
-            serialized_plan=compiled_plan,
+        target = DeliveryTarget(
             storage=get_object_storage(),
             bucket=settings.STORAGE_BUCKET_NAME,
             prefix=settings.ACES_CONTENT_DELIVERY_PREFIX,
             max_payload_bytes=settings.ACES_CONTENT_DELIVERY_MAX_PAYLOAD_BYTES,
         )
+        return prepare_content_delivery(pack_root=self.pack_root, serialized_plan=compiled_plan, target=target)

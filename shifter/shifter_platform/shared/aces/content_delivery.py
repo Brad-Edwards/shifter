@@ -79,6 +79,33 @@ def _is_hex_sha256(value: object) -> TypeGuard[str]:
     return isinstance(value, str) and len(value) == _HEX_SHA256_LEN and _HEX_DIGITS.issuperset(value)
 
 
+def _require(condition: bool, message: str) -> None:
+    """Raise ``ContentDeliveryError(message)`` unless ``condition`` is true."""
+    if not condition:
+        raise ContentDeliveryError(message)
+
+
+def _validated_str(value: object, message: str) -> str:
+    """Return ``value`` as a non-empty str, or fail closed with ``message``."""
+    if not isinstance(value, str) or not value:
+        raise ContentDeliveryError(message)
+    return value
+
+
+def _validated_sha256(value: object, message: str) -> str:
+    """Return ``value`` as a lowercase hex sha256 str, or fail closed with ``message``."""
+    if not _is_hex_sha256(value):
+        raise ContentDeliveryError(message)
+    return value
+
+
+def _validated_byte_count(value: object, message: str) -> int:
+    """Return ``value`` as a non-negative, non-bool int, or fail closed with ``message``."""
+    if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+        raise ContentDeliveryError(message)
+    return value
+
+
 def normalized_storage_key(prefix: str, digest: str) -> str:
     """Return a content-addressed object key ``<prefix>/<dd>/<digest>``.
 
@@ -121,27 +148,16 @@ class DeliveryBinding:
         ride along), an unsupported version, a non-sha256 digest, an empty
         address / key, or a negative byte count.
         """
-        if not isinstance(raw, Mapping) or set(raw) != _BINDING_KEYS:
-            raise ContentDeliveryError("delivery binding transport shape is invalid")
-        if raw["binding_version"] != BINDING_VERSION:
-            raise ContentDeliveryError(f"unsupported delivery binding version {raw['binding_version']!r}")
-        address = raw["content_address"]
-        storage_key = raw["storage_key"]
-        digest = raw["sha256"]
-        byte_count = raw["byte_count"]
-        if not isinstance(address, str) or not address:
-            raise ContentDeliveryError("delivery binding content_address is invalid")
-        if not isinstance(storage_key, str) or not storage_key:
-            raise ContentDeliveryError("delivery binding storage_key is invalid")
-        if not _is_hex_sha256(digest):
-            raise ContentDeliveryError("delivery binding sha256 is invalid")
-        if not isinstance(byte_count, int) or isinstance(byte_count, bool) or byte_count < 0:
-            raise ContentDeliveryError("delivery binding byte_count is invalid")
+        _require(isinstance(raw, Mapping) and set(raw) == _BINDING_KEYS, "delivery binding transport shape is invalid")
+        _require(
+            raw["binding_version"] == BINDING_VERSION,
+            f"unsupported delivery binding version {raw['binding_version']!r}",
+        )
         return cls(
-            content_address=address,
-            sha256=digest,
-            storage_key=storage_key,
-            byte_count=byte_count,
+            content_address=_validated_str(raw["content_address"], "delivery binding content_address is invalid"),
+            storage_key=_validated_str(raw["storage_key"], "delivery binding storage_key is invalid"),
+            sha256=_validated_sha256(raw["sha256"], "delivery binding sha256 is invalid"),
+            byte_count=_validated_byte_count(raw["byte_count"], "delivery binding byte_count is invalid"),
             binding_version=BINDING_VERSION,
         )
 
@@ -232,21 +248,14 @@ def _parse_entry(item: object) -> DeliveryProjectionEntry:
     source = item.get("source")
     if not isinstance(source, Mapping):
         raise ContentDeliveryError("delivery projection entry requires 'source'")
-    name = source.get("name")
-    version = source.get("version", "*")
+    name = _validated_str(source.get("name"), "delivery projection entry 'source.name' is invalid")
+    version = _validated_str(source.get("version", "*"), "delivery projection entry 'source.version' is invalid")
     content_type = item.get("content_type")
-    content_format = item.get("format", "")
-    input_path = item.get("input_path")
-    if not isinstance(name, str) or not name:
-        raise ContentDeliveryError("delivery projection entry 'source.name' is invalid")
-    if not isinstance(version, str) or not version:
-        raise ContentDeliveryError("delivery projection entry 'source.version' is invalid")
     if content_type not in SUPPORTED_DELIVERY_CONTENT_TYPES:
         raise ContentDeliveryError(f"delivery projection entry has unsupported content_type {content_type!r}")
-    if not isinstance(content_format, str):
-        raise ContentDeliveryError("delivery projection entry 'format' must be a string")
-    if not isinstance(input_path, str) or not input_path:
-        raise ContentDeliveryError("delivery projection entry requires 'input_path'")
+    content_format = item.get("format", "")
+    _require(isinstance(content_format, str), "delivery projection entry 'format' must be a string")
+    input_path = _validated_str(item.get("input_path"), "delivery projection entry requires 'input_path'")
     _reject_unsafe_input_path(input_path)
     return DeliveryProjectionEntry(
         source_name=name,

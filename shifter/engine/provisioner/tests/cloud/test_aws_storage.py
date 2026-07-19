@@ -101,9 +101,10 @@ class TestDownloadObject:
         fake_client = MagicMock()
         fake_client.get_object.return_value = {"Body": BytesIO(b"x" * 5000), "ETag": '"e"'}
         dest_path = tmp_path / "big.tar"
+        dest = str(dest_path)
 
         with patch("boto3.client", return_value=fake_client), pytest.raises(CloudStorageError):
-            storage.download_object("b", "k", str(dest_path), max_bytes=1024)
+            storage.download_object("b", "k", dest, max_bytes=1024)
 
         # Fail closed BEFORE writing an over-size body: no oversize file left behind.
         assert not dest_path.exists() or dest_path.stat().st_size < 5000

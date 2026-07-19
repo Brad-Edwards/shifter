@@ -181,7 +181,10 @@ def _binding_for(bindings: list[dict[str, Any]], content_address: str) -> dict[s
     for binding in bindings:
         if str(binding.get("content_address", "")) == content_address:
             return binding
-    raise AcesContentDeliveryError("ACES content delivery binding is missing")  # pragma: no cover
+    # Unreachable in a correctly-gated apply; excluded from coverage via
+    # pyproject.toml [tool.coverage.report].exclude_lines (Sonar S139 forbids
+    # a trailing "# pragma: no cover" comment on this line).
+    raise AcesContentDeliveryError("ACES content delivery binding is missing")
 
 
 def _target_path(item: AcesPlanContent) -> str:
@@ -287,7 +290,7 @@ def _download_and_verify(
         # a plain (no exc_info) call, and raise a fresh value-free error
         # `from None` so neither the log nor the propagated exception carries
         # the storage key, bucket, or any other identity value.
-        logger.error("ACES content delivery download failed: %s", safe_log_value(exc.__class__.__name__))
+        logger.error("ACES content delivery download failed: %s", safe_log_value(exc.__class__.__name__))  # NOSONAR
         raise AcesContentDeliveryError("ACES content delivery payload could not be retrieved") from None
 
     if actual_sha256 != binding.sha256:

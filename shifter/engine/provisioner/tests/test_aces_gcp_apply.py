@@ -440,13 +440,15 @@ class TestContentDeliveryIntegration:
         content = _source_backed_content()
         clients = _clients()
         secret_ops, _ = _secret_ops()
+        plan = _plan_with_content(content)
+        options = _apply_options(_config(), clients, secret_ops)
         with pytest.raises(AcesGceCompositionError, match="missing its delivery binding"):
             apply_aces_range_cell(
                 "req-1",
                 7,
-                _plan_with_content(content),
+                plan,
                 _resolver,
-                _apply_options(_config(), clients, secret_ops),
+                options,
                 delivery_bindings=[],
             )
         assert not clients.instances.insert.called
@@ -455,14 +457,17 @@ class TestContentDeliveryIntegration:
     def test_extra_binding_with_no_source_backed_content_fails_closed(self):
         clients = _clients()
         secret_ops, _ = _secret_ops()
+        plan = _plan()
+        options = _apply_options(_config(), clients, secret_ops)
+        binding = _binding()
         with pytest.raises(AcesGceCompositionError, match="does not match any source-backed content"):
             apply_aces_range_cell(
                 "req-1",
                 7,
-                _plan(),
+                plan,
                 _resolver,
-                _apply_options(_config(), clients, secret_ops),
-                delivery_bindings=[_binding()],
+                options,
+                delivery_bindings=[binding],
             )
         assert not clients.instances.insert.called
 
@@ -477,13 +482,15 @@ class TestContentDeliveryIntegration:
         )
         clients = _clients()
         secret_ops, _ = _secret_ops()
+        plan = _plan_with_content(content)
+        options = _apply_options(_config(), clients, secret_ops)
         with pytest.raises(AcesGceCompositionError, match="no delivery materializer"):
             apply_aces_range_cell(
                 "req-1",
                 7,
-                _plan_with_content(content),
+                plan,
                 _resolver,
-                _apply_options(_config(), clients, secret_ops),
+                options,
                 delivery_bindings=[],
             )
         assert not clients.instances.insert.called
@@ -532,15 +539,18 @@ class TestContentDeliveryIntegration:
         clients = _clients()
         secret_ops, secret_mocks = _secret_ops()
         realizer = MagicMock(side_effect=RuntimeError("delivery failed"))
+        plan = _plan_with_content(content)
+        options = _apply_options(_config(), clients, secret_ops, content_delivery_realizer=realizer)
+        binding = _binding()
 
         with pytest.raises(RuntimeError, match="delivery failed"):
             apply_aces_range_cell(
                 "req-1",
                 7,
-                _plan_with_content(content),
+                plan,
                 _resolver,
-                _apply_options(_config(), clients, secret_ops, content_delivery_realizer=realizer),
-                delivery_bindings=[_binding()],
+                options,
+                delivery_bindings=[binding],
             )
 
         # Reconstructive cleanup ran (same as a directory-realization failure).

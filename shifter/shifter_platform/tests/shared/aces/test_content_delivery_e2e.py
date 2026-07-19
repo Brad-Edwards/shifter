@@ -25,7 +25,7 @@ from aces_runtime.manager import RuntimeManager
 from aces_sdl.parser import parse_sdl
 
 from shared.aces.content_delivery import DeliveryProjection, DeliveryProjectionEntry, sha256_hex
-from shared.aces.content_delivery_prep import InventoryEntry, prepare_content_delivery
+from shared.aces.content_delivery_prep import DeliveryTarget, InventoryEntry, prepare_content_delivery
 from shared.aces.dispatch_port import ShifterDispatchResult
 from shared.aces.runtime_target import (
     ShifterProvisioner,
@@ -114,13 +114,13 @@ def test_source_backed_content_admitted_and_bound_end_to_end(tmp_path: Path):
         )
     )
     storage = _FakeStorage()
+    target = DeliveryTarget(
+        storage=storage, bucket="assets-bucket", prefix="aces/content", max_payload_bytes=10_000_000
+    )
     bindings = prepare_content_delivery(
         pack_root=pack,
         serialized_plan=serialized,
-        storage=storage,
-        bucket="assets-bucket",
-        prefix="aces/content",
-        max_payload_bytes=10_000_000,
+        target=target,
         projection_loader=lambda _root: projection,
         inventory_loader=lambda _root: inventory,
     )

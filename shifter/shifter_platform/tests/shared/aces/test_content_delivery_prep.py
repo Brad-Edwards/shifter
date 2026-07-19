@@ -24,6 +24,7 @@ from shared.aces.content_delivery import (
     sha256_hex,
 )
 from shared.aces.content_delivery_prep import (
+    DeliveryTarget,
     InventoryEntry,
     prepare_content_delivery,
 )
@@ -93,13 +94,11 @@ def _pack(tmp_path: Path) -> tuple[Path, dict, DeliveryProjection]:
 
 
 def _prepare(pack, inventory, projection, plan, storage, *, prefix="aces/content", max_bytes=10_000_000):
+    target = DeliveryTarget(storage=storage, bucket="assets-bucket", prefix=prefix, max_payload_bytes=max_bytes)
     return prepare_content_delivery(
         pack_root=pack,
         serialized_plan=plan,
-        storage=storage,
-        bucket="assets-bucket",
-        prefix=prefix,
-        max_payload_bytes=max_bytes,
+        target=target,
         projection_loader=lambda _root: projection,
         inventory_loader=lambda _root: inventory,
     )
@@ -159,32 +158,36 @@ def test_source_shorthand_string_resolves(tmp_path: Path):
 def test_missing_projection_entry_fails_closed(tmp_path: Path):
     pack, inventory, projection = _pack(tmp_path)
     plan = _plan(_content_resource("cf.x", ctype="file", source={"name": "unknown-pkg", "version": "1.0.0"}))
+    storage = _FakeStorage()
     with pytest.raises(ContentDeliveryError):
-        _prepare(pack, inventory, projection, plan, _FakeStorage())
+        _prepare(pack, inventory, projection, plan, storage)
 
 
 def test_input_not_in_inventory_fails_closed(tmp_path: Path):
     pack, inventory, projection = _pack(tmp_path)
     inventory.pop("assets/flag.txt")  # projection points at it, inventory does not cover it
     plan = _plan(_content_resource("cf.flag", ctype="file", source="flag-pkg"))
+    storage = _FakeStorage()
     with pytest.raises(ContentDeliveryError):
-        _prepare(pack, inventory, projection, plan, _FakeStorage())
+        _prepare(pack, inventory, projection, plan, storage)
 
 
 def test_inventory_digest_mismatch_fails_closed(tmp_path: Path):
     pack, inventory, projection = _pack(tmp_path)
     inventory["assets/flag.txt"] = InventoryEntry(sha256="0" * 64, size_bytes=3)  # tampered claim
     plan = _plan(_content_resource("cf.flag", ctype="file", source="flag-pkg"))
+    storage = _FakeStorage()
     with pytest.raises(ContentDeliveryError):
-        _prepare(pack, inventory, projection, plan, _FakeStorage())
+        _prepare(pack, inventory, projection, plan, storage)
 
 
 def test_directory_file_not_in_inventory_fails_closed(tmp_path: Path):
     pack, inventory, projection = _pack(tmp_path)
     inventory.pop("assets/seed/sub/b.txt")  # a file under the delivered tree is uncovered
     plan = _plan(_content_resource("cf.seed", ctype="directory", source="seed-tree"))
+    storage = _FakeStorage()
     with pytest.raises(ContentDeliveryError):
-        _prepare(pack, inventory, projection, plan, _FakeStorage())
+        _prepare(pack, inventory, projection, plan, storage)
 
 
 def test_input_path_escaping_pack_fails_closed(tmp_path: Path):
@@ -197,15 +200,17 @@ def test_input_path_escaping_pack_fails_closed(tmp_path: Path):
     # a hand-built entry object (bypassing parse guards).
     object.__setattr__(escaping.entries[0], "input_path", "../../etc/passwd")
     plan = _plan(_content_resource("cf.flag", ctype="file", source="flag-pkg"))
+    storage = _FakeStorage()
     with pytest.raises(ContentDeliveryError):
-        _prepare(pack, inventory, escaping, plan, _FakeStorage())
+        _prepare(pack, inventory, escaping, plan, storage)
 
 
 def test_unsupported_source_backed_type_fails_closed(tmp_path: Path):
     pack, inventory, projection = _pack(tmp_path)
     plan = _plan(_content_resource("cf.ds", ctype="dataset", source={"name": "flag-pkg", "version": "1.0.0"}))
+    storage = _FakeStorage()
     with pytest.raises(ContentDeliveryError):
-        _prepare(pack, inventory, projection, plan, _FakeStorage())
+        _prepare(pack, inventory, projection, plan, storage)
 
 
 def test_oversize_payload_fails_closed(tmp_path: Path):
@@ -213,8 +218,9 @@ def test_oversize_payload_fails_closed(tmp_path: Path):
     # any bytes are read.
     pack, inventory, projection = _pack(tmp_path)
     plan = _plan(_content_resource("cf.flag", ctype="file", source="flag-pkg"))
+    storage = _FakeStorage()
     with pytest.raises(ContentDeliveryError):
-        _prepare(pack, inventory, projection, plan, _FakeStorage(), max_bytes=3)
+        _prepare(pack, inventory, projection, plan, storage, max_bytes=3)
 
 
 def test_streaming_hash_caps_input_larger_than_declared(tmp_path: Path):
@@ -224,8 +230,9 @@ def test_streaming_hash_caps_input_larger_than_declared(tmp_path: Path):
     (pack / "assets" / "flag.txt").write_bytes(b"x" * 500)  # actual >> declared
     inventory["assets/flag.txt"] = InventoryEntry(sha256="0" * 64, size_bytes=5)  # lies small
     plan = _plan(_content_resource("cf.flag", ctype="file", source="flag-pkg"))
+    storage = _FakeStorage()
     with pytest.raises(ContentDeliveryError):
-        _prepare(pack, inventory, projection, plan, _FakeStorage(), max_bytes=50)
+        _prepare(pack, inventory, projection, plan, storage, max_bytes=50)
 
 
 def _write_projection_file(pack: Path, entries: list[dict]) -> Path:
@@ -257,13 +264,13 @@ def test_default_projection_loader_requires_matching_inventory_record(tmp_path: 
         sha256=hashlib.sha256(proj_path.read_bytes()).hexdigest(), size_bytes=proj_path.stat().st_size
     )
     plan = _plan(_content_resource("cf.flag", ctype="file", source={"name": "flag-pkg", "version": "1.0.0"}))
+    target = DeliveryTarget(
+        storage=_FakeStorage(), bucket="assets-bucket", prefix="aces/content", max_payload_bytes=10_000_000
+    )
     bindings = prepare_content_delivery(
         pack_root=pack,
         serialized_plan=plan,
-        storage=_FakeStorage(),
-        bucket="assets-bucket",
-        prefix="aces/content",
-        max_payload_bytes=10_000_000,
+        target=target,
         inventory_loader=lambda _root: inventory,
     )
     assert len(bindings) == 1
@@ -274,14 +281,14 @@ def test_default_projection_loader_fails_closed_when_document_uncovered(tmp_path
     _write_projection_file(pack, _FLAG_PROJECTION_ENTRIES)
     # inventory carries no record at all for delivery/content-projection.json
     plan = _plan(_content_resource("cf.flag", ctype="file", source={"name": "flag-pkg", "version": "1.0.0"}))
+    target = DeliveryTarget(
+        storage=_FakeStorage(), bucket="assets-bucket", prefix="aces/content", max_payload_bytes=10_000_000
+    )
     with pytest.raises(ContentDeliveryError, match="associated-artifact inventory"):
         prepare_content_delivery(
             pack_root=pack,
             serialized_plan=plan,
-            storage=_FakeStorage(),
-            bucket="assets-bucket",
-            prefix="aces/content",
-            max_payload_bytes=10_000_000,
+            target=target,
             inventory_loader=lambda _root: inventory,
         )
 
@@ -294,14 +301,14 @@ def test_default_projection_loader_fails_closed_when_document_altered(tmp_path: 
     _write_projection_file(pack, _FLAG_PROJECTION_ENTRIES)
     inventory["delivery/content-projection.json"] = InventoryEntry(sha256="0" * 64, size_bytes=1)
     plan = _plan(_content_resource("cf.flag", ctype="file", source={"name": "flag-pkg", "version": "1.0.0"}))
+    target = DeliveryTarget(
+        storage=_FakeStorage(), bucket="assets-bucket", prefix="aces/content", max_payload_bytes=10_000_000
+    )
     with pytest.raises(ContentDeliveryError, match="does not match the pack inventory digest"):
         prepare_content_delivery(
             pack_root=pack,
             serialized_plan=plan,
-            storage=_FakeStorage(),
-            bucket="assets-bucket",
-            prefix="aces/content",
-            max_payload_bytes=10_000_000,
+            target=target,
             inventory_loader=lambda _root: inventory,
         )
 
@@ -309,14 +316,12 @@ def test_default_projection_loader_fails_closed_when_document_altered(tmp_path: 
 def test_no_bucket_configured_fails_closed(tmp_path: Path):
     pack, inventory, projection = _pack(tmp_path)
     plan = _plan(_content_resource("cf.flag", ctype="file", source="flag-pkg"))
+    target = DeliveryTarget(storage=_FakeStorage(), bucket="", prefix="aces/content", max_payload_bytes=10_000)
     with pytest.raises(ContentDeliveryError):
         prepare_content_delivery(
             pack_root=pack,
             serialized_plan=plan,
-            storage=_FakeStorage(),
-            bucket="",
-            prefix="aces/content",
-            max_payload_bytes=10_000,
+            target=target,
             projection_loader=lambda _root: projection,
             inventory_loader=lambda _root: inventory,
         )

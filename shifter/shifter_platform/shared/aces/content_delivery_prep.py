@@ -51,7 +51,13 @@ _OCTET_STREAM = "application/octet-stream"
 #: Streaming read chunk for size-gated digesting (never buffers a whole file).
 _READ_CHUNK_BYTES = 1024 * 1024
 
-__all__ = ["PROJECTION_RELPATH", "InventoryEntry", "has_source_backed_content", "prepare_content_delivery"]
+__all__ = [
+    "PROJECTION_RELPATH",
+    "DeliveryTarget",
+    "InventoryEntry",
+    "has_source_backed_content",
+    "prepare_content_delivery",
+]
 
 
 def has_source_backed_content(serialized_plan: Mapping[str, object]) -> bool:
@@ -82,14 +88,26 @@ class _ContentRef:
     content_format: str
 
 
+@dataclass(frozen=True)
+class DeliveryTarget:
+    """Where prepared content-delivery payloads are promoted to.
+
+    Bundles the object-storage boundary, the destination bucket/prefix, and the
+    materialized-payload size cap that :func:`prepare_content_delivery` needs to
+    promote each source-backed content resource (ADR-032-R3, ADR-034-R6).
+    """
+
+    storage: ObjectStorage
+    bucket: str
+    prefix: str
+    max_payload_bytes: int
+
+
 def prepare_content_delivery(
     *,
     pack_root: Path | None,
     serialized_plan: Mapping[str, object],
-    storage: ObjectStorage,
-    bucket: str,
-    prefix: str,
-    max_payload_bytes: int,
+    target: DeliveryTarget,
     projection_loader: Callable[[Path], DeliveryProjection] | None = None,
     inventory_loader: Callable[[Path], dict[str, InventoryEntry]] | None = None,
 ) -> tuple[DeliveryBinding, ...]:
@@ -99,16 +117,17 @@ def prepare_content_delivery(
     case). Otherwise, for each such content resource this resolves the pack input
     through the author-declared projection, cross-checks it against the pack's
     associated-artifact inventory, materializes a deterministic payload, promotes
-    it content-addressed to ``bucket``/``prefix``, and returns the byte-free
-    binding. Any failure raises ``ContentDeliveryError`` (the caller marks the
-    range reservation FAILED); nothing is dispatched on a partial preparation.
+    it content-addressed to ``target.bucket``/``target.prefix``, and returns the
+    byte-free binding. Any failure raises ``ContentDeliveryError`` (the caller
+    marks the range reservation FAILED); nothing is dispatched on a partial
+    preparation.
     """
     refs = _source_backed_content_refs(serialized_plan)
     if not refs:
         return ()
     if pack_root is None:
         raise ContentDeliveryError("pack root is unavailable for source-backed content delivery")
-    if not isinstance(bucket, str) or not bucket.strip():
+    if not isinstance(target.bucket, str) or not target.bucket.strip():
         raise ContentDeliveryError("content delivery bucket is not configured")
     inventory = (inventory_loader or build_inventory_index)(pack_root)
     if projection_loader is None:
@@ -121,9 +140,7 @@ def prepare_content_delivery(
         projection = _load_pack_projection(pack_root)
     else:
         projection = projection_loader(pack_root)
-    return tuple(
-        _prepare_one(ref, pack_root, projection, inventory, storage, bucket, prefix, max_payload_bytes) for ref in refs
-    )
+    return tuple(_prepare_one(ref, pack_root, projection, inventory, target) for ref in refs)
 
 
 def _prepare_one(
@@ -131,10 +148,7 @@ def _prepare_one(
     pack_root: Path,
     projection: DeliveryProjection,
     inventory: dict[str, InventoryEntry],
-    storage: ObjectStorage,
-    bucket: str,
-    prefix: str,
-    max_payload_bytes: int,
+    target: DeliveryTarget,
 ) -> DeliveryBinding:
     """Resolve, verify, materialize, promote, and bind one content resource."""
     entry = projection.resolve(
@@ -144,18 +158,18 @@ def _prepare_one(
         content_format=ref.content_format,
     )
     input_abs = _resolve_pack_input(pack_root, entry.input_path)
-    _verify_input_against_inventory(pack_root, input_abs, ref.content_type, inventory, max_payload_bytes)
+    _verify_input_against_inventory(pack_root, input_abs, ref.content_type, inventory, target.max_payload_bytes)
     payload = materialize_payload(
         content_type=ref.content_type,
         content_format=ref.content_format,
         source_path=input_abs,
-        max_bytes=max_payload_bytes,
+        max_bytes=target.max_payload_bytes,
     )
-    if len(payload) > max_payload_bytes:
+    if len(payload) > target.max_payload_bytes:
         raise ContentDeliveryError("materialized content payload exceeds the configured size bound")
     digest = sha256_hex(payload)
-    key = normalized_storage_key(prefix, digest)
-    _promote(storage, bucket, key, payload)
+    key = normalized_storage_key(target.prefix, digest)
+    _promote(target.storage, target.bucket, key, payload)
     return DeliveryBinding(content_address=ref.address, sha256=digest, storage_key=key, byte_count=len(payload))
 
 
@@ -171,30 +185,41 @@ def _source_backed_content_refs(serialized_plan: Mapping[str, object]) -> list[_
         return []
     refs: list[_ContentRef] = []
     for address, resource in resources.items():
-        if not isinstance(resource, Mapping) or resource.get("resource_type") != _CONTENT_PLACEMENT_RESOURCE_TYPE:
-            continue
-        payload = resource.get("payload")
-        spec = payload.get("spec") if isinstance(payload, Mapping) else None
-        if not isinstance(spec, Mapping):
-            continue
-        source = spec.get("source")
-        if source is None:
-            continue
-        name, version = _parse_source(source)
-        if not name:
-            raise ContentDeliveryError("source-backed content has an unresolvable source name")
-        content_type = spec.get("type")
-        content_format = spec.get("format")
-        refs.append(
-            _ContentRef(
-                address=str(resource.get("address") or address),
-                source_name=name,
-                source_version=version,
-                content_type=content_type.lower() if isinstance(content_type, str) else "",
-                content_format=content_format if isinstance(content_format, str) else "",
-            )
-        )
+        ref = _content_ref_from_resource(address, resource)
+        if ref is not None:
+            refs.append(ref)
     return refs
+
+
+def _content_ref_from_resource(address: object, resource: object) -> _ContentRef | None:
+    """Return the ``_ContentRef`` for one plan resource, or None if not deliverable.
+
+    A resource is deliverable only when it is a content-placement carrying a
+    ``source``; inline (``text``) files and source-less directories return None
+    (realized by the existing guest bootstrap, not delivered here). A malformed
+    source (present but with no name) fails closed.
+    """
+    if not isinstance(resource, Mapping) or resource.get("resource_type") != _CONTENT_PLACEMENT_RESOURCE_TYPE:
+        return None
+    payload = resource.get("payload")
+    spec = payload.get("spec") if isinstance(payload, Mapping) else None
+    if not isinstance(spec, Mapping):
+        return None
+    source = spec.get("source")
+    if source is None:
+        return None
+    name, version = _parse_source(source)
+    if not name:
+        raise ContentDeliveryError("source-backed content has an unresolvable source name")
+    content_type = spec.get("type")
+    content_format = spec.get("format")
+    return _ContentRef(
+        address=str(resource.get("address") or address),
+        source_name=name,
+        source_version=version,
+        content_type=content_type.lower() if isinstance(content_type, str) else "",
+        content_format=content_format if isinstance(content_format, str) else "",
+    )
 
 
 def _parse_source(source: object) -> tuple[str | None, str]:
@@ -238,6 +263,15 @@ def _verify_input_against_inventory(
     before the materialized-payload cap in ``_prepare_one`` could reject it).
     """
     root = Path(pack_root).resolve()
+    files = _deliverable_files(input_abs, content_type)
+    records = _matched_inventory_records(files, root, inventory, max_payload_bytes)
+    for path, record in records:
+        if _sha256_file(path, max_payload_bytes) != record.sha256:
+            raise ContentDeliveryError("content delivery input does not match the pack inventory digest")
+
+
+def _deliverable_files(input_abs: Path, content_type: str) -> list[Path]:
+    """Return the concrete files backing one content input, failing closed if none."""
     if content_type == "file":
         files = [input_abs]
     elif content_type == "directory":
@@ -246,6 +280,18 @@ def _verify_input_against_inventory(
         raise ContentDeliveryError(f"content type {content_type!r} cannot be delivered")
     if not files:
         raise ContentDeliveryError("content delivery input has no deliverable files")
+    return files
+
+
+def _matched_inventory_records(
+    files: list[Path], root: Path, inventory: Mapping[str, InventoryEntry], max_payload_bytes: int
+) -> list[tuple[Path, InventoryEntry]]:
+    """Return each file paired with its inventory record, size-gating as it accumulates.
+
+    Fails closed on a non-regular file, an uninventoried file, or a declared
+    total that would exceed ``max_payload_bytes`` -- all before any bytes are
+    read (the digest itself is checked separately, in :func:`_sha256_file`).
+    """
     records: list[tuple[Path, InventoryEntry]] = []
     declared_total = 0
     for path in files:
@@ -259,9 +305,7 @@ def _verify_input_against_inventory(
         if declared_total > max_payload_bytes:
             raise ContentDeliveryError("content delivery input exceeds the configured size bound")
         records.append((path, record))
-    for path, record in records:
-        if _sha256_file(path, max_payload_bytes) != record.sha256:
-            raise ContentDeliveryError("content delivery input does not match the pack inventory digest")
+    return records
 
 
 def _sha256_file(path: Path, max_bytes: int) -> str:

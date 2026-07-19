@@ -115,13 +115,15 @@ class TestAssertContentDeliveryBindingsComplete:
 
     def test_extra_binding_with_no_matching_content_fails_closed(self):
         plan = _plan(content=())
+        binding = _binding()
         with pytest.raises(AcesGceCompositionError, match="does not match any source-backed content"):
-            assert_content_delivery_bindings_complete(plan, [_binding()])
+            assert_content_delivery_bindings_complete(plan, [binding])
 
     def test_duplicate_content_address_fails_closed(self):
         plan = _plan(content=(_content(source_name="pkg", path="/opt/x.bin"),))
+        bindings = [_binding(), _binding(byte_count=6)]
         with pytest.raises(AcesGceCompositionError, match="duplicate content_address"):
-            assert_content_delivery_bindings_complete(plan, [_binding(), _binding(byte_count=6)])
+            assert_content_delivery_bindings_complete(plan, bindings)
 
     def test_unsupported_content_type_fails_closed_even_without_bindings(self):
         plan = _plan(content=(_content(source_name="pkg", content_type="dataset", items=("a",)),))
@@ -134,8 +136,9 @@ class TestAssertContentDeliveryBindingsComplete:
 
     def test_binding_that_fails_contract_validation_fails_closed(self):
         plan = _plan(content=(_content(source_name="pkg", path="/opt/x.bin"),))
+        binding = _binding(binding_version=99)
         with pytest.raises(AcesGceCompositionError, match="failed contract validation"):
-            assert_content_delivery_bindings_complete(plan, [_binding(binding_version=99)])
+            assert_content_delivery_bindings_complete(plan, [binding])
 
     def test_two_source_backed_items_each_need_their_own_binding(self):
         plan = _plan(
@@ -144,8 +147,9 @@ class TestAssertContentDeliveryBindingsComplete:
                 _content(source_name="pkg2", path="/opt/b.bin", address="content.b"),
             )
         )
+        binding_a = _binding(content_address="content.a")
         with pytest.raises(AcesGceCompositionError, match="missing its delivery binding"):
-            assert_content_delivery_bindings_complete(plan, [_binding(content_address="content.a")])
+            assert_content_delivery_bindings_complete(plan, [binding_a])
         assert_content_delivery_bindings_complete(
             plan,
             [_binding(content_address="content.a"), _binding(content_address="content.b")],
@@ -335,11 +339,12 @@ class TestRealizeAcesContentDelivery:
         plan = _plan(content=(content,))
         ops, _storage, executors = _ops(payload=b"tampered bytes")
         binding = _binding(sha256="f" * 64, byte_count=5)  # does not match "tampered bytes"
+        output = _output("node.web#0")
 
         with pytest.raises(AcesContentDeliveryError, match="digest mismatch"):
             realize_aces_content_delivery(
                 aces_plan=plan,
-                instance_outputs=[_output("node.web#0")],
+                instance_outputs=[output],
                 delivery_bindings=[binding],
                 ops=ops,
             )
@@ -349,12 +354,14 @@ class TestRealizeAcesContentDelivery:
         content = _content(source_name="pkg", path="/opt/x.bin")
         plan = _plan(content=(content,))
         ops, _storage, executors = _ops(bucket="")
+        output = _output("node.web#0")
+        binding = _binding(byte_count=5)
 
         with pytest.raises(AcesContentDeliveryError, match="bucket is not configured"):
             realize_aces_content_delivery(
                 aces_plan=plan,
-                instance_outputs=[_output("node.web#0")],
-                delivery_bindings=[_binding(byte_count=5)],
+                instance_outputs=[output],
+                delivery_bindings=[binding],
                 ops=ops,
             )
         assert executors == []
@@ -363,12 +370,14 @@ class TestRealizeAcesContentDelivery:
         content = _content(source_name="pkg", path="/opt/x.bin")
         plan = _plan(content=(content,))
         ops, _storage, executors = _ops(max_bytes=10)
+        output = _output("node.web#0")
+        binding = _binding(byte_count=1_000_000)
 
         with pytest.raises(AcesContentDeliveryError, match="exceeds the configured size bound"):
             realize_aces_content_delivery(
                 aces_plan=plan,
-                instance_outputs=[_output("node.web#0")],
-                delivery_bindings=[_binding(byte_count=1_000_000)],
+                instance_outputs=[output],
+                delivery_bindings=[binding],
                 ops=ops,
             )
         assert executors == []
@@ -378,12 +387,14 @@ class TestRealizeAcesContentDelivery:
         plan = _plan(content=(content,))
         storage = _FakeObjectStorage(b"x", download_error=CloudStorageError("s3://secret-bucket/leaked-key failed"))
         ops, _storage, executors = _ops(storage=storage)
+        output = _output("node.web#0")
+        binding = _binding(byte_count=5)
 
         with pytest.raises(AcesContentDeliveryError) as exc_info:
             realize_aces_content_delivery(
                 aces_plan=plan,
-                instance_outputs=[_output("node.web#0")],
-                delivery_bindings=[_binding(byte_count=5)],
+                instance_outputs=[output],
+                delivery_bindings=[binding],
                 ops=ops,
             )
         assert "secret-bucket" not in str(exc_info.value)
@@ -409,12 +420,14 @@ class TestRealizeAcesContentDelivery:
             results=[_success("ACES_CONTENT_FILE_INSTALLED"), _failure("FATAL: readback digest mismatch")]
         )
         ops, _storage, executors = _ops(executor=executor)
+        output = _output("node.web#0")
+        binding = _binding(byte_count=5)
 
         with pytest.raises(AcesContentDeliveryError, match="in-guest digest verification failed"):
             realize_aces_content_delivery(
                 aces_plan=plan,
-                instance_outputs=[_output("node.web#0")],
-                delivery_bindings=[_binding(byte_count=5)],
+                instance_outputs=[output],
+                delivery_bindings=[binding],
                 ops=ops,
             )
         assert len(executors[0].calls) >= 2  # both steps really ran
@@ -425,12 +438,14 @@ class TestRealizeAcesContentDelivery:
         plan = _plan(content=(content,))
         executor = _FakeExecutor(results=[_failure("FATAL: digest mismatch")])
         ops, _storage, _executors = _ops(executor=executor)
+        output = _output("node.web#0")
+        binding = _binding(byte_count=5)
 
         with pytest.raises(AcesContentDeliveryError, match="setup plan failed"):
             realize_aces_content_delivery(
                 aces_plan=plan,
-                instance_outputs=[_output("node.web#0")],
-                delivery_bindings=[_binding(byte_count=5)],
+                instance_outputs=[output],
+                delivery_bindings=[binding],
                 ops=ops,
             )
 
@@ -439,12 +454,14 @@ class TestRealizeAcesContentDelivery:
         plan = _plan(content=(content,))
         executor = _FakeExecutor(results=[_success("x")], ready=False)
         ops, _storage, executors = _ops(executor=executor)
+        output = _output("node.web#0")
+        binding = _binding(byte_count=5)
 
         with pytest.raises(AcesContentDeliveryError, match="did not become ready"):
             realize_aces_content_delivery(
                 aces_plan=plan,
-                instance_outputs=[_output("node.web#0")],
-                delivery_bindings=[_binding(byte_count=5)],
+                instance_outputs=[output],
+                delivery_bindings=[binding],
                 ops=ops,
             )
         assert executors[0].calls == []  # never ran a command against an unready guest
@@ -453,12 +470,14 @@ class TestRealizeAcesContentDelivery:
         content = _content(source_name="pkg", path="/opt/x.bin")
         plan = _plan(content=(content,), nodes=(_node(count=2),))
         ops, _storage, _executors = _ops()
+        output = _output("node.web#0")  # only index 0; node has count=2
+        binding = _binding(byte_count=5)
 
         with pytest.raises(AcesContentDeliveryError, match="instance output is missing"):
             realize_aces_content_delivery(
                 aces_plan=plan,
-                instance_outputs=[_output("node.web#0")],  # only index 0; node has count=2
-                delivery_bindings=[_binding(byte_count=5)],
+                instance_outputs=[output],
+                delivery_bindings=[binding],
                 ops=ops,
             )
 
@@ -478,11 +497,12 @@ class TestBindingContractValidation:
         plan = _plan(content=(content,))
         ops, _storage, executors = _ops()
         binding = _binding(binding_version=2)
+        output = _output("node.web#0")
 
         with pytest.raises(AcesContentDeliveryError, match="binding is invalid"):
             realize_aces_content_delivery(
                 aces_plan=plan,
-                instance_outputs=[_output("node.web#0")],
+                instance_outputs=[output],
                 delivery_bindings=[binding],
                 ops=ops,
             )
@@ -493,11 +513,12 @@ class TestBindingContractValidation:
         plan = _plan(content=(content,))
         ops, _storage, executors = _ops()
         binding = _binding(bucket="s3://leaked-bucket")  # smuggled extra field
+        output = _output("node.web#0")
 
         with pytest.raises(AcesContentDeliveryError, match="binding is invalid"):
             realize_aces_content_delivery(
                 aces_plan=plan,
-                instance_outputs=[_output("node.web#0")],
+                instance_outputs=[output],
                 delivery_bindings=[binding],
                 ops=ops,
             )
@@ -508,11 +529,12 @@ class TestBindingContractValidation:
         plan = _plan(content=(content,))
         ops, _storage, executors = _ops()
         binding = _binding(storage_key="some/unrelated/key")  # not <dd>/<digest>-suffixed
+        output = _output("node.web#0")
 
         with pytest.raises(AcesContentDeliveryError, match="binding is invalid"):
             realize_aces_content_delivery(
                 aces_plan=plan,
-                instance_outputs=[_output("node.web#0")],
+                instance_outputs=[output],
                 delivery_bindings=[binding],
                 ops=ops,
             )
@@ -527,11 +549,12 @@ class TestBindingContractValidation:
         plan = _plan(content=(content,))
         ops, _storage, executors = _ops(payload=b"hello")
         binding = _binding(byte_count=999)
+        output = _output("node.web#0")
 
         with pytest.raises(AcesContentDeliveryError, match="size mismatch"):
             realize_aces_content_delivery(
                 aces_plan=plan,
-                instance_outputs=[_output("node.web#0")],
+                instance_outputs=[output],
                 delivery_bindings=[binding],
                 ops=ops,
             )

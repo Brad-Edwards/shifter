@@ -217,9 +217,10 @@ class TestDownloadObject:
         fake_blob = self._blob_writing(b"x" * 10)
         fake_client.bucket.return_value.blob.return_value = fake_blob
         dest = tmp_path / "big.tar"
+        dest_str = str(dest)
 
         with _install_fake_google_storage(fake_client), pytest.raises(CloudStorageError):
-            storage.download_object("b", "k", str(dest), max_bytes=1024, expected_identity={"content_length": 5000})
+            storage.download_object("b", "k", dest_str, max_bytes=1024, expected_identity={"content_length": 5000})
 
         # Fail closed before touching the network: no oversize file left behind.
         fake_blob.download_to_file.assert_not_called()

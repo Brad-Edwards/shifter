@@ -160,10 +160,12 @@ class TestCmsAcesDispatchPort:
         mock_prepare.assert_called_once_with(
             pack_root=tmp_path,
             serialized_plan=compiled_plan,
-            storage=storage_sentinel,
-            bucket=settings.STORAGE_BUCKET_NAME,
-            prefix=settings.ACES_CONTENT_DELIVERY_PREFIX,
-            max_payload_bytes=settings.ACES_CONTENT_DELIVERY_MAX_PAYLOAD_BYTES,
+            target=prep.DeliveryTarget(
+                storage=storage_sentinel,
+                bucket=settings.STORAGE_BUCKET_NAME,
+                prefix=settings.ACES_CONTENT_DELIVERY_PREFIX,
+                max_payload_bytes=settings.ACES_CONTENT_DELIVERY_MAX_PAYLOAD_BYTES,
+            ),
         )
         rows = list(AcesContentDeliveryBinding.objects.all())
         assert len(rows) == 1
