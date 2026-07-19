@@ -185,7 +185,7 @@ def create_challenge(event_id: UUID, challenge_data: dict[str, Any], *, actor_id
         CTFStateError: If event is not modifiable.
         CTFValidationError: If challenge data is invalid.
     """
-    logger.info("Creating challenge for event %s", event_id)
+    logger.info("Creating challenge for event %s", safe_log_value(event_id))
 
     # Get and validate event
     try:
@@ -239,7 +239,7 @@ def create_challenge(event_id: UUID, challenge_data: dict[str, Any], *, actor_id
         logger.info(
             "Created challenge %s for event %s: %s",
             challenge.id,
-            event_id,
+            safe_log_value(event_id),
             safe_log_value(challenge.name),
         )
 
@@ -310,7 +310,7 @@ def update_challenge(challenge_id: UUID, challenge_data: dict[str, Any], *, acto
         CTFPermissionError: If actor does not own the event.
         CTFStateError: If challenge's event is not modifiable.
     """
-    logger.info("Updating challenge %s", challenge_id)
+    logger.info("Updating challenge %s", safe_log_value(challenge_id))
 
     try:
         challenge = CTFChallenge.objects.select_related("event").get(pk=challenge_id)
@@ -443,7 +443,7 @@ def delete_challenge(challenge_id: UUID, *, actor_id: int) -> None:
         CTFPermissionError: If actor does not own the event.
         CTFStateError: If challenge's event is not modifiable.
     """
-    logger.info("Deleting challenge %s", challenge_id)
+    logger.info("Deleting challenge %s", safe_log_value(challenge_id))
 
     try:
         challenge = CTFChallenge.objects.select_related("event").get(pk=challenge_id)
@@ -468,4 +468,4 @@ def delete_challenge(challenge_id: UUID, *, actor_id: int) -> None:
         # Soft-delete prerequisite links where this challenge is required
         CTFChallengePrerequisite.objects.filter(required_challenge=challenge).update(deleted_at=timezone.now())
         challenge.delete(soft=True)
-    logger.info("Deleted challenge %s", challenge_id)
+    logger.info("Deleted challenge %s", safe_log_value(challenge_id))
