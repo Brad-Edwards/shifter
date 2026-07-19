@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from django import forms
 
-from ctf.models import CTFChallenge
+from ctf.models import CTFChallenge, CTFEvent
 
 from ._common import DATETIME_LOCAL_FORMAT, DATETIME_SECONDS_FORMAT
 
@@ -41,6 +43,8 @@ class CTFChallengeForm(forms.ModelForm):
     )
 
     class Meta:
+        """Model/field configuration for `CTFChallengeForm`."""
+
         model = CTFChallenge
         fields = [
             "name",
@@ -66,7 +70,7 @@ class CTFChallengeForm(forms.ModelForm):
             ),
         }
 
-    def __init__(self, *args, event=None, **kwargs):
+    def __init__(self, *args: Any, event: CTFEvent | None = None, **kwargs: Any) -> None:
         """Initialize form with event context.
 
         Args:
@@ -77,7 +81,7 @@ class CTFChallengeForm(forms.ModelForm):
 
         # Set input formats for datetime fields
         if "release_time" in self.fields:
-            self.fields["release_time"].input_formats = [
+            self.fields["release_time"].input_formats = [  # type: ignore[attr-defined]
                 DATETIME_LOCAL_FORMAT,
                 DATETIME_SECONDS_FORMAT,
                 "%Y-%m-%d %H:%M:%S",
@@ -97,7 +101,7 @@ class CTFChallengeForm(forms.ModelForm):
             qs = CTFChallenge.objects.filter(event=event)
             if self.instance.pk:
                 qs = qs.exclude(pk=self.instance.pk)
-            self.fields["next_challenge"].queryset = qs
+            self.fields["next_challenge"].queryset = qs  # type: ignore[attr-defined]
         self.fields["next_challenge"].required = False
 
         # Flag is required for new challenges
@@ -111,7 +115,7 @@ class CTFChallengeForm(forms.ModelForm):
             existing_classes = field.widget.attrs.get("class", "")
             field.widget.attrs["class"] = f"{existing_classes} form-control".strip()
 
-    def clean(self) -> dict:
+    def clean(self) -> dict[str, Any]:
         """Validate form data."""
         cleaned_data = super().clean()
         if cleaned_data is None:
@@ -155,7 +159,7 @@ class CTFChallengeForm(forms.ModelForm):
             "with the form's `to_service_data()` and an `actor_id`."
         )
 
-    def to_service_data(self) -> dict:
+    def to_service_data(self) -> dict[str, Any]:
         """Return a dict suitable for `create_challenge`/`update_challenge`.
 
         Must be called only after `is_valid()`.
@@ -163,7 +167,7 @@ class CTFChallengeForm(forms.ModelForm):
         cleaned = self.cleaned_data
         # Start from the ModelForm field set, drop the form-only helpers,
         # and add service-shape fields (flag, tags, topics).
-        data: dict = {}
+        data: dict[str, Any] = {}
         for field in self.Meta.fields:
             if field in cleaned:
                 data[field] = cleaned[field]

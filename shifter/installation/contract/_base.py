@@ -28,12 +28,14 @@ class _ContractModel(BaseModel):
 
 
 def _check_non_empty(value: str) -> str:
+    """Reject an empty string or one with leading/trailing whitespace."""
     if not value or value != value.strip():
         raise ValueError("must be a non-empty string with no surrounding whitespace")
     return value
 
 
 def _check_repo_relative(value: str) -> str:
+    """Reject an absolute host path or a path containing a '..' traversal segment."""
     _check_non_empty(value)
     if value.startswith("/"):
         raise ValueError(f"{value!r} must be a repository-relative path, not an absolute host path")
@@ -43,6 +45,7 @@ def _check_repo_relative(value: str) -> str:
 
 
 def _check_unique(values: Iterable[str], *, field: str) -> None:
+    """Raise if ``values`` contains a duplicate entry."""
     seen: set[str] = set()
     for value in values:
         if value in seen:
@@ -58,6 +61,7 @@ _CUSTOM_VALIDATOR_ERROR_TYPES: frozenset[str] = frozenset({"value_error", "asser
 
 
 def _safe_pydantic_message(err: Mapping[str, Any]) -> str:
+    """Return a sanitized message for a single Pydantic error record."""
     if err["type"] in _CUSTOM_VALIDATOR_ERROR_TYPES:
         return "failed a backend-specific validation check"
     return err["msg"]

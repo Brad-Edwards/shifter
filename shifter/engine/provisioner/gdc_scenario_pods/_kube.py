@@ -5,9 +5,14 @@ from __future__ import annotations
 import json
 import logging
 import time
-from typing import Any
+from types import ModuleType
+from typing import TYPE_CHECKING, Any
 
 import yaml
+
+if TYPE_CHECKING:
+    from kubernetes.client import ApiClient, CoreV1Api
+    from kubernetes.client.exceptions import ApiException
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +22,8 @@ _READY_TIMEOUT_SECONDS = 600
 _DELETE_TIMEOUT_SECONDS = 300
 
 
-def _import_kubernetes_modules():
+def _import_kubernetes_modules() -> tuple[ModuleType, ModuleType, type[ApiException]]:
+    """Lazily import the kubernetes client/config modules and ApiException type."""
     try:
         from kubernetes import client, config
         from kubernetes.client.exceptions import ApiException
@@ -27,7 +33,8 @@ def _import_kubernetes_modules():
     return client, config, ApiException
 
 
-def _build_kube_api_client(kubeconfig_yaml: str):
+def _build_kube_api_client(kubeconfig_yaml: str) -> ApiClient:
+    """Build an authenticated Kubernetes ApiClient from a GDC kubeconfig YAML string."""
     # Late-bound call to ``gdc_scenario_pods._import_kubernetes_modules`` so
     # test patches applied at the package level still apply here.
     import gdc_scenario_pods as _pkg
@@ -43,7 +50,8 @@ def _build_kube_api_client(kubeconfig_yaml: str):
     return client.ApiClient(configuration=configuration)
 
 
-def _apply_pod(core_api, namespace: str, body: dict[str, Any], api_exception) -> None:
+def _apply_pod(core_api: CoreV1Api, namespace: str, body: dict[str, Any], api_exception: type[ApiException]) -> None:
+    """Create the scenario Pod, falling back to an update patch on a 409 conflict."""
     name = body["metadata"]["name"]
     try:
         core_api.create_namespaced_pod(namespace=namespace, body=body)
@@ -56,36 +64,40 @@ def _apply_pod(core_api, namespace: str, body: dict[str, Any], api_exception) ->
 
 
 def _extract_network_status_ip(pod: dict[str, Any], network_name: str, namespace: str) -> str:
+    """Return the Pod's assigned IP from its network-status annotation, or "" if unavailable."""
+    result = ""
     annotations = pod.get("metadata", {}).get("annotations") or {}
     raw_status = annotations.get(_NETWORK_STATUS_ANNOTATION)
-    if not raw_status:
-        return ""
+    if raw_status:
+        try:
+            network_status = json.loads(raw_status)
+        except json.JSONDecodeError:
+            network_status = None
 
-    try:
-        network_status = json.loads(raw_status)
-    except json.JSONDecodeError:
-        return ""
+        if network_status is not None:
+            expected_names = {network_name, f"{namespace}/{network_name}"}
+            for attachment in network_status:
+                if not isinstance(attachment, dict):
+                    continue
+                if attachment.get("name") not in expected_names and attachment.get("interface") != "net1":
+                    continue
+                ips = attachment.get("ips") or []
+                if ips:
+                    result = str(ips[0]).split("/", 1)[0]
+                    break
 
-    expected_names = {network_name, f"{namespace}/{network_name}"}
-    for attachment in network_status:
-        if not isinstance(attachment, dict):
-            continue
-        if attachment.get("name") not in expected_names and attachment.get("interface") != "net1":
-            continue
-        ips = attachment.get("ips") or []
-        if ips:
-            return str(ips[0]).split("/", 1)[0]
-    return ""
+    return result
 
 
 def _wait_for_pod_ready(
-    core_api,
+    core_api: CoreV1Api,
     namespace: str,
     pod_name: str,
     expected_ip: str,
     network_name: str,
-    api_exception,
+    api_exception: type[ApiException],
 ) -> None:
+    """Poll until the Pod is Running with its expected network IP, or raise on timeout/failure."""
     deadline = time.monotonic() + _READY_TIMEOUT_SECONDS
     while time.monotonic() < deadline:
         try:
@@ -107,7 +119,10 @@ def _wait_for_pod_ready(
     raise RuntimeError(f"Timed out waiting for scenario Pod {namespace}/{pod_name} to become ready")
 
 
-def _wait_for_pod_deleted(core_api, namespace: str, pod_name: str, api_exception) -> None:
+def _wait_for_pod_deleted(
+    core_api: CoreV1Api, namespace: str, pod_name: str, api_exception: type[ApiException]
+) -> None:
+    """Poll until the Pod is deleted (404), or raise on timeout."""
     deadline = time.monotonic() + _DELETE_TIMEOUT_SECONDS
     while time.monotonic() < deadline:
         try:
@@ -122,14 +137,15 @@ def _wait_for_pod_deleted(core_api, namespace: str, pod_name: str, api_exception
 
 
 def _is_pod_ready(
-    core_api,
+    core_api: CoreV1Api,
     *,
     namespace: str,
     pod_name: str,
     expected_ip: str,
     network_name: str,
-    api_exception,
+    api_exception: type[ApiException],
 ) -> bool:
+    """Return True when the Pod is Running with its expected network-status IP."""
     try:
         pod = core_api.read_namespaced_pod(name=pod_name, namespace=namespace).to_dict()
     except api_exception as exc:

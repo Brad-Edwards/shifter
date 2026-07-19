@@ -8,10 +8,14 @@ helpers used by subnet allocation and lookup.
 import ipaddress
 import logging
 import os
+from typing import TYPE_CHECKING
 
 import psycopg
 
 from cloud.exceptions import CloudNetworkInventoryError
+
+if TYPE_CHECKING:
+    from cloud.types import NetworkInventory
 
 logger = logging.getLogger(__name__)
 
@@ -48,8 +52,10 @@ def _get_db_connection() -> psycopg.Connection:
             password=db_password,
         )
 
-    assert db_host is not None  # validated above
-    assert db_user is not None  # validated above
+    # validated above
+    assert db_host is not None
+    # validated above
+    assert db_user is not None
     from cloud import get_db_auth
 
     auth = get_db_auth()
@@ -68,7 +74,7 @@ def _get_db_connection() -> psycopg.Connection:
     )
 
 
-def _get_network_inventory():
+def _get_network_inventory() -> "NetworkInventory":
     """Resolve the active provider's network inventory adapter lazily."""
     from cloud import get_network_inventory
 

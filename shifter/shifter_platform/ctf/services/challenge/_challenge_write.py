@@ -201,9 +201,9 @@ def _build_safe_update_payload(data: dict[str, Any], challenge: CTFChallenge) ->
 
 def _apply_optional_challenge_associations(
     challenge: CTFChallenge,
-    flags_list,
-    tag_names,
-    topic_names,
+    flags_list: list[dict[str, Any]] | None,
+    tag_names: list[str] | None,
+    topic_names: list[str] | None,
     actor_id: int,
 ) -> None:
     """Apply optional flag/tag/topic updates inside the existing transaction."""

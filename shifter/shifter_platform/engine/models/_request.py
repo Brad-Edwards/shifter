@@ -43,11 +43,14 @@ class Request(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
+        """Default ordering and display names for the Request model."""
+
         ordering = ["-created_at"]
         verbose_name = "Request"
         verbose_name_plural = "Requests"
 
-    def __str__(self):
+    def __str__(self) -> str:
+        """Return a human-readable label with the request's correlation UUID."""
         return f"Request {self.request_id}"
 
 
@@ -94,6 +97,8 @@ class Instantiation(models.Model):
     destroyed_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
+        """Marks Instantiation as an abstract base with no table of its own."""
+
         abstract = True
 
     @property
@@ -119,12 +124,16 @@ class Instance(Instantiation):
     """
 
     class Role(models.TextChoices):
+        """Instance roles from InstanceSpec."""
+
         ATTACKER = "attacker", "Attacker"
         VICTIM = "victim", "Victim"
         DC = "dc", "Domain Controller"
         NGFW = "ngfw", "NGFW"
 
     class OSType(models.TextChoices):
+        """Operating system types an Instance can run."""
+
         KALI = "kali", "Kali Linux"
         UBUNTU = "ubuntu", "Ubuntu"
         WINDOWS = "windows", "Windows"
@@ -144,11 +153,14 @@ class Instance(Instantiation):
     )
 
     class Meta:
+        """Default ordering and display names for the Instance model."""
+
         ordering = ["-created_at"]
         verbose_name = "Instance"
         verbose_name_plural = "Instances"
 
-    def __str__(self):
+    def __str__(self) -> str:
+        """Return a human-readable label with uuid, role, and OS type."""
         return f"Instance {self.uuid} ({self.role}/{self.os_type})"
 
 
@@ -164,6 +176,8 @@ class App(Instantiation):
     """
 
     class AppType(models.TextChoices):
+        """App type discriminator for what an App represents."""
+
         OS = "os", "OS"
         NGFW = "ngfw", "NGFW"
         AGENT = "agent", "Agent"
@@ -177,9 +191,12 @@ class App(Instantiation):
     )
 
     class Meta:
+        """Default ordering and display names for the App model."""
+
         ordering = ["-created_at"]
         verbose_name = "App"
         verbose_name_plural = "Apps"
 
-    def __str__(self):
+    def __str__(self) -> str:
+        """Return a human-readable label with uuid and app type."""
         return f"App {self.uuid} ({self.app_type})"

@@ -40,11 +40,12 @@ class DCSetupPlan:
     verify_step: ClassVar[SetupStep] = SetupStep(
         name="verify_ad_running",
         script=VERIFY_AD_SCRIPT,
-        timeout_seconds=900,  # 15 min - allows 15 retries x 20s delays + verification time
+        # 15 min - allows 15 retries x 20s delays + verification time
+        timeout_seconds=900,
         is_verification=True,
     )
 
-    def __init__(self, runtime_promotion: bool = False):
+    def __init__(self, runtime_promotion: bool = False) -> None:
         self.runtime_promotion = runtime_promotion
 
     @property
@@ -79,7 +80,10 @@ class DCSetupPlan:
         )
         return steps
 
-    def get_context(self, instance: Any) -> dict[str, Any]:
+    @staticmethod
+    # NOSONAR - instance is duck-typed per the SetupPlan protocol (plans/base.py);
+    # consistent with every other get_context implementation in this package.
+    def get_context(instance: Any) -> dict[str, Any]:  # NOSONAR
         """Get template variables for DC setup scripts.
 
         Args:

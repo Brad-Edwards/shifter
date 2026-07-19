@@ -7,7 +7,6 @@ submodule (``_challenge_crud``).
 
 from __future__ import annotations
 
-from typing import Any
 from uuid import UUID
 
 from ctf.exceptions import CTFValidationError
@@ -52,7 +51,7 @@ def _resolve_topics(topic_names: list[str]) -> list[CTFTopic]:
 
 
 def _resolve_next_challenge(
-    raw: Any,
+    raw: CTFChallenge | UUID | str | None,
     *,
     event: CTFEvent,
     self_id: UUID | None = None,

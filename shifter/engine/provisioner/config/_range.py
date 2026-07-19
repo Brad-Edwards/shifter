@@ -37,16 +37,25 @@ class InstanceConfig:
         dc_config_param_name: SSM parameter path for DC config (optional).
     """
 
-    uuid: str  # Required: correlation key for tagging and DB updates
-    name: str  # Display name like "target-ubuntu" or "attacker-kali"
-    role: str  # "attacker", "victim", or "dc"
-    os_type: str  # "kali", "ubuntu", "windows"
+    # Required: correlation key for tagging and DB updates
+    uuid: str
+    # Display name like "target-ubuntu" or "attacker-kali"
+    name: str
+    # "attacker", "victim", or "dc"
+    role: str
+    # "kali", "ubuntu", "windows"
+    os_type: str
     instance_type: str
-    agent_s3_key: str | None = None  # S3 key for agent installer
-    agent_presigned_url: str | None = None  # Presigned URL for agent download
-    dc_config: dict[str, str] | None = None  # {"domain_name": "...", "netbios_name": "..."}
-    join_domain: bool = False  # Whether this instance should join a domain
-    dc_config_param_name: str | None = None  # SSM parameter path for DC config
+    # S3 key for agent installer
+    agent_s3_key: str | None = None
+    # Presigned URL for agent download
+    agent_presigned_url: str | None = None
+    # {"domain_name": "...", "netbios_name": "..."}
+    dc_config: dict[str, str] | None = None
+    # Whether this instance should join a domain
+    join_domain: bool = False
+    # SSM parameter path for DC config
+    dc_config_param_name: str | None = None
 
 
 @dataclass
@@ -99,20 +108,28 @@ class RangeConfig:
     windows_ami_id: str
     agent_s3_bucket: str
     availability_zone: str
-    ngfw_data_eni_id: str = ""  # Legacy AWS data ENI ID for inter-subnet routing
-    ngfw_attachment_mode: str = ""  # Provider-neutral NGFW attachment mode
-    ngfw_route_next_hop_ip: str = ""  # Provider-neutral next hop used for subnet routes
-    dc_ami_id: str = ""  # AMI ID for DC instances (prebaked with AD DS)
+    # Legacy AWS data ENI ID for inter-subnet routing
+    ngfw_data_eni_id: str = ""
+    # Provider-neutral NGFW attachment mode
+    ngfw_attachment_mode: str = ""
+    # Provider-neutral next hop used for subnet routes
+    ngfw_route_next_hop_ip: str = ""
+    # AMI ID for DC instances (prebaked with AD DS)
+    dc_ami_id: str = ""
     portal_vpc_cidr: str = ""
-    portal_vpc_peering_id: str = ""  # VPC peering connection ID for portal route
+    # VPC peering connection ID for portal route
+    portal_vpc_peering_id: str = ""
     # NGFW (VM-Series) configuration
     ngfw_enabled: bool = False
     ngfw_ami_id: str = ""
     ngfw_instance_type: str = "m5.xlarge"
     # NGFW connection info for subnet configuration (set when ngfw_enabled=True)
-    ngfw_management_ip: str = ""  # NGFW management IP for SSH
-    ngfw_ssh_key_secret_arn: str = ""  # Secrets Manager ARN for SSH private key
-    ngfw_subnet_cidr: str = ""  # NGFW subnet CIDR for computing gateway IP
+    # NGFW management IP for SSH
+    ngfw_management_ip: str = ""
+    # Secrets Manager ARN for SSH private key
+    ngfw_ssh_key_secret_arn: str = ""
+    # NGFW subnet CIDR for computing gateway IP
+    ngfw_subnet_cidr: str = ""
     # S3 VPC endpoint for agent downloads (Gateway endpoint ID)
     s3_endpoint_id: str = ""
     # AWS Network Firewall endpoint ID for internet egress from range subnets

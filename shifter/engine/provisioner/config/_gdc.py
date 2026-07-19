@@ -24,7 +24,8 @@ class GDCNetworkAccessConfig:
     region: str
     namespace_prefix: str = "range"
     network_interface: str = "vxlan0"
-    dns_nameservers: tuple[str, ...] = ("8.8.8.8",)
+    # NOSONAR - public DNS resolver default (Google Public DNS), not a sensitive/internal address
+    dns_nameservers: tuple[str, ...] = ("8.8.8.8",)  # NOSONAR
     static_ip_reservation_count: int = 4
 
 
@@ -149,6 +150,7 @@ def _load_gdc_scenario_pod_profile(prefix: str, *, default_image: str) -> GDCSce
 
 
 def _decode_gdc_access_secret(raw_secret: str) -> tuple[dict[str, Any], str]:
+    """Decode the GDC access secret, returning its JSON payload and kubeconfig."""
     payload: dict[str, Any] = {}
     kubeconfig = raw_secret
     try:
@@ -167,6 +169,7 @@ def _decode_gdc_access_secret(raw_secret: str) -> tuple[dict[str, Any], str]:
 
 
 def _resolve_gdc_access_region(payload: dict[str, Any]) -> str:
+    """Resolve the GDC access region from the secret payload or region env vars."""
     return str(
         payload.get("region")
         or os.environ.get("RANGE_NETWORK_REGION")
@@ -177,6 +180,7 @@ def _resolve_gdc_access_region(payload: dict[str, Any]) -> str:
 
 
 def _validate_gdc_access_fields(*, cluster_id: str, vxlan_cidr: str, region: str) -> None:
+    """Raise ``RuntimeError`` if any required GDC access field is missing."""
     if not cluster_id:
         raise RuntimeError("GDC access secret must include cluster_id or GDC_CLUSTER_ID must be set")
     if not vxlan_cidr:

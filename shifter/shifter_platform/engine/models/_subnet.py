@@ -45,11 +45,14 @@ class Subnet(Instantiation):
     )
 
     class Meta:
+        """Default ordering and display names for the Subnet model."""
+
         ordering = ["-created_at"]
         verbose_name = "Logical Subnet"
         verbose_name_plural = "Logical Subnets"
 
-    def __str__(self):
+    def __str__(self) -> str:
+        """Return a human-readable label with the subnet's name and uuid."""
         return f"Subnet {self.name} ({self.uuid})"
 
     @property
@@ -86,6 +89,8 @@ class SubnetAllocation(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
+        """Table name and the unique CIDR-per-VPC constraint for allocations."""
+
         db_table = "engine_subnetallocation"
         constraints = [
             models.UniqueConstraint(
@@ -94,5 +99,6 @@ class SubnetAllocation(models.Model):
             ),
         ]
 
-    def __str__(self):
+    def __str__(self) -> str:
+        """Return a human-readable label with the allocated CIDR and VPC id."""
         return f"{self.cidr} in {self.vpc_id}"

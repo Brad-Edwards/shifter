@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from django import forms
 
-from ctf.models import CTFBracket, CTFNotification
+from ctf.models import CTFBracket, CTFEvent, CTFNotification
 
 from ._common import DATETIME_LOCAL_FORMAT, DATETIME_SECONDS_FORMAT
 
@@ -13,6 +15,8 @@ class CTFNotificationForm(forms.ModelForm):
     """Form for creating notifications."""
 
     class Meta:
+        """Model/field configuration for `CTFNotificationForm`."""
+
         model = CTFNotification
         fields = [
             "notification_type",
@@ -29,7 +33,7 @@ class CTFNotificationForm(forms.ModelForm):
             ),
         }
 
-    def __init__(self, *args, event=None, **kwargs):
+    def __init__(self, *args: Any, event: CTFEvent | None = None, **kwargs: Any) -> None:
         """Initialize form with event context.
 
         Args:
@@ -40,7 +44,7 @@ class CTFNotificationForm(forms.ModelForm):
 
         # Set input formats for datetime fields
         if "scheduled_at" in self.fields:
-            self.fields["scheduled_at"].input_formats = [
+            self.fields["scheduled_at"].input_formats = [  # type: ignore[attr-defined]
                 DATETIME_LOCAL_FORMAT,
                 DATETIME_SECONDS_FORMAT,
                 "%Y-%m-%d %H:%M:%S",
@@ -57,6 +61,8 @@ class CTFBracketForm(forms.ModelForm):
     """Form for creating and editing brackets."""
 
     class Meta:
+        """Model/field configuration for `CTFBracketForm`."""
+
         model = CTFBracket
         fields = [
             "name",
@@ -67,7 +73,7 @@ class CTFBracketForm(forms.ModelForm):
             "description": forms.Textarea(attrs={"rows": 3}),
         }
 
-    def __init__(self, *args, event=None, **kwargs):
+    def __init__(self, *args: Any, event: CTFEvent | None = None, **kwargs: Any) -> None:
         """Initialize form with event context.
 
         Args:

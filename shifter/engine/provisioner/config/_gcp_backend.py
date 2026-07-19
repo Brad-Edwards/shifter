@@ -37,6 +37,7 @@ def get_gcp_range_backend() -> str:
 
 
 def _is_active_gdc_range_plane() -> bool:
+    """Return True when the configured GCP range backend is the GDC VM Runtime."""
     return get_gcp_range_backend() == "gdc"
 
 

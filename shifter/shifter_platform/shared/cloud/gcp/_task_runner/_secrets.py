@@ -11,7 +11,7 @@ from __future__ import annotations
 import logging
 import uuid
 from hashlib import sha256
-from typing import Any, cast
+from typing import cast
 
 from shared.cloud.exceptions import CloudTaskError
 from shared.log_sanitize import safe_log_fingerprint
@@ -95,14 +95,16 @@ def _owner_ref_to_dict(owner_ref: _OwnerReference) -> dict[str, object]:
     }
 
 
-def _cleanup_sensitive_secret(core_api: Any, secret_name: str | None, namespace: str) -> None:
+def _cleanup_sensitive_secret(core_api: object, secret_name: str | None, namespace: str) -> None:
     """Delete an orphan sensitive-env Secret. Best-effort: log on
     failure so the operator can clean up manually, but never raise
     — the caller is already on an error path."""
     if not secret_name:
         return
     try:
-        core_api.delete_namespaced_secret(
+        _api_call(
+            core_api,
+            "delete_namespaced_secret",
             name=secret_name,
             namespace=namespace,
             _request_timeout=_KUBERNETES_REQUEST_TIMEOUT_SECONDS,
@@ -180,8 +182,8 @@ def _install_owner_reference_or_unwind(
 
 
 def _unwind_run(
-    batch_api: Any,
-    core_api: Any,
+    batch_api: object,
+    core_api: object,
     namespace: str,
     job_name: str,
     secret_name: str,
@@ -200,7 +202,9 @@ def _unwind_run(
         detail,
     )
     try:
-        batch_api.delete_namespaced_job(
+        _api_call(
+            batch_api,
+            "delete_namespaced_job",
             name=job_name,
             namespace=namespace,
             _request_timeout=_KUBERNETES_REQUEST_TIMEOUT_SECONDS,
@@ -213,7 +217,9 @@ def _unwind_run(
             exc_info=True,
         )
     try:
-        core_api.delete_namespaced_secret(
+        _api_call(
+            core_api,
+            "delete_namespaced_secret",
             name=secret_name,
             namespace=namespace,
             _request_timeout=_KUBERNETES_REQUEST_TIMEOUT_SECONDS,

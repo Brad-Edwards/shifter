@@ -53,6 +53,48 @@ def hash_flag(flag: str, case_sensitive: bool = True) -> str:
         return f"pbkdf2:{salt}:{hash_value}"
 
 
+def _verify_bcrypt(submitted_flag: str, stored_hash: str, context_id: UUID) -> bool:
+    """Verify a submitted flag against a bcrypt hash (``$2`` prefix)."""
+    try:
+        return bcrypt.checkpw(
+            submitted_flag.encode("utf-8"),
+            stored_hash.encode("utf-8"),
+        )
+    except Exception as e:
+        logger.exception("Flag verification error for %s: %s", context_id, e)
+        return False
+
+
+def _verify_pbkdf2(submitted_flag: str, stored_hash: str, context_id: UUID) -> bool:
+    """Verify a submitted flag against a ``pbkdf2:<salt>:<hash>`` digest."""
+    parts = stored_hash.split(":", 2)
+    if len(parts) != 3:
+        logger.error("Invalid hash format for %s", context_id)
+        return False
+    _, salt, expected_hash = parts
+    actual_hash = hashlib.pbkdf2_hmac(
+        "sha256", submitted_flag.encode("utf-8"), salt.encode("utf-8"), iterations=600_000
+    ).hex()
+    return secrets.compare_digest(actual_hash, expected_hash)
+
+
+def _verify_legacy_sha256(submitted_flag: str, stored_hash: str, context_id: UUID) -> bool:
+    """Verify a submitted flag against a legacy ``sha256:<salt>:<hash>`` digest.
+
+    Kept for backward compatibility with hashes created before the PBKDF2
+    migration. New flags always use bcrypt or PBKDF2 (see ``hash_flag()``).
+    """
+    parts = stored_hash.split(":", 2)
+    if len(parts) != 3:
+        logger.error("Invalid hash format for %s", context_id)
+        return False
+    _, salt, expected_hash = parts
+    actual_hash = hashlib.sha256(  # NOSONAR — legacy compat, not for new hashes
+        f"{salt}:{submitted_flag}".encode()
+    ).hexdigest()
+    return secrets.compare_digest(actual_hash, expected_hash)
+
+
 def _verify_hash(submitted_flag: str, stored_hash: str, context_id: UUID) -> bool:
     """Verify a submitted flag against a stored hash.
 
@@ -65,40 +107,15 @@ def _verify_hash(submitted_flag: str, stored_hash: str, context_id: UUID) -> boo
         True if the flag matches the hash.
     """
     if BCRYPT_AVAILABLE and stored_hash.startswith("$2"):
-        try:
-            return bcrypt.checkpw(
-                submitted_flag.encode("utf-8"),
-                stored_hash.encode("utf-8"),
-            )
-        except Exception as e:
-            logger.exception("Flag verification error for %s: %s", context_id, e)
-            return False
+        verifier = _verify_bcrypt
     elif stored_hash.startswith("pbkdf2:"):
-        parts = stored_hash.split(":", 2)
-        if len(parts) != 3:
-            logger.error("Invalid hash format for %s", context_id)
-            return False
-        _, salt, expected_hash = parts
-        actual_hash = hashlib.pbkdf2_hmac(
-            "sha256", submitted_flag.encode("utf-8"), salt.encode("utf-8"), iterations=600_000
-        ).hex()
-        return secrets.compare_digest(actual_hash, expected_hash)
+        verifier = _verify_pbkdf2
     elif stored_hash.startswith("sha256:"):
-        # Legacy format: single-round salted SHA-256.  Kept for backward
-        # compatibility with hashes created before PBKDF2 migration.  New
-        # flags always use bcrypt or PBKDF2 (see hash_flag()).
-        parts = stored_hash.split(":", 2)
-        if len(parts) != 3:
-            logger.error("Invalid hash format for %s", context_id)
-            return False
-        _, salt, expected_hash = parts
-        actual_hash = hashlib.sha256(  # NOSONAR — legacy compat, not for new hashes
-            f"{salt}:{submitted_flag}".encode()
-        ).hexdigest()
-        return secrets.compare_digest(actual_hash, expected_hash)
+        verifier = _verify_legacy_sha256
     else:
         logger.error("Unknown hash format for %s", context_id)
         return False
+    return verifier(submitted_flag, stored_hash, context_id)
 
 
 def _verify_regex_flag(flag_obj: CTFFlag, submitted_flag: str) -> bool:
@@ -147,6 +164,14 @@ def _verify_static_flag(flag_obj: CTFFlag, submitted_flag: str) -> bool:
     return _verify_hash(value, flag_obj.flag_hash, flag_obj.id)
 
 
+def _verify_programmable_or_http_flag(flag_obj: CTFFlag, submitted_flag: str) -> bool:
+    """Verify a submitted flag against a programmable or HTTP validator CTFFlag."""
+    config = flag_obj.validator_config or {}
+    if flag_obj.flag_type == "programmable":
+        return _verify_programmable_flag(flag_obj, submitted_flag, config)
+    return _verify_http_flag(flag_obj, submitted_flag, config)
+
+
 def verify_single_flag(flag_obj: CTFFlag, submitted_flag: str) -> bool:
     """Verify a submitted flag against a single CTFFlag record.
 
@@ -160,10 +185,7 @@ def verify_single_flag(flag_obj: CTFFlag, submitted_flag: str) -> bool:
     if flag_obj.flag_type == "regex":
         return _verify_regex_flag(flag_obj, submitted_flag)
     if flag_obj.flag_type in ("programmable", "http"):
-        config = flag_obj.validator_config or {}
-        if flag_obj.flag_type == "programmable":
-            return _verify_programmable_flag(flag_obj, submitted_flag, config)
-        return _verify_http_flag(flag_obj, submitted_flag, config)
+        return _verify_programmable_or_http_flag(flag_obj, submitted_flag)
     return _verify_static_flag(flag_obj, submitted_flag)
 
 

@@ -30,6 +30,32 @@ def _is_flag_modifiable(event: CTFEvent) -> bool:
     return event.is_content_modifiable or event.is_live_flag_repairable
 
 
+def _flag_hash_for_static_or_regex(flag_type: str, flag_data: dict[str, Any], *, case_sensitive: bool) -> str:
+    """Validate and hash a static/regex flag payload, returning the flag_hash value."""
+    plaintext_flag = flag_data.get("flag", "").strip()
+    if not plaintext_flag:
+        raise CTFValidationError(
+            "Flag value is required",
+            details={"missing_fields": ["flag"]},
+        )
+    if flag_type == "regex":
+        # Reject unsafe patterns at creation time (over-long or
+        # uncompilable) so organizers get immediate feedback and the
+        # request-worker verifier never stores a ReDoS-prone pattern
+        # (issue #1183). The pattern is not echoed back to avoid leaking it.
+        from ctf.services.regex_policy import UnsafeRegexError, validate_pattern
+
+        try:
+            validate_pattern(plaintext_flag)
+        except UnsafeRegexError as e:
+            raise CTFValidationError(
+                str(e),
+                details={"pattern_length": len(plaintext_flag)},
+            ) from None
+        return plaintext_flag
+    return hash_flag(plaintext_flag, case_sensitive=case_sensitive)
+
+
 def _flag_hash_for_payload(
     flag_type: str,
     flag_data: dict[str, Any],
@@ -45,28 +71,7 @@ def _flag_hash_for_payload(
         )
 
     if flag_type in ("static", "regex"):
-        plaintext_flag = flag_data.get("flag", "").strip()
-        if not plaintext_flag:
-            raise CTFValidationError(
-                "Flag value is required",
-                details={"missing_fields": ["flag"]},
-            )
-        if flag_type == "regex":
-            # Reject unsafe patterns at creation time (over-long or
-            # uncompilable) so organizers get immediate feedback and the
-            # request-worker verifier never stores a ReDoS-prone pattern
-            # (issue #1183). The pattern is not echoed back to avoid leaking it.
-            from ctf.services.regex_policy import UnsafeRegexError, validate_pattern
-
-            try:
-                validate_pattern(plaintext_flag)
-            except UnsafeRegexError as e:
-                raise CTFValidationError(
-                    str(e),
-                    details={"pattern_length": len(plaintext_flag)},
-                ) from None
-            return plaintext_flag
-        return hash_flag(plaintext_flag, case_sensitive=case_sensitive)
+        return _flag_hash_for_static_or_regex(flag_type, flag_data, case_sensitive=case_sensitive)
 
     if flag_type == "programmable":
         _validate_programmable_config(validator_config)

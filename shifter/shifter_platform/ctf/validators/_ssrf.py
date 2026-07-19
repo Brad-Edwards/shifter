@@ -98,7 +98,9 @@ class _PinnedHTTPSConnection(http.client.HTTPSConnection):
         super().__init__(host=hostname, port=port, timeout=timeout, context=context)
         self._pinned_ip = pinned_ip
 
-    def connect(self) -> None:  # pragma: no cover - exercised in dedicated unit test
+    def connect(
+        self,
+    ) -> None:  # pragma: no cover - exercised in dedicated unit test  # NOSONAR: pragma must stay inline
         sock = socket.create_connection(
             (self._pinned_ip, self.port),
             timeout=self.timeout,
@@ -156,6 +158,36 @@ def _safe_parse_url(url: str) -> tuple[Any, str, int] | None:
     return parsed, hostname, port
 
 
+def _hostname_and_port_from_url(url: str) -> tuple[str, int] | None:
+    """Return ``(hostname, port)`` for *url*, or None if malformed or directly blocklisted."""
+    parsed_tuple = _safe_parse_url(url)
+    if parsed_tuple is None:
+        return None
+    _parsed, hostname, port = parsed_tuple
+    if hostname in _BLOCKED_HOSTNAMES:
+        return None
+    return hostname, port
+
+
+def _is_blocked_hostname_via_dns(hostname: str, port: int) -> bool:
+    """Return True if every address DNS returns for *hostname* is policy-blocked.
+
+    Config-time DNS-lookup failures are tolerated (return False) rather than
+    rejecting a legitimate URL whose DNS is briefly unavailable at
+    organizer-edit time; the runtime validator re-resolves with pinning and
+    fails closed there if the destination is actually unsafe.
+    """
+    try:
+        _resolve_and_validate(hostname, port)
+    except _BlockedDestinationError:
+        return True
+    except OSError:
+        # socket.gaierror is a subclass of OSError, so this also covers
+        # DNS resolution failure.
+        pass
+    return False
+
+
 def is_blocked_url(url: str) -> bool:
     """Return True if *url* targets a blocked or private network address.
 
@@ -165,26 +197,14 @@ def is_blocked_url(url: str) -> bool:
     tolerated (return False) rather than rejecting a legitimate URL whose
     DNS is briefly unavailable at organizer-edit time.
     """
-    parsed_tuple = _safe_parse_url(url)
-    if parsed_tuple is None:
+    resolved = _hostname_and_port_from_url(url)
+    if resolved is None:
         return True
-    _parsed, hostname, port = parsed_tuple
-
-    if hostname in _BLOCKED_HOSTNAMES:
-        return True
+    hostname, port = resolved
 
     try:
         addr = ipaddress.ip_address(hostname)
     except ValueError:
-        try:
-            _resolve_and_validate(hostname, port)
-        except _BlockedDestinationError:
-            return True
-        except (socket.gaierror, OSError):
-            # DNS resolution failed; runtime validator will re-resolve
-            # with pinning and fail closed there if the destination is
-            # actually unsafe.
-            return False
-        return False
+        return _is_blocked_hostname_via_dns(hostname, port)
 
     return _is_blocked_address(addr)

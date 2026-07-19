@@ -35,6 +35,7 @@ class TerraformBackendConfig:
 
 
 def _get_provider() -> str:
+    """Resolve the active cloud provider name (late-bound for test patchability)."""
     # Late-bound call to ``terraform_base.resolve_cloud_provider`` so a test
     # patch applied at the package level (``monkeypatch.setattr(terraform_base,
     # "resolve_cloud_provider", ...)``) takes effect here.
@@ -115,10 +116,7 @@ def get_locks_table() -> str | None:
     # collision). The DynamoDB lock table itself isn't globally namespaced and
     # kept its original "<prefix>-pulumi-locks" name in both cases.
     match = re.search(r"-pulumi-state(?:-\d+)?$", bucket)
-    if match:
-        return bucket[: match.start()] + "-pulumi-locks"
-
-    return f"{bucket}-locks"
+    return (bucket[: match.start()] + "-pulumi-locks") if match else f"{bucket}-locks"
 
 
 def get_state_key(

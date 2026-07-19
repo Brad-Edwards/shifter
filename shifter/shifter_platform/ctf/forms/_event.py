@@ -39,6 +39,8 @@ class CTFEventForm(forms.ModelForm):
     )
 
     class Meta:
+        """Model/field configuration for `CTFEventForm`."""
+
         model = CTFEvent
         fields = [
             "name",
@@ -92,7 +94,7 @@ class CTFEventForm(forms.ModelForm):
             validate_password(value)
         return value
 
-    def __init__(self, *args, user=None, **kwargs):
+    def __init__(self, *args: Any, user: User | None = None, **kwargs: Any) -> None:
         """Initialize form with scenario dropdown and datetime-local format support.
 
         Args:
@@ -147,7 +149,7 @@ class CTFEventForm(forms.ModelForm):
                     css = self.fields[field_name].widget.attrs.get("class", "")
                     self.fields[field_name].widget.attrs["class"] = f"{css} is-invalid".strip()
 
-    def clean(self) -> dict:
+    def clean(self) -> dict[str, Any]:
         """Validate form data."""
         cleaned_data = super().clean()
         if cleaned_data is None:
@@ -228,7 +230,7 @@ class EventStatusForm(forms.Form):
         ],
     )
 
-    def __init__(self, *args, event=None, **kwargs):
+    def __init__(self, *args: Any, event: CTFEvent | None = None, **kwargs: Any) -> None:
         """Initialize form with event context.
 
         Args:
@@ -259,4 +261,4 @@ class EventStatusForm(forms.Form):
             elif status == EventStatus.ENDED.value:
                 available_actions = [("archive", "Archive Event")]
 
-            self.fields["action"].choices = available_actions
+            self.fields["action"].choices = available_actions  # type: ignore[attr-defined]

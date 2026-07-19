@@ -11,6 +11,7 @@ _NETWORKS_ANNOTATION = "k8s.v1.cni.cncf.io/networks"
 
 
 def _sanitize_name(value: str, *, max_length: int = 63) -> str:
+    """Lowercase, hyphenate, and truncate ``value`` into a DNS-1123-safe name."""
     normalized = re.sub(r"[^a-z0-9-]+", "-", value.strip().lower())
     normalized = re.sub(r"-{2,}", "-", normalized).strip("-")
     normalized = normalized[:max_length].rstrip("-")
@@ -34,6 +35,7 @@ def _is_scenario_pod(instance: dict[str, Any]) -> bool:
 
 
 def _pod_name(range_id: int, subnet_name: str, instance: dict[str, Any]) -> str:
+    """Build the sanitized scenario Pod name for an instance in a subnet."""
     uuid_value = str(instance.get("uuid", "")).strip()
     token = uuid_value.split("-")[-1] if uuid_value else str(instance.get("name", "pod"))
     role = str(instance.get("role", "pod")).strip()
@@ -41,6 +43,7 @@ def _pod_name(range_id: int, subnet_name: str, instance: dict[str, Any]) -> str:
 
 
 def _pod_labels(range_id: int, request_uuid: str, subnet_name: str, instance_uuid: str) -> dict[str, str]:
+    """Build the standard Kubernetes labels for a scenario Pod."""
     labels = {
         "app.kubernetes.io/managed-by": _MANAGED_BY_LABEL,
         "shifter.dev/range-id": str(range_id),
@@ -55,6 +58,7 @@ def _pod_labels(range_id: int, request_uuid: str, subnet_name: str, instance_uui
 
 
 def _build_networks_annotation(network_name: str, static_ip: str) -> str:
+    """Build the Multus ``k8s.v1.cni.cncf.io/networks`` annotation JSON for a static-IP attachment."""
     return json.dumps(
         [
             {
@@ -67,7 +71,8 @@ def _build_networks_annotation(network_name: str, static_ip: str) -> str:
 
 
 def _build_pod_manifest(
-    *,
+    # Moved private helper; already keyword-only, parameter-object refactor out of scope for a decomposition.
+    *,  # NOSONAR
     namespace: str,
     pod_name: str,
     hostname: str,
@@ -77,6 +82,7 @@ def _build_pod_manifest(
     image_pull_policy: str,
     labels: dict[str, str],
 ) -> dict[str, Any]:
+    """Build the Kubernetes Pod manifest dict for a GDC scenario-Pod asset."""
     return {
         "apiVersion": "v1",
         "kind": "Pod",
@@ -106,6 +112,7 @@ def _build_pod_manifest(
 
 
 def _get_runtime_metadata(state: dict[str, Any]) -> dict[str, Any]:
+    """Return the GCP/GDC provider metadata block from a range-network state payload."""
     provider_metadata = state.get("provider_metadata")
     if not isinstance(provider_metadata, dict):
         return {}
@@ -133,6 +140,7 @@ def _build_subnet_pod_context(
     subnet: dict[str, Any],
     subnet_outputs: dict[str, dict[str, Any]],
 ) -> tuple[str, dict[str, Any], dict[str, Any], str, str]:
+    """Resolve a subnet's name, output, IP assignments, namespace, and network name for scenario Pods."""
     subnet_name = str(subnet.get("name", "")).strip()
     subnet_output = subnet_outputs.get(subnet_name, {})
     network_name = str(subnet_output.get("gdc_nad_name") or subnet_output.get("gdc_network_name") or "").strip()

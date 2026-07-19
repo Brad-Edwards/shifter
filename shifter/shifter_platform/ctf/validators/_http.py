@@ -24,7 +24,8 @@ import json
 import logging
 import ssl
 from typing import Any
-from urllib.parse import urlencode
+from urllib.parse import ParseResult, urlencode
+from uuid import UUID
 
 from shared.log_sanitize import safe_log
 
@@ -47,7 +48,48 @@ DEFAULT_HTTP_TIMEOUT = 10
 _MAX_RESPONSE_BYTES = 1 * 1024 * 1024
 
 
-def _resolve_target(hostname: str, port: int, challenge_id: Any) -> list[str] | None:
+def _resolve_literal_address(
+    hostname: str,
+    addr: ipaddress.IPv4Address | ipaddress.IPv6Address,
+    challenge_id: UUID,
+) -> list[str] | None:
+    """Validate *hostname* (already parsed as *addr*) as a literal IP against SSRF policy."""
+    if _is_blocked_address(addr):
+        logger.error(
+            "HTTP validator URL blocked (literal address) for challenge %s",
+            safe_log(challenge_id),
+        )
+        return None
+    return [hostname]
+
+
+def _resolve_hostname_via_dns(hostname: str, port: int, challenge_id: UUID) -> list[str] | None:
+    """Resolve *hostname* via DNS, applying SSRF policy to every address in the reply."""
+    if hostname in _BLOCKED_HOSTNAMES:
+        logger.error(
+            "HTTP validator URL blocked (metadata hostname) for challenge %s",
+            safe_log(challenge_id),
+        )
+        return None
+
+    try:
+        return _resolve_and_validate(hostname, port)
+    except _BlockedDestinationError:
+        logger.exception(
+            "HTTP validator URL blocked (DNS answer in restricted range) for challenge %s",
+            safe_log(challenge_id),
+        )
+    except OSError:
+        # socket.gaierror is a subclass of OSError; this branch covers
+        # both DNS lookup failure and any other resolver-layer OSError.
+        logger.warning(
+            "HTTP validator hostname resolution failed for challenge %s",
+            safe_log(challenge_id),
+        )
+    return None
+
+
+def _resolve_target(hostname: str, port: int, challenge_id: UUID) -> list[str] | None:
     """Resolve and validate *hostname*, returning every safe pinned IP.
 
     Returns the full validated address list from the DNS reply on
@@ -60,50 +102,19 @@ def _resolve_target(hostname: str, port: int, challenge_id: Any) -> list[str] | 
     try:
         addr = ipaddress.ip_address(hostname)
     except ValueError:
-        pass
-    else:
-        if _is_blocked_address(addr):
-            logger.error(
-                "HTTP validator URL blocked (literal address) for challenge %s",
-                safe_log(challenge_id),
-            )
-            return None
-        return [hostname]
-
-    if hostname in _BLOCKED_HOSTNAMES:
-        logger.error(
-            "HTTP validator URL blocked (metadata hostname) for challenge %s",
-            safe_log(challenge_id),
-        )
-        return None
-
-    try:
-        addresses = _resolve_and_validate(hostname, port)
-    except _BlockedDestinationError:
-        logger.exception(
-            "HTTP validator URL blocked (DNS answer in restricted range) for challenge %s",
-            safe_log(challenge_id),
-        )
-        return None
-    except OSError:
-        # socket.gaierror is a subclass of OSError; this branch covers
-        # both DNS lookup failure and any other resolver-layer OSError.
-        logger.warning(
-            "HTTP validator hostname resolution failed for challenge %s",
-            safe_log(challenge_id),
-        )
-        return None
-
-    return addresses
+        return _resolve_hostname_via_dns(hostname, port, challenge_id)
+    return _resolve_literal_address(hostname, addr, challenge_id)
 
 
-def _coerce_timeout(value: Any) -> int:
+def _coerce_timeout(value: object) -> int:
+    """Coerce an organizer-supplied `timeout` config value to a safe bounded int."""
     if not isinstance(value, (int, float)) or value < 1:
         value = DEFAULT_HTTP_TIMEOUT
     return min(int(value), MAX_HTTP_TIMEOUT)
 
 
-def _coerce_method(value: Any) -> str:
+def _coerce_method(value: object) -> str:
+    """Coerce an organizer-supplied `method` config value to `GET` or `POST` (default `POST`)."""
     method = str(value).upper() if value is not None else "POST"
     return method if method in ("GET", "POST") else "POST"
 
@@ -123,7 +134,8 @@ _RESERVED_HEADERS = frozenset(
 )
 
 
-def _coerce_headers(value: Any) -> dict[str, str]:
+def _coerce_headers(value: object) -> dict[str, str]:
+    """Coerce an organizer-supplied `headers` config value, dropping transport-reserved names."""
     if not isinstance(value, dict):
         return {}
     return {str(k): str(v) for k, v in value.items() if str(k).strip().lower() not in _RESERVED_HEADERS}
@@ -135,7 +147,7 @@ def _has_header_ci(headers: dict[str, str], name: str) -> bool:
     return any(k.strip().lower() == target for k in headers)
 
 
-def _request_target(parsed) -> str:
+def _request_target(parsed: ParseResult) -> str:
     """Build the HTTP request-target from *parsed*.
 
     Preserves every component http.client needs to relay: ``path``,
@@ -150,7 +162,7 @@ def _request_target(parsed) -> str:
 
 
 def _build_request(
-    parsed,
+    parsed: ParseResult,
     method: str,
     payload: dict[str, Any],
     headers: dict[str, str],
@@ -177,7 +189,36 @@ def _build_request(
     return base_target, body, headers
 
 
-def _parse_response(resp: Any, challenge_id: Any) -> bool:
+def _read_response_body(resp: http.client.HTTPResponse, challenge_id: UUID) -> dict[str, Any] | None:
+    """Read and JSON-decode the validator response body, enforcing the size cap.
+
+    Returns the decoded object only when it is valid JSON, within
+    ``_MAX_RESPONSE_BYTES``, and a JSON object; returns None (with a
+    warning) otherwise so the caller can fail closed uniformly.
+    """
+    raw = resp.read(_MAX_RESPONSE_BYTES + 1)
+    if len(raw) > _MAX_RESPONSE_BYTES:
+        logger.warning(
+            "HTTP validator response oversized for challenge %s",
+            safe_log(challenge_id),
+        )
+        return None
+
+    try:
+        data = json.loads(raw.decode("utf-8"))
+    except ValueError:
+        # UnicodeDecodeError is a subclass of ValueError, so this also
+        # covers a non-UTF-8 response body.
+        logger.warning(
+            "HTTP validator response not JSON for challenge %s",
+            safe_log(challenge_id),
+        )
+        return None
+
+    return data if isinstance(data, dict) else None
+
+
+def _parse_response(resp: http.client.HTTPResponse, challenge_id: UUID) -> bool:
     """Decode the validator response. True iff HTTP 200 + ``{"valid": true}``."""
     status = getattr(resp, "status", None)
     if status != 200:
@@ -190,31 +231,13 @@ def _parse_response(resp: Any, challenge_id: Any) -> bool:
 
     # http.client does NOT follow Location: by default, so an attacker
     # cannot bounce the validation request to a private address via 3xx.
-    raw = resp.read(_MAX_RESPONSE_BYTES + 1)
-    if len(raw) > _MAX_RESPONSE_BYTES:
-        logger.warning(
-            "HTTP validator response oversized for challenge %s",
-            safe_log(challenge_id),
-        )
-        return False
-
-    try:
-        data = json.loads(raw.decode("utf-8"))
-    except ValueError:
-        # UnicodeDecodeError is a subclass of ValueError, so this also
-        # covers a non-UTF-8 response body.
-        logger.warning(
-            "HTTP validator response not JSON for challenge %s",
-            safe_log(challenge_id),
-        )
-        return False
-
-    if not isinstance(data, dict):
+    data = _read_response_body(resp, challenge_id)
+    if data is None:
         return False
     return bool(data.get("valid", False))
 
 
-def _try_one_address(
+def _try_one_address(  # NOSONAR — one HTTP attempt's destination/request/timeout params; already keyword-only
     *,
     hostname: str,
     pinned_ip: str,
@@ -224,7 +247,7 @@ def _try_one_address(
     request_path: str,
     body: bytes | None,
     headers: dict[str, str],
-    challenge_id: Any,
+    challenge_id: UUID,
 ) -> tuple[bool, bool]:
     """Attempt one pinned-address request.
 
@@ -265,26 +288,24 @@ def _try_one_address(
             timeout,
             safe_log(challenge_id),
         )
-        return False, False
     except ssl.SSLError:
         logger.warning(
             "HTTP validator TLS error for challenge %s",
             safe_log(challenge_id),
         )
-        return False, False
     except (OSError, http.client.HTTPException):
         logger.warning(
             "HTTP validator transport error for challenge %s",
             safe_log(challenge_id),
         )
-        return False, False
     finally:
         if conn is not None:
             with contextlib.suppress(Exception):
                 conn.close()
+    return False, False
 
 
-def _send_validation_request(
+def _send_validation_request(  # NOSONAR — one HTTP attempt's destination/request/timeout params; already keyword-only
     *,
     hostname: str,
     pinned_ips: list[str],
@@ -294,7 +315,7 @@ def _send_validation_request(
     request_path: str,
     body: bytes | None,
     headers: dict[str, str],
-    challenge_id: Any,
+    challenge_id: UUID,
 ) -> bool:
     """Try each pre-validated pinned IP in order until one returns a response.
 
@@ -321,10 +342,37 @@ def _send_validation_request(
     return False
 
 
+def _validate_and_parse_config_url(config: dict[str, Any], challenge_id: UUID) -> tuple[Any, str, int] | None:
+    """Validate `config["url"]` and return its parsed `(parsed, hostname, port)`.
+
+    Fails closed (returns None, logging why) when the URL is missing,
+    not HTTPS, or malformed.
+    """
+    url = config.get("url")
+    if not url:
+        logger.error("HTTP validator missing 'url' in config")
+        return None
+
+    if not isinstance(url, str) or not url.startswith("https://"):
+        logger.error(
+            "HTTP validator URL must use HTTPS for challenge %s",
+            safe_log(challenge_id),
+        )
+        return None
+
+    parsed_tuple = _safe_parse_url(url)
+    if parsed_tuple is None:
+        logger.error(
+            "HTTP validator URL is malformed for challenge %s",
+            safe_log(challenge_id),
+        )
+    return parsed_tuple
+
+
 def validate_http(
     submitted_flag: str,
     config: dict[str, Any],
-    challenge_id: Any,
+    challenge_id: UUID,
 ) -> bool:
     """Validate a flag submission via an external HTTPS endpoint.
 
@@ -341,24 +389,8 @@ def validate_http(
     timeout, TLS error, transport error, non-JSON or oversized body,
     invalid JSON).
     """
-    url = config.get("url")
-    if not url:
-        logger.error("HTTP validator missing 'url' in config")
-        return False
-
-    if not isinstance(url, str) or not url.startswith("https://"):
-        logger.error(
-            "HTTP validator URL must use HTTPS for challenge %s",
-            safe_log(challenge_id),
-        )
-        return False
-
-    parsed_tuple = _safe_parse_url(url)
+    parsed_tuple = _validate_and_parse_config_url(config, challenge_id)
     if parsed_tuple is None:
-        logger.error(
-            "HTTP validator URL is malformed for challenge %s",
-            safe_log(challenge_id),
-        )
         return False
     parsed, hostname, port = parsed_tuple
 

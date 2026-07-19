@@ -1,6 +1,7 @@
 """Range model - user's cyber range instance with lifecycle management."""
 
 import uuid
+from datetime import timedelta
 from typing import TYPE_CHECKING
 
 from django.conf import settings
@@ -18,6 +19,8 @@ class Range(models.Model):
     """User's cyber range instance with lifecycle management."""
 
     class Status(models.TextChoices):
+        """Lifecycle states a Range can occupy from creation through teardown."""
+
         PENDING = "pending", "Pending"
         PROVISIONING = "provisioning", "Provisioning"
         READY = "ready", "Ready"
@@ -199,17 +202,20 @@ class Range(models.Model):
     destroyed_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
+        """Default ordering and legacy table name for the Range model."""
+
         ordering = ["-created_at"]
         # Keep using original table name from mission_control
         db_table = "mission_control_range"
 
-    def __str__(self):
+    def __str__(self) -> str:
+        """Return a human-readable label with id, scenario, and status."""
         config = unwrap_persisted_spec(self.range_config) if self.range_config else {}
         scenario = config.get("scenario_id", "unknown")
         return f"Range {self.id} ({scenario}) - {self.status}"
 
     @property
-    def is_usable(self):
+    def is_usable(self) -> bool:
         """Return True if range is in a usable state (operational and connectable).
 
         Delegates to ``engine._range_state.is_range_usable`` (#685); the
@@ -223,7 +229,7 @@ class Range(models.Model):
         return is_range_usable(self.status)
 
     @property
-    def is_terminal(self):
+    def is_terminal(self) -> bool:
         """Return True if range has reached a final state.
 
         Delegates to ``engine._range_state.is_range_terminal`` (#685); see
@@ -235,7 +241,7 @@ class Range(models.Model):
         return is_range_terminal(self.status)
 
     @property
-    def standup_duration(self):
+    def standup_duration(self) -> timedelta | None:
         """Total time from creation to ready.
 
         Returns:
@@ -246,7 +252,7 @@ class Range(models.Model):
         return None
 
     @classmethod
-    def get_active_for_user(cls, user):
+    def get_active_for_user(cls, user: "User") -> "Range | None":
         """Return the user's active range, or None.
 
         DESTROYING ranges are excluded - user can launch a new range while
@@ -264,7 +270,7 @@ class Range(models.Model):
         ).first()
 
     @classmethod
-    def get_destroyable_for_user(cls, user):
+    def get_destroyable_for_user(cls, user: "User") -> "Range | None":
         """Return a range that can be destroyed (active or failed), or None."""
         return cls.objects.filter(
             user=user,
@@ -411,7 +417,7 @@ class Range(models.Model):
         return attacker_instance(self.provisioned_instances)
 
     @property
-    def victim_instances(self) -> list:
+    def victim_instances(self) -> list[dict]:
         """Get all victim instance details.
 
         Returns:

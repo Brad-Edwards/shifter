@@ -15,6 +15,6 @@ class SoftDeleteAdminMixin:
 
     model: type[_models.Model]
 
-    def get_queryset(self, request: HttpRequest) -> QuerySet:
+    def get_queryset(self, request: HttpRequest) -> QuerySet:  # NOSONAR - Django override requires request param
         """Include soft-deleted records in admin queryset."""
         return self.model.all_objects.all()  # type: ignore[attr-defined]

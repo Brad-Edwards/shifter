@@ -75,7 +75,8 @@ class GCPTaskRunner:
         network_config: dict[str, Any] | None = None,
         task_identity: str | None = None,
     ) -> str | None:
-        del network_config  # Networking is handled by the cluster and namespace policies.
+        # Networking is handled by the cluster and namespace policies.
+        del network_config
         logger.debug("run_task: task_definition=%s cluster=%s", task_definition, cluster)
 
         namespace = cluster
@@ -109,10 +110,7 @@ class GCPTaskRunner:
 
     def get_task_status(self, cluster: str, task_id: str) -> dict[str, Any] | None:
         logger.debug("get_task_status: cluster=%s task_id=%s", cluster, task_id)
-        if not task_id:
-            return None
-
-        namespace, job_name = parse_job_task_id(task_id, cluster)
+        namespace, job_name = parse_job_task_id(task_id, cluster) if task_id else ("", "")
         if not namespace or not job_name:
             return None
 

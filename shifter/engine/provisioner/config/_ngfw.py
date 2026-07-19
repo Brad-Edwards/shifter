@@ -39,17 +39,15 @@ def _get_ngfw_provider_metadata(state: dict[str, Any], cloud_provider: str) -> d
     if not isinstance(provider_metadata, dict):
         return {}
 
-    if cloud_provider:
-        metadata = provider_metadata.get(cloud_provider)
-        if isinstance(metadata, dict):
-            return metadata
+    metadata = provider_metadata.get(cloud_provider) if cloud_provider else None
+    if not isinstance(metadata, dict):
+        for provider_name in ("gcp", "gdc", "aws"):
+            candidate = provider_metadata.get(provider_name)
+            if isinstance(candidate, dict):
+                metadata = candidate
+                break
 
-    for provider_name in ("gcp", "gdc", "aws"):
-        metadata = provider_metadata.get(provider_name)
-        if isinstance(metadata, dict):
-            return metadata
-
-    return {}
+    return metadata if isinstance(metadata, dict) else {}
 
 
 def _infer_ngfw_cloud_provider(data_attachment_id: str, route_next_hop_ip: str, env_default: str) -> str:

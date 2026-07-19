@@ -11,6 +11,7 @@ from typing import Any
 
 
 def _get_int_env(name: str, default: int) -> int:
+    """Return an int env var, or ``default`` if unset/blank."""
     value = os.environ.get(name, "").strip()
     return int(value) if value else default
 
@@ -24,6 +25,7 @@ def _get_bool_env(name: str, default: bool) -> bool:
 
 
 def _parse_csv_env(value: str) -> tuple[str, ...]:
+    """Split a comma-separated env value into trimmed, non-empty items."""
     return tuple(item.strip() for item in value.split(",") if item.strip())
 
 

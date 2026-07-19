@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import Any
 
 from events import build_status_event
 from executors.aws_executor import AWSExecutor
@@ -57,6 +58,7 @@ def _build_range_lifecycle_entry(
     role: str,
     name: str | None,
 ) -> dict[str, object] | None:
+    """Build the lifecycle-operation entry for one instance, or None if it's an unmapped AWS asset."""
     state_dict = state if isinstance(state, dict) else {}
     cloud_provider = str(state_dict.get("cloud_provider", "aws")).strip().lower() or "aws"
     asset_type = str(state_dict.get("asset_type", "vm_runtime_vm")).strip() or "vm_runtime_vm"
@@ -82,7 +84,7 @@ def _build_range_lifecycle_entry(
     return entry
 
 
-def get_range_instance_ids(request_id: str) -> list[dict]:
+def get_range_instance_ids(request_id: str) -> list[dict[str, Any]]:
     """Get all range assets for pause/resume operations.
 
     Queries engine_instance records for the given request and extracts
@@ -142,7 +144,7 @@ def _execute_instance_operation(
     executor: AWSExecutor | None,
     orchestrator: OpsOrchestrator | None,
     plan: RangePausePlan | RangeResumePlan | None,
-    instance: dict,
+    instance: dict[str, Any],
     *,
     operation: str,
 ) -> tuple[str, bool, str | None]:
@@ -288,7 +290,7 @@ def run_range_pause(request_id: str) -> None:
 
     # Cascade: pause NGFW if no other ranges need it (before reporting paused)
     try:
-        _pkg.pause_ngfw_for_range(request_id, range_data)
+        _pkg.pause_ngfw_for_range(request_id)
     except Exception as e:
         # Non-fatal: log and continue - range instances are already paused
         logger.warning(

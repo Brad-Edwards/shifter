@@ -58,7 +58,7 @@ def _send_email(
 
 def _render_email(
     template_name: str,
-    context: dict,
+    context: dict[str, object],
     event: CTFEvent | None = None,
 ) -> tuple[str, str, str]:
     """Render email templates.

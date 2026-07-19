@@ -86,6 +86,7 @@ def _read_idempotent_job(
     namespace: str,
     job_name: str,
 ) -> object | None:
+    """Return the named Job if it exists, or ``None`` on a 404."""
     try:
         return _api_call(
             batch_api,

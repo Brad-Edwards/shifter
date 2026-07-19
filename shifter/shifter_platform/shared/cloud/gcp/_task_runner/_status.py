@@ -9,14 +9,17 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from ._helpers import _KUBERNETES_REQUEST_TIMEOUT_SECONDS, _derive_job_state, _job_condition_reason
+from ._helpers import _KUBERNETES_REQUEST_TIMEOUT_SECONDS, _api_call, _derive_job_state, _job_condition_reason
 
 logger = logging.getLogger(__name__)
 
 
-def _extract_stopped_reason(core_api: Any, namespace: str, job_name: str) -> str | None:
+def _extract_stopped_reason(core_api: object, namespace: str, job_name: str) -> str | None:
+    """Return the terminated-container message/reason for a finished Job's pod, if any."""
     try:
-        pods = core_api.list_namespaced_pod(
+        pods = _api_call(
+            core_api,
+            "list_namespaced_pod",
             namespace=namespace,
             label_selector=f"job-name={job_name}",
             _request_timeout=_KUBERNETES_REQUEST_TIMEOUT_SECONDS,
@@ -35,9 +38,12 @@ def _extract_stopped_reason(core_api: Any, namespace: str, job_name: str) -> str
     return None
 
 
-def _read_job_status(batch_api: Any, namespace: str, job_name: str, api_exception: type[Exception]) -> Any:
+def _read_job_status(batch_api: object, namespace: str, job_name: str, api_exception: type[Exception]) -> object | None:
+    """Return the named Job's status object, or ``None`` on a 404."""
     try:
-        return batch_api.read_namespaced_job_status(
+        return _api_call(
+            batch_api,
+            "read_namespaced_job_status",
             name=job_name,
             namespace=namespace,
             _request_timeout=_KUBERNETES_REQUEST_TIMEOUT_SECONDS,
@@ -48,7 +54,8 @@ def _read_job_status(batch_api: Any, namespace: str, job_name: str, api_exceptio
         raise
 
 
-def _build_status_payload(status: Any, core_api: Any, namespace: str, job_name: str) -> dict[str, Any]:
+def _build_status_payload(status: object, core_api: object, namespace: str, job_name: str) -> dict[str, Any]:
+    """Build the ECS-shaped status payload from a Kubernetes Job status."""
     active = int(getattr(status, "active", 0) or 0)
     failed = int(getattr(status, "failed", 0) or 0)
     succeeded = int(getattr(status, "succeeded", 0) or 0)

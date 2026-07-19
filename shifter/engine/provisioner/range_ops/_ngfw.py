@@ -8,6 +8,7 @@ status to the database and event bus.
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from plans.ngfw_stop import NGFWStopPlan
 
@@ -184,7 +185,7 @@ def _update_ngfw_status(ngfw_instance_id: int, status: str) -> None:
     )
 
 
-def pause_ngfw_for_range(request_id: str, range_data: dict) -> None:
+def pause_ngfw_for_range(request_id: str) -> None:
     """Pause NGFW if no other ranges need it.
 
     Called after a range is paused. Checks if any other ranges are using
@@ -194,7 +195,6 @@ def pause_ngfw_for_range(request_id: str, range_data: dict) -> None:
 
     Args:
         request_id: UUID string of the Range's Request.
-        range_data: Dict from get_range_data_by_request_id() with range_id.
     """
     logger.info("pause_ngfw_for_range: starting request_id=%s", request_id)
 
@@ -239,7 +239,9 @@ def pause_ngfw_for_range(request_id: str, range_data: dict) -> None:
 
     # Create a simple object with instance_id attribute for get_context
     class InstanceRef:
-        def __init__(self, instance_id: str):
+        """Minimal instance_id holder satisfying the NGFWStopPlan.get_context contract."""
+
+        def __init__(self, instance_id: str) -> None:
             self.instance_id = instance_id
 
     context = plan.get_context(InstanceRef(ngfw_info["ec2_instance_id"]))
@@ -275,7 +277,7 @@ def pause_ngfw_for_range(request_id: str, range_data: dict) -> None:
     )
 
 
-def _wait_for_ngfw_pause_to_complete(ngfw_info: dict) -> None:
+def _wait_for_ngfw_pause_to_complete(ngfw_info: dict[str, Any]) -> None:
     """If the NGFW is mid-`pausing`, block until EC2 reports stopped before resuming."""
     logger.info("ensure_ngfw_running: NGFW is pausing, waiting for paused...")
 
@@ -290,7 +292,7 @@ def _wait_for_ngfw_pause_to_complete(ngfw_info: dict) -> None:
     logger.info("ensure_ngfw_running: NGFW is now paused, proceeding to resume")
 
 
-def _publish_ngfw_status(ngfw_info: dict, status: str) -> None:
+def _publish_ngfw_status(ngfw_info: dict[str, Any], status: str) -> None:
     """Persist `status` and emit the matching event for an NGFW lifecycle transition."""
     # Late-bound calls to package-level names so test patches applied at
     # the package level still apply here.
@@ -305,7 +307,7 @@ def _publish_ngfw_status(ngfw_info: dict, status: str) -> None:
     )
 
 
-def _run_ngfw_start_with_retry(ngfw_info: dict, request_id: str) -> None:
+def _run_ngfw_start_with_retry(ngfw_info: dict[str, Any], request_id: str) -> None:
     """Run NGFWStartPlan with bounded retries; raise RuntimeError on permanent failure.
 
     Returns early without raising if a parallel resume marks the NGFW ready
@@ -320,7 +322,9 @@ def _run_ngfw_start_with_retry(ngfw_info: dict, request_id: str) -> None:
     plan = _pkg.NGFWStartPlan()
 
     class _InstanceRef:
-        def __init__(self, instance_id: str):
+        """Minimal instance_id holder satisfying the NGFWStartPlan.get_context contract."""
+
+        def __init__(self, instance_id: str) -> None:
             self.instance_id = instance_id
 
     context = plan.get_context(_InstanceRef(ngfw_info["ec2_instance_id"]))

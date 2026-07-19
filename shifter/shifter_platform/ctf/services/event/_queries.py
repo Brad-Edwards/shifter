@@ -34,7 +34,7 @@ def get_organizer_events(
     return queryset.order_by("-event_start")
 
 
-def get_event_stats(event: CTFEvent) -> dict:
+def get_event_stats(event: CTFEvent) -> dict[str, int]:
     """Get statistics for an event.
 
     Args:
