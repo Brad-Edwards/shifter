@@ -22,6 +22,7 @@ from django.contrib.auth.models import User
 from ctf.enums import EventStaffRole
 from ctf.exceptions import CTFNotFoundError, CTFValidationError
 from ctf.models import CTFEvent, CTFEventStaff
+from shared.log_sanitize import safe_log_value
 
 if TYPE_CHECKING:
     from uuid import UUID
@@ -124,7 +125,7 @@ def revoke_event_staff(event_id: UUID, actor: User | AnonymousUser, user_id: int
     if staff is None:
         raise CTFNotFoundError("Staff assignment not found", details={"user_id": str(user_id)})
     staff.delete(soft=True)
-    logger.info("Revoked staff %s on event %s", user_id, event.pk)
+    logger.info("Revoked staff %s on event %s", safe_log_value(user_id), event.pk)
     return True
 
 

@@ -108,7 +108,7 @@ def force_delete_event(
 
     logger.warning(
         "FORCE DELETE: Event %s (%s) permanently deleted by %s (pk=%s). Ranges destroyed: %d, ranges failed: %d.",
-        event_id,
+        safe_log_value(event_id),
         safe_log_value(event_name),
         safe_log_value(actor.email),
         actor.pk,
