@@ -26,6 +26,12 @@ from pathlib import Path
 
 import yaml
 
+from _symbol_facade import (
+    analyze_symbol_facade_imports,
+    apply_symbol_facade_violations,
+    load_allowed_symbols,
+)
+
 # Every first-party Django app is classified (ADR-001, #1523). Held to
 # set-equality with the canonical classification in layer_imports.yaml by
 # tests/test_check_layer_imports.py.
@@ -317,11 +323,27 @@ def _apply_private_facade_violations(stats: dict[str, object], private_facade: d
         )
 
 
+def _apply_extra_violations(
+    stats: dict[str, object],
+    cyberscript: dict[str, list[str]] | None,
+    private_facade: dict[str, list[str]] | None,
+    symbol_facade: dict[str, list[str]] | None,
+) -> None:
+    """Roll the boundary-specific violation categories into summary stats."""
+    if cyberscript:
+        _apply_cyberscript_violations(stats, cyberscript)
+    if private_facade:
+        _apply_private_facade_violations(stats, private_facade)
+    if symbol_facade:
+        apply_symbol_facade_violations(stats, symbol_facade)
+
+
 def compute_stats(
     imports: dict[str, dict[str, list[str]]],
     allowed: dict[str, list[str]],
     cyberscript: dict[str, list[str]] | None = None,
     private_facade: dict[str, list[str]] | None = None,
+    symbol_facade: dict[str, list[str]] | None = None,
 ) -> dict[str, object]:
     """Compute summary statistics from import analysis."""
     stats = {
@@ -354,11 +376,7 @@ def compute_stats(
         if layer_has_violation:
             stats["layers_with_violations"].append(from_layer)
 
-    if cyberscript:
-        _apply_cyberscript_violations(stats, cyberscript)
-
-    if private_facade:
-        _apply_private_facade_violations(stats, private_facade)
+    _apply_extra_violations(stats, cyberscript, private_facade, symbol_facade)
 
     # Determine clean layers (no violations)
     for layer in ALL_LAYERS:
@@ -406,6 +424,7 @@ def main():
 
     # Load allowed imports from config
     allowed = load_allowed_imports(config_path)
+    allowed_symbols = load_allowed_symbols(config_path)
 
     # Go up two levels: check_layer_imports -> scripts -> repo root
     base_path = script_dir.parent.parent / "shifter" / "shifter_platform"
@@ -418,13 +437,15 @@ def main():
     imports = analyze_imports(base_path)
     cyberscript = analyze_cyberscript_imports(base_path)
     private_facade = analyze_private_facade_imports(base_path, allowed)
-    stats = compute_stats(imports, allowed, cyberscript, private_facade)
+    symbol_facade = analyze_symbol_facade_imports(base_path, allowed_symbols, ALL_LAYERS)
+    stats = compute_stats(imports, allowed, cyberscript, private_facade, symbol_facade)
 
     # Build output
     output = {
         "imports": imports,
         "cyberscript_imports": cyberscript,
         "private_facade_imports": private_facade,
+        "symbol_facade_imports": symbol_facade,
         "stats": stats,
     }
 

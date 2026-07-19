@@ -312,7 +312,7 @@
   {
     "rule_id": "ADR-019-R1",
     "owner": "@Brad-Edwards",
-    "reason": "Temporary baseline convergence for bootstrap tests already merged to dev by #1713, #1716, and #1718. Their independently reviewed branches introduced aggregate CLI/GDC orchestration patch counts that were not reflected in the shared ratchet after merge, making the CI-only full-repository guard fail for every subsequent PR. This exception records the exact current counts without exempting any future growth; the bootstrap tests must be converted to process/cloud-boundary or observable-behavior tests before expiry.",
+    "reason": "Temporary baseline convergence for bootstrap tests already merged to dev by #1713, #1716, #1718, #1738, #1742, and #1745. Their independently reviewed branches introduced aggregate CLI/GDC orchestration patch counts that were not reflected in the shared ratchet after merge, making the CI-only full-repository guard fail for every subsequent PR that touches a guardrail path (surfaced again while merging dev into #994). This exception records the exact current counts without exempting any future growth; the bootstrap tests must be converted to process/cloud-boundary or observable-behavior tests before expiry.",
     "expires_on": "2026-10-18",
     "paths": [
       "scripts/adr_guard/boundary_mock_baseline.json"

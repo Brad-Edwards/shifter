@@ -151,6 +151,20 @@ class AssignBracketResultSerializer(serializers.Serializer):
 # ---------------------------------------------------------------------------
 
 
+class RangeTargetInstanceSerializer(serializers.Serializer):
+    """A participant-safe target box in a ready range (issue #1740).
+
+    Documents the projected {uuid, name, private_ip, os_type} allowlist. The
+    ``ctf.bridges.cms_get_range_target_instances`` projection is what enforces the
+    allowlist at runtime; this serializer only publishes the contract.
+    """
+
+    uuid = serializers.CharField(read_only=True)
+    name = serializers.CharField(read_only=True)
+    private_ip = serializers.CharField(read_only=True)
+    os_type = serializers.CharField(read_only=True)
+
+
 class RangeStatusResponseSerializer(serializers.Serializer):
     """Participant range status projection (or the not-assigned sentinel)."""
 
@@ -158,6 +172,7 @@ class RangeStatusResponseSerializer(serializers.Serializer):
     status = serializers.CharField(read_only=True)
     range_instance_id = serializers.IntegerField(read_only=True, allow_null=True)
     vpn_profile_available = serializers.BooleanField(read_only=True, default=False)
+    target_instances = RangeTargetInstanceSerializer(many=True, read_only=True, required=False)
 
 
 class RangeAccessResponseSerializer(serializers.Serializer):
