@@ -88,6 +88,8 @@ class TestGetRange:
         assert data["has_range"] is False
         assert data["range"] is None
         assert data["connection_urls"] == []
+        assert data["lifecycle"] is None
+        assert data["vpn_profile_available"] is False
 
     def test_returns_active_range_after_launch(self, authenticated_client, launch_range_via_api):
         client, user = authenticated_client(email="active@example.com")
@@ -107,6 +109,9 @@ class TestGetRange:
         assert data["range"]["is_terminal"] is False
         # The launched range is the one returned.
         assert data["range"]["request_id"] == _json(launch_resp)["range"]["request_id"]
+        assert data["lifecycle"]["extension_days"] == 30
+        assert data["lifecycle"]["can_extend"] is True
+        assert data["lifecycle"]["expires_at"] < data["lifecycle"]["maximum_expires_at"]
 
     def test_does_not_return_another_users_range(self, authenticated_client, launch_range_via_api):
         owner_client, owner = authenticated_client(email="owner@example.com")
@@ -178,6 +183,70 @@ class TestGetRange:
         assert backend_commands[0]["target_ref"] == request_id
         # Shifter range status stays untouched by the ACES participant/runtime projection.
         assert data["range"]["status"] == "provisioning"
+
+
+class TestExtendRangeLease:
+    def test_extends_owned_mission_control_range_without_accepting_a_deadline(
+        self, authenticated_client, launch_range_via_api
+    ):
+        client, user = authenticated_client(email="extend-range@example.com")
+        launch_range_via_api(client, user)
+        before = _json(client.get(reverse("v1:mission_control:range-current")))["lifecycle"]
+
+        response = client.post(
+            reverse("v1:mission_control:range-extend"),
+            data="",
+            content_type="application/json",
+        )
+
+        assert response.status_code == 200
+        payload = _json(response)
+        assert payload["lifecycle"]["expires_at"] > before["expires_at"]
+        assert payload["lifecycle"]["maximum_expires_at"] == before["maximum_expires_at"]
+
+    def test_rejects_extension_input(self, authenticated_client, launch_range_via_api):
+        client, user = authenticated_client(email="extend-input@example.com")
+        launch_range_via_api(client, user)
+
+        response = client.post(
+            reverse("v1:mission_control:range-extend"),
+            data=json.dumps({"days": 365}),
+            content_type="application/json",
+        )
+
+        assert response.status_code == 400
+        assert _json(response)["error"]["code"] == "invalid"
+
+    def test_cannot_extend_another_users_range(self, authenticated_client, launch_range_via_api):
+        owner_client, owner = authenticated_client(email="extend-owner@example.com")
+        launch_range_via_api(owner_client, owner)
+        other_client, _ = authenticated_client(email="extend-other@example.com")
+
+        response = other_client.post(
+            reverse("v1:mission_control:range-extend"),
+            data="",
+            content_type="application/json",
+        )
+
+        assert response.status_code == 404
+
+    def test_range_at_hard_limit_returns_conflict(self, authenticated_client, launch_range_via_api):
+        from cms.models import RangeInstance
+
+        client, user = authenticated_client(email="extend-limit@example.com")
+        launch_range_via_api(client, user)
+        instance = RangeInstance.objects.get(user_id=user.pk)
+        instance.expires_at = instance.maximum_expires_at
+        instance.save(update_fields=["expires_at", "updated_at"])
+
+        response = client.post(
+            reverse("v1:mission_control:range-extend"),
+            data="",
+            content_type="application/json",
+        )
+
+        assert response.status_code == 409
+        assert _json(response)["error"]["code"] == "range_extension_unavailable"
 
 
 # ---------------------------------------------------------------------------
@@ -337,6 +406,7 @@ class TestParticipantOnlyLifecycleGuard:
         "v1:mission_control:range-launch",
         "v1:mission_control:range-cancel",
         "v1:mission_control:range-destroy",
+        "v1:mission_control:range-extend",
         "v1:mission_control:range-pause",
         "v1:mission_control:range-resume",
     ]

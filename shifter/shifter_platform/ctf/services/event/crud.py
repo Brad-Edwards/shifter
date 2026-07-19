@@ -142,6 +142,7 @@ def _reschedule_event_if_schedule_changed(
     safe_data: dict[str, Any],
     *,
     old_event_end: datetime | None,
+    old_cleanup_time: datetime | None = None,
 ) -> None:
     """Reschedule pending tasks when event times change."""
     schedule_changed = ("event_start" in safe_data and safe_data["event_start"] != event.event_start) or (
@@ -155,6 +156,10 @@ def _reschedule_event_if_schedule_changed(
         EventStatus.PAUSED.value,
     ):
         _reschedule_live_event_schedule(event)
+    if old_cleanup_time is not None and event.get_cleanup_time() != old_cleanup_time:
+        from ctf.services._event_range_lease import reconcile_event_range_leases
+
+        reconcile_event_range_leases(event)
 
 
 _TEAM_CONFIG_FIELDS = frozenset({"team_mode", "team_size_limit"})
@@ -220,6 +225,8 @@ def update_event(event_id: UUID, event_data: dict[str, Any]) -> CTFEvent:
 
     safe_data = {k: v for k, v in event_data.items() if k in _EVENT_MUTABLE_FIELDS}
     old_event_end = event.event_end
+    cleanup_may_change = bool({"event_end", "cleanup_delay_hours"} & safe_data.keys())
+    old_cleanup_time = event.get_cleanup_time() if cleanup_may_change else None
 
     with transaction.atomic():
         for key, value in safe_data.items():
@@ -227,7 +234,9 @@ def update_event(event_id: UUID, event_data: dict[str, Any]) -> CTFEvent:
         event.save()
 
         logger.info("Updated CTF event %s", event.id)
-        _reschedule_event_if_schedule_changed(event, safe_data, old_event_end=old_event_end)
+        _reschedule_event_if_schedule_changed(
+            event, safe_data, old_event_end=old_event_end, old_cleanup_time=old_cleanup_time
+        )
 
     return event
 

@@ -134,20 +134,13 @@ def audit_vpn_profile_download(
     profile_version: str,
 ) -> None:
     """Record profile delivery without credential, topology, or provider data."""
-    audit_log(
-        AuditEvent(
-            entity_type=AuditEntityType.CREDENTIAL,
-            entity_id=range_instance_id,
-            action=AuditAction.DOWNLOAD,
-            actor_type=AuditActorType.USER,
-            actor_id=actor_id,
-            new_state={
-                "participant_id": str(participant_id),
-                "range_generation": str(generation),
-                "channel": "openvpn",
-                "profile_version": profile_version,
-                "outcome": "delivered",
-            },
-            context="ctf_vpn_profile_download",
-        )
+    from shared.credential_delivery import audit_openvpn_profile_download
+
+    audit_openvpn_profile_download(
+        actor_id=actor_id,
+        participant_id=participant_id,
+        range_instance_id=range_instance_id,
+        generation=generation,
+        profile_version=profile_version,
+        product="ctf",
     )
