@@ -50,8 +50,8 @@ function formatRemaining(ms: number): string {
 function EventCountdown({ event }: Readonly<{ event: CtfCurrentEvent["event"] }>) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
-    const timer = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(timer);
+    const timer = globalThis.setInterval(() => setNow(Date.now()), 1000);
+    return () => globalThis.clearInterval(timer);
   }, []);
 
   if (!event.event_start || !event.event_end) return null;
