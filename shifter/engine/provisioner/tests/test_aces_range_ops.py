@@ -45,6 +45,17 @@ def _serialized_plan() -> dict:
     }
 
 
+_DELIVERY_BINDINGS = [
+    {
+        "content_address": "content.c",
+        "sha256": "a" * 64,
+        "storage_key": "aces/content-delivery/aa/" + "a" * 64,
+        "byte_count": 5,
+        "binding_version": 1,
+    }
+]
+
+
 @pytest.fixture
 def patched(monkeypatch):
     calls = SimpleNamespace(
@@ -56,12 +67,14 @@ def patched(monkeypatch):
         destroyed=MagicMock(),
         aces_operation=MagicMock(),
         aces_snapshot=MagicMock(),
+        delivery_bindings=MagicMock(return_value=_DELIVERY_BINDINGS),
     )
     monkeypatch.setattr(
         aces_range_ops,
         "get_aces_range_data_by_request_id",
         lambda request_id: {"range_id": 7, "user_id": 3, "plan": _serialized_plan()},
     )
+    monkeypatch.setattr(aces_range_ops, "get_aces_content_delivery_bindings_by_request_id", calls.delivery_bindings)
     monkeypatch.setattr(aces_range_ops, "apply_aces_range_cell", calls.apply)
     monkeypatch.setattr(aces_range_ops, "destroy_aces_range_cell", calls.destroy)
     monkeypatch.setattr(aces_range_ops, "publish_status_update", calls.status)
@@ -86,6 +99,14 @@ class TestProvision:
         assert [n.address for n in aces_plan.nodes] == ["node.web"]
         patched.ready.assert_called_once_with(request_id="req-1", range_id=7, user_id=3)
         assert not patched.failed.called
+
+    def test_reads_and_forwards_content_delivery_bindings(self, patched):
+        # #1564: the delivery bindings are read once per provision and threaded
+        # through to apply_aces_range_cell so it can gate + realize source-backed
+        # content delivery.
+        aces_range_ops.run_aces_range_provision("req-1")
+        patched.delivery_bindings.assert_called_once_with("req-1")
+        assert patched.apply.call_args.kwargs["delivery_bindings"] == _DELIVERY_BINDINGS
 
     def test_emits_aces_operation_and_snapshot_on_success(self, patched):
         aces_range_ops.run_aces_range_provision("req-1")

@@ -154,13 +154,16 @@ def test_provisioner_capabilities_are_the_narrowed_ledger():
     assert provisioner.supported_account_features == frozenset(
         {"groups", "shell", "home", "disabled", "auth_method", "spn"}
     )
-    assert provisioner.supported_content_types == frozenset({"directory"})
+    assert provisioner.supported_content_types == frozenset({"file", "directory"})
     assert provisioner.supported_domain_profiles == frozenset({"active_directory"})
     # Removed over-claims stay out until their sibling issue lands genuine realization
-    # (auth_method -> #1560, spn -> #1561, source-backed file/dataset -> #1564).
+    # (auth_method -> #1560, spn -> #1561). #1564 re-declares file + directory now
+    # that every admitted shape (inline text, empty dir, source-backed file/dir) has a
+    # genuine, digest-verified guest effect; dataset stays out (no deterministic
+    # materializer + readback for its item-only / generator shapes).
     for dropped in ("mail",):
         assert dropped not in provisioner.supported_account_features
-    for dropped in ("file", "dataset"):
+    for dropped in ("dataset",):
         assert dropped not in provisioner.supported_content_types
 
     checked_in = json.loads(PUBLISHED_MANIFEST_PATH.read_text())

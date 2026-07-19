@@ -26,6 +26,7 @@ from aces_gcp_apply import (
     apply_aces_range_cell,
     destroy_aces_range_cell,
 )
+from aces_gcp_composition import AcesGceCompositionError
 from aces_gcp_firewall import node_tag
 from aces_gcp_plan import AcesGcePlanError, build_aces_range_cell_plan
 from aces_plan import (
@@ -407,6 +408,146 @@ class TestCompositionIntegration:
             )
 
 
+def _binding(**kw) -> dict:
+    base = {
+        "content_address": "content.c",
+        "sha256": "a" * 64,
+        "storage_key": "aces/content-delivery/aa/" + "a" * 64,
+        "byte_count": 5,
+        "binding_version": 1,
+    }
+    base.update(kw)
+    return base
+
+
+def _source_backed_content(**kw) -> AcesPlanContent:
+    base = {
+        "name": "c",
+        "content_type": "file",
+        "target_address": "node.web",
+        "path": "/opt/x.bin",
+        "source_name": "pkg",
+        "address": "content.c",
+    }
+    base.update(kw)
+    return AcesPlanContent(**base)
+
+
+class TestContentDeliveryIntegration:
+    """Wiring tests for #1564: the gate and realizer are reached from apply_aces_range_cell."""
+
+    def test_missing_binding_fails_closed_before_any_cloud_resource_is_created(self):
+        content = _source_backed_content()
+        clients = _clients()
+        secret_ops, _ = _secret_ops()
+        with pytest.raises(AcesGceCompositionError, match="missing its delivery binding"):
+            apply_aces_range_cell(
+                "req-1",
+                7,
+                _plan_with_content(content),
+                _resolver,
+                _apply_options(_config(), clients, secret_ops),
+                delivery_bindings=[],
+            )
+        assert not clients.instances.insert.called
+        assert not clients.networks.insert.called
+
+    def test_extra_binding_with_no_source_backed_content_fails_closed(self):
+        clients = _clients()
+        secret_ops, _ = _secret_ops()
+        with pytest.raises(AcesGceCompositionError, match="does not match any source-backed content"):
+            apply_aces_range_cell(
+                "req-1",
+                7,
+                _plan(),
+                _resolver,
+                _apply_options(_config(), clients, secret_ops),
+                delivery_bindings=[_binding()],
+            )
+        assert not clients.instances.insert.called
+
+    def test_unsupported_source_backed_content_type_fails_closed(self):
+        content = AcesPlanContent(
+            name="c",
+            content_type="dataset",
+            target_address="node.web",
+            source_name="pkg",
+            items=("a",),
+            address="content.c",
+        )
+        clients = _clients()
+        secret_ops, _ = _secret_ops()
+        with pytest.raises(AcesGceCompositionError, match="no delivery materializer"):
+            apply_aces_range_cell(
+                "req-1",
+                7,
+                _plan_with_content(content),
+                _resolver,
+                _apply_options(_config(), clients, secret_ops),
+                delivery_bindings=[],
+            )
+        assert not clients.instances.insert.called
+
+    def test_realizer_is_invoked_with_plan_outputs_and_bindings_when_content_is_source_backed(self):
+        content = _source_backed_content()
+        clients = _clients()
+        secret_ops, _ = _secret_ops()
+        realizer = MagicMock()
+        binding = _binding()
+
+        apply_aces_range_cell(
+            "req-1",
+            7,
+            _plan_with_content(content),
+            _resolver,
+            _apply_options(_config(), clients, secret_ops, content_delivery_realizer=realizer),
+            delivery_bindings=[binding],
+        )
+
+        realizer.assert_called_once()
+        assert realizer.call_args.kwargs["delivery_bindings"] == [binding]
+        assert len(realizer.call_args.kwargs["instance_outputs"]) == 1
+        assert realizer.call_args.kwargs["aces_plan"].content[0].source_name == "pkg"
+
+    def test_realizer_is_not_invoked_when_no_content_is_source_backed(self):
+        content = AcesPlanContent(
+            name="c", content_type="file", target_address="node.web", path="/srv/x.txt", text="hi"
+        )
+        clients = _clients()
+        secret_ops, _ = _secret_ops()
+        realizer = MagicMock()
+
+        apply_aces_range_cell(
+            "req-1",
+            7,
+            _plan_with_content(content),
+            _resolver,
+            _apply_options(_config(), clients, secret_ops, content_delivery_realizer=realizer),
+        )
+
+        realizer.assert_not_called()
+
+    def test_realizer_failure_triggers_cleanup_and_reraises(self):
+        content = _source_backed_content()
+        clients = _clients()
+        secret_ops, secret_mocks = _secret_ops()
+        realizer = MagicMock(side_effect=RuntimeError("delivery failed"))
+
+        with pytest.raises(RuntimeError, match="delivery failed"):
+            apply_aces_range_cell(
+                "req-1",
+                7,
+                _plan_with_content(content),
+                _resolver,
+                _apply_options(_config(), clients, secret_ops, content_delivery_realizer=realizer),
+                delivery_bindings=[_binding()],
+            )
+
+        # Reconstructive cleanup ran (same as a directory-realization failure).
+        assert secret_mocks.delete_ssh.call_count == 1
+        assert clients.instances.get.called
+
+
 def _plan_with_accounts(*accounts: AcesPlanAccount, os_family: str = "linux", count: int = 2) -> AcesPlan:
     plan = _plan()
     return AcesPlan(
@@ -685,3 +826,20 @@ class TestDestroy:
 
         assert account_mocks.delete.call_count == 2
         assert [call.args[1] for call in account_mocks.delete.call_args_list] == ["node.web#1", "node.web#0"]
+
+    def test_destroys_a_stale_plan_carrying_source_backed_content_without_bindings(self):
+        # #1564: content delivery has no destroy-side ownership -- destroy takes
+        # no delivery_bindings parameter at all, and a plan whose source-backed
+        # content item was never realized (or the range is being torn down
+        # before delivery bindings even existed) must still parse and destroy
+        # every owned GCE resource cleanly.
+        content = AcesPlanContent(
+            name="pkg", content_type="file", target_address="node.web", path="/opt/app/data.bin", source_name="pkg"
+        )
+        clients = _clients(exists=True)
+        secret_ops, secret_mocks = _secret_ops()
+
+        destroy_aces_range_cell("req-1", 7, _plan_with_content(content), _config(), clients, secret_ops)
+
+        assert clients.instances.delete.call_count == 1
+        assert secret_mocks.delete_ssh.call_count == 1

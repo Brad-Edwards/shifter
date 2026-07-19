@@ -28,6 +28,7 @@ import base64
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Any
 
 from aces_account_credentials import (
     AcesAccountCredentialOps,
@@ -40,6 +41,10 @@ from aces_active_directory import (
     default_directory_secret_ops,
     delete_aces_directory_secrets,
     realize_aces_active_directory,
+)
+from aces_content_delivery import (
+    assert_content_delivery_bindings_complete,
+    realize_aces_content_delivery,
 )
 from aces_gcp_composition import node_bootstrap_script
 from aces_gcp_plan import AcesGcePlanError, build_aces_range_cell_plan
@@ -87,6 +92,7 @@ class AcesGceApplyOptions:
     credential_installer: Callable[..., None] = install_instance_account_credentials
     directory_secret_ops: AcesDirectorySecretOps | None = None
     directory_realizer: Callable[..., None] = realize_aces_active_directory
+    content_delivery_realizer: Callable[..., None] = realize_aces_content_delivery
 
 
 @dataclass(frozen=True)
@@ -108,6 +114,7 @@ class _AcesGceApplyRuntime:
     credential_installer: Callable[..., None]
     directory_secret_ops: AcesDirectorySecretOps
     directory_realizer: Callable[..., None]
+    content_delivery_realizer: Callable[..., None]
 
 
 @dataclass(frozen=True)
@@ -141,6 +148,7 @@ def _apply_runtime(options: AcesGceApplyOptions) -> _AcesGceApplyRuntime:
         credential_installer=options.credential_installer,
         directory_secret_ops=options.directory_secret_ops or default_directory_secret_ops(),
         directory_realizer=options.directory_realizer,
+        content_delivery_realizer=options.content_delivery_realizer,
     )
 
 
@@ -171,6 +179,20 @@ def _assert_composition_targets_resolve(aces_plan: AcesPlan) -> None:
     for target, kind, name in placements:
         if target not in node_addresses:
             raise AcesGcePlanError(f"{kind} placement {name!r} targets node {target!r} not present in this plan")
+
+
+def _assert_content_delivery_bindings_complete(
+    aces_plan: AcesPlan, delivery_bindings: list[dict[str, Any]] | None
+) -> None:
+    """Fail closed unless every source-backed content item has exactly one binding.
+
+    Delegates to ``aces_content_delivery.assert_content_delivery_bindings_complete``
+    (#1564): a missing binding, an over-claiming extra binding, or an
+    unsupported source-backed content_type all raise ``AcesGceCompositionError``
+    before any cloud resource is planned or created -- the same early,
+    no-cleanup-needed position as the sibling ``_assert_composition_targets_resolve``.
+    """
+    assert_content_delivery_bindings_complete(aces_plan, delivery_bindings)
 
 
 def _node_address_of(instance: InstancePlan) -> str:
@@ -310,6 +332,21 @@ def _realize_directory(
         )
 
 
+def _realize_content_delivery(
+    aces_plan: AcesPlan,
+    instance_outputs: list[ResourceDict],
+    delivery_bindings: list[dict[str, Any]] | None,
+    runtime: _AcesGceApplyRuntime,
+) -> None:
+    """Deliver every source-backed content item when the plan carries one (#1564)."""
+    if any(item.source_name for item in aces_plan.content):
+        runtime.content_delivery_realizer(
+            aces_plan=aces_plan,
+            instance_outputs=instance_outputs,
+            delivery_bindings=delivery_bindings,
+        )
+
+
 def _cleanup_failed_apply(
     request_uuid: str,
     range_id: int,
@@ -337,10 +374,17 @@ def apply_aces_range_cell(
     aces_plan: AcesPlan,
     resolve_image: Callable[[AcesPlanNode], GCERangeImageProfile],
     options: AcesGceApplyOptions | None = None,
+    delivery_bindings: list[dict[str, Any]] | None = None,
 ) -> ResourceDict:
-    """Provision an ACES GCE range cell and return provisioner outputs."""
+    """Provision an ACES GCE range cell and return provisioner outputs.
+
+    ``delivery_bindings`` are the byte-free #1564 delivery bindings for the
+    range (``provisioner_db_aces.get_aces_content_delivery_bindings_by_request_id``);
+    ``None``/empty is the common case of a plan with no source-backed content.
+    """
     runtime = _apply_runtime(options or AcesGceApplyOptions())
     _assert_composition_targets_resolve(aces_plan)
+    _assert_content_delivery_bindings_complete(aces_plan, delivery_bindings)
     plan = build_aces_range_cell_plan(request_uuid, range_id, aces_plan, resolve_image, runtime.config)
     try:
         instance_outputs = _provision_aces_resources(
@@ -350,6 +394,7 @@ def apply_aces_range_cell(
             _accounts_by_node(aces_plan),
         )
         _realize_directory(plan, aces_plan, instance_outputs, runtime)
+        _realize_content_delivery(aces_plan, instance_outputs, delivery_bindings, runtime)
     except Exception:
         logger.exception("ACES GCE range-cell apply failed; attempting cleanup request_id=%s", request_uuid)
         _cleanup_failed_apply(request_uuid, range_id, aces_plan, runtime)

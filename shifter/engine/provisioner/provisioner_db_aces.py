@@ -54,6 +54,44 @@ def get_aces_range_data_by_request_id(request_id: str) -> dict[str, Any]:
     }
 
 
+def get_aces_content_delivery_bindings_by_request_id(request_id: str) -> list[dict[str, Any]]:
+    """Read the #1564 delivery bindings realized for the range bound to a request.
+
+    Byte-free identity rows only: content_address, sha256, storage_key,
+    byte_count, binding_version. Returns an empty list when the range has no
+    bindings (or does not exist) rather than raising, since an ACES plan may
+    legitimately carry no source-backed content.
+    """
+    with get_db_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT
+                b.content_address,
+                b.sha256,
+                b.storage_key,
+                b.byte_count,
+                b.binding_version
+            FROM engine_request r
+            JOIN mission_control_range rng ON rng.request_id = r.id
+            JOIN engine_aces_content_delivery_binding b ON b.range_id = rng.id
+            WHERE r.request_id = %s
+            """,
+            (request_id,),
+        )
+        rows = cur.fetchall()
+
+    return [
+        {
+            "content_address": row[0],
+            "sha256": row[1],
+            "storage_key": row[2],
+            "byte_count": row[3],
+            "binding_version": row[4],
+        }
+        for row in rows
+    ]
+
+
 def get_aces_image_candidates(provider: str, source_name: str) -> list[dict[str, Any]]:
     """Return enabled ACES image mappings for (provider, source_name) (ADR-032-R2).
 

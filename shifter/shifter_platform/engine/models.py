@@ -879,3 +879,49 @@ class AcesImageMapping(models.Model):
     def __str__(self) -> str:
         version = self.source_version or "*"
         return f"{self.provider}:{self.source_name}@{version} -> {self.image_ref}"
+
+
+class AcesContentDeliveryBinding(models.Model):
+    """Server-owned, byte-free delivery identity persisted beside a Range (#1564).
+
+    Mirrors ``shared.aces.content_delivery.DeliveryBinding``: one row per content
+    address realized for a range, carrying only the compiled resource address, the
+    sha256 of the delivered payload, the content-addressed storage key, the byte
+    count, and the binding schema version. No payload bytes, URL, bucket, or
+    credential is ever persisted here (ADR-032-R3). The Engine create seam
+    (``engine.services.create_aces_range``) is the sole writer; the provisioner
+    only reads these rows (SELECT-only grant) to join + verify + realize content
+    at apply time.
+    """
+
+    range = models.ForeignKey(
+        Range,
+        on_delete=models.CASCADE,
+        related_name="content_delivery_bindings",
+        help_text="Range this delivery binding is realized for.",
+    )
+    content_address = models.CharField(
+        max_length=500,
+        help_text="Compiled ACES content resource address this binding identifies.",
+    )
+    sha256 = models.CharField(max_length=64, help_text="Lowercase hex sha256 of the delivered payload.")
+    storage_key = models.CharField(
+        max_length=500, help_text="Normalized content-addressed object key for the delivered payload."
+    )
+    byte_count = models.PositiveBigIntegerField(help_text="Size in bytes of the delivered payload.")
+    binding_version = models.PositiveIntegerField(help_text="DeliveryBinding schema version (rolling-deploy seam).")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        """Table + uniqueness (one binding per range/content_address)."""
+
+        db_table = "engine_aces_content_delivery_binding"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["range", "content_address"],
+                name="unique_aces_content_delivery_binding",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"AcesContentDeliveryBinding({self.range_id}, {self.content_address})"
