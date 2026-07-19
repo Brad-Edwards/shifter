@@ -32,6 +32,15 @@ realized resource. It re-asserts the redaction contract (ADR-031-R4) as defense
 in depth, tears the range down by `request_id`, and maps every failure to a
 bounded, sanitized diagnostic.
 
+For an admitted `active_directory` topology, `succeeded` is downstream of a
+stronger guest-state gate: the provisioner has promoted and read back the exact
+domain controller, reconnected as the authored RID-500 authority, joined and
+read back every Windows member through a machine-scoped offline-domain-join
+package without disclosing the authority password, created each domain-bound account, registered
+each SPN with uniqueness-preserving semantics, and read the resulting
+`servicePrincipalName` from AD. A marker file, successful VM creation, or a
+write without directory readback cannot produce successful operation evidence.
+
 ## Running the validation
 
 The evidence path is the `run_aces_backend_validation` management command,
@@ -78,6 +87,32 @@ Prerequisites:
 
   See [manage-aces-image-registry](../how-to/manage-aces-image-registry.md) for
   the full register / list / disable reference.
+
+### Active Directory and SPN evidence profile
+
+The minimal `scenario-dev/shifter-aces-validation/` pack exercises the generic
+provisioning cutover only; it does not claim domain/SPN evidence. To validate the
+`active_directory`/`spn` capability, point the same command at a separately
+registered, digest-verified validation pack whose single SDL entry explicitly
+contains all of the following public ACES terms:
+
+- one Windows controller related to one `active_directory` identity domain by
+  `domain_controller_for`;
+- one Windows member related by `joins_domain`, with that controller in
+  `controller_refs` and a shared authored network;
+- an enabled password-backed `Administrator` authority account on the
+  controller; and
+- a password-backed member account with the same `domain_ref` and a syntactically
+  valid, unique `spn`.
+
+Register enabled GCE image mappings for every Windows source/version authored by
+that pack. The mapped image must provide the Shifter Windows management baseline
+(Windows OpenSSH and the startup-script prerequisites) and support installation
+of AD DS; image-family inference from `os_family` is not evidence. Run
+`run_aces_backend_validation` with that pack's registered scenario id. The normal
+operation receipt/status/snapshot evidence is sufficient because range success is
+now conditional on the in-directory readbacks above; do not export usernames,
+SPNs, secret references, or raw AD command output into the evidence surface.
 
 ## What does not satisfy the gate
 

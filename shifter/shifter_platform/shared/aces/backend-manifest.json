@@ -15,12 +15,15 @@
         "disabled",
         "groups",
         "home",
-        "shell"
+        "shell",
+        "spn"
       ],
       "supported_content_types": [
         "directory"
       ],
-      "supported_domain_profiles": [],
+      "supported_domain_profiles": [
+        "active_directory"
+      ],
       "supported_node_types": [
         "switch",
         "vm"

@@ -65,11 +65,12 @@ __all__ = [
 #: (``switch`` nodes) as backend networks/subnets, realizes authored node ACLs as
 #: backend firewall rules, and realizes authored composition as guest bootstrap:
 #: ``directory`` content placements, feature bindings, and account placements
-#: (groups/shell/home/disabled/auth_method). Every declared term must be backed by a real
+#: (groups/shell/home/disabled/auth_method) plus range-local Active Directory
+#: accounts and SPNs. Every declared term must be backed by a real
 #: guest effect (ADR-031 / ADR-032); a term realized only structurally or as a
 #: marker file is dropped until its sibling issue lands genuine realization plus
-#: cross-boundary evidence -- ``mail`` (no common provider), ``spn`` (#1561), and
-#: source-backed content ``file`` / ``dataset`` (#1564). ``file`` is one coarse
+#: cross-boundary evidence -- ``mail`` (no common provider) and source-backed
+#: content ``file`` / ``dataset`` (#1564). ``file`` is one coarse
 #: type-level capability that cannot distinguish an inline file (realized) from a
 #: source-backed file (only a parent directory is created), so it stays out
 #: entirely rather than admit the unrealized shape. ``switch`` is required for any
@@ -93,11 +94,11 @@ SHIFTER_PROVISIONER_CAPABILITIES = ProvisionerCapabilities(
     supported_node_types=frozenset({"vm", "switch"}),
     supported_os_families=frozenset({"linux", "windows"}),
     supported_content_types=frozenset({"directory"}),
-    supported_account_features=frozenset({"groups", "shell", "home", "disabled", "auth_method"}),
-    # #1606 consumes ACES's public authored topology contract without claiming
-    # realization. #1561 may add active_directory only with genuine DC/join/SPN
-    # effects and cross-boundary evidence.
-    supported_domain_profiles=frozenset(),
+    supported_account_features=frozenset({"groups", "shell", "home", "disabled", "auth_method", "spn"}),
+    # #1561 realizes the bounded first ACES identity-domain profile: one
+    # range-local Windows AD controller, Windows member joins, domain accounts,
+    # uniqueness-preserving SPN registration, and directory readback.
+    supported_domain_profiles=frozenset({"active_directory"}),
     max_total_nodes=None,
     supports_acls=True,
     supports_accounts=True,

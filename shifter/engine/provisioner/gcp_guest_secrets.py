@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import logging
 import re
 import time
@@ -191,13 +192,27 @@ def _aces_account_secret_id(range_id: int, instance_key: str, username: str, kin
     return f"{prefix}-{suffix}"
 
 
+def _aces_directory_secret_id(range_id: int, domain_id: str, subject_address: str, purpose: str) -> str:
+    """Return an opaque deterministic id for one range-local directory secret."""
+    identity = "\0".join((str(range_id), domain_id, subject_address, purpose)).encode("utf-8")
+    digest = hashlib.sha256(identity).hexdigest()[:40]
+    safe_purpose = _sanitize_secret_part(purpose, max_length=32)
+    return f"shifter-range-{range_id}-aces-domain-{digest}-{safe_purpose}"
+
+
+def _password_length(strength: str) -> int:
+    """Resolve an admitted password-strength label to its generated length."""
+    length = _ACES_PASSWORD_LENGTHS.get(strength)
+    if length is None:
+        raise ValueError(f"unsupported password strength {strength!r}")
+    return length
+
+
 def ensure_aces_account_password_secret(
     range_id: int, instance_key: str, username: str, password_strength: str
 ) -> tuple[str, str]:
     """Create or read one authored account's password using explicit strength policy."""
-    length = _ACES_PASSWORD_LENGTHS.get(password_strength)
-    if length is None:
-        raise ValueError(f"unsupported password strength {password_strength!r}")
+    length = _password_length(password_strength)
     return _read_or_create_secret(
         _aces_account_secret_id(range_id, instance_key, username, "account-password"),
         lambda: generate_rdp_password(length),
@@ -211,6 +226,65 @@ def ensure_aces_account_public_key_secret(range_id: int, instance_key: str, user
         lambda: generate_ssh_keypair()[0],
     )
     return secret_name, derive_ssh_public_key(private_key)
+
+
+def ensure_aces_domain_dsrm_secret(range_id: int, domain_id: str) -> tuple[str, str]:
+    """Create or read the distinct DSRM password for one range-local domain."""
+    return _read_or_create_secret(
+        _aces_directory_secret_id(range_id, domain_id, "dsrm", "dsrm-password"),
+        lambda: generate_rdp_password(_password_length("strong")),
+    )
+
+
+def ensure_aces_domain_authority_secret(range_id: int, domain_id: str, password_strength: str) -> tuple[str, str]:
+    """Create or read the built-in domain authority password."""
+    return _read_or_create_secret(
+        _aces_directory_secret_id(range_id, domain_id, "authority", "authority-password"),
+        lambda: generate_rdp_password(_password_length(password_strength)),
+    )
+
+
+def ensure_aces_domain_account_password_secret(
+    range_id: int,
+    domain_id: str,
+    account_address: str,
+    password_strength: str,
+) -> tuple[str, str]:
+    """Create or read a domain-account password keyed by stable account address."""
+    return _read_or_create_secret(
+        _aces_directory_secret_id(range_id, domain_id, account_address, "account-password"),
+        lambda: generate_rdp_password(_password_length(password_strength)),
+    )
+
+
+def _delete_aces_directory_secret(range_id: int, domain_id: str, subject_address: str, purpose: str) -> None:
+    """Delete one deterministic directory secret when Secret Manager is configured."""
+    try:
+        client, google_exceptions, project_id = _secret_client()
+    except RuntimeError:
+        return
+    secret_id = _aces_directory_secret_id(range_id, domain_id, subject_address, purpose)
+    secret_name = f"projects/{project_id}/secrets/{secret_id}"
+    try:
+        client.delete_secret(request={"name": secret_name})
+        logger.info("Deleted ACES directory secret secret_fp=%s", safe_log_fingerprint(secret_name))
+    except google_exceptions.NotFound:
+        return
+
+
+def delete_aces_domain_dsrm_secret(range_id: int, domain_id: str) -> None:
+    """Delete the DSRM secret for one range-local domain."""
+    _delete_aces_directory_secret(range_id, domain_id, "dsrm", "dsrm-password")
+
+
+def delete_aces_domain_authority_secret(range_id: int, domain_id: str) -> None:
+    """Delete the RID-500 authority secret for one range-local domain."""
+    _delete_aces_directory_secret(range_id, domain_id, "authority", "authority-password")
+
+
+def delete_aces_domain_account_secret(range_id: int, domain_id: str, account_address: str) -> None:
+    """Delete one domain-account password secret by stable account address."""
+    _delete_aces_directory_secret(range_id, domain_id, account_address, "account-password")
 
 
 def delete_aces_ssh_secret(range_id: int, instance_key: str) -> None:
