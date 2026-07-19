@@ -51,6 +51,7 @@ _CHALLENGE_SCALARS = (
 
 
 def _get_event(event_id: UUID) -> CTFEvent:
+    """Load a live event or raise not-found."""
     try:
         return CTFEvent.objects.get(pk=event_id)
     except CTFEvent.DoesNotExist:
@@ -138,48 +139,53 @@ def import_challenges(event_id: UUID, payload: dict[str, Any], *, actor_id: int)
     created: list[str] = []
     errors: list[dict[str, Any]] = []
     for index, entry in enumerate(raw_challenges):
-        if not isinstance(entry, dict):
-            errors.append({"index": index, "error": "entry must be an object"})
-            continue
-        name = str(entry.get("name") or "").strip()
-        if not name:
-            errors.append({"index": index, "error": "name is required"})
-            continue
-        if name in existing_names:
-            errors.append({"index": index, "name": name, "error": "already exists in this event"})
-            continue
-        try:
-            with transaction.atomic():
-                if is_ctfd:
-                    _create_from_ctfd(event, entry, actor_id=actor_id)
-                else:
-                    _create_from_shifter(event, entry)
-        except (CTFValidationError, ValueError) as exc:
-            errors.append({"index": index, "name": name, "error": str(exc)})
-            continue
-        except Exception:
-            logger.exception("Challenge import entry %d failed", index)
-            errors.append({"index": index, "name": name, "error": "Could not import challenge."})
-            continue
-        existing_names.add(name)
-        created.append(name)
+        name, error = _import_entry(event, entry, index, existing_names, is_ctfd=is_ctfd, actor_id=actor_id)
+        if error is not None:
+            errors.append(error)
+        else:
+            existing_names.add(name)
+            created.append(name)
 
     logger.info("Imported %d challenges into event %s (%d errors)", len(created), event_id, len(errors))
     return {"created": created, "errors": errors}
+
+
+def _import_entry(
+    event: CTFEvent,
+    entry: Any,
+    index: int,
+    existing_names: set[str],
+    *,
+    is_ctfd: bool,
+    actor_id: int,
+) -> tuple[str, dict[str, Any] | None]:
+    """Import one entry; return ``(name, None)`` on success or ``(name, error)``."""
+    if not isinstance(entry, dict):
+        return "", {"index": index, "error": "entry must be an object"}
+    name = str(entry.get("name") or "").strip()
+    if not name:
+        return "", {"index": index, "error": "name is required"}
+    if name in existing_names:
+        return name, {"index": index, "name": name, "error": "already exists in this event"}
+    try:
+        with transaction.atomic():
+            if is_ctfd:
+                _create_from_ctfd(event, entry, actor_id=actor_id)
+            else:
+                _create_from_shifter(event, entry)
+    except (CTFValidationError, ValueError) as exc:
+        return name, {"index": index, "name": name, "error": str(exc)}
+    except Exception:
+        logger.exception("Challenge import entry %d failed", index)
+        return name, {"index": index, "name": name, "error": "Could not import challenge."}
+    return name, None
 
 
 def _create_from_ctfd(event: CTFEvent, entry: dict[str, Any], *, actor_id: int) -> CTFChallenge:
     """Create one challenge from a CTFd-shaped entry (plaintext flags)."""
     from ctf.services.challenge import create_challenge
 
-    flags = [f for f in entry.get("flags") or [] if isinstance(f, (dict, str))]
-    first_flag = None
-    if flags:
-        raw = flags[0]
-        first_flag = raw if isinstance(raw, str) else str(raw.get("content") or "")
-    if not first_flag:
-        raise CTFValidationError("CTFd entry has no flag content", code="CTF_INVALID_IMPORT")
-
+    first_flag = _first_ctfd_flag(entry)
     challenge = create_challenge(
         event.pk,
         {
@@ -193,7 +199,25 @@ def _create_from_ctfd(event: CTFEvent, entry: dict[str, Any], *, actor_id: int) 
         },
         actor_id=actor_id,
     )
-    for order, hint in enumerate(entry.get("hints") or [], start=1):
+    _create_ctfd_hints(challenge, entry.get("hints") or [])
+    return challenge
+
+
+def _first_ctfd_flag(entry: dict[str, Any]) -> str:
+    """Extract the first usable plaintext flag from a CTFd entry, or raise."""
+    flags = [f for f in entry.get("flags") or [] if isinstance(f, (dict, str))]
+    first_flag = None
+    if flags:
+        raw = flags[0]
+        first_flag = raw if isinstance(raw, str) else str(raw.get("content") or "")
+    if not first_flag:
+        raise CTFValidationError("CTFd entry has no flag content", code="CTF_INVALID_IMPORT")
+    return first_flag
+
+
+def _create_ctfd_hints(challenge: CTFChallenge, hints: list[Any]) -> None:
+    """Create hints from CTFd ``content``/``cost`` entries."""
+    for order, hint in enumerate(hints, start=1):
         if isinstance(hint, dict) and hint.get("content"):
             CTFHint.objects.create(
                 challenge=challenge,
@@ -201,7 +225,6 @@ def _create_from_ctfd(event: CTFEvent, entry: dict[str, Any], *, actor_id: int) 
                 penalty=int(hint.get("cost") or 0),
                 order=order,
             )
-    return challenge
 
 
 def _create_from_shifter(event: CTFEvent, entry: dict[str, Any]) -> CTFChallenge:
@@ -211,7 +234,14 @@ def _create_from_shifter(event: CTFEvent, entry: dict[str, Any]) -> CTFChallenge
     if not flag_hash:
         raise CTFValidationError("Shifter entry has no flag_hash", code="CTF_INVALID_IMPORT")
     challenge = CTFChallenge.objects.create(event=event, flag_hash=flag_hash, **scalars)
-    for flag in entry.get("flags") or []:
+    _create_shifter_flags(challenge, entry.get("flags") or [])
+    _create_shifter_hints(challenge, entry.get("hints") or [])
+    return challenge
+
+
+def _create_shifter_flags(challenge: CTFChallenge, flags: list[Any]) -> None:
+    """Recreate exported flag rows (verification material travels as-is)."""
+    for flag in flags:
         if not isinstance(flag, dict) or not flag.get("flag_hash"):
             continue
         CTFFlag.objects.create(
@@ -222,7 +252,11 @@ def _create_from_shifter(event: CTFEvent, entry: dict[str, Any]) -> CTFChallenge
             order=int(flag.get("order") or 0),
             validator_config=flag.get("validator_config") or {},
         )
-    for hint in entry.get("hints") or []:
+
+
+def _create_shifter_hints(challenge: CTFChallenge, hints: list[Any]) -> None:
+    """Recreate exported hint rows."""
+    for hint in hints:
         if isinstance(hint, dict) and hint.get("text"):
             CTFHint.objects.create(
                 challenge=challenge,
@@ -230,7 +264,6 @@ def _create_from_shifter(event: CTFEvent, entry: dict[str, Any]) -> CTFChallenge
                 penalty=int(hint.get("penalty") or 0),
                 order=int(hint.get("order") or 0),
             )
-    return challenge
 
 
 def export_event_results(event_id: UUID) -> dict[str, Any]:
