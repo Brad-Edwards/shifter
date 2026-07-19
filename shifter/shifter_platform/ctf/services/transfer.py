@@ -155,11 +155,12 @@ def _entry_precheck(entry: object, index: int, existing_names: set[str]) -> tupl
     if not isinstance(entry, dict):
         return "", {"index": index, "error": "entry must be an object"}
     name = str(entry.get("name") or "").strip()
+    error: dict[str, Any] | None = None
     if not name:
-        return "", {"index": index, "error": "name is required"}
-    if name in existing_names:
-        return name, {"index": index, "name": name, "error": "already exists in this event"}
-    return name, None
+        error = {"index": index, "error": "name is required"}
+    elif name in existing_names:
+        error = {"index": index, "name": name, "error": "already exists in this event"}
+    return name, error
 
 
 def _import_entry(
