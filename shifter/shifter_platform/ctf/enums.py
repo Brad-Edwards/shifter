@@ -8,11 +8,14 @@ from __future__ import annotations
 from enum import StrEnum
 
 # Recovery-domain enums live in ctf.enums_recovery (python:S104 split); they are
-# re-exported here so `from ctf.enums import RecoveryPhase` keeps working.
-from ctf.enums_recovery import RecoveryFailureCategory as RecoveryFailureCategory
-from ctf.enums_recovery import RecoveryPhase as RecoveryPhase
-from ctf.enums_recovery import RecoveryStrategy as RecoveryStrategy
-from ctf.enums_recovery import SpareRangeStatus as SpareRangeStatus
+# re-exported here (see __all__ below) so `from ctf.enums import RecoveryPhase`
+# keeps working.
+from ctf.enums_recovery import (
+    RecoveryFailureCategory,
+    RecoveryPhase,
+    RecoveryStrategy,
+    SpareRangeStatus,
+)
 
 
 class EventStatus(StrEnum):
@@ -422,3 +425,33 @@ VALID_TRANSITIONS: dict[EventStatus, frozenset[EventStatus]] = {
 def validate_transition(current: EventStatus, target: EventStatus) -> bool:
     """Return True if transitioning from current to target is valid."""
     return target in VALID_TRANSITIONS.get(current, frozenset())
+
+
+__all__ = [
+    "EVENT_MODIFIABLE_STATUSES",
+    "EVENT_TERMINAL_STATUSES",
+    "PARTICIPANT_MODERATED_STATUSES",
+    "VALID_TRANSITIONS",
+    "AttemptLimitMode",
+    "ChallengeCategory",
+    "ChallengeDifficulty",
+    "ChallengeVisibility",
+    "DecayFunction",
+    "EventStaffRole",
+    "EventStatus",
+    "NotificationStatus",
+    "NotificationType",
+    "ParticipantRole",
+    "ParticipantStatus",
+    "RatingVisibility",
+    "RecoveryFailureCategory",
+    "RecoveryPhase",
+    "RecoveryStrategy",
+    "ScheduledTaskStatus",
+    "ScheduledTaskType",
+    "ScoreboardVisibility",
+    "ScoringMode",
+    "SpareRangeStatus",
+    "UserType",
+    "validate_transition",
+]
