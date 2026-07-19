@@ -128,6 +128,8 @@ def _outputs(
             "value": {
                 "private_ip": "10.0.0.10",
                 "port": 5432,
+                "database_name": "shifter",
+                "user_name": "shifter",
             }
         },
         "control_plane_cache": {
@@ -188,6 +190,13 @@ def test_render_env_emits_production_security_profile():
     # bill the correct quota/consumer project, not the overlay placeholder.
     assert "GCP_PROJECT_ID=shifter-gcp-dev\n" in rendered
     assert "GOOGLE_CLOUD_PROJECT=shifter-gcp-dev\n" in rendered
+    # #1742: DB_NAME/DB_USER/CLOUD_PROJECT_ID are literals the provisioner-launcher
+    # emits and the restrict-provisioner-jobs admission policy validates against the
+    # platform-runtime ConfigMap, so they MUST be rendered here or every GCP range
+    # Job is denied.
+    assert "DB_NAME=shifter\n" in rendered
+    assert "DB_USER=shifter\n" in rendered
+    assert "CLOUD_PROJECT_ID=shifter-gcp-dev\n" in rendered
     assert "IDENTITY_PLATFORM_PROJECT_ID=shifter-gcp-dev\n" in rendered
     assert "IDENTITY_PLATFORM_AUTH_DOMAIN=shifter-gcp-dev.firebaseapp.com\n" in rendered
     assert "GDC_ACCESS_SECRET_ID=projects/shifter-gcp-dev/secrets/shifter-gcp-dev-gdc-access\n" in rendered

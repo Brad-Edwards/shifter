@@ -157,6 +157,11 @@ def render_gcp_platform_runtime_env(
         f"ENVIRONMENT={config.environment}",
         f"CLOUD_REGION={config.region}",
         f"GCP_REGION={config.region}",
+        # AWS_REGION == CLOUD_REGION in Django settings (config/_cloud.py), so the
+        # provisioner-launcher always emits a non-empty AWS_REGION even on GCP. It
+        # must therefore be present in the runtime ConfigMap or the
+        # restrict-provisioner-jobs admission policy denies the range Job (#1742).
+        f"AWS_REGION={config.region}",
         f"GCP_PROJECT_ID={config.project_id}",
         f"GOOGLE_CLOUD_PROJECT={config.project_id}",
         # GCE range cells are the default GCP range backend; the GDC VM Runtime
