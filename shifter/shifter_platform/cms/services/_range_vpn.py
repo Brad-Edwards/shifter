@@ -57,6 +57,7 @@ def _load_owned_range(user: User, range_source: RangeSource, range_instance_pk: 
 
 
 def _resolve_profile(user: User, instance: RangeInstance) -> OpenVpnProfile:
+    """Resolve an Engine profile while preserving the CMS error vocabulary."""
     from cms import services as cms_services
     from engine.services import VpnProfileConflict, VpnProfileNotFound, VpnProfileUnavailable
 
@@ -74,6 +75,7 @@ def _resolve_profile(user: User, instance: RangeInstance) -> OpenVpnProfile:
 
 
 def _has_profile(user: User, instance: RangeInstance) -> bool:
+    """Return whether Engine has a profile for the owned range generation."""
     from cms import services as cms_services
 
     request = instance.request
@@ -83,10 +85,12 @@ def _has_profile(user: User, instance: RangeInstance) -> bool:
 
 
 def get_ctf_openvpn_profile(user: User, range_instance_pk: int) -> OpenVpnProfile:
+    """Return the profile for one caller-owned, ready CTF range."""
     return _resolve_profile(user, _load_owned_range(user, RangeSource.CTF, range_instance_pk))
 
 
 def has_ctf_openvpn_profile(user: User, range_instance_pk: int) -> bool:
+    """Return whether one caller-owned CTF range has a ready profile."""
     try:
         instance = _load_owned_range(user, RangeSource.CTF, range_instance_pk)
     except CMSError:
@@ -95,11 +99,13 @@ def has_ctf_openvpn_profile(user: User, range_instance_pk: int) -> bool:
 
 
 def get_mission_control_openvpn_profile(user: User) -> tuple[OpenVpnProfile, int]:
+    """Return the active Mission Control profile and range-instance ID."""
     instance = _load_owned_range(user, RangeSource.MISSION_CONTROL)
     return _resolve_profile(user, instance), instance.pk
 
 
 def has_mission_control_openvpn_profile(user: User) -> bool:
+    """Return whether the caller's active Mission Control range has a profile."""
     try:
         instance = _load_owned_range(user, RangeSource.MISSION_CONTROL)
     except CMSError:

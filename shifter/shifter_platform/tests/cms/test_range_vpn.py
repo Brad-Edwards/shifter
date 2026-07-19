@@ -128,8 +128,9 @@ def test_profile_access_rejects_unsaved_users_and_missing_requests():
     from cms.exceptions import CMSError
     from cms.services import get_mission_control_openvpn_profile
 
+    unsaved_user = User()
     with pytest.raises(CMSError):
-        get_mission_control_openvpn_profile(User())
+        get_mission_control_openvpn_profile(unsaved_user)
 
     user = User.objects.create_user(username="cms-vpn-missing-request@example.test")
     RangeInstance.objects.create(

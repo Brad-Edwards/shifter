@@ -246,7 +246,12 @@ export function ActiveRangePanel({
   const extendRange = useExtendRange();
 
   const mutations = { cancel: cancelRange, destroy: destroyRange, pause: pauseRange, resume: resumeRange } as const;
-  const activeMutation = dialog === "extend" ? extendRange : dialog ? mutations[dialog] : null;
+  let activeMutation: { isPending: boolean; error: unknown } | null = null;
+  if (dialog === "extend") {
+    activeMutation = extendRange;
+  } else if (dialog) {
+    activeMutation = mutations[dialog];
+  }
 
   function closeDialog() {
     cancelRange.reset();

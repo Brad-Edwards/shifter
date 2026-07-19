@@ -190,8 +190,9 @@ class TestLiveEventEndReschedule:
             range_instance_id=participant_range.pk,
         )
 
+        extended_end = old_end + timedelta(hours=1)
         with pytest.raises(CTFValidationError) as exc:
-            update_event(ctf_event_active.pk, {"event_end": old_end + timedelta(hours=1)})
+            update_event(ctf_event_active.pk, {"event_end": extended_end})
 
         assert exc.value.code == "CTF_RANGE_LEASE_CEILING"
         ctf_event_active.refresh_from_db()

@@ -46,9 +46,79 @@ from shared.auth import is_ctf_participant_only
 from shared.errors import classify_user_message
 from shared.exceptions import CMSError
 from shared.log_sanitize import safe_log_value
-from shared.remote_access import OPENVPN_PROFILE_MEDIA_TYPE
+from shared.remote_access import OPENVPN_PROFILE_MEDIA_TYPE, OpenVpnProfile
 
 _VPN_PROFILE_FILENAME = "shifter-range.ovpn"
+
+
+def _credential_delivery_error(view: MissionControlAPIView, actor: User) -> Response | None:
+    """Return a fail-closed delivery response, or None when delivery may proceed."""
+    from shared.credential_delivery import credential_delivery_allowed
+
+    try:
+        allowed = credential_delivery_allowed(actor.pk)
+    except Exception:
+        response = view.error_response(
+            code="vpn_profile_unavailable",
+            message="VPN profile is unavailable.",
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        )
+    else:
+        response = None
+        if not allowed:
+            response = view.error_response(
+                code="throttled",
+                message="Too many VPN profile requests. Try again later.",
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            )
+            response["Retry-After"] = "3600"
+    return response
+
+
+def _mission_control_profile_result(
+    view: MissionControlAPIView,
+    actor: User,
+) -> tuple[OpenVpnProfile, int] | Response:
+    """Resolve a profile or translate the CMS failure into its API response."""
+    from cms.services import OpenVpnProfileConflict, OpenVpnProfileNotFound, OpenVpnProfileUnavailable
+
+    result: tuple[OpenVpnProfile, int] | Response
+    try:
+        result = _pkg().get_mission_control_openvpn_profile(actor)
+    except OpenVpnProfileNotFound:
+        result = view.not_found("VPN profile is not available.")
+    except OpenVpnProfileConflict:
+        result = view.error_response(
+            code="vpn_not_ready",
+            message="VPN profile is not ready.",
+            status_code=status.HTTP_409_CONFLICT,
+        )
+    except OpenVpnProfileUnavailable:
+        result = view.error_response(
+            code="vpn_profile_unavailable",
+            message="VPN profile is unavailable.",
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        )
+    return result
+
+
+def _vpn_profile_download_response(actor: User, profile: OpenVpnProfile, range_instance_id: int) -> HttpResponse:
+    """Audit and build the non-cacheable OpenVPN credential response."""
+    from shared.credential_delivery import audit_openvpn_profile_download
+
+    audit_openvpn_profile_download(
+        actor_id=actor.pk,
+        range_instance_id=range_instance_id,
+        generation=profile.generation,
+        profile_version=profile.profile_version,
+        product="mission_control",
+    )
+    response = HttpResponse(profile.content, content_type=OPENVPN_PROFILE_MEDIA_TYPE)
+    response["Content-Disposition"] = f'attachment; filename="{_VPN_PROFILE_FILENAME}"'
+    response["Cache-Control"] = "private, no-store"
+    response["Content-Length"] = str(len(profile.content))
+    patch_vary_headers(response, ("Cookie", "Authorization"))
+    return response
 
 
 class CurrentRangeView(MissionControlReadAPIView):
@@ -116,24 +186,27 @@ class ExtendRangeLeaseView(MissionControlAPIView):
     def post(self, request: Request) -> Response:
         """Extend only the server-owned lease; caller timestamps are forbidden."""
         if request.body or request.query_params:
-            return self.error_response(
+            response = self.error_response(
                 code="invalid",
                 message="Range extension requests must not include a body or query parameters.",
                 status_code=400,
             )
-        from cms.services import RangeLeaseConflict, RangeLeaseNotFound
+        else:
+            from cms.services import RangeLeaseConflict, RangeLeaseNotFound
 
-        try:
-            lease = _pkg().cms_extend_mission_control_range(self.actor_user())
-        except RangeLeaseNotFound:
-            return self.not_found("Range not found")
-        except RangeLeaseConflict:
-            return self.error_response(
-                code="range_extension_unavailable",
-                message="Range cannot be extended.",
-                status_code=409,
-            )
-        return Response({"lifecycle": lease.to_payload()})
+            try:
+                lease = _pkg().cms_extend_mission_control_range(self.actor_user())
+            except RangeLeaseNotFound:
+                response = self.not_found("Range not found")
+            except RangeLeaseConflict:
+                response = self.error_response(
+                    code="range_extension_unavailable",
+                    message="Range cannot be extended.",
+                    status_code=409,
+                )
+            else:
+                response = Response({"lifecycle": lease.to_payload()})
+        return response
 
 
 class MissionControlVpnProfileView(MissionControlAPIView):
@@ -158,59 +231,23 @@ class MissionControlVpnProfileView(MissionControlAPIView):
     )
     def post(self, request: Request) -> HttpResponse | Response:
         if request.body or request.query_params:
-            return self.error_response(
+            response: HttpResponse | Response = self.error_response(
                 code="invalid",
                 message="VPN profile requests must not include a body or query parameters.",
                 status_code=status.HTTP_400_BAD_REQUEST,
             )
-        actor = self.actor_user()
-        from cms.services import OpenVpnProfileConflict, OpenVpnProfileNotFound, OpenVpnProfileUnavailable
-        from shared.credential_delivery import audit_openvpn_profile_download, credential_delivery_allowed
-
-        try:
-            try:
-                allowed = credential_delivery_allowed(actor.pk)
-            except Exception:
-                return self.error_response(
-                    code="vpn_profile_unavailable",
-                    message="VPN profile is unavailable.",
-                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                )
-            if not allowed:
-                response = self.error_response(
-                    code="throttled",
-                    message="Too many VPN profile requests. Try again later.",
-                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                )
-                response["Retry-After"] = "3600"
-                return response
-            profile, range_instance_id = _pkg().get_mission_control_openvpn_profile(actor)
-        except OpenVpnProfileNotFound:
-            return self.not_found("VPN profile is not available.")
-        except OpenVpnProfileConflict:
-            return self.error_response(
-                code="vpn_not_ready",
-                message="VPN profile is not ready.",
-                status_code=status.HTTP_409_CONFLICT,
-            )
-        except OpenVpnProfileUnavailable:
-            return self.error_response(
-                code="vpn_profile_unavailable",
-                message="VPN profile is unavailable.",
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            )
-        audit_openvpn_profile_download(
-            actor_id=actor.pk,
-            range_instance_id=range_instance_id,
-            generation=profile.generation,
-            profile_version=profile.profile_version,
-            product="mission_control",
-        )
-        response = HttpResponse(profile.content, content_type=OPENVPN_PROFILE_MEDIA_TYPE)
-        response["Content-Disposition"] = f'attachment; filename="{_VPN_PROFILE_FILENAME}"'
-        response["Cache-Control"] = "private, no-store"
-        response["Content-Length"] = str(len(profile.content))
-        patch_vary_headers(response, ("Cookie", "Authorization"))
+        else:
+            actor = self.actor_user()
+            delivery_error = _credential_delivery_error(self, actor)
+            if delivery_error is not None:
+                response = delivery_error
+            else:
+                profile_result = _mission_control_profile_result(self, actor)
+                if isinstance(profile_result, Response):
+                    response = profile_result
+                else:
+                    profile, range_instance_id = profile_result
+                    response = _vpn_profile_download_response(actor, profile, range_instance_id)
         return response
 
 

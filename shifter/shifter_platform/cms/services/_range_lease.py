@@ -84,6 +84,7 @@ def build_range_lease(
 
 
 def _projection(instance: RangeInstance) -> RangeLeaseProjection:
+    """Build a lease projection from a fully leased range instance."""
     if instance.expires_at is None or instance.maximum_expires_at is None:
         raise RangeLeaseConflict("Range lease is unavailable")
     can_extend = (

@@ -68,8 +68,9 @@ def test_lease_builder_rejects_invalid_deadlines_and_sources():
     now = timezone.now()
     with pytest.raises(RangeLeaseConflict, match="future"):
         build_range_lease(RangeSource.CTF, now=now, enforced_deadline=now)
+    unsupported_source = cast(RangeSource, object())
     with pytest.raises(RangeLeaseConflict, match="Unsupported"):
-        build_range_lease(cast(RangeSource, object()), now=now)
+        build_range_lease(unsupported_source, now=now)
 
 
 def test_extend_mission_control_range_advances_one_bounded_increment():
@@ -158,9 +159,10 @@ def test_extension_rejects_unsaved_and_unleased_ranges():
         get_mission_control_range_lease,
     )
 
+    unsaved_user = User()
     with pytest.raises(RangeLeaseNotFound):
-        extend_mission_control_range(User())
-    assert get_mission_control_range_lease(User()) is None
+        extend_mission_control_range(unsaved_user)
+    assert get_mission_control_range_lease(unsaved_user) is None
 
     user = User.objects.create_user(username="legacy-unleased@example.com")
     _range(user)

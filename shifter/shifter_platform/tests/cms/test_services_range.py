@@ -341,13 +341,14 @@ class TestRangeSourceAdmission:
             range_source=RangeSource.CTF,
             remote_access_teardown_at=timezone.now() + timedelta(days=1),
         )
+        teardown_at = timezone.now() + timedelta(days=1)
         with pytest.raises(CMSError, match="already have an active range"):
             services.create_range(
                 user,
                 hydratable_scenario.scenario_id,
                 {"windows": agent.id},
                 range_source=RangeSource.CTF,
-                remote_access_teardown_at=timezone.now() + timedelta(days=1),
+                remote_access_teardown_at=teardown_at,
             )
 
     def test_get_active_range_bare_call_returns_mc_range(self, user):
@@ -472,11 +473,12 @@ class TestRangeSourceAdmission:
         from cms.services._range_create import _build_remote_access_capability
 
         range_spec = SimpleNamespace(participant_access=[], all_instances=[])
+        teardown_at = timezone.now() + timedelta(days=1)
 
         with pytest.raises(CMSError, match="exactly one identified Kali"):
             _build_remote_access_capability(
                 range_spec,
-                timezone.now() + timedelta(days=1),
+                teardown_at,
                 required=True,
             )
 

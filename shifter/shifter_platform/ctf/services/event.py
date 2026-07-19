@@ -6,6 +6,7 @@ Provides business logic for CTF event lifecycle management.
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
@@ -126,7 +127,7 @@ def create_event(user: User, event_data: dict[str, Any]) -> CTFEvent:
     return event
 
 
-def _validate_event_time_range(event_start: Any, event_end: Any) -> None:
+def _validate_event_time_range(event_start: datetime, event_end: datetime) -> None:
     """Raise when event_end is not strictly after event_start."""
     if event_end <= event_start:
         raise CTFValidationError(
@@ -139,9 +140,9 @@ def _reschedule_event_if_schedule_changed(
     event: CTFEvent,
     safe_data: dict[str, Any],
     *,
-    old_event_start: Any,
-    old_event_end: Any,
-    old_cleanup_time: Any | None,
+    old_event_start: datetime,
+    old_event_end: datetime,
+    old_cleanup_time: datetime | None,
 ) -> None:
     """Reschedule pending tasks when event times change."""
     schedule_changed = ("event_start" in safe_data and safe_data["event_start"] != old_event_start) or (
