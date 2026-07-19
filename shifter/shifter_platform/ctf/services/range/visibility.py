@@ -33,9 +33,7 @@ def _visible_os_types_for(user: AbstractBaseUser | AnonymousUser) -> list[str] |
     if participant is None:
         return list(_LEGACY_DEFAULT)
     configured = participant.event.visible_os_types
-    if not configured:
-        return None
-    return [str(os_type).lower() for os_type in configured]
+    return [str(os_type).lower() for os_type in configured] if configured else None
 
 
 def ctf_instance_visibility_policy(user: AbstractBaseUser | AnonymousUser, instances: list[Any]) -> list[Any]:

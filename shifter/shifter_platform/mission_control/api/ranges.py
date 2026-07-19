@@ -394,14 +394,19 @@ class RangeVpnProfileView(MissionControlAPIView):
         )
 
         actor = self.actor_user()
+        error: tuple[str, int] | None = None
+        profile = None
         try:
             profile = get_own_mission_control_openvpn_profile(cast(User, actor))
         except CtfOpenVpnProfileNotFound:
-            return Response({"detail": "No VPN profile available."}, status=404)
+            error = ("No VPN profile available.", 404)
         except CtfOpenVpnProfileConflict:
-            return Response({"detail": "Range is not ready."}, status=409)
+            error = ("Range is not ready.", 409)
         except CtfOpenVpnProfileUnavailable:
-            return Response({"detail": "VPN profile is unavailable."}, status=503)
+            error = ("VPN profile is unavailable.", 503)
+        if error is not None or profile is None:
+            detail, code = error or ("VPN profile is unavailable.", 503)
+            return Response({"detail": detail}, status=code)
         response = HttpResponse(profile.content, content_type=OPENVPN_PROFILE_MEDIA_TYPE)
         response["Content-Disposition"] = 'attachment; filename="range.ovpn"'
         response["Cache-Control"] = "private, no-store"

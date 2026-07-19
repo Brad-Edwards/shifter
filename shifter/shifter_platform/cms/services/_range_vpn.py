@@ -20,6 +20,7 @@ if TYPE_CHECKING:
     from shared.remote_access import OpenVpnProfile
 
 _CTF_RANGE_NOT_FOUND = "CTF range not found"
+_RANGE_NOT_FOUND = "Range not found"
 
 
 class CtfOpenVpnProfileNotFound(CMSError):
@@ -87,7 +88,7 @@ def _load_own_mission_control_range_request(user: User) -> Request:
     from shared.enums import ACTIVE_STATUSES
 
     if getattr(user, "id", None) is None:
-        raise CtfOpenVpnProfileNotFound("Range not found")
+        raise CtfOpenVpnProfileNotFound(_RANGE_NOT_FOUND)
     range_instance = (
         RangeInstance.objects.select_related("request")
         .filter(
@@ -99,7 +100,7 @@ def _load_own_mission_control_range_request(user: User) -> Request:
         .first()
     )
     if range_instance is None:
-        raise CtfOpenVpnProfileNotFound("Range not found")
+        raise CtfOpenVpnProfileNotFound(_RANGE_NOT_FOUND)
     if range_instance.status != ResourceStatus.READY.value:
         raise CtfOpenVpnProfileConflict("Range is not ready")
     if range_instance.request is None:
@@ -116,7 +117,7 @@ def get_own_mission_control_openvpn_profile(user: User) -> OpenVpnProfile:
     try:
         return cms_services.engine_get_openvpn_profile(user, cms_request.request_id)
     except VpnProfileNotFound as exc:
-        raise CtfOpenVpnProfileNotFound("Range not found") from exc
+        raise CtfOpenVpnProfileNotFound(_RANGE_NOT_FOUND) from exc
     except VpnProfileConflict as exc:
         raise CtfOpenVpnProfileConflict("Range VPN profile is not ready") from exc
     except VpnProfileUnavailable as exc:
