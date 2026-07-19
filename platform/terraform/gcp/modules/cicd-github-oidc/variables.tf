@@ -93,5 +93,14 @@ variable "build_roles" {
     "roles/storage.admin",
     "roles/cloudbuild.builds.editor",
     "roles/serviceusage.serviceUsageConsumer",
+    # Reach the PRIVATE GKE control plane over Connect Gateway (#1723): the
+    # gateway roles authorize the fleet-membership impersonation, and
+    # container.admin authorizes the actual kubectl apply via GKE's IAM->RBAC
+    # mapping (the deploy applies cluster-scoped objects: namespaces, CRDs,
+    # cluster services). Together these replace the old public-endpoint +
+    # runner-IP-allowlist access path removed from _gcp-dev.yml.
+    "roles/gkehub.gatewayEditor",
+    "roles/gkehub.viewer",
+    "roles/container.admin",
   ]
 }

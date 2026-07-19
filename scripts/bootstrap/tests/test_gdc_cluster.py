@@ -682,7 +682,8 @@ class TestGdcControlPlaneRollout:
         assert commands[0] == [
             "gcloud",
             "container",
-            "clusters",
+            "fleet",
+            "memberships",
             "get-credentials",
             "shifter-gcp-dev-platform",
             "--location",

@@ -303,6 +303,15 @@ def render_env(outputs: dict[str, object], *, engine_image: str) -> str:
         "CSRF_COOKIE_SECURE": "true",
         "DB_HOST": database["private_ip"],
         "DB_PORT": str(database["port"]),
+        # DB_NAME / DB_USER are non-secret and MUST ride the runtime ConfigMap as
+        # literals: the restrict-provisioner-jobs admission policy (issue #1177)
+        # lists them in requiredLiteralEnv and validates every Job literal against
+        # this ConfigMap (params.data). The provisioner-launcher emits them (the
+        # entrypoint hydrates them into the pod env from the DB secret bundle), so
+        # if they are absent here the policy denies every range Job (#1742). Only
+        # DB_PASSWORD is Secret-backed; name/user are plain connection metadata.
+        "DB_NAME": database["database_name"],
+        "DB_USER": database["user_name"],
         # Redis host/port are non-secret and ride in the runtime ConfigMap.
         # REDIS_TLS / REDIS_SECRET_ID (added below) flag the secure posture
         # and point the entrypoint at the Secret Manager bundle that carries
@@ -325,6 +334,11 @@ def render_env(outputs: dict[str, object], *, engine_image: str) -> str:
         # libraries bill the correct quota/consumer project.
         "GCP_PROJECT_ID": real_project,
         "GOOGLE_CLOUD_PROJECT": real_project,
+        # CLOUD_PROJECT_ID is emitted by the provisioner-launcher (its
+        # _get_gcp_provisioner_env_overrides fallback is settings.GCP_PROJECT_ID),
+        # so it must be present in this ConfigMap or the restrict-provisioner-jobs
+        # policy denies the Job (#1742). Mirror GCP_PROJECT_ID (the real project).
+        "CLOUD_PROJECT_ID": real_project,
         "IDENTITY_PLATFORM_API_KEY": identity_platform_api_key,
         "IDENTITY_PLATFORM_PROJECT_ID": identity_platform_project_id,
         "IDENTITY_PLATFORM_AUTH_DOMAIN": f"{identity_platform_project_id}.firebaseapp.com",

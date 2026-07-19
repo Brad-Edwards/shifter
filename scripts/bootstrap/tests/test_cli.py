@@ -526,6 +526,48 @@ class TestMainCLI:
             assert config.terraform_identity == "operator-adc"
             assert config.terraform_uses_operator_adc is True
 
+    def test_gdc_bootstrap_defaults_to_operator_adc_terraform_identity(self):
+        """gdc-bootstrap defaults to operator-adc (keyless, no owner-on-SA) terraform identity (#1738)."""
+        with (
+            patch.dict("os.environ", {"SHIFTER_GCP_TERRAFORM_IDENTITY": ""}, clear=False),
+            patch(
+                "sys.argv",
+                ["deploy.py", "gdc-bootstrap", "--project-id", "prod-rwctxzl6shxk", "--cluster-id", "cluster1"],
+            ),
+            patch("deploy.check_dependencies"),
+            patch("deploy.gdc_bootstrap_cluster") as mock_gdc_bootstrap,
+        ):
+            deploy.main()
+
+            config = mock_gdc_bootstrap.call_args[0][0]
+            assert config.terraform_identity == "operator-adc"
+            assert config.terraform_uses_operator_adc is True
+
+    def test_gdc_bootstrap_terraform_identity_bootstrap_sa_optout(self):
+        """--terraform-identity bootstrap-sa opts back into the tf-bootstrap SA path (#1738)."""
+        with (
+            patch(
+                "sys.argv",
+                [
+                    "deploy.py",
+                    "gdc-bootstrap",
+                    "--project-id",
+                    "prod-rwctxzl6shxk",
+                    "--cluster-id",
+                    "cluster1",
+                    "--terraform-identity",
+                    "bootstrap-sa",
+                ],
+            ),
+            patch("deploy.check_dependencies"),
+            patch("deploy.gdc_bootstrap_cluster") as mock_gdc_bootstrap,
+        ):
+            deploy.main()
+
+            config = mock_gdc_bootstrap.call_args[0][0]
+            assert config.terraform_identity == "bootstrap-sa"
+            assert config.terraform_uses_operator_adc is False
+
     def test_passes_yes_flag_to_gdc_bootstrap(self):
         """--yes makes later non-interactive confirmation prompts proceed."""
         deploy.set_assume_yes(False)
