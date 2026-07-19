@@ -12,7 +12,6 @@ import type {
   CtfChallengeListItem,
   CtfCurrentEvent,
   CtfOrganizerScoreboard,
-  CtfRangeAccess,
   CtfRangeStatus,
   CtfScoreboard,
   CtfSubmissionList,
@@ -164,14 +163,6 @@ export function useUseHint(challengeId: string) {
         body: hintId ? { hint_id: hintId } : {},
       }),
     onSuccess: () => invalidatePlay(queryClient, challengeId),
-  });
-}
-
-export function useRangeAccess() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: () => apiFetch<CtfRangeAccess>(`${BASE}/range/access/`, { method: "POST" }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ctfKeys.rangeStatus() }),
   });
 }
 
