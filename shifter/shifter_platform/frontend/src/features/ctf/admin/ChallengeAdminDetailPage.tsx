@@ -45,19 +45,13 @@ function ChallengeBody({ challenge }: Readonly<{ challenge: CtfOrganizerChalleng
             <div>
               <dt className="text-xs text-muted-foreground">Target</dt>
               <dd className="mt-0.5 text-sm">
-                {challenge.target_instance_name
-                  ? `${challenge.target_instance_name}${challenge.target_port == null ? "" : `:${challenge.target_port}`}`
-                  : "—"}
+                {formatTarget(challenge.target_instance_name, challenge.target_port)}
               </dd>
             </div>
             <div>
               <dt className="text-xs text-muted-foreground">Participant rating</dt>
               <dd className="mt-0.5 text-sm">
-                {challenge.rating
-                  ? challenge.rating.count > 0
-                    ? `${challenge.rating.average} average from ${challenge.rating.count} rating${challenge.rating.count === 1 ? "" : "s"}`
-                    : "No ratings yet"
-                  : "Ratings disabled for this event"}
+                {formatRating(challenge.rating)}
               </dd>
             </div>
           </dl>
@@ -104,6 +98,19 @@ function ChallengeBody({ challenge }: Readonly<{ challenge: CtfOrganizerChalleng
       ) : null}
     </div>
   );
+}
+
+function formatTarget(name: string | null | undefined, port: number | null | undefined): string {
+  if (!name) return "—";
+  const suffix = port == null ? "" : `:${port}`;
+  return `${name}${suffix}`;
+}
+
+function formatRating(rating: { average: number | null; count: number } | null | undefined): string {
+  if (!rating) return "Ratings disabled for this event";
+  if (rating.count === 0) return "No ratings yet";
+  const noun = rating.count === 1 ? "rating" : "ratings";
+  return `${rating.average ?? "?"} average from ${rating.count} ${noun}`;
 }
 
 export function ChallengeAdminDetailPage() {

@@ -45,13 +45,11 @@ def _can_subscribe(user: AbstractBaseUser | AnonymousUser, topic: str) -> bool:
     except ValueError:
         return False
     event = CTFEvent.objects.filter(pk=event_id, deleted_at__isnull=True).only("id", "created_by_id").first()
-    if event is None:
-        return False
-    if event.created_by_id == user_id:
-        return True
-    if CTFEventStaff.objects.filter(event=event, user_id=user_id, deleted_at__isnull=True).exists():
-        return True
-    return CTFParticipant.objects.filter(viewing_participant_q(), event=event, user_id=user_id).exists()
+    return event is not None and (
+        event.created_by_id == user_id
+        or CTFEventStaff.objects.filter(event=event, user_id=user_id, deleted_at__isnull=True).exists()
+        or CTFParticipant.objects.filter(viewing_participant_q(), event=event, user_id=user_id).exists()
+    )
 
 
 def register_ctf_notifications() -> None:

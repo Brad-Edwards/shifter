@@ -140,15 +140,7 @@ def provision_event_ranges_throttled(
 
     count = len(participants)
     if count == 0:
-        return {
-            "event_id": str(event_id),
-            "total": 0,
-            "successful": 0,
-            "failed": 0,
-            "skipped": 0,
-            "errors": [],
-            "interrupted": False,
-        }
+        return _empty_batch_result(event_id)
 
     delay = compute_throttle_delay(spinup_window_seconds, count)
 
@@ -185,20 +177,7 @@ def provision_event_ranges_throttled(
         if i < count - 1 and not (shutdown_check and shutdown_check()):
             _interruptible_sleep(delay, heartbeat=heartbeat, shutdown_check=shutdown_check)
 
-    # Notify organizer of failures, and each affected participant (CTF-801)
-    if errors:
-        from ctf.services.notification import (
-            notify_organizer_provision_failure,
-            notify_participant_provision_failure,
-        )
-
-        notify_organizer_provision_failure(event_id, errors)
-        from uuid import UUID as _UUID
-
-        for error in errors:
-            participant_id = error.get("participant_id") if isinstance(error, dict) else None
-            if participant_id:
-                notify_participant_provision_failure(_UUID(str(participant_id)))
+    _notify_provision_failures(event_id, errors)
 
     return {
         "event_id": str(event_id),
@@ -209,3 +188,32 @@ def provision_event_ranges_throttled(
         "errors": errors,
         "interrupted": interrupted,
     }
+
+
+def _empty_batch_result(event_id: UUID) -> dict[str, Any]:
+    """Result shape for an event with nothing left to provision."""
+    return {
+        "event_id": str(event_id),
+        "total": 0,
+        "successful": 0,
+        "failed": 0,
+        "skipped": 0,
+        "errors": [],
+        "interrupted": False,
+    }
+
+
+def _notify_provision_failures(event_id: UUID, errors: list[dict[str, str]]) -> None:
+    """Notify the organizer and each affected participant of failures (CTF-801)."""
+    if not errors:
+        return
+    from ctf.services.notification import (
+        notify_organizer_provision_failure,
+        notify_participant_provision_failure,
+    )
+
+    notify_organizer_provision_failure(event_id, errors)
+    for error in errors:
+        participant_id = error.get("participant_id") if isinstance(error, dict) else None
+        if participant_id:
+            notify_participant_provision_failure(UUID(str(participant_id)))
