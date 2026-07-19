@@ -130,6 +130,75 @@ def test_force_change_boundary_redirects_before_ctf_surface(ctf_event_active, mo
     assert response.url == reverse("ctf:ctf_change_password")
 
 
+def _boundary_response(user, path):
+    """Run the CTF account boundary middleware for ``user`` against ``path``."""
+    from config.middleware import CTFAccountBoundaryMiddleware
+
+    request = RequestFactory().get(path)
+    request.user = user
+    return CTFAccountBoundaryMiddleware(lambda _request: HttpResponse("escaped"))(request)
+
+
+def test_ctf_boundary_admits_live_participant_to_guacamole_range_access(ctf_event_active, monkeypatch):
+    # Issue #1740: a live participant must reach the Mission Control Guacamole
+    # range-access endpoints (RDP/SSH bootstrap + status/open) for their own box.
+    from management.services import set_ctf_password_change_required
+
+    monkeypatch.setattr("ctf.services.participant.accounts.request_event_provisioning", lambda *_a, **_kw: None)
+    participant = create_participant_accounts(ctf_event_active.id, count=1)[0]
+    # Simulate the post-first-login state so the boundary evaluates the surface
+    # rule rather than the forced-password-change redirect.
+    set_ctf_password_change_required(participant.user, False)
+    user = User.objects.get(pk=participant.user_id)
+
+    for path in (
+        "/api/v1/mission-control/guacamole/rdp-url/",
+        "/api/v1/mission-control/guacamole/ssh-url/",
+        "/api/v1/mission-control/guacamole/bootstrap/00000000-0000-0000-0000-000000000000/",
+        "/api/v1/mission-control/guacamole/bootstrap/00000000-0000-0000-0000-000000000000/open/",
+    ):
+        response = _boundary_response(user, path)
+        assert response.status_code == 200, path
+        assert response.content == b"escaped", path
+
+
+def test_ctf_boundary_still_denies_non_guacamole_mission_control(ctf_event_active, monkeypatch):
+    # The exception is narrow: NGFW, range lifecycle, credentials, and the
+    # terminal page stay blocked for temporary accounts (issue #1740).
+    from management.services import set_ctf_password_change_required
+
+    monkeypatch.setattr("ctf.services.participant.accounts.request_event_provisioning", lambda *_a, **_kw: None)
+    participant = create_participant_accounts(ctf_event_active.id, count=1)[0]
+    set_ctf_password_change_required(participant.user, False)
+    user = User.objects.get(pk=participant.user_id)
+
+    for path in (
+        "/api/v1/mission-control/ngfw/00000000-0000-0000-0000-000000000000/ssh-url/",
+        "/api/v1/mission-control/range/launch/",
+        "/api/v1/mission-control/credentials/",
+        "/mission-control/terminal/",
+    ):
+        response = _boundary_response(user, path)
+        assert response.status_code == 403, path
+        assert response.content == b"Forbidden", path
+
+
+def test_ctf_boundary_denies_guacamole_for_non_live_participant(ctf_event, monkeypatch):
+    # The live-participant gate still applies to the guacamole prefix: a temporary
+    # account with no live participation (event not active) is denied (issue #1740).
+    from management.services import set_ctf_password_change_required
+
+    monkeypatch.setattr("ctf.services.participant.accounts.request_event_provisioning", lambda *_a, **_kw: None)
+    participant = create_participant_accounts(ctf_event.id, count=1)[0]
+    set_ctf_password_change_required(participant.user, False)
+    user = User.objects.get(pk=participant.user_id)
+
+    response = _boundary_response(user, "/api/v1/mission-control/guacamole/rdp-url/")
+
+    assert response.status_code == 403
+    assert response.content == b"Forbidden"
+
+
 def test_platform_password_backend_rejects_ctf_credentials(ctf_event_active, monkeypatch):
     from config.auth import PlatformModelBackend
 
