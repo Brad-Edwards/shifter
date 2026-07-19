@@ -108,10 +108,22 @@ def participant_team(participant: CTFParticipant) -> dict[str, Any] | None:
     if team is None:
         return None
     members = team.members.filter(deleted_at__isnull=True).order_by("name")
+    is_captain = team.captain_id == participant.pk
     return {
         "id": str(team.id),
         "name": team.name,
-        "members": [{"id": str(member.id), "name": member.name} for member in members],
+        "members": [
+            {
+                "id": str(member.id),
+                "name": member.name,
+                "is_captain": member.id == team.captain_id,
+            }
+            for member in members
+        ],
+        "is_captain": is_captain,
+        "team_size_limit": team.event.team_size_limit,
+        # The invite code is the joining secret; only the captain sees it.
+        "invite_code": team.invite_code if is_captain else None,
     }
 
 

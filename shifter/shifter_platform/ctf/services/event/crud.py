@@ -153,6 +153,28 @@ def _reschedule_event_if_schedule_changed(
         _reschedule_live_event_schedule(event)
 
 
+_TEAM_CONFIG_FIELDS = frozenset({"team_mode", "team_size_limit"})
+
+
+def _reject_team_config_changes_after_start(event: CTFEvent, event_data: dict[str, Any]) -> None:
+    """CTF-501: team mode and size are structural — frozen once the event starts.
+
+    Changing them mid-competition would strand existing teams or silently
+    invalidate the capacity guard, so edits are allowed only in DRAFT and
+    REGISTRATION (values equal to the current ones pass through unchanged).
+    """
+    if event.status in (EventStatus.DRAFT.value, EventStatus.REGISTRATION.value):
+        return
+    changed = {
+        field for field in _TEAM_CONFIG_FIELDS if field in event_data and event_data[field] != getattr(event, field)
+    }
+    if changed:
+        raise CTFStateError(
+            "Team settings cannot change after the event starts",
+            details={"event_status": event.status, "fields": sorted(changed)},
+        )
+
+
 def update_event(event_id: UUID, event_data: dict[str, Any]) -> CTFEvent:
     """Update an existing CTF event.
 
@@ -177,6 +199,8 @@ def update_event(event_id: UUID, event_data: dict[str, Any]) -> CTFEvent:
             f"Event {event_id} not found",
             details={"event_id": str(event_id)},
         ) from None
+
+    _reject_team_config_changes_after_start(event, event_data)
 
     # Check if event is modifiable
     if not event.is_modifiable:

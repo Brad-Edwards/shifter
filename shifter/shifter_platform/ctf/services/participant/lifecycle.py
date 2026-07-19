@@ -86,6 +86,18 @@ def invite_participant(
                 details={"event_id": str(event_id), "max": event.max_participants},
             )
 
+        if team is not None:
+            # CTF-505 (#648): organizer team assignment honors the same
+            # capacity cap as participant joins; lock the team row so
+            # concurrent assignments cannot race past the limit.
+            locked_team = CTFTeam.objects.select_for_update().get(pk=team.pk)
+            if locked_team.is_full:
+                raise CTFValidationError(
+                    "Team is at its size limit",
+                    code="CTF_TEAM_FULL",
+                    details={"team_id": str(locked_team.pk)},
+                )
+
         participant = CTFParticipant.objects.create(
             event=event,
             email=email.lower().strip(),
