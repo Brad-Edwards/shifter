@@ -18,6 +18,8 @@ class CTFParticipantForm(forms.ModelForm):
     """Form for adding/editing individual participants."""
 
     class Meta:
+        """Model binding and field selection."""
+
         model = CTFParticipant
         fields = [
             "email",
