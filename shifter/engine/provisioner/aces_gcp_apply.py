@@ -35,6 +35,12 @@ from aces_account_credentials import (
     delete_instance_account_credentials,
     install_instance_account_credentials,
 )
+from aces_active_directory import (
+    AcesDirectorySecretOps,
+    default_directory_secret_ops,
+    delete_aces_directory_secrets,
+    realize_aces_active_directory,
+)
 from aces_gcp_composition import node_bootstrap_script
 from aces_gcp_plan import AcesGcePlanError, build_aces_range_cell_plan
 from aces_plan import AcesPlan, AcesPlanAccount, AcesPlanNode
@@ -79,6 +85,16 @@ class AcesGceApplyOptions:
     secret_ops: AcesGceSecretOps | None = None
     account_secret_ops: AcesAccountCredentialOps | None = None
     credential_installer: Callable[..., None] = install_instance_account_credentials
+    directory_secret_ops: AcesDirectorySecretOps | None = None
+    directory_realizer: Callable[..., None] = realize_aces_active_directory
+
+
+@dataclass(frozen=True)
+class AcesGceDestroyOptions:
+    """Optional account and directory cleanup bindings for ACES teardown."""
+
+    account_secret_ops: AcesAccountCredentialOps | None = None
+    directory_secret_ops: AcesDirectorySecretOps | None = None
 
 
 @dataclass(frozen=True)
@@ -90,6 +106,19 @@ class _AcesGceApplyRuntime:
     secret_ops: AcesGceSecretOps
     account_secret_ops: AcesAccountCredentialOps
     credential_installer: Callable[..., None]
+    directory_secret_ops: AcesDirectorySecretOps
+    directory_realizer: Callable[..., None]
+
+
+@dataclass(frozen=True)
+class _AcesGceDestroyRuntime:
+    """Resolved non-optional bindings shared by ACES resource teardown."""
+
+    config: GCERangeCellConfig
+    clients: GCEClients
+    secret_ops: AcesGceSecretOps
+    account_secret_ops: AcesAccountCredentialOps
+    directory_secret_ops: AcesDirectorySecretOps
 
 
 def _default_secret_ops() -> AcesGceSecretOps:
@@ -100,6 +129,35 @@ def _default_secret_ops() -> AcesGceSecretOps:
 def _default_destroy_profile(_node: AcesPlanNode) -> GCERangeImageProfile:
     """Image resolver used for destroy: teardown deletes by name, so no image."""
     return GCERangeImageProfile()
+
+
+def _apply_runtime(options: AcesGceApplyOptions) -> _AcesGceApplyRuntime:
+    """Resolve optional apply bindings exactly once."""
+    return _AcesGceApplyRuntime(
+        config=options.config or load_gce_range_cell_config(),
+        clients=options.clients or _build_clients(),
+        secret_ops=options.secret_ops or _default_secret_ops(),
+        account_secret_ops=options.account_secret_ops or default_account_credential_ops(),
+        credential_installer=options.credential_installer,
+        directory_secret_ops=options.directory_secret_ops or default_directory_secret_ops(),
+        directory_realizer=options.directory_realizer,
+    )
+
+
+def _destroy_runtime(
+    config: GCERangeCellConfig | None,
+    clients: GCEClients | None,
+    secret_ops: AcesGceSecretOps | None,
+    options: AcesGceDestroyOptions,
+) -> _AcesGceDestroyRuntime:
+    """Resolve optional teardown bindings exactly once."""
+    return _AcesGceDestroyRuntime(
+        config=config or load_gce_range_cell_config(),
+        clients=clients or _build_clients(),
+        secret_ops=secret_ops or _default_secret_ops(),
+        account_secret_ops=options.account_secret_ops or default_account_credential_ops(),
+        directory_secret_ops=options.directory_secret_ops or default_directory_secret_ops(),
+    )
 
 
 def _assert_composition_targets_resolve(aces_plan: AcesPlan) -> None:
@@ -219,6 +277,60 @@ def _provision_aces_resources(
     return instance_outputs
 
 
+def _bootstrap_by_node(aces_plan: AcesPlan) -> dict[str, str]:
+    """Render non-empty local composition bootstrap scripts by node."""
+    return {node.address: script for node in aces_plan.nodes if (script := node_bootstrap_script(node, aces_plan))}
+
+
+def _accounts_by_node(aces_plan: AcesPlan) -> dict[str, tuple[AcesPlanAccount, ...]]:
+    """Return local-only guest accounts grouped by target node."""
+    return {
+        node.address: tuple(
+            account
+            for account in aces_plan.accounts
+            if account.target_address == node.address and account.domain_ref is None and account.domain_id is None
+        )
+        for node in aces_plan.nodes
+    }
+
+
+def _realize_directory(
+    plan: RangeCellPlan,
+    aces_plan: AcesPlan,
+    instance_outputs: list[ResourceDict],
+    runtime: _AcesGceApplyRuntime,
+) -> None:
+    """Realize admitted directory topology when the plan carries a domain."""
+    if aces_plan.domains:
+        runtime.directory_realizer(
+            range_id=plan["range_id"],
+            aces_plan=aces_plan,
+            instance_outputs=instance_outputs,
+            secret_ops=runtime.directory_secret_ops,
+        )
+
+
+def _cleanup_failed_apply(
+    request_uuid: str,
+    range_id: int,
+    aces_plan: AcesPlan,
+    runtime: _AcesGceApplyRuntime,
+) -> None:
+    """Run reconstructive cleanup using the apply pass's resolved clients."""
+    destroy_aces_range_cell(
+        request_uuid,
+        range_id,
+        aces_plan,
+        runtime.config,
+        runtime.clients,
+        runtime.secret_ops,
+        AcesGceDestroyOptions(
+            account_secret_ops=runtime.account_secret_ops,
+            directory_secret_ops=runtime.directory_secret_ops,
+        ),
+    )
+
+
 def apply_aces_range_cell(
     request_uuid: str,
     range_id: int,
@@ -227,41 +339,20 @@ def apply_aces_range_cell(
     options: AcesGceApplyOptions | None = None,
 ) -> ResourceDict:
     """Provision an ACES GCE range cell and return provisioner outputs."""
-    options = options or AcesGceApplyOptions()
-    runtime = _AcesGceApplyRuntime(
-        config=options.config or load_gce_range_cell_config(),
-        clients=options.clients or _build_clients(),
-        secret_ops=options.secret_ops or _default_secret_ops(),
-        account_secret_ops=options.account_secret_ops or default_account_credential_ops(),
-        credential_installer=options.credential_installer,
-    )
+    runtime = _apply_runtime(options or AcesGceApplyOptions())
     _assert_composition_targets_resolve(aces_plan)
     plan = build_aces_range_cell_plan(request_uuid, range_id, aces_plan, resolve_image, runtime.config)
-    bootstrap_by_node = {
-        node.address: script for node in aces_plan.nodes if (script := node_bootstrap_script(node, aces_plan))
-    }
-    accounts_by_node = {
-        node.address: tuple(account for account in aces_plan.accounts if account.target_address == node.address)
-        for node in aces_plan.nodes
-    }
     try:
         instance_outputs = _provision_aces_resources(
             plan,
             runtime,
-            bootstrap_by_node,
-            accounts_by_node,
+            _bootstrap_by_node(aces_plan),
+            _accounts_by_node(aces_plan),
         )
+        _realize_directory(plan, aces_plan, instance_outputs, runtime)
     except Exception:
         logger.exception("ACES GCE range-cell apply failed; attempting cleanup request_id=%s", request_uuid)
-        destroy_aces_range_cell(
-            request_uuid,
-            range_id,
-            aces_plan,
-            config=runtime.config,
-            clients=runtime.clients,
-            secret_ops=runtime.secret_ops,
-            account_secret_ops=runtime.account_secret_ops,
-        )
+        _cleanup_failed_apply(request_uuid, range_id, aces_plan, runtime)
         raise
     return {"subnets": subnet_outputs(plan), "instances": instance_outputs}
 
@@ -273,22 +364,28 @@ def destroy_aces_range_cell(
     config: GCERangeCellConfig | None = None,
     clients: GCEClients | None = None,
     secret_ops: AcesGceSecretOps | None = None,
-    *,
-    account_secret_ops: AcesAccountCredentialOps | None = None,
+    options: AcesGceDestroyOptions | None = None,
 ) -> None:
     """Destroy every GCE resource owned by one ACES range cell."""
-    resolved_config = config or load_gce_range_cell_config()
-    resolved_clients = clients or _build_clients()
-    resolved_secret_ops = secret_ops or _default_secret_ops()
-    resolved_account_secret_ops = account_secret_ops or default_account_credential_ops()
-    plan = build_aces_range_cell_plan(request_uuid, range_id, aces_plan, _default_destroy_profile, resolved_config)
+    runtime = _destroy_runtime(config, clients, secret_ops, options or AcesGceDestroyOptions())
+    plan = build_aces_range_cell_plan(request_uuid, range_id, aces_plan, _default_destroy_profile, runtime.config)
+    _destroy_instances(plan, aces_plan, runtime)
+    delete_aces_directory_secrets(plan["range_id"], aces_plan, runtime.directory_secret_ops)
+    _destroy_network_resources(plan, runtime.clients)
 
+
+def _destroy_instances(
+    plan: RangeCellPlan,
+    aces_plan: AcesPlan,
+    runtime: _AcesGceDestroyRuntime,
+) -> None:
+    """Delete instances, addresses, and their deterministic guest secrets."""
     for instance in reversed(plan["instances"]):
         _delete_resource(
             plan,
-            resolved_clients,
-            resolved_clients.instances.get,
-            resolved_clients.instances.delete,
+            runtime.clients,
+            runtime.clients.instances.get,
+            runtime.clients.instances.delete,
             "zone",
             project=plan["project_id"],
             zone=plan["zone"],
@@ -296,26 +393,41 @@ def destroy_aces_range_cell(
         )
         _delete_resource(
             plan,
-            resolved_clients,
-            resolved_clients.addresses.get,
-            resolved_clients.addresses.delete,
+            runtime.clients,
+            runtime.clients.addresses.get,
+            runtime.clients.addresses.delete,
             "region",
             project=plan["project_id"],
             region=plan["region"],
             address=instance["address_name"],
         )
-        resolved_secret_ops.delete_ssh(plan["range_id"], instance["uuid"])
-        accounts = tuple(
-            account for account in aces_plan.accounts if account.target_address == _node_address_of(instance)
+        runtime.secret_ops.delete_ssh(plan["range_id"], instance["uuid"])
+        delete_instance_account_credentials(
+            plan["range_id"],
+            instance["uuid"],
+            _instance_accounts(aces_plan, instance),
+            runtime.account_secret_ops,
         )
-        delete_instance_account_credentials(plan["range_id"], instance["uuid"], accounts, resolved_account_secret_ops)
 
+
+def _instance_accounts(aces_plan: AcesPlan, instance: InstancePlan) -> tuple[AcesPlanAccount, ...]:
+    """Return local-only account placements belonging to one instance's node."""
+    node_address = _node_address_of(instance)
+    return tuple(
+        account
+        for account in aces_plan.accounts
+        if account.target_address == node_address and account.domain_ref is None and account.domain_id is None
+    )
+
+
+def _destroy_network_resources(plan: RangeCellPlan, clients: GCEClients) -> None:
+    """Delete firewalls, subnets, and an owned per-range network in dependency order."""
     for firewall in reversed(plan["firewalls"]):
         _delete_resource(
             plan,
-            resolved_clients,
-            resolved_clients.firewalls.get,
-            resolved_clients.firewalls.delete,
+            clients,
+            clients.firewalls.get,
+            clients.firewalls.delete,
             "global",
             project=plan["project_id"],
             firewall=firewall["name"],
@@ -324,9 +436,9 @@ def destroy_aces_range_cell(
     for subnet in reversed(plan["subnets"]):
         _delete_resource(
             plan,
-            resolved_clients,
-            resolved_clients.subnetworks.get,
-            resolved_clients.subnetworks.delete,
+            clients,
+            clients.subnetworks.get,
+            clients.subnetworks.delete,
             "region",
             project=plan["project_id"],
             region=plan["region"],
@@ -338,9 +450,9 @@ def destroy_aces_range_cell(
     if plan["manage_network"]:
         _delete_resource(
             plan,
-            resolved_clients,
-            resolved_clients.networks.get,
-            resolved_clients.networks.delete,
+            clients,
+            clients.networks.get,
+            clients.networks.delete,
             "global",
             project=plan["project_id"],
             network=plan["network"]["name"],
