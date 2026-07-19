@@ -1,9 +1,15 @@
-"""Shared email transport and template rendering for CTF notifications."""
+"""CTF notification email dispatch and rendering.
+
+Houses the low-level email choke point (``_send_email``), template
+rendering (``_render_email``), and the tokenless CTF login URL builder
+(``_build_ctf_login_url``) shared by the participant- and organizer-facing
+notification functions in ``ctf.services.notification``.
+"""
 
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from ctf.models import CTFEvent
@@ -52,7 +58,7 @@ def _send_email(
 
 def _render_email(
     template_name: str,
-    context: dict[str, Any],
+    context: dict[str, object],
     event: CTFEvent | None = None,
 ) -> tuple[str, str, str]:
     """Render email templates.

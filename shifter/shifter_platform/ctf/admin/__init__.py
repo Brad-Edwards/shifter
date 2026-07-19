@@ -1,10 +1,58 @@
-"""Django admin for CTF models, grouped by bounded context (#683).
+"""Django admin configuration for CTF models.
 
-Importing the submodules here is what registers every ModelAdmin with the
-default admin site, exactly as the former single ``ctf/admin.py`` did.
+Provides admin interfaces for managing CTF events, challenges,
+participants, teams, and related entities.
+
+The implementation is split by domain across private submodules
+(``_base``, ``_inlines``, ``_event``, ``_participant``, ``_misc``) and
+re-exported here so ``ctf.admin.<Name>`` keeps resolving as it did before
+the split, and so importing ``ctf.admin`` still fires every
+``@admin.register`` side effect exactly once.
 """
 
-from ctf.admin import challenge, event, notifications, people, scoring
-from ctf.admin._shared import SoftDeleteAdminMixin
+from __future__ import annotations
 
-__all__ = ["SoftDeleteAdminMixin", "challenge", "event", "notifications", "people", "scoring"]
+from ._base import SoftDeleteAdminMixin
+from ._event import CTFBracketAdmin, CTFChallengeAdmin, CTFEventAdmin
+from ._inlines import (
+    CTFAwardInline,
+    CTFChallengeFileInline,
+    CTFChallengeInline,
+    CTFChallengePrerequisiteInline,
+    CTFParticipantInline,
+    CTFScheduledTaskInline,
+    CTFSubmissionInline,
+    CTFTeamInline,
+)
+from ._misc import (
+    CTFChallengeFileAdmin,
+    CTFChallengePrerequisiteAdmin,
+    CTFEmailTemplateAdmin,
+    CTFNotificationAdmin,
+    CTFScheduledTaskAdmin,
+)
+from ._participant import CTFAwardAdmin, CTFParticipantAdmin, CTFSubmissionAdmin, CTFTeamAdmin
+
+__all__ = (
+    "CTFAwardAdmin",
+    "CTFAwardInline",
+    "CTFBracketAdmin",
+    "CTFChallengeAdmin",
+    "CTFChallengeFileAdmin",
+    "CTFChallengeFileInline",
+    "CTFChallengeInline",
+    "CTFChallengePrerequisiteAdmin",
+    "CTFChallengePrerequisiteInline",
+    "CTFEmailTemplateAdmin",
+    "CTFEventAdmin",
+    "CTFNotificationAdmin",
+    "CTFParticipantAdmin",
+    "CTFParticipantInline",
+    "CTFScheduledTaskAdmin",
+    "CTFScheduledTaskInline",
+    "CTFSubmissionAdmin",
+    "CTFSubmissionInline",
+    "CTFTeamAdmin",
+    "CTFTeamInline",
+    "SoftDeleteAdminMixin",
+)
