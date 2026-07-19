@@ -326,6 +326,48 @@ class TestLiveFlagRepair:
                 actor_id=ctf_event_active.created_by_id,
             )
 
+    def test_update_challenge_allows_visibility_toggle_on_active(self, ctf_event_active):
+        """CTF-110: organizers may hide/stage a challenge at any time during a live event."""
+        from ctf.enums import ChallengeVisibility
+
+        challenge = CTFChallenge.objects.create(
+            event=ctf_event_active,
+            name="Breakable Challenge",
+            description="Desc",
+            category=ChallengeCategory.WEB.value,
+            points=100,
+            difficulty=ChallengeDifficulty.EASY.value,
+            flag_hash="placeholder",
+        )
+        update_challenge(
+            challenge.pk,
+            {"visibility": ChallengeVisibility.HIDDEN.value},
+            actor_id=ctf_event_active.created_by_id,
+        )
+        challenge.refresh_from_db()
+        assert challenge.visibility == ChallengeVisibility.HIDDEN.value
+
+    def test_update_challenge_rejects_visibility_with_content_edits_on_active(self, ctf_event_active):
+        from ctf.exceptions import CTFStateError
+
+        challenge = CTFChallenge.objects.create(
+            event=ctf_event_active,
+            name="Guarded Challenge",
+            description="Desc",
+            category=ChallengeCategory.WEB.value,
+            points=100,
+            difficulty=ChallengeDifficulty.EASY.value,
+            flag_hash="placeholder",
+        )
+        from ctf.enums import ChallengeVisibility
+
+        with pytest.raises(CTFStateError):
+            update_challenge(
+                challenge.pk,
+                {"visibility": ChallengeVisibility.HIDDEN.value, "name": "Renamed"},
+                actor_id=ctf_event_active.created_by_id,
+            )
+
     def test_update_challenge_allows_flag_only_on_active(self, ctf_event_active):
         challenge = CTFChallenge.objects.create(
             event=ctf_event_active,
@@ -469,8 +511,9 @@ class TestDisqualifyIsolatedAccount:
                 registered_at=now,
             )
 
-    def test_disqualify_clears_group_when_no_other_participation(self, participant_user, organizer_user):
-        from ctf.services.participant import disqualify_participant
+    def test_disqualify_keeps_account_but_delete_anonymizes(self, participant_user, organizer_user):
+        """CTF-609: disqualify keeps the account live; removal still anonymizes it."""
+        from ctf.services.participant import delete_participant, disqualify_participant
         from management.services import configure_temporary_ctf_account, get_user_profile
         from shared.auth import is_ctf_participant
 
@@ -486,6 +529,12 @@ class TestDisqualifyIsolatedAccount:
         configure_temporary_ctf_account(participant_user, event_a.pk)
 
         disqualify_participant(part_a.id)
+
+        participant_user.refresh_from_db()
+        assert is_ctf_participant(participant_user) is True
+        assert participant_user.is_active is True
+
+        delete_participant(part_a.id)
 
         participant_user.refresh_from_db()
         assert is_ctf_participant(participant_user) is False

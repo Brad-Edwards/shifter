@@ -15,7 +15,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from ctf.bridges import get_user_role
-from ctf.services.participant import is_active_participant
+from ctf.services.participant import is_viewing_participant
 from shared.api.errors import api_error_response
 from shared.api.permissions import IsAuthenticatedSessionOrApiToken
 from shared.api_tokens.models import ApiToken
@@ -101,13 +101,18 @@ class HasCTFOrganizer(permissions.BasePermission):
 
 
 class HasCTFParticipant(permissions.BasePermission):
-    """Require the resolved actor to be an active CTF participant."""
+    """Require the resolved actor to be a viewing-eligible CTF participant.
+
+    Uses the view predicate (CTF-609): disqualified participants keep read
+    access to the me-surface; every mutation service re-checks compete
+    eligibility, so widening this gate cannot let them act or rank.
+    """
 
     message = "Forbidden"
 
     def has_permission(self, request: Request, view: APIView) -> bool:
         user = ctf_actor_user(request)
-        return bool(user and is_active_participant(user))
+        return bool(user and is_viewing_participant(user))
 
 
 class HasCTFRole(permissions.BasePermission):

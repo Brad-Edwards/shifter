@@ -55,7 +55,11 @@ class EventDetailSerializer(serializers.Serializer):
     rating_visibility = serializers.CharField(read_only=True)
     scoring_mode = serializers.CharField(read_only=True)
     scoreboard_visible = serializers.BooleanField(read_only=True)
+    scoreboard_visibility = serializers.CharField(read_only=True)
     scoreboard_freeze_at = serializers.DateTimeField(read_only=True, allow_null=True)
+    rules = serializers.CharField(read_only=True, allow_blank=True)
+    reminder_hours = serializers.ListField(child=serializers.IntegerField(), read_only=True)
+    event_timezone = serializers.CharField(read_only=True, allow_blank=True)
 
 
 class EventWriteSerializer(serializers.Serializer):
@@ -84,8 +88,44 @@ class EventWriteSerializer(serializers.Serializer):
     attempt_limit_cooldown_seconds = serializers.IntegerField(required=False)
     rating_visibility = serializers.CharField(required=False)
     scoring_mode = serializers.CharField(required=False)
-    scoreboard_visible = serializers.BooleanField(required=False)
+    scoreboard_visibility = serializers.CharField(required=False)
     scoreboard_freeze_at = serializers.DateTimeField(required=False, allow_null=True)
+    rules = serializers.CharField(required=False, allow_blank=True)
+    reminder_hours = serializers.ListField(
+        child=serializers.IntegerField(min_value=1, max_value=720), required=False, max_length=10
+    )
+    event_timezone = serializers.CharField(required=False, allow_blank=True, max_length=64)
+
+
+class EventLifecycleRequestSerializer(serializers.Serializer):
+    """One lifecycle transition to apply to an owned event (CTF-007)."""
+
+    action = serializers.ChoiceField(choices=["open_registration", "activate", "pause", "resume", "end", "cancel"])
+
+
+class ScheduledTaskSerializer(serializers.Serializer):
+    """One scheduler row in the organizer task history (#526)."""
+
+    id = serializers.CharField(read_only=True)
+    task_type = serializers.CharField(read_only=True)
+    status = serializers.CharField(read_only=True)
+    scheduled_for = serializers.DateTimeField(read_only=True)
+    executed_at = serializers.DateTimeField(read_only=True, allow_null=True)
+    error_message = serializers.CharField(read_only=True, allow_blank=True)
+    retry_count = serializers.IntegerField(read_only=True)
+
+
+class ScheduledTaskListResponseSerializer(serializers.Serializer):
+    """Envelope for the organizer scheduled-task listing."""
+
+    tasks = ScheduledTaskSerializer(many=True, read_only=True)
+
+
+class CleanupControlRequestSerializer(serializers.Serializer):
+    """Defer or cancel the pending automated range cleanup (CTF-1003)."""
+
+    action = serializers.ChoiceField(choices=["defer", "cancel"])
+    hours = serializers.IntegerField(required=False, min_value=1, max_value=168)
 
 
 class EventMutationResultSerializer(serializers.Serializer):
@@ -149,6 +189,9 @@ class ChallengeWriteSerializer(serializers.Serializer):
     flag_format = serializers.CharField(required=False, allow_blank=True)
     solution = serializers.CharField(required=False, allow_blank=True)
     max_attempts = serializers.IntegerField(required=False)
+    minimum_points = serializers.IntegerField(required=False, min_value=0)
+    decay_function = serializers.CharField(required=False)
+    decay_solve_count = serializers.IntegerField(required=False, min_value=0)
     release_time = serializers.DateTimeField(required=False, allow_null=True)
     order = serializers.IntegerField(required=False)
     visibility = serializers.CharField(required=False, allow_blank=True)
@@ -189,6 +232,13 @@ class ChallengeHintSerializer(serializers.Serializer):
     order = serializers.IntegerField(read_only=True)
 
 
+class OrganizerChallengeRatingSerializer(serializers.Serializer):
+    """Aggregate participant rating shown to organizers (CTF-120)."""
+
+    average = serializers.FloatField(read_only=True, allow_null=True)
+    count = serializers.IntegerField(read_only=True)
+
+
 class OrganizerChallengeDetailSerializer(serializers.Serializer):
     """Full organizer-facing challenge detail projection."""
 
@@ -201,6 +251,9 @@ class OrganizerChallengeDetailSerializer(serializers.Serializer):
     flag_format = serializers.CharField(read_only=True, allow_blank=True)
     hints = ChallengeHintSerializer(many=True, read_only=True)
     max_attempts = serializers.IntegerField(read_only=True)
+    minimum_points = serializers.IntegerField(read_only=True)
+    decay_function = serializers.CharField(read_only=True)
+    decay_solve_count = serializers.IntegerField(read_only=True)
     order = serializers.IntegerField(read_only=True)
     release_time = serializers.DateTimeField(read_only=True, allow_null=True)
     visibility = serializers.CharField(read_only=True, allow_blank=True)
@@ -209,6 +262,30 @@ class OrganizerChallengeDetailSerializer(serializers.Serializer):
     tags = serializers.ListField(child=serializers.CharField(), read_only=True)
     topics = serializers.ListField(child=serializers.CharField(), read_only=True)
     solution = serializers.CharField(read_only=True, allow_blank=True)
+    rating = OrganizerChallengeRatingSerializer(read_only=True, allow_null=True)
+
+
+class AwardSerializer(serializers.Serializer):
+    """One organizer-granted award row (CTF-204)."""
+
+    id = serializers.CharField(read_only=True)
+    points = serializers.IntegerField(read_only=True)
+    reason = serializers.CharField(read_only=True, allow_blank=True)
+    granted_by = serializers.CharField(read_only=True, allow_null=True)
+    created_at = serializers.CharField(read_only=True, allow_null=True)
+
+
+class AwardListResponseSerializer(serializers.Serializer):
+    """Envelope for a participant's award list."""
+
+    awards = AwardSerializer(many=True, read_only=True)
+
+
+class AwardWriteSerializer(serializers.Serializer):
+    """Request body for granting an award (positive or negative points)."""
+
+    points = serializers.IntegerField(min_value=-100000, max_value=100000)
+    reason = serializers.CharField(max_length=2000)
 
 
 class ChallengeMutationResultSerializer(serializers.Serializer):

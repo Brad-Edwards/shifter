@@ -1610,6 +1610,66 @@
         ]
       }
     },
+    "/api/v1/ctf/awards/{award_id}/delete/": {
+      "post": {
+        "operationId": "ctf_awards_delete_create",
+        "description": "Delete the award and recompute the affected scores.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "award_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "ctf"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ParticipantDeleteResult"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
     "/api/v1/ctf/challenges/{challenge_id}/": {
       "get": {
         "operationId": "ctf_challenges_retrieve",
@@ -2968,6 +3028,86 @@
         }
       }
     },
+    "/api/v1/ctf/events/{event_id}/cleanup/": {
+      "post": {
+        "operationId": "ctf_events_cleanup_create",
+        "description": "Apply the control and return the refreshed task listing.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "ctf"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CleanupControlRequest"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/CleanupControlRequest"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/CleanupControlRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduledTaskListResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
     "/api/v1/ctf/events/{event_id}/email-templates/{notification_type}/": {
       "get": {
         "operationId": "ctf_events_email_templates_retrieve",
@@ -3292,6 +3432,86 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/SendInvitationsResult"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
+    "/api/v1/ctf/events/{event_id}/lifecycle/": {
+      "post": {
+        "operationId": "ctf_events_lifecycle_create",
+        "description": "Validate the action, run the state machine, and return the new status.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "ctf"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EventLifecycleRequest"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/EventLifecycleRequest"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/EventLifecycleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventMutationResult"
                 }
               }
             },
@@ -3995,6 +4215,334 @@
         }
       }
     },
+    "/api/v1/ctf/events/{event_id}/staff/": {
+      "get": {
+        "operationId": "ctf_events_staff_retrieve",
+        "description": "Return the event's staff assignments (owner-only).",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "ctf"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventStaffListResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      },
+      "post": {
+        "operationId": "ctf_events_staff_create",
+        "description": "Assign (or re-role) a staff member by email.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "ctf"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EventStaffAssignRequest"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/EventStaffAssignRequest"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/EventStaffAssignRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventStaffMember"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
+    "/api/v1/ctf/events/{event_id}/staff/{user_id}/": {
+      "delete": {
+        "operationId": "ctf_events_staff_destroy",
+        "description": "Remove the assignment; the user keeps their platform account.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "user_id",
+            "schema": {
+              "type": "integer"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "ctf"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No response body"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
+    "/api/v1/ctf/events/{event_id}/tasks/": {
+      "get": {
+        "operationId": "ctf_events_tasks_retrieve",
+        "description": "Return the event's task history, soonest first.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "ctf"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduledTaskListResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
+    "/api/v1/ctf/events/{event_id}/tasks/{task_id}/run/": {
+      "post": {
+        "operationId": "ctf_events_tasks_run_create",
+        "description": "Reschedule the task to now; the scheduler executes it on its next poll.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "task_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "ctf"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduledTask"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
     "/api/v1/ctf/files/{file_id}/delete/": {
       "post": {
         "operationId": "ctf_files_delete_create",
@@ -4389,6 +4937,121 @@
         }
       }
     },
+    "/api/v1/ctf/me/profile/": {
+      "get": {
+        "operationId": "ctf_me_profile_retrieve",
+        "description": "Return the event-scoped profile projection.",
+        "tags": [
+          "ctf"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ParticipantProfile"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      },
+      "patch": {
+        "operationId": "ctf_me_profile_partial_update",
+        "description": "Update display name and/or affiliation; omitted fields stay put.",
+        "tags": [
+          "ctf"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PatchedProfileUpdateRequest"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/PatchedProfileUpdateRequest"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/PatchedProfileUpdateRequest"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ParticipantProfile"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
     "/api/v1/ctf/me/team/": {
       "get": {
         "operationId": "ctf_me_team_retrieve",
@@ -4410,6 +5073,553 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ParticipantTeam"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
+    "/api/v1/ctf/me/team/create/": {
+      "post": {
+        "operationId": "ctf_me_team_create_create",
+        "description": "Create a team named by the request body.",
+        "tags": [
+          "ctf"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TeamCreateRequest"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/TeamCreateRequest"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/TeamCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ParticipantTeam"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
+    "/api/v1/ctf/me/team/disband/": {
+      "post": {
+        "operationId": "ctf_me_team_disband_create",
+        "description": "Unteam every member and delete the team.",
+        "tags": [
+          "ctf"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "No response body"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
+    "/api/v1/ctf/me/team/join/": {
+      "post": {
+        "operationId": "ctf_me_team_join_create",
+        "description": "Join the team matching the submitted invite code.",
+        "tags": [
+          "ctf"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TeamJoinRequest"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/TeamJoinRequest"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/TeamJoinRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ParticipantTeam"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
+    "/api/v1/ctf/me/team/leave/": {
+      "post": {
+        "operationId": "ctf_me_team_leave_create",
+        "description": "Leave; a lone captain disbands the team by leaving.",
+        "tags": [
+          "ctf"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "No response body"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
+    "/api/v1/ctf/me/team/regenerate-code/": {
+      "post": {
+        "operationId": "ctf_me_team_regenerate_code_create",
+        "description": "Invalidate the old invite code and return the new one.",
+        "tags": [
+          "ctf"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ParticipantTeam"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
+    "/api/v1/ctf/me/team/remove-member/": {
+      "post": {
+        "operationId": "ctf_me_team_remove_member_create",
+        "description": "Remove the named teammate from the team.",
+        "tags": [
+          "ctf"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TeamMemberRequest"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/TeamMemberRequest"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/TeamMemberRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ParticipantTeam"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
+    "/api/v1/ctf/me/team/rename/": {
+      "post": {
+        "operationId": "ctf_me_team_rename_create",
+        "description": "Rename to the requested unique-per-event name.",
+        "tags": [
+          "ctf"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TeamCreateRequest"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/TeamCreateRequest"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/TeamCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ParticipantTeam"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
+    "/api/v1/ctf/me/team/transfer-captaincy/": {
+      "post": {
+        "operationId": "ctf_me_team_transfer_captaincy_create",
+        "description": "Transfer captaincy to the named teammate.",
+        "tags": [
+          "ctf"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TeamMemberRequest"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/TeamMemberRequest"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/TeamMemberRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ParticipantTeam"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
+    "/api/v1/ctf/me/username/": {
+      "post": {
+        "operationId": "ctf_me_username_create",
+        "description": "Validate, apply, and audit the self-rename; return the fresh profile.",
+        "tags": [
+          "ctf"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UsernameChangeRequest"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/UsernameChangeRequest"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/UsernameChangeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ParticipantProfile"
                 }
               }
             },
@@ -4609,6 +5819,223 @@
         }
       }
     },
+    "/api/v1/ctf/participants/{participant_id}/awards/": {
+      "get": {
+        "operationId": "ctf_participants_awards_retrieve",
+        "description": "Return the participant's awards, newest first.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "participant_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "ctf"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AwardListResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      },
+      "post": {
+        "operationId": "ctf_participants_awards_create",
+        "description": "Grant a bonus or deduction to the participant and recompute scores.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "participant_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "ctf"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AwardWrite"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/AwardWrite"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/AwardWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Award"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
+    "/api/v1/ctf/participants/{participant_id}/ban/": {
+      "post": {
+        "operationId": "ctf_participants_ban_create",
+        "description": "Ban with an optional recorded reason.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "participant_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "ctf"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ParticipantModerationRequest"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/ParticipantModerationRequest"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/ParticipantModerationRequest"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ParticipantDetail"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
     "/api/v1/ctf/participants/{participant_id}/bracket/": {
       "post": {
         "operationId": "ctf_participants_bracket_create",
@@ -4660,6 +6087,165 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AssignBracketResult"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
+    "/api/v1/ctf/participants/{participant_id}/disqualify/": {
+      "post": {
+        "operationId": "ctf_participants_disqualify_create",
+        "description": "Disqualify with an optional recorded reason.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "participant_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "ctf"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ParticipantModerationRequest"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/ParticipantModerationRequest"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/ParticipantModerationRequest"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ParticipantDetail"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
+    "/api/v1/ctf/participants/{participant_id}/hidden/": {
+      "post": {
+        "operationId": "ctf_participants_hidden_create",
+        "description": "Hide or show the participant on rankings.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "participant_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "ctf"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ParticipantHiddenRequest"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/ParticipantHiddenRequest"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/ParticipantHiddenRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ParticipantDetail"
                 }
               }
             },
@@ -5068,6 +6654,66 @@
         }
       }
     },
+    "/api/v1/ctf/participants/{participant_id}/requalify/": {
+      "post": {
+        "operationId": "ctf_participants_requalify_create",
+        "description": "Restore competitive standing.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "participant_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "ctf"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ParticipantDetail"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
     "/api/v1/ctf/participants/{participant_id}/resend-invite/": {
       "post": {
         "operationId": "ctf_participants_resend_invite_create",
@@ -5128,6 +6774,86 @@
         }
       }
     },
+    "/api/v1/ctf/participants/{participant_id}/role/": {
+      "post": {
+        "operationId": "ctf_participants_role_create",
+        "description": "Switch between player and observer.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "participant_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "ctf"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ParticipantRoleRequest"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/ParticipantRoleRequest"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/ParticipantRoleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ParticipantDetail"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
     "/api/v1/ctf/participants/{participant_id}/score-timeline/": {
       "get": {
         "operationId": "ctf_participants_score_timeline_retrieve",
@@ -5160,6 +6886,146 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ScoreTimelineResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
+    "/api/v1/ctf/participants/{participant_id}/unban/": {
+      "post": {
+        "operationId": "ctf_participants_unban_create",
+        "description": "Restore the registration-derived status.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "participant_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "ctf"
+        ],
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ParticipantDetail"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Permission denied."
+          }
+        }
+      }
+    },
+    "/api/v1/ctf/participants/{participant_id}/username/": {
+      "post": {
+        "operationId": "ctf_participants_username_create",
+        "description": "Rename after organizer/moderator authorization inside the service.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "participant_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "ctf"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ParticipantUsernameRequest"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/ParticipantUsernameRequest"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/ParticipantUsernameRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ParticipantDetail"
                 }
               }
             },
@@ -8874,35 +10740,6 @@
           "results"
         ]
       },
-      "ActionEnum": {
-        "enum": [
-          "create",
-          "update",
-          "delete",
-          "restore",
-          "close",
-          "reopen",
-          "login",
-          "logout",
-          "login_failed",
-          "access_denied",
-          "role_sync",
-          "connect",
-          "disconnect",
-          "download",
-          "provision",
-          "deprovision",
-          "ready",
-          "failed",
-          "pause",
-          "resume",
-          "cancel",
-          "recover",
-          "spare_provision"
-        ],
-        "type": "string",
-        "description": "* `create` - Create\n* `update` - Update\n* `delete` - Delete\n* `restore` - Restore\n* `close` - Close\n* `reopen` - Reopen\n* `login` - Login\n* `logout` - Logout\n* `login_failed` - Login Failed\n* `access_denied` - Access Denied\n* `role_sync` - Role Sync\n* `connect` - Connect\n* `disconnect` - Disconnect\n* `download` - Download\n* `provision` - Provision\n* `deprovision` - Deprovision\n* `ready` - Ready\n* `failed` - Failed\n* `pause` - Pause\n* `resume` - Resume\n* `cancel` - Cancel\n* `recover` - Recover\n* `spare_provision` - Spare Provision"
-      },
       "ActorTypeEnum": {
         "enum": [
           "user",
@@ -9248,7 +11085,7 @@
           "action": {
             "allOf": [
               {
-                "$ref": "#/components/schemas/ActionEnum"
+                "$ref": "#/components/schemas/AuditLogActionEnum"
               }
             ],
             "readOnly": true
@@ -9312,6 +11149,105 @@
           "source_ip",
           "timestamp",
           "user_agent"
+        ]
+      },
+      "AuditLogActionEnum": {
+        "enum": [
+          "create",
+          "update",
+          "delete",
+          "restore",
+          "close",
+          "reopen",
+          "login",
+          "logout",
+          "login_failed",
+          "access_denied",
+          "role_sync",
+          "connect",
+          "disconnect",
+          "download",
+          "provision",
+          "deprovision",
+          "ready",
+          "failed",
+          "pause",
+          "resume",
+          "cancel",
+          "recover",
+          "spare_provision"
+        ],
+        "type": "string",
+        "description": "* `create` - Create\n* `update` - Update\n* `delete` - Delete\n* `restore` - Restore\n* `close` - Close\n* `reopen` - Reopen\n* `login` - Login\n* `logout` - Logout\n* `login_failed` - Login Failed\n* `access_denied` - Access Denied\n* `role_sync` - Role Sync\n* `connect` - Connect\n* `disconnect` - Disconnect\n* `download` - Download\n* `provision` - Provision\n* `deprovision` - Deprovision\n* `ready` - Ready\n* `failed` - Failed\n* `pause` - Pause\n* `resume` - Resume\n* `cancel` - Cancel\n* `recover` - Recover\n* `spare_provision` - Spare Provision"
+      },
+      "Award": {
+        "type": "object",
+        "description": "One organizer-granted award row (CTF-204).",
+        "properties": {
+          "id": {
+            "type": "string",
+            "readOnly": true
+          },
+          "points": {
+            "type": "integer",
+            "readOnly": true
+          },
+          "reason": {
+            "type": "string",
+            "readOnly": true
+          },
+          "granted_by": {
+            "type": "string",
+            "readOnly": true,
+            "nullable": true
+          },
+          "created_at": {
+            "type": "string",
+            "readOnly": true,
+            "nullable": true
+          }
+        },
+        "required": [
+          "created_at",
+          "granted_by",
+          "id",
+          "points",
+          "reason"
+        ]
+      },
+      "AwardListResponse": {
+        "type": "object",
+        "description": "Envelope for a participant's award list.",
+        "properties": {
+          "awards": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Award"
+            },
+            "readOnly": true
+          }
+        },
+        "required": [
+          "awards"
+        ]
+      },
+      "AwardWrite": {
+        "type": "object",
+        "description": "Request body for granting an award (positive or negative points).",
+        "properties": {
+          "points": {
+            "type": "integer",
+            "maximum": 100000,
+            "minimum": -100000
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 2000
+          }
+        },
+        "required": [
+          "points",
+          "reason"
         ]
       },
       "Bootstrap": {
@@ -9855,6 +11791,17 @@
           "max_attempts": {
             "type": "integer"
           },
+          "minimum_points": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "decay_function": {
+            "type": "string"
+          },
+          "decay_solve_count": {
+            "type": "integer",
+            "minimum": 0
+          },
           "release_time": {
             "type": "string",
             "format": "date-time",
@@ -9904,6 +11851,31 @@
         "required": [
           "name"
         ]
+      },
+      "CleanupControlRequest": {
+        "type": "object",
+        "description": "Defer or cancel the pending automated range cleanup (CTF-1003).",
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/CleanupControlRequestActionEnum"
+          },
+          "hours": {
+            "type": "integer",
+            "maximum": 168,
+            "minimum": 1
+          }
+        },
+        "required": [
+          "action"
+        ]
+      },
+      "CleanupControlRequestActionEnum": {
+        "enum": [
+          "defer",
+          "cancel"
+        ],
+        "type": "string",
+        "description": "* `defer` - defer\n* `cancel` - cancel"
       },
       "Comment": {
         "type": "object",
@@ -10399,11 +12371,30 @@
             "type": "boolean",
             "readOnly": true
           },
+          "scoreboard_visibility": {
+            "type": "string",
+            "readOnly": true
+          },
           "scoreboard_freeze_at": {
             "type": "string",
             "format": "date-time",
             "readOnly": true,
             "nullable": true
+          },
+          "rules": {
+            "type": "string",
+            "readOnly": true
+          },
+          "reminder_hours": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "readOnly": true
+          },
+          "event_timezone": {
+            "type": "string",
+            "readOnly": true
           }
         },
         "required": [
@@ -10414,6 +12405,7 @@
           "description",
           "event_end",
           "event_start",
+          "event_timezone",
           "id",
           "max_participants",
           "name",
@@ -10421,8 +12413,11 @@
           "range_spinup_minutes",
           "rating_visibility",
           "registration_deadline",
+          "reminder_hours",
+          "rules",
           "scenario_id",
           "scoreboard_freeze_at",
+          "scoreboard_visibility",
           "scoreboard_visible",
           "scoring_mode",
           "status",
@@ -10430,6 +12425,30 @@
           "team_mode",
           "team_size_limit"
         ]
+      },
+      "EventLifecycleRequest": {
+        "type": "object",
+        "description": "One lifecycle transition to apply to an owned event (CTF-007).",
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/EventLifecycleRequestActionEnum"
+          }
+        },
+        "required": [
+          "action"
+        ]
+      },
+      "EventLifecycleRequestActionEnum": {
+        "enum": [
+          "open_registration",
+          "activate",
+          "pause",
+          "resume",
+          "end",
+          "cancel"
+        ],
+        "type": "string",
+        "description": "* `open_registration` - open_registration\n* `activate` - activate\n* `pause` - pause\n* `resume` - resume\n* `end` - end\n* `cancel` - cancel"
       },
       "EventListResponse": {
         "type": "object",
@@ -10468,6 +12487,70 @@
           "id",
           "name",
           "status"
+        ]
+      },
+      "EventStaffAssignRequest": {
+        "type": "object",
+        "description": "Assignment request: organizer-tier user email plus staff role.",
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "role": {
+            "type": "string",
+            "maxLength": 16
+          }
+        },
+        "required": [
+          "email",
+          "role"
+        ]
+      },
+      "EventStaffListResponse": {
+        "type": "object",
+        "description": "Envelope for the event staff listing.",
+        "properties": {
+          "staff": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EventStaffMember"
+            },
+            "readOnly": true
+          }
+        },
+        "required": [
+          "staff"
+        ]
+      },
+      "EventStaffMember": {
+        "type": "object",
+        "description": "One delegated staff assignment on an event (CTF-607).",
+        "properties": {
+          "user_id": {
+            "type": "integer",
+            "readOnly": true
+          },
+          "email": {
+            "type": "string",
+            "readOnly": true
+          },
+          "role": {
+            "type": "string",
+            "readOnly": true
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true,
+            "nullable": true
+          }
+        },
+        "required": [
+          "created_at",
+          "email",
+          "role",
+          "user_id"
         ]
       },
       "EventSummary": {
@@ -10577,13 +12660,29 @@
           "scoring_mode": {
             "type": "string"
           },
-          "scoreboard_visible": {
-            "type": "boolean"
+          "scoreboard_visibility": {
+            "type": "string"
           },
           "scoreboard_freeze_at": {
             "type": "string",
             "format": "date-time",
             "nullable": true
+          },
+          "rules": {
+            "type": "string"
+          },
+          "reminder_hours": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "maximum": 720,
+              "minimum": 1
+            },
+            "maxItems": 10
+          },
+          "event_timezone": {
+            "type": "string",
+            "maxLength": 64
           }
         },
         "required": [
@@ -11199,6 +13298,18 @@
             "type": "integer",
             "readOnly": true
           },
+          "minimum_points": {
+            "type": "integer",
+            "readOnly": true
+          },
+          "decay_function": {
+            "type": "string",
+            "readOnly": true
+          },
+          "decay_solve_count": {
+            "type": "integer",
+            "readOnly": true
+          },
           "order": {
             "type": "integer",
             "readOnly": true
@@ -11239,19 +13350,32 @@
           "solution": {
             "type": "string",
             "readOnly": true
+          },
+          "rating": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OrganizerChallengeRating"
+              }
+            ],
+            "readOnly": true,
+            "nullable": true
           }
         },
         "required": [
           "category",
+          "decay_function",
+          "decay_solve_count",
           "description",
           "difficulty",
           "flag_format",
           "hints",
           "id",
           "max_attempts",
+          "minimum_points",
           "name",
           "order",
           "points",
+          "rating",
           "release_time",
           "solution",
           "tags",
@@ -11259,6 +13383,26 @@
           "target_port",
           "topics",
           "visibility"
+        ]
+      },
+      "OrganizerChallengeRating": {
+        "type": "object",
+        "description": "Aggregate participant rating shown to organizers (CTF-120).",
+        "properties": {
+          "average": {
+            "type": "number",
+            "format": "double",
+            "readOnly": true,
+            "nullable": true
+          },
+          "count": {
+            "type": "integer",
+            "readOnly": true
+          }
+        },
+        "required": [
+          "average",
+          "count"
         ]
       },
       "OrganizerGrantResult": {
@@ -11525,6 +13669,20 @@
             "type": "string",
             "readOnly": true
           },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "readOnly": true
+          },
+          "topics": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "readOnly": true
+          },
           "points": {
             "type": "integer",
             "readOnly": true
@@ -11610,6 +13768,10 @@
             "readOnly": true,
             "nullable": true
           },
+          "locked": {
+            "type": "boolean",
+            "readOnly": true
+          },
           "show_solution": {
             "type": "boolean",
             "readOnly": true
@@ -11640,6 +13802,7 @@
           "files",
           "hints",
           "id",
+          "locked",
           "max_attempts",
           "name",
           "next_hint_cost",
@@ -11651,7 +13814,9 @@
           "show_solution",
           "solution",
           "solved",
+          "tags",
           "timeout_retry_after",
+          "topics",
           "total_hint_penalty",
           "unmet_prerequisites"
         ]
@@ -11720,6 +13885,20 @@
           "solved": {
             "type": "boolean",
             "readOnly": true
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "readOnly": true
+          },
+          "topics": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "readOnly": true
           }
         },
         "required": [
@@ -11729,7 +13908,9 @@
           "name",
           "order",
           "points",
-          "solved"
+          "solved",
+          "tags",
+          "topics"
         ]
       },
       "ParticipantCurrentEvent": {
@@ -11758,6 +13939,24 @@
           "participant"
         ]
       },
+      "ParticipantDeleteResult": {
+        "type": "object",
+        "description": "Confirmation returned after soft-deleting a participant.",
+        "properties": {
+          "deleted": {
+            "type": "boolean",
+            "readOnly": true
+          },
+          "id": {
+            "type": "string",
+            "readOnly": true
+          }
+        },
+        "required": [
+          "deleted",
+          "id"
+        ]
+      },
       "ParticipantDetail": {
         "type": "object",
         "description": "Full organizer-facing participant detail projection.",
@@ -11777,6 +13976,27 @@
           "status": {
             "type": "string",
             "readOnly": true
+          },
+          "status_reason": {
+            "type": "string",
+            "readOnly": true
+          },
+          "role": {
+            "type": "string",
+            "readOnly": true
+          },
+          "hidden": {
+            "type": "boolean",
+            "readOnly": true
+          },
+          "affiliation": {
+            "type": "string",
+            "readOnly": true
+          },
+          "username": {
+            "type": "string",
+            "readOnly": true,
+            "nullable": true
           },
           "team_name": {
             "type": "string",
@@ -11826,23 +14046,36 @@
             "type": "string",
             "readOnly": true,
             "nullable": true
+          },
+          "awards": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Award"
+            },
+            "readOnly": true
           }
         },
         "required": [
+          "affiliation",
           "attempt_count",
+          "awards",
           "bracket_id",
           "bracket_name",
           "email",
           "event_id",
+          "hidden",
           "id",
           "invited_at",
           "last_active_at",
           "name",
           "registered_at",
+          "role",
           "solved_count",
           "status",
+          "status_reason",
           "team_name",
-          "total_score"
+          "total_score",
+          "username"
         ]
       },
       "ParticipantEvent": {
@@ -11885,6 +14118,10 @@
             "type": "boolean",
             "readOnly": true
           },
+          "scoreboard_visibility": {
+            "type": "string",
+            "readOnly": true
+          },
           "event_start": {
             "type": "string",
             "format": "date-time",
@@ -11896,6 +14133,16 @@
             "format": "date-time",
             "readOnly": true,
             "nullable": true
+          },
+          "registration_deadline": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true,
+            "nullable": true
+          },
+          "rules": {
+            "type": "string",
+            "readOnly": true
           }
         },
         "required": [
@@ -11906,10 +14153,25 @@
           "id",
           "name",
           "rating_visibility",
+          "registration_deadline",
+          "rules",
+          "scoreboard_visibility",
           "scoreboard_visible",
           "scoring_mode",
           "status",
           "team_mode"
+        ]
+      },
+      "ParticipantHiddenRequest": {
+        "type": "object",
+        "description": "Target scoreboard visibility for the hidden endpoint (CTF-606).",
+        "properties": {
+          "hidden": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "hidden"
         ]
       },
       "ParticipantHint": {
@@ -12101,6 +14363,79 @@
           "total"
         ]
       },
+      "ParticipantModerationRequest": {
+        "type": "object",
+        "description": "Optional reason accompanying a ban or disqualification.",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "maxLength": 2000
+          }
+        }
+      },
+      "ParticipantProfile": {
+        "type": "object",
+        "description": "Event-scoped self profile (CTF-610).",
+        "properties": {
+          "id": {
+            "type": "string",
+            "readOnly": true
+          },
+          "name": {
+            "type": "string",
+            "readOnly": true
+          },
+          "affiliation": {
+            "type": "string",
+            "readOnly": true
+          },
+          "email": {
+            "type": "string",
+            "readOnly": true
+          },
+          "username": {
+            "type": "string",
+            "readOnly": true,
+            "nullable": true
+          },
+          "role": {
+            "type": "string",
+            "readOnly": true
+          },
+          "status": {
+            "type": "string",
+            "readOnly": true
+          },
+          "event": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/_ProfileEventRef"
+              }
+            ],
+            "readOnly": true
+          },
+          "score": {
+            "type": "integer",
+            "readOnly": true
+          },
+          "solve_count": {
+            "type": "integer",
+            "readOnly": true
+          }
+        },
+        "required": [
+          "affiliation",
+          "email",
+          "event",
+          "id",
+          "name",
+          "role",
+          "score",
+          "solve_count",
+          "status",
+          "username"
+        ]
+      },
       "ParticipantRangeActionResult": {
         "type": "object",
         "description": "Pass-through result of a single-participant range lifecycle action.",
@@ -12125,6 +14460,19 @@
           "status"
         ]
       },
+      "ParticipantRoleRequest": {
+        "type": "object",
+        "description": "Target participation role for the role endpoint (CTF-604).",
+        "properties": {
+          "role": {
+            "type": "string",
+            "maxLength": 16
+          }
+        },
+        "required": [
+          "role"
+        ]
+      },
       "ParticipantSelf": {
         "type": "object",
         "description": "The requesting participant's own state (never another participant's).",
@@ -12138,6 +14486,14 @@
             "readOnly": true
           },
           "status": {
+            "type": "string",
+            "readOnly": true
+          },
+          "role": {
+            "type": "string",
+            "readOnly": true
+          },
+          "affiliation": {
             "type": "string",
             "readOnly": true
           },
@@ -12173,12 +14529,14 @@
           }
         },
         "required": [
+          "affiliation",
           "bracket",
           "cached_score",
           "cached_solve_count",
           "id",
           "name",
           "range_status",
+          "role",
           "status",
           "team"
         ]
@@ -12203,6 +14561,14 @@
             "type": "string",
             "readOnly": true
           },
+          "role": {
+            "type": "string",
+            "readOnly": true
+          },
+          "hidden": {
+            "type": "boolean",
+            "readOnly": true
+          },
           "team_name": {
             "type": "string",
             "readOnly": true,
@@ -12221,9 +14587,11 @@
         },
         "required": [
           "email",
+          "hidden",
           "id",
           "name",
           "registered_at",
+          "role",
           "status",
           "team_name",
           "total_score"
@@ -12247,12 +14615,29 @@
               "$ref": "#/components/schemas/ParticipantTeamMember"
             },
             "readOnly": true
+          },
+          "is_captain": {
+            "type": "boolean",
+            "readOnly": true
+          },
+          "team_size_limit": {
+            "type": "integer",
+            "readOnly": true,
+            "nullable": true
+          },
+          "invite_code": {
+            "type": "string",
+            "readOnly": true,
+            "nullable": true
           }
         },
         "required": [
           "id",
+          "invite_code",
+          "is_captain",
           "members",
-          "name"
+          "name",
+          "team_size_limit"
         ]
       },
       "ParticipantTeamMember": {
@@ -12266,12 +14651,44 @@
           "name": {
             "type": "string",
             "readOnly": true
+          },
+          "is_captain": {
+            "type": "boolean",
+            "readOnly": true
           }
         },
         "required": [
           "id",
+          "is_captain",
           "name"
         ]
+      },
+      "ParticipantUsernameRequest": {
+        "type": "object",
+        "description": "New login handle for the username-rename endpoints (#1206/#1593).",
+        "properties": {
+          "username": {
+            "type": "string",
+            "maxLength": 49
+          }
+        },
+        "required": [
+          "username"
+        ]
+      },
+      "PatchedProfileUpdateRequest": {
+        "type": "object",
+        "description": "Partial self-profile update: any omitted field is left unchanged.",
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "affiliation": {
+            "type": "string",
+            "maxLength": 120
+          }
+        }
       },
       "PatchedRiskUpdate": {
         "type": "object",
@@ -13563,6 +15980,68 @@
           "name"
         ]
       },
+      "ScheduledTask": {
+        "type": "object",
+        "description": "One scheduler row in the organizer task history (#526).",
+        "properties": {
+          "id": {
+            "type": "string",
+            "readOnly": true
+          },
+          "task_type": {
+            "type": "string",
+            "readOnly": true
+          },
+          "status": {
+            "type": "string",
+            "readOnly": true
+          },
+          "scheduled_for": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true
+          },
+          "executed_at": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true,
+            "nullable": true
+          },
+          "error_message": {
+            "type": "string",
+            "readOnly": true
+          },
+          "retry_count": {
+            "type": "integer",
+            "readOnly": true
+          }
+        },
+        "required": [
+          "error_message",
+          "executed_at",
+          "id",
+          "retry_count",
+          "scheduled_for",
+          "status",
+          "task_type"
+        ]
+      },
+      "ScheduledTaskListResponse": {
+        "type": "object",
+        "description": "Envelope for the organizer scheduled-task listing.",
+        "properties": {
+          "tasks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ScheduledTask"
+            },
+            "readOnly": true
+          }
+        },
+        "required": [
+          "tasks"
+        ]
+      },
       "ScoreTimelineResponse": {
         "type": "object",
         "description": "Per-participant chronological score progression for a step chart.",
@@ -13824,6 +16303,45 @@
           "success"
         ]
       },
+      "TeamCreateRequest": {
+        "type": "object",
+        "description": "Request body for creating a team.",
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 100
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "TeamJoinRequest": {
+        "type": "object",
+        "description": "Request body for joining a team by invite code.",
+        "properties": {
+          "invite_code": {
+            "type": "string",
+            "maxLength": 64
+          }
+        },
+        "required": [
+          "invite_code"
+        ]
+      },
+      "TeamMemberRequest": {
+        "type": "object",
+        "description": "Request body naming a teammate (transfer captaincy, remove member).",
+        "properties": {
+          "participant_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "participant_id"
+        ]
+      },
       "UploadCancel": {
         "type": "object",
         "description": "Validate agent-upload cancel requests.",
@@ -13952,6 +16470,19 @@
           "total_penalty"
         ]
       },
+      "UsernameChangeRequest": {
+        "type": "object",
+        "description": "Self-service username change request (#1593).",
+        "properties": {
+          "username": {
+            "type": "string",
+            "maxLength": 49
+          }
+        },
+        "required": [
+          "username"
+        ]
+      },
       "YAMLContent": {
         "type": "object",
         "description": "Validate a YAML-content request body.",
@@ -13995,6 +16526,24 @@
       "_NamedRef": {
         "type": "object",
         "description": "A minimal ``{id, name}`` reference to a related entity.",
+        "properties": {
+          "id": {
+            "type": "string",
+            "readOnly": true
+          },
+          "name": {
+            "type": "string",
+            "readOnly": true
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ]
+      },
+      "_ProfileEventRef": {
+        "type": "object",
+        "description": "Minimal event reference on the profile payload.",
         "properties": {
           "id": {
             "type": "string",

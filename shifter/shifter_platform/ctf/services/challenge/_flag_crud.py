@@ -93,7 +93,7 @@ def _reject_non_flag_live_edits(challenge: CTFChallenge, challenge_data: dict[st
                 "event_status": challenge.event.status,
             },
         )
-    allowed_keys = {"flag", "flags"}
+    allowed_keys = {"flag", "flags", "visibility"}
     if not allowed_keys.intersection(challenge_data.keys()):
         raise CTFStateError(
             f"Only flag fields may be changed during a live event (status {challenge.event.status})",

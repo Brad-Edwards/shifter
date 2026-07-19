@@ -80,6 +80,35 @@ export function BasicFields({
             onChange={(v) => set("max_attempts", v)}
           />
         </div>
+        <div className="grid gap-5 sm:grid-cols-3">
+          <TextField
+            id="c-minpoints"
+            label="Minimum points (dynamic scoring)"
+            type="number"
+            min={0}
+            value={state.minimum_points}
+            error={firstError("minimum_points")}
+            onChange={(v) => set("minimum_points", v)}
+          />
+          <SelectField
+            id="c-decayfn"
+            label="Decay curve"
+            value={state.decay_function}
+            error={firstError("decay_function")}
+            options={["linear", "logarithmic"]}
+            labelFor={titleCase}
+            onChange={(v) => set("decay_function", v)}
+          />
+          <TextField
+            id="c-decaycount"
+            label="Solves to reach minimum (0 = no decay)"
+            type="number"
+            min={0}
+            value={state.decay_solve_count}
+            error={firstError("decay_solve_count")}
+            onChange={(v) => set("decay_solve_count", v)}
+          />
+        </div>
         <TextField
           id="c-format"
           label="Flag format (hint shown to participants)"
@@ -116,15 +145,25 @@ export function BasicFields({
             onChange={(v) => set("target_port", v)}
           />
         </div>
-        <SelectField
-          id="c-vis"
-          label="Visibility"
-          value={state.visibility}
-          error={firstError("visibility")}
-          options={VISIBILITY_OPTIONS}
-          labelFor={titleCase}
-          onChange={(v) => set("visibility", v)}
-        />
+        <div className="grid gap-5 sm:grid-cols-2">
+          <SelectField
+            id="c-vis"
+            label="Visibility"
+            value={state.visibility}
+            error={firstError("visibility")}
+            options={VISIBILITY_OPTIONS}
+            labelFor={titleCase}
+            onChange={(v) => set("visibility", v)}
+          />
+          <TextField
+            id="c-release"
+            label="Release time (optional, auto-reveals a hidden challenge)"
+            type="datetime-local"
+            value={state.release_time}
+            error={firstError("release_time")}
+            onChange={(v) => set("release_time", v)}
+          />
+        </div>
         <div className="grid gap-5 sm:grid-cols-2">
           <TextField id="c-tags" label="Tags (comma separated)" value={state.tags} onChange={(v) => set("tags", v)} />
           <TextField id="c-topics" label="Topics (comma separated)" value={state.topics} onChange={(v) => set("topics", v)} />

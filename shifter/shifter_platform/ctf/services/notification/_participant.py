@@ -137,7 +137,7 @@ def send_credentials(event_id: UUID) -> dict[str, Any]:
             from django.conf import settings
             from django.urls import reverse
 
-            range_page_url = reverse("ctf:ctf_range")
+            range_page_url = reverse("ctf:participant_range")
             base = (getattr(settings, "SITE_URL", "") or "").rstrip("/")
             access_url = f"{base}{range_page_url}"
 

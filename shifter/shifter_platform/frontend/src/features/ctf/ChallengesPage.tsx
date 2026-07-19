@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { CheckCircle2 } from "lucide-react";
@@ -12,6 +12,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 
 import { titleCase } from "./format";
+import { LabelFilterRow, distinctLabels, filterByLabels } from "./label-filters";
 import { ctfChallengeDetailPath } from "./routes";
 
 const UNCATEGORIZED = "Uncategorized";
@@ -55,7 +56,15 @@ function ChallengeCard({ challenge }: Readonly<{ challenge: CtfChallengeListItem
 }
 
 function ChallengesBody({ query }: Readonly<{ query: ReturnType<typeof useCtfChallenges> }>) {
-  const grouped = useMemo(() => groupByCategory(query.data ?? []), [query.data]);
+  const [activeTag, setActiveTag] = useState<string | null>(null);
+  const [activeTopic, setActiveTopic] = useState<string | null>(null);
+  const challenges = useMemo(
+    () => filterByLabels(query.data ?? [], activeTag, activeTopic),
+    [query.data, activeTag, activeTopic],
+  );
+  const tagLabels = useMemo(() => distinctLabels(query.data ?? [], "tags"), [query.data]);
+  const topicLabels = useMemo(() => distinctLabels(query.data ?? [], "topics"), [query.data]);
+  const grouped = useMemo(() => groupByCategory(challenges), [challenges]);
 
   if (query.isLoading) {
     return (
@@ -76,19 +85,46 @@ function ChallengesBody({ query }: Readonly<{ query: ReturnType<typeof useCtfCha
     );
   }
 
+  const filterRows = (
+    <div className="flex flex-col gap-2">
+      <LabelFilterRow
+        axis="tags"
+        labels={tagLabels}
+        active={activeTag}
+        onToggle={(value) => setActiveTag(activeTag === value ? null : value)}
+      />
+      <LabelFilterRow
+        axis="topics"
+        labels={topicLabels}
+        active={activeTopic}
+        onToggle={(value) => setActiveTopic(activeTopic === value ? null : value)}
+      />
+    </div>
+  );
+
   if (grouped.length === 0) {
     return (
-      <Card>
-        <CardContent className="grid place-items-center px-6 py-16 text-center">
-          <p className="text-sm font-medium">No challenges available yet</p>
-          <p className="mt-1 text-sm text-muted-foreground">Challenges appear here once the event releases them.</p>
-        </CardContent>
-      </Card>
+      <div className="space-y-4">
+        {filterRows}
+        <Card>
+          <CardContent className="grid place-items-center px-6 py-16 text-center">
+            <p className="text-sm font-medium">
+              {activeTag || activeTopic ? "No challenges match this filter" : "No challenges available yet"}
+            </p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {activeTag || activeTopic
+                ? "Clear the filter to see every available challenge."
+                : "Challenges appear here once the event releases them."}
+            </p>
+          </CardContent>
+        </Card>
+      </div>
     );
   }
 
   return (
     <div className="space-y-8">
+      {filterRows}
       {grouped.map(([category, items]) => (
         <section key={category} aria-label={category}>
           <h2 className="mb-3 text-sm font-semibold">{titleCase(category)}</h2>

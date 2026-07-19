@@ -20,6 +20,7 @@ export const ctfChallengeDetailPath = (challengeId: string): string => `${CTF_BA
 export const ctfRangePath = (): string => `${CTF_BASE}/range/`;
 export const ctfScoreboardPath = (): string => `${CTF_BASE}/scoreboard/`;
 export const ctfTeamPath = (): string => `${CTF_BASE}/team/`;
+export const ctfAccountPath = (): string => `${CTF_BASE}/account/`;
 export const ctfHelpPath = (): string => `${CTF_BASE}/help/`;
 
 /**

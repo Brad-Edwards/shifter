@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING
 from uuid import UUID
 
 from django.db import transaction
-from django.utils import timezone
 
 from ctf.enums import ParticipantStatus
 from ctf.exceptions import CTFNotFoundError, CTFValidationError
@@ -51,16 +50,9 @@ def invite_participant(
             details={"event_id": str(event_id)},
         ) from None
 
-    # Check registration deadline
-    if event.registration_deadline and timezone.now() > event.registration_deadline:
-        raise CTFValidationError(
-            "Registration deadline has passed",
-            code="CTF_REGISTRATION_DEADLINE_PASSED",
-            details={
-                "event_id": str(event_id),
-                "deadline": event.registration_deadline.isoformat(),
-            },
-        )
+    # CTF-705: the registration deadline closes SELF-registration; organizer
+    # manual additions (this path and bulk import) intentionally bypass it so
+    # stragglers can be added to a live event. Capacity still applies below.
 
     # Capacity is enforced under the event row lock inside the transaction
     # below (#1145), so concurrent invites cannot race past max_participants.
@@ -86,6 +78,29 @@ def invite_participant(
                 details={"event_id": str(event_id), "max": event.max_participants},
             )
 
+        # CTF-601: a delivery email may appear at most once per event; check
+        # under the event lock so concurrent invites cannot double-insert
+        # (the partial unique constraint backstops any other write path).
+        normalized_email = email.lower().strip()
+        if normalized_email and event.participants.filter(email=normalized_email).exists():
+            raise CTFValidationError(
+                "A participant with this email already exists for this event",
+                code="CTF_DUPLICATE_EMAIL",
+                details={"event_id": str(event_id), "email": normalized_email},
+            )
+
+        if team is not None:
+            # CTF-505 (#648): organizer team assignment honors the same
+            # capacity cap as participant joins; lock the team row so
+            # concurrent assignments cannot race past the limit.
+            locked_team = CTFTeam.objects.select_for_update().get(pk=team.pk)
+            if locked_team.is_full:
+                raise CTFValidationError(
+                    "Team is at its size limit",
+                    code="CTF_TEAM_FULL",
+                    details={"team_id": str(locked_team.pk)},
+                )
+
         participant = CTFParticipant.objects.create(
             event=event,
             email=email.lower().strip(),
@@ -102,56 +117,6 @@ def invite_participant(
             safe_log_value(event_id),
             participant.id,
         )
-
-    return participant
-
-
-def disqualify_participant(participant_id: UUID, reason: str | None = None) -> CTFParticipant:
-    """Disqualify a participant from the event.
-
-    Args:
-        participant_id: UUID of the participant.
-        reason: Optional reason for disqualification.
-
-    Returns:
-        The updated CTFParticipant instance.
-
-    Raises:
-        CTFNotFoundError: If participant doesn't exist.
-    """
-    logger.info("Disqualifying participant %s", participant_id)
-
-    try:
-        participant = CTFParticipant.objects.get(pk=participant_id)
-    except CTFParticipant.DoesNotExist:
-        raise CTFNotFoundError(
-            f"Participant {participant_id} not found",
-            details={"participant_id": str(participant_id)},
-        ) from None
-
-    participant.status = ParticipantStatus.DISQUALIFIED.value
-    participant.save(update_fields=["status", "updated_at"])
-
-    # Maintain the materialized leaderboard (issue #850): a disqualified
-    # participant drops off the individual board via the eligibility filter at
-    # read time, but their team's materialized score must shed their
-    # contribution now.
-    if participant.team_id is not None:
-        from ctf.services.scoring import recompute_team_score
-
-        recompute_team_score(participant.team_id)
-
-    # Clear CTF participant profile if user was linked
-    if participant.user is not None:
-        from ctf.services.participant.accounts import anonymize_participant_account
-
-        anonymize_participant_account(participant.pk)
-
-    logger.info(
-        "Disqualified participant %s: %s",
-        participant_id,
-        reason or "No reason provided",
-    )
 
     return participant
 

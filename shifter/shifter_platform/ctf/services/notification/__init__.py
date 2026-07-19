@@ -30,6 +30,7 @@ from __future__ import annotations
 # PATCH LOCALITY note above), so patches applied here are honoured for free.
 from ctf.models import CTFEvent, CTFNotification, CTFParticipant
 
+from ._cleanup import send_cleanup_warning
 from ._email import _build_ctf_login_url, _render_email, _send_email
 from ._organizer import (
     notify_organizer_event_end,
@@ -56,6 +57,7 @@ __all__ = (
     "notify_organizer_provision_failure",
     "schedule_notification",
     "send_announcement",
+    "send_cleanup_warning",
     "send_credentials",
     "send_invitations",
     "send_reminder",
