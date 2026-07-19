@@ -255,7 +255,11 @@ class TestGdcControlPlaneTerraform:
 
     def test_uses_requested_project_for_backend_and_apply(self, mock_repo_root):
         """Terraform bootstrap must target the live project instead of the committed gcp-dev placeholder."""
-        config = deploy.GDCBootstrapConfig(project_id="prod-rwctxzl6shxk", cluster_id="cluster1")
+        # Pin the bootstrap-sa path explicitly: the default is now operator-adc (#1738),
+        # but this test exercises the tf-bootstrap-SA credential + access-wait flow.
+        config = deploy.GDCBootstrapConfig(
+            project_id="prod-rwctxzl6shxk", cluster_id="cluster1", terraform_identity="bootstrap-sa"
+        )
         tf_dir = mock_repo_root / "platform" / "terraform" / "gcp" / "environments" / "gcp-dev"
         tf_dir.mkdir(parents=True)
         (tf_dir / "terraform.tfvars").write_text(
@@ -342,6 +346,7 @@ gke_master_authorized_cidrs = ["198.51.100.10/32"]
         terraform_output = json.dumps(_sample_gcp_control_plane_outputs(config.project_id))
 
         with (
+            patch.dict("os.environ", {}, clear=False),
             patch("deploy.get_repo_root", return_value=mock_repo_root),
             patch("deploy.gcloud_resource_exists", return_value=False),
             patch("deploy.gcp_terraform_bootstrap_credentials") as mock_creds,
@@ -358,6 +363,11 @@ gke_master_authorized_cidrs = ["198.51.100.10/32"]
             ),
         ):
             outputs = deploy.apply_gcp_control_plane_terraform(config)
+
+            # Under the caller's user ADC, identitytoolkit / Identity Platform need
+            # a quota project or they 403; the operator-adc path sets it (#1738).
+            assert os.environ["USER_PROJECT_OVERRIDE"] == "true"
+            assert os.environ["GOOGLE_BILLING_PROJECT"] == config.project_id
 
         mock_creds.assert_not_called()
         mock_wait.assert_not_called()

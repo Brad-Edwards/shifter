@@ -361,13 +361,14 @@ def _add_gdc_bootstrap_subparser(subparsers: argparse._SubParsersAction) -> None
     gdc_parser.add_argument(
         "--terraform-identity",
         choices=["bootstrap-sa", "operator-adc"],
-        default=(os.environ.get("SHIFTER_GCP_TERRAFORM_IDENTITY", "bootstrap-sa").strip() or "bootstrap-sa"),
+        default=(os.environ.get("SHIFTER_GCP_TERRAFORM_IDENTITY", "operator-adc").strip() or "operator-adc"),
         help=(
             "Identity the control-plane Terraform runs as (#1718; default from "
-            "SHIFTER_GCP_TERRAFORM_IDENTITY, else bootstrap-sa). 'bootstrap-sa' impersonates a "
-            "dedicated tf-bootstrap service account granted roles/owner (ADR-008). 'operator-adc' "
-            "runs terraform under the caller's Application Default Credentials, skipping that SA + "
-            "key entirely — required on orgs that forbid owner-on-SA or SA-key creation."
+            "SHIFTER_GCP_TERRAFORM_IDENTITY, else operator-adc). 'operator-adc' (default) runs "
+            "terraform under the caller's Application Default Credentials, minting no service "
+            "account or key (secure-by-default; the only path on orgs that forbid owner-on-SA or "
+            "SA-key creation). 'bootstrap-sa' impersonates a dedicated tf-bootstrap service account "
+            "granted roles/owner (ADR-008), for operators who cannot run terraform under their own ADC."
         ),
     )
     gdc_parser.add_argument("--dry-run", action="store_true", help=HELP_DRY_RUN)

@@ -49,7 +49,10 @@ locals {
     "cloudfunctions.googleapis.com",
     "cloudkms.googleapis.com",
     "compute.googleapis.com",
+    "connectgateway.googleapis.com",
     "container.googleapis.com",
+    "gkeconnect.googleapis.com",
+    "gkehub.googleapis.com",
     "identitytoolkit.googleapis.com",
     "monitoring.googleapis.com",
     "pubsub.googleapis.com",
@@ -311,5 +314,13 @@ module "portal_gke" {
   provisioner_node_count                    = var.provisioner_node_count
   node_service_account_email                = module.portal_iam.node_service_account_email
 
-  depends_on = [module.project_services, module.portal_vpc, module.portal_iam]
+  # The cluster already orders after the node service account via the
+  # node_service_account_email output reference above. It must NOT depend on the
+  # whole portal_iam module: portal_iam creates the workload_identity SA bindings
+  # whose member is PROJECT.svc.id.goog[...], which only exists once this
+  # workload-identity-enabled cluster is created. Depending on the whole module
+  # deadlocks a fresh project (cluster waits for bindings that wait for the
+  # cluster). The svc.id.goog bindings converge on a subsequent apply once the
+  # pool exists (#1723).
+  depends_on = [module.project_services, module.portal_vpc]
 }
