@@ -316,6 +316,132 @@ class LayerImportTighteningTests(unittest.TestCase):
             self.assertEqual(violations, [])
 
 
+class SymbolFacadeAllowlistTests(unittest.TestCase):
+    """ADR-001-R4: mission_control -> engine.services is a per-symbol seam.
+
+    The facade stays allowed at module-path level (so the ADR-001-R1 check does
+    not fire), but only the enumerated data-plane symbols may be imported.
+    """
+
+    _CONFIG = (
+        "allowed:\n"
+        "  mission_control:\n"
+        "    - shared\n"
+        "    - cms.services\n"
+        "    - engine.services\n"
+        "allowed_symbols:\n"
+        "  mission_control:\n"
+        "    engine.services:\n"
+        "      - connect_terminal\n"
+        "      - SSHConnection\n"
+    )
+
+    def _write_layer_repo(self, repo_root: Path, rel: str, body: str, config: str | None = None) -> None:
+        path = repo_root / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(body, encoding="utf-8")
+        cfg = repo_root / "scripts" / "check_layer_imports" / "layer_imports.yaml"
+        cfg.parent.mkdir(parents=True, exist_ok=True)
+        cfg.write_text(config or self._CONFIG, encoding="utf-8")
+
+    def test_load_allowed_symbols_parses_three_levels(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = Path(tmp) / "layer_imports.yaml"
+            cfg.write_text(self._CONFIG, encoding="utf-8")
+            self.assertEqual(
+                ADR_GUARD.load_allowed_symbols(cfg),
+                {"mission_control": {"engine.services": ["connect_terminal", "SSHConnection"]}},
+            )
+
+    def test_sanctioned_symbol_is_allowed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            rel = "shifter/shifter_platform/mission_control/consumers.py"
+            self._write_layer_repo(repo_root, rel, "from engine.services import connect_terminal\n")
+
+            self.assertEqual(ADR_GUARD.check_layer_imports(repo_root, [rel]), [])
+
+    def test_unsanctioned_symbol_is_flagged(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            rel = "shifter/shifter_platform/mission_control/views.py"
+            self._write_layer_repo(repo_root, rel, "from engine.services import create_range\n")
+
+            violations = ADR_GUARD.check_layer_imports(repo_root, [rel])
+
+            self.assertEqual(len(violations), 1)
+            self.assertEqual(violations[0].rule_id, "ADR-001-R4")
+            self.assertIn("create_range", violations[0].message)
+
+    def test_module_import_bypass_is_flagged(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            rel = "shifter/shifter_platform/mission_control/views.py"
+            self._write_layer_repo(repo_root, rel, "import engine.services as es\n")
+
+            violations = ADR_GUARD.check_layer_imports(repo_root, [rel])
+
+            self.assertTrue(any(v.rule_id == "ADR-001-R4" for v in violations))
+            self.assertTrue(any("may not reach engine.services" in v.message for v in violations))
+
+    def test_descendant_from_import_is_flagged(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            rel = "shifter/shifter_platform/mission_control/views.py"
+            self._write_layer_repo(repo_root, rel, "from engine.services.runtime import create_range\n")
+
+            violations = ADR_GUARD.check_layer_imports(repo_root, [rel])
+
+            self.assertTrue(any(v.rule_id == "ADR-001-R4" for v in violations))
+            self.assertTrue(any("engine.services.runtime" in v.message for v in violations))
+
+    def test_relative_facade_import_is_flagged(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            rel = "shifter/shifter_platform/mission_control/sub/views.py"
+            self._write_layer_repo(repo_root, rel, "from ..engine.services import create_range\n")
+
+            violations = ADR_GUARD.check_layer_imports(repo_root, [rel])
+
+            self.assertTrue(any(v.rule_id == "ADR-001-R4" for v in violations))
+
+    def test_real_config_pins_sanctioned_engine_symbols(self) -> None:
+        cfg = ADR_GUARD.REPO_ROOT / "scripts" / "check_layer_imports" / "layer_imports.yaml"
+        self.assertEqual(
+            ADR_GUARD.load_allowed_symbols(cfg),
+            {
+                "mission_control": {
+                    "engine.services": [
+                        "SSHConnection",
+                        "connect_ngfw_terminal",
+                        "connect_terminal",
+                        "get_ranges_for_ngfw",
+                        "get_rdp_connection_info",
+                        "get_ssh_connection_info",
+                    ]
+                }
+            },
+        )
+
+    def test_unrestricted_layer_is_unaffected(self) -> None:
+        config = (
+            "allowed:\n"
+            "  cms:\n"
+            "    - shared\n"
+            "    - engine.services\n"
+            "allowed_symbols:\n"
+            "  mission_control:\n"
+            "    engine.services:\n"
+            "      - connect_terminal\n"
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            rel = "shifter/shifter_platform/cms/services/_range_create.py"
+            self._write_layer_repo(repo_root, rel, "from engine.services import create_range\n", config=config)
+
+            self.assertEqual(ADR_GUARD.check_layer_imports(repo_root, [rel]), [])
+
+
 class DeployWorkflowPlanScopeTests(unittest.TestCase):
     """Tests for the AWS platform plan trigger and lock-timeout guardrail."""
 

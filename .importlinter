@@ -44,6 +44,10 @@ forbidden_modules =
 allow_indirect_imports = True
 
 [importlinter:contract:mission-control-forbidden]
+# ADR-001-R4: mission_control intentionally consumes both cms.services and
+# engine.services (the engine seam narrowed to a per-symbol allowlist). The
+# canonical allowlist is enumerated in scripts/check_layer_imports/layer_imports.yaml;
+# this complementary contract prevents a direct CTF dependency.
 name = Mission Control may not depend on CTF directly
 type = forbidden
 source_modules =
