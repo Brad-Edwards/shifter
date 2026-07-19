@@ -21,7 +21,7 @@
       "target": "deploy.bootstrap_account"
     },
     {
-      "count": 12,
+      "count": 14,
       "path": "scripts/bootstrap/tests/test_cli.py",
       "target": "deploy.check_dependencies"
     },
@@ -31,7 +31,7 @@
       "target": "deploy.full_deployment"
     },
     {
-      "count": 6,
+      "count": 8,
       "path": "scripts/bootstrap/tests/test_cli.py",
       "target": "deploy.gdc_bootstrap_cluster"
     },
@@ -141,7 +141,7 @@
       "target": "deploy.list_gcp_helm_cutover_resources"
     },
     {
-      "count": 3,
+      "count": 4,
       "path": "scripts/bootstrap/tests/test_gcp_control_plane.py",
       "target": "deploy.load_bootstrap_env_values"
     },
