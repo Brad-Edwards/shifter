@@ -329,6 +329,27 @@ class TestSpareStatusSignalSync:
         spare.refresh_from_db()
         assert spare.status == SpareRangeStatus.CONSUMED.value
 
+    @pytest.mark.django_db
+    def test_destroyed_status_finalizes_unconsumed_spare(self, event_with_scenario, organizer_user):
+        from cms.signals import range_status_changed
+        from shared.enums import ResourceStatus
+
+        provision_event_spares(event_with_scenario.pk, 1, operator=organizer_user)
+        spare = CTFSpareRange.objects.get(event=event_with_scenario)
+        owner_id = spare.owner_user_id
+
+        range_status_changed.send(
+            sender=None,
+            range_instance_id=spare.range_instance_id,
+            new_status=ResourceStatus.DESTROYED.value,
+            previous_status=ResourceStatus.DESTROYING.value,
+        )
+
+        spare.refresh_from_db()
+        assert spare.status == SpareRangeStatus.FAILED.value
+        assert spare.owner_user_id is None
+        assert not User.objects.filter(pk=owner_id).exists()
+
 
 class TestCleanupEventSpares:
     @pytest.mark.django_db
