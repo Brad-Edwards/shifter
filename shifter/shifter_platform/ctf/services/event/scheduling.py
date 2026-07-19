@@ -10,6 +10,7 @@ from django.utils import timezone
 
 from ctf.enums import ScheduledTaskType
 from ctf.models import CTFEvent, CTFScheduledTask
+from shared.log_sanitize import safe_log_value
 
 if TYPE_CHECKING:
     from uuid import UUID
@@ -203,7 +204,7 @@ def run_task_now(event_id: UUID, task_id: UUID) -> CTFScheduledTask:
         )
     task.scheduled_for = timezone.now()
     task.save(update_fields=["scheduled_for", "updated_at"])
-    logger.info("Task %s (%s) made due now for event %s", task.pk, task.task_type, event_id)
+    logger.info("Task %s (%s) made due now for event %s", task.pk, task.task_type, safe_log_value(event_id))
     return task
 
 
@@ -250,7 +251,7 @@ def defer_event_cleanup(event_id: UUID, hours: int) -> int:
     for task in tasks:
         task.scheduled_for = task.scheduled_for + timedelta(hours=hours)
         task.save(update_fields=["scheduled_for", "updated_at"])
-    logger.info("Deferred cleanup for event %s by %d hours (%d tasks)", event_id, hours, len(tasks))
+    logger.info("Deferred cleanup for event %s by %d hours (%d tasks)", safe_log_value(event_id), hours, len(tasks))
     return len(tasks)
 
 
@@ -267,5 +268,5 @@ def cancel_event_cleanup(event_id: UUID) -> int:
         raise CTFStateError("No pending cleanup to cancel", details={"event_id": str(event_id)})
     for task in tasks:
         task.mark_cancelled()
-    logger.info("Cancelled automated cleanup for event %s (%d tasks)", event_id, len(tasks))
+    logger.info("Cancelled automated cleanup for event %s (%d tasks)", safe_log_value(event_id), len(tasks))
     return len(tasks)
