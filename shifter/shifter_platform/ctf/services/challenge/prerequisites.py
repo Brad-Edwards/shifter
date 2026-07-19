@@ -16,6 +16,7 @@ from ctf.models import (
     CTFEvent,
 )
 from ctf.services.authorization import assert_actor_owns_event as _assert_actor_owns_event
+from shared.log_sanitize import safe_log_value
 
 logger = logging.getLogger(__name__)
 
@@ -122,8 +123,8 @@ def add_prerequisite(
 
     logger.info(
         "Added prerequisite: %s requires %s",
-        challenge_id,
-        required_challenge_id,
+        safe_log_value(challenge_id),
+        safe_log_value(required_challenge_id),
     )
     return prereq
 
@@ -192,7 +193,7 @@ def remove_prerequisite(prerequisite_id: UUID, *, actor_id: int) -> None:
         )
 
     prereq.delete(soft=True)
-    logger.info("Removed prerequisite %s", prerequisite_id)
+    logger.info("Removed prerequisite %s", safe_log_value(prerequisite_id))
 
 
 def get_prerequisites(challenge_id: UUID) -> QuerySet[CTFChallengePrerequisite]:

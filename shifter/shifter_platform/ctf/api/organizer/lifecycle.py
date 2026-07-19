@@ -136,10 +136,10 @@ class TaskRunNowView(APIView):
             _resolve_owned_event(request, event_id)
             try:
                 task = run_task_now(event_id, task_id)
-            except CTFNotFoundError as exc:
-                _raise_not_found(str(exc))
-            except CTFStateError as exc:
-                _raise_conflict(str(exc))
+            except CTFNotFoundError:
+                _raise_not_found("Scheduled task not found.")
+            except CTFStateError:
+                _raise_conflict("Only pending tasks can be run now.")
             return Response(_task_payload(task))
         except _CtfApiError as exc:
             return exc.to_response(request)
@@ -174,10 +174,10 @@ class EventCleanupControlView(APIView):
                     defer_event_cleanup(event_id, hours)
                 else:
                     cancel_event_cleanup(event_id)
-            except CTFValidationError as exc:
-                _raise_bad_request(str(exc))
-            except CTFStateError as exc:
-                _raise_conflict(str(exc))
+            except CTFValidationError:
+                _raise_bad_request("Deferral must be between 1 and 168 hours.")
+            except CTFStateError:
+                _raise_conflict("No pending cleanup for this event.")
             return Response({"tasks": [_task_payload(t) for t in list_event_tasks(event_id)]})
         except _CtfApiError as exc:
             return exc.to_response(request)

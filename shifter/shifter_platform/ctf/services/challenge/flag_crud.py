@@ -269,7 +269,7 @@ def remove_flag(flag_id: UUID, *, actor_id: int) -> None:
         )
 
     flag_obj.delete(soft=True)
-    logger.info("Removed flag %s", flag_id)
+    logger.info("Removed flag %s", safe_log_value(flag_id))
 
 
 def _compute_legacy_flag_hash(data: dict[str, Any], flags_list: list | None) -> None:
