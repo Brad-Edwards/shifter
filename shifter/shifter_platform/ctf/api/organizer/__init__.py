@@ -24,6 +24,7 @@ from ctf.api.organizer.attachments import (
     FileDownloadView,
     PrerequisiteDeleteView,
 )
+from ctf.api.organizer.awards import AwardRevokeView, ParticipantAwardsView
 from ctf.api.organizer.challenges import (
     AddFlagView,
     ChallengeDetailView,
@@ -79,6 +80,7 @@ from ctf.api.organizer.scoreboard import (
 __all__ = [
     "AddFlagView",
     "AssignBracketView",
+    "AwardRevokeView",
     "ChallengeDetailView",
     "ChallengeFileDeleteView",
     "ChallengeFilesView",
@@ -97,6 +99,7 @@ __all__ = [
     "NotificationListView",
     "NotificationSendView",
     "OrganizerScoreboardView",
+    "ParticipantAwardsView",
     "ParticipantDetailView",
     "ParticipantImportView",
     "ParticipantListView",

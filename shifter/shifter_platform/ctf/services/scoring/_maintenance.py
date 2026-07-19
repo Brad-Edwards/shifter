@@ -27,13 +27,64 @@ from django.db import transaction
 from django.db.models import Count, Max, Sum
 from django.db.models.functions import Coalesce
 
-from ctf.models import CTFAward, CTFParticipant, CTFSubmission, CTFTeam
+from ctf.models import CTFAward, CTFChallenge, CTFParticipant, CTFSubmission, CTFTeam
 from ctf.services.participant import eligible_participant_q
 
 if TYPE_CHECKING:
     from uuid import UUID
 
 logger = logging.getLogger(__name__)
+
+
+def apply_dynamic_decay(challenge: CTFChallenge) -> None:
+    """Re-price every correct solve of a dynamic-mode challenge (CTF-202).
+
+    Computes the challenge's current decayed base value from the authoritative
+    solve count, reapplies each solver's percentage hint penalty, updates the
+    stored ``points_awarded`` rows, and recomputes every affected participant
+    and team score. The caller MUST hold the challenge row lock inside the
+    submission transaction — that lock is what serializes concurrent solvers
+    of the same challenge so the count, the update, and the recomputes are one
+    atomic re-pricing.
+    """
+    from ctf.models import CTFHintUsage
+    from ctf.services.scoring._strategy import dynamic_challenge_value, dynamic_points_with_penalty
+
+    correct = list(
+        CTFSubmission.objects.filter(challenge=challenge, is_correct=True).only(
+            "id", "participant_id", "points_awarded"
+        )
+    )
+    if not correct:
+        return
+    value = dynamic_challenge_value(challenge, len(correct))
+
+    participant_ids = [submission.participant_id for submission in correct]
+    penalty_rows = (
+        CTFHintUsage.objects.filter(hint__challenge=challenge, participant_id__in=participant_ids)
+        .values("participant_id")
+        .annotate(total=Sum("hint__penalty"))
+    )
+    penalties = {row["participant_id"]: min(row["total"] or 0, 100) for row in penalty_rows}
+
+    changed: list[CTFSubmission] = []
+    for submission in correct:
+        new_points = dynamic_points_with_penalty(value, penalties.get(submission.participant_id, 0))
+        if submission.points_awarded != new_points:
+            submission.points_awarded = new_points
+            changed.append(submission)
+    if changed:
+        CTFSubmission.objects.bulk_update(changed, ["points_awarded"])
+
+    for participant_id in participant_ids:
+        recompute_participant_score(participant_id)
+    team_ids: set[UUID] = set(
+        CTFParticipant.objects.filter(pk__in=participant_ids, team_id__isnull=False)
+        .values_list("team_id", flat=True)
+        .distinct()
+    )
+    for team_id in team_ids:
+        recompute_team_score(team_id)
 
 
 def recompute_participant_score(participant_id: UUID) -> None:

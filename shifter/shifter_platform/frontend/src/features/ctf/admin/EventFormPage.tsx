@@ -34,8 +34,9 @@ interface FormState {
   attempt_limit_cooldown_seconds: string;
   auto_cleanup: boolean;
   cleanup_delay_hours: string;
-  scoreboard_visible: boolean;
+  scoreboard_visibility: string;
   rating_visibility: string;
+  scoring_mode: string;
 }
 
 const EMPTY: FormState = {
@@ -54,8 +55,9 @@ const EMPTY: FormState = {
   attempt_limit_cooldown_seconds: "300",
   auto_cleanup: true,
   cleanup_delay_hours: "24",
-  scoreboard_visible: true,
+  scoreboard_visibility: "public",
   rating_visibility: "public",
+  scoring_mode: "standard",
 };
 
 function fromEvent(event: CtfEventDetail): FormState {
@@ -75,8 +77,9 @@ function fromEvent(event: CtfEventDetail): FormState {
     attempt_limit_cooldown_seconds: String(event.attempt_limit_cooldown_seconds ?? 300),
     auto_cleanup: Boolean(event.auto_cleanup),
     cleanup_delay_hours: String(event.cleanup_delay_hours ?? 24),
-    scoreboard_visible: Boolean(event.scoreboard_visible),
+    scoreboard_visibility: event.scoreboard_visibility || "public",
     rating_visibility: event.rating_visibility || "public",
+    scoring_mode: event.scoring_mode || "standard",
   };
 }
 
@@ -108,8 +111,9 @@ function toPayload(state: FormState): CtfEventWrite {
     attempt_limit_cooldown_seconds: intOr(state.attempt_limit_cooldown_seconds, 300),
     auto_cleanup: state.auto_cleanup,
     cleanup_delay_hours: intOr(state.cleanup_delay_hours, 24),
-    scoreboard_visible: state.scoreboard_visible,
+    scoreboard_visibility: state.scoreboard_visibility,
     rating_visibility: state.rating_visibility,
+    scoring_mode: state.scoring_mode,
   };
 }
 
@@ -377,18 +381,39 @@ export function EventFormPage({ mode }: Readonly<{ mode: "create" | "edit" }>) {
                   onChange={(v) => set("team_size_limit", v)}
                 />
               ) : null}
-              <CheckboxField
-                id="e-scoreboard"
-                label="Scoreboard visible to participants"
-                checked={state.scoreboard_visible}
-                onChange={(c) => set("scoreboard_visible", c)}
-              />
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="e-scoreboardvis">Scoreboard visibility</Label>
+                <Select value={state.scoreboard_visibility} onValueChange={(v) => set("scoreboard_visibility", v)}>
+                  <SelectTrigger id="e-scoreboardvis" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="public">Public (anyone with the link)</SelectItem>
+                    <SelectItem value="participants">Participants and organizers only</SelectItem>
+                    <SelectItem value="hidden">Hidden (organizers only)</SelectItem>
+                  </SelectContent>
+                </Select>
+                <FieldError id="e-scoreboardvis-e" error={firstError("scoreboard_visibility")} />
+              </div>
               <CheckboxField
                 id="e-cleanup"
                 label="Auto-clean up ranges after the event"
                 checked={state.auto_cleanup}
                 onChange={(c) => set("auto_cleanup", c)}
               />
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="e-scoringmode">Scoring mode</Label>
+                <Select value={state.scoring_mode} onValueChange={(v) => set("scoring_mode", v)}>
+                  <SelectTrigger id="e-scoringmode" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="standard">Standard (fixed challenge values)</SelectItem>
+                    <SelectItem value="dynamic">Dynamic (values decay as solves accrue)</SelectItem>
+                  </SelectContent>
+                </Select>
+                <FieldError id="e-scoringmode-e" error={firstError("scoring_mode")} />
+              </div>
               <div className="flex flex-col gap-2">
                 <Label htmlFor="e-ratingvis">Challenge ratings</Label>
                 <Select value={state.rating_visibility} onValueChange={(v) => set("rating_visibility", v)}>

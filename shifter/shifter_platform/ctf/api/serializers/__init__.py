@@ -10,6 +10,9 @@ scoreboard management). This package re-exports every serializer so existing
 from __future__ import annotations
 
 from ctf.api.serializers.organizer import (
+    AwardListResponseSerializer,
+    AwardSerializer,
+    AwardWriteSerializer,
     ChallengeFileListResponseSerializer,
     ChallengeFileMetaSerializer,
     ChallengeFileUploadResultSerializer,
@@ -102,6 +105,9 @@ from ctf.api.serializers.participant import (
 __all__ = [
     "AssignBracketRequestSerializer",
     "AssignBracketResultSerializer",
+    "AwardListResponseSerializer",
+    "AwardSerializer",
+    "AwardWriteSerializer",
     "ChallengeConnectionInfoSerializer",
     "ChallengeFileListResponseSerializer",
     "ChallengeFileMetaSerializer",

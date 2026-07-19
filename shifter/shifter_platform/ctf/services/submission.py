@@ -14,6 +14,7 @@ from django.db import IntegrityError, transaction
 from django.db.models import QuerySet
 from django.utils import timezone
 
+from ctf.enums import ScoringMode
 from ctf.exceptions import CTFNotFoundError, CTFRateLimitError, CTFValidationError
 from ctf.models import CTFChallenge, CTFChallengeRating, CTFEvent, CTFParticipant, CTFSubmission
 from ctf.services.challenge import verify_flag
@@ -208,8 +209,15 @@ def _record_submission_locked(
     """
     event = participant.event
     challenge_id = challenge.id
+    dynamic_mode = event.scoring_mode == ScoringMode.DYNAMIC.value
     with transaction.atomic():
         CTFParticipant.objects.select_for_update().get(pk=participant.id)
+        if dynamic_mode:
+            # Serialize dynamic re-pricing per challenge (CTF-202): concurrent
+            # solvers hold different participant locks, so the challenge row is
+            # the shared lock that makes the solve count, the retroactive
+            # points update, and the score recomputes one atomic step.
+            CTFChallenge.objects.select_for_update().get(pk=challenge.pk)
 
         submissions = CTFSubmission.objects.filter(participant=participant, challenge=challenge)
         if submissions.filter(is_correct=True).exists():
@@ -247,7 +255,14 @@ def _record_submission_locked(
         # transaction as the authoritative write. Only a correct submission
         # changes score/solve-count/last-solve, so incorrect attempts stay
         # cheap (no recompute) — important under wrong-answer load.
-        if is_correct:
+        if is_correct and dynamic_mode:
+            # Dynamic mode re-prices every correct solve (including this one)
+            # and recomputes all affected participant/team scores (CTF-202).
+            from ctf.services.scoring import apply_dynamic_decay
+
+            apply_dynamic_decay(challenge)
+            submission.refresh_from_db(fields=["points_awarded"])
+        elif is_correct:
             from ctf.services.scoring import recompute_participant_score, recompute_team_score
 
             recompute_participant_score(participant.id)

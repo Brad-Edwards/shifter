@@ -372,6 +372,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/ctf/awards/{award_id}/delete/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Delete the award and recompute the affected scores. */
+        post: operations["ctf_awards_delete_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/ctf/challenges/{challenge_id}/": {
         parameters: {
             query?: never;
@@ -925,6 +942,24 @@ export interface paths {
         post?: never;
         /** @description Soft-delete an owned participant. */
         delete: operations["ctf_participants_destroy"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ctf/participants/{participant_id}/awards/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Return the participant's awards, newest first. */
+        get: operations["ctf_participants_awards_retrieve"];
+        put?: never;
+        /** @description Grant a bonus or deduction to the participant and recompute scores. */
+        post: operations["ctf_participants_awards_create"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -2107,6 +2142,23 @@ export interface components {
             readonly user_agent: string;
             readonly request_id: string;
         };
+        /** @description One organizer-granted award row (CTF-204). */
+        Award: {
+            readonly id: string;
+            readonly points: number;
+            readonly reason: string;
+            readonly granted_by: string | null;
+            readonly created_at: string | null;
+        };
+        /** @description Envelope for a participant's award list. */
+        AwardListResponse: {
+            readonly awards: components["schemas"]["Award"][];
+        };
+        /** @description Request body for granting an award (positive or negative points). */
+        AwardWrite: {
+            points: number;
+            reason: string;
+        };
         /** @description Top-level SPA bootstrap payload. */
         Bootstrap: {
             principal: components["schemas"]["BootstrapPrincipal"];
@@ -2262,6 +2314,9 @@ export interface components {
             flag_format?: string;
             solution?: string;
             max_attempts?: number;
+            minimum_points?: number;
+            decay_function?: string;
+            decay_solve_count?: number;
             /** Format: date-time */
             release_time?: string | null;
             order?: number;
@@ -2441,6 +2496,7 @@ export interface components {
             readonly rating_visibility: string;
             readonly scoring_mode: string;
             readonly scoreboard_visible: boolean;
+            readonly scoreboard_visibility: string;
             /** Format: date-time */
             readonly scoreboard_freeze_at: string | null;
         };
@@ -2496,7 +2552,7 @@ export interface components {
             attempt_limit_cooldown_seconds?: number;
             rating_visibility?: string;
             scoring_mode?: string;
-            scoreboard_visible?: boolean;
+            scoreboard_visibility?: string;
             /** Format: date-time */
             scoreboard_freeze_at?: string | null;
         };
@@ -2737,6 +2793,9 @@ export interface components {
             readonly flag_format: string;
             readonly hints: components["schemas"]["ChallengeHint"][];
             readonly max_attempts: number;
+            readonly minimum_points: number;
+            readonly decay_function: string;
+            readonly decay_solve_count: number;
             readonly order: number;
             /** Format: date-time */
             readonly release_time: string | null;
@@ -2922,6 +2981,11 @@ export interface components {
             readonly event: components["schemas"]["ParticipantEvent"];
             readonly participant: components["schemas"]["ParticipantSelf"];
         };
+        /** @description Confirmation returned after soft-deleting a participant. */
+        ParticipantDeleteResult: {
+            readonly deleted: boolean;
+            readonly id: string;
+        };
         /** @description Full organizer-facing participant detail projection. */
         ParticipantDetail: {
             readonly id: string;
@@ -2941,6 +3005,7 @@ export interface components {
             readonly event_id: string;
             readonly bracket_id: string | null;
             readonly bracket_name: string | null;
+            readonly awards: components["schemas"]["Award"][];
         };
         /**
          * @description Read-only participant-facing projection of the current CTF event.
@@ -2958,6 +3023,7 @@ export interface components {
             readonly rating_visibility: string;
             readonly attempt_limit_mode: string;
             readonly scoreboard_visible: boolean;
+            readonly scoreboard_visibility: string;
             /** Format: date-time */
             readonly event_start: string | null;
             /** Format: date-time */
@@ -4613,6 +4679,45 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["YAMLValidationResult"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    ctf_awards_delete_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                award_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ParticipantDeleteResult"];
                 };
             };
             /** @description Authentication failed. */
@@ -6497,6 +6602,90 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    ctf_participants_awards_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                participant_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AwardListResponse"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    ctf_participants_awards_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                participant_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AwardWrite"];
+                "application/x-www-form-urlencoded": components["schemas"]["AwardWrite"];
+                "multipart/form-data": components["schemas"]["AwardWrite"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Award"];
+                };
             };
             /** @description Authentication failed. */
             401: {

@@ -244,11 +244,17 @@ class ScoringMode(StrEnum):
     STANDARD: fixed per-challenge point value (CTF-201). A correct flag awards
     the challenge's full point value (less any cumulative hint penalty); points
     do not change with the number of solves. This is the default and, today, the
-    only supported mode. The enum exists so future modes (e.g. dynamic) slot in
-    as one additional value plus one scoring-service strategy (CTF-002).
+    only supported mode. The enum exists so future modes slot in as one
+    additional value plus one scoring-service strategy (CTF-002).
+
+    DYNAMIC: decaying per-challenge value (CTF-202). A challenge starts at its
+    full point value and decays toward its configured minimum as more
+    participants solve it; every new solve retroactively re-prices earlier
+    solves so all solvers of a challenge hold the same base value.
     """
 
     STANDARD = "standard"
+    DYNAMIC = "dynamic"
 
     def __str__(self) -> str:
         return self.value
@@ -256,6 +262,41 @@ class ScoringMode(StrEnum):
     @classmethod
     def choices(cls) -> list[tuple[str, str]]:
         return [(m.value, m.name.title()) for m in cls]
+
+
+class DecayFunction(StrEnum):
+    """Shape of the dynamic-scoring decay curve (CTF-202).
+
+    LINEAR: value falls in equal steps per solve until the minimum.
+    LOGARITHMIC: value falls fastest for early solves, flattening toward the
+    minimum (CTFd-style quadratic-over-decay-window curve).
+    """
+
+    LINEAR = "linear"
+    LOGARITHMIC = "logarithmic"
+
+    @classmethod
+    def choices(cls) -> list[tuple[str, str]]:
+        """Django choices tuples."""
+        return [(member.value, member.name.title()) for member in cls]
+
+
+class ScoreboardVisibility(StrEnum):
+    """Controls who can view the event scoreboard (CTF-404).
+
+    PUBLIC: Anyone, including unauthenticated viewers (projector screens).
+    PARTICIPANTS: Only registered participants and organizers.
+    HIDDEN: Only organizers (through the organizer scoreboard surface).
+    """
+
+    PUBLIC = "public"
+    PARTICIPANTS = "participants"
+    HIDDEN = "hidden"
+
+    @classmethod
+    def choices(cls) -> list[tuple[str, str]]:
+        """Django choices tuples."""
+        return [(member.value, member.name.title()) for member in cls]
 
 
 class RatingVisibility(StrEnum):

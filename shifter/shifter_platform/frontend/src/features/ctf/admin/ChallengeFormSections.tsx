@@ -80,6 +80,35 @@ export function BasicFields({
             onChange={(v) => set("max_attempts", v)}
           />
         </div>
+        <div className="grid gap-5 sm:grid-cols-3">
+          <TextField
+            id="c-minpoints"
+            label="Minimum points (dynamic scoring)"
+            type="number"
+            min={0}
+            value={state.minimum_points}
+            error={firstError("minimum_points")}
+            onChange={(v) => set("minimum_points", v)}
+          />
+          <SelectField
+            id="c-decayfn"
+            label="Decay curve"
+            value={state.decay_function}
+            error={firstError("decay_function")}
+            options={["linear", "logarithmic"]}
+            labelFor={titleCase}
+            onChange={(v) => set("decay_function", v)}
+          />
+          <TextField
+            id="c-decaycount"
+            label="Solves to reach minimum (0 = no decay)"
+            type="number"
+            min={0}
+            value={state.decay_solve_count}
+            error={firstError("decay_solve_count")}
+            onChange={(v) => set("decay_solve_count", v)}
+          />
+        </div>
         <TextField
           id="c-format"
           label="Flag format (hint shown to participants)"

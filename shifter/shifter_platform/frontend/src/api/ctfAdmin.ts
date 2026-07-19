@@ -14,6 +14,8 @@ import { apiFetch } from "./client";
 import { ctfKeys } from "./ctf";
 import type {
   CtfAssignBracketResult,
+  CtfAward,
+  CtfAwardListResponse,
   CtfChallengeFileListResponse,
   CtfChallengeFileUploadResult,
   CtfChallengeListResponse,
@@ -320,6 +322,38 @@ export function useImportCtfParticipants(eventId: string) {
         body: { participants },
       }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ctfKeys.participants(eventId) }),
+  });
+}
+
+export function useCtfParticipantAwards(participantId: string, enabled = true) {
+  return useQuery({
+    queryKey: ctfKeys.awards(participantId),
+    enabled: enabled && Boolean(participantId),
+    queryFn: ({ signal }) =>
+      apiFetch<CtfAwardListResponse>(`${BASE}/participants/${participantId}/awards/`, { signal }),
+  });
+}
+
+export function useGrantCtfAward(participantId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { points: number; reason: string }) =>
+      apiFetch<CtfAward>(`${BASE}/participants/${participantId}/awards/`, { method: "POST", body }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ctfKeys.awards(participantId) });
+      queryClient.invalidateQueries({ queryKey: ctfKeys.participant(participantId) });
+    },
+  });
+}
+
+export function useRevokeCtfAward(participantId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (awardId: string) => apiFetch<void>(`${BASE}/awards/${awardId}/delete/`, { method: "POST" }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ctfKeys.awards(participantId) });
+      queryClient.invalidateQueries({ queryKey: ctfKeys.participant(participantId) });
+    },
   });
 }
 

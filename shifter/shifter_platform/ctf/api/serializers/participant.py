@@ -44,6 +44,7 @@ class ParticipantEventSerializer(serializers.Serializer):
     rating_visibility = serializers.CharField(read_only=True)
     attempt_limit_mode = serializers.CharField(read_only=True)
     scoreboard_visible = serializers.BooleanField(read_only=True)
+    scoreboard_visibility = serializers.CharField(read_only=True)
     event_start = serializers.DateTimeField(read_only=True, allow_null=True)
     event_end = serializers.DateTimeField(read_only=True, allow_null=True)
 
