@@ -183,7 +183,8 @@ def _import_entry(
                 else:
                     _create_from_shifter(event, entry)
         except (CTFValidationError, ValueError) as exc:
-            error = {"index": index, "name": name, "error": str(exc)}
+            logger.info("Challenge import entry %d failed: %s", index, safe_log_value(str(exc)))
+            error = {"index": index, "name": name, "error": "Challenge entry failed validation."}
         except Exception:
             logger.exception("Challenge import entry %d failed", index)
             error = {"index": index, "name": name, "error": "Could not import challenge."}
