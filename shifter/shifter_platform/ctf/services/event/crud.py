@@ -14,6 +14,7 @@ from ctf.enums import EventStatus
 from ctf.exceptions import CTFNotFoundError, CTFStateError, CTFValidationError
 from ctf.models import CTFEvent
 from ctf.services.event.scheduling import _cancel_event_tasks, _reschedule_event_tasks, _reschedule_live_event_schedule
+from shared.log_sanitize import safe_log_value
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import User
@@ -95,7 +96,7 @@ def create_event(user: User, event_data: dict[str, Any]) -> CTFEvent:
     Raises:
         CTFValidationError: If event data is invalid.
     """
-    logger.info("Creating CTF event for user %s", user.email)
+    logger.info("Creating CTF event for user %s", safe_log_value(user.email))
 
     # Validate required fields
     required_fields = ["name", "event_start", "event_end"]
@@ -199,7 +200,7 @@ def update_event(event_id: UUID, event_data: dict[str, Any]) -> CTFEvent:
         CTFStateError: If event is not modifiable.
         CTFValidationError: If event data is invalid.
     """
-    logger.info("Updating CTF event %s", event_id)
+    logger.info("Updating CTF event %s", safe_log_value(event_id))
 
     try:
         event = CTFEvent.objects.get(pk=event_id)
@@ -246,7 +247,7 @@ def delete_event(event_id: UUID) -> None:
     Raises:
         CTFNotFoundError: If event doesn't exist.
     """
-    logger.info("Deleting CTF event %s", event_id)
+    logger.info("Deleting CTF event %s", safe_log_value(event_id))
 
     try:
         event = CTFEvent.objects.get(pk=event_id)
@@ -263,7 +264,7 @@ def delete_event(event_id: UUID) -> None:
         # Soft delete
         event.delete(soft=True)
 
-        logger.info("Deleted CTF event %s", event_id)
+        logger.info("Deleted CTF event %s", safe_log_value(event_id))
 
 
 def get_event(event_id: UUID) -> CTFEvent:
