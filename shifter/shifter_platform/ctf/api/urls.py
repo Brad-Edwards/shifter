@@ -130,6 +130,26 @@ urlpatterns = [
         name="api_participant_username",
     ),
     path(
+        "events/<uuid:event_id>/lifecycle/",
+        organizer.EventLifecycleView.as_view(),
+        name="api_event_lifecycle",
+    ),
+    path(
+        "events/<uuid:event_id>/tasks/",
+        organizer.EventTasksView.as_view(),
+        name="api_event_tasks",
+    ),
+    path(
+        "events/<uuid:event_id>/tasks/<uuid:task_id>/run/",
+        organizer.TaskRunNowView.as_view(),
+        name="api_event_task_run",
+    ),
+    path(
+        "events/<uuid:event_id>/cleanup/",
+        organizer.EventCleanupControlView.as_view(),
+        name="api_event_cleanup",
+    ),
+    path(
         "events/<uuid:event_id>/staff/",
         organizer.EventStaffView.as_view(),
         name="api_event_staff",

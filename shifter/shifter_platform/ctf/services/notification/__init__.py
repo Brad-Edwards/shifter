@@ -11,6 +11,7 @@ from ctf.services.notification._email import _build_ctf_login_url, _render_email
 from ctf.services.notification.delivery import (
     schedule_notification,
     send_announcement,
+    send_cleanup_warning,
     send_credentials,
     send_invitations,
     send_reminder,
@@ -34,6 +35,7 @@ __all__ = [
     "notify_organizer_provision_failure",
     "schedule_notification",
     "send_announcement",
+    "send_cleanup_warning",
     "send_credentials",
     "send_invitations",
     "send_reminder",

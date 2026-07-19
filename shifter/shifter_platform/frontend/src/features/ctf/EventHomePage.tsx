@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { Flag, Server, Trophy, UserCog, Users } from "lucide-react";
@@ -13,7 +14,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
-import { titleCase } from "./format";
+import { titleCase, formatDateTime } from "./format";
+import { MarkdownContent } from "./MarkdownContent";
 import { ctfAccountPath, ctfChallengesPath, ctfRangePath, ctfScoreboardPath, ctfTeamPath } from "./routes";
 
 const QUICK_LINKS = [
@@ -33,6 +35,61 @@ function Stat({ label, value }: Readonly<{ label: string; value: string | number
   );
 }
 
+function formatRemaining(ms: number): string {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const days = Math.floor(total / 86400);
+  const hours = Math.floor((total % 86400) / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const seconds = total % 60;
+  if (days > 0) return `${days}d ${hours}h ${minutes}m`;
+  if (hours > 0) return `${hours}h ${minutes}m ${seconds}s`;
+  return `${minutes}m ${seconds}s`;
+}
+
+/** Countdown to event start (before start) or event end (CTF-702). */
+function EventCountdown({ event }: Readonly<{ event: CtfCurrentEvent["event"] }>) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  if (!event.event_start || !event.event_end) return null;
+  const start = new Date(event.event_start).getTime();
+  const end = new Date(event.event_end).getTime();
+  let label: string;
+  let value: string;
+  if (now < start) {
+    label = "Starts in";
+    value = formatRemaining(start - now);
+  } else if (now < end) {
+    label = "Ends in";
+    value = formatRemaining(end - now);
+  } else {
+    label = "Event";
+    value = "Ended";
+  }
+  return (
+    <div className="rounded-lg border border-border/60 p-4">
+      <dt className="text-xs text-muted-foreground">{label}</dt>
+      <dd className="mt-1 text-2xl font-semibold tracking-tight tabular-nums" aria-live="off">
+        {value}
+      </dd>
+    </div>
+  );
+}
+
+/** Local-timezone schedule facts (CTF-702/705). */
+function EventSchedule({ event }: Readonly<{ event: CtfCurrentEvent["event"] }>) {
+  return (
+    <p className="mb-6 text-xs text-muted-foreground">
+      {event.event_start ? <>Starts {formatDateTime(event.event_start)}</> : null}
+      {event.event_end ? <> · Ends {formatDateTime(event.event_end)}</> : null}
+      {event.registration_deadline ? <> · Registration closes {formatDateTime(event.registration_deadline)}</> : null}
+    </p>
+  );
+}
+
 function EventOverview({ data }: Readonly<{ data: CtfCurrentEvent }>) {
   const { event, participant } = data;
   return (
@@ -48,6 +105,8 @@ function EventOverview({ data }: Readonly<{ data: CtfCurrentEvent }>) {
         }
       />
 
+      <EventSchedule event={event} />
+
       {event.description ? (
         <Card className="mb-6">
           <CardContent>
@@ -56,7 +115,19 @@ function EventOverview({ data }: Readonly<{ data: CtfCurrentEvent }>) {
         </Card>
       ) : null}
 
-      <dl className="mb-8 grid gap-4 sm:grid-cols-3">
+      {event.rules ? (
+        <Card className="mb-6">
+          <CardContent>
+            <h2 className="text-sm font-semibold">Rules</h2>
+            <div className="mt-2">
+              <MarkdownContent text={event.rules} />
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      <dl className="mb-8 grid gap-4 sm:grid-cols-4">
+        <EventCountdown event={event} />
         <Stat label="Score" value={participant.cached_score} />
         <Stat label="Solves" value={participant.cached_solve_count} />
         <Stat label="Status" value={titleCase(participant.status)} />

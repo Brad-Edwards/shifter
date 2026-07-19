@@ -57,6 +57,9 @@ class EventDetailSerializer(serializers.Serializer):
     scoreboard_visible = serializers.BooleanField(read_only=True)
     scoreboard_visibility = serializers.CharField(read_only=True)
     scoreboard_freeze_at = serializers.DateTimeField(read_only=True, allow_null=True)
+    rules = serializers.CharField(read_only=True, allow_blank=True)
+    reminder_hours = serializers.ListField(child=serializers.IntegerField(), read_only=True)
+    event_timezone = serializers.CharField(read_only=True, allow_blank=True)
 
 
 class EventWriteSerializer(serializers.Serializer):
@@ -87,6 +90,42 @@ class EventWriteSerializer(serializers.Serializer):
     scoring_mode = serializers.CharField(required=False)
     scoreboard_visibility = serializers.CharField(required=False)
     scoreboard_freeze_at = serializers.DateTimeField(required=False, allow_null=True)
+    rules = serializers.CharField(required=False, allow_blank=True)
+    reminder_hours = serializers.ListField(
+        child=serializers.IntegerField(min_value=1, max_value=720), required=False, max_length=10
+    )
+    event_timezone = serializers.CharField(required=False, allow_blank=True, max_length=64)
+
+
+class EventLifecycleRequestSerializer(serializers.Serializer):
+    """One lifecycle transition to apply to an owned event (CTF-007)."""
+
+    action = serializers.ChoiceField(choices=["open_registration", "activate", "pause", "resume", "end", "cancel"])
+
+
+class ScheduledTaskSerializer(serializers.Serializer):
+    """One scheduler row in the organizer task history (#526)."""
+
+    id = serializers.CharField(read_only=True)
+    task_type = serializers.CharField(read_only=True)
+    status = serializers.CharField(read_only=True)
+    scheduled_for = serializers.DateTimeField(read_only=True)
+    executed_at = serializers.DateTimeField(read_only=True, allow_null=True)
+    error_message = serializers.CharField(read_only=True, allow_blank=True)
+    retry_count = serializers.IntegerField(read_only=True)
+
+
+class ScheduledTaskListResponseSerializer(serializers.Serializer):
+    """Envelope for the organizer scheduled-task listing."""
+
+    tasks = ScheduledTaskSerializer(many=True, read_only=True)
+
+
+class CleanupControlRequestSerializer(serializers.Serializer):
+    """Defer or cancel the pending automated range cleanup (CTF-1003)."""
+
+    action = serializers.ChoiceField(choices=["defer", "cancel"])
+    hours = serializers.IntegerField(required=False, min_value=1, max_value=168)
 
 
 class EventMutationResultSerializer(serializers.Serializer):

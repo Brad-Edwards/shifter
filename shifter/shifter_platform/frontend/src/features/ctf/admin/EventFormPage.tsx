@@ -34,6 +34,9 @@ interface FormState {
   attempt_limit_cooldown_seconds: string;
   auto_cleanup: boolean;
   cleanup_delay_hours: string;
+  rules: string;
+  reminder_hours: string;
+  event_timezone: string;
   scoreboard_visibility: string;
   rating_visibility: string;
   scoring_mode: string;
@@ -55,6 +58,9 @@ const EMPTY: FormState = {
   attempt_limit_cooldown_seconds: "300",
   auto_cleanup: true,
   cleanup_delay_hours: "24",
+  rules: "",
+  reminder_hours: "24, 1",
+  event_timezone: "UTC",
   scoreboard_visibility: "public",
   rating_visibility: "public",
   scoring_mode: "standard",
@@ -77,6 +83,9 @@ function fromEvent(event: CtfEventDetail): FormState {
     attempt_limit_cooldown_seconds: String(event.attempt_limit_cooldown_seconds ?? 300),
     auto_cleanup: Boolean(event.auto_cleanup),
     cleanup_delay_hours: String(event.cleanup_delay_hours ?? 24),
+    rules: event.rules ?? "",
+    reminder_hours: (event.reminder_hours ?? [24, 1]).join(", "),
+    event_timezone: event.event_timezone || "UTC",
     scoreboard_visibility: event.scoreboard_visibility || "public",
     rating_visibility: event.rating_visibility || "public",
     scoring_mode: event.scoring_mode || "standard",
@@ -92,6 +101,14 @@ function intOrNull(value: string): number | null {
 
 function intOr(value: string, fallback: number): number {
   return intOrNull(value) ?? fallback;
+}
+
+/** Parse "24, 1"-style input into the reminder-hours list (CTF-1005). */
+function parseReminderHours(text: string): number[] {
+  return text
+    .split(",")
+    .map((part) => Number.parseInt(part.trim(), 10))
+    .filter((n) => Number.isFinite(n) && n > 0 && n <= 720);
 }
 
 function toPayload(state: FormState): CtfEventWrite {
@@ -111,6 +128,9 @@ function toPayload(state: FormState): CtfEventWrite {
     attempt_limit_cooldown_seconds: intOr(state.attempt_limit_cooldown_seconds, 300),
     auto_cleanup: state.auto_cleanup,
     cleanup_delay_hours: intOr(state.cleanup_delay_hours, 24),
+    rules: state.rules,
+    reminder_hours: parseReminderHours(state.reminder_hours),
+    event_timezone: state.event_timezone.trim() || "UTC",
     scoreboard_visibility: state.scoreboard_visibility,
     rating_visibility: state.rating_visibility,
     scoring_mode: state.scoring_mode,
@@ -252,6 +272,14 @@ export function EventFormPage({ mode }: Readonly<{ mode: "create" | "edit" }>) {
               value={state.description}
               error={firstError("description")}
               onChange={(v) => set("description", v)}
+            />
+            <TextAreaField
+              id="e-rules"
+              label="Rules (markdown, shown to participants)"
+              rows={5}
+              value={state.rules}
+              error={firstError("rules")}
+              onChange={(v) => set("rules", v)}
             />
 
             <div className="grid gap-5 sm:grid-cols-2">
@@ -400,6 +428,28 @@ export function EventFormPage({ mode }: Readonly<{ mode: "create" | "edit" }>) {
                 label="Auto-clean up ranges after the event"
                 checked={state.auto_cleanup}
                 onChange={(c) => set("auto_cleanup", c)}
+              />
+              <TextField
+                id="e-cleanupdelay"
+                label="Cleanup delay (hours after end)"
+                type="number"
+                value={state.cleanup_delay_hours}
+                error={firstError("cleanup_delay_hours")}
+                onChange={(v) => set("cleanup_delay_hours", v)}
+              />
+              <TextField
+                id="e-reminders"
+                label="Reminder hours before start (comma-separated)"
+                value={state.reminder_hours}
+                error={firstError("reminder_hours")}
+                onChange={(v) => set("reminder_hours", v)}
+              />
+              <TextField
+                id="e-timezone"
+                label="Event timezone (for emails)"
+                value={state.event_timezone}
+                error={firstError("event_timezone")}
+                onChange={(v) => set("event_timezone", v)}
               />
               <div className="flex flex-col gap-2">
                 <Label htmlFor="e-scoringmode">Scoring mode</Label>

@@ -27,6 +27,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 
 import { formatDateTime, rankingKey, rankingNumber, rankingString, titleCase } from "../format";
+import { EventTasksCard } from "./EventTasksCard";
 import { ctfAdminEventPath, ctfAdminEventsPath } from "../routes";
 
 export type MonitoringTab = "scoreboard" | "ranges" | "notifications" | "analytics";
@@ -434,6 +435,7 @@ export function MonitoringPage({ defaultTab = "scoreboard" }: Readonly<{ default
           <TabsTrigger value="ranges">Ranges</TabsTrigger>
           <TabsTrigger value="notifications">Notifications</TabsTrigger>
           <TabsTrigger value="analytics">Analytics</TabsTrigger>
+          <TabsTrigger value="tasks">Tasks</TabsTrigger>
         </TabsList>
         <TabsContent value="scoreboard" className="mt-4">
           <ScoreboardTab eventId={eventId} />
@@ -446,6 +448,9 @@ export function MonitoringPage({ defaultTab = "scoreboard" }: Readonly<{ default
         </TabsContent>
         <TabsContent value="analytics" className="mt-4">
           <AnalyticsTab eventId={eventId} />
+        </TabsContent>
+        <TabsContent value="tasks" className="mt-4">
+          <EventTasksCard eventId={eventId} />
         </TabsContent>
       </Tabs>
     </>

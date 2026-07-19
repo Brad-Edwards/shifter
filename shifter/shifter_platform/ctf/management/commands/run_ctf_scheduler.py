@@ -4,6 +4,27 @@ Polls for due CTFScheduledTask rows and dispatches them to the appropriate
 handler. Follows the same signal-handling and heartbeat pattern as
 shared/management/commands/run_worker.py.
 
+Scheduler model (#526/#527, CTF-1001/CTF-1006):
+
+- Tasks are ONE-SHOT rows scheduled at absolute times. Recurring behavior is
+  intentionally out of scope: every CTF automation (spinup, start, end,
+  reminders, cleanup and its warning, challenge release) is an
+  event-anchored one-shot, and rescheduling on event-time changes is handled
+  by ``ctf.services.event.scheduling`` re-planning the rows.
+- Transient handler failures retry with exponential backoff
+  (``CTFScheduledTask.retry_or_fail``, 5 · 2^n minutes, ``max_retries``
+  default 3); handlers are idempotent so a retry never duplicates work.
+- Startup is DEPLOYMENT-MANAGED: this command is a long-running process run
+  under the platform's process supervisor (the same model as
+  ``run_worker``), not an in-process thread — a web worker crash can never
+  take the scheduler down with it, and one scheduler serves all app
+  replicas. Restart recovery is safe without duplicate execution: due
+  PENDING rows are claimed atomically (``select_for_update(skip_locked)``),
+  interrupted RUNNING rows are requeued by the stale-lease sweep, and
+  completed rows are never re-run.
+- Organizers inspect and control the queue via the canonical API
+  (``events/<id>/tasks/``: list, run-now, and cleanup defer/cancel).
+
 Usage:
     python manage.py run_ctf_scheduler
     python manage.py run_ctf_scheduler --poll-interval 15 --batch-size 5
@@ -180,7 +201,7 @@ class Command(BaseCommand):
                 task.mark_completed()
         except Exception as exc:
             logger.exception("Task %s failed: %s", task.pk, exc)
-            task.mark_failed(str(exc)[:1000])
+            task.retry_or_fail(str(exc)[:1000])
 
     def _touch_heartbeat(self) -> None:
         try:
@@ -294,12 +315,25 @@ def _handle_event_end(
 
         notify_organizer_event_end(event.pk)
 
-    # Also trigger cleanup if auto_cleanup is enabled
-    if event.auto_cleanup:
-        from ctf.services.range import cleanup_event_ranges
+    # End-of-event cleanup (including the CTF-703 delayed-task window) is
+    # owned by ``complete_event`` so manual and automated ends behave alike.
 
-        result = cleanup_event_ranges(event.pk)
-        logger.info("EVENT_END cleanup for event %s: %s", event.pk, result)
+
+def _handle_cleanup_warning(
+    task: CTFScheduledTask,
+    shutdown_check: ShutdownCheck | None = None,
+    heartbeat: Heartbeat | None = None,
+) -> None:
+    """Warn participants that range destruction is imminent (CTF-1003)."""
+    from ctf.services.notification import send_cleanup_warning
+
+    result = send_cleanup_warning(task.event_id)
+    logger.info(
+        "CLEANUP_WARNING for event %s: sent=%d failed=%d",
+        task.event_id,
+        result["sent"],
+        result["failed"],
+    )
 
 
 def _handle_send_reminder(
@@ -345,6 +379,7 @@ def _handle_release_challenge(
 TASK_HANDLERS: dict[str, Any] = {
     ScheduledTaskType.SPIN_UP_RANGES.value: _handle_spin_up_ranges,
     ScheduledTaskType.CLEANUP_RANGES.value: _handle_cleanup_ranges,
+    ScheduledTaskType.CLEANUP_WARNING.value: _handle_cleanup_warning,
     ScheduledTaskType.EVENT_START.value: _handle_event_start,
     ScheduledTaskType.EVENT_END.value: _handle_event_end,
     ScheduledTaskType.SEND_REMINDER.value: _handle_send_reminder,

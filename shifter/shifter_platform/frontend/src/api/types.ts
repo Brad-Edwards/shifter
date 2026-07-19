@@ -199,6 +199,11 @@ export type CtfParticipantImportResult = components["schemas"]["ParticipantImpor
 export type CtfParticipantProfile = components["schemas"]["ParticipantProfile"];
 export type CtfProfileUpdateRequest = components["schemas"]["PatchedProfileUpdateRequest"];
 export type CtfEventStaffMember = components["schemas"]["EventStaffMember"];
+export type CtfEventLifecycleAction =
+  components["schemas"]["EventLifecycleRequest"]["action"];
+export type CtfScheduledTask = components["schemas"]["ScheduledTask"];
+export type CtfScheduledTaskListResponse = components["schemas"]["ScheduledTaskListResponse"];
+export type CtfCleanupControlRequest = components["schemas"]["CleanupControlRequest"];
 export type CtfEventStaffListResponse = components["schemas"]["EventStaffListResponse"];
 export type CtfEventStaffAssignRequest = components["schemas"]["EventStaffAssignRequest"];
 export type CtfAssignBracketRequest = components["schemas"]["AssignBracketRequest"];

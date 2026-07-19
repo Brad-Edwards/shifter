@@ -15,7 +15,6 @@ from typing import Any
 from uuid import UUID
 
 from django.db import transaction
-from django.utils import timezone
 
 from ctf.enums import ParticipantStatus
 from ctf.exceptions import CTFNotFoundError, CTFValidationError
@@ -67,16 +66,11 @@ def _parse_participants_csv(csv_content: str) -> tuple[list[tuple[str, str]], li
 
 
 def _assert_event_accepts_import(event: CTFEvent, importing: int) -> None:
-    """Reject the import if the event is past deadline or would exceed cap."""
-    if event.registration_deadline and timezone.now() > event.registration_deadline:
-        raise CTFValidationError(
-            "Registration deadline has passed",
-            code="CTF_REGISTRATION_DEADLINE_PASSED",
-            details={
-                "event_id": str(event.pk),
-                "deadline": event.registration_deadline.isoformat(),
-            },
-        )
+    """Reject the import if it would exceed the participant cap.
+
+    CTF-705: the registration deadline closes self-registration only;
+    organizer-driven import stays open so stragglers can join a live event.
+    """
     if not event.max_participants:
         return
     current_count = event.participants.count()

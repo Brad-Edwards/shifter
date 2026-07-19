@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING
 from uuid import UUID
 
 from django.db import transaction
-from django.utils import timezone
 
 from ctf.enums import ParticipantStatus
 from ctf.exceptions import CTFNotFoundError, CTFValidationError
@@ -51,16 +50,9 @@ def invite_participant(
             details={"event_id": str(event_id)},
         ) from None
 
-    # Check registration deadline
-    if event.registration_deadline and timezone.now() > event.registration_deadline:
-        raise CTFValidationError(
-            "Registration deadline has passed",
-            code="CTF_REGISTRATION_DEADLINE_PASSED",
-            details={
-                "event_id": str(event_id),
-                "deadline": event.registration_deadline.isoformat(),
-            },
-        )
+    # CTF-705: the registration deadline closes SELF-registration; organizer
+    # manual additions (this path and bulk import) intentionally bypass it so
+    # stragglers can be added to a live event. Capacity still applies below.
 
     # Capacity is enforced under the event row lock inside the transaction
     # below (#1145), so concurrent invites cannot race past max_participants.
