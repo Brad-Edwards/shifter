@@ -12,6 +12,7 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from ctf.models import CTFEvent
+from shared.log_sanitize import safe_log_value
 
 if TYPE_CHECKING:
     from uuid import UUID
@@ -63,7 +64,11 @@ def declare_event_capacity(event_id: UUID, *, source: str) -> bool:
         event = CTFEvent.objects.get(pk=event_id)
         cms_declare_event_capacity(**build_event_capacity_signal(event))
     except Exception:
-        logger.exception("Failed to declare capacity for event %s (%s)", event_id, source)
+        logger.exception(
+            "Failed to declare capacity for event %s (%s)",
+            safe_log_value(event_id),
+            safe_log_value(source),
+        )
         return False
-    logger.info("Declared capacity for event %s (%s)", event_id, source)
+    logger.info("Declared capacity for event %s (%s)", safe_log_value(event_id), safe_log_value(source))
     return True
