@@ -63,17 +63,18 @@ def _apply_pod(core_api: CoreV1Api, namespace: str, body: dict[str, Any], api_ex
         logger.info("Updated scenario Pod %s/%s", namespace, name)
 
 
-def _parse_network_status(raw_status: str | None) -> Any:
-    """Parse the raw network-status annotation JSON; return None if absent or invalid."""
+def _parse_network_status(raw_status: str | None) -> list[Any] | None:
+    """Parse the raw network-status annotation JSON; return None if absent or not a list."""
     if not raw_status:
         return None
     try:
-        return json.loads(raw_status)
+        parsed = json.loads(raw_status)
     except json.JSONDecodeError:
         return None
+    return parsed if isinstance(parsed, list) else None
 
 
-def _ip_from_network_status(network_status: Any, expected_names: set[str]) -> str:
+def _ip_from_network_status(network_status: list[Any], expected_names: set[str]) -> str:
     """Return the first matching attachment's IP (without CIDR suffix), or "" if none match."""
     for attachment in network_status:
         if not isinstance(attachment, dict):
