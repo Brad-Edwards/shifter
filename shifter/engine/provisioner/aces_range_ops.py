@@ -80,9 +80,15 @@ def run_aces_range_provision(request_id: str) -> None:
     try:
         aces_plan = parse_plan(data["plan"])
         delivery_bindings = get_aces_content_delivery_bindings_by_request_id(request_id)
-        apply_aces_range_cell(
+        apply_result = apply_aces_range_cell(
             request_id, range_id, aces_plan, _registry_resolver(), delivery_bindings=delivery_bindings
         )
+        verified_addresses = apply_result.get("composition_verified_addresses")
+        if not isinstance(verified_addresses, list) or not all(
+            isinstance(address, str) for address in verified_addresses
+        ):
+            raise ValueError("ACES composition verification proof is invalid")
+        resources = snapshot_resources(aces_plan, set(verified_addresses))
     except Exception as exc:
         error_msg = str(exc)[:1000]
         logger.exception("ACES range provision failed: %s", error_msg)
@@ -101,7 +107,7 @@ def run_aces_range_provision(request_id: str) -> None:
         range_id=range_id,
         user_id=user_id,
         operation_id=operation_id,
-        resources=snapshot_resources(aces_plan),
+        resources=resources,
     )
     publish_aces_operation(
         request_id=request_id, range_id=range_id, user_id=user_id, operation_id=operation_id, status="succeeded"
