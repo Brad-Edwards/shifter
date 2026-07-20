@@ -34,6 +34,12 @@ _CTF_ACCOUNT_ALWAYS_ALLOWED = frozenset(
     }
 )
 
+# The unified SPA shell always loads this authenticated, advisory-only payload
+# before it renders a workspace. Temporary CTF accounts need the exact endpoint
+# after their forced password change; admitting a prefix would unnecessarily
+# expose future composition-root APIs.
+_CTF_ACCOUNT_SPA_ALLOWED = frozenset({"/api/v1/bootstrap/"})
+
 # Mission Control range-access endpoints a live participant legitimately needs to
 # reach their OWN range box: the Guacamole RDP/SSH URL bootstrap plus its
 # status/open polling (issue #1740). These self-authorize per user — the
@@ -103,6 +109,7 @@ class CTFAccountBoundaryMiddleware:
                 (path.startswith("/ctf/") and not path.startswith("/ctf/admin/"))
                 or path.startswith("/api/v1/ctf/")
                 or path.startswith(_PARTICIPANT_MISSION_CONTROL_PREFIXES)
+                or path in _CTF_ACCOUNT_SPA_ALLOWED
             )
             forbidden = (path != "/logout/" and live_participant_for_user(user) is None) or (
                 path not in _CTF_ACCOUNT_ALWAYS_ALLOWED and not participant_surface

@@ -141,7 +141,7 @@ def _boundary_response(user, path):
     return CTFAccountBoundaryMiddleware(lambda _request: HttpResponse("escaped"))(request)
 
 
-def test_ctf_boundary_admits_live_participant_to_guacamole_range_access(ctf_event_active, monkeypatch):
+def test_ctf_boundary_admits_live_participant_spa_bootstrap_and_guacamole_range_access(ctf_event_active, monkeypatch):
     # Issue #1740: a live participant must reach the Mission Control Guacamole
     # range-access endpoints (RDP/SSH bootstrap + status/open) for their own box.
     from management.services import set_ctf_password_change_required
@@ -154,6 +154,7 @@ def test_ctf_boundary_admits_live_participant_to_guacamole_range_access(ctf_even
     user = User.objects.get(pk=participant.user_id)
 
     for path in (
+        "/api/v1/bootstrap/",
         "/api/v1/mission-control/guacamole/rdp-url/",
         "/api/v1/mission-control/guacamole/ssh-url/",
         "/api/v1/mission-control/guacamole/bootstrap/00000000-0000-0000-0000-000000000000/",
@@ -162,6 +163,23 @@ def test_ctf_boundary_admits_live_participant_to_guacamole_range_access(ctf_even
         response = _boundary_response(user, path)
         assert response.status_code == 200, path
         assert response.content == b"escaped", path
+
+
+def test_live_participant_can_load_real_spa_bootstrap(client, ctf_event_active, monkeypatch):
+    from management.services import set_ctf_password_change_required
+
+    monkeypatch.setattr("ctf.services.participant.accounts.request_event_provisioning", lambda *_a, **_kw: None)
+    participant = create_participant_accounts(ctf_event_active.id, count=1)[0]
+    set_ctf_password_change_required(participant.user, False)
+    client.force_login(participant.user)
+
+    response = client.get("/api/v1/bootstrap/")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["principal"]["username"] == participant.user.username
+    assert payload["permissions"]["is_ctf_participant"] is True
+    assert payload["modes"] == {"participant": True, "operator": False, "default": "participant"}
 
 
 def test_ctf_boundary_still_denies_non_guacamole_mission_control(ctf_event_active, monkeypatch):
@@ -175,6 +193,7 @@ def test_ctf_boundary_still_denies_non_guacamole_mission_control(ctf_event_activ
     user = User.objects.get(pk=participant.user_id)
 
     for path in (
+        "/api/v1/bootstrap/admin/",
         "/api/v1/mission-control/ngfw/00000000-0000-0000-0000-000000000000/ssh-url/",
         "/api/v1/mission-control/range/launch/",
         "/api/v1/mission-control/credentials/",
