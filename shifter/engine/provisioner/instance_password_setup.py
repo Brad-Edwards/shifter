@@ -8,7 +8,6 @@ execution context.  This module owns that transport switch and keeps
 
 from __future__ import annotations
 
-import logging
 from typing import Any
 
 from executors.base import ExecutorError
@@ -16,8 +15,6 @@ from executors.factory import GuestExecutionContext
 from orchestrators.setup_orchestrator import SetupError, SetupOrchestrator
 from plans.set_local_password import SetLocalPasswordPlan
 from state_helpers import _get_cloud_provider
-
-logger = logging.getLogger(__name__)
 
 _WINDOWS_SSH_HOST_KEY_SCRIPT = r"""
 $ErrorActionPreference = "Stop"
@@ -177,6 +174,3 @@ def set_local_password_or_raise(
     finally:
         if owns_password_execution:
             password_execution.close()
-
-    container_note = f", {target_container} container target" if target_container else ""
-    logger.info("Per-instance local credential set on %s (%s%s)", instance_id, platform, container_note)
