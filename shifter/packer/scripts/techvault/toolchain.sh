@@ -41,4 +41,4 @@ curl -fsSL --proto '=https' --proto-redir '=https' \
   "https://registry.npmjs.org/@anthropic-ai/claude-code-linux-x64/-/claude-code-linux-x64-${CLAUDE_CODE_VERSION}.tgz"
 printf '%s  %s\n' "${CLAUDE_CODE_TARBALL_SHA256}" "${claude_tgz}" | sha256sum --check --status
 printf '%s  %s\n' "${CLAUDE_CODE_LINUX_X64_TARBALL_SHA256}" "${claude_native_tgz}" | sha256sum --check --status
-npm install -g --offline "${claude_tgz}" "${claude_native_tgz}" # NOSONAR
+npm install -g --offline "${claude_tgz}" "${claude_native_tgz}"

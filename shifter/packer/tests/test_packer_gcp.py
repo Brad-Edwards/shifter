@@ -319,6 +319,7 @@ class TestGcpTechVaultSupplyChain:
         assert "CLAUDE_CODE_LINUX_X64_TARBALL_SHA256" in toolchain
         assert "sha256sum --check" in toolchain
         assert "npm install -g --offline" in toolchain
+        assert "NOSONAR" not in toolchain
 
     def test_aptl_complete_dependency_lock_is_hash_enforced(self, stack, lock):
         assert "APTL_REQUIREMENTS_LOCK:?" in stack
