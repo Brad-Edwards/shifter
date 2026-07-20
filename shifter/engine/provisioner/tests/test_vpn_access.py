@@ -238,6 +238,15 @@ def test_aws_gateway_bootstrap_uses_the_baked_runtime_without_package_egress():
     assert "  - [python3, /usr/local/sbin/configure-shifter-openvpn.py]" in bootstrap
 
 
+def test_aws_gateway_secrets_client_uses_the_module_region():
+    module = Path(__file__).parents[1] / "terraform" / "modules" / "range"
+    bootstrap = (module / "templates" / "openvpn_gateway_aws.py.tpl").read_text(encoding="utf-8")
+    resources = (module / "vpn.tf").read_text(encoding="utf-8")
+
+    assert 'boto3.client("secretsmanager", region_name="${region}")' in bootstrap
+    assert "region       = substr(var.availability_zone, 0, length(var.availability_zone) - 1)" in resources
+
+
 def test_server_payload_excludes_client_and_ca_signing_keys():
 
     generation = uuid4()
